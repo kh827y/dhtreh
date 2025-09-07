@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Get, Param } from '@nestjs/common';
+import { Body, Controller, Post, Get, Param, Query } from '@nestjs/common';
 import { LoyaltyService } from './loyalty.service';
 import { CommitDto, QrMintDto, QuoteDto, RefundDto } from './dto';
 import { looksLikeJwt, signQrToken, verifyQrToken } from './token.util';
@@ -52,5 +52,18 @@ export class LoyaltyController {
   @Post('refund')
   refund(@Body() dto: RefundDto) {
     return this.service.refund(dto.merchantId, dto.orderId, dto.refundTotal, dto.refundEligibleTotal);
+  }
+
+  // ===== НОВОЕ: история транзакций =====
+  @Get('transactions')
+  transactions(
+    @Query('merchantId') merchantId: string,
+    @Query('customerId') customerId: string,
+    @Query('limit') limitStr?: string,
+    @Query('before') beforeStr?: string
+  ) {
+    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 20, 1), 100) : 20;
+    const before = beforeStr ? new Date(beforeStr) : undefined;
+    return this.service.transactions(merchantId, customerId, limit, before);
   }
 }

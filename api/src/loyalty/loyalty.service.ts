@@ -205,4 +205,21 @@ export class LoyaltyService {
       return { ok: true, share, pointsRestored: pointsToRestore, pointsRevoked: pointsToRevoke };
     });
   }
+
+  // ===== НОВОЕ: список транзакций по клиенту/мерчанту с пагинацией по времени =====
+  async transactions(merchantId: string, customerId: string, limit = 20, before?: Date) {
+    const items = await this.prisma.transaction.findMany({
+      where: {
+        merchantId,
+        customerId,
+        ...(before ? { createdAt: { lt: before } } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(Math.max(limit, 1), 100),
+    });
+
+    const nextBefore = items.length > 0 ? items[items.length - 1].createdAt.toISOString() : null;
+
+    return { items, nextBefore };
+  }
 }
