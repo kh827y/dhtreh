@@ -1,0 +1,80 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum WalletType {
+  POINTS
+}
+
+enum HoldMode {
+  REDEEM
+  EARN
+}
+
+enum HoldStatus {
+  PENDING
+  COMMITTED
+  CANCELED
+}
+
+enum TxnType {
+  EARN
+  REDEEM
+  REFUND
+  ADJUST
+}
+
+model Customer {
+  id          String        @id @default(cuid())
+  phone       String?       @unique
+  tgId        String?       @unique
+  wallets     Wallet[]
+  createdAt   DateTime      @default(now())
+  Hold        Hold[]
+  Transaction Transaction[]
+}
+
+model Wallet {
+  id         String     @id @default(cuid())
+  customerId String
+  customer   Customer   @relation(fields: [customerId], references: [id])
+  type       WalletType
+  balance    Int        @default(0) // баланс в "рублях" для простоты
+  createdAt  DateTime   @default(now())
+  // если нужен один кошелёк каждого типа на клиента — раскомментируй:
+  // @@unique([customerId, type], name: "wallet_owner_type_unique")
+
+  @@index([customerId, type], name: "wallet_owner_type_idx")
+}
+
+model Hold {
+  id           String     @id @default(cuid())
+  customerId   String
+  customer     Customer   @relation(fields: [customerId], references: [id])
+  mode         HoldMode
+  redeemAmount Int        @default(0)
+  earnPoints   Int        @default(0)
+  status       HoldStatus @default(PENDING)
+  orderId      String?
+  receiptId    String?
+  createdAt    DateTime   @default(now())
+
+  @@index([customerId, status])
+}
+
+model Transaction {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+  type       TxnType
+  amount     Int // +начисление, -списание
+  orderId    String?
+  createdAt  DateTime @default(now())
+
+  @@index([customerId, createdAt])
+}
