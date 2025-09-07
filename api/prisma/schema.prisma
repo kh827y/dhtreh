@@ -1,6 +1,6 @@
 datasource db {
-  provider          = "postgresql"
-  url               = env("DATABASE_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 generator client {
@@ -37,6 +37,7 @@ model Merchant {
   holds     Hold[]
   txns      Transaction[]
   createdAt DateTime          @default(now())
+  Receipt   Receipt[]
 }
 
 model MerchantSettings {
@@ -55,6 +56,7 @@ model Customer {
   holds     Hold[]
   txns      Transaction[]
   createdAt DateTime      @default(now())
+  Receipt   Receipt[]
 }
 
 model Wallet {
@@ -71,21 +73,42 @@ model Wallet {
 }
 
 model Hold {
-  id           String     @id @default(cuid())
-  customerId   String
-  customer     Customer   @relation(fields: [customerId], references: [id])
-  merchantId   String
-  merchant     Merchant   @relation(fields: [merchantId], references: [id])
-  mode         HoldMode
-  redeemAmount Int        @default(0)
-  earnPoints   Int        @default(0)
-  status       HoldStatus @default(PENDING)
-  orderId      String?
-  receiptId    String?
-  createdAt    DateTime   @default(now())
+  id            String     @id @default(cuid())
+  customerId    String
+  customer      Customer   @relation(fields: [customerId], references: [id])
+  merchantId    String
+  merchant      Merchant   @relation(fields: [merchantId], references: [id])
+  mode          HoldMode
+  redeemAmount  Int        @default(0)
+  earnPoints    Int        @default(0)
+  status        HoldStatus @default(PENDING)
+  orderId       String?
+  receiptId     String?
+  total         Int?
+  eligibleTotal Int?
+  createdAt     DateTime   @default(now())
 
   @@index([customerId, status])
   @@index([merchantId, status])
+}
+
+model Receipt {
+  id         String   @id @default(cuid())
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id])
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  orderId       String
+  receiptNumber String?
+  total         Int
+  eligibleTotal Int
+  redeemApplied Int      @default(0) // сколько списали баллами
+  earnApplied   Int      @default(0) // сколько начислили
+  createdAt     DateTime @default(now())
+
+  @@unique([merchantId, orderId])
+  @@index([merchantId, createdAt])
 }
 
 model Transaction {

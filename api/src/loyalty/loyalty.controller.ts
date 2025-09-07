@@ -1,6 +1,6 @@
 import { Body, Controller, Post, Get, Param } from '@nestjs/common';
 import { LoyaltyService } from './loyalty.service';
-import { CommitDto, QrMintDto, QuoteDto } from './dto';
+import { CommitDto, QrMintDto, QuoteDto, RefundDto } from './dto';
 import { looksLikeJwt, signQrToken, verifyQrToken } from './token.util';
 
 @Controller('loyalty')
@@ -31,13 +31,11 @@ export class LoyaltyController {
     return this.service.cancel(holdId);
   }
 
-  // НОВЫЙ путь баланса с merchantId
   @Get('balance/:merchantId/:customerId')
   balance2(@Param('merchantId') merchantId: string, @Param('customerId') customerId: string) {
     return this.service.balance(merchantId, customerId);
   }
 
-  // Оставим старый путь для совместимости (merchantId = M-1)
   @Get('balance/:customerId')
   balanceBackCompat(@Param('customerId') customerId: string) {
     return this.service.balance('M-1', customerId);
@@ -49,5 +47,10 @@ export class LoyaltyController {
     const ttl = dto.ttlSec ?? 60;
     const token = await signQrToken(secret, dto.customerId, ttl);
     return { token, ttl };
+  }
+
+  @Post('refund')
+  refund(@Body() dto: RefundDto) {
+    return this.service.refund(dto.merchantId, dto.orderId, dto.refundTotal, dto.refundEligibleTotal);
   }
 }
