@@ -5,9 +5,8 @@ import { looksLikeJwt, signQrToken, verifyQrToken } from './token.util';
 
 @Controller('loyalty')
 export class LoyaltyController {
-  constructor(private service: LoyaltyService) {}
+  constructor(private readonly service: LoyaltyService) {}
 
-  // helper: получим customerId из plain или JWT
   private async resolveCustomerId(userToken: string): Promise<string> {
     if (looksLikeJwt(userToken)) {
       const secret = process.env.QR_JWT_SECRET || 'dev_change_me';
@@ -19,13 +18,7 @@ export class LoyaltyController {
   @Post('quote')
   async quote(@Body() dto: QuoteDto) {
     const customerId = await this.resolveCustomerId(dto.userToken);
-    // пробросим "нативный" dto в сервис: поменяем там ensureCustomer на ensureCustomerId(customerId)
-    // поэтому раскинем поля руками
-    const res = await this.service.quote({
-      ...dto,
-      userToken: customerId, // теперь это точно customerId
-    } as any);
-    return res;
+    return this.service.quote({ ...dto, userToken: customerId });
   }
 
   @Post('commit')
@@ -38,15 +31,22 @@ export class LoyaltyController {
     return this.service.cancel(holdId);
   }
 
+  // НОВЫЙ путь баланса с merchantId
+  @Get('balance/:merchantId/:customerId')
+  balance2(@Param('merchantId') merchantId: string, @Param('customerId') customerId: string) {
+    return this.service.balance(merchantId, customerId);
+  }
+
+  // Оставим старый путь для совместимости (merchantId = M-1)
   @Get('balance/:customerId')
-  balance(@Param('customerId') customerId: string) {
-    return this.service.balance(customerId);
+  balanceBackCompat(@Param('customerId') customerId: string) {
+    return this.service.balance('M-1', customerId);
   }
 
   @Post('qr')
   async mintQr(@Body() dto: QrMintDto) {
     const secret = process.env.QR_JWT_SECRET || 'dev_change_me';
-    const ttl = dto.ttlSec ?? 60; // по умолчанию 60 сек
+    const ttl = dto.ttlSec ?? 60;
     const token = await signQrToken(secret, dto.customerId, ttl);
     return { token, ttl };
   }

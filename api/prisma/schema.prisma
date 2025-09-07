@@ -1,6 +1,6 @@
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
 }
 
 generator client {
@@ -29,33 +29,53 @@ enum TxnType {
   ADJUST
 }
 
+model Merchant {
+  id        String            @id @default(cuid())
+  name      String
+  settings  MerchantSettings?
+  wallets   Wallet[]
+  holds     Hold[]
+  txns      Transaction[]
+  createdAt DateTime          @default(now())
+}
+
+model MerchantSettings {
+  merchantId     String   @id
+  merchant       Merchant @relation(fields: [merchantId], references: [id])
+  earnBps        Int      @default(500)
+  redeemLimitBps Int      @default(5000)
+  updatedAt      DateTime @default(now())
+}
+
 model Customer {
-  id          String        @id @default(cuid())
-  phone       String?       @unique
-  tgId        String?       @unique
-  wallets     Wallet[]
-  createdAt   DateTime      @default(now())
-  Hold        Hold[]
-  Transaction Transaction[]
+  id        String        @id @default(cuid())
+  phone     String?       @unique
+  tgId      String?       @unique
+  wallets   Wallet[]
+  holds     Hold[]
+  txns      Transaction[]
+  createdAt DateTime      @default(now())
 }
 
 model Wallet {
   id         String     @id @default(cuid())
   customerId String
   customer   Customer   @relation(fields: [customerId], references: [id])
+  merchantId String
+  merchant   Merchant   @relation(fields: [merchantId], references: [id])
   type       WalletType
-  balance    Int        @default(0) // баланс в "рублях" для простоты
+  balance    Int        @default(0)
   createdAt  DateTime   @default(now())
-  // если нужен один кошелёк каждого типа на клиента — раскомментируй:
-  // @@unique([customerId, type], name: "wallet_owner_type_unique")
 
-  @@index([customerId, type], name: "wallet_owner_type_idx")
+  @@unique([customerId, merchantId, type])
 }
 
 model Hold {
   id           String     @id @default(cuid())
   customerId   String
   customer     Customer   @relation(fields: [customerId], references: [id])
+  merchantId   String
+  merchant     Merchant   @relation(fields: [merchantId], references: [id])
   mode         HoldMode
   redeemAmount Int        @default(0)
   earnPoints   Int        @default(0)
@@ -65,16 +85,20 @@ model Hold {
   createdAt    DateTime   @default(now())
 
   @@index([customerId, status])
+  @@index([merchantId, status])
 }
 
 model Transaction {
   id         String   @id @default(cuid())
   customerId String
   customer   Customer @relation(fields: [customerId], references: [id])
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id])
   type       TxnType
-  amount     Int // +начисление, -списание
+  amount     Int
   orderId    String?
   createdAt  DateTime @default(now())
 
   @@index([customerId, createdAt])
+  @@index([merchantId, createdAt])
 }

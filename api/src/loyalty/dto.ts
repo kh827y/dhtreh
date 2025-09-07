@@ -1,15 +1,18 @@
 import { IsEnum, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+
 export enum Mode { REDEEM = 'redeem', EARN = 'earn' }
 
 export class QuoteDto {
   @IsEnum(Mode) mode: Mode;
-  @IsString() userToken: string; // может быть customerId или JWT
+  @IsString() merchantId: string;           // <— НОВОЕ
+  @IsString() userToken: string;            // customerId или JWT
   @IsString() orderId: string;
   @IsNumber() @Min(0) total: number;
   @IsNumber() @Min(0) eligibleTotal: number;
 }
 
 export class CommitDto {
+  @IsString() merchantId: string;           // <— НОВОЕ
   @IsString() holdId: string;
   @IsString() orderId: string;
   @IsOptional() @IsString() receiptNumber?: string;

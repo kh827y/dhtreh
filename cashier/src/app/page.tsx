@@ -20,8 +20,12 @@ type QuoteEarnResp = {
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
+const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
 
 export default function Page() {
+  // merchantId из .env (редактировать на странице не нужно)
+  const [merchantId] = useState<string>(MERCHANT);
+
   const [mode, setMode] = useState<'redeem' | 'earn'>('redeem');
   const [userToken, setUserToken] = useState<string>('user-1'); // сюда вставится отсканированный JWT
   const [orderId, setOrderId] = useState<string>('O-1');
@@ -41,7 +45,7 @@ export default function Page() {
       const r = await fetch(`${API_BASE}/loyalty/quote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode, userToken, orderId, total, eligibleTotal }),
+        body: JSON.stringify({ merchantId, mode, userToken, orderId, total, eligibleTotal }),
       });
       const data = await r.json();
       setResult(data);
@@ -60,7 +64,7 @@ export default function Page() {
       const r = await fetch(`${API_BASE}/loyalty/commit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ holdId, orderId, receiptNumber: '000001' }),
+        body: JSON.stringify({ merchantId, holdId, orderId, receiptNumber: '000001' }),
       });
       const data = await r.json();
       if (data?.ok) {
@@ -78,8 +82,18 @@ export default function Page() {
     }
   }
 
+  async function loadBalance() {
+    try {
+      const r = await fetch(`${API_BASE}/loyalty/balance/${merchantId}/${encodeURIComponent(userToken)}`);
+      const data = await r.json();
+      alert(`Баланс клиента ${data.customerId} в мерчанте ${data.merchantId}: ${data.balance} ₽`);
+    } catch (e: any) {
+      alert('Ошибка получения баланса: ' + e?.message);
+    }
+  }
+
   function onScan(text: string) {
-    // В QR лежит JWT токен — подставим в поле клиента и сразу посчитаем
+    // В QR лежит JWT-токен — подставим в поле клиента и сразу посчитаем
     setUserToken(text);
     setScanOpen(false);
     // авто-QUOTE
@@ -89,6 +103,7 @@ export default function Page() {
   return (
     <main style={{ maxWidth: 760, margin: '40px auto', fontFamily: 'system-ui, Arial' }}>
       <h1>Виртуальный терминал кассира</h1>
+      <div style={{ color: '#666', marginTop: 6 }}>Мерчант: <code>{merchantId}</code></div>
 
       <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
         <label>
@@ -102,6 +117,9 @@ export default function Page() {
             />
             <button onClick={() => setScanOpen(true)} style={{ padding: '8px 12px' }}>
               Сканировать QR
+            </button>
+            <button onClick={loadBalance} style={{ padding: '8px 12px' }}>
+              Баланс
             </button>
           </div>
         </label>
@@ -164,7 +182,11 @@ export default function Page() {
         {holdId && <div>Текущий holdId: <code>{holdId}</code></div>}
       </div>
 
-      {scanOpen && <div style={{ marginTop: 20 }}><QrScanner onResult={onScan} onClose={() => setScanOpen(false)} /></div>}
+      {scanOpen && (
+        <div style={{ marginTop: 20 }}>
+          <QrScanner onResult={onScan} onClose={() => setScanOpen(false)} />
+        </div>
+      )}
 
       <p style={{ marginTop: 24, color: '#666' }}>
         Камера работает на <code>http://localhost</code> без HTTPS. Если открываешь с другого IP — понадобится HTTPS.

@@ -6,6 +6,7 @@ import QRCode from 'qrcode';
 
 const API = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
 const QR_TTL = Number(process.env.NEXT_PUBLIC_QR_TTL || '60');
+const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
 
 declare global {
   interface Window {
@@ -29,7 +30,7 @@ export default function MiniApp() {
   }, []);
 
   async function refreshBalance(id: string) {
-    const r = await fetch(`${API}/loyalty/balance/${encodeURIComponent(id)}`);
+    const r = await fetch(`${API}/loyalty/balance/${MERCHANT}/${encodeURIComponent(id)}`);
     const data = await r.json();
     setBalance(data.balance ?? 0);
   }
