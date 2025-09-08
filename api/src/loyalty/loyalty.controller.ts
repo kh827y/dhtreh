@@ -1,9 +1,9 @@
-import { Body, Controller, Post, Get, Param, Query, BadRequestException, Res } from '@nestjs/common';
+import { Body, Controller, Post, Get, Param, Query, BadRequestException, Res, Req } from '@nestjs/common';
 import { LoyaltyService } from './loyalty.service';
 import { CommitDto, QrMintDto, QuoteDto, RefundDto } from './dto';
 import { looksLikeJwt, signQrToken, verifyQrToken } from './token.util';
 import { PrismaService } from '../prisma.service';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { createHmac } from 'crypto';
 
 @Controller('loyalty')
@@ -42,8 +42,8 @@ export class LoyaltyController {
   }
 
   @Post('commit')
-  async commit(@Body() dto: CommitDto, @Res({ passthrough: true }) res: Response) {
-    const data = await this.service.commit(dto.holdId, dto.orderId, dto.receiptNumber);
+  async commit(@Body() dto: CommitDto, @Res({ passthrough: true }) res: Response, @Req() req: Request & { requestId?: string }) {
+    const data = await this.service.commit(dto.holdId, dto.orderId, dto.receiptNumber, req.requestId ?? dto.requestId);
     try {
       const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId: dto.merchantId } });
       const secret = s?.webhookSecret;
@@ -54,6 +54,7 @@ export class LoyaltyController {
         res.setHeader('X-Loyalty-Signature', `v1,ts=${ts},sig=${sig}`);
         res.setHeader('X-Merchant-Id', dto.merchantId);
         res.setHeader('X-Signature-Timestamp', ts);
+        if (req.requestId) res.setHeader('X-Request-Id', req.requestId);
       }
     } catch {}
     return data;
@@ -94,8 +95,8 @@ export class LoyaltyController {
   }
 
   @Post('refund')
-  async refund(@Body() dto: RefundDto, @Res({ passthrough: true }) res: Response) {
-    const data = await this.service.refund(dto.merchantId, dto.orderId, dto.refundTotal, dto.refundEligibleTotal);
+  async refund(@Body() dto: RefundDto, @Res({ passthrough: true }) res: Response, @Req() req: Request & { requestId?: string }) {
+    const data = await this.service.refund(dto.merchantId, dto.orderId, dto.refundTotal, dto.refundEligibleTotal, req.requestId);
     try {
       const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId: dto.merchantId } });
       const secret = s?.webhookSecret;
@@ -106,6 +107,7 @@ export class LoyaltyController {
         res.setHeader('X-Loyalty-Signature', `v1,ts=${ts},sig=${sig}`);
         res.setHeader('X-Merchant-Id', dto.merchantId);
         res.setHeader('X-Signature-Timestamp', ts);
+        if (req.requestId) res.setHeader('X-Request-Id', req.requestId);
       }
     } catch {}
     return data;

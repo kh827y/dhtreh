@@ -52,12 +52,13 @@ export default function Page() {
 
   async function callQuote() {
     setBusy(true);
+    const requestId = 'req_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8);
     setResult(null);
     setHoldId(null);
     try {
       const r = await fetch(`${API_BASE}/loyalty/quote`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId },
         body: JSON.stringify({ merchantId, mode, userToken, orderId, total, eligibleTotal }),
       });
       if (!r.ok) {
@@ -89,11 +90,12 @@ export default function Page() {
   async function callCommit() {
     if (!holdId) return alert('Сначала сделайте расчёт (QUOTE).');
     setBusy(true);
+    const requestId = 'req_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8);
     try {
       const r = await fetch(`${API_BASE}/loyalty/commit`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ merchantId, holdId, orderId, receiptNumber: '000001' }),
+        headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId },
+        body: JSON.stringify({ merchantId, holdId, orderId, receiptNumber: '000001', requestId }),
       });
       const data = await r.json();
       if (data?.ok) {

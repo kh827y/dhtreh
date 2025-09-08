@@ -22,6 +22,18 @@ enum HoldStatus {
   CANCELED
 }
 
+enum DeviceType {
+  SMART
+  PC_POS
+  VIRTUAL
+}
+
+enum StaffRole {
+  ADMIN
+  MANAGER
+  CASHIER
+}
+
 enum TxnType {
   EARN
   REDEEM
@@ -38,6 +50,9 @@ model Merchant {
   txns      Transaction[]
   createdAt DateTime          @default(now())
   Receipt   Receipt[]
+  outlets   Outlet[]
+  devices   Device[]
+  staff     Staff[]
 }
 
 model MerchantSettings {
@@ -91,10 +106,20 @@ model Hold {
   eligibleTotal Int?
   qrJti        String?    @unique   // <— НОВОЕ: один hold на один QR
   expiresAt    DateTime?
+  outletId     String?
+  deviceId     String?
+  staffId      String?
   createdAt    DateTime   @default(now())
+
+  outlet       Outlet?    @relation(fields: [outletId], references: [id])
+  device       Device?    @relation(fields: [deviceId], references: [id])
+  staff        Staff?     @relation(fields: [staffId], references: [id])
 
   @@index([customerId, status])
   @@index([merchantId, status])
+  @@index([merchantId, outletId])
+  @@index([merchantId, deviceId])
+  @@index([merchantId, staffId])
 }
 
 model Receipt {
@@ -111,9 +136,19 @@ model Receipt {
   redeemApplied Int      @default(0) // сколько списали баллами
   earnApplied   Int      @default(0) // сколько начислили
   createdAt     DateTime @default(now())
+  outletId      String?
+  deviceId      String?
+  staffId       String?
+
+  outlet       Outlet?    @relation(fields: [outletId], references: [id])
+  device       Device?    @relation(fields: [deviceId], references: [id])
+  staff        Staff?     @relation(fields: [staffId], references: [id])
 
   @@unique([merchantId, orderId])
   @@index([merchantId, createdAt])
+  @@index([merchantId, outletId])
+  @@index([merchantId, deviceId])
+  @@index([merchantId, staffId])
 }
 
 model Transaction {
@@ -126,9 +161,19 @@ model Transaction {
   amount     Int
   orderId    String?
   createdAt  DateTime @default(now())
+  outletId   String?
+  deviceId   String?
+  staffId    String?
+
+  outlet       Outlet?    @relation(fields: [outletId], references: [id])
+  device       Device?    @relation(fields: [deviceId], references: [id])
+  staff        Staff?     @relation(fields: [staffId], references: [id])
 
   @@index([customerId, createdAt])
   @@index([merchantId, createdAt])
+  @@index([merchantId, outletId])
+  @@index([merchantId, deviceId])
+  @@index([merchantId, staffId])
 }
 
 model QrNonce {
@@ -157,4 +202,61 @@ model EventOutbox {
 
   @@index([status, nextRetryAt])
   @@index([merchantId, createdAt])
+}
+
+model Outlet {
+  id          String    @id @default(cuid())
+  merchantId  String
+  merchant    Merchant  @relation(fields: [merchantId], references: [id])
+  name        String
+  address     String?
+  createdAt   DateTime  @default(now())
+
+  @@index([merchantId])
+
+  // обратные связи
+  devices     Device[]
+  holds       Hold[]
+  receipts    Receipt[]
+  txns        Transaction[]
+}
+
+model Device {
+  id          String     @id @default(cuid())
+  merchantId  String
+  merchant    Merchant   @relation(fields: [merchantId], references: [id])
+  outletId    String?
+  outlet      Outlet?    @relation(fields: [outletId], references: [id])
+  type        DeviceType
+  label       String?
+  lastSeenAt  DateTime?
+  createdAt   DateTime   @default(now())
+
+  @@index([merchantId])
+  @@index([merchantId, outletId])
+
+  // обратные связи
+  holds     Hold[]
+  receipts  Receipt[]
+  txns      Transaction[]
+}
+
+model Staff {
+  id          String     @id @default(cuid())
+  merchantId  String
+  merchant    Merchant   @relation(fields: [merchantId], references: [id])
+  login       String?
+  email       String?
+  role        StaffRole  @default(CASHIER)
+  status      String     @default("ACTIVE")
+  hash        String?
+  createdAt   DateTime   @default(now())
+
+  @@index([merchantId])
+  @@unique([merchantId, login])
+
+  // обратные связи
+  holds     Hold[]
+  receipts  Receipt[]
+  txns      Transaction[]
 }

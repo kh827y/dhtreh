@@ -118,6 +118,9 @@ export class LoyaltyService {
             qrJti: qr?.jti ?? null,
             expiresAt: qr?.exp ? new Date(qr.exp * 1000) : null,
             status: HoldStatus.PENDING,
+            outletId: dto.outletId ?? null,
+            deviceId: dto.deviceId ?? null,
+            staffId: dto.staffId ?? null,
           }
         });
 
@@ -160,6 +163,9 @@ export class LoyaltyService {
           qrJti: qr?.jti ?? null,
           expiresAt: qr?.exp ? new Date(qr.exp * 1000) : null,
           status: HoldStatus.PENDING,
+          outletId: dto.outletId ?? null,
+          deviceId: dto.deviceId ?? null,
+          staffId: dto.staffId ?? null,
         }
       });
 
@@ -172,7 +178,7 @@ export class LoyaltyService {
     });
   }
 
-  async commit(holdId: string, orderId: string, receiptNumber?: string) {
+  async commit(holdId: string, orderId: string, receiptNumber?: string, requestId?: string) {
     const hold = await this.prisma.hold.findUnique({ where: { id: holdId } });
     if (!hold) throw new BadRequestException('Hold not found');
     if (hold.expiresAt && hold.expiresAt.getTime() < Date.now()) {
@@ -207,7 +213,7 @@ export class LoyaltyService {
         appliedRedeem = amount;
         await tx.wallet.update({ where: { id: wallet.id }, data: { balance: fresh!.balance - amount } });
         await tx.transaction.create({
-          data: { customerId: hold.customerId, merchantId: hold.merchantId, type: TxnType.REDEEM, amount: -amount, orderId }
+          data: { customerId: hold.customerId, merchantId: hold.merchantId, type: TxnType.REDEEM, amount: -amount, orderId, outletId: hold.outletId, deviceId: hold.deviceId, staffId: hold.staffId }
         });
       }
       if (hold.mode === 'EARN' && hold.earnPoints > 0) {
@@ -215,7 +221,7 @@ export class LoyaltyService {
         appliedEarn = hold.earnPoints;
         await tx.wallet.update({ where: { id: wallet.id }, data: { balance: fresh!.balance + hold.earnPoints } });
         await tx.transaction.create({
-          data: { customerId: hold.customerId, merchantId: hold.merchantId, type: TxnType.EARN, amount: hold.earnPoints, orderId }
+          data: { customerId: hold.customerId, merchantId: hold.merchantId, type: TxnType.EARN, amount: hold.earnPoints, orderId, outletId: hold.outletId, deviceId: hold.deviceId, staffId: hold.staffId }
         });
       }
 
@@ -235,6 +241,9 @@ export class LoyaltyService {
             eligibleTotal: hold.eligibleTotal ?? (hold.total ?? 0),
             redeemApplied: appliedRedeem,
             earnApplied: appliedEarn,
+            outletId: hold.outletId ?? null,
+            deviceId: hold.deviceId ?? null,
+            staffId: hold.staffId ?? null,
           }
         });
         // Пишем событие в outbox (минимально)
@@ -251,6 +260,10 @@ export class LoyaltyService {
               earnApplied: appliedEarn,
               receiptId: created.id,
               createdAt: new Date().toISOString(),
+              outletId: hold.outletId ?? null,
+              deviceId: hold.deviceId ?? null,
+              staffId: hold.staffId ?? null,
+              requestId: requestId ?? null,
             } as any,
           },
         });
@@ -281,7 +294,7 @@ export class LoyaltyService {
     return { merchantId, customerId, balance: wallet?.balance ?? 0 };
   }
 
-  async refund(merchantId: string, orderId: string, refundTotal: number, refundEligibleTotal?: number) {
+  async refund(merchantId: string, orderId: string, refundTotal: number, refundEligibleTotal?: number, requestId?: string) {
     const receipt = await this.prisma.receipt.findUnique({
       where: { merchantId_orderId: { merchantId, orderId } },
     });
@@ -304,14 +317,14 @@ export class LoyaltyService {
         const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
         await tx.wallet.update({ where: { id: wallet.id }, data: { balance: (fresh!.balance + pointsToRestore) } });
         await tx.transaction.create({
-          data: { customerId: receipt.customerId, merchantId, type: TxnType.REFUND, amount: pointsToRestore, orderId }
+          data: { customerId: receipt.customerId, merchantId, type: TxnType.REFUND, amount: pointsToRestore, orderId, outletId: receipt.outletId, deviceId: receipt.deviceId, staffId: receipt.staffId }
         });
       }
       if (pointsToRevoke > 0) {
         const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
         await tx.wallet.update({ where: { id: wallet.id }, data: { balance: (fresh!.balance - pointsToRevoke) } });
         await tx.transaction.create({
-          data: { customerId: receipt.customerId, merchantId, type: TxnType.REFUND, amount: -pointsToRevoke, orderId }
+          data: { customerId: receipt.customerId, merchantId, type: TxnType.REFUND, amount: -pointsToRevoke, orderId, outletId: receipt.outletId, deviceId: receipt.deviceId, staffId: receipt.staffId }
         });
       }
       await tx.eventOutbox.create({
@@ -326,6 +339,10 @@ export class LoyaltyService {
             pointsRestored: pointsToRestore,
             pointsRevoked: pointsToRevoke,
             createdAt: new Date().toISOString(),
+            outletId: receipt.outletId ?? null,
+            deviceId: receipt.deviceId ?? null,
+            staffId: receipt.staffId ?? null,
+            requestId: requestId ?? null,
           } as any,
         },
       });

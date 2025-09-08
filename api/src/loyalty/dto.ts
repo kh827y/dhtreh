@@ -9,6 +9,10 @@ export class QuoteDto {
   @IsString() orderId: string;
   @IsNumber() @Min(0) total: number;
   @IsNumber() @Min(0) eligibleTotal: number;
+  @IsOptional() @IsString() outletId?: string;
+  @IsOptional() @IsString() deviceId?: string;
+  @IsOptional() @IsString() staffId?: string;
+  @IsOptional() @IsString() requestId?: string;
 }
 
 export class CommitDto {
@@ -17,6 +21,7 @@ export class CommitDto {
   @IsString() orderId: string;
   @IsOptional() @IsString() receiptNumber?: string;
   @IsOptional() @IsString() provider?: string;
+  @IsOptional() @IsString() requestId?: string;
 }
 
 export class QrMintDto {
