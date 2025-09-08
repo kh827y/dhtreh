@@ -242,9 +242,21 @@ export default function Page() {
         setOutlets(Array.isArray(lo) ? lo : []);
         setDevices(Array.isArray(ld) ? ld : []);
         setStaff(Array.isArray(ls) ? ls : []);
+        try {
+          const saved = JSON.parse(localStorage.getItem('cashier_ctx_v1') || '{}');
+          if (saved?.outletId) setOutletId(saved.outletId);
+          if (saved?.deviceId) setDeviceId(saved.deviceId);
+          if (saved?.staffId) setStaffId(saved.staffId);
+        } catch {}
       } catch {}
     })();
   }, [merchantId]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('cashier_ctx_v1', JSON.stringify({ outletId, deviceId, staffId }));
+    } catch {}
+  }, [outletId, deviceId, staffId]);
 
   return (
     <main style={{ maxWidth: 920, margin: '40px auto', fontFamily: 'system-ui, Arial' }}>

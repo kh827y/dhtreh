@@ -3,12 +3,13 @@ import { LoyaltyService } from './loyalty.service';
 import { CommitDto, QrMintDto, QuoteDto, RefundDto } from './dto';
 import { looksLikeJwt, signQrToken, verifyQrToken } from './token.util';
 import { PrismaService } from '../prisma.service';
+import { MetricsService } from '../metrics.service';
 import type { Request, Response } from 'express';
 import { createHmac } from 'crypto';
 
 @Controller('loyalty')
 export class LoyaltyController {
-  constructor(private readonly service: LoyaltyService, private readonly prisma: PrismaService) {}
+  constructor(private readonly service: LoyaltyService, private readonly prisma: PrismaService, private readonly metrics: MetricsService) {}
 
   // Plain ID или JWT
   private async resolveFromToken(userToken: string) {
@@ -33,17 +34,40 @@ export class LoyaltyController {
 
   @Post('quote')
   async quote(@Body() dto: QuoteDto) {
-    const v = await this.resolveFromToken(dto.userToken);
-    if (v.merchantAud && v.merchantAud !== 'any' && v.merchantAud !== dto.merchantId) {
-      throw new BadRequestException('QR выписан для другого мерчанта');
+    const t0 = Date.now();
+    try {
+      const v = await this.resolveFromToken(dto.userToken);
+      if (v.merchantAud && v.merchantAud !== 'any' && v.merchantAud !== dto.merchantId) {
+        this.metrics.inc('loyalty_quote_requests_total', { result: 'error', reason: 'merchant_mismatch' });
+        throw new BadRequestException('QR выписан для другого мерчанта');
+      }
+      const qrMeta = looksLikeJwt(dto.userToken) ? { jti: v.jti, iat: v.iat, exp: v.exp } : undefined;
+      const data = await this.service.quote({ ...dto, userToken: v.customerId }, qrMeta);
+      this.metrics.inc('loyalty_quote_requests_total', { result: 'ok' });
+      return data;
+    } catch (e: any) {
+      const msg = String(e?.message || e || '');
+      if (/JWTExpired|"exp"/.test(msg)) this.metrics.inc('loyalty_jwt_expired_total');
+      this.metrics.inc('loyalty_quote_requests_total', { result: 'error' });
+      throw e;
+    } finally {
+      this.metrics.observe('loyalty_quote_latency_ms', Date.now() - t0);
     }
-    const qrMeta = looksLikeJwt(dto.userToken) ? { jti: v.jti, iat: v.iat, exp: v.exp } : undefined;
-    return this.service.quote({ ...dto, userToken: v.customerId }, qrMeta);
   }
 
   @Post('commit')
   async commit(@Body() dto: CommitDto, @Res({ passthrough: true }) res: Response, @Req() req: Request & { requestId?: string }) {
-    const data = await this.service.commit(dto.holdId, dto.orderId, dto.receiptNumber, req.requestId ?? dto.requestId);
+    const t0 = Date.now();
+    let data: any;
+    try {
+      data = await this.service.commit(dto.holdId, dto.orderId, dto.receiptNumber, req.requestId ?? dto.requestId);
+      this.metrics.inc('loyalty_commit_requests_total', { result: data?.alreadyCommitted ? 'already_committed' : 'ok' });
+    } catch (e) {
+      this.metrics.inc('loyalty_commit_requests_total', { result: 'error' });
+      throw e;
+    } finally {
+      this.metrics.observe('loyalty_commit_latency_ms', Date.now() - t0);
+    }
     try {
       const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId: dto.merchantId } });
       const secret = s?.webhookSecret;
@@ -97,7 +121,14 @@ export class LoyaltyController {
 
   @Post('refund')
   async refund(@Body() dto: RefundDto, @Res({ passthrough: true }) res: Response, @Req() req: Request & { requestId?: string }) {
-    const data = await this.service.refund(dto.merchantId, dto.orderId, dto.refundTotal, dto.refundEligibleTotal, req.requestId);
+    let data: any;
+    try {
+      data = await this.service.refund(dto.merchantId, dto.orderId, dto.refundTotal, dto.refundEligibleTotal, req.requestId);
+      this.metrics.inc('loyalty_refund_requests_total', { result: 'ok' });
+    } catch (e) {
+      this.metrics.inc('loyalty_refund_requests_total', { result: 'error' });
+      throw e;
+    }
     try {
       const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId: dto.merchantId } });
       const secret = s?.webhookSecret;

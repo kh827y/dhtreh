@@ -13,7 +13,7 @@ async function bootstrap() {
     ],
     methods: ['GET','POST','PUT','DELETE','PATCH','OPTIONS'],
     allowedHeaders: ['Content-Type','x-admin-key','x-request-id'],
-    exposedHeaders: ['X-Loyalty-Signature','X-Merchant-Id','X-Signature-Timestamp','X-Request-Id','X-Event-Id'],
+    exposedHeaders: ['X-Loyalty-Signature','X-Merchant-Id','X-Signature-Timestamp','X-Request-Id','X-Event-Id','X-Signature-Key-Id'],
   });  
 
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));

@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { createHmac } from 'crypto';
+import { MetricsService } from '../metrics.service';
 
 @Injectable()
 export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
@@ -8,7 +9,7 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
   private timer: any = null;
   private running = false;
 
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private metrics: MetricsService) {}
 
   onModuleInit() {
     const intervalMs = Number(process.env.OUTBOX_INTERVAL_MS || '2000');
@@ -31,6 +32,8 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
         orderBy: { createdAt: 'asc' },
         take: 10,
       });
+      const pendingCount = await this.prisma.eventOutbox.count({ where: { status: 'PENDING' } });
+      this.metrics.setGauge('loyalty_outbox_pending', pendingCount);
       for (const ev of batch) {
         // Попробуем атомарно пометить как SENDING, чтобы не схватить гонку в одном процессе
         const locked = await this.prisma.eventOutbox.updateMany({
@@ -57,17 +60,21 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
               'X-Merchant-Id': ev.merchantId,
               'X-Signature-Timestamp': ts,
               'X-Event-Id': ev.id,
+              ...(settings?.webhookKeyId ? { 'X-Signature-Key-Id': settings.webhookKeyId } : {}),
             },
             body,
           });
           if (r.ok) {
             await this.prisma.eventOutbox.update({ where: { id: ev.id }, data: { status: 'SENT', retries: ev.retries, lastError: null, nextRetryAt: null } });
+            this.metrics.inc('loyalty_outbox_sent_total');
           } else {
             const errText = await r.text().catch(() => `${r.status} ${r.statusText}`);
             await this.failWithBackoff(ev.id, ev.retries, errText);
+            this.metrics.inc('loyalty_outbox_failed_total');
           }
         } catch (e: any) {
           await this.failWithBackoff(ev.id, ev.retries, String(e?.message || e));
+          this.metrics.inc('loyalty_outbox_failed_total');
         }
       }
     } finally {

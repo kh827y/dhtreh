@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 import { HoldStatus } from '@prisma/client';
+import { MetricsService } from './metrics.service';
 
 @Injectable()
 export class HoldGcWorker implements OnModuleInit, OnModuleDestroy {
@@ -8,7 +9,7 @@ export class HoldGcWorker implements OnModuleInit, OnModuleDestroy {
   private timer: any = null;
   private running = false;
 
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private metrics: MetricsService) {}
 
   onModuleInit() {
     const intervalMs = Number(process.env.HOLD_GC_INTERVAL_MS || '30000');
@@ -26,9 +27,9 @@ export class HoldGcWorker implements OnModuleInit, OnModuleDestroy {
       for (const h of expired) {
         try {
           await this.prisma.hold.update({ where: { id: h.id }, data: { status: HoldStatus.CANCELED } });
+          this.metrics.inc('loyalty_hold_gc_canceled_total');
         } catch {}
       }
     } finally { this.running = false; }
   }
 }
-

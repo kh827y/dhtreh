@@ -5,6 +5,8 @@ import { LoyaltyModule } from './loyalty/loyalty.module';
 import { MerchantsModule } from './merchants/merchants.module';
 import { RequestIdMiddleware } from './request-id.middleware';
 import { HealthController } from './health.controller';
+import { MetricsController } from './metrics.controller';
+import { MetricsModule } from './metrics.module';
 import { HoldGcWorker } from './hold-gc.worker';
 
 @Module({
@@ -12,9 +14,10 @@ import { HoldGcWorker } from './hold-gc.worker';
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     LoyaltyModule,
+    MetricsModule,
     MerchantsModule, // <— добавили
   ],
-  controllers: [HealthController],
+  controllers: [HealthController, MetricsController],
   providers: [HoldGcWorker],
 })
 export class AppModule implements NestModule {
