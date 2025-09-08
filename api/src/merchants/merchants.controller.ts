@@ -15,6 +15,6 @@ export class MerchantsController {
 
   @Put(':id/settings')
   updateSettings(@Param('id') id: string, @Body() dto: UpdateMerchantSettingsDto) {
-    return this.service.updateSettings(id, dto.earnBps, dto.redeemLimitBps);
+    return this.service.updateSettings(id, dto.earnBps, dto.redeemLimitBps, dto.qrTtlSec, dto.webhookUrl, dto.webhookSecret);
   }
 }

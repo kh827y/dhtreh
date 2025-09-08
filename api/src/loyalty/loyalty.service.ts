@@ -116,6 +116,7 @@ export class LoyaltyService {
             total: Math.floor(dto.total),
             eligibleTotal: Math.floor(dto.eligibleTotal),
             qrJti: qr?.jti ?? null,
+            expiresAt: qr?.exp ? new Date(qr.exp * 1000) : null,
             status: HoldStatus.PENDING,
           }
         });
@@ -157,6 +158,7 @@ export class LoyaltyService {
           total: Math.floor(dto.total),
           eligibleTotal: Math.floor(dto.eligibleTotal),
           qrJti: qr?.jti ?? null,
+          expiresAt: qr?.exp ? new Date(qr.exp * 1000) : null,
           status: HoldStatus.PENDING,
         }
       });
@@ -173,7 +175,17 @@ export class LoyaltyService {
   async commit(holdId: string, orderId: string, receiptNumber?: string) {
     const hold = await this.prisma.hold.findUnique({ where: { id: holdId } });
     if (!hold) throw new BadRequestException('Hold not found');
-    if (hold.status !== HoldStatus.PENDING) throw new ConflictException('Hold already finished');
+    if (hold.expiresAt && hold.expiresAt.getTime() < Date.now()) {
+      throw new BadRequestException('Hold expired. Обновите QR в мини-аппе и повторите.');
+    }
+    if (hold.status !== HoldStatus.PENDING) {
+      // Идемпотентность: если чек уже есть по этому заказу — возвращаем успех
+      const existing = await this.prisma.receipt.findUnique({ where: { merchantId_orderId: { merchantId: hold.merchantId, orderId } } });
+      if (existing) {
+        return { ok: true, alreadyCommitted: true, receiptId: existing.id, redeemApplied: existing.redeemApplied, earnApplied: existing.earnApplied };
+      }
+      throw new ConflictException('Hold already finished');
+    }
 
     const wallet = await this.prisma.wallet.findFirst({
       where: { customerId: hold.customerId, merchantId: hold.merchantId, type: WalletType.POINTS },
@@ -181,6 +193,11 @@ export class LoyaltyService {
     if (!wallet) throw new BadRequestException('Wallet not found');
 
     return this.prisma.$transaction(async (tx) => {
+      // Идемпотентность: если чек уже есть — ничего не делаем
+      const existing = await tx.receipt.findUnique({ where: { merchantId_orderId: { merchantId: hold.merchantId, orderId } } });
+      if (existing) {
+        return { ok: true, alreadyCommitted: true, receiptId: existing.id, redeemApplied: existing.redeemApplied, earnApplied: existing.earnApplied };
+      }
       let appliedRedeem = 0;
       let appliedEarn = 0;
 
@@ -207,22 +224,45 @@ export class LoyaltyService {
         data: { status: HoldStatus.COMMITTED, orderId, receiptId: receiptNumber }
       });
 
-      await tx.receipt.upsert({
-        where: { merchantId_orderId: { merchantId: hold.merchantId, orderId } },
-        update: {},
-        create: {
-          merchantId: hold.merchantId,
-          customerId: hold.customerId,
-          orderId,
-          receiptNumber: receiptNumber ?? null,
-          total: hold.total ?? 0,
-          eligibleTotal: hold.eligibleTotal ?? (hold.total ?? 0),
-          redeemApplied: appliedRedeem,
-          earnApplied: appliedEarn,
+      try {
+        const created = await tx.receipt.create({
+          data: {
+            merchantId: hold.merchantId,
+            customerId: hold.customerId,
+            orderId,
+            receiptNumber: receiptNumber ?? null,
+            total: hold.total ?? 0,
+            eligibleTotal: hold.eligibleTotal ?? (hold.total ?? 0),
+            redeemApplied: appliedRedeem,
+            earnApplied: appliedEarn,
+          }
+        });
+        // Пишем событие в outbox (минимально)
+        await tx.eventOutbox.create({
+          data: {
+            merchantId: hold.merchantId,
+            eventType: 'loyalty.commit',
+            payload: {
+              holdId: hold.id,
+              orderId,
+              customerId: hold.customerId,
+              merchantId: hold.merchantId,
+              redeemApplied: appliedRedeem,
+              earnApplied: appliedEarn,
+              receiptId: created.id,
+              createdAt: new Date().toISOString(),
+            } as any,
+          },
+        });
+        return { ok: true, receiptId: created.id, redeemApplied: appliedRedeem, earnApplied: appliedEarn };
+      } catch (e: any) {
+        // В редкой гонке уникальный индекс по (merchantId, orderId) может сработать — считаем идемпотентным успехом
+        const existing2 = await tx.receipt.findUnique({ where: { merchantId_orderId: { merchantId: hold.merchantId, orderId } } });
+        if (existing2) {
+          return { ok: true, alreadyCommitted: true, receiptId: existing2.id, redeemApplied: existing2.redeemApplied, earnApplied: existing2.earnApplied };
         }
-      });
-
-      return { ok: true };
+        throw e;
+      }
     });
   }
 
@@ -274,6 +314,21 @@ export class LoyaltyService {
           data: { customerId: receipt.customerId, merchantId, type: TxnType.REFUND, amount: -pointsToRevoke, orderId }
         });
       }
+      await tx.eventOutbox.create({
+        data: {
+          merchantId,
+          eventType: 'loyalty.refund',
+          payload: {
+            orderId,
+            customerId: receipt.customerId,
+            merchantId,
+            share,
+            pointsRestored: pointsToRestore,
+            pointsRevoked: pointsToRevoke,
+            createdAt: new Date().toISOString(),
+          } as any,
+        },
+      });
       return { ok: true, share, pointsRestored: pointsToRestore, pointsRevoked: pointsToRevoke };
     });
   }

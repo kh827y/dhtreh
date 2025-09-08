@@ -5,7 +5,8 @@ import { useEffect, useMemo, useState } from 'react';
 import QRCode from 'qrcode';
 
 const API = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
-const QR_TTL = Number(process.env.NEXT_PUBLIC_QR_TTL || '60');
+// TTL по умолчанию, перезапишем настройками мерчанта
+const DEFAULT_QR_TTL = Number(process.env.NEXT_PUBLIC_QR_TTL || '60');
 const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
 
 declare global {
@@ -26,6 +27,9 @@ export default function MiniApp() {
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [expiresAt, setExpiresAt] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(false);
+  const [qrTtlSec, setQrTtlSec] = useState<number>(DEFAULT_QR_TTL);
+  const [autoRefreshTimer, setAutoRefreshTimer] = useState<any>(null);
+  const [lastTtlSec, setLastTtlSec] = useState<number>(DEFAULT_QR_TTL);
 
   // История
   const [txns, setTxns] = useState<Txn[]>([]);
@@ -53,12 +57,14 @@ export default function MiniApp() {
       const r = await fetch(`${API}/loyalty/qr`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customerId, ttlSec: QR_TTL, merchantId: MERCHANT }), // <— добавили merchantId
+        body: JSON.stringify({ customerId, ttlSec: qrTtlSec, merchantId: MERCHANT }),
       });
-      const { token } = await r.json();
+      const { token, ttl } = await r.json();
       const qr = await QRCode.toDataURL(token, { margin: 1, width: 240 });
       setQrDataUrl(qr);
-      setExpiresAt(Date.now() + QR_TTL * 1000);
+      const effTtl = typeof ttl === 'number' && ttl > 0 ? ttl : qrTtlSec;
+      setExpiresAt(Date.now() + effTtl * 1000);
+      setLastTtlSec(effTtl);
     } catch (e: any) {
       alert('Ошибка выдачи QR: ' + e?.message);
     } finally {
@@ -89,6 +95,17 @@ export default function MiniApp() {
     }
   }
 
+  // подгружаем настройки мерчанта (qrTtlSec)
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch(`${API}/loyalty/settings/${MERCHANT}`);
+        const data = await r.json();
+        if (data?.qrTtlSec) setQrTtlSec(data.qrTtlSec);
+      } catch {}
+    })();
+  }, []);
+
   // первичная загрузка баланса и истории
   useEffect(() => {
     refreshBalance(customerId);
@@ -102,6 +119,16 @@ export default function MiniApp() {
     const t = setInterval(() => setExpiresAt(x => x), 500);
     return () => clearInterval(t);
   }, [expiresAt]);
+
+  // автообновление QR за 2/3 TTL
+  useEffect(() => {
+    if (!expiresAt || !qrDataUrl) return;
+    const refreshDelay = Math.max(1000, Math.floor((lastTtlSec * 1000) * 2 / 3));
+    if (autoRefreshTimer) clearTimeout(autoRefreshTimer);
+    const timer = setTimeout(() => { makeQr(); }, refreshDelay);
+    setAutoRefreshTimer(timer);
+    return () => clearTimeout(timer);
+  }, [qrDataUrl, expiresAt, lastTtlSec]);
 
   function typeLabel(t: Txn['type']) {
     if (t === 'EARN') return 'Начисление';

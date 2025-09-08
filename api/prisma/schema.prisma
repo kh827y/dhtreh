@@ -45,6 +45,9 @@ model MerchantSettings {
   merchant       Merchant @relation(fields: [merchantId], references: [id])
   earnBps        Int      @default(500)
   redeemLimitBps Int      @default(5000)
+  qrTtlSec       Int      @default(120)
+  webhookUrl     String?
+  webhookSecret  String?
   updatedAt      DateTime @default(now())
 }
 
@@ -87,6 +90,7 @@ model Hold {
   total         Int?
   eligibleTotal Int?
   qrJti        String?    @unique   // <— НОВОЕ: один hold на один QR
+  expiresAt    DateTime?
   createdAt    DateTime   @default(now())
 
   @@index([customerId, status])
@@ -139,3 +143,18 @@ model QrNonce {
   @@index([merchantId, usedAt])
 }
 
+model EventOutbox {
+  id          String   @id @default(cuid())
+  merchantId  String
+  eventType   String
+  payload     Json
+  status      String   @default("PENDING")
+  retries     Int      @default(0)
+  nextRetryAt DateTime?
+  lastError   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status, nextRetryAt])
+  @@index([merchantId, createdAt])
+}

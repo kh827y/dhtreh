@@ -2,17 +2,28 @@ import { Body, Controller, Post, Get, Param, Query, BadRequestException } from '
 import { LoyaltyService } from './loyalty.service';
 import { CommitDto, QrMintDto, QuoteDto, RefundDto } from './dto';
 import { looksLikeJwt, signQrToken, verifyQrToken } from './token.util';
+import { PrismaService } from '../prisma.service';
 
 @Controller('loyalty')
 export class LoyaltyController {
-  constructor(private readonly service: LoyaltyService) {}
+  constructor(private readonly service: LoyaltyService, private readonly prisma: PrismaService) {}
 
   // Plain ID или JWT
   private async resolveFromToken(userToken: string) {
     if (looksLikeJwt(userToken)) {
       const secret = process.env.QR_JWT_SECRET || 'dev_change_me';
-      const v = await verifyQrToken(secret, userToken);
-      return v; // { customerId, merchantAud, jti, iat, exp }
+      try {
+        const v = await verifyQrToken(secret, userToken);
+        return v; // { customerId, merchantAud, jti, iat, exp }
+      } catch (e: any) {
+        const code = e?.code || e?.name || '';
+        const msg  = String(e?.message || e || '');
+        if (code === 'ERR_JWT_EXPIRED' || /JWTExpired/i.test(code) || /"exp"/i.test(msg)) {
+          // отдадим 400 с предсказуемым текстом, чтобы фронт показал «QR истёк»
+          throw new BadRequestException('JWTExpired: "exp" claim timestamp check failed');
+        }
+        throw new BadRequestException('Bad QR token');
+      }
     }
     const now = Math.floor(Date.now() / 1000);
     return { customerId: userToken, merchantAud: undefined, jti: `plain:${userToken}:${now}`, iat: now, exp: now + 3600 };
@@ -51,9 +62,20 @@ export class LoyaltyController {
   @Post('qr')
   async mintQr(@Body() dto: QrMintDto) {
     const secret = process.env.QR_JWT_SECRET || 'dev_change_me';
-    const ttl = dto.ttlSec ?? 60;
+    let ttl = dto.ttlSec ?? 60;
+    if (!dto.ttlSec && dto.merchantId) {
+      const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId: dto.merchantId } });
+      if (s?.qrTtlSec) ttl = s.qrTtlSec;
+    }
     const token = await signQrToken(secret, dto.customerId, dto.merchantId, ttl);
     return { token, ttl };
+  }
+
+  // Публичные настройки, доступные мини-аппе (без админ-ключа)
+  @Get('settings/:merchantId')
+  async publicSettings(@Param('merchantId') merchantId: string) {
+    const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId } });
+    return { merchantId, qrTtlSec: s?.qrTtlSec ?? 120 };
   }
 
   @Post('refund')
