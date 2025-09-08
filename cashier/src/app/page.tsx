@@ -45,6 +45,11 @@ export default function Page() {
   const [histBusy, setHistBusy] = useState(false);
   const [histNextBefore, setHistNextBefore] = useState<string | null>(null);
 
+  // Сгенерируем уникальный orderId при первом монтировании, чтобы избежать идемпотентных коллизий после перезагрузки
+  useEffect(() => {
+    setOrderId('O-' + Math.floor(Date.now() % 1_000_000));
+  }, []);
+
   async function callQuote() {
     setBusy(true);
     setResult(null);
@@ -92,7 +97,7 @@ export default function Page() {
       });
       const data = await r.json();
       if (data?.ok) {
-        alert('Операция зафиксирована.');
+        alert(data?.alreadyCommitted ? 'Операция уже была зафиксирована ранее (идемпотентно).' : 'Операция зафиксирована.');
         setHoldId(null);
         setResult(null);
         setOrderId('O-' + Math.floor(Math.random() * 100000));
