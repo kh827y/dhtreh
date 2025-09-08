@@ -22,6 +22,8 @@ type Ev = {
 export default function OutboxPage() {
   const [items, setItems] = useState<Ev[]>([]);
   const [status, setStatus] = useState<string>('');
+  const [type, setType] = useState<string>('');
+  const [since, setSince] = useState<string>('');
   const [limit, setLimit] = useState<number>(50);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
@@ -31,6 +33,8 @@ export default function OutboxPage() {
     try {
       const url = new URL(`${API}/merchants/${MERCHANT}/outbox`);
       if (status) url.searchParams.set('status', status);
+      if (type) url.searchParams.set('type', type);
+      if (since) url.searchParams.set('since', since);
       if (limit) url.searchParams.set('limit', String(limit));
       const r = await fetch(url.toString(), { headers: { 'x-admin-key': ADMIN_KEY } });
       if (!r.ok) throw new Error(await r.text());
@@ -66,6 +70,8 @@ export default function OutboxPage() {
       </div>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 8 }}>
         <label>Статус: <input value={status} onChange={(e) => setStatus(e.target.value)} placeholder="PENDING/SENT/…" /></label>
+        <label>Тип: <input value={type} onChange={(e) => setType(e.target.value)} placeholder="loyalty.commit" /></label>
+        <label>С даты: <input type="datetime-local" value={since} onChange={(e) => setSince(e.target.value)} /></label>
         <label>Limit: <input type="number" value={limit} onChange={(e) => setLimit(Number(e.target.value)||50)} style={{ width: 80 }} /></label>
         <button onClick={load} disabled={loading} style={{ padding: '6px 10px' }}>Обновить</button>
       </div>
@@ -94,4 +100,3 @@ export default function OutboxPage() {
     </main>
   );
 }
-

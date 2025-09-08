@@ -303,6 +303,10 @@ export class LoyaltyService {
             staffId: hold.staffId ?? null,
           }
         });
+        // обновим lastSeen у устройства, если передано
+        if (hold.deviceId) {
+          try { await tx.device.update({ where: { id: hold.deviceId }, data: { lastSeenAt: new Date() } }); } catch {}
+        }
         // Пишем событие в outbox (минимально)
         await tx.eventOutbox.create({
           data: {

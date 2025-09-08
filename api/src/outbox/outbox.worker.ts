@@ -83,8 +83,14 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
   }
 
   private async failWithBackoff(id: string, retries: number, error: string) {
-    const next = this.nextRetryAt(retries + 1);
-    await this.prisma.eventOutbox.update({ where: { id }, data: { status: 'PENDING', retries: retries + 1, nextRetryAt: next, lastError: error } });
+    const nextRetries = retries + 1;
+    const maxRetries = Number(process.env.OUTBOX_MAX_RETRIES || '8');
+    if (nextRetries >= maxRetries) {
+      await this.prisma.eventOutbox.update({ where: { id }, data: { status: 'FAILED', retries: nextRetries, nextRetryAt: null, lastError: error } });
+      return;
+    }
+    const next = this.nextRetryAt(nextRetries);
+    await this.prisma.eventOutbox.update({ where: { id }, data: { status: 'PENDING', retries: nextRetries, nextRetryAt: next, lastError: error } });
   }
 
   private nextRetryAt(retry: number) {

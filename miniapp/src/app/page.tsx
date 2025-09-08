@@ -30,6 +30,7 @@ export default function MiniApp() {
   const [qrTtlSec, setQrTtlSec] = useState<number>(DEFAULT_QR_TTL);
   const [autoRefreshTimer, setAutoRefreshTimer] = useState<any>(null);
   const [lastTtlSec, setLastTtlSec] = useState<number>(DEFAULT_QR_TTL);
+  const [consent, setConsent] = useState<boolean>(false);
 
   // История
   const [txns, setTxns] = useState<Txn[]>([]);
@@ -106,6 +107,17 @@ export default function MiniApp() {
     })();
   }, []);
 
+  // загрузка согласия
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch(`${API}/loyalty/consent?merchantId=${encodeURIComponent(MERCHANT)}&customerId=${encodeURIComponent(customerId)}`);
+        const data = await r.json();
+        setConsent(Boolean(data?.granted));
+      } catch {}
+    })();
+  }, [customerId]);
+
   // первичная загрузка баланса и истории
   useEffect(() => {
     refreshBalance(customerId);
@@ -163,6 +175,20 @@ export default function MiniApp() {
         <button onClick={makeQr} disabled={loading} style={{ padding: '10px 16px' }}>
           Показать QR для оплаты
         </button>
+      </div>
+
+      <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <input id="consent" type="checkbox" checked={consent} onChange={async (e) => {
+          const v = e.target.checked;
+          setConsent(v);
+          try {
+            await fetch(`${API}/loyalty/consent`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ merchantId: MERCHANT, customerId, granted: v })
+            });
+          } catch {}
+        }} />
+        <label htmlFor="consent">Я согласен получать уведомления о бонусах и предложениях</label>
       </div>
 
       {qrDataUrl && (

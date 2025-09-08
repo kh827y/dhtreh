@@ -19,6 +19,7 @@ export default function AdminPage() {
   const [earnCooldownSec, setEarnCooldownSec] = useState<number>(0);
   const [redeemDailyCap, setRedeemDailyCap] = useState<number>(0);
   const [earnDailyCap, setEarnDailyCap] = useState<number>(0);
+  const [requireJwtForQuote, setRequireJwtForQuote] = useState<boolean>(false);
 
   const earnPct = useMemo(() => (earnBps/100).toFixed(2), [earnBps]);
   const redeemPct = useMemo(() => (redeemLimitBps/100).toFixed(2), [redeemLimitBps]);
@@ -42,6 +43,7 @@ export default function AdminPage() {
       setEarnCooldownSec(Number(data.earnCooldownSec || 0));
       setRedeemDailyCap(Number(data.redeemDailyCap || 0));
       setEarnDailyCap(Number(data.earnDailyCap || 0));
+      setRequireJwtForQuote(Boolean(data.requireJwtForQuote));
     } catch (e: any) {
       setMsg('Ошибка загрузки: ' + e?.message);
     } finally {
@@ -56,7 +58,7 @@ export default function AdminPage() {
       const r = await fetch(`${API}/merchants/${MERCHANT}/settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY },
-        body: JSON.stringify({ earnBps, redeemLimitBps, qrTtlSec, webhookUrl, webhookSecret, webhookKeyId, redeemCooldownSec, earnCooldownSec, redeemDailyCap, earnDailyCap }),
+        body: JSON.stringify({ earnBps, redeemLimitBps, qrTtlSec, webhookUrl, webhookSecret, webhookKeyId, redeemCooldownSec, earnCooldownSec, redeemDailyCap, earnDailyCap, requireJwtForQuote }),
       });
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
@@ -78,6 +80,8 @@ export default function AdminPage() {
         <a href="/outlets">Outlets</a>
         <a href="/devices">Devices</a>
         <a href="/staff">Staff</a>
+        <a href="/docs/signature">Signature</a>
+        <a href="/txns">Txns</a>
       </div>
       <div style={{ color: '#666' }}>Merchant: <code>{MERCHANT}</code></div>
 
@@ -88,6 +92,9 @@ export default function AdminPage() {
                  onChange={(e) => setEarnBps(Math.max(0, Math.min(10000, Number(e.target.value))))}
                  style={{ width: '100%', padding: 8 }} />
           <div style={{ color: '#666', fontSize: 12 }}>= {earnPct}% от базы</div>
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input type="checkbox" checked={requireJwtForQuote} onChange={(e) => setRequireJwtForQuote(e.target.checked)} /> Требовать JWT для QUOTE
         </label>
 
         <label>

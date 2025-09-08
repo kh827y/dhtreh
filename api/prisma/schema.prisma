@@ -53,6 +53,7 @@ model Merchant {
   outlets   Outlet[]
   devices   Device[]
   staff     Staff[]
+  consents  Consent[]
 }
 
 model MerchantSettings {
@@ -68,7 +69,32 @@ model MerchantSettings {
   earnCooldownSec   Int   @default(0)
   redeemDailyCap    Int?
   earnDailyCap      Int?
+  requireJwtForQuote Boolean @default(false)
   updatedAt      DateTime @default(now())
+}
+
+model IdempotencyKey {
+  id         String   @id @default(cuid())
+  merchantId String
+  key        String
+  response   Json
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime?
+
+  @@unique([merchantId, key])
+  @@index([merchantId, createdAt])
+}
+
+model Consent {
+  merchantId String
+  customerId String
+  consentAt  DateTime
+  createdAt  DateTime @default(now())
+
+  merchant   Merchant @relation(fields: [merchantId], references: [id])
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  @@id([merchantId, customerId])
 }
 
 model Customer {
@@ -80,6 +106,7 @@ model Customer {
   txns      Transaction[]
   createdAt DateTime      @default(now())
   Receipt   Receipt[]
+  consents  Consent[]
 }
 
 model Wallet {

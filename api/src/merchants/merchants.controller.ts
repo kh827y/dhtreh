@@ -27,6 +27,7 @@ export class MerchantsController {
       dto.earnCooldownSec,
       dto.redeemDailyCap,
       dto.earnDailyCap,
+      dto.requireJwtForQuote,
     );
   }
 
@@ -86,12 +87,29 @@ export class MerchantsController {
 
   // Outbox monitor
   @Get(':id/outbox')
-  listOutbox(@Param('id') id: string, @Query('status') status?: string, @Query('limit') limitStr?: string) {
+  listOutbox(@Param('id') id: string, @Query('status') status?: string, @Query('limit') limitStr?: string, @Query('type') type?: string, @Query('since') since?: string) {
     const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200) : undefined;
-    return this.service.listOutbox(id, status, limit);
+    return this.service.listOutbox(id, status, limit, type, since);
   }
   @Post(':id/outbox/:eventId/retry')
   retryOutbox(@Param('id') id: string, @Param('eventId') eventId: string) {
     return this.service.retryOutbox(id, eventId);
+  }
+
+  // Transactions overview
+  @Get(':id/transactions')
+  listTransactions(
+    @Param('id') id: string,
+    @Query('limit') limitStr?: string,
+    @Query('before') beforeStr?: string,
+    @Query('type') type?: string,
+    @Query('customerId') customerId?: string,
+    @Query('outletId') outletId?: string,
+    @Query('deviceId') deviceId?: string,
+    @Query('staffId') staffId?: string,
+  ) {
+    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200) : 50;
+    const before = beforeStr ? new Date(beforeStr) : undefined;
+    return this.service.listTransactions(id, { limit, before, type, customerId, outletId, deviceId, staffId });
   }
 }

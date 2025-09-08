@@ -25,10 +25,11 @@ export class MerchantsService {
       earnCooldownSec: s.earnCooldownSec ?? 0,
       redeemDailyCap: s.redeemDailyCap ?? null,
       earnDailyCap: s.earnDailyCap ?? null,
+      requireJwtForQuote: s.requireJwtForQuote ?? false,
     };
   }
 
-  async updateSettings(merchantId: string, earnBps: number, redeemLimitBps: number, qrTtlSec?: number, webhookUrl?: string, webhookSecret?: string, webhookKeyId?: string, redeemCooldownSec?: number, earnCooldownSec?: number, redeemDailyCap?: number, earnDailyCap?: number) {
+  async updateSettings(merchantId: string, earnBps: number, redeemLimitBps: number, qrTtlSec?: number, webhookUrl?: string, webhookSecret?: string, webhookKeyId?: string, redeemCooldownSec?: number, earnCooldownSec?: number, redeemDailyCap?: number, earnDailyCap?: number, requireJwtForQuote?: boolean) {
     // убедимся, что мерчант есть
     await this.prisma.merchant.upsert({
       where: { id: merchantId },
@@ -49,6 +50,7 @@ export class MerchantsService {
         earnCooldownSec: earnCooldownSec ?? undefined,
         redeemDailyCap: redeemDailyCap ?? undefined,
         earnDailyCap: earnDailyCap ?? undefined,
+        requireJwtForQuote: requireJwtForQuote ?? undefined,
         updatedAt: new Date(),
       },
       create: {
@@ -63,6 +65,7 @@ export class MerchantsService {
         earnCooldownSec: earnCooldownSec ?? 0,
         redeemDailyCap: redeemDailyCap ?? null,
         earnDailyCap: earnDailyCap ?? null,
+        requireJwtForQuote: requireJwtForQuote ?? false,
       },
     });
     return {
@@ -77,6 +80,7 @@ export class MerchantsService {
       earnCooldownSec: updated.earnCooldownSec,
       redeemDailyCap: updated.redeemDailyCap,
       earnDailyCap: updated.earnDailyCap,
+      requireJwtForQuote: updated.requireJwtForQuote,
     };
   }
 
@@ -145,9 +149,14 @@ export class MerchantsService {
   }
 
   // Outbox monitor
-  async listOutbox(merchantId: string, status?: string, limit = 50) {
+  async listOutbox(merchantId: string, status?: string, limit = 50, type?: string, since?: string) {
     const where: any = { merchantId };
     if (status) where.status = status;
+    if (type) where.eventType = type;
+    if (since) {
+      const d = new Date(since);
+      if (!isNaN(d.getTime())) where.createdAt = { gte: d };
+    }
     return this.prisma.eventOutbox.findMany({ where, orderBy: { createdAt: 'desc' }, take: limit });
   }
   async retryOutbox(merchantId: string, eventId: string) {
@@ -155,5 +164,16 @@ export class MerchantsService {
     if (!ev || ev.merchantId !== merchantId) throw new NotFoundException('Event not found');
     await this.prisma.eventOutbox.update({ where: { id: eventId }, data: { status: 'PENDING', nextRetryAt: new Date(), lastError: null } });
     return { ok: true };
+  }
+
+  async listTransactions(merchantId: string, params: { limit: number; before?: Date; type?: string; customerId?: string; outletId?: string; deviceId?: string; staffId?: string }) {
+    const where: any = { merchantId };
+    if (params.type) where.type = params.type as any;
+    if (params.customerId) where.customerId = params.customerId;
+    if (params.outletId) where.outletId = params.outletId;
+    if (params.deviceId) where.deviceId = params.deviceId;
+    if (params.staffId) where.staffId = params.staffId;
+    if (params.before) where.createdAt = { lt: params.before };
+    return this.prisma.transaction.findMany({ where, orderBy: { createdAt: 'desc' }, take: params.limit });
   }
 }

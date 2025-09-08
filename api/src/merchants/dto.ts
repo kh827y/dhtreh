@@ -28,6 +28,9 @@ export class UpdateMerchantSettingsDto {
   redeemDailyCap?: number;
   @IsOptional() @IsInt() @Min(0)
   earnDailyCap?: number;
+
+  @IsOptional()
+  requireJwtForQuote?: boolean;
 }
 
 export class CreateOutletDto {

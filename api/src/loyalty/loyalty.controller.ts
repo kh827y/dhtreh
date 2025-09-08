@@ -37,6 +37,11 @@ export class LoyaltyController {
     const t0 = Date.now();
     try {
       const v = await this.resolveFromToken(dto.userToken);
+      const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId: dto.merchantId } });
+      if (s?.requireJwtForQuote && !looksLikeJwt(dto.userToken)) {
+        this.metrics.inc('loyalty_quote_requests_total', { result: 'error', reason: 'jwt_required' });
+        throw new BadRequestException('JWT required for quote');
+      }
       if (v.merchantAud && v.merchantAud !== 'any' && v.merchantAud !== dto.merchantId) {
         this.metrics.inc('loyalty_quote_requests_total', { result: 'error', reason: 'merchant_mismatch' });
         throw new BadRequestException('QR выписан для другого мерчанта');
@@ -60,7 +65,20 @@ export class LoyaltyController {
     const t0 = Date.now();
     let data: any;
     try {
-      data = await this.service.commit(dto.holdId, dto.orderId, dto.receiptNumber, req.requestId ?? dto.requestId);
+      const idemKey = (req.headers['idempotency-key'] as string | undefined) || undefined;
+      if (idemKey) {
+        // вернуть сохранённый ответ, если есть
+        const saved = await this.prisma.idempotencyKey.findUnique({ where: { merchantId_key: { merchantId: dto.merchantId, key: idemKey } } });
+        if (saved) {
+          data = saved.response as any;
+        } else {
+          data = await this.service.commit(dto.holdId, dto.orderId, dto.receiptNumber, req.requestId ?? dto.requestId);
+          // попытка сохранить; при гонке второй повернёт существующий
+          try { await this.prisma.idempotencyKey.create({ data: { merchantId: dto.merchantId, key: idemKey, response: data } }); } catch {}
+        }
+      } else {
+        data = await this.service.commit(dto.holdId, dto.orderId, dto.receiptNumber, req.requestId ?? dto.requestId);
+      }
       this.metrics.inc('loyalty_commit_requests_total', { result: data?.alreadyCommitted ? 'already_committed' : 'ok' });
     } catch (e) {
       this.metrics.inc('loyalty_commit_requests_total', { result: 'error' });
@@ -123,7 +141,18 @@ export class LoyaltyController {
   async refund(@Body() dto: RefundDto, @Res({ passthrough: true }) res: Response, @Req() req: Request & { requestId?: string }) {
     let data: any;
     try {
-      data = await this.service.refund(dto.merchantId, dto.orderId, dto.refundTotal, dto.refundEligibleTotal, req.requestId);
+      const idemKey = (req.headers['idempotency-key'] as string | undefined) || undefined;
+      if (idemKey) {
+        const saved = await this.prisma.idempotencyKey.findUnique({ where: { merchantId_key: { merchantId: dto.merchantId, key: idemKey } } });
+        if (saved) {
+          data = saved.response as any;
+        } else {
+          data = await this.service.refund(dto.merchantId, dto.orderId, dto.refundTotal, dto.refundEligibleTotal, req.requestId);
+          try { await this.prisma.idempotencyKey.create({ data: { merchantId: dto.merchantId, key: idemKey, response: data } }); } catch {}
+        }
+      } else {
+        data = await this.service.refund(dto.merchantId, dto.orderId, dto.refundTotal, dto.refundEligibleTotal, req.requestId);
+      }
       this.metrics.inc('loyalty_refund_requests_total', { result: 'ok' });
     } catch (e) {
       this.metrics.inc('loyalty_refund_requests_total', { result: 'error' });
@@ -178,5 +207,23 @@ export class LoyaltyController {
   async publicStaff(@Param('merchantId') merchantId: string) {
     const items = await this.prisma.staff.findMany({ where: { merchantId, status: 'ACTIVE' }, orderBy: { createdAt: 'asc' } });
     return items.map(s => ({ id: s.id, login: s.login ?? undefined, role: s.role }));
+  }
+
+  // Согласия на коммуникации
+  @Get('consent')
+  async getConsent(@Query('merchantId') merchantId: string, @Query('customerId') customerId: string) {
+    const c = await this.prisma.consent.findUnique({ where: { merchantId_customerId: { merchantId, customerId } } });
+    return { granted: !!c, consentAt: c?.consentAt?.toISOString() };
+  }
+
+  @Post('consent')
+  async setConsent(@Body() body: { merchantId: string; customerId: string; granted: boolean }) {
+    if (!body?.merchantId || !body?.customerId) throw new BadRequestException('merchantId and customerId required');
+    if (body.granted) {
+      await this.prisma.consent.upsert({ where: { merchantId_customerId: { merchantId: body.merchantId, customerId: body.customerId } }, update: { consentAt: new Date() }, create: { merchantId: body.merchantId, customerId: body.customerId, consentAt: new Date() } });
+    } else {
+      try { await this.prisma.consent.delete({ where: { merchantId_customerId: { merchantId: body.merchantId, customerId: body.customerId } } }); } catch {}
+    }
+    return { ok: true };
   }
 }
