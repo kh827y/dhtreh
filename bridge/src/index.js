@@ -156,7 +156,11 @@ app.post('/queue/flush', async (req, res) => {
   res.json(r);
 });
 
+app.get('/queue/status', (req, res) => {
+  const items = queue.slice(0, 50).map(q => ({ id: q.id, type: q.type, idemKey: q.idemKey }));
+  res.json({ pending: queue.length, preview: items });
+});
+
 app.listen(PORT, '127.0.0.1', () => {
   console.log(`POS Bridge listening on http://127.0.0.1:${PORT}`);
 });
-

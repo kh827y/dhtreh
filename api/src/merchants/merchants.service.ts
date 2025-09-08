@@ -191,6 +191,24 @@ export class MerchantsService {
     await this.prisma.eventOutbox.update({ where: { id: eventId }, data: { status: 'PENDING', nextRetryAt: new Date(), lastError: null } });
     return { ok: true };
   }
+  async deleteOutbox(merchantId: string, eventId: string) {
+    const ev = await this.prisma.eventOutbox.findUnique({ where: { id: eventId } });
+    if (!ev || ev.merchantId !== merchantId) throw new NotFoundException('Event not found');
+    await this.prisma.eventOutbox.delete({ where: { id: eventId } });
+    return { ok: true };
+  }
+  async retryAll(merchantId: string, status?: string) {
+    const where: any = { merchantId };
+    if (status) where.status = status;
+    const updated = await this.prisma.eventOutbox.updateMany({ where, data: { status: 'PENDING', nextRetryAt: new Date(), lastError: null } });
+    return { ok: true, updated: updated.count };
+  }
+  async listOutboxByOrder(merchantId: string, orderId: string, limit = 100) {
+    const items = await this.prisma.eventOutbox.findMany({ where: { merchantId }, orderBy: { createdAt: 'desc' }, take: limit });
+    return items.filter(i => {
+      try { return (i.payload as any)?.orderId === orderId; } catch { return false; }
+    });
+  }
 
   // Staff tokens
   private randToken() {

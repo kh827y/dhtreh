@@ -117,6 +117,20 @@ export class MerchantsController {
   retryOutbox(@Param('id') id: string, @Param('eventId') eventId: string) {
     return this.service.retryOutbox(id, eventId);
   }
+  @Delete(':id/outbox/:eventId')
+  deleteOutbox(@Param('id') id: string, @Param('eventId') eventId: string) {
+    return this.service.deleteOutbox(id, eventId);
+  }
+  @Post(':id/outbox/retryAll')
+  retryAll(@Param('id') id: string, @Query('status') status?: string) {
+    return this.service.retryAll(id, status);
+  }
+
+  @Get(':id/outbox/by-order')
+  async outboxByOrder(@Param('id') id: string, @Query('orderId') orderId: string, @Query('limit') limitStr?: string) {
+    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 500) : 100;
+    return this.service.listOutboxByOrder(id, orderId, limit);
+  }
 
   // Transactions overview
   @Get(':id/transactions')

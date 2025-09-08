@@ -56,6 +56,25 @@ export default function OutboxPage() {
       setMsg('Ошибка ретрая: ' + e?.message);
     }
   }
+  async function retryAll(status?: string) {
+    setMsg('');
+    try {
+      const url = new URL(`${API}/merchants/${MERCHANT}/outbox/retryAll`);
+      if (status) url.searchParams.set('status', status);
+      const r = await fetch(url.toString(), { method: 'POST', headers: { 'x-admin-key': ADMIN_KEY } });
+      if (!r.ok) throw new Error(await r.text());
+      await load();
+      setMsg('Переотправка поставлена в очередь');
+    } catch (e: any) { setMsg('Ошибка: ' + e?.message); }
+  }
+  async function remove(ev: Ev) {
+    setMsg('');
+    try {
+      const r = await fetch(`${API}/merchants/${MERCHANT}/outbox/${ev.id}`, { method: 'DELETE', headers: { 'x-admin-key': ADMIN_KEY } });
+      if (!r.ok) throw new Error(await r.text());
+      await load();
+    } catch (e: any) { setMsg('Ошибка: ' + e?.message); }
+  }
 
   useEffect(() => { load(); }, []);
 
@@ -74,6 +93,8 @@ export default function OutboxPage() {
         <label>С даты: <input type="datetime-local" value={since} onChange={(e) => setSince(e.target.value)} /></label>
         <label>Limit: <input type="number" value={limit} onChange={(e) => setLimit(Number(e.target.value)||50)} style={{ width: 80 }} /></label>
         <button onClick={load} disabled={loading} style={{ padding: '6px 10px' }}>Обновить</button>
+        <button onClick={() => retryAll()} disabled={loading} style={{ padding: '6px 10px' }}>Retry All</button>
+        <button onClick={() => retryAll('FAILED')} disabled={loading} style={{ padding: '6px 10px' }}>Retry FAILED</button>
       </div>
 
       {msg && <div style={{ marginTop: 8 }}>{msg}</div>}
@@ -92,6 +113,7 @@ export default function OutboxPage() {
               {ev.lastError && <div style={{ color: '#b00' }}>Ошибка: {ev.lastError}</div>}
               <div style={{ flex: 1 }} />
               <button onClick={() => retry(ev)} style={{ padding: '6px 10px' }}>Ретрай</button>
+              <button onClick={() => remove(ev)} style={{ padding: '6px 10px' }}>Удалить</button>
             </div>
           </div>
         ))}

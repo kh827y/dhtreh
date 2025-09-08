@@ -84,6 +84,25 @@ export class LoyaltyController {
   async commit(@Body() dto: CommitDto, @Res({ passthrough: true }) res: Response, @Req() req: Request & { requestId?: string }) {
     const t0 = Date.now();
     let data: any;
+    // проверка подписи Bridge до выполнения, с учётом устройства из hold
+    try {
+      const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId: dto.merchantId } });
+      if (s?.requireBridgeSig) {
+        const sig = (req.headers['x-bridge-signature'] as string | undefined) || '';
+        let secret = s.bridgeSecret || null;
+        try {
+          const hold = await this.prisma.hold.findUnique({ where: { id: dto.holdId } });
+          if (hold?.deviceId) {
+            const dev = await this.prisma.device.findUnique({ where: { id: hold.deviceId } });
+            if (dev?.bridgeSecret) secret = dev.bridgeSecret;
+          }
+        } catch {}
+        const bodyForSig = JSON.stringify({ merchantId: dto.merchantId, holdId: dto.holdId, orderId: dto.orderId, receiptNumber: dto.receiptNumber ?? undefined });
+        if (!secret || !this.verifyBridgeSignature(sig, bodyForSig, secret)) {
+          throw new UnauthorizedException('Invalid bridge signature');
+        }
+      }
+    } catch {}
     try {
       const idemKey = (req.headers['idempotency-key'] as string | undefined) || undefined;
       if (idemKey) {
@@ -164,6 +183,18 @@ export class LoyaltyController {
   @Post('refund')
   async refund(@Body() dto: RefundDto, @Res({ passthrough: true }) res: Response, @Req() req: Request & { requestId?: string }) {
     let data: any;
+    // проверка подписи Bridge до выполнения
+    try {
+      const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId: dto.merchantId } });
+      if (s?.requireBridgeSig) {
+        const sig = (req.headers['x-bridge-signature'] as string | undefined) || '';
+        const secret = (s.bridgeSecret || null);
+        const bodyForSig = JSON.stringify({ merchantId: dto.merchantId, orderId: dto.orderId, refundTotal: dto.refundTotal, refundEligibleTotal: dto.refundEligibleTotal ?? undefined });
+        if (!secret || !this.verifyBridgeSignature(sig, bodyForSig, secret)) {
+          throw new UnauthorizedException('Invalid bridge signature');
+        }
+      }
+    } catch {}
     try {
       const idemKey = (req.headers['idempotency-key'] as string | undefined) || undefined;
       if (idemKey) {

@@ -52,6 +52,7 @@ export default function Page() {
   const [outletId, setOutletId] = useState<string>('');
   const [deviceId, setDeviceId] = useState<string>('');
   const [staffId, setStaffId] = useState<string>('');
+  const [category, setCategory] = useState<string>('');
 
   // Сгенерируем уникальный orderId при первом монтировании, чтобы избежать идемпотентных коллизий после перезагрузки
   useEffect(() => {
@@ -67,7 +68,7 @@ export default function Page() {
       const r = await fetch(`${API_BASE}/loyalty/quote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId },
-        body: JSON.stringify({ merchantId, mode, userToken, orderId, total, eligibleTotal, outletId: outletId || undefined, deviceId: deviceId || undefined, staffId: staffId || undefined }),
+        body: JSON.stringify({ merchantId, mode, userToken, orderId, total, eligibleTotal, outletId: outletId || undefined, deviceId: deviceId || undefined, staffId: staffId || undefined, category: category || undefined }),
       });
       if (!r.ok) {
         const text = await r.text();
@@ -247,6 +248,7 @@ export default function Page() {
           if (saved?.outletId) setOutletId(saved.outletId);
           if (saved?.deviceId) setDeviceId(saved.deviceId);
           if (saved?.staffId) setStaffId(saved.staffId);
+          if (saved?.category) setCategory(saved.category);
         } catch {}
       } catch {}
     })();
@@ -254,9 +256,9 @@ export default function Page() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('cashier_ctx_v1', JSON.stringify({ outletId, deviceId, staffId }));
+      localStorage.setItem('cashier_ctx_v1', JSON.stringify({ outletId, deviceId, staffId, category }));
     } catch {}
-  }, [outletId, deviceId, staffId]);
+  }, [outletId, deviceId, staffId, category]);
 
   return (
     <main style={{ maxWidth: 920, margin: '40px auto', fontFamily: 'system-ui, Arial' }}>
@@ -330,6 +332,10 @@ export default function Page() {
               <option value="">(не выбрано)</option>
               {staff.map(s => <option key={s.id} value={s.id}>{s.login||s.id.slice(0,6)} · {s.role}</option>)}
             </select>
+          </label>
+          <label>
+            Категория:
+            <input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="например, GROCERIES" style={{ padding: 8, minWidth: 180 }} />
           </label>
         </div>
 

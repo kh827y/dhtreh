@@ -57,7 +57,7 @@ export default function ReceiptsPage() {
         {items.map(r => (
           <div key={r.id} style={{ border: '1px solid #eee', borderRadius: 10, padding: 10 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <b>Заказ {r.orderId}</b>
+              <b>Заказ <a href={`/receipts/${r.id}`}>{r.orderId}</a></b>
               <span>{new Date(r.createdAt).toLocaleString()}</span>
             </div>
             <div>Клиент: <code>{r.customerId}</code> · Итого: {r.total} ₽ · База: {r.eligibleTotal} ₽ · Списано: {r.redeemApplied} · Начислено: {r.earnApplied}</div>
@@ -69,4 +69,3 @@ export default function ReceiptsPage() {
     </main>
   );
 }
-

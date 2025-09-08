@@ -13,6 +13,7 @@ export class QuoteDto {
   @IsOptional() @IsString() deviceId?: string;
   @IsOptional() @IsString() staffId?: string;
   @IsOptional() @IsString() requestId?: string;
+  @IsOptional() @IsString() category?: string;
 }
 
 export class CommitDto {

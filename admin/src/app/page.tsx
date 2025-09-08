@@ -90,6 +90,7 @@ export default function AdminPage() {
         <a href="/txns">Txns</a>
         <a href="/receipts">Receipts</a>
         <a href="/docs/bridge">Bridge</a>
+        <a href="/metrics">Metrics</a>
       </div>
       <div style={{ color: '#666' }}>Merchant: <code>{MERCHANT}</code></div>
 

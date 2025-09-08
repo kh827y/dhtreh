@@ -15,6 +15,7 @@ export default function StaffPage() {
   const [role, setRole] = useState('CASHIER');
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
+  const [lastToken, setLastToken] = useState('');
 
   async function load() {
     setLoading(true); setMsg('');
@@ -43,6 +44,24 @@ export default function StaffPage() {
     if (!r.ok) return alert(await r.text());
     load();
   }
+  async function issueToken(id: string) {
+    setMsg(''); setLastToken('');
+    try {
+      const r = await fetch(`${API}/merchants/${MERCHANT}/staff/${id}/token`, { method: 'POST', headers: { 'x-admin-key': ADMIN_KEY } });
+      if (!r.ok) throw new Error(await r.text());
+      const data = await r.json();
+      setLastToken(data.token || '');
+      await load();
+    } catch (e: any) { setMsg('Ошибка: ' + e?.message); }
+  }
+  async function revokeToken(id: string) {
+    setMsg(''); setLastToken('');
+    try {
+      const r = await fetch(`${API}/merchants/${MERCHANT}/staff/${id}/token`, { method: 'DELETE', headers: { 'x-admin-key': ADMIN_KEY } });
+      if (!r.ok) throw new Error(await r.text());
+      await load();
+    } catch (e: any) { setMsg('Ошибка: ' + e?.message); }
+  }
 
   useEffect(() => { load(); }, []);
 
@@ -66,6 +85,7 @@ export default function StaffPage() {
         <button onClick={create} style={{ padding: '8px 12px' }}>Добавить</button>
       </div>
       {msg && <div style={{ marginTop: 8 }}>{msg}</div>}
+      {lastToken && <div style={{ marginTop: 8, color: '#0a0' }}>Staff Token: <code>{lastToken}</code> (сохраните сейчас — повторно не показывается)</div>}
       <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
         {items.map(s => (
           <div key={s.id} style={{ border: '1px solid #eee', borderRadius: 10, padding: 10, display: 'grid', gap: 8 }}>
@@ -82,6 +102,8 @@ export default function StaffPage() {
                 <option value="BLOCKED">BLOCKED</option>
               </select>
               <button onClick={() => save(s)} style={{ padding: '6px 10px' }}>Сохранить</button>
+              <button onClick={() => issueToken(s.id)} style={{ padding: '6px 10px' }}>Выдать токен</button>
+              <button onClick={() => revokeToken(s.id)} style={{ padding: '6px 10px' }}>Отозвать токен</button>
               <button onClick={() => del(s.id)} style={{ padding: '6px 10px' }}>Удалить</button>
             </div>
             <div style={{ color: '#666' }}>Создан: {new Date(s.createdAt).toLocaleString()}</div>
@@ -92,4 +114,3 @@ export default function StaffPage() {
     </main>
   );
 }
-

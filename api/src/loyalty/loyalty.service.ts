@@ -80,6 +80,7 @@ export class LoyaltyService {
           if (Array.isArray(cond.channelIn) && !cond.channelIn.includes(channel)) continue;
           if (Array.isArray(cond.weekdayIn) && !cond.weekdayIn.includes(wd)) continue;
           if (cond.minEligible != null && dto.eligibleTotal < Number(cond.minEligible)) continue;
+          if (Array.isArray(cond.categoryIn) && !cond.categoryIn.includes(dto.category)) continue;
           const then = (item as any).then ?? {};
           if (then.earnBps != null) earnBps = Number(then.earnBps);
           if (then.redeemLimitBps != null) redeemLimitBps = Number(then.redeemLimitBps);
