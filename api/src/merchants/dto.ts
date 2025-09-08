@@ -16,6 +16,18 @@ export class UpdateMerchantSettingsDto {
 
   @IsOptional() @IsString()
   webhookSecret?: string;
+
+  @IsOptional() @IsString()
+  webhookKeyId?: string;
+
+  @IsOptional() @IsInt() @Min(0) @Max(86400)
+  redeemCooldownSec?: number;
+  @IsOptional() @IsInt() @Min(0) @Max(86400)
+  earnCooldownSec?: number;
+  @IsOptional() @IsInt() @Min(0)
+  redeemDailyCap?: number;
+  @IsOptional() @IsInt() @Min(0)
+  earnDailyCap?: number;
 }
 
 export class CreateOutletDto {

@@ -14,6 +14,11 @@ export default function AdminPage() {
   const [qrTtlSec, setQrTtlSec] = useState<number>(120);
   const [webhookUrl, setWebhookUrl] = useState<string>('');
   const [webhookSecret, setWebhookSecret] = useState<string>('');
+  const [webhookKeyId, setWebhookKeyId] = useState<string>('');
+  const [redeemCooldownSec, setRedeemCooldownSec] = useState<number>(0);
+  const [earnCooldownSec, setEarnCooldownSec] = useState<number>(0);
+  const [redeemDailyCap, setRedeemDailyCap] = useState<number>(0);
+  const [earnDailyCap, setEarnDailyCap] = useState<number>(0);
 
   const earnPct = useMemo(() => (earnBps/100).toFixed(2), [earnBps]);
   const redeemPct = useMemo(() => (redeemLimitBps/100).toFixed(2), [redeemLimitBps]);
@@ -32,6 +37,11 @@ export default function AdminPage() {
       if (typeof data.qrTtlSec === 'number') setQrTtlSec(data.qrTtlSec);
       setWebhookUrl(data.webhookUrl || '');
       setWebhookSecret(data.webhookSecret || '');
+      setWebhookKeyId(data.webhookKeyId || '');
+      setRedeemCooldownSec(Number(data.redeemCooldownSec || 0));
+      setEarnCooldownSec(Number(data.earnCooldownSec || 0));
+      setRedeemDailyCap(Number(data.redeemDailyCap || 0));
+      setEarnDailyCap(Number(data.earnDailyCap || 0));
     } catch (e: any) {
       setMsg('Ошибка загрузки: ' + e?.message);
     } finally {
@@ -46,7 +56,7 @@ export default function AdminPage() {
       const r = await fetch(`${API}/merchants/${MERCHANT}/settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY },
-        body: JSON.stringify({ earnBps, redeemLimitBps, qrTtlSec, webhookUrl, webhookSecret }),
+        body: JSON.stringify({ earnBps, redeemLimitBps, qrTtlSec, webhookUrl, webhookSecret, webhookKeyId, redeemCooldownSec, earnCooldownSec, redeemDailyCap, earnDailyCap }),
       });
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
@@ -107,6 +117,41 @@ export default function AdminPage() {
                  style={{ width: '100%', padding: 8 }} />
           <div style={{ color: '#666', fontSize: 12 }}>Подпись: HMAC_SHA256(ts + '.' + body), заголовок X-Loyalty-Signature</div>
         </label>
+        <label>
+          Webhook Key ID (kid):
+          <input value={webhookKeyId} onChange={(e) => setWebhookKeyId(e.target.value)} placeholder="идентификатор ключа"
+                 style={{ width: '100%', padding: 8 }} />
+          <div style={{ color: '#666', fontSize: 12 }}>Отправляется в заголовке X-Signature-Key-Id</div>
+        </label>
+
+        <div style={{ display: 'flex', gap: 12 }}>
+          <label style={{ flex: 1 }}>
+            Кулдаун списаний (сек):
+            <input type="number" min={0} max={86400} value={redeemCooldownSec}
+                   onChange={(e) => setRedeemCooldownSec(Math.max(0, Math.min(86400, Number(e.target.value))))}
+                   style={{ width: '100%', padding: 8 }} />
+          </label>
+          <label style={{ flex: 1 }}>
+            Кулдаун начислений (сек):
+            <input type="number" min={0} max={86400} value={earnCooldownSec}
+                   onChange={(e) => setEarnCooldownSec(Math.max(0, Math.min(86400, Number(e.target.value))))}
+                   style={{ width: '100%', padding: 8 }} />
+          </label>
+        </div>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <label style={{ flex: 1 }}>
+            Дневной лимит списаний (баллы):
+            <input type="number" min={0} value={redeemDailyCap}
+                   onChange={(e) => setRedeemDailyCap(Math.max(0, Number(e.target.value)))}
+                   style={{ width: '100%', padding: 8 }} />
+          </label>
+          <label style={{ flex: 1 }}>
+            Дневной лимит начислений (баллы):
+            <input type="number" min={0} value={earnDailyCap}
+                   onChange={(e) => setEarnDailyCap(Math.max(0, Number(e.target.value)))}
+                   style={{ width: '100%', padding: 8 }} />
+          </label>
+        </div>
 
         <div style={{ display: 'flex', gap: 12 }}>
           <button onClick={load} disabled={loading} style={{ padding: '8px 16px' }}>Обновить</button>

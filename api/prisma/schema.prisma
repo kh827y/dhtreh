@@ -63,6 +63,11 @@ model MerchantSettings {
   qrTtlSec       Int      @default(120)
   webhookUrl     String?
   webhookSecret  String?
+  webhookKeyId   String?
+  redeemCooldownSec Int   @default(0)
+  earnCooldownSec   Int   @default(0)
+  redeemDailyCap    Int?
+  earnDailyCap      Int?
   updatedAt      DateTime @default(now())
 }
 

@@ -18,7 +18,14 @@ export class LoyaltyService {
 
   private async getSettings(merchantId: string) {
     const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId } });
-    return { earnBps: s?.earnBps ?? 500, redeemLimitBps: s?.redeemLimitBps ?? 5000 };
+    return {
+      earnBps: s?.earnBps ?? 500,
+      redeemLimitBps: s?.redeemLimitBps ?? 5000,
+      redeemCooldownSec: s?.redeemCooldownSec ?? 0,
+      earnCooldownSec: s?.earnCooldownSec ?? 0,
+      redeemDailyCap: s?.redeemDailyCap ?? null,
+      earnDailyCap: s?.earnDailyCap ?? null,
+    };
   }
 
   // ————— вспомогалки для идемпотентности по существующему hold —————
@@ -51,7 +58,7 @@ export class LoyaltyService {
   // ————— основной расчёт — анти-replay вне транзакции + идемпотентность —————
   async quote(dto: QuoteDto & { userToken: string }, qr?: QrMeta) {
     const customer = await this.ensureCustomerId(dto.userToken);
-    const { earnBps, redeemLimitBps } = await this.getSettings(dto.merchantId);
+    const { earnBps, redeemLimitBps, redeemCooldownSec, earnCooldownSec, redeemDailyCap, earnDailyCap } = await this.getSettings(dto.merchantId);
 
     // 0) если есть qr — сначала смотрим, не существует ли hold с таким qrJti
     if (qr) {
@@ -90,6 +97,30 @@ export class LoyaltyService {
     }
 
     if (dto.mode === Mode.REDEEM) {
+      // антифрод: кулдаун и дневной лимит списаний
+      if (redeemCooldownSec && redeemCooldownSec > 0) {
+        const last = await this.prisma.transaction.findFirst({
+          where: { merchantId: dto.merchantId, customerId: customer.id, type: 'REDEEM' },
+          orderBy: { createdAt: 'desc' },
+        });
+        if (last) {
+          const diffSec = Math.floor((Date.now() - last.createdAt.getTime()) / 1000);
+          if (diffSec < redeemCooldownSec) {
+            const wait = redeemCooldownSec - diffSec;
+            return { canRedeem: false, discountToApply: 0, pointsToBurn: 0, finalPayable: Math.floor(dto.total), holdId: undefined, message: `Кулдаун на списание: подождите ${wait} сек.` };
+          }
+        }
+      }
+      let dailyRedeemLeft: number | null = null;
+      if (redeemDailyCap && redeemDailyCap > 0) {
+        const since = new Date(Date.now() - 24*60*60*1000);
+        const txns = await this.prisma.transaction.findMany({ where: { merchantId: dto.merchantId, customerId: customer.id, type: 'REDEEM', createdAt: { gte: since } } });
+        const used = txns.reduce((sum, t) => sum + Math.max(0, -t.amount), 0);
+        dailyRedeemLeft = Math.max(0, redeemDailyCap - used);
+        if (dailyRedeemLeft <= 0) {
+          return { canRedeem: false, discountToApply: 0, pointsToBurn: 0, finalPayable: Math.floor(dto.total), holdId: undefined, message: 'Дневной лимит списаний исчерпан.' };
+        }
+      }
       // 2) дальше — обычный расчёт в транзакции и создание нового hold (уникальный qrJti не даст дубликат)
       return this.prisma.$transaction(async (tx) => {
         let wallet = await tx.wallet.findFirst({
@@ -102,7 +133,8 @@ export class LoyaltyService {
         }
 
         const limit = Math.floor(dto.eligibleTotal * redeemLimitBps / 10000);
-        const discountToApply = Math.min(wallet.balance, limit);
+        const capLeft = dailyRedeemLeft != null ? dailyRedeemLeft : Number.MAX_SAFE_INTEGER;
+        const discountToApply = Math.min(wallet.balance, limit, capLeft);
         const finalPayable = Math.max(0, Math.floor(dto.total - discountToApply));
 
         const hold = await tx.hold.create({
@@ -138,6 +170,30 @@ export class LoyaltyService {
     }
 
     // ===== EARN =====
+    // антифрод: кулдаун и дневной лимит начислений
+    if (earnCooldownSec && earnCooldownSec > 0) {
+      const last = await this.prisma.transaction.findFirst({
+        where: { merchantId: dto.merchantId, customerId: customer.id, type: 'EARN' },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (last) {
+        const diffSec = Math.floor((Date.now() - last.createdAt.getTime()) / 1000);
+        if (diffSec < earnCooldownSec) {
+          const wait = earnCooldownSec - diffSec;
+          return { canEarn: false, pointsToEarn: 0, holdId: undefined, message: `Кулдаун на начисление: подождите ${wait} сек.` };
+        }
+      }
+    }
+    let dailyEarnLeft: number | null = null;
+    if (earnDailyCap && earnDailyCap > 0) {
+      const since = new Date(Date.now() - 24*60*60*1000);
+      const txns = await this.prisma.transaction.findMany({ where: { merchantId: dto.merchantId, customerId: customer.id, type: 'EARN', createdAt: { gte: since } } });
+      const used = txns.reduce((sum, t) => sum + Math.max(0, t.amount), 0);
+      dailyEarnLeft = Math.max(0, earnDailyCap - used);
+      if (dailyEarnLeft <= 0) {
+        return { canEarn: false, pointsToEarn: 0, holdId: undefined, message: 'Дневной лимит начислений исчерпан.' };
+      }
+    }
     return this.prisma.$transaction(async (tx) => {
       let wallet = await tx.wallet.findFirst({
         where: { customerId: customer.id, merchantId: dto.merchantId, type: WalletType.POINTS },
@@ -148,7 +204,8 @@ export class LoyaltyService {
         });
       }
 
-      const points = Math.floor(dto.eligibleTotal * earnBps / 10000);
+      let points = Math.floor(dto.eligibleTotal * earnBps / 10000);
+      if (dailyEarnLeft != null) points = Math.min(points, dailyEarnLeft);
 
       const hold = await tx.hold.create({
         data: {

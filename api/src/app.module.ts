@@ -5,6 +5,7 @@ import { LoyaltyModule } from './loyalty/loyalty.module';
 import { MerchantsModule } from './merchants/merchants.module';
 import { RequestIdMiddleware } from './request-id.middleware';
 import { HealthController } from './health.controller';
+import { HoldGcWorker } from './hold-gc.worker';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { HealthController } from './health.controller';
     MerchantsModule, // <— добавили
   ],
   controllers: [HealthController],
+  providers: [HoldGcWorker],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

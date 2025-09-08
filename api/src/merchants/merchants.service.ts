@@ -12,11 +12,23 @@ export class MerchantsService {
       include: { settings: true },
     });
     if (!merchant) throw new NotFoundException('Merchant not found');
-    const s = merchant.settings ?? { earnBps: 500, redeemLimitBps: 5000, qrTtlSec: 120, webhookUrl: null, webhookSecret: null } as any;
-    return { merchantId, earnBps: s.earnBps, redeemLimitBps: s.redeemLimitBps, qrTtlSec: s.qrTtlSec, webhookUrl: s.webhookUrl, webhookSecret: s.webhookSecret };
+    const s = merchant.settings ?? { earnBps: 500, redeemLimitBps: 5000, qrTtlSec: 120 } as any;
+    return {
+      merchantId,
+      earnBps: s.earnBps,
+      redeemLimitBps: s.redeemLimitBps,
+      qrTtlSec: s.qrTtlSec,
+      webhookUrl: s.webhookUrl ?? null,
+      webhookSecret: s.webhookSecret ?? null,
+      webhookKeyId: s.webhookKeyId ?? null,
+      redeemCooldownSec: s.redeemCooldownSec ?? 0,
+      earnCooldownSec: s.earnCooldownSec ?? 0,
+      redeemDailyCap: s.redeemDailyCap ?? null,
+      earnDailyCap: s.earnDailyCap ?? null,
+    };
   }
 
-  async updateSettings(merchantId: string, earnBps: number, redeemLimitBps: number, qrTtlSec?: number, webhookUrl?: string, webhookSecret?: string) {
+  async updateSettings(merchantId: string, earnBps: number, redeemLimitBps: number, qrTtlSec?: number, webhookUrl?: string, webhookSecret?: string, webhookKeyId?: string, redeemCooldownSec?: number, earnCooldownSec?: number, redeemDailyCap?: number, earnDailyCap?: number) {
     // убедимся, что мерчант есть
     await this.prisma.merchant.upsert({
       where: { id: merchantId },
@@ -26,10 +38,46 @@ export class MerchantsService {
 
     const updated = await this.prisma.merchantSettings.upsert({
       where: { merchantId },
-      update: { earnBps, redeemLimitBps, qrTtlSec: qrTtlSec ?? undefined, webhookUrl, webhookSecret, updatedAt: new Date() },
-      create: { merchantId, earnBps, redeemLimitBps, qrTtlSec: qrTtlSec ?? 120, webhookUrl: webhookUrl ?? null, webhookSecret: webhookSecret ?? null },
+      update: {
+        earnBps,
+        redeemLimitBps,
+        qrTtlSec: qrTtlSec ?? undefined,
+        webhookUrl,
+        webhookSecret,
+        webhookKeyId,
+        redeemCooldownSec: redeemCooldownSec ?? undefined,
+        earnCooldownSec: earnCooldownSec ?? undefined,
+        redeemDailyCap: redeemDailyCap ?? undefined,
+        earnDailyCap: earnDailyCap ?? undefined,
+        updatedAt: new Date(),
+      },
+      create: {
+        merchantId,
+        earnBps,
+        redeemLimitBps,
+        qrTtlSec: qrTtlSec ?? 120,
+        webhookUrl: webhookUrl ?? null,
+        webhookSecret: webhookSecret ?? null,
+        webhookKeyId: webhookKeyId ?? null,
+        redeemCooldownSec: redeemCooldownSec ?? 0,
+        earnCooldownSec: earnCooldownSec ?? 0,
+        redeemDailyCap: redeemDailyCap ?? null,
+        earnDailyCap: earnDailyCap ?? null,
+      },
     });
-    return { merchantId, earnBps: updated.earnBps, redeemLimitBps: updated.redeemLimitBps, qrTtlSec: updated.qrTtlSec, webhookUrl: updated.webhookUrl, webhookSecret: updated.webhookSecret };
+    return {
+      merchantId,
+      earnBps: updated.earnBps,
+      redeemLimitBps: updated.redeemLimitBps,
+      qrTtlSec: updated.qrTtlSec,
+      webhookUrl: updated.webhookUrl,
+      webhookSecret: updated.webhookSecret,
+      webhookKeyId: updated.webhookKeyId,
+      redeemCooldownSec: updated.redeemCooldownSec,
+      earnCooldownSec: updated.earnCooldownSec,
+      redeemDailyCap: updated.redeemDailyCap,
+      earnDailyCap: updated.earnDailyCap,
+    };
   }
 
   // Outlets

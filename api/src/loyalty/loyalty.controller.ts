@@ -54,6 +54,7 @@ export class LoyaltyController {
         res.setHeader('X-Loyalty-Signature', `v1,ts=${ts},sig=${sig}`);
         res.setHeader('X-Merchant-Id', dto.merchantId);
         res.setHeader('X-Signature-Timestamp', ts);
+        if (s?.webhookKeyId) res.setHeader('X-Signature-Key-Id', s.webhookKeyId);
         if (req.requestId) res.setHeader('X-Request-Id', req.requestId);
       }
     } catch {}
@@ -107,6 +108,7 @@ export class LoyaltyController {
         res.setHeader('X-Loyalty-Signature', `v1,ts=${ts},sig=${sig}`);
         res.setHeader('X-Merchant-Id', dto.merchantId);
         res.setHeader('X-Signature-Timestamp', ts);
+        if (s?.webhookKeyId) res.setHeader('X-Signature-Key-Id', s.webhookKeyId);
         if (req.requestId) res.setHeader('X-Request-Id', req.requestId);
       }
     } catch {}
