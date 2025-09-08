@@ -31,6 +31,9 @@ export class UpdateMerchantSettingsDto {
 
   @IsOptional()
   requireJwtForQuote?: boolean;
+
+  @IsOptional()
+  rulesJson?: any;
 }
 
 export class CreateOutletDto {

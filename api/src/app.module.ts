@@ -8,6 +8,7 @@ import { HealthController } from './health.controller';
 import { MetricsController } from './metrics.controller';
 import { MetricsModule } from './metrics.module';
 import { HoldGcWorker } from './hold-gc.worker';
+import { IdempotencyGcWorker } from './idempotency-gc.worker';
 
 @Module({
   imports: [
@@ -18,7 +19,7 @@ import { HoldGcWorker } from './hold-gc.worker';
     MerchantsModule, // <— добавили
   ],
   controllers: [HealthController, MetricsController],
-  providers: [HoldGcWorker],
+  providers: [HoldGcWorker, IdempotencyGcWorker],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

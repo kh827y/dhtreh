@@ -25,6 +25,7 @@ export class LoyaltyService {
       earnCooldownSec: s?.earnCooldownSec ?? 0,
       redeemDailyCap: s?.redeemDailyCap ?? null,
       earnDailyCap: s?.earnDailyCap ?? null,
+      rulesJson: s?.rulesJson ?? null,
     };
   }
 
@@ -58,7 +59,37 @@ export class LoyaltyService {
   // ————— основной расчёт — анти-replay вне транзакции + идемпотентность —————
   async quote(dto: QuoteDto & { userToken: string }, qr?: QrMeta) {
     const customer = await this.ensureCustomerId(dto.userToken);
-    const { earnBps, redeemLimitBps, redeemCooldownSec, earnCooldownSec, redeemDailyCap, earnDailyCap } = await this.getSettings(dto.merchantId);
+    const { redeemCooldownSec, earnCooldownSec, redeemDailyCap, earnDailyCap, rulesJson } = await this.getSettings(dto.merchantId);
+
+    // канал по типу устройства
+    let channel: 'VIRTUAL'|'PC_POS'|'SMART' = 'VIRTUAL';
+    if (dto.deviceId) {
+      const dev = await this.prisma.device.findUnique({ where: { id: dto.deviceId } });
+      if (dev) channel = dev.type as any;
+    }
+
+    // применяем правила для earnBps/redeemLimitBps
+    let earnBps = 500;
+    let redeemLimitBps = 5000;
+    if (Array.isArray(rulesJson)) {
+      const wd = new Date().getDay();
+      for (const item of rulesJson as any[]) {
+        try {
+          if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+          const cond = (item as any).if ?? {};
+          if (Array.isArray(cond.channelIn) && !cond.channelIn.includes(channel)) continue;
+          if (Array.isArray(cond.weekdayIn) && !cond.weekdayIn.includes(wd)) continue;
+          if (cond.minEligible != null && dto.eligibleTotal < Number(cond.minEligible)) continue;
+          const then = (item as any).then ?? {};
+          if (then.earnBps != null) earnBps = Number(then.earnBps);
+          if (then.redeemLimitBps != null) redeemLimitBps = Number(then.redeemLimitBps);
+        } catch {}
+      }
+    } else {
+      const s2 = await this.prisma.merchantSettings.findUnique({ where: { merchantId: dto.merchantId } });
+      earnBps = s2?.earnBps ?? 500;
+      redeemLimitBps = s2?.redeemLimitBps ?? 5000;
+    }
 
     // 0) если есть qr — сначала смотрим, не существует ли hold с таким qrJti
     if (qr) {

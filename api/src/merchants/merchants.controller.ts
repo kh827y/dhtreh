@@ -28,6 +28,7 @@ export class MerchantsController {
       dto.redeemDailyCap,
       dto.earnDailyCap,
       dto.requireJwtForQuote,
+      dto.rulesJson,
     );
   }
 
@@ -85,6 +86,16 @@ export class MerchantsController {
     return this.service.deleteStaff(id, staffId);
   }
 
+  // Staff tokens
+  @Post(':id/staff/:staffId/token')
+  issueStaffToken(@Param('id') id: string, @Param('staffId') staffId: string) {
+    return this.service.issueStaffToken(id, staffId);
+  }
+  @Delete(':id/staff/:staffId/token')
+  revokeStaffToken(@Param('id') id: string, @Param('staffId') staffId: string) {
+    return this.service.revokeStaffToken(id, staffId);
+  }
+
   // Outbox monitor
   @Get(':id/outbox')
   listOutbox(@Param('id') id: string, @Query('status') status?: string, @Query('limit') limitStr?: string, @Query('type') type?: string, @Query('since') since?: string) {
@@ -111,5 +122,75 @@ export class MerchantsController {
     const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200) : 50;
     const before = beforeStr ? new Date(beforeStr) : undefined;
     return this.service.listTransactions(id, { limit, before, type, customerId, outletId, deviceId, staffId });
+  }
+  @Get(':id/receipts')
+  listReceipts(
+    @Param('id') id: string,
+    @Query('limit') limitStr?: string,
+    @Query('before') beforeStr?: string,
+    @Query('orderId') orderId?: string,
+    @Query('customerId') customerId?: string,
+  ) {
+    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200) : 50;
+    const before = beforeStr ? new Date(beforeStr) : undefined;
+    return this.service.listReceipts(id, { limit, before, orderId, customerId });
+  }
+  @Get(':id/receipts/:receiptId')
+  getReceipt(@Param('id') id: string, @Param('receiptId') receiptId: string) {
+    return this.service.getReceipt(id, receiptId);
+  }
+  @Get(':id/receipts.csv')
+  async exportReceiptsCsv(
+    @Param('id') id: string,
+    @Query('limit') limitStr?: string,
+    @Query('before') beforeStr?: string,
+    @Query('orderId') orderId?: string,
+    @Query('customerId') customerId?: string,
+  ) {
+    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 1000, 1), 5000) : 1000;
+    const before = beforeStr ? new Date(beforeStr) : undefined;
+    const items = await this.service.listReceipts(id, { limit, before, orderId, customerId });
+    const lines = [ 'id,orderId,customerId,total,eligibleTotal,redeemApplied,earnApplied,createdAt,outletId,deviceId,staffId' ];
+    for (const r of items) lines.push([r.id,r.orderId,r.customerId,r.total,r.eligibleTotal,r.redeemApplied,r.earnApplied,r.createdAt.toISOString(),(r.outletId||''),(r.deviceId||''),(r.staffId||'')].map(x=>`"${String(x).replaceAll('"','""')}"`).join(','));
+    return lines.join('\n') + '\n';
+  }
+
+  // CRM helpers
+  @Get(':id/customer/summary')
+  async customerSummary(
+    @Param('id') id: string,
+    @Query('customerId') customerId: string,
+  ) {
+    const bal = await this.service.getBalance(id, customerId);
+    const tx = await this.service.listTransactions(id, { limit: 10 });
+    const rc = await this.service.listReceipts(id, { limit: 5, customerId });
+    return { balance: bal, recentTx: tx, recentReceipts: rc };
+  }
+  @Get(':id/customer/search')
+  async customerSearch(
+    @Param('id') id: string,
+    @Query('phone') phone: string,
+  ) {
+    return this.service.findCustomerByPhone(id, phone);
+  }
+
+  // CSV exports
+  @Get(':id/transactions.csv')
+  async exportTxCsv(
+    @Param('id') id: string,
+    @Query('limit') limitStr?: string,
+    @Query('before') beforeStr?: string,
+    @Query('type') type?: string,
+    @Query('customerId') customerId?: string,
+    @Query('outletId') outletId?: string,
+    @Query('deviceId') deviceId?: string,
+    @Query('staffId') staffId?: string,
+  ) {
+    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 1000, 1), 5000) : 1000;
+    const before = beforeStr ? new Date(beforeStr) : undefined;
+    const items = await this.service.listTransactions(id, { limit, before, type, customerId, outletId, deviceId, staffId });
+    const lines = [ 'id,type,amount,orderId,customerId,createdAt,outletId,deviceId,staffId' ];
+    for (const t of items) lines.push([t.id,t.type,t.amount,(t.orderId||''),t.customerId,t.createdAt.toISOString(),(t.outletId||''),(t.deviceId||''),(t.staffId||'')].map(x=>`"${String(x).replaceAll('"','""')}"`).join(','));
+    return lines.join('\n') + '\n';
   }
 }

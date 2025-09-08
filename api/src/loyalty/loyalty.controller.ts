@@ -33,7 +33,7 @@ export class LoyaltyController {
   }
 
   @Post('quote')
-  async quote(@Body() dto: QuoteDto) {
+  async quote(@Body() dto: QuoteDto, @Req() req: Request & { requestId?: string }) {
     const t0 = Date.now();
     try {
       const v = await this.resolveFromToken(dto.userToken);
@@ -46,8 +46,20 @@ export class LoyaltyController {
         this.metrics.inc('loyalty_quote_requests_total', { result: 'error', reason: 'merchant_mismatch' });
         throw new BadRequestException('QR выписан для другого мерчанта');
       }
+      // атрибуция staffId по x-staff-key, если не передан явно
+      let staffId = dto.staffId;
+      if (!staffId) {
+        const key = (req.headers['x-staff-key'] as string | undefined) || undefined;
+        if (key) {
+          try {
+            const hash = require('crypto').createHash('sha256').update(key, 'utf8').digest('hex');
+            const staff = await this.prisma.staff.findFirst({ where: { merchantId: dto.merchantId, apiKeyHash: hash, status: 'ACTIVE' } });
+            if (staff) staffId = staff.id;
+          } catch {}
+        }
+      }
       const qrMeta = looksLikeJwt(dto.userToken) ? { jti: v.jti, iat: v.iat, exp: v.exp } : undefined;
-      const data = await this.service.quote({ ...dto, userToken: v.customerId }, qrMeta);
+      const data = await this.service.quote({ ...dto, staffId, userToken: v.customerId }, qrMeta);
       this.metrics.inc('loyalty_quote_requests_total', { result: 'ok' });
       return data;
     } catch (e: any) {
@@ -74,7 +86,11 @@ export class LoyaltyController {
         } else {
           data = await this.service.commit(dto.holdId, dto.orderId, dto.receiptNumber, req.requestId ?? dto.requestId);
           // попытка сохранить; при гонке второй повернёт существующий
-          try { await this.prisma.idempotencyKey.create({ data: { merchantId: dto.merchantId, key: idemKey, response: data } }); } catch {}
+          try {
+            const ttlH = Number(process.env.IDEMPOTENCY_TTL_HOURS || '72');
+            const exp = new Date(Date.now() + ttlH * 3600 * 1000);
+            await this.prisma.idempotencyKey.create({ data: { merchantId: dto.merchantId, key: idemKey, response: data, expiresAt: exp } });
+          } catch {}
         }
       } else {
         data = await this.service.commit(dto.holdId, dto.orderId, dto.receiptNumber, req.requestId ?? dto.requestId);
@@ -148,7 +164,11 @@ export class LoyaltyController {
           data = saved.response as any;
         } else {
           data = await this.service.refund(dto.merchantId, dto.orderId, dto.refundTotal, dto.refundEligibleTotal, req.requestId);
-          try { await this.prisma.idempotencyKey.create({ data: { merchantId: dto.merchantId, key: idemKey, response: data } }); } catch {}
+          try {
+            const ttlH = Number(process.env.IDEMPOTENCY_TTL_HOURS || '72');
+            const exp = new Date(Date.now() + ttlH * 3600 * 1000);
+            await this.prisma.idempotencyKey.create({ data: { merchantId: dto.merchantId, key: idemKey, response: data, expiresAt: exp } });
+          } catch {}
         }
       } else {
         data = await this.service.refund(dto.merchantId, dto.orderId, dto.refundTotal, dto.refundEligibleTotal, req.requestId);

@@ -70,6 +70,7 @@ model MerchantSettings {
   redeemDailyCap    Int?
   earnDailyCap      Int?
   requireJwtForQuote Boolean @default(false)
+  rulesJson          Json?
   updatedAt      DateTime @default(now())
 }
 
@@ -282,10 +283,12 @@ model Staff {
   role        StaffRole  @default(CASHIER)
   status      String     @default("ACTIVE")
   hash        String?
+  apiKeyHash  String?
   createdAt   DateTime   @default(now())
 
   @@index([merchantId])
   @@unique([merchantId, login])
+  @@index([merchantId, apiKeyHash])
 
   // обратные связи
   holds     Hold[]

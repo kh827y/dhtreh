@@ -26,10 +26,11 @@ export class MerchantsService {
       redeemDailyCap: s.redeemDailyCap ?? null,
       earnDailyCap: s.earnDailyCap ?? null,
       requireJwtForQuote: s.requireJwtForQuote ?? false,
+      rulesJson: s.rulesJson ?? null,
     };
   }
 
-  async updateSettings(merchantId: string, earnBps: number, redeemLimitBps: number, qrTtlSec?: number, webhookUrl?: string, webhookSecret?: string, webhookKeyId?: string, redeemCooldownSec?: number, earnCooldownSec?: number, redeemDailyCap?: number, earnDailyCap?: number, requireJwtForQuote?: boolean) {
+  async updateSettings(merchantId: string, earnBps: number, redeemLimitBps: number, qrTtlSec?: number, webhookUrl?: string, webhookSecret?: string, webhookKeyId?: string, redeemCooldownSec?: number, earnCooldownSec?: number, redeemDailyCap?: number, earnDailyCap?: number, requireJwtForQuote?: boolean, rulesJson?: any) {
     // убедимся, что мерчант есть
     await this.prisma.merchant.upsert({
       where: { id: merchantId },
@@ -51,6 +52,7 @@ export class MerchantsService {
         redeemDailyCap: redeemDailyCap ?? undefined,
         earnDailyCap: earnDailyCap ?? undefined,
         requireJwtForQuote: requireJwtForQuote ?? undefined,
+        rulesJson: rulesJson ?? undefined,
         updatedAt: new Date(),
       },
       create: {
@@ -66,6 +68,7 @@ export class MerchantsService {
         redeemDailyCap: redeemDailyCap ?? null,
         earnDailyCap: earnDailyCap ?? null,
         requireJwtForQuote: requireJwtForQuote ?? false,
+        rulesJson: rulesJson ?? null,
       },
     });
     return {
@@ -81,6 +84,7 @@ export class MerchantsService {
       redeemDailyCap: updated.redeemDailyCap,
       earnDailyCap: updated.earnDailyCap,
       requireJwtForQuote: updated.requireJwtForQuote,
+      rulesJson: updated.rulesJson,
     };
   }
 
@@ -166,6 +170,33 @@ export class MerchantsService {
     return { ok: true };
   }
 
+  // Staff tokens
+  private randToken() {
+    return (
+      Math.random().toString(36).slice(2) +
+      Math.random().toString(36).slice(2) +
+      Math.random().toString(36).slice(2)
+    ).slice(0, 48);
+  }
+  private sha256(s: string) {
+    const crypto = require('crypto');
+    return crypto.createHash('sha256').update(s, 'utf8').digest('hex');
+  }
+  async issueStaffToken(merchantId: string, staffId: string) {
+    const user = await this.prisma.staff.findUnique({ where: { id: staffId } });
+    if (!user || user.merchantId !== merchantId) throw new NotFoundException('Staff not found');
+    const token = this.randToken();
+    const hash = this.sha256(token);
+    await this.prisma.staff.update({ where: { id: staffId }, data: { apiKeyHash: hash } });
+    return { token };
+  }
+  async revokeStaffToken(merchantId: string, staffId: string) {
+    const user = await this.prisma.staff.findUnique({ where: { id: staffId } });
+    if (!user || user.merchantId !== merchantId) throw new NotFoundException('Staff not found');
+    await this.prisma.staff.update({ where: { id: staffId }, data: { apiKeyHash: null } });
+    return { ok: true };
+  }
+
   async listTransactions(merchantId: string, params: { limit: number; before?: Date; type?: string; customerId?: string; outletId?: string; deviceId?: string; staffId?: string }) {
     const where: any = { merchantId };
     if (params.type) where.type = params.type as any;
@@ -175,5 +206,30 @@ export class MerchantsService {
     if (params.staffId) where.staffId = params.staffId;
     if (params.before) where.createdAt = { lt: params.before };
     return this.prisma.transaction.findMany({ where, orderBy: { createdAt: 'desc' }, take: params.limit });
+  }
+
+  async listReceipts(merchantId: string, params: { limit: number; before?: Date; orderId?: string; customerId?: string }) {
+    const where: any = { merchantId };
+    if (params.orderId) where.orderId = params.orderId;
+    if (params.customerId) where.customerId = params.customerId;
+    if (params.before) where.createdAt = { lt: params.before };
+    return this.prisma.receipt.findMany({ where, orderBy: { createdAt: 'desc' }, take: params.limit });
+  }
+  async getReceipt(merchantId: string, receiptId: string) {
+    const r = await this.prisma.receipt.findUnique({ where: { id: receiptId } });
+    if (!r || r.merchantId !== merchantId) throw new NotFoundException('Receipt not found');
+    const tx = await this.prisma.transaction.findMany({ where: { merchantId, orderId: r.orderId }, orderBy: { createdAt: 'asc' } });
+    return { receipt: r, transactions: tx };
+  }
+
+  async getBalance(merchantId: string, customerId: string) {
+    const w = await this.prisma.wallet.findFirst({ where: { merchantId, customerId, type: 'POINTS' as any } });
+    return w?.balance ?? 0;
+  }
+  async findCustomerByPhone(merchantId: string, phone: string) {
+    const c = await this.prisma.customer.findFirst({ where: { phone } });
+    if (!c) return null;
+    const bal = await this.getBalance(merchantId, c.id);
+    return { customerId: c.id, phone: c.phone, balance: bal };
   }
 }

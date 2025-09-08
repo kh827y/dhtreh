@@ -1,0 +1,30 @@
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { PrismaService } from './prisma.service';
+
+@Injectable()
+export class IdempotencyGcWorker implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(IdempotencyGcWorker.name);
+  private timer: any = null;
+  private running = false;
+
+  constructor(private prisma: PrismaService) {}
+
+  onModuleInit() {
+    const intervalMs = Number(process.env.IDEMPOTENCY_GC_INTERVAL_MS || '60000');
+    this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
+    this.logger.log(`IdempotencyGcWorker started, interval=${intervalMs}ms`);
+  }
+
+  onModuleDestroy() { if (this.timer) clearInterval(this.timer); }
+
+  private async tick() {
+    if (this.running) return; this.running = true;
+    try {
+      const now = new Date();
+      const ttlH = Number(process.env.IDEMPOTENCY_TTL_HOURS || '72');
+      const olderThan = new Date(Date.now() - ttlH * 3600 * 1000);
+      await this.prisma.idempotencyKey.deleteMany({ where: { OR: [ { expiresAt: { lt: now } }, { expiresAt: null, createdAt: { lt: olderThan } } ] } });
+    } finally { this.running = false; }
+  }
+}
+
