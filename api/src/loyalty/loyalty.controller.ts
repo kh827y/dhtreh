@@ -118,10 +118,13 @@ export class LoyaltyController {
     @Query('merchantId') merchantId: string,
     @Query('customerId') customerId: string,
     @Query('limit') limitStr?: string,
-    @Query('before') beforeStr?: string
+    @Query('before') beforeStr?: string,
+    @Query('outletId') outletId?: string,
+    @Query('deviceId') deviceId?: string,
+    @Query('staffId') staffId?: string,
   ) {
     const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 20, 1), 100) : 20;
     const before = beforeStr ? new Date(beforeStr) : undefined;
-    return this.service.transactions(merchantId, customerId, limit, before);
+    return this.service.transactions(merchantId, customerId, limit, before, { outletId, deviceId, staffId });
   }
 }

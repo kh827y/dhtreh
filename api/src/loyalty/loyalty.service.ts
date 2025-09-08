@@ -350,9 +350,14 @@ export class LoyaltyService {
     });
   }
 
-  async transactions(merchantId: string, customerId: string, limit = 20, before?: Date) {
+  async transactions(merchantId: string, customerId: string, limit = 20, before?: Date, filters?: { outletId?: string|null; deviceId?: string|null; staffId?: string|null }) {
+    const where: any = { merchantId, customerId };
+    if (before) where.createdAt = { lt: before };
+    if (filters?.outletId) where.outletId = filters.outletId;
+    if (filters?.deviceId) where.deviceId = filters.deviceId;
+    if (filters?.staffId) where.staffId = filters.staffId;
     const items = await this.prisma.transaction.findMany({
-      where: { merchantId, customerId, ...(before ? { createdAt: { lt: before } } : {}) },
+      where,
       orderBy: { createdAt: 'desc' },
       take: Math.min(Math.max(limit, 1), 100),
     });

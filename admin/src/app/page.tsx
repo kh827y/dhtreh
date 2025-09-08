@@ -11,6 +11,9 @@ export default function AdminPage() {
   const [earnBps, setEarnBps] = useState<number>(500);
   const [redeemLimitBps, setRedeemLimitBps] = useState<number>(5000);
   const [msg, setMsg] = useState<string>('');
+  const [qrTtlSec, setQrTtlSec] = useState<number>(120);
+  const [webhookUrl, setWebhookUrl] = useState<string>('');
+  const [webhookSecret, setWebhookSecret] = useState<string>('');
 
   const earnPct = useMemo(() => (earnBps/100).toFixed(2), [earnBps]);
   const redeemPct = useMemo(() => (redeemLimitBps/100).toFixed(2), [redeemLimitBps]);
@@ -26,6 +29,9 @@ export default function AdminPage() {
       const data = await r.json();
       setEarnBps(data.earnBps);
       setRedeemLimitBps(data.redeemLimitBps);
+      if (typeof data.qrTtlSec === 'number') setQrTtlSec(data.qrTtlSec);
+      setWebhookUrl(data.webhookUrl || '');
+      setWebhookSecret(data.webhookSecret || '');
     } catch (e: any) {
       setMsg('Ошибка загрузки: ' + e?.message);
     } finally {
@@ -40,7 +46,7 @@ export default function AdminPage() {
       const r = await fetch(`${API}/merchants/${MERCHANT}/settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY },
-        body: JSON.stringify({ earnBps, redeemLimitBps }),
+        body: JSON.stringify({ earnBps, redeemLimitBps, qrTtlSec, webhookUrl, webhookSecret }),
       });
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
@@ -57,6 +63,12 @@ export default function AdminPage() {
   return (
     <main style={{ maxWidth: 560, margin: '40px auto', fontFamily: 'system-ui, Arial' }}>
       <h1>Настройки мерчанта</h1>
+      <div style={{ display: 'flex', gap: 12, margin: '8px 0' }}>
+        <a href="/outbox">Outbox</a>
+        <a href="/outlets">Outlets</a>
+        <a href="/devices">Devices</a>
+        <a href="/staff">Staff</a>
+      </div>
       <div style={{ color: '#666' }}>Merchant: <code>{MERCHANT}</code></div>
 
       <div style={{ display: 'grid', gap: 14, marginTop: 18 }}>
@@ -74,6 +86,26 @@ export default function AdminPage() {
                  onChange={(e) => setRedeemLimitBps(Math.max(0, Math.min(10000, Number(e.target.value))))}
                  style={{ width: '100%', padding: 8 }} />
           <div style={{ color: '#666', fontSize: 12 }}>= {redeemPct}% от базы</div>
+        </label>
+
+        <label>
+          QR TTL (секунды):
+          <input type="number" min={15} max={600} value={qrTtlSec}
+                 onChange={(e) => setQrTtlSec(Math.max(15, Math.min(600, Number(e.target.value))))}
+                 style={{ width: '100%', padding: 8 }} />
+          <div style={{ color: '#666', fontSize: 12 }}>Минимум 15 сек; мини‑аппа обновляет QR за 2/3 TTL</div>
+        </label>
+
+        <label>
+          Webhook URL:
+          <input value={webhookUrl} onChange={(e) => setWebhookUrl(e.target.value)} placeholder="https://..."
+                 style={{ width: '100%', padding: 8 }} />
+        </label>
+        <label>
+          Webhook Secret:
+          <input value={webhookSecret} onChange={(e) => setWebhookSecret(e.target.value)} placeholder="секрет для подписи"
+                 style={{ width: '100%', padding: 8 }} />
+          <div style={{ color: '#666', fontSize: 12 }}>Подпись: HMAC_SHA256(ts + '.' + body), заголовок X-Loyalty-Signature</div>
         </label>
 
         <div style={{ display: 'flex', gap: 12 }}>
