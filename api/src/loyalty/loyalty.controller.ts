@@ -1,8 +1,10 @@
-import { Body, Controller, Post, Get, Param, Query, BadRequestException } from '@nestjs/common';
+import { Body, Controller, Post, Get, Param, Query, BadRequestException, Res } from '@nestjs/common';
 import { LoyaltyService } from './loyalty.service';
 import { CommitDto, QrMintDto, QuoteDto, RefundDto } from './dto';
 import { looksLikeJwt, signQrToken, verifyQrToken } from './token.util';
 import { PrismaService } from '../prisma.service';
+import type { Response } from 'express';
+import { createHmac } from 'crypto';
 
 @Controller('loyalty')
 export class LoyaltyController {
@@ -40,8 +42,21 @@ export class LoyaltyController {
   }
 
   @Post('commit')
-  commit(@Body() dto: CommitDto) {
-    return this.service.commit(dto.holdId, dto.orderId, dto.receiptNumber);
+  async commit(@Body() dto: CommitDto, @Res({ passthrough: true }) res: Response) {
+    const data = await this.service.commit(dto.holdId, dto.orderId, dto.receiptNumber);
+    try {
+      const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId: dto.merchantId } });
+      const secret = s?.webhookSecret;
+      if (secret) {
+        const ts = Math.floor(Date.now() / 1000).toString();
+        const body = JSON.stringify(data);
+        const sig = createHmac('sha256', secret).update(`${ts}.${body}`).digest('base64');
+        res.setHeader('X-Loyalty-Signature', `v1,ts=${ts},sig=${sig}`);
+        res.setHeader('X-Merchant-Id', dto.merchantId);
+        res.setHeader('X-Signature-Timestamp', ts);
+      }
+    } catch {}
+    return data;
   }
 
   @Post('cancel')
@@ -79,8 +94,21 @@ export class LoyaltyController {
   }
 
   @Post('refund')
-  refund(@Body() dto: RefundDto) {
-    return this.service.refund(dto.merchantId, dto.orderId, dto.refundTotal, dto.refundEligibleTotal);
+  async refund(@Body() dto: RefundDto, @Res({ passthrough: true }) res: Response) {
+    const data = await this.service.refund(dto.merchantId, dto.orderId, dto.refundTotal, dto.refundEligibleTotal);
+    try {
+      const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId: dto.merchantId } });
+      const secret = s?.webhookSecret;
+      if (secret) {
+        const ts = Math.floor(Date.now() / 1000).toString();
+        const body = JSON.stringify(data);
+        const sig = createHmac('sha256', secret).update(`${ts}.${body}`).digest('base64');
+        res.setHeader('X-Loyalty-Signature', `v1,ts=${ts},sig=${sig}`);
+        res.setHeader('X-Merchant-Id', dto.merchantId);
+        res.setHeader('X-Signature-Timestamp', ts);
+      }
+    } catch {}
+    return data;
   }
 
   @Get('transactions')
