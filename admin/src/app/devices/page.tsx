@@ -17,6 +17,7 @@ export default function DevicesPage() {
   const [outletId, setOutletId] = useState('');
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
+  const [lastSecret, setLastSecret] = useState('');
 
   async function load() {
     setLoading(true); setMsg('');
@@ -50,6 +51,24 @@ export default function DevicesPage() {
     if (!r.ok) return alert(await r.text());
     load();
   }
+  async function issueSecret(id: string) {
+    setMsg(''); setLastSecret('');
+    try {
+      const r = await fetch(`${API}/merchants/${MERCHANT}/devices/${id}/secret`, { method: 'POST', headers: { 'x-admin-key': ADMIN_KEY } });
+      if (!r.ok) throw new Error(await r.text());
+      const data = await r.json();
+      setLastSecret(data.secret || '');
+      await load();
+    } catch (e: any) { setMsg('Ошибка: ' + e?.message); }
+  }
+  async function revokeSecret(id: string) {
+    setMsg(''); setLastSecret('');
+    try {
+      const r = await fetch(`${API}/merchants/${MERCHANT}/devices/${id}/secret`, { method: 'DELETE', headers: { 'x-admin-key': ADMIN_KEY } });
+      if (!r.ok) throw new Error(await r.text());
+      await load();
+    } catch (e: any) { setMsg('Ошибка: ' + e?.message); }
+  }
 
   useEffect(() => { load(); }, []);
 
@@ -76,6 +95,7 @@ export default function DevicesPage() {
         <button onClick={create} style={{ padding: '8px 12px' }}>Добавить</button>
       </div>
       {msg && <div style={{ marginTop: 8 }}>{msg}</div>}
+      {lastSecret && <div style={{ marginTop: 8, color: '#0a0' }}>Bridge Secret: <code>{lastSecret}</code> (сохраните сейчас — повторно не показывается)</div>}
       <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
         {items.map(d => (
           <div key={d.id} style={{ border: '1px solid #eee', borderRadius: 10, padding: 10, display: 'grid', gap: 8 }}>
@@ -87,6 +107,8 @@ export default function DevicesPage() {
               </select>
               <input value={d.label||''} onChange={(e) => setItems(prev => prev.map(x => x.id===d.id?{...x,label:e.target.value||null}:x))} style={{ padding: 8, flex: 1 }} />
               <button onClick={() => save(d)} style={{ padding: '6px 10px' }}>Сохранить</button>
+              <button onClick={() => issueSecret(d.id)} style={{ padding: '6px 10px' }}>Выдать секрет</button>
+              <button onClick={() => revokeSecret(d.id)} style={{ padding: '6px 10px' }}>Отозвать</button>
               <button onClick={() => del(d.id)} style={{ padding: '6px 10px' }}>Удалить</button>
             </div>
             <div style={{ color: '#666' }}>Создано: {new Date(d.createdAt).toLocaleString()}</div>
@@ -97,4 +119,3 @@ export default function DevicesPage() {
     </main>
   );
 }
-

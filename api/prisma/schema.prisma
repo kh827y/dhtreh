@@ -70,6 +70,8 @@ model MerchantSettings {
   redeemDailyCap    Int?
   earnDailyCap      Int?
   requireJwtForQuote Boolean @default(false)
+  requireBridgeSig   Boolean @default(false)
+  bridgeSecret       String?
   rulesJson          Json?
   updatedAt      DateTime @default(now())
 }
@@ -263,6 +265,7 @@ model Device {
   type        DeviceType
   label       String?
   lastSeenAt  DateTime?
+  bridgeSecret String?
   createdAt   DateTime   @default(now())
 
   @@index([merchantId])

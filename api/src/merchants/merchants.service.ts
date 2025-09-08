@@ -21,6 +21,8 @@ export class MerchantsService {
       webhookUrl: s.webhookUrl ?? null,
       webhookSecret: s.webhookSecret ?? null,
       webhookKeyId: s.webhookKeyId ?? null,
+      requireBridgeSig: s.requireBridgeSig ?? false,
+      bridgeSecret: s.bridgeSecret ?? null,
       redeemCooldownSec: s.redeemCooldownSec ?? 0,
       earnCooldownSec: s.earnCooldownSec ?? 0,
       redeemDailyCap: s.redeemDailyCap ?? null,
@@ -30,7 +32,7 @@ export class MerchantsService {
     };
   }
 
-  async updateSettings(merchantId: string, earnBps: number, redeemLimitBps: number, qrTtlSec?: number, webhookUrl?: string, webhookSecret?: string, webhookKeyId?: string, redeemCooldownSec?: number, earnCooldownSec?: number, redeemDailyCap?: number, earnDailyCap?: number, requireJwtForQuote?: boolean, rulesJson?: any) {
+  async updateSettings(merchantId: string, earnBps: number, redeemLimitBps: number, qrTtlSec?: number, webhookUrl?: string, webhookSecret?: string, webhookKeyId?: string, redeemCooldownSec?: number, earnCooldownSec?: number, redeemDailyCap?: number, earnDailyCap?: number, requireJwtForQuote?: boolean, rulesJson?: any, requireBridgeSig?: boolean, bridgeSecret?: string) {
     // убедимся, что мерчант есть
     await this.prisma.merchant.upsert({
       where: { id: merchantId },
@@ -47,6 +49,8 @@ export class MerchantsService {
         webhookUrl,
         webhookSecret,
         webhookKeyId,
+        requireBridgeSig: requireBridgeSig ?? undefined,
+        bridgeSecret: bridgeSecret ?? undefined,
         redeemCooldownSec: redeemCooldownSec ?? undefined,
         earnCooldownSec: earnCooldownSec ?? undefined,
         redeemDailyCap: redeemDailyCap ?? undefined,
@@ -63,6 +67,8 @@ export class MerchantsService {
         webhookUrl: webhookUrl ?? null,
         webhookSecret: webhookSecret ?? null,
         webhookKeyId: webhookKeyId ?? null,
+        requireBridgeSig: requireBridgeSig ?? false,
+        bridgeSecret: bridgeSecret ?? null,
         redeemCooldownSec: redeemCooldownSec ?? 0,
         earnCooldownSec: earnCooldownSec ?? 0,
         redeemDailyCap: redeemDailyCap ?? null,
@@ -79,6 +85,8 @@ export class MerchantsService {
       webhookUrl: updated.webhookUrl,
       webhookSecret: updated.webhookSecret,
       webhookKeyId: updated.webhookKeyId,
+      requireBridgeSig: updated.requireBridgeSig,
+      bridgeSecret: updated.bridgeSecret,
       redeemCooldownSec: updated.redeemCooldownSec,
       earnCooldownSec: updated.earnCooldownSec,
       redeemDailyCap: updated.redeemDailyCap,
@@ -125,6 +133,20 @@ export class MerchantsService {
     const dev = await this.prisma.device.findUnique({ where: { id: deviceId } });
     if (!dev || dev.merchantId !== merchantId) throw new NotFoundException('Device not found');
     await this.prisma.device.delete({ where: { id: deviceId } });
+    return { ok: true };
+  }
+
+  async issueDeviceSecret(merchantId: string, deviceId: string) {
+    const dev = await this.prisma.device.findUnique({ where: { id: deviceId } });
+    if (!dev || dev.merchantId !== merchantId) throw new NotFoundException('Device not found');
+    const secret = this.randToken();
+    await this.prisma.device.update({ where: { id: deviceId }, data: { bridgeSecret: secret } });
+    return { secret };
+  }
+  async revokeDeviceSecret(merchantId: string, deviceId: string) {
+    const dev = await this.prisma.device.findUnique({ where: { id: deviceId } });
+    if (!dev || dev.merchantId !== merchantId) throw new NotFoundException('Device not found');
+    await this.prisma.device.update({ where: { id: deviceId }, data: { bridgeSecret: null } });
     return { ok: true };
   }
 

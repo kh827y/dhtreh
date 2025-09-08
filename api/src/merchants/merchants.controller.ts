@@ -29,6 +29,8 @@ export class MerchantsController {
       dto.earnDailyCap,
       dto.requireJwtForQuote,
       dto.rulesJson,
+      dto.requireBridgeSig,
+      dto.bridgeSecret,
     );
   }
 
@@ -66,6 +68,15 @@ export class MerchantsController {
   @Delete(':id/devices/:deviceId')
   deleteDevice(@Param('id') id: string, @Param('deviceId') deviceId: string) {
     return this.service.deleteDevice(id, deviceId);
+  }
+
+  @Post(':id/devices/:deviceId/secret')
+  issueDeviceSecret(@Param('id') id: string, @Param('deviceId') deviceId: string) {
+    return this.service.issueDeviceSecret(id, deviceId);
+  }
+  @Delete(':id/devices/:deviceId/secret')
+  revokeDeviceSecret(@Param('id') id: string, @Param('deviceId') deviceId: string) {
+    return this.service.revokeDeviceSecret(id, deviceId);
   }
 
   // Staff

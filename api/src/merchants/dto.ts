@@ -34,6 +34,11 @@ export class UpdateMerchantSettingsDto {
 
   @IsOptional()
   rulesJson?: any;
+
+  @IsOptional()
+  requireBridgeSig?: boolean;
+  @IsOptional() @IsString()
+  bridgeSecret?: string;
 }
 
 export class CreateOutletDto {

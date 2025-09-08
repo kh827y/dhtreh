@@ -21,6 +21,8 @@ export default function AdminPage() {
   const [earnDailyCap, setEarnDailyCap] = useState<number>(0);
   const [requireJwtForQuote, setRequireJwtForQuote] = useState<boolean>(false);
   const [rulesJson, setRulesJson] = useState<string>('[\n  {\n    "if": { "channelIn": ["VIRTUAL"], "weekdayIn": [1,2,3,4,5] },\n    "then": { "earnBps": 600 }\n  }\n]');
+  const [requireBridgeSig, setRequireBridgeSig] = useState<boolean>(false);
+  const [bridgeSecret, setBridgeSecret] = useState<string>('');
 
   const earnPct = useMemo(() => (earnBps/100).toFixed(2), [earnBps]);
   const redeemPct = useMemo(() => (redeemLimitBps/100).toFixed(2), [redeemLimitBps]);
@@ -46,6 +48,8 @@ export default function AdminPage() {
       setEarnDailyCap(Number(data.earnDailyCap || 0));
       setRequireJwtForQuote(Boolean(data.requireJwtForQuote));
       if (data.rulesJson) setRulesJson(JSON.stringify(data.rulesJson, null, 2));
+      setRequireBridgeSig(Boolean(data.requireBridgeSig));
+      setBridgeSecret(data.bridgeSecret || '');
     } catch (e: any) {
       setMsg('Ошибка загрузки: ' + e?.message);
     } finally {
@@ -60,7 +64,7 @@ export default function AdminPage() {
       const r = await fetch(`${API}/merchants/${MERCHANT}/settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY },
-        body: JSON.stringify({ earnBps, redeemLimitBps, qrTtlSec, webhookUrl, webhookSecret, webhookKeyId, redeemCooldownSec, earnCooldownSec, redeemDailyCap, earnDailyCap, requireJwtForQuote, rulesJson: JSON.parse(rulesJson||'null') }),
+        body: JSON.stringify({ earnBps, redeemLimitBps, qrTtlSec, webhookUrl, webhookSecret, webhookKeyId, redeemCooldownSec, earnCooldownSec, redeemDailyCap, earnDailyCap, requireJwtForQuote, rulesJson: JSON.parse(rulesJson||'null'), requireBridgeSig, bridgeSecret }),
       });
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
@@ -139,6 +143,23 @@ export default function AdminPage() {
           <input value={webhookKeyId} onChange={(e) => setWebhookKeyId(e.target.value)} placeholder="идентификатор ключа"
                  style={{ width: '100%', padding: 8 }} />
           <div style={{ color: '#666', fontSize: 12 }}>Отправляется в заголовке X-Signature-Key-Id</div>
+        </label>
+
+        <label>
+          Bridge Secret (merchant-level):
+          <input value={bridgeSecret} onChange={(e) => setBridgeSecret(e.target.value)} placeholder="секрет Bridge"
+                 style={{ width: '100%', padding: 8 }} />
+          <div style={{ color: '#666', fontSize: 12 }}>Для проверки входящих запросов Bridge (если нет секретов на устройствах)</div>
+        </label>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input type="checkbox" checked={requireBridgeSig} onChange={(e) => setRequireBridgeSig(e.target.checked)} /> Требовать подпись Bridge
+        </label>
+
+        <label>
+          Правила (JSON):
+          <textarea value={rulesJson} onChange={(e) => setRulesJson(e.target.value)} rows={8} style={{ width: '100%', padding: 8, fontFamily: 'monospace' }} />
+          <div style={{ color: '#666', fontSize: 12 }}>Пример: массив правил с условиями channelIn/weekdayIn/minEligible и действиями earnBps/redeemLimitBps</div>
         </label>
 
         <div style={{ display: 'flex', gap: 12 }}>

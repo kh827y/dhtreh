@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Get, Param, Query, BadRequestException, Res, Req } from '@nestjs/common';
+import { Body, Controller, Post, Get, Param, Query, BadRequestException, Res, Req, UnauthorizedException } from '@nestjs/common';
 import { LoyaltyService } from './loyalty.service';
 import { CommitDto, QrMintDto, QuoteDto, RefundDto } from './dto';
 import { looksLikeJwt, signQrToken, verifyQrToken } from './token.util';
@@ -59,6 +59,14 @@ export class LoyaltyController {
         }
       }
       const qrMeta = looksLikeJwt(dto.userToken) ? { jti: v.jti, iat: v.iat, exp: v.exp } : undefined;
+      // проверка подписи Bridge при необходимости
+      if (s?.requireBridgeSig) {
+        const sig = (req.headers['x-bridge-signature'] as string | undefined) || '';
+        const secret = dto.deviceId ? (await this.prisma.device.findUnique({ where: { id: dto.deviceId } }))?.bridgeSecret : (s.bridgeSecret || null);
+        if (!secret || !this.verifyBridgeSignature(sig, JSON.stringify(dto), secret)) {
+          throw new UnauthorizedException('Invalid bridge signature');
+        }
+      }
       const data = await this.service.quote({ ...dto, staffId, userToken: v.customerId }, qrMeta);
       this.metrics.inc('loyalty_quote_requests_total', { result: 'ok' });
       return data;
@@ -227,6 +235,21 @@ export class LoyaltyController {
   async publicStaff(@Param('merchantId') merchantId: string) {
     const items = await this.prisma.staff.findMany({ where: { merchantId, status: 'ACTIVE' }, orderBy: { createdAt: 'asc' } });
     return items.map(s => ({ id: s.id, login: s.login ?? undefined, role: s.role }));
+  }
+
+  private verifyBridgeSignature(header: string, body: string, secret: string): boolean {
+    try {
+      if (!header || !secret) return false;
+      if (!header.startsWith('v1,')) return false;
+      const parts = Object.fromEntries(header.split(',').slice(1).map(x => x.split('=')));
+      const ts = parts.ts; const sig = parts.sig;
+      if (!ts || !sig) return false;
+      const calc = require('crypto').createHmac('sha256', secret).update(ts + '.' + body).digest('base64');
+      const skewOk = Math.abs(Math.floor(Date.now()/1000) - Number(ts)) <= 300;
+      return skewOk && calc === sig;
+    } catch {
+      return false;
+    }
   }
 
   // Согласия на коммуникации
