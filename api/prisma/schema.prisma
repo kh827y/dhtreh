@@ -73,20 +73,21 @@ model Wallet {
 }
 
 model Hold {
-  id            String     @id @default(cuid())
-  customerId    String
-  customer      Customer   @relation(fields: [customerId], references: [id])
-  merchantId    String
-  merchant      Merchant   @relation(fields: [merchantId], references: [id])
-  mode          HoldMode
-  redeemAmount  Int        @default(0)
-  earnPoints    Int        @default(0)
-  status        HoldStatus @default(PENDING)
-  orderId       String?
-  receiptId     String?
+  id           String     @id @default(cuid())
+  customerId   String
+  customer     Customer   @relation(fields: [customerId], references: [id])
+  merchantId   String
+  merchant     Merchant   @relation(fields: [merchantId], references: [id])
+  mode         HoldMode
+  redeemAmount Int        @default(0)
+  earnPoints   Int        @default(0)
+  status       HoldStatus @default(PENDING)
+  orderId      String?
+  receiptId    String?
   total         Int?
   eligibleTotal Int?
-  createdAt     DateTime   @default(now())
+  qrJti        String?    @unique   // <— НОВОЕ: один hold на один QR
+  createdAt    DateTime   @default(now())
 
   @@index([customerId, status])
   @@index([merchantId, status])
@@ -125,3 +126,16 @@ model Transaction {
   @@index([customerId, createdAt])
   @@index([merchantId, createdAt])
 }
+
+model QrNonce {
+  jti        String   @id                  // уникальный ID токена (JTI)
+  customerId String
+  merchantId String?
+  issuedAt   DateTime
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([merchantId, usedAt])
+}
+

@@ -53,7 +53,7 @@ export default function MiniApp() {
       const r = await fetch(`${API}/loyalty/qr`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customerId, ttlSec: QR_TTL }),
+        body: JSON.stringify({ customerId, ttlSec: QR_TTL, merchantId: MERCHANT }), // <— добавили merchantId
       });
       const { token } = await r.json();
       const qr = await QRCode.toDataURL(token, { margin: 1, width: 240 });

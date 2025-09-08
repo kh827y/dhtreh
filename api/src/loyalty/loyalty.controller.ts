@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Get, Param, Query } from '@nestjs/common';
+import { Body, Controller, Post, Get, Param, Query, BadRequestException } from '@nestjs/common';
 import { LoyaltyService } from './loyalty.service';
 import { CommitDto, QrMintDto, QuoteDto, RefundDto } from './dto';
 import { looksLikeJwt, signQrToken, verifyQrToken } from './token.util';
@@ -7,18 +7,25 @@ import { looksLikeJwt, signQrToken, verifyQrToken } from './token.util';
 export class LoyaltyController {
   constructor(private readonly service: LoyaltyService) {}
 
-  private async resolveCustomerId(userToken: string): Promise<string> {
+  // Plain ID или JWT
+  private async resolveFromToken(userToken: string) {
     if (looksLikeJwt(userToken)) {
       const secret = process.env.QR_JWT_SECRET || 'dev_change_me';
-      return await verifyQrToken(secret, userToken);
+      const v = await verifyQrToken(secret, userToken);
+      return v; // { customerId, merchantAud, jti, iat, exp }
     }
-    return userToken;
+    const now = Math.floor(Date.now() / 1000);
+    return { customerId: userToken, merchantAud: undefined, jti: `plain:${userToken}:${now}`, iat: now, exp: now + 3600 };
   }
 
   @Post('quote')
   async quote(@Body() dto: QuoteDto) {
-    const customerId = await this.resolveCustomerId(dto.userToken);
-    return this.service.quote({ ...dto, userToken: customerId });
+    const v = await this.resolveFromToken(dto.userToken);
+    if (v.merchantAud && v.merchantAud !== 'any' && v.merchantAud !== dto.merchantId) {
+      throw new BadRequestException('QR выписан для другого мерчанта');
+    }
+    const qrMeta = looksLikeJwt(dto.userToken) ? { jti: v.jti, iat: v.iat, exp: v.exp } : undefined;
+    return this.service.quote({ ...dto, userToken: v.customerId }, qrMeta);
   }
 
   @Post('commit')
@@ -45,7 +52,7 @@ export class LoyaltyController {
   async mintQr(@Body() dto: QrMintDto) {
     const secret = process.env.QR_JWT_SECRET || 'dev_change_me';
     const ttl = dto.ttlSec ?? 60;
-    const token = await signQrToken(secret, dto.customerId, ttl);
+    const token = await signQrToken(secret, dto.customerId, dto.merchantId, ttl);
     return { token, ttl };
   }
 
@@ -54,7 +61,6 @@ export class LoyaltyController {
     return this.service.refund(dto.merchantId, dto.orderId, dto.refundTotal, dto.refundEligibleTotal);
   }
 
-  // ===== НОВОЕ: история транзакций =====
   @Get('transactions')
   transactions(
     @Query('merchantId') merchantId: string,

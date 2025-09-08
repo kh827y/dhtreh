@@ -22,6 +22,7 @@ export class CommitDto {
 export class QrMintDto {
   @IsString() customerId: string;
   @IsOptional() @Min(10) ttlSec?: number;
+  @IsOptional() @IsString() merchantId?: string; // <— добавили
 }
 
 export class RefundDto {

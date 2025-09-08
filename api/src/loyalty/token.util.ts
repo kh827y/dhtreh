@@ -2,21 +2,31 @@ import { SignJWT, jwtVerify } from 'jose';
 
 const ENC = new TextEncoder();
 
-export async function signQrToken(secret: string, customerId: string, ttlSec = 60) {
+export async function signQrToken(secret: string, customerId: string, merchantId?: string, ttlSec = 60) {
   const now = Math.floor(Date.now() / 1000);
+  const jti = `${customerId}:${now}`;
   return await new SignJWT({ sub: customerId, t: 'qr' })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
     .setIssuedAt(now)
     .setExpirationTime(now + ttlSec)
-    .setJti(`${customerId}:${now}`)
+    .setJti(jti)
+    .setAudience(merchantId || 'any')
     .sign(ENC.encode(secret));
 }
 
-export async function verifyQrToken(secret: string, token: string): Promise<string> {
+export type VerifiedQr = {
+  customerId: string;
+  merchantAud?: string;
+  jti: string;
+  iat: number;
+  exp: number;
+};
+
+export async function verifyQrToken(secret: string, token: string): Promise<VerifiedQr> {
   const { payload } = await jwtVerify(token, ENC.encode(secret), { algorithms: ['HS256'] });
-  // customerId храним в sub
-  if (!payload.sub) throw new Error('No sub');
-  return String(payload.sub);
+  if (!payload.sub || !payload.jti || !payload.exp || !payload.iat) throw new Error('Bad QR token');
+  const aud = (Array.isArray(payload.aud) ? payload.aud[0] : payload.aud) as string | undefined;
+  return { customerId: String(payload.sub), merchantAud: aud, jti: String(payload.jti), iat: payload.iat!, exp: payload.exp! };
 }
 
 // простая эвристика: похоже ли на JWT
