@@ -111,9 +111,9 @@ model Hold {
   staffId      String?
   createdAt    DateTime   @default(now())
 
-  outlet       Outlet?    @relation(fields: [outletId], references: [id])
-  device       Device?    @relation(fields: [deviceId], references: [id])
-  staff        Staff?     @relation(fields: [staffId], references: [id])
+  outlet       Outlet?    @relation(fields: [outletId], references: [id], onDelete: SetNull)
+  device       Device?    @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  staff        Staff?     @relation(fields: [staffId], references: [id], onDelete: SetNull)
 
   @@index([customerId, status])
   @@index([merchantId, status])
@@ -140,9 +140,9 @@ model Receipt {
   deviceId      String?
   staffId       String?
 
-  outlet       Outlet?    @relation(fields: [outletId], references: [id])
-  device       Device?    @relation(fields: [deviceId], references: [id])
-  staff        Staff?     @relation(fields: [staffId], references: [id])
+  outlet       Outlet?    @relation(fields: [outletId], references: [id], onDelete: SetNull)
+  device       Device?    @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  staff        Staff?     @relation(fields: [staffId], references: [id], onDelete: SetNull)
 
   @@unique([merchantId, orderId])
   @@index([merchantId, createdAt])
@@ -165,9 +165,9 @@ model Transaction {
   deviceId   String?
   staffId    String?
 
-  outlet       Outlet?    @relation(fields: [outletId], references: [id])
-  device       Device?    @relation(fields: [deviceId], references: [id])
-  staff        Staff?     @relation(fields: [staffId], references: [id])
+  outlet       Outlet?    @relation(fields: [outletId], references: [id], onDelete: SetNull)
+  device       Device?    @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  staff        Staff?     @relation(fields: [staffId], references: [id], onDelete: SetNull)
 
   @@index([customerId, createdAt])
   @@index([merchantId, createdAt])
@@ -226,7 +226,7 @@ model Device {
   merchantId  String
   merchant    Merchant   @relation(fields: [merchantId], references: [id])
   outletId    String?
-  outlet      Outlet?    @relation(fields: [outletId], references: [id])
+  outlet      Outlet?    @relation(fields: [outletId], references: [id], onDelete: SetNull)
   type        DeviceType
   label       String?
   lastSeenAt  DateTime?

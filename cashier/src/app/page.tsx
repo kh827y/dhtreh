@@ -45,6 +45,14 @@ export default function Page() {
   const [histBusy, setHistBusy] = useState(false);
   const [histNextBefore, setHistNextBefore] = useState<string | null>(null);
 
+  // контекст точки/устройства/сотрудника
+  const [outlets, setOutlets] = useState<Array<{id:string; name:string}>>([]);
+  const [devices, setDevices] = useState<Array<{id:string; type:string; label?:string; outletId?:string}>>([]);
+  const [staff, setStaff] = useState<Array<{id:string; login?:string; role:string}>>([]);
+  const [outletId, setOutletId] = useState<string>('');
+  const [deviceId, setDeviceId] = useState<string>('');
+  const [staffId, setStaffId] = useState<string>('');
+
   // Сгенерируем уникальный orderId при первом монтировании, чтобы избежать идемпотентных коллизий после перезагрузки
   useEffect(() => {
     setOrderId('O-' + Math.floor(Date.now() % 1_000_000));
@@ -59,7 +67,7 @@ export default function Page() {
       const r = await fetch(`${API_BASE}/loyalty/quote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId },
-        body: JSON.stringify({ merchantId, mode, userToken, orderId, total, eligibleTotal }),
+        body: JSON.stringify({ merchantId, mode, userToken, orderId, total, eligibleTotal, outletId: outletId || undefined, deviceId: deviceId || undefined, staffId: staffId || undefined }),
       });
       if (!r.ok) {
         const text = await r.text();
@@ -221,6 +229,23 @@ export default function Page() {
 
   useEffect(() => { setHistory([]); setHistNextBefore(null); }, [userToken, merchantId]);
 
+  // загрузка списков точек/устройств/сотрудников
+  useEffect(() => {
+    (async () => {
+      try {
+        const [ro, rd, rs] = await Promise.all([
+          fetch(`${API_BASE}/loyalty/outlets/${merchantId}`),
+          fetch(`${API_BASE}/loyalty/devices/${merchantId}`),
+          fetch(`${API_BASE}/loyalty/staff/${merchantId}`),
+        ]);
+        const [lo, ld, ls] = await Promise.all([ro.json(), rd.json(), rs.json()]);
+        setOutlets(Array.isArray(lo) ? lo : []);
+        setDevices(Array.isArray(ld) ? ld : []);
+        setStaff(Array.isArray(ls) ? ls : []);
+      } catch {}
+    })();
+  }, [merchantId]);
+
   return (
     <main style={{ maxWidth: 920, margin: '40px auto', fontFamily: 'system-ui, Arial' }}>
       <h1>Виртуальный терминал кассира</h1>
@@ -272,9 +297,34 @@ export default function Page() {
           <label><input type="radio" name="mode" checked={mode === 'earn'} onChange={() => setMode('earn')} /> Начислить</label>
         </div>
 
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <label>
+            Точка:
+            <select value={outletId} onChange={(e) => setOutletId(e.target.value)} style={{ padding: 8, minWidth: 180 }}>
+              <option value="">(не выбрано)</option>
+              {outlets.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+          </label>
+          <label>
+            Устройство:
+            <select value={deviceId} onChange={(e) => setDeviceId(e.target.value)} style={{ padding: 8, minWidth: 180 }}>
+              <option value="">(не выбрано)</option>
+              {devices.map(d => <option key={d.id} value={d.id}>{(d.label||d.type) + (d.outletId?` · ${d.outletId.slice(0,4)}`:'')}</option>)}
+            </select>
+          </label>
+          <label>
+            Сотрудник:
+            <select value={staffId} onChange={(e) => setStaffId(e.target.value)} style={{ padding: 8, minWidth: 180 }}>
+              <option value="">(не выбрано)</option>
+              {staff.map(s => <option key={s.id} value={s.id}>{s.login||s.id.slice(0,6)} · {s.role}</option>)}
+            </select>
+          </label>
+        </div>
+
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <button onClick={callQuote} disabled={busy} style={{ padding: '8px 16px' }}>Посчитать (QUOTE)</button>
           <button onClick={callCommit} disabled={busy || !holdId} style={{ padding: '8px 16px' }}>Оплачено (COMMIT)</button>
+          <button onClick={() => setOrderId('O-' + Math.floor(Math.random()*100000))} disabled={busy} style={{ padding: '8px 16px' }}>Новый orderId</button>
         </div>
 
         {result && (

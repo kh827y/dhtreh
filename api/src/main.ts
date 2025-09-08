@@ -11,7 +11,9 @@ async function bootstrap() {
       'http://localhost:3002','http://127.0.0.1:3002',
       'http://localhost:3003','http://127.0.0.1:3003',
     ],
-    methods: ['GET','POST','PUT','OPTIONS'],
+    methods: ['GET','POST','PUT','DELETE','PATCH','OPTIONS'],
+    allowedHeaders: ['Content-Type','x-admin-key','x-request-id'],
+    exposedHeaders: ['X-Loyalty-Signature','X-Merchant-Id','X-Signature-Timestamp','X-Request-Id','X-Event-Id'],
   });  
 
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));

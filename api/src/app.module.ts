@@ -4,6 +4,7 @@ import { PrismaModule } from './prisma.module';
 import { LoyaltyModule } from './loyalty/loyalty.module';
 import { MerchantsModule } from './merchants/merchants.module';
 import { RequestIdMiddleware } from './request-id.middleware';
+import { HealthController } from './health.controller';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { RequestIdMiddleware } from './request-id.middleware';
     LoyaltyModule,
     MerchantsModule, // <— добавили
   ],
+  controllers: [HealthController],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

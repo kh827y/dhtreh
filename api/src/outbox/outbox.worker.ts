@@ -56,6 +56,7 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
               'X-Loyalty-Signature': `v1,ts=${ts},sig=${sig}`,
               'X-Merchant-Id': ev.merchantId,
               'X-Signature-Timestamp': ts,
+              'X-Event-Id': ev.id,
             },
             body,
           });
@@ -87,4 +88,3 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
     return new Date(Date.now() + backoff + jitter);
   }
 }
-

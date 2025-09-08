@@ -127,4 +127,23 @@ export class LoyaltyController {
     const before = beforeStr ? new Date(beforeStr) : undefined;
     return this.service.transactions(merchantId, customerId, limit, before, { outletId, deviceId, staffId });
   }
+
+  // Публичные списки для фронтов (без AdminGuard)
+  @Get('outlets/:merchantId')
+  async publicOutlets(@Param('merchantId') merchantId: string) {
+    const items = await this.prisma.outlet.findMany({ where: { merchantId }, orderBy: { name: 'asc' } });
+    return items.map(o => ({ id: o.id, name: o.name, address: o.address ?? undefined }));
+  }
+
+  @Get('devices/:merchantId')
+  async publicDevices(@Param('merchantId') merchantId: string) {
+    const items = await this.prisma.device.findMany({ where: { merchantId }, orderBy: { createdAt: 'asc' } });
+    return items.map(d => ({ id: d.id, type: d.type, label: d.label ?? undefined, outletId: d.outletId ?? undefined }));
+  }
+
+  @Get('staff/:merchantId')
+  async publicStaff(@Param('merchantId') merchantId: string) {
+    const items = await this.prisma.staff.findMany({ where: { merchantId, status: 'ACTIVE' }, orderBy: { createdAt: 'asc' } });
+    return items.map(s => ({ id: s.id, login: s.login ?? undefined, role: s.role }));
+  }
 }
