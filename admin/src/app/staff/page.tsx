@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 
 const API = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
 const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
-const ADMIN_KEY = process.env.NEXT_PUBLIC_ADMIN_KEY || '';
 
 type Staff = { id: string; login?: string|null; email?: string|null; role: string; status: string; createdAt: string };
 
@@ -20,7 +19,7 @@ export default function StaffPage() {
   async function load() {
     setLoading(true); setMsg('');
     try {
-      const r = await fetch(`${API}/merchants/${MERCHANT}/staff`, { headers: { 'x-admin-key': ADMIN_KEY } });
+      const r = await fetch(`/api/admin/merchants/${MERCHANT}/staff`);
       if (!r.ok) throw new Error(await r.text());
       setItems(await r.json());
     } catch (e: any) { setMsg('Ошибка: ' + e?.message); } finally { setLoading(false); }
@@ -28,7 +27,7 @@ export default function StaffPage() {
   async function create() {
     setMsg('');
     try {
-      const r = await fetch(`${API}/merchants/${MERCHANT}/staff`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY }, body: JSON.stringify({ login: login||undefined, email: email||undefined, role }) });
+      const r = await fetch(`/api/admin/merchants/${MERCHANT}/staff`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ login: login||undefined, email: email||undefined, role }) });
       if (!r.ok) throw new Error(await r.text());
       setLogin(''); setEmail(''); setRole('CASHIER');
       await load();
@@ -36,19 +35,19 @@ export default function StaffPage() {
   }
   async function save(s: Staff) {
     const body = { login: s.login||undefined, email: s.email||undefined, role: s.role, status: s.status, allowedOutletId: (s as any).allowedOutletId||undefined, allowedDeviceId: (s as any).allowedDeviceId||undefined };
-    const r = await fetch(`${API}/merchants/${MERCHANT}/staff/${s.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY }, body: JSON.stringify(body) });
+    const r = await fetch(`/api/admin/merchants/${MERCHANT}/staff/${s.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!r.ok) alert(await r.text());
   }
   async function del(id: string) {
     if (!confirm('Удалить сотрудника?')) return;
-    const r = await fetch(`${API}/merchants/${MERCHANT}/staff/${id}`, { method: 'DELETE', headers: { 'x-admin-key': ADMIN_KEY } });
+    const r = await fetch(`/api/admin/merchants/${MERCHANT}/staff/${id}`, { method: 'DELETE' });
     if (!r.ok) return alert(await r.text());
     load();
   }
   async function issueToken(id: string) {
     setMsg(''); setLastToken('');
     try {
-      const r = await fetch(`${API}/merchants/${MERCHANT}/staff/${id}/token`, { method: 'POST', headers: { 'x-admin-key': ADMIN_KEY } });
+      const r = await fetch(`/api/admin/merchants/${MERCHANT}/staff/${id}/token`, { method: 'POST' });
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
       setLastToken(data.token || '');
@@ -58,7 +57,7 @@ export default function StaffPage() {
   async function revokeToken(id: string) {
     setMsg(''); setLastToken('');
     try {
-      const r = await fetch(`${API}/merchants/${MERCHANT}/staff/${id}/token`, { method: 'DELETE', headers: { 'x-admin-key': ADMIN_KEY } });
+      const r = await fetch(`/api/admin/merchants/${MERCHANT}/staff/${id}/token`, { method: 'DELETE' });
       if (!r.ok) throw new Error(await r.text());
       await load();
     } catch (e: any) { setMsg('Ошибка: ' + e?.message); }

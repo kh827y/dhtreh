@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 
 const API = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
 const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
-const ADMIN_KEY = process.env.NEXT_PUBLIC_ADMIN_KEY || '';
 
 type Device = { id: string; type: string; outletId?: string|null; label?: string|null; createdAt: string };
 type Outlet = { id: string; name: string };
@@ -23,8 +22,8 @@ export default function DevicesPage() {
     setLoading(true); setMsg('');
     try {
       const [rd, ro] = await Promise.all([
-        fetch(`${API}/merchants/${MERCHANT}/devices`, { headers: { 'x-admin-key': ADMIN_KEY } }),
-        fetch(`${API}/merchants/${MERCHANT}/outlets`, { headers: { 'x-admin-key': ADMIN_KEY } }),
+        fetch(`/api/admin/merchants/${MERCHANT}/devices`),
+        fetch(`/api/admin/merchants/${MERCHANT}/outlets`),
       ]);
       if (!rd.ok) throw new Error(await rd.text());
       if (!ro.ok) throw new Error(await ro.text());
@@ -35,26 +34,26 @@ export default function DevicesPage() {
   async function create() {
     setMsg('');
     try {
-      const r = await fetch(`${API}/merchants/${MERCHANT}/devices`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY }, body: JSON.stringify({ type, outletId: outletId||undefined, label }) });
+      const r = await fetch(`/api/admin/merchants/${MERCHANT}/devices`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type, outletId: outletId||undefined, label }) });
       if (!r.ok) throw new Error(await r.text());
       setType('VIRTUAL'); setLabel(''); setOutletId('');
       await load();
     } catch (e: any) { setMsg('Ошибка: ' + e?.message); }
   }
   async function save(d: Device) {
-    const r = await fetch(`${API}/merchants/${MERCHANT}/devices/${d.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY }, body: JSON.stringify({ outletId: d.outletId||undefined, label: d.label||undefined }) });
+    const r = await fetch(`/api/admin/merchants/${MERCHANT}/devices/${d.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ outletId: d.outletId||undefined, label: d.label||undefined }) });
     if (!r.ok) alert(await r.text());
   }
   async function del(id: string) {
     if (!confirm('Удалить устройство?')) return;
-    const r = await fetch(`${API}/merchants/${MERCHANT}/devices/${id}`, { method: 'DELETE', headers: { 'x-admin-key': ADMIN_KEY } });
+    const r = await fetch(`/api/admin/merchants/${MERCHANT}/devices/${id}`, { method: 'DELETE' });
     if (!r.ok) return alert(await r.text());
     load();
   }
   async function issueSecret(id: string) {
     setMsg(''); setLastSecret('');
     try {
-      const r = await fetch(`${API}/merchants/${MERCHANT}/devices/${id}/secret`, { method: 'POST', headers: { 'x-admin-key': ADMIN_KEY } });
+      const r = await fetch(`/api/admin/merchants/${MERCHANT}/devices/${id}/secret`, { method: 'POST' });
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
       setLastSecret(data.secret || '');
@@ -64,7 +63,7 @@ export default function DevicesPage() {
   async function revokeSecret(id: string) {
     setMsg(''); setLastSecret('');
     try {
-      const r = await fetch(`${API}/merchants/${MERCHANT}/devices/${id}/secret`, { method: 'DELETE', headers: { 'x-admin-key': ADMIN_KEY } });
+      const r = await fetch(`/api/admin/merchants/${MERCHANT}/devices/${id}/secret`, { method: 'DELETE' });
       if (!r.ok) throw new Error(await r.text());
       await load();
     } catch (e: any) { setMsg('Ошибка: ' + e?.message); }

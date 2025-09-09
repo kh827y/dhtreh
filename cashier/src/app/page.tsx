@@ -53,6 +53,13 @@ export default function Page() {
   const [deviceId, setDeviceId] = useState<string>('');
   const [staffId, setStaffId] = useState<string>('');
   const [category, setCategory] = useState<string>('');
+  const [staffKey, setStaffKey] = useState<string>('');
+  useEffect(() => {
+    try { const v = localStorage.getItem('cashier_staff_key_v1'); if (v != null) setStaffKey(v); } catch {}
+  }, []);
+  useEffect(() => {
+    try { localStorage.setItem('cashier_staff_key_v1', staffKey || ''); } catch {}
+  }, [staffKey]);
 
   // Сгенерируем уникальный orderId при первом монтировании, чтобы избежать идемпотентных коллизий после перезагрузки
   useEffect(() => {
@@ -67,7 +74,7 @@ export default function Page() {
     try {
       const r = await fetch(`${API_BASE}/loyalty/quote`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId },
+        headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId, ...(staffKey?{ 'X-Staff-Key': staffKey }: {}) },
         body: JSON.stringify({ merchantId, mode, userToken, orderId, total, eligibleTotal, outletId: outletId || undefined, deviceId: deviceId || undefined, staffId: staffId || undefined, category: category || undefined }),
       });
       if (!r.ok) {
@@ -103,7 +110,7 @@ export default function Page() {
     try {
       const r = await fetch(`${API_BASE}/loyalty/commit`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId },
+        headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId, ...(staffKey?{ 'X-Staff-Key': staffKey }: {}) },
         body: JSON.stringify({ merchantId, holdId, orderId, receiptNumber: '000001', requestId }),
       });
       const data = await r.json();
@@ -189,7 +196,7 @@ export default function Page() {
     try {
       const r = await fetch(`${API_BASE}/loyalty/refund`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(staffKey?{ 'X-Staff-Key': staffKey }: {}) },
         body: JSON.stringify({ merchantId, orderId: refundOrderId, refundTotal }),
       });
       if (!r.ok) throw new Error(await r.text());
@@ -281,6 +288,12 @@ export default function Page() {
             <button onClick={loadBalance} style={{ padding: '8px 12px' }}>
               Баланс
             </button>
+            <input
+              value={staffKey}
+              onChange={(e) => setStaffKey(e.target.value)}
+              placeholder="X-Staff-Key (если требуется)"
+              style={{ flex: 1, minWidth: 240, padding: 8 }}
+            />
           </div>
         </label>
 

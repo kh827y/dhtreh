@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react';
 
 const API = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
 const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
-const ADMIN_KEY = process.env.NEXT_PUBLIC_ADMIN_KEY || '';
 
 type Ev = {
   id: string;
@@ -31,12 +30,12 @@ export default function OutboxPage() {
   async function load() {
     setLoading(true); setMsg('');
     try {
-      const url = new URL(`${API}/merchants/${MERCHANT}/outbox`);
+      const url = new URL(`/api/admin/merchants/${MERCHANT}/outbox`, window.location.origin);
       if (status) url.searchParams.set('status', status);
       if (type) url.searchParams.set('type', type);
       if (since) url.searchParams.set('since', since);
       if (limit) url.searchParams.set('limit', String(limit));
-      const r = await fetch(url.toString(), { headers: { 'x-admin-key': ADMIN_KEY } });
+      const r = await fetch(url.toString());
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
       setItems(data);
@@ -48,7 +47,7 @@ export default function OutboxPage() {
   async function retry(ev: Ev) {
     setMsg('');
     try {
-      const r = await fetch(`${API}/merchants/${MERCHANT}/outbox/${ev.id}/retry`, { method: 'POST', headers: { 'x-admin-key': ADMIN_KEY } });
+      const r = await fetch(`/api/admin/merchants/${MERCHANT}/outbox/${ev.id}/retry`, { method: 'POST' });
       if (!r.ok) throw new Error(await r.text());
       await load();
       setMsg('Отправка поставлена в очередь');
@@ -59,9 +58,9 @@ export default function OutboxPage() {
   async function retryAll(status?: string) {
     setMsg('');
     try {
-      const url = new URL(`${API}/merchants/${MERCHANT}/outbox/retryAll`);
+      const url = new URL(`/api/admin/merchants/${MERCHANT}/outbox/retryAll`, window.location.origin);
       if (status) url.searchParams.set('status', status);
-      const r = await fetch(url.toString(), { method: 'POST', headers: { 'x-admin-key': ADMIN_KEY } });
+      const r = await fetch(url.toString(), { method: 'POST' });
       if (!r.ok) throw new Error(await r.text());
       await load();
       setMsg('Переотправка поставлена в очередь');
@@ -70,7 +69,7 @@ export default function OutboxPage() {
   async function remove(ev: Ev) {
     setMsg('');
     try {
-      const r = await fetch(`${API}/merchants/${MERCHANT}/outbox/${ev.id}`, { method: 'DELETE', headers: { 'x-admin-key': ADMIN_KEY } });
+      const r = await fetch(`/api/admin/merchants/${MERCHANT}/outbox/${ev.id}`, { method: 'DELETE' });
       if (!r.ok) throw new Error(await r.text());
       await load();
     } catch (e: any) { setMsg('Ошибка: ' + e?.message); }

@@ -87,6 +87,7 @@ model IdempotencyKey {
 
   @@unique([merchantId, key])
   @@index([merchantId, createdAt])
+  @@index([expiresAt])
 }
 
 model Consent {
@@ -210,6 +211,7 @@ model Transaction {
   @@index([merchantId, outletId])
   @@index([merchantId, deviceId])
   @@index([merchantId, staffId])
+  @@index([merchantId, customerId, type, createdAt])
 }
 
 model QrNonce {

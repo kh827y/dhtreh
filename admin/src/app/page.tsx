@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react';
 
 const API = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
 const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
-const ADMIN_KEY = process.env.NEXT_PUBLIC_ADMIN_KEY || '';
 
 export default function AdminPage() {
   const [loading, setLoading] = useState(false);
@@ -33,9 +32,7 @@ export default function AdminPage() {
     setLoading(true);
     setMsg('');
     try {
-      const r = await fetch(`${API}/merchants/${MERCHANT}/settings`, {
-        headers: { 'x-admin-key': ADMIN_KEY }
-      });
+      const r = await fetch(`/api/admin/merchants/${MERCHANT}/settings`);
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
       setEarnBps(data.earnBps);
@@ -64,9 +61,9 @@ export default function AdminPage() {
     setLoading(true);
     setMsg('');
     try {
-      const r = await fetch(`${API}/merchants/${MERCHANT}/settings`, {
+      const r = await fetch(`/api/admin/merchants/${MERCHANT}/settings`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ earnBps, redeemLimitBps, qrTtlSec, webhookUrl, webhookSecret, webhookKeyId, redeemCooldownSec, earnCooldownSec, redeemDailyCap, earnDailyCap, requireJwtForQuote, rulesJson: JSON.parse(rulesJson||'null'), requireBridgeSig, bridgeSecret, requireStaffKey }),
       });
       if (!r.ok) throw new Error(await r.text());

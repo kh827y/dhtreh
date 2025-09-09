@@ -1,4 +1,5 @@
 import { Body, Controller, Post, Get, Param, Query, BadRequestException, Res, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { LoyaltyService } from './loyalty.service';
 import { CommitDto, QrMintDto, QuoteDto, RefundDto } from './dto';
 import { looksLikeJwt, signQrToken, verifyQrToken } from './token.util';
@@ -155,16 +156,19 @@ export class LoyaltyController {
   }
 
   @Get('balance/:merchantId/:customerId')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
   balance2(@Param('merchantId') merchantId: string, @Param('customerId') customerId: string) {
     return this.service.balance(merchantId, customerId);
   }
 
   @Get('balance/:customerId')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
   balanceBackCompat(@Param('customerId') customerId: string) {
     return this.service.balance('M-1', customerId);
   }
 
   @Post('qr')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   async mintQr(@Body() dto: QrMintDto) {
     const secret = process.env.QR_JWT_SECRET || 'dev_change_me';
     let ttl = dto.ttlSec ?? 60;
@@ -178,6 +182,7 @@ export class LoyaltyController {
 
   // Публичные настройки, доступные мини-аппе (без админ-ключа)
   @Get('settings/:merchantId')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
   async publicSettings(@Param('merchantId') merchantId: string) {
     const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId } });
     return { merchantId, qrTtlSec: s?.qrTtlSec ?? 120 };
@@ -239,6 +244,7 @@ export class LoyaltyController {
 
   // Telegram miniapp auth: принимает initData и возвращает customerId
   @Post('teleauth')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async teleauth(@Body('initData') initData: string) {
     const token = process.env.TELEGRAM_BOT_TOKEN || '';
     if (!token) throw new BadRequestException('Bot token not configured');
@@ -248,6 +254,7 @@ export class LoyaltyController {
   }
 
   @Get('transactions')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
   transactions(
     @Query('merchantId') merchantId: string,
     @Query('customerId') customerId: string,
@@ -264,18 +271,21 @@ export class LoyaltyController {
 
   // Публичные списки для фронтов (без AdminGuard)
   @Get('outlets/:merchantId')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
   async publicOutlets(@Param('merchantId') merchantId: string) {
     const items = await this.prisma.outlet.findMany({ where: { merchantId }, orderBy: { name: 'asc' } });
     return items.map(o => ({ id: o.id, name: o.name, address: o.address ?? undefined }));
   }
 
   @Get('devices/:merchantId')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
   async publicDevices(@Param('merchantId') merchantId: string) {
     const items = await this.prisma.device.findMany({ where: { merchantId }, orderBy: { createdAt: 'asc' } });
     return items.map(d => ({ id: d.id, type: d.type, label: d.label ?? undefined, outletId: d.outletId ?? undefined }));
   }
 
   @Get('staff/:merchantId')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
   async publicStaff(@Param('merchantId') merchantId: string) {
     const items = await this.prisma.staff.findMany({ where: { merchantId, status: 'ACTIVE' }, orderBy: { createdAt: 'asc' } });
     return items.map(s => ({ id: s.id, login: s.login ?? undefined, role: s.role }));
@@ -298,12 +308,14 @@ export class LoyaltyController {
 
   // Согласия на коммуникации
   @Get('consent')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async getConsent(@Query('merchantId') merchantId: string, @Query('customerId') customerId: string) {
     const c = await this.prisma.consent.findUnique({ where: { merchantId_customerId: { merchantId, customerId } } });
     return { granted: !!c, consentAt: c?.consentAt?.toISOString() };
   }
 
   @Post('consent')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   async setConsent(@Body() body: { merchantId: string; customerId: string; granted: boolean }) {
     if (!body?.merchantId || !body?.customerId) throw new BadRequestException('merchantId and customerId required');
     if (body.granted) {

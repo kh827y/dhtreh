@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 
 const API = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
 const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
-const ADMIN_KEY = process.env.NEXT_PUBLIC_ADMIN_KEY || '';
 
 type Outlet = { id: string; name: string; address?: string|null; createdAt: string };
 
@@ -18,7 +17,7 @@ export default function OutletsPage() {
   async function load() {
     setLoading(true); setMsg('');
     try {
-      const r = await fetch(`${API}/merchants/${MERCHANT}/outlets`, { headers: { 'x-admin-key': ADMIN_KEY } });
+      const r = await fetch(`/api/admin/merchants/${MERCHANT}/outlets`);
       if (!r.ok) throw new Error(await r.text());
       setItems(await r.json());
     } catch (e: any) { setMsg('Ошибка: ' + e?.message); } finally { setLoading(false); }
@@ -26,19 +25,19 @@ export default function OutletsPage() {
   async function create() {
     setMsg('');
     try {
-      const r = await fetch(`${API}/merchants/${MERCHANT}/outlets`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY }, body: JSON.stringify({ name, address }) });
+      const r = await fetch(`/api/admin/merchants/${MERCHANT}/outlets`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, address }) });
       if (!r.ok) throw new Error(await r.text());
       setName(''); setAddress('');
       await load();
     } catch (e: any) { setMsg('Ошибка: ' + e?.message); }
   }
   async function save(o: Outlet) {
-    const r = await fetch(`${API}/merchants/${MERCHANT}/outlets/${o.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY }, body: JSON.stringify({ name: o.name, address: o.address||'' }) });
+    const r = await fetch(`/api/admin/merchants/${MERCHANT}/outlets/${o.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: o.name, address: o.address||'' }) });
     if (!r.ok) alert(await r.text());
   }
   async function del(id: string) {
     if (!confirm('Удалить точку?')) return;
-    const r = await fetch(`${API}/merchants/${MERCHANT}/outlets/${id}`, { method: 'DELETE', headers: { 'x-admin-key': ADMIN_KEY } });
+    const r = await fetch(`/api/admin/merchants/${MERCHANT}/outlets/${id}`, { method: 'DELETE' });
     if (!r.ok) return alert(await r.text());
     load();
   }
@@ -77,4 +76,3 @@ export default function OutletsPage() {
     </main>
   );
 }
-
