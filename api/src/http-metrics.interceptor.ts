@@ -2,6 +2,7 @@ import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nes
 import { Observable, throwError } from 'rxjs';
 import { tap, catchError } from 'rxjs/operators';
 import { MetricsService } from './metrics.service';
+import { context as otelContext, trace as otelTrace } from '@opentelemetry/api';
 
 @Injectable()
 export class HttpMetricsInterceptor implements NestInterceptor {
@@ -15,6 +16,14 @@ export class HttpMetricsInterceptor implements NestInterceptor {
     const method: string = req.method || 'GET';
     // Берём паттерн маршрута, чтобы не плодить кардинальности
     const route: string = (req.route && req.route.path) || req.path || req.originalUrl || 'unknown';
+
+    // Устанавливаем X-Trace-Id/X-Span-Id, если доступны
+    try {
+      const span = otelTrace.getSpan(otelContext.active());
+      const sc = span?.spanContext();
+      if (sc?.traceId) res.setHeader('X-Trace-Id', sc.traceId);
+      if (sc?.spanId) res.setHeader('X-Span-Id', sc.spanId);
+    } catch {}
 
     const record = (status: number) => {
       try {
@@ -35,4 +44,3 @@ export class HttpMetricsInterceptor implements NestInterceptor {
     );
   }
 }
-

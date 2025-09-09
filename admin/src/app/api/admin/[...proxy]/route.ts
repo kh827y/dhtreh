@@ -5,8 +5,9 @@ export const runtime = 'nodejs';
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
 const ADMIN_KEY = process.env.ADMIN_KEY || process.env.NEXT_PUBLIC_ADMIN_KEY || '';
 
-async function proxy(req: NextRequest, { params }: { params: { proxy: string[] } }) {
-  const path = Array.isArray(params?.proxy) ? params.proxy.join('/') : '';
+async function proxy(req: NextRequest, ctx: { params: Promise<{ proxy: string[] }> }) {
+  const { proxy } = await ctx.params;
+  const path = Array.isArray(proxy) ? proxy.join('/') : '';
   const search = req.nextUrl.search || '';
   const targetUrl = `${API_BASE}/${path}${search}`;
 
@@ -34,4 +35,3 @@ async function proxy(req: NextRequest, { params }: { params: { proxy: string[] }
 }
 
 export { proxy as GET, proxy as POST, proxy as PUT, proxy as DELETE, proxy as PATCH };
-

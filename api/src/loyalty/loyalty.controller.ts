@@ -1,4 +1,5 @@
 import { Body, Controller, Post, Get, Param, Query, BadRequestException, Res, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { ApiHeader, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { LoyaltyService } from './loyalty.service';
 import { CommitDto, QrMintDto, QuoteDto, RefundDto } from './dto';
@@ -12,6 +13,7 @@ import { validateTelegramInitData } from './telegram.util';
 
 @Controller('loyalty')
 @UseGuards(CashierGuard)
+@ApiTags('loyalty')
 export class LoyaltyController {
   constructor(private readonly service: LoyaltyService, private readonly prisma: PrismaService, private readonly metrics: MetricsService) {}
 
@@ -37,6 +39,8 @@ export class LoyaltyController {
   }
 
   @Post('quote')
+  @ApiHeader({ name: 'X-Staff-Key', required: false, description: 'Ключ кассира (если включено requireStaffKey)' })
+  @ApiHeader({ name: 'X-Bridge-Signature', required: false, description: 'Подпись Bridge (если включено requireBridgeSig)' })
   async quote(@Body() dto: QuoteDto, @Req() req: Request & { requestId?: string }) {
     const t0 = Date.now();
     try {
@@ -85,6 +89,8 @@ export class LoyaltyController {
   }
 
   @Post('commit')
+  @ApiHeader({ name: 'Idempotency-Key', required: false, description: 'Идемпотентность COMMIT' })
+  @ApiHeader({ name: 'X-Bridge-Signature', required: false, description: 'Подпись Bridge (если включено requireBridgeSig)' })
   async commit(@Body() dto: CommitDto, @Res({ passthrough: true }) res: Response, @Req() req: Request & { requestId?: string }) {
     const t0 = Date.now();
     let data: any;
@@ -189,6 +195,8 @@ export class LoyaltyController {
   }
 
   @Post('refund')
+  @ApiHeader({ name: 'Idempotency-Key', required: false, description: 'Идемпотентность REFUND' })
+  @ApiHeader({ name: 'X-Bridge-Signature', required: false, description: 'Подпись Bridge (если включено requireBridgeSig)' })
   async refund(@Body() dto: RefundDto, @Res({ passthrough: true }) res: Response, @Req() req: Request & { requestId?: string }) {
     let data: any;
     // проверка подписи Bridge до выполнения

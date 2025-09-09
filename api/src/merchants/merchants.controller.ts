@@ -2,9 +2,12 @@ import { Body, Controller, Delete, Get, Param, Post, Put, UseGuards, Query } fro
 import { MerchantsService } from './merchants.service';
 import { CreateDeviceDto, CreateOutletDto, CreateStaffDto, UpdateDeviceDto, UpdateMerchantSettingsDto, UpdateOutletDto, UpdateStaffDto } from './dto';
 import { AdminGuard } from '../admin.guard';
+import { ApiHeader, ApiTags } from '@nestjs/swagger';
 
 @Controller('merchants')
 @UseGuards(AdminGuard)
+@ApiTags('merchants')
+@ApiHeader({ name: 'X-Admin-Key', required: true, description: 'Админ-ключ (в проде проксируется сервером админки)' })
 export class MerchantsController {
   constructor(private readonly service: MerchantsService) {}
 

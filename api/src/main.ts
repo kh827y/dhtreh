@@ -12,6 +12,7 @@ import { HttpMetricsInterceptor } from './http-metrics.interceptor';
 import { MetricsService } from './metrics.service';
 // OpenTelemetry (инициализация по флагу)
 import './otel';
+import { context as otelContext, trace as otelTrace } from '@opentelemetry/api';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -43,7 +44,15 @@ async function bootstrap() {
     customProps: (req) => {
       const mId = (req as any).body?.merchantId || req.headers['x-merchant-id'] || undefined;
       const reqId = (req as any).requestId || req.headers['x-request-id'] || undefined;
-      return { requestId: reqId, merchantId: mId } as any;
+      try {
+        const span = otelTrace.getSpan(otelContext.active());
+        const sc = span?.spanContext();
+        const traceId = sc?.traceId;
+        const spanId = sc?.spanId;
+        return { requestId: reqId, merchantId: mId, traceId, spanId } as any;
+      } catch {
+        return { requestId: reqId, merchantId: mId } as any;
+      }
     },
   }));
 
