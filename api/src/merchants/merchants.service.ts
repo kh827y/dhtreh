@@ -29,10 +29,11 @@ export class MerchantsService {
       earnDailyCap: s.earnDailyCap ?? null,
       requireJwtForQuote: s.requireJwtForQuote ?? false,
       rulesJson: s.rulesJson ?? null,
+      requireStaffKey: s.requireStaffKey ?? false,
     };
   }
 
-  async updateSettings(merchantId: string, earnBps: number, redeemLimitBps: number, qrTtlSec?: number, webhookUrl?: string, webhookSecret?: string, webhookKeyId?: string, redeemCooldownSec?: number, earnCooldownSec?: number, redeemDailyCap?: number, earnDailyCap?: number, requireJwtForQuote?: boolean, rulesJson?: any, requireBridgeSig?: boolean, bridgeSecret?: string) {
+  async updateSettings(merchantId: string, earnBps: number, redeemLimitBps: number, qrTtlSec?: number, webhookUrl?: string, webhookSecret?: string, webhookKeyId?: string, redeemCooldownSec?: number, earnCooldownSec?: number, redeemDailyCap?: number, earnDailyCap?: number, requireJwtForQuote?: boolean, rulesJson?: any, requireBridgeSig?: boolean, bridgeSecret?: string, requireStaffKey?: boolean) {
     // убедимся, что мерчант есть
     await this.prisma.merchant.upsert({
       where: { id: merchantId },
@@ -57,6 +58,7 @@ export class MerchantsService {
         earnDailyCap: earnDailyCap ?? undefined,
         requireJwtForQuote: requireJwtForQuote ?? undefined,
         rulesJson: rulesJson ?? undefined,
+        requireStaffKey: requireStaffKey ?? undefined,
         updatedAt: new Date(),
       },
       create: {
@@ -75,6 +77,7 @@ export class MerchantsService {
         earnDailyCap: earnDailyCap ?? null,
         requireJwtForQuote: requireJwtForQuote ?? false,
         rulesJson: rulesJson ?? null,
+        requireStaffKey: requireStaffKey ?? false,
       },
     });
     return {
@@ -93,6 +96,7 @@ export class MerchantsService {
       earnDailyCap: updated.earnDailyCap,
       requireJwtForQuote: updated.requireJwtForQuote,
       rulesJson: updated.rulesJson,
+      requireStaffKey: updated.requireStaffKey,
     };
   }
 

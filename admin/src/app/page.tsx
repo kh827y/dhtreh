@@ -112,6 +112,13 @@ export default function AdminPage() {
           <div style={{ color: '#666', fontSize: 12 }}>Пример: массив правил с условиями channelIn/weekdayIn/minEligible и действиями earnBps/redeemLimitBps</div>
         </label>
 
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input type="checkbox" checked={requireJwtForQuote} onChange={(e) => setRequireJwtForQuote(e.target.checked)} /> Требовать JWT для QUOTE
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input type="checkbox" checked={requireBridgeSig} onChange={(e) => setRequireBridgeSig(e.target.checked)} /> Требовать подпись Bridge
+        </label>
+
         <label>
           Лимит списания (basis points):
           <input type="number" min={0} max={10000} value={redeemLimitBps}

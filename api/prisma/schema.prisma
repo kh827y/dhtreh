@@ -73,6 +73,7 @@ model MerchantSettings {
   requireBridgeSig   Boolean @default(false)
   bridgeSecret       String?
   rulesJson          Json?
+  requireStaffKey    Boolean @default(false)
   updatedAt      DateTime @default(now())
 }
 

@@ -1,5 +1,6 @@
 /* POS Bridge MVP */
 const express = require('express');
+const cors = require('cors');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -8,6 +9,7 @@ require('dotenv').config();
 
 const app = express();
 app.use(express.json({ limit: '256kb' }));
+app.use(cors({ origin: true }));
 
 const PORT = Number(process.env.BRIDGE_PORT || 18080);
 const API = process.env.API_BASE || 'http://localhost:3000';
@@ -29,6 +31,11 @@ function saveQueue(q) {
   try { fs.writeFileSync(queueFile, JSON.stringify(q, null, 2)); } catch {}
 }
 let queue = loadQueue();
+let metrics = {
+  queue_enqueued_total: 0,
+  queue_flushed_total: 0,
+  queue_fail_total: 0,
+};
 
 function reqId() { return 'req_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8); }
 function signBody(secret, body) {
@@ -72,9 +79,11 @@ async function flushQueue() {
       }
       // success, remove
       queue = queue.filter(q => q.id !== item.id);
+      metrics.queue_flushed_total++;
       changed = true;
     } catch (e) {
       // keep in queue
+      metrics.queue_fail_total++;
     }
   }
   if (changed) saveQueue(queue);
@@ -120,6 +129,7 @@ app.post('/commit', async (req, res) => {
       // offline enqueue
       const id = uuidv4();
       queue.push({ id, type: 'commit', idemKey, body: { merchantId, holdId, orderId, receiptNumber } });
+      metrics.queue_enqueued_total++;
       saveQueue(queue);
       res.status(202).json({ queued: true, id, reason: String(e.message || e) });
     }
@@ -143,6 +153,7 @@ app.post('/refund', async (req, res) => {
     } catch (e) {
       const id = uuidv4();
       queue.push({ id, type: 'refund', idemKey, body: { merchantId, orderId, refundTotal, refundEligibleTotal } });
+      metrics.queue_enqueued_total++;
       saveQueue(queue);
       res.status(202).json({ queued: true, id, reason: String(e.message || e) });
     }
@@ -159,6 +170,24 @@ app.post('/queue/flush', async (req, res) => {
 app.get('/queue/status', (req, res) => {
   const items = queue.slice(0, 50).map(q => ({ id: q.id, type: q.type, idemKey: q.idemKey }));
   res.json({ pending: queue.length, preview: items });
+});
+
+app.get('/metrics', (req, res) => {
+  res.setHeader('Content-Type', 'text/plain; version=0.0.4');
+  const lines = [];
+  lines.push('# HELP bridge_queue_pending current pending queue');
+  lines.push('# TYPE bridge_queue_pending gauge');
+  lines.push(`bridge_queue_pending ${queue.length}`);
+  lines.push('# HELP bridge_queue_enqueued_total total enqueued jobs');
+  lines.push('# TYPE bridge_queue_enqueued_total counter');
+  lines.push(`bridge_queue_enqueued_total ${metrics.queue_enqueued_total}`);
+  lines.push('# HELP bridge_queue_flushed_total total flushed jobs');
+  lines.push('# TYPE bridge_queue_flushed_total counter');
+  lines.push(`bridge_queue_flushed_total ${metrics.queue_flushed_total}`);
+  lines.push('# HELP bridge_queue_fail_total total failed flush attempts');
+  lines.push('# TYPE bridge_queue_fail_total counter');
+  lines.push(`bridge_queue_fail_total ${metrics.queue_fail_total}`);
+  res.end(lines.join('\n') + '\n');
 });
 
 app.listen(PORT, '127.0.0.1', () => {

@@ -31,6 +31,7 @@ export class MerchantsController {
       dto.rulesJson,
       dto.requireBridgeSig,
       dto.bridgeSecret,
+      dto.requireStaffKey,
     );
   }
 
