@@ -8,7 +8,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <h1 style={{ margin: '8px 0 16px' }}>Loyalty Admin</h1>
           <nav style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
             <a href="/" style={{ color: '#89b4fa' }}>Главная</a>
+            <a href="/settings" style={{ color: '#89b4fa' }}>Настройки мерчанта</a>
             <a href="/telegram" style={{ color: '#89b4fa' }}>Telegram / Мини‑аппа</a>
+            <a href="/outbox" style={{ color: '#89b4fa' }}>Outbox</a>
           </nav>
           {children}
         </div>
@@ -16,4 +18,3 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     </html>
   );
 }
-

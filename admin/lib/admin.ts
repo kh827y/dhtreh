@@ -24,6 +24,15 @@ export type MerchantSettings = {
   telegramBotUsername?: string | null;
   telegramStartParamRequired?: boolean;
   miniappBaseUrl?: string | null;
+  // интеграции/вебхуки/bridge (частично серверные поля)
+  webhookUrl?: string | null;
+  webhookSecret?: string | null;
+  webhookKeyId?: string | null;
+  webhookSecretNext?: string | null;
+  webhookKeyIdNext?: string | null;
+  useWebhookNext?: boolean;
+  bridgeSecret?: string | null;
+  bridgeSecretNext?: string | null;
 };
 
 export async function getSettings(merchantId: string): Promise<MerchantSettings> {
@@ -33,4 +42,3 @@ export async function getSettings(merchantId: string): Promise<MerchantSettings>
 export async function updateSettings(merchantId: string, dto: Partial<MerchantSettings> & { earnBps: number; redeemLimitBps: number }): Promise<MerchantSettings> {
   return http(`/merchants/${encodeURIComponent(merchantId)}/settings`, { method: 'PUT', body: JSON.stringify(dto) });
 }
-
