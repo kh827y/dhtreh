@@ -52,7 +52,16 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, cfg);
   SwaggerModule.setup('docs', app, document);
 
-  // Префикс /api/v1 планируется включить на следующем этапе с обновлением фронтов
+  // Совместимый алиас: пробрасываем /api/v1/* на существующие маршруты, чтобы не ломать клиентов
+  const http = app.getHttpAdapter().getInstance();
+  http.use('/api/v1', (req, _res, next) => {
+    try {
+      const orig = (req as any).originalUrl || req.url || '';
+      (req as any).url = String(orig).replace(/^\/api\/v1/, '') || '/';
+    } catch {}
+    next();
+  });
+
   await app.listen(3000);
   console.log(`API on http://localhost:3000`);
 }

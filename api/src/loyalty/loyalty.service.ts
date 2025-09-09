@@ -345,6 +345,7 @@ export class LoyaltyService {
             merchantId: hold.merchantId,
             eventType: 'loyalty.commit',
             payload: {
+              schemaVersion: 1,
               holdId: hold.id,
               orderId,
               customerId: hold.customerId,
@@ -425,6 +426,7 @@ export class LoyaltyService {
           merchantId,
           eventType: 'loyalty.refund',
           payload: {
+            schemaVersion: 1,
             orderId,
             customerId: receipt.customerId,
             merchantId,

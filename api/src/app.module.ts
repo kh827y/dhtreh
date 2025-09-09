@@ -11,6 +11,7 @@ import { MetricsController } from './metrics.controller';
 import { MetricsModule } from './metrics.module';
 import { HoldGcWorker } from './hold-gc.worker';
 import { IdempotencyGcWorker } from './idempotency-gc.worker';
+import { OutboxDispatcherWorker } from './outbox-dispatcher.worker';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { IdempotencyGcWorker } from './idempotency-gc.worker';
   providers: [
     HoldGcWorker,
     IdempotencyGcWorker,
+    OutboxDispatcherWorker,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
