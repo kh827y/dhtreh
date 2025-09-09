@@ -14,12 +14,25 @@ export default function SettingsPage() {
   const [rules, setRules] = useState<string>('');
   const [msg, setMsg] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
+  // локальные поля для секретов (не подставляем значения из API)
+  const [webhookUrl, setWebhookUrl] = useState<string>('');
+  const [webhookKeyId, setWebhookKeyId] = useState<string>('');
+  const [webhookSecret, setWebhookSecret] = useState<string>('');
+  const [webhookKeyIdNext, setWebhookKeyIdNext] = useState<string>('');
+  const [webhookSecretNext, setWebhookSecretNext] = useState<string>('');
+  const [useWebhookNext, setUseWebhookNext] = useState<boolean>(false);
+  const [bridgeSecret, setBridgeSecret] = useState<string>('');
+  const [bridgeSecretNext, setBridgeSecretNext] = useState<string>('');
 
   useEffect(() => {
     setLoading(true);
     getSettings(merchantId).then(r => {
       setS(r);
       setRules(r.rulesJson ? JSON.stringify(r.rulesJson, null, 2) : '');
+      setWebhookUrl(r.webhookUrl || '');
+      setWebhookKeyId(r.webhookKeyId || '');
+      setWebhookKeyIdNext(r.webhookKeyIdNext || '');
+      setUseWebhookNext(!!r.useWebhookNext);
     }).catch((e:any)=>setMsg(String(e?.message||e))).finally(()=>setLoading(false));
   }, [merchantId]);
 
@@ -45,10 +58,22 @@ export default function SettingsPage() {
         earnDailyCap: s.earnDailyCap ?? undefined,
         pointsTtlDays: s.pointsTtlDays ?? undefined,
         rulesJson,
+        webhookUrl: webhookUrl || undefined,
+        webhookKeyId: webhookKeyId || undefined,
+        webhookSecret: webhookSecret || undefined,
+        webhookKeyIdNext: webhookKeyIdNext || undefined,
+        webhookSecretNext: webhookSecretNext || undefined,
+        useWebhookNext: useWebhookNext,
+        bridgeSecret: bridgeSecret || undefined,
+        bridgeSecretNext: bridgeSecretNext || undefined,
       };
       const r = await updateSettings(merchantId, dto);
       setS(r);
       setMsg('Сохранено');
+      setWebhookSecret('');
+      setWebhookSecretNext('');
+      setBridgeSecret('');
+      setBridgeSecretNext('');
     } catch (e:any) { setMsg('Ошибка сохранения: ' + (e.message || e)); }
     finally { setLoading(false); }
   };
@@ -120,6 +145,44 @@ export default function SettingsPage() {
             <label>Правила (JSON):</label>
             <textarea value={rules} onChange={e=>setRules(e.target.value)} rows={10} style={{ width: '100%', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }} placeholder='[ {"if": {"channelIn":["SMART"]}, "then": {"earnBps":700}} ]' />
           </div>
+          <hr />
+          <h3>Вебхуки</h3>
+          <div>
+            <label>Webhook URL:</label>
+            <input value={webhookUrl} onChange={e=>setWebhookUrl(e.target.value)} style={{ marginLeft: 8, width: 520 }} placeholder="https://example.com/webhook" />
+          </div>
+          <div>
+            <label>Webhook Key ID:</label>
+            <input value={webhookKeyId} onChange={e=>setWebhookKeyId(e.target.value)} style={{ marginLeft: 8, width: 280 }} placeholder="key_v1" />
+          </div>
+          <div>
+            <label>Webhook Secret (HS256):</label>
+            <input type="password" value={webhookSecret} onChange={e=>setWebhookSecret(e.target.value)} style={{ marginLeft: 8, width: 520 }} placeholder="вводите только при смене" />
+          </div>
+          <div>
+            <label>Next Key ID:</label>
+            <input value={webhookKeyIdNext} onChange={e=>setWebhookKeyIdNext(e.target.value)} style={{ marginLeft: 8, width: 280 }} placeholder="key_v2" />
+          </div>
+          <div>
+            <label>Next Secret:</label>
+            <input type="password" value={webhookSecretNext} onChange={e=>setWebhookSecretNext(e.target.value)} style={{ marginLeft: 8, width: 520 }} placeholder="для ротации ключей" />
+          </div>
+          <div>
+            <label>
+              Использовать Next Secret
+              <input type="checkbox" checked={useWebhookNext} onChange={e=>setUseWebhookNext(e.target.checked)} style={{ marginLeft: 8 }} />
+            </label>
+          </div>
+          <hr />
+          <h3>Bridge подпись</h3>
+          <div>
+            <label>Bridge Secret:</label>
+            <input type="password" value={bridgeSecret} onChange={e=>setBridgeSecret(e.target.value)} style={{ marginLeft: 8, width: 520 }} placeholder="вводите только при смене" />
+          </div>
+          <div>
+            <label>Bridge Secret Next:</label>
+            <input type="password" value={bridgeSecretNext} onChange={e=>setBridgeSecretNext(e.target.value)} style={{ marginLeft: 8, width: 520 }} placeholder="для ротации" />
+          </div>
           <div><button onClick={save} disabled={loading} style={{ padding: '8px 12px' }}>Сохранить</button></div>
         </div>
       )}
@@ -128,4 +191,3 @@ export default function SettingsPage() {
     </div>
   );
 }
-

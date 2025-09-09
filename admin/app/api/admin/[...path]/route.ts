@@ -3,12 +3,14 @@ import { NextRequest } from 'next/server';
 const API_BASE = (process.env.API_BASE || process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/$/, '');
 const ADMIN_KEY = process.env.ADMIN_KEY || process.env.NEXT_PUBLIC_ADMIN_KEY || '';
 
-async function proxy(req: NextRequest, { params }: { params: { path: string[] } }) {
+async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }> | { path: string[] } }) {
   if (!API_BASE) return new Response('API_BASE not configured', { status: 500 });
   if (!ADMIN_KEY) return new Response('ADMIN_KEY not configured', { status: 500 });
   const method = req.method;
   const url = new URL(req.url);
-  const suffix = '/' + (params.path?.join('/') || '');
+  // В Next 15 params может быть Promise — поддержим оба варианта
+  const p = (typeof (ctx.params as any)?.then === 'function') ? await (ctx.params as Promise<{ path: string[] }>) : (ctx.params as { path: string[] });
+  const suffix = '/' + ((p?.path || []).join('/'));
   const target = API_BASE + suffix + (url.search || '');
 
   const headers: Record<string, string> = {};
