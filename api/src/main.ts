@@ -12,7 +12,7 @@ async function bootstrap() {
       'http://localhost:3003','http://127.0.0.1:3003',
     ],
     methods: ['GET','POST','PUT','DELETE','PATCH','OPTIONS'],
-    allowedHeaders: ['Content-Type','x-admin-key','x-request-id'],
+    allowedHeaders: ['Content-Type','x-admin-key','x-request-id','x-staff-key','x-bridge-signature','idempotency-key'],
     exposedHeaders: ['X-Loyalty-Signature','X-Merchant-Id','X-Signature-Timestamp','X-Request-Id','X-Event-Id','X-Signature-Key-Id'],
   });  
 

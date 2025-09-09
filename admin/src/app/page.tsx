@@ -23,6 +23,7 @@ export default function AdminPage() {
   const [rulesJson, setRulesJson] = useState<string>('[\n  {\n    "if": { "channelIn": ["VIRTUAL"], "weekdayIn": [1,2,3,4,5] },\n    "then": { "earnBps": 600 }\n  }\n]');
   const [requireBridgeSig, setRequireBridgeSig] = useState<boolean>(false);
   const [bridgeSecret, setBridgeSecret] = useState<string>('');
+  const [requireStaffKey, setRequireStaffKey] = useState<boolean>(false);
 
   const earnPct = useMemo(() => (earnBps/100).toFixed(2), [earnBps]);
   const redeemPct = useMemo(() => (redeemLimitBps/100).toFixed(2), [redeemLimitBps]);
@@ -50,6 +51,7 @@ export default function AdminPage() {
       if (data.rulesJson) setRulesJson(JSON.stringify(data.rulesJson, null, 2));
       setRequireBridgeSig(Boolean(data.requireBridgeSig));
       setBridgeSecret(data.bridgeSecret || '');
+      setRequireStaffKey(Boolean(data.requireStaffKey));
     } catch (e: any) {
       setMsg('Ошибка загрузки: ' + e?.message);
     } finally {
@@ -64,7 +66,7 @@ export default function AdminPage() {
       const r = await fetch(`${API}/merchants/${MERCHANT}/settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY },
-        body: JSON.stringify({ earnBps, redeemLimitBps, qrTtlSec, webhookUrl, webhookSecret, webhookKeyId, redeemCooldownSec, earnCooldownSec, redeemDailyCap, earnDailyCap, requireJwtForQuote, rulesJson: JSON.parse(rulesJson||'null'), requireBridgeSig, bridgeSecret }),
+        body: JSON.stringify({ earnBps, redeemLimitBps, qrTtlSec, webhookUrl, webhookSecret, webhookKeyId, redeemCooldownSec, earnCooldownSec, redeemDailyCap, earnDailyCap, requireJwtForQuote, rulesJson: JSON.parse(rulesJson||'null'), requireBridgeSig, bridgeSecret, requireStaffKey }),
       });
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
@@ -91,6 +93,7 @@ export default function AdminPage() {
         <a href="/receipts">Receipts</a>
         <a href="/docs/bridge">Bridge</a>
         <a href="/metrics">Metrics</a>
+        <a href="/bridge-status">Bridge Status</a>
       </div>
       <div style={{ color: '#666' }}>Merchant: <code>{MERCHANT}</code></div>
 
@@ -125,6 +128,21 @@ export default function AdminPage() {
                  onChange={(e) => setRedeemLimitBps(Math.max(0, Math.min(10000, Number(e.target.value))))}
                  style={{ width: '100%', padding: 8 }} />
           <div style={{ color: '#666', fontSize: 12 }}>= {redeemPct}% от базы</div>
+        </label>
+
+        <label>
+          Bridge Secret (merchant-level):
+          <input value={bridgeSecret} onChange={(e) => setBridgeSecret(e.target.value)} placeholder="секрет Bridge"
+                 style={{ width: '100%', padding: 8 }} />
+          <div style={{ color: '#666', fontSize: 12 }}>Для проверки входящих запросов Bridge (если нет секретов на устройствах)</div>
+        </label>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input type="checkbox" checked={requireBridgeSig} onChange={(e) => setRequireBridgeSig(e.target.checked)} /> Требовать подпись Bridge
+        </label>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input type="checkbox" checked={requireStaffKey} onChange={(e) => setRequireStaffKey(e.target.checked)} /> Требовать ключ кассира (X‑Staff‑Key)
         </label>
 
         <label>

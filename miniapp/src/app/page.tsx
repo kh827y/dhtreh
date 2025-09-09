@@ -38,12 +38,20 @@ export default function MiniApp() {
   const [nextBefore, setNextBefore] = useState<string | null>(null);
   const [initLoaded, setInitLoaded] = useState(false);
 
-  // Получаем userId из Telegram, если доступен
+  // Telegram auth через initData (сервер проверяет подпись)
   useEffect(() => {
-    try {
-      const tgUserId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
-      if (tgUserId) setCustomerId(String(tgUserId));
-    } catch {}
+    (async () => {
+      try {
+        const initData = (window as any)?.Telegram?.WebApp?.initData;
+        if (initData) {
+          const r = await fetch(`${API}/loyalty/teleauth`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ initData }) });
+          if (r.ok) {
+            const data = await r.json();
+            if (data?.customerId) setCustomerId(data.customerId);
+          }
+        }
+      } catch {}
+    })();
   }, []);
 
   async function refreshBalance(id: string) {

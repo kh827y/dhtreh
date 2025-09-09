@@ -7,6 +7,7 @@ import { MetricsService } from '../metrics.service';
 import { CashierGuard } from '../guards/cashier.guard';
 import type { Request, Response } from 'express';
 import { createHmac } from 'crypto';
+import { validateTelegramInitData } from './telegram.util';
 
 @Controller('loyalty')
 @UseGuards(CashierGuard)
@@ -234,6 +235,16 @@ export class LoyaltyController {
       }
     } catch {}
     return data;
+  }
+
+  // Telegram miniapp auth: принимает initData и возвращает customerId
+  @Post('teleauth')
+  async teleauth(@Body('initData') initData: string) {
+    const token = process.env.TELEGRAM_BOT_TOKEN || '';
+    if (!token) throw new BadRequestException('Bot token not configured');
+    const r = validateTelegramInitData(token, initData || '');
+    if (!r.ok || !r.userId) throw new BadRequestException('Invalid initData');
+    return { ok: true, customerId: 'tg:' + r.userId };
   }
 
   @Get('transactions')
