@@ -34,6 +34,7 @@ export class MerchantsService {
       requireJwtForQuote: s.requireJwtForQuote ?? false,
       rulesJson: s.rulesJson ?? null,
       requireStaffKey: s.requireStaffKey ?? false,
+      pointsTtlDays: (s as any).pointsTtlDays ?? null,
     };
   }
 
@@ -68,6 +69,7 @@ export class MerchantsService {
         rulesJson: rulesJson ?? undefined,
         requireStaffKey: requireStaffKey ?? undefined,
         updatedAt: new Date(),
+        pointsTtlDays: extras?.pointsTtlDays ?? undefined,
       },
       create: {
         merchantId,
@@ -90,6 +92,7 @@ export class MerchantsService {
         requireJwtForQuote: requireJwtForQuote ?? false,
         rulesJson: rulesJson ?? null,
         requireStaffKey: requireStaffKey ?? false,
+        pointsTtlDays: extras?.pointsTtlDays ?? null,
       },
     });
     return {

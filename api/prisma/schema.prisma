@@ -68,6 +68,7 @@ model MerchantSettings {
   webhookSecretNext String?
   webhookKeyIdNext  String?
   useWebhookNext    Boolean  @default(false)
+  pointsTtlDays     Int?
   redeemCooldownSec Int   @default(0)
   earnCooldownSec   Int   @default(0)
   redeemDailyCap    Int?

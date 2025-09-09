@@ -70,6 +70,10 @@ export class UpdateMerchantSettingsDto {
   @ApiPropertyOptional()
   @IsOptional()
   requireStaffKey?: boolean;
+
+  @ApiPropertyOptional({ minimum: 0, description: 'TTL баллов (в днях). 0 или отсутствие — отключено' })
+  @IsOptional() @IsInt() @Min(0)
+  pointsTtlDays?: number;
 }
 
 export class CreateOutletDto {
@@ -145,6 +149,7 @@ export class MerchantSettingsRespDto {
   @ApiProperty() requireJwtForQuote!: boolean;
   @ApiPropertyOptional() rulesJson?: any;
   @ApiProperty() requireStaffKey!: boolean;
+  @ApiPropertyOptional({ description: 'TTL баллов (в днях). Предпросмотр через outbox, списание отключено.' }) pointsTtlDays?: number|null;
 }
 
 export class OutletDto {

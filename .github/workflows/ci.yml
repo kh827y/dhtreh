@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9 --activate
+      - name: Install deps (api)
+        run: pnpm -C api i --frozen-lockfile=false
+      - name: Build (api)
+        run: pnpm -C api build
+      - name: Generate Prisma client
+        run: pnpm -C api prisma generate
+
+  lint-admin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9 --activate
+      - name: Install deps (admin)
+        run: pnpm -C admin i --frozen-lockfile=false
+      - name: Lint (admin)
+        run: pnpm -C admin lint
+
+  install-bridge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9 --activate
+      - name: Install deps (bridge)
+        run: pnpm -C bridge i --frozen-lockfile=false
+

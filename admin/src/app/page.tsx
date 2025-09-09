@@ -27,6 +27,7 @@ export default function AdminPage() {
   const [bridgeSecret, setBridgeSecret] = useState<string>('');
   const [bridgeSecretNext, setBridgeSecretNext] = useState<string>('');
   const [requireStaffKey, setRequireStaffKey] = useState<boolean>(false);
+  const [pointsTtlDays, setPointsTtlDays] = useState<number>(0);
   const [rulesCheck, setRulesCheck] = useState<string>('');
 
   const earnPct = useMemo(() => (earnBps/100).toFixed(2), [earnBps]);
@@ -58,6 +59,7 @@ export default function AdminPage() {
       setBridgeSecret(data.bridgeSecret || '');
       setBridgeSecretNext(data.bridgeSecretNext || '');
       setRequireStaffKey(Boolean(data.requireStaffKey));
+      setPointsTtlDays(Number(data.pointsTtlDays || 0));
     } catch (e: any) {
       setMsg('Ошибка загрузки: ' + e?.message);
     } finally {
@@ -72,7 +74,7 @@ export default function AdminPage() {
       const r = await fetch(`/api/admin/merchants/${MERCHANT}/settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ earnBps, redeemLimitBps, qrTtlSec, webhookUrl, webhookSecret, webhookKeyId, webhookSecretNext, webhookKeyIdNext, useWebhookNext, redeemCooldownSec, earnCooldownSec, redeemDailyCap, earnDailyCap, requireJwtForQuote, rulesJson: JSON.parse(rulesJson||'null'), requireBridgeSig, bridgeSecret, bridgeSecretNext, requireStaffKey }),
+        body: JSON.stringify({ earnBps, redeemLimitBps, qrTtlSec, webhookUrl, webhookSecret, webhookKeyId, webhookSecretNext, webhookKeyIdNext, useWebhookNext, redeemCooldownSec, earnCooldownSec, redeemDailyCap, earnDailyCap, requireJwtForQuote, rulesJson: JSON.parse(rulesJson||'null'), requireBridgeSig, bridgeSecret, bridgeSecretNext, requireStaffKey, pointsTtlDays }),
       });
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
@@ -95,6 +97,7 @@ export default function AdminPage() {
         <a href="/devices">Devices</a>
         <a href="/staff">Staff</a>
         <a href="/docs/signature">Signature</a>
+        <a href="/docs/rotation">Rotation</a>
         <a href="/txns">Txns</a>
         <a href="/receipts">Receipts</a>
         <a href="/docs/bridge">Bridge</a>
@@ -279,6 +282,15 @@ export default function AdminPage() {
             <input type="number" min={0} max={86400} value={earnCooldownSec}
                    onChange={(e) => setEarnCooldownSec(Math.max(0, Math.min(86400, Number(e.target.value))))}
                    style={{ width: '100%', padding: 8 }} />
+          </label>
+        </div>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <label style={{ flex: 1 }}>
+            TTL баллов (дни):
+            <input type="number" min={0} value={pointsTtlDays}
+                   onChange={(e) => setPointsTtlDays(Math.max(0, Number(e.target.value)))}
+                   style={{ width: '100%', padding: 8 }} />
+            <div style={{ color: '#666', fontSize: 12 }}>Предпросмотр истечения пишется в Outbox (loyalty.points_ttl.preview). Списание выключено.</div>
           </label>
         </div>
         <div style={{ display: 'flex', gap: 12 }}>

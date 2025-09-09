@@ -1,0 +1,3604 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/healthz": {
+      "get": {
+        "operationId": "HealthController_health",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "HealthController_ready",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "MetricsController_metricsEndpoint",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Metrics"
+        ]
+      }
+    },
+    "/loyalty/quote": {
+      "post": {
+        "operationId": "LoyaltyController_quote",
+        "parameters": [
+          {
+            "name": "X-Bridge-Signature",
+            "in": "header",
+            "description": "Подпись Bridge (если включено requireBridgeSig)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Staff-Key",
+            "in": "header",
+            "description": "Ключ кассира (если включено requireStaffKey)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuoteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/QuoteRedeemRespDto"
+                    },
+                    {
+                      "$ref": "#/components/schemas/QuoteEarnRespDto"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "loyalty"
+        ]
+      }
+    },
+    "/loyalty/commit": {
+      "post": {
+        "operationId": "LoyaltyController_commit",
+        "parameters": [
+          {
+            "name": "X-Bridge-Signature",
+            "in": "header",
+            "description": "Подпись Bridge (если включено requireBridgeSig)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Идемпотентность COMMIT",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommitDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitRespDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "loyalty"
+        ]
+      }
+    },
+    "/loyalty/cancel": {
+      "post": {
+        "operationId": "LoyaltyController_cancel",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "loyalty"
+        ]
+      }
+    },
+    "/loyalty/balance/{merchantId}/{customerId}": {
+      "get": {
+        "operationId": "LoyaltyController_balance2",
+        "parameters": [
+          {
+            "name": "merchantId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "customerId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BalanceDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "loyalty"
+        ]
+      }
+    },
+    "/loyalty/balance/{customerId}": {
+      "get": {
+        "operationId": "LoyaltyController_balanceBackCompat",
+        "parameters": [
+          {
+            "name": "customerId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BalanceDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "loyalty"
+        ]
+      }
+    },
+    "/loyalty/qr": {
+      "post": {
+        "operationId": "LoyaltyController_mintQr",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QrMintDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QrMintRespDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "loyalty"
+        ]
+      }
+    },
+    "/loyalty/settings/{merchantId}": {
+      "get": {
+        "operationId": "LoyaltyController_publicSettings",
+        "parameters": [
+          {
+            "name": "merchantId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicSettingsDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "loyalty"
+        ]
+      }
+    },
+    "/loyalty/refund": {
+      "post": {
+        "operationId": "LoyaltyController_refund",
+        "parameters": [
+          {
+            "name": "X-Bridge-Signature",
+            "in": "header",
+            "description": "Подпись Bridge (если включено requireBridgeSig)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Идемпотентность REFUND",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefundDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefundRespDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "loyalty"
+        ]
+      }
+    },
+    "/loyalty/teleauth": {
+      "post": {
+        "operationId": "LoyaltyController_teleauth",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "loyalty"
+        ]
+      }
+    },
+    "/loyalty/transactions": {
+      "get": {
+        "operationId": "LoyaltyController_transactions",
+        "parameters": [
+          {
+            "name": "merchantId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "customerId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "before",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "outletId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "deviceId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "staffId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionsRespDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "loyalty"
+        ]
+      }
+    },
+    "/loyalty/outlets/{merchantId}": {
+      "get": {
+        "operationId": "LoyaltyController_publicOutlets",
+        "parameters": [
+          {
+            "name": "merchantId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PublicOutletDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "loyalty"
+        ]
+      }
+    },
+    "/loyalty/devices/{merchantId}": {
+      "get": {
+        "operationId": "LoyaltyController_publicDevices",
+        "parameters": [
+          {
+            "name": "merchantId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PublicDeviceDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "loyalty"
+        ]
+      }
+    },
+    "/loyalty/staff/{merchantId}": {
+      "get": {
+        "operationId": "LoyaltyController_publicStaff",
+        "parameters": [
+          {
+            "name": "merchantId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PublicStaffDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "loyalty"
+        ]
+      }
+    },
+    "/loyalty/consent": {
+      "get": {
+        "operationId": "LoyaltyController_getConsent",
+        "parameters": [
+          {
+            "name": "merchantId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "customerId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentGetRespDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "loyalty"
+        ]
+      },
+      "post": {
+        "operationId": "LoyaltyController_setConsent",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "loyalty"
+        ]
+      }
+    },
+    "/merchants/{id}/settings": {
+      "get": {
+        "operationId": "MerchantsController_getSettings",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantSettingsRespDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      },
+      "put": {
+        "operationId": "MerchantsController_updateSettings",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMerchantSettingsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantSettingsRespDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      }
+    },
+    "/merchants/{id}/outlets": {
+      "get": {
+        "operationId": "MerchantsController_listOutlets",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OutletDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      },
+      "post": {
+        "operationId": "MerchantsController_createOutlet",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOutletDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutletDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      }
+    },
+    "/merchants/{id}/outlets/{outletId}": {
+      "put": {
+        "operationId": "MerchantsController_updateOutlet",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "outletId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateOutletDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutletDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      },
+      "delete": {
+        "operationId": "MerchantsController_deleteOutlet",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "outletId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      }
+    },
+    "/merchants/{id}/devices": {
+      "get": {
+        "operationId": "MerchantsController_listDevices",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DeviceDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      },
+      "post": {
+        "operationId": "MerchantsController_createDevice",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDeviceDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      }
+    },
+    "/merchants/{id}/devices/{deviceId}": {
+      "put": {
+        "operationId": "MerchantsController_updateDevice",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "deviceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDeviceDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      },
+      "delete": {
+        "operationId": "MerchantsController_deleteDevice",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "deviceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      }
+    },
+    "/merchants/{id}/devices/{deviceId}/secret": {
+      "post": {
+        "operationId": "MerchantsController_issueDeviceSecret",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "deviceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretRespDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      },
+      "delete": {
+        "operationId": "MerchantsController_revokeDeviceSecret",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "deviceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      }
+    },
+    "/merchants/{id}/staff": {
+      "get": {
+        "operationId": "MerchantsController_listStaff",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StaffDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      },
+      "post": {
+        "operationId": "MerchantsController_createStaff",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateStaffDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      }
+    },
+    "/merchants/{id}/staff/{staffId}": {
+      "put": {
+        "operationId": "MerchantsController_updateStaff",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "staffId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateStaffDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      },
+      "delete": {
+        "operationId": "MerchantsController_deleteStaff",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "staffId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      }
+    },
+    "/merchants/{id}/staff/{staffId}/token": {
+      "post": {
+        "operationId": "MerchantsController_issueStaffToken",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "staffId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenRespDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      },
+      "delete": {
+        "operationId": "MerchantsController_revokeStaffToken",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "staffId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      }
+    },
+    "/merchants/{id}/outbox": {
+      "get": {
+        "operationId": "MerchantsController_listOutbox",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OutboxEventDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      }
+    },
+    "/merchants/{id}/outbox/{eventId}/retry": {
+      "post": {
+        "operationId": "MerchantsController_retryOutbox",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      }
+    },
+    "/merchants/{id}/outbox/{eventId}": {
+      "delete": {
+        "operationId": "MerchantsController_deleteOutbox",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      }
+    },
+    "/merchants/{id}/outbox/retryAll": {
+      "post": {
+        "operationId": "MerchantsController_retryAll",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkUpdateRespDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      }
+    },
+    "/merchants/{id}/outbox/by-order": {
+      "get": {
+        "operationId": "MerchantsController_outboxByOrder",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OutboxEventDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      }
+    },
+    "/merchants/{id}/transactions": {
+      "get": {
+        "operationId": "MerchantsController_listTransactions",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "before",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "customerId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "outletId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "deviceId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "staffId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TransactionItemDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      }
+    },
+    "/merchants/{id}/receipts": {
+      "get": {
+        "operationId": "MerchantsController_listReceipts",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "before",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "customerId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ReceiptDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      }
+    },
+    "/merchants/{id}/receipts/{receiptId}": {
+      "get": {
+        "operationId": "MerchantsController_getReceipt",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "receiptId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "receipt": {
+                      "$ref": "#/components/schemas/ReceiptDto"
+                    },
+                    "transactions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TransactionItemDto"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      }
+    },
+    "/merchants/{id}/receipts.csv": {
+      "get": {
+        "operationId": "MerchantsController_exportReceiptsCsv",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "before",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "customerId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "description": "CSV"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      }
+    },
+    "/merchants/{id}/customer/summary": {
+      "get": {
+        "operationId": "MerchantsController_customerSummary",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "customerId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "balance": {
+                      "type": "number"
+                    },
+                    "recentTx": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TransactionItemDto"
+                      }
+                    },
+                    "recentReceipts": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ReceiptDto"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      }
+    },
+    "/merchants/{id}/customer/search": {
+      "get": {
+        "operationId": "MerchantsController_customerSearch",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "phone",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/CustomerSearchRespDto"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      }
+    },
+    "/merchants/{id}/transactions.csv": {
+      "get": {
+        "operationId": "MerchantsController_exportTxCsv",
+        "parameters": [
+          {
+            "name": "X-Admin-Key",
+            "in": "header",
+            "description": "Админ-ключ (в проде проксируется сервером админки)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "before",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "customerId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "outletId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "deviceId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "staffId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "merchants"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "Loyalty API",
+    "description": "Draft OpenAPI for loyalty endpoints",
+    "version": "0.1.0",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "components": {
+    "schemas": {
+      "QuoteRedeemRespDto": {
+        "type": "object",
+        "properties": {
+          "canRedeem": {
+            "type": "boolean"
+          },
+          "discountToApply": {
+            "type": "number"
+          },
+          "pointsToBurn": {
+            "type": "number"
+          },
+          "finalPayable": {
+            "type": "number"
+          },
+          "holdId": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "canRedeem",
+          "discountToApply",
+          "pointsToBurn",
+          "finalPayable"
+        ]
+      },
+      "QuoteEarnRespDto": {
+        "type": "object",
+        "properties": {
+          "canEarn": {
+            "type": "boolean"
+          },
+          "pointsToEarn": {
+            "type": "number"
+          },
+          "holdId": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "canEarn",
+          "pointsToEarn"
+        ]
+      },
+      "QuoteDto": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "redeem",
+              "earn"
+            ]
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "userToken": {
+            "type": "string",
+            "description": "customerId или JWT"
+          },
+          "orderId": {
+            "type": "string"
+          },
+          "total": {
+            "type": "number",
+            "minimum": 0
+          },
+          "eligibleTotal": {
+            "type": "number",
+            "minimum": 0
+          },
+          "outletId": {
+            "type": "string"
+          },
+          "deviceId": {
+            "type": "string"
+          },
+          "staffId": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "description": "Категория товара/чека для правил"
+          }
+        },
+        "required": [
+          "mode",
+          "merchantId",
+          "userToken",
+          "orderId",
+          "total",
+          "eligibleTotal"
+        ]
+      },
+      "ErrorDto": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "statusCode": {
+            "type": "number"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "message",
+          "statusCode"
+        ]
+      },
+      "CommitDto": {
+        "type": "object",
+        "properties": {
+          "merchantId": {
+            "type": "string"
+          },
+          "holdId": {
+            "type": "string"
+          },
+          "orderId": {
+            "type": "string"
+          },
+          "receiptNumber": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "merchantId",
+          "holdId",
+          "orderId"
+        ]
+      },
+      "CommitRespDto": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "alreadyCommitted": {
+            "type": "boolean"
+          },
+          "receiptId": {
+            "type": "string"
+          },
+          "redeemApplied": {
+            "type": "number"
+          },
+          "earnApplied": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "ok"
+        ]
+      },
+      "OkDto": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ]
+      },
+      "BalanceDto": {
+        "type": "object",
+        "properties": {
+          "merchantId": {
+            "type": "string"
+          },
+          "customerId": {
+            "type": "string"
+          },
+          "balance": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "merchantId",
+          "customerId",
+          "balance"
+        ]
+      },
+      "QrMintDto": {
+        "type": "object",
+        "properties": {
+          "customerId": {
+            "type": "string"
+          },
+          "ttlSec": {
+            "type": "number",
+            "minimum": 10
+          },
+          "merchantId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "customerId"
+        ]
+      },
+      "QrMintRespDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          },
+          "ttl": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "token",
+          "ttl"
+        ]
+      },
+      "PublicSettingsDto": {
+        "type": "object",
+        "properties": {
+          "merchantId": {
+            "type": "string"
+          },
+          "qrTtlSec": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "merchantId",
+          "qrTtlSec"
+        ]
+      },
+      "RefundDto": {
+        "type": "object",
+        "properties": {
+          "merchantId": {
+            "type": "string"
+          },
+          "orderId": {
+            "type": "string"
+          },
+          "refundTotal": {
+            "type": "number",
+            "minimum": 0
+          },
+          "refundEligibleTotal": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "merchantId",
+          "orderId",
+          "refundTotal"
+        ]
+      },
+      "RefundRespDto": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "share": {
+            "type": "number"
+          },
+          "pointsRestored": {
+            "type": "number"
+          },
+          "pointsRevoked": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "ok",
+          "share",
+          "pointsRestored",
+          "pointsRevoked"
+        ]
+      },
+      "TransactionItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "EARN",
+              "REDEEM",
+              "REFUND",
+              "ADJUST"
+            ]
+          },
+          "amount": {
+            "type": "number"
+          },
+          "orderId": {
+            "type": "object"
+          },
+          "customerId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "outletId": {
+            "type": "object"
+          },
+          "deviceId": {
+            "type": "object"
+          },
+          "staffId": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "amount",
+          "customerId",
+          "createdAt"
+        ]
+      },
+      "MerchantSettingsRespDto": {
+        "type": "object",
+        "properties": {
+          "merchantId": {
+            "type": "string"
+          },
+          "earnBps": {
+            "type": "number"
+          },
+          "redeemLimitBps": {
+            "type": "number"
+          },
+          "qrTtlSec": {
+            "type": "number"
+          },
+          "webhookUrl": {
+            "type": "object"
+          },
+          "webhookSecret": {
+            "type": "object"
+          },
+          "webhookKeyId": {
+            "type": "object"
+          },
+          "requireBridgeSig": {
+            "type": "boolean"
+          },
+          "bridgeSecret": {
+            "type": "object"
+          },
+          "redeemCooldownSec": {
+            "type": "number"
+          },
+          "earnCooldownSec": {
+            "type": "number"
+          },
+          "redeemDailyCap": {
+            "type": "object"
+          },
+          "earnDailyCap": {
+            "type": "object"
+          },
+          "requireJwtForQuote": {
+            "type": "boolean"
+          },
+          "rulesJson": {
+            "type": "object"
+          },
+          "requireStaffKey": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "merchantId",
+          "earnBps",
+          "redeemLimitBps",
+          "qrTtlSec",
+          "requireBridgeSig",
+          "redeemCooldownSec",
+          "earnCooldownSec",
+          "requireJwtForQuote",
+          "requireStaffKey"
+        ]
+      },
+      "UpdateMerchantSettingsDto": {
+        "type": "object",
+        "properties": {
+          "earnBps": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 10000,
+            "description": "10000 б.п. = 100%"
+          },
+          "redeemLimitBps": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 10000,
+            "description": "Лимит списания, 5000 = 50%"
+          },
+          "qrTtlSec": {
+            "type": "number",
+            "minimum": 15,
+            "maximum": 600
+          },
+          "webhookUrl": {
+            "type": "string"
+          },
+          "webhookSecret": {
+            "type": "string"
+          },
+          "webhookKeyId": {
+            "type": "string"
+          },
+          "webhookSecretNext": {
+            "type": "string"
+          },
+          "webhookKeyIdNext": {
+            "type": "string"
+          },
+          "useWebhookNext": {
+            "type": "boolean"
+          },
+          "redeemCooldownSec": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 86400
+          },
+          "earnCooldownSec": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 86400
+          },
+          "redeemDailyCap": {
+            "type": "number",
+            "minimum": 0
+          },
+          "earnDailyCap": {
+            "type": "number",
+            "minimum": 0
+          },
+          "requireJwtForQuote": {
+            "type": "boolean"
+          },
+          "rulesJson": {
+            "type": "object",
+            "description": "JSON-правила для earnBps/redeemLimitBps"
+          },
+          "requireBridgeSig": {
+            "type": "boolean"
+          },
+          "bridgeSecret": {
+            "type": "string"
+          },
+          "bridgeSecretNext": {
+            "type": "string"
+          },
+          "requireStaffKey": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "earnBps",
+          "redeemLimitBps"
+        ]
+      },
+      "OutletDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "address": {
+            "type": "object"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "merchantId",
+          "name",
+          "createdAt"
+        ]
+      },
+      "CreateOutletDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "UpdateOutletDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          }
+        }
+      },
+      "DeviceDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "outletId": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "SMART",
+              "PC_POS",
+              "VIRTUAL"
+            ]
+          },
+          "label": {
+            "type": "object"
+          },
+          "lastSeenAt": {
+            "type": "object"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "merchantId",
+          "type",
+          "createdAt"
+        ]
+      },
+      "CreateDeviceDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "SMART",
+              "PC_POS",
+              "VIRTUAL"
+            ]
+          },
+          "outletId": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "UpdateDeviceDto": {
+        "type": "object",
+        "properties": {
+          "outletId": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
+      "SecretRespDto": {
+        "type": "object",
+        "properties": {
+          "secret": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "secret"
+        ]
+      },
+      "StaffDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "login": {
+            "type": "object"
+          },
+          "email": {
+            "type": "object"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "ADMIN",
+              "MANAGER",
+              "CASHIER"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "allowedOutletId": {
+            "type": "object"
+          },
+          "allowedDeviceId": {
+            "type": "object"
+          },
+          "apiKeyHash": {
+            "type": "object"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "merchantId",
+          "role",
+          "status",
+          "createdAt"
+        ]
+      },
+      "CreateStaffDto": {
+        "type": "object",
+        "properties": {
+          "login": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "ADMIN",
+              "MANAGER",
+              "CASHIER"
+            ]
+          }
+        }
+      },
+      "UpdateStaffDto": {
+        "type": "object",
+        "properties": {
+          "login": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "ADMIN",
+              "MANAGER",
+              "CASHIER"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "allowedOutletId": {
+            "type": "string"
+          },
+          "allowedDeviceId": {
+            "type": "string"
+          }
+        }
+      },
+      "TokenRespDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ]
+      },
+      "OutboxEventDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "eventType": {
+            "type": "string"
+          },
+          "payload": {
+            "type": "object"
+          },
+          "status": {
+            "type": "string"
+          },
+          "retries": {
+            "type": "number"
+          },
+          "nextRetryAt": {
+            "type": "object"
+          },
+          "lastError": {
+            "type": "object"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "merchantId",
+          "eventType",
+          "payload",
+          "status",
+          "retries",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "BulkUpdateRespDto": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "updated": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "ok",
+          "updated"
+        ]
+      },
+      "ReceiptDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "customerId": {
+            "type": "string"
+          },
+          "orderId": {
+            "type": "string"
+          },
+          "receiptNumber": {
+            "type": "object"
+          },
+          "total": {
+            "type": "number"
+          },
+          "eligibleTotal": {
+            "type": "number"
+          },
+          "redeemApplied": {
+            "type": "number"
+          },
+          "earnApplied": {
+            "type": "number"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "outletId": {
+            "type": "object"
+          },
+          "deviceId": {
+            "type": "object"
+          },
+          "staffId": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "merchantId",
+          "customerId",
+          "orderId",
+          "total",
+          "eligibleTotal",
+          "redeemApplied",
+          "earnApplied",
+          "createdAt"
+        ]
+      }
+    }
+  }
+}
