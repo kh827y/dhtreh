@@ -35,7 +35,8 @@ export default function StaffPage() {
     } catch (e: any) { setMsg('Ошибка: ' + e?.message); }
   }
   async function save(s: Staff) {
-    const r = await fetch(`${API}/merchants/${MERCHANT}/staff/${s.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY }, body: JSON.stringify({ login: s.login||undefined, email: s.email||undefined, role: s.role, status: s.status }) });
+    const body = { login: s.login||undefined, email: s.email||undefined, role: s.role, status: s.status, allowedOutletId: (s as any).allowedOutletId||undefined, allowedDeviceId: (s as any).allowedDeviceId||undefined };
+    const r = await fetch(`${API}/merchants/${MERCHANT}/staff/${s.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY }, body: JSON.stringify(body) });
     if (!r.ok) alert(await r.text());
   }
   async function del(id: string) {
@@ -89,7 +90,7 @@ export default function StaffPage() {
       <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
         {items.map(s => (
           <div key={s.id} style={{ border: '1px solid #eee', borderRadius: 10, padding: 10, display: 'grid', gap: 8 }}>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <input value={s.login||''} onChange={(e) => setItems(prev => prev.map(x => x.id===s.id?{...x,login:e.target.value||null}:x))} placeholder="login" style={{ padding: 8 }} />
               <input value={s.email||''} onChange={(e) => setItems(prev => prev.map(x => x.id===s.id?{...x,email:e.target.value||null}:x))} placeholder="email" style={{ padding: 8 }} />
               <select value={s.role} onChange={(e) => setItems(prev => prev.map(x => x.id===s.id?{...x,role:e.target.value}:x))} style={{ padding: 8 }}>
@@ -101,6 +102,8 @@ export default function StaffPage() {
                 <option value="ACTIVE">ACTIVE</option>
                 <option value="BLOCKED">BLOCKED</option>
               </select>
+              <input value={(s as any).allowedOutletId||''} onChange={(e) => setItems(prev => prev.map(x => x.id===s.id?{...x,allowedOutletId:e.target.value||null}:x))} placeholder="allowedOutletId" style={{ padding: 8 }} />
+              <input value={(s as any).allowedDeviceId||''} onChange={(e) => setItems(prev => prev.map(x => x.id===s.id?{...x,allowedDeviceId:e.target.value||null}:x))} placeholder="allowedDeviceId" style={{ padding: 8 }} />
               <button onClick={() => save(s)} style={{ padding: '6px 10px' }}>Сохранить</button>
               <button onClick={() => issueToken(s.id)} style={{ padding: '6px 10px' }}>Выдать токен</button>
               <button onClick={() => revokeToken(s.id)} style={{ padding: '6px 10px' }}>Отозвать токен</button>

@@ -73,4 +73,6 @@ export class UpdateStaffDto {
   @IsOptional() @IsString() email?: string;
   @IsOptional() @IsString() role?: keyof typeof StaffRole | string;
   @IsOptional() @IsString() status?: string;
+  @IsOptional() @IsString() allowedOutletId?: string;
+  @IsOptional() @IsString() allowedDeviceId?: string;
 }

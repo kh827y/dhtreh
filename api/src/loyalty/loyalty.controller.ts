@@ -1,13 +1,15 @@
-import { Body, Controller, Post, Get, Param, Query, BadRequestException, Res, Req, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Post, Get, Param, Query, BadRequestException, Res, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { LoyaltyService } from './loyalty.service';
 import { CommitDto, QrMintDto, QuoteDto, RefundDto } from './dto';
 import { looksLikeJwt, signQrToken, verifyQrToken } from './token.util';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
+import { CashierGuard } from '../guards/cashier.guard';
 import type { Request, Response } from 'express';
 import { createHmac } from 'crypto';
 
 @Controller('loyalty')
+@UseGuards(CashierGuard)
 export class LoyaltyController {
   constructor(private readonly service: LoyaltyService, private readonly prisma: PrismaService, private readonly metrics: MetricsService) {}
 

@@ -3,11 +3,12 @@ import { LoyaltyService } from './loyalty.service';
 import { LoyaltyController } from './loyalty.controller';
 import { PrismaModule } from '../prisma.module';
 import { MetricsModule } from '../metrics.module';
+import { CashierGuard } from '../guards/cashier.guard';
 import { OutboxWorker } from '../outbox/outbox.worker';
 
 @Module({
   imports: [PrismaModule, MetricsModule],
-  providers: [LoyaltyService, OutboxWorker],
+  providers: [LoyaltyService, OutboxWorker, CashierGuard],
   controllers: [LoyaltyController],
 })
 export class LoyaltyModule {}

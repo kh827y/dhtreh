@@ -161,7 +161,7 @@ export class MerchantsService {
   async updateStaff(merchantId: string, staffId: string, dto: UpdateStaffDto) {
     const user = await this.prisma.staff.findUnique({ where: { id: staffId } });
     if (!user || user.merchantId !== merchantId) throw new NotFoundException('Staff not found');
-    return this.prisma.staff.update({ where: { id: staffId }, data: { login: dto.login ?? undefined, email: dto.email ?? undefined, role: (dto.role as any) ?? undefined, status: dto.status ?? undefined } });
+    return this.prisma.staff.update({ where: { id: staffId }, data: { login: dto.login ?? undefined, email: dto.email ?? undefined, role: (dto.role as any) ?? undefined, status: dto.status ?? undefined, allowedOutletId: dto.allowedOutletId ?? undefined, allowedDeviceId: dto.allowedDeviceId ?? undefined } });
   }
   async deleteStaff(merchantId: string, staffId: string) {
     const user = await this.prisma.staff.findUnique({ where: { id: staffId } });
