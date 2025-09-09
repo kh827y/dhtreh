@@ -41,6 +41,12 @@ enum TxnType {
   ADJUST
 }
 
+enum LedgerAccount {
+  CUSTOMER_BALANCE
+  MERCHANT_LIABILITY
+  RESERVED
+}
+
 model Merchant {
   id        String            @id @default(cuid())
   name      String
@@ -307,4 +313,23 @@ model Staff {
   holds     Hold[]
   receipts  Receipt[]
   txns      Transaction[]
+}
+
+model LedgerEntry {
+  id          String         @id @default(cuid())
+  merchantId  String
+  customerId  String?
+  debit       LedgerAccount
+  credit      LedgerAccount
+  amount      Int
+  orderId     String?
+  receiptId   String?
+  outletId    String?
+  deviceId    String?
+  staffId     String?
+  meta        Json?
+  createdAt   DateTime       @default(now())
+
+  @@index([merchantId, createdAt])
+  @@index([merchantId, customerId, createdAt])
 }

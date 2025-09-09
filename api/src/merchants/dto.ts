@@ -223,3 +223,19 @@ export class CustomerSearchRespDto {
   @ApiPropertyOptional() phone?: string|null;
   @ApiProperty() balance!: number;
 }
+
+export class LedgerEntryDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() merchantId!: string;
+  @ApiPropertyOptional() customerId?: string|null;
+  @ApiProperty() debit!: string;   // LedgerAccount
+  @ApiProperty() credit!: string;  // LedgerAccount
+  @ApiProperty() amount!: number;
+  @ApiPropertyOptional() orderId?: string|null;
+  @ApiPropertyOptional() receiptId?: string|null;
+  @ApiPropertyOptional() outletId?: string|null;
+  @ApiPropertyOptional() deviceId?: string|null;
+  @ApiPropertyOptional() staffId?: string|null;
+  @ApiPropertyOptional() meta?: any;
+  @ApiProperty() createdAt!: Date;
+}

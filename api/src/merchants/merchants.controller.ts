@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, UseGuards, Query } from '@nestjs/common';
 import { MerchantsService } from './merchants.service';
-import { CreateDeviceDto, CreateOutletDto, CreateStaffDto, UpdateDeviceDto, UpdateMerchantSettingsDto, UpdateOutletDto, UpdateStaffDto, MerchantSettingsRespDto, OutletDto, DeviceDto, StaffDto, SecretRespDto, TokenRespDto, OkDto, OutboxEventDto, BulkUpdateRespDto, ReceiptDto, CustomerSearchRespDto } from './dto';
+import { CreateDeviceDto, CreateOutletDto, CreateStaffDto, UpdateDeviceDto, UpdateMerchantSettingsDto, UpdateOutletDto, UpdateStaffDto, MerchantSettingsRespDto, OutletDto, DeviceDto, StaffDto, SecretRespDto, TokenRespDto, OkDto, OutboxEventDto, BulkUpdateRespDto, ReceiptDto, CustomerSearchRespDto, LedgerEntryDto } from './dto';
 import { AdminGuard } from '../admin.guard';
 import { ApiBadRequestResponse, ApiExtraModels, ApiHeader, ApiNotFoundResponse, ApiOkResponse, ApiTags, ApiUnauthorizedResponse, getSchemaPath } from '@nestjs/swagger';
 import { ErrorDto } from '../loyalty/dto';
@@ -257,6 +257,35 @@ export class MerchantsController {
     const lines = [ 'id,orderId,customerId,total,eligibleTotal,redeemApplied,earnApplied,createdAt,outletId,deviceId,staffId' ];
     for (const r of items) lines.push([r.id,r.orderId,r.customerId,r.total,r.eligibleTotal,r.redeemApplied,r.earnApplied,r.createdAt.toISOString(),(r.outletId||''),(r.deviceId||''),(r.staffId||'')].map(x=>`"${String(x).replaceAll('"','""')}"`).join(','));
     return lines.join('\n') + '\n';
+  }
+
+  // Ledger
+  @Get(':id/ledger')
+  @ApiOkResponse({ type: LedgerEntryDto, isArray: true })
+  @ApiUnauthorizedResponse({ type: ErrorDto })
+  listLedger(
+    @Param('id') id: string,
+    @Query('limit') limitStr?: string,
+    @Query('before') beforeStr?: string,
+    @Query('customerId') customerId?: string,
+  ) {
+    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 500) : 50;
+    const before = beforeStr ? new Date(beforeStr) : undefined;
+    return this.service.listLedger(id, { limit, before, customerId });
+  }
+
+  @Get(':id/ledger.csv')
+  @ApiOkResponse({ schema: { type: 'string', description: 'CSV' } })
+  @ApiUnauthorizedResponse({ type: ErrorDto })
+  async exportLedgerCsv(
+    @Param('id') id: string,
+    @Query('limit') limitStr?: string,
+    @Query('before') beforeStr?: string,
+    @Query('customerId') customerId?: string,
+  ) {
+    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 1000, 1), 5000) : 1000;
+    const before = beforeStr ? new Date(beforeStr) : undefined;
+    return this.service.exportLedgerCsv(id, { limit, before, customerId });
   }
 
   // CRM helpers

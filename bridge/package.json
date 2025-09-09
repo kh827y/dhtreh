@@ -6,7 +6,9 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "NODE_ENV=development nodemon src/index.js"
+    "dev": "NODE_ENV=development nodemon src/index.js",
+    "flush": "node bin/bridge-cli.js flush",
+    "status": "node bin/bridge-cli.js status"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

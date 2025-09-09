@@ -99,6 +99,7 @@ export default function AdminPage() {
         <a href="/docs/signature">Signature</a>
         <a href="/docs/rotation">Rotation</a>
         <a href="/txns">Txns</a>
+        <a href="/ledger">Ledger</a>
         <a href="/receipts">Receipts</a>
         <a href="/docs/bridge">Bridge</a>
         <a href="/metrics">Metrics</a>

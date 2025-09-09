@@ -1,0 +1,20 @@
+[Unit]
+Description=POS Bridge Service
+After=network.target
+
+[Service]
+Environment=API_BASE=http://localhost:3000
+Environment=MERCHANT_ID=M-1
+Environment=BRIDGE_PORT=18080
+Environment=BRIDGE_SECRET=change_me
+Environment=STAFF_KEY=
+WorkingDirectory=/opt/loyalty/bridge
+ExecStart=/usr/bin/node /opt/loyalty/bridge/src/index.js
+Restart=always
+RestartSec=3
+User=bridge
+Group=bridge
+
+[Install]
+WantedBy=multi-user.target
+

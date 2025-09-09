@@ -281,6 +281,25 @@ export class MerchantsService {
     return { receipt: r, transactions: tx };
   }
 
+  // Ledger
+  async listLedger(merchantId: string, params: { limit: number; before?: Date; customerId?: string }) {
+    const where: any = { merchantId };
+    if (params.customerId) where.customerId = params.customerId;
+    if (params.before) where.createdAt = { lt: params.before };
+    return this.prisma.ledgerEntry.findMany({ where, orderBy: { createdAt: 'desc' }, take: params.limit });
+  }
+
+  async exportLedgerCsv(merchantId: string, params: { limit: number; before?: Date; customerId?: string }) {
+    const items = await this.listLedger(merchantId, params);
+    const lines = [ 'id,customerId,debit,credit,amount,orderId,receiptId,createdAt,outletId,deviceId,staffId' ];
+    for (const e of items) {
+      const row = [ e.id, e.customerId||'', e.debit, e.credit, e.amount, e.orderId||'', e.receiptId||'', e.createdAt.toISOString(), e.outletId||'', e.deviceId||'', e.staffId||'' ]
+        .map(x => `"${String(x).replaceAll('"','""')}"`).join(',');
+      lines.push(row);
+    }
+    return lines.join('\n') + '\n';
+  }
+
   async getBalance(merchantId: string, customerId: string) {
     const w = await this.prisma.wallet.findFirst({ where: { merchantId, customerId, type: 'POINTS' as any } });
     return w?.balance ?? 0;

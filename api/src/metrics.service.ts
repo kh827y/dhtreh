@@ -21,6 +21,7 @@ export class MetricsService {
   private quoteLatencyHist?: Histogram;
   private httpReqCounter?: Counter<string>;
   private httpReqDuration?: Histogram<string>;
+  private ledgerEntries?: Counter<string>;
 
   constructor() {
     this.registry = new Registry();
@@ -37,6 +38,7 @@ export class MetricsService {
     this.quoteLatencyHist = new Histogram({ name: 'loyalty_quote_latency_seconds', help: 'Quote latency seconds', buckets: [0.01,0.02,0.05,0.1,0.2,0.5,1,2,5], registers: [this.registry] });
     this.httpReqCounter = new Counter({ name: 'http_requests_total', help: 'HTTP requests total', labelNames: ['method','route','status'], registers: [this.registry] });
     this.httpReqDuration = new Histogram({ name: 'http_request_duration_seconds', help: 'HTTP request duration seconds', labelNames: ['method','route','status'], buckets: [0.01,0.025,0.05,0.1,0.2,0.5,1,2,5], registers: [this.registry] });
+    this.ledgerEntries = new Counter({ name: 'loyalty_ledger_entries_total', help: 'Ledger entries created', labelNames: ['type'], registers: [this.registry] });
   }
 
   inc(name: string, labels: Record<string, string> = {}, value = 1) {
@@ -49,6 +51,7 @@ export class MetricsService {
     if (name === 'loyalty_quote_requests_total' && labels?.result) this.reqQuote?.inc({ result: labels.result }, value);
     if (name === 'loyalty_commit_requests_total' && labels?.result) this.reqCommit?.inc({ result: labels.result }, value);
     if (name === 'loyalty_refund_requests_total' && labels?.result) this.reqRefund?.inc({ result: labels.result }, value);
+    if (name === 'loyalty_ledger_entries_total' && labels?.type) this.ledgerEntries?.inc({ type: labels.type }, value);
   }
 
   observe(name: string, ms: number, labels: Record<string, string> = {}) {

@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { Mode, QuoteDto } from './dto';
-import { HoldStatus, TxnType, WalletType } from '@prisma/client';
+import { HoldStatus, TxnType, WalletType, LedgerAccount } from '@prisma/client';
 import { v4 as uuid } from 'uuid';
 
 type QrMeta = { jti: string; iat: number; exp: number } | undefined;
@@ -321,6 +321,21 @@ export class LoyaltyService {
         await tx.transaction.create({
           data: { customerId: hold.customerId, merchantId: hold.merchantId, type: TxnType.REDEEM, amount: -amount, orderId, outletId: hold.outletId, deviceId: hold.deviceId, staffId: hold.staffId }
         });
+        // Ledger mirror (optional)
+        if (process.env.LEDGER_FEATURE === '1' && amount > 0) {
+          await tx.ledgerEntry.create({ data: {
+            merchantId: hold.merchantId,
+            customerId: hold.customerId,
+            debit: LedgerAccount.CUSTOMER_BALANCE,
+            credit: LedgerAccount.MERCHANT_LIABILITY,
+            amount,
+            orderId,
+            outletId: hold.outletId ?? null,
+            deviceId: hold.deviceId ?? null,
+            staffId: hold.staffId ?? null,
+            meta: { mode: 'REDEEM' },
+          }});
+        }
       }
       if (hold.mode === 'EARN' && hold.earnPoints > 0) {
         const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
@@ -329,6 +344,21 @@ export class LoyaltyService {
         await tx.transaction.create({
           data: { customerId: hold.customerId, merchantId: hold.merchantId, type: TxnType.EARN, amount: hold.earnPoints, orderId, outletId: hold.outletId, deviceId: hold.deviceId, staffId: hold.staffId }
         });
+        // Ledger mirror (optional)
+        if (process.env.LEDGER_FEATURE === '1' && appliedEarn > 0) {
+          await tx.ledgerEntry.create({ data: {
+            merchantId: hold.merchantId,
+            customerId: hold.customerId,
+            debit: LedgerAccount.MERCHANT_LIABILITY,
+            credit: LedgerAccount.CUSTOMER_BALANCE,
+            amount: appliedEarn,
+            orderId,
+            outletId: hold.outletId ?? null,
+            deviceId: hold.deviceId ?? null,
+            staffId: hold.staffId ?? null,
+            meta: { mode: 'EARN' },
+          }});
+        }
       }
 
       await tx.hold.update({
@@ -430,6 +460,20 @@ export class LoyaltyService {
         await tx.transaction.create({
           data: { customerId: receipt.customerId, merchantId, type: TxnType.REFUND, amount: pointsToRestore, orderId, outletId: receipt.outletId, deviceId: receipt.deviceId, staffId: receipt.staffId }
         });
+        if (process.env.LEDGER_FEATURE === '1') {
+          await tx.ledgerEntry.create({ data: {
+            merchantId,
+            customerId: receipt.customerId,
+            debit: LedgerAccount.MERCHANT_LIABILITY,
+            credit: LedgerAccount.CUSTOMER_BALANCE,
+            amount: pointsToRestore,
+            orderId,
+            outletId: receipt.outletId ?? null,
+            deviceId: receipt.deviceId ?? null,
+            staffId: receipt.staffId ?? null,
+            meta: { mode: 'REFUND', kind: 'restore' },
+          }});
+        }
       }
       if (pointsToRevoke > 0) {
         const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
@@ -437,6 +481,20 @@ export class LoyaltyService {
         await tx.transaction.create({
           data: { customerId: receipt.customerId, merchantId, type: TxnType.REFUND, amount: -pointsToRevoke, orderId, outletId: receipt.outletId, deviceId: receipt.deviceId, staffId: receipt.staffId }
         });
+        if (process.env.LEDGER_FEATURE === '1') {
+          await tx.ledgerEntry.create({ data: {
+            merchantId,
+            customerId: receipt.customerId,
+            debit: LedgerAccount.CUSTOMER_BALANCE,
+            credit: LedgerAccount.MERCHANT_LIABILITY,
+            amount: pointsToRevoke,
+            orderId,
+            outletId: receipt.outletId ?? null,
+            deviceId: receipt.deviceId ?? null,
+            staffId: receipt.staffId ?? null,
+            meta: { mode: 'REFUND', kind: 'revoke' },
+          }});
+        }
       }
       await tx.eventOutbox.create({
         data: {
