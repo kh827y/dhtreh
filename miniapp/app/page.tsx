@@ -5,6 +5,8 @@ import { balance, consentGet, consentSet, mintQr, publicSettings, teleauth, tran
 
 type TgWebApp = { initData?: string; initDataUnsafe?: any };
 
+const DEV_UI = (process.env.NEXT_PUBLIC_MINIAPP_DEV_UI || '').toLowerCase() === 'true' || process.env.NEXT_PUBLIC_MINIAPP_DEV_UI === '1';
+
 function getInitData(): string | null {
   try {
     const tg = (window as any)?.Telegram?.WebApp as TgWebApp | undefined;
@@ -12,6 +14,20 @@ function getInitData(): string | null {
     const p = new URLSearchParams(window.location.search);
     return p.get('initData') || p.get('tgWebAppData') || p.get('tg_init_data');
   } catch { return null; }
+}
+
+function getMerchantFromContext(initData: string | null): string | undefined {
+  try {
+    const q = new URLSearchParams(window.location.search);
+    const fromQuery = q.get('merchantId') || undefined;
+    if (fromQuery) return fromQuery;
+    if (initData) {
+      const u = new URLSearchParams(initData);
+      const sp = u.get('start_param') || u.get('startapp');
+      if (sp) return sp;
+    }
+  } catch {}
+  return undefined;
 }
 
 export default function Page() {
@@ -22,19 +38,23 @@ export default function Page() {
   const [ttl, setTtl] = useState<number>(Number(process.env.NEXT_PUBLIC_QR_TTL || '60'));
   const [bal, setBal] = useState<number | null>(null);
   const [tx, setTx] = useState<Array<{ id: string; type: string; amount: number; createdAt: string }>>([]);
+  const [nextBefore, setNextBefore] = useState<string | null>(null);
+  const [autoRefresh, setAutoRefresh] = useState<boolean>(false);
   const [consent, setConsent] = useState<boolean>(false);
 
   useEffect(() => {
     const saved = localStorage.getItem('miniapp.customerId');
     if (saved) setCustomerId(saved);
     const id = getInitData();
-    if (id && merchantId) {
-      teleauth(merchantId, id)
+    const ctxMerchant = getMerchantFromContext(id);
+    if (ctxMerchant) setMerchantId(ctxMerchant);
+    if (id && (ctxMerchant || merchantId)) {
+      teleauth(ctxMerchant || merchantId, id)
         .then((r) => { setCustomerId(r.customerId); localStorage.setItem('miniapp.customerId', r.customerId); setStatus('Авторизовано через Telegram'); })
         .catch((e) => setStatus(`Ошибка авторизации: ${e.message || e}`));
     }
     // подтянем рекомендуемый TTL
-    publicSettings(merchantId).then(s => setTtl(s.qrTtlSec)).catch(() => {});
+    publicSettings(ctxMerchant || merchantId).then(s => setTtl(s.qrTtlSec)).catch(() => {});
   }, [merchantId]);
 
   const doMint = useCallback(async () => {
@@ -54,9 +74,29 @@ export default function Page() {
 
   const loadTx = useCallback(async () => {
     if (!customerId) { setStatus('Нет customerId'); return; }
-    try { const r = await transactions(merchantId, customerId, 20); setTx(r.items.map(i => ({ id: i.id, type: i.type, amount: i.amount, createdAt: i.createdAt }))); setStatus('История обновлена'); }
+    try {
+      const r = await transactions(merchantId, customerId, 20);
+      setTx(r.items.map(i => ({ id: i.id, type: i.type, amount: i.amount, createdAt: i.createdAt })));
+      setNextBefore(r.nextBefore || null);
+      setStatus('История обновлена');
+    }
     catch (e: any) { setStatus(`Ошибка истории: ${e.message || e}`); }
   }, [customerId, merchantId]);
+
+  const loadMore = useCallback(async () => {
+    if (!customerId || !nextBefore) return;
+    try {
+      const r = await transactions(merchantId, customerId, 20, nextBefore);
+      setTx(prev => [...prev, ...r.items.map(i => ({ id: i.id, type: i.type, amount: i.amount, createdAt: i.createdAt }))]);
+      setNextBefore(r.nextBefore || null);
+    } catch (e:any) { setStatus(`Ошибка подгрузки: ${e.message || e}`); }
+  }, [merchantId, customerId, nextBefore]);
+
+  useEffect(() => {
+    if (!qrToken || !autoRefresh) return;
+    const id = setTimeout(() => { doMint().catch(()=>{}); }, Math.max(5, (ttl - 5)) * 1000);
+    return () => clearTimeout(id);
+  }, [qrToken, autoRefresh, ttl, doMint]);
 
   const syncConsent = useCallback(async () => {
     if (!customerId) return;
@@ -73,23 +113,30 @@ export default function Page() {
   return (
     <div>
       <h1 style={{ margin: '8px 0 16px' }}>Программа лояльности</h1>
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
-        <label>
-          Мерчант:
-          <input value={merchantId} onChange={e=>setMerchantId(e.target.value)} style={{ marginLeft: 8 }} />
-        </label>
-        <label>
-          TTL QR (сек):
-          <input type="number" min={10} max={600} value={ttl} onChange={e=>setTtl(parseInt(e.target.value||'60',10))} style={{ marginLeft: 8, width: 90 }} />
-        </label>
-        <label>
-          CustomerId:
-          <input value={customerId || ''} onChange={e=>{ setCustomerId(e.target.value); localStorage.setItem('miniapp.customerId', e.target.value); }} placeholder="teleauth заполнит сам" style={{ marginLeft: 8, width: 220 }} />
-        </label>
-      </div>
+      {DEV_UI && (
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
+          <label>
+            Мерчант:
+            <input value={merchantId} onChange={e=>setMerchantId(e.target.value)} style={{ marginLeft: 8 }} />
+          </label>
+          <label>
+            TTL QR (сек):
+            <input type="number" min={10} max={600} value={ttl} onChange={e=>setTtl(parseInt(e.target.value||'60',10))} style={{ marginLeft: 8, width: 90 }} />
+          </label>
+          <label>
+            CustomerId:
+            <input value={customerId || ''} onChange={e=>{ setCustomerId(e.target.value); localStorage.setItem('miniapp.customerId', e.target.value); }} placeholder="teleauth заполнит сам" style={{ marginLeft: 8, width: 220 }} />
+          </label>
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
         <button onClick={doMint} style={{ padding: '8px 12px' }}>Показать QR</button>
+        {DEV_UI && (
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <input type="checkbox" checked={autoRefresh} onChange={e=>setAutoRefresh(e.target.checked)} /> авто‑обновлять QR
+          </label>
+        )}
         <button onClick={loadBalance} style={{ padding: '8px 12px' }}>Обновить баланс</button>
         <button onClick={loadTx} style={{ padding: '8px 12px' }}>История</button>
         <button onClick={toggleConsent} style={{ padding: '8px 12px' }}>{consent ? 'Отозвать согласие' : 'Дать согласие'}</button>
@@ -120,9 +167,13 @@ export default function Page() {
               </div>
             ))}
           </div>
+          {nextBefore && (
+            <div style={{ marginTop: 8 }}>
+              <button onClick={loadMore} style={{ padding: '6px 10px' }}>Показать ещё</button>
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 }
-
