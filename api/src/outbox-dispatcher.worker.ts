@@ -56,10 +56,16 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     const settings = await this.prisma.merchantSettings.findUnique({ where: { merchantId: row.merchantId } });
     const url = settings?.webhookUrl || '';
     const secret = settings?.webhookSecret || '';
+    const maxRetries = Number(process.env.OUTBOX_MAX_RETRIES || '10');
     if (!url || !secret) {
       // ничего не отправляем — парковка и лёгкий бэк‑офф
-      const next = new Date(Date.now() + this.backoffMs(row.retries));
-      await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'PENDING', retries: row.retries + 1, nextRetryAt: next, lastError: 'Webhook not configured' } });
+      const retries = row.retries + 1;
+      if (retries >= maxRetries) {
+        await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'DEAD', retries, nextRetryAt: null, lastError: 'Webhook not configured' } });
+      } else {
+        const next = new Date(Date.now() + this.backoffMs(row.retries));
+        await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'PENDING', retries, nextRetryAt: next, lastError: 'Webhook not configured' } });
+      }
       return;
     }
     const body = JSON.stringify(row.payload ?? {});
@@ -81,13 +87,23 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         this.metrics.inc('loyalty_outbox_sent_total');
       } else {
         const text = await res.text().catch(() => '');
-        const next = new Date(Date.now() + this.backoffMs(row.retries));
-        await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'FAILED', retries: row.retries + 1, nextRetryAt: next, lastError: `${res.status} ${res.statusText} ${text}` } });
+        const retries = row.retries + 1;
+        if (retries >= maxRetries) {
+          await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'DEAD', retries, nextRetryAt: null, lastError: `${res.status} ${res.statusText} ${text}` } });
+        } else {
+          const next = new Date(Date.now() + this.backoffMs(row.retries));
+          await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'FAILED', retries, nextRetryAt: next, lastError: `${res.status} ${res.statusText} ${text}` } });
+        }
         this.metrics.inc('loyalty_outbox_failed_total');
       }
     } catch (e: any) {
-      const next = new Date(Date.now() + this.backoffMs(row.retries));
-      await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'FAILED', retries: row.retries + 1, nextRetryAt: next, lastError: String(e?.message || e) } });
+      const retries = row.retries + 1;
+      if (retries >= maxRetries) {
+        await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'DEAD', retries, nextRetryAt: null, lastError: String(e?.message || e) } });
+      } else {
+        const next = new Date(Date.now() + this.backoffMs(row.retries));
+        await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'FAILED', retries, nextRetryAt: next, lastError: String(e?.message || e) } });
+      }
       this.metrics.inc('loyalty_outbox_failed_total');
     }
   }

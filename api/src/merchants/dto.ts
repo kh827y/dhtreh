@@ -113,3 +113,96 @@ export class UpdateStaffDto {
   @ApiPropertyOptional()
   @IsOptional() @IsString() allowedDeviceId?: string;
 }
+
+// ===== Response DTOs =====
+
+export class MerchantSettingsRespDto {
+  @ApiProperty() merchantId!: string;
+  @ApiProperty() earnBps!: number;
+  @ApiProperty() redeemLimitBps!: number;
+  @ApiProperty() qrTtlSec!: number;
+  @ApiPropertyOptional() webhookUrl?: string|null;
+  @ApiPropertyOptional() webhookSecret?: string|null;
+  @ApiPropertyOptional() webhookKeyId?: string|null;
+  @ApiProperty() requireBridgeSig!: boolean;
+  @ApiPropertyOptional() bridgeSecret?: string|null;
+  @ApiProperty() redeemCooldownSec!: number;
+  @ApiProperty() earnCooldownSec!: number;
+  @ApiPropertyOptional() redeemDailyCap?: number|null;
+  @ApiPropertyOptional() earnDailyCap?: number|null;
+  @ApiProperty() requireJwtForQuote!: boolean;
+  @ApiPropertyOptional() rulesJson?: any;
+  @ApiProperty() requireStaffKey!: boolean;
+}
+
+export class OutletDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() merchantId!: string;
+  @ApiProperty() name!: string;
+  @ApiPropertyOptional() address?: string|null;
+  @ApiProperty() createdAt!: Date;
+}
+
+export class DeviceDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() merchantId!: string;
+  @ApiPropertyOptional() outletId?: string|null;
+  @ApiProperty({ enum: DeviceType }) type!: keyof typeof DeviceType | string;
+  @ApiPropertyOptional() label?: string|null;
+  @ApiPropertyOptional() lastSeenAt?: Date|null;
+  @ApiProperty() createdAt!: Date;
+}
+
+export class StaffDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() merchantId!: string;
+  @ApiPropertyOptional() login?: string|null;
+  @ApiPropertyOptional() email?: string|null;
+  @ApiProperty({ enum: StaffRole }) role!: keyof typeof StaffRole | string;
+  @ApiProperty() status!: string;
+  @ApiPropertyOptional() allowedOutletId?: string|null;
+  @ApiPropertyOptional() allowedDeviceId?: string|null;
+  @ApiPropertyOptional() apiKeyHash?: string|null;
+  @ApiProperty() createdAt!: Date;
+}
+
+export class SecretRespDto { @ApiProperty() secret!: string; }
+export class TokenRespDto { @ApiProperty() token!: string; }
+export class OkDto { @ApiProperty() ok!: boolean; }
+
+export class OutboxEventDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() merchantId!: string;
+  @ApiProperty() eventType!: string;
+  @ApiProperty() payload!: any;
+  @ApiProperty() status!: string;
+  @ApiProperty() retries!: number;
+  @ApiPropertyOptional() nextRetryAt?: Date|null;
+  @ApiPropertyOptional() lastError?: string|null;
+  @ApiProperty() createdAt!: Date;
+  @ApiProperty() updatedAt!: Date;
+}
+
+export class BulkUpdateRespDto { @ApiProperty() ok!: boolean; @ApiProperty() updated!: number; }
+
+export class ReceiptDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() merchantId!: string;
+  @ApiProperty() customerId!: string;
+  @ApiProperty() orderId!: string;
+  @ApiPropertyOptional() receiptNumber?: string|null;
+  @ApiProperty() total!: number;
+  @ApiProperty() eligibleTotal!: number;
+  @ApiProperty() redeemApplied!: number;
+  @ApiProperty() earnApplied!: number;
+  @ApiProperty() createdAt!: Date;
+  @ApiPropertyOptional() outletId?: string|null;
+  @ApiPropertyOptional() deviceId?: string|null;
+  @ApiPropertyOptional() staffId?: string|null;
+}
+
+export class CustomerSearchRespDto {
+  @ApiProperty() customerId!: string;
+  @ApiPropertyOptional() phone?: string|null;
+  @ApiProperty() balance!: number;
+}

@@ -14,6 +14,9 @@ export class MetricsService {
   private outboxFailed?: Counter;
   private outboxPendingGauge?: Gauge;
   private commitLatencyHist?: Histogram;
+  private reqQuote?: Counter<string>;
+  private reqCommit?: Counter<string>;
+  private reqRefund?: Counter<string>;
   private quoteLatencyHist?: Histogram;
   private httpReqCounter?: Counter<string>;
   private httpReqDuration?: Histogram<string>;
@@ -26,6 +29,9 @@ export class MetricsService {
     this.outboxFailed = new Counter({ name: 'loyalty_outbox_failed_total', help: 'Total outbox failed events', registers: [this.registry] });
     this.outboxPendingGauge = new Gauge({ name: 'loyalty_outbox_pending', help: 'Current outbox pending', registers: [this.registry] });
     this.commitLatencyHist = new Histogram({ name: 'loyalty_commit_latency_seconds', help: 'Commit latency seconds', buckets: [0.05,0.1,0.2,0.5,1,2,5,10], registers: [this.registry] });
+    this.reqQuote = new Counter({ name: 'loyalty_quote_requests_total', help: 'Quote requests', labelNames: ['result'], registers: [this.registry] });
+    this.reqCommit = new Counter({ name: 'loyalty_commit_requests_total', help: 'Commit requests', labelNames: ['result'], registers: [this.registry] });
+    this.reqRefund = new Counter({ name: 'loyalty_refund_requests_total', help: 'Refund requests', labelNames: ['result'], registers: [this.registry] });
     this.quoteLatencyHist = new Histogram({ name: 'loyalty_quote_latency_seconds', help: 'Quote latency seconds', buckets: [0.01,0.02,0.05,0.1,0.2,0.5,1,2,5], registers: [this.registry] });
     this.httpReqCounter = new Counter({ name: 'http_requests_total', help: 'HTTP requests total', labelNames: ['method','route','status'], registers: [this.registry] });
     this.httpReqDuration = new Histogram({ name: 'http_request_duration_seconds', help: 'HTTP request duration seconds', labelNames: ['method','route','status'], buckets: [0.01,0.025,0.05,0.1,0.2,0.5,1,2,5], registers: [this.registry] });
@@ -37,6 +43,9 @@ export class MetricsService {
     // Mirror selected counters to prom-client
     if (name === 'loyalty_outbox_sent_total') this.outboxSent?.inc(value);
     if (name === 'loyalty_outbox_failed_total') this.outboxFailed?.inc(value);
+    if (name === 'loyalty_quote_requests_total' && labels?.result) this.reqQuote?.inc({ result: labels.result }, value);
+    if (name === 'loyalty_commit_requests_total' && labels?.result) this.reqCommit?.inc({ result: labels.result }, value);
+    if (name === 'loyalty_refund_requests_total' && labels?.result) this.reqRefund?.inc({ result: labels.result }, value);
   }
 
   observe(name: string, ms: number, labels: Record<string, string> = {}) {

@@ -157,3 +157,150 @@ export class LoyaltyApi {
     return await r.json();
   }
 }
+
+// ===== Admin SDK (используйте через серверный прокси /api/admin или с adminKey на сервере) =====
+
+export class AdminApi {
+  private baseUrl: string;
+  private fetchImpl: typeof fetch;
+  private adminKey?: string;
+  constructor(opts: { baseUrl: string; adminKey?: string; fetchImpl?: typeof fetch }) {
+    this.baseUrl = opts.baseUrl.replace(/\/$/, '');
+    this.fetchImpl = opts.fetchImpl || (globalThis as any).fetch;
+    this.adminKey = opts.adminKey;
+    if (!this.fetchImpl) throw new Error('No fetch implementation available');
+  }
+  private headers(json = true): Record<string,string> {
+    const h: Record<string,string> = {};
+    if (json) h['Content-Type'] = 'application/json';
+    if (this.adminKey) h['X-Admin-Key'] = this.adminKey;
+    return h;
+  }
+
+  // Settings
+  async getSettings(merchantId: string) {
+    const r = await this.fetchImpl(`${this.baseUrl}/merchants/${merchantId}/settings`, { headers: this.headers(false) });
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  }
+  async updateSettings(merchantId: string, body: any) {
+    const r = await this.fetchImpl(`${this.baseUrl}/merchants/${merchantId}/settings`, { method: 'PUT', headers: this.headers(), body: JSON.stringify(body) });
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  }
+
+  // Outbox
+  async listOutbox(merchantId: string, params?: { status?: string; limit?: number; type?: string; since?: string }) {
+    const url = new URL(`${this.baseUrl}/merchants/${merchantId}/outbox`);
+    if (params?.status) url.searchParams.set('status', params.status);
+    if (params?.type) url.searchParams.set('type', params.type);
+    if (params?.since) url.searchParams.set('since', params.since);
+    if (params?.limit) url.searchParams.set('limit', String(params.limit));
+    const r = await this.fetchImpl(url.toString(), { headers: this.headers(false) });
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  }
+  async retryOutbox(merchantId: string, eventId: string) {
+    const r = await this.fetchImpl(`${this.baseUrl}/merchants/${merchantId}/outbox/${eventId}/retry`, { method: 'POST', headers: this.headers(false) });
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  }
+  async deleteOutbox(merchantId: string, eventId: string) {
+    const r = await this.fetchImpl(`${this.baseUrl}/merchants/${merchantId}/outbox/${eventId}`, { method: 'DELETE', headers: this.headers(false) });
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  }
+  async retryAll(merchantId: string, status?: string) {
+    const url = new URL(`${this.baseUrl}/merchants/${merchantId}/outbox/retryAll`);
+    if (status) url.searchParams.set('status', status);
+    const r = await this.fetchImpl(url.toString(), { method: 'POST', headers: this.headers(false) });
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  }
+
+  // Outlets
+  async listOutlets(merchantId: string) {
+    const r = await this.fetchImpl(`${this.baseUrl}/merchants/${merchantId}/outlets`, { headers: this.headers(false) });
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  }
+  async createOutlet(merchantId: string, body: any) {
+    const r = await this.fetchImpl(`${this.baseUrl}/merchants/${merchantId}/outlets`, { method: 'POST', headers: this.headers(), body: JSON.stringify(body) });
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  }
+  async updateOutlet(merchantId: string, outletId: string, body: any) {
+    const r = await this.fetchImpl(`${this.baseUrl}/merchants/${merchantId}/outlets/${outletId}`, { method: 'PUT', headers: this.headers(), body: JSON.stringify(body) });
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  }
+  async deleteOutlet(merchantId: string, outletId: string) {
+    const r = await this.fetchImpl(`${this.baseUrl}/merchants/${merchantId}/outlets/${outletId}`, { method: 'DELETE', headers: this.headers(false) });
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  }
+
+  // Devices
+  async listDevices(merchantId: string) {
+    const r = await this.fetchImpl(`${this.baseUrl}/merchants/${merchantId}/devices`, { headers: this.headers(false) });
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  }
+  async createDevice(merchantId: string, body: any) {
+    const r = await this.fetchImpl(`${this.baseUrl}/merchants/${merchantId}/devices`, { method: 'POST', headers: this.headers(), body: JSON.stringify(body) });
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  }
+  async updateDevice(merchantId: string, deviceId: string, body: any) {
+    const r = await this.fetchImpl(`${this.baseUrl}/merchants/${merchantId}/devices/${deviceId}`, { method: 'PUT', headers: this.headers(), body: JSON.stringify(body) });
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  }
+  async deleteDevice(merchantId: string, deviceId: string) {
+    const r = await this.fetchImpl(`${this.baseUrl}/merchants/${merchantId}/devices/${deviceId}`, { method: 'DELETE', headers: this.headers(false) });
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  }
+  async issueDeviceSecret(merchantId: string, deviceId: string) {
+    const r = await this.fetchImpl(`${this.baseUrl}/merchants/${merchantId}/devices/${deviceId}/secret`, { method: 'POST', headers: this.headers(false) });
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  }
+  async revokeDeviceSecret(merchantId: string, deviceId: string) {
+    const r = await this.fetchImpl(`${this.baseUrl}/merchants/${merchantId}/devices/${deviceId}/secret`, { method: 'DELETE', headers: this.headers(false) });
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  }
+
+  // Staff
+  async listStaff(merchantId: string) {
+    const r = await this.fetchImpl(`${this.baseUrl}/merchants/${merchantId}/staff`, { headers: this.headers(false) });
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  }
+  async createStaff(merchantId: string, body: any) {
+    const r = await this.fetchImpl(`${this.baseUrl}/merchants/${merchantId}/staff`, { method: 'POST', headers: this.headers(), body: JSON.stringify(body) });
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  }
+  async updateStaff(merchantId: string, staffId: string, body: any) {
+    const r = await this.fetchImpl(`${this.baseUrl}/merchants/${merchantId}/staff/${staffId}`, { method: 'PUT', headers: this.headers(), body: JSON.stringify(body) });
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  }
+  async deleteStaff(merchantId: string, staffId: string) {
+    const r = await this.fetchImpl(`${this.baseUrl}/merchants/${merchantId}/staff/${staffId}`, { method: 'DELETE', headers: this.headers(false) });
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  }
+  async issueStaffToken(merchantId: string, staffId: string) {
+    const r = await this.fetchImpl(`${this.baseUrl}/merchants/${merchantId}/staff/${staffId}/token`, { method: 'POST', headers: this.headers(false) });
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  }
+  async revokeStaffToken(merchantId: string, staffId: string) {
+    const r = await this.fetchImpl(`${this.baseUrl}/merchants/${merchantId}/staff/${staffId}/token`, { method: 'DELETE', headers: this.headers(false) });
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  }
+}

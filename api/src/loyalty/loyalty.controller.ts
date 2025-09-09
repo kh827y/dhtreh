@@ -1,8 +1,8 @@
 import { Body, Controller, Post, Get, Param, Query, BadRequestException, Res, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
-import { ApiHeader, ApiTags } from '@nestjs/swagger';
+import { ApiExtraModels, ApiHeader, ApiOkResponse, ApiTags, getSchemaPath } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { LoyaltyService } from './loyalty.service';
-import { CommitDto, QrMintDto, QuoteDto, RefundDto } from './dto';
+import { CommitDto, QrMintDto, QuoteDto, RefundDto, QuoteRedeemRespDto, QuoteEarnRespDto, CommitRespDto, RefundRespDto, QrMintRespDto, OkDto, BalanceDto, PublicSettingsDto, TransactionsRespDto, PublicOutletDto, PublicDeviceDto, PublicStaffDto, ConsentGetRespDto } from './dto';
 import { looksLikeJwt, signQrToken, verifyQrToken } from './token.util';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
@@ -14,6 +14,7 @@ import { validateTelegramInitData } from './telegram.util';
 @Controller('loyalty')
 @UseGuards(CashierGuard)
 @ApiTags('loyalty')
+@ApiExtraModels(QuoteRedeemRespDto, QuoteEarnRespDto)
 export class LoyaltyController {
   constructor(private readonly service: LoyaltyService, private readonly prisma: PrismaService, private readonly metrics: MetricsService) {}
 
@@ -41,6 +42,7 @@ export class LoyaltyController {
   @Post('quote')
   @ApiHeader({ name: 'X-Staff-Key', required: false, description: 'Ключ кассира (если включено requireStaffKey)' })
   @ApiHeader({ name: 'X-Bridge-Signature', required: false, description: 'Подпись Bridge (если включено requireBridgeSig)' })
+  @ApiOkResponse({ schema: { oneOf: [ { $ref: getSchemaPath(QuoteRedeemRespDto) }, { $ref: getSchemaPath(QuoteEarnRespDto) } ] } })
   async quote(@Body() dto: QuoteDto, @Req() req: Request & { requestId?: string }) {
     const t0 = Date.now();
     try {
@@ -91,6 +93,7 @@ export class LoyaltyController {
   @Post('commit')
   @ApiHeader({ name: 'Idempotency-Key', required: false, description: 'Идемпотентность COMMIT' })
   @ApiHeader({ name: 'X-Bridge-Signature', required: false, description: 'Подпись Bridge (если включено requireBridgeSig)' })
+  @ApiOkResponse({ type: CommitRespDto })
   async commit(@Body() dto: CommitDto, @Res({ passthrough: true }) res: Response, @Req() req: Request & { requestId?: string }) {
     const t0 = Date.now();
     let data: any;
@@ -157,24 +160,28 @@ export class LoyaltyController {
   }
 
   @Post('cancel')
+  @ApiOkResponse({ type: OkDto })
   cancel(@Body('holdId') holdId: string) {
     return this.service.cancel(holdId);
   }
 
   @Get('balance/:merchantId/:customerId')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiOkResponse({ type: BalanceDto })
   balance2(@Param('merchantId') merchantId: string, @Param('customerId') customerId: string) {
     return this.service.balance(merchantId, customerId);
   }
 
   @Get('balance/:customerId')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiOkResponse({ type: BalanceDto })
   balanceBackCompat(@Param('customerId') customerId: string) {
     return this.service.balance('M-1', customerId);
   }
 
   @Post('qr')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @ApiOkResponse({ type: QrMintRespDto })
   async mintQr(@Body() dto: QrMintDto) {
     const secret = process.env.QR_JWT_SECRET || 'dev_change_me';
     let ttl = dto.ttlSec ?? 60;
@@ -189,6 +196,7 @@ export class LoyaltyController {
   // Публичные настройки, доступные мини-аппе (без админ-ключа)
   @Get('settings/:merchantId')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiOkResponse({ type: PublicSettingsDto })
   async publicSettings(@Param('merchantId') merchantId: string) {
     const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId } });
     return { merchantId, qrTtlSec: s?.qrTtlSec ?? 120 };
@@ -197,6 +205,7 @@ export class LoyaltyController {
   @Post('refund')
   @ApiHeader({ name: 'Idempotency-Key', required: false, description: 'Идемпотентность REFUND' })
   @ApiHeader({ name: 'X-Bridge-Signature', required: false, description: 'Подпись Bridge (если включено requireBridgeSig)' })
+  @ApiOkResponse({ type: RefundRespDto })
   async refund(@Body() dto: RefundDto, @Res({ passthrough: true }) res: Response, @Req() req: Request & { requestId?: string }) {
     let data: any;
     // проверка подписи Bridge до выполнения
@@ -263,6 +272,7 @@ export class LoyaltyController {
 
   @Get('transactions')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiOkResponse({ schema: { $ref: getSchemaPath(TransactionsRespDto) } })
   transactions(
     @Query('merchantId') merchantId: string,
     @Query('customerId') customerId: string,
@@ -280,6 +290,7 @@ export class LoyaltyController {
   // Публичные списки для фронтов (без AdminGuard)
   @Get('outlets/:merchantId')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiOkResponse({ schema: { type: 'array', items: { $ref: getSchemaPath(PublicOutletDto) } } })
   async publicOutlets(@Param('merchantId') merchantId: string) {
     const items = await this.prisma.outlet.findMany({ where: { merchantId }, orderBy: { name: 'asc' } });
     return items.map(o => ({ id: o.id, name: o.name, address: o.address ?? undefined }));
@@ -287,6 +298,7 @@ export class LoyaltyController {
 
   @Get('devices/:merchantId')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiOkResponse({ schema: { type: 'array', items: { $ref: getSchemaPath(PublicDeviceDto) } } })
   async publicDevices(@Param('merchantId') merchantId: string) {
     const items = await this.prisma.device.findMany({ where: { merchantId }, orderBy: { createdAt: 'asc' } });
     return items.map(d => ({ id: d.id, type: d.type, label: d.label ?? undefined, outletId: d.outletId ?? undefined }));
@@ -294,6 +306,7 @@ export class LoyaltyController {
 
   @Get('staff/:merchantId')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiOkResponse({ schema: { type: 'array', items: { $ref: getSchemaPath(PublicStaffDto) } } })
   async publicStaff(@Param('merchantId') merchantId: string) {
     const items = await this.prisma.staff.findMany({ where: { merchantId, status: 'ACTIVE' }, orderBy: { createdAt: 'asc' } });
     return items.map(s => ({ id: s.id, login: s.login ?? undefined, role: s.role }));
@@ -317,6 +330,7 @@ export class LoyaltyController {
   // Согласия на коммуникации
   @Get('consent')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @ApiOkResponse({ schema: { $ref: getSchemaPath(ConsentGetRespDto) } })
   async getConsent(@Query('merchantId') merchantId: string, @Query('customerId') customerId: string) {
     const c = await this.prisma.consent.findUnique({ where: { merchantId_customerId: { merchantId, customerId } } });
     return { granted: !!c, consentAt: c?.consentAt?.toISOString() };
@@ -324,6 +338,7 @@ export class LoyaltyController {
 
   @Post('consent')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @ApiOkResponse({ schema: { $ref: getSchemaPath(OkDto) } })
   async setConsent(@Body() body: { merchantId: string; customerId: string; granted: boolean }) {
     if (!body?.merchantId || !body?.customerId) throw new BadRequestException('merchantId and customerId required');
     if (body.granted) {

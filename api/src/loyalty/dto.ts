@@ -64,3 +64,95 @@ export class RefundDto {
   @ApiPropertyOptional({ minimum: 0 })
   @IsOptional() @IsNumber() @Min(0) refundEligibleTotal?: number;
 }
+
+// ====== Swagger DTOs for responses ======
+
+export class QuoteRedeemRespDto {
+  @ApiProperty() canRedeem!: boolean;
+  @ApiProperty() discountToApply!: number;
+  @ApiProperty() pointsToBurn!: number;
+  @ApiProperty() finalPayable!: number;
+  @ApiPropertyOptional() holdId?: string;
+  @ApiPropertyOptional() message?: string;
+}
+
+export class QuoteEarnRespDto {
+  @ApiProperty() canEarn!: boolean;
+  @ApiProperty() pointsToEarn!: number;
+  @ApiPropertyOptional() holdId?: string;
+  @ApiPropertyOptional() message?: string;
+}
+
+export class CommitRespDto {
+  @ApiProperty() ok!: boolean;
+  @ApiPropertyOptional() alreadyCommitted?: boolean;
+  @ApiPropertyOptional() receiptId?: string;
+  @ApiPropertyOptional() redeemApplied?: number;
+  @ApiPropertyOptional() earnApplied?: number;
+}
+
+export class RefundRespDto {
+  @ApiProperty() ok!: boolean;
+  @ApiProperty() share!: number;
+  @ApiProperty() pointsRestored!: number;
+  @ApiProperty() pointsRevoked!: number;
+}
+
+export class PublicSettingsDto {
+  @ApiProperty() merchantId!: string;
+  @ApiProperty() qrTtlSec!: number;
+}
+
+export class BalanceDto {
+  @ApiProperty() merchantId!: string;
+  @ApiProperty() customerId!: string;
+  @ApiProperty() balance!: number;
+}
+
+export class OkDto { @ApiProperty() ok!: boolean; }
+
+export class QrMintRespDto {
+  @ApiProperty() token!: string;
+  @ApiProperty() ttl!: number;
+}
+
+export class TransactionItemDto {
+  @ApiProperty() id!: string;
+  @ApiProperty({ enum: ['EARN','REDEEM','REFUND','ADJUST'] }) type!: 'EARN'|'REDEEM'|'REFUND'|'ADJUST';
+  @ApiProperty() amount!: number;
+  @ApiPropertyOptional() orderId?: string|null;
+  @ApiProperty() customerId!: string;
+  @ApiProperty() createdAt!: string;
+  @ApiPropertyOptional() outletId?: string|null;
+  @ApiPropertyOptional() deviceId?: string|null;
+  @ApiPropertyOptional() staffId?: string|null;
+}
+
+export class TransactionsRespDto {
+  @ApiProperty({ type: [TransactionItemDto] }) items!: TransactionItemDto[];
+  @ApiPropertyOptional({ nullable: true }) nextBefore?: string|null;
+}
+
+export class PublicOutletDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() name!: string;
+  @ApiPropertyOptional() address?: string;
+}
+
+export class PublicDeviceDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() type!: string;
+  @ApiPropertyOptional() label?: string;
+  @ApiPropertyOptional() outletId?: string;
+}
+
+export class PublicStaffDto {
+  @ApiProperty() id!: string;
+  @ApiPropertyOptional() login?: string;
+  @ApiProperty() role!: string;
+}
+
+export class ConsentGetRespDto {
+  @ApiProperty() granted!: boolean;
+  @ApiPropertyOptional() consentAt?: string;
+}
