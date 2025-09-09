@@ -65,6 +65,9 @@ model MerchantSettings {
   webhookUrl     String?
   webhookSecret  String?
   webhookKeyId   String?
+  webhookSecretNext String?
+  webhookKeyIdNext  String?
+  useWebhookNext    Boolean  @default(false)
   redeemCooldownSec Int   @default(0)
   earnCooldownSec   Int   @default(0)
   redeemDailyCap    Int?
@@ -72,6 +75,7 @@ model MerchantSettings {
   requireJwtForQuote Boolean @default(false)
   requireBridgeSig   Boolean @default(false)
   bridgeSecret       String?
+  bridgeSecretNext   String?
   rulesJson          Json?
   requireStaffKey    Boolean @default(false)
   updatedAt      DateTime @default(now())

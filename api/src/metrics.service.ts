@@ -12,6 +12,7 @@ export class MetricsService {
   private registry: Registry;
   private outboxSent?: Counter;
   private outboxFailed?: Counter;
+  private outboxDead?: Counter;
   private outboxPendingGauge?: Gauge;
   private commitLatencyHist?: Histogram;
   private reqQuote?: Counter<string>;
@@ -27,6 +28,7 @@ export class MetricsService {
     // Known metrics via prom-client (без динамических лейблов)
     this.outboxSent = new Counter({ name: 'loyalty_outbox_sent_total', help: 'Total outbox sent events', registers: [this.registry] });
     this.outboxFailed = new Counter({ name: 'loyalty_outbox_failed_total', help: 'Total outbox failed events', registers: [this.registry] });
+    this.outboxDead = new Counter({ name: 'loyalty_outbox_dead_total', help: 'Total outbox dead events', registers: [this.registry] });
     this.outboxPendingGauge = new Gauge({ name: 'loyalty_outbox_pending', help: 'Current outbox pending', registers: [this.registry] });
     this.commitLatencyHist = new Histogram({ name: 'loyalty_commit_latency_seconds', help: 'Commit latency seconds', buckets: [0.05,0.1,0.2,0.5,1,2,5,10], registers: [this.registry] });
     this.reqQuote = new Counter({ name: 'loyalty_quote_requests_total', help: 'Quote requests', labelNames: ['result'], registers: [this.registry] });
@@ -43,6 +45,7 @@ export class MetricsService {
     // Mirror selected counters to prom-client
     if (name === 'loyalty_outbox_sent_total') this.outboxSent?.inc(value);
     if (name === 'loyalty_outbox_failed_total') this.outboxFailed?.inc(value);
+    if (name === 'loyalty_outbox_dead_total') this.outboxDead?.inc(value);
     if (name === 'loyalty_quote_requests_total' && labels?.result) this.reqQuote?.inc({ result: labels.result }, value);
     if (name === 'loyalty_commit_requests_total' && labels?.result) this.reqCommit?.inc({ result: labels.result }, value);
     if (name === 'loyalty_refund_requests_total' && labels?.result) this.reqRefund?.inc({ result: labels.result }, value);

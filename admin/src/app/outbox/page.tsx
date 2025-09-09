@@ -86,7 +86,7 @@ export default function OutboxPage() {
         <a href="/devices">Devices</a>
         <a href="/staff">Staff</a>
       </div>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 8 }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
         <label>Статус: <input value={status} onChange={(e) => setStatus(e.target.value)} placeholder="PENDING/SENT/…" /></label>
         <label>Тип: <input value={type} onChange={(e) => setType(e.target.value)} placeholder="loyalty.commit" /></label>
         <label>С даты: <input type="datetime-local" value={since} onChange={(e) => setSince(e.target.value)} /></label>
@@ -94,13 +94,14 @@ export default function OutboxPage() {
         <button onClick={load} disabled={loading} style={{ padding: '6px 10px' }}>Обновить</button>
         <button onClick={() => retryAll()} disabled={loading} style={{ padding: '6px 10px' }}>Retry All</button>
         <button onClick={() => retryAll('FAILED')} disabled={loading} style={{ padding: '6px 10px' }}>Retry FAILED</button>
+        <button onClick={() => retryAll('DEAD')} disabled={loading} style={{ padding: '6px 10px' }}>Retry DEAD</button>
       </div>
 
       {msg && <div style={{ marginTop: 8 }}>{msg}</div>}
 
       <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
         {items.map(ev => (
-          <div key={ev.id} style={{ border: '1px solid #eee', borderRadius: 10, padding: 10 }}>
+          <div key={ev.id} style={{ border: '1px solid #eee', borderRadius: 10, padding: 10, background: ev.status==='DEAD'?'#fee':ev.status==='FAILED'?'#fff7f7':'#fff' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <div><b>{ev.eventType}</b> · <code>{ev.status}</code> · попыток: {ev.retries}</div>
               <div style={{ color: '#666' }}>{new Date(ev.createdAt).toLocaleString()}</div>

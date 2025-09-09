@@ -14,6 +14,9 @@ export default function AdminPage() {
   const [webhookUrl, setWebhookUrl] = useState<string>('');
   const [webhookSecret, setWebhookSecret] = useState<string>('');
   const [webhookKeyId, setWebhookKeyId] = useState<string>('');
+  const [webhookSecretNext, setWebhookSecretNext] = useState<string>('');
+  const [webhookKeyIdNext, setWebhookKeyIdNext] = useState<string>('');
+  const [useWebhookNext, setUseWebhookNext] = useState<boolean>(false);
   const [redeemCooldownSec, setRedeemCooldownSec] = useState<number>(0);
   const [earnCooldownSec, setEarnCooldownSec] = useState<number>(0);
   const [redeemDailyCap, setRedeemDailyCap] = useState<number>(0);
@@ -22,6 +25,7 @@ export default function AdminPage() {
   const [rulesJson, setRulesJson] = useState<string>('[\n  {\n    "if": { "channelIn": ["VIRTUAL"], "weekdayIn": [1,2,3,4,5] },\n    "then": { "earnBps": 600 }\n  }\n]');
   const [requireBridgeSig, setRequireBridgeSig] = useState<boolean>(false);
   const [bridgeSecret, setBridgeSecret] = useState<string>('');
+  const [bridgeSecretNext, setBridgeSecretNext] = useState<string>('');
   const [requireStaffKey, setRequireStaffKey] = useState<boolean>(false);
   const [rulesCheck, setRulesCheck] = useState<string>('');
 
@@ -41,6 +45,9 @@ export default function AdminPage() {
       setWebhookUrl(data.webhookUrl || '');
       setWebhookSecret(data.webhookSecret || '');
       setWebhookKeyId(data.webhookKeyId || '');
+      setWebhookSecretNext(data.webhookSecretNext || '');
+      setWebhookKeyIdNext(data.webhookKeyIdNext || '');
+      setUseWebhookNext(Boolean(data.useWebhookNext));
       setRedeemCooldownSec(Number(data.redeemCooldownSec || 0));
       setEarnCooldownSec(Number(data.earnCooldownSec || 0));
       setRedeemDailyCap(Number(data.redeemDailyCap || 0));
@@ -49,6 +56,7 @@ export default function AdminPage() {
       if (data.rulesJson) setRulesJson(JSON.stringify(data.rulesJson, null, 2));
       setRequireBridgeSig(Boolean(data.requireBridgeSig));
       setBridgeSecret(data.bridgeSecret || '');
+      setBridgeSecretNext(data.bridgeSecretNext || '');
       setRequireStaffKey(Boolean(data.requireStaffKey));
     } catch (e: any) {
       setMsg('Ошибка загрузки: ' + e?.message);
@@ -64,7 +72,7 @@ export default function AdminPage() {
       const r = await fetch(`/api/admin/merchants/${MERCHANT}/settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ earnBps, redeemLimitBps, qrTtlSec, webhookUrl, webhookSecret, webhookKeyId, redeemCooldownSec, earnCooldownSec, redeemDailyCap, earnDailyCap, requireJwtForQuote, rulesJson: JSON.parse(rulesJson||'null'), requireBridgeSig, bridgeSecret, requireStaffKey }),
+        body: JSON.stringify({ earnBps, redeemLimitBps, qrTtlSec, webhookUrl, webhookSecret, webhookKeyId, webhookSecretNext, webhookKeyIdNext, useWebhookNext, redeemCooldownSec, earnCooldownSec, redeemDailyCap, earnDailyCap, requireJwtForQuote, rulesJson: JSON.parse(rulesJson||'null'), requireBridgeSig, bridgeSecret, bridgeSecretNext, requireStaffKey }),
       });
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
@@ -183,9 +191,40 @@ export default function AdminPage() {
         </label>
         <label>
           Webhook Secret:
-          <input value={webhookSecret} onChange={(e) => setWebhookSecret(e.target.value)} placeholder="секрет для подписи"
-                 style={{ width: '100%', padding: 8 }} />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input value={webhookSecret} onChange={(e) => setWebhookSecret(e.target.value)} placeholder="секрет для подписи"
+                   style={{ width: '100%', padding: 8 }} />
+            <button type="button" onClick={() => {
+              const s = Array.from(crypto.getRandomValues(new Uint8Array(24))).map(b=>b.toString(16).padStart(2,'0')).join('');
+              setWebhookSecret(s);
+            }} style={{ padding: '8px 12px' }}>Generate</button>
+          </div>
           <div style={{ color: '#666', fontSize: 12 }}>Подпись: HMAC_SHA256(ts + '.' + body), заголовок X-Loyalty-Signature</div>
+        </label>
+        <label>
+          Webhook Key ID:
+          <input value={webhookKeyId} onChange={(e) => setWebhookKeyId(e.target.value)} placeholder="kid"
+                 style={{ width: '100%', padding: 8 }} />
+        </label>
+        <div style={{ borderTop: '1px dashed #ddd', margin: '8px 0' }} />
+        <label>
+          Webhook Secret (next):
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input value={webhookSecretNext} onChange={(e) => setWebhookSecretNext(e.target.value)} placeholder="секрет следующего ключа"
+                   style={{ width: '100%', padding: 8 }} />
+            <button type="button" onClick={() => {
+              const s = Array.from(crypto.getRandomValues(new Uint8Array(24))).map(b=>b.toString(16).padStart(2,'0')).join('');
+              setWebhookSecretNext(s);
+            }} style={{ padding: '8px 12px' }}>Generate</button>
+          </div>
+        </label>
+        <label>
+          Webhook Key ID (next):
+          <input value={webhookKeyIdNext} onChange={(e) => setWebhookKeyIdNext(e.target.value)} placeholder="kid-next"
+                 style={{ width: '100%', padding: 8 }} />
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input type="checkbox" checked={useWebhookNext} onChange={(e) => setUseWebhookNext(e.target.checked)} /> Использовать следующий ключ для подписи (ротация)
         </label>
         <label>
           Webhook Key ID (kid):
@@ -196,9 +235,26 @@ export default function AdminPage() {
 
         <label>
           Bridge Secret (merchant-level):
-          <input value={bridgeSecret} onChange={(e) => setBridgeSecret(e.target.value)} placeholder="секрет Bridge"
-                 style={{ width: '100%', padding: 8 }} />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input value={bridgeSecret} onChange={(e) => setBridgeSecret(e.target.value)} placeholder="секрет Bridge"
+                   style={{ width: '100%', padding: 8 }} />
+            <button type="button" onClick={() => {
+              const s = Array.from(crypto.getRandomValues(new Uint8Array(24))).map(b=>b.toString(16).padStart(2,'0')).join('');
+              setBridgeSecret(s);
+            }} style={{ padding: '8px 12px' }}>Generate</button>
+          </div>
           <div style={{ color: '#666', fontSize: 12 }}>Для проверки входящих запросов Bridge (если нет секретов на устройствах)</div>
+        </label>
+        <label>
+          Bridge Secret (next):
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input value={bridgeSecretNext} onChange={(e) => setBridgeSecretNext(e.target.value)} placeholder="следующий секрет Bridge"
+                   style={{ width: '100%', padding: 8 }} />
+            <button type="button" onClick={() => {
+              const s = Array.from(crypto.getRandomValues(new Uint8Array(24))).map(b=>b.toString(16).padStart(2,'0')).join('');
+              setBridgeSecretNext(s);
+            }} style={{ padding: '8px 12px' }}>Generate</button>
+          </div>
         </label>
 
         <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

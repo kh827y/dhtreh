@@ -156,3 +156,12 @@ export class ConsentGetRespDto {
   @ApiProperty() granted!: boolean;
   @ApiPropertyOptional() consentAt?: string;
 }
+
+export class ErrorDto {
+  @ApiProperty() error!: string;
+  @ApiProperty() message!: string;
+  @ApiProperty() statusCode!: number;
+  @ApiPropertyOptional() requestId?: string;
+  @ApiPropertyOptional() path?: string;
+  @ApiPropertyOptional() timestamp?: string;
+}

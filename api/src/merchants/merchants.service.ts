@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { UpdateDeviceDto, UpdateOutletDto, UpdateStaffDto } from './dto';
+import { UpdateDeviceDto, UpdateMerchantSettingsDto, UpdateOutletDto, UpdateStaffDto } from './dto';
 
 @Injectable()
 export class MerchantsService {
@@ -21,8 +21,12 @@ export class MerchantsService {
       webhookUrl: s.webhookUrl ?? null,
       webhookSecret: s.webhookSecret ?? null,
       webhookKeyId: s.webhookKeyId ?? null,
+      webhookSecretNext: (s as any).webhookSecretNext ?? null,
+      webhookKeyIdNext: (s as any).webhookKeyIdNext ?? null,
+      useWebhookNext: (s as any).useWebhookNext ?? false,
       requireBridgeSig: s.requireBridgeSig ?? false,
       bridgeSecret: s.bridgeSecret ?? null,
+      bridgeSecretNext: (s as any).bridgeSecretNext ?? null,
       redeemCooldownSec: s.redeemCooldownSec ?? 0,
       earnCooldownSec: s.earnCooldownSec ?? 0,
       redeemDailyCap: s.redeemDailyCap ?? null,
@@ -33,7 +37,7 @@ export class MerchantsService {
     };
   }
 
-  async updateSettings(merchantId: string, earnBps: number, redeemLimitBps: number, qrTtlSec?: number, webhookUrl?: string, webhookSecret?: string, webhookKeyId?: string, redeemCooldownSec?: number, earnCooldownSec?: number, redeemDailyCap?: number, earnDailyCap?: number, requireJwtForQuote?: boolean, rulesJson?: any, requireBridgeSig?: boolean, bridgeSecret?: string, requireStaffKey?: boolean) {
+  async updateSettings(merchantId: string, earnBps: number, redeemLimitBps: number, qrTtlSec?: number, webhookUrl?: string, webhookSecret?: string, webhookKeyId?: string, redeemCooldownSec?: number, earnCooldownSec?: number, redeemDailyCap?: number, earnDailyCap?: number, requireJwtForQuote?: boolean, rulesJson?: any, requireBridgeSig?: boolean, bridgeSecret?: string, requireStaffKey?: boolean, extras?: Partial<UpdateMerchantSettingsDto>) {
     // убедимся, что мерчант есть
     await this.prisma.merchant.upsert({
       where: { id: merchantId },
@@ -50,8 +54,12 @@ export class MerchantsService {
         webhookUrl,
         webhookSecret,
         webhookKeyId,
+        webhookSecretNext: extras?.webhookSecretNext ?? undefined,
+        webhookKeyIdNext: extras?.webhookKeyIdNext ?? undefined,
+        useWebhookNext: extras?.useWebhookNext ?? undefined,
         requireBridgeSig: requireBridgeSig ?? undefined,
         bridgeSecret: bridgeSecret ?? undefined,
+        bridgeSecretNext: extras?.bridgeSecretNext ?? undefined,
         redeemCooldownSec: redeemCooldownSec ?? undefined,
         earnCooldownSec: earnCooldownSec ?? undefined,
         redeemDailyCap: redeemDailyCap ?? undefined,
@@ -69,8 +77,12 @@ export class MerchantsService {
         webhookUrl: webhookUrl ?? null,
         webhookSecret: webhookSecret ?? null,
         webhookKeyId: webhookKeyId ?? null,
+        webhookSecretNext: extras?.webhookSecretNext ?? null,
+        webhookKeyIdNext: extras?.webhookKeyIdNext ?? null,
+        useWebhookNext: extras?.useWebhookNext ?? false,
         requireBridgeSig: requireBridgeSig ?? false,
         bridgeSecret: bridgeSecret ?? null,
+        bridgeSecretNext: extras?.bridgeSecretNext ?? null,
         redeemCooldownSec: redeemCooldownSec ?? 0,
         earnCooldownSec: earnCooldownSec ?? 0,
         redeemDailyCap: redeemDailyCap ?? null,

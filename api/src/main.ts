@@ -13,6 +13,7 @@ import { MetricsService } from './metrics.service';
 // OpenTelemetry (инициализация по флагу)
 import './otel';
 import { context as otelContext, trace as otelTrace } from '@opentelemetry/api';
+import { HttpErrorFilter } from './http-error.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -62,6 +63,9 @@ async function bootstrap() {
   // HTTP metrics interceptor (prom-client с лейблами)
   app.useGlobalInterceptors(new HttpMetricsInterceptor(app.get(MetricsService)));
 
+  // Единый JSON-формат ошибок
+  app.useGlobalFilters(new HttpErrorFilter());
+
   // Sentry (опц.)
   if (process.env.SENTRY_DSN) {
     Sentry.init({ dsn: process.env.SENTRY_DSN, tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE || '0.0'), environment: process.env.NODE_ENV || 'development' });
@@ -83,6 +87,22 @@ async function bootstrap() {
   try {
     const httpInst = app.getHttpAdapter().getInstance();
     httpInst.get('/openapi.json', (_req: any, res: any) => res.json(document));
+    // Postman collection export from OpenAPI
+    httpInst.get('/postman.json', (_req: any, res: any) => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const converter = require('openapi-to-postmanv2');
+        converter.convert({ type: 'json', data: document }, { folderStrategy: 'Tags' }, (err: any, result: any) => {
+          if (err || !result?.result) {
+            res.status(500).json({ error: 'ConversionError', message: String(err || result?.reason || 'Unknown') });
+            return;
+          }
+          res.json(result.output[0].data);
+        });
+      } catch (e: any) {
+        res.status(500).json({ error: 'ConversionError', message: String(e?.message || e) });
+      }
+    });
   } catch {}
 
   // Совместимый алиас: пробрасываем /api/v1/* на существующие маршруты, чтобы не ломать клиентов

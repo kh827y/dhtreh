@@ -1,8 +1,8 @@
 import { Body, Controller, Post, Get, Param, Query, BadRequestException, Res, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
-import { ApiExtraModels, ApiHeader, ApiOkResponse, ApiTags, getSchemaPath } from '@nestjs/swagger';
+import { ApiBadRequestResponse, ApiExtraModels, ApiHeader, ApiOkResponse, ApiTags, ApiUnauthorizedResponse, getSchemaPath } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { LoyaltyService } from './loyalty.service';
-import { CommitDto, QrMintDto, QuoteDto, RefundDto, QuoteRedeemRespDto, QuoteEarnRespDto, CommitRespDto, RefundRespDto, QrMintRespDto, OkDto, BalanceDto, PublicSettingsDto, TransactionsRespDto, PublicOutletDto, PublicDeviceDto, PublicStaffDto, ConsentGetRespDto } from './dto';
+import { CommitDto, QrMintDto, QuoteDto, RefundDto, QuoteRedeemRespDto, QuoteEarnRespDto, CommitRespDto, RefundRespDto, QrMintRespDto, OkDto, BalanceDto, PublicSettingsDto, TransactionsRespDto, PublicOutletDto, PublicDeviceDto, PublicStaffDto, ConsentGetRespDto, ErrorDto } from './dto';
 import { looksLikeJwt, signQrToken, verifyQrToken } from './token.util';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
@@ -43,6 +43,7 @@ export class LoyaltyController {
   @ApiHeader({ name: 'X-Staff-Key', required: false, description: 'Ключ кассира (если включено requireStaffKey)' })
   @ApiHeader({ name: 'X-Bridge-Signature', required: false, description: 'Подпись Bridge (если включено requireBridgeSig)' })
   @ApiOkResponse({ schema: { oneOf: [ { $ref: getSchemaPath(QuoteRedeemRespDto) }, { $ref: getSchemaPath(QuoteEarnRespDto) } ] } })
+  @ApiBadRequestResponse({ type: ErrorDto })
   async quote(@Body() dto: QuoteDto, @Req() req: Request & { requestId?: string }) {
     const t0 = Date.now();
     try {
@@ -72,10 +73,13 @@ export class LoyaltyController {
       // проверка подписи Bridge при необходимости
       if (s?.requireBridgeSig) {
         const sig = (req.headers['x-bridge-signature'] as string | undefined) || '';
-        const secret = dto.deviceId ? (await this.prisma.device.findUnique({ where: { id: dto.deviceId } }))?.bridgeSecret : (s.bridgeSecret || null);
-        if (!secret || !this.verifyBridgeSignature(sig, JSON.stringify(dto), secret)) {
-          throw new UnauthorizedException('Invalid bridge signature');
-        }
+        let secret = dto.deviceId ? (await this.prisma.device.findUnique({ where: { id: dto.deviceId } }))?.bridgeSecret : (s.bridgeSecret || null);
+        const alt = dto.deviceId ? null : ((s as any).bridgeSecretNext || null);
+        const bodyForSig = JSON.stringify(dto);
+        let ok = false;
+        if (secret && this.verifyBridgeSignature(sig, bodyForSig, secret)) ok = true;
+        else if (alt && this.verifyBridgeSignature(sig, bodyForSig, alt)) ok = true;
+        if (!ok) throw new UnauthorizedException('Invalid bridge signature');
       }
       const data = await this.service.quote({ ...dto, staffId, userToken: v.customerId }, qrMeta);
       this.metrics.inc('loyalty_quote_requests_total', { result: 'ok' });
@@ -94,6 +98,8 @@ export class LoyaltyController {
   @ApiHeader({ name: 'Idempotency-Key', required: false, description: 'Идемпотентность COMMIT' })
   @ApiHeader({ name: 'X-Bridge-Signature', required: false, description: 'Подпись Bridge (если включено requireBridgeSig)' })
   @ApiOkResponse({ type: CommitRespDto })
+  @ApiUnauthorizedResponse({ type: ErrorDto })
+  @ApiBadRequestResponse({ type: ErrorDto })
   async commit(@Body() dto: CommitDto, @Res({ passthrough: true }) res: Response, @Req() req: Request & { requestId?: string }) {
     const t0 = Date.now();
     let data: any;
@@ -102,18 +108,20 @@ export class LoyaltyController {
       const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId: dto.merchantId } });
       if (s?.requireBridgeSig) {
         const sig = (req.headers['x-bridge-signature'] as string | undefined) || '';
-        let secret = s.bridgeSecret || null;
+        let secret: string | null = s.bridgeSecret || null;
+        let alt: string | null = (s as any).bridgeSecretNext || null;
         try {
           const hold = await this.prisma.hold.findUnique({ where: { id: dto.holdId } });
           if (hold?.deviceId) {
             const dev = await this.prisma.device.findUnique({ where: { id: hold.deviceId } });
-            if (dev?.bridgeSecret) secret = dev.bridgeSecret;
+            if (dev?.bridgeSecret) { secret = dev.bridgeSecret; alt = null; }
           }
         } catch {}
         const bodyForSig = JSON.stringify({ merchantId: dto.merchantId, holdId: dto.holdId, orderId: dto.orderId, receiptNumber: dto.receiptNumber ?? undefined });
-        if (!secret || !this.verifyBridgeSignature(sig, bodyForSig, secret)) {
-          throw new UnauthorizedException('Invalid bridge signature');
-        }
+        let ok = false;
+        if (secret && this.verifyBridgeSignature(sig, bodyForSig, secret)) ok = true;
+        else if (alt && this.verifyBridgeSignature(sig, bodyForSig, alt)) ok = true;
+        if (!ok) throw new UnauthorizedException('Invalid bridge signature');
       }
     } catch {}
     try {
@@ -144,7 +152,8 @@ export class LoyaltyController {
     }
     try {
       const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId: dto.merchantId } });
-      const secret = s?.webhookSecret;
+      const useNext = Boolean((s as any)?.useWebhookNext) && !!(s as any)?.webhookSecretNext;
+      const secret = (useNext ? (s as any)?.webhookSecretNext : s?.webhookSecret) as string | undefined;
       if (secret) {
         const ts = Math.floor(Date.now() / 1000).toString();
         const body = JSON.stringify(data);
@@ -152,7 +161,8 @@ export class LoyaltyController {
         res.setHeader('X-Loyalty-Signature', `v1,ts=${ts},sig=${sig}`);
         res.setHeader('X-Merchant-Id', dto.merchantId);
         res.setHeader('X-Signature-Timestamp', ts);
-        if (s?.webhookKeyId) res.setHeader('X-Signature-Key-Id', s.webhookKeyId);
+        const kid = useNext ? (s as any)?.webhookKeyIdNext : s?.webhookKeyId;
+        if (kid) res.setHeader('X-Signature-Key-Id', kid);
         if (req.requestId) res.setHeader('X-Request-Id', req.requestId);
       }
     } catch {}
@@ -206,6 +216,8 @@ export class LoyaltyController {
   @ApiHeader({ name: 'Idempotency-Key', required: false, description: 'Идемпотентность REFUND' })
   @ApiHeader({ name: 'X-Bridge-Signature', required: false, description: 'Подпись Bridge (если включено requireBridgeSig)' })
   @ApiOkResponse({ type: RefundRespDto })
+  @ApiUnauthorizedResponse({ type: ErrorDto })
+  @ApiBadRequestResponse({ type: ErrorDto })
   async refund(@Body() dto: RefundDto, @Res({ passthrough: true }) res: Response, @Req() req: Request & { requestId?: string }) {
     let data: any;
     // проверка подписи Bridge до выполнения

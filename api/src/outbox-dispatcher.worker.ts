@@ -55,13 +55,15 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
   private async send(row: OutboxRow) {
     const settings = await this.prisma.merchantSettings.findUnique({ where: { merchantId: row.merchantId } });
     const url = settings?.webhookUrl || '';
-    const secret = settings?.webhookSecret || '';
+    const useNext = Boolean((settings as any)?.useWebhookNext) && !!(settings as any)?.webhookSecretNext;
+    const secret = (useNext ? (settings as any)?.webhookSecretNext : settings?.webhookSecret) || '';
     const maxRetries = Number(process.env.OUTBOX_MAX_RETRIES || '10');
     if (!url || !secret) {
       // ничего не отправляем — парковка и лёгкий бэк‑офф
       const retries = row.retries + 1;
       if (retries >= maxRetries) {
         await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'DEAD', retries, nextRetryAt: null, lastError: 'Webhook not configured' } });
+        this.metrics.inc('loyalty_outbox_dead_total');
       } else {
         const next = new Date(Date.now() + this.backoffMs(row.retries));
         await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'PENDING', retries, nextRetryAt: next, lastError: 'Webhook not configured' } });
@@ -78,7 +80,8 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       'X-Signature-Timestamp': ts,
       'X-Event-Id': row.id,
     };
-    if (settings?.webhookKeyId) headers['X-Signature-Key-Id'] = settings.webhookKeyId;
+    const kid = useNext ? (settings as any)?.webhookKeyIdNext : settings?.webhookKeyId;
+    if (kid) headers['X-Signature-Key-Id'] = kid as string;
 
     try {
       const res = await fetch(url, { method: 'POST', headers, body, redirect: 'manual' });
@@ -90,6 +93,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         const retries = row.retries + 1;
         if (retries >= maxRetries) {
           await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'DEAD', retries, nextRetryAt: null, lastError: `${res.status} ${res.statusText} ${text}` } });
+          this.metrics.inc('loyalty_outbox_dead_total');
         } else {
           const next = new Date(Date.now() + this.backoffMs(row.retries));
           await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'FAILED', retries, nextRetryAt: next, lastError: `${res.status} ${res.statusText} ${text}` } });
@@ -100,6 +104,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       const retries = row.retries + 1;
       if (retries >= maxRetries) {
         await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'DEAD', retries, nextRetryAt: null, lastError: String(e?.message || e) } });
+        this.metrics.inc('loyalty_outbox_dead_total');
       } else {
         const next = new Date(Date.now() + this.backoffMs(row.retries));
         await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'FAILED', retries, nextRetryAt: next, lastError: String(e?.message || e) } });

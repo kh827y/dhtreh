@@ -26,6 +26,15 @@ export class UpdateMerchantSettingsDto {
   @ApiPropertyOptional()
   @IsOptional() @IsString()
   webhookKeyId?: string;
+  @ApiPropertyOptional()
+  @IsOptional() @IsString()
+  webhookSecretNext?: string;
+  @ApiPropertyOptional()
+  @IsOptional() @IsString()
+  webhookKeyIdNext?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  useWebhookNext?: boolean;
 
   @ApiPropertyOptional({ minimum: 0, maximum: 86400 })
   @IsOptional() @IsInt() @Min(0) @Max(86400)
@@ -54,6 +63,9 @@ export class UpdateMerchantSettingsDto {
   @ApiPropertyOptional()
   @IsOptional() @IsString()
   bridgeSecret?: string;
+  @ApiPropertyOptional()
+  @IsOptional() @IsString()
+  bridgeSecretNext?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

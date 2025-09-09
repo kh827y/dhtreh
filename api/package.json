@@ -18,7 +18,8 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "seed": "prisma db seed"
+    "seed": "prisma db seed",
+    "postman:gen": "node scripts/generate-postman.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -44,6 +45,7 @@
     "pino": "^9.5.0",
     "pino-http": "^10.3.0",
     "prom-client": "^15.1.3",
+    "openapi-to-postmanv2": "^4.24.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "uuid": "^12.0.0"
