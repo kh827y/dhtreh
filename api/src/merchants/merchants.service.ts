@@ -35,6 +35,10 @@ export class MerchantsService {
       rulesJson: s.rulesJson ?? null,
       requireStaffKey: s.requireStaffKey ?? false,
       pointsTtlDays: (s as any).pointsTtlDays ?? null,
+      telegramBotToken: (s as any).telegramBotToken ?? null,
+      telegramBotUsername: (s as any).telegramBotUsername ?? null,
+      telegramStartParamRequired: (s as any).telegramStartParamRequired ?? false,
+      miniappBaseUrl: (s as any).miniappBaseUrl ?? null,
     };
   }
 
@@ -70,6 +74,10 @@ export class MerchantsService {
         requireStaffKey: requireStaffKey ?? undefined,
         updatedAt: new Date(),
         pointsTtlDays: extras?.pointsTtlDays ?? undefined,
+        telegramBotToken: extras?.telegramBotToken ?? undefined,
+        telegramBotUsername: extras?.telegramBotUsername ?? undefined,
+        telegramStartParamRequired: extras?.telegramStartParamRequired ?? undefined,
+        miniappBaseUrl: extras?.miniappBaseUrl ?? undefined,
       },
       create: {
         merchantId,
@@ -93,6 +101,10 @@ export class MerchantsService {
         rulesJson: rulesJson ?? null,
         requireStaffKey: requireStaffKey ?? false,
         pointsTtlDays: extras?.pointsTtlDays ?? null,
+        telegramBotToken: extras?.telegramBotToken ?? null,
+        telegramBotUsername: extras?.telegramBotUsername ?? null,
+        telegramStartParamRequired: extras?.telegramStartParamRequired ?? false,
+        miniappBaseUrl: extras?.miniappBaseUrl ?? null,
       },
     });
     return {
@@ -112,6 +124,10 @@ export class MerchantsService {
       requireJwtForQuote: updated.requireJwtForQuote,
       rulesJson: updated.rulesJson,
       requireStaffKey: updated.requireStaffKey,
+      telegramBotToken: (updated as any).telegramBotToken ?? null,
+      telegramBotUsername: (updated as any).telegramBotUsername ?? null,
+      telegramStartParamRequired: (updated as any).telegramStartParamRequired ?? false,
+      miniappBaseUrl: (updated as any).miniappBaseUrl ?? null,
     };
   }
 
@@ -282,18 +298,44 @@ export class MerchantsService {
   }
 
   // Ledger
-  async listLedger(merchantId: string, params: { limit: number; before?: Date; customerId?: string }) {
+  async listLedger(merchantId: string, params: { limit: number; before?: Date; customerId?: string; from?: Date; to?: Date; type?: string }) {
     const where: any = { merchantId };
     if (params.customerId) where.customerId = params.customerId;
     if (params.before) where.createdAt = { lt: params.before };
+    if (params.from || params.to) {
+      where.createdAt = Object.assign(where.createdAt || {}, params.from ? { gte: params.from } : {}, params.to ? { lte: params.to } : {});
+    }
+    if (params.type) {
+      // приблизительное сопоставление по мета.type
+      where.meta = { path: ['mode'], equals: params.type === 'earn' || params.type === 'redeem' ? params.type.toUpperCase() : 'REFUND' } as any;
+    }
     return this.prisma.ledgerEntry.findMany({ where, orderBy: { createdAt: 'desc' }, take: params.limit });
   }
 
-  async exportLedgerCsv(merchantId: string, params: { limit: number; before?: Date; customerId?: string }) {
+  async exportLedgerCsv(merchantId: string, params: { limit: number; before?: Date; customerId?: string; from?: Date; to?: Date; type?: string }) {
     const items = await this.listLedger(merchantId, params);
     const lines = [ 'id,customerId,debit,credit,amount,orderId,receiptId,createdAt,outletId,deviceId,staffId' ];
     for (const e of items) {
       const row = [ e.id, e.customerId||'', e.debit, e.credit, e.amount, e.orderId||'', e.receiptId||'', e.createdAt.toISOString(), e.outletId||'', e.deviceId||'', e.staffId||'' ]
+        .map(x => `"${String(x).replaceAll('"','""')}"`).join(',');
+      lines.push(row);
+    }
+    return lines.join('\n') + '\n';
+  }
+
+  // Earn lots (admin)
+  async listEarnLots(merchantId: string, params: { limit: number; before?: Date; customerId?: string; activeOnly?: boolean }) {
+    const where: any = { merchantId };
+    if (params.customerId) where.customerId = params.customerId;
+    if (params.before) where.createdAt = { lt: params.before };
+    if (params.activeOnly) where.OR = [ { consumedPoints: null }, { consumedPoints: { lt: (undefined as any) } } ] as any; // prisma workaround placeholder
+    return this.prisma.earnLot.findMany({ where, orderBy: { earnedAt: 'desc' }, take: params.limit });
+  }
+  async exportEarnLotsCsv(merchantId: string, params: { limit: number; before?: Date; customerId?: string; activeOnly?: boolean }) {
+    const items = await this.listEarnLots(merchantId, params);
+    const lines = [ 'id,customerId,points,consumedPoints,earnedAt,expiresAt,orderId,receiptId,outletId,deviceId,staffId' ];
+    for (const e of items) {
+      const row = [ e.id, e.customerId, e.points, e.consumedPoints||0, e.earnedAt.toISOString(), e.expiresAt?e.expiresAt.toISOString():'', e.orderId||'', e.receiptId||'', e.outletId||'', e.deviceId||'', e.staffId||'' ]
         .map(x => `"${String(x).replaceAll('"','""')}"`).join(',');
       lines.push(row);
     }

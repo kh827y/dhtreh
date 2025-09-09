@@ -182,13 +182,6 @@ export class LoyaltyController {
     return this.service.balance(merchantId, customerId);
   }
 
-  @Get('balance/:customerId')
-  @Throttle({ default: { limit: 60, ttl: 60_000 } })
-  @ApiOkResponse({ type: BalanceDto })
-  balanceBackCompat(@Param('customerId') customerId: string) {
-    return this.service.balance('M-1', customerId);
-  }
-
   @Post('qr')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @ApiOkResponse({ type: QrMintRespDto })
@@ -225,11 +218,13 @@ export class LoyaltyController {
       const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId: dto.merchantId } });
       if (s?.requireBridgeSig) {
         const sig = (req.headers['x-bridge-signature'] as string | undefined) || '';
-        const secret = (s.bridgeSecret || null);
+        const secret = (s.bridgeSecret || null) as string | null;
+        const alt = ((s as any).bridgeSecretNext || null) as string | null;
         const bodyForSig = JSON.stringify({ merchantId: dto.merchantId, orderId: dto.orderId, refundTotal: dto.refundTotal, refundEligibleTotal: dto.refundEligibleTotal ?? undefined });
-        if (!secret || !this.verifyBridgeSignature(sig, bodyForSig, secret)) {
-          throw new UnauthorizedException('Invalid bridge signature');
-        }
+        let ok = false;
+        if (secret && this.verifyBridgeSignature(sig, bodyForSig, secret)) ok = true;
+        else if (alt && this.verifyBridgeSignature(sig, bodyForSig, alt)) ok = true;
+        if (!ok) throw new UnauthorizedException('Invalid bridge signature');
       }
     } catch {}
     try {
@@ -271,15 +266,36 @@ export class LoyaltyController {
     return data;
   }
 
-  // Telegram miniapp auth: принимает initData и возвращает customerId
+  // Telegram miniapp auth: принимает merchantId + initData, валидирует токеном бота мерчанта и возвращает customerId
   @Post('teleauth')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  async teleauth(@Body('initData') initData: string) {
-    const token = process.env.TELEGRAM_BOT_TOKEN || '';
+  async teleauth(@Body() body: { merchantId?: string; initData?: string }) {
+    const merchantId = body?.merchantId;
+    const initData = body?.initData || '';
+    if (!initData) throw new BadRequestException('initData is required');
+    // определяем токен бота: из настроек мерчанта или глобальный (dev)
+    let token = process.env.TELEGRAM_BOT_TOKEN || '';
+    if (merchantId) {
+      try {
+        const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId } });
+        if (s && (s as any).telegramBotToken) token = (s as any).telegramBotToken as string;
+      } catch {}
+    }
     if (!token) throw new BadRequestException('Bot token not configured');
     const r = validateTelegramInitData(token, initData || '');
     if (!r.ok || !r.userId) throw new BadRequestException('Invalid initData');
-    return { ok: true, customerId: 'tg:' + r.userId };
+    // По tgId ищем/создаём клиента. Пытаемся подтянуть legacy id 'tg:<id>'
+    const tgId = String(r.userId);
+    const legacyId = 'tg:' + tgId;
+    const existingByTg = await this.prisma.customer.findUnique({ where: { tgId } }).catch(() => null);
+    if (existingByTg) return { ok: true, customerId: existingByTg.id };
+    const legacy = await this.prisma.customer.findUnique({ where: { id: legacyId } }).catch(() => null);
+    if (legacy) {
+      try { await this.prisma.customer.update({ where: { id: legacy.id }, data: { tgId } }); } catch {}
+      return { ok: true, customerId: legacy.id };
+    }
+    const created = await this.prisma.customer.create({ data: { tgId } });
+    return { ok: true, customerId: created.id };
   }
 
   @Get('transactions')

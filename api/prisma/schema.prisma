@@ -85,6 +85,11 @@ model MerchantSettings {
   bridgeSecretNext   String?
   rulesJson          Json?
   requireStaffKey    Boolean @default(false)
+  // Telegram miniapp per merchant
+  telegramBotToken   String?
+  telegramBotUsername String?
+  telegramStartParamRequired Boolean @default(false)
+  miniappBaseUrl     String?
   updatedAt      DateTime @default(now())
 }
 
@@ -332,4 +337,23 @@ model LedgerEntry {
 
   @@index([merchantId, createdAt])
   @@index([merchantId, customerId, createdAt])
+}
+
+model EarnLot {
+  id            String   @id @default(cuid())
+  merchantId    String
+  customerId    String
+  points        Int
+  consumedPoints Int     @default(0)
+  earnedAt      DateTime
+  expiresAt     DateTime?
+  orderId       String?
+  receiptId     String?
+  outletId      String?
+  deviceId      String?
+  staffId       String?
+  createdAt     DateTime @default(now())
+
+  @@index([merchantId, customerId, earnedAt])
+  @@index([merchantId, expiresAt])
 }

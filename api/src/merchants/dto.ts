@@ -74,6 +74,20 @@ export class UpdateMerchantSettingsDto {
   @ApiPropertyOptional({ minimum: 0, description: 'TTL баллов (в днях). 0 или отсутствие — отключено' })
   @IsOptional() @IsInt() @Min(0)
   pointsTtlDays?: number;
+
+  // Telegram/miniapp настройки
+  @ApiPropertyOptional({ description: 'Telegram Bot Token для мини-аппы мерчанта' })
+  @IsOptional() @IsString()
+  telegramBotToken?: string;
+  @ApiPropertyOptional({ description: 'Telegram Bot Username (например, @my_bot)' })
+  @IsOptional() @IsString()
+  telegramBotUsername?: string;
+  @ApiPropertyOptional({ description: 'Требовать start_param при запуске мини-аппы' })
+  @IsOptional()
+  telegramStartParamRequired?: boolean;
+  @ApiPropertyOptional({ description: 'Базовый URL мини-аппы (для Deep Link)' })
+  @IsOptional() @IsString()
+  miniappBaseUrl?: string;
 }
 
 export class CreateOutletDto {
@@ -150,6 +164,11 @@ export class MerchantSettingsRespDto {
   @ApiPropertyOptional() rulesJson?: any;
   @ApiProperty() requireStaffKey!: boolean;
   @ApiPropertyOptional({ description: 'TTL баллов (в днях). Предпросмотр через outbox, списание отключено.' }) pointsTtlDays?: number|null;
+  // Telegram/miniapp
+  @ApiPropertyOptional() telegramBotToken?: string|null;
+  @ApiPropertyOptional() telegramBotUsername?: string|null;
+  @ApiPropertyOptional() telegramStartParamRequired?: boolean;
+  @ApiPropertyOptional() miniappBaseUrl?: string|null;
 }
 
 export class OutletDto {
@@ -237,5 +256,21 @@ export class LedgerEntryDto {
   @ApiPropertyOptional() deviceId?: string|null;
   @ApiPropertyOptional() staffId?: string|null;
   @ApiPropertyOptional() meta?: any;
+  @ApiProperty() createdAt!: Date;
+}
+
+export class EarnLotDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() merchantId!: string;
+  @ApiProperty() customerId!: string;
+  @ApiProperty() points!: number;
+  @ApiProperty() consumedPoints!: number;
+  @ApiProperty() earnedAt!: Date;
+  @ApiPropertyOptional() expiresAt?: Date|null;
+  @ApiPropertyOptional() orderId?: string|null;
+  @ApiPropertyOptional() receiptId?: string|null;
+  @ApiPropertyOptional() outletId?: string|null;
+  @ApiPropertyOptional() deviceId?: string|null;
+  @ApiPropertyOptional() staffId?: string|null;
   @ApiProperty() createdAt!: Date;
 }

@@ -31,36 +31,38 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
         const ttlDays = (s as any).pointsTtlDays as number | null;
         if (!ttlDays || ttlDays <= 0) continue;
         const cutoff = new Date(now - ttlDays * 24 * 60 * 60 * 1000);
-        // Приближённая оценка: «старые» баллы ~ max(0, wallet.balance - earn за последние ttlDays)
-        const wallets = await this.prisma.wallet.findMany({ where: { merchantId: s.merchantId, type: 'POINTS' as any } });
-        for (const w of wallets) {
-          try {
-            const recentEarn = await this.prisma.transaction.aggregate({
-              _sum: { amount: true },
-              where: { merchantId: s.merchantId, customerId: w.customerId, type: 'EARN' as any, createdAt: { gte: cutoff } },
-            });
-            const recent = recentEarn._sum.amount || 0;
-            const tentativeExpire = Math.max(0, (w.balance || 0) - recent);
-            if (tentativeExpire > 0) {
-              await this.prisma.eventOutbox.create({
-                data: {
-                  merchantId: s.merchantId,
-                  eventType: 'loyalty.points_ttl.preview',
-                  payload: {
-                    merchantId: s.merchantId,
-                    customerId: w.customerId,
-                    walletId: w.id,
-                    ttlDays,
-                    tentativeExpire,
-                    computedAt: new Date().toISOString(),
-                  } as any,
-                },
-              });
-            }
-          } catch {}
+        const useLots = process.env.EARN_LOTS_FEATURE === '1';
+        if (useLots) {
+          // Точный превью: неиспользованные lot'ы, «заработанные» ранее cutoff
+          const lots = await this.prisma.earnLot.findMany({ where: { merchantId: s.merchantId, earnedAt: { lt: cutoff } } });
+          const byCustomer = new Map<string, number>();
+          for (const lot of lots) {
+            const remain = Math.max(0, lot.points - lot.consumedPoints);
+            if (remain <= 0) continue;
+            byCustomer.set(lot.customerId, (byCustomer.get(lot.customerId) || 0) + remain);
+          }
+          for (const [customerId, expiringPoints] of byCustomer.entries()) {
+            await this.prisma.eventOutbox.create({ data: {
+              merchantId: s.merchantId,
+              eventType: 'loyalty.points_ttl.preview',
+              payload: { merchantId: s.merchantId, customerId, ttlDays, expiringPoints, computedAt: new Date().toISOString(), mode: 'lots' } as any,
+            }});
+          }
+        } else {
+          // Приблизённый превью от баланса/начислений за период
+          const wallets = await this.prisma.wallet.findMany({ where: { merchantId: s.merchantId, type: 'POINTS' as any } });
+          for (const w of wallets) {
+            try {
+              const recentEarn = await this.prisma.transaction.aggregate({ _sum: { amount: true }, where: { merchantId: s.merchantId, customerId: w.customerId, type: 'EARN' as any, createdAt: { gte: cutoff } } });
+              const recent = recentEarn._sum.amount || 0;
+              const tentativeExpire = Math.max(0, (w.balance || 0) - recent);
+              if (tentativeExpire > 0) {
+                await this.prisma.eventOutbox.create({ data: { merchantId: s.merchantId, eventType: 'loyalty.points_ttl.preview', payload: { merchantId: s.merchantId, customerId: w.customerId, walletId: w.id, ttlDays, tentativeExpire, computedAt: new Date().toISOString(), mode: 'approx' } as any } });
+              }
+            } catch {}
+          }
         }
       }
     } finally { this.running = false; }
   }
 }
-

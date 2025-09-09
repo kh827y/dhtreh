@@ -1,0 +1,25 @@
+# Monorepo ignores
+node_modules/
+pnpm-lock.yaml
+
+# Build artifacts
+api/dist/
+admin/.next/
+cashier/.next/
+miniapp/.next/
+
+# Env files
+*.env
+*.env.local
+
+# Logs
+**/*.log
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+
+# Editor/OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -25,7 +25,10 @@ export default function LedgerPage() {
   const [msg, setMsg] = useState('');
   const [limit, setLimit] = useState(50);
   const [before, setBefore] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const [customerId, setCustomerId] = useState('');
+  const [type, setType] = useState('');
 
   async function load() {
     setLoading(true); setMsg('');
@@ -33,6 +36,9 @@ export default function LedgerPage() {
       const url = new URL(`/api/admin/merchants/${MERCHANT}/ledger`, window.location.origin);
       url.searchParams.set('limit', String(limit));
       if (before) url.searchParams.set('before', before);
+      if (from) url.searchParams.set('from', from);
+      if (to) url.searchParams.set('to', to);
+      if (type) url.searchParams.set('type', type);
       if (customerId) url.searchParams.set('customerId', customerId);
       const r = await fetch(url.toString());
       if (!r.ok) throw new Error(await r.text());
@@ -51,9 +57,20 @@ export default function LedgerPage() {
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
         <label>Limit: <input type="number" value={limit} onChange={(e)=>setLimit(Number(e.target.value)||50)} style={{ width: 90 }} /></label>
         <label>Before: <input type="datetime-local" value={before} onChange={(e)=>setBefore(e.target.value)} /></label>
+        <label>From: <input type="datetime-local" value={from} onChange={(e)=>setFrom(e.target.value)} /></label>
+        <label>To: <input type="datetime-local" value={to} onChange={(e)=>setTo(e.target.value)} /></label>
         <label>CustomerId: <input value={customerId} onChange={(e)=>setCustomerId(e.target.value)} /></label>
+        <label>Type: 
+          <select value={type} onChange={(e)=>setType(e.target.value)}>
+            <option value="">(любая)</option>
+            <option value="earn">earn</option>
+            <option value="redeem">redeem</option>
+            <option value="refund_restore">refund_restore</option>
+            <option value="refund_revoke">refund_revoke</option>
+          </select>
+        </label>
         <button onClick={load} disabled={loading} style={{ padding: '6px 10px' }}>Обновить</button>
-        <a href={`/api/admin/merchants/${MERCHANT}/ledger.csv${customerId?`?customerId=${encodeURIComponent(customerId)}`:''}`} target="_blank">CSV</a>
+        <a href={`/api/admin/merchants/${MERCHANT}/ledger.csv?${new URLSearchParams({ customerId: customerId||'', from: from||'', to: to||'', type: type||'' }).toString()}`} target="_blank">CSV</a>
       </div>
       {msg && <div style={{ marginTop: 8 }}>{msg}</div>}
       <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
@@ -78,4 +95,3 @@ export default function LedgerPage() {
     </main>
   );
 }
-

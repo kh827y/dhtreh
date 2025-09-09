@@ -267,11 +267,16 @@ export class MerchantsController {
     @Param('id') id: string,
     @Query('limit') limitStr?: string,
     @Query('before') beforeStr?: string,
+    @Query('from') fromStr?: string,
+    @Query('to') toStr?: string,
     @Query('customerId') customerId?: string,
+    @Query('type') type?: string,
   ) {
     const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 500) : 50;
     const before = beforeStr ? new Date(beforeStr) : undefined;
-    return this.service.listLedger(id, { limit, before, customerId });
+    const from = fromStr ? new Date(fromStr) : undefined;
+    const to = toStr ? new Date(toStr) : undefined;
+    return this.service.listLedger(id, { limit, before, customerId, from, to, type });
   }
 
   @Get(':id/ledger.csv')
@@ -281,11 +286,16 @@ export class MerchantsController {
     @Param('id') id: string,
     @Query('limit') limitStr?: string,
     @Query('before') beforeStr?: string,
+    @Query('from') fromStr?: string,
+    @Query('to') toStr?: string,
     @Query('customerId') customerId?: string,
+    @Query('type') type?: string,
   ) {
     const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 1000, 1), 5000) : 1000;
     const before = beforeStr ? new Date(beforeStr) : undefined;
-    return this.service.exportLedgerCsv(id, { limit, before, customerId });
+    const from = fromStr ? new Date(fromStr) : undefined;
+    const to = toStr ? new Date(toStr) : undefined;
+    return this.service.exportLedgerCsv(id, { limit, before, customerId, from, to, type });
   }
 
   // CRM helpers

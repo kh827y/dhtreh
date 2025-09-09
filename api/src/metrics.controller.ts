@@ -1,5 +1,6 @@
-import { Controller, Get, Header } from '@nestjs/common';
+import { Controller, Get, Header, Req, UnauthorizedException } from '@nestjs/common';
 import { MetricsService } from './metrics.service';
+import type { Request } from 'express';
 
 @Controller()
 export class MetricsController {
@@ -7,7 +8,12 @@ export class MetricsController {
 
   @Get('metrics')
   @Header('Content-Type', 'text/plain; version=0.0.4')
-  async metricsEndpoint(): Promise<string> {
+  async metricsEndpoint(@Req() req: Request): Promise<string> {
+    const token = process.env.METRICS_TOKEN || '';
+    if (token) {
+      const got = (req.headers['x-metrics-token'] as string | undefined) || '';
+      if (got !== token) throw new UnauthorizedException('Metrics token required');
+    }
     return await this.metrics.exportProm();
   }
 }

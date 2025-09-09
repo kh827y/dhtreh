@@ -41,6 +41,21 @@ async function bootstrap() {
 
   // JSON-логирование запросов
   app.use(pinoHttp({
+    // редактирование чувствительных полей
+    redact: {
+      paths: [
+        'req.headers.authorization',
+        'req.headers["x-admin-key"]',
+        'req.headers["x-staff-key"]',
+        'req.headers["x-bridge-signature"]',
+        'req.headers["idempotency-key"]',
+        'req.headers["x-metrics-token"]',
+        'req.body.userToken',
+        'req.body.initData',
+        'res.headers["x-loyalty-signature"]',
+      ],
+      censor: '[REDACTED]'
+    },
     autoLogging: true,
     customProps: (req) => {
       const mId = (req as any).body?.merchantId || req.headers['x-merchant-id'] || undefined;

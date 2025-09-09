@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { MetricsService } from '../metrics.service';
 import { Mode, QuoteDto } from './dto';
 import { HoldStatus, TxnType, WalletType, LedgerAccount } from '@prisma/client';
 import { v4 as uuid } from 'uuid';
@@ -8,7 +9,56 @@ type QrMeta = { jti: string; iat: number; exp: number } | undefined;
 
 @Injectable()
 export class LoyaltyService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private metrics: MetricsService) {}
+
+  // ===== Earn Lots helpers (optional feature) =====
+  private async consumeLots(tx: any, merchantId: string, customerId: string, amount: number, ctx: { orderId?: string|null }) {
+    let left = amount;
+    const lots = await tx.earnLot.findMany({ where: { merchantId, customerId }, orderBy: { earnedAt: 'asc' } });
+    for (const lot of lots) {
+      const consumed = lot.consumedPoints || 0;
+      const remain = Math.max(0, (lot.points || 0) - consumed);
+      if (remain <= 0) continue;
+      const take = Math.min(remain, left);
+      if (take <= 0) break;
+      await tx.earnLot.update({ where: { id: lot.id }, data: { consumedPoints: consumed + take } });
+      await tx.eventOutbox.create({ data: { merchantId, eventType: 'loyalty.earnlot.consumed', payload: { merchantId, customerId, lotId: lot.id, consumed: take, orderId: ctx.orderId ?? null, at: new Date().toISOString() } } });
+      left -= take;
+      if (left <= 0) break;
+    }
+  }
+
+  private async unconsumeLots(tx: any, merchantId: string, customerId: string, amount: number, ctx: { orderId?: string|null }) {
+    let left = amount;
+    const lots = await tx.earnLot.findMany({ where: { merchantId, customerId, consumedPoints: { gt: 0 } }, orderBy: { earnedAt: 'desc' } });
+    for (const lot of lots) {
+      const consumed = lot.consumedPoints || 0;
+      if (consumed <= 0) continue;
+      const giveBack = Math.min(consumed, left);
+      if (giveBack <= 0) break;
+      await tx.earnLot.update({ where: { id: lot.id }, data: { consumedPoints: consumed - giveBack } });
+      await tx.eventOutbox.create({ data: { merchantId, eventType: 'loyalty.earnlot.unconsumed', payload: { merchantId, customerId, lotId: lot.id, unconsumed: giveBack, orderId: ctx.orderId ?? null, at: new Date().toISOString() } } });
+      left -= giveBack;
+      if (left <= 0) break;
+    }
+  }
+
+  private async revokeLots(tx: any, merchantId: string, customerId: string, amount: number, ctx: { orderId?: string|null }) {
+    // уменьшить доступные к списанию баллы: увеличим consumedPoints у самых свежих lot'ов
+    let left = amount;
+    const lots = await tx.earnLot.findMany({ where: { merchantId, customerId }, orderBy: { earnedAt: 'desc' } });
+    for (const lot of lots) {
+      const consumed = lot.consumedPoints || 0;
+      const remain = Math.max(0, (lot.points || 0) - consumed);
+      if (remain <= 0) continue;
+      const take = Math.min(remain, left);
+      if (take <= 0) break;
+      await tx.earnLot.update({ where: { id: lot.id }, data: { consumedPoints: consumed + take } });
+      await tx.eventOutbox.create({ data: { merchantId, eventType: 'loyalty.earnlot.revoked', payload: { merchantId, customerId, lotId: lot.id, revoked: take, orderId: ctx.orderId ?? null, at: new Date().toISOString() } } });
+      left -= take;
+      if (left <= 0) break;
+    }
+  }
 
   // ====== Кеш правил ======
   private rulesCache = new Map<string, { updatedAt: string; fn: (args: { channel: 'VIRTUAL'|'PC_POS'|'SMART'; weekday: number; eligibleTotal: number; category?: string }) => { earnBps: number; redeemLimitBps: number } }>();
@@ -335,6 +385,7 @@ export class LoyaltyService {
             staffId: hold.staffId ?? null,
             meta: { mode: 'REDEEM' },
           }});
+          this.metrics.inc('loyalty_ledger_entries_total', { type: 'redeem' });
         }
       }
       if (hold.mode === 'EARN' && hold.earnPoints > 0) {
@@ -357,6 +408,30 @@ export class LoyaltyService {
             deviceId: hold.deviceId ?? null,
             staffId: hold.staffId ?? null,
             meta: { mode: 'EARN' },
+          }});
+          this.metrics.inc('loyalty_ledger_entries_total', { type: 'earn' });
+          this.metrics.inc('loyalty_ledger_amount_total', { type: 'earn' }, appliedEarn);
+        }
+        // Earn lots (optional)
+        if (process.env.EARN_LOTS_FEATURE === '1' && appliedEarn > 0) {
+          let expires: Date | null = null;
+          try {
+            const s = await tx.merchantSettings.findUnique({ where: { merchantId: hold.merchantId } });
+            const days = (s as any)?.pointsTtlDays as number | null;
+            if (days && days > 0) expires = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+          } catch {}
+          await tx.earnLot.create({ data: {
+            merchantId: hold.merchantId,
+            customerId: hold.customerId,
+            points: appliedEarn,
+            consumedPoints: 0,
+            earnedAt: new Date(),
+            expiresAt: expires,
+            orderId,
+            receiptId: null,
+            outletId: hold.outletId ?? null,
+            deviceId: hold.deviceId ?? null,
+            staffId: hold.staffId ?? null,
           }});
         }
       }
@@ -473,6 +548,7 @@ export class LoyaltyService {
             staffId: receipt.staffId ?? null,
             meta: { mode: 'REFUND', kind: 'restore' },
           }});
+          this.metrics.inc('loyalty_ledger_entries_total', { type: 'refund_restore' });
         }
       }
       if (pointsToRevoke > 0) {
@@ -494,6 +570,7 @@ export class LoyaltyService {
             staffId: receipt.staffId ?? null,
             meta: { mode: 'REFUND', kind: 'revoke' },
           }});
+          this.metrics.inc('loyalty_ledger_entries_total', { type: 'refund_revoke' });
         }
       }
       await tx.eventOutbox.create({
