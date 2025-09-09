@@ -8,6 +8,10 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import * as Sentry from '@sentry/node';
 import { HttpAdapterHost } from '@nestjs/core';
 import { SentryFilter } from './sentry.filter';
+import { HttpMetricsInterceptor } from './http-metrics.interceptor';
+import { MetricsService } from './metrics.service';
+// OpenTelemetry (инициализация по флагу)
+import './otel';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -46,6 +50,9 @@ async function bootstrap() {
   // Валидация
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
+  // HTTP metrics interceptor (prom-client с лейблами)
+  app.useGlobalInterceptors(new HttpMetricsInterceptor(app.get(MetricsService)));
+
   // Sentry (опц.)
   if (process.env.SENTRY_DSN) {
     Sentry.init({ dsn: process.env.SENTRY_DSN, tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE || '0.0'), environment: process.env.NODE_ENV || 'development' });
@@ -63,6 +70,11 @@ async function bootstrap() {
     .build();
   const document = SwaggerModule.createDocument(app, cfg);
   SwaggerModule.setup('docs', app, document);
+  // JSON спецификация
+  try {
+    const httpInst = app.getHttpAdapter().getInstance();
+    httpInst.get('/openapi.json', (_req: any, res: any) => res.json(document));
+  } catch {}
 
   // Совместимый алиас: пробрасываем /api/v1/* на существующие маршруты, чтобы не ломать клиентов
   const http = app.getHttpAdapter().getInstance();
@@ -73,7 +85,6 @@ async function bootstrap() {
     } catch {}
     next();
   });
-
   await app.listen(3000);
   console.log(`API on http://localhost:3000`);
 }
