@@ -7,8 +7,7 @@ export class MetricsController {
 
   @Get('metrics')
   @Header('Content-Type', 'text/plain; version=0.0.4')
-  metricsEndpoint(): string {
-    return this.metrics.exportProm();
+  async metricsEndpoint(): Promise<string> {
+    return await this.metrics.exportProm();
   }
 }
-

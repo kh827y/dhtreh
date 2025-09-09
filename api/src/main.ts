@@ -5,6 +5,9 @@ import helmet from 'helmet';
 import compression from 'compression';
 import pinoHttp from 'pino-http';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import * as Sentry from '@sentry/node';
+import { HttpAdapterHost } from '@nestjs/core';
+import { SentryFilter } from './sentry.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -42,6 +45,15 @@ async function bootstrap() {
 
   // Валидация
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+
+  // Sentry (опц.)
+  if (process.env.SENTRY_DSN) {
+    Sentry.init({ dsn: process.env.SENTRY_DSN, tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE || '0.0'), environment: process.env.NODE_ENV || 'development' });
+    const adapterHost = app.get(HttpAdapterHost);
+    app.useGlobalFilters(new SentryFilter(adapterHost));
+    process.on('unhandledRejection', (reason) => { try { Sentry.captureException(reason); } catch {} });
+    process.on('uncaughtException', (err) => { try { Sentry.captureException(err); } catch {} });
+  }
 
   // Swagger (draft)
   const cfg = new DocumentBuilder()

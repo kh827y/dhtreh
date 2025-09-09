@@ -19,6 +19,8 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(OutboxDispatcherWorker.name);
   private timer: any = null;
   private running = false;
+  public startedAt: Date | null = null;
+  public lastTickAt: Date | null = null;
 
   constructor(private prisma: PrismaService, private metrics: MetricsService) {}
 
@@ -26,6 +28,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     const intervalMs = Number(process.env.OUTBOX_WORKER_INTERVAL_MS || '15000');
     this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
     this.logger.log(`OutboxDispatcherWorker started, interval=${intervalMs}ms`);
+    this.startedAt = new Date();
   }
 
   onModuleDestroy() { if (this.timer) clearInterval(this.timer); }
@@ -92,6 +95,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
   private async tick() {
     if (this.running) return; this.running = true;
     try {
+      this.lastTickAt = new Date();
       const now = new Date();
       // обновим gauge pending
       try {
@@ -114,4 +118,3 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     } finally { this.running = false; }
   }
 }
-

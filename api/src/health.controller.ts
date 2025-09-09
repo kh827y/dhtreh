@@ -1,17 +1,18 @@
 import { Controller, Get } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
+import { OutboxDispatcherWorker } from './outbox-dispatcher.worker';
 
 @Controller()
 export class HealthController {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private outbox: OutboxDispatcherWorker) {}
 
   @Get('healthz')
   async health() {
     try {
       await this.prisma.$queryRaw`SELECT 1`;
-      return { ok: true };
+      return { ok: true, version: process.env.APP_VERSION || 'dev', workers: { outbox: { alive: !!this.outbox?.startedAt, lastTickAt: this.outbox?.lastTickAt?.toISOString?.() } } };
     } catch (e: any) {
-      return { ok: false, error: String(e?.message || e) };
+      return { ok: false, error: String(e?.message || e), version: process.env.APP_VERSION || 'dev' };
     }
   }
 
@@ -20,10 +21,10 @@ export class HealthController {
     try {
       await this.prisma.$queryRaw`SELECT 1`;
       // можно добавить проверку иных зависимостей (очередей и т.д.)
-      return { ready: true };
+      const outboxAlive = !!this.outbox?.startedAt;
+      return { ready: true, version: process.env.APP_VERSION || 'dev', workers: { outbox: { alive: outboxAlive, lastTickAt: this.outbox?.lastTickAt?.toISOString?.() } } };
     } catch (e: any) {
-      return { ready: false, error: String(e?.message || e) };
+      return { ready: false, error: String(e?.message || e), version: process.env.APP_VERSION || 'dev' };
     }
   }
 }
-
