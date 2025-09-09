@@ -21,6 +21,15 @@ export default function BridgeStatusPage() {
       setHealth(h); setQueue(q); setMetrics(m);
     } catch (e: any) { setMsg('Ошибка загрузки: ' + e?.message); }
   }
+  async function flush() {
+    setMsg('');
+    try {
+      const r = await fetch(`${BRIDGE}/queue/flush`, { method: 'POST' });
+      if (!r.ok) throw new Error(await r.text());
+      await load();
+      setMsg('Очередь отправлена');
+    } catch (e: any) { setMsg('Ошибка flush: ' + e?.message); }
+  }
 
   useEffect(() => { load(); }, []);
 
@@ -29,6 +38,7 @@ export default function BridgeStatusPage() {
       <h1>Bridge Status</h1>
       <div style={{ display: 'flex', gap: 8 }}>
         <button onClick={load} style={{ padding: '6px 10px' }}>Обновить</button>
+        <button onClick={flush} style={{ padding: '6px 10px' }}>Flush очередь</button>
         <a href={`${BRIDGE}/metrics`} target="_blank" rel="noreferrer">Открыть /metrics</a>
       </div>
       {msg && <div style={{ color: '#b00', marginTop: 8 }}>{msg}</div>}
@@ -48,4 +58,3 @@ export default function BridgeStatusPage() {
     </main>
   );
 }
-

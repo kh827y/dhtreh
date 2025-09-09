@@ -24,6 +24,7 @@ export default function AdminPage() {
   const [requireBridgeSig, setRequireBridgeSig] = useState<boolean>(false);
   const [bridgeSecret, setBridgeSecret] = useState<string>('');
   const [requireStaffKey, setRequireStaffKey] = useState<boolean>(false);
+  const [rulesCheck, setRulesCheck] = useState<string>('');
 
   const earnPct = useMemo(() => (earnBps/100).toFixed(2), [earnBps]);
   const redeemPct = useMemo(() => (redeemLimitBps/100).toFixed(2), [redeemLimitBps]);
@@ -114,6 +115,31 @@ export default function AdminPage() {
           <textarea value={rulesJson} onChange={(e) => setRulesJson(e.target.value)} rows={8} style={{ width: '100%', padding: 8, fontFamily: 'monospace' }} />
           <div style={{ color: '#666', fontSize: 12 }}>Пример: массив правил с условиями channelIn/weekdayIn/minEligible и действиями earnBps/redeemLimitBps</div>
         </label>
+        <div style={{ display:'flex', gap: 8, alignItems: 'center' }}>
+          <button onClick={() => {
+            try {
+              const parsed = JSON.parse(rulesJson||'null');
+              if (!Array.isArray(parsed)) throw new Error('Должен быть массив правил');
+              for (const [i, it] of parsed.entries()) {
+                if (!it || typeof it !== 'object' || Array.isArray(it)) throw new Error(`Правило #${i+1}: ожидался объект`);
+                if ('if' in it && (typeof it.if !== 'object' || Array.isArray(it.if))) throw new Error(`Правило #${i+1}: if должен быть объектом`);
+                if ('then' in it && (typeof it.then !== 'object' || Array.isArray(it.then))) throw new Error(`Правило #${i+1}: then должен быть объектом`);
+                const allowedIf = ['channelIn','weekdayIn','minEligible','categoryIn'];
+                if (it.if) {
+                  for (const k of Object.keys(it.if)) if (!allowedIf.includes(k)) throw new Error(`Правило #${i+1}: неизвестное условие '${k}'`);
+                }
+                const allowedThen = ['earnBps','redeemLimitBps'];
+                if (it.then) {
+                  for (const k of Object.keys(it.then)) if (!allowedThen.includes(k)) throw new Error(`Правило #${i+1}: неизвестное действие '${k}'`);
+                }
+              }
+              setRulesCheck('OK: правила валидны');
+            } catch (e: any) {
+              setRulesCheck('Ошибка правил: ' + (e?.message||e));
+            }
+          }} style={{ padding:'6px 10px' }}>Проверить правила</button>
+          {rulesCheck && <span style={{ color: rulesCheck.startsWith('OK')?'#0a0':'#b00' }}>{rulesCheck}</span>}
+        </div>
 
         <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <input type="checkbox" checked={requireJwtForQuote} onChange={(e) => setRequireJwtForQuote(e.target.checked)} /> Требовать JWT для QUOTE
