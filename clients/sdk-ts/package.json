@@ -3,12 +3,13 @@
   "version": "0.0.1",
   "private": true,
   "description": "TypeScript SDK for Loyalty API",
-  "types": "src/index.ts",
-  "main": "src/index.ts",
+  "types": "dist/index.d.ts",
+  "main": "dist/index.js",
   "devDependencies": {
     "openapi-typescript": "^7.4.2"
   },
   "scripts": {
-    "gen:types": "openapi-typescript http://localhost:3000/openapi.json -o src/openapi.d.ts"
+    "gen:types": "openapi-typescript http://localhost:3000/openapi.json -o src/openapi.d.ts",
+    "build": "tsc -p tsconfig.json"
   }
 }

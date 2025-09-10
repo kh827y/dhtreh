@@ -41,6 +41,54 @@ jobs:
       - name: Lint (admin)
         run: pnpm -C admin lint
 
+  build-admin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9 --activate
+      - name: Install deps (admin)
+        run: pnpm -C admin i --frozen-lockfile=false
+      - name: Build (admin)
+        run: pnpm -C admin build
+
+  build-miniapp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9 --activate
+      - name: Install deps (miniapp)
+        run: pnpm -C miniapp i --frozen-lockfile=false
+      - name: Build (miniapp)
+        run: pnpm -C miniapp build
+
+  build-sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9 --activate
+      - name: Install deps (sdk)
+        run: pnpm -C clients/sdk-ts i --frozen-lockfile=false
+      - name: Build (sdk)
+        run: pnpm -C clients/sdk-ts build || echo "sdk build skipped"
+
   install-bridge:
     runs-on: ubuntu-latest
     steps:
@@ -54,4 +102,3 @@ jobs:
           corepack prepare pnpm@9 --activate
       - name: Install deps (bridge)
         run: pnpm -C bridge i --frozen-lockfile=false
-

@@ -19,6 +19,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <a href="/staff" style={{ color: '#89b4fa' }}>Сотрудники</a>
             <a href="/docs/webhooks" style={{ color: '#89b4fa' }}>Документация вебхуков</a>
             <a href="/docs/integration" style={{ color: '#89b4fa' }}>Интеграции</a>
+            <a href="/exports" style={{ color: '#89b4fa' }}>Экспорт</a>
+            <a href="/tools/signature" style={{ color: '#89b4fa' }}>Инструменты</a>
           </nav>
           <StatusBar merchantId={merchantId} />
           {children}
