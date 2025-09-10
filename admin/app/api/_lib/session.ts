@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import crypto from 'crypto';
+import { createHmac } from 'crypto';
 
 const COOKIE = 'admin_session_v1';
 
-type Sess = { sub: string; iat: number; exp: number };
+export type Sess = { sub: string; role: 'ADMIN'|'MANAGER'; iat: number; exp: number };
 
 function b64(s: string) { return Buffer.from(s, 'utf8').toString('base64url'); }
 function ub64(s: string) { return Buffer.from(s, 'base64url').toString('utf8'); }
@@ -12,13 +12,13 @@ function getSecret() {
   return process.env.ADMIN_SESSION_SECRET || '';
 }
 
-export function makeSessionCookie(days = 7) {
+export function makeSessionCookie(days = 7, role: 'ADMIN'|'MANAGER' = 'ADMIN') {
   const now = Math.floor(Date.now()/1000);
-  const payload: Sess = { sub: 'admin', iat: now, exp: now + days*24*60*60 };
+  const payload: Sess = { sub: 'admin', role, iat: now, exp: now + days*24*60*60 };
   const secret = getSecret();
   if (!secret) throw new Error('ADMIN_SESSION_SECRET not configured');
   const p = b64(JSON.stringify(payload));
-  const sig = crypto.createHmac('sha256', secret).update(p).digest('base64url');
+  const sig = createHmac('sha256', secret).update(p).digest('base64url');
   return `${p}.${sig}`;
 }
 
@@ -29,11 +29,18 @@ export function verifySessionCookie(cookieVal: string | undefined): Sess | null 
     if (!p || !sig) return null;
     const secret = getSecret();
     if (!secret) return null;
-    const calc = crypto.createHmac('sha256', secret).update(p).digest('base64url');
+    const calc = createHmac('sha256', secret).update(p).digest('base64url');
     if (calc !== sig) return null;
     const sess = JSON.parse(ub64(p)) as Sess;
     if (!sess?.exp || sess.exp < Math.floor(Date.now()/1000)) return null;
     return sess;
+  } catch { return null; }
+}
+
+export function getSession(req: NextRequest): Sess | null {
+  try {
+    const val = req.cookies.get(COOKIE)?.value;
+    return verifySessionCookie(val);
   } catch { return null; }
 }
 
@@ -54,4 +61,3 @@ export function setSessionCookie(res: NextResponse, cookieVal: string) {
 export function clearSessionCookie(res: NextResponse) {
   res.cookies.set({ name: COOKIE, value: '', httpOnly: true, sameSite: 'lax', secure: true, path: '/', maxAge: 0 });
 }
-

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireSession } from '../../_lib/session';
+import { requireSession, getSession } from '../../_lib/session';
+export const runtime = 'nodejs';
 
 const API_BASE = (process.env.API_BASE || '').replace(/\/$/, '');
 const ADMIN_KEY = process.env.ADMIN_KEY || '';
@@ -8,8 +9,8 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   if (!API_BASE) return new Response('API_BASE not configured', { status: 500 });
   if (!ADMIN_KEY) return new Response('ADMIN_KEY not configured', { status: 500 });
   {
-    const auth = requireSession(req);
-    if (auth) return auth;
+    const unauth = requireSession(req);
+    if (unauth) return unauth;
   }
   const method = req.method;
   const url = new URL(req.url);
@@ -21,6 +22,16 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   const headers: Record<string, string> = {};
   req.headers.forEach((v, k) => { if (!/^host$/i.test(k)) headers[k] = v; });
   headers['x-admin-key'] = ADMIN_KEY;
+  // RBAC: только ADMIN может выполнять изменяющие методы
+  const sess = getSession(req);
+  if (sess?.role === 'MANAGER' && !/^(GET|HEAD|OPTIONS)$/i.test(method)) {
+    return new NextResponse('Forbidden for role MANAGER', { status: 403 });
+  }
+  // Audit hint via header (для логов API)
+  try {
+    const ip = (req.headers.get('x-forwarded-for') || req.ip || '').split(',')[0].trim();
+    headers['x-admin-actor'] = `${sess?.role || 'UNKNOWN'}@${ip || 'unknown'}`;
+  } catch {}
 
   const body = method === 'GET' || method === 'HEAD' ? undefined : await req.text();
   if (body != null) headers['content-type'] = 'application/json';

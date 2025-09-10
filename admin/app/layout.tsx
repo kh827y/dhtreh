@@ -14,6 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <a href="/" style={{ color: '#89b4fa' }}>Главная</a>
             <a href="/settings" style={{ color: '#89b4fa' }}>Настройки мерчанта</a>
             <a href="/telegram" style={{ color: '#89b4fa' }}>Telegram / Мини‑аппа</a>
+            <a href="/docs/miniapp" style={{ color: '#89b4fa' }}>Мини‑аппа (док)</a>
             <OutboxLink merchantId={merchantId} />
             <a href="/outlets" style={{ color: '#89b4fa' }}>Точки</a>
             <a href="/devices" style={{ color: '#89b4fa' }}>Устройства</a>
@@ -25,6 +26,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <a href="/docs/deployment" style={{ color: '#89b4fa' }}>Деплой</a>
             <a href="/exports" style={{ color: '#89b4fa' }}>Экспорт</a>
             <a href="/tools/signature" style={{ color: '#89b4fa' }}>Инструменты</a>
+            <span style={{ flex: 1 }} />
+            <a href="/logout" style={{ color: '#f38ba8' }}>Выход</a>
           </nav>
           <StatusBar merchantId={merchantId} />
           {children}

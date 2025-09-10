@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireSession } from '../_lib/session';
+export const runtime = 'nodejs';
 
 const API_BASE = (process.env.API_BASE || '').replace(/\/$/, '');
 const METRICS_TOKEN = process.env.METRICS_TOKEN || '';

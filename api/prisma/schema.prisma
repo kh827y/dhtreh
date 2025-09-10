@@ -361,3 +361,16 @@ model EarnLot {
   @@index([merchantId, customerId, earnedAt])
   @@index([merchantId, expiresAt])
 }
+
+model AdminAudit {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  actor       String
+  method      String
+  path        String
+  merchantId  String?
+  action      String?
+  payload     Json?
+
+  @@index([merchantId, createdAt])
+}
