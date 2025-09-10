@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import QrCanvas from '../components/QrCanvas';
 import { balance, consentGet, consentSet, mintQr, transactions } from '../lib/api';
 import Spinner from '../components/Spinner';
+import Toast from '../components/Toast';
 import { useMiniappAuth } from '../lib/useMiniapp';
 
 const DEV_UI = (process.env.NEXT_PUBLIC_MINIAPP_DEV_UI || '').toLowerCase() === 'true' || process.env.NEXT_PUBLIC_MINIAPP_DEV_UI === '1';
@@ -22,6 +23,7 @@ export default function Page() {
   const [consent, setConsent] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
+  const [toast, setToast] = useState<{ msg: string; type?: 'info'|'error'|'success' }|null>(null);
   const [theme, setTheme] = useState<{ primary?: string|null; bg?: string|null; logo?: string|null }>({});
 
   useEffect(() => {
@@ -39,19 +41,24 @@ export default function Page() {
       const r = await mintQr(customerId, merchantId, ttl);
       setQrToken(r.token);
       setStatus(`QR сгенерирован, TTL ${r.ttl}s`);
+      setToast({ msg: 'QR сгенерирован', type: 'success' });
     } catch (e: any) { setStatus(`Ошибка генерации QR: ${e.message || e}`); }
   }, [customerId, merchantId, ttl]);
 
+  const retry = async <T,>(fn: () => Promise<T>, tries = 2, delayMs = 500): Promise<T> => {
+    try { return await fn(); } catch (e) { if (tries <= 0) throw e; await new Promise(r => setTimeout(r, delayMs)); return retry(fn, tries - 1, delayMs * 2); }
+  };
+
   const loadBalance = useCallback(async () => {
     if (!customerId) { setStatus('Нет customerId'); return; }
-    try { const r = await balance(merchantId, customerId); setBal(r.balance); setStatus('Баланс обновлён'); }
+    try { const r = await retry(() => balance(merchantId, customerId)); setBal(r.balance); setStatus('Баланс обновлён'); setToast({ msg: 'Баланс обновлён', type: 'success' }); }
     catch (e: any) { setStatus(`Ошибка баланса: ${e.message || e}`); }
   }, [customerId, merchantId]);
 
   const loadTx = useCallback(async () => {
     if (!customerId) { setStatus('Нет customerId'); return; }
     try {
-      const r = await transactions(merchantId, customerId, 20);
+      const r = await retry(() => transactions(merchantId, customerId, 20));
       setTx(r.items.map(i => ({ id: i.id, type: i.type, amount: i.amount, createdAt: i.createdAt })));
       setNextBefore(r.nextBefore || null);
       setStatus('История обновлена');
@@ -153,7 +160,7 @@ export default function Page() {
             {tx.map(item => (
               <div key={item.id} style={{ background: '#0e1629', padding: 8, borderRadius: 6 }}>
                 <div>{item.type} {item.amount >= 0 ? '+' : ''}{item.amount}</div>
-                <div style={{ opacity: 0.7, fontSize: 12 }}>{new Date(item.createdAt).toLocaleString()}</div>
+                <div style={{ opacity: 0.7, fontSize: 12 }}>{new Date(item.createdAt).toLocaleString('ru-RU')}</div>
               </div>
             ))}
           </div>
@@ -166,6 +173,8 @@ export default function Page() {
       ) : (
         <div style={{ marginTop: 16, opacity: 0.8 }}>Операций пока нет</div>
       )}
+
+      {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   );
 }

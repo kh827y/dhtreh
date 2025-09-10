@@ -7,6 +7,8 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PointsTtlWorker.name);
   private timer: any = null;
   private running = false;
+  public startedAt: Date | null = null;
+  public lastTickAt: Date | null = null;
 
   constructor(private prisma: PrismaService, private metrics: MetricsService) {}
 
@@ -18,6 +20,7 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
     const intervalMs = Number(process.env.POINTS_TTL_INTERVAL_MS || (6 * 60 * 60 * 1000)); // каждые 6 часов
     this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
     this.logger.log(`PointsTtlWorker started, interval=${intervalMs}ms`);
+    this.startedAt = new Date();
   }
 
   onModuleDestroy() { if (this.timer) clearInterval(this.timer); }
@@ -25,6 +28,7 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
   private async tick() {
     if (this.running) return; this.running = true;
     try {
+      this.lastTickAt = new Date();
       const merchants = await this.prisma.merchantSettings.findMany({ where: { pointsTtlDays: { not: null } } });
       const now = Date.now();
       for (const s of merchants) {

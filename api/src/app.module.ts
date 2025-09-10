@@ -13,6 +13,7 @@ import { HoldGcWorker } from './hold-gc.worker';
 import { IdempotencyGcWorker } from './idempotency-gc.worker';
 import { OutboxDispatcherWorker } from './outbox-dispatcher.worker';
 import { PointsTtlWorker } from './points-ttl.worker';
+import { PointsBurnWorker } from './points-burn.worker';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { PointsTtlWorker } from './points-ttl.worker';
     IdempotencyGcWorker,
     OutboxDispatcherWorker,
     PointsTtlWorker,
+    PointsBurnWorker,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })

@@ -1,6 +1,7 @@
 export const metadata = { title: 'Loyalty Admin', description: 'Админ‑панель' };
 
 import StatusBar from '../components/StatusBar';
+import OutboxLink from '../components/OutboxLink';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const merchantId = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
@@ -13,7 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <a href="/" style={{ color: '#89b4fa' }}>Главная</a>
             <a href="/settings" style={{ color: '#89b4fa' }}>Настройки мерчанта</a>
             <a href="/telegram" style={{ color: '#89b4fa' }}>Telegram / Мини‑аппа</a>
-            <a href="/outbox" style={{ color: '#89b4fa' }}>Outbox</a>
+            <OutboxLink merchantId={merchantId} />
             <a href="/outlets" style={{ color: '#89b4fa' }}>Точки</a>
             <a href="/devices" style={{ color: '#89b4fa' }}>Устройства</a>
             <a href="/staff" style={{ color: '#89b4fa' }}>Сотрудники</a>
