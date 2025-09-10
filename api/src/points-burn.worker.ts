@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { PrismaService } from './prisma.service';
 import { MetricsService } from './metrics.service';
 import { TxnType, LedgerAccount } from '@prisma/client';
+import { pgTryAdvisoryLock, pgAdvisoryUnlock } from './pg-lock.util';
 
 @Injectable()
 export class PointsBurnWorker implements OnModuleInit, OnModuleDestroy {
@@ -25,6 +26,8 @@ export class PointsBurnWorker implements OnModuleInit, OnModuleDestroy {
 
   private async tick() {
     if (this.running) return; this.running = true;
+    const lock = await pgTryAdvisoryLock(this.prisma, 'worker:points_ttl_burn');
+    if (!lock.ok) { this.running = false; return; }
     try {
       this.lastTickAt = new Date();
       if (process.env.EARN_LOTS_FEATURE !== '1') { this.logger.log('EARN_LOTS_FEATURE not enabled, skip TTL burn'); return; }
@@ -74,7 +77,6 @@ export class PointsBurnWorker implements OnModuleInit, OnModuleDestroy {
           this.metrics.inc('loyalty_points_ttl_burned_amount_total', {}, burnReq);
         }
       }
-    } finally { this.running = false; }
+    } finally { this.running = false; await pgAdvisoryUnlock(this.prisma, lock.key); }
   }
 }
-

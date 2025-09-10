@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 import { MetricsService } from './metrics.service';
+import { pgTryAdvisoryLock, pgAdvisoryUnlock } from './pg-lock.util';
 
 type OutboxRow = {
   id: string;
@@ -90,7 +91,11 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     if (kid) headers['X-Signature-Key-Id'] = kid as string;
 
     try {
-      const res = await fetch(url, { method: 'POST', headers, body, redirect: 'manual' });
+      const timeoutMs = Number(process.env.OUTBOX_HTTP_TIMEOUT_MS || '10000');
+      const ac = new AbortController();
+      const to = setTimeout(() => ac.abort(), Math.max(1000, timeoutMs));
+      const res = await fetch(url, { method: 'POST', headers, body, redirect: 'manual', signal: ac.signal as any });
+      clearTimeout(to);
       if (res.ok) {
         await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'SENT', updatedAt: new Date(), lastError: null } });
         this.metrics.inc('loyalty_outbox_sent_total');
@@ -121,6 +126,9 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
 
   private async tick() {
     if (this.running) return; this.running = true;
+    // лидер-лок между инстансами
+    const lock = await pgTryAdvisoryLock(this.prisma, 'worker:outbox_dispatcher');
+    if (!lock.ok) { this.running = false; return; }
     try {
       this.lastTickAt = new Date();
       const now = new Date();
@@ -137,11 +145,16 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         take: batch,
       }) as unknown as OutboxRow[];
 
-      for (const row of items) {
-        const claimed = await this.claim(row);
-        if (!claimed) continue;
-        await this.send(row);
+      const concurrency = Math.max(1, Number(process.env.OUTBOX_WORKER_CONCURRENCY || '3'));
+      for (let i = 0; i < items.length; i += concurrency) {
+        const batchItems = items.slice(i, i + concurrency);
+        await Promise.all(batchItems.map(async (row) => {
+          const claimed = await this.claim(row);
+          if (!claimed) return;
+          await this.send(row);
+        }));
       }
     } finally { this.running = false; }
+    await pgAdvisoryUnlock(this.prisma, lock.key);
   }
 }

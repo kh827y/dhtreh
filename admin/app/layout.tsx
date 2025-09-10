@@ -26,6 +26,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <a href="/docs/deployment" style={{ color: '#89b4fa' }}>Деплой</a>
             <a href="/exports" style={{ color: '#89b4fa' }}>Экспорт</a>
             <a href="/tools/signature" style={{ color: '#89b4fa' }}>Инструменты</a>
+            <a href="/audit" style={{ color: '#89b4fa' }}>Аудит</a>
             <span style={{ flex: 1 }} />
             <a href="/logout" style={{ color: '#f38ba8' }}>Выход</a>
           </nav>

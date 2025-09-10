@@ -6,6 +6,7 @@ import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './prisma.module';
 import { LoyaltyModule } from './loyalty/loyalty.module';
 import { MerchantsModule } from './merchants/merchants.module';
+import { AdminAuditModule } from './admin-audit.module';
 import { RequestIdMiddleware } from './request-id.middleware';
 import { HealthController } from './health.controller';
 import { MetricsController } from './metrics.controller';
@@ -30,6 +31,7 @@ import { PointsBurnWorker } from './points-burn.worker';
     LoyaltyModule,
     MetricsModule,
     MerchantsModule, // <— добавили
+    AdminAuditModule,
   ],
   controllers: [HealthController, MetricsController],
   providers: [

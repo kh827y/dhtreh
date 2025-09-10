@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
+import { pgTryAdvisoryLock, pgAdvisoryUnlock } from './pg-lock.util';
 
 @Injectable()
 export class IdempotencyGcWorker implements OnModuleInit, OnModuleDestroy {
@@ -19,12 +20,13 @@ export class IdempotencyGcWorker implements OnModuleInit, OnModuleDestroy {
 
   private async tick() {
     if (this.running) return; this.running = true;
+    const lock = await pgTryAdvisoryLock(this.prisma, 'worker:idempotency_gc');
+    if (!lock.ok) { this.running = false; return; }
     try {
       const now = new Date();
       const ttlH = Number(process.env.IDEMPOTENCY_TTL_HOURS || '72');
       const olderThan = new Date(Date.now() - ttlH * 3600 * 1000);
       await this.prisma.idempotencyKey.deleteMany({ where: { OR: [ { expiresAt: { lt: now } }, { expiresAt: null, createdAt: { lt: olderThan } } ] } });
-    } finally { this.running = false; }
+    } finally { this.running = false; await pgAdvisoryUnlock(this.prisma, lock.key); }
   }
 }
-

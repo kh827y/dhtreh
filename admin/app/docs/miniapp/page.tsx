@@ -8,7 +8,7 @@ export default function MiniappDocs() {
       <ul>
         <li><b>start_param</b> из Telegram WebApp (если открыт внутри Telegram)</li>
         <li><b>?merchantId=</b> в query</li>
-        <li>последний сегмент пути (<code>/miniapp/<merchantId></code>)</li>
+        <li>последний сегмент пути (<code>/miniapp/&lt;merchantId&gt;</code>)</li>
         <li>переменная окружения по умолчанию</li>
       </ul>
       <p>При наличии <code>initData</code> мини‑аппа вызывает <code>POST /loyalty/teleauth</code> и передаёт <code>merchantId</code> для валидации HMAC бот‑токеном мерчанта.</p>
@@ -16,4 +16,3 @@ export default function MiniappDocs() {
     </div>
   );
 }
-

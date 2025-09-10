@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { PrismaService } from './prisma.service';
 import { HoldStatus } from '@prisma/client';
 import { MetricsService } from './metrics.service';
+import { pgTryAdvisoryLock, pgAdvisoryUnlock } from './pg-lock.util';
 
 @Injectable()
 export class HoldGcWorker implements OnModuleInit, OnModuleDestroy {
@@ -21,6 +22,8 @@ export class HoldGcWorker implements OnModuleInit, OnModuleDestroy {
 
   private async tick() {
     if (this.running) return; this.running = true;
+    const lock = await pgTryAdvisoryLock(this.prisma, 'worker:hold_gc');
+    if (!lock.ok) { this.running = false; return; }
     try {
       const now = new Date();
       const expired = await this.prisma.hold.findMany({ where: { status: HoldStatus.PENDING, expiresAt: { lt: now } }, take: 50 });
@@ -30,6 +33,6 @@ export class HoldGcWorker implements OnModuleInit, OnModuleDestroy {
           this.metrics.inc('loyalty_hold_gc_canceled_total');
         } catch {}
       }
-    } finally { this.running = false; }
+    } finally { this.running = false; await pgAdvisoryUnlock(this.prisma, lock.key); }
   }
 }

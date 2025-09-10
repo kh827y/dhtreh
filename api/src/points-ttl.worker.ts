@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 import { MetricsService } from './metrics.service';
+import { pgTryAdvisoryLock, pgAdvisoryUnlock } from './pg-lock.util';
 
 @Injectable()
 export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
@@ -27,6 +28,8 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
 
   private async tick() {
     if (this.running) return; this.running = true;
+    const lock = await pgTryAdvisoryLock(this.prisma, 'worker:points_ttl_preview');
+    if (!lock.ok) { this.running = false; return; }
     try {
       this.lastTickAt = new Date();
       const merchants = await this.prisma.merchantSettings.findMany({ where: { pointsTtlDays: { not: null } } });
@@ -67,6 +70,6 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
           }
         }
       }
-    } finally { this.running = false; }
+    } finally { this.running = false; await pgAdvisoryUnlock(this.prisma, lock.key); }
   }
 }
