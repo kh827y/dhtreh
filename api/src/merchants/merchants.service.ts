@@ -39,6 +39,9 @@ export class MerchantsService {
       telegramBotUsername: (s as any).telegramBotUsername ?? null,
       telegramStartParamRequired: (s as any).telegramStartParamRequired ?? false,
       miniappBaseUrl: (s as any).miniappBaseUrl ?? null,
+      miniappThemePrimary: (s as any).miniappThemePrimary ?? null,
+      miniappThemeBg: (s as any).miniappThemeBg ?? null,
+      miniappLogoUrl: (s as any).miniappLogoUrl ?? null,
     };
   }
 
@@ -78,6 +81,9 @@ export class MerchantsService {
         telegramBotUsername: extras?.telegramBotUsername ?? undefined,
         telegramStartParamRequired: extras?.telegramStartParamRequired ?? undefined,
         miniappBaseUrl: extras?.miniappBaseUrl ?? undefined,
+        miniappThemePrimary: extras?.miniappThemePrimary ?? undefined,
+        miniappThemeBg: extras?.miniappThemeBg ?? undefined,
+        miniappLogoUrl: extras?.miniappLogoUrl ?? undefined,
       },
       create: {
         merchantId,
@@ -105,6 +111,9 @@ export class MerchantsService {
         telegramBotUsername: extras?.telegramBotUsername ?? null,
         telegramStartParamRequired: extras?.telegramStartParamRequired ?? false,
         miniappBaseUrl: extras?.miniappBaseUrl ?? null,
+        miniappThemePrimary: extras?.miniappThemePrimary ?? null,
+        miniappThemeBg: extras?.miniappThemeBg ?? null,
+        miniappLogoUrl: extras?.miniappLogoUrl ?? null,
       },
     });
     return {
@@ -128,6 +137,9 @@ export class MerchantsService {
       telegramBotUsername: (updated as any).telegramBotUsername ?? null,
       telegramStartParamRequired: (updated as any).telegramStartParamRequired ?? false,
       miniappBaseUrl: (updated as any).miniappBaseUrl ?? null,
+      miniappThemePrimary: (updated as any).miniappThemePrimary ?? null,
+      miniappThemeBg: (updated as any).miniappThemeBg ?? null,
+      miniappLogoUrl: (updated as any).miniappLogoUrl ?? null,
     };
   }
 

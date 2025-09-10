@@ -202,7 +202,13 @@ export class LoyaltyController {
   @ApiOkResponse({ type: PublicSettingsDto })
   async publicSettings(@Param('merchantId') merchantId: string) {
     const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId } });
-    return { merchantId, qrTtlSec: s?.qrTtlSec ?? 120 };
+    return {
+      merchantId,
+      qrTtlSec: s?.qrTtlSec ?? 120,
+      miniappThemePrimary: (s as any)?.miniappThemePrimary ?? null,
+      miniappThemeBg: (s as any)?.miniappThemeBg ?? null,
+      miniappLogoUrl: (s as any)?.miniappLogoUrl ?? null,
+    } as any;
   }
 
   @Post('refund')

@@ -14,6 +14,9 @@ export default function SettingsPage() {
   const [rules, setRules] = useState<string>('');
   const [msg, setMsg] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
+  const [rulesErrors, setRulesErrors] = useState<string[]>([]);
+  const [preview, setPreview] = useState<{ channel: 'SMART'|'PC_POS'|'VIRTUAL'; weekday: number; eligibleTotal: number; category?: string }>({ channel: 'SMART', weekday: new Date().getDay(), eligibleTotal: 1000 });
+  const [previewOut, setPreviewOut] = useState<{ earnBps: number; redeemLimitBps: number } | null>(null);
   // локальные поля для секретов (не подставляем значения из API)
   const [webhookUrl, setWebhookUrl] = useState<string>('');
   const [webhookKeyId, setWebhookKeyId] = useState<string>('');
@@ -23,6 +26,9 @@ export default function SettingsPage() {
   const [useWebhookNext, setUseWebhookNext] = useState<boolean>(false);
   const [bridgeSecret, setBridgeSecret] = useState<string>('');
   const [bridgeSecretNext, setBridgeSecretNext] = useState<string>('');
+  const [miniappThemePrimary, setMiniappThemePrimary] = useState<string>('');
+  const [miniappThemeBg, setMiniappThemeBg] = useState<string>('');
+  const [miniappLogoUrl, setMiniappLogoUrl] = useState<string>('');
 
   useEffect(() => {
     setLoading(true);
@@ -33,6 +39,9 @@ export default function SettingsPage() {
       setWebhookKeyId(r.webhookKeyId || '');
       setWebhookKeyIdNext(r.webhookKeyIdNext || '');
       setUseWebhookNext(!!r.useWebhookNext);
+      setMiniappThemePrimary(r.miniappThemePrimary || '');
+      setMiniappThemeBg(r.miniappThemeBg || '');
+      setMiniappLogoUrl(r.miniappLogoUrl || '');
     }).catch((e:any)=>setMsg(String(e?.message||e))).finally(()=>setLoading(false));
   }, [merchantId]);
 
@@ -44,6 +53,9 @@ export default function SettingsPage() {
       if (rules.trim()) {
         try { rulesJson = JSON.parse(rules); }
         catch (e:any) { setMsg('Некорректный JSON правил: ' + (e.message||e)); setLoading(false); return; }
+        const errs = validateRules(rulesJson);
+        setRulesErrors(errs);
+        if (errs.length) { setMsg('Исправьте ошибки правил перед сохранением'); setLoading(false); return; }
       }
       const dto: any = {
         earnBps: s.earnBps,
@@ -66,6 +78,9 @@ export default function SettingsPage() {
         useWebhookNext: useWebhookNext,
         bridgeSecret: bridgeSecret || undefined,
         bridgeSecretNext: bridgeSecretNext || undefined,
+        miniappThemePrimary: miniappThemePrimary || undefined,
+        miniappThemeBg: miniappThemeBg || undefined,
+        miniappLogoUrl: miniappLogoUrl || undefined,
       };
       const r = await updateSettings(merchantId, dto);
       setS(r);
@@ -77,6 +92,54 @@ export default function SettingsPage() {
     } catch (e:any) { setMsg('Ошибка сохранения: ' + (e.message || e)); }
     finally { setLoading(false); }
   };
+
+  function validateRules(json: any): string[] {
+    const errors: string[] = [];
+    if (json == null || json === '') return errors;
+    if (!Array.isArray(json)) { errors.push('Правила должны быть массивом объектов'); return errors; }
+    json.forEach((item: any, idx: number) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) { errors.push(`#${idx}: элемент должен быть объектом`); return; }
+      const cond = item.if ?? {};
+      const then = item.then ?? {};
+      if (cond.channelIn && !Array.isArray(cond.channelIn)) errors.push(`#${idx}: if.channelIn должен быть массивом строк`);
+      if (cond.weekdayIn && !Array.isArray(cond.weekdayIn)) errors.push(`#${idx}: if.weekdayIn должен быть массивом чисел 0..6`);
+      if (cond.minEligible != null && (typeof cond.minEligible !== 'number' || cond.minEligible < 0)) errors.push(`#${idx}: if.minEligible должен быть числом ≥ 0`);
+      if (cond.categoryIn && !Array.isArray(cond.categoryIn)) errors.push(`#${idx}: if.categoryIn должен быть массивом строк`);
+      if (then.earnBps != null && (typeof then.earnBps !== 'number' || then.earnBps < 0 || then.earnBps > 10000)) errors.push(`#${idx}: then.earnBps должен быть 0..10000`);
+      if (then.redeemLimitBps != null && (typeof then.redeemLimitBps !== 'number' || then.redeemLimitBps < 0 || then.redeemLimitBps > 10000)) errors.push(`#${idx}: then.redeemLimitBps должен быть 0..10000`);
+    });
+    return errors;
+  }
+
+  function computeRules(json: any, args: { channel: 'SMART'|'PC_POS'|'VIRTUAL'; weekday: number; eligibleTotal: number; category?: string }): { earnBps: number; redeemLimitBps: number } {
+    let earnBps = s?.earnBps ?? 500;
+    let redeemLimitBps = s?.redeemLimitBps ?? 5000;
+    if (Array.isArray(json)) {
+      for (const item of json) {
+        try {
+          if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+          const cond = (item as any).if ?? {};
+          if (Array.isArray(cond.channelIn) && !cond.channelIn.includes(args.channel)) continue;
+          if (Array.isArray(cond.weekdayIn) && !cond.weekdayIn.includes(args.weekday)) continue;
+          if (cond.minEligible != null && args.eligibleTotal < Number(cond.minEligible)) continue;
+          if (Array.isArray(cond.categoryIn) && !cond.categoryIn.includes(args.category)) continue;
+          const then = (item as any).then ?? {};
+          if (then.earnBps != null) earnBps = Number(then.earnBps);
+          if (then.redeemLimitBps != null) redeemLimitBps = Number(then.redeemLimitBps);
+        } catch {}
+      }
+    }
+    return { earnBps, redeemLimitBps };
+  }
+
+  useEffect(() => {
+    try {
+      const json = rules.trim() ? JSON.parse(rules) : [];
+      setRulesErrors(validateRules(json));
+      setPreviewOut(computeRules(json, preview));
+    } catch { setRulesErrors(['Некорректный JSON']); setPreviewOut(null); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rules, preview.channel, preview.weekday, preview.eligibleTotal, preview.category]);
 
   return (
     <div>
@@ -145,6 +208,33 @@ export default function SettingsPage() {
             <label>Правила (JSON):</label>
             <textarea value={rules} onChange={e=>setRules(e.target.value)} rows={10} style={{ width: '100%', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }} placeholder='[ {"if": {"channelIn":["SMART"]}, "then": {"earnBps":700}} ]' />
           </div>
+          {rulesErrors.length > 0 ? (
+            <div style={{ color: '#f38ba8' }}>Ошибки правил: <ul>{rulesErrors.map((er,i)=>(<li key={i}>{er}</li>))}</ul></div>
+          ) : (
+            <div style={{ color: '#a6e3a1' }}>Правила валидны</div>
+          )}
+          <div style={{ background: '#0e1629', padding: 10, borderRadius: 8 }}>
+            <div style={{ marginBottom: 8 }}>Предпросмотр применения правил:</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <label>Канал:
+                <select value={preview.channel} onChange={e=>setPreview(prev=>({ ...prev, channel: e.target.value as any }))} style={{ marginLeft: 8 }}>
+                  <option value="SMART">SMART</option>
+                  <option value="PC_POS">PC_POS</option>
+                  <option value="VIRTUAL">VIRTUAL</option>
+                </select>
+              </label>
+              <label>День недели:
+                <input type="number" min={0} max={6} value={preview.weekday} onChange={e=>setPreview(prev=>({ ...prev, weekday: parseInt(e.target.value||'0',10) }))} style={{ marginLeft: 8, width: 80 }} />
+              </label>
+              <label>Сумма (eligible):
+                <input type="number" min={0} value={preview.eligibleTotal} onChange={e=>setPreview(prev=>({ ...prev, eligibleTotal: parseInt(e.target.value||'0',10) }))} style={{ marginLeft: 8, width: 120 }} />
+              </label>
+              <label>Категория:
+                <input value={preview.category || ''} onChange={e=>setPreview(prev=>({ ...prev, category: e.target.value||undefined }))} style={{ marginLeft: 8 }} placeholder="опц." />
+              </label>
+            </div>
+            <div style={{ marginTop: 8 }}>Результат: {previewOut ? (<span>earnBps=<b>{previewOut.earnBps}</b>, redeemLimitBps=<b>{previewOut.redeemLimitBps}</b></span>) : '—'}</div>
+          </div>
           <hr />
           <h3>Вебхуки</h3>
           <div>
@@ -182,6 +272,20 @@ export default function SettingsPage() {
           <div>
             <label>Bridge Secret Next:</label>
             <input type="password" value={bridgeSecretNext} onChange={e=>setBridgeSecretNext(e.target.value)} style={{ marginLeft: 8, width: 520 }} placeholder="для ротации" />
+          </div>
+          <hr />
+          <h3>Мини‑аппа (бренд)</h3>
+          <div>
+            <label>Основной цвет (HEX):</label>
+            <input value={miniappThemePrimary} onChange={e=>setMiniappThemePrimary(e.target.value)} style={{ marginLeft: 8, width: 160 }} placeholder="#4f46e5" />
+          </div>
+          <div>
+            <label>Цвет фона (HEX):</label>
+            <input value={miniappThemeBg} onChange={e=>setMiniappThemeBg(e.target.value)} style={{ marginLeft: 8, width: 160 }} placeholder="#0b1220" />
+          </div>
+          <div>
+            <label>Логотип (URL):</label>
+            <input value={miniappLogoUrl} onChange={e=>setMiniappLogoUrl(e.target.value)} style={{ marginLeft: 8, width: 520 }} placeholder="https://.../logo.png" />
           </div>
           <div><button onClick={save} disabled={loading} style={{ padding: '8px 12px' }}>Сохранить</button></div>
         </div>

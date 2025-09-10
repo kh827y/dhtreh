@@ -90,6 +90,9 @@ model MerchantSettings {
   telegramBotUsername String?
   telegramStartParamRequired Boolean @default(false)
   miniappBaseUrl     String?
+  miniappThemePrimary String?
+  miniappThemeBg      String?
+  miniappLogoUrl      String?
   updatedAt      DateTime @default(now())
 }
 

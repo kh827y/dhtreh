@@ -20,7 +20,7 @@ export async function teleauth(merchantId: string, initData: string): Promise<{ 
   return http('/loyalty/teleauth', { method: 'POST', body: JSON.stringify({ merchantId, initData }) });
 }
 
-export async function publicSettings(merchantId: string): Promise<{ merchantId: string; qrTtlSec: number }>
+export async function publicSettings(merchantId: string): Promise<{ merchantId: string; qrTtlSec: number; miniappThemePrimary?: string|null; miniappThemeBg?: string|null; miniappLogoUrl?: string|null }>
 { return http(`/loyalty/settings/${encodeURIComponent(merchantId)}`); }
 
 export async function mintQr(customerId: string, merchantId?: string, ttlSec?: number): Promise<QrMintResp> {
@@ -42,4 +42,3 @@ export async function consentGet(merchantId: string, customerId: string): Promis
 export async function consentSet(merchantId: string, customerId: string, granted: boolean): Promise<{ ok: boolean }> {
   return http('/loyalty/consent', { method: 'POST', body: JSON.stringify({ merchantId, customerId, granted }) });
 }
-

@@ -41,6 +41,7 @@ export default function Page() {
   const [nextBefore, setNextBefore] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState<boolean>(false);
   const [consent, setConsent] = useState<boolean>(false);
+  const [theme, setTheme] = useState<{ primary?: string|null; bg?: string|null; logo?: string|null }>({});
 
   useEffect(() => {
     const saved = localStorage.getItem('miniapp.customerId');
@@ -54,7 +55,7 @@ export default function Page() {
         .catch((e) => setStatus(`Ошибка авторизации: ${e.message || e}`));
     }
     // подтянем рекомендуемый TTL
-    publicSettings(ctxMerchant || merchantId).then(s => setTtl(s.qrTtlSec)).catch(() => {});
+    publicSettings(ctxMerchant || merchantId).then(s => { setTtl(s.qrTtlSec); setTheme({ primary: s.miniappThemePrimary, bg: s.miniappThemeBg, logo: s.miniappLogoUrl }); }).catch(() => {});
   }, [merchantId]);
 
   const doMint = useCallback(async () => {
@@ -111,8 +112,13 @@ export default function Page() {
   }, [merchantId, customerId, consent]);
 
   return (
-    <div>
+    <div style={{ background: theme.bg || '#0b1220', color: '#e6edf3', minHeight: '100vh', margin: -16, padding: 16 }}>
       <h1 style={{ margin: '8px 0 16px' }}>Программа лояльности</h1>
+      {theme.logo && (
+        <div style={{ margin: '8px 0' }}>
+          <img src={theme.logo} alt="logo" style={{ maxHeight: 48 }} />
+        </div>
+      )}
       {DEV_UI && (
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
           <label>
@@ -131,7 +137,7 @@ export default function Page() {
       )}
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-        <button onClick={doMint} style={{ padding: '8px 12px' }}>Показать QR</button>
+        <button onClick={doMint} style={{ padding: '8px 12px', background: theme.primary || '#4f46e5', border: 'none', color: '#fff', borderRadius: 6 }}>Показать QR</button>
         {DEV_UI && (
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <input type="checkbox" checked={autoRefresh} onChange={e=>setAutoRefresh(e.target.checked)} /> авто‑обновлять QR
@@ -144,19 +150,21 @@ export default function Page() {
 
       {status && <div style={{ margin: '8px 0', opacity: 0.9 }}>{status}</div>}
 
-      {qrToken && (
+      {qrToken ? (
         <div style={{ background: '#0e1629', padding: 12, borderRadius: 8, margin: '16px 0' }}>
           <div style={{ marginBottom: 8 }}>Покажите QR кассиру для сканирования</div>
           <QrCanvas value={qrToken} />
           <div style={{ wordBreak: 'break-all', fontSize: 12, opacity: 0.7, marginTop: 8 }}>JWT: {qrToken}</div>
         </div>
+      ) : (
+        <div style={{ margin: '16px 0', opacity: 0.8 }}>QR ещё не сгенерирован</div>
       )}
 
       {bal != null && (
         <div style={{ marginTop: 8 }}>Баланс: <b>{bal}</b> баллов</div>
       )}
 
-      {tx.length > 0 && (
+      {tx.length > 0 ? (
         <div style={{ marginTop: 16 }}>
           <div style={{ marginBottom: 8 }}>Последние операции:</div>
           <div style={{ display: 'grid', gap: 6 }}>
@@ -173,6 +181,8 @@ export default function Page() {
             </div>
           )}
         </div>
+      ) : (
+        <div style={{ marginTop: 16, opacity: 0.8 }}>Операций пока нет</div>
       )}
     </div>
   );

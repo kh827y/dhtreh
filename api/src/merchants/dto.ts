@@ -88,6 +88,15 @@ export class UpdateMerchantSettingsDto {
   @ApiPropertyOptional({ description: 'Базовый URL мини-аппы (для Deep Link)' })
   @IsOptional() @IsString()
   miniappBaseUrl?: string;
+  @ApiPropertyOptional({ description: 'Цвет основной темы мини-аппы (HEX)' })
+  @IsOptional() @IsString()
+  miniappThemePrimary?: string;
+  @ApiPropertyOptional({ description: 'Цвет фона мини-аппы (HEX)' })
+  @IsOptional() @IsString()
+  miniappThemeBg?: string;
+  @ApiPropertyOptional({ description: 'URL логотипа мини-аппы' })
+  @IsOptional() @IsString()
+  miniappLogoUrl?: string;
 }
 
 export class CreateOutletDto {
@@ -169,6 +178,9 @@ export class MerchantSettingsRespDto {
   @ApiPropertyOptional() telegramBotUsername?: string|null;
   @ApiPropertyOptional() telegramStartParamRequired?: boolean;
   @ApiPropertyOptional() miniappBaseUrl?: string|null;
+  @ApiPropertyOptional() miniappThemePrimary?: string|null;
+  @ApiPropertyOptional() miniappThemeBg?: string|null;
+  @ApiPropertyOptional() miniappLogoUrl?: string|null;
 }
 
 export class OutletDto {

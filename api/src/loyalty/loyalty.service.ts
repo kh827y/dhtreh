@@ -371,6 +371,10 @@ export class LoyaltyService {
         await tx.transaction.create({
           data: { customerId: hold.customerId, merchantId: hold.merchantId, type: TxnType.REDEEM, amount: -amount, orderId, outletId: hold.outletId, deviceId: hold.deviceId, staffId: hold.staffId }
         });
+        // Earn lots consumption (optional)
+        if (process.env.EARN_LOTS_FEATURE === '1' && amount > 0) {
+          await this.consumeLots(tx, hold.merchantId, hold.customerId, amount, { orderId });
+        }
         // Ledger mirror (optional)
         if (process.env.LEDGER_FEATURE === '1' && amount > 0) {
           await tx.ledgerEntry.create({ data: {
@@ -535,6 +539,9 @@ export class LoyaltyService {
         await tx.transaction.create({
           data: { customerId: receipt.customerId, merchantId, type: TxnType.REFUND, amount: pointsToRestore, orderId, outletId: receipt.outletId, deviceId: receipt.deviceId, staffId: receipt.staffId }
         });
+        if (process.env.EARN_LOTS_FEATURE === '1') {
+          await this.unconsumeLots(tx, merchantId, receipt.customerId, pointsToRestore, { orderId });
+        }
         if (process.env.LEDGER_FEATURE === '1') {
           await tx.ledgerEntry.create({ data: {
             merchantId,
@@ -557,6 +564,9 @@ export class LoyaltyService {
         await tx.transaction.create({
           data: { customerId: receipt.customerId, merchantId, type: TxnType.REFUND, amount: -pointsToRevoke, orderId, outletId: receipt.outletId, deviceId: receipt.deviceId, staffId: receipt.staffId }
         });
+        if (process.env.EARN_LOTS_FEATURE === '1') {
+          await this.revokeLots(tx, merchantId, receipt.customerId, pointsToRevoke, { orderId });
+        }
         if (process.env.LEDGER_FEATURE === '1') {
           await tx.ledgerEntry.create({ data: {
             merchantId,
