@@ -190,6 +190,19 @@ app.get('/metrics', (req, res) => {
   res.end(lines.join('\n') + '\n');
 });
 
+// Sanitized config view (no secrets)
+app.get('/config', (req, res) => {
+  res.json({
+    apiBase: API,
+    merchantId: DEFAULT_MERCHANT,
+    outletId: DEFAULT_OUTLET || null,
+    deviceId: DEFAULT_DEVICE || null,
+    hasStaffKey: !!STAFF_KEY,
+    hasBridgeSecret: !!BRIDGE_SECRET,
+    port: PORT,
+  });
+});
+
 app.listen(PORT, '127.0.0.1', () => {
   console.log(`POS Bridge listening on http://127.0.0.1:${PORT}`);
 });
