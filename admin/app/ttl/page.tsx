@@ -19,7 +19,7 @@ export default function TtlPage() {
     finally { setLoading(false); }
   };
 
-  const csvUrl = `/api/admin/merchants/${encodeURIComponent(merchantId)}/ttl/reconciliation.csv?cutoff=${encodeURIComponent(cutoff)}`;
+  const csvUrl = `/api/admin/merchants/${encodeURIComponent(merchantId)}/ttl/reconciliation.csv?cutoff=${encodeURIComponent(cutoff)}${onlyDiff ? '&onlyDiff=1' : ''}`;
 
   return (
     <div>

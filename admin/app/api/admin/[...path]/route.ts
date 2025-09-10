@@ -1,11 +1,16 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { requireSession } from '../../_lib/session';
 
-const API_BASE = (process.env.API_BASE || process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/$/, '');
-const ADMIN_KEY = process.env.ADMIN_KEY || process.env.NEXT_PUBLIC_ADMIN_KEY || '';
+const API_BASE = (process.env.API_BASE || '').replace(/\/$/, '');
+const ADMIN_KEY = process.env.ADMIN_KEY || '';
 
 async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }> | { path: string[] } }) {
   if (!API_BASE) return new Response('API_BASE not configured', { status: 500 });
   if (!ADMIN_KEY) return new Response('ADMIN_KEY not configured', { status: 500 });
+  {
+    const auth = requireSession(req);
+    if (auth) return auth;
+  }
   const method = req.method;
   const url = new URL(req.url);
   // В Next 15 params может быть Promise — поддержим оба варианта
@@ -20,7 +25,13 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   const body = method === 'GET' || method === 'HEAD' ? undefined : await req.text();
   if (body != null) headers['content-type'] = 'application/json';
 
-  const res = await fetch(target, { method, headers, body, redirect: 'manual' });
+  let res: Response;
+  try {
+    res = await fetch(target, { method, headers, body, redirect: 'manual' });
+  } catch (e: any) {
+    const msg = `Upstream fetch failed to ${target}: ${String(e?.message || e)}`;
+    return new NextResponse(msg, { status: 502 });
+  }
   const isCsv = /\.csv(\?|$)/i.test(suffix);
   if (isCsv) {
     const out = new Headers();

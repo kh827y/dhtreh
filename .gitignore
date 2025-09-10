@@ -4,9 +4,12 @@ pnpm-lock.yaml
 
 # Build artifacts
 api/dist/
-admin/.next/
-cashier/.next/
-miniapp/.next/
+**/.next/
+
+# Remove accidentally committed nested app folders
+admin/admin/
+cashier/cashier/
+miniapp/miniapp/
 
 # Env files
 *.env

@@ -1,0 +1,57 @@
+import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
+
+const COOKIE = 'admin_session_v1';
+
+type Sess = { sub: string; iat: number; exp: number };
+
+function b64(s: string) { return Buffer.from(s, 'utf8').toString('base64url'); }
+function ub64(s: string) { return Buffer.from(s, 'base64url').toString('utf8'); }
+
+function getSecret() {
+  return process.env.ADMIN_SESSION_SECRET || '';
+}
+
+export function makeSessionCookie(days = 7) {
+  const now = Math.floor(Date.now()/1000);
+  const payload: Sess = { sub: 'admin', iat: now, exp: now + days*24*60*60 };
+  const secret = getSecret();
+  if (!secret) throw new Error('ADMIN_SESSION_SECRET not configured');
+  const p = b64(JSON.stringify(payload));
+  const sig = crypto.createHmac('sha256', secret).update(p).digest('base64url');
+  return `${p}.${sig}`;
+}
+
+export function verifySessionCookie(cookieVal: string | undefined): Sess | null {
+  try {
+    if (!cookieVal) return null;
+    const [p, sig] = cookieVal.split('.') as [string, string];
+    if (!p || !sig) return null;
+    const secret = getSecret();
+    if (!secret) return null;
+    const calc = crypto.createHmac('sha256', secret).update(p).digest('base64url');
+    if (calc !== sig) return null;
+    const sess = JSON.parse(ub64(p)) as Sess;
+    if (!sess?.exp || sess.exp < Math.floor(Date.now()/1000)) return null;
+    return sess;
+  } catch { return null; }
+}
+
+export function requireSession(req: NextRequest): NextResponse | null {
+  // allow in dev if no password configured (developer convenience)
+  const devBypass = process.env.NODE_ENV !== 'production' && !process.env.ADMIN_UI_PASSWORD;
+  if (devBypass) return null;
+  const val = req.cookies.get(COOKIE)?.value;
+  const sess = verifySessionCookie(val);
+  if (!sess) return new NextResponse('Unauthorized', { status: 401 });
+  return null;
+}
+
+export function setSessionCookie(res: NextResponse, cookieVal: string) {
+  res.cookies.set({ name: COOKIE, value: cookieVal, httpOnly: true, sameSite: 'lax', secure: true, path: '/' });
+}
+
+export function clearSessionCookie(res: NextResponse) {
+  res.cookies.set({ name: COOKIE, value: '', httpOnly: true, sameSite: 'lax', secure: true, path: '/', maxAge: 0 });
+}
+

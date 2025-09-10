@@ -22,6 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <a href="/docs/webhooks" style={{ color: '#89b4fa' }}>Документация вебхуков</a>
             <a href="/docs/integration" style={{ color: '#89b4fa' }}>Интеграции</a>
             <a href="/docs/bridge" style={{ color: '#89b4fa' }}>Bridge</a>
+            <a href="/docs/deployment" style={{ color: '#89b4fa' }}>Деплой</a>
             <a href="/exports" style={{ color: '#89b4fa' }}>Экспорт</a>
             <a href="/tools/signature" style={{ color: '#89b4fa' }}>Инструменты</a>
           </nav>

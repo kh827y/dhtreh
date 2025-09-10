@@ -252,6 +252,29 @@ export class MerchantsService {
     return { ok: true, updated: updated.count };
   }
 
+  async retrySince(merchantId: string, params: { status?: string; since?: string }) {
+    const where: any = { merchantId };
+    if (params.status) where.status = params.status;
+    if (params.since) {
+      const d = new Date(params.since);
+      if (!isNaN(d.getTime())) where.createdAt = { gte: d };
+    }
+    const updated = await this.prisma.eventOutbox.updateMany({ where, data: { status: 'PENDING', nextRetryAt: new Date(), lastError: null } });
+    return { ok: true, updated: updated.count };
+  }
+
+  async exportOutboxCsv(merchantId: string, params: { status?: string; since?: string; type?: string; limit?: number }) {
+    const limit = params.limit ? Math.min(Math.max(params.limit, 1), 5000) : 1000;
+    const items = await this.listOutbox(merchantId, params.status, limit, params.type, params.since);
+    const lines = [ 'id,eventType,status,retries,nextRetryAt,lastError,createdAt' ];
+    for (const ev of items) {
+      const row = [ ev.id, ev.eventType, ev.status, ev.retries, ev.nextRetryAt?ev.nextRetryAt.toISOString():'', ev.lastError||'', ev.createdAt.toISOString() ]
+        .map(x => `"${String(x).replaceAll('"','""')}"`).join(',');
+      lines.push(row);
+    }
+    return lines.join('\n') + '\n';
+  }
+
   async pauseOutbox(merchantId: string, minutes?: number, untilISO?: string) {
     const until = untilISO ? new Date(untilISO) : new Date(Date.now() + (Math.max(1, minutes || 60) * 60 * 1000));
     await this.prisma.merchantSettings.update({ where: { merchantId }, data: { outboxPausedUntil: until, updatedAt: new Date() } });
@@ -396,10 +419,11 @@ export class MerchantsService {
     return { merchantId, cutoff: cutoff.toISOString(), items, totals };
   }
 
-  async exportTtlReconciliationCsv(merchantId: string, cutoffISO: string) {
+  async exportTtlReconciliationCsv(merchantId: string, cutoffISO: string, onlyDiff = false) {
     const r = await this.ttlReconciliation(merchantId, cutoffISO);
     const lines = [ 'merchantId,cutoff,customerId,expiredRemain,burned,diff' ];
-    for (const it of r.items) {
+    const arr = onlyDiff ? r.items.filter(it => it.diff !== 0) : r.items;
+    for (const it of arr) {
       const row = [ r.merchantId, r.cutoff, it.customerId, it.expiredRemain, it.burned, it.diff ]
         .map(x => `"${String(x).replaceAll('"','""')}"`).join(',');
       lines.push(row);

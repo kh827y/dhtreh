@@ -197,7 +197,7 @@ export default function Page() {
       const r = await fetch(`${API_BASE}/loyalty/refund`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(staffKey?{ 'X-Staff-Key': staffKey }: {}) },
-        body: JSON.stringify({ merchantId, orderId: refundOrderId, refundTotal }),
+        body: JSON.stringify({ merchantId, orderId: refundOrderId, refundTotal, deviceId: deviceId || undefined }),
       });
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();

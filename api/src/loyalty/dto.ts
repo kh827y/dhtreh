@@ -63,6 +63,9 @@ export class RefundDto {
   // база возврата (если в исходном чеке были исключения); можно не указывать — возьмём пропорцию по total
   @ApiPropertyOptional({ minimum: 0 })
   @IsOptional() @IsNumber() @Min(0) refundEligibleTotal?: number;
+  // опциональная атрибуция устройства для проверки подписи Bridge при приоритете device.secret
+  @ApiPropertyOptional()
+  @IsOptional() @IsString() deviceId?: string;
 }
 
 // ====== Swagger DTOs for responses ======

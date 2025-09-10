@@ -228,9 +228,15 @@ export class LoyaltyController {
       const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId: dto.merchantId } });
       if (s?.requireBridgeSig) {
         const sig = (req.headers['x-bridge-signature'] as string | undefined) || '';
-        const secret = (s.bridgeSecret || null) as string | null;
-        const alt = ((s as any).bridgeSecretNext || null) as string | null;
-        const bodyForSig = JSON.stringify({ merchantId: dto.merchantId, orderId: dto.orderId, refundTotal: dto.refundTotal, refundEligibleTotal: dto.refundEligibleTotal ?? undefined });
+        let secret: string | null = s.bridgeSecret || null;
+        let alt: string | null = (s as any).bridgeSecretNext || null;
+        try {
+          if (dto.deviceId) {
+            const dev = await this.prisma.device.findUnique({ where: { id: dto.deviceId } });
+            if (dev?.bridgeSecret) { secret = dev.bridgeSecret; alt = null; }
+          }
+        } catch {}
+        const bodyForSig = JSON.stringify({ merchantId: dto.merchantId, orderId: dto.orderId, refundTotal: dto.refundTotal, refundEligibleTotal: dto.refundEligibleTotal ?? undefined, deviceId: dto.deviceId ?? undefined });
         let ok = false;
         if (secret && verifyBridgeSigUtil(sig, bodyForSig, secret)) ok = true;
         else if (alt && verifyBridgeSigUtil(sig, bodyForSig, alt)) ok = true;

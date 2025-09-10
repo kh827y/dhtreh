@@ -194,6 +194,13 @@ export class MerchantsController {
     return this.service.retryAll(id, status);
   }
 
+  @Post(':id/outbox/retrySince')
+  @ApiOkResponse({ type: BulkUpdateRespDto })
+  @ApiUnauthorizedResponse({ type: ErrorDto })
+  retrySince(@Param('id') id: string, @Body() body: { status?: string; since?: string }) {
+    return this.service.retrySince(id, { status: body?.status, since: body?.since });
+  }
+
   @Post(':id/outbox/pause')
   @ApiOkResponse({ type: OkDto })
   @ApiUnauthorizedResponse({ type: ErrorDto })
@@ -212,6 +219,19 @@ export class MerchantsController {
   outboxStats(@Param('id') id: string, @Query('since') sinceStr?: string) {
     const since = sinceStr ? new Date(sinceStr) : undefined;
     return this.service.outboxStats(id, since);
+  }
+
+  @Get(':id/outbox.csv')
+  @ApiOkResponse({ schema: { type: 'string', description: 'CSV' } })
+  outboxCsv(
+    @Param('id') id: string,
+    @Query('status') status?: string,
+    @Query('since') since?: string,
+    @Query('type') type?: string,
+    @Query('limit') limitStr?: string,
+  ) {
+    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 1000, 1), 5000) : 1000;
+    return this.service.exportOutboxCsv(id, { status, since, type, limit });
   }
 
   @Get(':id/outbox/by-order')
@@ -333,8 +353,9 @@ export class MerchantsController {
   async exportTtlReconciliationCsv(
     @Param('id') id: string,
     @Query('cutoff') cutoff: string,
+    @Query('onlyDiff') onlyDiff?: string,
   ) {
-    return this.service.exportTtlReconciliationCsv(id, cutoff);
+    return this.service.exportTtlReconciliationCsv(id, cutoff, (onlyDiff === '1' || /true/i.test(onlyDiff||'')));
   }
 
   // CRM helpers

@@ -7,7 +7,7 @@ import QRCode from 'qrcode';
 const API = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
 // TTL по умолчанию, перезапишем настройками мерчанта
 const DEFAULT_QR_TTL = Number(process.env.NEXT_PUBLIC_QR_TTL || '60');
-const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
+const DEFAULT_MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
 
 declare global {
   interface Window { Telegram?: any; }
@@ -22,6 +22,7 @@ type Txn = {
 };
 
 export default function MiniApp() {
+  const [merchantId, setMerchantId] = useState<string>(DEFAULT_MERCHANT);
   const [customerId, setCustomerId] = useState<string>('user-1'); // fallback для браузера
   const [balance, setBalance] = useState<number>(0);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
@@ -31,6 +32,9 @@ export default function MiniApp() {
   const [autoRefreshTimer, setAutoRefreshTimer] = useState<any>(null);
   const [lastTtlSec, setLastTtlSec] = useState<number>(DEFAULT_QR_TTL);
   const [consent, setConsent] = useState<boolean>(false);
+  const [themePrimary, setThemePrimary] = useState<string | null>(null);
+  const [themeBg, setThemeBg] = useState<string | null>(null);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   // История
   const [txns, setTxns] = useState<Txn[]>([]);
@@ -38,13 +42,30 @@ export default function MiniApp() {
   const [nextBefore, setNextBefore] = useState<string | null>(null);
   const [initLoaded, setInitLoaded] = useState(false);
 
+  // Определяем merchantId: Telegram start_param -> ?merchantId= -> путь -> env
+  useEffect(() => {
+    try {
+      const wa = (window as any)?.Telegram?.WebApp;
+      const sp = wa?.initDataUnsafe?.start_param;
+      if (sp) setMerchantId(String(sp));
+    } catch {}
+    try {
+      const q = new URLSearchParams(window.location.search).get('merchantId');
+      if (q) setMerchantId(q);
+    } catch {}
+    try {
+      const seg = (window.location.pathname || '').split('/').filter(Boolean).pop();
+      if (seg && /^M-/.test(seg)) setMerchantId(seg);
+    } catch {}
+  }, []);
+
   // Telegram auth через initData (сервер проверяет подпись)
   useEffect(() => {
     (async () => {
       try {
         const initData = (window as any)?.Telegram?.WebApp?.initData;
         if (initData) {
-          const r = await fetch(`${API}/loyalty/teleauth`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ initData }) });
+          const r = await fetch(`${API}/loyalty/teleauth`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ initData, merchantId }) });
           if (r.ok) {
             const data = await r.json();
             if (data?.customerId) setCustomerId(data.customerId);
@@ -52,10 +73,10 @@ export default function MiniApp() {
         }
       } catch {}
     })();
-  }, []);
+  }, [merchantId]);
 
   async function refreshBalance(id: string) {
-    const r = await fetch(`${API}/loyalty/balance/${MERCHANT}/${encodeURIComponent(id)}`);
+    const r = await fetch(`${API}/loyalty/balance/${merchantId}/${encodeURIComponent(id)}`);
     const data = await r.json();
     setBalance(data.balance ?? 0);
   }
@@ -66,7 +87,7 @@ export default function MiniApp() {
       const r = await fetch(`${API}/loyalty/qr`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customerId, ttlSec: qrTtlSec, merchantId: MERCHANT }),
+        body: JSON.stringify({ customerId, ttlSec: qrTtlSec, merchantId }),
       });
       const { token, ttl } = await r.json();
       const qr = await QRCode.toDataURL(token, { margin: 1, width: 240 });
@@ -86,7 +107,7 @@ export default function MiniApp() {
     setLoadingTx(true);
     try {
       const url = new URL(`${API}/loyalty/transactions`);
-      url.searchParams.set('merchantId', MERCHANT);
+      url.searchParams.set('merchantId', merchantId);
       url.searchParams.set('customerId', customerId);
       url.searchParams.set('limit', '20');
       if (!reset && nextBefore) url.searchParams.set('before', nextBefore);
@@ -104,27 +125,30 @@ export default function MiniApp() {
     }
   }
 
-  // подгружаем настройки мерчанта (qrTtlSec)
+  // подгружаем настройки мерчанта (qrTtlSec, темы/логотип)
   useEffect(() => {
     (async () => {
       try {
-        const r = await fetch(`${API}/loyalty/settings/${MERCHANT}`);
+        const r = await fetch(`${API}/loyalty/settings/${merchantId}`);
         const data = await r.json();
         if (data?.qrTtlSec) setQrTtlSec(data.qrTtlSec);
+        setThemePrimary(data?.miniappThemePrimary ?? null);
+        setThemeBg(data?.miniappThemeBg ?? null);
+        setLogoUrl(data?.miniappLogoUrl ?? null);
       } catch {}
     })();
-  }, []);
+  }, [merchantId]);
 
   // загрузка согласия
   useEffect(() => {
     (async () => {
       try {
-        const r = await fetch(`${API}/loyalty/consent?merchantId=${encodeURIComponent(MERCHANT)}&customerId=${encodeURIComponent(customerId)}`);
+        const r = await fetch(`${API}/loyalty/consent?merchantId=${encodeURIComponent(merchantId)}&customerId=${encodeURIComponent(customerId)}`);
         const data = await r.json();
         setConsent(Boolean(data?.granted));
       } catch {}
     })();
-  }, [customerId]);
+  }, [customerId, merchantId]);
 
   // первичная загрузка баланса и истории
   useEffect(() => {
@@ -163,13 +187,16 @@ export default function MiniApp() {
   }
 
   return (
-    <main style={{ maxWidth: 460, margin: '24px auto', fontFamily: 'system-ui, Arial', padding: 12 }}>
+    <main style={{ maxWidth: 460, margin: '24px auto', fontFamily: 'system-ui, Arial', padding: 12, background: themeBg || undefined, borderRadius: 12 }}>
       {/* SDK Telegram */}
       <Script src="https://telegram.org/js/telegram-web-app.js" strategy="afterInteractive" />
-      <h2>Моя карта лояльности</h2>
+      <h2 style={{ color: themePrimary || undefined, display: 'flex', alignItems: 'center', gap: 8 }}>
+        {logoUrl ? <img src={logoUrl} alt="logo" style={{ height: 28 }} /> : null}
+        Моя карта лояльности
+      </h2>
 
       <div style={{ marginTop: 8, color: '#666' }}>
-        Клиент: <code>{customerId}</code> · Мерчант: <code>{MERCHANT}</code>
+        Клиент: <code>{customerId}</code> · Мерчант: <code>{merchantId}</code>
       </div>
 
       <div style={{ marginTop: 12, fontSize: 18, display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -192,7 +219,7 @@ export default function MiniApp() {
           try {
             await fetch(`${API}/loyalty/consent`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ merchantId: MERCHANT, customerId, granted: v })
+              body: JSON.stringify({ merchantId, customerId, granted: v })
             });
           } catch {}
         }} />

@@ -145,14 +145,17 @@ app.post('/refund', async (req, res) => {
     const orderId = b.orderId;
     const refundTotal = Number(b.refundTotal || 0);
     const refundEligibleTotal = b.refundEligibleTotal != null ? Number(b.refundEligibleTotal) : undefined;
+    const deviceId = b.deviceId || DEFAULT_DEVICE || undefined;
     if (!orderId) return res.status(400).json({ error: 'orderId required' });
     const idemKey = b.idempotencyKey || `refund:${merchantId}:${orderId}:${refundTotal}`;
     try {
-      const data = await callApi('/loyalty/refund', { merchantId, orderId, refundTotal, refundEligibleTotal }, { idempotencyKey: idemKey });
+      const body = { merchantId, orderId, refundTotal, refundEligibleTotal, ...(deviceId ? { deviceId } : {}) };
+      const data = await callApi('/loyalty/refund', body, { idempotencyKey: idemKey });
       res.json(data);
     } catch (e) {
       const id = uuidv4();
-      queue.push({ id, type: 'refund', idemKey, body: { merchantId, orderId, refundTotal, refundEligibleTotal } });
+      const body = { merchantId, orderId, refundTotal, refundEligibleTotal, ...(deviceId ? { deviceId } : {}) };
+      queue.push({ id, type: 'refund', idemKey, body });
       metrics.queue_enqueued_total++;
       saveQueue(queue);
       res.status(202).json({ queued: true, id, reason: String(e.message || e) });

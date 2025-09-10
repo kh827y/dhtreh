@@ -1,10 +1,15 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { requireSession } from '../_lib/session';
 
-const API_BASE = (process.env.API_BASE || process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/$/, '');
+const API_BASE = (process.env.API_BASE || '').replace(/\/$/, '');
 const METRICS_TOKEN = process.env.METRICS_TOKEN || '';
 
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   if (!API_BASE) return new Response('API_BASE not configured', { status: 500 });
+  {
+    const auth = requireSession(req);
+    if (auth) return auth;
+  }
   try {
     const headers: any = {};
     if (METRICS_TOKEN) headers['X-Metrics-Token'] = METRICS_TOKEN;
@@ -12,7 +17,7 @@ export async function GET(_req: NextRequest) {
     const text = await res.text();
     if (!res.ok) return new Response(text || 'metrics error', { status: 502 });
     const summary = parseMetrics(text);
-    return Response.json(summary);
+    return NextResponse.json(summary);
   } catch (e: any) {
     return new Response(String(e?.message || e), { status: 500 });
   }
@@ -56,4 +61,3 @@ function parseMetrics(text: string) {
   }
   return { outboxPending, outboxDead, http5xx, http4xx, counters };
 }
-

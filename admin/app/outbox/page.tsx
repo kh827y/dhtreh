@@ -31,9 +31,16 @@ export default function OutboxPage() {
 
   useEffect(() => { load().catch(()=>{}); }, []);
 
+  const setPreset = (hours: number) => {
+    const d = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+    setSince(d);
+  };
+
   const onRetry = async (id: string) => { await retryOutbox(merchantId, id); await load(); };
   const onDelete = async (id: string) => { await deleteOutbox(merchantId, id); await load(); };
   const onRetryAll = async () => { await retryAll(merchantId, status || undefined); await load(); };
+  const onRetryFailed = async () => { await retryAll(merchantId, 'FAILED'); await load(); };
+  const onRetryDead = async () => { await retryAll(merchantId, 'DEAD'); await load(); };
   const onPause = async () => {
     const minsStr = prompt('На сколько минут паузу? (по умолчанию 60)');
     const minutes = minsStr ? parseInt(minsStr, 10) : 60;
@@ -59,9 +66,16 @@ export default function OutboxPage() {
         </label>
         <label>Тип: <input value={type} onChange={e=>setType(e.target.value)} style={{ marginLeft: 8, width: 220 }} placeholder="loyalty.commit" /></label>
         <label>С даты (ISO): <input value={since} onChange={e=>setSince(e.target.value)} style={{ marginLeft: 8, width: 220 }} placeholder="2025-09-01T00:00:00Z" /></label>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button onClick={()=>setPreset(24)} style={{ padding: '6px 10px' }}>24h</button>
+          <button onClick={()=>setPreset(24*7)} style={{ padding: '6px 10px' }}>7d</button>
+          <button onClick={()=>setPreset(24*30)} style={{ padding: '6px 10px' }}>30d</button>
+        </div>
         <label>Лимит: <input type="number" value={limit} onChange={e=>setLimit(parseInt(e.target.value||'50',10))} style={{ marginLeft: 8, width: 90 }} /></label>
         <button onClick={load} disabled={loading} style={{ padding: '6px 10px' }}>Обновить</button>
         <button onClick={onRetryAll} disabled={loading} style={{ padding: '6px 10px' }}>Retry All</button>
+        <button onClick={onRetryFailed} disabled={loading} style={{ padding: '6px 10px' }}>Retry FAILED</button>
+        <button onClick={onRetryDead} disabled={loading} style={{ padding: '6px 10px' }}>Retry DEAD</button>
         <button onClick={onPause} disabled={loading} style={{ padding: '6px 10px' }}>Pause</button>
         <button onClick={onResume} disabled={loading} style={{ padding: '6px 10px' }}>Resume</button>
       </div>

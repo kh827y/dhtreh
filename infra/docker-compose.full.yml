@@ -1,0 +1,51 @@
+version: "3.9"
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: loyalty
+      POSTGRES_PASSWORD: loyalty
+      POSTGRES_DB: loyalty
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+
+  api:
+    build: ../api
+    depends_on: [postgres]
+    environment:
+      DATABASE_URL: postgresql://loyalty:loyalty@postgres:5432/loyalty
+      ADMIN_KEY: change_me_admin
+      QR_JWT_SECRET: change_me_qr
+      CORS_ORIGINS: http://localhost:3001,http://localhost:3002,http://localhost:3003
+    ports: ["3000:3000"]
+
+  admin:
+    build: ../admin
+    depends_on: [api]
+    environment:
+      API_BASE: http://api:3000
+      ADMIN_KEY: change_me_admin
+      NEXT_PUBLIC_MERCHANT_ID: M-1
+    ports: ["3001:3001"]
+
+  miniapp:
+    build: ../miniapp
+    depends_on: [api]
+    environment:
+      NEXT_PUBLIC_API_BASE: http://api:3000
+      NEXT_PUBLIC_MERCHANT_ID: M-1
+    ports: ["3003:3003"]
+
+  bridge:
+    build: ../bridge
+    depends_on: [api]
+    environment:
+      API_BASE: http://api:3000
+      MERCHANT_ID: M-1
+      BRIDGE_PORT: 18080
+      BRIDGE_SECRET: change_me_bridge
+    ports: ["18080:18080"]
+
+volumes:
+  pgdata:
+
