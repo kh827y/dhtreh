@@ -1,37 +1,16 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import QrCanvas from '../components/QrCanvas';
-import { balance, consentGet, consentSet, mintQr, publicSettings, teleauth, transactions } from '../lib/api';
-
-type TgWebApp = { initData?: string; initDataUnsafe?: any };
+import { balance, consentGet, consentSet, mintQr, transactions } from '../lib/api';
+import Spinner from '../components/Spinner';
+import { useMiniappAuth } from '../lib/useMiniapp';
 
 const DEV_UI = (process.env.NEXT_PUBLIC_MINIAPP_DEV_UI || '').toLowerCase() === 'true' || process.env.NEXT_PUBLIC_MINIAPP_DEV_UI === '1';
 
-function getInitData(): string | null {
-  try {
-    const tg = (window as any)?.Telegram?.WebApp as TgWebApp | undefined;
-    if (tg?.initData) return tg.initData;
-    const p = new URLSearchParams(window.location.search);
-    return p.get('initData') || p.get('tgWebAppData') || p.get('tg_init_data');
-  } catch { return null; }
-}
-
-function getMerchantFromContext(initData: string | null): string | undefined {
-  try {
-    const q = new URLSearchParams(window.location.search);
-    const fromQuery = q.get('merchantId') || undefined;
-    if (fromQuery) return fromQuery;
-    if (initData) {
-      const u = new URLSearchParams(initData);
-      const sp = u.get('start_param') || u.get('startapp');
-      if (sp) return sp;
-    }
-  } catch {}
-  return undefined;
-}
-
 export default function Page() {
-  const [merchantId, setMerchantId] = useState<string>(process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1');
+  const auth = useMiniappAuth(process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1');
+  const merchantId = auth.merchantId;
+  const setMerchantId = auth.setMerchantId;
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [status, setStatus] = useState<string>('');
   const [qrToken, setQrToken] = useState<string>('');
@@ -41,22 +20,18 @@ export default function Page() {
   const [nextBefore, setNextBefore] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState<boolean>(false);
   const [consent, setConsent] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string>('');
   const [theme, setTheme] = useState<{ primary?: string|null; bg?: string|null; logo?: string|null }>({});
 
   useEffect(() => {
-    const saved = localStorage.getItem('miniapp.customerId');
-    if (saved) setCustomerId(saved);
-    const id = getInitData();
-    const ctxMerchant = getMerchantFromContext(id);
-    if (ctxMerchant) setMerchantId(ctxMerchant);
-    if (id && (ctxMerchant || merchantId)) {
-      teleauth(ctxMerchant || merchantId, id)
-        .then((r) => { setCustomerId(r.customerId); localStorage.setItem('miniapp.customerId', r.customerId); setStatus('Авторизовано через Telegram'); })
-        .catch((e) => setStatus(`Ошибка авторизации: ${e.message || e}`));
+    setLoading(auth.loading);
+    setError(auth.error);
+    if (!auth.loading) {
+      setCustomerId(auth.customerId);
+      if (auth.theme.ttl) setTtl(auth.theme.ttl);
     }
-    // подтянем рекомендуемый TTL
-    publicSettings(ctxMerchant || merchantId).then(s => { setTtl(s.qrTtlSec); setTheme({ primary: s.miniappThemePrimary, bg: s.miniappThemeBg, logo: s.miniappLogoUrl }); }).catch(() => {});
-  }, [merchantId]);
+  }, [auth.loading, auth.error, auth.customerId, auth.theme]);
 
   const doMint = useCallback(async () => {
     if (!customerId) { setStatus('Сначала авторизуйтесь'); return; }
@@ -112,12 +87,19 @@ export default function Page() {
   }, [merchantId, customerId, consent]);
 
   return (
-    <div style={{ background: theme.bg || '#0b1220', color: '#e6edf3', minHeight: '100vh', margin: -16, padding: 16 }}>
+    <div style={{ background: auth.theme.bg || '#0b1220', color: '#e6edf3', minHeight: '100vh', margin: -16, padding: 16 }}>
       <h1 style={{ margin: '8px 0 16px' }}>Программа лояльности</h1>
-      {theme.logo && (
+      {auth.theme.logo && (
         <div style={{ margin: '8px 0' }}>
-          <img src={theme.logo} alt="logo" style={{ maxHeight: 48 }} />
+          <img src={auth.theme.logo} alt="logo" style={{ maxHeight: 48 }} />
         </div>
+      )}
+
+      {loading && (
+        <div style={{ margin: '12px 0' }}><Spinner /> <span style={{ marginLeft: 8 }}>Загрузка…</span></div>
+      )}
+      {error && !loading && (
+        <div style={{ margin: '12px 0', color: '#f38ba8' }}>{error}</div>
       )}
       {DEV_UI && (
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
@@ -137,7 +119,7 @@ export default function Page() {
       )}
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-        <button onClick={doMint} style={{ padding: '8px 12px', background: theme.primary || '#4f46e5', border: 'none', color: '#fff', borderRadius: 6 }}>Показать QR</button>
+        <button onClick={doMint} style={{ padding: '8px 12px', background: auth.theme.primary || '#4f46e5', border: 'none', color: '#fff', borderRadius: 6 }}>Показать QR</button>
         {DEV_UI && (
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <input type="checkbox" checked={autoRefresh} onChange={e=>setAutoRefresh(e.target.checked)} /> авто‑обновлять QR
@@ -166,7 +148,7 @@ export default function Page() {
 
       {tx.length > 0 ? (
         <div style={{ marginTop: 16 }}>
-          <div style={{ marginBottom: 8 }}>Последние операции:</div>
+          <div style={{ marginBottom: 8 }}>История:</div>
           <div style={{ display: 'grid', gap: 6 }}>
             {tx.map(item => (
               <div key={item.id} style={{ background: '#0e1629', padding: 8, borderRadius: 6 }}>

@@ -47,10 +47,11 @@ export default function SignatureTool() {
           <label>JSON‑тело:</label>
           <textarea rows={8} value={body} onChange={e=>setBody(e.target.value)} style={{ width: '100%', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }} />
         </div>
-        <div><button onClick={compute} style={{ padding: '6px 10px' }}>Сгенерировать подпись</button></div>
-        <div>
-          Заголовок: <code>{sig || '—'}</code>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button onClick={compute} style={{ padding: '6px 10px' }}>Сгенерировать подпись</button>
+          <button onClick={()=>{ if (sig) navigator.clipboard?.writeText(sig).catch(()=>{}); }} disabled={!sig} style={{ padding: '6px 10px' }}>Копировать</button>
         </div>
+        <div>Заголовок: <code>{sig || '—'}</code></div>
       </div>
 
       <hr />

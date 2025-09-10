@@ -16,13 +16,21 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   const headers: Record<string, string> = {};
   req.headers.forEach((v, k) => { if (!/^host$/i.test(k)) headers[k] = v; });
   headers['x-admin-key'] = ADMIN_KEY;
-  headers['content-type'] = 'application/json';
 
   const body = method === 'GET' || method === 'HEAD' ? undefined : await req.text();
+  if (body != null) headers['content-type'] = 'application/json';
+
   const res = await fetch(target, { method, headers, body, redirect: 'manual' });
-  const outHeaders = new Headers();
-  res.headers.forEach((v, k) => outHeaders.set(k, v));
-  return new Response(await res.text(), { status: res.status, statusText: res.statusText, headers: outHeaders });
+  const isCsv = /\.csv(\?|$)/i.test(suffix);
+  if (isCsv) {
+    const out = new Headers();
+    out.set('Content-Type', 'text/csv; charset=utf-8');
+    const fname = suffix.split('/').pop() || 'export.csv';
+    out.set('Content-Disposition', `attachment; filename="${fname}"`);
+    return new Response(res.body, { status: res.status, statusText: res.statusText, headers: out });
+  }
+  // Прозрачно проксируем тело и заголовки для остальных запросов
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers: res.headers });
 }
 
 export { proxy as GET, proxy as POST, proxy as PUT, proxy as PATCH, proxy as DELETE };
