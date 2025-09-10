@@ -298,6 +298,25 @@ export class MerchantsController {
     return this.service.exportLedgerCsv(id, { limit, before, customerId, from, to, type });
   }
 
+  // TTL reconciliation (preview vs burned)
+  @Get(':id/ttl/reconciliation')
+  @ApiOkResponse({ schema: { type: 'object', properties: { merchantId: { type: 'string' }, cutoff: { type: 'string' }, items: { type: 'array', items: { type: 'object', properties: { customerId: { type: 'string' }, expiredRemain: { type: 'number' }, burned: { type: 'number' }, diff: { type: 'number' } } } }, totals: { type: 'object', properties: { expiredRemain: { type: 'number' }, burned: { type: 'number' }, diff: { type: 'number' } } } } } })
+  ttlReconciliation(
+    @Param('id') id: string,
+    @Query('cutoff') cutoff: string,
+  ) {
+    return this.service.ttlReconciliation(id, cutoff);
+  }
+
+  @Get(':id/ttl/reconciliation.csv')
+  @ApiOkResponse({ schema: { type: 'string', description: 'CSV' } })
+  async exportTtlReconciliationCsv(
+    @Param('id') id: string,
+    @Query('cutoff') cutoff: string,
+  ) {
+    return this.service.exportTtlReconciliationCsv(id, cutoff);
+  }
+
   // CRM helpers
   @Get(':id/customer/summary')
   @ApiOkResponse({ schema: { type: 'object', properties: { balance: { type: 'number' }, recentTx: { type: 'array', items: { $ref: getSchemaPath(TransactionItemDto) } }, recentReceipts: { type: 'array', items: { $ref: getSchemaPath(ReceiptDto) } } } } })

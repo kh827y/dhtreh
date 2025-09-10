@@ -335,6 +335,53 @@ export class MerchantsService {
     return lines.join('\n') + '\n';
   }
 
+  // ===== TTL reconciliation (burn vs. expired lots) =====
+  async ttlReconciliation(merchantId: string, cutoffISO: string) {
+    const cutoff = new Date(cutoffISO);
+    if (isNaN(cutoff.getTime())) throw new Error('Bad cutoff date');
+    // expired lots (earnedAt < cutoff)
+    const lots = await this.prisma.earnLot.findMany({ where: { merchantId, earnedAt: { lt: cutoff } } });
+    const remainByCustomer = new Map<string, number>();
+    for (const lot of lots) {
+      const remain = Math.max(0, (lot.points || 0) - (lot.consumedPoints || 0));
+      if (remain > 0) remainByCustomer.set(lot.customerId, (remainByCustomer.get(lot.customerId) || 0) + remain);
+    }
+    // burned from outbox events with matching cutoff
+    const events = await this.prisma.eventOutbox.findMany({ where: { merchantId, eventType: 'loyalty.points_ttl.burned' } });
+    const burnedByCustomer = new Map<string, number>();
+    for (const ev of events) {
+      try {
+        const p: any = ev.payload as any;
+        if (p && p.cutoff && String(p.cutoff) === cutoff.toISOString()) {
+          const cid = String(p.customerId || '');
+          const amt = Number(p.amount || 0);
+          if (cid && amt > 0) burnedByCustomer.set(cid, (burnedByCustomer.get(cid) || 0) + amt);
+        }
+      } catch {}
+    }
+    const customers = new Set<string>([...remainByCustomer.keys(), ...burnedByCustomer.keys()]);
+    const items = Array.from(customers).map((customerId) => ({
+      customerId,
+      expiredRemain: remainByCustomer.get(customerId) || 0,
+      burned: burnedByCustomer.get(customerId) || 0,
+      diff: (remainByCustomer.get(customerId) || 0) - (burnedByCustomer.get(customerId) || 0),
+    }));
+    const totals = items.reduce((acc, it) => ({ expiredRemain: acc.expiredRemain + it.expiredRemain, burned: acc.burned + it.burned, diff: acc.diff + it.diff }), { expiredRemain: 0, burned: 0, diff: 0 });
+    return { merchantId, cutoff: cutoff.toISOString(), items, totals };
+  }
+
+  async exportTtlReconciliationCsv(merchantId: string, cutoffISO: string) {
+    const r = await this.ttlReconciliation(merchantId, cutoffISO);
+    const lines = [ 'merchantId,cutoff,customerId,expiredRemain,burned,diff' ];
+    for (const it of r.items) {
+      const row = [ r.merchantId, r.cutoff, it.customerId, it.expiredRemain, it.burned, it.diff ]
+        .map(x => `"${String(x).replaceAll('"','""')}"`).join(',');
+      lines.push(row);
+    }
+    lines.push([r.merchantId, r.cutoff, 'TOTALS', r.totals.expiredRemain, r.totals.burned, r.totals.diff].map(x => `"${String(x).replaceAll('"','""')}"`).join(','));
+    return lines.join('\n') + '\n';
+  }
+
   // Earn lots (admin)
   async listEarnLots(merchantId: string, params: { limit: number; before?: Date; customerId?: string; activeOnly?: boolean }) {
     const where: any = { merchantId };

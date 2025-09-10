@@ -40,6 +40,7 @@ export class LoyaltyController {
   }
 
   @Post('quote')
+  @Throttle({ default: { limit: 120, ttl: 60_000 } })
   @ApiHeader({ name: 'X-Staff-Key', required: false, description: 'Ключ кассира (если включено requireStaffKey)' })
   @ApiHeader({ name: 'X-Bridge-Signature', required: false, description: 'Подпись Bridge (если включено requireBridgeSig)' })
   @ApiOkResponse({ schema: { oneOf: [ { $ref: getSchemaPath(QuoteRedeemRespDto) }, { $ref: getSchemaPath(QuoteEarnRespDto) } ] } })
@@ -95,6 +96,7 @@ export class LoyaltyController {
   }
 
   @Post('commit')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @ApiHeader({ name: 'Idempotency-Key', required: false, description: 'Идемпотентность COMMIT' })
   @ApiHeader({ name: 'X-Bridge-Signature', required: false, description: 'Подпись Bridge (если включено requireBridgeSig)' })
   @ApiOkResponse({ type: CommitRespDto })
@@ -212,6 +214,7 @@ export class LoyaltyController {
   }
 
   @Post('refund')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiHeader({ name: 'Idempotency-Key', required: false, description: 'Идемпотентность REFUND' })
   @ApiHeader({ name: 'X-Bridge-Signature', required: false, description: 'Подпись Bridge (если включено requireBridgeSig)' })
   @ApiOkResponse({ type: RefundRespDto })

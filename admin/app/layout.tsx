@@ -18,6 +18,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <a href="/outlets" style={{ color: '#89b4fa' }}>Точки</a>
             <a href="/devices" style={{ color: '#89b4fa' }}>Устройства</a>
             <a href="/staff" style={{ color: '#89b4fa' }}>Сотрудники</a>
+            <a href="/ttl" style={{ color: '#89b4fa' }}>TTL Reconciliation</a>
             <a href="/docs/webhooks" style={{ color: '#89b4fa' }}>Документация вебхуков</a>
             <a href="/docs/integration" style={{ color: '#89b4fa' }}>Интеграции</a>
             <a href="/docs/bridge" style={{ color: '#89b4fa' }}>Bridge</a>
