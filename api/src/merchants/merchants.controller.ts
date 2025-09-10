@@ -196,6 +196,14 @@ export class MerchantsController {
     return this.service.retryAll(id, status);
   }
 
+  @Get(':id/outbox/event/:eventId')
+  @ApiOkResponse({ type: OutboxEventDto })
+  @ApiUnauthorizedResponse({ type: ErrorDto })
+  @ApiNotFoundResponse({ type: ErrorDto })
+  getOutboxEvent(@Param('id') id: string, @Param('eventId') eventId: string) {
+    return this.service.getOutboxEvent(id, eventId);
+  }
+
   @Post(':id/outbox/retrySince')
   @ApiOkResponse({ type: BulkUpdateRespDto })
   @ApiUnauthorizedResponse({ type: ErrorDto })

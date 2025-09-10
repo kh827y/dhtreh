@@ -30,6 +30,8 @@ function parseMetrics(text: string) {
   let outboxDead = 0;
   let http5xx = 0;
   let http4xx = 0;
+  let circuitOpen = 0;
+  let rateLimited = 0;
   const counters: Record<string, number> = {};
   const inc = (k: string, v: number) => { counters[k] = (counters[k] || 0) + v; };
 
@@ -38,6 +40,16 @@ function parseMetrics(text: string) {
     if (ln.startsWith('loyalty_outbox_pending ')) {
       const v = Number(ln.split(' ')[1] || '0');
       if (!isNaN(v)) outboxPending = v;
+      continue;
+    }
+    if (ln.startsWith('loyalty_outbox_circuit_open ')) {
+      const v = Number(ln.split(' ')[1] || '0');
+      if (!isNaN(v)) circuitOpen = v;
+      continue;
+    }
+    if (ln.startsWith('loyalty_outbox_rate_limited_total ')) {
+      const v = Number(ln.split(' ')[1] || '0');
+      if (!isNaN(v)) rateLimited = v;
       continue;
     }
     if (ln.startsWith('loyalty_outbox_dead_total ')) {
@@ -60,5 +72,5 @@ function parseMetrics(text: string) {
       continue;
     }
   }
-  return { outboxPending, outboxDead, http5xx, http4xx, counters };
+  return { outboxPending, outboxDead, http5xx, http4xx, circuitOpen, rateLimited, counters };
 }

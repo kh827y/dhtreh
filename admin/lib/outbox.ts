@@ -47,7 +47,11 @@ export async function resumeOutbox(merchantId: string): Promise<{ ok: boolean }>
   return http(`/merchants/${encodeURIComponent(merchantId)}/outbox/resume`, { method: 'POST' });
 }
 
-export async function outboxStats(merchantId: string, since?: string): Promise<{ merchantId: string; since: string|null; counts: Record<string, number>; lastDeadAt: string|null }> {
+export async function outboxStats(merchantId: string, since?: string): Promise<{ merchantId: string; since: string|null; counts: Record<string, number>; typeCounts?: Record<string, number>; lastDeadAt: string|null }> {
   const q = since ? `?since=${encodeURIComponent(since)}` : '';
   return http(`/merchants/${encodeURIComponent(merchantId)}/outbox/stats${q}`);
+}
+
+export async function getOutboxEvent(merchantId: string, eventId: string) {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/outbox/event/${encodeURIComponent(eventId)}`);
 }

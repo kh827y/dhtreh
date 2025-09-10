@@ -11,7 +11,7 @@ export default function OutboxPage() {
   const [limit, setLimit] = useState<number>(50);
   const [items, setItems] = useState<OutboxEvent[]>([]);
   const [msg, setMsg] = useState<string>('');
-  const [stats, setStats] = useState<{ counts: Record<string, number>; lastDeadAt: string|null } | null>(null);
+  const [stats, setStats] = useState<{ counts: Record<string, number>; typeCounts?: Record<string, number>; lastDeadAt: string|null } | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
 
   const load = async () => {
@@ -88,6 +88,18 @@ export default function OutboxPage() {
             </div>
           ))}
           {stats.lastDeadAt && <div style={{ opacity: 0.8 }}>last DEAD: {new Date(stats.lastDeadAt).toLocaleString()}</div>}
+        </div>
+      )}
+      {stats?.typeCounts && (
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ opacity: 0.85, marginBottom: 4 }}>По типам событий:</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {Object.entries(stats.typeCounts).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([t,c]) => (
+              <div key={t} style={{ background: '#0e1629', padding: '6px 10px', borderRadius: 6 }}>
+                <b>{t}</b>: {c}
+              </div>
+            ))}
+          </div>
         </div>
       )}
       <div style={{ display: 'grid', gap: 8 }}>

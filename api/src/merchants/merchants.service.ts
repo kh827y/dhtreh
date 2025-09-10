@@ -239,6 +239,11 @@ export class MerchantsService {
     await this.prisma.eventOutbox.update({ where: { id: eventId }, data: { status: 'PENDING', nextRetryAt: new Date(), lastError: null } });
     return { ok: true };
   }
+  async getOutboxEvent(merchantId: string, eventId: string) {
+    const ev = await this.prisma.eventOutbox.findUnique({ where: { id: eventId } });
+    if (!ev || ev.merchantId !== merchantId) throw new NotFoundException('Event not found');
+    return ev;
+  }
   async deleteOutbox(merchantId: string, eventId: string) {
     const ev = await this.prisma.eventOutbox.findUnique({ where: { id: eventId } });
     if (!ev || ev.merchantId !== merchantId) throw new NotFoundException('Event not found');
@@ -296,8 +301,14 @@ export class MerchantsService {
     for (const st of statuses) {
       counts[st] = await this.prisma.eventOutbox.count({ where: { ...where, status: st } });
     }
+    // by eventType counts (top)
+    let typeCounts: Record<string, number> = {};
+    try {
+      const grouped = await (this.prisma as any).eventOutbox.groupBy({ by: ['eventType'], where, _count: { eventType: true } });
+      for (const g of grouped) typeCounts[g.eventType] = (g._count?.eventType || 0);
+    } catch {}
     const lastDead = await this.prisma.eventOutbox.findFirst({ where: { merchantId, status: 'DEAD' }, orderBy: { createdAt: 'desc' } });
-    return { merchantId, since: since?.toISOString() || null, counts, lastDeadAt: lastDead?.createdAt?.toISOString?.() || null };
+    return { merchantId, since: since?.toISOString() || null, counts, typeCounts, lastDeadAt: lastDead?.createdAt?.toISOString?.() || null };
   }
   async listOutboxByOrder(merchantId: string, orderId: string, limit = 100) {
     const items = await this.prisma.eventOutbox.findMany({ where: { merchantId }, orderBy: { createdAt: 'desc' }, take: limit });

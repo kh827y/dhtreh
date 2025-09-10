@@ -2,6 +2,7 @@ export const metadata = { title: 'Loyalty Admin', description: 'Админ‑п�
 
 import StatusBar from '../components/StatusBar';
 import OutboxLink from '../components/OutboxLink';
+import RoleBadge from '../components/RoleBadge';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const merchantId = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
@@ -16,6 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <a href="/telegram" style={{ color: '#89b4fa' }}>Telegram / Мини‑аппа</a>
             <a href="/docs/miniapp" style={{ color: '#89b4fa' }}>Мини‑аппа (док)</a>
             <OutboxLink merchantId={merchantId} />
+            <a href="/outbox/monitor" style={{ color: '#89b4fa' }}>Outbox Monitor</a>
             <a href="/outlets" style={{ color: '#89b4fa' }}>Точки</a>
             <a href="/devices" style={{ color: '#89b4fa' }}>Устройства</a>
             <a href="/staff" style={{ color: '#89b4fa' }}>Сотрудники</a>
@@ -24,10 +26,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <a href="/docs/integration" style={{ color: '#89b4fa' }}>Интеграции</a>
             <a href="/docs/bridge" style={{ color: '#89b4fa' }}>Bridge</a>
             <a href="/docs/deployment" style={{ color: '#89b4fa' }}>Деплой</a>
+            <a href="/docs/observability" style={{ color: '#89b4fa' }}>Наблюдаемость</a>
             <a href="/exports" style={{ color: '#89b4fa' }}>Экспорт</a>
             <a href="/tools/signature" style={{ color: '#89b4fa' }}>Инструменты</a>
+            <a href="/status" style={{ color: '#89b4fa' }}>Статус API</a>
             <a href="/audit" style={{ color: '#89b4fa' }}>Аудит</a>
             <span style={{ flex: 1 }} />
+            <RoleBadge />
             <a href="/logout" style={{ color: '#f38ba8' }}>Выход</a>
           </nav>
           <StatusBar merchantId={merchantId} />

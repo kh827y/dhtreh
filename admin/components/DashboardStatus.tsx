@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from 'react';
 
-type Summary = { outboxPending: number; outboxDead: number; http5xx: number; http4xx: number; counters: Record<string, number> };
+type Summary = { outboxPending: number; outboxDead: number; http5xx: number; http4xx: number; circuitOpen?: number; counters: Record<string, number> };
 
 export default function DashboardStatus() {
   const [data, setData] = useState<Summary | null>(null);
@@ -26,6 +26,7 @@ export default function DashboardStatus() {
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
         <Metric label="Outbox pending" value={data?.outboxPending ?? 0} warn={v=>v>0} />
         <Metric label="Outbox DEAD" value={data?.outboxDead ?? 0} warn={v=>v>0} />
+        <Metric label="Breaker open" value={data?.circuitOpen ?? 0} warn={v=>v>0} />
         <Metric label="HTTP 5xx" value={data?.http5xx ?? 0} warn={v=>v>0} />
         <Metric label="HTTP 4xx" value={data?.http4xx ?? 0} warn={v=>v>100} />
         <Metric label="Quotes (ok)" value={data?.counters?.['loyalty_quote_requests_total:ok'] ?? 0} />

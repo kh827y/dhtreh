@@ -52,8 +52,14 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
     out.set('Cache-Control', 'no-store');
     return new Response(res.body, { status: res.status, statusText: res.statusText, headers: out });
   }
-  // Прозрачно проксируем тело и заголовки для остальных запросов
-  return new Response(res.body, { status: res.status, statusText: res.statusText, headers: res.headers });
+  // Прозрачно проксируем тело и заголовки для остальных запросов,
+  // но убираем сжатие (content-encoding), чтобы избежать двойной декомпрессии в браузере.
+  const out = new Headers();
+  res.headers.forEach((v, k) => {
+    if (/^(content-encoding|content-length|transfer-encoding)$/i.test(k)) return;
+    out.set(k, v);
+  });
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers: out });
 }
 
 export { proxy as GET, proxy as POST, proxy as PUT, proxy as PATCH, proxy as DELETE };
