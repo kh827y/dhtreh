@@ -18,6 +18,11 @@ export default function DashboardStatus() {
 
   return (
     <div style={{ background: '#0e1629', padding: 12, borderRadius: 8 }}>
+      {data && data.http5xx > 0 && (
+        <div style={{ marginBottom: 8, background: '#3f1d2e', color: '#f38ba8', padding: '6px 10px', borderRadius: 6 }}>
+          Обнаружены ошибки 5xx: {data.http5xx}. Проверьте логи и состояние воркеров.
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
         <Metric label="Outbox pending" value={data?.outboxPending ?? 0} warn={v=>v>0} />
         <Metric label="Outbox DEAD" value={data?.outboxDead ?? 0} warn={v=>v>0} />
@@ -41,4 +46,3 @@ function Metric({ label, value, warn }: { label: string; value: number; warn?: (
     </div>
   );
 }
-

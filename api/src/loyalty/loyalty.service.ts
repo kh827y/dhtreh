@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
 import { Mode, QuoteDto } from './dto';
 import { HoldStatus, TxnType, WalletType, LedgerAccount } from '@prisma/client';
-import { v4 as uuid } from 'uuid';
+import { randomUUID } from 'crypto';
 
 type QrMeta = { jti: string; iat: number; exp: number } | undefined;
 
@@ -13,50 +13,32 @@ export class LoyaltyService {
 
   // ===== Earn Lots helpers (optional feature) =====
   private async consumeLots(tx: any, merchantId: string, customerId: string, amount: number, ctx: { orderId?: string|null }) {
-    let left = amount;
     const lots = await tx.earnLot.findMany({ where: { merchantId, customerId }, orderBy: { earnedAt: 'asc' } });
-    for (const lot of lots) {
-      const consumed = lot.consumedPoints || 0;
-      const remain = Math.max(0, (lot.points || 0) - consumed);
-      if (remain <= 0) continue;
-      const take = Math.min(remain, left);
-      if (take <= 0) break;
-      await tx.earnLot.update({ where: { id: lot.id }, data: { consumedPoints: consumed + take } });
-      await tx.eventOutbox.create({ data: { merchantId, eventType: 'loyalty.earnlot.consumed', payload: { merchantId, customerId, lotId: lot.id, consumed: take, orderId: ctx.orderId ?? null, at: new Date().toISOString() } } });
-      left -= take;
-      if (left <= 0) break;
+    const updates = require('./lots.util').planConsume(lots.map((l: any) => ({ id: l.id, points: l.points, consumedPoints: l.consumedPoints || 0, earnedAt: l.earnedAt })), amount);
+    for (const up of updates) {
+      const lot = lots.find((l: any) => l.id === up.id)!;
+      await tx.earnLot.update({ where: { id: up.id }, data: { consumedPoints: (lot.consumedPoints || 0) + up.deltaConsumed } });
+      await tx.eventOutbox.create({ data: { merchantId, eventType: 'loyalty.earnlot.consumed', payload: { merchantId, customerId, lotId: up.id, consumed: up.deltaConsumed, orderId: ctx.orderId ?? null, at: new Date().toISOString() } } });
     }
   }
 
   private async unconsumeLots(tx: any, merchantId: string, customerId: string, amount: number, ctx: { orderId?: string|null }) {
-    let left = amount;
     const lots = await tx.earnLot.findMany({ where: { merchantId, customerId, consumedPoints: { gt: 0 } }, orderBy: { earnedAt: 'desc' } });
-    for (const lot of lots) {
-      const consumed = lot.consumedPoints || 0;
-      if (consumed <= 0) continue;
-      const giveBack = Math.min(consumed, left);
-      if (giveBack <= 0) break;
-      await tx.earnLot.update({ where: { id: lot.id }, data: { consumedPoints: consumed - giveBack } });
-      await tx.eventOutbox.create({ data: { merchantId, eventType: 'loyalty.earnlot.unconsumed', payload: { merchantId, customerId, lotId: lot.id, unconsumed: giveBack, orderId: ctx.orderId ?? null, at: new Date().toISOString() } } });
-      left -= giveBack;
-      if (left <= 0) break;
+    const updates = require('./lots.util').planUnconsume(lots.map((l: any) => ({ id: l.id, points: l.points, consumedPoints: l.consumedPoints || 0, earnedAt: l.earnedAt })), amount);
+    for (const up of updates) {
+      const lot = lots.find((l: any) => l.id === up.id)!;
+      await tx.earnLot.update({ where: { id: up.id }, data: { consumedPoints: (lot.consumedPoints || 0) + up.deltaConsumed } });
+      await tx.eventOutbox.create({ data: { merchantId, eventType: 'loyalty.earnlot.unconsumed', payload: { merchantId, customerId, lotId: up.id, unconsumed: -up.deltaConsumed, orderId: ctx.orderId ?? null, at: new Date().toISOString() } } });
     }
   }
 
   private async revokeLots(tx: any, merchantId: string, customerId: string, amount: number, ctx: { orderId?: string|null }) {
-    // уменьшить доступные к списанию баллы: увеличим consumedPoints у самых свежих lot'ов
-    let left = amount;
     const lots = await tx.earnLot.findMany({ where: { merchantId, customerId }, orderBy: { earnedAt: 'desc' } });
-    for (const lot of lots) {
-      const consumed = lot.consumedPoints || 0;
-      const remain = Math.max(0, (lot.points || 0) - consumed);
-      if (remain <= 0) continue;
-      const take = Math.min(remain, left);
-      if (take <= 0) break;
-      await tx.earnLot.update({ where: { id: lot.id }, data: { consumedPoints: consumed + take } });
-      await tx.eventOutbox.create({ data: { merchantId, eventType: 'loyalty.earnlot.revoked', payload: { merchantId, customerId, lotId: lot.id, revoked: take, orderId: ctx.orderId ?? null, at: new Date().toISOString() } } });
-      left -= take;
-      if (left <= 0) break;
+    const updates = require('./lots.util').planRevoke(lots.map((l: any) => ({ id: l.id, points: l.points, consumedPoints: l.consumedPoints || 0, earnedAt: l.earnedAt })), amount);
+    for (const up of updates) {
+      const lot = lots.find((l: any) => l.id === up.id)!;
+      await tx.earnLot.update({ where: { id: up.id }, data: { consumedPoints: (lot.consumedPoints || 0) + up.deltaConsumed } });
+      await tx.eventOutbox.create({ data: { merchantId, eventType: 'loyalty.earnlot.revoked', payload: { merchantId, customerId, lotId: up.id, revoked: up.deltaConsumed, orderId: ctx.orderId ?? null, at: new Date().toISOString() } } });
     }
   }
 
@@ -238,7 +220,7 @@ export class LoyaltyService {
 
         const hold = await tx.hold.create({
           data: {
-            id: uuid(),
+            id: randomUUID(),
             customerId: customer.id,
             merchantId: dto.merchantId,
             mode: 'REDEEM',
@@ -308,7 +290,7 @@ export class LoyaltyService {
 
       const hold = await tx.hold.create({
         data: {
-          id: uuid(),
+          id: randomUUID(),
           customerId: customer.id,
           merchantId: dto.merchantId,
           mode: 'EARN',

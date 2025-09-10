@@ -33,6 +33,7 @@ export type MerchantSettings = {
   useWebhookNext?: boolean;
   bridgeSecret?: string | null;
   bridgeSecretNext?: string | null;
+  outboxPausedUntil?: string | null;
 };
 
 export async function getSettings(merchantId: string): Promise<MerchantSettings> {

@@ -93,6 +93,7 @@ model MerchantSettings {
   miniappThemePrimary String?
   miniappThemeBg      String?
   miniappLogoUrl      String?
+  outboxPausedUntil   DateTime?
   updatedAt      DateTime @default(now())
 }
 

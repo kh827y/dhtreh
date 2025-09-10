@@ -58,6 +58,12 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     const useNext = Boolean((settings as any)?.useWebhookNext) && !!(settings as any)?.webhookSecretNext;
     const secret = (useNext ? (settings as any)?.webhookSecretNext : settings?.webhookSecret) || '';
     const maxRetries = Number(process.env.OUTBOX_MAX_RETRIES || '10');
+    const pausedUntil = (settings as any)?.outboxPausedUntil as Date | null;
+    if (pausedUntil && pausedUntil > new Date()) {
+      const next = pausedUntil;
+      await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'PENDING', nextRetryAt: next, lastError: 'Paused by merchant until ' + next.toISOString() } });
+      return;
+    }
     if (!url || !secret) {
       // ничего не отправляем — парковка и лёгкий бэк‑офф
       const retries = row.retries + 1;

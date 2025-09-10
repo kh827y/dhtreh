@@ -40,3 +40,14 @@ export async function retryAll(merchantId: string, status?: string): Promise<{ o
   return http(`/merchants/${encodeURIComponent(merchantId)}/outbox/retryAll${status ? `?status=${encodeURIComponent(status)}` : ''}`, { method: 'POST' });
 }
 
+export async function pauseOutbox(merchantId: string, params?: { minutes?: number; until?: string }): Promise<{ ok: boolean; until?: string }> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/outbox/pause`, { method: 'POST', body: JSON.stringify(params || {}) });
+}
+export async function resumeOutbox(merchantId: string): Promise<{ ok: boolean }> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/outbox/resume`, { method: 'POST' });
+}
+
+export async function outboxStats(merchantId: string, since?: string): Promise<{ merchantId: string; since: string|null; counts: Record<string, number>; lastDeadAt: string|null }> {
+  const q = since ? `?since=${encodeURIComponent(since)}` : '';
+  return http(`/merchants/${encodeURIComponent(merchantId)}/outbox/stats${q}`);
+}

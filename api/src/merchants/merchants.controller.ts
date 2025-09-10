@@ -194,6 +194,26 @@ export class MerchantsController {
     return this.service.retryAll(id, status);
   }
 
+  @Post(':id/outbox/pause')
+  @ApiOkResponse({ type: OkDto })
+  @ApiUnauthorizedResponse({ type: ErrorDto })
+  async pauseOutbox(@Param('id') id: string, @Body() body: { minutes?: number; until?: string }) {
+    return this.service.pauseOutbox(id, body?.minutes, body?.until);
+  }
+  @Post(':id/outbox/resume')
+  @ApiOkResponse({ type: OkDto })
+  @ApiUnauthorizedResponse({ type: ErrorDto })
+  async resumeOutbox(@Param('id') id: string) {
+    return this.service.resumeOutbox(id);
+  }
+
+  @Get(':id/outbox/stats')
+  @ApiOkResponse({ schema: { type: 'object', properties: { merchantId: { type: 'string' }, since: { type: 'string', nullable: true }, counts: { type: 'object', additionalProperties: { type: 'number' } }, lastDeadAt: { type: 'string', nullable: true } } } })
+  outboxStats(@Param('id') id: string, @Query('since') sinceStr?: string) {
+    const since = sinceStr ? new Date(sinceStr) : undefined;
+    return this.service.outboxStats(id, since);
+  }
+
   @Get(':id/outbox/by-order')
   @ApiOkResponse({ type: OutboxEventDto, isArray: true })
   @ApiUnauthorizedResponse({ type: ErrorDto })

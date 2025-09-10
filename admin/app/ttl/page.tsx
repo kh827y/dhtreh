@@ -8,6 +8,7 @@ export default function TtlPage() {
   const [data, setData] = useState<TtlRecon | null>(null);
   const [msg, setMsg] = useState('');
   const [loading, setLoading] = useState(false);
+  const [onlyDiff, setOnlyDiff] = useState(true);
 
   const load = async () => {
     setLoading(true);
@@ -32,9 +33,15 @@ export default function TtlPage() {
       {msg && <div style={{ color: '#f38ba8' }}>{msg}</div>}
       {data && (
         <div style={{ background: '#0e1629', padding: 10, borderRadius: 8 }}>
-          <div style={{ marginBottom: 8 }}>Итоги: expiredRemain=<b>{data.totals.expiredRemain}</b>, burned=<b>{data.totals.burned}</b>, diff=<b>{data.totals.diff}</b></div>
+          <div style={{ marginBottom: 8 }}>Итоги: expiredRemain=<b>{data.totals.expiredRemain}</b>, burned=<b>{data.totals.burned}</b>, diff=<b style={{ color: data.totals.diff !== 0 ? '#f9e2af' : '#a6e3a1' }}>{data.totals.diff}</b></div>
+          <div style={{ marginBottom: 8 }}>
+            <label>
+              Показать только расхождения
+              <input type="checkbox" checked={onlyDiff} onChange={e=>setOnlyDiff(e.target.checked)} style={{ marginLeft: 8 }} />
+            </label>
+          </div>
           <div style={{ display: 'grid', gap: 6 }}>
-            {data.items.slice(0, 200).map(it => (
+            {(onlyDiff ? data.items.filter(i=>i.diff!==0) : data.items).slice(0, 500).map(it => (
               <div key={it.customerId} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8, background: '#101828', padding: 8, borderRadius: 6 }}>
                 <div style={{ opacity: 0.8 }}>{it.customerId}</div>
                 <div>expiredRemain: <b>{it.expiredRemain}</b></div>
@@ -48,4 +55,3 @@ export default function TtlPage() {
     </div>
   );
 }
-

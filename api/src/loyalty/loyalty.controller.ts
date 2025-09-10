@@ -9,6 +9,7 @@ import { MetricsService } from '../metrics.service';
 import { CashierGuard } from '../guards/cashier.guard';
 import type { Request, Response } from 'express';
 import { createHmac } from 'crypto';
+import { verifyBridgeSignature as verifyBridgeSigUtil } from './bridge.util';
 import { validateTelegramInitData } from './telegram.util';
 
 @Controller('loyalty')
@@ -78,8 +79,8 @@ export class LoyaltyController {
         const alt = dto.deviceId ? null : ((s as any).bridgeSecretNext || null);
         const bodyForSig = JSON.stringify(dto);
         let ok = false;
-        if (secret && this.verifyBridgeSignature(sig, bodyForSig, secret)) ok = true;
-        else if (alt && this.verifyBridgeSignature(sig, bodyForSig, alt)) ok = true;
+        if (secret && verifyBridgeSigUtil(sig, bodyForSig, secret)) ok = true;
+        else if (alt && verifyBridgeSigUtil(sig, bodyForSig, alt)) ok = true;
         if (!ok) throw new UnauthorizedException('Invalid bridge signature');
       }
       const data = await this.service.quote({ ...dto, staffId, userToken: v.customerId }, qrMeta);
@@ -121,8 +122,8 @@ export class LoyaltyController {
         } catch {}
         const bodyForSig = JSON.stringify({ merchantId: dto.merchantId, holdId: dto.holdId, orderId: dto.orderId, receiptNumber: dto.receiptNumber ?? undefined });
         let ok = false;
-        if (secret && this.verifyBridgeSignature(sig, bodyForSig, secret)) ok = true;
-        else if (alt && this.verifyBridgeSignature(sig, bodyForSig, alt)) ok = true;
+        if (secret && verifyBridgeSigUtil(sig, bodyForSig, secret)) ok = true;
+        else if (alt && verifyBridgeSigUtil(sig, bodyForSig, alt)) ok = true;
         if (!ok) throw new UnauthorizedException('Invalid bridge signature');
       }
     } catch {}
@@ -231,8 +232,8 @@ export class LoyaltyController {
         const alt = ((s as any).bridgeSecretNext || null) as string | null;
         const bodyForSig = JSON.stringify({ merchantId: dto.merchantId, orderId: dto.orderId, refundTotal: dto.refundTotal, refundEligibleTotal: dto.refundEligibleTotal ?? undefined });
         let ok = false;
-        if (secret && this.verifyBridgeSignature(sig, bodyForSig, secret)) ok = true;
-        else if (alt && this.verifyBridgeSignature(sig, bodyForSig, alt)) ok = true;
+        if (secret && verifyBridgeSigUtil(sig, bodyForSig, secret)) ok = true;
+        else if (alt && verifyBridgeSigUtil(sig, bodyForSig, alt)) ok = true;
         if (!ok) throw new UnauthorizedException('Invalid bridge signature');
       }
     } catch {}
@@ -349,20 +350,7 @@ export class LoyaltyController {
     return items.map(s => ({ id: s.id, login: s.login ?? undefined, role: s.role }));
   }
 
-  private verifyBridgeSignature(header: string, body: string, secret: string): boolean {
-    try {
-      if (!header || !secret) return false;
-      if (!header.startsWith('v1,')) return false;
-      const parts = Object.fromEntries(header.split(',').slice(1).map(x => x.split('=')));
-      const ts = parts.ts; const sig = parts.sig;
-      if (!ts || !sig) return false;
-      const calc = require('crypto').createHmac('sha256', secret).update(ts + '.' + body).digest('base64');
-      const skewOk = Math.abs(Math.floor(Date.now()/1000) - Number(ts)) <= 300;
-      return skewOk && calc === sig;
-    } catch {
-      return false;
-    }
-  }
+  // verifyBridgeSignature: вынесен в ./bridge.util.ts
 
   // Согласия на коммуникации
   @Get('consent')

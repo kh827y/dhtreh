@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from 'react';
-import { deleteOutbox, listOutbox, retryAll, retryOutbox, type OutboxEvent } from '../../lib/outbox';
+import { deleteOutbox, listOutbox, retryAll, retryOutbox, pauseOutbox, resumeOutbox, outboxStats, type OutboxEvent } from '../../lib/outbox';
+import { getSettings } from '../../lib/admin';
 
 export default function OutboxPage() {
   const [merchantId, setMerchantId] = useState<string>(process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1');
@@ -10,13 +11,20 @@ export default function OutboxPage() {
   const [limit, setLimit] = useState<number>(50);
   const [items, setItems] = useState<OutboxEvent[]>([]);
   const [msg, setMsg] = useState<string>('');
+  const [stats, setStats] = useState<{ counts: Record<string, number>; lastDeadAt: string|null } | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
 
   const load = async () => {
     setLoading(true);
     try {
-      const r = await listOutbox(merchantId, { status: status || undefined, type: type || undefined, since: since || undefined, limit });
+      const [r, s, st] = await Promise.all([
+        listOutbox(merchantId, { status: status || undefined, type: type || undefined, since: since || undefined, limit }),
+        getSettings(merchantId),
+        outboxStats(merchantId, since || undefined),
+      ]);
       setItems(r);
+      if (s.outboxPausedUntil) setMsg(`Outbox paused until ${new Date(s.outboxPausedUntil).toLocaleString()}`);
+      setStats({ counts: st.counts, lastDeadAt: st.lastDeadAt });
     } catch (e:any) { setMsg(String(e?.message || e)); }
     finally { setLoading(false); }
   };
@@ -26,6 +34,13 @@ export default function OutboxPage() {
   const onRetry = async (id: string) => { await retryOutbox(merchantId, id); await load(); };
   const onDelete = async (id: string) => { await deleteOutbox(merchantId, id); await load(); };
   const onRetryAll = async () => { await retryAll(merchantId, status || undefined); await load(); };
+  const onPause = async () => {
+    const minsStr = prompt('На сколько минут паузу? (по умолчанию 60)');
+    const minutes = minsStr ? parseInt(minsStr, 10) : 60;
+    await pauseOutbox(merchantId, { minutes: isNaN(minutes) ? 60 : minutes });
+    await load();
+  };
+  const onResume = async () => { await resumeOutbox(merchantId); await load(); };
 
   return (
     <div>
@@ -47,8 +62,20 @@ export default function OutboxPage() {
         <label>Лимит: <input type="number" value={limit} onChange={e=>setLimit(parseInt(e.target.value||'50',10))} style={{ marginLeft: 8, width: 90 }} /></label>
         <button onClick={load} disabled={loading} style={{ padding: '6px 10px' }}>Обновить</button>
         <button onClick={onRetryAll} disabled={loading} style={{ padding: '6px 10px' }}>Retry All</button>
+        <button onClick={onPause} disabled={loading} style={{ padding: '6px 10px' }}>Pause</button>
+        <button onClick={onResume} disabled={loading} style={{ padding: '6px 10px' }}>Resume</button>
       </div>
       {msg && <div style={{ marginBottom: 8 }}>{msg}</div>}
+      {stats && (
+        <div style={{ display: 'flex', gap: 12, marginBottom: 8, flexWrap: 'wrap' }}>
+          {['PENDING','SENDING','FAILED','DEAD','SENT'].map(k => (
+            <div key={k} style={{ background: '#0e1629', padding: '6px 10px', borderRadius: 6 }}>
+              <b>{k}</b>: {stats.counts[k] || 0}
+            </div>
+          ))}
+          {stats.lastDeadAt && <div style={{ opacity: 0.8 }}>last DEAD: {new Date(stats.lastDeadAt).toLocaleString()}</div>}
+        </div>
+      )}
       <div style={{ display: 'grid', gap: 8 }}>
         {items.map(ev => (
           <div key={ev.id} style={{ background: '#0e1629', padding: 10, borderRadius: 8 }}>
@@ -70,4 +97,3 @@ export default function OutboxPage() {
     </div>
   );
 }
-

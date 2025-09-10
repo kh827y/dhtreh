@@ -181,6 +181,7 @@ export class MerchantSettingsRespDto {
   @ApiPropertyOptional() miniappThemePrimary?: string|null;
   @ApiPropertyOptional() miniappThemeBg?: string|null;
   @ApiPropertyOptional() miniappLogoUrl?: string|null;
+  @ApiPropertyOptional() outboxPausedUntil?: Date|null;
 }
 
 export class OutletDto {

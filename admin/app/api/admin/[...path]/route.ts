@@ -27,6 +27,7 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
     out.set('Content-Type', 'text/csv; charset=utf-8');
     const fname = suffix.split('/').pop() || 'export.csv';
     out.set('Content-Disposition', `attachment; filename="${fname}"`);
+    out.set('Cache-Control', 'no-store');
     return new Response(res.body, { status: res.status, statusText: res.statusText, headers: out });
   }
   // Прозрачно проксируем тело и заголовки для остальных запросов

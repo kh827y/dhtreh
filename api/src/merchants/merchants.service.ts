@@ -42,6 +42,7 @@ export class MerchantsService {
       miniappThemePrimary: (s as any).miniappThemePrimary ?? null,
       miniappThemeBg: (s as any).miniappThemeBg ?? null,
       miniappLogoUrl: (s as any).miniappLogoUrl ?? null,
+      outboxPausedUntil: (s as any).outboxPausedUntil ?? null,
     };
   }
 
@@ -249,6 +250,31 @@ export class MerchantsService {
     if (status) where.status = status;
     const updated = await this.prisma.eventOutbox.updateMany({ where, data: { status: 'PENDING', nextRetryAt: new Date(), lastError: null } });
     return { ok: true, updated: updated.count };
+  }
+
+  async pauseOutbox(merchantId: string, minutes?: number, untilISO?: string) {
+    const until = untilISO ? new Date(untilISO) : new Date(Date.now() + (Math.max(1, minutes || 60) * 60 * 1000));
+    await this.prisma.merchantSettings.update({ where: { merchantId }, data: { outboxPausedUntil: until, updatedAt: new Date() } });
+    // Отложим текущие pending, чтобы worker их не схватил ранее
+    await this.prisma.eventOutbox.updateMany({ where: { merchantId, status: 'PENDING' }, data: { nextRetryAt: until, lastError: 'Paused by merchant until ' + until.toISOString() } });
+    return { ok: true, until: until.toISOString() };
+  }
+  async resumeOutbox(merchantId: string) {
+    await this.prisma.merchantSettings.update({ where: { merchantId }, data: { outboxPausedUntil: null, updatedAt: new Date() } });
+    await this.prisma.eventOutbox.updateMany({ where: { merchantId, status: 'PENDING' }, data: { nextRetryAt: new Date(), lastError: null } });
+    return { ok: true };
+  }
+
+  async outboxStats(merchantId: string, since?: Date) {
+    const base = { merchantId } as any;
+    const where = since ? { ...base, createdAt: { gte: since } } : base;
+    const statuses = ['PENDING','SENDING','FAILED','DEAD','SENT'];
+    const counts: Record<string, number> = {};
+    for (const st of statuses) {
+      counts[st] = await this.prisma.eventOutbox.count({ where: { ...where, status: st } });
+    }
+    const lastDead = await this.prisma.eventOutbox.findFirst({ where: { merchantId, status: 'DEAD' }, orderBy: { createdAt: 'desc' } });
+    return { merchantId, since: since?.toISOString() || null, counts, lastDeadAt: lastDead?.createdAt?.toISOString?.() || null };
   }
   async listOutboxByOrder(merchantId: string, orderId: string, limit = 100) {
     const items = await this.prisma.eventOutbox.findMany({ where: { merchantId }, orderBy: { createdAt: 'desc' }, take: limit });
