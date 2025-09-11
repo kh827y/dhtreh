@@ -4,10 +4,16 @@ export const runtime = 'nodejs';
 
 const API_BASE = (process.env.API_BASE || '').replace(/\/$/, '');
 const ADMIN_KEY = process.env.ADMIN_KEY || '';
+const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || '';
+const ADMIN_UI_PASSWORD = process.env.ADMIN_UI_ADMIN_PASSWORD || process.env.ADMIN_UI_PASSWORD || '';
 
 async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }> | { path: string[] } }) {
   if (!API_BASE) return new Response('API_BASE not configured', { status: 500 });
   if (!ADMIN_KEY) return new Response('ADMIN_KEY not configured', { status: 500 });
+  if (process.env.NODE_ENV === 'production') {
+    if (!ADMIN_SESSION_SECRET) return new Response('ADMIN_SESSION_SECRET not configured', { status: 500 });
+    if (!ADMIN_UI_PASSWORD) return new Response('ADMIN_UI_PASSWORD not configured', { status: 500 });
+  }
   {
     const unauth = requireSession(req);
     if (unauth) return unauth;
@@ -16,11 +22,12 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   const url = new URL(req.url);
   // В Next 15 params может быть Promise — поддержим оба варианта
   const p = (typeof (ctx.params as any)?.then === 'function') ? await (ctx.params as Promise<{ path: string[] }>) : (ctx.params as { path: string[] });
-  const suffix = '/' + ((p?.path || []).join('/'));
+  const parts = (p?.path || []);
+  const suffix = '/' + parts.join('/');
   const target = API_BASE + suffix + (url.search || '');
 
   const headers: Record<string, string> = {};
-  req.headers.forEach((v, k) => { if (!/^host$/i.test(k)) headers[k] = v; });
+  req.headers.forEach((v: string, k: string) => { if (!/^host$/i.test(k)) headers[k] = v; });
   headers['x-admin-key'] = ADMIN_KEY;
   // RBAC: только ADMIN может выполнять изменяющие методы
   const sess = getSession(req);
@@ -31,6 +38,8 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   try {
     const ip = (req.headers.get('x-forwarded-for') || req.ip || '').split(',')[0].trim();
     headers['x-admin-actor'] = `${sess?.role || 'UNKNOWN'}@${ip || 'unknown'}`;
+    const mi = (() => { const i = parts.indexOf('merchants'); return i >= 0 ? parts[i+1] : undefined; })();
+    if (mi) headers['x-merchant-id'] = mi;
   } catch {}
 
   const body = method === 'GET' || method === 'HEAD' ? undefined : await req.text();

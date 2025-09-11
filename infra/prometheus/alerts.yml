@@ -1,0 +1,39 @@
+groups:
+  - name: api-alerts
+    interval: 30s
+    rules:
+      - alert: ApiHigh5xxRate
+        expr: sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API 5xx rate > 1%"
+          description: "High 5xx ratio observed over last 5m"
+
+      - alert: OutboxDeadEvents
+        expr: increase(loyalty_outbox_dead_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Outbox DEAD events detected"
+          description: "There were DEAD outbox events in the last 5 minutes"
+
+      - alert: OutboxPendingGrowing
+        expr: loyalty_outbox_pending > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Outbox pending backlog high"
+          description: "Pending outbox items exceed threshold"
+
+      - alert: WorkerStale
+        expr: (time() - loyalty_worker_last_tick_seconds{worker=~"outbox|hold_gc"}) > 300
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Worker {{ $labels.worker }} stale"
+          description: "No tick from worker {{ $labels.worker }} for >5m"

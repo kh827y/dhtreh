@@ -46,7 +46,8 @@ export function getSession(req: NextRequest): Sess | null {
 
 export function requireSession(req: NextRequest): NextResponse | null {
   // allow in dev if no password configured (developer convenience)
-  const devBypass = process.env.NODE_ENV !== 'production' && !process.env.ADMIN_UI_PASSWORD;
+  const noAdminPwd = !process.env.ADMIN_UI_ADMIN_PASSWORD && !process.env.ADMIN_UI_PASSWORD;
+  const devBypass = process.env.NODE_ENV !== 'production' && noAdminPwd;
   if (devBypass) return null;
   const val = req.cookies.get(COOKIE)?.value;
   const sess = verifySessionCookie(val);
@@ -55,9 +56,11 @@ export function requireSession(req: NextRequest): NextResponse | null {
 }
 
 export function setSessionCookie(res: NextResponse, cookieVal: string) {
-  res.cookies.set({ name: COOKIE, value: cookieVal, httpOnly: true, sameSite: 'lax', secure: true, path: '/' });
+  const secure = process.env.NODE_ENV === 'production';
+  res.cookies.set({ name: COOKIE, value: cookieVal, httpOnly: true, sameSite: 'lax', secure, path: '/' });
 }
 
 export function clearSessionCookie(res: NextResponse) {
-  res.cookies.set({ name: COOKIE, value: '', httpOnly: true, sameSite: 'lax', secure: true, path: '/', maxAge: 0 });
+  const secure = process.env.NODE_ENV === 'production';
+  res.cookies.set({ name: COOKIE, value: '', httpOnly: true, sameSite: 'lax', secure, path: '/', maxAge: 0 });
 }

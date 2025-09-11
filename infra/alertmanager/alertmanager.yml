@@ -1,0 +1,11 @@
+route:
+  receiver: dev-null
+  group_by: ['alertname']
+  group_wait: 10s
+  group_interval: 5m
+  repeat_interval: 3h
+receivers:
+  - name: dev-null
+    webhook_configs:
+      - url: 'http://localhost:0'
+        send_resolved: true

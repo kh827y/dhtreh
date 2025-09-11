@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from 'react';
-import { getSettings, updateSettings, type MerchantSettings } from '../../lib/admin';
+import { getSettings, updateSettings, previewRules, type MerchantSettings } from '../../lib/admin';
 
 function num(v: any, def: number | null = null): number | null {
   const n = parseInt(String(v || ''), 10);
@@ -17,6 +17,7 @@ export default function SettingsPage() {
   const [rulesErrors, setRulesErrors] = useState<string[]>([]);
   const [preview, setPreview] = useState<{ channel: 'SMART'|'PC_POS'|'VIRTUAL'; weekday: number; eligibleTotal: number; category?: string }>({ channel: 'SMART', weekday: new Date().getDay(), eligibleTotal: 1000 });
   const [previewOut, setPreviewOut] = useState<{ earnBps: number; redeemLimitBps: number } | null>(null);
+  const [serverPreviewOut, setServerPreviewOut] = useState<{ earnBps: number; redeemLimitBps: number } | null>(null);
   // локальные поля для секретов (не подставляем значения из API)
   const [webhookUrl, setWebhookUrl] = useState<string>('');
   const [webhookKeyId, setWebhookKeyId] = useState<string>('');
@@ -137,9 +138,13 @@ export default function SettingsPage() {
       const json = rules.trim() ? JSON.parse(rules) : [];
       setRulesErrors(validateRules(json));
       setPreviewOut(computeRules(json, preview));
+      // запрос к серверу для превью текущих сохраненных правил мерчанта
+      previewRules(merchantId, preview)
+        .then(res => setServerPreviewOut(res))
+        .catch(()=>setServerPreviewOut(null));
     } catch { setRulesErrors(['Некорректный JSON']); setPreviewOut(null); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rules, preview.channel, preview.weekday, preview.eligibleTotal, preview.category]);
+  }, [rules, preview.channel, preview.weekday, preview.eligibleTotal, preview.category, merchantId]);
 
   return (
     <div>
@@ -233,7 +238,16 @@ export default function SettingsPage() {
                 <input value={preview.category || ''} onChange={e=>setPreview(prev=>({ ...prev, category: e.target.value||undefined }))} style={{ marginLeft: 8 }} placeholder="опц." />
               </label>
             </div>
-            <div style={{ marginTop: 8 }}>Результат: {previewOut ? (<span>earnBps=<b>{previewOut.earnBps}</b>, redeemLimitBps=<b>{previewOut.redeemLimitBps}</b></span>) : '—'}</div>
+            <div style={{ marginTop: 8, display:'grid', gap:6 }}>
+              <div>Клиент: {previewOut ? (<span>earnBps=<b>{previewOut.earnBps}</b>, redeemLimitBps=<b>{previewOut.redeemLimitBps}</b></span>) : '—'}</div>
+              <div>Сервер: {serverPreviewOut ? (
+                <span>earnBps=<b>{serverPreviewOut.earnBps}</b>, redeemLimitBps=<b>{serverPreviewOut.redeemLimitBps}</b></span>
+              ) : '—'}
+              </div>
+              {previewOut && serverPreviewOut && (previewOut.earnBps !== serverPreviewOut.earnBps || previewOut.redeemLimitBps !== serverPreviewOut.redeemLimitBps) && (
+                <div style={{ color:'#f38ba8' }}>ВНИМАНИЕ: результат на сервере отличается от локального превью. Проверьте сохранённые правила.</div>
+              )}
+            </div>
           </div>
           <hr />
           <h3>Вебхуки</h3>

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export function middleware(req: NextRequest) {
-  const devBypass = process.env.NODE_ENV !== 'production' && !process.env.ADMIN_UI_PASSWORD;
+  const noAdminPwd = !process.env.ADMIN_UI_ADMIN_PASSWORD && !process.env.ADMIN_UI_PASSWORD;
+  const devBypass = process.env.NODE_ENV !== 'production' && noAdminPwd;
   if (devBypass) return NextResponse.next();
   const cookie = req.cookies.get('admin_session_v1')?.value;
   if (!cookie) {

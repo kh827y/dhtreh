@@ -1,0 +1,59 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 0,
+  "iteration": 1,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "HTTP RPS by status",
+      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+      "targets": [
+        {"expr": "sum(rate(http_requests_total{status=~\"2..\"}[5m]))", "legendFormat": "2xx"},
+        {"expr": "sum(rate(http_requests_total{status=~\"4..\"}[5m]))", "legendFormat": "4xx"},
+        {"expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m]))", "legendFormat": "5xx"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP latency P50/P90/P99",
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+      "targets": [
+        {"expr": "histogram_quantile(0.5, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p50"},
+        {"expr": "histogram_quantile(0.9, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p90"},
+        {"expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p99"}
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "5xx ratio (5m)",
+      "gridPos": {"x": 0, "y": 8, "w": 6, "h": 6},
+      "targets": [
+        {"expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m])) / sum(rate(http_requests_total[5m]))"}
+      ],
+      "options": {"reduceOptions": {"calcs": ["last"], "fields": ""}, "orientation": "auto"}
+    },
+    {
+      "type": "stat",
+      "title": "Outbox pending",
+      "gridPos": {"x": 6, "y": 8, "w": 6, "h": 6},
+      "targets": [ {"expr": "loyalty_outbox_pending"} ]
+    },
+    {
+      "type": "stat",
+      "title": "Outbox DEAD (5m)",
+      "gridPos": {"x": 12, "y": 8, "w": 6, "h": 6},
+      "targets": [ {"expr": "increase(loyalty_outbox_dead_total[5m])"} ]
+    },
+    {
+      "type": "stat",
+      "title": "Workers stale (now)",
+      "gridPos": {"x": 18, "y": 8, "w": 6, "h": 6},
+      "targets": [ {"expr": "sum((time() - loyalty_worker_last_tick_seconds) > 300)"} ]
+    }
+  ],
+  "schemaVersion": 38,
+  "title": "API Overview",
+  "version": 1
+}

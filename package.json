@@ -1,0 +1,20 @@
+{
+  "name": "loyalty-monorepo",
+  "private": true,
+  "engines": {
+    "node": ">=18.18.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "dev:api": "pnpm -C api start:dev",
+    "dev:admin": "pnpm -C admin dev",
+    "dev:cashier": "pnpm -C cashier dev",
+    "dev:miniapp": "pnpm -C miniapp dev",
+    "dev:bridge": "pnpm -C bridge start",
+    "build:api": "pnpm -C api build",
+    "build:admin": "pnpm -C admin build",
+    "build:cashier": "pnpm -C cashier build",
+    "build:miniapp": "pnpm -C miniapp build",
+    "postman:gen": "pnpm -C api postman:gen"
+  }
+}

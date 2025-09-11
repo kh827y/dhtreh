@@ -1,10 +1,50 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { UpdateDeviceDto, UpdateMerchantSettingsDto, UpdateOutletDto, UpdateStaffDto } from './dto';
+// Lazy Ajv import to avoid TS2307 when dependency isn't installed yet
+const __AjvLib: any = (() => { try { return require('ajv'); } catch { return null; } })();
 
 @Injectable()
 export class MerchantsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) {
+    const AjvCtor: any = __AjvLib?.default || __AjvLib;
+    this.ajv = AjvCtor ? new AjvCtor({ allErrors: true, coerceTypes: true, removeAdditional: 'failing' }) : {
+      validate: () => true,
+      errorsText: () => '',
+      errors: []
+    };
+  }
+  private ajv: { validate: (schema: any, data: any) => boolean; errorsText: (errs?: any, opts?: any) => string; errors?: any };
+  private rulesSchema = {
+    type: 'array',
+    items: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        if: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            channelIn: { type: 'array', items: { type: 'string' } },
+            weekdayIn: { type: 'array', items: { type: 'integer', minimum: 0, maximum: 6 } },
+            minEligible: { type: 'number', minimum: 0 },
+            categoryIn: { type: 'array', items: { type: 'string' } },
+          },
+          required: [],
+        },
+        then: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            earnBps: { type: 'integer', minimum: 0, maximum: 10000 },
+            redeemLimitBps: { type: 'integer', minimum: 0, maximum: 10000 },
+          },
+          anyOf: [ { required: ['earnBps'] }, { required: ['redeemLimitBps'] } ],
+        },
+      },
+      required: ['then'],
+    },
+  } as const;
 
   async getSettings(merchantId: string) {
     const merchant = await this.prisma.merchant.findUnique({
@@ -46,7 +86,20 @@ export class MerchantsService {
     };
   }
 
+  validateRules(rulesJson: any) {
+    if (rulesJson === undefined || rulesJson === null) return { ok: true };
+    const valid = this.ajv.validate(this.rulesSchema as any, rulesJson);
+    if (!valid) {
+      const msg = this.ajv.errorsText(this.ajv.errors, { separator: '; ' });
+      throw new BadRequestException('rulesJson invalid: ' + msg);
+    }
+    return { ok: true };
+  }
+
   async updateSettings(merchantId: string, earnBps: number, redeemLimitBps: number, qrTtlSec?: number, webhookUrl?: string, webhookSecret?: string, webhookKeyId?: string, redeemCooldownSec?: number, earnCooldownSec?: number, redeemDailyCap?: number, earnDailyCap?: number, requireJwtForQuote?: boolean, rulesJson?: any, requireBridgeSig?: boolean, bridgeSecret?: string, requireStaffKey?: boolean, extras?: Partial<UpdateMerchantSettingsDto>) {
+    // JSON Schema валидация правил (если переданы) — выполняем до любых DB операций
+    this.validateRules(rulesJson);
+
     // убедимся, что мерчант есть
     await this.prisma.merchant.upsert({
       where: { id: merchantId },
@@ -142,6 +195,29 @@ export class MerchantsService {
       miniappThemeBg: (updated as any).miniappThemeBg ?? null,
       miniappLogoUrl: (updated as any).miniappLogoUrl ?? null,
     };
+  }
+
+  async previewRules(merchantId: string, args: { channel: 'VIRTUAL'|'PC_POS'|'SMART'; weekday: number; eligibleTotal: number; category?: string }) {
+    const s = await this.getSettings(merchantId);
+    let earnBps = s.earnBps ?? 500;
+    let redeemLimitBps = s.redeemLimitBps ?? 5000;
+    const rules = s.rulesJson;
+    if (Array.isArray(rules)) {
+      for (const item of rules) {
+        try {
+          if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+          const cond = (item as any).if ?? {};
+          if (Array.isArray(cond.channelIn) && !cond.channelIn.includes(args.channel)) continue;
+          if (Array.isArray(cond.weekdayIn) && !cond.weekdayIn.includes(args.weekday)) continue;
+          if (cond.minEligible != null && args.eligibleTotal < Number(cond.minEligible)) continue;
+          if (Array.isArray(cond.categoryIn) && !cond.categoryIn.includes(args.category)) continue;
+          const then = (item as any).then ?? {};
+          if (then.earnBps != null) earnBps = Number(then.earnBps);
+          if (then.redeemLimitBps != null) redeemLimitBps = Number(then.redeemLimitBps);
+        } catch {}
+      }
+    }
+    return { earnBps, redeemLimitBps };
   }
 
   // Outlets

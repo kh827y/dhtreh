@@ -1,0 +1,41 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 0,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Outbox pending",
+      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+      "targets": [ {"expr": "loyalty_outbox_pending"} ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Outbox rate (sent/failed/dead) [5m]",
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+      "targets": [
+        {"expr": "rate(loyalty_outbox_sent_total[5m])", "legendFormat": "sent/s"},
+        {"expr": "rate(loyalty_outbox_failed_total[5m])", "legendFormat": "failed/s"},
+        {"expr": "rate(loyalty_outbox_dead_total[5m])", "legendFormat": "dead/s"}
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Circuit open (merchants)",
+      "gridPos": {"x": 0, "y": 8, "w": 6, "h": 6},
+      "targets": [ {"expr": "loyalty_outbox_circuit_open"} ]
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP 429/503 (backpressure)",
+      "gridPos": {"x": 6, "y": 8, "w": 18, "h": 6},
+      "targets": [
+        {"expr": "sum(rate(http_requests_total{status='429'}[5m]))", "legendFormat": "429"},
+        {"expr": "sum(rate(http_requests_total{status='503'}[5m]))", "legendFormat": "503"}
+      ]
+    }
+  ],
+  "schemaVersion": 38,
+  "title": "Outbox",
+  "version": 1
+}

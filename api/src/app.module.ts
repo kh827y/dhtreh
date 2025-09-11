@@ -16,6 +16,19 @@ import { IdempotencyGcWorker } from './idempotency-gc.worker';
 import { OutboxDispatcherWorker } from './outbox-dispatcher.worker';
 import { PointsTtlWorker } from './points-ttl.worker';
 import { PointsBurnWorker } from './points-burn.worker';
+// Optional Redis storage for Throttler
+let throttlerStorage: any = undefined;
+try {
+  if (process.env.REDIS_URL) {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const Redis = require('ioredis');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { ThrottlerStorageRedisService } = require('nestjs-throttler-storage-redis');
+    throttlerStorage = new ThrottlerStorageRedisService(new Redis(process.env.REDIS_URL));
+  }
+} catch {
+  // keep in-memory storage if deps not installed
+}
 
 @Module({
   imports: [
@@ -25,6 +38,7 @@ import { PointsBurnWorker } from './points-burn.worker';
         name: 'default',
         ttl: 60_000, // мс
         limit: 200,  // базовый мягкий лимит
+        ...(throttlerStorage ? { storage: throttlerStorage } : {}),
       },
     ]),
     PrismaModule,

@@ -20,6 +20,22 @@ const STAFF_KEY = process.env.STAFF_KEY || '';
 const BRIDGE_SECRET = process.env.BRIDGE_SECRET || '';
 const FLUSH_INTERVAL_MS = Number(process.env.FLUSH_INTERVAL_MS || 5000);
 
+// Fail-fast env validation
+function validateEnv() {
+  const prod = process.env.NODE_ENV === 'production';
+  const errs = [];
+  if (!API) errs.push('API_BASE not configured');
+  if (!DEFAULT_MERCHANT) errs.push('MERCHANT_ID not configured');
+  if (prod && !BRIDGE_SECRET) errs.push('BRIDGE_SECRET not configured in production');
+  if (errs.length) {
+    const msg = '[Bridge ENV] ' + errs.join('; ');
+    if (prod) { throw new Error(msg); }
+    // eslint-disable-next-line no-console
+    console.warn(msg);
+  }
+}
+validateEnv();
+
 const dataDir = path.join(__dirname, '..', 'data');
 const queueFile = path.join(dataDir, 'queue.json');
 fs.mkdirSync(dataDir, { recursive: true });

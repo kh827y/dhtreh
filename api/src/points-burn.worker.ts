@@ -15,6 +15,7 @@ export class PointsBurnWorker implements OnModuleInit, OnModuleDestroy {
   constructor(private prisma: PrismaService, private metrics: MetricsService) {}
 
   onModuleInit() {
+    if (process.env.WORKERS_ENABLED === '0') { this.logger.log('Workers disabled (WORKERS_ENABLED=0)'); return; }
     if (process.env.POINTS_TTL_BURN !== '1') { this.logger.log('POINTS_TTL_BURN disabled'); return; }
     const intervalMs = Number(process.env.POINTS_TTL_BURN_INTERVAL_MS || (6 * 60 * 60 * 1000));
     this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);

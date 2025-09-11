@@ -11,6 +11,7 @@ export class IdempotencyGcWorker implements OnModuleInit, OnModuleDestroy {
   constructor(private prisma: PrismaService) {}
 
   onModuleInit() {
+    if (process.env.WORKERS_ENABLED === '0') { this.logger.log('Workers disabled (WORKERS_ENABLED=0)'); return; }
     const intervalMs = Number(process.env.IDEMPOTENCY_GC_INTERVAL_MS || '60000');
     this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
     this.logger.log(`IdempotencyGcWorker started, interval=${intervalMs}ms`);

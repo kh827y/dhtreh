@@ -9,15 +9,34 @@ services:
     ports: ["5432:5432"]
     volumes: ["pgdata:/var/lib/postgresql/data"]
 
+  redis:
+    image: redis:7
+    ports: ["6379:6379"]
+
   api:
     build: ../api
-    depends_on: [postgres]
+    depends_on: [postgres, redis]
     environment:
       DATABASE_URL: postgresql://loyalty:loyalty@postgres:5432/loyalty
       ADMIN_KEY: change_me_admin
       QR_JWT_SECRET: change_me_qr
+      ADMIN_SESSION_SECRET: change_me_admin_session_secret
+      REDIS_URL: redis://redis:6379
       CORS_ORIGINS: http://localhost:3001,http://localhost:3002,http://localhost:3003
+      WORKERS_ENABLED: "0"
     ports: ["3000:3000"]
+
+  api-workers:
+    build: ../api
+    depends_on: [postgres, redis]
+    environment:
+      DATABASE_URL: postgresql://loyalty:loyalty@postgres:5432/loyalty
+      ADMIN_KEY: change_me_admin
+      QR_JWT_SECRET: change_me_qr
+      ADMIN_SESSION_SECRET: change_me_admin_session_secret
+      REDIS_URL: redis://redis:6379
+      WORKERS_ENABLED: "1"
+      NO_HTTP: "1"
 
   admin:
     build: ../admin
@@ -25,6 +44,8 @@ services:
     environment:
       API_BASE: http://api:3000
       ADMIN_KEY: change_me_admin
+      ADMIN_SESSION_SECRET: change_me_admin_ui_cookie_secret
+      ADMIN_UI_ADMIN_PASSWORD: admin_password
       NEXT_PUBLIC_MERCHANT_ID: M-1
     ports: ["3001:3001"]
 
@@ -45,6 +66,30 @@ services:
       BRIDGE_PORT: 18080
       BRIDGE_SECRET: change_me_bridge
     ports: ["18080:18080"]
+
+  prometheus:
+    image: prom/prometheus:latest
+    depends_on: [api, bridge]
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports: ["9090:9090"]
+
+  grafana:
+    image: grafana/grafana:latest
+    depends_on: [prometheus]
+    ports: ["3009:3000"]
+    volumes:
+      - ./grafana/provisioning/datasources/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
+      - ./grafana/provisioning/dashboards/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    depends_on: [prometheus]
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports: ["9093:9093"]
 
 volumes:
   pgdata:

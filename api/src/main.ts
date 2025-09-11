@@ -16,6 +16,20 @@ import { context as otelContext, trace as otelTrace } from '@opentelemetry/api';
 import { HttpErrorFilter } from './http-error.filter';
 
 async function bootstrap() {
+  // Fail-fast ENV validation
+  (function validateEnv() {
+    const must = ['DATABASE_URL', 'ADMIN_KEY'] as const;
+    for (const k of must) {
+      if (!process.env[k] || String(process.env[k]).trim() === '') {
+        throw new Error(`[ENV] ${k} not configured`);
+      }
+    }
+    if (process.env.NODE_ENV === 'production') {
+      if (!process.env.ADMIN_SESSION_SECRET) throw new Error('[ENV] ADMIN_SESSION_SECRET not configured');
+      const qr = process.env.QR_JWT_SECRET || '';
+      if (!qr || qr === 'dev_change_me') throw new Error('[ENV] QR_JWT_SECRET must be set and not use dev default in production');
+    }
+  })();
   const app = await NestFactory.create(AppModule);
 
   // CORS из ENV (запятая-разделённый список); если не задан — дефолты для локалки
@@ -129,6 +143,11 @@ async function bootstrap() {
     } catch {}
     next();
   });
+  if (process.env.NO_HTTP === '1') {
+    await app.init();
+    console.log('Workers-only mode: NO_HTTP=1 (HTTP server disabled)');
+    return;
+  }
   await app.listen(3000);
   console.log(`API on http://localhost:3000`);
 }

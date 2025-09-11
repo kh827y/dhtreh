@@ -1,0 +1,31 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 0,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Outbox worker stale (>5m)",
+      "gridPos": {"x": 0, "y": 0, "w": 8, "h": 6},
+      "targets": [ {"expr": "(time() - loyalty_worker_last_tick_seconds{worker='outbox'}) > 300"} ]
+    },
+    {
+      "type": "stat",
+      "title": "Hold GC worker stale (>5m)",
+      "gridPos": {"x": 8, "y": 0, "w": 8, "h": 6},
+      "targets": [ {"expr": "(time() - loyalty_worker_last_tick_seconds{worker='hold_gc'}) > 300"} ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Last tick time (seconds)",
+      "gridPos": {"x": 0, "y": 6, "w": 24, "h": 8},
+      "targets": [
+        {"expr": "loyalty_worker_last_tick_seconds{worker='outbox'}", "legendFormat": "outbox"},
+        {"expr": "loyalty_worker_last_tick_seconds{worker='hold_gc'}", "legendFormat": "hold_gc"}
+      ]
+    }
+  ],
+  "schemaVersion": 38,
+  "title": "Workers",
+  "version": 1
+}

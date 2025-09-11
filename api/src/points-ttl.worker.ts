@@ -14,6 +14,7 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
   constructor(private prisma: PrismaService, private metrics: MetricsService) {}
 
   onModuleInit() {
+    if (process.env.WORKERS_ENABLED === '0') { this.logger.log('Workers disabled (WORKERS_ENABLED=0)'); return; }
     if (process.env.POINTS_TTL_FEATURE !== '1') {
       this.logger.log('POINTS_TTL_FEATURE disabled');
       return;
@@ -32,6 +33,7 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
     if (!lock.ok) { this.running = false; return; }
     try {
       this.lastTickAt = new Date();
+      try { this.metrics.setGauge('loyalty_worker_last_tick_seconds', Math.floor(Date.now()/1000), { worker: 'points_ttl' }); } catch {}
       const merchants = await this.prisma.merchantSettings.findMany({ where: { pointsTtlDays: { not: null } } });
       const now = Date.now();
       for (const s of merchants) {

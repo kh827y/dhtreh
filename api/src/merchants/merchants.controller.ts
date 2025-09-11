@@ -23,6 +23,22 @@ export class MerchantsController {
     return this.service.getSettings(id);
   }
 
+  @Get(':id/rules/preview')
+  @ApiOkResponse({ schema: { type: 'object', properties: { earnBps: { type: 'number' }, redeemLimitBps: { type: 'number' } } } })
+  @ApiUnauthorizedResponse({ type: ErrorDto })
+  previewRules(
+    @Param('id') id: string,
+    @Query('channel') channel: 'VIRTUAL'|'PC_POS'|'SMART',
+    @Query('weekday') weekdayStr?: string,
+    @Query('eligibleTotal') eligibleStr?: string,
+    @Query('category') category?: string,
+  ) {
+    const weekday = Math.max(0, Math.min(6, parseInt(weekdayStr || '0', 10) || 0));
+    const eligibleTotal = Math.max(0, parseInt(eligibleStr || '0', 10) || 0);
+    const ch = (channel === 'SMART' || channel === 'PC_POS' || channel === 'VIRTUAL') ? channel : 'VIRTUAL';
+    return this.service.previewRules(id, { channel: ch, weekday, eligibleTotal, category });
+  }
+
   @Put(':id/settings')
   @ApiOkResponse({ type: MerchantSettingsRespDto })
   @ApiUnauthorizedResponse({ type: ErrorDto })
@@ -134,7 +150,7 @@ export class MerchantsController {
   @ApiUnauthorizedResponse({ type: ErrorDto })
   @ApiBadRequestResponse({ type: ErrorDto })
   createStaff(@Param('id') id: string, @Body() dto: CreateStaffDto) {
-    return this.service.createStaff(id, dto);
+    return this.service.createStaff(id, { login: dto.login, email: dto.email, role: dto.role ? String(dto.role) : undefined });
   }
   @Put(':id/staff/:staffId')
   @ApiOkResponse({ type: StaffDto })

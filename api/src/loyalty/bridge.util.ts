@@ -12,9 +12,11 @@ export function verifyBridgeSignature(header: string, body: string, secret: stri
     }
     const ts = kv.ts; const sig = kv.sig;
     if (!ts || !sig) return false;
-    const calc = require('crypto').createHmac('sha256', secret).update(ts + '.' + body).digest('base64');
+    const crypto = require('crypto');
+    const calcB = crypto.createHmac('sha256', secret).update(ts + '.' + body).digest();
+    const sigB = Buffer.from(sig, 'base64');
     const skewOk = Math.abs(Math.floor(Date.now()/1000) - Number(ts)) <= 300;
-    return skewOk && calc === sig;
+    return skewOk && (sigB.length === calcB.length) && crypto.timingSafeEqual(calcB, sigB);
   } catch {
     return false;
   }

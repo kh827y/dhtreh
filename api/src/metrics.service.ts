@@ -1,10 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { Counter, Gauge, Histogram, Registry, collectDefaultMetrics } from 'prom-client';
 
 type CMap = { [k: string]: number };
 
 @Injectable()
-export class MetricsService {
+export class MetricsService implements OnModuleDestroy {
   private counters: CMap = Object.create(null);
   private sums: CMap = Object.create(null);
   private counts: CMap = Object.create(null);
@@ -24,9 +24,14 @@ export class MetricsService {
   private ledgerEntries?: Counter<string>;
   private ledgerAmount?: Counter<string>;
 
+  private stopDefaultMetrics?: () => void;
+
   constructor() {
     this.registry = new Registry();
-    collectDefaultMetrics({ register: this.registry });
+    try {
+      const stop = collectDefaultMetrics({ register: this.registry });
+      if (typeof stop === 'function') this.stopDefaultMetrics = stop as any;
+    } catch {}
     // Known metrics via prom-client (без динамических лейблов)
     this.outboxSent = new Counter({ name: 'loyalty_outbox_sent_total', help: 'Total outbox sent events', registers: [this.registry] });
     this.outboxFailed = new Counter({ name: 'loyalty_outbox_failed_total', help: 'Total outbox failed events', registers: [this.registry] });
@@ -41,6 +46,10 @@ export class MetricsService {
     this.httpReqDuration = new Histogram({ name: 'http_request_duration_seconds', help: 'HTTP request duration seconds', labelNames: ['method','route','status'], buckets: [0.01,0.025,0.05,0.1,0.2,0.5,1,2,5], registers: [this.registry] });
     this.ledgerEntries = new Counter({ name: 'loyalty_ledger_entries_total', help: 'Ledger entries created', labelNames: ['type'], registers: [this.registry] });
     this.ledgerAmount = new Counter({ name: 'loyalty_ledger_amount_total', help: 'Ledger amount total', labelNames: ['type'], registers: [this.registry] });
+  }
+
+  onModuleDestroy() {
+    try { this.stopDefaultMetrics?.(); } catch {}
   }
 
   inc(name: string, labels: Record<string, string> = {}, value = 1) {

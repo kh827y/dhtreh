@@ -13,6 +13,7 @@ export class HoldGcWorker implements OnModuleInit, OnModuleDestroy {
   constructor(private prisma: PrismaService, private metrics: MetricsService) {}
 
   onModuleInit() {
+    if (process.env.WORKERS_ENABLED === '0') { this.logger.log('Workers disabled (WORKERS_ENABLED=0)'); return; }
     const intervalMs = Number(process.env.HOLD_GC_INTERVAL_MS || '30000');
     this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
     this.logger.log(`HoldGcWorker started, interval=${intervalMs}ms`);
@@ -25,6 +26,7 @@ export class HoldGcWorker implements OnModuleInit, OnModuleDestroy {
     const lock = await pgTryAdvisoryLock(this.prisma, 'worker:hold_gc');
     if (!lock.ok) { this.running = false; return; }
     try {
+      try { this.metrics.setGauge('loyalty_worker_last_tick_seconds', Math.floor(Date.now()/1000), { worker: 'hold_gc' }); } catch {}
       const now = new Date();
       const expired = await this.prisma.hold.findMany({ where: { status: HoldStatus.PENDING, expiresAt: { lt: now } }, take: 50 });
       for (const h of expired) {

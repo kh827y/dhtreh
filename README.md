@@ -30,9 +30,12 @@
 3) Admin (панель)
 - Перейдите в `admin`
 - Создайте `.env.local` (пример):
-  - `NEXT_PUBLIC_API_BASE=http://localhost:3000`
-  - `NEXT_PUBLIC_MERCHANT_ID=M-1`
-  - `NEXT_PUBLIC_ADMIN_KEY=admin123`
+  - `API_BASE=http://localhost:3000` (серверная переменная для прокси)
+  - `ADMIN_KEY=admin123` (серверно, прокидывается в `x-admin-key` при прокси)
+  - `ADMIN_SESSION_SECRET=change_me_admin_ui_cookie_secret`
+  - `ADMIN_UI_ADMIN_PASSWORD=admin_password`
+  - (опц.) `ADMIN_UI_MANAGER_PASSWORD=manager_password`
+  - (опц.) `NEXT_PUBLIC_MERCHANT_ID=M-1` (лишь для дефолта в UI)
 - `pnpm i` → `pnpm dev` (http://localhost:3001)
 
 4) Cashier (виртуальный терминал)
@@ -57,6 +60,7 @@
   - `MERCHANT_ID=M-1`
   - `BRIDGE_PORT=18080`
   - (опц.) `STAFF_KEY=...`, `BRIDGE_SECRET=...`, `OUTLET_ID=...`, `DEVICE_ID=...`
+  - В проде: `BRIDGE_SECRET` обязателен (Bridge завершит работу при старте, если не задан)
 - `pnpm i` → `pnpm start` (http://127.0.0.1:18080)
 
 ## Проверка E2E (понятно и по шагам)
@@ -98,7 +102,12 @@ E. Проверка результатов
 - POS Bridge: admin → Docs → Bridge
 - Варианты интеграции: admin → Docs → Integration
 
+## Дополнительно
+- (опц.) Redis для rate limiting: поднимите `redis:7` и задайте `REDIS_URL=redis://localhost:6379` в `api` — лимиты будут распределёнными.
+
 ## Замечания
 - Для защиты API используйте длинные и ротационные секреты.
 - Всегда передавайте `Idempotency-Key` на commit/refund.
 - Вебхуки проверяйте по `X-Loyalty-Signature` и окну времени ±5 минут.
+ - (опц.) Для распределённого rate limiting можно использовать Redis (`infra/docker-compose.yml` содержит сервис),
+   задайте `REDIS_URL=redis://localhost:6379` в API.
