@@ -13,6 +13,7 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   if (process.env.NODE_ENV === 'production') {
     if (!ADMIN_SESSION_SECRET) return new Response('ADMIN_SESSION_SECRET not configured', { status: 500 });
     if (!ADMIN_UI_PASSWORD) return new Response('ADMIN_UI_PASSWORD not configured', { status: 500 });
+    if (!/^https?:\/\//i.test(API_BASE)) return new Response('API_BASE must be absolute URL in production', { status: 500 });
   }
   {
     const unauth = requireSession(req);

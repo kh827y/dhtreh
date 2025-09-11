@@ -420,14 +420,16 @@ export class MerchantsService {
     return { ok: true };
   }
 
-  async listTransactions(merchantId: string, params: { limit: number; before?: Date; type?: string; customerId?: string; outletId?: string; deviceId?: string; staffId?: string }) {
+  async listTransactions(merchantId: string, params: { limit: number; before?: Date; from?: Date; to?: Date; type?: string; customerId?: string; outletId?: string; deviceId?: string; staffId?: string }) {
     const where: any = { merchantId };
     if (params.type) where.type = params.type as any;
     if (params.customerId) where.customerId = params.customerId;
     if (params.outletId) where.outletId = params.outletId;
     if (params.deviceId) where.deviceId = params.deviceId;
     if (params.staffId) where.staffId = params.staffId;
-    if (params.before) where.createdAt = { lt: params.before };
+    if (params.before) where.createdAt = Object.assign(where.createdAt || {}, { lt: params.before });
+    if (params.from) where.createdAt = Object.assign(where.createdAt || {}, { gte: params.from });
+    if (params.to) where.createdAt = Object.assign(where.createdAt || {}, { lte: params.to });
     return this.prisma.transaction.findMany({ where, orderBy: { createdAt: 'desc' }, take: params.limit });
   }
 

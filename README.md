@@ -82,6 +82,7 @@ C. Генерация QR клиентом (мини‑аппа)
 - Откройте miniapp: http://localhost:3003
 - Нажмите «Показать QR для оплаты» — отобразится QR
 - Если используете Telegram, установите переменную `TELEGRAM_BOT_TOKEN` в API и откройте мини‑аппу внутри Telegram — авторизация произойдёт автоматически
+ - В продакшне `/loyalty/qr` доступен только с валидным Telegram `initData` (серверная проверка подписи) или при включённом `Require Staff Key` — с заголовком `X-Staff-Key`.
 
 D. Продажа через виртуальный терминал кассира
 - Откройте cashier: http://localhost:3002
@@ -101,6 +102,12 @@ E. Проверка результатов
 - Документация по подписи: admin → Docs → Signature
 - POS Bridge: admin → Docs → Bridge
 - Варианты интеграции: admin → Docs → Integration
+
+## Продакшн конфигурация
+
+- API: `DATABASE_URL`, `ADMIN_KEY`, `ADMIN_SESSION_SECRET`, `QR_JWT_SECRET` (не `dev_change_me`), `CORS_ORIGINS` обязательны; `WORKERS_ENABLED=1` в отдельном процессе.
+- Admin: `API_BASE` (абсолютный URL), `ADMIN_UI_ADMIN_PASSWORD`, `ADMIN_SESSION_SECRET`.
+- Bridge: `API_BASE` (абсолютный URL), `MERCHANT_ID`, `BRIDGE_SECRET`.
 
 ## Дополнительно
 - (опц.) Redis для rate limiting: поднимите `redis:7` и задайте `REDIS_URL=redis://localhost:6379` в `api` — лимиты будут распределёнными.

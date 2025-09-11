@@ -135,10 +135,12 @@ export async function customerSummary(merchantId: string, customerId: string): P
   return http(`/merchants/${encodeURIComponent(merchantId)}/customer/summary?customerId=${encodeURIComponent(customerId)}`);
 }
 
-export function transactionsCsvUrl(merchantId: string, params: { limit?: number; before?: string; type?: string; customerId?: string; outletId?: string; deviceId?: string; staffId?: string }): string {
+export function transactionsCsvUrl(merchantId: string, params: { limit?: number; before?: string; from?: string; to?: string; type?: string; customerId?: string; outletId?: string; deviceId?: string; staffId?: string }): string {
   const p = new URLSearchParams();
   if (params.limit != null) p.set('limit', String(params.limit));
   if (params.before) p.set('before', params.before);
+  if (params.from) p.set('from', params.from);
+  if (params.to) p.set('to', params.to);
   if (params.type) p.set('type', params.type);
   if (params.customerId) p.set('customerId', params.customerId);
   if (params.outletId) p.set('outletId', params.outletId);
@@ -157,10 +159,12 @@ export function receiptsCsvUrl(merchantId: string, params: { limit?: number; bef
 }
 
 // Paged lists for CRM
-export async function listTransactionsAdmin(merchantId: string, params: { limit?: number; before?: string; type?: string; customerId?: string; outletId?: string; deviceId?: string; staffId?: string }): Promise<{ items: any[]; nextBefore: string | null }> {
+export async function listTransactionsAdmin(merchantId: string, params: { limit?: number; before?: string; from?: string; to?: string; type?: string; customerId?: string; outletId?: string; deviceId?: string; staffId?: string }): Promise<{ items: any[]; nextBefore: string | null }> {
   const p = new URLSearchParams();
   if (params.limit != null) p.set('limit', String(params.limit));
   if (params.before) p.set('before', params.before);
+  if (params.from) p.set('from', params.from);
+  if (params.to) p.set('to', params.to);
   if (params.type) p.set('type', params.type);
   if (params.customerId) p.set('customerId', params.customerId);
   if (params.outletId) p.set('outletId', params.outletId);
@@ -178,4 +182,105 @@ export async function listReceiptsAdmin(merchantId: string, params: { limit?: nu
   if (params.customerId) p.set('customerId', params.customerId);
   const qs = p.toString();
   return http(`/merchants/${encodeURIComponent(merchantId)}/receipts${qs?`?${qs}`:''}`);
+}
+
+// ===== Staff management =====
+export type Staff = {
+  id: string;
+  merchantId: string;
+  login?: string | null;
+  email?: string | null;
+  role: 'CASHIER' | 'MANAGER' | 'ADMIN';
+  status: 'ACTIVE' | 'INACTIVE';
+  apiKeyHash?: string | null;
+  allowedOutletId?: string | null;
+  allowedDeviceId?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+};
+
+export async function getStaff(merchantId: string): Promise<Staff[]> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/staff`);
+}
+
+export async function createStaff(merchantId: string, dto: { login?: string; email?: string; role?: string }): Promise<Staff> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/staff`, { method: 'POST', body: JSON.stringify(dto) });
+}
+
+export async function updateStaff(merchantId: string, staffId: string, dto: Partial<Staff>): Promise<Staff> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/staff/${encodeURIComponent(staffId)}`, { method: 'PUT', body: JSON.stringify(dto) });
+}
+
+export async function deleteStaff(merchantId: string, staffId: string): Promise<{ ok: true }> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/staff/${encodeURIComponent(staffId)}`, { method: 'DELETE' });
+}
+
+export async function issueStaffToken(merchantId: string, staffId: string): Promise<{ token: string }> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/staff/${encodeURIComponent(staffId)}/token`, { method: 'POST' });
+}
+
+export async function revokeStaffToken(merchantId: string, staffId: string): Promise<{ ok: true }> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/staff/${encodeURIComponent(staffId)}/token`, { method: 'DELETE' });
+}
+
+// ===== Device management =====
+export type Device = {
+  id: string;
+  merchantId: string;
+  type: 'VIRTUAL' | 'PC_POS' | 'SMART';
+  label?: string | null;
+  outletId?: string | null;
+  bridgeSecret?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+};
+
+export async function getDevices(merchantId: string): Promise<Device[]> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/devices`);
+}
+
+export async function createDevice(merchantId: string, dto: { type: string; label?: string; outletId?: string }): Promise<Device> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/devices`, { method: 'POST', body: JSON.stringify(dto) });
+}
+
+export async function updateDevice(merchantId: string, deviceId: string, dto: { label?: string; outletId?: string }): Promise<Device> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/devices/${encodeURIComponent(deviceId)}`, { method: 'PUT', body: JSON.stringify(dto) });
+}
+
+export async function deleteDevice(merchantId: string, deviceId: string): Promise<{ ok: true }> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/devices/${encodeURIComponent(deviceId)}`, { method: 'DELETE' });
+}
+
+export async function issueDeviceSecret(merchantId: string, deviceId: string): Promise<{ secret: string }> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/devices/${encodeURIComponent(deviceId)}/secret`, { method: 'POST' });
+}
+
+export async function revokeDeviceSecret(merchantId: string, deviceId: string): Promise<{ ok: true }> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/devices/${encodeURIComponent(deviceId)}/secret`, { method: 'DELETE' });
+}
+
+// ===== Outlet management =====
+export type Outlet = {
+  id: string;
+  merchantId: string;
+  name: string;
+  address?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+};
+
+export async function getOutlets(merchantId: string): Promise<Outlet[]> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/outlets`);
+}
+
+export async function createOutlet(merchantId: string, dto: { name: string; address?: string }): Promise<Outlet> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/outlets`, { method: 'POST', body: JSON.stringify(dto) });
+}
+
+export async function updateOutlet(merchantId: string, outletId: string, dto: { name?: string; address?: string }): Promise<Outlet> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/outlets/${encodeURIComponent(outletId)}`, { method: 'PUT', body: JSON.stringify(dto) });
+}
+
+export async function deleteOutlet(merchantId: string, outletId: string): Promise<{ ok: true }> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/outlets/${encodeURIComponent(outletId)}`, { method: 'DELETE' });
 }

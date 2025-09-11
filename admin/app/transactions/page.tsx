@@ -14,6 +14,8 @@ export default function TransactionsPage() {
   const [nextBefore, setNextBefore] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [msg, setMsg] = useState<string>('');
+  const [from, setFrom] = useState<string>('');
+  const [to, setTo] = useState<string>('');
 
   const load = async () => {
     setLoading(true);
@@ -25,6 +27,8 @@ export default function TransactionsPage() {
         outletId: outletId || undefined,
         deviceId: deviceId || undefined,
         staffId: staffId || undefined,
+        from: from || undefined,
+        to: to || undefined,
       });
       setItems(resp.items); setNextBefore(resp.nextBefore || null); setMsg('');
     } catch (e: any) { setMsg(String(e?.message || e)); setItems([]); setNextBefore(null); }
@@ -44,6 +48,8 @@ export default function TransactionsPage() {
         outletId: outletId || undefined,
         deviceId: deviceId || undefined,
         staffId: staffId || undefined,
+        from: from || undefined,
+        to: to || undefined,
       });
       setItems(prev=>[...prev, ...resp.items]); setNextBefore(resp.nextBefore || null);
     } catch (e: any) { setMsg(String(e?.message || e)); }
@@ -57,6 +63,8 @@ export default function TransactionsPage() {
     outletId: outletId || undefined,
     deviceId: deviceId || undefined,
     staffId: staffId || undefined,
+    from: from || undefined,
+    to: to || undefined,
   });
 
   return (
@@ -74,6 +82,8 @@ export default function TransactionsPage() {
         <label>Outlet: <input value={outletId} onChange={e=>setOutletId(e.target.value)} /></label>
         <label>Device: <input value={deviceId} onChange={e=>setDeviceId(e.target.value)} /></label>
         <label>Staff: <input value={staffId} onChange={e=>setStaffId(e.target.value)} /></label>
+        <label>От (ISO): <input type="datetime-local" value={from} onChange={e=>setFrom(e.target.value)} /></label>
+        <label>До (ISO): <input type="datetime-local" value={to} onChange={e=>setTo(e.target.value)} /></label>
         <label>Лимит: <input type="number" value={limit} onChange={e=>setLimit(parseInt(e.target.value||'20',10))} style={{ width:80 }} /></label>
         <button onClick={load} disabled={loading} style={{ padding:'6px 10px' }}>Обновить</button>
         <a href={csvHref} download style={{ color:'#89b4fa' }}>Скачать CSV</a>

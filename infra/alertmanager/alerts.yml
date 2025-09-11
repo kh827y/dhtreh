@@ -1,0 +1,121 @@
+groups:
+  - name: loyalty_critical
+    interval: 30s
+    rules:
+      - alert: APIDown
+        expr: up{job="api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: api
+        annotations:
+          summary: "API сервер недоступен"
+          description: "API сервер не отвечает более 2 минут"
+
+      - alert: DatabaseDown
+        expr: up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: database
+        annotations:
+          summary: "База данных недоступна"
+          description: "PostgreSQL не отвечает более 1 минуты"
+
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: redis
+        annotations:
+          summary: "Redis недоступен"
+          description: "Redis не отвечает более 2 минут"
+
+      - alert: HighErrorRate
+        expr: rate(loyalty_errors_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Высокий уровень ошибок"
+          description: "Более 10% запросов завершаются ошибкой"
+
+  - name: loyalty_warning
+    interval: 60s
+    rules:
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(loyalty_request_duration_seconds_bucket[5m])) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Высокая задержка API"
+          description: "P95 latency превышает 500ms"
+
+      - alert: HighMemoryUsage
+        expr: (container_memory_usage_bytes{name="api"} / container_spec_memory_limit_bytes{name="api"}) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          service: api
+        annotations:
+          summary: "Высокое использование памяти API"
+          description: "API использует более 80% выделенной памяти"
+
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Мало свободного места на диске"
+          description: "Осталось менее 20% свободного места"
+
+      - alert: WebhookQueueGrowing
+        expr: rate(webhook_queue_size[5m]) > 100
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Очередь вебхуков растет"
+          description: "Очередь вебхуков растет быстрее, чем обрабатывается"
+
+      - alert: FraudDetectionHigh
+        expr: rate(antifraud_blocked_total[1h]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Высокая активность фрода"
+          description: "Заблокировано более 10 транзакций за час"
+
+  - name: business_metrics
+    interval: 5m
+    rules:
+      - alert: NoTransactionsLongTime
+        expr: increase(loyalty_transactions_total[1h]) == 0
+        for: 2h
+        labels:
+          severity: info
+        annotations:
+          summary: "Нет транзакций"
+          description: "Нет новых транзакций более 2 часов"
+
+      - alert: SubscriptionExpiringSoon
+        expr: (subscription_expires_timestamp - time()) < 86400 * 7
+        for: 1h
+        labels:
+          severity: info
+        annotations:
+          summary: "Подписка истекает"
+          description: "Подписка мерчанта {{ $labels.merchantId }} истекает через {{ $value | humanizeDuration }}"
+
+      - alert: UsageLimitApproaching
+        expr: (loyalty_usage_current / loyalty_usage_limit) > 0.9
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Приближение к лимиту использования"
+          description: "Мерчант {{ $labels.merchantId }} использовал более 90% лимита {{ $labels.resource }}"

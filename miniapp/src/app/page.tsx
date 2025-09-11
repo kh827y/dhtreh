@@ -87,7 +87,7 @@ export default function MiniApp() {
       const r = await fetch(`${API}/loyalty/qr`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customerId, ttlSec: qrTtlSec, merchantId }),
+        body: JSON.stringify({ customerId, ttlSec: qrTtlSec, merchantId, initData: (window as any)?.Telegram?.WebApp?.initData || undefined }),
       });
       const { token, ttl } = await r.json();
       const qr = await QRCode.toDataURL(token, { margin: 1, width: 240 });

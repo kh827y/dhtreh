@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 const ENC = new TextEncoder();
 
 async function getJose() {
@@ -49,7 +50,8 @@ async function getJose() {
 export async function signQrToken(secret: string, customerId: string, merchantId?: string, ttlSec = 60) {
   const { SignJWT } = await getJose();
   const now = Math.floor(Date.now() / 1000);
-  const jti = `${customerId}:${now}`;
+  // Ensure JTI uniqueness to prevent accidental reuse within the same second
+  const jti = `${customerId}:${now}:${randomUUID()}`;
   const kid = process.env.QR_JWT_KID || undefined;
   return await new SignJWT({ sub: customerId, t: 'qr' })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT', ...(kid?{ kid }: {}) })

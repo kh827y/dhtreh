@@ -1,0 +1,231 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "loyalty-main",
+    "title": "Loyalty Program Dashboard",
+    "tags": ["loyalty", "business"],
+    "timezone": "browser",
+    "schemaVersion": 30,
+    "version": 0,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+        "type": "graph",
+        "title": "Транзакции в минуту",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "rate(loyalty_commit_requests_total[5m]) * 60",
+            "legendFormat": "Commits",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(loyalty_quote_requests_total[5m]) * 60",
+            "legendFormat": "Quotes",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "short",
+            "label": "Requests/min"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+        "type": "graph",
+        "title": "Latency (p95)",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(loyalty_quote_latency_ms_bucket[5m]))",
+            "legendFormat": "Quote p95",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(loyalty_commit_latency_ms_bucket[5m]))",
+            "legendFormat": "Commit p95",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "ms",
+            "label": "Latency"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "gridPos": { "h": 4, "w": 6, "x": 0, "y": 8 },
+        "type": "stat",
+        "title": "Активные клиенты (24ч)",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "count(count by (customerId) (loyalty_transactions_total{createdAt>time()-86400}))",
+            "refId": "A"
+          }
+        ],
+        "format": "short",
+        "thresholds": {
+          "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 100 },
+            { "color": "red", "value": 1000 }
+          ]
+        }
+      },
+      {
+        "id": 4,
+        "gridPos": { "h": 4, "w": 6, "x": 6, "y": 8 },
+        "type": "stat",
+        "title": "Баллов начислено (24ч)",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "sum(increase(loyalty_ledger_amount_total{type=\"earn\"}[24h]))",
+            "refId": "A"
+          }
+        ],
+        "format": "short",
+        "unit": "₽",
+        "thresholds": {
+          "steps": [
+            { "color": "green", "value": null }
+          ]
+        }
+      },
+      {
+        "id": 5,
+        "gridPos": { "h": 4, "w": 6, "x": 12, "y": 8 },
+        "type": "stat",
+        "title": "Баллов списано (24ч)",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "sum(increase(loyalty_ledger_amount_total{type=\"redeem\"}[24h]))",
+            "refId": "A"
+          }
+        ],
+        "format": "short",
+        "unit": "₽",
+        "thresholds": {
+          "steps": [
+            { "color": "blue", "value": null }
+          ]
+        }
+      },
+      {
+        "id": 6,
+        "gridPos": { "h": 4, "w": 6, "x": 18, "y": 8 },
+        "type": "stat",
+        "title": "Ошибки (5м)",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "sum(rate(loyalty_errors_total[5m]))",
+            "refId": "A"
+          }
+        ],
+        "format": "short",
+        "thresholds": {
+          "steps": [
+            { "color": "green", "value": 0 },
+            { "color": "yellow", "value": 1 },
+            { "color": "red", "value": 5 }
+          ]
+        }
+      },
+      {
+        "id": 7,
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+        "type": "table",
+        "title": "Топ мерчанты по транзакциям",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "topk(10, sum by (merchantId) (rate(loyalty_transactions_total[1h])))",
+            "format": "table",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+        "type": "graph",
+        "title": "Антифрод активность",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "rate(antifraud_checks_total[5m])",
+            "legendFormat": "Проверки",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(antifraud_blocked_total[5m])",
+            "legendFormat": "Заблокировано",
+            "refId": "B"
+          },
+          {
+            "expr": "rate(antifraud_reviewed_total[5m])",
+            "legendFormat": "На ревью",
+            "refId": "C"
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "gridPos": { "h": 6, "w": 8, "x": 0, "y": 20 },
+        "type": "piechart",
+        "title": "Распределение по тарифам",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "count by (plan) (subscription_active_total)",
+            "legendFormat": "{{plan}}",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "gridPos": { "h": 6, "w": 8, "x": 8, "y": 20 },
+        "type": "graph",
+        "title": "Webhook доставка",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "rate(webhook_sent_total[5m])",
+            "legendFormat": "Отправлено",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(webhook_failed_total[5m])",
+            "legendFormat": "Ошибки",
+            "refId": "B"
+          }
+        ]
+      },
+      {
+        "id": 11,
+        "gridPos": { "h": 6, "w": 8, "x": 16, "y": 20 },
+        "type": "heatmap",
+        "title": "Распределение латентности",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "sum(rate(loyalty_request_duration_seconds_bucket[5m])) by (le)",
+            "format": "heatmap",
+            "refId": "A"
+          }
+        ]
+      }
+    ]
+  }
+}

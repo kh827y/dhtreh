@@ -276,6 +276,8 @@ export class MerchantsController {
     @Param('id') id: string,
     @Query('limit') limitStr?: string,
     @Query('before') beforeStr?: string,
+    @Query('from') fromStr?: string,
+    @Query('to') toStr?: string,
     @Query('type') type?: string,
     @Query('customerId') customerId?: string,
     @Query('outletId') outletId?: string,
@@ -284,7 +286,9 @@ export class MerchantsController {
   ) {
     const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200) : 50;
     const before = beforeStr ? new Date(beforeStr) : undefined;
-    return this.service.listTransactions(id, { limit, before, type, customerId, outletId, deviceId, staffId });
+    const from = fromStr ? new Date(fromStr) : undefined;
+    const to = toStr ? new Date(toStr) : undefined;
+    return this.service.listTransactions(id, { limit, before, from, to, type, customerId, outletId, deviceId, staffId });
   }
   @Get(':id/receipts')
   @ApiOkResponse({ type: ReceiptDto, isArray: true })
@@ -413,6 +417,8 @@ export class MerchantsController {
     @Param('id') id: string,
     @Query('limit') limitStr?: string,
     @Query('before') beforeStr?: string,
+    @Query('from') fromStr?: string,
+    @Query('to') toStr?: string,
     @Query('type') type?: string,
     @Query('customerId') customerId?: string,
     @Query('outletId') outletId?: string,
@@ -421,7 +427,9 @@ export class MerchantsController {
   ) {
     const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 1000, 1), 5000) : 1000;
     const before = beforeStr ? new Date(beforeStr) : undefined;
-    const items = await this.service.listTransactions(id, { limit, before, type, customerId, outletId, deviceId, staffId });
+    const from = fromStr ? new Date(fromStr) : undefined;
+    const to = toStr ? new Date(toStr) : undefined;
+    const items = await this.service.listTransactions(id, { limit, before, from, to, type, customerId, outletId, deviceId, staffId });
     const lines = [ 'id,type,amount,orderId,customerId,createdAt,outletId,deviceId,staffId' ];
     for (const t of items) lines.push([t.id,t.type,t.amount,(t.orderId||''),t.customerId,t.createdAt.toISOString(),(t.outletId||''),(t.deviceId||''),(t.staffId||'')].map(x=>`"${String(x).replaceAll('"','""')}"`).join(','));
     return lines.join('\n') + '\n';

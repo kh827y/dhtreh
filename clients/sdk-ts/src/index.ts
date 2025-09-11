@@ -65,8 +65,8 @@ export class LoyaltyApi {
     return this.http('/loyalty/teleauth', { method: 'POST', body: JSON.stringify({ merchantId, initData }) });
   }
 
-  mintQr(customerId: string, merchantId?: string, ttlSec?: number) {
-    return this.http('/loyalty/qr', { method: 'POST', body: JSON.stringify({ customerId, merchantId, ttlSec }) });
+  mintQr(customerId: string, merchantId?: string, ttlSec?: number, initData?: string) {
+    return this.http('/loyalty/qr', { method: 'POST', body: JSON.stringify({ customerId, merchantId, ttlSec, initData }) });
   }
 
   publicSettings(merchantId: string) {

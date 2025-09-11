@@ -23,7 +23,6 @@ export class CashierGuard implements CanActivate {
     );
     const isAlwaysPublic = (
       path === '/loyalty/teleauth' ||
-      path === '/loyalty/qr' ||
       path === '/loyalty/consent'
     );
     if (isPublicGet || isAlwaysPublic) return true;

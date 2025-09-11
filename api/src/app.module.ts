@@ -14,8 +14,9 @@ import { MetricsModule } from './metrics.module';
 import { HoldGcWorker } from './hold-gc.worker';
 import { IdempotencyGcWorker } from './idempotency-gc.worker';
 import { OutboxDispatcherWorker } from './outbox-dispatcher.worker';
-import { PointsTtlWorker } from './points-ttl.worker';
+import { TtlBurnWorker } from './ttl-burn.worker';
 import { PointsBurnWorker } from './points-burn.worker';
+import { PointsTtlWorker } from './points-ttl.worker';
 // Optional Redis storage for Throttler
 let throttlerStorage: any = undefined;
 try {
@@ -50,9 +51,10 @@ try {
   controllers: [HealthController, MetricsController],
   providers: [
     HoldGcWorker,
-    IdempotencyGcWorker,
     OutboxDispatcherWorker,
+    IdempotencyGcWorker,
     PointsTtlWorker,
+    TtlBurnWorker,
     PointsBurnWorker,
     { provide: APP_GUARD, useClass: CustomThrottlerGuard },
   ],

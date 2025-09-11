@@ -1,3 +1,5 @@
+import * as crypto from 'crypto';
+
 export function verifyBridgeSignature(header: string, body: string, secret: string): boolean {
   try {
     if (!header || !secret) return false;
@@ -12,11 +14,11 @@ export function verifyBridgeSignature(header: string, body: string, secret: stri
     }
     const ts = kv.ts; const sig = kv.sig;
     if (!ts || !sig) return false;
-    const crypto = require('crypto');
     const calcB = crypto.createHmac('sha256', secret).update(ts + '.' + body).digest();
     const sigB = Buffer.from(sig, 'base64');
+    const calcBuffer = Buffer.from(calcB.toString('base64'), 'base64');
     const skewOk = Math.abs(Math.floor(Date.now()/1000) - Number(ts)) <= 300;
-    return skewOk && (sigB.length === calcB.length) && crypto.timingSafeEqual(calcB, sigB);
+    return skewOk && crypto.timingSafeEqual(sigB, calcBuffer);
   } catch {
     return false;
   }

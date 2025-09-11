@@ -30,6 +30,7 @@ export default function SettingsPage() {
   const [miniappThemePrimary, setMiniappThemePrimary] = useState<string>('');
   const [miniappThemeBg, setMiniappThemeBg] = useState<string>('');
   const [miniappLogoUrl, setMiniappLogoUrl] = useState<string>('');
+  const [telegramStartParamRequired, setTelegramStartParamRequired] = useState<boolean>(false);
 
   useEffect(() => {
     setLoading(true);
@@ -43,6 +44,7 @@ export default function SettingsPage() {
       setMiniappThemePrimary(r.miniappThemePrimary || '');
       setMiniappThemeBg(r.miniappThemeBg || '');
       setMiniappLogoUrl(r.miniappLogoUrl || '');
+      setTelegramStartParamRequired(!!r.telegramStartParamRequired);
     }).catch((e:any)=>setMsg(String(e?.message||e))).finally(()=>setLoading(false));
   }, [merchantId]);
 
@@ -82,6 +84,7 @@ export default function SettingsPage() {
         miniappThemePrimary: miniappThemePrimary || undefined,
         miniappThemeBg: miniappThemeBg || undefined,
         miniappLogoUrl: miniappLogoUrl || undefined,
+        telegramStartParamRequired: telegramStartParamRequired,
       };
       const r = await updateSettings(merchantId, dto);
       setS(r);

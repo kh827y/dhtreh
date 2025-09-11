@@ -1,7 +1,7 @@
 packages:
   - 'api'
   - 'admin'
-  - 'cashier'
-  - 'miniapp'
   - 'bridge'
+  - 'miniapp'
+  - 'cashier'
   - 'clients/*'

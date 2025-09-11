@@ -5,6 +5,21 @@ import OutboxLink from '../components/OutboxLink';
 import RoleBadge from '../components/RoleBadge';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  // Fail-fast ENV validation for Admin
+  if (typeof window === 'undefined') {
+    const required = ['API_BASE', 'ADMIN_UI_PASSWORD', 'ADMIN_SESSION_SECRET'];
+    for (const key of required) {
+      if (!process.env[key] || process.env[key].trim() === '') {
+        throw new Error(`[Admin ENV] ${key} not configured`);
+      }
+    }
+    if (process.env.NODE_ENV === 'production') {
+      if (process.env.ADMIN_SESSION_SECRET === 'dev_change_me') {
+        throw new Error('[Admin ENV] ADMIN_SESSION_SECRET must not use dev default in production');
+      }
+    }
+  }
+  
   const merchantId = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
   return (
     <html lang="ru">
@@ -22,6 +37,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <a href="/devices" style={{ color: '#89b4fa' }}>Устройства</a>
             <a href="/staff" style={{ color: '#89b4fa' }}>Сотрудники</a>
             <a href="/customers" style={{ color: '#89b4fa' }}>Клиенты</a>
+            <a href="/transactions" style={{ color: '#89b4fa' }}>Операции</a>
             <a href="/ttl" style={{ color: '#89b4fa' }}>TTL Reconciliation</a>
             <a href="/docs/webhooks" style={{ color: '#89b4fa' }}>Документация вебхуков</a>
             <a href="/docs/integration" style={{ color: '#89b4fa' }}>Интеграции</a>
@@ -30,6 +46,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <a href="/docs/observability" style={{ color: '#89b4fa' }}>Наблюдаемость</a>
             <a href="/exports" style={{ color: '#89b4fa' }}>Экспорт</a>
             <a href="/tools/signature" style={{ color: '#89b4fa' }}>Инструменты</a>
+            <a href="/rules/test" style={{ color: '#89b4fa' }}>Правила (тест)</a>
+            <a href="/antifraud" style={{ color: '#89b4fa' }}>Антифрод</a>
             <a href="/status" style={{ color: '#89b4fa' }}>Статус API</a>
             <a href="/audit" style={{ color: '#89b4fa' }}>Аудит</a>
             <span style={{ flex: 1 }} />

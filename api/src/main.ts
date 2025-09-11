@@ -37,16 +37,24 @@ async function bootstrap() {
     .split(',')
     .map(s => s.trim())
     .filter(Boolean);
+  
+  // In production, require explicit CORS_ORIGINS configuration
+  if (process.env.NODE_ENV === 'production' && corsOrigins.length === 0) {
+    throw new Error('[ENV] CORS_ORIGINS must be configured in production');
+  }
+  
   const defaultOrigins = [
     'http://localhost:3001','http://127.0.0.1:3001',
     'http://localhost:3002','http://127.0.0.1:3002',
     'http://localhost:3003','http://127.0.0.1:3003',
   ];
+  
   app.enableCors({
-    origin: corsOrigins.length ? corsOrigins : defaultOrigins,
+    origin: corsOrigins.length ? corsOrigins : (process.env.NODE_ENV === 'production' ? [] : defaultOrigins),
     methods: ['GET','POST','PUT','DELETE','PATCH','OPTIONS'],
     allowedHeaders: ['Content-Type','x-admin-key','x-request-id','x-staff-key','x-bridge-signature','idempotency-key'],
     exposedHeaders: ['X-Loyalty-Signature','X-Merchant-Id','X-Signature-Timestamp','X-Request-Id','X-Event-Id','X-Signature-Key-Id'],
+    credentials: true,
   });
 
   // Безопасность и производительность

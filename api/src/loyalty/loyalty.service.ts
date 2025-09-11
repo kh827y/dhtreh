@@ -127,6 +127,10 @@ export class LoyaltyService {
   // ————— основной расчёт — анти-replay вне транзакции + идемпотентность —————
   async quote(dto: QuoteDto & { userToken: string }, qr?: QrMeta) {
     const customer = await this.ensureCustomerId(dto.userToken);
+    // Ensure the merchant exists to satisfy FK constraints for wallet/holds
+    try {
+      await this.prisma.merchant.upsert({ where: { id: dto.merchantId }, update: {}, create: { id: dto.merchantId, name: dto.merchantId } });
+    } catch {}
     const { redeemCooldownSec, earnCooldownSec, redeemDailyCap, earnDailyCap, rulesJson } = await this.getSettings(dto.merchantId);
 
     // канал по типу устройства
@@ -204,6 +208,8 @@ export class LoyaltyService {
       }
       // 2) дальше — обычный расчёт в транзакции и создание нового hold (уникальный qrJti не даст дубликат)
       return this.prisma.$transaction(async (tx) => {
+        // Ensure merchant exists within the same transaction/connection (FK safety)
+        try { await tx.merchant.upsert({ where: { id: dto.merchantId }, update: {}, create: { id: dto.merchantId, name: dto.merchantId } }); } catch {}
         let wallet = await tx.wallet.findFirst({
           where: { customerId: customer.id, merchantId: dto.merchantId, type: WalletType.POINTS },
         });
@@ -276,6 +282,8 @@ export class LoyaltyService {
       }
     }
     return this.prisma.$transaction(async (tx) => {
+      // Ensure merchant exists within the same transaction/connection (FK safety)
+      try { await tx.merchant.upsert({ where: { id: dto.merchantId }, update: {}, create: { id: dto.merchantId, name: dto.merchantId } }); } catch {}
       let wallet = await tx.wallet.findFirst({
         where: { customerId: customer.id, merchantId: dto.merchantId, type: WalletType.POINTS },
       });

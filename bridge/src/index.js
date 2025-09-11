@@ -1,11 +1,33 @@
+#!/usr/bin/env node
+const path = require('path');
+const fs = require('fs');
+const { parse } = require('dotenv');
+
+// Fail-fast ENV validation for Bridge
+(function validateEnv() {
+  const required = ['API_BASE', 'MERCHANT_ID'];
+  for (const key of required) {
+    if (!process.env[key] || process.env[key].trim() === '') {
+      console.error(`[Bridge ENV] ${key} not configured`);
+      process.exit(1);
+    }
+  }
+  if (process.env.NODE_ENV === 'production') {
+    if (!process.env.BRIDGE_SECRET || process.env.BRIDGE_SECRET === 'dev_change_me') {
+      console.error('[Bridge ENV] BRIDGE_SECRET must be set and not use dev default in production');
+      process.exit(1);
+    }
+  }
+  console.log('[Bridge] ENV validation passed');
+})();
+
 /* POS Bridge MVP */
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 require('dotenv').config();
+const { createQueue } = require('./queue');
 
 const app = express();
 app.use(express.json({ limit: '256kb' }));
@@ -25,6 +47,7 @@ function validateEnv() {
   const prod = process.env.NODE_ENV === 'production';
   const errs = [];
   if (!API) errs.push('API_BASE not configured');
+  if (API && !/^https?:\/\//i.test(API)) errs.push('API_BASE must be absolute URL');
   if (!DEFAULT_MERCHANT) errs.push('MERCHANT_ID not configured');
   if (prod && !BRIDGE_SECRET) errs.push('BRIDGE_SECRET not configured in production');
   if (errs.length) {
@@ -36,17 +59,7 @@ function validateEnv() {
 }
 validateEnv();
 
-const dataDir = path.join(__dirname, '..', 'data');
-const queueFile = path.join(dataDir, 'queue.json');
-fs.mkdirSync(dataDir, { recursive: true });
-
-function loadQueue() {
-  try { return JSON.parse(fs.readFileSync(queueFile, 'utf8')); } catch { return []; }
-}
-function saveQueue(q) {
-  try { fs.writeFileSync(queueFile, JSON.stringify(q, null, 2)); } catch {}
-}
-let queue = loadQueue();
+const queue = createQueue();
 let metrics = {
   queue_enqueued_total: 0,
   queue_flushed_total: 0,
@@ -82,8 +95,7 @@ async function callApi(pathname, bodyObj, opts = {}) {
 
 // Queue handling
 async function flushQueue() {
-  const copy = [...queue];
-  let changed = false;
+  const copy = queue.snapshot(1000);
   for (const item of copy) {
     try {
       if (item.type === 'commit') {
@@ -94,21 +106,20 @@ async function flushQueue() {
         continue;
       }
       // success, remove
-      queue = queue.filter(q => q.id !== item.id);
+      queue.remove(item.id);
       metrics.queue_flushed_total++;
-      changed = true;
     } catch (e) {
       // keep in queue
       metrics.queue_fail_total++;
     }
   }
-  if (changed) saveQueue(queue);
-  return { ok: true, pending: queue.length };
+  return { ok: true, pending: queue.size() };
 }
 setInterval(() => { flushQueue().catch(()=>{}); }, FLUSH_INTERVAL_MS).unref();
 
 // API routes
 app.get('/health', (req, res) => res.json({ ok: true }));
+app.get('/ready', (req, res) => res.json({ ready: true }));
 
 app.post('/quote', async (req, res) => {
   try {
@@ -143,10 +154,8 @@ app.post('/commit', async (req, res) => {
       res.json(data);
     } catch (e) {
       // offline enqueue
-      const id = uuidv4();
-      queue.push({ id, type: 'commit', idemKey, body: { merchantId, holdId, orderId, receiptNumber } });
+      const id = queue.enqueue('commit', { merchantId, holdId, orderId, receiptNumber }, idemKey);
       metrics.queue_enqueued_total++;
-      saveQueue(queue);
       res.status(202).json({ queued: true, id, reason: String(e.message || e) });
     }
   } catch (e) {
@@ -169,11 +178,9 @@ app.post('/refund', async (req, res) => {
       const data = await callApi('/loyalty/refund', body, { idempotencyKey: idemKey });
       res.json(data);
     } catch (e) {
-      const id = uuidv4();
       const body = { merchantId, orderId, refundTotal, refundEligibleTotal, ...(deviceId ? { deviceId } : {}) };
-      queue.push({ id, type: 'refund', idemKey, body });
+      const id = queue.enqueue('refund', body, idemKey);
       metrics.queue_enqueued_total++;
-      saveQueue(queue);
       res.status(202).json({ queued: true, id, reason: String(e.message || e) });
     }
   } catch (e) {
@@ -187,8 +194,8 @@ app.post('/queue/flush', async (req, res) => {
 });
 
 app.get('/queue/status', (req, res) => {
-  const items = queue.slice(0, 50).map(q => ({ id: q.id, type: q.type, idemKey: q.idemKey }));
-  res.json({ pending: queue.length, preview: items });
+  const items = queue.snapshot(50).map(q => ({ id: q.id, type: q.type, idemKey: q.idemKey }));
+  res.json({ pending: queue.size(), preview: items });
 });
 
 app.get('/metrics', (req, res) => {
@@ -196,7 +203,7 @@ app.get('/metrics', (req, res) => {
   const lines = [];
   lines.push('# HELP bridge_queue_pending current pending queue');
   lines.push('# TYPE bridge_queue_pending gauge');
-  lines.push(`bridge_queue_pending ${queue.length}`);
+  lines.push(`bridge_queue_pending ${queue.size()}`);
   lines.push('# HELP bridge_queue_enqueued_total total enqueued jobs');
   lines.push('# TYPE bridge_queue_enqueued_total counter');
   lines.push(`bridge_queue_enqueued_total ${metrics.queue_enqueued_total}`);

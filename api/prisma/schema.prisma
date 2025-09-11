@@ -60,6 +60,12 @@ model Merchant {
   devices   Device[]
   staff     Staff[]
   consents  Consent[]
+  telegramBot TelegramBot?
+  subscription Subscription?
+  fraudChecks FraudCheck[]
+  integrations Integration[]
+  customerSegments CustomerSegment[]
+  campaigns Campaign[]
 }
 
 model MerchantSettings {
@@ -373,4 +379,146 @@ model AdminAudit {
   payload     Json?
 
   @@index([merchantId, createdAt])
+}
+
+model TelegramBot {
+  id                String   @id @default(cuid())
+  merchantId        String   @unique
+  botToken          String   @unique
+  botUsername       String   @unique
+  botId             String?
+  webhookUrl        String?
+  webhookSecret     String?
+  isActive          Boolean  @default(true)
+  welcomeMessage    String?
+  menuConfig        Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  merchant          Merchant @relation(fields: [merchantId], references: [id])
+}
+
+model Plan {
+  id                String   @id @default(cuid())
+  name              String
+  displayName       String
+  price             Int
+  currency          String   @default("RUB")
+  interval          String
+  features          Json
+  maxTransactions   Int?
+  maxCustomers      Int?
+  maxOutlets        Int?
+  webhooksEnabled   Boolean  @default(true)
+  customBranding    Boolean  @default(false)
+  prioritySupport   Boolean  @default(false)
+  apiAccess         Boolean  @default(true)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+
+  subscriptions     Subscription[]
+}
+
+model Subscription {
+  id                String    @id @default(cuid())
+  merchantId        String    @unique
+  planId            String
+  status            String    @default("active")
+  currentPeriodStart DateTime
+  currentPeriodEnd  DateTime
+  cancelAt          DateTime?
+  canceledAt        DateTime?
+  trialEnd          DateTime?
+  metadata          Json?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  plan              Plan      @relation(fields: [planId], references: [id])
+  merchant          Merchant  @relation(fields: [merchantId], references: [id])
+  payments          Payment[]
+}
+
+model Payment {
+  id                String    @id @default(cuid())
+  subscriptionId    String
+  amount            Int
+  currency          String    @default("RUB")
+  status            String
+  paymentMethod     String?
+  invoiceId         String?
+  receiptUrl        String?
+  failureReason     String?
+  paidAt            DateTime?
+  createdAt         DateTime  @default(now())
+
+  subscription      Subscription @relation(fields: [subscriptionId], references: [id])
+}
+
+model FraudCheck {
+  id                String    @id @default(cuid())
+  merchantId        String
+  customerId        String
+  transactionId     String?
+  riskScore         Int
+  riskLevel         String
+  factors           String[]
+  blocked           Boolean   @default(false)
+  reviewed          Boolean   @default(false)
+  reviewedBy        String?
+  reviewNotes       String?
+  metadata          Json?
+  createdAt         DateTime  @default(now())
+
+  merchant          Merchant  @relation(fields: [merchantId], references: [id])
+}
+
+model Integration {
+  id                String    @id @default(cuid())
+  merchantId        String
+  type              String
+  provider          String
+  config            Json
+  credentials       Json?
+  isActive          Boolean   @default(true)
+  lastSync          DateTime?
+  errorCount        Int       @default(0)
+  lastError         String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  merchant          Merchant  @relation(fields: [merchantId], references: [id])
+}
+
+model CustomerSegment {
+  id                String    @id @default(cuid())
+  merchantId        String
+  name              String
+  description       String?
+  rules             Json
+  customerCount     Int       @default(0)
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  merchant          Merchant  @relation(fields: [merchantId], references: [id])
+  campaigns         Campaign[]
+}
+
+model Campaign {
+  id                String    @id @default(cuid())
+  merchantId        String
+  name              String
+  type              String
+  status            String    @default("draft")
+  segmentId         String?
+  content           Json
+  schedule          Json?
+  metrics           Json?
+  startAt           DateTime?
+  endAt             DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  merchant          Merchant  @relation(fields: [merchantId], references: [id])
+  segment           CustomerSegment? @relation(fields: [segmentId], references: [id])
 }

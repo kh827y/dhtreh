@@ -50,6 +50,8 @@ export class QrMintDto {
   @IsOptional() @Min(10) ttlSec?: number;
   @ApiPropertyOptional()
   @IsOptional() @IsString() merchantId?: string; // <— добавили
+  @ApiPropertyOptional({ description: 'Telegram initData для серверной проверки подписи' })
+  @IsOptional() @IsString() initData?: string;
 }
 
 export class RefundDto {
