@@ -40,6 +40,19 @@ export async function retryAll(merchantId: string, status?: string): Promise<{ o
   return http(`/merchants/${encodeURIComponent(merchantId)}/outbox/retryAll${status ? `?status=${encodeURIComponent(status)}` : ''}`, { method: 'POST' });
 }
 
+export async function retrySince(merchantId: string, params: { status?: string; since?: string }): Promise<{ ok: boolean; updated: number }> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/outbox/retrySince`, { method: 'POST', body: JSON.stringify(params || {}) });
+}
+
+export function outboxCsvUrl(merchantId: string, params?: { status?: string; since?: string; type?: string; limit?: number }): string {
+  const q = new URLSearchParams();
+  if (params?.status) q.set('status', params.status);
+  if (params?.since) q.set('since', params.since);
+  if (params?.type) q.set('type', params.type);
+  if (params?.limit != null) q.set('limit', String(params.limit));
+  return `/api/admin/merchants/${encodeURIComponent(merchantId)}/outbox.csv${q.toString() ? `?${q.toString()}` : ''}`;
+}
+
 export async function pauseOutbox(merchantId: string, params?: { minutes?: number; until?: string }): Promise<{ ok: boolean; until?: string }> {
   return http(`/merchants/${encodeURIComponent(merchantId)}/outbox/pause`, { method: 'POST', body: JSON.stringify(params || {}) });
 }
@@ -54,4 +67,11 @@ export async function outboxStats(merchantId: string, since?: string): Promise<{
 
 export async function getOutboxEvent(merchantId: string, eventId: string) {
   return http(`/merchants/${encodeURIComponent(merchantId)}/outbox/event/${encodeURIComponent(eventId)}`);
+}
+
+export async function listOutboxByOrder(merchantId: string, orderId: string, limit = 100): Promise<OutboxEvent[]> {
+  const q = new URLSearchParams();
+  q.set('orderId', orderId);
+  q.set('limit', String(limit));
+  return http(`/merchants/${encodeURIComponent(merchantId)}/outbox/by-order?${q.toString()}`);
 }

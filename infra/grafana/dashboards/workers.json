@@ -23,6 +23,18 @@
         {"expr": "loyalty_worker_last_tick_seconds{worker='outbox'}", "legendFormat": "outbox"},
         {"expr": "loyalty_worker_last_tick_seconds{worker='hold_gc'}", "legendFormat": "hold_gc"}
       ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Circuit open (merchants) over time",
+      "gridPos": {"x": 0, "y": 14, "w": 12, "h": 8},
+      "targets": [ {"expr": "loyalty_outbox_circuit_open", "legendFormat": "open"} ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Rate-limited (5m rate)",
+      "gridPos": {"x": 12, "y": 14, "w": 12, "h": 8},
+      "targets": [ {"expr": "rate(loyalty_outbox_rate_limited_total[5m])", "legendFormat": "rate_limited/s"} ]
     }
   ],
   "schemaVersion": 38,

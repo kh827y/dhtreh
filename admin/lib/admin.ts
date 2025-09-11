@@ -96,6 +96,20 @@ export async function retryAllOutbox(merchantId: string, status?: string): Promi
   return http(`/merchants/${encodeURIComponent(merchantId)}/outbox/retryAll${q}`, { method: 'POST' });
 }
 
+export async function retrySinceOutbox(merchantId: string, params: { status?: string; since?: string }): Promise<{ ok: true; updated: number }> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/outbox/retrySince`, { method: 'POST', body: JSON.stringify(params) });
+}
+
+export function outboxCsvUrl(merchantId: string, opts?: { status?: string; since?: string; type?: string; limit?: number }): string {
+  const p = new URLSearchParams();
+  if (opts?.status) p.set('status', opts.status);
+  if (opts?.since) p.set('since', opts.since);
+  if (opts?.type) p.set('type', opts.type);
+  if (opts?.limit != null) p.set('limit', String(opts.limit));
+  const qs = p.toString();
+  return `/api/admin/merchants/${encodeURIComponent(merchantId)}/outbox.csv${qs ? `?${qs}` : ''}`;
+}
+
 export async function previewRules(merchantId: string, args: { channel: 'SMART'|'PC_POS'|'VIRTUAL'; weekday: number; eligibleTotal: number; category?: string }): Promise<{ earnBps: number; redeemLimitBps: number }> {
   const p = new URLSearchParams();
   p.set('channel', args.channel);
@@ -104,4 +118,64 @@ export async function previewRules(merchantId: string, args: { channel: 'SMART'|
   if (args.category) p.set('category', args.category);
   const qs = p.toString();
   return http(`/merchants/${encodeURIComponent(merchantId)}/rules/preview?${qs}`);
+}
+
+// ===== CRM helpers =====
+export type CustomerSummary = {
+  balance: number;
+  recentTx: Array<{ id: string; type: string; amount: number; orderId?: string; createdAt: string; outletId?: string; deviceId?: string; staffId?: string }>;
+  recentReceipts: Array<{ id: string; orderId: string; customerId: string; total: number; eligibleTotal: number; redeemApplied: number; earnApplied: number; createdAt: string; outletId?: string; deviceId?: string; staffId?: string }>;
+};
+
+export async function customerSearch(merchantId: string, phone: string): Promise<{ customerId: string; phone: string; balance: number } | null> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/customer/search?phone=${encodeURIComponent(phone)}`);
+}
+
+export async function customerSummary(merchantId: string, customerId: string): Promise<CustomerSummary> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/customer/summary?customerId=${encodeURIComponent(customerId)}`);
+}
+
+export function transactionsCsvUrl(merchantId: string, params: { limit?: number; before?: string; type?: string; customerId?: string; outletId?: string; deviceId?: string; staffId?: string }): string {
+  const p = new URLSearchParams();
+  if (params.limit != null) p.set('limit', String(params.limit));
+  if (params.before) p.set('before', params.before);
+  if (params.type) p.set('type', params.type);
+  if (params.customerId) p.set('customerId', params.customerId);
+  if (params.outletId) p.set('outletId', params.outletId);
+  if (params.deviceId) p.set('deviceId', params.deviceId);
+  if (params.staffId) p.set('staffId', params.staffId);
+  return `/api/admin/merchants/${encodeURIComponent(merchantId)}/transactions.csv?${p.toString()}`;
+}
+
+export function receiptsCsvUrl(merchantId: string, params: { limit?: number; before?: string; orderId?: string; customerId?: string }): string {
+  const p = new URLSearchParams();
+  if (params.limit != null) p.set('limit', String(params.limit));
+  if (params.before) p.set('before', params.before);
+  if (params.orderId) p.set('orderId', params.orderId);
+  if (params.customerId) p.set('customerId', params.customerId);
+  return `/api/admin/merchants/${encodeURIComponent(merchantId)}/receipts.csv?${p.toString()}`;
+}
+
+// Paged lists for CRM
+export async function listTransactionsAdmin(merchantId: string, params: { limit?: number; before?: string; type?: string; customerId?: string; outletId?: string; deviceId?: string; staffId?: string }): Promise<{ items: any[]; nextBefore: string | null }> {
+  const p = new URLSearchParams();
+  if (params.limit != null) p.set('limit', String(params.limit));
+  if (params.before) p.set('before', params.before);
+  if (params.type) p.set('type', params.type);
+  if (params.customerId) p.set('customerId', params.customerId);
+  if (params.outletId) p.set('outletId', params.outletId);
+  if (params.deviceId) p.set('deviceId', params.deviceId);
+  if (params.staffId) p.set('staffId', params.staffId);
+  const qs = p.toString();
+  return http(`/merchants/${encodeURIComponent(merchantId)}/transactions${qs?`?${qs}`:''}`);
+}
+
+export async function listReceiptsAdmin(merchantId: string, params: { limit?: number; before?: string; orderId?: string; customerId?: string }): Promise<any[]> {
+  const p = new URLSearchParams();
+  if (params.limit != null) p.set('limit', String(params.limit));
+  if (params.before) p.set('before', params.before);
+  if (params.orderId) p.set('orderId', params.orderId);
+  if (params.customerId) p.set('customerId', params.customerId);
+  const qs = p.toString();
+  return http(`/merchants/${encodeURIComponent(merchantId)}/receipts${qs?`?${qs}`:''}`);
 }

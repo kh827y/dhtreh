@@ -33,6 +33,24 @@
         {"expr": "sum(rate(http_requests_total{status='429'}[5m]))", "legendFormat": "429"},
         {"expr": "sum(rate(http_requests_total{status='503'}[5m]))", "legendFormat": "503"}
       ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Outbox events rate by type [5m]",
+      "gridPos": {"x": 0, "y": 14, "w": 12, "h": 8},
+      "fieldConfig": {"defaults": {"custom": {"stacking": {"group":"A","mode":"normal"}}}},
+      "targets": [
+        {"expr": "sum(rate(loyalty_outbox_events_total[5m])) by (type)", "legendFormat": "{{type}}"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Outbox events rate by result [5m]",
+      "gridPos": {"x": 12, "y": 14, "w": 12, "h": 8},
+      "fieldConfig": {"defaults": {"custom": {"stacking": {"group":"A","mode":"normal"}}}},
+      "targets": [
+        {"expr": "sum(rate(loyalty_outbox_events_total[5m])) by (result)", "legendFormat": "{{result}}"}
+      ]
     }
   ],
   "schemaVersion": 38,

@@ -171,6 +171,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       if (res.ok) {
         await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'SENT', updatedAt: new Date(), lastError: null } });
         this.metrics.inc('loyalty_outbox_sent_total');
+        try { this.metrics.inc('loyalty_outbox_events_total', { type: row.eventType, result: 'sent' }); } catch {}
         this.noteSuccess(row.merchantId);
       } else {
         const text = await res.text().catch(() => '');
@@ -178,6 +179,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         if (retries >= maxRetries) {
           await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'DEAD', retries, nextRetryAt: null, lastError: `${res.status} ${res.statusText} ${text}` } });
           this.metrics.inc('loyalty_outbox_dead_total');
+          try { this.metrics.inc('loyalty_outbox_events_total', { type: row.eventType, result: 'dead' }); } catch {}
         } else {
           let nextTime = Date.now() + this.backoffMs(row.retries);
           if (res.status === 429 || res.status === 503) {
@@ -188,18 +190,21 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
           if (res.status >= 500 || res.status === 429) this.noteFailure(row.merchantId);
         }
         this.metrics.inc('loyalty_outbox_failed_total');
+        try { this.metrics.inc('loyalty_outbox_events_total', { type: row.eventType, result: 'failed' }); } catch {}
       }
     } catch (e: any) {
       const retries = row.retries + 1;
       if (retries >= maxRetries) {
         await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'DEAD', retries, nextRetryAt: null, lastError: String(e?.message || e) } });
         this.metrics.inc('loyalty_outbox_dead_total');
+        try { this.metrics.inc('loyalty_outbox_events_total', { type: row.eventType, result: 'dead' }); } catch {}
       } else {
         const next = new Date(Date.now() + this.backoffMs(row.retries));
         await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'FAILED', retries, nextRetryAt: next, lastError: String(e?.message || e) } });
         this.noteFailure(row.merchantId);
       }
       this.metrics.inc('loyalty_outbox_failed_total');
+      try { this.metrics.inc('loyalty_outbox_events_total', { type: row.eventType, result: 'failed' }); } catch {}
     }
   }
 
@@ -231,6 +236,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         try {
           const openUntil = this.cb.get(row.merchantId)?.openUntil || (Date.now() + 60000);
           await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'PENDING', nextRetryAt: new Date(openUntil), lastError: 'circuit open' } });
+          try { this.metrics.inc('loyalty_outbox_events_total', { type: row.eventType, result: 'circuit_open' }); } catch {}
         } catch {}
       }
       // Group by eventType and apply per-type concurrency
@@ -250,6 +256,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
                 const ns = this.nextRateWindow(row.merchantId);
                 await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'PENDING', nextRetryAt: new Date(ns), lastError: 'rate limited' } });
                 this.metrics.inc('loyalty_outbox_rate_limited_total');
+                try { this.metrics.inc('loyalty_outbox_events_total', { type: row.eventType, result: 'rate_limited' }); } catch {}
               } catch {}
               return;
             }

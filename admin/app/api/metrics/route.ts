@@ -33,6 +33,7 @@ function parseMetrics(text: string) {
   let circuitOpen = 0;
   let rateLimited = 0;
   const counters: Record<string, number> = {};
+  const outboxEventsByResult: Record<string, number> = {};
   const inc = (k: string, v: number) => { counters[k] = (counters[k] || 0) + v; };
 
   for (const ln of lines) {
@@ -71,6 +72,13 @@ function parseMetrics(text: string) {
       inc(`${m[1]}:${m[2]}`, Number(m[3]));
       continue;
     }
+    // loyalty_outbox_events_total{type="...",result="..."} N
+    m = ln.match(/^loyalty_outbox_events_total\{[^}]*result="([a-zA-Z_]+)"[^}]*\}\s+(\d+(?:\.\d+)?)/);
+    if (m) {
+      const res = m[1]; const val = Number(m[2]);
+      outboxEventsByResult[res] = (outboxEventsByResult[res] || 0) + (isNaN(val) ? 0 : val);
+      continue;
+    }
   }
-  return { outboxPending, outboxDead, http5xx, http4xx, circuitOpen, rateLimited, counters };
+  return { outboxPending, outboxDead, http5xx, http4xx, circuitOpen, rateLimited, counters, outboxEvents: outboxEventsByResult };
 }

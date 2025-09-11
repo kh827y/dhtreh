@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from 'react';
-import { deleteOutbox, listOutbox, retryAll, retryOutbox, pauseOutbox, resumeOutbox, outboxStats, type OutboxEvent } from '../../lib/outbox';
+import { deleteOutbox, listOutbox, retryAll, retryOutbox, pauseOutbox, resumeOutbox, outboxStats, retrySince, outboxCsvUrl, listOutboxByOrder, type OutboxEvent } from '../../lib/outbox';
 import { getSettings } from '../../lib/admin';
 
 export default function OutboxPage() {
@@ -13,6 +13,7 @@ export default function OutboxPage() {
   const [msg, setMsg] = useState<string>('');
   const [stats, setStats] = useState<{ counts: Record<string, number>; typeCounts?: Record<string, number>; lastDeadAt: string|null } | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+  const [orderId, setOrderId] = useState<string>('');
 
   const load = async () => {
     setLoading(true);
@@ -24,7 +25,7 @@ export default function OutboxPage() {
       ]);
       setItems(r);
       if (s.outboxPausedUntil) setMsg(`Outbox paused until ${new Date(s.outboxPausedUntil).toLocaleString()}`);
-      setStats({ counts: st.counts, lastDeadAt: st.lastDeadAt });
+      setStats({ counts: st.counts, typeCounts: st.typeCounts, lastDeadAt: st.lastDeadAt });
     } catch (e:any) { setMsg(String(e?.message || e)); }
     finally { setLoading(false); }
   };
@@ -41,6 +42,12 @@ export default function OutboxPage() {
   const onRetryAll = async () => { await retryAll(merchantId, status || undefined); await load(); };
   const onRetryFailed = async () => { await retryAll(merchantId, 'FAILED'); await load(); };
   const onRetryDead = async () => { await retryAll(merchantId, 'DEAD'); await load(); };
+  const onRetrySince = async () => {
+    const s = prompt('Статус для ретрая с даты (оставьте пустым для любого): PENDING|FAILED|DEAD', status || '');
+    const dt = prompt('С даты (ISO, например 2025-09-01T00:00:00Z)', since || '');
+    await retrySince(merchantId, { status: (s||undefined) as any, since: dt || undefined });
+    await load();
+  };
   const onPause = async () => {
     const minsStr = prompt('На сколько минут паузу? (по умолчанию 60)');
     const minutes = minsStr ? parseInt(minsStr, 10) : 60;
@@ -48,6 +55,22 @@ export default function OutboxPage() {
     await load();
   };
   const onResume = async () => { await resumeOutbox(merchantId); await load(); };
+  const csvHref = outboxCsvUrl(merchantId, { status: status || undefined, type: type || undefined, since: since || undefined, limit });
+  const onRetrySinceLastDead = async () => {
+    if (!stats?.lastDeadAt) return;
+    await retrySince(merchantId, { since: stats.lastDeadAt, status: 'DEAD' });
+    await load();
+  };
+  const loadByOrder = async () => {
+    if (!orderId.trim()) return;
+    setLoading(true);
+    try {
+      const r = await listOutboxByOrder(merchantId, orderId.trim(), limit || 100);
+      setItems(r);
+      setMsg(`Показаны события по orderId=${orderId.trim()}`);
+    } catch (e:any) { setMsg(String(e?.message||e)); }
+    finally { setLoading(false); }
+  };
 
   return (
     <div>
@@ -76,8 +99,13 @@ export default function OutboxPage() {
         <button onClick={onRetryAll} disabled={loading} style={{ padding: '6px 10px' }}>Retry All</button>
         <button onClick={onRetryFailed} disabled={loading} style={{ padding: '6px 10px' }}>Retry FAILED</button>
         <button onClick={onRetryDead} disabled={loading} style={{ padding: '6px 10px' }}>Retry DEAD</button>
+        <button onClick={onRetrySince} disabled={loading} style={{ padding: '6px 10px' }}>Retry Since…</button>
+        <a href={csvHref} style={{ padding: '6px 10px', background:'#0e1629', borderRadius:6, textDecoration:'none' }} download>Download CSV</a>
         <button onClick={onPause} disabled={loading} style={{ padding: '6px 10px' }}>Pause</button>
         <button onClick={onResume} disabled={loading} style={{ padding: '6px 10px' }}>Resume</button>
+        <span style={{ flex: 1 }} />
+        <label>OrderId: <input value={orderId} onChange={e=>setOrderId(e.target.value)} style={{ marginLeft: 8, width: 200 }} placeholder="order-123" /></label>
+        <button onClick={loadByOrder} disabled={loading || !orderId.trim()} style={{ padding: '6px 10px' }}>Find by Order</button>
       </div>
       {msg && <div style={{ marginBottom: 8 }}>{msg}</div>}
       {stats && (
@@ -87,7 +115,21 @@ export default function OutboxPage() {
               <b>{k}</b>: {stats.counts[k] || 0}
             </div>
           ))}
-          {stats.lastDeadAt && <div style={{ opacity: 0.8 }}>last DEAD: {new Date(stats.lastDeadAt).toLocaleString()}</div>}
+          {stats.lastDeadAt && (
+            <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+              <div style={{ opacity: 0.8 }}>last DEAD: {new Date(stats.lastDeadAt).toLocaleString()}</div>
+              <button onClick={onRetrySinceLastDead} style={{ padding:'4px 8px' }}>Retry since last DEAD</button>
+            </div>
+          )}
+        </div>
+      )}
+      {stats?.typeCounts && (
+        <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:8 }}>
+          {Object.entries(stats.typeCounts).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([t,c]) => (
+            <button key={t} onClick={()=>{ setType(t); void load(); }} style={{ background:'#0e1629', padding:'6px 10px', borderRadius:6 }}>
+              <b>{t}</b>: {c}
+            </button>
+          ))}
         </div>
       )}
       {stats?.typeCounts && (

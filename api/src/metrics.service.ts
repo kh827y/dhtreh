@@ -14,6 +14,7 @@ export class MetricsService implements OnModuleDestroy {
   private outboxFailed?: Counter;
   private outboxDead?: Counter;
   private outboxPendingGauge?: Gauge;
+  private outboxCircuitOpenGauge?: Gauge;
   private commitLatencyHist?: Histogram;
   private reqQuote?: Counter<string>;
   private reqCommit?: Counter<string>;
@@ -23,6 +24,7 @@ export class MetricsService implements OnModuleDestroy {
   private httpReqDuration?: Histogram<string>;
   private ledgerEntries?: Counter<string>;
   private ledgerAmount?: Counter<string>;
+  private outboxEvents?: Counter<string>;
 
   private stopDefaultMetrics?: () => void;
 
@@ -37,6 +39,7 @@ export class MetricsService implements OnModuleDestroy {
     this.outboxFailed = new Counter({ name: 'loyalty_outbox_failed_total', help: 'Total outbox failed events', registers: [this.registry] });
     this.outboxDead = new Counter({ name: 'loyalty_outbox_dead_total', help: 'Total outbox dead events', registers: [this.registry] });
     this.outboxPendingGauge = new Gauge({ name: 'loyalty_outbox_pending', help: 'Current outbox pending', registers: [this.registry] });
+    this.outboxCircuitOpenGauge = new Gauge({ name: 'loyalty_outbox_circuit_open', help: 'Outbox circuit open merchants', registers: [this.registry] });
     this.commitLatencyHist = new Histogram({ name: 'loyalty_commit_latency_seconds', help: 'Commit latency seconds', buckets: [0.05,0.1,0.2,0.5,1,2,5,10], registers: [this.registry] });
     this.reqQuote = new Counter({ name: 'loyalty_quote_requests_total', help: 'Quote requests', labelNames: ['result'], registers: [this.registry] });
     this.reqCommit = new Counter({ name: 'loyalty_commit_requests_total', help: 'Commit requests', labelNames: ['result'], registers: [this.registry] });
@@ -46,6 +49,7 @@ export class MetricsService implements OnModuleDestroy {
     this.httpReqDuration = new Histogram({ name: 'http_request_duration_seconds', help: 'HTTP request duration seconds', labelNames: ['method','route','status'], buckets: [0.01,0.025,0.05,0.1,0.2,0.5,1,2,5], registers: [this.registry] });
     this.ledgerEntries = new Counter({ name: 'loyalty_ledger_entries_total', help: 'Ledger entries created', labelNames: ['type'], registers: [this.registry] });
     this.ledgerAmount = new Counter({ name: 'loyalty_ledger_amount_total', help: 'Ledger amount total', labelNames: ['type'], registers: [this.registry] });
+    this.outboxEvents = new Counter({ name: 'loyalty_outbox_events_total', help: 'Outbox events by type/result', labelNames: ['type','result'], registers: [this.registry] });
   }
 
   onModuleDestroy() {
@@ -64,6 +68,7 @@ export class MetricsService implements OnModuleDestroy {
     if (name === 'loyalty_refund_requests_total' && labels?.result) this.reqRefund?.inc({ result: labels.result }, value);
     if (name === 'loyalty_ledger_entries_total' && labels?.type) this.ledgerEntries?.inc({ type: labels.type }, value);
     if (name === 'loyalty_ledger_amount_total' && labels?.type) this.ledgerAmount?.inc({ type: labels.type }, value);
+    if (name === 'loyalty_outbox_events_total' && labels?.type && labels?.result) this.outboxEvents?.inc({ type: labels.type, result: labels.result }, value);
   }
 
   observe(name: string, ms: number, labels: Record<string, string> = {}) {
@@ -79,6 +84,7 @@ export class MetricsService implements OnModuleDestroy {
     const key = this.key(name, labels);
     this.gauges[key] = v;
     if (name === 'loyalty_outbox_pending') this.outboxPendingGauge?.set(v);
+    if (name === 'loyalty_outbox_circuit_open') this.outboxCircuitOpenGauge?.set(v);
   }
 
   async exportProm(): Promise<string> {

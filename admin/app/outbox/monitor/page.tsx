@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { outboxStats } from '../../../lib/outbox';
 
-type Summary = { outboxPending: number; outboxDead: number; http5xx: number; http4xx: number; circuitOpen?: number; rateLimited?: number; counters: Record<string, number> };
+type Summary = { outboxPending: number; outboxDead: number; http5xx: number; http4xx: number; circuitOpen?: number; rateLimited?: number; counters: Record<string, number>; outboxEvents?: Record<string, number> };
 
 export default function OutboxMonitorPage() {
   const [merchantId, setMerchantId] = useState<string>(process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1');
@@ -45,6 +45,18 @@ export default function OutboxMonitorPage() {
           <Metric label="DEAD total" value={metrics.outboxDead} warn={v=>v>0} />
           <Metric label="Breaker open" value={metrics.circuitOpen || 0} warn={v=>v>0} />
           <Metric label="Rate-limited" value={metrics.rateLimited || 0} />
+        </div>
+      )}
+      {metrics?.outboxEvents && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ opacity:0.85, marginBottom: 4 }}>Outbox events by result (cumulative):</div>
+          <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+            {Object.entries(metrics.outboxEvents).map(([k,v]) => (
+              <div key={k} style={{ background:'#0e1629', padding:'6px 10px', borderRadius:6 }}>
+                <b>{k}</b>: {v}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
