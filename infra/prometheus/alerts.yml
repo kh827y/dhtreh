@@ -37,3 +37,42 @@ groups:
         annotations:
           summary: "Worker {{ $labels.worker }} stale"
           description: "No tick from worker {{ $labels.worker }} for >5m"
+
+  - name: antifraud-alerts
+    interval: 30s
+    rules:
+      - alert: AntifraudCriticalBlocks
+        expr: increase(antifraud_blocked_total{reason="risk",level="CRITICAL"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Antifraud CRITICAL blocks detected"
+          description: "CRITICAL risk transactions blocked in the last 5 minutes"
+
+      - alert: AntifraudVelocityBlocksHigh
+        expr: rate(antifraud_velocity_block_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High velocity blocks rate"
+          description: "More than 0.1 velocity blocks per second over last 5 minutes"
+
+      - alert: AntifraudFactorBlocks
+        expr: increase(antifraud_block_factor_total[10m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Antifraud factor-based blocks detected"
+          description: "Factor-based blocks were triggered in last 10 minutes"
+
+      - alert: AntifraudHighRiskRatio
+        expr: (sum(rate(antifraud_risk_level_total{level="HIGH"}[5m])) / sum(rate(antifraud_check_total[5m]))) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High ratio of HIGH risk checks"
+          description: "HIGH risk checks exceed 20% of total antifraud checks in last 10 minutes"

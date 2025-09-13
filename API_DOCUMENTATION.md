@@ -60,6 +60,82 @@ Response 200:
 }
 ```
 
+### Конфигурация антифрода (админка и ENV)
+
+Антифрод настраивается через UI админки (страница `Anti-Fraud`) и/или через ENV переменные по умолчанию. Приоритет у настроек мерчанта в админке.
+
+rulesJson.af структура на мерчанте:
+
+```json
+{
+  "merchant": { "limit": 200, "windowSec": 3600, "dailyCap": 0, "weeklyCap": 0 },
+  "device":   { "limit": 20,  "windowSec": 600,  "dailyCap": 0, "weeklyCap": 0 },
+  "staff":    { "limit": 60,  "windowSec": 600,  "dailyCap": 0, "weeklyCap": 0 },
+  "customer": { "limit": 5,   "windowSec": 120,  "dailyCap": 0, "weeklyCap": 0 },
+  "blockFactors": ["blacklisted_customer", "balance_manipulation"]
+}
+```
+
+- `limit` + `windowSec` — скользящее окно частоты операций
+- `dailyCap` — суточный кап по операциям (0 = выключен)
+- `weeklyCap` — кап за 7 суток (роллинг) (0 = выключен)
+- `blockFactors` — список факторов скоринга, которые приводят к жёсткой блокировке, даже если уровень риска < CRITICAL
+
+ENV переменные по умолчанию (используются, если per-merchant не задано):
+
+```
+ANTIFRAUD_GUARD=on
+AF_LIMIT_MERCHANT=200
+AF_WINDOW_MERCHANT_SEC=3600
+AF_DAILY_CAP_MERCHANT=0
+AF_WEEKLY_CAP_MERCHANT=0
+AF_LIMIT_DEVICE=20
+AF_WINDOW_DEVICE_SEC=600
+AF_DAILY_CAP_DEVICE=0
+AF_WEEKLY_CAP_DEVICE=0
+AF_LIMIT_STAFF=60
+AF_WINDOW_STAFF_SEC=600
+AF_DAILY_CAP_STAFF=0
+AF_WEEKLY_CAP_STAFF=0
+AF_LIMIT_CUSTOMER=5
+AF_WINDOW_CUSTOMER_SEC=120
+AF_DAILY_CAP_CUSTOMER=0
+AF_WEEKLY_CAP_CUSTOMER=0
+```
+
+### Блокировки
+
+- Превышение лимитов/кап — 429 Too Many Requests, сообщение: `Антифрод: превышен лимит операций (...)`
+- CRITICAL риск от скоринга — 429, сообщение: `Антифрод: высокий риск (CRITICAL)`
+- Совпадение фактора из `blockFactors` — 429 с сообщением о факторе.
+
+### Метрики и алерты
+
+Публикуются Prometheus-метрики (см. `/metrics`):
+
+- `antifraud_check_total{operation}` — количество проверок (commit/refund)
+- `antifraud_risk_level_total{level}` — распределение уровней риска
+- `antifraud_velocity_block_total{scope,operation}` — блокировки по лимитам/капам
+- `antifraud_blocked_total{level,reason}` — блокировки по риску
+- `antifraud_block_factor_total{factor}` — блокировки по фактору
+- `antifraud_reviewed_total` — вручную рассмотренные проверки
+
+В `infra/prometheus/alerts.yml` добавлены правила:
+
+- `AntifraudCriticalBlocks` — CRITICAL блокировки за 5м
+- `AntifraudVelocityBlocksHigh` — повышенная частота блокировок по velocity
+- `AntifraudFactorBlocks` — срабатывания факторных блокировок
+- `AntifraudHighRiskRatio` — доля HIGH среди проверок > 20% 10м
+
+Telegram-алерты приложения (опционально) настраиваются через ENV:
+
+```
+ALERT_TELEGRAM_BOT_TOKEN=
+ALERT_TELEGRAM_CHAT_ID=
+```
+
+При наличии токена/чата AntiFraudGuard отправляет уведомления при блокировках (velocity, CRITICAL, factor). Для Alertmanager Telegram-нотификаций настройте соответствующий receiver в `infra/alertmanager/alertmanager.yml`.
+
 #### 2. Расчет операции (Quote)
 ```http
 POST /loyalty/quote

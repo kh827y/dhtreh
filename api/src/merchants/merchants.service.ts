@@ -88,11 +88,45 @@ export class MerchantsService {
 
   validateRules(rulesJson: any) {
     if (rulesJson === undefined || rulesJson === null) return { ok: true };
-    const valid = this.ajv.validate(this.rulesSchema as any, rulesJson);
-    if (!valid) {
-      const msg = this.ajv.errorsText(this.ajv.errors, { separator: '; ' });
+    // Backward-compatible: поддерживаем оба формата
+    // 1) Массив правил (старый формат)
+    // 2) Объект { rules?: Rule[], af?: {...} }
+    try {
+      if (Array.isArray(rulesJson)) {
+        const valid = this.ajv.validate(this.rulesSchema as any, rulesJson);
+        if (!valid) throw new Error(this.ajv.errorsText(this.ajv.errors, { separator: '; ' }));
+        return { ok: true };
+      }
+      if (rulesJson && typeof rulesJson === 'object') {
+        const hasRulesArr = Array.isArray((rulesJson as any).rules);
+        if (hasRulesArr) {
+          const valid = this.ajv.validate(this.rulesSchema as any, (rulesJson as any).rules);
+          if (!valid) throw new Error(this.ajv.errorsText(this.ajv.errors, { separator: '; ' }));
+        }
+        // Лёгкая валидация antifraud секции (если есть)
+        const af = (rulesJson as any).af;
+        if (af && typeof af === 'object') {
+          const check = (v: any) => v == null || (Number.isFinite(Number(v)) && Number(v) >= 0);
+          if (af.customer) {
+            if (!check(af.customer.limit) || !check(af.customer.windowSec) || !check(af.customer.dailyCap) || !check(af.customer.weeklyCap)) throw new Error('af.customer invalid');
+          }
+          if (af.device) {
+            if (!check(af.device.limit) || !check(af.device.windowSec) || !check(af.device.dailyCap) || !check(af.device.weeklyCap)) throw new Error('af.device invalid');
+          }
+          if (af.staff) {
+            if (!check(af.staff.limit) || !check(af.staff.windowSec) || !check(af.staff.dailyCap) || !check(af.staff.weeklyCap)) throw new Error('af.staff invalid');
+          }
+          if (af.merchant) {
+            if (!check(af.merchant.limit) || !check(af.merchant.windowSec) || !check(af.merchant.dailyCap) || !check(af.merchant.weeklyCap)) throw new Error('af.merchant invalid');
+          }
+        }
+        return { ok: true };
+      }
+    } catch (e: any) {
+      const msg = String(e?.message || e || 'rulesJson invalid');
       throw new BadRequestException('rulesJson invalid: ' + msg);
     }
+    // Если формат неизвестен — не валидируем строго (для расширяемости)
     return { ok: true };
   }
 

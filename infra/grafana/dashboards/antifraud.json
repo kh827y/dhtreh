@@ -1,0 +1,57 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "antifraud",
+    "title": "Antifraud Overview",
+    "tags": ["antifraud", "security"],
+    "timezone": "browser",
+    "schemaVersion": 30,
+    "version": 0,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+        "type": "graph",
+        "title": "Проверки и блокировки (rps)",
+        "datasource": "Prometheus",
+        "targets": [
+          { "expr": "rate(antifraud_check_total[5m])", "legendFormat": "Проверки", "refId": "A" },
+          { "expr": "rate(antifraud_blocked_total[5m])", "legendFormat": "Блокировки (риск)", "refId": "B" },
+          { "expr": "rate(antifraud_velocity_block_total[5m])", "legendFormat": "Блокировки (velocity)", "refId": "C" }
+        ]
+      },
+      {
+        "id": 2,
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+        "type": "graph",
+        "title": "Распределение HIGH/CRITICAL",
+        "datasource": "Prometheus",
+        "targets": [
+          { "expr": "rate(antifraud_risk_level_total{level=\"HIGH\"}[5m])", "legendFormat": "HIGH", "refId": "A" },
+          { "expr": "rate(antifraud_risk_level_total{level=\"CRITICAL\"}[5m])", "legendFormat": "CRITICAL", "refId": "B" }
+        ]
+      },
+      {
+        "id": 3,
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+        "type": "table",
+        "title": "Факторные блокировки (посл. 1ч)",
+        "datasource": "Prometheus",
+        "targets": [
+          { "expr": "topk(10, increase(antifraud_block_factor_total[1h]))", "format": "table", "refId": "A" }
+        ]
+      },
+      {
+        "id": 4,
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+        "type": "graph",
+        "title": "Velocity blocks (по скоупам)",
+        "datasource": "Prometheus",
+        "targets": [
+          { "expr": "sum by (scope) (rate(antifraud_velocity_block_total[5m]))", "legendFormat": "{{scope}}", "refId": "A" }
+        ]
+      }
+    ]
+  }
+}

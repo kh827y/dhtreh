@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bridge
+  namespace: loyalty
+  labels:
+    app: loyalty-bridge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: loyalty-bridge
+  template:
+    metadata:
+      labels:
+        app: loyalty-bridge
+    spec:
+      containers:
+        - name: bridge
+          image: ghcr.io/your-org/loyalty-bridge:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 18080
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          envFrom:
+            - configMapRef:
+                name: bridge-config
+            - secretRef:
+                name: bridge-secrets
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 18080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 18080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "300m"
+              memory: "128Mi"

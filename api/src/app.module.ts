@@ -16,6 +16,7 @@ import { TelegramModule } from './telegram/telegram.module';
 import { PaymentModule } from './payments/payment.module';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { AlertsModule } from './alerts/alerts.module';
 import { HoldGcWorker } from './hold-gc.worker';
 import { IdempotencyGcWorker } from './idempotency-gc.worker';
 import { OutboxDispatcherWorker } from './outbox-dispatcher.worker';
@@ -57,6 +58,7 @@ try {
     TelegramModule,
     PaymentModule,
     IntegrationsModule,
+    AlertsModule,
   ],
   controllers: [HealthController, MetricsController],
   providers: [

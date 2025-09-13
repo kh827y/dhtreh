@@ -1,0 +1,30 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api-from-ingress
+  namespace: loyalty
+spec:
+  podSelector:
+    matchLabels:
+      app: loyalty-api
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+          podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 3000
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: loyalty
+          podSelector:
+            matchLabels:
+              app: loyalty-bridge
+      ports:
+        - protocol: TCP
+          port: 3000

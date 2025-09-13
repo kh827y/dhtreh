@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bridge-config
+  namespace: loyalty
+  labels:
+    app: loyalty-bridge
+data:
+  NODE_ENV: "production"
+  API_BASE: "http://api.loyalty.svc.cluster.local"
+  MERCHANT_ID: "default-merchant"

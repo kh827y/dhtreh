@@ -1,0 +1,21 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cashier
+  namespace: loyalty
+spec:
+  rules:
+    - host: cashier.staging.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: cashier
+                port:
+                  number: 80
+  tls:
+    - hosts:
+        - cashier.staging.example.com
+      secretName: cashier-staging-tls

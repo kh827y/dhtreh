@@ -163,7 +163,7 @@
         "datasource": "Prometheus",
         "targets": [
           {
-            "expr": "rate(antifraud_checks_total[5m])",
+            "expr": "rate(antifraud_check_total[5m])",
             "legendFormat": "Проверки",
             "refId": "A"
           },

@@ -9,6 +9,11 @@ export class SubscriptionGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     // В e2e/юнит тестах не блокируем — иначе сломаем сценарии
     if (process.env.NODE_ENV === 'test') return true;
+    // Локальный обход через переменную окружения
+    const guardSwitch = (process.env.SUBSCRIPTION_GUARD || '').trim().toLowerCase();
+    if (guardSwitch === 'off' || guardSwitch === '0' || guardSwitch === 'false' || guardSwitch === 'no') {
+      return true;
+    }
     const req = context.switchToHttp().getRequest() as any;
     const method: string = (req.method || 'GET').toUpperCase();
     const path: string = req?.route?.path || req?.path || req?.originalUrl || '';

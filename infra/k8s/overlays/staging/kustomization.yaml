@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: loyalty
+resources:
+  - ../../k8s
+patchesStrategicMerge:
+  - patch-ingress-api.yaml
+  - patch-ingress-admin.yaml
+  - patch-ingress-cashier.yaml
+  - patch-ingress-miniapp.yaml
+  - patch-configmap-admin.yaml
+  - patch-configmap-cashier.yaml
+  - patch-configmap-miniapp.yaml
+images:
+  - name: ghcr.io/your-org/loyalty-api
+    newTag: staging
+  - name: ghcr.io/your-org/loyalty-admin
+    newTag: staging
+  - name: ghcr.io/your-org/loyalty-cashier
+    newTag: staging
+  - name: ghcr.io/your-org/loyalty-miniapp
+    newTag: staging
+  - name: ghcr.io/your-org/loyalty-bridge
+    newTag: staging

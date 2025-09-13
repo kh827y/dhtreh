@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cashier-config
+  namespace: loyalty
+data:
+  NEXT_PUBLIC_API_BASE_URL: "https://api.staging.example.com"

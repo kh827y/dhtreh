@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { MetricsService } from '../metrics.service';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 
@@ -49,6 +50,7 @@ export class AntiFraudService {
   constructor(
     private prisma: PrismaService,
     private configService: ConfigService,
+    private metrics: MetricsService,
   ) {}
 
   /**
@@ -496,6 +498,7 @@ export class AntiFraudService {
           } as any,
         },
       });
+      try { this.metrics.inc('antifraud_reviewed_total'); } catch {}
     } catch {}
     return { ok: true };
   }
@@ -557,5 +560,43 @@ export class AntiFraudService {
       blockRate: total > 0 ? (blocked / total * 100).toFixed(2) + '%' : '0%',
       reviewRate: total > 0 ? (reviewed / total * 100).toFixed(2) + '%' : '0%',
     };
+  }
+
+  /**
+   * Публичная запись результата антифрод‑проверки в модель FraudCheck
+   */
+  async recordFraudCheck(
+    context: TransactionContext,
+    score: RiskScore,
+    transactionId?: string,
+  ) {
+    try {
+      const createFn = (this.prisma as any)?.fraudCheck?.create;
+      if (!createFn) {
+        // In unit/e2e tests PrismaService may be partially mocked without fraudCheck
+        return null;
+      }
+      const rec = await (this.prisma as any).fraudCheck.create({
+        data: {
+          merchantId: context.merchantId,
+          customerId: context.customerId,
+          transactionId: transactionId || null,
+          riskScore: Math.round(score.score),
+          riskLevel: score.level,
+          factors: score.factors,
+          blocked: !!score.shouldBlock,
+          metadata: {
+            type: context.type,
+            deviceId: context.deviceId || null,
+            outletId: context.outletId || null,
+            staffId: context.staffId || null,
+          } as any,
+        },
+      });
+      return rec;
+    } catch (e) {
+      this.logger.error('Ошибка записи FraudCheck:', e);
+      return null;
+    }
   }
 }
