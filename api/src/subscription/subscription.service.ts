@@ -24,6 +24,16 @@ export class SubscriptionService {
   ) {}
 
   /**
+   * Получить текущую подписку мерчанта
+   */
+  async getSubscription(merchantId: string) {
+    return (this.prisma as any).subscription.findUnique({
+      where: { merchantId },
+      include: { plan: true },
+    });
+  }
+
+  /**
    * Создание новой подписки для мерчанта
    */
   async createSubscription(dto: CreateSubscriptionDto) {
@@ -33,7 +43,8 @@ export class SubscriptionService {
       where: { merchantId: dto.merchantId },
     });
 
-    if (existingSubscription && existingSubscription.status === 'active') {
+    if (existingSubscription) {
+      // В тестах ожидаем 400 при повторном создании подписки независимо от статуса
       throw new BadRequestException('У мерчанта уже есть активная подписка');
     }
 
@@ -56,20 +67,29 @@ export class SubscriptionService {
     const currentPeriodEnd = this.calculatePeriodEnd(currentPeriodStart, plan.interval);
 
     // Создаем подписку
-    const subscription = await prismaAny.subscription.create({
-      data: {
-        merchantId: dto.merchantId,
-        planId: dto.planId,
-        status: trialEnd ? 'trialing' : 'active',
-        currentPeriodStart,
-        currentPeriodEnd,
-        trialEnd,
-        metadata: dto.metadata,
-      },
-      include: {
-        plan: true,
-      },
-    });
+    let subscription: any;
+    try {
+      subscription = await prismaAny.subscription.create({
+        data: {
+          merchantId: dto.merchantId,
+          planId: dto.planId,
+          status: trialEnd ? 'trialing' : 'active',
+          currentPeriodStart,
+          currentPeriodEnd,
+          trialEnd,
+          metadata: dto.metadata,
+        },
+        include: {
+          plan: true,
+        },
+      });
+    } catch (e: any) {
+      // Prisma P2002 — уникальная подписка на merchantId уже существует
+      if (e?.code === 'P2002') {
+        throw new BadRequestException('У мерчанта уже есть активная подписка');
+      }
+      throw e;
+    }
 
     // Создаем событие в outbox
     await (prismaAny.eventOutbox ?? this.prisma.eventOutbox).create({
@@ -168,7 +188,7 @@ export class SubscriptionService {
       throw new NotFoundException('Подписка не найдена');
     }
 
-    if (subscription.status === 'canceled') {
+    if (subscription.status === 'canceled' || subscription.cancelAt) {
       throw new BadRequestException('Подписка уже отменена');
     }
 
@@ -270,22 +290,22 @@ export class SubscriptionService {
       include: { plan: true },
     });
 
-    if (!subscription || subscription.status !== 'active') {
+    if (!subscription || (subscription.status !== 'active' && subscription.status !== 'trialing')) {
       return false;
     }
 
     const plan = subscription.plan as any;
-    const features = plan.features as any;
+    const features = (plan as any)?.features as any;
 
     switch (feature) {
       case 'webhooks':
-        return plan.webhooksEnabled;
+        return (plan.webhooksEnabled ?? (features?.webhooks === true)) === true;
       case 'custom_branding':
-        return plan.customBranding;
+        return (plan.customBranding ?? (features?.customBranding === true)) === true;
       case 'priority_support':
-        return plan.prioritySupport;
+        return (plan.prioritySupport ?? (features?.prioritySupport === true)) === true;
       case 'api_access':
-        return plan.apiAccess;
+        return (plan.apiAccess ?? (features?.apiAccess === true)) === true;
       default:
         return features?.[feature] === true;
     }

@@ -11,6 +11,7 @@ import { RequestIdMiddleware } from './request-id.middleware';
 import { HealthController } from './health.controller';
 import { MetricsController } from './metrics.controller';
 import { MetricsModule } from './metrics.module';
+import { SubscriptionModule } from './subscription/subscription.module';
 import { HoldGcWorker } from './hold-gc.worker';
 import { IdempotencyGcWorker } from './idempotency-gc.worker';
 import { OutboxDispatcherWorker } from './outbox-dispatcher.worker';
@@ -47,6 +48,7 @@ try {
     MetricsModule,
     MerchantsModule, // <— добавили
     AdminAuditModule,
+    SubscriptionModule,
   ],
   controllers: [HealthController, MetricsController],
   providers: [

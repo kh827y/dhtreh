@@ -21,7 +21,8 @@ export default function AntiFraudPage() {
     try {
       // Fetch transactions for analysis
       const txResponse = await fetch(`/api/admin/merchants/${merchantId}/transactions?limit=1000&from=${dateRange.from}&to=${dateRange.to}`);
-      const transactions = await txResponse.json();
+      const txJson = await txResponse.json();
+      const transactions: any[] = Array.isArray(txJson?.items) ? txJson.items : (Array.isArray(txJson) ? txJson : []);
       
       // Analyze for anomalies
       analyzeAnomalies(transactions);
@@ -29,7 +30,8 @@ export default function AntiFraudPage() {
       
       // Fetch receipts for refund analysis
       const rcResponse = await fetch(`/api/admin/merchants/${merchantId}/receipts?limit=500`);
-      const receipts = await rcResponse.json();
+      const rcJson = await rcResponse.json();
+      const receipts: any[] = Array.isArray(rcJson?.items) ? rcJson.items : (Array.isArray(rcJson) ? rcJson : []);
       analyzeSerialRefunds(receipts);
     } catch (e) {
       console.error(e);
@@ -179,7 +181,7 @@ export default function AntiFraudPage() {
         refundRate: ((stats.refunded / stats.total) * 100).toFixed(1),
         receipts: stats.receipts.filter(r => r.redeemApplied < 0 || r.earnApplied < 0),
       }))
-      .filter(s => s.refundRate > '10'); // More than 10% refund rate
+      .filter(s => parseFloat(s.refundRate) > 10); // More than 10% refund rate
     
     setSerialRefunds(highRefundRate.sort((a, b) => parseFloat(b.refundRate) - parseFloat(a.refundRate)));
   };
@@ -227,10 +229,10 @@ export default function AntiFraudPage() {
                 <p>{anomaly.count} transactions in {anomaly.period}</p>
               )}
               {anomaly.type === 'LARGE_TRANSACTION' && (
-                <p>{anomaly.transactions.length} large transactions (>10000 points)</p>
+                <p>{(anomaly.transactions?.length ?? 0)} large transactions (&gt;10000 points)</p>
               )}
               {anomaly.type === 'EARN_REDEEM_PATTERN' && (
-                <p>{anomaly.patterns.length} immediate redeem patterns detected</p>
+                <p>{(anomaly.patterns?.length ?? 0)} immediate redeem patterns detected</p>
               )}
               <details style={{ marginTop: 8 }}>
                 <summary style={{ cursor: 'pointer', opacity: 0.8 }}>View details</summary>

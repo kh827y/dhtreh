@@ -85,7 +85,6 @@ export class AntiFraudService {
         totalScore += geoScore.score;
         factors.push(...geoScore.factors);
       }
-
       // 6. Проверка устройства
       const deviceScore = await this.checkDevice(context);
       totalScore += deviceScore.score;
@@ -457,6 +456,48 @@ export class AntiFraudService {
   ) {
     // Здесь должна быть интеграция с системой нотификаций
     this.logger.warn(`FRAUD ALERT: Customer ${context.customerId}, Score: ${score}, Factors: ${factors.join(', ')}`);
+  }
+
+  /**
+   * История проверок/транзакций клиента (простой вариант)
+   */
+  async getCustomerHistory(merchantId: string, customerId: string) {
+    const [txns, audits] = await Promise.all([
+      this.prisma.transaction.findMany({
+        where: { merchantId, customerId },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      }),
+      this.prisma.adminAudit.findMany({
+        where: { merchantId, actor: 'antifraud_system' },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      }),
+    ]);
+    return { txns, audits };
+  }
+
+  /**
+   * Ручная отметка результата проверки (review)
+   */
+  async reviewCheck(checkId: string, dto: { approved: boolean; notes?: string; reviewedBy: string; }) {
+    try {
+      await this.prisma.adminAudit.create({
+        data: {
+          actor: dto.reviewedBy || 'admin',
+          method: 'FRAUD_REVIEW',
+          path: '/antifraud/:checkId/review',
+          action: dto.approved ? 'fraud_review_approved' : 'fraud_review_rejected',
+          payload: {
+            checkId,
+            approved: dto.approved,
+            notes: dto.notes,
+            timestamp: new Date().toISOString(),
+          } as any,
+        },
+      });
+    } catch {}
+    return { ok: true };
   }
 
   /**

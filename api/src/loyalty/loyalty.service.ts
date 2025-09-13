@@ -9,6 +9,48 @@ type QrMeta = { jti: string; iat: number; exp: number } | undefined;
 
 @Injectable()
 export class LoyaltyService {
+  // Simple wrappers for modules that directly earn/redeem points without QR/holds
+  async earn(params: { customerId: string; merchantId: string; amount: number; orderId?: string }) {
+    const { customerId, merchantId, amount, orderId } = params;
+    if (amount <= 0) throw new BadRequestException('Amount must be > 0');
+    // Ensure entities exist
+    await this.ensureCustomerId(customerId);
+    try { await this.prisma.merchant.upsert({ where: { id: merchantId }, update: {}, create: { id: merchantId, name: merchantId } }); } catch {}
+
+    return this.prisma.$transaction(async (tx) => {
+      let wallet = await tx.wallet.findFirst({ where: { customerId, merchantId, type: WalletType.POINTS } });
+      if (!wallet) {
+        wallet = await tx.wallet.create({ data: { customerId, merchantId, type: WalletType.POINTS, balance: 0 } });
+      }
+      const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
+      await tx.wallet.update({ where: { id: wallet.id }, data: { balance: fresh!.balance + amount } });
+      const txn = await tx.transaction.create({
+        data: { customerId, merchantId, type: TxnType.EARN, amount, orderId },
+      });
+      return { ok: true, transactionId: txn.id };
+    });
+  }
+
+  async redeem(params: { customerId: string; merchantId: string; amount: number; orderId?: string }) {
+    const { customerId, merchantId, amount, orderId } = params;
+    if (amount <= 0) throw new BadRequestException('Amount must be > 0');
+    await this.ensureCustomerId(customerId);
+    try { await this.prisma.merchant.upsert({ where: { id: merchantId }, update: {}, create: { id: merchantId, name: merchantId } }); } catch {}
+
+    return this.prisma.$transaction(async (tx) => {
+      let wallet = await tx.wallet.findFirst({ where: { customerId, merchantId, type: WalletType.POINTS } });
+      if (!wallet) {
+        wallet = await tx.wallet.create({ data: { customerId, merchantId, type: WalletType.POINTS, balance: 0 } });
+      }
+      const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
+      if ((fresh!.balance) < amount) throw new BadRequestException('Insufficient points');
+      await tx.wallet.update({ where: { id: wallet.id }, data: { balance: fresh!.balance - amount } });
+      const txn = await tx.transaction.create({
+        data: { customerId, merchantId, type: TxnType.REDEEM, amount: -amount, orderId },
+      });
+      return { ok: true, transactionId: txn.id };
+    });
+  }
   constructor(private prisma: PrismaService, private metrics: MetricsService) {}
 
   // ===== Earn Lots helpers (optional feature) =====

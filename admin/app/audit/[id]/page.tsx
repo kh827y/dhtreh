@@ -1,16 +1,18 @@
 "use client";
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useParams } from 'next/navigation';
 
-export default function AuditDetailPage({ params }: { params: { id: string } }) {
+export default function AuditDetailPage() {
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState<string>('');
-  const id = params.id;
+  const params = useParams();
+  const id = String((params as any)?.id || '');
 
   useEffect(() => {
+    if (!id) return;
     (async () => {
       try {
-        const r = await fetch(`/api/admin/admin/audit?id=${encodeURIComponent(id)}`);
+        const r = await fetch(`/api/admin/admin/audit/${encodeURIComponent(id)}`);
         if (!r.ok) throw new Error(await r.text());
         setData(await r.json()); setErr('');
       } catch (e: any) { setErr(String(e?.message || e)); }
@@ -23,7 +25,7 @@ export default function AuditDetailPage({ params }: { params: { id: string } }) 
       {err && <div style={{ color: '#f38ba8' }}>{err}</div>}
       {data && (
         <div style={{ display: 'grid', gap: 8 }}>
-          <div>createdAt: {new Date(data.createdAt).toLocaleString()}</div>
+          <div>createdAt: {data.createdAt ? new Date(data.createdAt).toLocaleString() : '—'}</div>
           <div>actor: {data.actor}</div>
           <div>method: {data.method}</div>
           <div>path: {data.path}</div>

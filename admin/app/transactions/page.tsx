@@ -30,7 +30,10 @@ export default function TransactionsPage() {
         from: from || undefined,
         to: to || undefined,
       });
-      setItems(resp.items); setNextBefore(resp.nextBefore || null); setMsg('');
+      const newItems = Array.isArray((resp as any)?.items)
+        ? (resp as any).items
+        : (Array.isArray(resp as any) ? (resp as any) : []);
+      setItems(newItems); setNextBefore((resp as any)?.nextBefore || null); setMsg('');
     } catch (e: any) { setMsg(String(e?.message || e)); setItems([]); setNextBefore(null); }
     finally { setLoading(false); }
   };
@@ -51,7 +54,10 @@ export default function TransactionsPage() {
         from: from || undefined,
         to: to || undefined,
       });
-      setItems(prev=>[...prev, ...resp.items]); setNextBefore(resp.nextBefore || null);
+      const more = Array.isArray((resp as any)?.items)
+        ? (resp as any).items
+        : (Array.isArray(resp as any) ? (resp as any) : []);
+      setItems(prev=>[...prev, ...more]); setNextBefore((resp as any)?.nextBefore || null);
     } catch (e: any) { setMsg(String(e?.message || e)); }
     finally { setLoading(false); }
   };
@@ -90,8 +96,8 @@ export default function TransactionsPage() {
       </div>
       {msg && <div style={{ color:'#f38ba8', marginBottom:8 }}>{msg}</div>}
       <div style={{ display:'grid', gap:6 }}>
-        {items.length === 0 && <div style={{ opacity:0.8 }}>—</div>}
-        {items.map(tx => (
+        {(items?.length ?? 0) === 0 && <div style={{ opacity:0.8 }}>—</div>}
+        {(items ?? []).map(tx => (
           <div key={tx.id} style={{ background:'#0e1629', padding:8, borderRadius:6, display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr', gap:6 }}>
             <div>{new Date(tx.createdAt).toLocaleString()}</div>
             <div>{tx.type}</div>

@@ -171,7 +171,10 @@ export async function listTransactionsAdmin(merchantId: string, params: { limit?
   if (params.deviceId) p.set('deviceId', params.deviceId);
   if (params.staffId) p.set('staffId', params.staffId);
   const qs = p.toString();
-  return http(`/merchants/${encodeURIComponent(merchantId)}/transactions${qs?`?${qs}`:''}`);
+  const res: any = await http(`/merchants/${encodeURIComponent(merchantId)}/transactions${qs?`?${qs}`:''}`);
+  const items: any[] = Array.isArray(res?.items) ? res.items : (Array.isArray(res) ? res : []);
+  const nextBefore: string | null = (res && res.nextBefore) ? res.nextBefore : (items.length ? String(items[items.length - 1]?.createdAt || '') : null);
+  return { items, nextBefore: nextBefore || null };
 }
 
 export async function listReceiptsAdmin(merchantId: string, params: { limit?: number; before?: string; orderId?: string; customerId?: string }): Promise<any[]> {

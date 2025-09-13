@@ -52,6 +52,13 @@ export class MetricsService implements OnModuleDestroy {
     this.outboxEvents = new Counter({ name: 'loyalty_outbox_events_total', help: 'Outbox events by type/result', labelNames: ['type','result'], registers: [this.registry] });
   }
 
+  // Алиас для совместимости с вызовами в коде (increment -> inc)
+  increment(name: string, value = 1) {
+    try {
+      this.inc(name, {}, value);
+    } catch {}
+  }
+
   onModuleDestroy() {
     try { this.stopDefaultMetrics?.(); } catch {}
   }

@@ -1,0 +1,186 @@
+// Добавить эти модели и поля в schema.prisma
+
+// Добавить в модель Customer:
+//  gender           String?
+//  city             String?
+//  tags             String[]
+//  metadata         Json?
+
+// Добавить в модель Campaign:
+//  description      String?
+//  budget           Int?
+//  maxUsageTotal    Int?
+//  maxUsagePerCustomer Int?
+//  notificationChannels String[]
+//  targetSegmentId  String?
+//  reward           Json?
+
+// Добавить в модель Review:
+//  title            String?
+//  tags             String[]
+//  deletedAt        DateTime?
+
+// Добавить в модель Voucher:
+//  status           String    @default("ACTIVE")
+//  quantity         Int       @default(1)
+//  remainingQuantity Int      @default(1)
+//  maxUsesPerCustomer Int?
+//  maxTotalUses     Int?
+//  minPurchaseAmount Int?
+
+// Добавить в модель Subscription:
+//  autoRenew        Boolean   @default(true)
+//  lastPaymentId    String?
+//  reminderSent7Days Boolean  @default(false)
+//  reminderSent1Day Boolean   @default(false)
+
+// Добавить в модель Payment:
+//  merchantId       String?
+//  metadata         Json?
+//  refundedAt       DateTime?
+
+// Добавить в модель ReferralProgram:
+//  status           String    @default("ACTIVE")
+//  minPurchaseAmount Int      @default(0)
+//  expiryDays       Int       @default(30)
+
+// Добавить в модель Referral:
+//  refereePhone     String?
+//  expiresAt        DateTime?
+
+// Добавить в модель MerchantSettings:
+//  monthlyReports   Boolean   @default(false)
+//  smsSignature     String?
+//  phone            String?
+
+// Добавить в модель CustomerSegment:
+//  type             String    @default("DYNAMIC")
+
+// Добавить в модель VoucherUsage:
+//  metadata         Json?
+//  usedAt           DateTime  @default(now())
+
+// Добавить в модель Merchant:
+//  rating           Float?
+//  logo             String?
+
+model CampaignUsage {
+  id                String    @id @default(cuid())
+  campaignId        String
+  customerId        String
+  rewardValue       Int?
+  createdAt         DateTime  @default(now())
+  
+  @@index([campaignId])
+  @@index([customerId])
+}
+
+model SegmentCustomer {
+  id                String    @id @default(cuid())
+  segmentId         String
+  segment           CustomerSegment @relation(fields: [segmentId], references: [id])
+  customerId        String
+  customer          Customer  @relation(fields: [customerId], references: [id])
+  createdAt         DateTime  @default(now())
+  
+  @@unique([segmentId, customerId])
+}
+
+model EmailNotification {
+  id                String    @id @default(cuid())
+  merchantId        String
+  customerId        String?
+  to                String
+  subject           String
+  template          String
+  variables         Json?
+  status            String    @default("PENDING")
+  sentAt            DateTime?
+  error             String?
+  createdAt         DateTime  @default(now())
+}
+
+model PushDevice {
+  id                String    @id @default(cuid())
+  customerId        String
+  token             String    @unique
+  platform          String
+  lastUsed          DateTime  @default(now())
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  
+  @@index([customerId])
+}
+
+model PushNotification {
+  id                String    @id @default(cuid())
+  merchantId        String
+  customerId        String?
+  deviceToken       String?
+  title             String
+  body              String
+  data              Json?
+  status            String    @default("PENDING")
+  sentAt            DateTime?
+  error             String?
+  createdAt         DateTime  @default(now())
+}
+
+model SmsNotification {
+  id                String    @id @default(cuid())
+  merchantId        String
+  customerId        String?
+  phone             String
+  message           String
+  status            String    @default("PENDING")
+  provider          String?
+  cost              Float?
+  sentAt            DateTime?
+  error             String?
+  createdAt         DateTime  @default(now())
+}
+
+model OtpCode {
+  id                String    @id @default(cuid())
+  phone             String
+  code              String
+  attempts          Int       @default(0)
+  verified          Boolean   @default(false)
+  expiresAt         DateTime
+  createdAt         DateTime  @default(now())
+  
+  @@index([phone])
+}
+
+model PersonalReferralCode {
+  id                String    @id @default(cuid())
+  customerId        String
+  merchantId        String
+  code              String    @unique
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  
+  @@unique([customerId, merchantId])
+}
+
+model MerchantStats {
+  id                String    @id @default(cuid())
+  merchantId        String    @unique
+  smsCount          Int       @default(0)
+  pushCount         Int       @default(0)
+  emailCount        Int       @default(0)
+  lastUpdated       DateTime  @default(now())
+}
+
+model CustomerConsent {
+  id                String    @id @default(cuid())
+  customerId        String
+  merchantId        String
+  type              String
+  granted           Boolean   @default(false)
+  grantedAt         DateTime?
+  revokedAt         DateTime?
+  createdAt         DateTime  @default(now())
+  
+  @@unique([customerId, merchantId, type])
+}

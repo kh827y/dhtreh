@@ -1,0 +1,19 @@
+// Jest e2e setup: filter noisy Firebase warning only in tests
+
+const ORIGINAL_WARN = console.warn;
+
+beforeAll(() => {
+  // Spy and filter only the specific line coming from FcmProvider
+  jest.spyOn(console, 'warn').mockImplementation((...args: any[]) => {
+    const first = args[0];
+    if (typeof first === 'string' && first.includes('Firebase service account not configured')) {
+      return; // swallow this one warning
+    }
+    return ORIGINAL_WARN.apply(console, args as any);
+  });
+});
+
+afterAll(() => {
+  // Restore console.warn to its original behavior
+  (console.warn as any)?.mockRestore?.();
+});

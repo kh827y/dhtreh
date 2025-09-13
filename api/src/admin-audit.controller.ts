@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, Param } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 import { AdminGuard } from './admin.guard';
 
@@ -30,7 +30,7 @@ export class AdminAuditController {
   }
 
   @Get(':id')
-  async getOne(@Query('id') id?: string) {
+  async getOne(@Param('id') id: string) {
     if (!id) return null as any;
     const row = await this.prisma.adminAudit.findUnique({ where: { id } as any }).catch(()=>null);
     if (!row) return null as any;

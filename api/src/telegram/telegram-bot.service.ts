@@ -99,19 +99,23 @@ export class TelegramBotService {
     if (!bot) return;
 
     try {
-      await this.setWebhook(bot.token, bot.webhookUrl);
+      // Попробуем достать секрет из таблицы TelegramBot
+      const botRow = await this.prisma.telegramBot.findUnique({ where: { merchantId } }).catch(() => null);
+      const secret = botRow?.webhookSecret || undefined;
+      await this.setWebhook(bot.token, bot.webhookUrl, secret);
       this.logger.log(`Webhook установлен для ${merchantId}`);
     } catch (error) {
       this.logger.error(`Ошибка установки webhook для ${merchantId}:`, error);
     }
   }
 
-  private async setWebhook(token: string, url: string) {
+  private async setWebhook(token: string, url: string, secretToken?: string) {
     const response = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         url,
+        secret_token: secretToken,
         allowed_updates: ['message', 'callback_query', 'inline_query'],
         drop_pending_updates: true,
       }),
@@ -377,6 +381,17 @@ export class TelegramBotService {
     });
   }
 
+  private async deleteWebhook(token: string) {
+    const response = await fetch(`https://api.telegram.org/bot${token}/deleteWebhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ drop_pending_updates: true }),
+    });
+    if (!response.ok) {
+      this.logger.warn(`Ошибка удаления webhook: ${await response.text()}`);
+    }
+  }
+
   // Отправка уведомлений клиентам
   async sendNotification(customerId: string, merchantId: string, message: string) {
     const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
@@ -391,6 +406,59 @@ export class TelegramBotService {
     } catch (error) {
       this.logger.error(`Ошибка отправки уведомления: ${error}`);
       return { success: false, error };
+    }
+  }
+
+  // Админ: ротация секрета webhook бота
+  async rotateWebhookSecret(merchantId: string) {
+    try {
+      // Генерируем новый секрет
+      const secret = crypto.randomBytes(16).toString('hex');
+
+      // Обновим запись бота, если она есть
+      const existing = await this.prisma.telegramBot.findUnique({ where: { merchantId } }).catch(() => null);
+      if (existing) {
+        await this.prisma.telegramBot.update({
+          where: { merchantId },
+          data: { webhookSecret: secret, isActive: true },
+        });
+
+        // Переустановим webhook с новым секретом
+        const webhookUrl = `${this.configService.get('API_BASE_URL')}/telegram/webhook/${merchantId}`;
+        await this.setWebhook(existing.botToken, webhookUrl, secret);
+      } else {
+        // Если записи нет, но бот зарегистрирован через настройки мерчанта — просто установим webhook с секретом
+        const settings = await this.prisma.merchantSettings.findUnique({ where: { merchantId } });
+        if (settings?.telegramBotToken) {
+          const webhookUrl = `${this.configService.get('API_BASE_URL')}/telegram/webhook/${merchantId}`;
+          await this.setWebhook(settings.telegramBotToken, webhookUrl, secret);
+        }
+      }
+    } catch (error) {
+      this.logger.error(`Ошибка ротации webhook секрета для ${merchantId}:`, error);
+      throw error;
+    }
+  }
+
+  // Админ: деактивация бота (удаление webhook и отметка в БД)
+  async deactivateBot(merchantId: string) {
+    try {
+      const existing = await this.prisma.telegramBot.findUnique({ where: { merchantId } }).catch(() => null);
+      if (existing) {
+        await this.deleteWebhook(existing.botToken);
+        await this.prisma.telegramBot.update({ where: { merchantId }, data: { isActive: false } });
+      } else {
+        // Попробуем удалить webhook по токену из настроек мерчанта
+        const settings = await this.prisma.merchantSettings.findUnique({ where: { merchantId } });
+        if (settings?.telegramBotToken) {
+          await this.deleteWebhook(settings.telegramBotToken);
+        }
+      }
+      // Локально тоже уберем бота из карты
+      this.bots.delete(merchantId);
+    } catch (error) {
+      this.logger.error(`Ошибка деактивации бота для ${merchantId}:`, error);
+      throw error;
     }
   }
 }

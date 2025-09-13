@@ -39,6 +39,8 @@ enum TxnType {
   REDEEM
   REFUND
   ADJUST
+  CAMPAIGN
+  REFERRAL
 }
 
 enum LedgerAccount {
@@ -50,10 +52,15 @@ enum LedgerAccount {
 model Merchant {
   id        String            @id @default(cuid())
   name      String
+  telegramWebhookSecret String?
+  telegramBotEnabled    Boolean   @default(false)
+  telegramBotToken      String?
+  rating    Float?
+  logo      String?
   settings  MerchantSettings?
   wallets   Wallet[]
   holds     Hold[]
-  txns      Transaction[]
+  transactions Transaction[]
   createdAt DateTime          @default(now())
   Receipt   Receipt[]
   outlets   Outlet[]
@@ -66,6 +73,12 @@ model Merchant {
   integrations Integration[]
   customerSegments CustomerSegment[]
   campaigns Campaign[]
+  reviewCount Int @default(0)
+  // back-relations
+  campaignUsages CampaignUsage[]
+  reviews        Review[]
+  referralPrograms ReferralProgram[]
+  vouchers         Voucher[]
 }
 
 model MerchantSettings {
@@ -100,6 +113,9 @@ model MerchantSettings {
   miniappThemeBg      String?
   miniappLogoUrl      String?
   outboxPausedUntil   DateTime?
+  smsSignature        String?
+  phone               String?
+  monthlyReports      Boolean  @default(false)
   updatedAt      DateTime @default(now())
 }
 
@@ -132,12 +148,28 @@ model Customer {
   id        String        @id @default(cuid())
   phone     String?       @unique
   tgId      String?       @unique
+  email     String?       @unique
+  name      String?
+  birthday  DateTime?
+  gender    String?
+  city      String?
+  tags      String[]
+  metadata  Json?
   wallets   Wallet[]
   holds     Hold[]
-  txns      Transaction[]
+  transactions Transaction[]
   createdAt DateTime      @default(now())
   Receipt   Receipt[]
   consents  Consent[]
+  segments  SegmentCustomer[]
+  // back-relations
+  campaignUsages    CampaignUsage[]
+  voucherUsages     VoucherUsage[]
+  reviews           Review[]
+  reviewReactions   ReviewReaction[]
+  referralsAsReferrer Referral[] @relation("ReferralReferrer")
+  referralsAsReferee  Referral[] @relation("ReferralReferee")
+  pushDevices       PushDevice[]
 }
 
 model Wallet {
@@ -328,6 +360,7 @@ model Staff {
   holds     Hold[]
   receipts  Receipt[]
   txns      Transaction[]
+  reviewResponses ReviewResponse[]
 }
 
 model LedgerEntry {
@@ -430,12 +463,288 @@ model Subscription {
   canceledAt        DateTime?
   trialEnd          DateTime?
   metadata          Json?
+  autoRenew         Boolean   @default(true)
+  lastPaymentId     String?
+  reminderSent7Days Boolean   @default(false)
+  reminderSent1Day  Boolean   @default(false)
+  lastPaymentDate   DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
   plan              Plan      @relation(fields: [planId], references: [id])
   merchant          Merchant  @relation(fields: [merchantId], references: [id])
   payments          Payment[]
+}
+
+// Junction table for customer segments
+model SegmentCustomer {
+  id          String   @id @default(cuid())
+  segmentId   String
+  customerId  String
+  createdAt   DateTime @default(now())
+
+  segment     CustomerSegment @relation(fields: [segmentId], references: [id])
+  customer    Customer        @relation(fields: [customerId], references: [id])
+
+  @@unique([segmentId, customerId])
+}
+
+// Campaign usage tracking
+model CampaignUsage {
+  id          String   @id @default(cuid())
+  campaignId  String
+  customerId  String
+  merchantId  String?
+  rewardType  String?
+  rewardValue Int?
+  usedAt      DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  campaign    Campaign @relation(fields: [campaignId], references: [id])
+  customer    Customer @relation(fields: [customerId], references: [id])
+  merchant    Merchant? @relation(fields: [merchantId], references: [id])
+
+  @@index([campaignId])
+  @@index([customerId])
+}
+
+// Email notifications
+model EmailNotification {
+  id          String   @id @default(cuid())
+  merchantId  String
+  customerId  String?
+  campaignId  String?
+  to          String
+  subject     String
+  template    String
+  variables   Json?
+  status      String   @default("PENDING")
+  messageId   String?
+  sentAt      DateTime?
+  error       String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+}
+
+// Push devices registry
+model PushDevice {
+  id          String   @id @default(cuid())
+  customerId  String
+  merchantId  String?
+  deviceId    String?
+  token       String   @unique
+  platform    String
+  deviceInfo  Json?
+  lastActiveAt DateTime?
+  lastUsed    DateTime @default(now())
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  
+  customer    Customer @relation(fields: [customerId], references: [id])
+
+  @@unique([customerId, deviceId])
+  @@index([customerId])
+}
+
+// Push notifications log
+model PushNotification {
+  id           String   @id @default(cuid())
+  merchantId   String
+  customerId   String?
+  deviceId     String?
+  deviceToken  String?
+  title        String
+  body         String
+  type         String?
+  campaignId   String?
+  data         Json?
+  status       String   @default("PENDING")
+  messageId    String?
+  sentAt       DateTime?
+  error        String?
+  createdAt    DateTime @default(now())
+}
+
+// SMS notifications log
+model SmsNotification {
+  id          String   @id @default(cuid())
+  merchantId  String
+  customerId  String?
+  phone       String
+  message     String
+  type        String
+  status      String   @default("PENDING")
+  provider    String?
+  messageId   String?
+  cost        Float?   @default(0)
+  parts       Int?     @default(1)
+  sentAt      DateTime?
+  error       String?
+  campaignId  String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+}
+
+// OTP codes
+model OtpCode {
+  id          String   @id @default(cuid())
+  phone       String
+  code        String
+  type        String?
+  attempts    Int      @default(0)
+  verified    Boolean  @default(false)
+  expiresAt   DateTime
+  merchantId  String?
+  createdAt   DateTime @default(now())
+
+  @@index([phone])
+}
+
+// Customer consent by channel
+model CustomerConsent {
+  id          String   @id @default(cuid())
+  customerId  String
+  merchantId  String
+  channel     String
+  status      String   // e.g. GRANTED / REVOKED
+  grantedAt   DateTime @default(now())
+  revokedAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  @@unique([customerId, merchantId, channel])
+}
+
+// Merchant stats for notifications
+model MerchantStats {
+  id          String   @id @default(cuid())
+  merchantId  String  @unique
+  smsSent     Int     @default(0)
+  smsCost     Float   @default(0)
+  pushSent    Int     @default(0)
+  pushFailed  Int     @default(0)
+  emailSent   Int     @default(0)
+  lastUpdated DateTime @default(now())
+}
+
+// Referral program
+model ReferralProgram {
+  id                String   @id @default(cuid())
+  merchantId        String
+  name              String
+  description       String?
+  referrerReward    Int
+  refereeReward     Int
+  maxReferrals      Int?
+  validUntil        DateTime?
+  isActive          Boolean  @default(true)
+  status            String   @default("ACTIVE")
+  minPurchaseAmount Int      @default(0)
+  expiryDays        Int      @default(30)
+  createdAt         DateTime @default(now())
+
+  merchant          Merchant @relation(fields: [merchantId], references: [id])
+  referrals         Referral[]
+  personalCodes     PersonalReferralCode[]
+}
+
+model Referral {
+  id            String   @id @default(cuid())
+  programId     String
+  referrerId    String
+  refereeId     String?
+  code          String   @unique
+  status        String   @default("PENDING")
+  activatedAt   DateTime?
+  completedAt   DateTime?
+  purchaseAmount Int?
+  refereePhone  String?
+  refereeEmail  String?
+  channel       String?
+  expiresAt     DateTime?
+  createdAt     DateTime @default(now())
+
+  program       ReferralProgram @relation(fields: [programId], references: [id])
+  referrer      Customer        @relation("ReferralReferrer", fields: [referrerId], references: [id])
+  referee       Customer?       @relation("ReferralReferee", fields: [refereeId], references: [id])
+}
+
+// Personal referral codes per customer
+model PersonalReferralCode {
+  id          String   @id @default(cuid())
+  customerId  String
+  merchantId  String
+  code        String   @unique
+  isActive    Boolean  @default(true)
+  programId   String?
+  createdAt   DateTime @default(now())
+
+  program     ReferralProgram? @relation(fields: [programId], references: [id])
+
+  @@unique([customerId, merchantId])
+}
+
+// Voucher models
+model Voucher {
+  id                String   @id @default(cuid())
+  merchantId        String
+  name              String
+  description       String?
+  type              String    // DISCOUNT, GIFT_CARD, PROMO_CODE
+  valueType         String    // PERCENTAGE, FIXED_AMOUNT, POINTS
+  value             Int
+  minPurchase       Int?
+  maxUses           Int?
+  usedCount         Int       @default(0)
+  validFrom         DateTime?
+  validUntil        DateTime?
+  isActive          Boolean   @default(true)
+  metadata          Json?
+  status            String    @default("ACTIVE")
+  quantity          Int       @default(1)
+  remainingQuantity Int       @default(1)
+  maxUsesPerCustomer Int?
+  maxTotalUses      Int?
+  minPurchaseAmount Int?
+  applicableProducts String[]
+  applicableCategories String[]
+  totalUsed         Int       @default(0)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  merchant   Merchant @relation(fields: [merchantId], references: [id])
+  codes             VoucherCode[]
+  usages            VoucherUsage[]
+}
+
+model VoucherCode {
+  id          String   @id @default(cuid())
+  voucherId   String
+  code        String   @unique
+  status      String   @default("ACTIVE")
+  maxUses     Int      @default(1)
+  usedCount   Int      @default(0)
+  validFrom   DateTime?
+  validUntil  DateTime?
+  createdAt   DateTime @default(now())
+
+  voucher     Voucher  @relation(fields: [voucherId], references: [id])
+  usages      VoucherUsage[]
+}
+
+model VoucherUsage {
+  id          String   @id @default(cuid())
+  voucherId   String
+  codeId      String?
+  customerId  String
+  orderId     String?
+  amount      Int
+  metadata    Json?
+  usedAt      DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  voucher     Voucher    @relation(fields: [voucherId], references: [id])
+  code        VoucherCode? @relation(fields: [codeId], references: [id])
+  customer    Customer   @relation(fields: [customerId], references: [id])
 }
 
 model Payment {
@@ -449,6 +758,10 @@ model Payment {
   receiptUrl        String?
   failureReason     String?
   paidAt            DateTime?
+  provider          String?
+  merchantId        String?
+  metadata          Json?
+  refundedAt        DateTime?
   createdAt         DateTime  @default(now())
 
   subscription      Subscription @relation(fields: [subscriptionId], references: [id])
@@ -494,6 +807,7 @@ model CustomerSegment {
   merchantId        String
   name              String
   description       String?
+  type              String    @default("DYNAMIC")
   rules             Json
   customerCount     Int       @default(0)
   isActive          Boolean   @default(true)
@@ -502,12 +816,14 @@ model CustomerSegment {
 
   merchant          Merchant  @relation(fields: [merchantId], references: [id])
   campaigns         Campaign[]
+  customers         SegmentCustomer[]
 }
 
 model Campaign {
   id                String    @id @default(cuid())
   merchantId        String
   name              String
+  description       String?
   type              String
   status            String    @default("draft")
   segmentId         String?
@@ -516,9 +832,73 @@ model Campaign {
   metrics           Json?
   startAt           DateTime?
   endAt             DateTime?
+  startDate         DateTime?
+  endDate           DateTime?
+  budget            Int?
+  maxUsageTotal     Int?
+  maxUsagePerCustomer Int?
+  notificationChannels String[]
+  targetSegmentId   String?
+  reward            Json?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
   merchant          Merchant  @relation(fields: [merchantId], references: [id])
   segment           CustomerSegment? @relation(fields: [segmentId], references: [id])
+  usages            CampaignUsage[]
+}
+
+// Reviews system
+model Review {
+  id                String    @id @default(cuid())
+  merchantId        String
+  customerId        String
+  orderId           String?
+  rating            Int
+  title             String?
+  comment           String
+  photos            String[]
+  tags              String[]
+  isAnonymous       Boolean   @default(false)
+  status            String    @default("PENDING")
+  helpfulCount      Int       @default(0)
+  notHelpfulCount   Int       @default(0)
+  rewardPoints      Int       @default(0)
+  moderatedAt       DateTime?
+  moderatedBy       String?
+  moderationReason  String?
+  metadata          Json?
+  deletedAt         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  merchant          Merchant  @relation(fields: [merchantId], references: [id])
+  customer          Customer  @relation(fields: [customerId], references: [id])
+  response          ReviewResponse?
+  reactions         ReviewReaction[]
+}
+
+model ReviewResponse {
+  id                String    @id @default(cuid())
+  reviewId          String    @unique
+  staffId           String?
+  message           String
+  merchantId        String?
+  createdAt         DateTime  @default(now())
+
+  review            Review    @relation(fields: [reviewId], references: [id])
+  staff             Staff?    @relation(fields: [staffId], references: [id])
+}
+
+model ReviewReaction {
+  id                String    @id @default(cuid())
+  reviewId          String
+  customerId        String
+  type              String
+  createdAt         DateTime  @default(now())
+
+  review            Review    @relation(fields: [reviewId], references: [id])
+  customer          Customer  @relation(fields: [customerId], references: [id])
+
+  @@unique([reviewId, customerId])
 }
