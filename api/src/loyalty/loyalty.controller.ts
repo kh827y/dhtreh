@@ -7,6 +7,7 @@ import { looksLikeJwt, signQrToken, verifyQrToken } from './token.util';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
 import { CashierGuard } from '../guards/cashier.guard';
+import { SubscriptionGuard } from '../guards/subscription.guard';
 import type { Request, Response } from 'express';
 import { createHmac } from 'crypto';
 import { verifyBridgeSignature as verifyBridgeSigUtil } from './bridge.util';
@@ -133,6 +134,7 @@ export class LoyaltyController {
   }
 
   @Post('commit')
+  @UseGuards(SubscriptionGuard)
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @ApiHeader({ name: 'Idempotency-Key', required: false, description: 'Идемпотентность COMMIT' })
   @ApiHeader({ name: 'X-Bridge-Signature', required: false, description: 'Подпись Bridge (если включено requireBridgeSig)' })
@@ -315,6 +317,7 @@ export class LoyaltyController {
   }
 
   @Post('refund')
+  @UseGuards(SubscriptionGuard)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiHeader({ name: 'Idempotency-Key', required: false, description: 'Идемпотентность REFUND' })
   @ApiHeader({ name: 'X-Bridge-Signature', required: false, description: 'Подпись Bridge (если включено requireBridgeSig)' })

@@ -248,6 +248,15 @@ export class LoyaltyService {
           return { canRedeem: false, discountToApply: 0, pointsToBurn: 0, finalPayable: Math.floor(dto.total), holdId: undefined, message: 'Дневной лимит списаний исчерпан.' };
         }
       }
+      // Проверка: если указан orderId, учитываем уже применённое списание по этому заказу
+      let priorRedeemApplied = 0;
+      if (dto.orderId) {
+        try {
+          const rcp = await this.prisma.receipt.findUnique({ where: { merchantId_orderId: { merchantId: dto.merchantId, orderId: dto.orderId } } });
+          if (rcp) priorRedeemApplied = Math.max(0, rcp.redeemApplied || 0);
+        } catch {}
+      }
+
       // 2) дальше — обычный расчёт в транзакции и создание нового hold (уникальный qrJti не даст дубликат)
       return this.prisma.$transaction(async (tx) => {
         // Ensure merchant exists within the same transaction/connection (FK safety)
@@ -262,8 +271,20 @@ export class LoyaltyService {
         }
 
         const limit = Math.floor(dto.eligibleTotal * redeemLimitBps / 10000);
+        // Учитываем уже применённое списание по этому заказу: нельзя превысить лимит
+        const remainingByOrder = Math.max(0, limit - priorRedeemApplied);
+        if (dto.orderId && remainingByOrder <= 0) {
+          return {
+            canRedeem: false,
+            discountToApply: 0,
+            pointsToBurn: 0,
+            finalPayable: Math.floor(dto.total),
+            holdId: undefined,
+            message: 'По этому заказу уже списаны максимальные баллы.'
+          } as any;
+        }
         const capLeft = dailyRedeemLeft != null ? dailyRedeemLeft : Number.MAX_SAFE_INTEGER;
-        const discountToApply = Math.min(wallet.balance, limit, capLeft);
+        const discountToApply = Math.min(wallet.balance, remainingByOrder || limit, capLeft);
         const finalPayable = Math.max(0, Math.floor(dto.total - discountToApply));
 
         const hold = await tx.hold.create({
@@ -386,44 +407,48 @@ export class LoyaltyService {
     });
     if (!wallet) throw new BadRequestException('Wallet not found');
 
-    return this.prisma.$transaction(async (tx) => {
-      // Идемпотентность: если чек уже есть — ничего не делаем
-      const existing = await tx.receipt.findUnique({ where: { merchantId_orderId: { merchantId: hold.merchantId, orderId } } });
-      if (existing) {
-        return { ok: true, alreadyCommitted: true, receiptId: existing.id, redeemApplied: existing.redeemApplied, earnApplied: existing.earnApplied };
-      }
-      let appliedRedeem = 0;
-      let appliedEarn = 0;
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        // Идемпотентность: если чек уже есть — ничего не делаем
+        const existing = await tx.receipt.findUnique({ where: { merchantId_orderId: { merchantId: hold.merchantId, orderId } } });
+        if (existing) {
+          return { ok: true, alreadyCommitted: true, receiptId: existing.id, redeemApplied: existing.redeemApplied, earnApplied: existing.earnApplied };
+        }
 
-      if (hold.mode === 'REDEEM' && hold.redeemAmount > 0) {
-        const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
-        const amount = Math.min(fresh!.balance, hold.redeemAmount);
-        appliedRedeem = amount;
-        await tx.wallet.update({ where: { id: wallet.id }, data: { balance: fresh!.balance - amount } });
-        await tx.transaction.create({
-          data: { customerId: hold.customerId, merchantId: hold.merchantId, type: TxnType.REDEEM, amount: -amount, orderId, outletId: hold.outletId, deviceId: hold.deviceId, staffId: hold.staffId }
-        });
-        // Earn lots consumption (optional)
-        if (process.env.EARN_LOTS_FEATURE === '1' && amount > 0) {
-          await this.consumeLots(tx, hold.merchantId, hold.customerId, amount, { orderId });
+        // Накапливаем применённые суммы для чека
+        let appliedRedeem = 0;
+        let appliedEarn = 0;
+
+        // REDEEM
+        if (hold.mode === 'REDEEM' && hold.redeemAmount > 0) {
+          const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
+          const amount = Math.min(fresh!.balance, hold.redeemAmount);
+          appliedRedeem = amount;
+          await tx.wallet.update({ where: { id: wallet.id }, data: { balance: fresh!.balance - amount } });
+          await tx.transaction.create({
+            data: { customerId: hold.customerId, merchantId: hold.merchantId, type: TxnType.REDEEM, amount: -amount, orderId, outletId: hold.outletId, deviceId: hold.deviceId, staffId: hold.staffId }
+          });
+          // Earn lots consumption (optional)
+          if (process.env.EARN_LOTS_FEATURE === '1' && amount > 0) {
+            await this.consumeLots(tx, hold.merchantId, hold.customerId, amount, { orderId });
+          }
+          // Ledger mirror (optional)
+          if (process.env.LEDGER_FEATURE === '1' && amount > 0) {
+            await tx.ledgerEntry.create({ data: {
+              merchantId: hold.merchantId,
+              customerId: hold.customerId,
+              debit: LedgerAccount.CUSTOMER_BALANCE,
+              credit: LedgerAccount.MERCHANT_LIABILITY,
+              amount,
+              orderId,
+              outletId: hold.outletId ?? null,
+              deviceId: hold.deviceId ?? null,
+              staffId: hold.staffId ?? null,
+              meta: { mode: 'REDEEM' },
+            }});
+            this.metrics.inc('loyalty_ledger_entries_total', { type: 'redeem' });
+          }
         }
-        // Ledger mirror (optional)
-        if (process.env.LEDGER_FEATURE === '1' && amount > 0) {
-          await tx.ledgerEntry.create({ data: {
-            merchantId: hold.merchantId,
-            customerId: hold.customerId,
-            debit: LedgerAccount.CUSTOMER_BALANCE,
-            credit: LedgerAccount.MERCHANT_LIABILITY,
-            amount,
-            orderId,
-            outletId: hold.outletId ?? null,
-            deviceId: hold.deviceId ?? null,
-            staffId: hold.staffId ?? null,
-            meta: { mode: 'REDEEM' },
-          }});
-          this.metrics.inc('loyalty_ledger_entries_total', { type: 'redeem' });
-        }
-      }
       if (hold.mode === 'EARN' && hold.earnPoints > 0) {
         const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
         appliedEarn = hold.earnPoints;
@@ -477,7 +502,6 @@ export class LoyaltyService {
         data: { status: HoldStatus.COMMITTED, orderId, receiptId: receiptNumber }
       });
 
-      try {
         const created = await tx.receipt.create({
           data: {
             merchantId: hold.merchantId,
@@ -520,15 +544,19 @@ export class LoyaltyService {
           },
         });
         return { ok: true, receiptId: created.id, redeemApplied: appliedRedeem, earnApplied: appliedEarn };
-      } catch (e: any) {
-        // В редкой гонке уникальный индекс по (merchantId, orderId) может сработать — считаем идемпотентным успехом
-        const existing2 = await tx.receipt.findUnique({ where: { merchantId_orderId: { merchantId: hold.merchantId, orderId } } });
+      });
+    } catch (e: any) {
+      // В редкой гонке уникальный индекс по (merchantId, orderId) может сработать —
+      // любая следующая команда в рамках той же транзакции упадёт с 25P02 (transaction aborted).
+      // Выполним идемпотентный поиск вне транзакции.
+      try {
+        const existing2 = await this.prisma.receipt.findUnique({ where: { merchantId_orderId: { merchantId: hold.merchantId, orderId } } });
         if (existing2) {
           return { ok: true, alreadyCommitted: true, receiptId: existing2.id, redeemApplied: existing2.redeemApplied, earnApplied: existing2.earnApplied };
         }
-        throw e;
-      }
-    });
+      } catch {}
+      throw e;
+    }
   }
 
   async cancel(holdId: string) {

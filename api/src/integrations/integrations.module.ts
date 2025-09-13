@@ -5,11 +5,15 @@ import { AtolService } from './atol/atol.service';
 import { EvotorService } from './evotor/evotor.service';
 import { AtolController } from './atol/atol.controller';
 import { EvotorController } from './evotor/evotor.controller';
+import { ModulKassaService } from './modulkassa/modulkassa.service';
+import { ModulKassaController } from './modulkassa/modulkassa.controller';
+import { PosterService } from './poster/poster.service';
+import { PosterController } from './poster/poster.controller';
 
 @Module({
   imports: [PrismaModule, ConfigModule],
-  controllers: [AtolController, EvotorController],
-  providers: [AtolService, EvotorService],
-  exports: [AtolService, EvotorService],
+  controllers: [AtolController, EvotorController, ModulKassaController, PosterController],
+  providers: [AtolService, EvotorService, ModulKassaService, PosterService],
+  exports: [AtolService, EvotorService, ModulKassaService, PosterService],
 })
 export class IntegrationsModule {}

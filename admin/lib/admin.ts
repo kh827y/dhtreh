@@ -47,6 +47,61 @@ export async function updateSettings(merchantId: string, dto: Partial<MerchantSe
   return http(`/merchants/${encodeURIComponent(merchantId)}/settings`, { method: 'PUT', body: JSON.stringify(dto) });
 }
 
+// ===== Telegram bot management =====
+export async function registerTelegramBot(merchantId: string, botToken: string): Promise<{ ok: true; username: string; webhookUrl: string }>
+{
+  return http(`/merchants/${encodeURIComponent(merchantId)}/telegram/register`, { method: 'POST', body: JSON.stringify({ botToken }) });
+}
+
+export async function rotateTelegramWebhook(merchantId: string): Promise<{ ok: true }> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/telegram/rotate-webhook`, { method: 'POST' });
+}
+
+export async function deactivateTelegramBot(merchantId: string): Promise<{ ok: true }> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/telegram`, { method: 'DELETE' });
+}
+
+// ===== Subscription (via API key through admin proxy) =====
+const API_KEY_HEADER = (typeof process !== 'undefined' ? (process.env.NEXT_PUBLIC_API_KEY || '') : '') || 'test-key';
+
+export async function getPlans(): Promise<any[]> {
+  const res = await fetch(`/api/admin/subscription/plans`, { headers: { 'x-api-key': API_KEY_HEADER } });
+  if (!res.ok) throw new Error(await res.text());
+  return await res.json();
+}
+
+export async function createSubscription(merchantId: string, planId: string, trialDays = 14): Promise<any> {
+  const res = await fetch(`/api/admin/subscription/create`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY_HEADER },
+    body: JSON.stringify({ merchantId, planId, trialDays })
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return await res.json();
+}
+
+export async function getSubscription(merchantId: string): Promise<any> {
+  const res = await fetch(`/api/admin/subscription/${encodeURIComponent(merchantId)}`, { headers: { 'x-api-key': API_KEY_HEADER } });
+  if (!res.ok) throw new Error(await res.text());
+  return await res.json();
+}
+
+// ===== Payments for subscription =====
+export async function createSubscriptionPayment(merchantId: string, subscriptionId: string): Promise<{ paymentId: string; confirmationUrl?: string; status: string; amount: number; currency: string }> {
+  const res = await fetch(`/api/admin/payment/subscription/${encodeURIComponent(merchantId)}/${encodeURIComponent(subscriptionId)}`, {
+    method: 'POST',
+    headers: { 'x-api-key': API_KEY_HEADER },
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return await res.json();
+}
+
+export async function getPaymentStatus(paymentId: string): Promise<any> {
+  const res = await fetch(`/api/admin/payment/status/${encodeURIComponent(paymentId)}`, { headers: { 'x-api-key': API_KEY_HEADER } });
+  if (!res.ok) throw new Error(await res.text());
+  return await res.json();
+}
+
 // ===== Outbox monitor helpers =====
 export type OutboxStats = {
   merchantId: string;

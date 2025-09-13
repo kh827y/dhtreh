@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma.service';
 import { PaymentProvider, CreatePaymentParams, WebhookResult } from './payment-provider.interface';
 import { YooKassaProvider } from './providers/yookassa.provider';
+import { MockPaymentProvider } from './providers/mock.provider';
 import { CloudPaymentsProvider } from './providers/cloudpayments.provider';
 import { TinkoffProvider } from './providers/tinkoff.provider';
 import { SubscriptionService } from '../subscription/subscription.service';
@@ -24,6 +25,9 @@ export class PaymentService {
     switch (providerName) {
       case 'yookassa':
         this.provider = new YooKassaProvider(configService);
+        break;
+      case 'mock':
+        this.provider = new MockPaymentProvider();
         break;
       case 'cloudpayments':
         this.provider = new CloudPaymentsProvider(configService);
@@ -57,7 +61,7 @@ export class PaymentService {
     
     // Создаем платеж через провайдера
     const paymentResult = await this.provider.createPayment({
-      amount: plan.price * 100, // конвертируем в копейки
+      amount: plan.price, // план хранится в минорных единицах (копейки)
       currency: plan.currency || 'RUB',
       description: `Оплата подписки "${plan.displayName}" для ${merchantId}`,
       orderId: `sub_${subscriptionId}_${Date.now()}`,
@@ -289,7 +293,8 @@ export class PaymentService {
       throw new BadRequestException('Можно вернуть только успешный платеж');
     }
 
-    const refundAmount = amount || payment.amount * 100; // в копейках
+    // Если сумма не указана — возвращаем полную, payment.amount хранится в минорных единицах (копейках)
+    const refundAmount = amount ?? payment.amount;
     const result = await this.provider.refundPayment(paymentId, refundAmount);
 
     if (result.status === 'succeeded') {

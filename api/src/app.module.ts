@@ -12,6 +12,10 @@ import { HealthController } from './health.controller';
 import { MetricsController } from './metrics.controller';
 import { MetricsModule } from './metrics.module';
 import { SubscriptionModule } from './subscription/subscription.module';
+import { TelegramModule } from './telegram/telegram.module';
+import { PaymentModule } from './payments/payment.module';
+import { IntegrationsModule } from './integrations/integrations.module';
+import { ScheduleModule } from '@nestjs/schedule';
 import { HoldGcWorker } from './hold-gc.worker';
 import { IdempotencyGcWorker } from './idempotency-gc.worker';
 import { OutboxDispatcherWorker } from './outbox-dispatcher.worker';
@@ -35,6 +39,7 @@ try {
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([
       {
         name: 'default',
@@ -49,6 +54,9 @@ try {
     MerchantsModule, // <— добавили
     AdminAuditModule,
     SubscriptionModule,
+    TelegramModule,
+    PaymentModule,
+    IntegrationsModule,
   ],
   controllers: [HealthController, MetricsController],
   providers: [

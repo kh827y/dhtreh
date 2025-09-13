@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from 'react';
-import { getSettings, updateSettings, type MerchantSettings } from '../../lib/admin';
+import { getSettings, updateSettings, type MerchantSettings, registerTelegramBot, rotateTelegramWebhook, deactivateTelegramBot } from '../../lib/admin';
 
 export default function TelegramPage() {
   const [merchantId, setMerchantId] = useState<string>(process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1');
@@ -29,6 +29,37 @@ export default function TelegramPage() {
       const r = await updateSettings(merchantId, dto);
       setS(r); setMsg('Сохранено');
     } catch (e:any) { setMsg('Ошибка сохранения: ' + (e.message || e)); }
+    finally { setLoading(false); }
+  };
+
+  const register = async () => {
+    if (!s?.telegramBotToken) { setMsg('Укажите Telegram Bot Token и нажмите Сохранить'); return; }
+    setLoading(true);
+    try {
+      const res = await registerTelegramBot(merchantId, s.telegramBotToken);
+      setMsg(`Бот @${res.username} зарегистрирован, webhook: ${res.webhookUrl}`);
+      const fresh = await getSettings(merchantId);
+      setS(fresh);
+    } catch (e:any) {
+      setMsg('Ошибка регистрации бота: ' + (e.message || e));
+    } finally { setLoading(false); }
+  };
+
+  const rotate = async () => {
+    setLoading(true);
+    try {
+      await rotateTelegramWebhook(merchantId);
+      setMsg('Секрет вебхука ротирован и обновлен');
+    } catch (e:any) { setMsg('Ошибка ротации: ' + (e.message || e)); }
+    finally { setLoading(false); }
+  };
+
+  const deactivate = async () => {
+    setLoading(true);
+    try {
+      await deactivateTelegramBot(merchantId);
+      setMsg('Бот деактивирован и webhook удален');
+    } catch (e:any) { setMsg('Ошибка деактивации: ' + (e.message || e)); }
     finally { setLoading(false); }
   };
 
@@ -76,6 +107,9 @@ export default function TelegramPage() {
           </div>
           <div>
             <button onClick={save} disabled={loading} style={{ padding: '8px 12px' }}>Сохранить</button>
+            <button onClick={register} disabled={loading || !s.telegramBotToken} style={{ padding: '8px 12px', marginLeft: 8 }}>Зарегистрировать бота</button>
+            <button onClick={rotate} disabled={loading} style={{ padding: '8px 12px', marginLeft: 8 }}>Ротация секрета вебхука</button>
+            <button onClick={deactivate} disabled={loading} style={{ padding: '8px 12px', marginLeft: 8, color: '#f38ba8' }}>Деактивировать бота</button>
           </div>
           <div style={{ opacity: 0.85 }}>
             Deep link: {s.telegramBotUsername ? <a href={deeplink()} target="_blank" style={{ color: '#89b4fa' }}>{deeplink()}</a> : '—'}

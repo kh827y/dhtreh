@@ -40,6 +40,17 @@ export function useMiniappAuth(defaultMerchant: string) {
     const ctxMerchant = getMerchantFromContext(id);
     if (ctxMerchant) setMerchantId(ctxMerchant);
     const mId = ctxMerchant || merchantId;
+    // Dev fallback: if no Telegram initData and no saved customerId, auto-generate one for localhost/dev
+    try {
+      const devAuto = (process.env.NEXT_PUBLIC_MINIAPP_DEV_AUTO_CUSTOMER === '1') ||
+        ((process.env.NEXT_PUBLIC_MINIAPP_DEV_AUTO_CUSTOMER || '').toLowerCase() === 'true') ||
+        (typeof window !== 'undefined' && window.location && window.location.hostname === 'localhost');
+      if (!saved && !id && devAuto) {
+        const gen = 'user-' + Math.random().toString(36).slice(2, 10);
+        setCustomerId(gen);
+        localStorage.setItem('miniapp.customerId', gen);
+      }
+    } catch {}
     (async () => {
       try {
         const s = await publicSettings(mId);
