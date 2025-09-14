@@ -143,24 +143,29 @@ export class LoyaltyController {
   @ApiUnauthorizedResponse({ type: ErrorDto })
   @ApiBadRequestResponse({ type: ErrorDto })
   async commit(@Body() dto: CommitDto, @Res({ passthrough: true }) res: Response, @Req() req: Request & { requestId?: string }) {
-    await this.enforceRequireStaffKey(dto.merchantId, req);
     const t0 = Date.now();
     let data: any;
+    // кешируем hold для извлечения контекста (merchantId, deviceId, staffId)
+    let holdCached: any = null;
+    try { holdCached = await this.prisma.hold.findUnique({ where: { id: dto.holdId } }); } catch {}
+    const merchantIdEff = dto.merchantId || holdCached?.merchantId;
+    if (merchantIdEff) {
+      await this.enforceRequireStaffKey(merchantIdEff, req);
+    }
     // проверка подписи Bridge до выполнения, с учётом устройства из hold
     try {
-      const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId: dto.merchantId } });
+      const s = merchantIdEff ? await this.prisma.merchantSettings.findUnique({ where: { merchantId: merchantIdEff } }) : null;
       if (s?.requireBridgeSig) {
         const sig = (req.headers['x-bridge-signature'] as string | undefined) || '';
         let secret: string | null = s.bridgeSecret || null;
         let alt: string | null = (s as any).bridgeSecretNext || null;
         try {
-          const hold = await this.prisma.hold.findUnique({ where: { id: dto.holdId } });
-          if (hold?.deviceId) {
-            const dev = await this.prisma.device.findUnique({ where: { id: hold.deviceId } });
+          if (holdCached?.deviceId) {
+            const dev = await this.prisma.device.findUnique({ where: { id: holdCached.deviceId } });
             if (dev?.bridgeSecret) { secret = dev.bridgeSecret; alt = null; }
           }
         } catch {}
-        const bodyForSig = JSON.stringify({ merchantId: dto.merchantId, holdId: dto.holdId, orderId: dto.orderId, receiptNumber: dto.receiptNumber ?? undefined });
+        const bodyForSig = JSON.stringify({ merchantId: merchantIdEff, holdId: dto.holdId, orderId: dto.orderId, receiptNumber: dto.receiptNumber ?? undefined });
         let ok = false;
         if (secret && verifyBridgeSigUtil(sig, bodyForSig, secret)) ok = true;
         else if (alt && verifyBridgeSigUtil(sig, bodyForSig, alt)) ok = true;
@@ -170,18 +175,31 @@ export class LoyaltyController {
     try {
       const idemKey = (req.headers['idempotency-key'] as string | undefined) || undefined;
       if (idemKey) {
-        // вернуть сохранённый ответ, если есть
-        const saved = await this.prisma.idempotencyKey.findUnique({ where: { merchantId_key: { merchantId: dto.merchantId, key: idemKey } } });
-        if (saved) {
-          data = saved.response as any;
+        // определить merchantId для идемпотентности: из DTO или из hold
+        const merchantForIdem = merchantIdEff || undefined;
+        if (merchantForIdem) {
+          // вернуть сохранённый ответ, если есть
+          const saved = await this.prisma.idempotencyKey.findUnique({ where: { merchantId_key: { merchantId: merchantForIdem, key: idemKey } } });
+          if (saved) {
+            data = saved.response as any;
+          } else {
+            data = await this.service.commit(dto.holdId, dto.orderId, dto.receiptNumber, req.requestId ?? dto.requestId);
+            // если второй вызов пришёл после первого, когда hold уже COMMITTED,
+            // commit() вернёт alreadyCommitted=true. Для идемпотентности нормализуем ответ к первому.
+            if (data && typeof data === 'object' && (data as any).alreadyCommitted === true) {
+              const { alreadyCommitted, ...rest } = data as any;
+              data = rest;
+            }
+            // попытка сохранить; при гонке второй повернёт существующий
+            try {
+              const ttlH = Number(process.env.IDEMPOTENCY_TTL_HOURS || '72');
+              const exp = new Date(Date.now() + ttlH * 3600 * 1000);
+              await this.prisma.idempotencyKey.create({ data: { merchantId: merchantForIdem, key: idemKey, response: data, expiresAt: exp } });
+            } catch {}
+          }
         } else {
+          // нет merchantId — выполняем без сохранения идемпотентности (уникальный чек по orderId всё равно защитит)
           data = await this.service.commit(dto.holdId, dto.orderId, dto.receiptNumber, req.requestId ?? dto.requestId);
-          // попытка сохранить; при гонке второй повернёт существующий
-          try {
-            const ttlH = Number(process.env.IDEMPOTENCY_TTL_HOURS || '72');
-            const exp = new Date(Date.now() + ttlH * 3600 * 1000);
-            await this.prisma.idempotencyKey.create({ data: { merchantId: dto.merchantId, key: idemKey, response: data, expiresAt: exp } });
-          } catch {}
         }
       } else {
         data = await this.service.commit(dto.holdId, dto.orderId, dto.receiptNumber, req.requestId ?? dto.requestId);
@@ -194,7 +212,7 @@ export class LoyaltyController {
       this.metrics.observe('loyalty_commit_latency_ms', Date.now() - t0);
     }
     try {
-      const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId: dto.merchantId } });
+      const s = merchantIdEff ? await this.prisma.merchantSettings.findUnique({ where: { merchantId: merchantIdEff } }) : null;
       const useNext = Boolean((s as any)?.useWebhookNext) && !!(s as any)?.webhookSecretNext;
       const secret = (useNext ? (s as any)?.webhookSecretNext : s?.webhookSecret) as string | undefined;
       if (secret) {
@@ -202,7 +220,7 @@ export class LoyaltyController {
         const body = JSON.stringify(data);
         const sig = createHmac('sha256', secret).update(`${ts}.${body}`).digest('base64');
         res.setHeader('X-Loyalty-Signature', `v1,ts=${ts},sig=${sig}`);
-        res.setHeader('X-Merchant-Id', dto.merchantId);
+        if (merchantIdEff) res.setHeader('X-Merchant-Id', merchantIdEff);
         res.setHeader('X-Signature-Timestamp', ts);
         const kid = useNext ? (s as any)?.webhookKeyIdNext : s?.webhookKeyId;
         if (kid) res.setHeader('X-Signature-Key-Id', kid);
