@@ -17,12 +17,17 @@ import { PaymentModule } from './payments/payment.module';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AlertsModule } from './alerts/alerts.module';
+import { AnalyticsModule } from './analytics/analytics.module';
+import { CrmModule } from './crm/crm.module';
 import { HoldGcWorker } from './hold-gc.worker';
 import { IdempotencyGcWorker } from './idempotency-gc.worker';
 import { OutboxDispatcherWorker } from './outbox-dispatcher.worker';
 import { TtlBurnWorker } from './ttl-burn.worker';
 import { PointsBurnWorker } from './points-burn.worker';
 import { PointsTtlWorker } from './points-ttl.worker';
+import { EarnActivationWorker } from './earn-activation.worker';
+import { GiftsModule } from './gifts/gifts.module';
+import { CampaignModule } from './campaigns/campaign.module';
 // Optional Redis storage for Throttler
 let throttlerStorage: any = undefined;
 try {
@@ -52,6 +57,7 @@ try {
     PrismaModule,
     LoyaltyModule,
     MetricsModule,
+    AnalyticsModule,
     MerchantsModule, // <— добавили
     AdminAuditModule,
     SubscriptionModule,
@@ -59,6 +65,9 @@ try {
     PaymentModule,
     IntegrationsModule,
     AlertsModule,
+    CrmModule,
+    GiftsModule,
+    CampaignModule,
   ],
   controllers: [HealthController, MetricsController],
   providers: [
@@ -68,6 +77,7 @@ try {
     PointsTtlWorker,
     TtlBurnWorker,
     PointsBurnWorker,
+    EarnActivationWorker,
     { provide: APP_GUARD, useClass: CustomThrottlerGuard },
   ],
 })

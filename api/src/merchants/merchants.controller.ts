@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, UseGuards, Query, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, UseGuards, Query, UseInterceptors, Res } from '@nestjs/common';
 import { MerchantsService } from './merchants.service';
 import { CreateDeviceDto, CreateOutletDto, CreateStaffDto, UpdateDeviceDto, UpdateMerchantSettingsDto, UpdateOutletDto, UpdateStaffDto, MerchantSettingsRespDto, OutletDto, DeviceDto, StaffDto, SecretRespDto, TokenRespDto, OkDto, OutboxEventDto, BulkUpdateRespDto, ReceiptDto, CustomerSearchRespDto, LedgerEntryDto } from './dto';
 import { AdminGuard } from '../admin.guard';
@@ -249,16 +249,33 @@ export class MerchantsController {
   }
 
   @Get(':id/outbox.csv')
-  @ApiOkResponse({ schema: { type: 'string', description: 'CSV' } })
-  outboxCsv(
+  @ApiOkResponse({ schema: { type: 'string', description: 'CSV (streamed)' } })
+  async outboxCsv(
     @Param('id') id: string,
     @Query('status') status?: string,
     @Query('since') since?: string,
     @Query('type') type?: string,
-    @Query('limit') limitStr?: string,
+    @Query('batch') batchStr: string = '1000',
+    @Res() res?: any,
   ) {
-    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 1000, 1), 5000) : 1000;
-    return this.service.exportOutboxCsv(id, { status, since, type, limit });
+    const batch = Math.min(Math.max(parseInt(batchStr, 10) || 1000, 100), 5000);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="outbox_${id}_${Date.now()}.csv"`);
+    res.write('id,eventType,status,retries,nextRetryAt,lastError,createdAt\n');
+    // Пагинация по createdAt
+    let cursorSince = since;
+    while (true) {
+      const page = await this.service.listOutbox(id, status, batch, type, cursorSince);
+      if (!page.length) break;
+      for (const ev of page) {
+        const row = [ ev.id, ev.eventType, ev.status, ev.retries, ev.nextRetryAt?ev.nextRetryAt.toISOString():'', ev.lastError||'', ev.createdAt.toISOString() ]
+          .map(x => `"${String(x).replaceAll('"','""')}"`).join(',');
+        res.write(row + '\n');
+      }
+      cursorSince = page[page.length - 1].createdAt.toISOString();
+      if (page.length < batch) break;
+    }
+    res.end();
   }
 
   @Get(':id/outbox/by-order')
@@ -313,21 +330,33 @@ export class MerchantsController {
     return this.service.getReceipt(id, receiptId);
   }
   @Get(':id/receipts.csv')
-  @ApiOkResponse({ schema: { type: 'string', description: 'CSV' } })
+  @ApiOkResponse({ schema: { type: 'string', description: 'CSV (streamed)' } })
   @ApiUnauthorizedResponse({ type: ErrorDto })
   async exportReceiptsCsv(
     @Param('id') id: string,
-    @Query('limit') limitStr?: string,
+    @Query('batch') batchStr: string = '1000',
     @Query('before') beforeStr?: string,
     @Query('orderId') orderId?: string,
     @Query('customerId') customerId?: string,
+    @Res() res?: any,
   ) {
-    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 1000, 1), 5000) : 1000;
-    const before = beforeStr ? new Date(beforeStr) : undefined;
-    const items = await this.service.listReceipts(id, { limit, before, orderId, customerId });
-    const lines = [ 'id,orderId,customerId,total,eligibleTotal,redeemApplied,earnApplied,createdAt,outletId,deviceId,staffId' ];
-    for (const r of items) lines.push([r.id,r.orderId,r.customerId,r.total,r.eligibleTotal,r.redeemApplied,r.earnApplied,r.createdAt.toISOString(),(r.outletId||''),(r.deviceId||''),(r.staffId||'')].map(x=>`"${String(x).replaceAll('"','""')}"`).join(','));
-    return lines.join('\n') + '\n';
+    const batch = Math.min(Math.max(parseInt(batchStr, 10) || 1000, 100), 5000);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="receipts_${id}_${Date.now()}.csv"`);
+    res.write('id,orderId,customerId,total,eligibleTotal,redeemApplied,earnApplied,createdAt,outletId,deviceId,staffId\n');
+    let before = beforeStr ? new Date(beforeStr) : undefined;
+    while (true) {
+      const page = await this.service.listReceipts(id, { limit: batch, before, orderId, customerId });
+      if (!page.length) break;
+      for (const r of page) {
+        const row = [r.id,r.orderId,r.customerId,r.total,r.eligibleTotal,r.redeemApplied,r.earnApplied,r.createdAt.toISOString(),(r.outletId||''),(r.deviceId||''),(r.staffId||'')]
+          .map(x=>`"${String(x).replaceAll('"','""')}"`).join(',');
+        res.write(row + '\n');
+      }
+      before = page[page.length - 1].createdAt;
+      if (page.length < batch) break;
+    }
+    res.end();
   }
 
   // Ledger
@@ -351,22 +380,37 @@ export class MerchantsController {
   }
 
   @Get(':id/ledger.csv')
-  @ApiOkResponse({ schema: { type: 'string', description: 'CSV' } })
+  @ApiOkResponse({ schema: { type: 'string', description: 'CSV (streamed)' } })
   @ApiUnauthorizedResponse({ type: ErrorDto })
   async exportLedgerCsv(
     @Param('id') id: string,
-    @Query('limit') limitStr?: string,
+    @Query('batch') batchStr: string = '1000',
     @Query('before') beforeStr?: string,
     @Query('from') fromStr?: string,
     @Query('to') toStr?: string,
     @Query('customerId') customerId?: string,
     @Query('type') type?: string,
+    @Res() res?: any,
   ) {
-    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 1000, 1), 5000) : 1000;
-    const before = beforeStr ? new Date(beforeStr) : undefined;
+    const batch = Math.min(Math.max(parseInt(batchStr, 10) || 1000, 100), 5000);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="ledger_${id}_${Date.now()}.csv"`);
+    res.write('id,customerId,debit,credit,amount,orderId,receiptId,createdAt,outletId,deviceId,staffId\n');
+    let before = beforeStr ? new Date(beforeStr) : undefined;
     const from = fromStr ? new Date(fromStr) : undefined;
     const to = toStr ? new Date(toStr) : undefined;
-    return this.service.exportLedgerCsv(id, { limit, before, customerId, from, to, type });
+    while (true) {
+      const page = await this.service.listLedger(id, { limit: batch, before, customerId, from, to, type });
+      if (!page.length) break;
+      for (const e of page) {
+        const row = [ e.id, e.customerId||'', e.debit, e.credit, e.amount, e.orderId||'', e.receiptId||'', e.createdAt.toISOString(), e.outletId||'', e.deviceId||'', e.staffId||'' ]
+          .map(x=>`"${String(x).replaceAll('"','""')}"`).join(',');
+        res.write(row + '\n');
+      }
+      before = page[page.length - 1].createdAt;
+      if (page.length < batch) break;
+    }
+    res.end();
   }
 
   // TTL reconciliation (preview vs burned)
@@ -414,9 +458,10 @@ export class MerchantsController {
 
   // CSV exports
   @Get(':id/transactions.csv')
+  @ApiOkResponse({ schema: { type: 'string', description: 'CSV (streamed)' } })
   async exportTxCsv(
     @Param('id') id: string,
-    @Query('limit') limitStr?: string,
+    @Query('batch') batchStr: string = '1000',
     @Query('before') beforeStr?: string,
     @Query('from') fromStr?: string,
     @Query('to') toStr?: string,
@@ -425,14 +470,26 @@ export class MerchantsController {
     @Query('outletId') outletId?: string,
     @Query('deviceId') deviceId?: string,
     @Query('staffId') staffId?: string,
+    @Res() res?: any,
   ) {
-    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 1000, 1), 5000) : 1000;
-    const before = beforeStr ? new Date(beforeStr) : undefined;
+    const batch = Math.min(Math.max(parseInt(batchStr, 10) || 1000, 100), 5000);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="transactions_${id}_${Date.now()}.csv"`);
+    res.write('id,type,amount,orderId,customerId,createdAt,outletId,deviceId,staffId\n');
+    let before = beforeStr ? new Date(beforeStr) : undefined;
     const from = fromStr ? new Date(fromStr) : undefined;
     const to = toStr ? new Date(toStr) : undefined;
-    const items = await this.service.listTransactions(id, { limit, before, from, to, type, customerId, outletId, deviceId, staffId });
-    const lines = [ 'id,type,amount,orderId,customerId,createdAt,outletId,deviceId,staffId' ];
-    for (const t of items) lines.push([t.id,t.type,t.amount,(t.orderId||''),t.customerId,t.createdAt.toISOString(),(t.outletId||''),(t.deviceId||''),(t.staffId||'')].map(x=>`"${String(x).replaceAll('"','""')}"`).join(','));
-    return lines.join('\n') + '\n';
+    while (true) {
+      const page = await this.service.listTransactions(id, { limit: batch, before, from, to, type, customerId, outletId, deviceId, staffId });
+      if (!page.length) break;
+      for (const t of page) {
+        const row = [t.id,t.type,t.amount,(t.orderId||''),t.customerId,t.createdAt.toISOString(),(t.outletId||''),(t.deviceId||''),(t.staffId||'')]
+          .map(x=>`"${String(x).replaceAll('"','""')}"`).join(',');
+        res.write(row + '\n');
+      }
+      before = page[page.length - 1].createdAt;
+      if (page.length < batch) break;
+    }
+    res.end();
   }
 }

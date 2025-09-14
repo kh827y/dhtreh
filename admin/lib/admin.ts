@@ -1,7 +1,13 @@
 const BASE = '/api/admin';
 
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(BASE + path, { headers: { 'Content-Type': 'application/json' }, ...init });
+  const API_KEY_HEADER = (typeof process !== 'undefined' ? (process.env.NEXT_PUBLIC_API_KEY || '') : '') || 'test-key';
+  const mergedHeaders: HeadersInit = {
+    'Content-Type': 'application/json',
+    'x-api-key': API_KEY_HEADER,
+    ...(init?.headers as any || {}),
+  };
+  const res = await fetch(BASE + path, { ...(init || {}), headers: mergedHeaders });
   if (!res.ok) throw new Error(await res.text());
   return await res.json() as T;
 }
@@ -341,4 +347,150 @@ export async function updateOutlet(merchantId: string, outletId: string, dto: { 
 
 export async function deleteOutlet(merchantId: string, outletId: string): Promise<{ ok: true }> {
   return http(`/merchants/${encodeURIComponent(merchantId)}/outlets/${encodeURIComponent(outletId)}`, { method: 'DELETE' });
+}
+
+// ===== Analytics helpers =====
+export async function getRetentionCohorts(merchantId: string, by: 'month'|'week' = 'month', limit = 6): Promise<Array<{ cohort: string; from: string; to: string; size: number; retention: number[] }>> {
+  const p = new URLSearchParams();
+  if (by) p.set('by', by);
+  if (limit != null) p.set('limit', String(limit));
+  return http(`/analytics/cohorts/${encodeURIComponent(merchantId)}${p.toString()?`?${p.toString()}`:''}`);
+}
+
+export async function getRfmHeatmap(merchantId: string): Promise<{ grid: number[][]; totals: { count: number } }> {
+  return http(`/analytics/rfm/${encodeURIComponent(merchantId)}/heatmap`);
+}
+
+// ===== CRM extras =====
+export function segmentCustomersCsvUrl(merchantId: string, segmentId: string): string {
+  return `/api/admin/crm/${encodeURIComponent(merchantId)}/segments/${encodeURIComponent(segmentId)}/customers.csv`;
+}
+
+export async function getCustomerTimeline(merchantId: string, customerId: string, limit = 50): Promise<{ items: Array<{ type: string; at: string; data: any }> }> {
+  const p = new URLSearchParams();
+  if (limit != null) p.set('limit', String(limit));
+  const qs = p.toString();
+  const res = await fetch(`/api/admin/crm/${encodeURIComponent(merchantId)}/customer/${encodeURIComponent(customerId)}/timeline${qs?`?${qs}`:''}`);
+  if (!res.ok) throw new Error(await res.text());
+  return await res.json();
+}
+
+// ===== Segments helpers =====
+export type SegmentInfo = { id: string; name: string; type?: string; size?: number; createdAt?: string };
+
+export async function getSegmentsAdmin(merchantId: string): Promise<SegmentInfo[]> {
+  return http(`/segments/merchant/${encodeURIComponent(merchantId)}`);
+}
+
+export async function createDefaultSegments(merchantId: string): Promise<{ ok: true } | any> {
+  return http(`/segments/merchant/${encodeURIComponent(merchantId)}/defaults`, { method: 'POST' });
+}
+
+export async function recalcSegment(segmentId: string): Promise<{ ok: true } | any> {
+  return http(`/segments/${encodeURIComponent(segmentId)}/recalculate`, { method: 'POST' });
+}
+
+// ===== More Analytics helpers =====
+export async function getRevenueMetrics(merchantId: string, qp?: { period?: string; from?: string; to?: string }) {
+  const p = new URLSearchParams();
+  if (qp?.period) p.set('period', qp.period);
+  if (qp?.from) p.set('from', qp.from);
+  if (qp?.to) p.set('to', qp.to);
+  return http(`/analytics/revenue/${encodeURIComponent(merchantId)}${p.toString()?`?${p.toString()}`:''}`);
+}
+
+export async function getCustomerMetrics(merchantId: string, qp?: { period?: string; from?: string; to?: string }) {
+  const p = new URLSearchParams();
+  if (qp?.period) p.set('period', qp.period);
+  if (qp?.from) p.set('from', qp.from);
+  if (qp?.to) p.set('to', qp.to);
+  return http(`/analytics/customers/${encodeURIComponent(merchantId)}${p.toString()?`?${p.toString()}`:''}`);
+}
+
+export async function getLoyaltyMetrics(merchantId: string, qp?: { period?: string; from?: string; to?: string }) {
+  const p = new URLSearchParams();
+  if (qp?.period) p.set('period', qp.period);
+  if (qp?.from) p.set('from', qp.from);
+  if (qp?.to) p.set('to', qp.to);
+  return http(`/analytics/loyalty/${encodeURIComponent(merchantId)}${p.toString()?`?${p.toString()}`:''}`);
+}
+
+export async function getOperationalMetrics(merchantId: string, qp?: { period?: string; from?: string; to?: string }) {
+  const p = new URLSearchParams();
+  if (qp?.period) p.set('period', qp.period);
+  if (qp?.from) p.set('from', qp.from);
+  if (qp?.to) p.set('to', qp.to);
+  return http(`/analytics/operations/${encodeURIComponent(merchantId)}${p.toString()?`?${p.toString()}`:''}`);
+}
+
+export async function getCustomerPortraitAnalytics(merchantId: string, qp?: { period?: string; from?: string; to?: string }) {
+  const p = new URLSearchParams();
+  if (qp?.period) p.set('period', qp.period);
+  if (qp?.from) p.set('from', qp.from);
+  if (qp?.to) p.set('to', qp.to);
+  return http(`/analytics/portrait/${encodeURIComponent(merchantId)}${p.toString()?`?${p.toString()}`:''}`);
+}
+
+export async function getRepeatPurchasesAnalytics(merchantId: string, qp?: { period?: string; from?: string; to?: string; outletId?: string }) {
+  const p = new URLSearchParams();
+  if (qp?.period) p.set('period', qp.period);
+  if (qp?.from) p.set('from', qp.from);
+  if (qp?.to) p.set('to', qp.to);
+  if (qp?.outletId) p.set('outletId', qp.outletId);
+  return http(`/analytics/repeat/${encodeURIComponent(merchantId)}${p.toString()?`?${p.toString()}`:''}`);
+}
+
+export async function getBirthdaysAnalytics(merchantId: string, withinDays = 30, limit = 100) {
+  const p = new URLSearchParams();
+  if (withinDays) p.set('withinDays', String(withinDays));
+  if (limit) p.set('limit', String(limit));
+  return http(`/analytics/birthdays/${encodeURIComponent(merchantId)}${p.toString()?`?${p.toString()}`:''}`);
+}
+
+export async function getReferralSummaryAnalytics(merchantId: string, qp?: { period?: string; from?: string; to?: string }) {
+  const p = new URLSearchParams();
+  if (qp?.period) p.set('period', qp.period);
+  if (qp?.from) p.set('from', qp.from);
+  if (qp?.to) p.set('to', qp.to);
+  return http(`/analytics/referral/${encodeURIComponent(merchantId)}${p.toString()?`?${p.toString()}`:''}`);
+}
+
+export async function getBusinessMetricsAnalytics(merchantId: string, qp?: { period?: string; from?: string; to?: string; minPurchases?: number }) {
+  const p = new URLSearchParams();
+  if (qp?.period) p.set('period', qp.period);
+  if (qp?.from) p.set('from', qp.from);
+  if (qp?.to) p.set('to', qp.to);
+  if (qp?.minPurchases != null) p.set('minPurchases', String(qp.minPurchases));
+  return http(`/analytics/business/${encodeURIComponent(merchantId)}${p.toString()?`?${p.toString()}`:''}`);
+}
+
+// ===== Referral program helpers =====
+export type ReferralProgramDto = {
+  merchantId: string;
+  name: string;
+  description?: string;
+  referrerReward: number;
+  refereeReward: number;
+  minPurchaseAmount?: number;
+  maxReferrals?: number;
+  expiryDays?: number;
+  status?: 'ACTIVE'|'PAUSED'|'COMPLETED';
+};
+
+export async function getActiveReferralProgram(merchantId: string) {
+  return http(`/referral/program/${encodeURIComponent(merchantId)}`);
+}
+
+export async function createReferralProgram(dto: ReferralProgramDto) {
+  return http(`/referral/program`, { method: 'POST', body: JSON.stringify(dto) });
+}
+
+export async function updateReferralProgram(programId: string, dto: Partial<ReferralProgramDto>) {
+  return http(`/referral/program/${encodeURIComponent(programId)}`, { method: 'PUT', body: JSON.stringify(dto) });
+}
+
+export async function getReferralLeaderboard(merchantId: string, limit = 10) {
+  const p = new URLSearchParams();
+  if (limit) p.set('limit', String(limit));
+  return http(`/referral/leaderboard/${encodeURIComponent(merchantId)}${p.toString()?`?${p.toString()}`:''}`);
 }

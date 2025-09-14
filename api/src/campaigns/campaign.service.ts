@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { ConfigService } from '@nestjs/config';
+import type { Response } from 'express';
 
 export interface CreateCampaignDto {
   merchantId: string;
@@ -95,6 +96,65 @@ export class CampaignService {
     }
 
     return campaign;
+  }
+
+  /**
+   * Потоковый экспорт использований кампаний (batch-пагинация)
+   */
+  async streamCampaignUsagesCsv(params: { merchantId: string; campaignId?: string; customerId?: string; from?: Date; to?: Date }, res: Response, batch = 1000) {
+    const where: any = { campaign: { merchantId: params.merchantId } };
+    if (params.campaignId) where.campaignId = params.campaignId;
+    if (params.customerId) where.customerId = params.customerId;
+    if (params.from || params.to) where.usedAt = Object.assign({}, params.from ? { gte: params.from } : {}, params.to ? { lte: params.to } : {});
+
+    res.write(['id','campaignId','campaignName','customerId','rewardType','rewardValue','usedAt'].join(';') + '\n');
+    let before: Date | undefined = undefined;
+    while (true) {
+      const page = await this.prisma.campaignUsage.findMany({
+        where: Object.assign({}, where, before ? { usedAt: Object.assign({}, (where.usedAt||{}), { lt: before }) } : {}),
+        include: { campaign: { select: { name: true } } },
+        orderBy: { usedAt: 'desc' },
+        take: batch,
+      });
+      if (!page.length) break;
+      for (const u of page) {
+        const row = [u.id, u.campaignId, u.campaign?.name || '', u.customerId, u.rewardType||'', u.rewardValue??'', u.usedAt.toISOString()]
+          .map(v => this.csvCell(String(v ?? ''))).join(';');
+        res.write(row + '\n');
+      }
+      before = page[page.length - 1].usedAt;
+      if (page.length < batch) break;
+    }
+  }
+
+  /**
+   * Потоковый экспорт кампаний мерчанта
+   */
+  async streamCampaignsCsv(merchantId: string, res: Response, status?: string, batch = 1000) {
+    const where: any = { merchantId };
+    if (status) where.status = status;
+    res.write(['id','name','status','type','startDate','endDate','budget','maxUsagePerCustomer','maxUsageTotal','createdAt'].join(';') + '\n');
+    let before: Date | undefined = undefined;
+    while (true) {
+      const page = await this.prisma.campaign.findMany({
+        where: Object.assign({}, where, before ? { createdAt: { lt: before } } : {}),
+        orderBy: { createdAt: 'desc' },
+        take: batch,
+      });
+      if (!page.length) break;
+      for (const c of page) {
+        const row = [c.id, c.name, c.status, c.type, c.startDate?c.startDate.toISOString():'', c.endDate?c.endDate.toISOString():'', c.budget??'', c.maxUsagePerCustomer??'', c.maxUsageTotal??'', c.createdAt.toISOString()]
+          .map(v => this.csvCell(String(v ?? ''))).join(';');
+        res.write(row + '\n');
+      }
+      before = page[page.length - 1].createdAt;
+      if (page.length < batch) break;
+    }
+  }
+
+  private csvCell(s: string) {
+    const esc = s.replace(/"/g, '""');
+    return `"${esc}"`;
   }
 
   /**

@@ -1,6 +1,6 @@
 "use client";
 import { useState } from 'react';
-import { customerSearch, customerSummary, transactionsCsvUrl, receiptsCsvUrl, listTransactionsAdmin, listReceiptsAdmin, type CustomerSummary } from '../../lib/admin';
+import { customerSearch, customerSummary, transactionsCsvUrl, receiptsCsvUrl, listTransactionsAdmin, listReceiptsAdmin, type CustomerSummary, getCustomerTimeline } from '../../lib/admin';
 
 export default function CustomersPage() {
   const [merchantId, setMerchantId] = useState<string>(process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1');
@@ -15,6 +15,8 @@ export default function CustomersPage() {
   const [rcBefore, setRcBefore] = useState<string | undefined>(undefined);
   const [txType, setTxType] = useState<string>('');
   const [pageSize, setPageSize] = useState<number>(20);
+  const [timeline, setTimeline] = useState<Array<{ type: string; at: string; data: any }>>([]);
+  const [loadingTimeline, setLoadingTimeline] = useState<boolean>(false);
 
   const doSearch = async () => {
     setBusy(true); setMsg(''); setSummary(null);
@@ -57,6 +59,19 @@ export default function CustomersPage() {
     if (rc.length > 0) setRcBefore(rc[rc.length-1].createdAt);
   };
 
+  const loadTimeline = async () => {
+    if (!found) return;
+    setLoadingTimeline(true);
+    try {
+      const res = await getCustomerTimeline(merchantId, found.customerId, 50);
+      setTimeline(res.items);
+    } catch (e) {
+      // noop
+    } finally {
+      setLoadingTimeline(false);
+    }
+  };
+
   return (
     <div>
       <h2>Клиенты</h2>
@@ -74,6 +89,26 @@ export default function CustomersPage() {
           <div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
             <a href={txCsv} download style={{ color:'#89b4fa' }}>Скачать transactions.csv</a>
             <a href={rcCsv} download style={{ color:'#89b4fa' }}>Скачать receipts.csv</a>
+          </div>
+          <div style={{ background:'#0e1629', padding:10, borderRadius:8 }}>
+            <h3 style={{ marginTop:0 }}>Таймлайн клиента</h3>
+            <div style={{ marginBottom:8 }}>
+              <button onClick={loadTimeline} disabled={loadingTimeline} style={{ padding:'6px 10px' }}>{loadingTimeline ? 'Загрузка...' : 'Показать таймлайн'}</button>
+            </div>
+            <div style={{ display:'grid', gap:6 }}>
+              {timeline.length === 0 && <div style={{ opacity:0.8 }}>—</div>}
+              {timeline.map((ev, idx) => (
+                <div key={idx} style={{ display:'grid', gridTemplateColumns:'220px 120px 1fr', gap:8 }}>
+                  <div style={{ opacity:0.8 }}>{new Date(ev.at).toLocaleString()}</div>
+                  <div><b>{ev.type}</b></div>
+                  <div style={{ opacity:0.9, whiteSpace:'pre-wrap' }}>
+                    {ev.type === 'transaction' && `txn ${ev.data.txnType} amount=${ev.data.amount} order=${ev.data.orderId || '—'}`}
+                    {ev.type === 'receipt' && `receipt order=${ev.data.orderId} total=${ev.data.total} earn=${ev.data.earnApplied} redeem=${ev.data.redeemApplied}`}
+                    {ev.type === 'campaign' && `campaign ${ev.data.campaignName || ev.data.campaignId} reward=${ev.data.rewardType}:${ev.data.rewardValue}`}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}

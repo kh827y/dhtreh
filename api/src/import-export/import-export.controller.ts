@@ -85,6 +85,7 @@ export class ImportExportController {
     @Query('hasTransactions') hasTransactions?: string,
     @Query('createdFrom') createdFrom?: string,
     @Query('createdTo') createdTo?: string,
+    @Query('batch') batchStr: string = '1000',
     @Res() res?: Response,
   ) {
     const dto: ExportCustomersDto = {
@@ -100,20 +101,50 @@ export class ImportExportController {
       },
     };
 
-    const buffer = await this.importExportService.exportCustomers(dto);
-
     const filename = `customers_${merchantId}_${Date.now()}.${format === 'csv' ? 'csv' : 'xlsx'}`;
-    const contentType = format === 'csv' 
-      ? 'text/csv; charset=utf-8'
-      : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
+    if (format === 'csv') {
+      const batch = Math.min(Math.max(parseInt(batchStr, 10) || 1000, 100), 5000);
+      res!.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res!.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      await this.importExportService.streamCustomersCsv(dto, res!, batch);
+      return res!.end();
+    }
+
+    const buffer = await this.importExportService.exportCustomers(dto);
     res!.set({
-      'Content-Type': contentType,
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': `attachment; filename="${filename}"`,
       'Content-Length': buffer.length.toString(),
     });
+    return res!.send(buffer);
+  }
 
-    res!.send(buffer);
+  /**
+   * Экспорт транзакций в CSV (стрим)
+   */
+  @Get('export/transactions')
+  @ApiOperation({ summary: 'Экспортировать транзакции в CSV (стрим)' })
+  async exportTransactions(
+    @Query('merchantId') merchantId: string,
+    @Query('from') fromStr?: string,
+    @Query('to') toStr?: string,
+    @Query('type') type?: string,
+    @Query('customerId') customerId?: string,
+    @Query('outletId') outletId?: string,
+    @Query('deviceId') deviceId?: string,
+    @Query('staffId') staffId?: string,
+    @Query('batch') batchStr: string = '1000',
+    @Res() res?: Response,
+  ) {
+    const batch = Math.min(Math.max(parseInt(batchStr, 10) || 1000, 100), 5000);
+    const from = fromStr ? new Date(fromStr) : undefined;
+    const to = toStr ? new Date(toStr) : undefined;
+    const filename = `transactions_${merchantId}_${Date.now()}.csv`;
+    res!.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res!.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    await this.importExportService.streamTransactionsCsv({ merchantId, from, to, type, customerId, outletId, deviceId, staffId }, res!, batch);
+    res!.end();
   }
 
   /**

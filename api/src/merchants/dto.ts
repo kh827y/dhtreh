@@ -75,6 +75,10 @@ export class UpdateMerchantSettingsDto {
   @IsOptional() @IsInt() @Min(0)
   pointsTtlDays?: number;
 
+  @ApiPropertyOptional({ minimum: 0, description: 'Задержка начисления (в днях). 0 или отсутствие — немедленно' })
+  @IsOptional() @IsInt() @Min(0)
+  earnDelayDays?: number;
+
   // Telegram/miniapp настройки
   @ApiPropertyOptional({ description: 'Telegram Bot Token для мини-аппы мерчанта' })
   @IsOptional() @IsString()
@@ -173,6 +177,7 @@ export class MerchantSettingsRespDto {
   @ApiPropertyOptional() rulesJson?: any;
   @ApiProperty() requireStaffKey!: boolean;
   @ApiPropertyOptional({ description: 'TTL баллов (в днях). Предпросмотр через outbox, списание отключено.' }) pointsTtlDays?: number|null;
+  @ApiPropertyOptional({ description: 'Задержка начисления (в днях)' }) earnDelayDays?: number|null;
   // Telegram/miniapp
   @ApiPropertyOptional() telegramBotToken?: string|null;
   @ApiPropertyOptional() telegramBotUsername?: string|null;

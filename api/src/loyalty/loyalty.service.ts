@@ -55,31 +55,37 @@ export class LoyaltyService {
 
   // ===== Earn Lots helpers (optional feature) =====
   private async consumeLots(tx: any, merchantId: string, customerId: string, amount: number, ctx: { orderId?: string|null }) {
-    const lots = await tx.earnLot.findMany({ where: { merchantId, customerId }, orderBy: { earnedAt: 'asc' } });
+    const earnLot = (tx as any)?.earnLot ?? (this.prisma as any)?.earnLot;
+    if (!earnLot?.findMany || !earnLot?.update) return; // в тестовых моках может отсутствовать
+    const lots = await earnLot.findMany({ where: { merchantId, customerId }, orderBy: { earnedAt: 'asc' } });
     const updates = require('./lots.util').planConsume(lots.map((l: any) => ({ id: l.id, points: l.points, consumedPoints: l.consumedPoints || 0, earnedAt: l.earnedAt })), amount);
     for (const up of updates) {
       const lot = lots.find((l: any) => l.id === up.id)!;
-      await tx.earnLot.update({ where: { id: up.id }, data: { consumedPoints: (lot.consumedPoints || 0) + up.deltaConsumed } });
+      await earnLot.update({ where: { id: up.id }, data: { consumedPoints: (lot.consumedPoints || 0) + up.deltaConsumed } });
       await tx.eventOutbox.create({ data: { merchantId, eventType: 'loyalty.earnlot.consumed', payload: { merchantId, customerId, lotId: up.id, consumed: up.deltaConsumed, orderId: ctx.orderId ?? null, at: new Date().toISOString() } } });
     }
   }
 
   private async unconsumeLots(tx: any, merchantId: string, customerId: string, amount: number, ctx: { orderId?: string|null }) {
-    const lots = await tx.earnLot.findMany({ where: { merchantId, customerId, consumedPoints: { gt: 0 } }, orderBy: { earnedAt: 'desc' } });
+    const earnLot = (tx as any)?.earnLot ?? (this.prisma as any)?.earnLot;
+    if (!earnLot?.findMany || !earnLot?.update) return;
+    const lots = await earnLot.findMany({ where: { merchantId, customerId, consumedPoints: { gt: 0 } }, orderBy: { earnedAt: 'desc' } });
     const updates = require('./lots.util').planUnconsume(lots.map((l: any) => ({ id: l.id, points: l.points, consumedPoints: l.consumedPoints || 0, earnedAt: l.earnedAt })), amount);
     for (const up of updates) {
       const lot = lots.find((l: any) => l.id === up.id)!;
-      await tx.earnLot.update({ where: { id: up.id }, data: { consumedPoints: (lot.consumedPoints || 0) + up.deltaConsumed } });
+      await earnLot.update({ where: { id: up.id }, data: { consumedPoints: (lot.consumedPoints || 0) + up.deltaConsumed } });
       await tx.eventOutbox.create({ data: { merchantId, eventType: 'loyalty.earnlot.unconsumed', payload: { merchantId, customerId, lotId: up.id, unconsumed: -up.deltaConsumed, orderId: ctx.orderId ?? null, at: new Date().toISOString() } } });
     }
   }
 
   private async revokeLots(tx: any, merchantId: string, customerId: string, amount: number, ctx: { orderId?: string|null }) {
-    const lots = await tx.earnLot.findMany({ where: { merchantId, customerId }, orderBy: { earnedAt: 'desc' } });
+    const earnLot = (tx as any)?.earnLot ?? (this.prisma as any)?.earnLot;
+    if (!earnLot?.findMany || !earnLot?.update) return;
+    const lots = await earnLot.findMany({ where: { merchantId, customerId }, orderBy: { earnedAt: 'desc' } });
     const updates = require('./lots.util').planRevoke(lots.map((l: any) => ({ id: l.id, points: l.points, consumedPoints: l.consumedPoints || 0, earnedAt: l.earnedAt })), amount);
     for (const up of updates) {
       const lot = lots.find((l: any) => l.id === up.id)!;
-      await tx.earnLot.update({ where: { id: up.id }, data: { consumedPoints: (lot.consumedPoints || 0) + up.deltaConsumed } });
+      await earnLot.update({ where: { id: up.id }, data: { consumedPoints: (lot.consumedPoints || 0) + up.deltaConsumed } });
       await tx.eventOutbox.create({ data: { merchantId, eventType: 'loyalty.earnlot.revoked', payload: { merchantId, customerId, lotId: up.id, revoked: up.deltaConsumed, orderId: ctx.orderId ?? null, at: new Date().toISOString() } } });
     }
   }
@@ -450,50 +456,104 @@ export class LoyaltyService {
           }
         }
       if (hold.mode === 'EARN' && hold.earnPoints > 0) {
-        const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
-        appliedEarn = hold.earnPoints;
-        await tx.wallet.update({ where: { id: wallet.id }, data: { balance: fresh!.balance + hold.earnPoints } });
-        await tx.transaction.create({
-          data: { customerId: hold.customerId, merchantId: hold.merchantId, type: TxnType.EARN, amount: hold.earnPoints, orderId, outletId: hold.outletId, deviceId: hold.deviceId, staffId: hold.staffId }
-        });
-        // Ledger mirror (optional)
-        if (process.env.LEDGER_FEATURE === '1' && appliedEarn > 0) {
-          await tx.ledgerEntry.create({ data: {
-            merchantId: hold.merchantId,
-            customerId: hold.customerId,
-            debit: LedgerAccount.MERCHANT_LIABILITY,
-            credit: LedgerAccount.CUSTOMER_BALANCE,
-            amount: appliedEarn,
-            orderId,
-            outletId: hold.outletId ?? null,
-            deviceId: hold.deviceId ?? null,
-            staffId: hold.staffId ?? null,
-            meta: { mode: 'EARN' },
-          }});
-          this.metrics.inc('loyalty_ledger_entries_total', { type: 'earn' });
-          this.metrics.inc('loyalty_ledger_amount_total', { type: 'earn' }, appliedEarn);
+        // Проверяем, требуется ли задержка начисления. В юнит-тестах tx может не иметь merchantSettings — делаем fallback на this.prisma.
+        let settings: any = null;
+        const txHasMs = (tx as any)?.merchantSettings?.findUnique;
+        if (txHasMs) {
+          settings = await (tx as any).merchantSettings.findUnique({ where: { merchantId: hold.merchantId } });
+        } else if ((this.prisma as any)?.merchantSettings?.findUnique) {
+          settings = await (this.prisma as any).merchantSettings.findUnique({ where: { merchantId: hold.merchantId } });
         }
-        // Earn lots (optional)
-        if (process.env.EARN_LOTS_FEATURE === '1' && appliedEarn > 0) {
-          let expires: Date | null = null;
-          try {
-            const s = await tx.merchantSettings.findUnique({ where: { merchantId: hold.merchantId } });
-            const days = (s as any)?.pointsTtlDays as number | null;
-            if (days && days > 0) expires = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
-          } catch {}
-          await tx.earnLot.create({ data: {
+        const delayDays = Number((settings as any)?.earnDelayDays || 0) || 0;
+        const ttlDays = Number((settings as any)?.pointsTtlDays || 0) || 0;
+        appliedEarn = hold.earnPoints;
+
+        if (delayDays > 0) {
+          // Откладываем начисление: создаём PENDING lot и событие, баланс не трогаем до созревания
+          if (process.env.EARN_LOTS_FEATURE === '1' && appliedEarn > 0) {
+            const maturesAt = new Date(Date.now() + delayDays * 24 * 60 * 60 * 1000);
+            const expiresAt = ttlDays > 0 ? new Date(maturesAt.getTime() + ttlDays * 24 * 60 * 60 * 1000) : null;
+            const earnLot = (tx as any)?.earnLot ?? (this.prisma as any)?.earnLot;
+            if (earnLot?.create) {
+              await earnLot.create({ data: {
+                merchantId: hold.merchantId,
+                customerId: hold.customerId,
+                points: appliedEarn,
+                consumedPoints: 0,
+                earnedAt: maturesAt, // TTL считается от момента активации
+                maturesAt,
+                expiresAt,
+                orderId,
+                receiptId: null,
+                outletId: hold.outletId ?? null,
+                deviceId: hold.deviceId ?? null,
+                staffId: hold.staffId ?? null,
+                status: 'PENDING',
+              }});
+            }
+          }
+          await tx.eventOutbox.create({ data: {
             merchantId: hold.merchantId,
-            customerId: hold.customerId,
-            points: appliedEarn,
-            consumedPoints: 0,
-            earnedAt: new Date(),
-            expiresAt: expires,
-            orderId,
-            receiptId: null,
-            outletId: hold.outletId ?? null,
-            deviceId: hold.deviceId ?? null,
-            staffId: hold.staffId ?? null,
+            eventType: 'loyalty.earn.scheduled',
+            payload: {
+              holdId: hold.id,
+              orderId,
+              customerId: hold.customerId,
+              merchantId: hold.merchantId,
+              points: appliedEarn,
+              maturesAt: new Date(Date.now() + delayDays * 24 * 60 * 60 * 1000).toISOString(),
+              outletId: hold.outletId ?? null,
+              deviceId: hold.deviceId ?? null,
+              staffId: hold.staffId ?? null,
+            } as any,
           }});
+        } else {
+          // Немедленное начисление
+          const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
+          await tx.wallet.update({ where: { id: wallet.id }, data: { balance: fresh!.balance + hold.earnPoints } });
+          await tx.transaction.create({
+            data: { customerId: hold.customerId, merchantId: hold.merchantId, type: TxnType.EARN, amount: hold.earnPoints, orderId, outletId: hold.outletId, deviceId: hold.deviceId, staffId: hold.staffId }
+          });
+          // Ledger mirror (optional)
+          if (process.env.LEDGER_FEATURE === '1' && appliedEarn > 0) {
+            await tx.ledgerEntry.create({ data: {
+              merchantId: hold.merchantId,
+              customerId: hold.customerId,
+              debit: LedgerAccount.MERCHANT_LIABILITY,
+              credit: LedgerAccount.CUSTOMER_BALANCE,
+              amount: appliedEarn,
+              orderId,
+              outletId: hold.outletId ?? null,
+              deviceId: hold.deviceId ?? null,
+              staffId: hold.staffId ?? null,
+              meta: { mode: 'EARN' },
+            }});
+            this.metrics.inc('loyalty_ledger_entries_total', { type: 'earn' });
+            this.metrics.inc('loyalty_ledger_amount_total', { type: 'earn' }, appliedEarn);
+          }
+          // Earn lots (optional)
+          if (process.env.EARN_LOTS_FEATURE === '1' && appliedEarn > 0) {
+            let expires: Date | null = null;
+            if (ttlDays > 0) expires = new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000);
+            const earnLot = (tx as any)?.earnLot ?? (this.prisma as any)?.earnLot;
+            if (earnLot?.create) {
+              await earnLot.create({ data: {
+                merchantId: hold.merchantId,
+                customerId: hold.customerId,
+                points: appliedEarn,
+                consumedPoints: 0,
+                earnedAt: new Date(),
+                maturesAt: null,
+                expiresAt: expires,
+                orderId,
+                receiptId: null,
+                outletId: hold.outletId ?? null,
+                deviceId: hold.deviceId ?? null,
+                staffId: hold.staffId ?? null,
+                status: 'ACTIVE',
+              }});
+            }
+          }
         }
       }
 

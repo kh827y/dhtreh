@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
+import type { Response } from 'express';
 import { PrismaService } from '../prisma.service';
 import * as XLSX from 'xlsx';
 import * as csv from 'csv-parse/sync';
@@ -191,6 +192,97 @@ export class ImportExportService {
   }
 
   /**
+   * Потоковый экспорт клиентов в CSV (батчами)
+   */
+  async streamCustomersCsv(dto: ExportCustomersDto, res: Response, batch = 1000) {
+    const where: any = { wallets: { some: { merchantId: dto.merchantId } } };
+    if (dto.filters) {
+      if (dto.filters.hasTransactions !== undefined) {
+        where.transactions = dto.filters.hasTransactions
+          ? { some: { merchantId: dto.merchantId } }
+          : { none: { merchantId: dto.merchantId } };
+      }
+      if (dto.filters.createdFrom || dto.filters.createdTo) {
+        where.createdAt = {};
+        if (dto.filters.createdFrom) where.createdAt.gte = dto.filters.createdFrom;
+        if (dto.filters.createdTo) where.createdAt.lte = dto.filters.createdTo;
+      }
+    }
+    const allFields = [
+      'ID','Телефон','Email','Имя','Дата рождения','Пол','Город','Баланс баллов','Дата регистрации','Последняя покупка','Сегменты','Тэги'
+    ];
+    const fields = Array.isArray(dto.fields) && dto.fields.length ? dto.fields.filter(f => allFields.includes(f)) : allFields;
+    res.write(fields.join(';') + '\n');
+    let before: Date | undefined = undefined;
+    while (true) {
+      const page = await this.prisma.customer.findMany({
+        where: Object.assign({}, where, before ? { createdAt: Object.assign({}, (where.createdAt||{}), { lt: before }) } : {}),
+        include: {
+          wallets: { where: { merchantId: dto.merchantId } },
+          transactions: { where: { merchantId: dto.merchantId }, orderBy: { createdAt: 'desc' }, take: 1 },
+          segments: { include: { segment: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: batch,
+      });
+      if (!page.length) break;
+      for (const customer of page) {
+        const wallet = customer.wallets[0];
+        const lastTransaction = customer.transactions[0];
+        const segments = customer.segments.map(s => s.segment.name).filter(Boolean).join(', ');
+        const row: Record<string, any> = {
+          'ID': customer.id,
+          'Телефон': customer.phone || '',
+          'Email': customer.email || '',
+          'Имя': customer.name || '',
+          'Дата рождения': customer.birthday ? customer.birthday.toLocaleDateString('ru-RU') : '',
+          'Пол': customer.gender || '',
+          'Город': customer.city || '',
+          'Баланс баллов': wallet?.balance || 0,
+          'Дата регистрации': customer.createdAt.toLocaleDateString('ru-RU'),
+          'Последняя покупка': lastTransaction?.createdAt ? lastTransaction.createdAt.toLocaleDateString('ru-RU') : '',
+          'Сегменты': segments,
+          'Тэги': customer.tags?.join(', ') || '',
+        };
+        const line = fields.map(f => this.csvCell(String(row[f] ?? ''))).join(';');
+        res.write(line + '\n');
+      }
+      before = page[page.length - 1].createdAt;
+      if (page.length < batch) break;
+    }
+  }
+
+  /**
+   * Потоковый экспорт транзакций в CSV (батчами)
+   */
+  async streamTransactionsCsv(params: { merchantId: string; from?: Date; to?: Date; type?: string; customerId?: string; outletId?: string; deviceId?: string; staffId?: string; }, res: Response, batch = 1000) {
+    const where: any = { merchantId: params.merchantId };
+    if (params.type) where.type = params.type as any;
+    if (params.customerId) where.customerId = params.customerId;
+    if (params.outletId) where.outletId = params.outletId;
+    if (params.deviceId) where.deviceId = params.deviceId;
+    if (params.staffId) where.staffId = params.staffId;
+    if (params.from || params.to) where.createdAt = Object.assign({}, params.from ? { gte: params.from } : {}, params.to ? { lte: params.to } : {});
+    res.write(['id','type','amount','orderId','customerId','createdAt','outletId','deviceId','staffId'].join(';') + '\n');
+    let before: Date | undefined = undefined;
+    while (true) {
+      const page = await this.prisma.transaction.findMany({
+        where: Object.assign({}, where, before ? { createdAt: Object.assign({}, (where.createdAt||{}), { lt: before }) } : {}),
+        orderBy: { createdAt: 'desc' },
+        take: batch,
+      });
+      if (!page.length) break;
+      for (const t of page) {
+        const row = [ t.id, t.type, t.amount, t.orderId||'', t.customerId||'', t.createdAt.toISOString(), t.outletId||'', t.deviceId||'', t.staffId||'' ]
+          .map(v => this.csvCell(String(v ?? ''))).join(';');
+        res.write(row + '\n');
+      }
+      before = page[page.length - 1].createdAt;
+      if (page.length < batch) break;
+    }
+  }
+
+  /**
    * Импорт транзакций
    */
   async importTransactions(
@@ -347,6 +439,11 @@ export class ImportExportService {
     });
 
     return Buffer.from(csv, 'utf-8');
+  }
+
+  private csvCell(s: string) {
+    const esc = s.replace(/"/g, '""');
+    return `"${esc}"`;
   }
 
   private generateExcel(data: any[]): Buffer {

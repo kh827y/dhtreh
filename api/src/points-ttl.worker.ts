@@ -43,7 +43,7 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
         const useLots = process.env.EARN_LOTS_FEATURE === '1';
         if (useLots) {
           // Точный превью: неиспользованные lot'ы, «заработанные» ранее cutoff
-          const lots = await this.prisma.earnLot.findMany({ where: { merchantId: s.merchantId, earnedAt: { lt: cutoff } } });
+          const lots = await this.prisma.earnLot.findMany({ where: { merchantId: s.merchantId, status: 'ACTIVE', earnedAt: { lt: cutoff } } });
           const byCustomer = new Map<string, number>();
           for (const lot of lots) {
             const remain = Math.max(0, lot.points - lot.consumedPoints);

@@ -3,6 +3,47 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Gifts catalog (spend points for internal rewards)
+model Gift {
+  id          String   @id @default(cuid())
+  merchantId  String
+  title       String
+  description String?
+  imageUrl    String?
+  costPoints  Int
+  active      Boolean  @default(true)
+  periodFrom  DateTime?
+  periodTo    DateTime?
+  perCustomerLimit Int?
+  inventory   Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  merchant    Merchant @relation(fields: [merchantId], references: [id])
+  redemptions GiftRedemption[]
+
+  @@index([merchantId, active])
+}
+
+model GiftRedemption {
+  id          String   @id @default(cuid())
+  giftId      String
+  merchantId  String
+  customerId  String
+  code        String   @unique
+  state       String   @default("REDEEMED") // RESERVED | REDEEMED | CANCELED
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime?
+  redeemedAt  DateTime?
+  canceledAt  DateTime?
+
+  gift        Gift     @relation(fields: [giftId], references: [id])
+  merchant    Merchant @relation(fields: [merchantId], references: [id])
+  customer    Customer @relation(fields: [customerId], references: [id])
+
+  @@index([merchantId, customerId, createdAt])
+}
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -79,6 +120,12 @@ model Merchant {
   reviews        Review[]
   referralPrograms ReferralProgram[]
   vouchers         Voucher[]
+  // analytics back-relations
+  customerStats     CustomerStats[]
+  kpiDaily          MerchantKpiDaily[]
+  // gifts
+  gifts             Gift[]
+  giftRedemptions   GiftRedemption[]
 }
 
 model MerchantSettings {
@@ -94,6 +141,7 @@ model MerchantSettings {
   webhookKeyIdNext  String?
   useWebhookNext    Boolean  @default(false)
   pointsTtlDays     Int?
+  earnDelayDays     Int?    // задержка начисления (в днях)
   redeemCooldownSec Int   @default(0)
   earnCooldownSec   Int   @default(0)
   redeemDailyCap    Int?
@@ -170,6 +218,8 @@ model Customer {
   referralsAsReferrer Referral[] @relation("ReferralReferrer")
   referralsAsReferee  Referral[] @relation("ReferralReferee")
   pushDevices       PushDevice[]
+  customerStats     CustomerStats[]
+  giftRedemptions   GiftRedemption[]
 }
 
 model Wallet {
@@ -389,12 +439,14 @@ model EarnLot {
   points        Int
   consumedPoints Int     @default(0)
   earnedAt      DateTime
+  maturesAt     DateTime?
   expiresAt     DateTime?
   orderId       String?
   receiptId     String?
   outletId      String?
   deviceId      String?
   staffId       String?
+  status        String   @default("ACTIVE") // ACTIVE | PENDING
   createdAt     DateTime @default(now())
 
   @@index([merchantId, customerId, earnedAt])
@@ -901,4 +953,50 @@ model ReviewReaction {
   customer          Customer  @relation(fields: [customerId], references: [id])
 
   @@unique([reviewId, customerId])
+}
+
+// Aggregated per-customer stats per merchant
+model CustomerStats {
+  merchantId   String
+  customerId   String
+  firstSeenAt  DateTime @default(now())
+  lastSeenAt   DateTime @default(now())
+  lastOrderAt  DateTime?
+  visits       Int      @default(0)
+  totalSpent   Int      @default(0)
+  avgCheck     Float    @default(0)
+  rfmR         Int?
+  rfmF         Int?
+  rfmM         Int?
+  rfmScore     Int?
+  rfmClass     String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  merchant     Merchant @relation(fields: [merchantId], references: [id])
+  customer     Customer @relation(fields: [customerId], references: [id])
+
+  @@id([merchantId, customerId])
+  @@index([merchantId, updatedAt])
+}
+
+// Daily KPIs per merchant
+model MerchantKpiDaily {
+  id               String   @id @default(cuid())
+  merchantId       String
+  date             DateTime
+  revenue          Int      @default(0)
+  transactionCount Int      @default(0)
+  averageCheck     Float    @default(0)
+  newCustomers     Int      @default(0)
+  activeCustomers  Int      @default(0)
+  pointsIssued     Int      @default(0)
+  pointsRedeemed   Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  merchant         Merchant @relation(fields: [merchantId], references: [id])
+
+  @@unique([merchantId, date])
+  @@index([merchantId, date])
 }

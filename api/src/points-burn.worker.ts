@@ -39,7 +39,7 @@ export class PointsBurnWorker implements OnModuleInit, OnModuleDestroy {
         if (!days || days <= 0) continue;
         const cutoff = new Date(now - days * 24 * 60 * 60 * 1000);
         // Выберем клиентов, у кого есть неиспользованные lot'ы до cutoff
-        const lots = await this.prisma.earnLot.findMany({ where: { merchantId: s.merchantId, earnedAt: { lt: cutoff } } });
+        const lots = await this.prisma.earnLot.findMany({ where: { merchantId: s.merchantId, status: 'ACTIVE', earnedAt: { lt: cutoff } } });
         const map = new Map<string, number>();
         for (const lot of lots) {
           const remain = Math.max(0, (lot.points || 0) - (lot.consumedPoints || 0));

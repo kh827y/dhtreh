@@ -10,6 +10,7 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  Res,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { CampaignService } from './campaign.service';
@@ -48,6 +49,25 @@ export class CampaignController {
   }
 
   /**
+   * Экспорт кампаний в CSV (стрим)
+   */
+  @Get('export/campaigns.csv')
+  @ApiOperation({ summary: 'Экспортировать кампании в CSV (стрим)' })
+  async exportCampaignsCsv(
+    @Query('merchantId') merchantId: string,
+    @Query('status') status?: string,
+    @Query('batch') batchStr: string = '1000',
+    @Res() res?: any,
+  ) {
+    const batch = Math.min(Math.max(parseInt(batchStr, 10) || 1000, 100), 5000);
+    const filename = `campaigns_${merchantId}_${Date.now()}.csv`;
+    res!.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res!.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    await this.campaignService.streamCampaignsCsv(merchantId, res!, status, batch);
+    res!.end();
+  }
+
+  /**
    * Получить детали кампании
    */
   @Get(':campaignId')
@@ -56,6 +76,30 @@ export class CampaignController {
   @ApiResponse({ status: 404, description: 'Кампания не найдена' })
   async getCampaign(@Param('campaignId') campaignId: string) {
     return this.campaignService.getCampaign(campaignId);
+  }
+
+  /**
+   * Экспорт использований кампаний в CSV (стрим)
+   */
+  @Get('export/usages.csv')
+  @ApiOperation({ summary: 'Экспортировать использования кампаний в CSV (стрим)' })
+  async exportUsagesCsv(
+    @Query('merchantId') merchantId: string,
+    @Query('campaignId') campaignId?: string,
+    @Query('customerId') customerId?: string,
+    @Query('from') fromStr?: string,
+    @Query('to') toStr?: string,
+    @Query('batch') batchStr: string = '1000',
+    @Res() res?: any,
+  ) {
+    const batch = Math.min(Math.max(parseInt(batchStr, 10) || 1000, 100), 5000);
+    const filename = `campaign_usages_${merchantId}_${Date.now()}.csv`;
+    res!.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res!.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    const from = fromStr ? new Date(fromStr) : undefined;
+    const to = toStr ? new Date(toStr) : undefined;
+    await this.campaignService.streamCampaignUsagesCsv({ merchantId, campaignId, customerId, from, to }, res!, batch);
+    res!.end();
   }
 
   /**

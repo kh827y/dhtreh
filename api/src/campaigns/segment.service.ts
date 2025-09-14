@@ -265,101 +265,63 @@ export class SegmentService {
    * Поиск клиентов по правилам
    */
   private async findCustomersByRules(merchantId: string, rules: SegmentRules): Promise<string[]> {
-    // Базовый запрос - все клиенты с кошельками мерчанта
-    let query = this.prisma.$queryRaw<{ customerId: string }[]>`
-      SELECT DISTINCT w.customer_id as "customerId"
-      FROM wallet w
-      WHERE w.merchant_id = ${merchantId}
-    `;
+    // Используем агрегированные статистики + кошельки через Prisma, без сырых SQL
+    const candidateIds = new Set<string>();
+    let seeded = false;
 
-    const conditions: string[] = [];
-    const params: any[] = [merchantId];
-
-    // Баланс
-    if (rules.minBalance !== undefined) {
-      conditions.push(`w.balance >= $${params.length + 1}`);
-      params.push(rules.minBalance);
-    }
-    if (rules.maxBalance !== undefined) {
-      conditions.push(`w.balance <= $${params.length + 1}`);
-      params.push(rules.maxBalance);
-    }
-
-    // Покупки за период
+    // 1) Фильтрация по статистике клиента (CustomerStats)
+    const statsWhere: any = { merchantId };
     if (rules.lastPurchaseDaysAgo !== undefined) {
       const dateFrom = new Date();
       dateFrom.setDate(dateFrom.getDate() - rules.lastPurchaseDaysAgo);
-      conditions.push(`
-        EXISTS (
-          SELECT 1 FROM transaction t 
-          WHERE t.customer_id = w.customer_id 
-          AND t.merchant_id = w.merchant_id
-          AND t.created_at >= $${params.length + 1}
-        )
-      `);
-      params.push(dateFrom);
+      statsWhere.lastOrderAt = { gte: dateFrom };
     }
-
-    // Количество покупок
     if (rules.minPurchases !== undefined || rules.maxPurchases !== undefined) {
-      let havingClauses: string[] = [];
-      if (rules.minPurchases) {
-        havingClauses.push(`COUNT(*) >= $${params.length + 1}`);
-        params.push(rules.minPurchases);
-      }
-      if (rules.maxPurchases) {
-        havingClauses.push(`COUNT(*) <= $${params.length + 1}`);
-        params.push(rules.maxPurchases);
-      }
-      
-      conditions.push(`
-        w.customer_id IN (
-          SELECT customer_id 
-          FROM transaction 
-          WHERE merchant_id = $1
-          GROUP BY customer_id
-          HAVING ${havingClauses.join(' AND ')}
-        )
-      `);
+      statsWhere.visits = {};
+      if (rules.minPurchases !== undefined) statsWhere.visits.gte = rules.minPurchases;
+      if (rules.maxPurchases !== undefined) statsWhere.visits.lte = rules.maxPurchases;
     }
-
-    // Общая сумма покупок
     if (rules.minTotalSpent !== undefined || rules.maxTotalSpent !== undefined) {
-      let havingClauses: string[] = [];
-      if (rules.minTotalSpent) {
-        havingClauses.push(`SUM(ABS(amount)) >= $${params.length + 1}`);
-        params.push(rules.minTotalSpent);
-      }
-      if (rules.maxTotalSpent) {
-        havingClauses.push(`SUM(ABS(amount)) <= $${params.length + 1}`);
-        params.push(rules.maxTotalSpent);
-      }
-      
-      conditions.push(`
-        w.customer_id IN (
-          SELECT customer_id 
-          FROM transaction 
-          WHERE merchant_id = $1 AND type IN ('EARN', 'REDEEM')
-          GROUP BY customer_id
-          HAVING ${havingClauses.join(' AND ')}
-        )
-      `);
+      statsWhere.totalSpent = {};
+      if (rules.minTotalSpent !== undefined) statsWhere.totalSpent.gte = rules.minTotalSpent;
+      if (rules.maxTotalSpent !== undefined) statsWhere.totalSpent.lte = rules.maxTotalSpent;
     }
 
-    // Формируем финальный запрос
-    let sql = `
-      SELECT DISTINCT w.customer_id as "customerId"
-      FROM wallet w
-      LEFT JOIN customer c ON c.id = w.customer_id
-      WHERE w.merchant_id = $1
-    `;
-
-    if (conditions.length > 0) {
-      sql += ` AND ${conditions.join(' AND ')}`;
+    if (Object.keys(statsWhere).length > 1) { // кроме merchantId что-то добавили
+      const stats = await this.prisma.customerStats.findMany({
+        where: statsWhere,
+        select: { customerId: true },
+      });
+      for (const s of stats) candidateIds.add(s.customerId);
+      seeded = true;
     }
 
-    const result = await this.prisma.$queryRawUnsafe<{ customerId: string }[]>(sql, ...params);
-    return result.map(r => r.customerId);
+    // 2) Фильтрация по балансу кошелька (Wallet)
+    if (rules.minBalance !== undefined || rules.maxBalance !== undefined) {
+      const walWhere: any = { merchantId, type: 'POINTS' as any };
+      if (rules.minBalance !== undefined || rules.maxBalance !== undefined) {
+        walWhere.balance = {};
+        if (rules.minBalance !== undefined) walWhere.balance.gte = rules.minBalance;
+        if (rules.maxBalance !== undefined) walWhere.balance.lte = rules.maxBalance;
+      }
+      const wallets = await this.prisma.wallet.findMany({ where: walWhere, select: { customerId: true } });
+      const walletSet = new Set(wallets.map(w => w.customerId));
+      if (!seeded) {
+        for (const id of walletSet) candidateIds.add(id);
+        seeded = true;
+      } else {
+        // Пересечение с уже отфильтрованными по статистике
+        for (const id of Array.from(candidateIds)) if (!walletSet.has(id)) candidateIds.delete(id);
+      }
+    }
+
+    // Если ни одно правило не применилось — берём всех с кошельком мерчанта
+    if (!seeded) {
+      const wallets = await this.prisma.wallet.findMany({ where: { merchantId, type: 'POINTS' as any }, select: { customerId: true } });
+      for (const w of wallets) candidateIds.add(w.customerId);
+    }
+
+    return Array.from(candidateIds);
   }
 
   /**
