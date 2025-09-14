@@ -15,6 +15,18 @@
     "build:admin": "pnpm -C admin build",
     "build:cashier": "pnpm -C cashier build",
     "build:miniapp": "pnpm -C miniapp build",
-    "postman:gen": "pnpm -C api postman:gen"
+    "postman:gen": "pnpm -C api postman:gen",
+    "typecheck": "pnpm -C api typecheck && pnpm -C admin tsc --noEmit && pnpm -C cashier tsc --noEmit && pnpm -C miniapp tsc --noEmit",
+    "lint": "pnpm -C api lint && pnpm -C admin lint && pnpm -C cashier lint && pnpm -C miniapp lint",
+    "lint:fix": "pnpm -C api lint --fix && pnpm -C admin lint --fix && pnpm -C cashier lint --fix && pnpm -C miniapp lint --fix",
+    "format": "prettier -w .",
+    "format:check": "prettier -c .",
+    "test": "pnpm -C api test && pnpm -C api test:e2e"
+  },
+  "devDependencies": {
+    "eslint": "^9.18.0",
+    "eslint-config-prettier": "^10.0.1",
+    "eslint-plugin-prettier": "^5.2.2",
+    "prettier": "^3.4.2"
   }
 }
