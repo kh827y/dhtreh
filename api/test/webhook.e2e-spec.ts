@@ -334,5 +334,44 @@ describe('Webhooks (e2e)', () => {
       expect(res2.status).toBe(201);
       expect(res1.body).toEqual(res2.body);
     });
+
+    it('should return cached response on duplicate Idempotency-Key for refund', async () => {
+      const merchantId = 'M-idem-refund';
+      const idempotencyKey = 'idem-refund-' + Date.now();
+
+      // Create committed receipt
+      const quote = await request(app.getHttpServer())
+        .post('/loyalty/quote')
+        .send({
+          mode: 'earn',
+          merchantId,
+          orderId: 'idem-refund-1',
+          total: 500,
+          eligibleTotal: 500,
+          userToken: 'C-idem-refund',
+        })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post('/loyalty/commit')
+        .send({ merchantId, holdId: quote.body.holdId, orderId: 'idem-refund-1' })
+        .expect(201);
+
+      // First refund with Idempotency-Key
+      const r1 = await request(app.getHttpServer())
+        .post('/loyalty/refund')
+        .set('idempotency-key', idempotencyKey)
+        .send({ merchantId, orderId: 'idem-refund-1', refundTotal: 100 })
+        .expect(201);
+
+      // Second refund with the same key but different refundTotal should return cached r1
+      const r2 = await request(app.getHttpServer())
+        .post('/loyalty/refund')
+        .set('idempotency-key', idempotencyKey)
+        .send({ merchantId, orderId: 'idem-refund-1', refundTotal: 200 })
+        .expect(201);
+
+      expect(r2.body).toEqual(r1.body);
+    });
   });
 });
