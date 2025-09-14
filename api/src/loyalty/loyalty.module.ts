@@ -8,9 +8,11 @@ import { SubscriptionModule } from '../subscription/subscription.module';
 import { SubscriptionGuard } from '../guards/subscription.guard';
 import { AntiFraudGuard } from '../guards/antifraud.guard';
 import { AntifraudModule } from '../antifraud/antifraud.module';
+import { PromosModule } from '../promos/promos.module';
+import { VouchersModule } from '../vouchers/vouchers.module';
 
 @Module({
-  imports: [PrismaModule, MetricsModule, SubscriptionModule, AntifraudModule],
+  imports: [PrismaModule, MetricsModule, SubscriptionModule, AntifraudModule, PromosModule, VouchersModule],
   providers: [LoyaltyService, CashierGuard, SubscriptionGuard, AntiFraudGuard],
   controllers: [LoyaltyController],
 })

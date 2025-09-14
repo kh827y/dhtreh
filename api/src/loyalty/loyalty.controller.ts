@@ -13,13 +13,21 @@ import type { Request, Response } from 'express';
 import { createHmac } from 'crypto';
 import { verifyBridgeSignature as verifyBridgeSigUtil } from './bridge.util';
 import { validateTelegramInitData } from './telegram.util';
+import { PromosService } from '../promos/promos.service';
+import { VouchersService } from '../vouchers/vouchers.service';
 
 @Controller('loyalty')
 @UseGuards(CashierGuard)
 @ApiTags('loyalty')
 @ApiExtraModels(QuoteRedeemRespDto, QuoteEarnRespDto)
 export class LoyaltyController {
-  constructor(private readonly service: LoyaltyService, private readonly prisma: PrismaService, private readonly metrics: MetricsService) {}
+  constructor(
+    private readonly service: LoyaltyService,
+    private readonly prisma: PrismaService,
+    private readonly metrics: MetricsService,
+    private readonly promos: PromosService,
+    private readonly vouchers: VouchersService,
+  ) {}
 
   // Plain ID или JWT
   private async resolveFromToken(userToken: string) {
@@ -121,7 +129,29 @@ export class LoyaltyController {
         else if (alt && verifyBridgeSigUtil(sig, bodyForSig, alt)) ok = true;
         if (!ok) throw new UnauthorizedException('Invalid bridge signature');
       }
-      const data = await this.service.quote({ ...dto, staffId, userToken: v.customerId }, qrMeta);
+      // Применение ваучера/промо: сначала уменьшаем сумму eligible/total, затем рассчитываем quote
+      let adjTotal = Math.max(0, Math.floor(dto.total));
+      let adjEligible = Math.max(0, Math.floor(dto.eligibleTotal));
+      try {
+        // Ваучер
+        if (dto.voucherCode) {
+          const pv = await this.vouchers.preview({ merchantId: dto.merchantId, code: dto.voucherCode, eligibleTotal: adjEligible, customerId: v.customerId });
+          if (pv?.canApply && pv.discount > 0) {
+            const d = Math.min(adjEligible, Math.max(0, Math.floor(pv.discount)));
+            adjEligible = Math.max(0, adjEligible - d);
+            adjTotal = Math.max(0, adjTotal - d);
+          }
+        }
+        // Промо
+        const pr = await this.promos.preview(dto.merchantId, v.customerId, adjEligible, dto.category);
+        if (pr?.canApply && pr.discount > 0) {
+          const d = Math.min(adjEligible, Math.max(0, Math.floor(pr.discount)));
+          adjEligible = Math.max(0, adjEligible - d);
+          adjTotal = Math.max(0, adjTotal - d);
+        }
+      } catch {}
+
+      const data = await this.service.quote({ ...dto, total: adjTotal, eligibleTotal: adjEligible, staffId, userToken: v.customerId }, qrMeta);
       this.metrics.inc('loyalty_quote_requests_total', { result: 'ok' });
       return data;
     } catch (e: any) {
@@ -183,6 +213,13 @@ export class LoyaltyController {
           if (saved) {
             data = saved.response as any;
           } else {
+            // Идемпотентная фиксация ваучера перед commit (если указан)
+            try {
+              if (dto.voucherCode && holdCached?.customerId && merchantIdEff) {
+                const elig = Math.max(0, Number(holdCached?.eligibleTotal || holdCached?.total || 0));
+                await this.vouchers.redeem({ merchantId: merchantIdEff, code: dto.voucherCode, customerId: holdCached.customerId, eligibleTotal: elig, orderId: dto.orderId });
+              }
+            } catch {}
             data = await this.service.commit(dto.holdId, dto.orderId, dto.receiptNumber, req.requestId ?? dto.requestId);
             // если второй вызов пришёл после первого, когда hold уже COMMITTED,
             // commit() вернёт alreadyCommitted=true. Для идемпотентности нормализуем ответ к первому.
@@ -199,9 +236,21 @@ export class LoyaltyController {
           }
         } else {
           // нет merchantId — выполняем без сохранения идемпотентности (уникальный чек по orderId всё равно защитит)
+          try {
+            if (dto.voucherCode && holdCached?.customerId && merchantIdEff) {
+              const elig = Math.max(0, Number(holdCached?.eligibleTotal || holdCached?.total || 0));
+              await this.vouchers.redeem({ merchantId: merchantIdEff, code: dto.voucherCode, customerId: holdCached.customerId, eligibleTotal: elig, orderId: dto.orderId });
+            }
+          } catch {}
           data = await this.service.commit(dto.holdId, dto.orderId, dto.receiptNumber, req.requestId ?? dto.requestId);
         }
       } else {
+        try {
+          if (dto.voucherCode && holdCached?.customerId && merchantIdEff) {
+            const elig = Math.max(0, Number(holdCached?.eligibleTotal || holdCached?.total || 0));
+            await this.vouchers.redeem({ merchantId: merchantIdEff, code: dto.voucherCode, customerId: holdCached.customerId, eligibleTotal: elig, orderId: dto.orderId });
+          }
+        } catch {}
         data = await this.service.commit(dto.holdId, dto.orderId, dto.receiptNumber, req.requestId ?? dto.requestId);
       }
       this.metrics.inc('loyalty_commit_requests_total', { result: data?.alreadyCommitted ? 'already_committed' : 'ok' });
