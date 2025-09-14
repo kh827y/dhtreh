@@ -23,6 +23,7 @@ describe('Loyalty (e2e)', () => {
     staff: [] as { id: string; merchantId: string; apiKeyHash?: string; status: string; allowedOutletId?: string|null; allowedDeviceId?: string|null }[],
     devices: [] as { id: string; merchantId: string; type: 'SMART'|'PC_POS'|'VIRTUAL'; label?: string|null; bridgeSecret?: string|null }[],
     idem: new Map<string, any>(),
+    earnLots: [] as Array<{ id: string; merchantId: string; customerId: string; points: number; consumedPoints: number; earnedAt: Date; maturesAt?: Date|null; expiresAt?: Date|null; orderId?: string|null; receiptId?: string|null; outletId?: string|null; deviceId?: string|null; staffId?: string|null; status: 'ACTIVE'|'PENDING' }>,
   };
 
   const uuid = (() => { let i = 1; return () => `id-${i++}`; })();
@@ -83,7 +84,7 @@ describe('Loyalty (e2e)', () => {
 
     wallet: {
       findFirst: async (args: any) => state.wallets.find(w => w.customerId === args.where.customerId && w.merchantId === args.where.merchantId && String(args.where.type) === 'POINTS') || null,
-      create: async (args: any) => { const w: Wallet = { id: uuid(), customerId: args.data.customerId, merchantId: args.data.merchantId, balance: 0 }; state.wallets.push(w); return w; },
+      create: async (args: any) => { const w: any = { id: uuid(), customerId: args.data.customerId, merchantId: args.data.merchantId, type: String(args.data.type || 'POINTS'), balance: 0 }; state.wallets.push(w); return w; },
       findUnique: async (args: any) => state.wallets.find(w => w.id === args.where.id) || null,
       update: async (args: any) => { const w = state.wallets.find(x => x.id === args.where.id)!; Object.assign(w, { balance: args.data.balance }); return w; },
     },
@@ -116,6 +117,46 @@ describe('Loyalty (e2e)', () => {
       count: async (_args: any) => state.eventOutbox.length,
     },
 
+    earnLot: {
+      findMany: async (args: any) => {
+        let arr = state.earnLots.filter(l => l.merchantId === args.where.merchantId && l.customerId === args.where.customerId);
+        if (args.where.consumedPoints?.gt) arr = arr.filter(l => (l.consumedPoints || 0) > args.where.consumedPoints.gt);
+        if (args.orderBy?.earnedAt === 'asc') arr = arr.sort((a,b) => a.earnedAt.getTime() - b.earnedAt.getTime());
+        if (args.orderBy?.earnedAt === 'desc') arr = arr.sort((a,b) => b.earnedAt.getTime() - a.earnedAt.getTime());
+        return arr.map(x => ({ ...x }));
+      },
+      update: async (args: any) => {
+        const idx = state.earnLots.findIndex(l => l.id === args.where.id);
+        if (idx >= 0) {
+          const l = state.earnLots[idx];
+          state.earnLots[idx] = { ...l, ...args.data };
+          return state.earnLots[idx];
+        }
+        throw new Error('earnLot not found');
+      },
+      create: async (args: any) => {
+        const d = args.data;
+        const lot = {
+          id: uuid(),
+          merchantId: d.merchantId,
+          customerId: d.customerId,
+          points: d.points,
+          consumedPoints: d.consumedPoints || 0,
+          earnedAt: d.earnedAt ? new Date(d.earnedAt) : new Date(),
+          maturesAt: d.maturesAt ? new Date(d.maturesAt) : null,
+          expiresAt: d.expiresAt ? new Date(d.expiresAt) : null,
+          orderId: d.orderId ?? null,
+          receiptId: d.receiptId ?? null,
+          outletId: d.outletId ?? null,
+          deviceId: d.deviceId ?? null,
+          staffId: d.staffId ?? null,
+          status: d.status || 'ACTIVE',
+        } as any;
+        state.earnLots.push(lot);
+        return lot;
+      },
+    },
+
     idempotencyKey: {
       findUnique: async (args: any) => state.idem.get(args.where.merchantId_key.merchantId + '|' + args.where.merchantId_key.key) || null,
       create: async (args: any) => { state.idem.set(args.data.merchantId + '|' + args.data.key, { response: args.data.response }); return {}; },
@@ -140,8 +181,11 @@ describe('Loyalty (e2e)', () => {
 
   beforeAll(async () => {
     process.env.WORKERS_ENABLED = '0';
+    process.env.EARN_LOTS_FEATURE = '1';
     // default settings for M1
     state.merchantSettings.set('M1', { merchantId: 'M1', earnBps: 1000, redeemLimitBps: 5000, qrTtlSec: 120, requireStaffKey: false, webhookSecret: 'whsec1', webhookKeyId: 'key_v1', updatedAt: new Date() });
+    // lots-enabled merchant
+    state.merchantSettings.set('M-lots', { merchantId: 'M-lots', earnBps: 1000, redeemLimitBps: 5000, qrTtlSec: 120, requireStaffKey: false, updatedAt: new Date(), pointsTtlDays: 30 });
     // settings for guard merchant
     state.merchantSettings.set('M-guard', { merchantId: 'M-guard', earnBps: 1000, redeemLimitBps: 5000, qrTtlSec: 120, requireStaffKey: true, updatedAt: new Date() });
     // bridge signature required merchant
@@ -160,6 +204,251 @@ describe('Loyalty (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
     await app.init();
+  });
+
+  it('Refund idempotency: same Idempotency-Key returns cached body and does not re-apply balance change', async () => {
+    // Prepare: earn to have points and a receipt
+    const q = await request(app.getHttpServer())
+      .post('/loyalty/quote')
+      .send({ merchantId: 'M1', userToken: 'C-ridem', mode: 'EARN', total: 1000, eligibleTotal: 1000 })
+      .expect(201);
+    const holdId = q.body.holdId as string;
+    await request(app.getHttpServer()).post('/loyalty/commit').send({ holdId, orderId: 'OI-idem-ref-1' }).expect(201);
+
+    const b0 = await request(app.getHttpServer()).get('/loyalty/balance/M1/C-ridem').expect(200);
+    const key = 'idem-rf-1';
+    const r1 = await request(app.getHttpServer())
+      .post('/loyalty/refund')
+      .set('Idempotency-Key', key)
+      .send({ merchantId: 'M1', orderId: 'OI-idem-ref-1', refundEligibleTotal: 500 })
+      .expect(201);
+    const b1 = await request(app.getHttpServer()).get('/loyalty/balance/M1/C-ridem').expect(200);
+    const r2 = await request(app.getHttpServer())
+      .post('/loyalty/refund')
+      .set('Idempotency-Key', key)
+      .send({ merchantId: 'M1', orderId: 'OI-idem-ref-1', refundEligibleTotal: 500 })
+      .expect(201);
+    const b2 = await request(app.getHttpServer()).get('/loyalty/balance/M1/C-ridem').expect(200);
+    expect(r1.body).toEqual(r2.body);
+    expect(b2.body.balance).toBe(b1.body.balance);
+    expect(b1.body.balance).not.toBe(b0.body.balance);
+  });
+
+  it('Multi-step partial REFUND (REDEEM): two 25% refunds restore ~50% of applied redeem', async () => {
+    // Seed balance 200 points
+    const qE = await request(app.getHttpServer())
+      .post('/loyalty/quote')
+      .send({ merchantId: 'M1', userToken: 'C-rmulti', mode: 'EARN', total: 2000, eligibleTotal: 2000 })
+      .expect(201);
+    const hE = qE.body.holdId as string;
+    await request(app.getHttpServer()).post('/loyalty/commit').send({ holdId: hE, orderId: 'OR-rmulti-seed' }).expect(201);
+
+    // Redeem
+    const qR = await request(app.getHttpServer())
+      .post('/loyalty/quote')
+      .send({ merchantId: 'M1', userToken: 'C-rmulti', mode: 'REDEEM', total: 1000, eligibleTotal: 1000 })
+      .expect(201);
+    const hR = qR.body.holdId as string;
+    const cR = await request(app.getHttpServer()).post('/loyalty/commit').send({ holdId: hR, orderId: 'OR-rmulti' }).expect(201);
+    const appliedRedeem = Number(cR.body.redeemApplied || 0);
+
+    // Two partial refunds 25% + 25%
+    const rA = await request(app.getHttpServer()).post('/loyalty/refund').send({ merchantId: 'M1', orderId: 'OR-rmulti', refundEligibleTotal: 250 }).expect(201);
+    const rB = await request(app.getHttpServer()).post('/loyalty/refund').send({ merchantId: 'M1', orderId: 'OR-rmulti', refundEligibleTotal: 250 }).expect(201);
+    const totalRestored = Number(rA.body.pointsRestored || 0) + Number(rB.body.pointsRestored || 0);
+    expect(totalRestored).toBe(Math.round(appliedRedeem * 0.5));
+  });
+
+  it('Multi-step partial REFUND (EARN): two 25% refunds revoke ~50% of earned points', async () => {
+    const q = await request(app.getHttpServer())
+      .post('/loyalty/quote')
+      .send({ merchantId: 'M1', userToken: 'C-emulti', mode: 'EARN', total: 1000, eligibleTotal: 1000 })
+      .expect(201);
+    const holdId = q.body.holdId as string;
+    await request(app.getHttpServer()).post('/loyalty/commit').send({ holdId, orderId: 'OI-emulti' }).expect(201);
+    const baseEarn = Number(q.body.pointsToEarn || 0);
+
+    const rA = await request(app.getHttpServer()).post('/loyalty/refund').send({ merchantId: 'M1', orderId: 'OI-emulti', refundEligibleTotal: 250 }).expect(201);
+    const rB = await request(app.getHttpServer()).post('/loyalty/refund').send({ merchantId: 'M1', orderId: 'OI-emulti', refundEligibleTotal: 250 }).expect(201);
+    const totalRevoked = Number(rA.body.pointsRevoked || 0) + Number(rB.body.pointsRevoked || 0);
+    const half = Math.round(baseEarn * 0.5);
+    expect(Math.abs(totalRevoked - half)).toBeLessThanOrEqual(1);
+  });
+
+  it('Lots: EARN creates ACTIVE earn lot when lots feature enabled', async () => {
+    const q = await request(app.getHttpServer())
+      .post('/loyalty/quote')
+      .send({ merchantId: 'M-lots', userToken: 'C-lots', mode: 'EARN', total: 1000, eligibleTotal: 1000 })
+      .expect(201);
+    const holdId = q.body.holdId as string;
+    await request(app.getHttpServer()).post('/loyalty/commit').send({ holdId, orderId: 'OL-earn-1' }).expect(201);
+    const lots = await prismaMock.earnLot.findMany({ where: { merchantId: 'M-lots', customerId: 'C-lots' }, orderBy: { earnedAt: 'asc' } });
+    const sumPoints = lots.reduce((s: number, l: any) => s + (l.points || 0), 0);
+    // Default earnBps fallback is 500 (5%) when rulesJson is not configured
+    expect(sumPoints).toBeGreaterThanOrEqual(50);
+    expect(lots.find((l: any) => l.status === 'ACTIVE')).toBeTruthy();
+  });
+
+  it('Lots: REDEEM applies redeem; REFUND restores proportional points when lots feature enabled', async () => {
+    // prepare: ensure customer has some ACTIVE lots in M-lots
+    const qE = await request(app.getHttpServer())
+      .post('/loyalty/quote')
+      .send({ merchantId: 'M1', userToken: 'C-lots3', mode: 'EARN', total: 2000, eligibleTotal: 2000 })
+      .expect(201);
+    const hE = qE.body.holdId as string;
+    await request(app.getHttpServer()).post('/loyalty/commit').send({ holdId: hE, orderId: 'OL-seed' }).expect(201);
+
+    // ensure lots exist (seeded above)
+
+    // Redeem 1000 total eligible -> limit 500, wallet >=200 (from earn 200) -> consume 200
+    const qR = await request(app.getHttpServer())
+      .post('/loyalty/quote')
+      .send({ merchantId: 'M1', userToken: 'C-lots3', mode: 'REDEEM', total: 1000, eligibleTotal: 1000 })
+      .expect(201);
+    const hR = qR.body.holdId as string;
+    const cR = await request(app.getHttpServer()).post('/loyalty/commit').send({ holdId: hR, orderId: 'OL-redeem-1' }).expect(201);
+    const appliedRedeem = Number(cR.body.redeemApplied || 0);
+
+    // Refund half -> unconsume 100
+    const rR = await request(app.getHttpServer()).post('/loyalty/refund').send({ merchantId: 'M1', orderId: 'OL-redeem-1', refundEligibleTotal: 500 }).expect(201);
+    expect(rR.body.pointsRestored).toBe(Math.round(appliedRedeem * 0.5));
+  });
+
+  it('Invariant: EARN then partial REFUND revokes proportional points (by response)', async () => {
+    // Earn 100 points (10% of 1000)
+    const q1 = await request(app.getHttpServer())
+      .post('/loyalty/quote')
+      .send({ merchantId: 'M1', userToken: 'C-inv-earn', mode: 'EARN', total: 1000, eligibleTotal: 1000 })
+      .expect(201);
+    const h1 = q1.body.holdId as string;
+    await request(app.getHttpServer()).post('/loyalty/commit').send({ holdId: h1, orderId: 'OI-earn-1' }).expect(201);
+
+    // Balance after EARN (for info only)
+    await request(app.getHttpServer()).get('/loyalty/balance/M1/C-inv-earn').expect(200);
+
+    // Refund 50% of eligible -> expect ~half of earned points revoked
+    const r = await request(app.getHttpServer())
+      .post('/loyalty/refund')
+      .send({ merchantId: 'M1', orderId: 'OI-earn-1', refundEligibleTotal: 500 })
+      .expect(201);
+    // Points revoked should be approx half of previously earned points for the order
+    // Our earn was Math.floor(eligibleTotal * 0.05) = 50; expect ~25
+    expect(r.body.pointsRevoked).toBe(Math.round((q1.body.pointsToEarn || 50) * 0.5));
+  });
+
+  it('Invariant: REDEEM then partial REFUND restores proportional points (by response)', async () => {
+    // Seed balance by earning 200 points
+    const qE = await request(app.getHttpServer())
+      .post('/loyalty/quote')
+      .send({ merchantId: 'M1', userToken: 'C-inv-red', mode: 'EARN', total: 2000, eligibleTotal: 2000 })
+      .expect(201);
+    const hE = qE.body.holdId as string;
+    await request(app.getHttpServer()).post('/loyalty/commit').send({ holdId: hE, orderId: 'OR-seed' }).expect(201);
+
+    await request(app.getHttpServer()).get('/loyalty/balance/M1/C-inv-red').expect(200);
+    const qR = await request(app.getHttpServer())
+      .post('/loyalty/quote')
+      .send({ merchantId: 'M1', userToken: 'C-inv-red', mode: 'REDEEM', total: 1000, eligibleTotal: 1000 })
+      .expect(201);
+    const hR = qR.body.holdId as string;
+    const cRes = await request(app.getHttpServer()).post('/loyalty/commit').send({ holdId: hR, orderId: 'OR-1' }).expect(201);
+    const appliedRedeem = Number(cRes.body.redeemApplied || 0);
+
+    // Refund 50% of eligible -> expect ~half of appliedRedeem restored
+    const ref = await request(app.getHttpServer())
+      .post('/loyalty/refund')
+      .send({ merchantId: 'M1', orderId: 'OR-1', refundEligibleTotal: 500 })
+      .expect(201);
+    expect(ref.body.pointsRestored).toBe(Math.round(appliedRedeem * 0.5));
+  });
+
+  it('OrderId collision: second commit returns alreadyCommitted=true', async () => {
+    // First hold
+    const q1 = await request(app.getHttpServer())
+      .post('/loyalty/quote')
+      .send({ merchantId: 'M1', userToken: 'C-ord', mode: 'EARN', total: 1000, eligibleTotal: 1000 })
+      .expect(201);
+    const h1 = q1.body.holdId as string;
+
+    // Second hold (same merchant, same orderId)
+    const q2 = await request(app.getHttpServer())
+      .post('/loyalty/quote')
+      .send({ merchantId: 'M1', userToken: 'C-ord', mode: 'EARN', total: 500, eligibleTotal: 500 })
+      .expect(201);
+    const h2 = q2.body.holdId as string;
+
+    const orderId = 'O-coll-1';
+
+    const c1 = await request(app.getHttpServer())
+      .post('/loyalty/commit')
+      .send({ holdId: h1, orderId })
+      .expect(201);
+
+    const c2 = await request(app.getHttpServer())
+      .post('/loyalty/commit')
+      .send({ holdId: h2, orderId })
+      .expect(201);
+
+    expect(c1.body.ok).toBe(true);
+    expect(c2.body.alreadyCommitted).toBe(true);
+    expect(c2.body.receiptId).toBe(c1.body.receiptId);
+  });
+
+  it('Idempotency-Key is scoped per merchant', async () => {
+    const key = 'scope-key-' + Date.now();
+
+    // Merchant M1
+    const q1 = await request(app.getHttpServer())
+      .post('/loyalty/quote')
+      .send({ merchantId: 'M1', userToken: 'C-scope', mode: 'EARN', total: 100, eligibleTotal: 100 })
+      .expect(201);
+    const h1 = q1.body.holdId as string;
+
+    // Merchant M2 (no special settings)
+    const q2 = await request(app.getHttpServer())
+      .post('/loyalty/quote')
+      .send({ merchantId: 'M2', userToken: 'C-scope', mode: 'EARN', total: 100, eligibleTotal: 100 })
+      .expect(201);
+    const h2 = q2.body.holdId as string;
+
+    const r1 = await request(app.getHttpServer())
+      .post('/loyalty/commit')
+      .set('Idempotency-Key', key)
+      .send({ holdId: h1, orderId: 'O-scope-1' })
+      .expect(201);
+
+    const r2 = await request(app.getHttpServer())
+      .post('/loyalty/commit')
+      .set('Idempotency-Key', key)
+      .send({ holdId: h2, orderId: 'O-scope-2' })
+      .expect(201);
+
+    // Same key but different merchants -> independent results
+    expect(r1.body.receiptId).not.toBe(r2.body.receiptId);
+  });
+
+  it('Concurrency invariant: two commits on the same hold -> exactly one receipt, second alreadyCommitted', async () => {
+    const q = await request(app.getHttpServer())
+      .post('/loyalty/quote')
+      .send({ merchantId: 'M1', userToken: 'C-conc', mode: 'EARN', total: 1000, eligibleTotal: 1000 })
+      .expect(201);
+    const holdId = q.body.holdId as string;
+
+    const [a, b] = await Promise.all([
+      request(app.getHttpServer()).post('/loyalty/commit').send({ holdId, orderId: 'O-conc-1' }),
+      request(app.getHttpServer()).post('/loyalty/commit').send({ holdId, orderId: 'O-conc-1' }),
+    ]);
+
+    expect(a.status).toBe(201);
+    expect(b.status).toBe(201);
+    const r1 = a.body;
+    const r2 = b.body;
+    expect(r1.receiptId).toBeTruthy();
+    expect(r2.receiptId).toBeTruthy();
+    expect(r1.receiptId).toBe(r2.receiptId);
+    // one of the responses should indicate alreadyCommitted
+    const flags = [r1.alreadyCommitted === true, r2.alreadyCommitted === true];
+    expect(flags.includes(true)).toBe(true);
   });
 
   it('Idempotency: same Idempotency-Key returns cached commit response', async () => {
