@@ -1,9 +1,10 @@
 import { Controller, Get, Query, UseGuards, Param } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 import { AdminGuard } from './admin.guard';
+import { AdminIpGuard } from './admin-ip.guard';
 
 @Controller('admin/audit')
-@UseGuards(AdminGuard)
+@UseGuards(AdminGuard, AdminIpGuard)
 export class AdminAuditController {
   constructor(private prisma: PrismaService) {}
 

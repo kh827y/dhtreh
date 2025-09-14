@@ -3,6 +3,8 @@ kind: Kustomization
 namespace: loyalty
 resources:
   - ../../k8s
+  - ../../k8s/servicemonitor-api.yaml
+  - ../../k8s/servicemonitor-bridge.yaml
 patchesStrategicMerge:
   - patch-ingress-api.yaml
   - patch-ingress-admin.yaml

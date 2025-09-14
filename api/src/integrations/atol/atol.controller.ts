@@ -1,12 +1,14 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { AtolService } from './atol.service';
 import { MetricsService } from '../../metrics.service';
+import { OAuthGuard } from '../../guards/oauth.guard';
 
 @Controller('integrations/atol')
 export class AtolController {
   constructor(private atol: AtolService, private metrics: MetricsService) {}
 
   @Post('receipt')
+  @UseGuards(OAuthGuard)
   async sendReceipt(
     @Body() body: { merchantId: string; orderId: string; receipt: any; loyaltyData?: any }
   ) {

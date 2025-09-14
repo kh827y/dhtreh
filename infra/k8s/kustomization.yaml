@@ -38,3 +38,8 @@ resources:
   - pdb-bridge.yaml
   # Namespace-wide policies
   - networkpolicy-default-deny.yaml
+  - networkpolicy-allow-api-from-ingress.yaml
+  - networkpolicy-allow-admin-from-ingress.yaml
+  - networkpolicy-allow-cashier-from-ingress.yaml
+  - networkpolicy-allow-miniapp-from-ingress.yaml
+  - networkpolicy-allow-api-from-monitoring.yaml

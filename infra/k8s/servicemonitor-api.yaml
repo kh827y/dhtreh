@@ -1,0 +1,20 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: api
+  namespace: loyalty
+  labels:
+    app: loyalty-api
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: loyalty-api
+  namespaceSelector:
+    matchNames:
+      - loyalty
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s

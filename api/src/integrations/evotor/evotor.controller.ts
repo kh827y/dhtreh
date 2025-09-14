@@ -1,12 +1,14 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { EvotorService } from './evotor.service';
 import { MetricsService } from '../../metrics.service';
+import { OAuthGuard } from '../../guards/oauth.guard';
 
 @Controller('integrations/evotor')
 export class EvotorController {
   constructor(private evotor: EvotorService, private metrics: MetricsService) {}
 
   @Post('register')
+  @UseGuards(OAuthGuard)
   async register(@Body() body: { merchantId: string; token: string }) {
     try {
       const res = await this.evotor.registerApp(body.merchantId, body.token);

@@ -76,6 +76,11 @@ export class AntiFraudService {
       totalScore += timeScore.score;
       factors.push(...timeScore.factors);
 
+      // 3.5 Проверка клиентских сигналов (IP/User-Agent)
+      const clientScore = this.checkClientSignals(context);
+      totalScore += clientScore.score;
+      factors.push(...clientScore.factors);
+
       // 4. Проверка паттернов поведения
       const patternScore = await this.checkBehaviorPatterns(context);
       totalScore += patternScore.score;
@@ -178,6 +183,32 @@ export class AntiFraudService {
     if (recentTransactions > 2) {
       score += 25;
       factors.push(`rapid_transactions:${recentTransactions}_in_5min`);
+    }
+
+    return { score, factors };
+  }
+
+  /**
+   * Проверка клиентских сигналов (IP и User-Agent)
+   */
+  private checkClientSignals(context: TransactionContext) {
+    const factors: string[] = [];
+    let score = 0;
+
+    const ip = (context.ipAddress || '').toString();
+    const ua = (context.userAgent || '').toString();
+
+    if (!ua) {
+      score += 5;
+      factors.push('no_user_agent');
+    } else if (/curl|wget|httpie|python-requests|postman/i.test(ua)) {
+      score += 10;
+      factors.push('technical_user_agent');
+    }
+
+    if (ip && (/^127\./.test(ip) || ip === '::1' || /^(::ffff:)?127\./.test(ip) || /localhost/i.test(ip))) {
+      score += 5;
+      factors.push('local_ip');
     }
 
     return { score, factors };

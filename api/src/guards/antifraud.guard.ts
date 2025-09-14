@@ -158,6 +158,9 @@ export class AntiFraudGuard implements CanActivate {
         if (holdId) {
           const hold = await this.prisma.hold.findUnique({ where: { id: holdId } });
           if (hold && hold.customerId && hold.merchantId) {
+            const xfwd = (req.headers?.['x-forwarded-for'] as string | undefined) || '';
+            const ipAddr = (xfwd.split(',')[0]?.trim()) || (req.ip || req.ips?.[0] || req.socket?.remoteAddress || undefined);
+            const ua = (req.headers?.['user-agent'] as string | undefined) || undefined;
             const ctx = {
               merchantId: hold.merchantId,
               customerId: hold.customerId,
@@ -166,6 +169,8 @@ export class AntiFraudGuard implements CanActivate {
               deviceId: hold.deviceId || undefined,
               outletId: hold.outletId || undefined,
               staffId: hold.staffId || undefined,
+              ipAddress: ipAddr,
+              userAgent: ua,
             };
             // Быстрая проверка факторной блокировки: no_device_id
             try {

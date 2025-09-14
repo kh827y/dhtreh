@@ -12,7 +12,11 @@ export class MetricsController {
     const token = process.env.METRICS_TOKEN || '';
     if (token) {
       const got = (req.headers['x-metrics-token'] as string | undefined) || '';
-      if (got !== token) throw new UnauthorizedException('Metrics token required');
+      const auth = (req.headers['authorization'] as string | undefined) || '';
+      const bearer = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : '';
+      if (got !== token && bearer !== token) {
+        throw new UnauthorizedException('Metrics token required');
+      }
     }
     return await this.metrics.exportProm();
   }

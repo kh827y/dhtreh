@@ -2,13 +2,14 @@ import { Body, Controller, Delete, Get, Param, Post, Put, UseGuards, Query, UseI
 import { MerchantsService } from './merchants.service';
 import { CreateDeviceDto, CreateOutletDto, CreateStaffDto, UpdateDeviceDto, UpdateMerchantSettingsDto, UpdateOutletDto, UpdateStaffDto, MerchantSettingsRespDto, OutletDto, DeviceDto, StaffDto, SecretRespDto, TokenRespDto, OkDto, OutboxEventDto, BulkUpdateRespDto, ReceiptDto, CustomerSearchRespDto, LedgerEntryDto } from './dto';
 import { AdminGuard } from '../admin.guard';
+import { AdminIpGuard } from '../admin-ip.guard';
 import { ApiBadRequestResponse, ApiExtraModels, ApiHeader, ApiNotFoundResponse, ApiOkResponse, ApiTags, ApiUnauthorizedResponse, getSchemaPath } from '@nestjs/swagger';
 import { AdminAuditInterceptor } from '../admin-audit.interceptor';
 import { ErrorDto } from '../loyalty/dto';
 import { TransactionItemDto } from '../loyalty/dto';
 
 @Controller('merchants')
-@UseGuards(AdminGuard)
+@UseGuards(AdminGuard, AdminIpGuard)
 @UseInterceptors(AdminAuditInterceptor)
 @ApiTags('merchants')
 @ApiHeader({ name: 'X-Admin-Key', required: true, description: 'Админ-ключ (в проде проксируется сервером админки)' })
