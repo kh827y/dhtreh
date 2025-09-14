@@ -167,6 +167,43 @@ POINTS_TTL_BURN=0
 
 Проверка статуса: `GET /healthz` возвращает `flags` и `workers` (alive/lastTickAt для некоторых воркеров).
 
+## Уровни (Levels)
+
+Сервис уровней рассчитывает текущий уровень клиента за период и прогресс до следующего уровня.
+
+- Эндпоинт: `GET /levels/:merchantId/:customerId`
+- Настройка в `merchantSettings.rulesJson.levelsCfg`:
+
+```json
+{
+  "levelsCfg": {
+    "periodDays": 365,
+    "metric": "earn",
+    "levels": [
+      { "name": "Base",   "threshold": 0 },
+      { "name": "Silver", "threshold": 500 },
+      { "name": "Gold",   "threshold": 1000 }
+    ]
+  }
+}
+```
+
+- Поддерживаемые метрики: `earn` (сумма начислений), `redeem` (сумма списаний), `transactions` (кол-во операций) за последние `periodDays`.
+- Ответ:
+
+```json
+{
+  "merchantId": "M1",
+  "customerId": "C1",
+  "metric": "earn",
+  "periodDays": 365,
+  "value": 600,
+  "current": { "name": "Silver", "threshold": 500 },
+  "next": { "name": "Gold", "threshold": 1000 },
+  "progressToNext": 400
+}
+```
+
 ## Продакшн конфигурация
 
 - API: `DATABASE_URL`, `ADMIN_KEY`, `ADMIN_SESSION_SECRET`, `QR_JWT_SECRET` (не `dev_change_me`), `CORS_ORIGINS` обязательны; `WORKERS_ENABLED=1` в отдельном процессе.

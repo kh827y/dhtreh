@@ -27,7 +27,9 @@ import { PointsBurnWorker } from './points-burn.worker';
 import { PointsTtlWorker } from './points-ttl.worker';
 import { EarnActivationWorker } from './earn-activation.worker';
 import { GiftsModule } from './gifts/gifts.module';
+import { LevelsModule } from './levels/levels.module';
 import { CampaignModule } from './campaigns/campaign.module';
+import { PromosModule } from './promos/promos.module';
 // Optional Redis storage for Throttler
 let throttlerStorage: any = undefined;
 try {
@@ -67,6 +69,8 @@ try {
     AlertsModule,
     CrmModule,
     GiftsModule,
+    LevelsModule,
+    PromosModule,
     CampaignModule,
   ],
   controllers: [HealthController, MetricsController],
