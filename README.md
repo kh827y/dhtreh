@@ -204,6 +204,20 @@ POINTS_TTL_BURN=0
 }
 ```
 
+## Ваучеры (Vouchers)
+
+Ваучеры позволяют применять скидку по коду. Поддержка типов: `PERCENTAGE` (процент) и `FIXED_AMOUNT` (фиксированная сумма). Простейшие ограничения: срок действия, минимальная сумма, лимит использований.
+
+- Эндпоинты:
+  - `POST /vouchers/preview` — { merchantId, code, eligibleTotal, customerId? } → { canApply, discount, voucherId, codeId, reason? }
+  - `POST /vouchers/issue` — { merchantId, valueType, value, code, validFrom?, validUntil?, minPurchaseAmount? } → { ok, voucherId }
+  - `POST /vouchers/redeem` — { merchantId, code, customerId, eligibleTotal, orderId? } → { ok, discount }
+
+Примечания:
+
+- Сначала применяйте ваучеры/промо к `eligibleTotal`, затем списывайте баллы (REDEEM) — так пользовательские баллы не «сгорают» раньше времени.
+- В /commit интеграцию ваучеров следует делать идемпотентной по `orderId` (повторный commit не должен дублировать usage).
+
 ## Продакшн конфигурация
 
 - API: `DATABASE_URL`, `ADMIN_KEY`, `ADMIN_SESSION_SECRET`, `QR_JWT_SECRET` (не `dev_change_me`), `CORS_ORIGINS` обязательны; `WORKERS_ENABLED=1` в отдельном процессе.
