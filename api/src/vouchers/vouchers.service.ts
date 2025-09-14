@@ -25,6 +25,13 @@ export class VouchersService {
     if (String(voucher.merchantId) !== merchantId) throw new BadRequestException('Voucher belongs to another merchant');
 
     const now = new Date();
+    // Inactive checks
+    if ((codeRow as any).status && String((codeRow as any).status) !== 'ACTIVE') {
+      return { canApply: false, discount: 0, reason: 'inactive' } as any;
+    }
+    if ((voucher as any).isActive === false || (((voucher as any).status) && String((voucher as any).status) !== 'ACTIVE')) {
+      return { canApply: false, discount: 0, reason: 'inactive' } as any;
+    }
     const withinCode = (!codeRow.validFrom || new Date(codeRow.validFrom) <= now) && (!codeRow.validUntil || new Date(codeRow.validUntil) >= now);
     const withinVoucher = (!voucher.validFrom || new Date(voucher.validFrom) <= now) && (!voucher.validUntil || new Date(voucher.validUntil) >= now);
     if (!withinCode || !withinVoucher) return { canApply: false, discount: 0, reason: 'expired' };
@@ -101,5 +108,58 @@ export class VouchersService {
     try { await (this.prisma as any).voucherCode.update({ where: { id: codeRow.id }, data: { usedCount: (codeRow.usedCount || 0) + 1 } }); } catch {}
     try { this.metrics.inc('vouchers_redeemed_total'); } catch {}
     return { ok: true, discount };
+  }
+
+  async status(body: { merchantId: string; code?: string; voucherId?: string }) {
+    const { merchantId, code, voucherId } = body || ({} as any);
+    if (!merchantId) throw new BadRequestException('merchantId required');
+    if (!code && !voucherId) throw new BadRequestException('code or voucherId required');
+    let codeRow: any = null;
+    let voucher: any = null;
+    if (code) {
+      codeRow = await (this.prisma as any).voucherCode.findUnique({ where: { code } });
+      if (!codeRow) throw new BadRequestException('Voucher code not found');
+      voucher = await (this.prisma as any).voucher.findUnique({ where: { id: codeRow.voucherId } });
+    } else if (voucherId) {
+      voucher = await (this.prisma as any).voucher.findUnique({ where: { id: voucherId } });
+      if (!voucher) throw new BadRequestException('Voucher not found');
+    }
+    if (voucher && String(voucher.merchantId) !== merchantId) throw new BadRequestException('Voucher belongs to another merchant');
+    return {
+      voucherId: voucher?.id ?? codeRow?.voucherId,
+      codeId: codeRow?.id ?? null,
+      code: codeRow?.code ?? null,
+      voucherStatus: (voucher as any)?.status ?? 'ACTIVE',
+      voucherActive: (voucher as any)?.isActive ?? true,
+      codeStatus: (codeRow as any)?.status ?? 'ACTIVE',
+      codeUsedCount: (codeRow as any)?.usedCount ?? 0,
+      codeMaxUses: (codeRow as any)?.maxUses ?? null,
+      validFrom: (codeRow?.validFrom ?? voucher?.validFrom) ?? null,
+      validUntil: (codeRow?.validUntil ?? voucher?.validUntil) ?? null,
+    };
+  }
+
+  async deactivate(body: { merchantId: string; code?: string; voucherId?: string }) {
+    const { merchantId, code, voucherId } = body || ({} as any);
+    if (!merchantId) throw new BadRequestException('merchantId required');
+    if (!code && !voucherId) throw new BadRequestException('code or voucherId required');
+    if (code) {
+      const codeRow = await (this.prisma as any).voucherCode.findUnique({ where: { code } });
+      if (!codeRow) throw new BadRequestException('Voucher code not found');
+      const voucher = await (this.prisma as any).voucher.findUnique({ where: { id: codeRow.voucherId } });
+      if (!voucher) throw new BadRequestException('Voucher not found');
+      if (String(voucher.merchantId) !== merchantId) throw new BadRequestException('Voucher belongs to another merchant');
+      const now = new Date();
+      try { await (this.prisma as any).voucherCode.update({ where: { id: codeRow.id }, data: { status: 'INACTIVE', validUntil: now } }); } catch {}
+      try { this.metrics.inc('vouchers_deactivated_total', { scope: 'code' }); } catch {}
+      return { ok: true };
+    } else {
+      const voucher = await (this.prisma as any).voucher.findUnique({ where: { id: voucherId } });
+      if (!voucher) throw new BadRequestException('Voucher not found');
+      if (String(voucher.merchantId) !== merchantId) throw new BadRequestException('Voucher belongs to another merchant');
+      try { await (this.prisma as any).voucher.update({ where: { id: voucher.id }, data: { isActive: false, status: 'INACTIVE', validUntil: new Date() } }); } catch {}
+      try { this.metrics.inc('vouchers_deactivated_total', { scope: 'voucher' }); } catch {}
+      return { ok: true };
+    }
   }
 }

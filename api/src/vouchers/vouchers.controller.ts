@@ -33,4 +33,22 @@ export class VouchersController {
   async redeem(@Body() body: { merchantId: string; code: string; customerId: string; eligibleTotal: number; orderId?: string }) {
     return this.vouchers.redeem(body);
   }
+
+  @Post('status')
+  @ApiOkResponse({ schema: { type: 'object', properties: {
+    voucherId: { type: 'string' }, codeId: { type: 'string', nullable: true }, code: { type: 'string', nullable: true },
+    voucherStatus: { type: 'string' }, voucherActive: { type: 'boolean' }, codeStatus: { type: 'string' },
+    codeUsedCount: { type: 'number' }, codeMaxUses: { type: 'number', nullable: true }, validFrom: { type: 'string', nullable: true }, validUntil: { type: 'string', nullable: true }
+  } } })
+  @ApiBadRequestResponse({ schema: { type: 'object', properties: { statusCode: { type: 'number' }, message: { type: 'string' } } } })
+  async status(@Body() body: { merchantId: string; code?: string; voucherId?: string }) {
+    return this.vouchers.status(body);
+  }
+
+  @Post('deactivate')
+  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
+  @ApiBadRequestResponse({ schema: { type: 'object', properties: { statusCode: { type: 'number' }, message: { type: 'string' } } } })
+  async deactivate(@Body() body: { merchantId: string; code?: string; voucherId?: string }) {
+    return this.vouchers.deactivate(body);
+  }
 }

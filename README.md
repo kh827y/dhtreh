@@ -212,6 +212,8 @@ POINTS_TTL_BURN=0
   - `POST /vouchers/preview` — { merchantId, code, eligibleTotal, customerId? } → { canApply, discount, voucherId, codeId, reason? }
   - `POST /vouchers/issue` — { merchantId, valueType, value, code, validFrom?, validUntil?, minPurchaseAmount? } → { ok, voucherId }
   - `POST /vouchers/redeem` — { merchantId, code, customerId, eligibleTotal, orderId? } → { ok, discount }
+  - `POST /vouchers/status` — { merchantId, code? , voucherId? } → { voucherId, codeId?, code?, voucherStatus, voucherActive, codeStatus, codeUsedCount, codeMaxUses, validFrom?, validUntil? }
+  - `POST /vouchers/deactivate` — { merchantId, code? , voucherId? } → { ok: true }
 
 Примечания:
 

@@ -229,6 +229,10 @@ describe('Loyalty (e2e)', () => {
     state.vouchers.push({ id: 'V-TEN', merchantId: 'M1', valueType: 'PERCENTAGE', value: 10, validFrom: null, validUntil: future, minPurchaseAmount: 500 });
     state.voucherCodes.push({ id: 'VC-TEN', voucherId: 'V-TEN', code: 'TENOFF', validFrom: null, validUntil: future, maxUses: 1, usedCount: 0 });
 
+    // Seed M2 voucher TEN2 for combined promo+voucher test
+    state.vouchers.push({ id: 'V-TEN2', merchantId: 'M2', valueType: 'PERCENTAGE', value: 10, validFrom: null, validUntil: future, minPurchaseAmount: 0 });
+    state.voucherCodes.push({ id: 'VC-TEN2', voucherId: 'V-TEN2', code: 'TEN2', validFrom: null, validUntil: future, maxUses: 10, usedCount: 0 });
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
@@ -238,6 +242,17 @@ describe('Loyalty (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
     await app.init();
+  });
+
+  it('Quote order: voucher applied before promo, then points on remaining (M2)', async () => {
+    // Configure promo for M2: fixed 50
+    await prismaMock.merchantSettings.update({ where: { merchantId: 'M2' }, data: { rulesJson: { promos: [ { then: { discountFixed: 50 } } ] }, updatedAt: new Date() } });
+    const r = await request(app.getHttpServer())
+      .post('/loyalty/quote')
+      .send({ merchantId: 'M2', userToken: 'C-vp-1', mode: 'EARN', total: 1000, eligibleTotal: 1000, voucherCode: 'TEN2' })
+      .expect(201);
+    // 1000 - voucher 10% = 900; then promo -50 => 850; earn 5% => 42 or 42/43 after flooring
+    expect(r.body.pointsToEarn).toBe(42);
   });
 
   it('Quote (EARN) applies voucher discount before calculating points', async () => {
