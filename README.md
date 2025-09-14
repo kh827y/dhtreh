@@ -103,6 +103,70 @@ E. Проверка результатов
 - POS Bridge: admin → Docs → Bridge
 - Варианты интеграции: admin → Docs → Integration
 
+## Наблюдаемость: метрики и алерты
+
+Метрики доступны по `GET /metrics` (Prometheus, `text/plain; version=0.0.4`).
+
+- Защита метрик: если задан `METRICS_TOKEN`, требуется один из заголовков:
+  - `X-Metrics-Token: <token>`
+  - или `Authorization: Bearer <token>`
+
+Примеры:
+
+```bash
+# Без токена (если METRICS_TOKEN не установлен)
+curl -s http://localhost:3000/metrics | head -n 20
+
+# С токеном через заголовок
+curl -s -H "X-Metrics-Token: $METRICS_TOKEN" http://localhost:3000/metrics | head -n 20
+
+# С токеном через Bearer
+curl -s -H "Authorization: Bearer $METRICS_TOKEN" http://localhost:3000/metrics | head -n 20
+```
+
+5xx алерты (опционально) отправляются в Telegram с сэмплингом:
+
+- Переменные окружения API (`api/.env`):
+  - `ALERT_TELEGRAM_BOT_TOKEN`
+  - `ALERT_TELEGRAM_CHAT_ID`
+  - `ALERTS_5XX_SAMPLE_RATE` — число от `0.0` до `1.0` (например, `0.05` для 5% семплинга)
+
+Если токен/чат не заданы или сэмплинг `0`, алерты не отправляются. Тексты включают: статус, метод, маршрут, `requestId` и усечённое сообщение ошибки.
+
+Замечания:
+
+- В dev используйте небольшие сэмплы (`0.01–0.1`), чтобы не шуметь.
+- Секреты не коммитьте — храните в локальных `.env`.
+- В Admin есть страница «Metrics» для быстрых проверок.
+
+## Фичефлаги и воркеры
+
+Воркеры управляются переключателем `WORKERS_ENABLED` (по умолчанию `0` в прод‑примере и `1` в локальном примере). Для отдельных сценариев включаются фичефлаги:
+
+- `EARN_LOTS_FEATURE=1` — ведение лотов начислений баллов (FIFO потребление, LIFO unconsume/revoke); события `loyalty.earnlot.*` в `eventOutbox`.
+- `POINTS_TTL_FEATURE=1` — периодическое превью истекающих баллов (`loyalty.points_ttl.preview`).
+- `POINTS_TTL_BURN=1` — периодическое сжигание истекших баллов на основе лотов (`loyalty.points_ttl.burned`).
+- `TTL_BURN_ENABLED=1` — альтернативный воркер сжигания (совместимость, если используется).
+
+Полезные интервалы/настройки (значения по умолчанию заданы в `.env.example`):
+
+- `EARN_ACTIVATION_INTERVAL_MS` и `EARN_ACTIVATION_BATCH` — активация отложенных начислений (модуляция PENDING→ACTIVE лотов).
+- `OUTBOX_WORKER_INTERVAL_MS`, `OUTBOX_WORKER_CONCURRENCY`, `OUTBOX_MAX_RETRIES`, `OUTBOX_RPS_DEFAULT`, `OUTBOX_RPS_BY_MERCHANT` — доставка вебхуков из `eventOutbox`.
+- `HOLD_GC_INTERVAL_MS` — сборщик просроченных hold’ов.
+- `TTL_BURN_INTERVAL_MS` — частота сжигания TTL.
+
+Пример локального запуска с включёнными лотами и превью TTL:
+
+```bash
+# api/.env
+WORKERS_ENABLED=1
+EARN_LOTS_FEATURE=1
+POINTS_TTL_FEATURE=1
+POINTS_TTL_BURN=0
+```
+
+Проверка статуса: `GET /healthz` возвращает `flags` и `workers` (alive/lastTickAt для некоторых воркеров).
+
 ## Продакшн конфигурация
 
 - API: `DATABASE_URL`, `ADMIN_KEY`, `ADMIN_SESSION_SECRET`, `QR_JWT_SECRET` (не `dev_change_me`), `CORS_ORIGINS` обязательны; `WORKERS_ENABLED=1` в отдельном процессе.

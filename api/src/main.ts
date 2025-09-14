@@ -4,30 +4,51 @@ import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import compression from 'compression';
 import pinoHttp from 'pino-http';
+import Ajv from 'ajv';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import * as Sentry from '@sentry/node';
 import { HttpAdapterHost } from '@nestjs/core';
 import { SentryFilter } from './sentry.filter';
 import { HttpMetricsInterceptor } from './http-metrics.interceptor';
 import { MetricsService } from './metrics.service';
+import { AlertsService } from './alerts/alerts.service';
 // OpenTelemetry (инициализация по флагу)
 import './otel';
 import { context as otelContext, trace as otelTrace } from '@opentelemetry/api';
 import { HttpErrorFilter } from './http-error.filter';
 
 async function bootstrap() {
-  // Fail-fast ENV validation
+  // Fail-fast ENV validation (Ajv schema)
   (function validateEnv() {
-    const must = ['DATABASE_URL', 'ADMIN_KEY'] as const;
-    for (const k of must) {
-      if (!process.env[k] || String(process.env[k]).trim() === '') {
-        throw new Error(`[ENV] ${k} not configured`);
-      }
+    const ajv = new Ajv({ allErrors: true, allowUnionTypes: true, removeAdditional: false });
+    const schema = {
+      type: 'object',
+      properties: {
+        NODE_ENV: { type: 'string' },
+        DATABASE_URL: { type: 'string', minLength: 1 },
+        ADMIN_KEY: { type: 'string', minLength: 1 },
+        CORS_ORIGINS: { type: 'string' },
+        QR_JWT_SECRET: { type: 'string' },
+        ADMIN_SESSION_SECRET: { type: 'string' },
+      },
+      required: ['DATABASE_URL', 'ADMIN_KEY'],
+      additionalProperties: true,
+    } as const;
+    const validate = ajv.compile(schema as any);
+    const envObj: Record<string, unknown> = { ...process.env };
+    const ok = validate(envObj);
+    if (!ok) {
+      const errs = (validate.errors || []).map(e => `${e.instancePath || e.schemaPath}: ${e.message}`).join('; ');
+      throw new Error(`[ENV] Validation failed: ${errs}`);
     }
     if (process.env.NODE_ENV === 'production') {
-      if (!process.env.ADMIN_SESSION_SECRET) throw new Error('[ENV] ADMIN_SESSION_SECRET not configured');
+      if (!process.env.ADMIN_SESSION_SECRET || !String(process.env.ADMIN_SESSION_SECRET).trim()) {
+        throw new Error('[ENV] ADMIN_SESSION_SECRET not configured');
+      }
       const qr = process.env.QR_JWT_SECRET || '';
       if (!qr || qr === 'dev_change_me') throw new Error('[ENV] QR_JWT_SECRET must be set and not use dev default in production');
+      const cors = (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+      if (cors.length === 0) throw new Error('[ENV] CORS_ORIGINS must be configured in production');
     }
   })();
   const app = await NestFactory.create(AppModule);
@@ -97,8 +118,8 @@ async function bootstrap() {
   // Валидация
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
-  // HTTP metrics interceptor (prom-client с лейблами)
-  app.useGlobalInterceptors(new HttpMetricsInterceptor(app.get(MetricsService)));
+  // HTTP metrics interceptor (prom-client с лейблами) + 5xx alerts sampling
+  app.useGlobalInterceptors(new HttpMetricsInterceptor(app.get(MetricsService), app.get(AlertsService)));
 
   // Единый JSON-формат ошибок
   app.useGlobalFilters(new HttpErrorFilter());
