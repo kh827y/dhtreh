@@ -152,7 +152,8 @@ X-Staff-Key: required_if_enabled
   "outletId": "string", // optional
   "deviceId": "string", // optional
   "staffId": "string",  // optional
-  "category": "string"  // optional
+  "category": "string",  // optional (для правил промо)
+  "voucherCode": "string" // optional (применить ваучер перед расчётом)
 }
 
 Response 200 (REDEEM):
@@ -174,6 +175,8 @@ Response 200 (EARN):
 }
 ```
 
+Примечание: если указан `voucherCode`, сначала применяется ваучер (и промо‑правила) к `eligibleTotal`, затем выполняется расчёт `earn`/`redeem`.
+
 #### 3. Подтверждение операции (Commit)
 ```http
 POST /loyalty/commit
@@ -186,7 +189,8 @@ X-Staff-Key: required_if_enabled
   "holdId": "uuid",
   "orderId": "string",
   "receiptNumber": "string", // optional
-  "requestId": "string"      // optional
+  "requestId": "string",      // optional
+  "voucherCode": "string"     // optional (идемпотентная фиксация использования ваучера)
 }
 
 Response 200:
@@ -252,6 +256,99 @@ Response 200:
   ],
   "nextBefore": "2024-01-01T00:00:00Z"
 }
+```
+
+### Ваучеры
+
+#### 1. Предпросмотр скидки по ваучеру
+```http
+POST /vouchers/preview
+Content-Type: application/json
+
+{
+  "merchantId": "M1",
+  "code": "TENOFF",
+  "eligibleTotal": 1000,
+  "customerId": "optional"
+}
+
+Response 200:
+{
+  "canApply": true,
+  "discount": 100,
+  "voucherId": "V1",
+  "codeId": "C1",
+  "reason": null
+}
+```
+
+#### 2. Выпуск ваучера/кода
+```http
+POST /vouchers/issue
+Content-Type: application/json
+
+{
+  "merchantId": "M1",
+  "valueType": "PERCENTAGE", // или FIXED_AMOUNT
+  "value": 10,
+  "code": "TENOFF",
+  "validFrom": "2025-01-01T00:00:00Z",
+  "validUntil": "2025-12-31T23:59:59Z",
+  "minPurchaseAmount": 500
+}
+
+Response 200:
+{ "ok": true, "voucherId": "V1" }
+```
+
+#### 3. Фиксация использования ваучера (идемпотентно по orderId)
+```http
+POST /vouchers/redeem
+Content-Type: application/json
+
+{
+  "merchantId": "M1",
+  "code": "TENOFF",
+  "customerId": "C1",
+  "eligibleTotal": 1000,
+  "orderId": "ORDER-1"
+}
+
+Response 200:
+{ "ok": true, "discount": 100 }
+```
+
+#### 4. Статус ваучера/кода
+```http
+POST /vouchers/status
+Content-Type: application/json
+
+{ "merchantId": "M1", "code": "TENOFF" }
+
+Response 200:
+{
+  "voucherId": "V1",
+  "codeId": "C1",
+  "code": "TENOFF",
+  "voucherStatus": "ACTIVE",
+  "voucherActive": true,
+  "codeStatus": "ACTIVE",
+  "codeUsedCount": 0,
+  "codeMaxUses": 1,
+  "validFrom": "2025-01-01T00:00:00Z",
+  "validUntil": "2025-12-31T23:59:59Z"
+}
+```
+
+#### 5. Деактивация ваучера/кода
+```http
+POST /vouchers/deactivate
+Content-Type: application/json
+
+{ "merchantId": "M1", "code": "TENOFF" }
+
+Response 200:
+{ "ok": true }
 ```
 
 ## Управление мерчантами
