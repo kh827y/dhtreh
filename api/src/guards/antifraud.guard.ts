@@ -79,8 +79,8 @@ export class AntiFraudGuard implements CanActivate {
     } catch {}
 
     const now = Date.now();
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
+    // rolling windows to avoid TZ/midnight edge cases
+    const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const startOfWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); // rolling 7-day window
     startOfWeek.setHours(0,0,0,0);
 
@@ -97,7 +97,7 @@ export class AntiFraudGuard implements CanActivate {
       const count = await this.prisma.transaction.count({ where: { merchantId, createdAt: { gte: from } } });
       if (count >= limits.merchant.limit) block('merchant', count, limits.merchant.limit);
       if (limits.merchant.dailyCap && limits.merchant.dailyCap > 0) {
-        const daily = await this.prisma.transaction.count({ where: { merchantId, createdAt: { gte: startOfDay } } });
+        const daily = await this.prisma.transaction.count({ where: { merchantId, createdAt: { gte: since24h } } });
         if (daily >= limits.merchant.dailyCap) block('merchant_daily', daily, limits.merchant.dailyCap);
       }
       if (limits.merchant.weeklyCap && limits.merchant.weeklyCap > 0) {
@@ -112,7 +112,7 @@ export class AntiFraudGuard implements CanActivate {
       const count = await this.prisma.transaction.count({ where: { merchantId, deviceId, createdAt: { gte: from } } });
       if (count >= limits.device.limit) block('device', count, limits.device.limit);
       if (limits.device.dailyCap && limits.device.dailyCap > 0) {
-        const daily = await this.prisma.transaction.count({ where: { merchantId, deviceId, createdAt: { gte: startOfDay } } });
+        const daily = await this.prisma.transaction.count({ where: { merchantId, deviceId, createdAt: { gte: since24h } } });
         if (daily >= limits.device.dailyCap) block('device_daily', daily, limits.device.dailyCap);
       }
       if (limits.device.weeklyCap && limits.device.weeklyCap > 0) {
@@ -127,7 +127,7 @@ export class AntiFraudGuard implements CanActivate {
       const count = await this.prisma.transaction.count({ where: { merchantId, staffId, createdAt: { gte: from } } });
       if (count >= limits.staff.limit) block('staff', count, limits.staff.limit);
       if (limits.staff.dailyCap && limits.staff.dailyCap > 0) {
-        const daily = await this.prisma.transaction.count({ where: { merchantId, staffId, createdAt: { gte: startOfDay } } });
+        const daily = await this.prisma.transaction.count({ where: { merchantId, staffId, createdAt: { gte: since24h } } });
         if (daily >= limits.staff.dailyCap) block('staff_daily', daily, limits.staff.dailyCap);
       }
       if (limits.staff.weeklyCap && limits.staff.weeklyCap > 0) {
@@ -142,7 +142,7 @@ export class AntiFraudGuard implements CanActivate {
       const count = await this.prisma.transaction.count({ where: { merchantId, customerId, createdAt: { gte: from } } });
       if (count >= limits.customer.limit) block('customer', count, limits.customer.limit);
       if (limits.customer.dailyCap && limits.customer.dailyCap > 0) {
-        const daily = await this.prisma.transaction.count({ where: { merchantId, customerId, createdAt: { gte: startOfDay } } });
+        const daily = await this.prisma.transaction.count({ where: { merchantId, customerId, createdAt: { gte: since24h } } });
         if (daily >= limits.customer.dailyCap) block('customer_daily', daily, limits.customer.dailyCap);
       }
       if (limits.customer.weeklyCap && limits.customer.weeklyCap > 0) {
