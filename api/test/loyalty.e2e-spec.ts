@@ -24,6 +24,9 @@ describe('Loyalty (e2e)', () => {
     devices: [] as { id: string; merchantId: string; type: 'SMART'|'PC_POS'|'VIRTUAL'; label?: string|null; bridgeSecret?: string|null }[],
     idem: new Map<string, any>(),
     earnLots: [] as Array<{ id: string; merchantId: string; customerId: string; points: number; consumedPoints: number; earnedAt: Date; maturesAt?: Date|null; expiresAt?: Date|null; orderId?: string|null; receiptId?: string|null; outletId?: string|null; deviceId?: string|null; staffId?: string|null; status: 'ACTIVE'|'PENDING' }>,
+    vouchers: [] as Array<{ id: string; merchantId: string; valueType: 'PERCENTAGE'|'FIXED_AMOUNT'; value: number; validFrom?: Date|null; validUntil?: Date|null; minPurchaseAmount?: number|null }>,
+    voucherCodes: [] as Array<{ id: string; voucherId: string; code: string; validFrom?: Date|null; validUntil?: Date|null; maxUses?: number|null; usedCount?: number }>,
+    voucherUsages: [] as Array<{ id: string; voucherId: string; codeId: string; customerId: string; orderId?: string|null; amount: number }>,
   };
 
   const uuid = (() => { let i = 1; return () => `id-${i++}`; })();
@@ -177,6 +180,31 @@ describe('Loyalty (e2e)', () => {
     device: {
       findUnique: async (args: any) => state.devices.find(d => d.id === args.where.id) || null,
     },
+    voucherCode: {
+      findUnique: async (args: any) => {
+        if (args?.where?.code) return state.voucherCodes.find(c => c.code === args.where.code) || null;
+        if (args?.where?.id) return state.voucherCodes.find(c => c.id === args.where.id) || null;
+        return null;
+      },
+      update: async (args: any) => {
+        const idx = state.voucherCodes.findIndex(c => c.id === args.where.id);
+        if (idx >= 0) {
+          const cur = state.voucherCodes[idx];
+          const usedCount = (args.data.usedCount != null) ? args.data.usedCount : cur.usedCount || 0;
+          state.voucherCodes[idx] = { ...cur, usedCount };
+          return state.voucherCodes[idx];
+        }
+        return null;
+      },
+    },
+    voucher: {
+      findUnique: async (args: any) => state.vouchers.find(v => v.id === args.where.id) || null,
+      create: async (args: any) => { const v = { id: args.data.id || uuid(), ...args.data }; state.vouchers.push(v as any); return v; },
+    },
+    voucherUsage: {
+      findFirst: async (args: any) => state.voucherUsages.find(u => u.voucherId === args.where.voucherId && u.customerId === args.where.customerId && ((args.where.orderId ?? undefined) === (u.orderId ?? undefined))) || null,
+      create: async (args: any) => { const u = { id: uuid(), ...args.data }; state.voucherUsages.push(u as any); return u; },
+    },
   };
 
   beforeAll(async () => {
@@ -195,6 +223,12 @@ describe('Loyalty (e2e)', () => {
     // staff for guard
     state.staff.push({ id: 'S1', merchantId: 'M-guard', apiKeyHash: createHash('sha256').update('staff-secret','utf8').digest('hex'), status: 'ACTIVE' });
 
+    // Seed a voucher TENOFF (10% off, min 500)
+    const now = new Date();
+    const future = new Date(now.getTime() + 7*24*60*60*1000);
+    state.vouchers.push({ id: 'V-TEN', merchantId: 'M1', valueType: 'PERCENTAGE', value: 10, validFrom: null, validUntil: future, minPurchaseAmount: 500 });
+    state.voucherCodes.push({ id: 'VC-TEN', voucherId: 'V-TEN', code: 'TENOFF', validFrom: null, validUntil: future, maxUses: 1, usedCount: 0 });
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
@@ -204,6 +238,39 @@ describe('Loyalty (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
     await app.init();
+  });
+
+  it('Quote (EARN) applies voucher discount before calculating points', async () => {
+    const r = await request(app.getHttpServer())
+      .post('/loyalty/quote')
+      .send({ merchantId: 'M1', userToken: 'C-vq-1', mode: 'EARN', total: 1000, eligibleTotal: 1000, voucherCode: 'TENOFF' })
+      .expect(201);
+    expect(r.body.pointsToEarn).toBe(45); // default earnBps 5% on 900 eligible
+  });
+
+  it('Commit with voucherCode is idempotent by orderId (voucherUsage created once)', async () => {
+    const q = await request(app.getHttpServer())
+      .post('/loyalty/quote')
+      .send({ merchantId: 'M1', userToken: 'C-vr-1', mode: 'EARN', total: 1000, eligibleTotal: 1000 })
+      .expect(201);
+    const holdId = q.body.holdId as string;
+    const orderId = 'O-vr-1';
+
+    const c1 = await request(app.getHttpServer())
+      .post('/loyalty/commit')
+      .send({ holdId, orderId, voucherCode: 'TENOFF' })
+      .expect(201);
+    expect(c1.body.ok).toBe(true);
+    const usageCountAfterFirst = state.voucherUsages.length;
+    expect(usageCountAfterFirst).toBeGreaterThanOrEqual(1);
+
+    const c2 = await request(app.getHttpServer())
+      .post('/loyalty/commit')
+      .send({ holdId, orderId, voucherCode: 'TENOFF' })
+      .expect(201);
+    expect(c2.body.alreadyCommitted).toBe(true);
+    const usageCountAfterSecond = state.voucherUsages.length;
+    expect(usageCountAfterSecond).toBe(usageCountAfterFirst);
   });
 
   it('Refund idempotency: same Idempotency-Key returns cached body and does not re-apply balance change', async () => {
