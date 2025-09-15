@@ -12,7 +12,7 @@ export default function DashboardStatus() {
       const res = await fetch('/api/metrics');
       if (!res.ok) throw new Error(await res.text());
       setData(await res.json()); setErr('');
-    } catch (e: any) { setErr(String(e?.message || e)); }
+    } catch (e: unknown) { setErr(e instanceof Error ? e.message : String(e)); }
   };
   useEffect(() => { load().catch(()=>{}); const id = setInterval(load, 15000); return () => clearInterval(id); }, []);
 

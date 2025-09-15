@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 
 const API = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
 const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
@@ -43,7 +44,7 @@ export default function LedgerPage() {
       const r = await fetch(url.toString());
       if (!r.ok) throw new Error(await r.text());
       setItems(await r.json());
-    } catch (e: any) { setMsg('Ошибка: ' + e?.message); } finally { setLoading(false); }
+    } catch (e: unknown) { setMsg('Ошибка: ' + (e instanceof Error ? e.message : String(e))); } finally { setLoading(false); }
   }
 
   useEffect(() => { load(); }, []);
@@ -52,7 +53,7 @@ export default function LedgerPage() {
     <main style={{ maxWidth: 980, margin: '40px auto', fontFamily: 'system-ui, Arial' }}>
       <h1>Ledger Entries</h1>
       <div style={{ display: 'flex', gap: 12, margin: '8px 0' }}>
-        <a href="/">← Настройки</a>
+        <Link href="/">← Настройки</Link>
       </div>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
         <label>Limit: <input type="number" value={limit} onChange={(e)=>setLimit(Number(e.target.value)||50)} style={{ width: 90 }} /></label>

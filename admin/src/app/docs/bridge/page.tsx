@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 
 export default function BridgeDocs() {
   return (
@@ -25,7 +26,7 @@ export default function BridgeDocs() {
       <h3>Идемпотентность</h3>
       <p>Bridge устанавливает заголовок <code>Idempotency-Key</code> при commit/refund, чтобы повтор при сетевых ошибках не дублировал операцию.</p>
       <div style={{ marginTop: 12 }}>
-        <a href="/">← Настройки</a>
+        <Link href="/">← Настройки</Link>
       </div>
     </main>
   );

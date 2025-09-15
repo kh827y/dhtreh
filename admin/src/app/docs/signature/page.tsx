@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 
 export default function SignatureDocs() {
   return (
@@ -36,7 +37,7 @@ function verify(headers, body, secret) {
         Рекомендуется проверять окно времени ±5 минут и учитывать <code>X-Signature-Key-Id</code> для ротации ключей.
       </p>
       <div style={{ marginTop: 12 }}>
-        <a href="/">← Настройки</a>
+        <Link href="/">← Настройки</Link>
       </div>
     </main>
   );

@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 
 export default function RotationDocs() {
   return (
@@ -39,7 +40,7 @@ export default function RotationDocs() {
       </ul>
 
       <div style={{ marginTop: 12 }}>
-        <a href="/">← Настройки</a>
+        <Link href="/">← Настройки</Link>
       </div>
     </main>
   );

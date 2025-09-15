@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 
 export default function IntegrationDocs() {
   return (
@@ -14,7 +15,7 @@ export default function IntegrationDocs() {
         <li><b>Эндпоинты:</b> <code>/quote</code>, <code>/commit</code>, <code>/refund</code>, <code>/queue/flush</code>.</li>
       </ul>
       <div style={{ margin: '8px 0' }}>
-        Подробнее: <a href="/docs/bridge">POS Bridge</a> и <a href="/docs/signature">подпись</a>.
+        Подробнее: <Link href="/docs/bridge">POS Bridge</Link> и <Link href="/docs/signature">подпись</Link>.
       </div>
 
       <h3>2) Прямая интеграция из CRM</h3>
@@ -41,7 +42,7 @@ export default function IntegrationDocs() {
       </ul>
 
       <div style={{ marginTop: 12 }}>
-        <a href="/">← Настройки</a>
+        <Link href="/">← Настройки</Link>
       </div>
     </main>
   );

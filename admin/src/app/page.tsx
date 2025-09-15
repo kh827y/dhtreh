@@ -24,6 +24,8 @@ export default function AdminPage() {
   const [earnDailyCap, setEarnDailyCap] = useState<number>(0);
   const [requireJwtForQuote, setRequireJwtForQuote] = useState<boolean>(false);
   const [rulesJson, setRulesJson] = useState<string>('[\n  {\n    "if": { "channelIn": ["VIRTUAL"], "weekdayIn": [1,2,3,4,5] },\n    "then": { "earnBps": 600 }\n  }\n]');
+  const [levelsCfgJson, setLevelsCfgJson] = useState<string>('{\n  "periodDays": 365,\n  "metric": "earn",\n  "levels": [ { "name": "Base", "threshold": 0 }, { "name": "Silver", "threshold": 500 }, { "name": "Gold", "threshold": 1000 } ]\n}');
+  const [levelBenefitsJson, setLevelBenefitsJson] = useState<string>('{\n  "earnBpsBonusByLevel": { "Base": 0, "Silver": 200, "Gold": 400 },\n  "redeemLimitBpsBonusByLevel": { "Base": 0, "Silver": 1000, "Gold": 2000 }\n}');
   const [requireBridgeSig, setRequireBridgeSig] = useState<boolean>(false);
   const [bridgeSecret, setBridgeSecret] = useState<string>('');
   const [bridgeSecretNext, setBridgeSecretNext] = useState<string>('');
@@ -55,7 +57,11 @@ export default function AdminPage() {
       setRedeemDailyCap(Number(data.redeemDailyCap || 0));
       setEarnDailyCap(Number(data.earnDailyCap || 0));
       setRequireJwtForQuote(Boolean(data.requireJwtForQuote));
-      if (data.rulesJson) setRulesJson(JSON.stringify(data.rulesJson, null, 2));
+      if (data.rulesJson) {
+        setRulesJson(Array.isArray(data.rulesJson) ? JSON.stringify(data.rulesJson, null, 2) : JSON.stringify((data.rulesJson as any).rules ?? [], null, 2));
+        if ((data.rulesJson as any).levelsCfg) setLevelsCfgJson(JSON.stringify((data.rulesJson as any).levelsCfg, null, 2));
+        if ((data.rulesJson as any).levelBenefits) setLevelBenefitsJson(JSON.stringify((data.rulesJson as any).levelBenefits, null, 2));
+      }
       setRequireBridgeSig(Boolean(data.requireBridgeSig));
       setBridgeSecret(data.bridgeSecret || '');
       setBridgeSecretNext(data.bridgeSecretNext || '');
@@ -73,10 +79,16 @@ export default function AdminPage() {
     setLoading(true);
     setMsg('');
     try {
+      // Merge rules + levels config/benefits into a single object
+      let merged: any = {};
+      try { const parsed = JSON.parse(rulesJson || 'null'); if (Array.isArray(parsed)) merged.rules = parsed; } catch {}
+      try { const cfg = JSON.parse(levelsCfgJson || 'null'); if (cfg && typeof cfg === 'object') merged.levelsCfg = cfg; } catch {}
+      try { const ben = JSON.parse(levelBenefitsJson || 'null'); if (ben && typeof ben === 'object') merged.levelBenefits = ben; } catch {}
+
       const r = await fetch(`/api/admin/merchants/${MERCHANT}/settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ earnBps, redeemLimitBps, qrTtlSec, webhookUrl, webhookSecret, webhookKeyId, webhookSecretNext, webhookKeyIdNext, useWebhookNext, redeemCooldownSec, earnCooldownSec, redeemDailyCap, earnDailyCap, requireJwtForQuote, rulesJson: JSON.parse(rulesJson||'null'), requireBridgeSig, bridgeSecret, bridgeSecretNext, requireStaffKey, pointsTtlDays }),
+        body: JSON.stringify({ earnBps, redeemLimitBps, qrTtlSec, webhookUrl, webhookSecret, webhookKeyId, webhookSecretNext, webhookKeyIdNext, useWebhookNext, redeemCooldownSec, earnCooldownSec, redeemDailyCap, earnDailyCap, requireJwtForQuote, rulesJson: merged, requireBridgeSig, bridgeSecret, bridgeSecretNext, requireStaffKey, pointsTtlDays }),
       });
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
@@ -107,6 +119,7 @@ export default function AdminPage() {
         <Link href="/docs/bridge">Bridge</Link>
         <Link href="/metrics">Metrics</Link>
         <Link href="/bridge-status">Bridge Status</Link>
+        <Link href="/levels">Levels</Link>
       </div>
       <div style={{ color: '#666' }}>Merchant: <code>{MERCHANT}</code></div>
 
@@ -126,6 +139,16 @@ export default function AdminPage() {
           Правила (JSON):
           <textarea value={rulesJson} onChange={(e) => setRulesJson(e.target.value)} rows={8} style={{ width: '100%', padding: 8, fontFamily: 'monospace' }} />
           <div style={{ color: '#666', fontSize: 12 }}>Пример: массив правил с условиями channelIn/weekdayIn/minEligible и действиями earnBps/redeemLimitBps</div>
+        </label>
+        <label>
+          Levels config (JSON):
+          <textarea value={levelsCfgJson} onChange={(e) => setLevelsCfgJson(e.target.value)} rows={6} style={{ width: '100%', padding: 8, fontFamily: 'monospace' }} />
+          <div style={{ color: '#666', fontSize: 12 }}>Поля: periodDays, metric (earn/redeem/transactions), levels[]: {`{ name, threshold }`}</div>
+        </label>
+        <label>
+          Level benefits (JSON):
+          <textarea value={levelBenefitsJson} onChange={(e) => setLevelBenefitsJson(e.target.value)} rows={6} style={{ width: '100%', padding: 8, fontFamily: 'monospace' }} />
+          <div style={{ color: '#666', fontSize: 12 }}>Карты: earnBpsBonusByLevel, redeemLimitBpsBonusByLevel</div>
         </label>
         <div style={{ display:'flex', gap: 8, alignItems: 'center' }}>
           <button onClick={() => {

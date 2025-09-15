@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { listOutbox } from '../lib/outbox';
 
 export default function StatusBar({ merchantId }: { merchantId: string }) {
@@ -16,7 +17,7 @@ export default function StatusBar({ merchantId }: { merchantId: string }) {
       setHasPending((p?.length || 0) > 0);
       setHasDead((d?.length || 0) > 0);
       setMsg('');
-    } catch (e:any) { setMsg(String(e?.message || e)); }
+    } catch (e: unknown) { setMsg(e instanceof Error ? e.message : String(e)); }
   };
 
   useEffect(() => { load().catch(()=>{}); const i = setInterval(load, 15000); return () => clearInterval(i); }, [merchantId]);
@@ -24,7 +25,7 @@ export default function StatusBar({ merchantId }: { merchantId: string }) {
   return (
     <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 8 }}>
       <span>Outbox: {hasPending ? <b style={{ color: '#f9e2af' }}>есть PENDING</b> : <span style={{ color: '#a6e3a1' }}>OK</span>} {hasDead && <b style={{ color: '#f38ba8' }}>(DEAD события!)</b>}</span>
-      <a href="/outbox" style={{ color: '#89b4fa' }}>перейти</a>
+      <Link href="/outbox" style={{ color: '#89b4fa' }}>перейти</Link>
       {msg && <span style={{ color: '#f38ba8' }}>{msg}</span>}
     </div>
   );
