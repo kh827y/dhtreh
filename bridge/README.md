@@ -9,6 +9,20 @@
 - Фоновая попытка догона очереди
 - Локальная подпись X-Bridge-Signature (ts + '.' + body) HMAC-SHA256
 
+## Заголовки и безопасность
+- X-Request-Id — уникальный ID запроса (генерируется мостом)
+- Idempotency-Key — для /commit и /refund (генерируется мостом, можно передать вручную)
+- X-Staff-Key — проксируется из переменной окружения `STAFF_KEY` (если задана)
+- X-Bridge-Signature — подпись тела запроса. Формат заголовка:
+
+```
+X-Bridge-Signature: v1,ts=<unix_seconds>,sig=<base64(HMAC_SHA256(ts + '.' + body))>
+```
+
+Рекомендуемая верификация на стороне API:
+1) распарсить `ts` и `sig`, проверить окно времени (например, ±5 минут);
+2) вычислить `base64(HMAC_SHA256(ts + '.' + body, BRIDGE_SECRET))` и сравнить с `sig` из заголовка.
+
 ## Установка и запуск
 ```
 cd bridge
@@ -24,6 +38,8 @@ env BRIDGE_PORT=18080 API_BASE=http://localhost:3000 pnpm start
 - STAFF_KEY: ключ кассира (проксируется как X-Staff-Key)
 - BRIDGE_SECRET: секрет для подписи X-Bridge-Signature
 - FLUSH_INTERVAL_MS: период фона догона очереди (по умолчанию 5000)
+- BRIDGE_QUEUE_BACKEND: json | sqlite (по умолчанию json)
+- BRIDGE_DB_PATH: путь к базе для sqlite (по умолчанию ./data/bridge.db)
 
 ## Примеры запросов
 - QUOTE
@@ -54,4 +70,18 @@ POST http://127.0.0.1:18080/commit
 
 ## Очередь
 Файл `data/queue.json` (создаётся автоматически). Можно принудительно отправить: `POST /queue/flush`.
+
+Backend очереди:
+- JSON (по умолчанию) — файл `./data/queue.json`;
+- SQLite — установить `better-sqlite3`, задать `BRIDGE_QUEUE_BACKEND=sqlite`, опционально `BRIDGE_DB_PATH`.
+
+## Эндпоинты
+- GET /health — liveness
+- GET /ready — readiness
+- GET /config — безопасный просмотр конфигурации (без секретов)
+- GET /metrics — метрики в формате Prometheus:
+  - `bridge_queue_pending` — текущая длина очереди
+  - `bridge_queue_enqueued_total` — всего поставлено в очередь
+  - `bridge_queue_flushed_total` — всего успешно отправлено из очереди
+  - `bridge_queue_fail_total` — ошибок при отправке из очереди
 

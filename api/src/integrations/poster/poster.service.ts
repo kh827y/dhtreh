@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { MetricsService } from '../../metrics.service';
 import type { PosAdapter, LoyaltyQuoteRequest, LoyaltyCommitRequest } from '../types';
 import { validateIntegrationConfig, type PosterConfig } from '../config.schema';
+import { upsertIntegration } from '../integration.util';
 
 @Injectable()
 export class PosterService implements PosAdapter {
@@ -11,31 +12,9 @@ export class PosterService implements PosAdapter {
 
   async registerIntegration(merchantId: string, cfg: PosterConfig) {
     const valid = validateIntegrationConfig('POSTER', cfg);
-    if (!valid.ok) throw new Error('Poster config invalid: ' + valid.errors.join('; '));
-    const prismaAny = this.prisma as any;
-    const found = await prismaAny.integration.findFirst({ where: { merchantId, provider: 'POSTER' } });
-    if (found) {
-      await prismaAny.integration.update({
-        where: { id: found.id },
-        data: {
-          config: { appId: cfg.appId },
-          credentials: { appSecret: cfg.appSecret },
-          isActive: true,
-        },
-      });
-      return { success: true, integrationId: found.id };
-    }
-    const created = await prismaAny.integration.create({
-      data: {
-        merchantId,
-        type: 'POS',
-        provider: 'POSTER',
-        config: { appId: cfg.appId },
-        credentials: { appSecret: cfg.appSecret },
-        isActive: true,
-      },
-    });
-    return { success: true, integrationId: created.id };
+    if (!valid.ok) throw new BadRequestException('Poster config invalid: ' + valid.errors.join('; '));
+    const id = await upsertIntegration(this.prisma, merchantId, 'POSTER', { appId: cfg.appId }, { appSecret: cfg.appSecret });
+    return { success: true, integrationId: id };
   }
 
   async quoteLoyalty(req: LoyaltyQuoteRequest) {

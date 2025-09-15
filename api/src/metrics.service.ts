@@ -25,6 +25,9 @@ export class MetricsService implements OnModuleDestroy {
   private ledgerEntries?: Counter<string>;
   private ledgerAmount?: Counter<string>;
   private outboxEvents?: Counter<string>;
+  private posRequests?: Counter<string>;
+  private posErrors?: Counter<string>;
+  private posWebhooks?: Counter<string>;
 
   private stopDefaultMetrics?: () => void;
 
@@ -53,6 +56,10 @@ export class MetricsService implements OnModuleDestroy {
     this.ledgerEntries = new Counter({ name: 'loyalty_ledger_entries_total', help: 'Ledger entries created', labelNames: ['type'], registers: [this.registry] });
     this.ledgerAmount = new Counter({ name: 'loyalty_ledger_amount_total', help: 'Ledger amount total', labelNames: ['type'], registers: [this.registry] });
     this.outboxEvents = new Counter({ name: 'loyalty_outbox_events_total', help: 'Outbox events by type/result', labelNames: ['type','result'], registers: [this.registry] });
+    // POS integrations metrics
+    this.posRequests = new Counter({ name: 'pos_requests_total', help: 'POS integration requests', labelNames: ['provider','endpoint','result'], registers: [this.registry] });
+    this.posErrors = new Counter({ name: 'pos_errors_total', help: 'POS integration errors', labelNames: ['provider','endpoint'], registers: [this.registry] });
+    this.posWebhooks = new Counter({ name: 'pos_webhooks_total', help: 'POS webhooks received', labelNames: ['provider'], registers: [this.registry] });
   }
 
   // Алиас для совместимости с вызовами в коде (increment -> inc)
@@ -67,6 +74,19 @@ export class MetricsService implements OnModuleDestroy {
   }
 
   inc(name: string, labels: Record<string, string> = {}, value = 1) {
+    // Route POS metrics directly to prom-client counters to avoid duplicate legacy lines
+    if (name === 'pos_requests_total' && labels?.provider && labels?.endpoint && labels?.result) {
+      this.posRequests?.inc({ provider: labels.provider, endpoint: labels.endpoint, result: labels.result }, value);
+      return;
+    }
+    if (name === 'pos_errors_total' && labels?.provider && labels?.endpoint) {
+      this.posErrors?.inc({ provider: labels.provider, endpoint: labels.endpoint }, value);
+      return;
+    }
+    if (name === 'pos_webhooks_total' && labels?.provider) {
+      this.posWebhooks?.inc({ provider: labels.provider }, value);
+      return;
+    }
     const key = this.key(name, labels);
     this.counters[key] = (this.counters[key] || 0) + value;
     // Mirror selected counters to prom-client

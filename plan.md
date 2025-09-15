@@ -65,8 +65,10 @@
 - Идемпотентность commit: `merchantId` выводится из `hold`, кэшируемый ответ нормализован (устранён дрейф `alreadyCommitted`), повторные вызовы стабильно детерминированы.
 - Антифрод: `dailyCap` переведён на скользящее 24‑часовое окно, чтобы избежать TZ/полуночных артефактов.
 - E2E: добавлен тест идемпотентности `refund` (повтор по одному `Idempotency-Key`).
- - Wave 1: углублённые e2e по идемпотентности и инвариантам — коллизии `orderId`, конкурентные `commit`, многошаговые частичные `refund` для `EARN/REDEEM`, идемпотентность `refund`.
- - Воркеры/флаги: добавлены unit‑тесты `PointsTtlWorker`, `PointsBurnWorker`, `EarnActivationWorker`; документированы фичефлаги и интервалы, примеры `.env` обновлены (локальный/infra).
+- Wave 1: углублённые e2e по идемпотентности и инвариантам — коллизии `orderId`, конкурентные `commit`, многошаговые частичные `refund` для `EARN/REDEEM`, идемпотентность `refund`.
+- Воркеры/флаги: добавлены unit‑тесты `PointsTtlWorker`, `PointsBurnWorker`, `EarnActivationWorker`; документированы фичефлаги и интервалы, примеры `.env` обновлены (локальный/infra).
+- Тестовая инфраструктура: устранены «залипающие» open handles в Jest. Во всех воркерах таймеры `unref()`, таймауты очищаются; Prometheus default timers выключены в тестах (`METRICS_DEFAULTS=0`), e2e запускаются `--runInBand --detectOpenHandles`.
+- Интеграции: Evotor — AJV‑валидация конфигурации, журнал `SyncLog` (IN ok/error), контроллер инкрементирует `pos_webhooks_total`. ModulKassa/Poster — `POST /register` с OAuthGuard, валидация и upsert `Integration`, вебхуки пишут `SyncLog`, стандартизированы лейблы метрик; добавлены e2e тесты (включая проверку `pos_webhooks_total`).
 
 ## Ближайшие шаги (Wave 1)
 - [x] Идемпотентность commit/refund — e2e на коллизии `orderId`, гонки, ретраи и идемпотентность `refund`.
@@ -122,3 +124,19 @@
   - Журнал `SyncLog`: IN/OUT события, статус/ошибка, payload, план ретраев.
   - Bridge: обновить README/пример `.env`, описать подпись `BRIDGE_SECRET`, офлайн‑очередь.
   - Тесты: unit для валидаторов/подписей, e2e флоу интеграций (моки провайдеров), метрики `pos_*`.
+
+## Волна 4 — Прогресс (2025-09-15)
+
+- Выполнено:
+  - Evotor: валидация конфигов (AJV), `SyncLog` входящих вебхуков, метрики `pos_webhooks_total` и `pos_requests_total`/`pos_errors_total` в контроллере.
+  - ModulKassa/Poster: реализованы `POST /register` (OAuthGuard) с валидацией и upsert `Integration`; вебхуки пишут `SyncLog`; стандартизированы лейблы провайдера в метриках; e2e на вебхуки и метрики.
+  - E2E инфраструктура стабилизирована без open handles.
+  - Централизация POS‑метрик: `pos_requests_total`/`pos_errors_total`/`pos_webhooks_total` перенесены в prom‑client (`MetricsService`), роутинг через `inc()` без дублей.
+  - Негативные e2e: Evotor — неверная подпись вебхука → `SyncLog.status=error` и метрики; ModulKassa/Poster — `POST /register` с некорректным конфигом → 400 и `pos_requests_total{result="error"}`.
+  - DRY: общий helper `upsertIntegration()` для регистрации интеграций, используется в ModulKassa/Poster.
+  - Bridge: README дополнен (формат `X-Bridge-Signature`, заголовки, офлайн‑очередь/бэкенды, метрики/эндпоинты); `infra/env-examples/bridge.env.example` обновлён (переменные очереди).
+
+- Следующие шаги:
+  - Расширить общий helper для ERP/Shipper и перевести оставшиеся адаптеры.
+  - Добавить Admin‑виджеты по POS‑метрикам (`pos_*`) и краткий раздел API Docs о верификации `X-Bridge-Signature` в `loyalty.controller`.
+  - Покрыть негативные сценарии вебхуков прочих провайдеров (assert `pos_errors_total`, `SyncLog.status=error`).

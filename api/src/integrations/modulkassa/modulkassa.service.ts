@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { MetricsService } from '../../metrics.service';
 import type { PosAdapter, LoyaltyQuoteRequest, LoyaltyCommitRequest } from '../types';
 import { validateIntegrationConfig, type ModulKassaConfig } from '../config.schema';
+import { upsertIntegration } from '../integration.util';
 
 @Injectable()
 export class ModulKassaService implements PosAdapter {
@@ -11,31 +12,9 @@ export class ModulKassaService implements PosAdapter {
 
   async registerIntegration(merchantId: string, cfg: ModulKassaConfig) {
     const valid = validateIntegrationConfig('MODULKASSA', cfg);
-    if (!valid.ok) throw new Error('ModulKassa config invalid: ' + valid.errors.join('; '));
-    const prismaAny = this.prisma as any;
-    const found = await prismaAny.integration.findFirst({ where: { merchantId, provider: 'MODULKASSA' } });
-    if (found) {
-      await prismaAny.integration.update({
-        where: { id: found.id },
-        data: {
-          config: { baseUrl: cfg.baseUrl },
-          credentials: { apiKey: cfg.apiKey },
-          isActive: true,
-        },
-      });
-      return { success: true, integrationId: found.id };
-    }
-    const created = await prismaAny.integration.create({
-      data: {
-        merchantId,
-        type: 'POS',
-        provider: 'MODULKASSA',
-        config: { baseUrl: cfg.baseUrl },
-        credentials: { apiKey: cfg.apiKey },
-        isActive: true,
-      },
-    });
-    return { success: true, integrationId: created.id };
+    if (!valid.ok) throw new BadRequestException('ModulKassa config invalid: ' + valid.errors.join('; '));
+    const id = await upsertIntegration(this.prisma, merchantId, 'MODULKASSA', { baseUrl: cfg.baseUrl }, { apiKey: cfg.apiKey });
+    return { success: true, integrationId: id };
   }
 
   async quoteLoyalty(req: LoyaltyQuoteRequest) {
