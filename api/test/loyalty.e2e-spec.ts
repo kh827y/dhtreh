@@ -104,7 +104,21 @@ describe('Loyalty (e2e)', () => {
 
     transaction: {
       findFirst: async (_args: any) => null,
-      findMany: async (_args: any) => state.transactions.slice(),
+      findMany: async (args: any) => {
+        const w = (args && args.where) || {};
+        let arr = state.transactions.slice();
+        if (w.merchantId) arr = arr.filter(t => t.merchantId === w.merchantId);
+        if (w.customerId) arr = arr.filter(t => t.customerId === w.customerId);
+        if (w.type) {
+          const typeVal = String(w.type);
+          arr = arr.filter(t => String(t.type) === typeVal);
+        }
+        if (w.createdAt?.gte) {
+          const gte = new Date(w.createdAt.gte);
+          arr = arr.filter(t => new Date(t.createdAt) >= gte);
+        }
+        return arr.map(t => ({ ...t }));
+      },
       create: async (args: any) => { state.transactions.push({ id: uuid(), ...args.data, createdAt: new Date() }); return state.transactions[state.transactions.length - 1]; },
     },
 
@@ -244,6 +258,40 @@ describe('Loyalty (e2e)', () => {
     await app.init();
   });
 
+  it('Levels + voucher + promo (M2): EARN uses adjusted eligible and level bonus', async () => {
+    // Configure M2 with promos + levels
+    await prismaMock.merchantSettings.update({ where: { merchantId: 'M2' }, data: { rulesJson: {
+      rules: [],
+      promos: [ { then: { discountFixed: 50 } } ],
+      levelsCfg: { periodDays: 365, metric: 'earn', levels: [ { name: 'Base', threshold: 0 }, { name: 'Silver', threshold: 500 } ] },
+      levelBenefits: { earnBpsBonusByLevel: { Base: 0, Silver: 200 }, redeemLimitBpsBonusByLevel: { Base: 0, Silver: 1000 } },
+    }, updatedAt: new Date() } });
+
+    // Seed level to Silver: earn on 12000 -> ~600 points
+    const qSeed = await request(app.getHttpServer())
+      .post('/loyalty/quote')
+      .send({ merchantId: 'M2', userToken: 'C-cmb-1', mode: 'EARN', total: 12000, eligibleTotal: 12000 })
+      .expect(201);
+    await request(app.getHttpServer()).post('/loyalty/commit').send({ holdId: qSeed.body.holdId, orderId: 'OCMB-seed-1' }).expect(201);
+
+    // Now EARN with voucher 10% and promo -50: eligible 1000 -> 900 -> 850; earn bps 500 + 200 = 700 -> floor(850*0.07) = 59
+    const r = await request(app.getHttpServer())
+      .post('/loyalty/quote')
+      .send({ merchantId: 'M2', userToken: 'C-cmb-1', mode: 'EARN', total: 1000, eligibleTotal: 1000, voucherCode: 'TEN2' })
+      .expect(201);
+    expect(r.body.pointsToEarn).toBe(59);
+  });
+
+  it('Levels + voucher + promo (M2): REDEEM cap raised by level bonus and respects adjusted eligible', async () => {
+    // Given Silver level from previous test and wallet seeded >= 600
+    const q = await request(app.getHttpServer())
+      .post('/loyalty/quote')
+      .send({ merchantId: 'M2', userToken: 'C-cmb-1', mode: 'REDEEM', total: 1000, eligibleTotal: 1000, voucherCode: 'TEN2' })
+      .expect(201);
+    // eligible 1000 -> 900 -> 850; redeemLimitBps 5000 + 1000 = 6000 => cap 510; wallet >= 600 -> expect 510
+    expect(q.body.discountToApply).toBe(510);
+  });
+
   it('Commit (REDEEM) with voucher applies expected redeemApplied after voucher+promo (M2)', async () => {
     // Ensure promo for M2 is set (fixed 50)
     await prismaMock.merchantSettings.update({ where: { merchantId: 'M2' }, data: { rulesJson: { promos: [ { then: { discountFixed: 50 } } ] }, updatedAt: new Date() } });
@@ -302,7 +350,7 @@ describe('Loyalty (e2e)', () => {
       .post('/loyalty/quote')
       .send({ merchantId: 'M1', userToken: 'C-vq-1', mode: 'EARN', total: 1000, eligibleTotal: 1000, voucherCode: 'TENOFF' })
       .expect(201);
-    expect(r.body.pointsToEarn).toBe(45); // default earnBps 5% on 900 eligible
+    expect(r.body.pointsToEarn).toBe(90); // merchant earnBps 10% on 900 eligible
   });
 
   it('Commit with voucherCode is idempotent by orderId (voucherUsage created once)', async () => {

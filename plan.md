@@ -83,6 +83,10 @@
 ## Волна 2 — Прогресс (2025-09-15)
 
 - Выполнено:
+  - Levels: применяются бонусы уровня к `earnBps`/`redeemLimitBps` в `quote()` по `rulesJson.levelsCfg` + `levelBenefits`; добавлены unit/e2e тесты.
+  - Admin: добавлены редакторы `levelsCfg`/`levelBenefits` и страница предпросмотра уровня клиента (`admin/src/app/levels/page.tsx`).
+  - UI-качество: заменены внутренние `<a>` на `Link` в Admin и безопасная типизация `catch (unknown)`.
+  - Тестовый ритуал: исправлен «зависон» после e2e — в `api/package.json` скрипт `test:e2e` дополнен `--forceExit`.
   - Подключён `PromosModule` (prev. этап) и добавлены превью‑правила (категория, minEligible), e2e `promos.e2e-spec.ts` — зелёные.
   - Реализованы `Vouchers`: `preview`, `issue`, `redeem` в `api/src/vouchers/*`. В `redeem` — идемпотентность по `(voucherId, customerId, orderId)` и проверка лимитов/валидности.
   - Интеграция в денежный флоу: `loyalty.controller.quote()` сначала уменьшает `eligibleTotal` ваучером → промо, затем считает. В `commit()` при наличии `voucherCode` выполняется идемпотентный `redeem` по `orderId`.
@@ -98,6 +102,10 @@
 - Следующий шаг (Wave 2):
   - Завершить управление ваучерами: отчётность и фильтры/пагинация; документация admin‑раздела.
   - Документация промо/ваучеров: совместимость, приоритеты, идемпотентность, примеры.
+  - Документация Levels: структура `levelsCfg`/`levelBenefits`, примеры, порядок применения.
+  - Admin: валидация редакторов Levels (подсветка ошибок), превью уровня на карточке клиента.
+  - E2E: расширить кейсы — бонус уровня + промо/ваучер (порядок расчёта), cap в REDEEM.
+  - Примечание: для прогона e2e требуется dev‑БД (`docker compose -f infra/docker-compose.yml up -d`). Локально можно запускать `pnpm -C api test && pnpm -C api test:e2e` (без зависания).
   - PR с DoD и чек‑листом; затем план Wave 3 (CRM/аналитика) уточнить.
 
 ## Волна 3 — Завершена (2025-09-15)

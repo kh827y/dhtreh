@@ -8,9 +8,10 @@
 - [Интеграции](#интеграции)
 - [Вебхуки](#вебхуки)
 - [Коды ошибок](#коды-ошибок)
+- [Уровни и бонусы](#уровни-и-бонусы)
+- [TTL/Сгорание баллов](#ttlsгорание-баллов)
 
 ## Базовый URL
-```
 Production: https://api.loyalty.example.com
 Staging: https://api-staging.loyalty.example.com
 Local: http://localhost:3000
@@ -210,6 +211,98 @@ Response 200 (EARN):
 ```
 
 Примечание: если указан `voucherCode`, сначала применяется ваучер (и промо‑правила) к `eligibleTotal`, затем выполняется расчёт `earn`/`redeem`.
+
+## Уровни и бонусы
+
+Поддерживаются уровни клиента (levels) с бонусами к базовым ставкам начисления/списания.
+
+- Конфигурация хранится в `MerchantSettings.rulesJson` в виде объекта со следующей структурой:
+
+```json
+{
+  "rules": [
+    { "if": { "channelIn": ["VIRTUAL"], "weekdayIn": [1,2,3,4,5] }, "then": { "earnBps": 600 } }
+  ],
+  "levelsCfg": {
+    "periodDays": 365,
+    "metric": "earn",        // earn | redeem | transactions
+    "levels": [
+      { "name": "Base",   "threshold": 0 },
+      { "name": "Silver", "threshold": 500 },
+      { "name": "Gold",   "threshold": 1000 }
+    ]
+  },
+  "levelBenefits": {
+    "earnBpsBonusByLevel": { "Base": 0, "Silver": 200, "Gold": 400 },
+    "redeemLimitBpsBonusByLevel": { "Base": 0, "Silver": 1000, "Gold": 2000 }
+  }
+}
+```
+
+Пояснения:
+
+- `levelsCfg.metric` и `periodDays` определяют, как считается текущий уровень:
+  - `earn` — сумма начислений за период.
+  - `redeem` — сумма списаний за период (по модулю).
+  - `transactions` — количество операций за период.
+- Текущий уровень определяется максимальным `threshold`, не превышающим накопленное значение.
+- Бонусы уровня добавляются к базовым ставкам мерчанта/правил: `earnBps += earnBpsBonusByLevel[current]`, `redeemLimitBps += redeemLimitBpsBonusByLevel[current]`.
+
+Конфигурацию можно редактировать в админке на странице настроек мерчанта (редакторы `Levels config` и `Level benefits`).
+
+### Получение текущего уровня клиента
+
+```http
+GET /levels/{merchantId}/{customerId}
+
+Response 200:
+{
+  "merchantId": "M-1",
+  "customerId": "C-1",
+  "metric": "earn",
+  "periodDays": 365,
+  "value": 750,
+  "current": { "name": "Silver", "threshold": 500 },
+  "next": { "name": "Gold", "threshold": 1000 },
+  "progressToNext": 0.5
+}
+```
+
+Примечание: бонусы уровня автоматически применяются при расчёте `POST /loyalty/quote`.
+
+## TTL/Сгорание баллов
+
+Система поддерживает превью сгорания и фактическое сгорание баллов по TTL.
+
+- Настройка TTL на мерчанте: `MerchantSettings.pointsTtlDays` (0/empty — выключено).
+- Фичефлаги/интервалы:
+  - `POINTS_TTL_FEATURE=1` — включает превью сгорания (worker `PointsTtlWorker`).
+  - `POINTS_TTL_BURN=1` — включает фактическое сгорание (worker `PointsBurnWorker`).
+  - `EARN_LOTS_FEATURE=1` — включает точный учёт по лотам (рекомендуется при TTL).
+  - `POINTS_TTL_INTERVAL_MS` — период превью (default 6h).
+  - `POINTS_TTL_BURN_INTERVAL_MS` — период сжигания (default 6h).
+
+Поведение:
+
+1) Превью (`PointsTtlWorker`)
+
+- При `EARN_LOTS_FEATURE=1`: ищутся активные лоты с `earnedAt < now - ttlDays`, агрегируются остатки; для каждого клиента создаётся outbox-событие
+  `eventType = loyalty.points_ttl.preview` с payload `{ merchantId, customerId, expiringPoints, computedAt, mode: 'lots' }`.
+- Иначе: используется приближённая оценка `tentativeExpire = wallet.balance - recentEarn(ttlDays)` и пишется событие `{ tentativeExpire, mode: 'approx' }`.
+
+2) Сгорание (`PointsBurnWorker`)
+
+- По каждому клиенту с просроченными лотами рассчитывается объём списания `burnAmount = min(wallet.balance, sum(remainingLots))`.
+- Списываются лоты (увеличение `consumedPoints`), уменьшается баланс кошелька, создаётся транзакция `ADJUST` и событие
+  `eventType = loyalty.points_ttl.burned` с `{ merchantId, customerId, amount, cutoff }`. При включённом `LEDGER_FEATURE` создаётся зеркальная проводка.
+
+Админка:
+
+- Поле `TTL баллов (дни)` на странице настроек мерчанта управляет `pointsTtlDays`.
+
+Примечание:
+
+- Для детерминированности в тестах установите `WORKERS_ENABLED=0` и `METRICS_DEFAULTS=0`, а сами воркеры покрыты unit-тестами.
 
 #### 3. Подтверждение операции (Commit)
 ```http

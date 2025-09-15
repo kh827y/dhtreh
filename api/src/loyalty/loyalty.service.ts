@@ -91,14 +91,14 @@ export class LoyaltyService {
   }
 
   // ====== Кеш правил ======
-  private rulesCache = new Map<string, { updatedAt: string; fn: (args: { channel: 'VIRTUAL'|'PC_POS'|'SMART'; weekday: number; eligibleTotal: number; category?: string }) => { earnBps: number; redeemLimitBps: number } }>();
+  private rulesCache = new Map<string, { updatedAt: string; baseEarnBps: number; baseRedeemLimitBps: number; fn: (args: { channel: 'VIRTUAL'|'PC_POS'|'SMART'; weekday: number; eligibleTotal: number; category?: string }) => { earnBps: number; redeemLimitBps: number } }>();
 
-  private compileRules(merchantId: string, rulesJson: any, updatedAt: Date | null | undefined) {
+  private compileRules(merchantId: string, base: { earnBps: number; redeemLimitBps: number }, rulesJson: any, updatedAt: Date | null | undefined) {
     const key = merchantId;
     const stamp = updatedAt ? updatedAt.toISOString() : '0';
     const cached = this.rulesCache.get(key);
-    if (cached && cached.updatedAt === stamp) return cached.fn;
-    let fn = (args: { channel: 'VIRTUAL'|'PC_POS'|'SMART'; weekday: number; eligibleTotal: number; category?: string }) => ({ earnBps: 500, redeemLimitBps: 5000 });
+    if (cached && cached.updatedAt === stamp && cached.baseEarnBps === base.earnBps && cached.baseRedeemLimitBps === base.redeemLimitBps) return cached.fn;
+    let fn = (args: { channel: 'VIRTUAL'|'PC_POS'|'SMART'; weekday: number; eligibleTotal: number; category?: string }) => ({ earnBps: base.earnBps, redeemLimitBps: base.redeemLimitBps });
     // Support both array root and object with { rules: [...] }
     const rulesArr: any[] | null = Array.isArray(rulesJson)
       ? (rulesJson as any[])
@@ -106,8 +106,8 @@ export class LoyaltyService {
     if (Array.isArray(rulesArr)) {
       const rules = rulesArr as any[];
       fn = (args) => {
-        let earnBps = 500;
-        let redeemLimitBps = 5000;
+        let earnBps = base.earnBps;
+        let redeemLimitBps = base.redeemLimitBps;
         const wd = args.weekday;
         for (const item of rules) {
           try {
@@ -125,7 +125,7 @@ export class LoyaltyService {
         return { earnBps, redeemLimitBps };
       };
     }
-    this.rulesCache.set(key, { updatedAt: stamp, fn });
+    this.rulesCache.set(key, { updatedAt: stamp, baseEarnBps: base.earnBps, baseRedeemLimitBps: base.redeemLimitBps, fn });
     return fn;
   }
 
@@ -219,7 +219,7 @@ export class LoyaltyService {
     try {
       await this.prisma.merchant.upsert({ where: { id: dto.merchantId }, update: {}, create: { id: dto.merchantId, name: dto.merchantId } });
     } catch {}
-    const { redeemCooldownSec, earnCooldownSec, redeemDailyCap, earnDailyCap, rulesJson } = await this.getSettings(dto.merchantId);
+    const { redeemCooldownSec, earnCooldownSec, redeemDailyCap, earnDailyCap, rulesJson, earnBps: baseEarnBps, redeemLimitBps: baseRedeemLimitBps, updatedAt } = await this.getSettings(dto.merchantId);
 
     // канал по типу устройства
     let channel: 'VIRTUAL'|'PC_POS'|'SMART' = 'VIRTUAL';
@@ -230,7 +230,7 @@ export class LoyaltyService {
 
     // применяем правила для earnBps/redeemLimitBps (с кешом)
     const wd = new Date().getDay();
-    const rulesFn = this.compileRules(dto.merchantId, rulesJson, (await this.prisma.merchantSettings.findUnique({ where: { merchantId: dto.merchantId } }))?.updatedAt);
+    const rulesFn = this.compileRules(dto.merchantId, { earnBps: baseEarnBps, redeemLimitBps: baseRedeemLimitBps }, rulesJson, updatedAt);
     let { earnBps, redeemLimitBps } = rulesFn({ channel, weekday: wd, eligibleTotal: dto.eligibleTotal, category: dto.category });
     // Apply level-based bonuses (if configured)
     try {

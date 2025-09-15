@@ -15,12 +15,17 @@ describe('Levels bonuses applied in quote (e2e)', () => {
   const prismaMock: any = {
     $connect: jest.fn(async () => {}),
     $disconnect: jest.fn(async () => {}),
+    $transaction: async (fn: (tx: any) => any) => fn(prismaMock),
     merchant: { upsert: jest.fn(async () => ({})) },
     merchantSettings: {
       findUnique: async (args: any) => state.settings.get(args.where.merchantId) || null,
     },
+    customer: {
+      findUnique: async (_args: any) => null,
+      create: async (args: any) => ({ id: args?.data?.id || 'C1' }),
+    },
     transaction: {
-      findMany: async (args: any) => state.txns.filter(t => t.merchantId === args.where.merchantId && t.customerId === args.where.customerId && (!args.where.createdAt?.gte || t.createdAt >= args.where.createdAt.gte)),
+      findMany: async (args: any) => state.txns.filter(t => t.merchantId === args.where.merchantId && t.customerId === args.where.customerId && (!args.where.type || t.type === args.where.type) && (!args.where.createdAt?.gte || t.createdAt >= args.where.createdAt.gte)),
       count: async (args: any) => state.txns.filter(t => t.merchantId === args.where.merchantId && t.customerId === args.where.customerId && (!args.where.createdAt?.gte || t.createdAt >= args.where.createdAt.gte)).length,
     },
     device: { findUnique: async () => null },
