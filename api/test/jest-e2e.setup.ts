@@ -15,7 +15,7 @@ beforeAll(() => {
   });
 });
 
-afterAll(() => {
+afterAll(async () => {
   // Restore console.warn to its original behavior
   (console.warn as any)?.mockRestore?.();
 });

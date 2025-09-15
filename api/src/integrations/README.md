@@ -44,3 +44,13 @@
 - `pos_requests_total{provider,endpoint,result}`
 - `pos_errors_total{provider,endpoint}`
 - `pos_webhooks_total{provider}`
+
+## Единые интерфейсы адаптеров
+
+Для унификации интеграций предусмотрены интерфейсы в `api/src/integrations/types.ts`:
+
+- `PosAdapter` — quote/commit/webhook/health.
+- `ERPAdapter` — syncProducts/syncInventory/syncCustomers/webhook/health.
+- `ShipperAdapter` — create/cancel/track/webhook/health.
+
+Новые провайдеры должны реализовать соответствующий интерфейс и регистрироваться в `IntegrationsModule`.

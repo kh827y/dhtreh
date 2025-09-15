@@ -7,6 +7,20 @@ import { OAuthGuard } from '../../guards/oauth.guard';
 export class PosterController {
   constructor(private svc: PosterService, private metrics: MetricsService) {}
 
+  @Post('register')
+  @UseGuards(OAuthGuard)
+  async register(@Body() body: { merchantId: string; appId: string; appSecret: string }) {
+    try {
+      const res = await this.svc.registerIntegration(body.merchantId, { appId: body.appId, appSecret: body.appSecret });
+      this.metrics.inc('pos_requests_total', { provider: 'POSTER', endpoint: 'register', result: 'ok' });
+      return res;
+    } catch (e) {
+      this.metrics.inc('pos_requests_total', { provider: 'POSTER', endpoint: 'register', result: 'error' });
+      this.metrics.inc('pos_errors_total', { provider: 'POSTER', endpoint: 'register' });
+      throw e;
+    }
+  }
+
   @Post('quote')
   @UseGuards(OAuthGuard)
   async quote(@Body() body: any) {

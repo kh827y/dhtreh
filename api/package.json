@@ -19,7 +19,7 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "COLUMNS=120 jest --config ./test/jest-e2e.json",
+    "test:e2e": "COLUMNS=120 jest --config ./test/jest-e2e.json --runInBand --detectOpenHandles",
     "seed": "prisma db seed",
     "postman:gen": "node scripts/generate-postman.js"
   },
@@ -99,6 +99,9 @@
       "ts"
     ],
     "rootDir": ".",
+    "setupFilesAfterEnv": [
+      "<rootDir>/test/jest.setup.ts"
+    ],
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"

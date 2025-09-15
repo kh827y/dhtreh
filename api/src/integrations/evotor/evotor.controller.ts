@@ -25,9 +25,11 @@ export class EvotorController {
   async webhook(@Param('integrationId') integrationId: string, @Body() webhook: any) {
     try {
       const res = await this.evotor.handleWebhook(integrationId, webhook);
+      this.metrics.inc('pos_webhooks_total', { provider: 'EVOTOR' });
       this.metrics.inc('pos_requests_total', { provider: 'EVOTOR', endpoint: 'webhook', result: 'ok' });
       return res;
     } catch (e) {
+      this.metrics.inc('pos_webhooks_total', { provider: 'EVOTOR' });
       this.metrics.inc('pos_requests_total', { provider: 'EVOTOR', endpoint: 'webhook', result: 'error' });
       this.metrics.inc('pos_errors_total', { provider: 'EVOTOR', endpoint: 'webhook' });
       throw e;

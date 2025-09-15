@@ -25,8 +25,15 @@ describe('Evotor integration (e2e)', () => {
     const integrationId = 'INT-EVO-1';
     // ensure merchant exists
     try { await prisma.merchant.create({ data: { id: merchantId, name: 'Shop' } }); } catch {}
-    // create integration
-    await (prisma as any).integration.create({ data: { id: integrationId, merchantId, type: 'POS', provider: 'EVOTOR', config: {}, credentials: {}, isActive: true } });
+    // cleanup from previous runs (idempotent)
+    try { await (prisma as any).syncLog.deleteMany({ where: { integrationId } }); } catch {}
+    try { await (prisma as any).integration.delete({ where: { id: integrationId } }); } catch {}
+    // create or update integration deterministically
+    await (prisma as any).integration.upsert({
+      where: { id: integrationId },
+      create: { id: integrationId, merchantId, type: 'POS', provider: 'EVOTOR', config: {}, credentials: {}, isActive: true },
+      update: { merchantId, isActive: true },
+    });
 
     const webhook = {
       id: 'w1',
@@ -53,5 +60,8 @@ describe('Evotor integration (e2e)', () => {
 
     const integration = await (prisma as any).integration.findUnique({ where: { id: integrationId } });
     expect(integration?.lastSync).toBeTruthy();
+
+    const metrics = await request(app.getHttpServer()).get('/metrics').expect(200);
+    expect(metrics.text).toContain('pos_webhooks_total{provider="EVOTOR"}');
   });
 });
