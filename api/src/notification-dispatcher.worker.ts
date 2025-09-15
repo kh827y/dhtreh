@@ -92,13 +92,22 @@ export class NotificationDispatcherWorker implements OnModuleInit, OnModuleDestr
           } catch {}
         }
 
+        // Accumulators for per-channel metrics
+        let pushAttempted = 0, pushSent = 0, pushFailed = 0;
+        let smsAttempted = 0, smsSent = 0, smsFailed = 0;
+        let emailAttempted = 0, emailSent = 0, emailFailed = 0;
+
         // PUSH
         if (ch === 'PUSH' || ch === 'ALL') {
           try {
             if (customerIds.length > 0) {
-              await this.push.sendPush({ merchantId, customerIds, title: title || 'Сообщение', body: bodyText || 'У вас новое сообщение', type: 'MARKETING', data: dataVars });
+              const r = await this.push.sendPush({ merchantId, customerIds, title: title || 'Сообщение', body: bodyText || 'У вас новое сообщение', type: 'MARKETING', data: dataVars });
+              pushAttempted += r.total ?? customerIds.length;
+              pushSent += r.sent ?? 0;
+              pushFailed += r.failed ?? Math.max(0, (r.total ?? customerIds.length) - (r.sent ?? 0));
             } else {
-              await this.push.sendToTopic(merchantId, title || 'Сообщение', bodyText || 'У вас новое сообщение', Object.fromEntries(Object.entries(dataVars).map(([k,v])=>[k,String(v)])));
+              const r = await this.push.sendToTopic(merchantId, title || 'Сообщение', bodyText || 'У вас новое сообщение', Object.fromEntries(Object.entries(dataVars).map(([k,v])=>[k,String(v)])));
+              pushAttempted += 1; pushSent += r.success ? 1 : 0; pushFailed += r.success ? 0 : 1;
             }
           } catch {}
         }
@@ -107,7 +116,10 @@ export class NotificationDispatcherWorker implements OnModuleInit, OnModuleDestr
         if (ch === 'SMS' || ch === 'ALL') {
           try {
             if (customerIds.length > 0) {
-              await this.sms.sendBulkNotification(merchantId, customerIds, bodyText || title || 'Сообщение');
+              const r = await this.sms.sendBulkNotification(merchantId, customerIds, bodyText || title || 'Сообщение');
+              smsAttempted += r.total ?? customerIds.length;
+              smsSent += r.sent ?? 0;
+              smsFailed += r.failed ?? Math.max(0, (r.total ?? customerIds.length) - (r.sent ?? 0));
             }
           } catch {}
         }
@@ -120,12 +132,46 @@ export class NotificationDispatcherWorker implements OnModuleInit, OnModuleDestr
               const customers = await this.prisma.customer.findMany({ where: { id: { in: customerIds }, email: { not: null } }, select: { id: true, email: true, name: true } });
               const merchant = await this.prisma.merchant.findUnique({ where: { id: merchantId }, select: { name: true } });
               for (const c of customers) {
-                await this.email.sendEmail({ to: c.email!, subject: title || 'Сообщение', template: 'campaign', data: { customerName: c.name || 'Клиент', merchantName: merchant?.name || 'Merchant', campaignName: title || 'Сообщение', content: html || bodyText || '' }, merchantId });
+                emailAttempted += 1;
+                const ok = await this.email.sendEmail({ to: c.email!, subject: title || 'Сообщение', template: 'campaign', data: { customerName: c.name || 'Клиент', merchantName: merchant?.name || 'Merchant', campaignName: title || 'Сообщение', content: html || bodyText || '' }, merchantId });
+                if (ok) emailSent += 1; else emailFailed += 1;
               }
             }
           } catch {}
         }
+        // Metrics per channel
+        try {
+          if (pushAttempted) this.metrics.inc('notifications_channel_attempts_total', { channel: 'PUSH' }, pushAttempted);
+          if (pushSent) this.metrics.inc('notifications_channel_sent_total', { channel: 'PUSH' }, pushSent);
+          if (pushFailed) this.metrics.inc('notifications_channel_failed_total', { channel: 'PUSH' }, pushFailed);
+          if (smsAttempted) this.metrics.inc('notifications_channel_attempts_total', { channel: 'SMS' }, smsAttempted);
+          if (smsSent) this.metrics.inc('notifications_channel_sent_total', { channel: 'SMS' }, smsSent);
+          if (smsFailed) this.metrics.inc('notifications_channel_failed_total', { channel: 'SMS' }, smsFailed);
+          if (emailAttempted) this.metrics.inc('notifications_channel_attempts_total', { channel: 'EMAIL' }, emailAttempted);
+          if (emailSent) this.metrics.inc('notifications_channel_sent_total', { channel: 'EMAIL' }, emailSent);
+          if (emailFailed) this.metrics.inc('notifications_channel_failed_total', { channel: 'EMAIL' }, emailFailed);
+        } catch {}
+
         await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'SENT', updatedAt: new Date(), lastError: null } });
+        // Admin audit
+        try {
+          await this.prisma.adminAudit.create({
+            data: {
+              actor: 'system:notification-worker',
+              method: 'WORKER',
+              path: '/notifications/broadcast',
+              merchantId,
+              action: 'broadcast.sent',
+              payload: {
+                channel: ch,
+                segmentId: segmentId || null,
+                push: { attempted: pushAttempted, sent: pushSent, failed: pushFailed },
+                sms: { attempted: smsAttempted, sent: smsSent, failed: smsFailed },
+                email: { attempted: emailAttempted, sent: emailSent, failed: emailFailed },
+              },
+            },
+          });
+        } catch {}
         try { this.metrics.inc('notifications_processed_total', { type: 'broadcast', result: 'sent' }); } catch {}
         return;
       }

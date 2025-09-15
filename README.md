@@ -235,6 +235,14 @@ ENV подсказки:
 - Push: `FIREBASE_SERVICE_ACCOUNT` — JSON service account (строкой).
 - Воркер: `WORKERS_ENABLED=1`, опционально `NOTIFY_WORKER_INTERVAL_MS`, `NOTIFY_WORKER_BATCH`.
 
+Метрики уведомлений:
+
+- `notifications_enqueued_total{type}` — количество поставленных в outbox задач (`broadcast`/`test`).
+- `notifications_processed_total{type,result}` — обработанные воркером события (`broadcast`/`test` + `sent`/`dry`/`retry`/`dead`).
+- `notifications_channel_attempts_total{channel}` — попытки отправки по каналам (`EMAIL`/`SMS`/`PUSH`).
+- `notifications_channel_sent_total{channel}` — успешно отправленные по каналам.
+- `notifications_channel_failed_total{channel}` — неуспешные по каналам.
+
 ## Продакшн конфигурация
 
 - API: `DATABASE_URL`, `ADMIN_KEY`, `ADMIN_SESSION_SECRET`, `QR_JWT_SECRET` (не `dev_change_me`), `CORS_ORIGINS` обязательны; `WORKERS_ENABLED=1` в отдельном процессе.

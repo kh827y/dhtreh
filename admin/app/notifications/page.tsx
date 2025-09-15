@@ -17,6 +17,8 @@ export default function NotificationsPage() {
   const [estimated, setEstimated] = useState<number | null>(null);
   const [segments, setSegments] = useState<SegmentInfo[] | null>(null);
   const [segBusy, setSegBusy] = useState<boolean>(false);
+  const [validation, setValidation] = useState<string>('');
+  const [showPreview, setShowPreview] = useState<boolean>(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -43,9 +45,27 @@ export default function NotificationsPage() {
   const [testText, setTestText] = useState<string>('');
   const [testHtml, setTestHtml] = useState<string>('');
 
+  const validate = (): string | null => {
+    if (!merchantId) return 'Укажите merchantId';
+    const ch = String(channel).toUpperCase();
+    if (ch === 'EMAIL') {
+      if (!subject.trim()) return 'Для EMAIL требуется Subject';
+      if (!text.trim() && !html.trim()) return 'Для EMAIL требуется Text или HTML';
+    }
+    if (ch === 'SMS') {
+      if (!text.trim()) return 'Для SMS требуется Text';
+    }
+    if (ch === 'PUSH') {
+      if (!subject.trim() && !text.trim()) return 'Для PUSH требуется Subject или Text';
+    }
+    return null;
+  };
+
   const onBroadcast = async () => {
     setBusy(true); setMsg('');
     try {
+      const v = validate();
+      if (v) { setValidation(v); setBusy(false); return; } else setValidation('');
       let vars: any = {};
       try { vars = variables ? JSON.parse(variables) : {}; } catch (e:any) { setMsg('Некорректный JSON в variables'); setBusy(false); return; }
       const res = await broadcast({
@@ -109,8 +129,24 @@ export default function NotificationsPage() {
           <textarea placeholder="Text" value={text} onChange={e=>setText(e.target.value)} rows={3} />
           <textarea placeholder="HTML" value={html} onChange={e=>setHtml(e.target.value)} rows={3} />
           <textarea placeholder="Variables (JSON)" value={variables} onChange={e=>setVariables(e.target.value)} rows={3} />
-          <button onClick={onBroadcast} disabled={busy} style={{ padding:'6px 10px' }}>{dryRun?'Проверить (dry‑run)':'Отправить'}</button>
+          {validation && <div style={{ color:'#f38ba8' }}>{validation}</div>}
+          <div style={{ display:'flex', gap:8 }}>
+            <button onClick={onBroadcast} disabled={busy} style={{ padding:'6px 10px' }}>{dryRun?'Проверить (dry‑run)':'Отправить'}</button>
+            <button onClick={()=>setShowPreview(v=>!v)} type="button" disabled={busy} style={{ padding:'6px 10px' }}>{showPreview?'Скрыть предпросмотр':'Предпросмотр'}</button>
+          </div>
           {estimated!=null && dryRun && <div style={{ opacity:0.9 }}>Оценка получателей: <b>{estimated}</b></div>}
+          {showPreview && (
+            <div style={{ display:'grid', gap:8, marginTop:8 }}>
+              <div>
+                <div style={{ opacity:0.8, marginBottom:4 }}>Предпросмотр (TEXT)</div>
+                <pre style={{ background:'#111827', padding:10, borderRadius:8, whiteSpace:'pre-wrap' }}>{text || '(пусто)'}</pre>
+              </div>
+              <div>
+                <div style={{ opacity:0.8, marginBottom:4 }}>Предпросмотр (HTML)</div>
+                <iframe sandbox="allow-same-origin" style={{ width:'100%', height:240, border:'1px solid #334155', borderRadius:8 }} srcDoc={html || `<div style='font-family:system-ui;padding:16px;color:#94a3b8'>Нет HTML</div>`} />
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
