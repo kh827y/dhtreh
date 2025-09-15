@@ -797,6 +797,8 @@ model VoucherUsage {
   voucher     Voucher    @relation(fields: [voucherId], references: [id])
   code        VoucherCode? @relation(fields: [codeId], references: [id])
   customer    Customer   @relation(fields: [customerId], references: [id])
+
+  @@unique([voucherId, customerId, orderId])
 }
 
 model Payment {

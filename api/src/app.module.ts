@@ -30,6 +30,7 @@ import { GiftsModule } from './gifts/gifts.module';
 import { LevelsModule } from './levels/levels.module';
 import { CampaignModule } from './campaigns/campaign.module';
 import { PromosModule } from './promos/promos.module';
+import { VouchersModule } from './vouchers/vouchers.module';
 // Optional Redis storage for Throttler
 let throttlerStorage: any = undefined;
 try {
@@ -71,6 +72,7 @@ try {
     GiftsModule,
     LevelsModule,
     PromosModule,
+    VouchersModule,
     CampaignModule,
   ],
   controllers: [HealthController, MetricsController],

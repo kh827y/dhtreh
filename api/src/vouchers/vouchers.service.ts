@@ -90,8 +90,24 @@ export class VouchersService {
       if (existing) return { ok: true, discount: existing.amount };
     } catch {}
 
-    // Simple limits: maxUses on code
+    // Simple limits
+    // Per-code max uses
     if (codeRow.maxUses != null && codeRow.usedCount >= codeRow.maxUses) throw new BadRequestException('Code usage limit reached');
+    // Per-voucher total uses
+    try {
+      if ((voucher as any).maxTotalUses != null && (voucher as any).totalUsed != null) {
+        if ((voucher as any).totalUsed >= (voucher as any).maxTotalUses) throw new BadRequestException('Voucher usage limit reached');
+      }
+    } catch {}
+    // Per-customer limit
+    try {
+      const maxPerCustomer = (voucher as any).maxUsesPerCustomer;
+      if (maxPerCustomer != null) {
+        const usedByCustomer = await (this.prisma as any).voucherUsage.count?.({ where: { voucherId: voucher.id, customerId } })
+          ?? (await (this.prisma as any).voucherUsage.findMany?.({ where: { voucherId: voucher.id, customerId } }) || []).length;
+        if (usedByCustomer >= maxPerCustomer) throw new BadRequestException('Per-customer usage limit reached');
+      }
+    } catch {}
 
     const discount = this.computeDiscount(String(voucher.valueType), Number(voucher.value || 0), eligibleTotal);
     if (discount <= 0) throw new BadRequestException('No discount');
@@ -106,6 +122,7 @@ export class VouchersService {
       metadata: {},
     }});
     try { await (this.prisma as any).voucherCode.update({ where: { id: codeRow.id }, data: { usedCount: (codeRow.usedCount || 0) + 1 } }); } catch {}
+    try { await (this.prisma as any).voucher.update?.({ where: { id: voucher.id }, data: { totalUsed: ((voucher as any).totalUsed || 0) + 1 } }); } catch {}
     try { this.metrics.inc('vouchers_redeemed_total'); } catch {}
     return { ok: true, discount };
   }
