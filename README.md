@@ -234,14 +234,15 @@ ENV подсказки:
 - SMS: `SMS_PROVIDER` (по умолчанию `smsc`), `SMS_TEST_MODE=true` для безопасной отладки.
 - Push: `FIREBASE_SERVICE_ACCOUNT` — JSON service account (строкой).
 - Воркер: `WORKERS_ENABLED=1`, опционально `NOTIFY_WORKER_INTERVAL_MS`, `NOTIFY_WORKER_BATCH`.
+  - Троттлинг RPS: `NOTIFY_RPS_DEFAULT` (по умолчанию на мерчанта; `0` — без ограничений), `NOTIFY_RPS_BY_MERCHANT` (`M-1=5,M-2=3`).
 
 Метрики уведомлений:
 
 - `notifications_enqueued_total{type}` — количество поставленных в outbox задач (`broadcast`/`test`).
 - `notifications_processed_total{type,result}` — обработанные воркером события (`broadcast`/`test` + `sent`/`dry`/`retry`/`dead`).
-- `notifications_channel_attempts_total{channel}` — попытки отправки по каналам (`EMAIL`/`SMS`/`PUSH`).
-- `notifications_channel_sent_total{channel}` — успешно отправленные по каналам.
-- `notifications_channel_failed_total{channel}` — неуспешные по каналам.
+- `notifications_channel_attempts_total{channel,merchantId}` — попытки отправки по каналам (`EMAIL`/`SMS`/`PUSH`).
+- `notifications_channel_sent_total{channel,merchantId}` — успешно отправленные по каналам.
+- `notifications_channel_failed_total{channel,merchantId}` — неуспешные по каналам.
 
 ## Продакшн конфигурация
 

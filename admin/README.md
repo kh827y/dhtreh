@@ -20,6 +20,22 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Notifications (Admin)
+
+Page: `app/notifications` — broadcast by channel (ALL/EMAIL/SMS/PUSH), optional segment selection, dry‑run to estimate recipients, and template preview.
+
+Hints:
+
+- Use variables in templates: `{{customerName}}`, `{{merchantName}}`, and custom variables from the JSON block. Variables are applied to Subject/Text/HTML preview.
+- For EMAIL, Subject is required; for SMS, Text is required; for PUSH, Subject or Text is required.
+- Dry‑run returns estimated recipients before actual send.
+- Admin API requires `X-Admin-Key` configured on API (`ADMIN_KEY`).
+
+Accessibility & i18n:
+
+- Basic a11y labels are added for inputs and buttons.
+- Lightweight RU/EN switch is available in the top right corner.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

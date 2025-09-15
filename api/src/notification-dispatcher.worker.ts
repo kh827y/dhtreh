@@ -25,6 +25,9 @@ export class NotificationDispatcherWorker implements OnModuleInit, OnModuleDestr
   private running = false;
   public startedAt: Date | null = null;
   public lastTickAt: Date | null = null;
+  private rpsDefault = 0; // 0 = unlimited
+  private rpsByMerchant = new Map<string, number>();
+  private rpsWindow = new Map<string, { startMs: number; count: number }>();
 
   constructor(
     private prisma: PrismaService,
@@ -34,8 +37,21 @@ export class NotificationDispatcherWorker implements OnModuleInit, OnModuleDestr
     private email: EmailService,
   ) {}
 
+  private applyVars(tpl: string, vars: Record<string, any>): string {
+    if (!tpl) return '';
+    return tpl.replace(/{{\s*([a-zA-Z0-9_\.]+)\s*}}/g, (_m, key) => {
+      const path = String(key).split('.');
+      let cur: any = vars;
+      for (const k of path) {
+        if (cur && typeof cur === 'object' && k in cur) cur = cur[k]; else { cur = ''; break; }
+      }
+      return String(cur ?? '');
+    });
+  }
+
   onModuleInit() {
     if (process.env.WORKERS_ENABLED === '0') { this.logger.log('Workers disabled (WORKERS_ENABLED=0)'); return; }
+    this.loadRpsConfig();
     const intervalMs = Number(process.env.NOTIFY_WORKER_INTERVAL_MS || '15000');
     this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
     this.logger.log(`NotificationDispatcherWorker started, interval=${intervalMs}ms`);
@@ -62,6 +78,39 @@ export class NotificationDispatcherWorker implements OnModuleInit, OnModuleDestr
     return Math.floor(jitter);
   }
 
+  private loadRpsConfig() {
+    const d = Number(process.env.NOTIFY_RPS_DEFAULT || '0');
+    this.rpsDefault = Number.isFinite(d) && d >= 0 ? d : 0;
+    this.rpsByMerchant.clear();
+    const raw = process.env.NOTIFY_RPS_BY_MERCHANT || '';
+    for (const part of raw.split(',').map(s => s.trim()).filter(Boolean)) {
+      const [k, v] = part.split('=');
+      const n = Number(v);
+      if (k && Number.isFinite(n) && n >= 0) this.rpsByMerchant.set(k, n);
+    }
+  }
+
+  private getRps(merchantId: string): number {
+    return this.rpsByMerchant.get(merchantId) ?? this.rpsDefault;
+  }
+
+  private canPassRps(merchantId: string): boolean {
+    const rps = this.getRps(merchantId);
+    if (!rps || rps <= 0) return true; // unlimited
+    const now = Date.now();
+    const win = this.rpsWindow.get(merchantId) || { startMs: now, count: 0 };
+    // If window older than 1s, reset
+    if (now - win.startMs >= 1000) {
+      win.startMs = now;
+      win.count = 0;
+    }
+    if (win.count >= rps) return false;
+    // reserve a slot
+    win.count += 1;
+    this.rpsWindow.set(merchantId, win);
+    return true;
+  }
+
   private async handle(row: OutboxRow) {
     const payload = (row.payload || {}) as any;
     const type = row.eventType || '';
@@ -69,19 +118,26 @@ export class NotificationDispatcherWorker implements OnModuleInit, OnModuleDestr
     try {
       if (type === 'notify.broadcast') {
         const dry = !!payload.dryRun;
-        if (dry || isTestEnv) {
-          await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'SENT', lastError: dry ? 'dry-run' : null } });
+        if (dry) {
+          await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'SENT', lastError: 'dry-run' } });
           try { this.metrics.inc('notifications_processed_total', { type: 'broadcast', result: 'dry' }); } catch {}
           return;
         }
         const ch = String(payload.channel || 'ALL').toUpperCase();
         const merchantId = String(payload.merchantId || row.merchantId || '');
+        // RPS throttle per merchant
+        if (!this.canPassRps(merchantId)) {
+          const delayMs = 1000; // retry next second window
+          await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'PENDING', nextRetryAt: new Date(Date.now() + delayMs), lastError: 'throttled' } });
+          try { this.metrics.inc('notifications_processed_total', { type: 'broadcast', result: 'throttled' }); } catch {}
+          return;
+        }
         const segmentId: string | undefined = payload.segmentId || undefined;
         const template = payload.template || {};
-        const title = String(template.subject || '');
-        const bodyText = String(template.text || '');
-        const html = String(template.html || '');
-        const dataVars = payload.variables || {};
+        const titleRaw = String(template.subject || '');
+        const textRaw = String(template.text || '');
+        const htmlRaw = String(template.html || '');
+        const dataVars = (payload.variables || {}) as Record<string, any>;
 
         // derive recipients by segment if provided
         let customerIds: string[] = [];
@@ -101,12 +157,12 @@ export class NotificationDispatcherWorker implements OnModuleInit, OnModuleDestr
         if (ch === 'PUSH' || ch === 'ALL') {
           try {
             if (customerIds.length > 0) {
-              const r = await this.push.sendPush({ merchantId, customerIds, title: title || 'Сообщение', body: bodyText || 'У вас новое сообщение', type: 'MARKETING', data: dataVars });
+              const r = await this.push.sendPush({ merchantId, customerIds, title: this.applyVars(titleRaw, dataVars) || 'Сообщение', body: this.applyVars(textRaw, dataVars) || 'У вас новое сообщение', type: 'MARKETING', data: dataVars });
               pushAttempted += r.total ?? customerIds.length;
               pushSent += r.sent ?? 0;
               pushFailed += r.failed ?? Math.max(0, (r.total ?? customerIds.length) - (r.sent ?? 0));
             } else {
-              const r = await this.push.sendToTopic(merchantId, title || 'Сообщение', bodyText || 'У вас новое сообщение', Object.fromEntries(Object.entries(dataVars).map(([k,v])=>[k,String(v)])));
+              const r = await this.push.sendToTopic(merchantId, this.applyVars(titleRaw, dataVars) || 'Сообщение', this.applyVars(textRaw, dataVars) || 'У вас новое сообщение', Object.fromEntries(Object.entries(dataVars).map(([k,v])=>[k,String(v)])));
               pushAttempted += 1; pushSent += r.success ? 1 : 0; pushFailed += r.success ? 0 : 1;
             }
           } catch {}
@@ -116,7 +172,7 @@ export class NotificationDispatcherWorker implements OnModuleInit, OnModuleDestr
         if (ch === 'SMS' || ch === 'ALL') {
           try {
             if (customerIds.length > 0) {
-              const r = await this.sms.sendBulkNotification(merchantId, customerIds, bodyText || title || 'Сообщение');
+              const r = await this.sms.sendBulkNotification(merchantId, customerIds, this.applyVars(textRaw || titleRaw, dataVars) || 'Сообщение');
               smsAttempted += r.total ?? customerIds.length;
               smsSent += r.sent ?? 0;
               smsFailed += r.failed ?? Math.max(0, (r.total ?? customerIds.length) - (r.sent ?? 0));
@@ -133,7 +189,10 @@ export class NotificationDispatcherWorker implements OnModuleInit, OnModuleDestr
               const merchant = await this.prisma.merchant.findUnique({ where: { id: merchantId }, select: { name: true } });
               for (const c of customers) {
                 emailAttempted += 1;
-                const ok = await this.email.sendEmail({ to: c.email!, subject: title || 'Сообщение', template: 'campaign', data: { customerName: c.name || 'Клиент', merchantName: merchant?.name || 'Merchant', campaignName: title || 'Сообщение', content: html || bodyText || '' }, merchantId });
+                const ctx = { ...dataVars, customerName: c.name || 'Клиент', merchantName: merchant?.name || 'Merchant' };
+                const subj = this.applyVars(titleRaw, ctx) || 'Сообщение';
+                const content = this.applyVars(htmlRaw || textRaw, ctx) || '';
+                const ok = await this.email.sendEmail({ to: c.email!, subject: subj, template: 'campaign', data: { customerName: ctx.customerName, merchantName: ctx.merchantName, campaignName: subj, content }, merchantId });
                 if (ok) emailSent += 1; else emailFailed += 1;
               }
             }
@@ -141,15 +200,15 @@ export class NotificationDispatcherWorker implements OnModuleInit, OnModuleDestr
         }
         // Metrics per channel
         try {
-          if (pushAttempted) this.metrics.inc('notifications_channel_attempts_total', { channel: 'PUSH' }, pushAttempted);
-          if (pushSent) this.metrics.inc('notifications_channel_sent_total', { channel: 'PUSH' }, pushSent);
-          if (pushFailed) this.metrics.inc('notifications_channel_failed_total', { channel: 'PUSH' }, pushFailed);
-          if (smsAttempted) this.metrics.inc('notifications_channel_attempts_total', { channel: 'SMS' }, smsAttempted);
-          if (smsSent) this.metrics.inc('notifications_channel_sent_total', { channel: 'SMS' }, smsSent);
-          if (smsFailed) this.metrics.inc('notifications_channel_failed_total', { channel: 'SMS' }, smsFailed);
-          if (emailAttempted) this.metrics.inc('notifications_channel_attempts_total', { channel: 'EMAIL' }, emailAttempted);
-          if (emailSent) this.metrics.inc('notifications_channel_sent_total', { channel: 'EMAIL' }, emailSent);
-          if (emailFailed) this.metrics.inc('notifications_channel_failed_total', { channel: 'EMAIL' }, emailFailed);
+          if (pushAttempted) this.metrics.inc('notifications_channel_attempts_total', { channel: 'PUSH', merchantId }, pushAttempted);
+          if (pushSent) this.metrics.inc('notifications_channel_sent_total', { channel: 'PUSH', merchantId }, pushSent);
+          if (pushFailed) this.metrics.inc('notifications_channel_failed_total', { channel: 'PUSH', merchantId }, pushFailed);
+          if (smsAttempted) this.metrics.inc('notifications_channel_attempts_total', { channel: 'SMS', merchantId }, smsAttempted);
+          if (smsSent) this.metrics.inc('notifications_channel_sent_total', { channel: 'SMS', merchantId }, smsSent);
+          if (smsFailed) this.metrics.inc('notifications_channel_failed_total', { channel: 'SMS', merchantId }, smsFailed);
+          if (emailAttempted) this.metrics.inc('notifications_channel_attempts_total', { channel: 'EMAIL', merchantId }, emailAttempted);
+          if (emailSent) this.metrics.inc('notifications_channel_sent_total', { channel: 'EMAIL', merchantId }, emailSent);
+          if (emailFailed) this.metrics.inc('notifications_channel_failed_total', { channel: 'EMAIL', merchantId }, emailFailed);
         } catch {}
 
         await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'SENT', updatedAt: new Date(), lastError: null } });

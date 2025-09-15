@@ -147,6 +147,57 @@ docker-compose -f docker-compose.production.yml logs -f
 curl http://localhost:3000/health
 ```
 
+## ✉️ Уведомления (Email/SMS/Push)
+
+### Переменные окружения (API/worker)
+
+Добавьте в `.env.production` (и/или секцию `environment` сервиса `worker`/`api` в `docker-compose.production.yml`):
+
+```env
+# SMTP (Email)
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=mailer@example.com
+SMTP_PASSWORD=***
+SMTP_FROM="Loyalty <noreply@example.com>"
+
+# SMS
+SMS_PROVIDER=smsc
+SMS_TEST_MODE=true  # включайте false в проде после проверки
+
+# Push (FCM)
+# Вставьте JSON service account в одну строку (экранируйте кавычки)
+FIREBASE_SERVICE_ACCOUNT={"type":"service_account",...}
+
+# Воркер уведомлений
+WORKERS_ENABLED=1
+NO_HTTP=1
+# Интервалы/батчи и бэкофф
+NOTIFY_WORKER_INTERVAL_MS=15000
+NOTIFY_WORKER_BATCH=10
+NOTIFY_BACKOFF_BASE_MS=60000
+NOTIFY_BACKOFF_CAP_MS=3600000
+# Троттлинг RPS по мерчанту (0 — без ограничений)
+NOTIFY_RPS_DEFAULT=0
+NOTIFY_RPS_BY_MERCHANT="M-1=5,M-2=3"
+```
+
+В `docker-compose.production.yml` сервис `worker` уже запускается с `NO_HTTP=1` и `WORKERS_ENABLED=1`. При необходимости добавьте переменные `SMTP_*`, `SMS_*`, `FIREBASE_SERVICE_ACCOUNT`, `NOTIFY_*` в секцию `environment` сервиса `worker` (и `api`, если хотите отправку из API‑контекста).
+
+### Доступ из Admin UI
+
+- Страница: `admin/app/notifications` — рассылки по каналам `ALL/EMAIL/SMS/PUSH`, поддержан `dry‑run` (предварительная оценка получателей).
+- Для вызова API используется заголовок `X-Admin-Key` (см. `ADMIN_KEY`).
+- Рекомендуется ограничить доступ по IP для административных эндпоинтов (переменная `ADMIN_IP_WHITELIST`, если используется `AdminIpGuard`).
+
+### Метрики уведомлений
+
+- `notifications_enqueued_total{type}` — поставлено задач в outbox (`broadcast`/`test`).
+- `notifications_processed_total{type,result}` — обработка воркером (`sent`/`dry`/`retry`/`dead`/`throttled`).
+- `notifications_channel_attempts_total{channel}` / `..._sent_total{channel}` / `..._failed_total{channel}` — попытки/успехи/ошибки по каналам.
+
+
 ## 🔄 CI/CD Pipeline
 
 ### GitHub Actions

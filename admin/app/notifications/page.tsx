@@ -19,6 +19,98 @@ export default function NotificationsPage() {
   const [segBusy, setSegBusy] = useState<boolean>(false);
   const [validation, setValidation] = useState<string>('');
   const [showPreview, setShowPreview] = useState<boolean>(false);
+  const [previewVarsErr, setPreviewVarsErr] = useState<string>('');
+
+  // i18n (lightweight)
+  const [locale, setLocale] = useState<'ru'|'en'>(() => (typeof navigator !== 'undefined' && navigator.language?.startsWith('en') ? 'en' : 'ru'));
+  useEffect(() => {
+    if (typeof navigator !== 'undefined') {
+      const lang = navigator.language || 'ru';
+      setLocale(lang.startsWith('en') ? 'en' : 'ru');
+    }
+  }, []);
+  const dict = useMemo(() => ({
+    ru: {
+      title: 'Рассылки',
+      broadcast: 'Широковещательная рассылка',
+      merchant: 'Мерчант',
+      channel: 'Канал',
+      segment: 'Сегмент',
+      noSegment: '(без сегмента)',
+      loadingSegments: 'Загрузка сегментов…',
+      dryRun: 'Dry‑run',
+      subject: 'Subject (EMAIL)',
+      text: 'Text',
+      html: 'HTML',
+      variables: 'Variables (JSON)',
+      check: 'Проверить (dry‑run)',
+      send: 'Отправить',
+      preview: 'Предпросмотр',
+      hidePreview: 'Скрыть предпросмотр',
+      recipientsEstimate: 'Оценка получателей',
+      previewSubject: 'Предпросмотр (SUBJECT)',
+      previewText: 'Предпросмотр (TEXT)',
+      previewHtml: 'Предпросмотр (HTML)',
+      testTitle: 'Тестовое уведомление',
+      recipient: 'Получатель (email/телефон/токен)',
+      sendTest: 'Отправить тест',
+      msgQueued: 'Запрос на рассылку поставлен в очередь',
+      dryOk: 'Dry-run OK',
+      varsHint: 'Можно использовать переменные в шаблоне: {{customerName}}, {{merchantName}} и др. Поля заменяются из JSON ниже.'
+    },
+    en: {
+      title: 'Notifications',
+      broadcast: 'Broadcast',
+      merchant: 'Merchant',
+      channel: 'Channel',
+      segment: 'Segment',
+      noSegment: '(no segment)',
+      loadingSegments: 'Loading segments…',
+      dryRun: 'Dry‑run',
+      subject: 'Subject (EMAIL)',
+      text: 'Text',
+      html: 'HTML',
+      variables: 'Variables (JSON)',
+      check: 'Check (dry‑run)',
+      send: 'Send',
+      preview: 'Preview',
+      hidePreview: 'Hide preview',
+      recipientsEstimate: 'Estimated recipients',
+      previewSubject: 'Preview (SUBJECT)',
+      previewText: 'Preview (TEXT)',
+      previewHtml: 'Preview (HTML)',
+      testTitle: 'Test Notification',
+      recipient: 'Recipient (email/phone/token)',
+      sendTest: 'Send test',
+      msgQueued: 'Broadcast enqueued',
+      dryOk: 'Dry-run OK',
+      varsHint: 'You can use variables in templates: {{customerName}}, {{merchantName}} etc. Fields are substituted from JSON below.'
+    }
+  } as const)[locale], [locale]);
+  const t = (k: keyof typeof dict) => dict[k] || String(k);
+
+  function applyVars(tpl: string, vars: Record<string, any>): string {
+    if (!tpl) return '';
+    return tpl.replace(/{{\s*([a-zA-Z0-9_\.]+)\s*}}/g, (_m, key) => {
+      const path = String(key).split('.');
+      let cur: any = vars;
+      for (const k of path) { if (cur && typeof cur === 'object' && k in cur) cur = cur[k]; else { cur = ''; break; } }
+      return String(cur ?? '');
+    });
+  }
+
+  const parsedVars: Record<string, any> = useMemo(() => {
+    try {
+      setPreviewVarsErr('');
+      return variables ? JSON.parse(variables) : {};
+    } catch (e:any) {
+      setPreviewVarsErr('Некорректный JSON для Variables');
+      return {};
+    }
+  }, [variables]);
+  const previewSubject = useMemo(() => applyVars(subject, parsedVars), [subject, parsedVars]);
+  const previewText = useMemo(() => applyVars(text, parsedVars), [text, parsedVars]);
+  const previewHtml = useMemo(() => applyVars(html, parsedVars), [html, parsedVars]);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,10 +170,11 @@ export default function NotificationsPage() {
       });
       if (dryRun) {
         setEstimated((res as any).estimated ?? null);
-        setMsg(`Dry-run OK${(res as any).estimated!=null?` (оценка: ${(res as any).estimated})`:''}`);
+        const est = (res as any).estimated;
+        setMsg(`${t('dryOk')}${est!=null?` (${t('recipientsEstimate')}: ${est})`:''}`);
       } else {
         setEstimated(null);
-        setMsg('Запрос на рассылку поставлен в очередь');
+        setMsg(t('msgQueued'));
       }
     } catch (e:any) {
       setMsg(String(e?.message || e));
@@ -100,50 +193,75 @@ export default function NotificationsPage() {
 
   return (
     <div>
-      <h2>Рассылки</h2>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+        <h2>{t('title')}</h2>
+        <div>
+          <label style={{ fontSize:12, opacity:0.8 }}>Lang:{' '}
+            <select aria-label="Language" value={locale} onChange={e=>setLocale(e.target.value as any)}>
+              <option value="ru">RU</option>
+              <option value="en">EN</option>
+            </select>
+          </label>
+        </div>
+      </div>
       <div style={{ background:'#0e1629', padding:10, borderRadius:8, marginBottom:12 }}>
-        <h3 style={{ marginTop:0 }}>Широковещательная рассылка</h3>
+        <h3 style={{ marginTop:0 }}>{t('broadcast')}</h3>
         <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'flex-end' }}>
-          <label>Мерчант: <input value={merchantId} onChange={e=>setMerchantId(e.target.value)} /></label>
-          <label>Канал:
-            <select value={channel} onChange={e=>setChannel(e.target.value as any)} style={{ marginLeft: 8 }}>
+          <label>{t('merchant')}: <input aria-label="Merchant ID" value={merchantId} onChange={e=>setMerchantId(e.target.value)} /></label>
+          <label>{t('channel')}:
+            <select aria-label="Channel" value={channel} onChange={e=>setChannel(e.target.value as any)} style={{ marginLeft: 8 }}>
               <option value="ALL">ALL</option>
               <option value="EMAIL">EMAIL</option>
               <option value="PUSH">PUSH</option>
               <option value="SMS">SMS</option>
             </select>
           </label>
-          <label>Сегмент:
-            <select value={segmentId} onChange={e=>setSegmentId(e.target.value)} style={{ marginLeft: 8 }}>
-              <option value="">(без сегмента)</option>
-              {(segments||[]).map(s => (
-                <option key={s.id} value={s.id}>{s.name}{(s as any)._count?.customers ? ` — ${(s as any)._count.customers}` : (s.size!=null?` — ${s.size}`:'')}</option>
-              ))}
-            </select>
+          <label>{t('segment')}:
+            {segBusy ? (
+              <div style={{ display:'inline-flex', gap:8, marginLeft:8 }} aria-label="Segments loading">
+                <div style={{ width:160, height:28, background:'#111827', borderRadius:6, position:'relative', overflow:'hidden' }}>
+                  <div style={{ position:'absolute', inset:0, background:'linear-gradient(90deg, #111827, #1f2937, #111827)', transform:'translateX(-100%)', animation:'shimmer 1.2s infinite' }} />
+                </div>
+                <style>{`@keyframes shimmer { 100% { transform: translateX(100%); } }`}</style>
+              </div>
+            ) : (
+              <select aria-label="Segment" value={segmentId} onChange={e=>setSegmentId(e.target.value)} style={{ marginLeft: 8 }}>
+                <option value="">{t('noSegment')}</option>
+                {(segments||[]).map(s => (
+                  <option key={s.id} value={s.id}>{s.name}{(s as any)._count?.customers ? ` — ${(s as any)._count.customers}` : (s.size!=null?` — ${s.size}`:'')}</option>
+                ))}
+              </select>
+            )}
           </label>
-          {segBusy && <span style={{ opacity:0.8 }}>Загрузка сегментов…</span>}
-          <label>Dry‑run: <input type="checkbox" checked={dryRun} onChange={e=>setDryRun(e.target.checked)} /></label>
+          {segBusy && <span style={{ opacity:0.8 }}>{t('loadingSegments')}</span>}
+          <label>{t('dryRun')}: <input aria-label="Dry-run" type="checkbox" checked={dryRun} onChange={e=>setDryRun(e.target.checked)} /></label>
         </div>
         <div style={{ display:'grid', gap:8, marginTop:8 }}>
-          <input placeholder="Subject (EMAIL)" value={subject} onChange={e=>setSubject(e.target.value)} />
-          <textarea placeholder="Text" value={text} onChange={e=>setText(e.target.value)} rows={3} />
-          <textarea placeholder="HTML" value={html} onChange={e=>setHtml(e.target.value)} rows={3} />
-          <textarea placeholder="Variables (JSON)" value={variables} onChange={e=>setVariables(e.target.value)} rows={3} />
+          <input aria-label={t('subject')} placeholder={t('subject')} value={subject} onChange={e=>setSubject(e.target.value)} />
+          <textarea aria-label={t('text')} placeholder={t('text')} value={text} onChange={e=>setText(e.target.value)} rows={3} />
+          <textarea aria-label={t('html')} placeholder={t('html')} value={html} onChange={e=>setHtml(e.target.value)} rows={3} />
+          <textarea aria-label={t('variables')} placeholder={t('variables')} value={variables} onChange={e=>setVariables(e.target.value)} rows={3} />
+          <div style={{ fontSize:12, opacity:0.85 }}>{dict.varsHint}</div>
           {validation && <div style={{ color:'#f38ba8' }}>{validation}</div>}
+          {previewVarsErr && <div style={{ color:'#f38ba8' }}>{previewVarsErr}</div>}
           <div style={{ display:'flex', gap:8 }}>
-            <button onClick={onBroadcast} disabled={busy} style={{ padding:'6px 10px' }}>{dryRun?'Проверить (dry‑run)':'Отправить'}</button>
-            <button onClick={()=>setShowPreview(v=>!v)} type="button" disabled={busy} style={{ padding:'6px 10px' }}>{showPreview?'Скрыть предпросмотр':'Предпросмотр'}</button>
+            <button aria-label={dryRun ? t('check') : t('send')} onClick={onBroadcast} disabled={busy} style={{ padding:'6px 10px' }}>{dryRun?t('check'):t('send')}</button>
+            <button aria-label={showPreview ? t('hidePreview') : t('preview')} onClick={()=>setShowPreview(v=>!v)} type="button" disabled={busy} style={{ padding:'6px 10px' }}>{showPreview?t('hidePreview'):t('preview')}</button>
           </div>
-          {estimated!=null && dryRun && <div style={{ opacity:0.9 }}>Оценка получателей: <b>{estimated}</b></div>}
+          {estimated!=null && dryRun && <div style={{ opacity:0.9 }}>{t('recipientsEstimate')}: <b>{estimated}</b></div>}
           {showPreview && (
             <div style={{ display:'grid', gap:8, marginTop:8 }}>
               <div>
-                <div style={{ opacity:0.8, marginBottom:4 }}>Предпросмотр (TEXT)</div>
-                <pre style={{ background:'#111827', padding:10, borderRadius:8, whiteSpace:'pre-wrap' }}>{text || '(пусто)'}</pre>
+                <div style={{ opacity:0.8, marginBottom:4 }}>{t('previewSubject')}</div>
+                <pre style={{ background:'#111827', padding:10, borderRadius:8, whiteSpace:'pre-wrap' }}>{previewSubject || '(пусто)'}</pre>
               </div>
               <div>
-                <div style={{ opacity:0.8, marginBottom:4 }}>Предпросмотр (HTML)</div>
-                <iframe sandbox="allow-same-origin" style={{ width:'100%', height:240, border:'1px solid #334155', borderRadius:8 }} srcDoc={html || `<div style='font-family:system-ui;padding:16px;color:#94a3b8'>Нет HTML</div>`} />
+                <div style={{ opacity:0.8, marginBottom:4 }}>{t('previewText')}</div>
+                <pre style={{ background:'#111827', padding:10, borderRadius:8, whiteSpace:'pre-wrap' }}>{previewText || '(пусто)'}</pre>
+              </div>
+              <div>
+                <div style={{ opacity:0.8, marginBottom:4 }}>{t('previewHtml')}</div>
+                <iframe sandbox="allow-same-origin" style={{ width:'100%', height:240, border:'1px solid #334155', borderRadius:8 }} srcDoc={previewHtml || `<div style='font-family:system-ui;padding:16px;color:#94a3b8'>Нет HTML</div>`} />
               </div>
             </div>
           )}
@@ -151,26 +269,26 @@ export default function NotificationsPage() {
       </div>
 
       <div style={{ background:'#0e1629', padding:10, borderRadius:8 }}>
-        <h3 style={{ marginTop:0 }}>Тестовое уведомление</h3>
+        <h3 style={{ marginTop:0 }}>{t('testTitle')}</h3>
         <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'flex-end' }}>
-          <label>Канал:
-            <select value={testChannel} onChange={e=>setTestChannel(e.target.value as any)} style={{ marginLeft: 8 }}>
+          <label>{t('channel')}:
+            <select aria-label="Test Channel" value={testChannel} onChange={e=>setTestChannel(e.target.value as any)} style={{ marginLeft: 8 }}>
               <option value="EMAIL">EMAIL</option>
               <option value="PUSH">PUSH</option>
               <option value="SMS">SMS</option>
             </select>
           </label>
-          <input placeholder="Получатель (email/телефон/токен)" value={testTo} onChange={e=>setTestTo(e.target.value)} />
+          <input aria-label={t('recipient')} placeholder={t('recipient')} value={testTo} onChange={e=>setTestTo(e.target.value)} />
         </div>
         <div style={{ display:'grid', gap:8, marginTop:8 }}>
-          <input placeholder="Subject (EMAIL)" value={testSubject} onChange={e=>setTestSubject(e.target.value)} />
-          <textarea placeholder="Text" value={testText} onChange={e=>setTestText(e.target.value)} rows={3} />
-          <textarea placeholder="HTML" value={testHtml} onChange={e=>setTestHtml(e.target.value)} rows={3} />
-          <button onClick={onTest} disabled={busy} style={{ padding:'6px 10px' }}>Отправить тест</button>
+          <input aria-label={t('subject')} placeholder={t('subject')} value={testSubject} onChange={e=>setTestSubject(e.target.value)} />
+          <textarea aria-label={t('text')} placeholder={t('text')} value={testText} onChange={e=>setTestText(e.target.value)} rows={3} />
+          <textarea aria-label={t('html')} placeholder={t('html')} value={testHtml} onChange={e=>setTestHtml(e.target.value)} rows={3} />
+          <button aria-label={t('sendTest')} onClick={onTest} disabled={busy} style={{ padding:'6px 10px' }}>{t('sendTest')}</button>
         </div>
       </div>
 
-      {msg && <div style={{ marginTop:8 }}>{msg}</div>}
+      {msg && <div aria-live="polite" style={{ marginTop:8 }}>{msg}</div>}
     </div>
   );
 }
