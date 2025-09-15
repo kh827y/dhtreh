@@ -220,6 +220,21 @@ POINTS_TTL_BURN=0
 - Сначала применяйте ваучеры/промо к `eligibleTotal`, затем списывайте баллы (REDEEM) — так пользовательские баллы не «сгорают» раньше времени.
 - В /commit интеграцию ваучеров следует делать идемпотентной по `orderId` (повторный commit не должен дублировать usage).
 
+## Уведомления (Notifications)
+
+Волна 3 добавляет заготовку рассылок:
+
+- Админка: `admin/app/notifications` — форма для широковещательной рассылки по каналу `ALL/EMAIL/SMS/PUSH`, есть `dry-run`.
+- API: `POST /notifications/broadcast` и `POST /notifications/test` (защищено `AdminGuard`/`AdminIpGuard`).
+- Воркер: `NotificationDispatcherWorker` читает события `notify.*` из `EventOutbox` и отправляет через существующие сервисы `EmailService`/`SmsService`/`PushService`.
+
+ENV подсказки:
+
+- Email: `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`.
+- SMS: `SMS_PROVIDER` (по умолчанию `smsc`), `SMS_TEST_MODE=true` для безопасной отладки.
+- Push: `FIREBASE_SERVICE_ACCOUNT` — JSON service account (строкой).
+- Воркер: `WORKERS_ENABLED=1`, опционально `NOTIFY_WORKER_INTERVAL_MS`, `NOTIFY_WORKER_BATCH`.
+
 ## Продакшн конфигурация
 
 - API: `DATABASE_URL`, `ADMIN_KEY`, `ADMIN_SESSION_SECRET`, `QR_JWT_SECRET` (не `dev_change_me`), `CORS_ORIGINS` обязательны; `WORKERS_ENABLED=1` в отдельном процессе.
@@ -235,3 +250,18 @@ POINTS_TTL_BURN=0
 - Вебхуки проверяйте по `X-Loyalty-Signature` и окну времени ±5 минут.
  - (опц.) Для распределённого rate limiting можно использовать Redis (`infra/docker-compose.yml` содержит сервис),
    задайте `REDIS_URL=redis://localhost:6379` в API.
+
+## Уведомления (Notifications)
+
+Волна 3 добавляет заготовку рассылок:
+
+- Админка: `admin/app/notifications` — форма для широковещательной рассылки по каналу `ALL/EMAIL/SMS/PUSH`, есть `dry-run`.
+- API: `POST /notifications/broadcast` и `POST /notifications/test` (защищено `AdminGuard`/`AdminIpGuard`).
+- Воркер: `NotificationDispatcherWorker` читает события `notify.*` из `EventOutbox` и отправляет через существующие сервисы `EmailService`/`SmsService`/`PushService`.
+
+ENV подсказки:
+
+- Email: `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`.
+- SMS: `SMS_PROVIDER` (по умолчанию `smsc`), `SMS_TEST_MODE=true` для безопасной отладки.
+- Push: `FIREBASE_SERVICE_ACCOUNT` — JSON service account (строкой).
+- Воркер: `WORKERS_ENABLED=1`, опционально `NOTIFY_WORKER_INTERVAL_MS`, `NOTIFY_WORKER_BATCH`.

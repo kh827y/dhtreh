@@ -225,7 +225,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
 
       const batch = Number(process.env.OUTBOX_WORKER_BATCH || '10');
       const items = await this.prisma.eventOutbox.findMany({
-        where: { status: 'PENDING', OR: [ { nextRetryAt: null }, { nextRetryAt: { lte: now } } ] },
+        where: { status: 'PENDING', OR: [ { nextRetryAt: null }, { nextRetryAt: { lte: now } } ], eventType: { not: { startsWith: 'notify.' } } },
         orderBy: { createdAt: 'asc' },
         take: batch,
       }) as unknown as OutboxRow[];
