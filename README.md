@@ -239,7 +239,7 @@ ENV подсказки:
 Метрики уведомлений:
 
 - `notifications_enqueued_total{type}` — количество поставленных в outbox задач (`broadcast`/`test`).
-- `notifications_processed_total{type,result}` — обработанные воркером события (`broadcast`/`test` + `sent`/`dry`/`retry`/`dead`).
+- `notifications_processed_total{type,result}` — обработанные воркером события (`broadcast`/`test` + `sent`/`dry`/`retry`/`dead`/`throttled`).
 - `notifications_channel_attempts_total{channel,merchantId}` — попытки отправки по каналам (`EMAIL`/`SMS`/`PUSH`).
 - `notifications_channel_sent_total{channel,merchantId}` — успешно отправленные по каналам.
 - `notifications_channel_failed_total{channel,merchantId}` — неуспешные по каналам.
