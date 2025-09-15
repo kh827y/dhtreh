@@ -101,8 +101,13 @@
 - Выполнено:
   - Заготовка уведомлений: `NotificationsService.broadcast/test` — постановка задач в Outbox (`eventType=notify.*`), метрика `notifications_enqueued_total`.
   - Подключён `NotificationsModule` в `AppModule` (используем существующие Email/Push/SMS контроллеры для дальнейшей интеграции).
+  - Admin UI: добавлена страница `admin/app/notifications` с формой рассылки (канал, сегмент, шаблон), поддержкой `dry-run`, выводом оценки получателей, выпадающим списком сегментов (`getSegmentsAdmin`).
+  - Worker: создан `NotificationDispatcherWorker` (обработка `notify.broadcast`/`notify.test`), исключены `notify.*` из `OutboxDispatcherWorker`. Метрики `notifications_processed_total` и liveness.
+  - README и `infra/env-examples/api.env.example`: добавлены раздел и переменные для SMTP/SMS/FCM и настроек воркера уведомлений.
+  - Dry-run: `NotificationsService.broadcast()` возвращает `estimated` по сегменту или каналам (email/sms/push) на основе Prisma счётчиков и consent’ов.
 
 - Следующий шаг (Wave 3):
-  - Admin UI: форма рассылки (dry‑run + отправка в outbox), предпросмотр, выбор сегмента.
-  - Worker: обработка `notify.broadcast` (провайдеры, ретраи, rate‑limit), подписи и аудит.
-  - Метрики/алерты: счётчики попыток/успехов/ошибок по каналам, документация.
+  - Admin UI: предпросмотр шаблона (рендер HTML/текста), валидации формы, улучшить UX (состояния/лоадеры, a11y, i18n).
+  - Worker: расширить ретраи/логирование, per‑channel счётчики успехов/ошибок, настройки RPS/батча, аудит действий (AdminAudit).
+  - Метрики/алерты: метрики по каналам (sent/failed), документация Alerts/metrics для уведомлений.
+  - Тесты: unit/e2e сценарии воркера и dry‑run (ошибки/ретраи/consent), моки провайдеров.

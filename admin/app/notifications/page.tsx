@@ -1,6 +1,7 @@
 "use client";
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { broadcast, testNotification, type BroadcastArgs } from '../../lib/notifications';
+import { getSegmentsAdmin, type SegmentInfo } from '../../lib/admin';
 
 export default function NotificationsPage() {
   const [merchantId, setMerchantId] = useState<string>(process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1');
@@ -13,6 +14,27 @@ export default function NotificationsPage() {
   const [dryRun, setDryRun] = useState<boolean>(true);
   const [busy, setBusy] = useState<boolean>(false);
   const [msg, setMsg] = useState<string>('');
+  const [estimated, setEstimated] = useState<number | null>(null);
+  const [segments, setSegments] = useState<SegmentInfo[] | null>(null);
+  const [segBusy, setSegBusy] = useState<boolean>(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setSegBusy(true);
+      setSegments(null);
+      try {
+        const list = await getSegmentsAdmin(merchantId);
+        if (!cancelled) setSegments(list || []);
+      } catch (e) {
+        if (!cancelled) setSegments([]);
+      } finally {
+        if (!cancelled) setSegBusy(false);
+      }
+    }
+    if (merchantId) load();
+    return () => { cancelled = true; };
+  }, [merchantId]);
 
   // Test send
   const [testTo, setTestTo] = useState<string>('');
@@ -34,7 +56,13 @@ export default function NotificationsPage() {
         variables: vars,
         dryRun,
       });
-      setMsg(dryRun ? `Dry-run OK${res.estimated!=null?` (оценка: ${res.estimated})`:''}` : 'Запрос на рассылку поставлен в очередь');
+      if (dryRun) {
+        setEstimated((res as any).estimated ?? null);
+        setMsg(`Dry-run OK${(res as any).estimated!=null?` (оценка: ${(res as any).estimated})`:''}`);
+      } else {
+        setEstimated(null);
+        setMsg('Запрос на рассылку поставлен в очередь');
+      }
     } catch (e:any) {
       setMsg(String(e?.message || e));
     } finally { setBusy(false); }
@@ -65,7 +93,15 @@ export default function NotificationsPage() {
               <option value="SMS">SMS</option>
             </select>
           </label>
-          <label>Сегмент ID: <input placeholder="optional" value={segmentId} onChange={e=>setSegmentId(e.target.value)} /></label>
+          <label>Сегмент:
+            <select value={segmentId} onChange={e=>setSegmentId(e.target.value)} style={{ marginLeft: 8 }}>
+              <option value="">(без сегмента)</option>
+              {(segments||[]).map(s => (
+                <option key={s.id} value={s.id}>{s.name}{(s as any)._count?.customers ? ` — ${(s as any)._count.customers}` : (s.size!=null?` — ${s.size}`:'')}</option>
+              ))}
+            </select>
+          </label>
+          {segBusy && <span style={{ opacity:0.8 }}>Загрузка сегментов…</span>}
           <label>Dry‑run: <input type="checkbox" checked={dryRun} onChange={e=>setDryRun(e.target.checked)} /></label>
         </div>
         <div style={{ display:'grid', gap:8, marginTop:8 }}>
@@ -74,6 +110,7 @@ export default function NotificationsPage() {
           <textarea placeholder="HTML" value={html} onChange={e=>setHtml(e.target.value)} rows={3} />
           <textarea placeholder="Variables (JSON)" value={variables} onChange={e=>setVariables(e.target.value)} rows={3} />
           <button onClick={onBroadcast} disabled={busy} style={{ padding:'6px 10px' }}>{dryRun?'Проверить (dry‑run)':'Отправить'}</button>
+          {estimated!=null && dryRun && <div style={{ opacity:0.9 }}>Оценка получателей: <b>{estimated}</b></div>}
         </div>
       </div>
 
