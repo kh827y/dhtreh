@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 
 const API = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
 const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
@@ -20,7 +21,7 @@ export default function OutletsPage() {
       const r = await fetch(`/api/admin/merchants/${MERCHANT}/outlets`);
       if (!r.ok) throw new Error(await r.text());
       setItems(await r.json());
-    } catch (e: any) { setMsg('Ошибка: ' + e?.message); } finally { setLoading(false); }
+    } catch (e: unknown) { const msg = e instanceof Error ? e.message : String(e); setMsg('Ошибка: ' + msg); } finally { setLoading(false); }
   }
   async function create() {
     setMsg('');
@@ -29,7 +30,7 @@ export default function OutletsPage() {
       if (!r.ok) throw new Error(await r.text());
       setName(''); setAddress('');
       await load();
-    } catch (e: any) { setMsg('Ошибка: ' + e?.message); }
+    } catch (e: unknown) { const msg = e instanceof Error ? e.message : String(e); setMsg('Ошибка: ' + msg); }
   }
   async function save(o: Outlet) {
     const r = await fetch(`/api/admin/merchants/${MERCHANT}/outlets/${o.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: o.name, address: o.address||'' }) });
@@ -48,10 +49,10 @@ export default function OutletsPage() {
     <main style={{ maxWidth: 720, margin: '40px auto', fontFamily: 'system-ui, Arial' }}>
       <h1>Торговые точки</h1>
       <div style={{ display: 'flex', gap: 12, margin: '8px 0' }}>
-        <a href="/">← Настройки</a>
-        <a href="/outbox">Outbox</a>
-        <a href="/devices">Devices</a>
-        <a href="/staff">Staff</a>
+        <Link href="/">← Настройки</Link>
+        <Link href="/outbox">Outbox</Link>
+        <Link href="/devices">Devices</Link>
+        <Link href="/staff">Staff</Link>
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Название" style={{ padding: 8, flex: 1 }} />

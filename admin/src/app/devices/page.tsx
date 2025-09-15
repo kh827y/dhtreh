@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 
 const API = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
 const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
@@ -29,7 +30,7 @@ export default function DevicesPage() {
       if (!ro.ok) throw new Error(await ro.text());
       setItems(await rd.json());
       setOutlets(await ro.json());
-    } catch (e: any) { setMsg('Ошибка: ' + e?.message); } finally { setLoading(false); }
+    } catch (e: unknown) { const msg = e instanceof Error ? e.message : String(e); setMsg('Ошибка: ' + msg); } finally { setLoading(false); }
   }
   async function create() {
     setMsg('');
@@ -38,7 +39,7 @@ export default function DevicesPage() {
       if (!r.ok) throw new Error(await r.text());
       setType('VIRTUAL'); setLabel(''); setOutletId('');
       await load();
-    } catch (e: any) { setMsg('Ошибка: ' + e?.message); }
+    } catch (e: unknown) { const msg = e instanceof Error ? e.message : String(e); setMsg('Ошибка: ' + msg); }
   }
   async function save(d: Device) {
     const r = await fetch(`/api/admin/merchants/${MERCHANT}/devices/${d.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ outletId: d.outletId||undefined, label: d.label||undefined }) });
@@ -58,7 +59,7 @@ export default function DevicesPage() {
       const data = await r.json();
       setLastSecret(data.secret || '');
       await load();
-    } catch (e: any) { setMsg('Ошибка: ' + e?.message); }
+    } catch (e: unknown) { const msg = e instanceof Error ? e.message : String(e); setMsg('Ошибка: ' + msg); }
   }
   async function revokeSecret(id: string) {
     setMsg(''); setLastSecret('');
@@ -66,7 +67,7 @@ export default function DevicesPage() {
       const r = await fetch(`/api/admin/merchants/${MERCHANT}/devices/${id}/secret`, { method: 'DELETE' });
       if (!r.ok) throw new Error(await r.text());
       await load();
-    } catch (e: any) { setMsg('Ошибка: ' + e?.message); }
+    } catch (e: unknown) { const msg = e instanceof Error ? e.message : String(e); setMsg('Ошибка: ' + msg); }
   }
 
   useEffect(() => { load(); }, []);
@@ -75,10 +76,10 @@ export default function DevicesPage() {
     <main style={{ maxWidth: 920, margin: '40px auto', fontFamily: 'system-ui, Arial' }}>
       <h1>Устройства</h1>
       <div style={{ display: 'flex', gap: 12, margin: '8px 0' }}>
-        <a href="/">← Настройки</a>
-        <a href="/outbox">Outbox</a>
-        <a href="/outlets">Outlets</a>
-        <a href="/staff">Staff</a>
+        <Link href="/">← Настройки</Link>
+        <Link href="/outbox">Outbox</Link>
+        <Link href="/outlets">Outlets</Link>
+        <Link href="/staff">Staff</Link>
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
         <select value={type} onChange={(e) => setType(e.target.value)} style={{ padding: 8 }}>

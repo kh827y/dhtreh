@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 
 const API = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
 const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
@@ -34,7 +35,7 @@ export default function TxnsPage() {
       const r = await fetch(url.toString(), { headers: { 'x-admin-key': ADMIN_KEY } });
       if (!r.ok) throw new Error(await r.text());
       setItems(await r.json());
-    } catch (e: any) { setMsg('Ошибка: ' + e?.message); } finally { setLoading(false); }
+    } catch (e: unknown) { const msg = e instanceof Error ? e.message : String(e); setMsg('Ошибка: ' + msg); } finally { setLoading(false); }
   }
 
   useEffect(() => { load(); }, []);
@@ -43,11 +44,11 @@ export default function TxnsPage() {
     <main style={{ maxWidth: 920, margin: '40px auto', fontFamily: 'system-ui, Arial' }}>
       <h1>Транзакции</h1>
       <div style={{ display: 'flex', gap: 12, margin: '8px 0' }}>
-        <a href="/">← Настройки</a>
-        <a href="/outbox">Outbox</a>
-        <a href="/outlets">Outlets</a>
-        <a href="/devices">Devices</a>
-        <a href="/staff">Staff</a>
+        <Link href="/">← Настройки</Link>
+        <Link href="/outbox">Outbox</Link>
+        <Link href="/outlets">Outlets</Link>
+        <Link href="/devices">Devices</Link>
+        <Link href="/staff">Staff</Link>
       </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <label>Тип: <input value={type} onChange={(e) => setType(e.target.value)} placeholder="EARN/REDEEM/REFUND" /></label>

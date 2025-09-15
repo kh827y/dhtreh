@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 
 const API = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
 const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
 
-type Staff = { id: string; login?: string|null; email?: string|null; role: string; status: string; createdAt: string };
+type Staff = { id: string; login?: string|null; email?: string|null; role: string; status: string; createdAt: string; allowedOutletId?: string|null; allowedDeviceId?: string|null };
 
 export default function StaffPage() {
   const [items, setItems] = useState<Staff[]>([]);
@@ -22,7 +23,7 @@ export default function StaffPage() {
       const r = await fetch(`/api/admin/merchants/${MERCHANT}/staff`);
       if (!r.ok) throw new Error(await r.text());
       setItems(await r.json());
-    } catch (e: any) { setMsg('Ошибка: ' + e?.message); } finally { setLoading(false); }
+    } catch (e: unknown) { const msg = e instanceof Error ? e.message : String(e); setMsg('Ошибка: ' + msg); } finally { setLoading(false); }
   }
   async function create() {
     setMsg('');
@@ -31,10 +32,10 @@ export default function StaffPage() {
       if (!r.ok) throw new Error(await r.text());
       setLogin(''); setEmail(''); setRole('CASHIER');
       await load();
-    } catch (e: any) { setMsg('Ошибка: ' + e?.message); }
+    } catch (e: unknown) { const msg = e instanceof Error ? e.message : String(e); setMsg('Ошибка: ' + msg); }
   }
   async function save(s: Staff) {
-    const body = { login: s.login||undefined, email: s.email||undefined, role: s.role, status: s.status, allowedOutletId: (s as any).allowedOutletId||undefined, allowedDeviceId: (s as any).allowedDeviceId||undefined };
+    const body = { login: s.login||undefined, email: s.email||undefined, role: s.role, status: s.status, allowedOutletId: s.allowedOutletId||undefined, allowedDeviceId: s.allowedDeviceId||undefined };
     const r = await fetch(`/api/admin/merchants/${MERCHANT}/staff/${s.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!r.ok) alert(await r.text());
   }
@@ -52,7 +53,7 @@ export default function StaffPage() {
       const data = await r.json();
       setLastToken(data.token || '');
       await load();
-    } catch (e: any) { setMsg('Ошибка: ' + e?.message); }
+    } catch (e: unknown) { const msg = e instanceof Error ? e.message : String(e); setMsg('Ошибка: ' + msg); }
   }
   async function revokeToken(id: string) {
     setMsg(''); setLastToken('');
@@ -60,7 +61,7 @@ export default function StaffPage() {
       const r = await fetch(`/api/admin/merchants/${MERCHANT}/staff/${id}/token`, { method: 'DELETE' });
       if (!r.ok) throw new Error(await r.text());
       await load();
-    } catch (e: any) { setMsg('Ошибка: ' + e?.message); }
+    } catch (e: unknown) { const msg = e instanceof Error ? e.message : String(e); setMsg('Ошибка: ' + msg); }
   }
 
   useEffect(() => { load(); }, []);
@@ -69,10 +70,10 @@ export default function StaffPage() {
     <main style={{ maxWidth: 920, margin: '40px auto', fontFamily: 'system-ui, Arial' }}>
       <h1>Сотрудники</h1>
       <div style={{ display: 'flex', gap: 12, margin: '8px 0' }}>
-        <a href="/">← Настройки</a>
-        <a href="/outbox">Outbox</a>
-        <a href="/outlets">Outlets</a>
-        <a href="/devices">Devices</a>
+        <Link href="/">← Настройки</Link>
+        <Link href="/outbox">Outbox</Link>
+        <Link href="/outlets">Outlets</Link>
+        <Link href="/devices">Devices</Link>
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
         <input value={login} onChange={(e) => setLogin(e.target.value)} placeholder="login" style={{ padding: 8 }} />
@@ -101,8 +102,8 @@ export default function StaffPage() {
                 <option value="ACTIVE">ACTIVE</option>
                 <option value="BLOCKED">BLOCKED</option>
               </select>
-              <input value={(s as any).allowedOutletId||''} onChange={(e) => setItems(prev => prev.map(x => x.id===s.id?{...x,allowedOutletId:e.target.value||null}:x))} placeholder="allowedOutletId" style={{ padding: 8 }} />
-              <input value={(s as any).allowedDeviceId||''} onChange={(e) => setItems(prev => prev.map(x => x.id===s.id?{...x,allowedDeviceId:e.target.value||null}:x))} placeholder="allowedDeviceId" style={{ padding: 8 }} />
+              <input value={s.allowedOutletId||''} onChange={(e) => setItems(prev => prev.map(x => x.id===s.id?{...x,allowedOutletId:e.target.value||null}:x))} placeholder="allowedOutletId" style={{ padding: 8 }} />
+              <input value={s.allowedDeviceId||''} onChange={(e) => setItems(prev => prev.map(x => x.id===s.id?{...x,allowedDeviceId:e.target.value||null}:x))} placeholder="allowedDeviceId" style={{ padding: 8 }} />
               <button onClick={() => save(s)} style={{ padding: '6px 10px' }}>Сохранить</button>
               <button onClick={() => issueToken(s.id)} style={{ padding: '6px 10px' }}>Выдать токен</button>
               <button onClick={() => revokeToken(s.id)} style={{ padding: '6px 10px' }}>Отозвать токен</button>

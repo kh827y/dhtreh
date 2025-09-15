@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 
 const API = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
 const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
@@ -60,8 +61,9 @@ export default function AdminPage() {
       setBridgeSecretNext(data.bridgeSecretNext || '');
       setRequireStaffKey(Boolean(data.requireStaffKey));
       setPointsTtlDays(Number(data.pointsTtlDays || 0));
-    } catch (e: any) {
-      setMsg('Ошибка загрузки: ' + e?.message);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setMsg('Ошибка загрузки: ' + msg);
     } finally {
       setLoading(false);
     }
@@ -79,8 +81,9 @@ export default function AdminPage() {
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
       setMsg(`Сохранено: начисление ${data.earnBps/100}% | лимит ${data.redeemLimitBps/100}%`);
-    } catch (e: any) {
-      setMsg('Ошибка сохранения: ' + e?.message);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setMsg('Ошибка сохранения: ' + msg);
     } finally {
       setLoading(false);
     }
@@ -92,18 +95,18 @@ export default function AdminPage() {
     <main style={{ maxWidth: 560, margin: '40px auto', fontFamily: 'system-ui, Arial' }}>
       <h1>Настройки мерчанта</h1>
       <div style={{ display: 'flex', gap: 12, margin: '8px 0' }}>
-        <a href="/outbox">Outbox</a>
-        <a href="/outlets">Outlets</a>
-        <a href="/devices">Devices</a>
-        <a href="/staff">Staff</a>
-        <a href="/docs/signature">Signature</a>
-        <a href="/docs/rotation">Rotation</a>
-        <a href="/txns">Txns</a>
-        <a href="/ledger">Ledger</a>
-        <a href="/receipts">Receipts</a>
-        <a href="/docs/bridge">Bridge</a>
-        <a href="/metrics">Metrics</a>
-        <a href="/bridge-status">Bridge Status</a>
+        <Link href="/outbox">Outbox</Link>
+        <Link href="/outlets">Outlets</Link>
+        <Link href="/devices">Devices</Link>
+        <Link href="/staff">Staff</Link>
+        <Link href="/docs/signature">Signature</Link>
+        <Link href="/docs/rotation">Rotation</Link>
+        <Link href="/txns">Txns</Link>
+        <Link href="/ledger">Ledger</Link>
+        <Link href="/receipts">Receipts</Link>
+        <Link href="/docs/bridge">Bridge</Link>
+        <Link href="/metrics">Metrics</Link>
+        <Link href="/bridge-status">Bridge Status</Link>
       </div>
       <div style={{ color: '#666' }}>Merchant: <code>{MERCHANT}</code></div>
 

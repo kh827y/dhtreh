@@ -1,16 +1,21 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 
 const API = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
 const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
 const ADMIN_KEY = process.env.NEXT_PUBLIC_ADMIN_KEY || '';
 
+type Receipt = { id: string; orderId: string; customerId: string; total: number; eligibleTotal: number; redeemApplied: number; earnApplied: number; createdAt: string; outletId?: string|null; deviceId?: string|null; staffId?: string|null };
+type Txn = { id: string; type: string; amount: number; orderId?: string|null; customerId: string; createdAt: string; outletId?: string|null; deviceId?: string|null; staffId?: string|null };
+type OutboxEvent = { id: string; eventType: string; status: string; retries: number; lastError?: string|null; createdAt: string; payload: unknown };
+
 export default function ReceiptDetail({ params }: { params: { id: string } }) {
   const receiptId = params.id;
-  const [receipt, setReceipt] = useState<any>(null);
-  const [txns, setTxns] = useState<any[]>([]);
-  const [events, setEvents] = useState<any[]>([]);
+  const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [txns, setTxns] = useState<Txn[]>([]);
+  const [events, setEvents] = useState<OutboxEvent[]>([]);
   const [msg, setMsg] = useState('');
 
   async function load() {
@@ -26,7 +31,7 @@ export default function ReceiptDetail({ params }: { params: { id: string } }) {
         const e = await fetch(`${API}/merchants/${MERCHANT}/outbox/by-order?orderId=${encodeURIComponent(data.receipt.orderId)}`, { headers: { 'x-admin-key': ADMIN_KEY } });
         if (e.ok) setEvents(await e.json());
       }
-    } catch (e: any) { setMsg('Ошибка: ' + e?.message); }
+    } catch (e: unknown) { const msg = e instanceof Error ? e.message : String(e); setMsg('Ошибка: ' + msg); }
   }
 
   useEffect(() => { load(); }, [receiptId]);
@@ -35,7 +40,7 @@ export default function ReceiptDetail({ params }: { params: { id: string } }) {
     <main style={{ maxWidth: 920, margin: '40px auto', fontFamily: 'system-ui, Arial' }}>
       <h1>Чек</h1>
       <div style={{ marginBottom: 8 }}>
-        <a href="/receipts">← К списку чеков</a>
+        <Link href="/receipts">← К списку чеков</Link>
       </div>
       {msg && <div style={{ color: '#b00' }}>{msg}</div>}
       {receipt ? (
@@ -64,7 +69,7 @@ export default function ReceiptDetail({ params }: { params: { id: string } }) {
           </div>
           <h3 style={{ marginTop: 16 }}>События Outbox</h3>
           <div style={{ display: 'grid', gap: 8 }}>
-            {events.map((e: any) => (
+            {events.map((e) => (
               <div key={e.id} style={{ border: '1px solid #eee', borderRadius: 8, padding: 10 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <b>{e.eventType}</b>

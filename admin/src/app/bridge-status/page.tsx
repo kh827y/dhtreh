@@ -1,12 +1,16 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 
 const BRIDGE = process.env.NEXT_PUBLIC_BRIDGE_BASE || 'http://127.0.0.1:18080';
 
+type BridgeHealth = { ok?: boolean } | null;
+type QueueStatus = { pending?: number; preview?: Array<{ id: string; type: string; idemKey?: string|null }> } | null;
+
 export default function BridgeStatusPage() {
-  const [health, setHealth] = useState<any>(null);
-  const [queue, setQueue] = useState<any>(null);
+  const [health, setHealth] = useState<BridgeHealth>(null);
+  const [queue, setQueue] = useState<QueueStatus>(null);
   const [metrics, setMetrics] = useState<string>('');
   const [msg, setMsg] = useState('');
 
@@ -19,7 +23,7 @@ export default function BridgeStatusPage() {
         fetch(`${BRIDGE}/metrics`).then(r=>r.text()).catch(()=>''),
       ]);
       setHealth(h); setQueue(q); setMetrics(m);
-    } catch (e: any) { setMsg('Ошибка загрузки: ' + e?.message); }
+    } catch (e: unknown) { const msg = e instanceof Error ? e.message : String(e); setMsg('Ошибка загрузки: ' + msg); }
   }
   async function flush() {
     setMsg('');
@@ -28,7 +32,7 @@ export default function BridgeStatusPage() {
       if (!r.ok) throw new Error(await r.text());
       await load();
       setMsg('Очередь отправлена');
-    } catch (e: any) { setMsg('Ошибка flush: ' + e?.message); }
+    } catch (e: unknown) { const msg = e instanceof Error ? e.message : String(e); setMsg('Ошибка flush: ' + msg); }
   }
 
   useEffect(() => { load(); }, []);
@@ -53,7 +57,7 @@ export default function BridgeStatusPage() {
       <pre style={{ whiteSpace:'pre-wrap', background: '#fafafa', padding: 10 }}>{metrics || 'Нет данных'}</pre>
 
       <div style={{ marginTop: 12 }}>
-        <a href="/">← Настройки</a>
+        <Link href="/">← Настройки</Link>
       </div>
     </main>
   );

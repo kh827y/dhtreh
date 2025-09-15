@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 
 const API = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
 const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
@@ -28,7 +29,7 @@ export default function ReceiptsPage() {
       const r = await fetch(url.toString(), { headers: { 'x-admin-key': ADMIN_KEY } });
       if (!r.ok) throw new Error(await r.text());
       setItems(await r.json());
-    } catch (e: any) { setMsg('Ошибка: ' + e?.message); } finally { setLoading(false); }
+    } catch (e: unknown) { const msg = e instanceof Error ? e.message : String(e); setMsg('Ошибка: ' + msg); } finally { setLoading(false); }
   }
 
   useEffect(() => { load(); }, []);
@@ -37,12 +38,12 @@ export default function ReceiptsPage() {
     <main style={{ maxWidth: 920, margin: '40px auto', fontFamily: 'system-ui, Arial' }}>
       <h1>Чеки</h1>
       <div style={{ display: 'flex', gap: 12, margin: '8px 0' }}>
-        <a href="/">← Настройки</a>
-        <a href="/outbox">Outbox</a>
-        <a href="/outlets">Outlets</a>
-        <a href="/devices">Devices</a>
-        <a href="/staff">Staff</a>
-        <a href="/txns">Txns</a>
+        <Link href="/">← Настройки</Link>
+        <Link href="/outbox">Outbox</Link>
+        <Link href="/outlets">Outlets</Link>
+        <Link href="/devices">Devices</Link>
+        <Link href="/staff">Staff</Link>
+        <Link href="/txns">Txns</Link>
       </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <label>orderId: <input value={orderId} onChange={(e) => setOrderId(e.target.value)} /></label>
@@ -57,7 +58,7 @@ export default function ReceiptsPage() {
         {items.map(r => (
           <div key={r.id} style={{ border: '1px solid #eee', borderRadius: 10, padding: 10 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <b>Заказ <a href={`/receipts/${r.id}`}>{r.orderId}</a></b>
+              <b>Заказ <Link href={`/receipts/${r.id}`}>{r.orderId}</Link></b>
               <span>{new Date(r.createdAt).toLocaleString()}</span>
             </div>
             <div>Клиент: <code>{r.customerId}</code> · Итого: {r.total} ₽ · База: {r.eligibleTotal} ₽ · Списано: {r.redeemApplied} · Начислено: {r.earnApplied}</div>

@@ -1,15 +1,15 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
 
-const API = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
 const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
 
 type Ev = {
   id: string;
   merchantId: string;
   eventType: string;
-  payload: any;
+  payload: unknown;
   status: 'PENDING'|'SENDING'|'SENT'|'FAILED'|string;
   retries: number;
   nextRetryAt?: string;
@@ -39,8 +39,9 @@ export default function OutboxPage() {
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
       setItems(data);
-    } catch (e: any) {
-      setMsg('Ошибка загрузки: ' + e?.message);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setMsg('Ошибка загрузки: ' + msg);
     } finally { setLoading(false); }
   }
 
@@ -51,8 +52,9 @@ export default function OutboxPage() {
       if (!r.ok) throw new Error(await r.text());
       await load();
       setMsg('Отправка поставлена в очередь');
-    } catch (e: any) {
-      setMsg('Ошибка ретрая: ' + e?.message);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setMsg('Ошибка ретрая: ' + msg);
     }
   }
   async function retryAll(status?: string) {
@@ -64,7 +66,7 @@ export default function OutboxPage() {
       if (!r.ok) throw new Error(await r.text());
       await load();
       setMsg('Переотправка поставлена в очередь');
-    } catch (e: any) { setMsg('Ошибка: ' + e?.message); }
+    } catch (e: unknown) { const msg = e instanceof Error ? e.message : String(e); setMsg('Ошибка: ' + msg); }
   }
   async function remove(ev: Ev) {
     setMsg('');
@@ -72,7 +74,7 @@ export default function OutboxPage() {
       const r = await fetch(`/api/admin/merchants/${MERCHANT}/outbox/${ev.id}`, { method: 'DELETE' });
       if (!r.ok) throw new Error(await r.text());
       await load();
-    } catch (e: any) { setMsg('Ошибка: ' + e?.message); }
+    } catch (e: unknown) { const msg = e instanceof Error ? e.message : String(e); setMsg('Ошибка: ' + msg); }
   }
 
   useEffect(() => { load(); }, []);
@@ -81,10 +83,10 @@ export default function OutboxPage() {
     <main style={{ maxWidth: 920, margin: '40px auto', fontFamily: 'system-ui, Arial' }}>
       <h1>Outbox событий</h1>
       <div style={{ display: 'flex', gap: 12, margin: '8px 0' }}>
-        <a href="/">← Настройки</a>
-        <a href="/outlets">Outlets</a>
-        <a href="/devices">Devices</a>
-        <a href="/staff">Staff</a>
+        <Link href="/">← Настройки</Link>
+        <Link href="/outlets">Outlets</Link>
+        <Link href="/devices">Devices</Link>
+        <Link href="/staff">Staff</Link>
       </div>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
         <label>Статус: <input value={status} onChange={(e) => setStatus(e.target.value)} placeholder="PENDING/SENT/…" /></label>
