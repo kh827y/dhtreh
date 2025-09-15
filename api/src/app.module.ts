@@ -31,6 +31,7 @@ import { LevelsModule } from './levels/levels.module';
 import { CampaignModule } from './campaigns/campaign.module';
 import { PromosModule } from './promos/promos.module';
 import { VouchersModule } from './vouchers/vouchers.module';
+import { NotificationsModule } from './notifications/notifications.module';
 // Optional Redis storage for Throttler
 let throttlerStorage: any = undefined;
 try {
@@ -74,6 +75,7 @@ try {
     PromosModule,
     VouchersModule,
     CampaignModule,
+    NotificationsModule,
   ],
   controllers: [HealthController, MetricsController],
   providers: [

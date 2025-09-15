@@ -45,6 +45,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <a href="/customers" style={{ color:'#89b4fa' }}>Клиенты</a>
               <a href="/segments" style={{ color:'#89b4fa' }}>Сегменты</a>
               <a href="/transactions" style={{ color:'#89b4fa' }}>Операции</a>
+              <a href="/vouchers" style={{ color:'#89b4fa' }}>Ваучеры</a>
               <a href="/ttl" style={{ color:'#89b4fa' }}>TTL Reconciliation</a>
               <div style={{ marginTop:8, opacity:0.8, fontSize:12, textTransform:'uppercase' }}>Аналитика</div>
               <a href="/analytics/summary" style={{ color:'#89b4fa' }}>Сводный отчет</a>

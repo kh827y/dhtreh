@@ -179,4 +179,60 @@ export class VouchersService {
       return { ok: true };
     }
   }
+
+  // ===== Admin helpers =====
+  async list(args: { merchantId: string; status?: string; limit: number }) {
+    const { merchantId, status, limit } = args;
+    if (!merchantId) throw new BadRequestException('merchantId required');
+    const where: any = { merchantId };
+    if (status) where.status = status;
+    const vouchers = await (this.prisma as any).voucher.findMany?.({ where, orderBy: { createdAt: 'desc' }, take: limit })
+      ?? [];
+    const items: any[] = [];
+    for (const v of vouchers) {
+      let codes: any[] = [];
+      try { codes = await (this.prisma as any).voucherCode.findMany({ where: { voucherId: v.id }, orderBy: { createdAt: 'desc' } }); } catch {}
+      const totalCodes = codes.length;
+      const activeCodes = codes.filter(c => String(c.status || 'ACTIVE') === 'ACTIVE').length;
+      const usedCodes = codes.filter(c => (c.usedCount || 0) > 0).length;
+      const codeSamples = codes.slice(0, 3).map(c => c.code);
+      items.push({
+        id: v.id,
+        merchantId: v.merchantId,
+        name: v.name || '',
+        valueType: v.valueType,
+        value: v.value,
+        status: v.status,
+        isActive: v.isActive,
+        validFrom: v.validFrom || null,
+        validUntil: v.validUntil || null,
+        totalUsed: (v as any).totalUsed || 0,
+        maxTotalUses: (v as any).maxTotalUses ?? null,
+        codes: totalCodes,
+        activeCodes,
+        usedCodes,
+        codeSamples,
+      });
+    }
+    return { items };
+  }
+
+  async exportCsv(args: { merchantId: string; status?: string }) {
+    const { merchantId, status } = args;
+    const list = await this.list({ merchantId, status, limit: 1000 });
+    const lines: string[] = [];
+    const esc = (s: any) => {
+      if (s == null) return '';
+      const str = String(s);
+      if (/[",\n]/.test(str)) return '"' + str.replace(/"/g, '""') + '"';
+      return str;
+    };
+    lines.push(['id','merchantId','name','valueType','value','status','isActive','validFrom','validUntil','totalUsed','maxTotalUses','codes','activeCodes','usedCodes','codeSamples'].join(','));
+    for (const it of list.items) {
+      lines.push([
+        esc(it.id), esc(it.merchantId), esc(it.name), esc(it.valueType), esc(it.value), esc(it.status), esc(it.isActive), esc(it.validFrom), esc(it.validUntil), esc(it.totalUsed), esc(it.maxTotalUses), esc(it.codes), esc(it.activeCodes), esc(it.usedCodes), esc((it.codeSamples || []).join('|'))
+      ].join(','));
+    }
+    return lines.join('\n') + (lines.length ? '\n' : '');
+  }
 }

@@ -83,11 +83,26 @@
   - Реализованы `Vouchers`: `preview`, `issue`, `redeem` в `api/src/vouchers/*`. В `redeem` — идемпотентность по `(voucherId, customerId, orderId)` и проверка лимитов/валидности.
   - Интеграция в денежный флоу: `loyalty.controller.quote()` сначала уменьшает `eligibleTotal` ваучером → промо, затем считает. В `commit()` при наличии `voucherCode` выполняется идемпотентный `redeem` по `orderId`.
   - Добавлены e2e в `api/test/loyalty.e2e-spec.ts`: применение ваучера в quote и идемпотентность `commit` с ваучером.
+  - Дополнительные e2e: комбо ваучер+промо (REDEEM) влияет на лимит, проверка `redeemApplied` на `commit`, `redeem` идемпотентен при достижении `maxUses`, `issue` создаёт код и работает в `preview`.
+  - Prisma: добавлен уникальный индекс `@@unique([voucherId, customerId, orderId])` для `VoucherUsage` (идемпотентность на уровне БД, миграция будет сгенерирована).
+  - SDK TS: добавлены `vouchers.preview/issue/redeem/status/deactivate` и поддержка `voucherCode` в `quote/commit`.
   - README дополнен разделом «Vouchers» (эндпоинты, порядок применения скидок).
   - Все тесты зелёные: `pnpm -C api test && pnpm -C api test:e2e`.
+  - Admin UI: добавлен раздел «Ваучеры» — список/поиск/выпуск/деактивация/экспорт (admin/app/vouchers), клиентские методы (admin/lib/vouchers.ts).
+  - API: админские эндпоинты для ваучеров: `GET /vouchers/list`, `GET /vouchers/export.csv` (защищены AdminGuard/AdminIpGuard).
 
 - Следующий шаг (Wave 2):
-  - Завершить управление ваучерами: статус/деактивация/мульти‑use/пер‑клиент лимиты, отчётность.
-  - Admin UI: формы выпуска/активации/поиска ваучеров, фильтры и экспорт.
+  - Завершить управление ваучерами: отчётность и фильтры/пагинация; документация admin‑раздела.
   - Документация промо/ваучеров: совместимость, приоритеты, идемпотентность, примеры.
   - PR с DoD и чек‑листом; затем план Wave 3 (CRM/аналитика) уточнить.
+
+## Волна 3 — Старт (2025-09-15)
+
+- Выполнено:
+  - Заготовка уведомлений: `NotificationsService.broadcast/test` — постановка задач в Outbox (`eventType=notify.*`), метрика `notifications_enqueued_total`.
+  - Подключён `NotificationsModule` в `AppModule` (используем существующие Email/Push/SMS контроллеры для дальнейшей интеграции).
+
+- Следующий шаг (Wave 3):
+  - Admin UI: форма рассылки (dry‑run + отправка в outbox), предпросмотр, выбор сегмента.
+  - Worker: обработка `notify.broadcast` (провайдеры, ретраи, rate‑limit), подписи и аудит.
+  - Метрики/алерты: счётчики попыток/успехов/ошибок по каналам, документация.

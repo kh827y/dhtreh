@@ -229,7 +229,8 @@ export class LoyaltyService {
       }
     }
 
-    if (dto.mode === Mode.REDEEM) {
+    const modeUpper = String(dto.mode).toUpperCase();
+    if (modeUpper === 'REDEEM') {
       // антифрод: кулдаун и дневной лимит списаний
       if (redeemCooldownSec && redeemCooldownSec > 0) {
         const last = await this.prisma.transaction.findFirst({
