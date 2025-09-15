@@ -34,6 +34,9 @@ function parseMetrics(text: string) {
   let rateLimited = 0;
   const counters: Record<string, number> = {};
   const outboxEventsByResult: Record<string, number> = {};
+  const posWebhooks: Record<string, number> = {};
+  const posRequests: Record<string, Record<string, Record<string, number>>> = {};
+  const posErrors: Record<string, Record<string, number>> = {};
   const inc = (k: string, v: number) => { counters[k] = (counters[k] || 0) + v; };
 
   for (const ln of lines) {
@@ -73,12 +76,36 @@ function parseMetrics(text: string) {
       continue;
     }
     // loyalty_outbox_events_total{type="...",result="..."} N
-    m = ln.match(/^loyalty_outbox_events_total\{[^}]*result="([a-zA-Z_]+)"[^}]*\}\s+(\d+(?:\.\d+)?)/);
+    m = ln.match(/^loyalty_outbox_events_total\{[^}]*result="([a-zA-Z_]+)"[^}]*\}\s+(\d+(?:\.[0-9]+)?)/);
     if (m) {
       const res = m[1]; const val = Number(m[2]);
       outboxEventsByResult[res] = (outboxEventsByResult[res] || 0) + (isNaN(val) ? 0 : val);
       continue;
     }
+    // pos_webhooks_total{provider="..."} N
+    m = ln.match(/^pos_webhooks_total\{[^}]*provider="([A-Z0-9_]+)"[^}]*\}\s+(\d+(?:\.[0-9]+)?)/);
+    if (m) {
+      const provider = m[1]; const val = Number(m[2]);
+      posWebhooks[provider] = (posWebhooks[provider] || 0) + (isNaN(val) ? 0 : val);
+      continue;
+    }
+    // pos_requests_total{provider,endpoint,result} N
+    m = ln.match(/^pos_requests_total\{[^}]*provider="([A-Z0-9_]+)"[^}]*endpoint="([a-zA-Z0-9_\-]+)"[^}]*result="([a-zA-Z_]+)"[^}]*\}\s+(\d+(?:\.[0-9]+)?)/);
+    if (m) {
+      const provider = m[1]; const endpoint = m[2]; const result = m[3]; const val = Number(m[4]);
+      posRequests[provider] = posRequests[provider] || {};
+      posRequests[provider][endpoint] = posRequests[provider][endpoint] || {};
+      posRequests[provider][endpoint][result] = (posRequests[provider][endpoint][result] || 0) + (isNaN(val) ? 0 : val);
+      continue;
+    }
+    // pos_errors_total{provider,endpoint} N
+    m = ln.match(/^pos_errors_total\{[^}]*provider="([A-Z0-9_]+)"[^}]*endpoint="([a-zA-Z0-9_\-]+)"[^}]*\}\s+(\d+(?:\.[0-9]+)?)/);
+    if (m) {
+      const provider = m[1]; const endpoint = m[2]; const val = Number(m[3]);
+      posErrors[provider] = posErrors[provider] || {};
+      posErrors[provider][endpoint] = (posErrors[provider][endpoint] || 0) + (isNaN(val) ? 0 : val);
+      continue;
+    }
   }
-  return { outboxPending, outboxDead, http5xx, http4xx, circuitOpen, rateLimited, counters, outboxEvents: outboxEventsByResult };
+  return { outboxPending, outboxDead, http5xx, http4xx, circuitOpen, rateLimited, counters, outboxEvents: outboxEventsByResult, posWebhooks, posRequests, posErrors };
 }

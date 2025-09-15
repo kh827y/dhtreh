@@ -36,6 +36,40 @@ X-Admin-Key: ak_live_xxxxxxxxxxxxxx
 X-Bridge-Signature: v1,ts=1234567890,sig=base64signature
 ```
 
+Формирование подписи:
+- Алгоритм: HMAC-SHA256
+- Строка для подписи: `${ts}.${body}` (где `ts` — UNIX seconds, `body` — точный JSON тела запроса без изменений)
+- Формат заголовка: `v1,ts=<unix_seconds>,sig=<base64(HMAC_SHA256(ts + '.' + body))>`
+
+Проверка на стороне API:
+1) распарсить `ts` и `sig` из заголовка; убедиться, что `ts` в разумном окне времени (рекомендуется ±300 секунд);
+2) вычислить ожидаемую подпись `base64(HMAC_SHA256(ts + '.' + body, secret))` и сравнить с присланной `sig`;
+3) разрешить временную ротацию секрета: если проверка не прошла основным `bridgeSecret`, попробовать `bridgeSecretNext`.
+
+Где применяется (включается per-merchant настройкой `requireBridgeSig`):
+- `POST /loyalty/quote` — при включённой настройке, сигнатура обязательна.
+- `POST /loyalty/commit` — проверяется до выполнения; если hold привязан к устройству, используется секрет устройства (`Device.bridgeSecret`) вместо мерчантского.
+- `POST /loyalty/refund` — аналогично `commit`, с учётом `deviceId` из тела.
+- `POST /loyalty/qr` — если нет TeleAuth и Staff-Key, при включённой настройке требуется подпись.
+
+Совместимость со Staff-Key: если у мерчанта включено требование Staff-Key (`requireStaffKey`), допускается либо `X-Staff-Key`, либо `X-Bridge-Signature` (см. `loyalty.controller.ts: enforceRequireStaffKey`).
+
+Пример валидации:
+```ts
+import { createHmac } from 'crypto';
+
+function verifyBridgeSignature(sigHeader: string, rawBody: string, secret: string, nowSec = Math.floor(Date.now()/1000)) {
+  if (!sigHeader) return false;
+  const parts = Object.fromEntries(sigHeader.split(',').map(p => p.split('=')) as any);
+  const ts = Number(parts['ts']);
+  const sig = parts['sig'];
+  if (!ts || !sig) return false;
+  if (Math.abs(nowSec - ts) > 300) return false; // окно ±5 минут
+  const expected = createHmac('sha256', secret).update(`${ts}.${rawBody}`).digest('base64');
+  return expected === sig;
+}
+```
+
 ## Основные эндпоинты
 
 ### Программа лояльности
