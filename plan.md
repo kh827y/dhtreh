@@ -96,7 +96,7 @@
   - Документация промо/ваучеров: совместимость, приоритеты, идемпотентность, примеры.
   - PR с DoD и чек‑листом; затем план Wave 3 (CRM/аналитика) уточнить.
 
-## Волна 3 — Старт (2025-09-15)
+## Волна 3 — Завершена (2025-09-15)
 
 - Выполнено:
   - Заготовка уведомлений: `NotificationsService.broadcast/test` — постановка задач в Outbox (`eventType=notify.*`), метрика `notifications_enqueued_total`.
@@ -104,11 +104,21 @@
   - Admin UI: добавлена страница `admin/app/notifications` с формой рассылки (канал, сегмент, шаблон), поддержкой `dry-run`, выводом оценки получателей, выпадающим списком сегментов (`getSegmentsAdmin`).
   - Worker: создан `NotificationDispatcherWorker` (обработка `notify.broadcast`/`notify.test`), исключены `notify.*` из `OutboxDispatcherWorker`. Метрики `notifications_processed_total` и liveness.
   - Worker: добавлены per‑channel метрики (`notifications_channel_attempts_total/sent_total/failed_total` с label `channel`) и запись аудита в `AdminAudit` для событий broadcast.
+  - Worker: внедрён per‑merchant RPS‑троттлинг (`NOTIFY_RPS_DEFAULT`, `NOTIFY_RPS_BY_MERCHANT`), события при ограничении переносятся на +1s; покрыто unit‑тестом `notification-dispatcher.worker.spec.ts`.
   - README и `infra/env-examples/api.env.example`: добавлены раздел и переменные для SMTP/SMS/FCM и настроек воркера уведомлений.
   - Dry-run: `NotificationsService.broadcast()` возвращает `estimated` по сегменту или каналам (email/sms/push) на основе Prisma счётчиков и consent’ов.
+  - Admin UI: i18n (RU/EN), a11y‑лейблы, skeleton‑лоадеры для сегментов; предпросмотр шаблонов с `{{var}}`.
+  - Метрики: пер‑канальные метрики дополнены лейблом `merchantId` для разреза по мерчанту.
+  - Тесты: добавлены unit‑тесты воркера на троттлинг и ветви ошибок/ретраев (`notification-dispatcher.worker.spec.ts`, `notification-dispatcher.errors.spec.ts`).
 
-- Следующий шаг (Wave 3):
-  - Admin UI: предпросмотр шаблона (рендер HTML/текста), валидации формы, улучшить UX (состояния/лоадеры, a11y, i18n).
-  - Worker: расширить ретраи/логирование, per‑channel счётчики успехов/ошибок, настройки RPS/батча, аудит действий (AdminAudit).
-  - Метрики/алерты: метрики по каналам (sent/failed), документация Alerts/metrics для уведомлений.
-  - Тесты: unit/e2e сценарии воркера и dry‑run (ошибки/ретраи/consent), моки провайдеров.
+- Итог: функционал рассылок завершён — воркер уведомлений с метриками/аудитом, dry‑run и сегментами; Admin UI с предпросмотром/валидацией; документация и env‑пример обновлены; покрыто unit/e2e тестами; все тесты зелёные.
+
+## Волна 4 — Старт (2025-09-15)
+
+- Задачи:
+  - Адаптеры интеграций: унифицировать интерфейсы (`POSAdapter`/`PaymentProvider`/`ERPAdapter`/`Shipper`), описать контракты.
+  - Валидация конфигов интеграций (AJV): схемы для Evotor/ModulKassa/Poster, ошибки — fail‑fast.
+  - Подписанные вебхуки провайдеров: проверка подписи, окно времени; логирование входа/выхода, ретраи.
+  - Журнал `SyncLog`: IN/OUT события, статус/ошибка, payload, план ретраев.
+  - Bridge: обновить README/пример `.env`, описать подпись `BRIDGE_SECRET`, офлайн‑очередь.
+  - Тесты: unit для валидаторов/подписей, e2e флоу интеграций (моки провайдеров), метрики `pos_*`.

@@ -17,6 +17,7 @@ export class TtlBurnWorker implements OnModuleInit, OnModuleDestroy {
     if (process.env.WORKERS_ENABLED === '0') { this.logger.log('Workers disabled (WORKERS_ENABLED=0)'); return; }
     const intervalMs = Number(process.env.TTL_BURN_INTERVAL_MS || String(24 * 60 * 60 * 1000)); // default daily
     this.timer = setInterval(() => this.processTtlBurn().catch(() => {}), intervalMs);
+    try { if (this.timer && typeof this.timer.unref === 'function') this.timer.unref(); } catch {}
     this.logger.log(`TtlBurnWorker started, interval=${intervalMs}ms`);
   }
 

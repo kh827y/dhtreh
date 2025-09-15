@@ -54,6 +54,7 @@ export class NotificationDispatcherWorker implements OnModuleInit, OnModuleDestr
     this.loadRpsConfig();
     const intervalMs = Number(process.env.NOTIFY_WORKER_INTERVAL_MS || '15000');
     this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
+    try { if (this.timer && typeof this.timer.unref === 'function') this.timer.unref(); } catch {}
     this.logger.log(`NotificationDispatcherWorker started, interval=${intervalMs}ms`);
     this.startedAt = new Date();
   }

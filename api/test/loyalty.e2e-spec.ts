@@ -244,6 +244,48 @@ describe('Loyalty (e2e)', () => {
     await app.init();
   });
 
+  it('Commit (REDEEM) with voucher applies expected redeemApplied after voucher+promo (M2)', async () => {
+    // Ensure promo for M2 is set (fixed 50)
+    await prismaMock.merchantSettings.update({ where: { merchantId: 'M2' }, data: { rulesJson: { promos: [ { then: { discountFixed: 50 } } ] }, updatedAt: new Date() } });
+    // Seed plenty of points
+    const qE = await request(app.getHttpServer())
+      .post('/loyalty/quote')
+      .send({ merchantId: 'M2', userToken: 'C-vp-3', mode: 'EARN', total: 10000, eligibleTotal: 10000 })
+      .expect(201);
+    await request(app.getHttpServer()).post('/loyalty/commit').send({ holdId: qE.body.holdId, orderId: 'OVP-seed-2' }).expect(201);
+
+    const qR = await request(app.getHttpServer())
+      .post('/loyalty/quote')
+      .send({ merchantId: 'M2', userToken: 'C-vp-3', mode: 'REDEEM', total: 1000, eligibleTotal: 1000, voucherCode: 'TEN2' })
+      .expect(201);
+    const hR = qR.body.holdId as string;
+    const cR = await request(app.getHttpServer())
+      .post('/loyalty/commit')
+      .send({ holdId: hR, orderId: 'OVP-commit-1', voucherCode: 'TEN2' })
+      .expect(201);
+    expect(cR.body.ok).toBe(true);
+    expect(cR.body.redeemApplied).toBe(425);
+  });
+
+  it('Quote (REDEEM) limit reflects voucher+promo discounted eligible (M2)', async () => {
+    // Ensure promo for M2 is set (fixed 50)
+    await prismaMock.merchantSettings.update({ where: { merchantId: 'M2' }, data: { rulesJson: { promos: [ { then: { discountFixed: 50 } } ] }, updatedAt: new Date() } });
+    // Seed balance by earning 10k total => ~500 points
+    const qE = await request(app.getHttpServer())
+      .post('/loyalty/quote')
+      .send({ merchantId: 'M2', userToken: 'C-vp-2', mode: 'EARN', total: 10000, eligibleTotal: 10000 })
+      .expect(201);
+    const hE = qE.body.holdId as string;
+    await request(app.getHttpServer()).post('/loyalty/commit').send({ holdId: hE, orderId: 'OVP-seed' }).expect(201);
+
+    // Redeem with voucher TEN2: eligible 1000 -> -10% => 900 -> -50 => 850; limit 50% => 425; wallet >= 425
+    const qR = await request(app.getHttpServer())
+      .post('/loyalty/quote')
+      .send({ merchantId: 'M2', userToken: 'C-vp-2', mode: 'REDEEM', total: 1000, eligibleTotal: 1000, voucherCode: 'TEN2' })
+      .expect(201);
+    expect(qR.body.discountToApply).toBe(425);
+  });
+
   it('Quote order: voucher applied before promo, then points on remaining (M2)', async () => {
     // Configure promo for M2: fixed 50
     await prismaMock.merchantSettings.update({ where: { merchantId: 'M2' }, data: { rulesJson: { promos: [ { then: { discountFixed: 50 } } ] }, updatedAt: new Date() } });

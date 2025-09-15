@@ -31,8 +31,11 @@ export class MetricsService implements OnModuleDestroy {
   constructor() {
     this.registry = new Registry();
     try {
-      const stop = collectDefaultMetrics({ register: this.registry });
-      if (typeof stop === 'function') this.stopDefaultMetrics = stop as any;
+      const enableDefaults = process.env.METRICS_DEFAULTS === '1' || process.env.NODE_ENV !== 'test';
+      if (enableDefaults) {
+        const stop = collectDefaultMetrics({ register: this.registry });
+        if (typeof stop === 'function') this.stopDefaultMetrics = stop as any;
+      }
     } catch {}
     // Known metrics via prom-client (без динамических лейблов)
     this.outboxSent = new Counter({ name: 'loyalty_outbox_sent_total', help: 'Total outbox sent events', registers: [this.registry] });

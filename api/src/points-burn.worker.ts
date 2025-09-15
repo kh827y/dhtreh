@@ -19,6 +19,7 @@ export class PointsBurnWorker implements OnModuleInit, OnModuleDestroy {
     if (process.env.POINTS_TTL_BURN !== '1') { this.logger.log('POINTS_TTL_BURN disabled'); return; }
     const intervalMs = Number(process.env.POINTS_TTL_BURN_INTERVAL_MS || (6 * 60 * 60 * 1000));
     this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
+    try { if (this.timer && typeof this.timer.unref === 'function') this.timer.unref(); } catch {}
     this.logger.log(`PointsBurnWorker started, interval=${intervalMs}ms`);
     this.startedAt = new Date();
   }

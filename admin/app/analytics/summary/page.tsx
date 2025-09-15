@@ -16,6 +16,9 @@ export default function AnalyticsSummaryPage() {
   const [period, setPeriod] = useState<string>("month");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [customRange, setCustomRange] = useState<boolean>(false);
+  const [fromDate, setFromDate] = useState<string>("");
+  const [toDate, setToDate] = useState<string>("");
 
   const [revenue, setRevenue] = useState<any | null>(null);
   const [customers, setCustomers] = useState<any | null>(null);
@@ -33,13 +36,14 @@ export default function AnalyticsSummaryPage() {
   const load = async () => {
     setBusy(true); setError(null);
     try {
+      const qp: any = customRange ? { from: fromDate || undefined, to: toDate || undefined } : { period };
       const [r, c, l] = await Promise.all([
-        getRevenueMetrics(merchantId, { period }),
-        getCustomerMetrics(merchantId, { period }),
-        getLoyaltyMetrics(merchantId, { period }),
+        getRevenueMetrics(merchantId, qp),
+        getCustomerMetrics(merchantId, qp),
+        getLoyaltyMetrics(merchantId, qp),
       ]);
       setRevenue(r); setCustomers(c); setLoyalty(l);
-      const bm = await getBusinessMetricsAnalytics(merchantId, { period, minPurchases });
+      const bm = await getBusinessMetricsAnalytics(merchantId, { ...(customRange ? { from: fromDate || undefined, to: toDate || undefined } : { period }), minPurchases });
       setBiz(bm);
     } catch (e: any) {
       setError(e?.message || String(e));
@@ -73,6 +77,12 @@ export default function AnalyticsSummaryPage() {
         onRefresh={load}
         busy={busy}
         error={error}
+        customRange={customRange}
+        onCustomRangeChange={setCustomRange}
+        fromDate={fromDate}
+        toDate={toDate}
+        onFromDateChange={setFromDate}
+        onToDateChange={setToDate}
       />
 
       {busy && !revenue && !customers && !loyalty ? (

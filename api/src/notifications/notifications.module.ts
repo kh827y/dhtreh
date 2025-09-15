@@ -9,11 +9,12 @@ import { EmailController } from './email/email.controller';
 import { EmailService } from './email/email.service';
 import { PrismaModule } from '../prisma.module';
 import { NotificationsService } from './notifications.service';
+import { NotificationsController } from './notifications.controller';
 import { ConfigModule } from '@nestjs/config';
 
 @Module({
   imports: [PrismaModule, ConfigModule],
-  controllers: [SmsController, PushController, EmailController],
+  controllers: [SmsController, PushController, EmailController, NotificationsController],
   providers: [SmsService, SmscProvider, PushService, FcmProvider, EmailService, NotificationsService],
   exports: [SmsService, PushService, EmailService, NotificationsService],
 })

@@ -14,10 +14,16 @@ export default function TimeAnalyticsPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [seriesEnabled, setSeriesEnabled] = useState<Record<string, boolean>>({ revenue: true, transactions: true });
+  const [customRange, setCustomRange] = useState<boolean>(false);
+  const [fromDate, setFromDate] = useState<string>("");
+  const [toDate, setToDate] = useState<string>("");
 
   const load = async () => {
     setBusy(true); setError(null);
-    try { setData(await getRevenueMetrics(merchantId, { period })); } catch (e: any) { setError(e?.message || String(e)); }
+    try {
+      const qp: any = customRange ? { from: fromDate || undefined, to: toDate || undefined } : { period };
+      setData(await getRevenueMetrics(merchantId, qp));
+    } catch (e: any) { setError(e?.message || String(e)); }
     finally { setBusy(false); }
   };
 
@@ -43,6 +49,12 @@ export default function TimeAnalyticsPage() {
         onRefresh={load}
         busy={busy}
         error={error}
+        customRange={customRange}
+        onCustomRangeChange={setCustomRange}
+        fromDate={fromDate}
+        toDate={toDate}
+        onFromDateChange={setFromDate}
+        onToDateChange={setToDate}
       />
 
       <Card title="По времени суток" actions={

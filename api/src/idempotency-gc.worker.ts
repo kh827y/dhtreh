@@ -14,6 +14,7 @@ export class IdempotencyGcWorker implements OnModuleInit, OnModuleDestroy {
     if (process.env.WORKERS_ENABLED === '0') { this.logger.log('Workers disabled (WORKERS_ENABLED=0)'); return; }
     const intervalMs = Number(process.env.IDEMPOTENCY_GC_INTERVAL_MS || '60000');
     this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
+    try { if (this.timer && typeof this.timer.unref === 'function') this.timer.unref(); } catch {}
     this.logger.log(`IdempotencyGcWorker started, interval=${intervalMs}ms`);
   }
 

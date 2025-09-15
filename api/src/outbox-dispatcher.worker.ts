@@ -33,6 +33,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     if (process.env.WORKERS_ENABLED === '0') { this.logger.log('Workers disabled (WORKERS_ENABLED=0)'); return; }
     const intervalMs = Number(process.env.OUTBOX_WORKER_INTERVAL_MS || '15000');
     this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
+    try { if (this.timer && typeof this.timer.unref === 'function') this.timer.unref(); } catch {}
     this.logger.log(`OutboxDispatcherWorker started, interval=${intervalMs}ms`);
     this.startedAt = new Date();
   }
@@ -162,12 +163,13 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     const kid = useNext ? (settings as any)?.webhookKeyIdNext : settings?.webhookKeyId;
     if (kid) headers['X-Signature-Key-Id'] = kid as string;
 
+    let to: any = null;
+    const ac = new AbortController();
     try {
       const timeoutMs = Number(process.env.OUTBOX_HTTP_TIMEOUT_MS || '10000');
-      const ac = new AbortController();
-      const to = setTimeout(() => ac.abort(), Math.max(1000, timeoutMs));
+      to = setTimeout(() => ac.abort(), Math.max(1000, timeoutMs));
+      try { if (to && typeof to.unref === 'function') to.unref(); } catch {}
       const res = await fetch(url, { method: 'POST', headers, body, redirect: 'manual', signal: ac.signal as any });
-      clearTimeout(to);
       if (res.ok) {
         await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'SENT', updatedAt: new Date(), lastError: null } });
         this.metrics.inc('loyalty_outbox_sent_total');
@@ -205,7 +207,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       }
       this.metrics.inc('loyalty_outbox_failed_total');
       try { this.metrics.inc('loyalty_outbox_events_total', { type: row.eventType, result: 'failed' }); } catch {}
-    }
+    } finally { try { if (to) clearTimeout(to); } catch {} }
   }
 
   private async tick() {

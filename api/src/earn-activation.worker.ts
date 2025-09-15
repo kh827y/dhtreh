@@ -16,6 +16,7 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
     if (process.env.WORKERS_ENABLED === '0') { this.logger.log('Workers disabled (WORKERS_ENABLED=0)'); return; }
     const intervalMs = Number(process.env.EARN_ACTIVATION_INTERVAL_MS || (15 * 60 * 1000)); // каждые 15 минут
     this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
+    try { if (this.timer && typeof this.timer.unref === 'function') this.timer.unref(); } catch {}
     this.logger.log(`EarnActivationWorker started, interval=${intervalMs}ms`);
   }
 

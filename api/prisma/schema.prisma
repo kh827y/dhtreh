@@ -856,6 +856,25 @@ model Integration {
   merchant          Merchant  @relation(fields: [merchantId], references: [id])
 }
 
+model SyncLog {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  merchantId    String?
+  integrationId String?
+  provider      String?
+  direction     String   // IN | OUT
+  endpoint      String?
+  status        String?  // ok | error
+  request       Json?
+  response      Json?
+  error         String?
+  retryCount    Int      @default(0)
+  nextRetryAt   DateTime?
+
+  @@index([merchantId, createdAt])
+  @@index([integrationId, createdAt])
+}
+
 model CustomerSegment {
   id                String    @id @default(cuid())
   merchantId        String

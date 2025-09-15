@@ -21,6 +21,7 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
     }
     const intervalMs = Number(process.env.POINTS_TTL_INTERVAL_MS || (6 * 60 * 60 * 1000)); // каждые 6 часов
     this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
+    try { if (this.timer && typeof this.timer.unref === 'function') this.timer.unref(); } catch {}
     this.logger.log(`PointsTtlWorker started, interval=${intervalMs}ms`);
     this.startedAt = new Date();
   }

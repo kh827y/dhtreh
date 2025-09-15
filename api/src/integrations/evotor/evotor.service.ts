@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma.service';
 import * as crypto from 'crypto';
+import { validateIntegrationConfig } from '../config.schema';
 
 interface EvotorDevice {
   uuid: string;
@@ -74,18 +75,23 @@ export class EvotorService {
       const stores = await this.getStores(config.token);
       const devices = await this.getDevices(config.token);
 
-      // Сохраняем конфигурацию интеграции
+      // Сохраняем конфигурацию интеграции (с валидацией схемы)
       const prismaAny = this.prisma as any;
+      const evotorCfg = {
+        stores,
+        devices,
+        webhookUrl: `${this.configService.get('API_BASE_URL')}/integrations/evotor/webhook`,
+      };
+      const valid = validateIntegrationConfig('EVOTOR', evotorCfg);
+      if (!valid.ok) {
+        throw new Error('Evotor config invalid: ' + valid.errors.join('; '));
+      }
       const integration = await prismaAny.integration.create({
         data: {
           merchantId,
           type: 'POS',
           provider: 'EVOTOR',
-          config: {
-            stores,
-            devices,
-            webhookUrl: `${this.configService.get('API_BASE_URL')}/integrations/evotor/webhook`,
-          },
+          config: evotorCfg,
           credentials: {
             token: evotorToken,
             appId: config.appId,
@@ -227,6 +233,22 @@ export class EvotorService {
         data: { lastSync: new Date() },
       });
 
+      // Журнал синхронизаций: входящий вебхук
+      try {
+        await prismaAny.syncLog.create({
+          data: {
+            merchantId,
+            integrationId,
+            provider: 'EVOTOR',
+            direction: 'IN',
+            endpoint: 'webhook',
+            status: 'ok',
+            request: webhook as any,
+            response: { ok: true, type: webhook.type } as any,
+          },
+        });
+      } catch {}
+
       return { success: true };
     } catch (error) {
       this.logger.error('Ошибка обработки вебхука Эвотор:', error);
@@ -239,6 +261,21 @@ export class EvotorService {
           lastError: error.message,
         },
       });
+
+      // Журнал синхронизаций: ошибка входящего вебхука
+      try {
+        await prismaAny.syncLog.create({
+          data: {
+            integrationId,
+            provider: 'EVOTOR',
+            direction: 'IN',
+            endpoint: 'webhook',
+            status: 'error',
+            request: webhook as any,
+            error: String((error as any)?.message || error) as any,
+          },
+        });
+      } catch {}
 
       throw error;
     }

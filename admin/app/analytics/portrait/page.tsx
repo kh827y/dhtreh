@@ -13,10 +13,16 @@ export default function CustomerPortraitPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<any | null>(null);
+  const [customRange, setCustomRange] = useState<boolean>(false);
+  const [fromDate, setFromDate] = useState<string>("");
+  const [toDate, setToDate] = useState<string>("");
 
   const load = async () => {
     setBusy(true); setError(null);
-    try { setData(await getCustomerPortraitAnalytics(merchantId, { period })); } catch (e: any) { setError(e?.message || String(e)); }
+    try {
+      const qp: any = customRange ? { from: fromDate || undefined, to: toDate || undefined } : { period };
+      setData(await getCustomerPortraitAnalytics(merchantId, qp));
+    } catch (e: any) { setError(e?.message || String(e)); }
     finally { setBusy(false); }
   };
 
@@ -36,6 +42,12 @@ export default function CustomerPortraitPage() {
         onRefresh={load}
         busy={busy}
         error={error}
+        customRange={customRange}
+        onCustomRangeChange={setCustomRange}
+        fromDate={fromDate}
+        toDate={toDate}
+        onFromDateChange={setFromDate}
+        onToDateChange={setToDate}
       />
 
       <Card title="Пол — средний чек, количество и выручка">

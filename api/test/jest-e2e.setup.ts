@@ -1,8 +1,10 @@
-// Jest e2e setup: filter noisy Firebase warning only in tests
+// Jest e2e setup: filter noisy Firebase warning only in tests and disable background workers/metrics defaults
 
 const ORIGINAL_WARN = console.warn;
 
 beforeAll(() => {
+  process.env.WORKERS_ENABLED = '0';
+  process.env.METRICS_DEFAULTS = '0';
   // Spy and filter only the specific line coming from FcmProvider
   jest.spyOn(console, 'warn').mockImplementation((...args: any[]) => {
     const first = args[0];
