@@ -30,6 +30,7 @@ async function bootstrap() {
         CORS_ORIGINS: { type: 'string' },
         QR_JWT_SECRET: { type: 'string' },
         ADMIN_SESSION_SECRET: { type: 'string' },
+        PORTAL_JWT_SECRET: { type: 'string' },
       },
       required: ['DATABASE_URL', 'ADMIN_KEY'],
       additionalProperties: true,
@@ -68,12 +69,13 @@ async function bootstrap() {
     'http://localhost:3001','http://127.0.0.1:3001',
     'http://localhost:3002','http://127.0.0.1:3002',
     'http://localhost:3003','http://127.0.0.1:3003',
+    'http://localhost:3004','http://127.0.0.1:3004',
   ];
   
   app.enableCors({
     origin: corsOrigins.length ? corsOrigins : (process.env.NODE_ENV === 'production' ? [] : defaultOrigins),
     methods: ['GET','POST','PUT','DELETE','PATCH','OPTIONS'],
-    allowedHeaders: ['Content-Type','x-admin-key','x-request-id','x-staff-key','x-bridge-signature','idempotency-key'],
+    allowedHeaders: ['Content-Type','x-admin-key','x-request-id','x-staff-key','x-bridge-signature','idempotency-key','authorization'],
     exposedHeaders: ['X-Loyalty-Signature','X-Merchant-Id','X-Signature-Timestamp','X-Request-Id','X-Event-Id','X-Signature-Key-Id'],
     credentials: true,
   });

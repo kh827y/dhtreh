@@ -9,5 +9,6 @@ import { AdminIpGuard } from '../admin-ip.guard';
   imports: [PrismaModule],
   providers: [MerchantsService, AdminAuditInterceptor, AdminIpGuard],
   controllers: [MerchantsController],
+  exports: [MerchantsService],
 })
 export class MerchantsModule {}

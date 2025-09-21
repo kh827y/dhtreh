@@ -201,6 +201,10 @@ Response 200 (REDEEM):
   "message": "Списываем 500 ₽, к оплате 500 ₽"
 }
 
+Примечания к REDEEM:
+- Дневной лимит: если у мерчанта задан `redeemDailyCap`, то к расчёту применяется остаток за последние 24 часа — `dailyRedeemLeft = max(0, redeemDailyCap - sum(recent REDEEM))`. Итоговое списание равно `min(wallet.balance, redeemCapByBps, dailyRedeemLeft)`.
+- Лимит на заказ: если в прошлых операциях по `orderId` уже списано `receipt.redeemApplied`, то новый quote учитывает остаток по заказу: `remainingByOrder = max(0, redeemCapByBps - redeemApplied)`.
+
 Response 200 (EARN):
 {
   "canEarn": true,
@@ -208,9 +212,10 @@ Response 200 (EARN):
   "holdId": "uuid",
   "message": "Начислим 50 баллов после оплаты"
 }
-```
 
-Примечание: если указан `voucherCode`, сначала применяется ваучер (и промо‑правила) к `eligibleTotal`, затем выполняется расчёт `earn`/`redeem`.
+Примечания к EARN:
+
+- Дневной лимит: если у мерчанта задан `earnDailyCap`, к расчёту применяется остаток за последние 24 часа — `dailyEarnLeft = max(0, earnDailyCap - sum(recent EARN))`. Итоговое начисление равно `min(pointsByBps, dailyEarnLeft)`.
 
 ## Уровни и бонусы
 
@@ -270,6 +275,48 @@ Response 200:
 
 Примечание: бонусы уровня автоматически применяются при расчёте `POST /loyalty/quote`.
 
+### Примеры конфигурации уровней
+
+1) Базовая трёхуровневая схема
+
+```json
+{
+  "levelsCfg": {
+    "periodDays": 365,
+    "metric": "earn",
+    "levels": [
+      { "name": "Base",   "threshold": 0 },
+      { "name": "Silver", "threshold": 500 },
+      { "name": "Gold",   "threshold": 1000 }
+    ]
+  },
+  "levelBenefits": {
+    "earnBpsBonusByLevel": { "Base": 0, "Silver": 200, "Gold": 400 },
+    "redeemLimitBpsBonusByLevel": { "Base": 0, "Silver": 1000, "Gold": 2000 }
+  }
+}
+```
+
+2) По количеству транзакций за 90 дней
+
+```json
+{
+  "levelsCfg": {
+    "periodDays": 90,
+    "metric": "transactions",
+    "levels": [
+      { "name": "New",     "threshold": 0 },
+      { "name": "Regular", "threshold": 5 },
+      { "name": "VIP",     "threshold": 15 }
+    ]
+  },
+  "levelBenefits": {
+    "earnBpsBonusByLevel": { "New": 0, "Regular": 100, "VIP": 300 },
+    "redeemLimitBpsBonusByLevel": { "New": 0, "Regular": 500, "VIP": 2000 }
+  }
+}
+```
+
 ## TTL/Сгорание баллов
 
 Система поддерживает превью сгорания и фактическое сгорание баллов по TTL.
@@ -303,6 +350,37 @@ Response 200:
 Примечание:
 
 - Для детерминированности в тестах установите `WORKERS_ENABLED=0` и `METRICS_DEFAULTS=0`, а сами воркеры покрыты unit-тестами.
+
+## Порядок применения скидок и бонусов
+
+Последовательность в расчёте `POST /loyalty/quote`:
+
+1) Ваучер (если указан `voucherCode`) — уменьшает `eligibleTotal` и `total`.
+2) Промо‑правила (`rulesJson.promos`) — применяются к уменьшенному `eligibleTotal`.
+3) Базовые правила начисления/лимитов (`rulesJson.rules` или базовые ставки мерчанта).
+4) Бонусы уровня (Levels) — добавляются поверх базовых ставок: `earnBps += levelEarnBonus`, `redeemLimitBps += levelRedeemBonus`.
+
+Итоговые формулы (упрощённо):
+
+```text
+eligible' = eligibleTotal - voucherDiscount(eligibleTotal) - promoDiscount(eligibleTotal)
+earnPoints = floor( eligible' * (earnBps_base + earnBps_bonus(level)) / 10000 )
+redeemCap  = floor( eligible' * (redeemBps_base + redeemBps_bonus(level)) / 10000 )
+```
+
+Числовой пример:
+
+- База мерчанта: `earnBps=500` (5%), `redeemLimitBps=5000` (50%).
+- Уровень клиента: Silver (`earnBpsBonus=+200`, `redeemLimitBpsBonus=+1000`).
+- Ваучер 10% и промо −50 на чек 1000.
+
+Расчёт:
+
+```
+eligible: 1000 → voucher -10% = 900 → promo -50 = 850
+EARN: 850 * (500+200)/10000 = floor(850 * 0.07) = 59 баллов
+REDEEM cap: 850 * (5000+1000)/10000 = floor(850 * 0.6) = 510
+```
 
 #### 3. Подтверждение операции (Commit)
 ```http
@@ -477,6 +555,31 @@ Content-Type: application/json
 Response 200:
 { "ok": true }
 ```
+
+## Referrals (beta/preview)
+
+Модуль рефералов находится в статусе beta. Контракты могут меняться. Минимальный набор эндпоинтов:
+
+- `POST /referral/program` — создать программу. Ошибка 400, если активная программа уже существует.
+  - Тело: `{ merchantId, name, referrerReward, refereeReward, expiryDays? }`
+  - Ответ 201: `{ id, merchantId, status: "ACTIVE" }`
+
+- `POST /referral/create` — создать реферальную ссылку/код для реферера.
+  - Тело: `{ merchantId, referrerId, channel: "LINK"|"CODE" }`
+  - Ответ 201: `{ id, code, link }`
+
+- `POST /referral/activate` — активировать код реферала (реферал стал клиентом; может быть начислен приветственный бонус).
+  - Тело: `{ code, refereeId }`
+  - Ответ 201: `{ success: true, message }`
+
+- `POST /referral/complete` — завершить реферал после первой покупки (начисление бонуса рефереру).
+  - Тело: `{ refereeId, merchantId, purchaseAmount }`
+  - Ответ 201: `{ success: true, referralId, rewardIssued }`
+
+Примечания:
+
+- Для начислений/списаний в рамках активации используются общие сервисы лояльности (`LoyaltyService`), включая транзакционную запись Wallet/Transaction и события Outbox.
+- Рекомендуется проверка самореферала и повторов (идемпотентность по связке `programId+referrerId+refereeId`).
 
 ## Управление мерчантами
 

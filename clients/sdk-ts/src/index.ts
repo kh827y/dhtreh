@@ -88,5 +88,29 @@ export class LoyaltyApi {
     deactivate: (args: { merchantId: string; code?: string; voucherId?: string }) =>
       this.http('/vouchers/deactivate', { method: 'POST', body: JSON.stringify(args) }),
   } as const;
+
+  // Referrals API (beta)
+  referrals = {
+    program: (args: { merchantId: string; name: string; description?: string; referrerReward: number; refereeReward: number; minPurchaseAmount?: number; maxReferrals?: number; expiryDays?: number; status?: 'ACTIVE'|'PAUSED'|'COMPLETED' }, opts?: { apiKey?: string }) => {
+      const headers: any = {};
+      if (opts?.apiKey) headers['X-API-Key'] = opts.apiKey;
+      return this.http('/referral/program', { method: 'POST', headers, body: JSON.stringify(args) });
+    },
+    create: (args: { merchantId: string; referrerId: string; refereePhone?: string; refereeEmail?: string; channel?: 'SMS'|'EMAIL'|'LINK'|'QR' }, opts?: { apiKey?: string }) => {
+      const headers: any = {};
+      if (opts?.apiKey) headers['X-API-Key'] = opts.apiKey;
+      return this.http('/referral/create', { method: 'POST', headers, body: JSON.stringify(args) });
+    },
+    activate: (args: { code: string; refereeId: string }, opts?: { apiKey?: string }) => {
+      const headers: any = {};
+      if (opts?.apiKey) headers['X-API-Key'] = opts.apiKey;
+      return this.http('/referral/activate', { method: 'POST', headers, body: JSON.stringify(args) });
+    },
+    complete: (args: { refereeId: string; merchantId: string; purchaseAmount: number }, opts?: { apiKey?: string }) => {
+      const headers: any = {};
+      if (opts?.apiKey) headers['X-API-Key'] = opts.apiKey;
+      return this.http('/referral/complete', { method: 'POST', headers, body: JSON.stringify(args) });
+    },
+  } as const;
 }
 

@@ -34,32 +34,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </div>
             <nav style={{ display:'grid', gap:8 }}>
               <a href="/" style={{ color:'#89b4fa' }}>Главная</a>
-              <a href="/settings" style={{ color:'#89b4fa' }}>Настройки мерчанта</a>
-              <a href="/telegram" style={{ color:'#89b4fa' }}>Telegram / Мини‑аппа</a>
-              <a href="/docs/miniapp" style={{ color:'#89b4fa' }}>Мини‑аппа (док)</a>
+              <a href="/merchants" style={{ color:'#89b4fa' }}>Мерчанты</a>
               <OutboxLink merchantId={merchantId} />
               <a href="/outbox/monitor" style={{ color:'#89b4fa' }}>Outbox Monitor</a>
-              <a href="/outlets" style={{ color:'#89b4fa' }}>Точки</a>
-              <a href="/devices" style={{ color:'#89b4fa' }}>Устройства</a>
-              <a href="/staff" style={{ color:'#89b4fa' }}>Сотрудники</a>
-              <a href="/customers" style={{ color:'#89b4fa' }}>Клиенты</a>
-              <a href="/segments" style={{ color:'#89b4fa' }}>Сегменты</a>
-              <a href="/transactions" style={{ color:'#89b4fa' }}>Операции</a>
-              <a href="/vouchers" style={{ color:'#89b4fa' }}>Ваучеры</a>
-              <a href="/notifications" style={{ color:'#89b4fa' }}>Рассылки</a>
               <a href="/ttl" style={{ color:'#89b4fa' }}>TTL Reconciliation</a>
-              <div style={{ marginTop:8, opacity:0.8, fontSize:12, textTransform:'uppercase' }}>Аналитика</div>
-              <a href="/analytics/summary" style={{ color:'#89b4fa' }}>Сводный отчет</a>
-              <a href="/analytics/cohorts" style={{ color:'#89b4fa' }}>Cohorts</a>
-              <a href="/analytics/rfm" style={{ color:'#89b4fa' }}>RFM Heatmap</a>
-              <a href="/analytics/portrait" style={{ color:'#89b4fa' }}>Портрет клиента</a>
-              <a href="/analytics/repeat" style={{ color:'#89b4fa' }}>Повторные продажи</a>
-              <a href="/analytics/time" style={{ color:'#89b4fa' }}>По времени</a>
-              <a href="/analytics/operations" style={{ color:'#89b4fa' }}>Активность точек/сотрудников</a>
-              <a href="/analytics/birthdays" style={{ color:'#89b4fa' }}>Дни рождения</a>
-              <a href="/analytics/referral" style={{ color:'#89b4fa' }}>Реферальная сводка</a>
-              <div style={{ marginTop:8, opacity:0.8, fontSize:12, textTransform:'uppercase' }}>Реферальная программа</div>
-              <a href="/referral/settings" style={{ color:'#89b4fa' }}>Настройки</a>
               <div style={{ marginTop:8, opacity:0.8, fontSize:12, textTransform:'uppercase' }}>Документация</div>
               <a href="/docs/webhooks" style={{ color:'#89b4fa' }}>Вебхуки</a>
               <a href="/docs/integration" style={{ color:'#89b4fa' }}>Интеграции</a>

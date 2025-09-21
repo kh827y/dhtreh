@@ -3,7 +3,7 @@ import { createHmac } from 'crypto';
 
 const COOKIE = 'admin_session_v1';
 
-export type Sess = { sub: string; role: 'ADMIN'|'MANAGER'; iat: number; exp: number };
+export type Sess = { sub: string; role: 'ADMIN'|'MERCHANT'; iat: number; exp: number };
 
 function b64(s: string) { return Buffer.from(s, 'utf8').toString('base64url'); }
 function ub64(s: string) { return Buffer.from(s, 'base64url').toString('utf8'); }
@@ -12,7 +12,7 @@ function getSecret() {
   return process.env.ADMIN_SESSION_SECRET || '';
 }
 
-export function makeSessionCookie(days = 7, role: 'ADMIN'|'MANAGER' = 'ADMIN') {
+export function makeSessionCookie(days = 7, role: 'ADMIN'|'MERCHANT' = 'ADMIN') {
   const now = Math.floor(Date.now()/1000);
   const payload: Sess = { sub: 'admin', role, iat: now, exp: now + days*24*60*60 };
   const secret = getSecret();

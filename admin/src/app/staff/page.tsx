@@ -80,7 +80,7 @@ export default function StaffPage() {
         <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email" style={{ padding: 8 }} />
         <select value={role} onChange={(e) => setRole(e.target.value)} style={{ padding: 8 }}>
           <option value="CASHIER">CASHIER</option>
-          <option value="MANAGER">MANAGER</option>
+          <option value="MERCHANT">MERCHANT</option>
           <option value="ADMIN">ADMIN</option>
         </select>
         <button onClick={create} style={{ padding: '8px 12px' }}>Добавить</button>
@@ -95,7 +95,7 @@ export default function StaffPage() {
               <input value={s.email||''} onChange={(e) => setItems(prev => prev.map(x => x.id===s.id?{...x,email:e.target.value||null}:x))} placeholder="email" style={{ padding: 8 }} />
               <select value={s.role} onChange={(e) => setItems(prev => prev.map(x => x.id===s.id?{...x,role:e.target.value}:x))} style={{ padding: 8 }}>
                 <option value="CASHIER">CASHIER</option>
-                <option value="MANAGER">MANAGER</option>
+                <option value="MERCHANT">MERCHANT</option>
                 <option value="ADMIN">ADMIN</option>
               </select>
               <select value={s.status} onChange={(e) => setItems(prev => prev.map(x => x.id===s.id?{...x,status:e.target.value}:x))} style={{ padding: 8 }}>

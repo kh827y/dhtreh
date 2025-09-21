@@ -254,7 +254,7 @@ export type Staff = {
   merchantId: string;
   login?: string | null;
   email?: string | null;
-  role: 'CASHIER' | 'MANAGER' | 'ADMIN';
+  role: 'CASHIER' | 'MERCHANT' | 'ADMIN';
   status: 'ACTIVE' | 'INACTIVE';
   apiKeyHash?: string | null;
   allowedOutletId?: string | null;

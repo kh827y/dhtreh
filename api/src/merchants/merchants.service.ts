@@ -1,4 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { getJose } from '../loyalty/token.util';
+import { hashPassword } from '../password.util';
 import { PrismaService } from '../prisma.service';
 import { UpdateDeviceDto, UpdateMerchantSettingsDto, UpdateOutletDto, UpdateStaffDto } from './dto';
 // Lazy Ajv import to avoid TS2307 when dependency isn't installed yet
@@ -13,6 +15,63 @@ export class MerchantsService {
       errorsText: () => '',
       errors: []
     };
+  }
+
+  private slugify(s: string): string {
+    const map: Record<string, string> = {
+      'ё':'e','й':'i','ц':'c','у':'u','к':'k','е':'e','н':'n','г':'g','ш':'sh','щ':'sch','з':'z','х':'h','ъ':'',
+      'ф':'f','ы':'y','в':'v','а':'a','п':'p','р':'r','о':'o','л':'l','д':'d','ж':'zh','э':'e','я':'ya','ч':'ch',
+      'с':'s','м':'m','и':'i','т':'t','ь':'','б':'b','ю':'yu'
+    };
+    const t = s.toLowerCase().split('').map(ch=>map[ch] ?? ch).join('');
+    return t.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').replace(/-{2,}/g, '-');
+  }
+  private async ensureUniqueCashierLogin(slug: string): Promise<string> {
+    let candidate = slug || 'merchant';
+    for (let i = 0; i < 50; i++) {
+      const found = await this.prisma.merchant.findFirst({ where: { cashierLogin: candidate } });
+      if (!found) return candidate;
+      candidate = `${slug}-${i+2}`;
+    }
+    return `${slug}-${Date.now().toString(36).slice(-4)}`;
+  }
+  private random9(): string {
+    let s = '';
+    for (let i=0;i<9;i++) s += Math.floor(Math.random() * 10);
+    return s;
+  }
+
+  async getCashierCredentials(merchantId: string) {
+    const m = await this.prisma.merchant.findUnique({ where: { id: merchantId }, select: { cashierLogin: true, cashierPassword9: true } });
+    if (!m) throw new NotFoundException('Merchant not found');
+    return { login: m.cashierLogin || null, hasPassword: !!m.cashierPassword9 } as any;
+  }
+  async rotateCashierCredentials(merchantId: string, regenerateLogin?: boolean) {
+    const m = await this.prisma.merchant.findUnique({ where: { id: merchantId }, select: { id: true, name: true, cashierLogin: true } });
+    if (!m) throw new NotFoundException('Merchant not found');
+    let login = m.cashierLogin || this.slugify(m.name || 'merchant');
+    if (regenerateLogin || !m.cashierLogin) {
+      login = await this.ensureUniqueCashierLogin(this.slugify(m.name || 'merchant'));
+    }
+    const password = this.random9();
+    await this.prisma.merchant.update({ where: { id: merchantId }, data: { cashierLogin: login, cashierPassword9: password } });
+    return { login, password } as any;
+  }
+  async authenticateCashier(merchantLogin: string, password9: string) {
+    const m = await this.prisma.merchant.findFirst({ where: { cashierLogin: merchantLogin } });
+    if (!m || !m.cashierPassword9 || m.cashierPassword9 !== password9) throw new UnauthorizedException('Invalid cashier credentials');
+    return { merchantId: m.id } as any;
+  }
+  async issueStaffTokenByPin(merchantLogin: string, password9: string, staffIdOrLogin: string, outletId: string, pinCode: string) {
+    const auth = await this.authenticateCashier(merchantLogin, password9);
+    const merchantId = auth.merchantId;
+    const staff = await this.prisma.staff.findFirst({ where: { merchantId, OR: [ { id: staffIdOrLogin }, { login: staffIdOrLogin } ] } });
+    if (!staff) throw new NotFoundException('Staff not found');
+    // Verify outlet access and pin
+    const acc = await (this.prisma as any).staffOutletAccess.findUnique({ where: { merchantId_staffId_outletId: { merchantId, staffId: staff.id, outletId } } });
+    const ok = acc?.pinCode && String(acc.pinCode) === String(pinCode);
+    if (!ok) throw new UnauthorizedException('Invalid PIN');
+    return this.issueStaffToken(merchantId, staff.id);
   }
   private ajv: { validate: (schema: any, data: any) => boolean; errorsText: (errs?: any, opts?: any) => string; errors?: any };
   private rulesSchema = {
@@ -314,7 +373,20 @@ export class MerchantsService {
 
   // Staff
   async listStaff(merchantId: string) {
-    return this.prisma.staff.findMany({ where: { merchantId }, orderBy: { createdAt: 'asc' } });
+    const staff = await this.prisma.staff.findMany({ where: { merchantId }, orderBy: { createdAt: 'asc' } });
+    // Кол-во точек доступа на сотрудника
+    let accessMap = new Map<string, number>();
+    try {
+      const acc = await (this.prisma as any).staffOutletAccess.groupBy({ by: ['staffId'], where: { merchantId }, _count: { _all: true } });
+      accessMap = new Map<string, number>(acc.filter((a: any)=>a?.staffId).map((a: any)=>[a.staffId as string, (a._count?._all as number)||0]));
+    } catch {}
+    // Последняя активность (по транзакциям)
+    let lastMap = new Map<string, Date>();
+    try {
+      const tx = await this.prisma.transaction.groupBy({ by: ['staffId'], where: { merchantId, staffId: { not: null } }, _max: { createdAt: true } });
+      lastMap = new Map<string, Date>(tx.filter((t: any)=>t?.staffId).map((t: any)=>[t.staffId as string, t._max?.createdAt as Date]));
+    } catch {}
+    return staff.map(s => ({ ...s, outletsCount: accessMap.get(s.id) || 0, lastActivityAt: lastMap.get(s.id) || null }));
   }
   async createStaff(merchantId: string, dto: { login?: string; email?: string; role?: string }) {
     await this.ensureMerchant(merchantId);
@@ -330,6 +402,47 @@ export class MerchantsService {
     if (!user || user.merchantId !== merchantId) throw new NotFoundException('Staff not found');
     await this.prisma.staff.delete({ where: { id: staffId } });
     return { ok: true };
+  }
+
+  // Staff ↔ Outlet access management (PINs)
+  async listStaffAccess(merchantId: string, staffId: string) {
+    const user = await this.prisma.staff.findUnique({ where: { id: staffId } });
+    if (!user || user.merchantId !== merchantId) throw new NotFoundException('Staff not found');
+    const acc = await (this.prisma as any).staffOutletAccess.findMany({ where: { merchantId, staffId }, orderBy: { createdAt: 'asc' } });
+    const outletIds = acc.map((a: any) => a.outletId).filter(Boolean);
+    const outlets = outletIds.length ? await this.prisma.outlet.findMany({ where: { id: { in: outletIds } }, select: { id: true, name: true } }) : [];
+    const nameMap = new Map<string, string>(outlets.map(o=>[o.id, o.name]));
+    return acc.map((a: any)=>({ outletId: a.outletId as string, outletName: nameMap.get(a.outletId) || a.outletId, pinCode: a.pinCode || null, lastTxnAt: a.lastTxnAt || null }));
+  }
+  async addStaffAccess(merchantId: string, staffId: string, outletId: string) {
+    const [user, outlet] = await Promise.all([
+      this.prisma.staff.findUnique({ where: { id: staffId } }),
+      this.prisma.outlet.findUnique({ where: { id: outletId } }),
+    ]);
+    if (!user || user.merchantId !== merchantId) throw new NotFoundException('Staff not found');
+    if (!outlet || outlet.merchantId !== merchantId) throw new NotFoundException('Outlet not found');
+    const pinCode = this.randomPin4();
+    await (this.prisma as any).staffOutletAccess.upsert({
+      where: { merchantId_staffId_outletId: { merchantId, staffId, outletId } },
+      update: { pinCode },
+      create: { merchantId, staffId, outletId, pinCode },
+    });
+    return { outletId, pinCode } as any;
+  }
+  async removeStaffAccess(merchantId: string, staffId: string, outletId: string) {
+    const user = await this.prisma.staff.findUnique({ where: { id: staffId } });
+    if (!user || user.merchantId !== merchantId) throw new NotFoundException('Staff not found');
+    try {
+      await (this.prisma as any).staffOutletAccess.delete({ where: { merchantId_staffId_outletId: { merchantId, staffId, outletId } } });
+    } catch {}
+    return { ok: true } as any;
+  }
+  async regenerateStaffPin(merchantId: string, staffId: string, outletId: string) {
+    const user = await this.prisma.staff.findUnique({ where: { id: staffId } });
+    if (!user || user.merchantId !== merchantId) throw new NotFoundException('Staff not found');
+    const pinCode = this.randomPin4();
+    await (this.prisma as any).staffOutletAccess.update({ where: { merchantId_staffId_outletId: { merchantId, staffId, outletId } }, data: { pinCode } });
+    return { pinCode } as any;
   }
 
   private async ensureMerchant(merchantId: string) {
@@ -442,6 +555,25 @@ export class MerchantsService {
   private sha256(s: string) {
     const crypto = require('crypto');
     return crypto.createHash('sha256').update(s, 'utf8').digest('hex');
+  }
+  private randomKey(len = 48) {
+    return (
+      Math.random().toString(36).slice(2) +
+      Math.random().toString(36).slice(2) +
+      Math.random().toString(36).slice(2)
+    ).slice(0, len);
+  }
+  private async signPortalJwt(merchantId: string, ttlSeconds = 60 * 60, adminImpersonation = false) {
+    const { SignJWT } = await getJose();
+    const secret = process.env.PORTAL_JWT_SECRET || '';
+    if (!secret) throw new Error('PORTAL_JWT_SECRET not configured');
+    const now = Math.floor(Date.now() / 1000);
+    const jwt = await new SignJWT({ sub: merchantId, role: 'MERCHANT', adminImpersonation })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setIssuedAt(now)
+      .setExpirationTime(now + ttlSeconds)
+      .sign(new TextEncoder().encode(secret));
+    return jwt as string;
   }
   async issueStaffToken(merchantId: string, staffId: string) {
     const user = await this.prisma.staff.findUnique({ where: { id: staffId } });
@@ -587,5 +719,129 @@ export class MerchantsService {
     if (!c) return null;
     const bal = await this.getBalance(merchantId, c.id);
     return { customerId: c.id, phone: c.phone, balance: bal };
+  }
+
+  // ===== Admin: merchants management =====
+  async listMerchants() {
+    return (this.prisma.merchant as any).findMany({
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, name: true, createdAt: true, portalLoginEnabled: true, portalTotpEnabled: true, portalEmail: true },
+    });
+  }
+  async createMerchant(name: string, email: string, password: string, ownerName?: string) {
+    if (!name || !name.trim()) throw new BadRequestException('name required');
+    const em = String(email || '').trim().toLowerCase();
+    if (!em) throw new BadRequestException('email required');
+    if (!password || String(password).length < 6) throw new BadRequestException('password too short');
+    const pwd = hashPassword(String(password));
+    // slug для логина кассира + уникальность
+    const baseSlug = this.slugify(name.trim());
+    const uniqueSlug = await this.ensureUniqueCashierLogin(baseSlug);
+    const m = await (this.prisma.merchant as any).create({ data: { name: name.trim(), portalEmail: em, portalPasswordHash: pwd, cashierLogin: uniqueSlug } });
+    // Автосоздание сотрудника-владельца с флагами и пинкодом (минимальный профиль до полной миграции UI)
+    if (ownerName && ownerName.trim()) {
+      const [firstName, ...rest] = ownerName.trim().split(/\s+/);
+      const lastName = rest.join(' ');
+      const pinCode = this.randomPin4();
+      try {
+        await this.prisma.staff.create({ data: {
+          merchantId: m.id,
+          login: ownerName.trim(),
+          firstName: firstName || undefined,
+          lastName: lastName || undefined,
+          role: 'MERCHANT' as any,
+          isOwner: true,
+          canAccessPortal: true,
+          pinCode,
+        } });
+      } catch {}
+    }
+    return { id: m.id, name: m.name, email: m.portalEmail } as any;
+  }
+
+  private randomPin4(): string {
+    // 4-значный пинкод, допускаем лидирующие нули
+    const n = Math.floor(Math.random() * 10000);
+    return n.toString().padStart(4, '0');
+  }
+
+  async updateMerchant(id: string, dto: { name?: string; email?: string; password?: string }) {
+    const m = await this.prisma.merchant.findUnique({ where: { id } });
+    if (!m) throw new NotFoundException('Merchant not found');
+    const data: any = {};
+    if (dto.name != null) data.name = String(dto.name).trim();
+    if (dto.email != null) data.portalEmail = String(dto.email).trim().toLowerCase() || null;
+    if (dto.password != null) {
+      if (!dto.password || String(dto.password).length < 6) throw new BadRequestException('password too short');
+      data.portalPasswordHash = hashPassword(String(dto.password));
+    }
+    const res = await (this.prisma.merchant as any).update({ where: { id }, data });
+    return { id: res.id, name: res.name, email: res.portalEmail } as any;
+  }
+
+  async deleteMerchant(id: string) {
+    const m = await this.prisma.merchant.findUnique({ where: { id } });
+    if (!m) throw new NotFoundException('Merchant not found');
+    try {
+      await this.prisma.merchant.delete({ where: { id } });
+      return { ok: true };
+    } catch {
+      // Fallback: мягкое отключение, если есть зависимости
+      await (this.prisma.merchant as any).update({ where: { id }, data: { portalLoginEnabled: false, portalEmail: null } });
+      return { ok: true };
+    }
+  }
+  async rotatePortalKey(merchantId: string) {
+    const m = await this.prisma.merchant.findUnique({ where: { id: merchantId } });
+    if (!m) throw new NotFoundException('Merchant not found');
+    const key = this.randomKey(48);
+    const hash = this.sha256(key);
+    await (this.prisma.merchant as any).update({ where: { id: merchantId }, data: { portalKeyHash: hash } });
+    return { key };
+  }
+  async setPortalLoginEnabled(merchantId: string, enabled: boolean) {
+    await (this.prisma.merchant as any).update({ where: { id: merchantId }, data: { portalLoginEnabled: !!enabled } });
+    return { ok: true };
+  }
+  async initTotp(merchantId: string) {
+    const m = await this.prisma.merchant.findUnique({ where: { id: merchantId } });
+    if (!m) throw new NotFoundException('Merchant not found');
+    const otplib = (() => { try { return require('otplib'); } catch { return null; } })();
+    if (!otplib) throw new Error('otplib not installed');
+    const secret = otplib.authenticator.generateSecret();
+    const label = encodeURIComponent(`Loyalty:${m.name||m.id}`);
+    const issuer = encodeURIComponent('LoyaltyPortal');
+    const otpauth = `otpauth://totp/${label}?secret=${secret}&issuer=${issuer}`;
+    await (this.prisma.merchant as any).update({ where: { id: merchantId }, data: { portalTotpSecret: secret, portalTotpEnabled: false } });
+    return { secret, otpauth };
+  }
+  async verifyTotp(merchantId: string, code: string) {
+    const m = await this.prisma.merchant.findUnique({ where: { id: merchantId } });
+    if (!m) throw new NotFoundException('Merchant not found');
+    if (!(m as any).portalTotpSecret) throw new BadRequestException('TOTP not initialized');
+    const otplib = (() => { try { return require('otplib'); } catch { return null; } })();
+    if (!otplib) throw new Error('otplib not installed');
+    const ok = otplib.authenticator.verify({ token: String(code||''), secret: (m as any).portalTotpSecret });
+    if (!ok) throw new BadRequestException('Invalid TOTP code');
+    await (this.prisma.merchant as any).update({ where: { id: merchantId }, data: { portalTotpEnabled: true } });
+    return { ok: true };
+  }
+  async disableTotp(merchantId: string) {
+    await (this.prisma.merchant as any).update({ where: { id: merchantId }, data: { portalTotpEnabled: false, portalTotpSecret: null } });
+    return { ok: true };
+  }
+  async impersonatePortal(merchantId: string, ttlSec = 10 * 60) {
+    // short-lived admin impersonation token
+    const token = await this.signPortalJwt(merchantId, ttlSec, true);
+    return { token };
+  }
+
+  // ===== Integrations (portal) =====
+  async listIntegrations(merchantId: string) {
+    return this.prisma.integration.findMany({
+      where: { merchantId },
+      orderBy: { updatedAt: 'desc' },
+      select: { id: true, type: true, provider: true, isActive: true, lastSync: true, errorCount: true },
+    });
   }
 }

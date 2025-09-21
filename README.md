@@ -103,6 +103,23 @@ E. Проверка результатов
 - POS Bridge: admin → Docs → Bridge
 - Варианты интеграции: admin → Docs → Integration
 
+## PortalAuth (Merchant Portal)
+
+Аутентификация мерчанта для Merchant Portal использует JWT, подписанный секретом `PORTAL_JWT_SECRET`.
+
+- Эндпоинты API:
+  - `POST /portal/auth/login` — вход по email+пароль (+опц. `code` TOTP).
+  - `GET /portal/auth/me` — проверить токен, вернуть `{ merchantId, role }`.
+- Имперсонация из админки:
+  - `POST /merchants/:id/portal/impersonate` — выдаёт портальный токен от имени мерчанта (требуется заголовок `X-Admin-Key`).
+- Переменные окружения:
+  - `PORTAL_JWT_SECRET` — обязательный секрет для подписи/проверки токенов портала.
+
+Примечания:
+
+- При включённом TOTP у мерчанта логин требует поле `code` с текущим одноразовым паролем.
+- В продакшне используйте длинный, ротационный `PORTAL_JWT_SECRET`.
+
 ## Наблюдаемость: метрики и алерты
 
 Метрики доступны по `GET /metrics` (Prometheus, `text/plain; version=0.0.4`).
@@ -204,6 +221,32 @@ POINTS_TTL_BURN=0
 }
 ```
 
+### Quickstart: Levels + TTL
+
+1) Включите воркеры/флаги в `api/.env` (или экспортируйте в shell):
+
+```bash
+WORKERS_ENABLED=1
+EARN_LOTS_FEATURE=1
+POINTS_TTL_FEATURE=1
+POINTS_TTL_BURN=1
+```
+
+2) Настройте уровни/бонусы в Admin → «Настройки мерчанта»:
+
+- Заполните `levelsCfg` и `levelBenefits` (см. пример выше) и сохраните.
+- Страница «Levels» позволяет ввести `customerId`, автозагрузить уровень и увидеть прогресс‑бар.
+
+3) Превью эффективных ставок:
+
+- На странице «Настройки мерчанта» есть блок «Превью эффективных ставок (правила + бонус уровня)» — введите `CustomerId` и нажмите «Посчитать».
+- На странице «Levels» можно посчитать те же ставки для текущего уровня клиента.
+
+4) Проверка TTL/воркеров:
+
+- Превью/сжигание баллов выполняют воркеры с указанными флагами. Метрики доступны на `GET /metrics`.
+- Полезные автотесты: `ttl.flow.e2e-spec.ts`, `ttl.fifo.e2e-spec.ts`, `levels.ttl.interplay.e2e-spec.ts`.
+
 ## Ваучеры (Vouchers)
 
 Ваучеры позволяют применять скидку по коду. Поддержка типов: `PERCENTAGE` (процент) и `FIXED_AMOUNT` (фиксированная сумма). Простейшие ограничения: срок действия, минимальная сумма, лимит использований.
@@ -215,10 +258,13 @@ POINTS_TTL_BURN=0
   - `POST /vouchers/status` — { merchantId, code? , voucherId? } → { voucherId, codeId?, code?, voucherStatus, voucherActive, codeStatus, codeUsedCount, codeMaxUses, validFrom?, validUntil? }
   - `POST /vouchers/deactivate` — { merchantId, code? , voucherId? } → { ok: true }
 
-Примечания:
+## Лимиты списаний/начислений (cap’ы)
 
-- Сначала применяйте ваучеры/промо к `eligibleTotal`, затем списывайте баллы (REDEEM) — так пользовательские баллы не «сгорают» раньше времени.
-- В /commit интеграцию ваучеров следует делать идемпотентной по `orderId` (повторный commit не должен дублировать usage).
+- REDEEM per‑order cap: лимит на заказ рассчитывается как `floor(eligible' * (redeemBps_base + levelBonus) / 10000)`. Повторный `quote` по тому же `orderId` учитывает уже применённое списание `receipt.redeemApplied` (остаток не может быть отрицательным). После `commit` следующий `quote` по тому же заказу вернёт остаток или `0`.
+- REDEEM daily cap: при заданном `redeemDailyCap` применяется остаток за последние 24 часа `dailyRedeemLeft = max(0, redeemDailyCap - sum(|REDEEM| за 24h))`. Итоговое списание: `min(wallet.balance, perOrderCap, dailyRedeemLeft)`.
+- EARN daily cap: при заданном `earnDailyCap` начисление ограничивается остатком `dailyEarnLeft = max(0, earnDailyCap - sum(EARN за 24h))`. Итоговые баллы: `min(pointsByBps, dailyEarnLeft)`.
+
+Подробности и числовые примеры — в `API_DOCUMENTATION.md` (раздел «Порядок применения» и примечания к REDEEM/EARN).
 
 ## Уведомления (Notifications)
 

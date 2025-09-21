@@ -115,7 +115,7 @@ export default function StaffDetailPage() {
           Role:
           <select value={role} onChange={e => setRole(e.target.value)} style={{ marginLeft: 8 }}>
             <option value="CASHIER">CASHIER</option>
-            <option value="MANAGER">MANAGER</option>
+            <option value="MERCHANT">MERCHANT</option>
             <option value="ADMIN">ADMIN</option>
           </select>
         </label>

@@ -32,8 +32,8 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   headers['x-admin-key'] = ADMIN_KEY;
   // RBAC: только ADMIN может выполнять изменяющие методы
   const sess = getSession(req);
-  if (sess?.role === 'MANAGER' && !/^(GET|HEAD|OPTIONS)$/i.test(method)) {
-    return new NextResponse('Forbidden for role MANAGER', { status: 403 });
+  if (sess?.role === 'MERCHANT' && !/^(GET|HEAD|OPTIONS)$/i.test(method)) {
+    return new NextResponse('Forbidden for role MERCHANT', { status: 403 });
   }
   // Audit hint via header (для логов API)
   try {

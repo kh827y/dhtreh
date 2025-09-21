@@ -228,10 +228,13 @@ export class LoyaltyService {
       if (dev) channel = dev.type as any;
     }
 
+    // Нормализуем суммы (защита от отрицательных/NaN)
+    const sanitizedTotal = Math.max(0, Math.floor(Number((dto as any).total ?? 0)));
+    const sanitizedEligibleTotal = Math.max(0, Math.floor(Number((dto as any).eligibleTotal ?? 0)));
     // применяем правила для earnBps/redeemLimitBps (с кешом)
     const wd = new Date().getDay();
     const rulesFn = this.compileRules(dto.merchantId, { earnBps: baseEarnBps, redeemLimitBps: baseRedeemLimitBps }, rulesJson, updatedAt);
-    let { earnBps, redeemLimitBps } = rulesFn({ channel, weekday: wd, eligibleTotal: dto.eligibleTotal, category: dto.category });
+    let { earnBps, redeemLimitBps } = rulesFn({ channel, weekday: wd, eligibleTotal: sanitizedEligibleTotal, category: dto.category });
     // Apply level-based bonuses (if configured)
     try {
       const bonus = await this.computeLevelBonus(dto.merchantId, customer.id, rulesJson);
@@ -287,7 +290,7 @@ export class LoyaltyService {
           const diffSec = Math.floor((Date.now() - last.createdAt.getTime()) / 1000);
           if (diffSec < redeemCooldownSec) {
             const wait = redeemCooldownSec - diffSec;
-            return { canRedeem: false, discountToApply: 0, pointsToBurn: 0, finalPayable: Math.floor(dto.total), holdId: undefined, message: `Кулдаун на списание: подождите ${wait} сек.` };
+            return { canRedeem: false, discountToApply: 0, pointsToBurn: 0, finalPayable: sanitizedTotal, holdId: undefined, message: `Кулдаун на списание: подождите ${wait} сек.` };
           }
         }
       }
@@ -298,7 +301,7 @@ export class LoyaltyService {
         const used = txns.reduce((sum, t) => sum + Math.max(0, -t.amount), 0);
         dailyRedeemLeft = Math.max(0, redeemDailyCap - used);
         if (dailyRedeemLeft <= 0) {
-          return { canRedeem: false, discountToApply: 0, pointsToBurn: 0, finalPayable: Math.floor(dto.total), holdId: undefined, message: 'Дневной лимит списаний исчерпан.' };
+          return { canRedeem: false, discountToApply: 0, pointsToBurn: 0, finalPayable: sanitizedTotal, holdId: undefined, message: 'Дневной лимит списаний исчерпан.' };
         }
       }
       // Проверка: если указан orderId, учитываем уже применённое списание по этому заказу
@@ -323,7 +326,7 @@ export class LoyaltyService {
           });
         }
 
-        const limit = Math.floor(dto.eligibleTotal * redeemLimitBps / 10000);
+        const limit = Math.floor(sanitizedEligibleTotal * redeemLimitBps / 10000);
         // Учитываем уже применённое списание по этому заказу: нельзя превысить лимит
         const remainingByOrder = Math.max(0, limit - priorRedeemApplied);
         if (dto.orderId && remainingByOrder <= 0) {
@@ -331,14 +334,14 @@ export class LoyaltyService {
             canRedeem: false,
             discountToApply: 0,
             pointsToBurn: 0,
-            finalPayable: Math.floor(dto.total),
+            finalPayable: sanitizedTotal,
             holdId: undefined,
             message: 'По этому заказу уже списаны максимальные баллы.'
           } as any;
         }
         const capLeft = dailyRedeemLeft != null ? dailyRedeemLeft : Number.MAX_SAFE_INTEGER;
         const discountToApply = Math.min(wallet.balance, remainingByOrder || limit, capLeft);
-        const finalPayable = Math.max(0, Math.floor(dto.total - discountToApply));
+        const finalPayable = Math.max(0, sanitizedTotal - discountToApply);
 
         const hold = await tx.hold.create({
           data: {
@@ -348,8 +351,8 @@ export class LoyaltyService {
             mode: 'REDEEM',
             redeemAmount: discountToApply,
             orderId: dto.orderId,
-            total: Math.floor(dto.total),
-            eligibleTotal: Math.floor(dto.eligibleTotal),
+            total: sanitizedTotal,
+            eligibleTotal: sanitizedEligibleTotal,
             qrJti: qr?.jti ?? null,
             expiresAt: qr?.exp ? new Date(qr.exp * 1000) : null,
             status: HoldStatus.PENDING,
@@ -409,8 +412,9 @@ export class LoyaltyService {
         });
       }
 
-      let points = Math.floor(dto.eligibleTotal * earnBps / 10000);
+      let points = Math.floor(sanitizedEligibleTotal * earnBps / 10000);
       if (dailyEarnLeft != null) points = Math.min(points, dailyEarnLeft);
+      if (points < 0) points = 0;
 
       const hold = await tx.hold.create({
         data: {
@@ -420,8 +424,8 @@ export class LoyaltyService {
           mode: 'EARN',
           earnPoints: points,
           orderId: dto.orderId,
-          total: Math.floor(dto.total),
-          eligibleTotal: Math.floor(dto.eligibleTotal),
+          total: sanitizedTotal,
+          eligibleTotal: sanitizedEligibleTotal,
           qrJti: qr?.jti ?? null,
           expiresAt: qr?.exp ? new Date(qr.exp * 1000) : null,
           status: HoldStatus.PENDING,

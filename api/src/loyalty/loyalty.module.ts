@@ -10,10 +10,12 @@ import { AntiFraudGuard } from '../guards/antifraud.guard';
 import { AntifraudModule } from '../antifraud/antifraud.module';
 import { PromosModule } from '../promos/promos.module';
 import { VouchersModule } from '../vouchers/vouchers.module';
+import { MerchantsModule } from '../merchants/merchants.module';
 
 @Module({
-  imports: [PrismaModule, MetricsModule, SubscriptionModule, AntifraudModule, PromosModule, VouchersModule],
+  imports: [PrismaModule, MetricsModule, SubscriptionModule, AntifraudModule, PromosModule, VouchersModule, MerchantsModule],
   providers: [LoyaltyService, CashierGuard, SubscriptionGuard, AntiFraudGuard],
   controllers: [LoyaltyController],
+  exports: [LoyaltyService],
 })
 export class LoyaltyModule {}

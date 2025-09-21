@@ -32,6 +32,12 @@ export default function AdminPage() {
   const [requireStaffKey, setRequireStaffKey] = useState<boolean>(false);
   const [pointsTtlDays, setPointsTtlDays] = useState<number>(0);
   const [rulesCheck, setRulesCheck] = useState<string>('');
+  const [levelsCheck, setLevelsCheck] = useState<string>('');
+  const [benefitsCheck, setBenefitsCheck] = useState<string>('');
+  const [previewCustomerId, setPreviewCustomerId] = useState<string>('');
+  const [previewEarnPct, setPreviewEarnPct] = useState<string>('');
+  const [previewRedeemPct, setPreviewRedeemPct] = useState<string>('');
+  const API = (process as any)?.env?.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
 
   const earnPct = useMemo(() => (earnBps/100).toFixed(2), [earnBps]);
   const redeemPct = useMemo(() => (redeemLimitBps/100).toFixed(2), [redeemLimitBps]);
@@ -145,11 +151,95 @@ export default function AdminPage() {
           <textarea value={levelsCfgJson} onChange={(e) => setLevelsCfgJson(e.target.value)} rows={6} style={{ width: '100%', padding: 8, fontFamily: 'monospace' }} />
           <div style={{ color: '#666', fontSize: 12 }}>Поля: periodDays, metric (earn/redeem/transactions), levels[]: {`{ name, threshold }`}</div>
         </label>
+        <div style={{ display:'flex', gap: 8, alignItems:'center' }}>
+          <button onClick={() => {
+            try {
+              const cfg = JSON.parse(levelsCfgJson||'null');
+              if (!cfg || typeof cfg !== 'object') throw new Error('Ожидался объект');
+              const metric = cfg.metric;
+              if (!['earn','redeem','transactions'].includes(metric)) throw new Error('metric: earn|redeem|transactions');
+              if (!Array.isArray(cfg.levels) || !cfg.levels.length) throw new Error('levels: непустой массив');
+              for (const [i, L] of cfg.levels.entries()) {
+                if (!L || typeof L !== 'object') throw new Error(`levels[${i}]: ожидался объект`);
+                if (typeof L.name !== 'string') throw new Error(`levels[${i}].name: строка`);
+                if (!Number.isFinite(Number(L.threshold))) throw new Error(`levels[${i}].threshold: число`);
+              }
+              setLevelsCheck('OK: конфигурация уровней валидна');
+            } catch (e: unknown) {
+              setLevelsCheck('Ошибка уровней: ' + (e instanceof Error ? e.message : String(e)));
+            }
+          }} style={{ padding:'6px 10px' }}>Проверить уровни</button>
+          {levelsCheck && <span style={{ color: levelsCheck.startsWith('OK')?'#0a0':'#b00' }}>{levelsCheck}</span>}
+        </div>
+
+        <div style={{ borderTop: '1px dashed #333', margin: '8px 0' }} />
+        <div style={{ display:'grid', gap: 8 }}>
+          <div style={{ fontWeight: 600 }}>Превью эффективных ставок (правила + бонус уровня)</div>
+          <div style={{ display:'flex', gap: 12, flexWrap:'wrap', alignItems:'center' }}>
+            <label>CustomerId (для бонуса уровня): <input value={previewCustomerId} onChange={(e)=>setPreviewCustomerId(e.target.value)} placeholder="опционально" /></label>
+            <button onClick={async () => {
+              try {
+                // 1) preview base rules
+                const wd = new Date().getDay();
+                const p = new URLSearchParams({ channel: 'VIRTUAL', weekday: String(wd), eligibleTotal: '1000' }).toString();
+                const r = await fetch(`/api/admin/merchants/${MERCHANT}/rules/preview?` + p);
+                if (!r.ok) throw new Error(await r.text());
+                const rules = await r.json();
+                let earnBps = rules.earnBps || 500;
+                let redeemBps = rules.redeemLimitBps || 5000;
+                // 2) add level bonus if preview customer set
+                if (previewCustomerId) {
+                  try {
+                    const L = await fetch(`${API}/levels/${encodeURIComponent(MERCHANT)}/${encodeURIComponent(previewCustomerId)}`);
+                    if (L.ok) {
+                      const lvl = await L.json();
+                      const cfg = JSON.parse(levelBenefitsJson || 'null');
+                      const earnMap = cfg?.earnBpsBonusByLevel || {};
+                      const redeemMap = cfg?.redeemLimitBpsBonusByLevel || {};
+                      const name = lvl?.current?.name;
+                      earnBps += Number(earnMap?.[name] || 0);
+                      redeemBps += Number(redeemMap?.[name] || 0);
+                    }
+                  } catch {}
+                }
+                setPreviewEarnPct((earnBps/100).toFixed(2));
+                setPreviewRedeemPct((redeemBps/100).toFixed(2));
+                setMsg('');
+              } catch (e:any) {
+                setMsg('Ошибка превью: ' + (e?.message || e));
+              }
+            }} style={{ padding:'6px 10px' }}>Посчитать</button>
+            {(previewEarnPct || previewRedeemPct) && (
+              <div style={{ opacity: 0.9 }}>
+                {previewEarnPct && <div>Начисление (пример): <b>{previewEarnPct}%</b> от eligible</div>}
+                {previewRedeemPct && <div>Лимит списания (пример): <b>{previewRedeemPct}%</b> от eligible</div>}
+              </div>
+            )}
+          </div>
+        </div>
         <label>
           Level benefits (JSON):
           <textarea value={levelBenefitsJson} onChange={(e) => setLevelBenefitsJson(e.target.value)} rows={6} style={{ width: '100%', padding: 8, fontFamily: 'monospace' }} />
           <div style={{ color: '#666', fontSize: 12 }}>Карты: earnBpsBonusByLevel, redeemLimitBpsBonusByLevel</div>
         </label>
+        <div style={{ display:'flex', gap: 8, alignItems:'center' }}>
+          <button onClick={() => {
+            try {
+              const ben = JSON.parse(levelBenefitsJson||'null');
+              if (!ben || typeof ben !== 'object') throw new Error('Ожидался объект');
+              const earn = ben.earnBpsBonusByLevel || {};
+              const redm = ben.redeemLimitBpsBonusByLevel || {};
+              if (typeof earn !== 'object' || Array.isArray(earn)) throw new Error('earnBpsBonusByLevel: объект');
+              if (typeof redm !== 'object' || Array.isArray(redm)) throw new Error('redeemLimitBpsBonusByLevel: объект');
+              for (const [k,v] of Object.entries(earn)) if (!Number.isFinite(Number(v))) throw new Error(`earnBpsBonusByLevel.${k}: число`);
+              for (const [k,v] of Object.entries(redm)) if (!Number.isFinite(Number(v))) throw new Error(`redeemLimitBpsBonusByLevel.${k}: число`);
+              setBenefitsCheck('OK: бонусы уровней валидны');
+            } catch (e: unknown) {
+              setBenefitsCheck('Ошибка бонусов: ' + (e instanceof Error ? e.message : String(e)));
+            }
+          }} style={{ padding:'6px 10px' }}>Проверить бонусы</button>
+          {benefitsCheck && <span style={{ color: benefitsCheck.startsWith('OK')?'#0a0':'#b00' }}>{benefitsCheck}</span>}
+        </div>
         <div style={{ display:'flex', gap: 8, alignItems: 'center' }}>
           <button onClick={() => {
             try {

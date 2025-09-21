@@ -9,5 +9,6 @@ import { MetricsModule } from '../metrics.module';
   imports: [PrismaModule, MetricsModule],
   providers: [GiftsService, LoyaltyService],
   controllers: [GiftsController],
+  exports: [GiftsService],
 })
 export class GiftsModule {}

@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 const ENC = new TextEncoder();
 
-async function getJose() {
+export async function getJose() {
   // В среде тестов используем лёгкий stub, чтобы не требовать ESM из jest
   if (process.env.JEST_WORKER_ID) {
     const { createHmac } = require('crypto');

@@ -17,6 +17,39 @@ import { TransactionItemDto } from '../loyalty/dto';
 export class MerchantsController {
   constructor(private readonly service: MerchantsService) {}
 
+  // Admin: list / create merchants
+  @Get()
+  @ApiOkResponse({ schema: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' }, createdAt: { type: 'string' }, portalEmail: { type: 'string', nullable: true }, portalLoginEnabled: { type: 'boolean' }, portalTotpEnabled: { type: 'boolean' } } } } })
+  listMerchants() {
+    return this.service.listMerchants();
+  }
+  @Post()
+  @ApiOkResponse({ schema: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' }, email: { type: 'string' } } } })
+  createMerchant(@Body() body: { name: string; email: string; password: string; ownerName?: string }) {
+    return this.service.createMerchant(
+      (body?.name || '').trim(),
+      String(body?.email||'').trim().toLowerCase(),
+      String(body?.password||''),
+      body?.ownerName ? String(body.ownerName).trim() : undefined,
+    );
+  }
+
+  // Admin: update/delete merchant
+  @Put(':id')
+  @ApiOkResponse({ schema: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' }, email: { type: 'string', nullable: true } } } })
+  updateMerchant(
+    @Param('id') id: string,
+    @Body() body: { name?: string; email?: string; password?: string }
+  ) {
+    return this.service.updateMerchant(id, { name: body?.name, email: body?.email, password: body?.password });
+  }
+
+  @Delete(':id')
+  @ApiOkResponse({ type: OkDto })
+  deleteMerchant(@Param('id') id: string) {
+    return this.service.deleteMerchant(id);
+  }
+
   @Get(':id/settings')
   @ApiOkResponse({ type: MerchantSettingsRespDto })
   @ApiUnauthorizedResponse({ type: ErrorDto })
@@ -276,6 +309,50 @@ export class MerchantsController {
       if (page.length < batch) break;
     }
     res.end();
+  }
+
+  // ===== Portal auth management (admin only) =====
+  @Post(':id/portal/rotate-key')
+  @ApiOkResponse({ schema: { type: 'object', properties: { key: { type: 'string' } } } })
+  rotatePortalKey(@Param('id') id: string) {
+    return this.service.rotatePortalKey(id);
+  }
+  @Post(':id/portal/login-enabled')
+  @ApiOkResponse({ type: OkDto })
+  setPortalLoginEnabled(@Param('id') id: string, @Body() body: { enabled: boolean }) {
+    return this.service.setPortalLoginEnabled(id, !!body?.enabled);
+  }
+  @Post(':id/portal/totp/init')
+  @ApiOkResponse({ schema: { type: 'object', properties: { secret: { type: 'string' }, otpauth: { type: 'string' } } } })
+  initTotp(@Param('id') id: string) {
+    return this.service.initTotp(id);
+  }
+  @Post(':id/portal/totp/verify')
+  @ApiOkResponse({ type: OkDto })
+  verifyTotp(@Param('id') id: string, @Body() body: { code: string }) {
+    return this.service.verifyTotp(id, String(body?.code || ''));
+  }
+  @Post(':id/portal/totp/disable')
+  @ApiOkResponse({ type: OkDto })
+  disableTotp(@Param('id') id: string) {
+    return this.service.disableTotp(id);
+  }
+  @Post(':id/portal/impersonate')
+  @ApiOkResponse({ type: TokenRespDto })
+  impersonatePortal(@Param('id') id: string) {
+    return this.service.impersonatePortal(id);
+  }
+
+  // Cashier credentials (admin only)
+  @Get(':id/cashier')
+  @ApiOkResponse({ schema: { type: 'object', properties: { login: { type: 'string', nullable: true }, hasPassword: { type: 'boolean' } } } })
+  getCashier(@Param('id') id: string) {
+    return this.service.getCashierCredentials(id);
+  }
+  @Post(':id/cashier/rotate')
+  @ApiOkResponse({ schema: { type: 'object', properties: { login: { type: 'string' }, password: { type: 'string' } } } })
+  rotateCashier(@Param('id') id: string, @Body() body: { regenerateLogin?: boolean }) {
+    return this.service.rotateCashierCredentials(id, !!body?.regenerateLogin);
   }
 
   @Get(':id/outbox/by-order')

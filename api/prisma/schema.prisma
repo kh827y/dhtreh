@@ -71,7 +71,7 @@ enum DeviceType {
 
 enum StaffRole {
   ADMIN
-  MANAGER
+  MERCHANT
   CASHIER
 }
 
@@ -126,6 +126,20 @@ model Merchant {
   // gifts
   gifts             Gift[]
   giftRedemptions   GiftRedemption[]
+  // staff access per outlet
+  staffAccesses     StaffOutletAccess[]
+  // Portal auth
+  portalKeyHash        String?
+  portalEmail          String?  @unique
+  portalPasswordHash   String?
+  portalTotpSecret     String?
+  portalTotpEnabled    Boolean   @default(false)
+  portalLoginEnabled   Boolean   @default(true)
+  portalLastLoginAt    DateTime?
+  // Cashier credentials (admin-managed)
+  cashierLogin         String?   @unique
+  cashierPassword9     String?
+  archivedAt           DateTime?
 }
 
 model MerchantSettings {
@@ -365,6 +379,7 @@ model Outlet {
   holds       Hold[]
   receipts    Receipt[]
   txns        Transaction[]
+  staffAccesses StaffOutletAccess[]
 }
 
 model Device {
@@ -401,6 +416,19 @@ model Staff {
   allowedOutletId String?
   allowedDeviceId String?
   createdAt   DateTime   @default(now())
+  // Profile & access
+  firstName   String?
+  lastName    String?
+  position    String?
+  phone       String?
+  comment     String?
+  avatarUrl   String?
+  // Portal access flag (in addition to email presence)
+  canAccessPortal Boolean @default(false)
+  // Owner flag
+  isOwner     Boolean    @default(false)
+  // Staff-level PIN (legacy; per-outlet PINs are in StaffOutletAccess)
+  pinCode     String?
 
   @@index([merchantId])
   @@unique([merchantId, login])
@@ -411,6 +439,25 @@ model Staff {
   receipts  Receipt[]
   txns      Transaction[]
   reviewResponses ReviewResponse[]
+  accesses  StaffOutletAccess[]
+}
+
+// Per-outlet access and PIN codes for staff
+model StaffOutletAccess {
+  id          String   @id @default(cuid())
+  merchantId  String
+  staffId     String
+  outletId    String
+  pinCode     String?
+  lastTxnAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  merchant    Merchant @relation(fields: [merchantId], references: [id])
+  staff       Staff    @relation(fields: [staffId], references: [id])
+  outlet      Outlet   @relation(fields: [outletId], references: [id])
+
+  @@unique([merchantId, staffId, outletId])
+  @@index([merchantId, outletId])
 }
 
 model LedgerEntry {

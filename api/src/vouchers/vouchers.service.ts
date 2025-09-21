@@ -43,17 +43,17 @@ export class VouchersService {
     return { canApply, discount, voucherId: voucher.id, codeId: codeRow.id };
   }
 
-  async issue(body: { merchantId: string; name?: string; valueType: 'PERCENTAGE'|'FIXED_AMOUNT'; value: number; code: string; validFrom?: string; validUntil?: string; minPurchaseAmount?: number }) {
+  async issue(body: { merchantId: string; name?: string; valueType: 'PERCENTAGE'|'FIXED_AMOUNT'|'POINTS'; value: number; code: string; validFrom?: string; validUntil?: string; minPurchaseAmount?: number }) {
     const { merchantId, valueType, value, code } = body || ({} as any);
     if (!merchantId) throw new BadRequestException('merchantId required');
     if (!code) throw new BadRequestException('code required');
-    if (!['PERCENTAGE','FIXED_AMOUNT'].includes(String(valueType))) throw new BadRequestException('invalid valueType');
+    if (!['PERCENTAGE','FIXED_AMOUNT','POINTS'].includes(String(valueType))) throw new BadRequestException('invalid valueType');
     const vf = body.validFrom ? new Date(body.validFrom) : null;
     const vu = body.validUntil ? new Date(body.validUntil) : null;
     const voucher = await (this.prisma as any).voucher.create({ data: {
       merchantId,
       name: body.name || code,
-      type: 'DISCOUNT',
+      type: String(valueType) === 'POINTS' ? 'PROMO_CODE' : 'DISCOUNT',
       valueType,
       value: Math.floor(Number(value||0)),
       minPurchaseAmount: body.minPurchaseAmount != null ? Math.floor(Number(body.minPurchaseAmount)) : null,
@@ -181,11 +181,12 @@ export class VouchersService {
   }
 
   // ===== Admin helpers =====
-  async list(args: { merchantId: string; status?: string; limit: number }) {
-    const { merchantId, status, limit } = args;
+  async list(args: { merchantId: string; status?: string; type?: string; limit: number }) {
+    const { merchantId, status, type, limit } = args;
     if (!merchantId) throw new BadRequestException('merchantId required');
     const where: any = { merchantId };
     if (status) where.status = status;
+    if (type) where.type = type;
     const vouchers = await (this.prisma as any).voucher.findMany?.({ where, orderBy: { createdAt: 'desc' }, take: limit })
       ?? [];
     const items: any[] = [];

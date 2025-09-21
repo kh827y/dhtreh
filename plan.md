@@ -1,4 +1,46 @@
-# Planning Mode — Long Run (2025-09-15)
+# Planning Mode — Long Run (2025-09-15)  
+## Новая структура панелей (договорились)
+
+- Админ‑панель (Owner Admin):
+  - Мерчанты: список/создание/редактирование/удаление. При создании ОБЯЗАТЕЛЬНО ownerName; автоматически создаётся сотрудник‑владелец.
+  - Настройки мерчанта (перенос): QR TTL, Требовать подпись Bridge, Требовать Staff‑ключ; логин кассира (slug) и пароль из 9 цифр (регенерация).
+  - Интеграции и POS‑настройки, Telegram‑бот (токен), наблюдаемость (Metrics/Outbox/SyncLog).
+
+- Мерчант‑панель (Merchant Portal):
+  - Сотрудники: табы Работает/Уволен, фильтры (Роли/Точки/«Только с доступом в панель»), поиск, карточка сотрудника (доступы/связанные точки/пин‑коды/уволить/сменить пароль и т.п.).
+  - Торговые точки (вместо устройств): список/создание/редактирование.
+  - Программа лояльности: Механики, Акции, Промокоды (взамен Ваучеров), Push/Telegram‑рассылки, Мотивация персонала, Антифрод, Панель кассира (логин/пароль, таблица пинкодов сотрудников по точкам).
+  - Клиенты и аудитории; Товары и категории; Отзывы; Аналитика (Сводный, По времени, Портрет, Повторы, Динамика, RFM, Активность точек/сотрудников, Рефералы, ДР, Автовозврат).
+
+— Устройства: депрекация. UI/роуты удаляем, опираемся на Торговые точки.
+
+## Батчи внедрения (план)
+
+1) Бэкенд — мерчанты/владелец/CRUD (минимальная версия, обратная совместимость)
+- Добавить в админ‑API: PUT/DELETE мерчанта; POST /merchants принимать ownerName и авто‑создавать сотрудника‑владельца (роль MERCHANT). До миграции — без новых полей, только `login`.
+- Перенос настроек в админку: использовать существующие поля `MerchantSettings` (qrTtlSec, requireBridgeSig, requireStaffKey); портальную страницу настроек позже очистить.
+- Прогнать тесты, починить до зелёного.
+
+2) Prisma‑миграции (расширение моделей)
+- Staff: firstName/lastName/position/phone/comment/avatarUrl, pinCode(4), canAccessPortal(bool), isOwner(bool).
+- Merchant: cashierLogin(unique), cashierPassword9, archivedAt.
+- AccessGroup/AccessGroupMember; StaffOutletAccess (staff↔outlet + pinCode, lastTxnAt).
+- Методы Admin/Portal для управления пинкодами и доступами.
+
+3) Портал/Админ — фронтенд
+- Удалить «Устройства», усилить «Торговые точки».
+- Перенести UI настроек (QR TTL/BridgeSig/StaffKey) в админку; в портале убрать эти поля.
+- Реализовать «Сотрудники» по ТЗ (табы, фильтры, карточка, модалки редактирования/смены пароля/увольнение, точки/пины).
+- Заменить «Ваучеры» на «Промокоды» (баллы) с разделами Активные/Архивные + RUD/создание.
+
+4) Аналитика/Аудитории/Отзывы/Рассылки — расширение
+- Добрать разделы аналитики по ТЗ, аудитории (CRUD/состав), отзывы (миниаппа + портал), Telegram‑уведомления.
+
+5) Интеграции — паритет по GMB API и каталог API
+- Сверка функционала с: gmb_api.pdf, gmb_catalog_api.pdf; доработать API.
+- Интеграции по pdf (1C/r_keeper/iiko/Poster/Frontol/МойСклад/CommerceML): адаптеры/валидаторы/вебхуки.
+
+Каждый батч → тестовый ритуал: `pnpm -C api test && pnpm -C api test:e2e`. Обновлять README/Docs и этот план.
 
 Обновлённый рабочий план доведения проекта лояльности до стабильного и надёжного состояния с современным UI. План синхронизирован с Memories (dev/test ритуал, бэкенд гарантий, Prisma‑правила, фичефлаги/воркеры, интеграции/bridge, фронтенды, DoD).
 
@@ -33,11 +75,12 @@
   - Минимальные коннекторы (iiko/r_keeper/frontol/Evotor/1C/CommerceML/robokassa/ecommpay/DPD и др.) с записями `Integration`.
   - Встроить в Bridge; подпись `BRIDGE_SECRET`.
 
-- Волна 5 — Фронтенды (admin/cashier/miniapp)
+- Волна 5 — Фронтенды (Owner Admin / Merchant Portal / Cashier / Miniapp)
   - Современный UI: единая дизайн‑система, i18n, доступность, skeletons/загрузки.
-  - Admin: кампании/акции, сегменты, отчёты, Docs (Signature/Bridge/Integrations), системная «Metrics».
-  - Cashier: QR → quote → commit, возвраты, безопасные повторы.
-  - Miniapp: баланс/история/QR, промо/подарки/ДР, уведомления.
+  - Owner Admin (админ‑консоль): глобальные настройки и наблюдаемость системы (страница Metrics, воркеры, Outbox/вебхуки, POS‑метрики, интеграции), управление мерчантами и ролями; режим «Просмотр как мерчант» с правом редактирования.
+  - Merchant Portal (личный кабинет бизнеса): аналитика и CRM, механики/акции, аудитории, промокоды, отзывы; настройки перенесены в админку.
+  - Cashier: QR → quote → commit, возвраты, безопасные повторы. Авторизация кассира: login = slug от имени мерчанта, пароль = 9 цифр; у сотрудников — пинкод 4 цифры (по точкам).
+  - Miniapp (Telegram): баланс/история/QR, промо/подарки/ДР, уведомления; рефералка через deep‑link t.me/<bot>?start=ref_<code> и активацию при первом визите мини‑аппы.
 
 ## Definition of Done (общие)
 - Строгий TS, валидируемые ENV; глобальные фильтры ошибок и логирование; Helmet/CORS/rate‑limit включены.
@@ -53,6 +96,15 @@
 
 ## Выполнено недавно
 - Модернизация admin analytics: единый `TopBar`/`Card`/`Skeleton`, улучшенные графики (`SimpleLineChart` с tooltip/hover/линейкой).
+- Инициализирован `merchant-portal` (Next.js) — базовый дашборд, подключение дизайн‑системы.
+- Создан пакет `@loyalty/ui` (токены темы, базовые компоненты: Button/Card/Skeleton/Chart; иконки Lucide; анимации Framer Motion). Обновлён `pnpm-workspace.yaml`.
+- Merchant Portal: реализована аутентификация по email+паролю (+ TOTP опц.), добавлена страница `/login`, middleware защиты, server routes `/api/session/*`.
+- API: модуль `PortalAuth` (`POST /portal/auth/login`, `GET /portal/auth/me`), CORS для `authorization`, `PORTAL_JWT_SECRET` в ENV и `infra/env-examples/api.env.example`.
+- Prisma: у `Merchant` добавлены `portalEmail` (unique), `portalPasswordHash`, а также `portalKeyHash/portalTotpSecret/portalTotpEnabled/portalLoginEnabled/portalLastLoginAt`; миграции применены.
+- Admin: «Мерчанты» — список/создание (Name/Email/Password), включение/выключение входа, TOTP (init/verify/disable), «Открыть как мерчант» (имперсонация в портал).
+- Merchant Portal: подключены данные — `Настройки` (GET/PUT), `Сотрудники` (список/создать), `Точки` (список/создать), `Устройства` (список/создать), `Клиенты` (поиск по телефону), `Операции` (транзакции/чеки); добавлены `Ваучеры` (список/выпуск/деактивация), `Рассылки` (dry-run/enqueue), `Интеграции` (список); аналитика подключена: `Дашборд`, `RFM`, `Портрет`, `Повторы`, `Время`, `ДР` (через портальные прокси `/portal/analytics/*`).
+ - PortalAuth: добавлены e2e-тесты `login` (email+пароль), ветвь `TOTP`, `me` и админская имперсонация; внедрён jose-wrapper `getJose()` для стабильных тестов (используется в `PortalAuthController`, `PortalGuard`, `MerchantsService.signPortalJwt`); добавлен smoke‑тест портальной аналитики; обновлён `README` (раздел PortalAuth/имперсонация); все тесты зелёные.
+- RBAC: переименована роль `MANAGER` → `MERCHANT` во фронтах/admin‑proxy и Prisma enum (миграция).
 - Аналитика backend: заменены сырые SQL ($queryRaw) на Prisma в `getTopCustomers/getTopOutlets/getTopStaff/getDeviceUsage`.
 - Включён строгий TS на уровне монорепо: обновлён `tsconfig.base.json` (`strict`, `noUncheckedIndexedAccess`).
 - Настроены ESLint/Prettier во всех пакетах (`api`, `admin`, `cashier`, `miniapp`, `bridge`); добавлены корневые `.prettierrc`, `.prettierignore`, `.eslintignore`, `.editorconfig`.
@@ -87,9 +139,13 @@
   - Admin: добавлены редакторы `levelsCfg`/`levelBenefits` и страница предпросмотра уровня клиента (`admin/src/app/levels/page.tsx`).
   - UI-качество: заменены внутренние `<a>` на `Link` в Admin и безопасная типизация `catch (unknown)`.
   - Тестовый ритуал: исправлен «зависон» после e2e — в `api/package.json` скрипт `test:e2e` дополнен `--forceExit`.
+  - E2E комбо: Levels + Voucher + Promo — добавлены кейсы на EARN (59 баллов после ваучера/промо и бонуса уровня) и REDEEM (лимит 510) в `api/test/loyalty.e2e-spec.ts`.
+  - TTL: усилены unit‑тесты `PointsBurnWorker` (явные проверки суммы сгорания/баланса/события), превью TTL (`PointsTtlWorker`) и активация лотов — зелёные.
+  - Документация: `API_DOCUMENTATION.md` — разделы «Уровни и бонусы» и «TTL/Сгорание баллов» (флаги, события, настройки в админке).
+  - Admin: добавлены проверки валидности JSON для `levelsCfg` и `levelBenefits` (кнопки «Проверить уровни/бонусы» на странице настроек).
   - Подключён `PromosModule` (prev. этап) и добавлены превью‑правила (категория, minEligible), e2e `promos.e2e-spec.ts` — зелёные.
   - Реализованы `Vouchers`: `preview`, `issue`, `redeem` в `api/src/vouchers/*`. В `redeem` — идемпотентность по `(voucherId, customerId, orderId)` и проверка лимитов/валидности.
-  - Интеграция в денежный флоу: `loyalty.controller.quote()` сначала уменьшает `eligibleTotal` ваучером → промо, затем считает. В `commit()` при наличии `voucherCode` выполняется идемпотентный `redeem` по `orderId`.
+  - Интеграция в денежный флоу: `loyalty.controller.quote()` сначала уменьшаем `eligibleTotal` ваучером → промо, затем считаем. В `commit()` при наличии `voucherCode` выполняется идемпотентный `redeem` по `orderId`.
   - Добавлены e2e в `api/test/loyalty.e2e-spec.ts`: применение ваучера в quote и идемпотентность `commit` с ваучером.
   - Дополнительные e2e: комбо ваучер+промо (REDEEM) влияет на лимит, проверка `redeemApplied` на `commit`, `redeem` идемпотентен при достижении `maxUses`, `issue` создаёт код и работает в `preview`.
   - Prisma: добавлен уникальный индекс `@@unique([voucherId, customerId, orderId])` для `VoucherUsage` (идемпотентность на уровне БД, миграция будет сгенерирована).
@@ -98,15 +154,26 @@
   - Все тесты зелёные: `pnpm -C api test && pnpm -C api test:e2e`.
   - Admin UI: добавлен раздел «Ваучеры» — список/поиск/выпуск/деактивация/экспорт (admin/app/vouchers), клиентские методы (admin/lib/vouchers.ts).
   - API: админские эндпоинты для ваучеров: `GET /vouchers/list`, `GET /vouchers/export.csv` (защищены AdminGuard/AdminIpGuard).
+  - Admin (CRM): мини‑карточка уровня на странице клиентов, автозагрузка уровня, ссылка «Подробнее», бейдж уровня в транзакциях/чеках с tooltip «эффективные ставки» (base rules + level bonus).
+  - Admin (Levels): автозагрузка по query `merchantId/customerId`, прогресс‑бар, расчёт «эффективных ставок» на странице уровней и в настройках мерчанта.
+  - TTL e2e: полный флоу PENDING→ACTIVE→preview→burn (`ttl.flow.e2e-spec.ts`) и FIFO‑сгорание с проверкой `consumedPoints` (`ttl.fifo.e2e-spec.ts`).
+  - Levels x TTL interplay: при metric=earn активация PENDING(120) поднимает уровень до Silver; quote на 1000 даёт 70 баллов (700 bps) — `levels.ttl.interplay.e2e-spec.ts`.
+  - Метрики: e2e проверки /metrics после превью и burn (`metrics.workers.e2e-spec.ts`), gauge `loyalty_worker_last_tick_seconds`, счётчики burn.
+  - Referrals: e2e‑заглушки контроллера с mock Prisma (`referral.e2e-spec.ts`); подключён `ReferralModule`, экспортирован `LoyaltyService` из `LoyaltyModule`.
+  - Docs: `API_DOCUMENTATION.md` — добавлены примеры конфигов уровней и раздел «Порядок применения» (Voucher → Promo → Rules + Levels) с формулами и примерами.
+  - Admin: единый поповер «эффективные ставки» (`admin/components/EffectiveRatesPopover.tsx`) подключён на страницах `customers` и `levels`.
+  - E2E REDEEM: пер‑заказный cap — `redeem.order.cap.e2e-spec.ts` (учёт `receipt.redeemApplied`), дневной cap — `redeem.daily.cap.e2e-spec.ts` (rolling 24h) — оба зелёные.
+  - Docs: `README.md` дополнен Quickstart «Levels + TTL». `API_DOCUMENTATION.md` — раздел «Referrals (beta/preview)» и примечания к REDEEM (per‑order cap и daily cap).
+  - E2E EARN: дневной cap — `earn.daily.cap.e2e-spec.ts` — зелёный.
+  - Referrals: позитивный флоу create→activate→complete — `referral.flow.e2e-spec.ts` — зелёный; API docs — добавлен `/referral/complete`.
+  - Idempotency: конкурентные commit по одному `orderId` — `redeem.concurrent.order.commit.e2e-spec.ts` — второй commit идемпотентен.
+  - Admin UX: поповер — закрытие по клику вне и по Esc, скелетон‑состояние загрузки.
 
-- Следующий шаг (Wave 2):
-  - Завершить управление ваучерами: отчётность и фильтры/пагинация; документация admin‑раздела.
-  - Документация промо/ваучеров: совместимость, приоритеты, идемпотентность, примеры.
-  - Документация Levels: структура `levelsCfg`/`levelBenefits`, примеры, порядок применения.
-  - Admin: валидация редакторов Levels (подсветка ошибок), превью уровня на карточке клиента.
-  - E2E: расширить кейсы — бонус уровня + промо/ваучер (порядок расчёта), cap в REDEEM.
-  - Примечание: для прогона e2e требуется dev‑БД (`docker compose -f infra/docker-compose.yml up -d`). Локально можно запускать `pnpm -C api test && pnpm -C api test:e2e` (без зависания).
-  - PR с DoD и чек‑листом; затем план Wave 3 (CRM/аналитика) уточнить.
+ - Следующий шаг (Wave 2):
+  - E2E: «ваучер+промо+уровень+commit → повторный quote (per‑order cap)», расширение TTL‑кейсов, нагрузочные sanity‑чек‑тесты.
+  - Referrals: e2e без моков на dev‑БД (идемпотентность, самореферал), SDK методы и примеры.
+  - Admin: типографика/отступы/тени поповера (унификация с дизайн‑системой), быстрые подсказки на списках.
+  - Ритуал: держать `pnpm -C api test && pnpm -C api test:e2e` зелёным на каждом батче; фиксировать прогресс в `plan.md`.
 
 ## Волна 3 — Завершена (2025-09-15)
 

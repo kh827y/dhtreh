@@ -28,11 +28,14 @@ import { PointsBurnWorker } from './points-burn.worker';
 import { PointsTtlWorker } from './points-ttl.worker';
 import { EarnActivationWorker } from './earn-activation.worker';
 import { GiftsModule } from './gifts/gifts.module';
+import { ReferralModule } from './referral/referral.module';
 import { LevelsModule } from './levels/levels.module';
 import { CampaignModule } from './campaigns/campaign.module';
 import { PromosModule } from './promos/promos.module';
 import { VouchersModule } from './vouchers/vouchers.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { PortalAuthModule } from './portal-auth/portal-auth.module';
+import { PortalModule } from './portal/portal.module';
 // Optional Redis storage for Throttler
 let throttlerStorage: any = undefined;
 try {
@@ -77,6 +80,9 @@ try {
     VouchersModule,
     CampaignModule,
     NotificationsModule,
+    ReferralModule,
+    PortalAuthModule,
+    PortalModule,
   ],
   controllers: [HealthController, MetricsController],
   providers: [
