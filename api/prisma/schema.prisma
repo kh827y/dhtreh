@@ -140,6 +140,37 @@ model Merchant {
   cashierLogin         String?   @unique
   cashierPassword9     String?
   archivedAt           DateTime?
+  antifraudSettings MerchantAntifraudSettings?
+  antifraudAlerts   AntifraudAlert[]
+}
+
+model MerchantAntifraudSettings {
+  merchantId          String  @id
+  merchant            Merchant @relation(fields: [merchantId], references: [id])
+  dailyAccrualLimit   Int?
+  monthlyAccrualLimit Int?
+  maxPointsPerEarn    Int?
+  notifyEmails        String[] @default([])
+  notifyOutletAdmins  Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+}
+
+model AntifraudAlert {
+  id          String   @id @default(cuid())
+  merchantId  String
+  merchant    Merchant @relation(fields: [merchantId], references: [id])
+  customerId  String?
+  customer    Customer? @relation(fields: [customerId], references: [id])
+  kind        String
+  severity    String   @default("info")
+  payload     Json?
+  createdAt   DateTime @default(now())
+  acknowledgedAt DateTime?
+
+  @@index([merchantId, createdAt])
+  @@index([customerId, createdAt])
 }
 
 model MerchantSettings {
@@ -234,6 +265,7 @@ model Customer {
   pushDevices       PushDevice[]
   customerStats     CustomerStats[]
   giftRedemptions   GiftRedemption[]
+  antifraudAlerts   AntifraudAlert[]
 }
 
 model Wallet {
@@ -323,6 +355,8 @@ model Transaction {
   outletId   String?
   deviceId   String?
   staffId    String?
+  comment    String?
+  metadata   Json?
 
   outlet       Outlet?    @relation(fields: [outletId], references: [id], onDelete: SetNull)
   device       Device?    @relation(fields: [deviceId], references: [id], onDelete: SetNull)

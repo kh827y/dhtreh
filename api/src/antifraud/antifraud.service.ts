@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
 import { ConfigService } from '@nestjs/config';
+import { Prisma, TxnType } from '@prisma/client';
 import * as crypto from 'crypto';
 
 export enum RiskLevel {
@@ -31,6 +32,16 @@ export interface TransactionContext {
   userAgent?: string;
   location?: { lat: number; lon: number };
 }
+
+export type PortalAntifraudSettings = {
+  merchantId: string;
+  dailyAccrualLimit: number | null;
+  monthlyAccrualLimit: number | null;
+  maxPointsPerEarn: number | null;
+  notifyEmails: string[];
+  notifyOutletAdmins: boolean;
+  updatedAt: string | null;
+};
 
 @Injectable()
 export class AntiFraudService {
@@ -131,6 +142,180 @@ export class AntiFraudService {
         shouldReview: false,
       };
     }
+  }
+
+  async getPortalSettings(merchantId: string): Promise<PortalAntifraudSettings> {
+    const row = await this.prisma.merchantAntifraudSettings.findUnique({ where: { merchantId } });
+    return {
+      merchantId,
+      dailyAccrualLimit: row?.dailyAccrualLimit ?? null,
+      monthlyAccrualLimit: row?.monthlyAccrualLimit ?? null,
+      maxPointsPerEarn: row?.maxPointsPerEarn ?? null,
+      notifyEmails: row?.notifyEmails ?? [],
+      notifyOutletAdmins: row?.notifyOutletAdmins ?? false,
+      updatedAt: row?.updatedAt?.toISOString() ?? null,
+    };
+  }
+
+  async updatePortalSettings(
+    merchantId: string,
+    dto: {
+      dailyAccrualLimit?: number | null;
+      monthlyAccrualLimit?: number | null;
+      maxPointsPerEarn?: number | null;
+      notifyEmails?: string[];
+      notifyOutletAdmins?: boolean;
+    },
+  ): Promise<PortalAntifraudSettings> {
+    const normalize = (value: number | null | undefined) => {
+      if (value == null) return null;
+      const v = Math.max(0, Math.floor(Number(value)));
+      return Number.isFinite(v) ? v : null;
+    };
+    const emails = Array.from(
+      new Set((dto.notifyEmails ?? []).map((item) => item.trim().toLowerCase()).filter((item) => item.length > 0)),
+    );
+
+    await this.prisma.merchantAntifraudSettings.upsert({
+      where: { merchantId },
+      update: {
+        dailyAccrualLimit: normalize(dto.dailyAccrualLimit),
+        monthlyAccrualLimit: normalize(dto.monthlyAccrualLimit),
+        maxPointsPerEarn: normalize(dto.maxPointsPerEarn),
+        notifyEmails: emails,
+        notifyOutletAdmins: dto.notifyOutletAdmins ?? false,
+      },
+      create: {
+        merchantId,
+        dailyAccrualLimit: normalize(dto.dailyAccrualLimit),
+        monthlyAccrualLimit: normalize(dto.monthlyAccrualLimit),
+        maxPointsPerEarn: normalize(dto.maxPointsPerEarn),
+        notifyEmails: emails,
+        notifyOutletAdmins: dto.notifyOutletAdmins ?? false,
+      },
+    });
+
+    this.metrics.inc('portal_antifraud_settings_updated_total', { merchantId });
+    this.logger.log(`Updated antifraud limits for merchant ${merchantId}`);
+    return this.getPortalSettings(merchantId);
+  }
+
+  private async recordPortalAlert(
+    tx: Prisma.TransactionClient,
+    params: {
+      merchantId: string;
+      customerId: string;
+      kind: string;
+      severity: 'info' | 'warning' | 'critical';
+      payload: Record<string, any>;
+      recipients: { emails: string[]; notifyOutletAdmins: boolean };
+    },
+  ) {
+    const alert = await tx.antifraudAlert.create({
+      data: {
+        merchantId: params.merchantId,
+        customerId: params.customerId,
+        kind: params.kind,
+        severity: params.severity,
+        payload: params.payload,
+      },
+    });
+    await tx.eventOutbox.create({
+      data: {
+        merchantId: params.merchantId,
+        eventType: 'antifraud.alert',
+        payload: {
+          merchantId: params.merchantId,
+          customerId: params.customerId,
+          kind: params.kind,
+          severity: params.severity,
+          payload: params.payload,
+          recipients: params.recipients,
+          alertId: alert.id,
+        },
+      },
+    });
+    this.metrics.inc('portal_antifraud_alerts_total', { kind: params.kind, severity: params.severity });
+    return alert;
+  }
+
+  async evaluateAccrualLimits(
+    tx: Prisma.TransactionClient,
+    args: { merchantId: string; customerId: string; points: number; occurredAt?: Date; receiptId?: string },
+  ) {
+    const settings = await tx.merchantAntifraudSettings.findUnique({ where: { merchantId: args.merchantId } });
+    if (!settings) return [];
+
+    const alerts: any[] = [];
+    const now = args.occurredAt ?? new Date();
+    const basePayload = {
+      points: args.points,
+      occurredAt: now.toISOString(),
+      receiptId: args.receiptId ?? null,
+    };
+
+    if (settings.maxPointsPerEarn != null && args.points > settings.maxPointsPerEarn) {
+      alerts.push(
+        await this.recordPortalAlert(tx, {
+          merchantId: args.merchantId,
+          customerId: args.customerId,
+          kind: 'max_points_per_operation',
+          severity: 'warning',
+          payload: { ...basePayload, limit: settings.maxPointsPerEarn },
+          recipients: { emails: settings.notifyEmails ?? [], notifyOutletAdmins: settings.notifyOutletAdmins ?? false },
+        }),
+      );
+    }
+
+    if (settings.dailyAccrualLimit != null) {
+      const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const count = await tx.transaction.count({
+        where: {
+          merchantId: args.merchantId,
+          customerId: args.customerId,
+          type: TxnType.EARN,
+          createdAt: { gte: dayAgo },
+        },
+      });
+      if (count > settings.dailyAccrualLimit) {
+        alerts.push(
+          await this.recordPortalAlert(tx, {
+            merchantId: args.merchantId,
+            customerId: args.customerId,
+            kind: 'daily_earn_velocity',
+            severity: 'warning',
+            payload: { ...basePayload, count, limit: settings.dailyAccrualLimit },
+            recipients: { emails: settings.notifyEmails ?? [], notifyOutletAdmins: settings.notifyOutletAdmins ?? false },
+          }),
+        );
+      }
+    }
+
+    if (settings.monthlyAccrualLimit != null) {
+      const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const count = await tx.transaction.count({
+        where: {
+          merchantId: args.merchantId,
+          customerId: args.customerId,
+          type: TxnType.EARN,
+          createdAt: { gte: monthAgo },
+        },
+      });
+      if (count > settings.monthlyAccrualLimit) {
+        alerts.push(
+          await this.recordPortalAlert(tx, {
+            merchantId: args.merchantId,
+            customerId: args.customerId,
+            kind: 'monthly_earn_velocity',
+            severity: 'warning',
+            payload: { ...basePayload, count, limit: settings.monthlyAccrualLimit },
+            recipients: { emails: settings.notifyEmails ?? [], notifyOutletAdmins: settings.notifyOutletAdmins ?? false },
+          }),
+        );
+      }
+    }
+
+    return alerts;
   }
 
   /**

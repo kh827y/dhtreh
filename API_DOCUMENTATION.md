@@ -351,6 +351,25 @@ Response 200:
 
 - Для детерминированности в тестах установите `WORKERS_ENABLED=0` и `METRICS_DEFAULTS=0`, а сами воркеры покрыты unit-тестами.
 
+## Merchant Portal API
+
+### Customers
+
+- `GET /portal/customers` — список клиентов (query: `page`, `pageSize`, `login`, `name`, `email`, `tag`).
+- `POST /portal/customers` — создать клиента.
+- `GET /portal/customers/:customerId` — карточка клиента с балансами, сроками сгорания, историей операций и отзывами.
+- `PUT /portal/customers/:customerId` — обновить данные клиента.
+- `POST /portal/customers/:customerId/accrue` — ручное начисление баллов (сумма покупки, чек, точка, устройство, ручные баллы).
+- `POST /portal/customers/:customerId/redeem` — ручное списание баллов (количество, точка, устройство).
+- `POST /portal/customers/:customerId/complimentary` — комплиментарное начисление с TTL и комментарием.
+- `POST /portal/customers/transactions/:transactionId/cancel` — отмена транзакции с автоматической корректировкой баланса.
+- `POST /portal/customers/import` — импорт CSV (`file`), ответ содержит `processed`, `created`, `updated`, `errors[]` (строка/колонка/сообщение).
+
+### Antifraud
+
+- `GET /portal/antifraud/settings` — текущие лимиты (суточный/месячный, максимум баллов, email-получатели, уведомления администраторов, время обновления).
+- `PUT /portal/antifraud/settings` — обновить лимиты и контакты для уведомлений.
+
 ## Порядок применения скидок и бонусов
 
 Последовательность в расчёте `POST /loyalty/quote`:
