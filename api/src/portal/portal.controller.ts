@@ -9,6 +9,11 @@ import { NotificationsService, type BroadcastArgs } from '../notifications/notif
 import { AnalyticsService } from '../analytics/analytics.service';
 import { CampaignService } from '../campaigns/campaign.service';
 import { GiftsService } from '../gifts/gifts.service';
+import { PushCampaignsService, type PushCampaignScope } from './services/push-campaigns.service';
+import { TelegramCampaignsService, type TelegramCampaignScope } from './services/telegram-campaigns.service';
+import { StaffMotivationService, type UpdateStaffMotivationPayload } from './services/staff-motivation.service';
+import { ActionsService, type ActionsTab, type CreateProductBonusActionPayload, type UpdateActionStatusPayload } from './services/actions.service';
+import { OperationsLogService, type OperationsLogFilters } from './services/operations-log.service';
 
 @ApiTags('portal')
 @Controller('portal')
@@ -22,6 +27,11 @@ export class PortalController {
     private readonly analytics: AnalyticsService,
     private readonly campaigns: CampaignService,
     private readonly gifts: GiftsService,
+    private readonly pushCampaigns: PushCampaignsService,
+    private readonly telegramCampaigns: TelegramCampaignsService,
+    private readonly staffMotivation: StaffMotivationService,
+    private readonly actions: ActionsService,
+    private readonly operations: OperationsLogService,
   ) {}
 
   private getMerchantId(req: any) { return String((req as any).portalMerchantId || ''); }
@@ -62,6 +72,25 @@ export class PortalController {
         to = new Date(from); to.setMonth(to.getMonth()+1); to.setDate(0); to.setHours(23,59,59,999);
     }
     return { from, to, type: (periodType as any) || 'month' };
+  }
+
+  private normalizePushScope(scope?: string): PushCampaignScope {
+    return scope === 'ARCHIVED' ? 'ARCHIVED' : 'ACTIVE';
+  }
+
+  private normalizeTelegramScope(scope?: string): TelegramCampaignScope {
+    return scope === 'ARCHIVED' ? 'ARCHIVED' : 'ACTIVE';
+  }
+
+  private normalizeActionsTab(tab?: string): ActionsTab {
+    const upper = String(tab || '').toUpperCase() as ActionsTab;
+    return upper === 'UPCOMING' || upper === 'PAST' ? upper : 'CURRENT';
+  }
+
+  private normalizeDirection(direction?: string): OperationsLogFilters['direction'] {
+    const upper = String(direction || '').toUpperCase();
+    if (upper === 'EARN' || upper === 'REDEEM') return upper;
+    return 'ALL';
   }
 
   // Cashier credentials (merchant-wide 9-digit password)
@@ -178,6 +207,237 @@ export class PortalController {
   notificationsBroadcast(@Req() req: any, @Body() body: Omit<BroadcastArgs, 'merchantId'>) {
     const merchantId = this.getMerchantId(req);
     return this.notifications.broadcast({ merchantId, ...body });
+  }
+
+  // ===== Push campaigns =====
+  @Get('push-campaigns')
+  @ApiOkResponse({ schema: { type: 'array', items: { type: 'object', additionalProperties: true } } })
+  listPushCampaigns(@Req() req: any, @Query('scope') scope?: string) {
+    return this.pushCampaigns.list(this.getMerchantId(req), this.normalizePushScope(scope));
+  }
+
+  @Post('push-campaigns')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  createPushCampaign(
+    @Req() req: any,
+    @Body() body: { text?: string; audience?: string; startAt?: string; scheduledAt?: string; timezone?: string },
+  ) {
+    return this.pushCampaigns.create(this.getMerchantId(req), {
+      text: body?.text ?? '',
+      audience: body?.audience ?? '',
+      scheduledAt: body?.scheduledAt ?? body?.startAt ?? '',
+      timezone: body?.timezone,
+    });
+  }
+
+  @Post('push-campaigns/:campaignId/cancel')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  cancelPushCampaign(@Req() req: any, @Param('campaignId') campaignId: string) {
+    return this.pushCampaigns.markCanceled(this.getMerchantId(req), campaignId);
+  }
+
+  @Post('push-campaigns/:campaignId/archive')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  archivePushCampaign(@Req() req: any, @Param('campaignId') campaignId: string) {
+    return this.pushCampaigns.markArchived(this.getMerchantId(req), campaignId);
+  }
+
+  @Post('push-campaigns/:campaignId/duplicate')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  duplicatePushCampaign(
+    @Req() req: any,
+    @Param('campaignId') campaignId: string,
+    @Body() body: { scheduledAt?: string; startAt?: string },
+  ) {
+    return this.pushCampaigns.duplicate(this.getMerchantId(req), campaignId, {
+      scheduledAt: body?.scheduledAt ?? body?.startAt,
+    });
+  }
+
+  // ===== Telegram campaigns =====
+  @Get('telegram-campaigns')
+  @ApiOkResponse({ schema: { type: 'array', items: { type: 'object', additionalProperties: true } } })
+  listTelegramCampaigns(@Req() req: any, @Query('scope') scope?: string) {
+    return this.telegramCampaigns.list(this.getMerchantId(req), this.normalizeTelegramScope(scope));
+  }
+
+  @Post('telegram-campaigns')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  createTelegramCampaign(
+    @Req() req: any,
+    @Body()
+    body: {
+      audienceId?: string;
+      audienceName?: string;
+      text?: string;
+      imageUrl?: string;
+      startAt?: string;
+      scheduledAt?: string;
+      timezone?: string;
+    },
+  ) {
+    return this.telegramCampaigns.create(this.getMerchantId(req), {
+      audienceId: body?.audienceId,
+      audienceName: body?.audienceName,
+      text: body?.text ?? '',
+      imageUrl: body?.imageUrl,
+      scheduledAt: body?.scheduledAt ?? body?.startAt ?? '',
+      timezone: body?.timezone,
+    });
+  }
+
+  @Post('telegram-campaigns/:campaignId/cancel')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  cancelTelegramCampaign(@Req() req: any, @Param('campaignId') campaignId: string) {
+    return this.telegramCampaigns.markCanceled(this.getMerchantId(req), campaignId);
+  }
+
+  @Post('telegram-campaigns/:campaignId/archive')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  archiveTelegramCampaign(@Req() req: any, @Param('campaignId') campaignId: string) {
+    return this.telegramCampaigns.markArchived(this.getMerchantId(req), campaignId);
+  }
+
+  @Post('telegram-campaigns/:campaignId/duplicate')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  duplicateTelegramCampaign(
+    @Req() req: any,
+    @Param('campaignId') campaignId: string,
+    @Body() body: { scheduledAt?: string; startAt?: string },
+  ) {
+    return this.telegramCampaigns.duplicate(this.getMerchantId(req), campaignId, {
+      scheduledAt: body?.scheduledAt ?? body?.startAt,
+    });
+  }
+
+  // ===== Staff motivation =====
+  @Get('staff-motivation')
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        enabled: { type: 'boolean' },
+        pointsForNewCustomer: { type: 'number' },
+        pointsForExistingCustomer: { type: 'number' },
+        leaderboardPeriod: { type: 'string' },
+        customDays: { type: 'number', nullable: true },
+        updatedAt: { type: 'string', format: 'date-time' },
+      },
+    },
+  })
+  getStaffMotivation(@Req() req: any) {
+    return this.staffMotivation.getSettings(this.getMerchantId(req));
+  }
+
+  @Put('staff-motivation')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  updateStaffMotivation(@Req() req: any, @Body() body: UpdateStaffMotivationPayload) {
+    return this.staffMotivation.updateSettings(this.getMerchantId(req), {
+      enabled: !!body?.enabled,
+      pointsForNewCustomer: Number(body?.pointsForNewCustomer ?? 0),
+      pointsForExistingCustomer: Number(body?.pointsForExistingCustomer ?? 0),
+      leaderboardPeriod: body?.leaderboardPeriod ?? 'week',
+      customDays:
+        body?.customDays === undefined || body?.customDays === null
+          ? null
+          : Number(body.customDays),
+    });
+  }
+
+  // ===== Loyalty actions =====
+  @Get('actions')
+  @ApiOkResponse({ schema: { type: 'object', properties: { total: { type: 'number' }, items: { type: 'array', items: { type: 'object', additionalProperties: true } } } } })
+  listActions(@Req() req: any, @Query('tab') tab?: string, @Query('search') search?: string) {
+    return this.actions.list(this.getMerchantId(req), this.normalizeActionsTab(tab), search || undefined);
+  }
+
+  @Get('actions/:campaignId')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  getAction(@Req() req: any, @Param('campaignId') campaignId: string) {
+    return this.actions.getById(this.getMerchantId(req), campaignId);
+  }
+
+  @Post('actions/product-bonus')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  createProductBonusAction(@Req() req: any, @Body() body: any) {
+    const payload: CreateProductBonusActionPayload = {
+      name: String(body?.name ?? ''),
+      productIds: Array.isArray(body?.productIds) ? body.productIds.map((id: any) => String(id)) : [],
+      rule: {
+        mode: body?.rule?.mode ?? 'FIXED',
+        value: Number(body?.rule?.value ?? 0),
+      },
+      audienceId: body?.audienceId ?? undefined,
+      audienceName: body?.audienceName ?? undefined,
+      usageLimit: (body?.usageLimit ?? 'UNLIMITED') as CreateProductBonusActionPayload['usageLimit'],
+      usageLimitValue:
+        body?.usageLimitValue === undefined ? undefined : Number(body.usageLimitValue),
+      schedule: {
+        startEnabled: !!body?.schedule?.startEnabled,
+        startDate: body?.schedule?.startDate ?? body?.startDate,
+        endEnabled: !!body?.schedule?.endEnabled,
+        endDate: body?.schedule?.endDate ?? body?.endDate,
+      },
+      enabled: !!body?.enabled,
+    };
+
+    return this.actions.createProductBonus(this.getMerchantId(req), payload);
+  }
+
+  @Post('actions/:campaignId/status')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  updateActionStatus(
+    @Req() req: any,
+    @Param('campaignId') campaignId: string,
+    @Body() body: UpdateActionStatusPayload,
+  ) {
+    const action = body?.action === 'PAUSE' ? 'PAUSE' : 'RESUME';
+    return this.actions.updateStatus(this.getMerchantId(req), campaignId, { action });
+  }
+
+  @Post('actions/:campaignId/archive')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  archiveAction(@Req() req: any, @Param('campaignId') campaignId: string) {
+    return this.actions.archive(this.getMerchantId(req), campaignId);
+  }
+
+  @Post('actions/:campaignId/duplicate')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  duplicateAction(@Req() req: any, @Param('campaignId') campaignId: string) {
+    return this.actions.duplicate(this.getMerchantId(req), campaignId);
+  }
+
+  // ===== Operations journal =====
+  @Get('operations/log')
+  @ApiOkResponse({ schema: { type: 'object', properties: { total: { type: 'number' }, items: { type: 'array', items: { type: 'object', additionalProperties: true } } } } })
+  getOperationsLog(
+    @Req() req: any,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('staffId') staffId?: string,
+    @Query('outletId') outletId?: string,
+    @Query('direction') direction?: string,
+    @Query('receiptNumber') receiptNumber?: string,
+    @Query('limit') limitStr?: string,
+    @Query('offset') offsetStr?: string,
+  ) {
+    const filters: OperationsLogFilters = {
+      from: from || undefined,
+      to: to || undefined,
+      staffId: staffId || undefined,
+      outletId: outletId || undefined,
+      direction: this.normalizeDirection(direction),
+      receiptNumber: receiptNumber || undefined,
+      limit: limitStr ? parseInt(limitStr, 10) : undefined,
+      offset: offsetStr ? parseInt(offsetStr, 10) : undefined,
+    };
+    return this.operations.list(this.getMerchantId(req), filters);
+  }
+
+  @Get('operations/log/:receiptId')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  getOperationDetails(@Req() req: any, @Param('receiptId') receiptId: string) {
+    return this.operations.getDetails(this.getMerchantId(req), receiptId);
   }
 
   // ===== Analytics wrappers (portal-friendly) =====
