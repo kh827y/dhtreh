@@ -114,6 +114,8 @@ model Merchant {
   integrations Integration[]
   customerSegments CustomerSegment[]
   campaigns Campaign[]
+  pushCampaigns PushCampaign[]
+  telegramCampaigns TelegramCampaign[]
   reviewCount Int @default(0)
   // back-relations
   campaignUsages CampaignUsage[]
@@ -181,6 +183,11 @@ model MerchantSettings {
   smsSignature        String?
   phone               String?
   monthlyReports      Boolean  @default(false)
+  staffMotivationEnabled           Boolean @default(false)
+  staffMotivationNewCustomerPoints Int     @default(0)
+  staffMotivationExistingCustomerPoints Int @default(0)
+  staffMotivationLeaderboardPeriod String? 
+  staffMotivationCustomDays        Int?
   updatedAt      DateTime @default(now())
 }
 
@@ -794,6 +801,28 @@ model PushNotification {
   createdAt    DateTime @default(now())
 }
 
+model PushCampaign {
+  id            String   @id @default(cuid())
+  merchantId    String
+  text          String
+  audience      String
+  scheduledAt   DateTime
+  timezone      String?
+  status        String   @default("SCHEDULED")
+  totalRecipients Int    @default(0)
+  sent          Int      @default(0)
+  failed        Int      @default(0)
+  archivedAt    DateTime?
+  metadata      Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  merchant      Merchant @relation(fields: [merchantId], references: [id])
+
+  @@index([merchantId, status])
+  @@index([merchantId, scheduledAt])
+}
+
 // SMS notifications log
 model SmsNotification {
   id          String   @id @default(cuid())
@@ -812,6 +841,30 @@ model SmsNotification {
   campaignId  String?
   metadata    Json?
   createdAt   DateTime @default(now())
+}
+
+model TelegramCampaign {
+  id            String   @id @default(cuid())
+  merchantId    String
+  audienceId    String?
+  audienceName  String?
+  text          String
+  imageUrl      String?
+  scheduledAt   DateTime
+  timezone      String?
+  status        String   @default("SCHEDULED")
+  totalRecipients Int    @default(0)
+  sent          Int      @default(0)
+  failed        Int      @default(0)
+  archivedAt    DateTime?
+  metadata      Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  merchant      Merchant @relation(fields: [merchantId], references: [id])
+
+  @@index([merchantId, status])
+  @@index([merchantId, scheduledAt])
 }
 
 // OTP codes
@@ -1092,10 +1145,14 @@ model Campaign {
   reward            Json?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
+  archivedAt        DateTime?
 
   merchant          Merchant  @relation(fields: [merchantId], references: [id])
   segment           CustomerSegment? @relation(fields: [segmentId], references: [id])
   usages            CampaignUsage[]
+
+  @@index([merchantId, status])
+  @@index([merchantId, archivedAt])
 }
 
 // Reviews system

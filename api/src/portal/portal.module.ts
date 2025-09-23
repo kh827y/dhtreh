@@ -9,10 +9,15 @@ import { AnalyticsModule } from '../analytics/analytics.module';
 import { CampaignModule } from '../campaigns/campaign.module';
 import { GiftsModule } from '../gifts/gifts.module';
 import { PortalCatalogService } from './catalog.service';
+import { PushCampaignsService } from './services/push-campaigns.service';
+import { TelegramCampaignsService } from './services/telegram-campaigns.service';
+import { StaffMotivationService } from './services/staff-motivation.service';
+import { ActionsService } from './services/actions.service';
+import { OperationsLogService } from './services/operations-log.service';
 
 @Module({
   imports: [PrismaModule, MerchantsModule, VouchersModule, NotificationsModule, AnalyticsModule, CampaignModule, GiftsModule],
   controllers: [PortalController],
-  providers: [PortalGuard, PortalCatalogService],
+  providers: [PortalGuard, PortalCatalogService, PushCampaignsService, TelegramCampaignsService, StaffMotivationService, ActionsService, OperationsLogService],
 })
 export class PortalModule {}

@@ -1248,6 +1248,33 @@ const result = await client.commit({
 });
 ```
 
+### Merchant Portal API — рассылки, акции и мотивация
+
+| Endpoint | Метод | Описание |
+| --- | --- | --- |
+| `/portal/push-campaigns?scope=ACTIVE\|ARCHIVED` | GET | Списки push-кампаний мерчанта (активные или архивные). |
+| `/portal/push-campaigns` | POST | Создание новой push-рассылки. Требует `text`, `audience`, `scheduledAt`. |
+| `/portal/push-campaigns/{id}/cancel` | POST | Отмена запланированной рассылки. |
+| `/portal/push-campaigns/{id}/archive` | POST | Перенос кампании в архив. |
+| `/portal/push-campaigns/{id}/duplicate` | POST | Копирование кампании с новым расписанием. |
+| `/portal/telegram-campaigns?scope=ACTIVE\|ARCHIVED` | GET | Активные и архивные Telegram-рассылки. |
+| `/portal/telegram-campaigns` | POST | Создание Telegram-рассылки (аудитория, текст, опционально изображение и дата старта). |
+| `/portal/telegram-campaigns/{id}/cancel` | POST | Отмена Telegram-кампании до начала отправки. |
+| `/portal/telegram-campaigns/{id}/archive` | POST | Архивирование Telegram-кампании. |
+| `/portal/telegram-campaigns/{id}/duplicate` | POST | Создание копии Telegram-кампании. |
+| `/portal/staff-motivation` | GET | Текущие настройки мотивации персонала. |
+| `/portal/staff-motivation` | PUT | Обновление мотивации (включение/отключение, баллы, период рейтинга). |
+| `/portal/actions?tab=UPCOMING\|CURRENT\|PAST` | GET | Табличный список акций по вкладкам. |
+| `/portal/actions/{id}` | GET | Детальная информация по акции. |
+| `/portal/actions/product-bonus` | POST | Создание акции типа «акционные баллы на товары». |
+| `/portal/actions/{id}/status` | POST | Пауза или возобновление акции (`action=PAUSE|RESUME`). |
+| `/portal/actions/{id}/archive` | POST | Перенос акции в архив. |
+| `/portal/actions/{id}/duplicate` | POST | Создание черновика на основе существующей акции. |
+| `/portal/operations/log` | GET | Журнал начислений и списаний с фильтрами (даты, сотрудник, точка, направление). |
+| `/portal/operations/log/{receiptId}` | GET | Детали конкретной операции (состав транзакций, возможность отмены). |
+
+Каждый эндпоинт требует аутентифицированного вызова из Merchant Portal. Поля дат (`scheduledAt`, `startDate`, `endDate`) передаются в формате ISO 8601.
+
 ## Поддержка
 
 - Email: support@loyalty.com
