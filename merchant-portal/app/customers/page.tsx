@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Card, CardHeader, CardBody, Button, Icons } from "@loyalty/ui";
+import { Card, CardHeader, CardBody, Button, Icons, Skeleton } from "@loyalty/ui";
 import type { CustomerRecord } from "./data";
 import { normalizeGender } from "./data";
 import { CustomerFormModal, type CustomerFormPayload } from "./customer-form-modal";
@@ -27,6 +27,8 @@ const initialFilters: Filters = {
 const PAGE_SIZE = 8;
 const GROUPS = ["Стандарт", "Постоянные", "VIP", "Новые", "Сонные"];
 
+type QuickSearchResult = { customerId: string; phone?: string | null; balance: number } | null;
+
 type CustomersResponse = {
   items: CustomerRecord[];
   total: number;
@@ -43,6 +45,10 @@ export default function CustomersPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [toast, setToast] = React.useState<string | null>(null);
   const [modalState, setModalState] = React.useState<{ mode: "create" | "edit"; customer?: CustomerRecord } | null>(null);
+  const [quickPhone, setQuickPhone] = React.useState("");
+  const [quickLoading, setQuickLoading] = React.useState(false);
+  const [quickResult, setQuickResult] = React.useState<QuickSearchResult>(null);
+  const [quickMessage, setQuickMessage] = React.useState("");
 
   const totalPages = Math.max(1, Math.ceil(data.total / PAGE_SIZE));
   const shownFrom = data.total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
@@ -104,6 +110,54 @@ export default function CustomersPage() {
     setModalState({ mode: "edit", customer });
   }
 
+  async function runQuickSearch() {
+    const cleaned = quickPhone.replace(/\D+/g, "").trim();
+    if (!cleaned) {
+      setQuickMessage("Введите телефон клиента");
+      setQuickResult(null);
+      return;
+    }
+
+    setQuickLoading(true);
+    setQuickMessage("");
+    setQuickResult(null);
+    try {
+      const response = await fetch(`/api/portal/customer/search?phone=${encodeURIComponent(cleaned)}`, {
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error(`Ошибка поиска (${response.status})`);
+      }
+      const json = (await response.json()) as unknown;
+      if (!json || typeof json !== "object") {
+        setQuickMessage("Клиент не найден");
+        return;
+      }
+      const parsed = json as { customerId?: string; phone?: string | null; balance?: number | string };
+      if (!parsed.customerId) {
+        setQuickMessage("Клиент не найден");
+        return;
+      }
+      const balanceValue =
+        typeof parsed.balance === "number" ? parsed.balance : Number(parsed.balance ?? Number.NaN);
+      setQuickResult({
+        customerId: parsed.customerId,
+        phone: parsed.phone,
+        balance: Number.isFinite(balanceValue) ? balanceValue : 0,
+      });
+    } catch (err) {
+      console.error(err);
+      setQuickMessage(err instanceof Error ? err.message : "Ошибка поиска");
+    } finally {
+      setQuickLoading(false);
+    }
+  }
+
+  function handleQuickSearch(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void runQuickSearch();
+  }
+
   async function handleModalSubmit(payload: CustomerFormPayload) {
     if (!modalState) return;
     const body = {
@@ -161,6 +215,58 @@ export default function CustomersPage() {
           {toast}
         </div>
       )}
+
+      <Card>
+        <CardHeader title="Быстрый поиск" subtitle="Поиск клиента по номеру телефона" />
+        <CardBody>
+          <form onSubmit={handleQuickSearch} style={{ display: "grid", gap: 12 }}>
+            <div style={{ display: "grid", gap: 8, gridTemplateColumns: "minmax(220px, 1fr) auto" }}>
+              <input
+                placeholder="Телефон клиента"
+                value={quickPhone}
+                onChange={(event) => {
+                  setQuickPhone(event.target.value);
+                  setQuickMessage("");
+                }}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: 12,
+                  border: "1px solid rgba(148,163,184,0.18)",
+                  background: "rgba(15,23,42,0.55)",
+                  color: "inherit",
+                }}
+              />
+              <Button type="submit" disabled={!quickPhone.trim() || quickLoading}>
+                {quickLoading ? "Поиск…" : "Найти"}
+              </Button>
+            </div>
+            {quickLoading ? (
+              <Skeleton height={96} />
+            ) : quickResult ? (
+              <div style={{ display: "grid", gap: 6 }}>
+                <div>
+                  <strong>ID клиента:</strong> {quickResult.customerId}
+                </div>
+                <div>
+                  <strong>Телефон:</strong> {quickResult.phone || "—"}
+                </div>
+                <div>
+                  <strong>Баланс:</strong> {quickResult.balance}
+                </div>
+                <Link
+                  href={`/customers/${encodeURIComponent(quickResult.customerId)}`}
+                  style={{ color: "#6366f1", fontWeight: 500 }}
+                >
+                  Открыть карточку клиента →
+                </Link>
+              </div>
+            ) : (
+              <div style={{ opacity: 0.7 }}>Введите телефон и нажмите «Найти»</div>
+            )}
+            {quickMessage && <div style={{ color: "#f87171" }}>{quickMessage}</div>}
+          </form>
+        </CardBody>
+      </Card>
 
       <Card>
         <CardHeader
