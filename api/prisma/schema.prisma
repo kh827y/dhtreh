@@ -130,6 +130,9 @@ model Merchant {
   giftRedemptions   GiftRedemption[]
   // staff access per outlet
   staffAccesses     StaffOutletAccess[]
+  // catalog
+  productCategories ProductCategory[]
+  products          Product[]
   // Portal auth
   portalKeyHash        String?
   portalEmail          String?  @unique
@@ -377,9 +380,26 @@ model Outlet {
   merchant    Merchant  @relation(fields: [merchantId], references: [id])
   name        String
   address     String?
+  status      String    @default("ACTIVE") // ACTIVE | INACTIVE
+  hidden      Boolean   @default(false)
+  description String?
+  phone       String?
+  adminEmails String[]  @default([])
+  timezone    String?
+  scheduleEnabled Boolean @default(false)
+  scheduleMode String    @default("CUSTOM")
+  scheduleJson Json?
+  externalId  String?
+  manualLocation Boolean @default(false)
+  latitude    Decimal?  @db.Decimal(10, 7)
+  longitude   Decimal?  @db.Decimal(10, 7)
   createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([merchantId])
+  @@index([merchantId, status])
+  @@index([merchantId, hidden])
+  @@unique([merchantId, externalId])
 
   // обратные связи
   devices     Device[]
@@ -387,6 +407,7 @@ model Outlet {
   receipts    Receipt[]
   txns        Transaction[]
   staffAccesses StaffOutletAccess[]
+  stocks      ProductStock[]
 }
 
 model Device {
@@ -465,6 +486,115 @@ model StaffOutletAccess {
 
   @@unique([merchantId, staffId, outletId])
   @@index([merchantId, outletId])
+}
+
+model ProductCategory {
+  id          String            @id @default(cuid())
+  merchantId  String
+  merchant    Merchant          @relation(fields: [merchantId], references: [id])
+  parentId    String?
+  parent      ProductCategory?  @relation("CategoryChildren", fields: [parentId], references: [id])
+  children    ProductCategory[] @relation("CategoryChildren")
+  name        String
+  slug        String
+  description String?
+  imageUrl    String?
+  order       Int               @default(1000)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  deletedAt   DateTime?
+
+  products    Product[]
+
+  @@unique([merchantId, slug])
+  @@index([merchantId, order])
+  @@index([merchantId, parentId])
+}
+
+model Product {
+  id             String          @id @default(cuid())
+  merchantId     String
+  merchant       Merchant        @relation(fields: [merchantId], references: [id])
+  categoryId     String?
+  category       ProductCategory? @relation(fields: [categoryId], references: [id])
+  name           String
+  sku            String?
+  description    String?
+  order          Int             @default(1000)
+  iikoProductId  String?
+  hasVariants    Boolean         @default(false)
+  priceEnabled   Boolean         @default(true)
+  price          Decimal?        @db.Decimal(10, 2)
+  allowCart      Boolean         @default(true)
+  visible        Boolean         @default(true)
+  accruePoints   Boolean         @default(true)
+  allowRedeem    Boolean         @default(true)
+  redeemPercent  Int             @default(100)
+  weightValue    Decimal?        @db.Decimal(10, 3)
+  weightUnit     String?
+  heightCm       Decimal?        @db.Decimal(10, 2)
+  widthCm        Decimal?        @db.Decimal(10, 2)
+  depthCm        Decimal?        @db.Decimal(10, 2)
+  proteins       Decimal?        @db.Decimal(10, 2)
+  fats           Decimal?        @db.Decimal(10, 2)
+  carbs          Decimal?        @db.Decimal(10, 2)
+  calories       Decimal?        @db.Decimal(10, 2)
+  tags           String[]        @default([])
+  purchasesMonth Int             @default(0)
+  purchasesTotal Int             @default(0)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  deletedAt      DateTime?
+
+  images   ProductImage[]
+  variants ProductVariant[]
+  stocks   ProductStock[]
+
+  @@index([merchantId, categoryId])
+  @@index([merchantId, order])
+  @@unique([merchantId, sku])
+}
+
+model ProductImage {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  url       String
+  alt       String?
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([productId, position])
+}
+
+model ProductVariant {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  name      String
+  sku       String?
+  price     Decimal? @db.Decimal(10, 2)
+  notes     String?
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([productId, position])
+}
+
+model ProductStock {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  outletId  String?
+  outlet    Outlet?  @relation(fields: [outletId], references: [id])
+  label     String
+  price     Decimal? @db.Decimal(10, 2)
+  balance   Decimal? @db.Decimal(12, 3)
+  currency  String   @default("RUB")
+  createdAt DateTime @default(now())
+
+  @@index([productId])
+  @@index([productId, outletId])
 }
 
 model LedgerEntry {

@@ -635,6 +635,285 @@ Response 200:
 }
 ```
 
+### Merchant Portal — Каталог и торговые точки
+
+Все эндпоинты ниже требуют JWT портала (заголовок `Authorization: Bearer <token>`). Ответы содержат только данные текущего мерчанта.
+
+#### Категории товаров
+
+```http
+GET /portal/catalog/categories
+Authorization: Bearer <portal_jwt>
+
+Response 200:
+[
+  {
+    "id": "cat_1",
+    "name": "Пицца",
+    "slug": "pizza",
+    "description": "string | null",
+    "imageUrl": "https://... | null",
+    "parentId": "cat_parent | null",
+    "order": 1010
+  }
+]
+```
+
+```http
+POST /portal/catalog/categories
+Authorization: Bearer <portal_jwt>
+Content-Type: application/json
+
+{
+  "name": "Десерты",
+  "slug": "desserts",            // optional, генерируется автоматически
+  "description": "Раздел сладкого",
+  "imageUrl": "https://cdn/...",
+  "parentId": "cat_parent"       // optional
+}
+
+Response 200: объект категории
+```
+
+```http
+PUT /portal/catalog/categories/{categoryId}
+Authorization: Bearer <portal_jwt>
+Content-Type: application/json
+
+{
+  "name": "Салаты",
+  "slug": "salads"
+}
+
+Response 200: объект категории
+```
+
+```http
+POST /portal/catalog/categories/reorder
+Authorization: Bearer <portal_jwt>
+Content-Type: application/json
+
+{
+  "items": [
+    { "id": "cat_1", "order": 1000 },
+    { "id": "cat_2", "order": 1010 }
+  ]
+}
+
+Response 200: { "ok": true, "updated": 2 }
+```
+
+```http
+DELETE /portal/catalog/categories/{categoryId}
+Authorization: Bearer <portal_jwt>
+
+Response 200: { "ok": true }
+```
+
+#### Товары
+
+```http
+GET /portal/catalog/products?status=visible&points=with_points&categoryId=cat_1&search=маргарита
+Authorization: Bearer <portal_jwt>
+
+Response 200:
+{
+  "items": [
+    {
+      "id": "prd_1",
+      "name": "Маргарита",
+      "sku": "PZ-001",
+      "categoryId": "cat_1",
+      "categoryName": "Пицца",
+      "previewImage": "https://cdn/...",
+      "visible": true,
+      "accruePoints": true,
+      "allowRedeem": true,
+      "purchasesMonth": 120,
+      "purchasesTotal": 1450
+    }
+  ],
+  "total": 1
+}
+```
+
+```http
+GET /portal/catalog/products/{productId}
+Authorization: Bearer <portal_jwt>
+
+Response 200:
+{
+  "id": "prd_1",
+  "name": "Маргарита",
+  "sku": "PZ-001",
+  "order": 1000,
+  "description": "Тонкое тесто, моцарелла",
+  "categoryId": "cat_1",
+  "categoryName": "Пицца",
+  "iikoProductId": "ext-100",
+  "hasVariants": false,
+  "priceEnabled": true,
+  "price": 890,
+  "disableCart": false,
+  "redeemPercent": 100,
+  "tags": ["Популярный"],
+  "images": [{ "url": "https://cdn/...", "alt": "main", "position": 0 }],
+  "variants": [],
+  "stocks": [
+    { "label": "Основной склад", "outletId": "out-1", "price": 890, "balance": 25, "currency": "RUB" }
+  ],
+  "visible": true,
+  "accruePoints": true,
+  "allowRedeem": true,
+  "purchasesMonth": 120,
+  "purchasesTotal": 1450
+}
+```
+
+```http
+POST /portal/catalog/products
+Authorization: Bearer <portal_jwt>
+Content-Type: application/json
+
+{
+  "name": "Филадельфия",
+  "sku": "SU-101",
+  "categoryId": "cat_2",
+  "priceEnabled": true,
+  "price": 520,
+  "visible": true,
+  "accruePoints": true,
+  "allowRedeem": true,
+  "redeemPercent": 100,
+  "tags": ["Новинка"],
+  "images": [{ "url": "https://cdn/sushi.jpg" }],
+  "stocks": [{ "label": "Центральный склад", "balance": 10 }]
+}
+
+Response 200: объект товара
+```
+
+```http
+PUT /portal/catalog/products/{productId}
+Authorization: Bearer <portal_jwt>
+Content-Type: application/json
+
+{
+  "price": 540,
+  "allowRedeem": false,
+  "tags": ["Популярный", "Для вегетарианцев"]
+}
+
+Response 200: объект товара
+```
+
+```http
+DELETE /portal/catalog/products/{productId}
+Authorization: Bearer <portal_jwt>
+
+Response 200: { "ok": true }
+```
+
+```http
+POST /portal/catalog/products/bulk
+Authorization: Bearer <portal_jwt>
+Content-Type: application/json
+
+{
+  "action": "show" | "hide" | "allow_redeem" | "forbid_redeem" | "delete",
+  "ids": ["prd_1", "prd_2"]
+}
+
+Response 200: { "ok": true, "updated": 2 }
+```
+
+#### Торговые точки портала
+
+```http
+GET /portal/outlets?status=active&search=московской
+Authorization: Bearer <portal_jwt>
+
+Response 200:
+{
+  "items": [
+    {
+      "id": "out-1",
+      "name": "Тили-Тесто, Московской 56",
+      "address": "Новосибирск, Московская, 56",
+      "works": true,
+      "hidden": false,
+      "description": "Вход со двора",
+      "phone": "+7 (913) 000-00-00",
+      "adminEmails": ["manager@example.com"],
+      "timezone": "UTC+07",
+      "showSchedule": true,
+      "schedule": { "mode": "CUSTOM", "days": [...] },
+      "latitude": 55.0286,
+      "longitude": 82.9284,
+      "manualLocation": true,
+      "externalId": "BR-0001",
+      "createdAt": "2024-02-01T09:00:00.000Z",
+      "updatedAt": "2024-02-05T10:00:00.000Z"
+    }
+  ],
+  "total": 1
+}
+```
+
+```http
+GET /portal/outlets/{outletId}
+Authorization: Bearer <portal_jwt>
+
+Response 200: объект торговой точки
+```
+
+```http
+POST /portal/outlets
+Authorization: Bearer <portal_jwt>
+Content-Type: application/json
+
+{
+  "works": true,
+  "hidden": false,
+  "name": "Тили-Тесто, Московской 56",
+  "description": "Вход со двора",
+  "phone": "+7 (913) 000-00-00",
+  "address": "Новосибирск, Московская, 56",
+  "manualLocation": true,
+  "latitude": 55.0286,
+  "longitude": 82.9284,
+  "adminEmails": ["manager@example.com"],
+  "timezone": "UTC+07",
+  "showSchedule": true,
+  "schedule": { "mode": "CUSTOM", "days": [{ "day": "mon", "enabled": true, "from": "10:00", "to": "22:00" }] },
+  "externalId": "BR-0001"
+}
+
+Response 200: объект торговой точки
+```
+
+```http
+PUT /portal/outlets/{outletId}
+Authorization: Bearer <portal_jwt>
+Content-Type: application/json
+
+{
+  "works": false,
+  "hidden": true,
+  "showSchedule": false,
+  "externalId": "BR-0001"
+}
+
+Response 200: объект торговой точки
+```
+
+```http
+DELETE /portal/outlets/{outletId}
+Authorization: Bearer <portal_jwt>
+
+Response 200: { "ok": true }
+```
+
 ## Telegram Bot Integration
 
 ### Регистрация бота
