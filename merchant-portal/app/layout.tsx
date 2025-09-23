@@ -1,6 +1,7 @@
 import "@loyalty/ui/theme.css";
 import React from "react";
 import { Inter } from "next/font/google";
+import SidebarNav, { SidebarSection } from "../components/SidebarNav";
 
 export const metadata = {
   title: "Merchant Portal",
@@ -9,13 +10,89 @@ export const metadata = {
 
 const inter = Inter({ subsets: ["latin", "cyrillic"] });
 
-const LinkItem: React.FC<{ href: string; label: string }> = ({ href, label }) => (
-  <a href={href} className="btn btn-ghost" style={{ textDecoration: 'none', justifyContent: 'flex-start', padding: '8px 10px', width: '100%' }}>{label}</a>
-);
-
-const SectionTitle: React.FC<{ title: string }> = ({ title }) => (
-  <div style={{ fontSize: 12, opacity: .7, padding: '8px 10px', textTransform: 'uppercase' }}>{title}</div>
-);
+const sections: SidebarSection[] = [
+  {
+    id: "wizard",
+    title: "Мастер",
+    items: [{ href: "/", label: "Мастер настройки" }],
+  },
+  {
+    id: "analytics",
+    title: "Аналитика",
+    items: [
+      { href: "/analytics", label: "Сводный отчёт" },
+      { href: "/analytics/time", label: "По времени" },
+      { href: "/analytics/portrait", label: "Портрет клиента" },
+      { href: "/analytics/repeat", label: "Повторные продажи" },
+      { href: "/analytics/dynamics", label: "Динамика" },
+      { href: "/analytics/rfm", label: "RFM-анализ" },
+      { href: "/analytics/outlets", label: "Активность торговых точек" },
+      { href: "/analytics/staff", label: "Активность сотрудников" },
+      { href: "/analytics/referrals", label: "Реферальная программа" },
+      { href: "/analytics/birthdays", label: "Дни рождения" },
+      { href: "/analytics/auto-return", label: "Автовозврат клиентов" },
+    ],
+  },
+  {
+    id: "loyalty",
+    title: "Программа лояльности",
+    items: [
+      { href: "/loyalty/mechanics", label: "Механики" },
+      { href: "/loyalty/actions", label: "Акции" },
+      { href: "/loyalty/actions-earn", label: "Акции с начислением баллов" },
+      { href: "/operations", label: "Журнал начисления баллов" },
+      { href: "/loyalty/push", label: "Push‑рассылки" },
+      { href: "/loyalty/telegram", label: "Telegram‑рассылки" },
+      { href: "/promocodes", label: "Промокоды" },
+      { href: "/loyalty/staff-motivation", label: "Мотивация персонала" },
+      { href: "/loyalty/antifraud", label: "Защита от мошенничества" },
+      { href: "/loyalty/cashier", label: "Панель кассира" },
+    ],
+  },
+  {
+    id: "reviews",
+    title: "Отзывы",
+    items: [{ href: "/reviews", label: "Обратная связь" }],
+  },
+  {
+    id: "customers",
+    title: "Клиенты и аудитории",
+    items: [
+      { href: "/customers", label: "Клиенты" },
+      { href: "/audiences", label: "Аудитории" },
+    ],
+  },
+  {
+    id: "catalog",
+    title: "Товары и категории",
+    items: [
+      { href: "/products", label: "Товары" },
+      { href: "/categories", label: "Категории" },
+    ],
+  },
+  {
+    id: "wallet",
+    title: "Карта Wallet",
+    items: [{ href: "/wallet", label: "Карта Wallet" }],
+  },
+  {
+    id: "settings",
+    title: "Настройки",
+    items: [
+      { href: "/settings/outlets", label: "Торговые точки" },
+      { href: "/settings/staff", label: "Сотрудники" },
+      { href: "/settings/access", label: "Права доступа" },
+      { href: "/settings/integrations", label: "Интеграции" },
+      { href: "/settings/telegram", label: "Уведомления в телеграм" },
+      { href: "/settings/system", label: "Системные настройки" },
+    ],
+  },
+  {
+    id: "tools",
+    title: "Инструменты",
+    items: [{ href: "/tools/import", label: "Импорт данных" }],
+  },
+];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -30,59 +107,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <div style={{ fontSize: 12, opacity: .7 }}>v1</div>
           </header>
           <aside style={{ borderRight: '1px solid rgba(255,255,255,.06)', padding: 8, overflow: 'auto' }}>
-            <nav style={{ display: 'grid', gap: 4 }}>
-              <SectionTitle title="Мастер" />
-              <LinkItem href="/" label="Мастер настройки" />
-
-              <SectionTitle title="Аналитика" />
-              <LinkItem href="/analytics" label="Сводный отчёт" />
-              <LinkItem href="/analytics/time" label="По времени" />
-              <LinkItem href="/analytics/portrait" label="Портрет клиента" />
-              <LinkItem href="/analytics/repeat" label="Повторные продажи" />
-              <LinkItem href="/analytics/dynamics" label="Динамика" />
-              <LinkItem href="/analytics/rfm" label="RFM-анализ" />
-              <LinkItem href="/analytics/outlets" label="Активность торговых точек" />
-              <LinkItem href="/analytics/staff" label="Активность сотрудников" />
-              <LinkItem href="/analytics/referrals" label="Реферальная программа" />
-              <LinkItem href="/analytics/birthdays" label="Дни рождения" />
-              <LinkItem href="/analytics/auto-return" label="Автовозврат клиентов" />
-
-              <SectionTitle title="Программа лояльности" />
-              <LinkItem href="/loyalty/mechanics" label="Механики" />
-              <LinkItem href="/loyalty/actions" label="Акции" />
-              <LinkItem href="/loyalty/actions-earn" label="Акции с начислением баллов" />
-              <LinkItem href="/loyalty/push" label="Push‑рассылки" />
-              <LinkItem href="/loyalty/telegram" label="Telegram‑рассылки" />
-              <LinkItem href="/promocodes" label="Промокоды" />
-              <LinkItem href="/loyalty/staff-motivation" label="Мотивация персонала" />
-              <LinkItem href="/loyalty/antifraud" label="Защита от мошенничества" />
-              <LinkItem href="/loyalty/cashier" label="Панель кассира" />
-
-              <SectionTitle title="Отзывы" />
-              <LinkItem href="/reviews" label="Обратная связь" />
-
-              <SectionTitle title="Клиенты и аудитории" />
-              <LinkItem href="/customers" label="Клиенты" />
-              <LinkItem href="/audiences" label="Аудитории" />
-
-              <SectionTitle title="Товары и категории" />
-              <LinkItem href="/products" label="Товары" />
-              <LinkItem href="/categories" label="Категории" />
-
-              <SectionTitle title="Карта Wallet" />
-              <LinkItem href="/wallet" label="Карта Wallet" />
-
-              <SectionTitle title="Настройки" />
-              <LinkItem href="/settings/outlets" label="Торговые точки" />
-              <LinkItem href="/settings/staff" label="Сотрудники" />
-              <LinkItem href="/settings/access" label="Права доступа" />
-              <LinkItem href="/settings/integrations" label="Интеграции" />
-              <LinkItem href="/settings/telegram" label="Уведомления в телеграм" />
-              <LinkItem href="/settings/system" label="Системные настройки" />
-
-              <SectionTitle title="Инструменты" />
-              <LinkItem href="/tools/import" label="Импорт данных" />
-            </nav>
+            <SidebarNav sections={sections} />
           </aside>
           <main style={{ padding: 16 }}>
             {children}
