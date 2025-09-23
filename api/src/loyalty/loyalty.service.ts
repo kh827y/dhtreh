@@ -444,7 +444,7 @@ export class LoyaltyService {
     });
   }
 
-  async commit(holdId: string, orderId: string, receiptNumber?: string, requestId?: string) {
+  async commit(holdId: string, orderId: string, receiptNumber?: string, requestId?: string, opts?: { additionalEarnPoints?: number }) {
     const hold = await this.prisma.hold.findUnique({ where: { id: holdId } });
     if (!hold) throw new BadRequestException('Hold not found');
     if (hold.expiresAt && hold.expiresAt.getTime() < Date.now()) {
@@ -517,9 +517,12 @@ export class LoyaltyService {
         }
         const delayDays = Number((settings as any)?.earnDelayDays || 0) || 0;
         const ttlDays = Number((settings as any)?.pointsTtlDays || 0) || 0;
-        appliedEarn = hold.earnPoints;
+        const add = Math.max(0, Math.floor(Number(opts?.additionalEarnPoints || 0)));
+        appliedEarn = Math.max(0, Math.floor(Number(hold.earnPoints || 0)) + add);
 
-        if (delayDays > 0) {
+        if (appliedEarn <= 0) {
+          // ничего не начисляем
+        } else if (delayDays > 0) {
           // Откладываем начисление: создаём PENDING lot и событие, баланс не трогаем до созревания
           if (process.env.EARN_LOTS_FEATURE === '1' && appliedEarn > 0) {
             const maturesAt = new Date(Date.now() + delayDays * 24 * 60 * 60 * 1000);
@@ -561,9 +564,11 @@ export class LoyaltyService {
         } else {
           // Немедленное начисление
           const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
-          await tx.wallet.update({ where: { id: wallet.id }, data: { balance: fresh!.balance + hold.earnPoints } });
+          if (appliedEarn > 0) {
+            await tx.wallet.update({ where: { id: wallet.id }, data: { balance: fresh!.balance + appliedEarn } });
+          }
           await tx.transaction.create({
-            data: { customerId: hold.customerId, merchantId: hold.merchantId, type: TxnType.EARN, amount: hold.earnPoints, orderId, outletId: hold.outletId, deviceId: hold.deviceId, staffId: hold.staffId }
+            data: { customerId: hold.customerId, merchantId: hold.merchantId, type: TxnType.EARN, amount: appliedEarn, orderId, outletId: hold.outletId, deviceId: hold.deviceId, staffId: hold.staffId }
           });
           // Ledger mirror (optional)
           if (process.env.LEDGER_FEATURE === '1' && appliedEarn > 0) {

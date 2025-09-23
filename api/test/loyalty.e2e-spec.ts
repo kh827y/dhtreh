@@ -24,7 +24,7 @@ describe('Loyalty (e2e)', () => {
     devices: [] as { id: string; merchantId: string; type: 'SMART'|'PC_POS'|'VIRTUAL'; label?: string|null; bridgeSecret?: string|null }[],
     idem: new Map<string, any>(),
     earnLots: [] as Array<{ id: string; merchantId: string; customerId: string; points: number; consumedPoints: number; earnedAt: Date; maturesAt?: Date|null; expiresAt?: Date|null; orderId?: string|null; receiptId?: string|null; outletId?: string|null; deviceId?: string|null; staffId?: string|null; status: 'ACTIVE'|'PENDING' }>,
-    vouchers: [] as Array<{ id: string; merchantId: string; valueType: 'PERCENTAGE'|'FIXED_AMOUNT'; value: number; validFrom?: Date|null; validUntil?: Date|null; minPurchaseAmount?: number|null }>,
+    vouchers: [] as Array<{ id: string; merchantId: string; type?: 'DISCOUNT'|'PROMO_CODE'; valueType: 'PERCENTAGE'|'FIXED_AMOUNT'|'POINTS'; value: number; validFrom?: Date|null; validUntil?: Date|null; minPurchaseAmount?: number|null; totalUsed?: number; maxTotalUses?: number; maxUsesPerCustomer?: number }>,
     voucherCodes: [] as Array<{ id: string; voucherId: string; code: string; validFrom?: Date|null; validUntil?: Date|null; maxUses?: number|null; usedCount?: number }>,
     voucherUsages: [] as Array<{ id: string; voucherId: string; codeId: string; customerId: string; orderId?: string|null; amount: number }>,
   };
@@ -256,6 +256,41 @@ describe('Loyalty (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
     await app.init();
+  });
+
+  it('POINTS promocode (EARN): commit adds additionalEarnPoints and is idempotent', async () => {
+    const now = new Date();
+    const future = new Date(now.getTime() + 7*24*60*60*1000);
+    state.vouchers.push({ id: 'V-P50', merchantId: 'M1', type: 'PROMO_CODE', valueType: 'POINTS', value: 50, validFrom: now, validUntil: future, minPurchaseAmount: 0 });
+    state.voucherCodes.push({ id: 'VC-P50', voucherId: 'V-P50', code: 'PROMO50', validFrom: now, validUntil: future, maxUses: 5, usedCount: 0 });
+
+    const q = await request(app.getHttpServer())
+      .post('/loyalty/quote')
+      .send({ merchantId: 'M1', userToken: 'C-points-1', mode: 'EARN', total: 1000, eligibleTotal: 1000 })
+      .expect(201);
+    const holdId = q.body.holdId as string;
+    const expectedBase = Number(q.body.pointsToEarn || 0); // for M1 default earnBps=1000 -> 100 points
+    const usagesBefore = state.voucherUsages.length;
+
+    const c1 = await request(app.getHttpServer())
+      .post('/loyalty/commit')
+      .send({ holdId, orderId: 'O-PROMO-1', voucherCode: 'PROMO50' })
+      .expect(201);
+
+    expect(c1.body.ok).toBe(true);
+    expect(c1.body.earnApplied).toBe(expectedBase + 50);
+
+    const usagesAfterFirst = state.voucherUsages.length;
+    expect(usagesAfterFirst).toBe(usagesBefore + 1);
+
+    const c2 = await request(app.getHttpServer())
+      .post('/loyalty/commit')
+      .send({ holdId, orderId: 'O-PROMO-1', voucherCode: 'PROMO50' })
+      .expect(201);
+
+    expect(c2.body.alreadyCommitted).toBe(true);
+    const usagesAfterSecond = state.voucherUsages.length;
+    expect(usagesAfterSecond).toBe(usagesAfterFirst);
   });
 
   it('Levels + voucher + promo (M2): EARN uses adjusted eligible and level bonus', async () => {

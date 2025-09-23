@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import QrScanner from '../components/QrScanner';
+import SegmentedInput from '../components/SegmentedInput';
 
 type QuoteRedeemResp = {
   canRedeem?: boolean;
@@ -23,7 +24,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
 const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
 
 export default function Page() {
-  const [merchantId] = useState<string>(MERCHANT);
+  const [merchantId, setMerchantId] = useState<string>(MERCHANT);
 
   const [mode, setMode] = useState<'redeem' | 'earn'>('redeem');
   const [userToken, setUserToken] = useState<string>('user-1'); // сюда вставится отсканированный JWT
@@ -53,13 +54,38 @@ export default function Page() {
   const [deviceId, setDeviceId] = useState<string>('');
   const [staffId, setStaffId] = useState<string>('');
   const [category, setCategory] = useState<string>('');
+  const [voucherCode, setVoucherCode] = useState<string>('');
   const [staffKey, setStaffKey] = useState<string>('');
+  // cashier auth (merchant login + 9-digit password)
+  const [merchantLogin, setMerchantLogin] = useState<string>('');
+  const [passwordDigits, setPasswordDigits] = useState<string>('');
+  const [pinDigits, setPinDigits] = useState<string>('');
+  const [authMsg, setAuthMsg] = useState<string>('');
+  const [step, setStep] = useState<'merchant' | 'pin' | 'terminal'>('merchant');
+  const [staffLookup, setStaffLookup] = useState<{
+    staff: { id: string; login?: string; firstName?: string; lastName?: string; role: string };
+    accesses: Array<{ outletId: string; outletName: string }>;
+  } | null>(null);
+  const password9 = passwordDigits;
   useEffect(() => {
-    try { const v = localStorage.getItem('cashier_staff_key_v1'); if (v != null) setStaffKey(v); } catch {}
+    try {
+      const v = localStorage.getItem('cashier_staff_key_v1');
+      if (v) {
+        setStaffKey(v);
+        setStep('terminal');
+      }
+    } catch {}
+    try { const v = localStorage.getItem('cashier_merchant_login_v1'); if (v != null) setMerchantLogin(v); } catch {}
+    try { const v = localStorage.getItem('cashier_merchant_id_v1'); if (v != null) setMerchantId(v); } catch {}
   }, []);
   useEffect(() => {
     try { localStorage.setItem('cashier_staff_key_v1', staffKey || ''); } catch {}
+    if (staffKey) {
+      setStep('terminal');
+    }
   }, [staffKey]);
+  useEffect(() => { try { localStorage.setItem('cashier_merchant_login_v1', merchantLogin || ''); } catch {} }, [merchantLogin]);
+  useEffect(() => { try { localStorage.setItem('cashier_merchant_id_v1', merchantId || ''); } catch {} }, [merchantId]);
 
   // Сгенерируем уникальный orderId при первом монтировании, чтобы избежать идемпотентных коллизий после перезагрузки
   useEffect(() => {
@@ -74,8 +100,8 @@ export default function Page() {
     try {
       const r = await fetch(`${API_BASE}/loyalty/quote`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId, ...(staffKey?{ 'X-Staff-Key': staffKey }: {}) },
-        body: JSON.stringify({ merchantId, mode, userToken, orderId, total, eligibleTotal, outletId: outletId || undefined, deviceId: deviceId || undefined, staffId: staffId || undefined, category: category || undefined }),
+        headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId, ...(staffKey ? { 'X-Staff-Key': staffKey } : {}) },
+        body: JSON.stringify({ merchantId, mode, userToken, orderId, total, eligibleTotal, outletId: outletId || undefined, deviceId: deviceId || undefined, staffId: staffId || undefined, category: category || undefined, voucherCode: voucherCode || undefined }),
       });
       if (!r.ok) {
         const text = await r.text();
@@ -86,9 +112,7 @@ export default function Page() {
       setHoldId((data as any).holdId ?? null);
     } catch (e: any) {
       const msg = String(e?.message || e);
-      // гарантированно закрываем модалку, если вдруг ещё открыта
       setScanOpen(false);
-
       if (msg.includes('QR токен уже использован')) {
         alert('Этот QR уже использован. Попросите клиента обновить QR в мини-аппе.');
       } else if (msg.includes('ERR_JWT_EXPIRED') || msg.includes('JWTExpired') || msg.includes('"exp"')) {
@@ -103,6 +127,93 @@ export default function Page() {
     }
   }
 
+  // ===== Cashier Auth =====
+  const normalizedLogin = merchantLogin.trim().toLowerCase().replace(/[^a-z]/g, '') || merchantLogin.trim().toLowerCase();
+
+  async function cashierLogin() {
+    setAuthMsg('');
+    try {
+      if (!normalizedLogin || !password9 || password9.length !== 9) throw new Error('Укажите логин мерчанта и 9‑значный пароль');
+      const r = await fetch(`${API_BASE}/loyalty/cashier/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ merchantLogin: normalizedLogin, password9 }) });
+      if (!r.ok) throw new Error(await r.text());
+      const data = await r.json();
+      if (data?.merchantId) {
+        setMerchantId(String(data.merchantId));
+        setStep('pin');
+        setStaffLookup(null);
+        setPinDigits('');
+        setMerchantLogin(normalizedLogin);
+      }
+    } catch (e: any) {
+      setAuthMsg(String(e?.message || e));
+    }
+  }
+
+  async function lookupStaffByPin(pin: string) {
+    setAuthMsg('');
+    if (!pin || pin.length !== 4) return;
+    try {
+      if (!normalizedLogin || !password9 || password9.length !== 9) throw new Error('Сначала выполните вход мерчанта');
+      setPinDigits(pin);
+      const r = await fetch(`${API_BASE}/loyalty/cashier/staff-access`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ merchantLogin: normalizedLogin, password9, pinCode: pin }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      const data = await r.json();
+      const accesses = Array.isArray(data?.accesses) ? data.accesses : [];
+      setStaffLookup({
+        staff: {
+          id: data?.staff?.id,
+          login: data?.staff?.login,
+          firstName: data?.staff?.firstName,
+          lastName: data?.staff?.lastName,
+          role: data?.staff?.role,
+        },
+        accesses,
+      });
+      if (data?.staff?.id) setStaffId(String(data.staff.id));
+      if (accesses.length) setOutletId(accesses[0].outletId);
+    } catch (e: any) {
+      setAuthMsg(String(e?.message || e));
+    }
+  }
+
+  async function issueStaffToken() {
+    setAuthMsg('');
+    try {
+      if (!normalizedLogin || !password9 || password9.length !== 9) throw new Error('Сначала войдите как кассир (логин/пароль 9 цифр)');
+      if (!staffLookup?.staff?.id) throw new Error('Введите PIN сотрудника');
+      const selectedOutlet = outletId || staffLookup.accesses[0]?.outletId;
+      if (!selectedOutlet) throw new Error('Выберите торговую точку');
+      if (!pinDigits || pinDigits.length !== 4) throw new Error('Введите PIN сотрудника');
+      const r = await fetch(`${API_BASE}/loyalty/cashier/staff-token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ merchantLogin: normalizedLogin, password9, staffIdOrLogin: staffLookup.staff.id, outletId: selectedOutlet, pinCode: pinDigits }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      const data = await r.json();
+      if (data?.token) {
+        setStaffKey(String(data.token));
+        try { localStorage.setItem('cashier_staff_key_v1', String(data.token)); } catch {}
+        setPinDigits('');
+        setStep('terminal');
+      }
+    } catch (e: any) {
+      setAuthMsg(String(e?.message || e));
+    }
+  }
+
+  function logoutStaff() {
+    setStaffKey('');
+    try { localStorage.removeItem('cashier_staff_key_v1'); } catch {}
+    setStaffLookup(null);
+    setPinDigits('');
+    setStep(passwordDigits.length === 9 && merchantLogin.trim() ? 'pin' : 'merchant');
+  }
+
   async function callCommit() {
     if (!holdId) return alert('Сначала сделайте расчёт (QUOTE).');
     setBusy(true);
@@ -111,7 +222,7 @@ export default function Page() {
       const r = await fetch(`${API_BASE}/loyalty/commit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId, ...(staffKey?{ 'X-Staff-Key': staffKey }: {}) },
-        body: JSON.stringify({ merchantId, holdId, orderId, receiptNumber: '000001', requestId }),
+        body: JSON.stringify({ merchantId, holdId, orderId, receiptNumber: '000001', requestId, voucherCode: voucherCode || undefined }),
       });
       const data = await r.json();
       if (data?.ok) {
@@ -272,6 +383,118 @@ export default function Page() {
       <h1>Виртуальный терминал кассира</h1>
       <div style={{ color: '#666', marginTop: 6 }}>Мерчант: <code>{merchantId}</code></div>
 
+      {/* Cashier Auth */}
+      <section style={{ marginTop: 16, padding: 16, border: '1px solid #eee', borderRadius: 12, background: '#fafafa' }}>
+        <h2 style={{ margin: 0, marginBottom: 12, fontSize: 18 }}>Авторизация кассира</h2>
+        <div style={{ display: 'flex', gap: 12, fontSize: 12, opacity: 0.7, marginBottom: 12, flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: step === 'merchant' ? 700 : 500 }}>1. Логин мерчанта</span>
+          <span style={{ fontWeight: step === 'pin' ? 700 : 500 }}>2. PIN сотрудника</span>
+          <span style={{ fontWeight: step === 'terminal' ? 700 : 500 }}>3. Работа в терминале</span>
+        </div>
+
+        {step === 'merchant' && (
+          <div style={{ display: 'grid', gap: 14 }}>
+            <div style={{ display: 'grid', gap: 6 }}>
+              <label style={{ fontSize: 13, opacity: 0.8 }}>Логин мерчанта</label>
+              <input
+                value={merchantLogin}
+                onChange={(e)=>setMerchantLogin(e.target.value)}
+                placeholder="Например, greenmarket"
+                style={{ padding: 10, borderRadius: 8, border: '1px solid #ddd', maxWidth: 280 }}
+              />
+            </div>
+            <div style={{ display: 'grid', gap: 6 }}>
+              <label style={{ fontSize: 13, opacity: 0.8 }}>Пароль (9 цифр)</label>
+              <SegmentedInput length={9} groupSize={3} value={passwordDigits} onChange={setPasswordDigits} placeholderChar="○" autoFocus />
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button
+                onClick={cashierLogin}
+                style={{ padding: '8px 16px' }}
+                disabled={!merchantLogin.trim() || passwordDigits.length !== 9}
+              >
+                Войти в панель кассира
+              </button>
+            </div>
+            {authMsg && <div style={{ color: '#d33' }}>{authMsg}</div>}
+          </div>
+        )}
+
+        {step === 'pin' && (
+          <div style={{ display: 'grid', gap: 14 }}>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 13, opacity: 0.75 }}>Логин мерчанта:</div>
+              <code style={{ padding: '2px 8px', borderRadius: 6, background: '#fff', border: '1px solid #eee' }}>{normalizedLogin || '—'}</code>
+              <button className="btn btn-ghost" onClick={() => setStep('merchant')}>Изменить</button>
+            </div>
+            <div style={{ display: 'grid', gap: 8 }}>
+              <label style={{ fontSize: 13, opacity: 0.8 }}>PIN сотрудника</label>
+              <SegmentedInput
+                length={4}
+                value={pinDigits}
+                onChange={(val) => {
+                  setPinDigits(val);
+                  if (val.length < 4) setStaffLookup(null);
+                }}
+                onComplete={lookupStaffByPin}
+                placeholderChar="○"
+              />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => lookupStaffByPin(pinDigits)} disabled={pinDigits.length !== 4} style={{ padding: '6px 12px' }}>Проверить PIN</button>
+                {staffKey ? <button className="btn btn-ghost" onClick={logoutStaff}>Сбросить ключ</button> : null}
+              </div>
+            </div>
+            {staffLookup && (
+              <div style={{ display: 'grid', gap: 10, padding: 12, border: '1px solid #e1e1e1', borderRadius: 10, background: '#fff' }}>
+                <div>
+                  <div style={{ fontSize: 13, opacity: 0.7 }}>Сотрудник</div>
+                  <div style={{ fontSize: 16, fontWeight: 600 }}>
+                    {[staffLookup.staff.firstName, staffLookup.staff.lastName].filter(Boolean).join(' ') || staffLookup.staff.login || staffLookup.staff.id}
+                  </div>
+                  <div style={{ fontSize: 12, opacity: 0.6 }}>{staffLookup.staff.role}</div>
+                </div>
+                <div>
+                  <label style={{ fontSize: 13, opacity: 0.7 }}>Торговая точка</label>
+                  <select value={outletId} onChange={(e)=>setOutletId(e.target.value)} style={{ padding: 8, minWidth: 220, borderRadius: 8, border: '1px solid #ddd' }}>
+                    {staffLookup.accesses.length ? null : <option value="">Нет доступных точек</option>}
+                    {staffLookup.accesses.map((acc) => (
+                      <option key={acc.outletId} value={acc.outletId}>{acc.outletName}</option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  onClick={issueStaffToken}
+                  style={{ padding: '8px 16px' }}
+                  disabled={!staffLookup.accesses.length}
+                >
+                  Получить ключ кассира
+                </button>
+              </div>
+            )}
+            {authMsg && <div style={{ color: '#d33' }}>{authMsg}</div>}
+          </div>
+        )}
+
+        {step === 'terminal' && (
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 13, opacity: 0.7 }}>Мерчант:</div>
+              <code style={{ padding: '2px 8px', borderRadius: 6, background: '#fff', border: '1px solid #eee' }}>{normalizedLogin || merchantLogin || '—'}</code>
+            </div>
+            {staffId && (
+              <div style={{ fontSize: 13, opacity: 0.75 }}>Активный сотрудник ID: <code>{staffId}</code></div>
+            )}
+            {staffKey && (
+              <div style={{ fontSize: 12, color: '#0a0' }}>X-Staff-Key установлен. Запросы будут подписаны.</div>
+            )}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn" onClick={() => setStep('pin')}>Сменить PIN</button>
+              <button className="btn btn-ghost" onClick={logoutStaff}>Сбросить ключ</button>
+            </div>
+          </div>
+        )}
+      </section>
+
       <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
         <label>
           Клиент (userToken/сканер):
@@ -314,6 +537,12 @@ export default function Page() {
           <label style={{ flex: 1 }}>
             База (eligibleTotal):
             <input type="number" value={eligibleTotal} onChange={(e) => setEligibleTotal(+e.target.value)} style={{ width: '100%', padding: 8 }} />
+          </label>
+        </div>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <label style={{ flex: 1 }}>
+            Промокод/ваучер (опц.):
+            <input value={voucherCode} onChange={(e)=>setVoucherCode(e.target.value)} style={{ width: '100%', padding: 8 }} placeholder="например, SAVE10 или BONUS100" />
           </label>
         </div>
 

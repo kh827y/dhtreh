@@ -69,12 +69,25 @@ export class LoyaltyController {
   async cashierStaffToken(@Body() body: { merchantLogin?: string; password9?: string; staffIdOrLogin?: string; outletId?: string; pinCode?: string }) {
     const merchantLogin = String(body?.merchantLogin || '');
     const password9 = String(body?.password9 || '');
-    const staffIdOrLogin = String(body?.staffIdOrLogin || '');
+    const staffIdOrLogin = body?.staffIdOrLogin != null ? String(body.staffIdOrLogin) : '';
     const outletId = String(body?.outletId || '');
     const pinCode = String(body?.pinCode || '');
     if (!merchantLogin || !password9 || password9.length !== 9) throw new BadRequestException('merchantLogin and 9-digit password required');
-    if (!staffIdOrLogin || !outletId || !pinCode) throw new BadRequestException('staffIdOrLogin, outletId and pinCode required');
+    if (!outletId) throw new BadRequestException('outletId required');
+    if (!pinCode) throw new BadRequestException('pinCode required');
     return this.merchants.issueStaffTokenByPin(merchantLogin, password9, staffIdOrLogin, outletId, pinCode);
+  }
+  @Post('cashier/staff-access')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiOkResponse({ schema: { type: 'object', properties: { staff: { type: 'object', additionalProperties: true }, accesses: { type: 'array', items: { type: 'object', additionalProperties: true } } } } })
+  async cashierStaffAccess(@Body() body: { merchantLogin?: string; password9?: string; pinCode?: string }) {
+    const merchantLogin = String(body?.merchantLogin || '');
+    const password9 = String(body?.password9 || '');
+    const pinCode = String(body?.pinCode || '');
+    if (!merchantLogin || !password9 || password9.length !== 9) throw new BadRequestException('merchantLogin and 9-digit password required');
+    if (!pinCode || pinCode.length !== 4) throw new BadRequestException('pinCode (4 digits) required');
+    const auth = await this.merchants.authenticateCashier(merchantLogin, password9);
+    return this.merchants.getStaffAccessByPin(auth.merchantId, pinCode);
   }
 
   private async verifyStaffKey(merchantId: string, key: string): Promise<boolean> {
@@ -271,6 +284,7 @@ export class LoyaltyController {
   async commit(@Body() dto: CommitDto, @Res({ passthrough: true }) res: Response, @Req() req: Request & { requestId?: string }) {
     const t0 = Date.now();
     let data: any;
+    let extraEarnPoints = 0;
     // кешируем hold для извлечения контекста (merchantId, deviceId, staffId)
     let holdCached: any = null;
     try { holdCached = await this.prisma.hold.findUnique({ where: { id: dto.holdId } }); } catch {}
@@ -309,14 +323,22 @@ export class LoyaltyController {
           if (saved) {
             data = saved.response as any;
           } else {
-            // Идемпотентная фиксация ваучера перед commit (если указан)
+            // Идемпотентная фиксация ваучера/промокода перед commit (если указан)
             try {
               if (dto.voucherCode && holdCached?.customerId && merchantIdEff) {
-                const elig = Math.max(0, Number(holdCached?.eligibleTotal || holdCached?.total || 0));
-                await this.vouchers.redeem({ merchantId: merchantIdEff, code: dto.voucherCode, customerId: holdCached.customerId, eligibleTotal: elig, orderId: dto.orderId });
+                try {
+                  const st = await this.vouchers.status({ merchantId: merchantIdEff, code: dto.voucherCode });
+                  if (st && String(st.type) === 'PROMO_CODE' && String(st.valueType) === 'POINTS') {
+                    const r = await this.vouchers.redeemPoints({ merchantId: merchantIdEff, code: dto.voucherCode, customerId: holdCached.customerId, orderId: dto.orderId });
+                    extraEarnPoints = Math.max(0, Number(r?.points || 0));
+                  } else {
+                    const elig = Math.max(0, Number(holdCached?.eligibleTotal || holdCached?.total || 0));
+                    await this.vouchers.redeem({ merchantId: merchantIdEff, code: dto.voucherCode, customerId: holdCached.customerId, eligibleTotal: elig, orderId: dto.orderId });
+                  }
+                } catch {}
               }
             } catch {}
-            data = await this.service.commit(dto.holdId, dto.orderId, dto.receiptNumber, req.requestId ?? dto.requestId);
+            data = await this.service.commit(dto.holdId, dto.orderId, dto.receiptNumber, req.requestId ?? dto.requestId, { additionalEarnPoints: extraEarnPoints });
             // если второй вызов пришёл после первого, когда hold уже COMMITTED,
             // commit() вернёт alreadyCommitted=true. Для идемпотентности нормализуем ответ к первому.
             if (data && typeof data === 'object' && (data as any).alreadyCommitted === true) {
@@ -334,20 +356,36 @@ export class LoyaltyController {
           // нет merchantId — выполняем без сохранения идемпотентности (уникальный чек по orderId всё равно защитит)
           try {
             if (dto.voucherCode && holdCached?.customerId && merchantIdEff) {
-              const elig = Math.max(0, Number(holdCached?.eligibleTotal || holdCached?.total || 0));
-              await this.vouchers.redeem({ merchantId: merchantIdEff, code: dto.voucherCode, customerId: holdCached.customerId, eligibleTotal: elig, orderId: dto.orderId });
+              try {
+                const st = await this.vouchers.status({ merchantId: merchantIdEff, code: dto.voucherCode });
+                if (st && String(st.type) === 'PROMO_CODE' && String(st.valueType) === 'POINTS') {
+                  const r = await this.vouchers.redeemPoints({ merchantId: merchantIdEff, code: dto.voucherCode, customerId: holdCached.customerId, orderId: dto.orderId });
+                  extraEarnPoints = Math.max(0, Number(r?.points || 0));
+                } else {
+                  const elig = Math.max(0, Number(holdCached?.eligibleTotal || holdCached?.total || 0));
+                  await this.vouchers.redeem({ merchantId: merchantIdEff, code: dto.voucherCode, customerId: holdCached.customerId, eligibleTotal: elig, orderId: dto.orderId });
+                }
+              } catch {}
             }
           } catch {}
-          data = await this.service.commit(dto.holdId, dto.orderId, dto.receiptNumber, req.requestId ?? dto.requestId);
+          data = await this.service.commit(dto.holdId, dto.orderId, dto.receiptNumber, req.requestId ?? dto.requestId, { additionalEarnPoints: extraEarnPoints });
         }
       } else {
         try {
           if (dto.voucherCode && holdCached?.customerId && merchantIdEff) {
-            const elig = Math.max(0, Number(holdCached?.eligibleTotal || holdCached?.total || 0));
-            await this.vouchers.redeem({ merchantId: merchantIdEff, code: dto.voucherCode, customerId: holdCached.customerId, eligibleTotal: elig, orderId: dto.orderId });
+            try {
+              const st = await this.vouchers.status({ merchantId: merchantIdEff, code: dto.voucherCode });
+              if (st && String(st.type) === 'PROMO_CODE' && String(st.valueType) === 'POINTS') {
+                const r = await this.vouchers.redeemPoints({ merchantId: merchantIdEff, code: dto.voucherCode, customerId: holdCached.customerId, orderId: dto.orderId });
+                extraEarnPoints = Math.max(0, Number(r?.points || 0));
+              } else {
+                const elig = Math.max(0, Number(holdCached?.eligibleTotal || holdCached?.total || 0));
+                await this.vouchers.redeem({ merchantId: merchantIdEff, code: dto.voucherCode, customerId: holdCached.customerId, eligibleTotal: elig, orderId: dto.orderId });
+              }
+            } catch {}
           }
         } catch {}
-        data = await this.service.commit(dto.holdId, dto.orderId, dto.receiptNumber, req.requestId ?? dto.requestId);
+        data = await this.service.commit(dto.holdId, dto.orderId, dto.receiptNumber, req.requestId ?? dto.requestId, { additionalEarnPoints: extraEarnPoints });
       }
       this.metrics.inc('loyalty_commit_requests_total', { result: data?.alreadyCommitted ? 'already_committed' : 'ok' });
     } catch (e) {

@@ -1,0 +1,33 @@
+import { NextRequest } from 'next/server';
+import { portalFetch } from '../../_lib';
+
+export async function PUT(req: NextRequest, ctx: { params: { staffId: string } }) {
+  const { staffId } = await Promise.resolve(ctx.params);
+  const body = await req.json().catch(() => ({} as any));
+  const payload: Record<string, any> = {};
+  if (body?.login !== undefined) payload.login = body.login == null ? null : String(body.login);
+  if (body?.email !== undefined) payload.email = body.email == null ? null : String(body.email);
+  if (body?.role !== undefined) payload.role = body.role == null ? null : String(body.role);
+  if (body?.status !== undefined) payload.status = body.status == null ? null : String(body.status);
+  if (body?.allowedOutletId !== undefined) payload.allowedOutletId = body.allowedOutletId == null ? null : String(body.allowedOutletId);
+  if (body?.allowedDeviceId !== undefined) payload.allowedDeviceId = body.allowedDeviceId == null ? null : String(body.allowedDeviceId);
+  if (body?.firstName !== undefined) payload.firstName = body.firstName == null ? null : String(body.firstName);
+  if (body?.lastName !== undefined) payload.lastName = body.lastName == null ? null : String(body.lastName);
+  if (body?.position !== undefined) payload.position = body.position == null ? null : String(body.position);
+  if (body?.phone !== undefined) payload.phone = body.phone == null ? null : String(body.phone);
+  if (body?.comment !== undefined) payload.comment = body.comment == null ? null : String(body.comment);
+  if (body?.avatarUrl !== undefined) payload.avatarUrl = body.avatarUrl == null ? null : String(body.avatarUrl);
+  if (body?.canAccessPortal !== undefined) payload.canAccessPortal = !!body.canAccessPortal;
+  if (body?.password !== undefined && body.password != null) payload.password = String(body.password);
+  if (body?.currentPassword !== undefined && body.currentPassword != null) payload.currentPassword = String(body.currentPassword);
+  return portalFetch(req, `/portal/staff/${encodeURIComponent(staffId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function DELETE(req: NextRequest, ctx: { params: { staffId: string } }) {
+  const { staffId } = await Promise.resolve(ctx.params);
+  return portalFetch(req, `/portal/staff/${encodeURIComponent(staffId)}`, { method: 'DELETE' });
+}

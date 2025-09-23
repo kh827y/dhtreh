@@ -1,4 +1,4 @@
-import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { DeviceType, StaffRole } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -140,6 +140,22 @@ export class CreateStaffDto {
   @IsOptional() @IsString() email?: string;
   @ApiPropertyOptional({ enum: StaffRole })
   @IsOptional() @IsString() role?: keyof typeof StaffRole | string;
+  @ApiPropertyOptional()
+  @IsOptional() @IsString() firstName?: string;
+  @ApiPropertyOptional()
+  @IsOptional() @IsString() lastName?: string;
+  @ApiPropertyOptional()
+  @IsOptional() @IsString() position?: string;
+  @ApiPropertyOptional()
+  @IsOptional() @IsString() phone?: string;
+  @ApiPropertyOptional()
+  @IsOptional() @IsString() comment?: string;
+  @ApiPropertyOptional()
+  @IsOptional() @IsString() avatarUrl?: string;
+  @ApiPropertyOptional()
+  @IsOptional() @IsBoolean() canAccessPortal?: boolean;
+  @ApiPropertyOptional({ description: 'Пароль для входа в портал (минимум 6 символов)' })
+  @IsOptional() @IsString() password?: string;
 }
 
 export class UpdateStaffDto {
@@ -155,6 +171,24 @@ export class UpdateStaffDto {
   @IsOptional() @IsString() allowedOutletId?: string;
   @ApiPropertyOptional()
   @IsOptional() @IsString() allowedDeviceId?: string;
+  @ApiPropertyOptional()
+  @IsOptional() @IsString() firstName?: string;
+  @ApiPropertyOptional()
+  @IsOptional() @IsString() lastName?: string;
+  @ApiPropertyOptional()
+  @IsOptional() @IsString() position?: string;
+  @ApiPropertyOptional()
+  @IsOptional() @IsString() phone?: string;
+  @ApiPropertyOptional()
+  @IsOptional() @IsString() comment?: string;
+  @ApiPropertyOptional()
+  @IsOptional() @IsString() avatarUrl?: string;
+  @ApiPropertyOptional()
+  @IsOptional() @IsBoolean() canAccessPortal?: boolean;
+  @ApiPropertyOptional({ description: 'Новый пароль для входа в портал' })
+  @IsOptional() @IsString() password?: string;
+  @ApiPropertyOptional({ description: 'Текущий пароль (для смены пользователем)' })
+  @IsOptional() @IsString() currentPassword?: string;
 }
 
 // ===== Response DTOs =====

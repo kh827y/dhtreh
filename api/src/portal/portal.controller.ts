@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Query, UseGuards, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query, UseGuards, Req, NotFoundException } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiExtraModels, ApiOkResponse, ApiTags, ApiUnauthorizedResponse, getSchemaPath } from '@nestjs/swagger';
 import { PortalGuard } from '../portal-auth/portal.guard';
 import { MerchantsService } from '../merchants/merchants.service';
@@ -64,6 +64,18 @@ export class PortalController {
     return { from, to, type: (periodType as any) || 'month' };
   }
 
+  // Cashier credentials (merchant-wide 9-digit password)
+  @Get('cashier')
+  @ApiOkResponse({ schema: { type: 'object', properties: { login: { type: 'string', nullable: true }, hasPassword: { type: 'boolean' } } } })
+  getCashier(@Req() req: any) {
+    return this.service.getCashierCredentials(this.getMerchantId(req));
+  }
+  @Post('cashier/rotate')
+  @ApiOkResponse({ schema: { type: 'object', properties: { login: { type: 'string' }, password: { type: 'string' } } } })
+  rotateCashier(@Req() req: any, @Body() body: { regenerateLogin?: boolean }) {
+    return this.service.rotateCashierCredentials(this.getMerchantId(req), !!body?.regenerateLogin);
+  }
+
   @Get('me')
   @ApiOkResponse({ schema: { type: 'object', properties: { merchantId: { type: 'string' }, role: { type: 'string' } } } })
   me(@Req() req: any) { return { merchantId: this.getMerchantId(req), role: (req as any).portalRole || 'MERCHANT' }; }
@@ -116,14 +128,48 @@ export class PortalController {
   @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' }, voucherId: { type: 'string' } } } })
   promocodesIssue(
     @Req() req: any,
-    @Body() body: { name?: string; points: number; code: string; validFrom?: string; validUntil?: string },
+    @Body() body: { name?: string; description?: string; points: number; code: string; validFrom?: string; validUntil?: string; awardPoints?: boolean; burnEnabled?: boolean; burnDays?: number; levelEnabled?: boolean; levelId?: string; usageLimit?: 'none'|'once_total'|'once_per_customer'; usagePeriodEnabled?: boolean; usagePeriodDays?: number; recentVisitEnabled?: boolean; recentVisitHours?: number },
   ) {
-    return this.vouchers.issue({ merchantId: this.getMerchantId(req), name: body?.name, valueType: 'POINTS', value: Number(body?.points||0), code: body?.code, validFrom: body?.validFrom, validUntil: body?.validUntil });
+    return this.vouchers.issue({
+      merchantId: this.getMerchantId(req),
+      name: body?.name,
+      description: body?.description,
+      valueType: 'POINTS',
+      value: Number(body?.points||0),
+      points: Number(body?.points||0),
+      code: body?.code,
+      validFrom: body?.validFrom,
+      validUntil: body?.validUntil,
+      awardPoints: body?.awardPoints,
+      burnEnabled: body?.burnEnabled,
+      burnDays: body?.burnDays,
+      levelEnabled: body?.levelEnabled,
+      levelId: body?.levelId,
+      usageLimit: body?.usageLimit,
+      usagePeriodEnabled: body?.usagePeriodEnabled,
+      usagePeriodDays: body?.usagePeriodDays,
+      recentVisitEnabled: body?.recentVisitEnabled,
+      recentVisitHours: body?.recentVisitHours,
+    });
   }
   @Post('promocodes/deactivate')
   @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
   promocodesDeactivate(@Req() req: any, @Body() body: { voucherId?: string; code?: string }) {
     return this.vouchers.deactivate({ merchantId: this.getMerchantId(req), voucherId: body?.voucherId, code: body?.code });
+  }
+  @Post('promocodes/activate')
+  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
+  promocodesActivate(@Req() req: any, @Body() body: { voucherId?: string; code?: string }) {
+    return this.vouchers.activate({ merchantId: this.getMerchantId(req), voucherId: body?.voucherId, code: body?.code });
+  }
+  @Put('promocodes/:voucherId')
+  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
+  promocodesUpdate(
+    @Req() req: any,
+    @Param('voucherId') voucherId: string,
+    @Body() body: { name?: string; description?: string; code?: string; points?: number; awardPoints?: boolean; burnEnabled?: boolean; burnDays?: number; levelEnabled?: boolean; levelId?: string; usageLimit?: 'none'|'once_total'|'once_per_customer'; usagePeriodEnabled?: boolean; usagePeriodDays?: number; recentVisitEnabled?: boolean; recentVisitHours?: number; validFrom?: string; validUntil?: string },
+  ) {
+    return this.vouchers.updatePromocode(this.getMerchantId(req), voucherId, body);
   }
 
   // Notifications broadcast (enqueue or dry-run)
@@ -207,6 +253,29 @@ export class PortalController {
   campaignsList(@Req() req: any, @Query('status') status?: string) {
     return this.campaigns.getCampaigns(this.getMerchantId(req), status);
   }
+  @Post('campaigns')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  createCampaign(@Req() req: any, @Body() body: any) {
+    const merchantId = this.getMerchantId(req);
+    const dto = Object.assign({}, body || {}, { merchantId });
+    return this.campaigns.createCampaign(dto);
+  }
+  @Get('campaigns/:campaignId')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  async campaignDetails(@Req() req: any, @Param('campaignId') campaignId: string) {
+    const merchantId = this.getMerchantId(req);
+    const c: any = await this.campaigns.getCampaign(String(campaignId||''));
+    if (!c || c.merchantId !== merchantId) throw new NotFoundException();
+    return c;
+  }
+  @Put('campaigns/:campaignId')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  async updateCampaign(@Req() req: any, @Param('campaignId') campaignId: string, @Body() body: any) {
+    const merchantId = this.getMerchantId(req);
+    const c: any = await this.campaigns.getCampaign(String(campaignId||''));
+    if (!c || c.merchantId !== merchantId) throw new NotFoundException();
+    return this.campaigns.updateCampaign(String(campaignId||''), body || {});
+  }
 
   // Gifts (portal list)
   @Get('gifts')
@@ -287,7 +356,21 @@ export class PortalController {
   listStaff(@Req() req: any) { return this.service.listStaff(this.getMerchantId(req)); }
   @Post('staff')
   @ApiOkResponse({ type: StaffDto })
-  createStaff(@Req() req: any, @Body() dto: CreateStaffDto) { return this.service.createStaff(this.getMerchantId(req), { login: dto.login, email: dto.email, role: dto.role ? String(dto.role) : undefined }); }
+  createStaff(@Req() req: any, @Body() dto: CreateStaffDto) {
+    return this.service.createStaff(this.getMerchantId(req), {
+      login: dto.login,
+      email: dto.email,
+      role: dto.role ? String(dto.role) : undefined,
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+      position: dto.position,
+      phone: dto.phone,
+      comment: dto.comment,
+      avatarUrl: dto.avatarUrl,
+      canAccessPortal: dto.canAccessPortal,
+      password: dto.password,
+    });
+  }
   @Put('staff/:staffId')
   @ApiOkResponse({ type: StaffDto })
   updateStaff(@Req() req: any, @Param('staffId') staffId: string, @Body() dto: UpdateStaffDto) { return this.service.updateStaff(this.getMerchantId(req), staffId, dto); }
@@ -300,6 +383,11 @@ export class PortalController {
   @Delete('staff/:staffId/token')
   @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
   revokeStaffToken(@Req() req: any, @Param('staffId') staffId: string) { return this.service.revokeStaffToken(this.getMerchantId(req), staffId); }
+  @Post('staff/:staffId/pin/regenerate')
+  @ApiOkResponse({ schema: { type: 'object', properties: { pinCode: { type: 'string' } } } })
+  regenerateStaffPersonalPin(@Req() req: any, @Param('staffId') staffId: string) {
+    return this.service.regenerateStaffPersonalPin(this.getMerchantId(req), staffId);
+  }
 
   // Staff ↔ Outlet access & PINs
   @Get('staff/:staffId/access')

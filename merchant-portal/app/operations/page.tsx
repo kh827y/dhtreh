@@ -10,14 +10,24 @@ export default function OperationsPage() {
   const [loadingRc, setLoadingRc] = React.useState(true);
   const [tx, setTx] = React.useState<Tx[]>([]);
   const [rc, setRc] = React.useState<Rc[]>([]);
-  const [orderId, setOrderId] = React.useState('');
+  const [orderId, setOrderId] = React.useState(() => {
+    if (typeof window === 'undefined') return '';
+    return new URLSearchParams(window.location.search).get('orderId') || '';
+  });
+  const [staffId, setStaffId] = React.useState(() => {
+    if (typeof window === 'undefined') return '';
+    return new URLSearchParams(window.location.search).get('staffId') || '';
+  });
   const [msg, setMsg] = React.useState('');
 
   async function load() {
     setMsg('');
     setLoadingTx(true); setLoadingRc(true);
     try {
-      const qs = orderId ? `?orderId=${encodeURIComponent(orderId)}` : '';
+      const params = new URLSearchParams();
+      if (orderId) params.set('orderId', orderId);
+      if (staffId) params.set('staffId', staffId);
+      const qs = params.size ? `?${params.toString()}` : '';
       const [rTx, rRc] = await Promise.all([
         fetch(`/api/portal/transactions${qs}`),
         fetch(`/api/portal/receipts${qs}`),
@@ -35,8 +45,9 @@ export default function OperationsPage() {
 
   return (
     <div style={{ display:'grid', gap: 16 }}>
-      <div style={{ display:'grid', gridTemplateColumns:'1fr auto', gap:8 }}>
-        <input placeholder="Фильтр по OrderId (опц.)" value={orderId} onChange={e=>setOrderId(e.target.value)} style={{ padding:8 }} />
+      <div style={{ display:'grid', gap:8, gridTemplateColumns:'1fr 1fr auto' }}>
+        <input placeholder="OrderId (опционально)" value={orderId} onChange={e=>setOrderId(e.target.value)} style={{ padding:8 }} />
+        <input placeholder="ID сотрудника" value={staffId} onChange={e=>setStaffId(e.target.value)} style={{ padding:8 }} />
         <Button onClick={load}>Обновить</Button>
       </div>
       <Card>

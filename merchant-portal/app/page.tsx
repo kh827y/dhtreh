@@ -27,12 +27,12 @@ export default function Page() {
       <MotionFadeIn>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
           <div>
-            <div style={{ fontSize: 18, fontWeight: 700 }}>Добро пожаловать!</div>
-            <div style={{ opacity: .8, fontSize: 13 }}>Личный кабинет мерчанта: настройки лояльности, аналитика и CRM</div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>Мастер настройки</div>
+            <div style={{ opacity: .8, fontSize: 13 }}>Быстрый старт: проверьте параметры программы, добавьте точки и сотрудников</div>
           </div>
           <div style={{ display:'flex', gap: 8 }}>
-            <Button variant="primary">Настройки программы</Button>
-            <Button variant="secondary">Реферальная программа</Button>
+            <Button variant="primary" onClick={()=>location.href='/settings/system'}>Системные настройки</Button>
+            <Button variant="secondary" onClick={()=>location.href='/settings/outlets'}>Торговые точки</Button>
           </div>
         </div>
       </MotionFadeIn>

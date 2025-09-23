@@ -3,6 +3,7 @@
 import Script from 'next/script';
 import { useEffect, useMemo, useState } from 'react';
 import QRCode from 'qrcode';
+import { ReviewPrompt } from '../../components/ReviewPrompt';
 
 const API = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
 // TTL по умолчанию, перезапишем настройками мерчанта
@@ -41,6 +42,8 @@ export default function MiniApp() {
   const [loadingTx, setLoadingTx] = useState(false);
   const [nextBefore, setNextBefore] = useState<string | null>(null);
   const [initLoaded, setInitLoaded] = useState(false);
+  const [reviewPrompt, setReviewPrompt] = useState<{ visible: boolean; txnId?: string }>({ visible: false });
+  const [reviewedTxnIds, setReviewedTxnIds] = useState<string[]>([]);
 
   // Определяем merchantId: Telegram start_param -> ?merchantId= -> путь -> env
   useEffect(() => {
@@ -124,6 +127,17 @@ export default function MiniApp() {
       setInitLoaded(true);
     }
   }
+
+  useEffect(() => {
+    if (!txns.length) return;
+    const latest = txns[0];
+    if (!latest) return;
+    const eligible = latest.type === 'EARN' || latest.type === 'REDEEM';
+    if (!eligible) return;
+    if (reviewedTxnIds.includes(latest.id)) return;
+    setReviewPrompt({ visible: true, txnId: latest.id });
+    setReviewedTxnIds((prev) => prev.includes(latest.id) ? prev : [...prev, latest.id]);
+  }, [txns, reviewedTxnIds]);
 
   // подгружаем настройки мерчанта (qrTtlSec, темы/логотип)
   useEffect(() => {
@@ -265,6 +279,16 @@ export default function MiniApp() {
           initLoaded && <div style={{ color: '#666' }}>Это всё ✨</div>
         )}
       </div>
+      <ReviewPrompt
+        visible={reviewPrompt.visible}
+        transactionId={reviewPrompt.txnId}
+        onClose={() => setReviewPrompt({ visible: false })}
+        onSubmit={(rating, comment) => {
+          console.log('Review submitted', { rating, comment, transactionId: reviewPrompt.txnId });
+          alert('Спасибо за отзыв!');
+          setReviewPrompt({ visible: false });
+        }}
+      />
     </main>
   );
 }
