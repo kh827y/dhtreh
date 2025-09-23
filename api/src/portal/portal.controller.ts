@@ -2,13 +2,30 @@ import { Body, Controller, Delete, Get, Param, Post, Put, Query, UseGuards, Req,
 import { ApiBadRequestResponse, ApiExtraModels, ApiOkResponse, ApiTags, ApiUnauthorizedResponse, getSchemaPath } from '@nestjs/swagger';
 import { PortalGuard } from '../portal-auth/portal.guard';
 import { MerchantsService } from '../merchants/merchants.service';
-import { CreateDeviceDto, CreateOutletDto, CreateStaffDto, DeviceDto, LedgerEntryDto, MerchantSettingsRespDto, OutletDto, ReceiptDto, StaffDto, UpdateDeviceDto, UpdateMerchantSettingsDto, UpdateOutletDto, UpdateStaffDto } from '../merchants/dto';
+import { CreateDeviceDto, CreateStaffDto, DeviceDto, LedgerEntryDto, MerchantSettingsRespDto, ReceiptDto, StaffDto, UpdateDeviceDto, UpdateMerchantSettingsDto, UpdateStaffDto } from '../merchants/dto';
 import { ErrorDto, TransactionItemDto } from '../loyalty/dto';
 import { VouchersService } from '../vouchers/vouchers.service';
 import { NotificationsService, type BroadcastArgs } from '../notifications/notifications.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { CampaignService } from '../campaigns/campaign.service';
 import { GiftsService } from '../gifts/gifts.service';
+import { PortalCatalogService } from './catalog.service';
+import {
+  CategoryDto,
+  CreateCategoryDto,
+  UpdateCategoryDto,
+  ReorderCategoriesDto,
+  CreateProductDto,
+  UpdateProductDto,
+  ProductListResponseDto,
+  ProductDto,
+  ListProductsQueryDto,
+  ProductBulkActionDto,
+  PortalOutletListResponseDto,
+  PortalOutletDto,
+  CreatePortalOutletDto,
+  UpdatePortalOutletDto,
+} from './catalog.dto';
 
 @ApiTags('portal')
 @Controller('portal')
@@ -21,6 +38,7 @@ export class PortalController {
     private readonly notifications: NotificationsService,
     private readonly analytics: AnalyticsService,
     private readonly campaigns: CampaignService,
+    private readonly catalog: PortalCatalogService,
     private readonly gifts: GiftsService,
   ) {}
 
@@ -316,19 +334,96 @@ export class PortalController {
     );
   }
 
+  // Catalog — Categories
+  @Get('catalog/categories')
+  @ApiOkResponse({ type: CategoryDto, isArray: true })
+  listCatalogCategories(@Req() req: any) {
+    return this.catalog.listCategories(this.getMerchantId(req));
+  }
+  @Post('catalog/categories')
+  @ApiOkResponse({ type: CategoryDto })
+  createCatalogCategory(@Req() req: any, @Body() dto: CreateCategoryDto) {
+    return this.catalog.createCategory(this.getMerchantId(req), dto);
+  }
+  @Put('catalog/categories/:categoryId')
+  @ApiOkResponse({ type: CategoryDto })
+  updateCatalogCategory(@Req() req: any, @Param('categoryId') categoryId: string, @Body() dto: UpdateCategoryDto) {
+    return this.catalog.updateCategory(this.getMerchantId(req), categoryId, dto);
+  }
+  @Post('catalog/categories/reorder')
+  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' }, updated: { type: 'number' } } } })
+  reorderCatalogCategories(@Req() req: any, @Body() dto: ReorderCategoriesDto) {
+    return this.catalog.reorderCategories(this.getMerchantId(req), dto);
+  }
+  @Delete('catalog/categories/:categoryId')
+  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
+  deleteCatalogCategory(@Req() req: any, @Param('categoryId') categoryId: string) {
+    return this.catalog.deleteCategory(this.getMerchantId(req), categoryId);
+  }
+
+  // Catalog — Products
+  @Get('catalog/products')
+  @ApiOkResponse({ type: ProductListResponseDto })
+  listCatalogProducts(@Req() req: any, @Query() query: ListProductsQueryDto) {
+    return this.catalog.listProducts(this.getMerchantId(req), query);
+  }
+  @Get('catalog/products/:productId')
+  @ApiOkResponse({ type: ProductDto })
+  getCatalogProduct(@Req() req: any, @Param('productId') productId: string) {
+    return this.catalog.getProduct(this.getMerchantId(req), productId);
+  }
+  @Post('catalog/products')
+  @ApiOkResponse({ type: ProductDto })
+  createCatalogProduct(@Req() req: any, @Body() dto: CreateProductDto) {
+    return this.catalog.createProduct(this.getMerchantId(req), dto);
+  }
+  @Put('catalog/products/:productId')
+  @ApiOkResponse({ type: ProductDto })
+  updateCatalogProduct(@Req() req: any, @Param('productId') productId: string, @Body() dto: UpdateProductDto) {
+    return this.catalog.updateProduct(this.getMerchantId(req), productId, dto);
+  }
+  @Delete('catalog/products/:productId')
+  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
+  deleteCatalogProduct(@Req() req: any, @Param('productId') productId: string) {
+    return this.catalog.deleteProduct(this.getMerchantId(req), productId);
+  }
+  @Post('catalog/products/bulk')
+  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' }, updated: { type: 'number' } } } })
+  bulkCatalogProducts(@Req() req: any, @Body() dto: ProductBulkActionDto) {
+    return this.catalog.bulkProductAction(this.getMerchantId(req), dto);
+  }
+
   // Outlets
   @Get('outlets')
-  @ApiOkResponse({ type: OutletDto, isArray: true })
-  listOutlets(@Req() req: any) { return this.service.listOutlets(this.getMerchantId(req)); }
+  @ApiOkResponse({ type: PortalOutletListResponseDto })
+  listOutlets(
+    @Req() req: any,
+    @Query('status') status?: 'active' | 'inactive' | 'all',
+    @Query('search') search?: string,
+  ) {
+    const normalized: 'active' | 'inactive' | 'all' = status === 'active' ? 'active' : status === 'inactive' ? 'inactive' : 'all';
+    return this.catalog.listOutlets(this.getMerchantId(req), normalized, search);
+  }
+  @Get('outlets/:outletId')
+  @ApiOkResponse({ type: PortalOutletDto })
+  getOutlet(@Req() req: any, @Param('outletId') outletId: string) {
+    return this.catalog.getOutlet(this.getMerchantId(req), outletId);
+  }
   @Post('outlets')
-  @ApiOkResponse({ type: OutletDto })
-  createOutlet(@Req() req: any, @Body() dto: CreateOutletDto) { return this.service.createOutlet(this.getMerchantId(req), dto.name, dto.address); }
+  @ApiOkResponse({ type: PortalOutletDto })
+  createOutlet(@Req() req: any, @Body() dto: CreatePortalOutletDto) {
+    return this.catalog.createOutlet(this.getMerchantId(req), dto);
+  }
   @Put('outlets/:outletId')
-  @ApiOkResponse({ type: OutletDto })
-  updateOutlet(@Req() req: any, @Param('outletId') outletId: string, @Body() dto: UpdateOutletDto) { return this.service.updateOutlet(this.getMerchantId(req), outletId, dto); }
+  @ApiOkResponse({ type: PortalOutletDto })
+  updateOutlet(@Req() req: any, @Param('outletId') outletId: string, @Body() dto: UpdatePortalOutletDto) {
+    return this.catalog.updateOutlet(this.getMerchantId(req), outletId, dto);
+  }
   @Delete('outlets/:outletId')
   @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
-  deleteOutlet(@Req() req: any, @Param('outletId') outletId: string) { return this.service.deleteOutlet(this.getMerchantId(req), outletId); }
+  deleteOutlet(@Req() req: any, @Param('outletId') outletId: string) {
+    return this.service.deleteOutlet(this.getMerchantId(req), outletId);
+  }
 
   // Devices
   @Get('devices')
