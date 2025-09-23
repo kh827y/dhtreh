@@ -8,10 +8,11 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
 import { CampaignModule } from '../campaigns/campaign.module';
 import { GiftsModule } from '../gifts/gifts.module';
+import { PortalCatalogService } from './catalog.service';
 
 @Module({
   imports: [PrismaModule, MerchantsModule, VouchersModule, NotificationsModule, AnalyticsModule, CampaignModule, GiftsModule],
   controllers: [PortalController],
-  providers: [PortalGuard],
+  providers: [PortalGuard, PortalCatalogService],
 })
 export class PortalModule {}
