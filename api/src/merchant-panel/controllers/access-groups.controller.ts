@@ -1,10 +1,33 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+  Req,
+  UseGuards,
+  UsePipes,
+  ValidationPipe,
+} from '@nestjs/common';
 import { PortalGuard } from '../../portal-auth/portal.guard';
-import { AccessScope } from '@prisma/client';
-import { MerchantPanelService, AccessGroupPayload } from '../merchant-panel.service';
+import { MerchantPanelService, AccessGroupFilters } from '../merchant-panel.service';
+import {
+  AccessGroupDto,
+  AccessGroupDtoInput,
+  AccessGroupListQueryDto,
+  AccessGroupListResponseDto,
+  SetAccessGroupMembersDto,
+} from '../dto/access-group.dto';
+import { plainToInstance } from 'class-transformer';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('portal-access-groups')
 @Controller('portal/access-groups')
 @UseGuards(PortalGuard)
+@UsePipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }))
 export class AccessGroupsController {
   constructor(private readonly service: MerchantPanelService) {}
 
@@ -13,23 +36,30 @@ export class AccessGroupsController {
   }
 
   @Get()
-  list(@Req() req: any, @Query('scope') scope?: string) {
-    const normalized = scope && scope !== 'ALL' ? (scope as AccessScope) : 'ALL';
-    return this.service.listAccessGroups(this.getMerchantId(req), normalized as any);
+  async list(@Req() req: any, @Query() query: AccessGroupListQueryDto): Promise<AccessGroupListResponseDto> {
+    const { page, pageSize, ...rest } = query;
+    const filters: AccessGroupFilters = {
+      scope: rest.scope ? (rest.scope as any) : undefined,
+      search: rest.search,
+    };
+    const result = await this.service.listAccessGroups(this.getMerchantId(req), filters, { page, pageSize });
+    return plainToInstance(AccessGroupListResponseDto, result, { enableImplicitConversion: true });
   }
 
   @Post()
-  create(@Req() req: any, @Body() body: AccessGroupPayload & { actorId?: string }) {
-    return this.service.createAccessGroup(this.getMerchantId(req), body, body.actorId);
+  async create(@Req() req: any, @Body() body: AccessGroupDtoInput & { actorId?: string }) {
+    const group = await this.service.createAccessGroup(this.getMerchantId(req), body, body.actorId);
+    return plainToInstance(AccessGroupDto, group, { enableImplicitConversion: true });
   }
 
   @Put(':id')
-  update(
+  async update(
     @Req() req: any,
     @Param('id') id: string,
-    @Body() body: AccessGroupPayload & { actorId?: string },
+    @Body() body: AccessGroupDtoInput & { actorId?: string },
   ) {
-    return this.service.updateAccessGroup(this.getMerchantId(req), id, body, body.actorId);
+    const group = await this.service.updateAccessGroup(this.getMerchantId(req), id, body, body.actorId);
+    return plainToInstance(AccessGroupDto, group, { enableImplicitConversion: true });
   }
 
   @Delete(':id')
@@ -38,7 +68,7 @@ export class AccessGroupsController {
   }
 
   @Post(':id/members')
-  setMembers(@Req() req: any, @Param('id') id: string, @Body() body: { staffIds: string[] }) {
+  setMembers(@Req() req: any, @Param('id') id: string, @Body() body: SetAccessGroupMembersDto) {
     return this.service.setGroupMembers(this.getMerchantId(req), id, body.staffIds ?? []);
   }
 }

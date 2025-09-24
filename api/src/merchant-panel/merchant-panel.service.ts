@@ -3,6 +3,11 @@ import { AccessScope, Prisma, StaffOutletAccessStatus, StaffRole, StaffStatus } 
 import { MerchantsService } from '../merchants/merchants.service';
 import { PrismaService } from '../prisma.service';
 
+interface PaginationOptions {
+  page: number;
+  pageSize: number;
+}
+
 export interface StaffFilters {
   search?: string;
   status?: StaffStatus | 'ALL';
@@ -36,6 +41,11 @@ export interface AccessGroupPayload {
   isDefault?: boolean;
 }
 
+export interface AccessGroupFilters {
+  scope?: AccessScope | 'ALL';
+  search?: string;
+}
+
 export interface OutletFilters {
   status?: 'ACTIVE' | 'INACTIVE' | 'ALL';
   hidden?: boolean;
@@ -51,7 +61,7 @@ export interface UpsertOutletPayload {
   works?: boolean;
   hidden?: boolean;
   timezone?: string | null;
-  schedule?: { mode: '24_7' | 'CUSTOM'; days: Array<{ day: string; enabled: boolean; from?: string; to?: string }> };
+  schedule?: { mode: '24_7' | 'CUSTOM'; days: Array<{ day: number; enabled: boolean; opensAt?: string | null; closesAt?: string | null }> };
   externalId?: string | null;
   integrationProvider?: string | null;
   integrationLocationCode?: string | null;
@@ -64,6 +74,17 @@ export interface UpsertOutletPayload {
 @Injectable()
 export class MerchantPanelService {
   constructor(private readonly prisma: PrismaService, private readonly merchants: MerchantsService) {}
+
+  private normalizePagination(pagination?: Partial<PaginationOptions>): PaginationOptions {
+    const page = Math.max(1, Math.floor(pagination?.page ?? 1));
+    const pageSize = Math.max(1, Math.min(200, Math.floor(pagination?.pageSize ?? 20)));
+    return { page, pageSize };
+  }
+
+  private buildMeta(pagination: PaginationOptions, total: number) {
+    const totalPages = Math.max(1, Math.ceil(total / pagination.pageSize));
+    return { page: pagination.page, pageSize: pagination.pageSize, total, totalPages };
+  }
 
   private randomPin(): string {
     return String(Math.floor(Math.random() * 10000)).padStart(4, '0');
@@ -103,7 +124,97 @@ export class MerchantPanelService {
     } satisfies Prisma.StaffInclude;
   }
 
-  async listStaff(merchantId: string, filters: StaffFilters = {}) {
+  private mapStaff(
+    member: Prisma.StaffGetPayload<{ include: ReturnType<MerchantPanelService['staffInclude']> }>,
+  ) {
+    return {
+      id: member.id,
+      login: member.login,
+      email: member.email,
+      phone: member.phone,
+      firstName: member.firstName,
+      lastName: member.lastName,
+      position: member.position,
+      comment: member.comment,
+      role: member.role,
+      status: member.status,
+      portalAccessEnabled: member.portalAccessEnabled,
+      canAccessPortal: member.canAccessPortal,
+      isOwner: member.isOwner,
+      accesses: member.accesses.map((access) => ({
+        id: access.id,
+        outletId: access.outletId,
+        outletName: access.outlet?.name ?? null,
+        pinCode: access.pinCode,
+        status: access.status,
+      })),
+      groups: member.accessGroupMemberships.map((m) => ({
+        id: m.groupId,
+        name: m.group.name,
+        scope: m.group.scope,
+      })),
+    };
+  }
+
+  private parseSchedule(schedule: any) {
+    if (!schedule || typeof schedule !== 'object') return null;
+    const days = Array.isArray((schedule as any).days) ? (schedule as any).days : [];
+    return {
+      mode: (schedule as any).mode ?? 'CUSTOM',
+      days: days.map((day: any) => ({
+        day: typeof day.day === 'number' ? day.day : parseInt(day.day ?? '0', 10),
+        enabled: !!day.enabled,
+        opensAt: day.opensAt ?? day.from ?? null,
+        closesAt: day.closesAt ?? day.to ?? null,
+      })),
+    };
+  }
+
+  private mapOutlet(outlet: Prisma.OutletGetPayload<undefined>) {
+    const schedule = this.parseSchedule(outlet.scheduleJson ?? undefined);
+    return {
+      id: outlet.id,
+      name: outlet.name,
+      description: outlet.description,
+      address: outlet.address,
+      phone: outlet.phone,
+      adminEmails: outlet.adminEmails ?? [],
+      status: outlet.status,
+      hidden: outlet.hidden,
+      scheduleEnabled: outlet.scheduleEnabled,
+      scheduleMode: schedule?.mode ?? 'CUSTOM',
+      schedule: schedule?.days ?? null,
+      timezone: outlet.timezone,
+      externalId: outlet.externalId,
+      integrationProvider: outlet.integrationProvider,
+      integrationLocationCode: outlet.integrationLocationCode,
+      manualLocation: outlet.manualLocation,
+      latitude: outlet.latitude ? Number(outlet.latitude) : null,
+      longitude: outlet.longitude ? Number(outlet.longitude) : null,
+    };
+  }
+
+  private mapAccessGroup(
+    group: Prisma.AccessGroupGetPayload<{ include: { permissions: true } }> & { memberCount?: number },
+  ) {
+    return {
+      id: group.id,
+      name: group.name,
+      description: group.description,
+      scope: group.scope,
+      isSystem: group.isSystem,
+      isDefault: group.isDefault,
+      memberCount: group.memberCount ?? 0,
+      permissions: group.permissions.map((permission) => ({
+        resource: permission.resource,
+        action: permission.action,
+        conditions: permission.conditions ?? null,
+      })),
+    };
+  }
+
+  async listStaff(merchantId: string, filters: StaffFilters = {}, pagination?: Partial<PaginationOptions>) {
+    const paging = this.normalizePagination(pagination);
     const where: Prisma.StaffWhereInput = {
       merchantId,
     };
@@ -128,29 +239,38 @@ export class MerchantPanelService {
         { phone: { contains: q, mode: 'insensitive' } },
       ];
     }
-    const staff = await this.prisma.staff.findMany({
-      where,
-      orderBy: [
-        { isOwner: 'desc' },
-        { createdAt: 'desc' },
-      ],
-      include: this.staffInclude(),
-    });
-    return staff.map((member) => ({
-      ...member,
-      accesses: member.accesses.map((access) => ({
-        id: access.id,
-        outletId: access.outletId,
-        outletName: access.outlet?.name ?? null,
-        pinCode: access.pinCode,
-        status: access.status,
-      })),
-      groups: member.accessGroupMemberships.map((m) => ({
-        id: m.groupId,
-        name: m.group.name,
-        scope: m.group.scope,
-      })),
-    }));
+    const [items, total, active, pending, suspended, fired, archived, portalEnabled] = await this.prisma.$transaction([
+      this.prisma.staff.findMany({
+        where,
+        orderBy: [
+          { isOwner: 'desc' },
+          { createdAt: 'desc' },
+        ],
+        include: this.staffInclude(),
+        skip: (paging.page - 1) * paging.pageSize,
+        take: paging.pageSize,
+      }),
+      this.prisma.staff.count({ where }),
+      this.prisma.staff.count({ where: { merchantId, status: StaffStatus.ACTIVE } }),
+      this.prisma.staff.count({ where: { merchantId, status: StaffStatus.PENDING } }),
+      this.prisma.staff.count({ where: { merchantId, status: StaffStatus.SUSPENDED } }),
+      this.prisma.staff.count({ where: { merchantId, status: StaffStatus.FIRED } }),
+      this.prisma.staff.count({ where: { merchantId, status: StaffStatus.ARCHIVED } }),
+      this.prisma.staff.count({ where: { merchantId, portalAccessEnabled: true } }),
+    ]);
+
+    return {
+      items: items.map((member) => this.mapStaff(member)),
+      meta: this.buildMeta(paging, total),
+      counters: {
+        active,
+        pending,
+        suspended,
+        fired,
+        archived,
+        portalEnabled,
+      },
+    };
   }
 
   async getStaff(merchantId: string, staffId: string) {
@@ -159,7 +279,7 @@ export class MerchantPanelService {
       include: this.staffInclude(),
     });
     if (!staff) throw new NotFoundException('Сотрудник не найден');
-    return staff;
+    return this.mapStaff(staff);
   }
 
   private async syncAccessGroups(
@@ -364,27 +484,47 @@ export class MerchantPanelService {
     return { ok: true };
   }
 
-  async listAccessGroups(merchantId: string, scope: AccessScope | 'ALL' = 'PORTAL') {
+  async listAccessGroups(
+    merchantId: string,
+    filters: AccessGroupFilters = {},
+    pagination?: Partial<PaginationOptions>,
+  ) {
+    const paging = this.normalizePagination(pagination);
     const where: Prisma.AccessGroupWhereInput = { merchantId };
-    if (scope !== 'ALL') {
-      where.scope = scope;
+    if (filters.scope && filters.scope !== 'ALL') {
+      where.scope = filters.scope;
     }
-    const groups = await this.prisma.accessGroup.findMany({
-      where,
-      orderBy: [{ isSystem: 'asc' }, { createdAt: 'desc' }],
-      include: {
-        permissions: true,
-        members: { select: { id: true } },
-      },
-    });
-    return groups.map((group) => ({
-      ...group,
-      memberCount: group.members.length,
-    }));
+    if (filters.search) {
+      const q = filters.search.trim();
+      where.OR = [
+        { name: { contains: q, mode: 'insensitive' } },
+        { description: { contains: q, mode: 'insensitive' } },
+      ];
+    }
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.accessGroup.findMany({
+        where,
+        orderBy: [{ isSystem: 'asc' }, { createdAt: 'desc' }],
+        include: {
+          permissions: true,
+          members: { select: { id: true } },
+        },
+        skip: (paging.page - 1) * paging.pageSize,
+        take: paging.pageSize,
+      }),
+      this.prisma.accessGroup.count({ where }),
+    ]);
+
+    return {
+      items: items.map((group) =>
+        this.mapAccessGroup({ ...group, memberCount: group.members.length }),
+      ),
+      meta: this.buildMeta(paging, total),
+    };
   }
 
   async createAccessGroup(merchantId: string, payload: AccessGroupPayload, actorId?: string) {
-    return this.prisma.accessGroup.create({
+    const group = await this.prisma.accessGroup.create({
       data: {
         merchantId,
         name: payload.name.trim(),
@@ -404,13 +544,14 @@ export class MerchantPanelService {
       },
       include: { permissions: true },
     });
+    return this.mapAccessGroup({ ...group, memberCount: 0 });
   }
 
   async updateAccessGroup(merchantId: string, groupId: string, payload: AccessGroupPayload, actorId?: string) {
     const group = await this.prisma.accessGroup.findFirst({ where: { merchantId, id: groupId } });
     if (!group) throw new NotFoundException('Группа не найдена');
     if (group.isSystem) throw new ForbiddenException('Нельзя редактировать системную группу');
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       await tx.accessGroup.update({
         where: { id: groupId },
         data: {
@@ -432,8 +573,22 @@ export class MerchantPanelService {
           })),
         });
       }
-      return tx.accessGroup.findUnique({ where: { id: groupId }, include: { permissions: true } });
+      const reloaded = await tx.accessGroup.findUnique({
+        where: { id: groupId },
+        include: { permissions: true, members: { select: { id: true } } },
+      });
+      return reloaded!;
     });
+    return this.mapAccessGroup({ ...updated, memberCount: updated.members.length });
+  }
+
+  async getAccessGroup(merchantId: string, groupId: string) {
+    const group = await this.prisma.accessGroup.findFirst({
+      where: { merchantId, id: groupId },
+      include: { permissions: true, members: { select: { id: true } } },
+    });
+    if (!group) throw new NotFoundException('Группа не найдена');
+    return this.mapAccessGroup({ ...group, memberCount: group.members.length });
   }
 
   async deleteAccessGroup(merchantId: string, groupId: string) {
@@ -462,7 +617,8 @@ export class MerchantPanelService {
     return { ok: true };
   }
 
-  async listOutlets(merchantId: string, filters: OutletFilters = {}) {
+  async listOutlets(merchantId: string, filters: OutletFilters = {}, pagination?: Partial<PaginationOptions>) {
+    const paging = this.normalizePagination(pagination);
     const where: Prisma.OutletWhereInput = { merchantId };
     if (filters.status && filters.status !== 'ALL') {
       where.status = filters.status;
@@ -476,7 +632,20 @@ export class MerchantPanelService {
         { address: { contains: filters.search, mode: 'insensitive' } },
       ];
     }
-    return this.prisma.outlet.findMany({ where, orderBy: { createdAt: 'desc' } });
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.outlet.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (paging.page - 1) * paging.pageSize,
+        take: paging.pageSize,
+      }),
+      this.prisma.outlet.count({ where }),
+    ]);
+
+    return {
+      items: items.map((outlet) => this.mapOutlet(outlet)),
+      meta: this.buildMeta(paging, total),
+    };
   }
 
   private buildScheduleJson(payload: UpsertOutletPayload['schedule']) {
@@ -486,8 +655,8 @@ export class MerchantPanelService {
       days: payload.days.map((day) => ({
         day: day.day,
         enabled: !!day.enabled,
-        from: day.from ?? null,
-        to: day.to ?? null,
+        opensAt: day.opensAt ?? null,
+        closesAt: day.closesAt ?? null,
       })),
     };
   }
@@ -516,7 +685,7 @@ export class MerchantPanelService {
         longitude: payload.longitude != null ? new Prisma.Decimal(payload.longitude) : null,
       },
     });
-    return outlet;
+    return this.mapOutlet(outlet);
   }
 
   async updateOutlet(merchantId: string, outletId: string, payload: UpsertOutletPayload) {
@@ -544,7 +713,13 @@ export class MerchantPanelService {
         longitude: payload.longitude != null ? new Prisma.Decimal(payload.longitude) : outlet.longitude,
       },
     });
-    return updated;
+    return this.mapOutlet(updated);
+  }
+
+  async getOutlet(merchantId: string, outletId: string) {
+    const outlet = await this.prisma.outlet.findFirst({ where: { merchantId, id: outletId } });
+    if (!outlet) throw new NotFoundException('Точка не найдена');
+    return this.mapOutlet(outlet);
   }
 
   async listCashierPins(merchantId: string) {

@@ -1,9 +1,21 @@
-import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
 import { PortalGuard } from '../../portal-auth/portal.guard';
-import { MerchantPanelService, StaffFilters, UpsertStaffPayload } from '../merchant-panel.service';
+import { MerchantPanelService, StaffFilters } from '../merchant-panel.service';
+import {
+  ChangeStaffStatusDto,
+  StaffListQueryDto,
+  StaffListResponseDto,
+  UpsertStaffDto,
+  StaffDetailDto,
+} from '../dto/staff.dto';
+import { plainToInstance } from 'class-transformer';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('portal-staff')
 @Controller('portal/staff')
 @UseGuards(PortalGuard)
+@UsePipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }))
+
 export class StaffController {
   constructor(private readonly service: MerchantPanelService) {}
 
@@ -12,36 +24,41 @@ export class StaffController {
   }
 
   @Get()
-  list(@Req() req: any, @Query() query: StaffFilters & { search?: string; status?: string; outletId?: string; groupId?: string; portalOnly?: string }) {
+  
+  async list(@Req() req: any, @Query() query: StaffListQueryDto): Promise<StaffListResponseDto> {
+    const { page, pageSize, ...rest } = query;
     const filters: StaffFilters = {
-      search: query.search,
-      outletId: query.outletId,
-      groupId: query.groupId,
-      portalOnly: query.portalOnly === 'true',
+      search: rest.search,
+      status: rest.status ? (rest.status as any) : undefined,
+      outletId: rest.outletId,
+      groupId: rest.groupId,
+      portalOnly: rest.portalOnly,
     };
-    if (query.status && query.status !== 'ALL') {
-      filters.status = query.status as any;
-    }
-    return this.service.listStaff(this.getMerchantId(req), filters);
+    const result = await this.service.listStaff(this.getMerchantId(req), filters, { page, pageSize });
+    return plainToInstance(StaffListResponseDto, result, { enableImplicitConversion: true });
   }
 
   @Get(':id')
-  get(@Req() req: any, @Param('id') id: string) {
-    return this.service.getStaff(this.getMerchantId(req), id);
+  async get(@Req() req: any, @Param('id') id: string): Promise<StaffDetailDto> {
+    const staff = await this.service.getStaff(this.getMerchantId(req), id);
+    return plainToInstance(StaffDetailDto, staff, { enableImplicitConversion: true });
   }
 
   @Post()
-  create(@Req() req: any, @Body() body: UpsertStaffPayload) {
-    return this.service.createStaff(this.getMerchantId(req), body);
+  async create(@Req() req: any, @Body() body: UpsertStaffDto) {
+    const staff = await this.service.createStaff(this.getMerchantId(req), body);
+    return plainToInstance(StaffDetailDto, staff, { enableImplicitConversion: true });
   }
 
   @Put(':id')
-  update(@Req() req: any, @Param('id') id: string, @Body() body: UpsertStaffPayload) {
-    return this.service.updateStaff(this.getMerchantId(req), id, body);
+  async update(@Req() req: any, @Param('id') id: string, @Body() body: UpsertStaffDto) {
+    const staff = await this.service.updateStaff(this.getMerchantId(req), id, body);
+    return plainToInstance(StaffDetailDto, staff, { enableImplicitConversion: true });
   }
 
   @Post(':id/status')
-  changeStatus(@Req() req: any, @Param('id') id: string, @Body() body: { status: any }) {
+  changeStatus(@Req() req: any, @Param('id') id: string, @Body() body: ChangeStaffStatusDto) {
+
     return this.service.changeStaffStatus(this.getMerchantId(req), id, body.status);
   }
 

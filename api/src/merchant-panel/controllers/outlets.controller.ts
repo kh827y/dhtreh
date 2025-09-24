@@ -1,9 +1,15 @@
-import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
 import { PortalGuard } from '../../portal-auth/portal.guard';
-import { MerchantPanelService, OutletFilters, UpsertOutletPayload } from '../merchant-panel.service';
+import { MerchantPanelService, OutletFilters } from '../merchant-panel.service';
+import { OutletListQueryDto, OutletListResponseDto, UpsertOutletDto, OutletDto } from '../dto/outlet.dto';
+import { plainToInstance } from 'class-transformer';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('portal-outlets')
 @Controller('portal/outlets')
 @UseGuards(PortalGuard)
+@UsePipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }))
+
 export class OutletsController {
   constructor(private readonly service: MerchantPanelService) {}
 
@@ -12,26 +18,26 @@ export class OutletsController {
   }
 
   @Get()
-  list(@Req() req: any, @Query() query: OutletFilters & { status?: string; hidden?: string; search?: string }) {
+  async list(@Req() req: any, @Query() query: OutletListQueryDto): Promise<OutletListResponseDto> {
+    const { page, pageSize, ...rest } = query;
     const filters: OutletFilters = {
-      search: query.search,
+      status: rest.status ? (rest.status as any) : undefined,
+      hidden: rest.hidden,
+      search: rest.search,
     };
-    if (query.status && query.status !== 'ALL') {
-      filters.status = query.status as any;
-    }
-    if (query.hidden != null) {
-      filters.hidden = query.hidden === 'true';
-    }
-    return this.service.listOutlets(this.getMerchantId(req), filters);
+    const result = await this.service.listOutlets(this.getMerchantId(req), filters, { page, pageSize });
+    return plainToInstance(OutletListResponseDto, result, { enableImplicitConversion: true });
   }
 
   @Post()
-  create(@Req() req: any, @Body() body: UpsertOutletPayload) {
-    return this.service.createOutlet(this.getMerchantId(req), body);
+  async create(@Req() req: any, @Body() body: UpsertOutletDto) {
+    const outlet = await this.service.createOutlet(this.getMerchantId(req), body);
+    return plainToInstance(OutletDto, outlet, { enableImplicitConversion: true });
   }
 
   @Put(':id')
-  update(@Req() req: any, @Param('id') id: string, @Body() body: UpsertOutletPayload) {
-    return this.service.updateOutlet(this.getMerchantId(req), id, body);
+  async update(@Req() req: any, @Param('id') id: string, @Body() body: UpsertOutletDto) {
+    const outlet = await this.service.updateOutlet(this.getMerchantId(req), id, body);
+    return plainToInstance(OutletDto, outlet, { enableImplicitConversion: true });
   }
 }
