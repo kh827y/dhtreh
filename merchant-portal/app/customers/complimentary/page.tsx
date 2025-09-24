@@ -4,7 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardHeader, CardBody, Button } from "@loyalty/ui";
-import { getCustomerById, getCustomerByLogin } from "../data";
+import { normalizeCustomer, type CustomerRecord } from "../utils";
 
 type FormState = {
   amount: string;
@@ -26,17 +26,82 @@ export default function ComplimentaryPointsPage() {
   const rawPhone = searchParams.get("phone") || "";
   const customerId = searchParams.get("customerId") || "";
   const phone = maskPhone(rawPhone);
-  const customer = rawPhone
-    ? getCustomerByLogin(maskPhone(rawPhone)) ?? getCustomerByLogin(rawPhone)
-    : customerId
-    ? getCustomerById(customerId)
-    : null;
+  const [resolvedCustomer, setResolvedCustomer] = React.useState<CustomerRecord | null>(null);
+  const [lookupError, setLookupError] = React.useState<string | null>(null);
+  const [lookupLoading, setLookupLoading] = React.useState(false);
+
+  const displayPhone = resolvedCustomer?.phone ? maskPhone(resolvedCustomer.phone) : phone || rawPhone;
 
   const [form, setForm] = React.useState<FormState>(initialState);
   const [errors, setErrors] = React.useState<FormErrors>({});
   const [submitting, setSubmitting] = React.useState(false);
   const [toast, setToast] = React.useState<string | null>(null);
   const [apiError, setApiError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    async function resolveCustomer() {
+      if (!rawPhone && !customerId) {
+        setResolvedCustomer(null);
+        setLookupError("Укажите телефон клиента");
+        return;
+      }
+      setLookupLoading(true);
+      setLookupError(null);
+      try {
+        if (customerId) {
+          const res = await fetch(`/api/portal/customers/${customerId}`);
+          if (!res.ok) {
+            const message = await res.text();
+            throw new Error(message || "Не удалось загрузить клиента");
+          }
+          const payload = await res.json();
+          if (!cancelled) {
+            setResolvedCustomer(normalizeCustomer(payload));
+          }
+          return;
+        }
+
+        if (rawPhone) {
+          const candidates = buildPhoneCandidates(rawPhone);
+          for (const candidate of candidates) {
+            try {
+              const res = await fetch(`/api/portal/customer/search?phone=${encodeURIComponent(candidate)}`);
+              if (!res.ok) continue;
+              const payload = await res.json();
+              if (payload && typeof payload === "object" && payload.customerId) {
+                if (!cancelled) {
+                  setResolvedCustomer({
+                    id: String(payload.customerId),
+                    phone: payload.phone ?? candidate,
+                  } as CustomerRecord);
+                }
+                return;
+              }
+            } catch {
+              /* пробуем следующий вариант */
+            }
+          }
+          throw new Error("Клиент не найден. Проверьте номер телефона.");
+        }
+      } catch (err: unknown) {
+        if (!cancelled) {
+          const message = err instanceof Error ? err.message : String(err ?? "Не удалось найти клиента");
+          setLookupError(message);
+          setResolvedCustomer(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setLookupLoading(false);
+        }
+      }
+    }
+
+    resolveCustomer();
+    return () => {
+      cancelled = true;
+    };
+  }, [rawPhone, customerId]);
 
   React.useEffect(() => {
     if (!toast) return;
@@ -73,7 +138,12 @@ export default function ComplimentaryPointsPage() {
     return Object.keys(nextErrors).length === 0;
   }
 
-  const canSubmit = !!rawPhone && form.amount.trim().length > 0 && form.expiresIn.trim().length > 0 && !submitting;
+  const canSubmit =
+    !!rawPhone &&
+    form.amount.trim().length > 0 &&
+    form.expiresIn.trim().length > 0 &&
+    !submitting &&
+    Boolean(resolvedCustomer?.id);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -84,7 +154,7 @@ export default function ComplimentaryPointsPage() {
       return;
     }
 
-    const targetCustomer = customer ?? getCustomerByLogin(rawPhone) ?? getCustomerByLogin(phone);
+    const targetCustomer = resolvedCustomer;
     if (!targetCustomer) {
       setApiError("Клиент не найден. Проверьте телефон или откройте форму из карточки клиента.");
       return;
@@ -111,12 +181,14 @@ export default function ComplimentaryPointsPage() {
             <div style={{ display: "grid", gap: 12 }}>
               <label style={fieldStyle}>
                 <span style={labelStyle}>Телефон клиента</span>
-                <input style={{ ...inputStyle, opacity: 0.8 }} value={phone || rawPhone || "—"} disabled />
+                <input style={{ ...inputStyle, opacity: 0.8 }} value={displayPhone || "—"} disabled />
                 {!rawPhone && (
                   <span style={{ fontSize: 12, color: "#f87171" }}>
                     Поле доступно только при переходе из карточки клиента или списка.
                   </span>
                 )}
+                {lookupLoading && <span style={{ fontSize: 12, opacity: 0.7 }}>Ищем клиента…</span>}
+                {lookupError && <ErrorText>{lookupError}</ErrorText>}
               </label>
 
               <label style={fieldStyle}>
@@ -165,7 +237,10 @@ export default function ComplimentaryPointsPage() {
               <Button type="submit" disabled={!canSubmit}>
                 {submitting ? "Начисляем…" : "Начислить"}
               </Button>
-              <Link href={customer ? `/customers/${customer.id}` : "/customers"} style={{ color: "#94a3b8", alignSelf: "center" }}>
+              <Link
+                href={resolvedCustomer ? `/customers/${resolvedCustomer.id}` : "/customers"}
+                style={{ color: "#94a3b8", alignSelf: "center" }}
+              >
                 Отмена
               </Link>
             </div>
@@ -182,6 +257,20 @@ function maskPhone(raw: string): string {
   const [, a, b, c, d, e] = digits.match(/^(\d)(\d{3})(\d{3})(\d{2})(\d{2})$/) || [];
   if (!a) return raw;
   return `+${a} (${b}) ${c}-${d}-${e}`;
+}
+
+function buildPhoneCandidates(raw: string): string[] {
+  const trimmed = raw.trim();
+  const digits = trimmed.replace(/\D+/g, "");
+  const variants = new Set<string>();
+  if (trimmed) variants.add(trimmed);
+  if (digits) variants.add(digits);
+  if (digits.length === 11) {
+    variants.add(`+${digits}`);
+    variants.add(`+${digits[0]}${digits.slice(1)}`);
+    variants.add(maskPhone(digits));
+  }
+  return Array.from(variants).filter((value) => value.length > 0);
 }
 
 const fieldStyle: React.CSSProperties = {
