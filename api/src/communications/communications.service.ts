@@ -3,6 +3,7 @@ import { CommunicationChannel, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
 
+
 export interface TemplatePayload {
   name: string;
   channel: CommunicationChannel;
@@ -33,6 +34,7 @@ export class CommunicationsService {
     private readonly metrics: MetricsService,
   ) {}
 
+
   async listTemplates(merchantId: string, channel?: CommunicationChannel | 'ALL') {
     const where: Prisma.CommunicationTemplateWhereInput = { merchantId };
     if (channel && channel !== 'ALL') where.channel = channel;
@@ -57,6 +59,7 @@ export class CommunicationsService {
   async createTemplate(merchantId: string, payload: TemplatePayload) {
     if (!payload.name?.trim()) throw new BadRequestException('Название шаблона обязательно');
     const template = await this.prisma.communicationTemplate.create({
+
       data: {
         merchantId,
         name: payload.name.trim(),
@@ -81,6 +84,7 @@ export class CommunicationsService {
       this.metrics.inc('portal_communications_templates_changed_total', { action: 'create' });
     } catch {}
     return template;
+
   }
 
   async updateTemplate(merchantId: string, templateId: string, payload: TemplatePayload) {
@@ -90,6 +94,7 @@ export class CommunicationsService {
       throw new BadRequestException('Системные шаблоны нельзя переводить в пользовательские');
     }
     const updated = await this.prisma.communicationTemplate.update({
+
       where: { id: templateId },
       data: {
         name: payload.name?.trim() ?? template.name,
@@ -101,6 +106,7 @@ export class CommunicationsService {
         updatedById: payload.actorId ?? template.updatedById,
       },
     });
+
     try {
       this.logger.log(
         JSON.stringify({
@@ -118,6 +124,7 @@ export class CommunicationsService {
   async archiveTemplate(merchantId: string, templateId: string) {
     const template = await this.prisma.communicationTemplate.findFirst({ where: { merchantId, id: templateId } });
     if (!template) throw new NotFoundException('Шаблон не найден');
+
     const archived = await this.prisma.communicationTemplate.update({
       where: { id: templateId },
       data: { archivedAt: new Date() },
@@ -139,11 +146,13 @@ export class CommunicationsService {
     const where: Prisma.CommunicationTaskWhereInput = { merchantId };
     if (channel && channel !== 'ALL') where.channel = channel;
     if (status) where.status = status;
+
     const tasks = await this.prisma.communicationTask.findMany({
       where,
       orderBy: { createdAt: 'desc' },
       include: { template: true, audience: true },
     });
+
     try {
       this.logger.log(
         JSON.stringify({
@@ -173,6 +182,7 @@ export class CommunicationsService {
         createdById: payload.actorId ?? null,
       },
     });
+
     try {
       this.logger.log(
         JSON.stringify({
@@ -191,6 +201,7 @@ export class CommunicationsService {
   async updateTaskStatus(merchantId: string, taskId: string, status: string) {
     const task = await this.prisma.communicationTask.findFirst({ where: { merchantId, id: taskId } });
     if (!task) throw new NotFoundException('Задача не найдена');
+    
     const updated = await this.prisma.communicationTask.update({
       where: { id: taskId },
       data: { status },

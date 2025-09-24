@@ -565,7 +565,6 @@ export class MerchantPanelService {
         );
         this.metrics.inc('portal_staff_changed_total', { action: 'create' });
       } catch {}
-
       return this.getStaff(merchantId, staff.id);
     });
   }
@@ -793,6 +792,7 @@ export class MerchantPanelService {
       } catch {}
       return { pinCode };
     });
+
   }
 
   async rotateStaffPin(merchantId: string, accessId: string) {
@@ -822,6 +822,7 @@ export class MerchantPanelService {
       } catch {}
       const [view] = await this.buildAccessViews(merchantId, updated.staffId, [updated]);
       return view;
+
     });
   }
 

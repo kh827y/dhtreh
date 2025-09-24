@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
 
+
 export interface CustomerFilters {
   search?: string;
   segmentId?: string;
@@ -28,6 +29,7 @@ export interface SegmentPayload {
 
 @Injectable()
 export class CustomerAudiencesService {
+
   private readonly logger = new Logger(CustomerAudiencesService.name);
 
   constructor(
@@ -85,6 +87,7 @@ export class CustomerAudiencesService {
       }),
       this.prisma.customer.count({ where }),
     ]);
+
     const result = {
       total,
       items: items.map((customer) => ({
@@ -93,6 +96,7 @@ export class CustomerAudiencesService {
         segments: customer.segments.map((s) => ({ id: s.segmentId, name: s.segment.name })),
       })),
     };
+
     try {
       this.logger.log(
         JSON.stringify({
@@ -126,11 +130,13 @@ export class CustomerAudiencesService {
       },
     });
     if (!customer) throw new NotFoundException('Клиент не найден');
+
     const result = {
       ...customer,
       stats: customer.customerStats[0] ?? null,
       segments: customer.segments.map((s) => ({ id: s.segmentId, name: s.segment.name })),
     };
+
     try {
       this.logger.log(
         JSON.stringify({
@@ -186,6 +192,7 @@ export class CustomerAudiencesService {
   }
 
   async listSegments(merchantId: string) {
+
     const segments = await this.prisma.customerSegment.findMany({
       where: { merchantId },
       orderBy: [{ archivedAt: 'asc' }, { createdAt: 'desc' }],
@@ -205,6 +212,7 @@ export class CustomerAudiencesService {
 
   async createSegment(merchantId: string, payload: SegmentPayload) {
     if (!payload.name?.trim()) throw new BadRequestException('Название сегмента обязательно');
+
     const segment = await this.prisma.customerSegment.create({
       data: {
         merchantId,
@@ -219,6 +227,7 @@ export class CustomerAudiencesService {
         updatedById: payload.actorId ?? null,
       },
     });
+
     try {
       this.logger.log(
         JSON.stringify({
@@ -249,6 +258,7 @@ export class CustomerAudiencesService {
         updatedById: payload.actorId ?? segment.updatedById,
       },
     });
+
     try {
       this.logger.log(
         JSON.stringify({
@@ -266,6 +276,7 @@ export class CustomerAudiencesService {
   async setSegmentActive(merchantId: string, segmentId: string, isActive: boolean) {
     const segment = await this.prisma.customerSegment.findFirst({ where: { merchantId, id: segmentId } });
     if (!segment) throw new NotFoundException('Сегмент не найден');
+
     const updated = await this.prisma.customerSegment.update({
       where: { id: segmentId },
       data: { isActive },
@@ -287,6 +298,7 @@ export class CustomerAudiencesService {
   async archiveSegment(merchantId: string, segmentId: string) {
     const segment = await this.prisma.customerSegment.findFirst({ where: { merchantId, id: segmentId } });
     if (!segment) throw new NotFoundException('Сегмент не найден');
+
     const archived = await this.prisma.customerSegment.update({
       where: { id: segmentId },
       data: { archivedAt: new Date(), isActive: false },
@@ -311,6 +323,7 @@ export class CustomerAudiencesService {
     const count = await this.prisma.customer.count({
       where: { ...where, segments: { some: { segmentId } } },
     });
+
     const updated = await this.prisma.customerSegment.update({
       where: { id: segmentId },
       data: { customerCount: count, lastEvaluatedAt: new Date() },

@@ -9,6 +9,7 @@ import { ApiTags } from '@nestjs/swagger';
 @Controller('portal/outlets')
 @UseGuards(PortalGuard)
 @UsePipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }))
+
 export class OutletsController {
   constructor(private readonly service: MerchantPanelService) {}
 

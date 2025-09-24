@@ -32,6 +32,7 @@ import { ApiTags } from '@nestjs/swagger';
 @Controller('portal/staff')
 @UseGuards(PortalGuard)
 @UsePipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }))
+
 export class StaffController {
   constructor(private readonly service: MerchantPanelService) {}
 
@@ -50,6 +51,7 @@ export class StaffController {
       portalOnly: rest.portalOnly,
     };
     const result = await this.service.listStaff(this.getMerchantId(req), filters, { page, pageSize });
+
     const rawQuery = (req?.query ?? {}) as Record<string, unknown>;
     const hasExplicitFilters = Object.keys(rawQuery).length > 0;
     if (!hasExplicitFilters) {
@@ -90,6 +92,7 @@ export class StaffController {
   revokePin(@Req() req: any, @Param('accessId') accessId: string) {
     return this.service.revokeStaffPin(this.getMerchantId(req), accessId);
   }
+
 
   @Get(':id/access')
   async listAccess(@Req() req: any, @Param('id') id: string) {

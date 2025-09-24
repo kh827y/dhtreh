@@ -38,7 +38,9 @@
 ## Observability updates
 
 - Метрики портала дополнились событиями списков сотрудников/групп и операциями с PIN (`portal_staff_*`, `portal_access_group_list_total`).
+
 - Для лояльности, аудиторий и коммуникаций добавлены структурные логи и счётчики (`portal_loyalty_*`, `portal_audiences_*`, `portal_communications_*`).
+
 - В юнит-тестах добавлено покрытие `MerchantPanelService.listStaff` для проверки пагинации, маппинга и инкремента счётчиков.
 
 ## Project setup

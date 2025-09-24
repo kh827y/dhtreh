@@ -88,6 +88,7 @@ export class LoyaltyProgramService {
     if (status && status !== 'ALL') {
       where.status = status;
     }
+    
     const mechanics = await this.prisma.loyaltyMechanic.findMany({ where, orderBy: { createdAt: 'desc' } });
     try {
       this.logger.log(
@@ -136,6 +137,7 @@ export class LoyaltyProgramService {
   async updateMechanic(merchantId: string, mechanicId: string, payload: MechanicPayload) {
     const mechanic = await this.prisma.loyaltyMechanic.findFirst({ where: { merchantId, id: mechanicId } });
     if (!mechanic) throw new NotFoundException('Механика не найдена');
+
     const updated = await this.prisma.loyaltyMechanic.update({
       where: { id: mechanicId },
       data: {
@@ -148,6 +150,7 @@ export class LoyaltyProgramService {
         updatedById: payload.actorId ?? mechanic.updatedById,
       },
     });
+
     try {
       this.logger.log(
         JSON.stringify({
@@ -174,6 +177,7 @@ export class LoyaltyProgramService {
         disabledAt: status === MechanicStatus.DISABLED ? new Date() : mechanic.disabledAt,
       },
     });
+
     try {
       this.logger.log(
         JSON.stringify({
@@ -192,6 +196,7 @@ export class LoyaltyProgramService {
     const mechanic = await this.prisma.loyaltyMechanic.findFirst({ where: { merchantId, id: mechanicId } });
     if (!mechanic) throw new NotFoundException('Механика не найдена');
     await this.prisma.loyaltyMechanic.delete({ where: { id: mechanicId } });
+
     try {
       this.logger.log(
         JSON.stringify({
@@ -210,11 +215,13 @@ export class LoyaltyProgramService {
     if (status && status !== 'ALL') {
       where.status = status;
     }
+
     const promotions = await this.prisma.loyaltyPromotion.findMany({
       where,
       orderBy: { createdAt: 'desc' },
       include: { metrics: true },
     });
+
     try {
       this.logger.log(
         JSON.stringify({
@@ -231,6 +238,7 @@ export class LoyaltyProgramService {
 
   async createPromotion(merchantId: string, payload: PromotionPayload) {
     if (!payload.name?.trim()) throw new BadRequestException('Название акции обязательно');
+
     const promotion = await this.prisma.loyaltyPromotion.create({
       data: {
         merchantId,
@@ -256,6 +264,7 @@ export class LoyaltyProgramService {
         updatedById: payload.actorId ?? null,
       },
     });
+
     try {
       this.logger.log(
         JSON.stringify({
@@ -273,6 +282,7 @@ export class LoyaltyProgramService {
   async updatePromotion(merchantId: string, promotionId: string, payload: PromotionPayload) {
     const promotion = await this.prisma.loyaltyPromotion.findFirst({ where: { merchantId, id: promotionId } });
     if (!promotion) throw new NotFoundException('Акция не найдена');
+
     const updated = await this.prisma.loyaltyPromotion.update({
       where: { id: promotionId },
       data: {
@@ -297,6 +307,7 @@ export class LoyaltyProgramService {
         updatedById: payload.actorId ?? promotion.updatedById,
       },
     });
+
     try {
       this.logger.log(
         JSON.stringify({
@@ -314,6 +325,7 @@ export class LoyaltyProgramService {
   async changePromotionStatus(merchantId: string, promotionId: string, status: PromotionStatus, actorId?: string) {
     const promotion = await this.prisma.loyaltyPromotion.findFirst({ where: { merchantId, id: promotionId } });
     if (!promotion) throw new NotFoundException('Акция не найдена');
+
     const updated = await this.prisma.loyaltyPromotion.update({
       where: { id: promotionId },
       data: {
@@ -323,6 +335,7 @@ export class LoyaltyProgramService {
         archivedAt: status === PromotionStatus.ARCHIVED ? new Date() : promotion.archivedAt,
       },
     });
+
     try {
       this.logger.log(
         JSON.stringify({
@@ -352,6 +365,7 @@ export class LoyaltyProgramService {
         }),
       ),
     );
+
     const updated = results.reduce((acc, res) => acc + res.count, 0);
     try {
       this.logger.log(
@@ -371,11 +385,13 @@ export class LoyaltyProgramService {
   async listPromoCodes(merchantId: string, status?: PromoCodeStatus | 'ALL') {
     const where: Prisma.PromoCodeWhereInput = { merchantId };
     if (status && status !== 'ALL') where.status = status;
+
     const promoCodes = await this.prisma.promoCode.findMany({
       where,
       orderBy: { createdAt: 'desc' },
       include: { metrics: true },
     });
+
     try {
       this.logger.log(
         JSON.stringify({
@@ -394,6 +410,7 @@ export class LoyaltyProgramService {
     if (!payload.code?.trim()) throw new BadRequestException('Код обязателен');
     const exists = await this.prisma.promoCode.findFirst({ where: { merchantId, code: payload.code.trim() } });
     if (exists) throw new BadRequestException('Промокод уже существует');
+
     const promoCode = await this.prisma.promoCode.create({
       data: {
         merchantId,
@@ -422,6 +439,7 @@ export class LoyaltyProgramService {
         updatedById: payload.actorId ?? null,
       },
     });
+
     try {
       this.logger.log(
         JSON.stringify({
@@ -439,6 +457,7 @@ export class LoyaltyProgramService {
   async updatePromoCode(merchantId: string, promoCodeId: string, payload: PromoCodePayload) {
     const promoCode = await this.prisma.promoCode.findFirst({ where: { merchantId, id: promoCodeId } });
     if (!promoCode) throw new NotFoundException('Промокод не найден');
+
     const updated = await this.prisma.promoCode.update({
       where: { id: promoCodeId },
       data: {
@@ -466,6 +485,7 @@ export class LoyaltyProgramService {
         updatedById: payload.actorId ?? promoCode.updatedById,
       },
     });
+
     try {
       this.logger.log(
         JSON.stringify({
@@ -483,6 +503,7 @@ export class LoyaltyProgramService {
   async changePromoCodeStatus(merchantId: string, promoCodeId: string, status: PromoCodeStatus, actorId?: string) {
     const promoCode = await this.prisma.promoCode.findFirst({ where: { merchantId, id: promoCodeId } });
     if (!promoCode) throw new NotFoundException('Промокод не найден');
+
     const updated = await this.prisma.promoCode.update({
       where: { id: promoCodeId },
       data: {
@@ -491,6 +512,7 @@ export class LoyaltyProgramService {
         archivedAt: status === PromoCodeStatus.ARCHIVED ? new Date() : promoCode.archivedAt,
       },
     });
+
     try {
       this.logger.log(
         JSON.stringify({
@@ -519,6 +541,7 @@ export class LoyaltyProgramService {
         }),
       ),
     );
+
     const updated = results.reduce((acc, res) => acc + res.count, 0);
     try {
       this.logger.log(
@@ -579,6 +602,7 @@ export class LoyaltyProgramService {
         take: 200,
       });
     }
+
     try {
       this.logger.log(
         JSON.stringify({
