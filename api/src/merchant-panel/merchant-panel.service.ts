@@ -4,6 +4,7 @@ import { MerchantsService } from '../merchants/merchants.service';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
 
+
 interface PaginationOptions {
   page: number;
   pageSize: number;
@@ -433,7 +434,6 @@ export class MerchantPanelService {
         );
         this.metrics.inc('portal_staff_changed_total', { action: 'create' });
       } catch {}
-
       return this.getStaff(merchantId, staff.id);
     });
   }
@@ -515,6 +515,7 @@ export class MerchantPanelService {
       );
       this.metrics.inc('portal_staff_status_changed_total', { status });
     } catch {}
+
     return this.getStaff(merchantId, staffId);
   }
 
@@ -607,7 +608,7 @@ export class MerchantPanelService {
       );
       this.metrics.inc('portal_access_group_list_total');
     } catch {}
-
+      
     return {
       items: items.map((group) =>
         this.mapAccessGroup({ ...group, memberCount: group.members.length }),
