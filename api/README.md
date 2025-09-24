@@ -25,6 +25,22 @@
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
+## Domain modules
+
+Сервисы, отвечающие за доменные разделы портала:
+
+- `AdminPanelModule` — CRUD мерчантов, управление настройками Bridge/QR/Staff и Telegram-токенами.
+- `MerchantPanelModule` — сотрудники, группы доступа, торговые точки и кассовые PIN-ы, структурные логи (`portal.staff.*`) и метрики (`portal_staff_list_total`, `portal_staff_changed_total`, `portal_staff_pin_events_total`).
+- `LoyaltyProgramModule` — механики, акции, промокоды и журнал операций по лояльности со структурными логами (`portal.loyalty.*`) и метриками (`portal_loyalty_*`).
+- `CustomerAudiencesModule` — клиенты, фильтрация и сегменты/аудитории с пересчётом метрик, логами (`portal.customers.*`, `portal.audiences.*`) и счётчиками (`portal_customers_*`, `portal_audiences_*`).
+- `CommunicationsModule` — шаблоны и задачи рассылок (push/SMS/email/telegram) с логами (`portal.communications.*`) и метриками (`portal_communications_*`).
+
+## Observability updates
+
+- Метрики портала дополнились событиями списков сотрудников/групп и операциями с PIN (`portal_staff_*`, `portal_access_group_list_total`).
+- Для лояльности, аудиторий и коммуникаций добавлены структурные логи и счётчики (`portal_loyalty_*`, `portal_audiences_*`, `portal_communications_*`).
+- В юнит-тестах добавлено покрытие `MerchantPanelService.listStaff` для проверки пагинации, маппинга и инкремента счётчиков.
+
 ## Project setup
 
 ```bash
@@ -56,6 +72,8 @@ $ pnpm run test:e2e
 # test coverage
 $ pnpm run test:cov
 ```
+
+> Prisma Client генерируется автоматически перед запуском всех тестовых скриптов (`pretest`/`pretest:e2e`), дополнительных команд выполнять не нужно.
 
 ## Deployment
 

@@ -3,25 +3,37 @@ import React from "react";
 import { Card, CardHeader, CardBody, Button, Skeleton } from "@loyalty/ui";
 import Toggle from "../../components/Toggle";
 
+type StaffOutletAccess = {
+  id: string;
+  outletId: string;
+  outletName?: string | null;
+  pinCode?: string | null;
+  status: string;
+};
+
+type StaffGroup = {
+  id: string;
+  name: string;
+  scope?: string;
+};
+
 type Staff = {
   id: string;
   login?: string | null;
   email?: string | null;
-  role?: string | null;
-  status: string;
-  createdAt?: string;
-  outletsCount?: number;
-  lastActivityAt?: string | null;
+  phone?: string | null;
   firstName?: string | null;
   lastName?: string | null;
   position?: string | null;
-  phone?: string | null;
   comment?: string | null;
-  avatarUrl?: string | null;
-  canAccessPortal?: boolean | null;
-  isOwner?: boolean | null;
-  allowedOutletId?: string | null;
-  pinCode?: string | null;
+  role: string;
+  status: string;
+  portalAccessEnabled: boolean;
+  canAccessPortal: boolean;
+  isOwner: boolean;
+  accesses: StaffOutletAccess[];
+  groups: StaffGroup[];
+  lastActivityAt?: string | null;
 };
 
 type Outlet = { id: string; name: string };
@@ -77,13 +89,22 @@ function getRoleLabel(role?: string | null): string {
 }
 
 function hasPortalAccess(staff: Staff): boolean {
-  return Boolean(staff.isOwner || staff.canAccessPortal || staff.email);
+  return Boolean(staff.isOwner || staff.portalAccessEnabled || staff.canAccessPortal);
 }
 
 export default function StaffPage() {
   const [items, setItems] = React.useState<Staff[]>([]);
   const [outlets, setOutlets] = React.useState<Outlet[]>([]);
   const [groups, setGroups] = React.useState<AccessGroup[]>([]);
+  const [meta, setMeta] = React.useState({ page: 1, pageSize: 20, total: 0, totalPages: 1 });
+  const [counters, setCounters] = React.useState({
+    active: 0,
+    pending: 0,
+    suspended: 0,
+    fired: 0,
+    archived: 0,
+    portalEnabled: 0,
+  });
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState("");
   const [showCreate, setShowCreate] = React.useState(false);
@@ -122,13 +143,11 @@ export default function StaffPage() {
       if (tab === "FIRED" && staff.status === "ACTIVE") return false;
       if (roleFilter !== "ALL" && (staff.role || "").toUpperCase() !== roleFilter) return false;
       if (outletFilter !== "ALL") {
-        if (staff.allowedOutletId) {
-          if (staff.allowedOutletId !== outletFilter) return false;
-        } else if ((staff.outletsCount || 0) > 0) {
-          // No exact mapping yet — keep staff if they have access count > 0 (best effort)
-        } else {
-          return false;
-        }
+        const accesses = Array.isArray(staff.accesses) ? staff.accesses : [];
+        const hasAccess = accesses.some(
+          (access) => access.outletId === outletFilter && access.status === "ACTIVE"
+        );
+        if (!hasAccess) return false;
       }
       if (onlyPortal && !hasPortalAccess(staff)) return false;
       if (q) {
@@ -150,10 +169,11 @@ export default function StaffPage() {
   }, [items, tab, roleFilter, outletFilter, onlyPortal, search]);
 
   const recordsLabel = React.useMemo(() => {
-    if (loading) return "Найдено: — записей";
-    const count = filteredItems.length;
-    return `Найдено: ${count} записей`;
-  }, [filteredItems, loading]);
+    if (loading) return "Показано: —";
+    const visible = filteredItems.length;
+    const total = meta.total ?? visible;
+    return `Показано: ${visible} из ${total}`;
+  }, [filteredItems.length, loading, meta.total]);
 
   const ensureGroupsLoaded = React.useCallback(async () => {
     if (groupsLoading) return;
@@ -201,30 +221,75 @@ export default function StaffPage() {
     setCreateError("");
   }, []);
 
-  async function load() {
+  const load = React.useCallback(async () => {
     setLoading(true);
     setError("");
     try {
+      const qs = new URLSearchParams();
+      qs.set("page", "1");
+      qs.set("pageSize", "100");
+      if (tab === "ACTIVE") qs.set("status", "ACTIVE");
+      if (tab === "FIRED") qs.set("status", "FIRED");
+      if (outletFilter !== "ALL") qs.set("outletId", outletFilter);
+      if (onlyPortal) qs.set("portalOnly", "true");
+      const trimmedSearch = search.trim();
+      if (trimmedSearch) qs.set("search", trimmedSearch);
+
       const [staffRes, outletsRes] = await Promise.all([
-        fetch("/api/portal/staff"),
-        fetch("/api/portal/outlets"),
+        fetch(`/api/portal/staff?${qs.toString()}`),
+        fetch(`/api/portal/outlets`),
       ]);
       if (!staffRes.ok) throw new Error(await staffRes.text());
       if (!outletsRes.ok) throw new Error(await outletsRes.text());
-      const staff = await staffRes.json();
-      const outletsData = await outletsRes.json();
-      setItems(Array.isArray(staff) ? staff : []);
-      setOutlets(Array.isArray(outletsData) ? outletsData : []);
+      const staffPayload = await staffRes.json();
+      const outletsPayload = await outletsRes.json();
+
+      const staffItems: Staff[] = Array.isArray(staffPayload?.items)
+        ? staffPayload.items
+        : Array.isArray(staffPayload)
+          ? staffPayload
+          : [];
+      setItems(staffItems);
+      const metaData = staffPayload?.meta;
+      setMeta(
+        metaData && typeof metaData === "object"
+          ? {
+              page: Number(metaData.page) || 1,
+              pageSize: Number(metaData.pageSize) || staffItems.length || 20,
+              total: Number(metaData.total) || staffItems.length,
+              totalPages: Number(metaData.totalPages) || 1,
+            }
+          : { page: 1, pageSize: staffItems.length || 20, total: staffItems.length, totalPages: 1 }
+      );
+      const countersData = staffPayload?.counters;
+      setCounters(
+        countersData && typeof countersData === "object"
+          ? {
+              active: Number(countersData.active) || 0,
+              pending: Number(countersData.pending) || 0,
+              suspended: Number(countersData.suspended) || 0,
+              fired: Number(countersData.fired) || 0,
+              archived: Number(countersData.archived) || 0,
+              portalEnabled: Number(countersData.portalEnabled) || 0,
+            }
+          : { active: 0, pending: 0, suspended: 0, fired: 0, archived: 0, portalEnabled: 0 }
+      );
+      const outletItems: Outlet[] = Array.isArray(outletsPayload?.items)
+        ? outletsPayload.items
+        : Array.isArray(outletsPayload)
+          ? outletsPayload
+          : [];
+      setOutlets(outletItems);
     } catch (e: any) {
       setError(String(e?.message || e || "Не удалось загрузить данных"));
     } finally {
       setLoading(false);
     }
-  }
+  }, [tab, outletFilter, onlyPortal, search]);
 
   React.useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
   React.useEffect(() => {
     if (showCreate) {
@@ -235,16 +300,17 @@ export default function StaffPage() {
   const canSubmitCreate = React.useMemo(() => {
     if (!cFirstName.trim()) return false;
     if (cPortal) {
-      return Boolean(cGroup && cEmail.trim() && cPassword.trim());
+      return Boolean(cGroup && cEmail.trim());
     }
     return true;
-  }, [cFirstName, cPortal, cGroup, cEmail, cPassword]);
+  }, [cFirstName, cPortal, cGroup, cEmail]);
 
   async function handleCreate() {
     if (!canSubmitCreate) return;
     setSubmitting(true);
     setCreateError("");
     try {
+      const normalizedGroup = cGroup.trim();
       const payload: Record<string, any> = {
         firstName: cFirstName.trim(),
         lastName: cLastName.trim() || undefined,
@@ -253,10 +319,19 @@ export default function StaffPage() {
         phone: cPhone.trim() || undefined,
         comment: cComment.trim() || undefined,
         canAccessPortal: cPortal,
+        portalAccessEnabled: cPortal,
         email: cPortal ? cEmail.trim() : undefined,
-        password: cPortal ? cPassword.trim() : undefined,
-        role: cPortal ? cGroup : "CASHIER",
       };
+      if (normalizedGroup) {
+        payload.accessGroupIds = [normalizedGroup];
+        const upper = normalizedGroup.toUpperCase();
+        if (["MERCHANT", "MANAGER", "ANALYST", "CASHIER"].includes(upper)) {
+          payload.role = upper;
+        }
+      }
+      if (!payload.role && !cPortal) {
+        payload.role = "CASHIER";
+      }
       const res = await fetch("/api/portal/staff", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -296,7 +371,7 @@ export default function StaffPage() {
           }}
           onClick={() => setTab("ACTIVE")}
         >
-          Работает
+          Работает{` (${counters.active})`}
         </button>
         <button
           className="btn"
@@ -310,7 +385,7 @@ export default function StaffPage() {
           }}
           onClick={() => setTab("FIRED")}
         >
-          Уволен
+          Уволен{` (${counters.fired})`}
         </button>
       </div>
 
@@ -439,15 +514,13 @@ export default function StaffPage() {
                 const secondary = staff.email || staff.phone || staff.position;
                 const portalsAccess = hasPortalAccess(staff);
                 const outletText = (() => {
-                  const count = staff.outletsCount || 0;
-                  const allowed = staff.allowedOutletId && outlets.find((o) => o.id === staff.allowedOutletId)?.name;
-                  if (allowed) return allowed;
-                  if (count > 0) {
-                    if (count === 1) return "1 торговая точка";
-                    if (count >= 2 && count <= 4) return `${count} торговые точки`;
-                    return `${count} торговых точек`;
+                  const accesses = Array.isArray(staff.accesses) ? staff.accesses : [];
+                  const active = accesses.filter((access) => access.status === "ACTIVE");
+                  if (active.length === 0) return "—";
+                  if (active.length === 1) {
+                    return active[0].outletName || "1 торговая точка";
                   }
-                  return "—";
+                  return `${active.length} торговых точек`;
                 })();
                 const applyRowHighlight = (el: HTMLAnchorElement, active: boolean) => {
                   el.style.borderColor = active ? "var(--brand-primary)" : "rgba(255,255,255,.05)";
