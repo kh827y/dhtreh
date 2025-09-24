@@ -98,6 +98,14 @@ export class StaffOutletAccessDto {
   @Field(() => StaffOutletAccessStatus)
   @ApiProperty({ enum: StaffOutletAccessStatus, description: 'Статус доступа к точке' })
   status!: StaffOutletAccessStatus;
+
+  @Field(() => String, { nullable: true })
+  @ApiPropertyOptional({ description: 'Дата последней операции кассира по точке' })
+  lastTxnAt?: string | null;
+
+  @Field(() => Int, { nullable: true })
+  @ApiPropertyOptional({ description: 'Количество операций по точке' })
+  transactionsTotal?: number | null;
 }
 
 @ObjectType()
@@ -165,6 +173,22 @@ export class StaffSummaryDto {
   @ApiProperty({ description: 'Является владельцем аккаунта мерчанта' })
   isOwner!: boolean;
 
+  @Field(() => String, { nullable: true })
+  @ApiPropertyOptional({ description: 'Персональный PIN сотрудника' })
+  pinCode?: string | null;
+
+  @Field(() => String, { nullable: true })
+  @ApiPropertyOptional({ description: 'Последняя активность сотрудника' })
+  lastActivityAt?: string | null;
+
+  @Field(() => String, { nullable: true })
+  @ApiPropertyOptional({ description: 'Дата последнего входа в портал' })
+  lastPortalLoginAt?: string | null;
+
+  @Field(() => Int, { nullable: true })
+  @ApiPropertyOptional({ description: 'Количество активных торговых точек' })
+  outletsCount?: number | null;
+
   @Field(() => [StaffOutletAccessDto])
   @ApiProperty({ type: () => [StaffOutletAccessDto], description: 'Список доступов по точкам' })
   accesses!: StaffOutletAccessDto[];
@@ -179,6 +203,13 @@ export class StaffDetailDto extends StaffSummaryDto {
   @Field(() => String, { nullable: true })
   @ApiPropertyOptional({ description: 'Комментарий' })
   comment?: string | null;
+}
+
+@ObjectType()
+export class StaffPinDto {
+  @Field(() => String, { nullable: true })
+  @ApiPropertyOptional({ description: 'Новый персональный PIN сотрудника' })
+  pinCode?: string | null;
 }
 
 @ObjectType()
@@ -306,9 +337,32 @@ export class UpsertStaffInput {
   @IsOptional()
   @IsIn(['KEEP', 'ROTATE'])
   pinStrategy?: 'KEEP' | 'ROTATE';
+
+  @Field(() => String, { nullable: true })
+  @ApiPropertyOptional({ description: 'Новый пароль сотрудника', minLength: 6 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  password?: string | null;
+
+  @Field(() => String, { nullable: true })
+  @ApiPropertyOptional({ description: 'Текущий пароль сотрудника для подтверждения' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  currentPassword?: string | null;
 }
 
 export class UpsertStaffDto extends UpsertStaffInput {}
+
+export class AssignStaffAccessDto {
+  @ApiProperty({ description: 'Идентификатор торговой точки' })
+  @IsString()
+  @MaxLength(100)
+  outletId!: string;
+}
+
+@ObjectType()
 
 @InputType()
 export class ChangeStaffStatusInput {

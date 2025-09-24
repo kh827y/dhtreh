@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
   LoyaltyMechanicType,
   MechanicStatus,
@@ -9,6 +9,7 @@ import {
   PromoCodeUsageLimitType,
 } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { MetricsService } from '../metrics.service';
 
 export interface MechanicPayload {
   type: LoyaltyMechanicType;
@@ -75,19 +76,37 @@ export interface OperationsLogFilters {
 
 @Injectable()
 export class LoyaltyProgramService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(LoyaltyProgramService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly metrics: MetricsService,
+  ) {}
 
   async listMechanics(merchantId: string, status?: MechanicStatus | 'ALL') {
     const where: Prisma.LoyaltyMechanicWhereInput = { merchantId };
     if (status && status !== 'ALL') {
       where.status = status;
     }
-    return this.prisma.loyaltyMechanic.findMany({ where, orderBy: { createdAt: 'desc' } });
+    
+    const mechanics = await this.prisma.loyaltyMechanic.findMany({ where, orderBy: { createdAt: 'desc' } });
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.loyalty.mechanics.list',
+          merchantId,
+          status: status ?? 'ALL',
+          total: mechanics.length,
+        }),
+      );
+      this.metrics.inc('portal_loyalty_mechanics_list_total');
+    } catch {}
+    return mechanics;
   }
 
   async createMechanic(merchantId: string, payload: MechanicPayload) {
     if (!payload.type) throw new BadRequestException('Тип механики обязателен');
-    return this.prisma.loyaltyMechanic.create({
+    const mechanic = await this.prisma.loyaltyMechanic.create({
       data: {
         merchantId,
         type: payload.type,
@@ -100,12 +119,26 @@ export class LoyaltyProgramService {
         updatedById: payload.actorId ?? null,
       },
     });
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.loyalty.mechanics.create',
+          merchantId,
+          mechanicId: mechanic.id,
+          type: mechanic.type,
+          status: mechanic.status,
+        }),
+      );
+      this.metrics.inc('portal_loyalty_mechanics_changed_total', { action: 'create' });
+    } catch {}
+    return mechanic;
   }
 
   async updateMechanic(merchantId: string, mechanicId: string, payload: MechanicPayload) {
     const mechanic = await this.prisma.loyaltyMechanic.findFirst({ where: { merchantId, id: mechanicId } });
     if (!mechanic) throw new NotFoundException('Механика не найдена');
-    return this.prisma.loyaltyMechanic.update({
+
+    const updated = await this.prisma.loyaltyMechanic.update({
       where: { id: mechanicId },
       data: {
         type: payload.type ?? mechanic.type,
@@ -117,12 +150,25 @@ export class LoyaltyProgramService {
         updatedById: payload.actorId ?? mechanic.updatedById,
       },
     });
+
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.loyalty.mechanics.update',
+          merchantId,
+          mechanicId,
+          status: updated.status,
+        }),
+      );
+      this.metrics.inc('portal_loyalty_mechanics_changed_total', { action: 'update' });
+    } catch {}
+    return updated;
   }
 
   async changeMechanicStatus(merchantId: string, mechanicId: string, status: MechanicStatus, actorId?: string) {
     const mechanic = await this.prisma.loyaltyMechanic.findFirst({ where: { merchantId, id: mechanicId } });
     if (!mechanic) throw new NotFoundException('Механика не найдена');
-    return this.prisma.loyaltyMechanic.update({
+    const updated = await this.prisma.loyaltyMechanic.update({
       where: { id: mechanicId },
       data: {
         status,
@@ -131,12 +177,36 @@ export class LoyaltyProgramService {
         disabledAt: status === MechanicStatus.DISABLED ? new Date() : mechanic.disabledAt,
       },
     });
+
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.loyalty.mechanics.status',
+          merchantId,
+          mechanicId,
+          status,
+        }),
+      );
+      this.metrics.inc('portal_loyalty_mechanics_changed_total', { action: 'status' });
+    } catch {}
+    return updated;
   }
 
   async deleteMechanic(merchantId: string, mechanicId: string) {
     const mechanic = await this.prisma.loyaltyMechanic.findFirst({ where: { merchantId, id: mechanicId } });
     if (!mechanic) throw new NotFoundException('Механика не найдена');
     await this.prisma.loyaltyMechanic.delete({ where: { id: mechanicId } });
+
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.loyalty.mechanics.delete',
+          merchantId,
+          mechanicId,
+        }),
+      );
+      this.metrics.inc('portal_loyalty_mechanics_changed_total', { action: 'delete' });
+    } catch {}
     return { ok: true };
   }
 
@@ -145,16 +215,31 @@ export class LoyaltyProgramService {
     if (status && status !== 'ALL') {
       where.status = status;
     }
-    return this.prisma.loyaltyPromotion.findMany({
+
+    const promotions = await this.prisma.loyaltyPromotion.findMany({
       where,
       orderBy: { createdAt: 'desc' },
       include: { metrics: true },
     });
+
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.loyalty.promotions.list',
+          merchantId,
+          status: status ?? 'ALL',
+          total: promotions.length,
+        }),
+      );
+      this.metrics.inc('portal_loyalty_promotions_list_total');
+    } catch {}
+    return promotions;
   }
 
   async createPromotion(merchantId: string, payload: PromotionPayload) {
     if (!payload.name?.trim()) throw new BadRequestException('Название акции обязательно');
-    return this.prisma.loyaltyPromotion.create({
+
+    const promotion = await this.prisma.loyaltyPromotion.create({
       data: {
         merchantId,
         name: payload.name.trim(),
@@ -179,12 +264,26 @@ export class LoyaltyProgramService {
         updatedById: payload.actorId ?? null,
       },
     });
+
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.loyalty.promotions.create',
+          merchantId,
+          promotionId: promotion.id,
+          status: promotion.status,
+        }),
+      );
+      this.metrics.inc('portal_loyalty_promotions_changed_total', { action: 'create' });
+    } catch {}
+    return promotion;
   }
 
   async updatePromotion(merchantId: string, promotionId: string, payload: PromotionPayload) {
     const promotion = await this.prisma.loyaltyPromotion.findFirst({ where: { merchantId, id: promotionId } });
     if (!promotion) throw new NotFoundException('Акция не найдена');
-    return this.prisma.loyaltyPromotion.update({
+
+    const updated = await this.prisma.loyaltyPromotion.update({
       where: { id: promotionId },
       data: {
         name: payload.name?.trim() ?? promotion.name,
@@ -208,12 +307,26 @@ export class LoyaltyProgramService {
         updatedById: payload.actorId ?? promotion.updatedById,
       },
     });
+
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.loyalty.promotions.update',
+          merchantId,
+          promotionId,
+          status: updated.status,
+        }),
+      );
+      this.metrics.inc('portal_loyalty_promotions_changed_total', { action: 'update' });
+    } catch {}
+    return updated;
   }
 
   async changePromotionStatus(merchantId: string, promotionId: string, status: PromotionStatus, actorId?: string) {
     const promotion = await this.prisma.loyaltyPromotion.findFirst({ where: { merchantId, id: promotionId } });
     if (!promotion) throw new NotFoundException('Акция не найдена');
-    return this.prisma.loyaltyPromotion.update({
+
+    const updated = await this.prisma.loyaltyPromotion.update({
       where: { id: promotionId },
       data: {
         status,
@@ -222,6 +335,19 @@ export class LoyaltyProgramService {
         archivedAt: status === PromotionStatus.ARCHIVED ? new Date() : promotion.archivedAt,
       },
     });
+
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.loyalty.promotions.status',
+          merchantId,
+          promotionId,
+          status,
+        }),
+      );
+      this.metrics.inc('portal_loyalty_promotions_changed_total', { action: 'status' });
+    } catch {}
+    return updated;
   }
 
   async bulkUpdatePromotionStatus(merchantId: string, promotionIds: string[], status: PromotionStatus, actorId?: string) {
@@ -239,24 +365,53 @@ export class LoyaltyProgramService {
         }),
       ),
     );
-    return { updated: results.reduce((acc, res) => acc + res.count, 0) };
+
+    const updated = results.reduce((acc, res) => acc + res.count, 0);
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.loyalty.promotions.bulkStatus',
+          merchantId,
+          status,
+          ids: promotionIds.length,
+          updated,
+        }),
+      );
+      this.metrics.inc('portal_loyalty_promotions_changed_total', { action: 'bulk-status' }, updated || 1);
+    } catch {}
+    return { updated };
   }
 
   async listPromoCodes(merchantId: string, status?: PromoCodeStatus | 'ALL') {
     const where: Prisma.PromoCodeWhereInput = { merchantId };
     if (status && status !== 'ALL') where.status = status;
-    return this.prisma.promoCode.findMany({
+
+    const promoCodes = await this.prisma.promoCode.findMany({
       where,
       orderBy: { createdAt: 'desc' },
       include: { metrics: true },
     });
+
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.loyalty.promocodes.list',
+          merchantId,
+          status: status ?? 'ALL',
+          total: promoCodes.length,
+        }),
+      );
+      this.metrics.inc('portal_loyalty_promocodes_list_total');
+    } catch {}
+    return promoCodes;
   }
 
   async createPromoCode(merchantId: string, payload: PromoCodePayload) {
     if (!payload.code?.trim()) throw new BadRequestException('Код обязателен');
     const exists = await this.prisma.promoCode.findFirst({ where: { merchantId, code: payload.code.trim() } });
     if (exists) throw new BadRequestException('Промокод уже существует');
-    return this.prisma.promoCode.create({
+
+    const promoCode = await this.prisma.promoCode.create({
       data: {
         merchantId,
         code: payload.code.trim(),
@@ -284,12 +439,26 @@ export class LoyaltyProgramService {
         updatedById: payload.actorId ?? null,
       },
     });
+
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.loyalty.promocodes.create',
+          merchantId,
+          promoCodeId: promoCode.id,
+          status: promoCode.status,
+        }),
+      );
+      this.metrics.inc('portal_loyalty_promocodes_changed_total', { action: 'create' });
+    } catch {}
+    return promoCode;
   }
 
   async updatePromoCode(merchantId: string, promoCodeId: string, payload: PromoCodePayload) {
     const promoCode = await this.prisma.promoCode.findFirst({ where: { merchantId, id: promoCodeId } });
     if (!promoCode) throw new NotFoundException('Промокод не найден');
-    return this.prisma.promoCode.update({
+
+    const updated = await this.prisma.promoCode.update({
       where: { id: promoCodeId },
       data: {
         code: payload.code?.trim() ?? promoCode.code,
@@ -316,12 +485,26 @@ export class LoyaltyProgramService {
         updatedById: payload.actorId ?? promoCode.updatedById,
       },
     });
+
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.loyalty.promocodes.update',
+          merchantId,
+          promoCodeId,
+          status: updated.status,
+        }),
+      );
+      this.metrics.inc('portal_loyalty_promocodes_changed_total', { action: 'update' });
+    } catch {}
+    return updated;
   }
 
   async changePromoCodeStatus(merchantId: string, promoCodeId: string, status: PromoCodeStatus, actorId?: string) {
     const promoCode = await this.prisma.promoCode.findFirst({ where: { merchantId, id: promoCodeId } });
     if (!promoCode) throw new NotFoundException('Промокод не найден');
-    return this.prisma.promoCode.update({
+
+    const updated = await this.prisma.promoCode.update({
       where: { id: promoCodeId },
       data: {
         status,
@@ -329,6 +512,19 @@ export class LoyaltyProgramService {
         archivedAt: status === PromoCodeStatus.ARCHIVED ? new Date() : promoCode.archivedAt,
       },
     });
+
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.loyalty.promocodes.status',
+          merchantId,
+          promoCodeId,
+          status,
+        }),
+      );
+      this.metrics.inc('portal_loyalty_promocodes_changed_total', { action: 'status' });
+    } catch {}
+    return updated;
   }
 
   async bulkArchivePromoCodes(merchantId: string, promoCodeIds: string[], status: PromoCodeStatus, actorId?: string) {
@@ -345,7 +541,21 @@ export class LoyaltyProgramService {
         }),
       ),
     );
-    return { updated: results.reduce((acc, res) => acc + res.count, 0) };
+
+    const updated = results.reduce((acc, res) => acc + res.count, 0);
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.loyalty.promocodes.bulkStatus',
+          merchantId,
+          status,
+          ids: promoCodeIds.length,
+          updated,
+        }),
+      );
+      this.metrics.inc('portal_loyalty_promocodes_changed_total', { action: 'bulk-status' }, updated || 1);
+    } catch {}
+    return { updated };
   }
 
   async operationsLog(merchantId: string, filters: OperationsLogFilters = {}) {
@@ -392,6 +602,20 @@ export class LoyaltyProgramService {
         take: 200,
       });
     }
+
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.loyalty.operations.log',
+          merchantId,
+          type: filters.type ?? 'ALL',
+          mechanics: logs.mechanics?.length ?? 0,
+          promoCodes: logs.promoCodes?.length ?? 0,
+          promotions: logs.promotions?.length ?? 0,
+        }),
+      );
+      this.metrics.inc('portal_loyalty_operations_list_total');
+    } catch {}
     return logs;
   }
 }

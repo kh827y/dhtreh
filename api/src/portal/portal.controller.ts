@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, Param, Post, Put, Query, UseGuards, Req,
 import { ApiBadRequestResponse, ApiExtraModels, ApiOkResponse, ApiTags, ApiUnauthorizedResponse, getSchemaPath } from '@nestjs/swagger';
 import { PortalGuard } from '../portal-auth/portal.guard';
 import { MerchantsService } from '../merchants/merchants.service';
-import { CreateDeviceDto, CreateStaffDto, DeviceDto, LedgerEntryDto, MerchantSettingsRespDto, ReceiptDto, StaffDto, UpdateDeviceDto, UpdateMerchantSettingsDto, UpdateStaffDto } from '../merchants/dto';
+import { CreateDeviceDto, DeviceDto, LedgerEntryDto, MerchantSettingsRespDto, ReceiptDto, UpdateDeviceDto, UpdateMerchantSettingsDto } from '../merchants/dto';
 import { ErrorDto, TransactionItemDto } from '../loyalty/dto';
 import { VouchersService } from '../vouchers/vouchers.service';
 import { NotificationsService, type BroadcastArgs } from '../notifications/notifications.service';
@@ -109,18 +109,6 @@ export class PortalController {
     const upper = String(direction || '').toUpperCase();
     if (upper === 'EARN' || upper === 'REDEEM') return upper;
     return 'ALL';
-  }
-
-  // Cashier credentials (merchant-wide 9-digit password)
-  @Get('cashier')
-  @ApiOkResponse({ schema: { type: 'object', properties: { login: { type: 'string', nullable: true }, hasPassword: { type: 'boolean' } } } })
-  getCashier(@Req() req: any) {
-    return this.service.getCashierCredentials(this.getMerchantId(req));
-  }
-  @Post('cashier/rotate')
-  @ApiOkResponse({ schema: { type: 'object', properties: { login: { type: 'string' }, password: { type: 'string' } } } })
-  rotateCashier(@Req() req: any, @Body() body: { regenerateLogin?: boolean }) {
-    return this.service.rotateCashierCredentials(this.getMerchantId(req), !!body?.regenerateLogin);
   }
 
   @Get('me')
@@ -704,67 +692,6 @@ export class PortalController {
   @Delete('devices/:deviceId/secret')
   @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
   revokeDeviceSecret(@Req() req: any, @Param('deviceId') deviceId: string) { return this.service.revokeDeviceSecret(this.getMerchantId(req), deviceId); }
-
-  // Staff
-  @Get('staff')
-  @ApiOkResponse({ type: StaffDto, isArray: true })
-  listStaff(@Req() req: any) { return this.service.listStaff(this.getMerchantId(req)); }
-  @Post('staff')
-  @ApiOkResponse({ type: StaffDto })
-  createStaff(@Req() req: any, @Body() dto: CreateStaffDto) {
-    return this.service.createStaff(this.getMerchantId(req), {
-      login: dto.login,
-      email: dto.email,
-      role: dto.role ? String(dto.role) : undefined,
-      firstName: dto.firstName,
-      lastName: dto.lastName,
-      position: dto.position,
-      phone: dto.phone,
-      comment: dto.comment,
-      avatarUrl: dto.avatarUrl,
-      canAccessPortal: dto.canAccessPortal,
-      password: dto.password,
-    });
-  }
-  @Put('staff/:staffId')
-  @ApiOkResponse({ type: StaffDto })
-  updateStaff(@Req() req: any, @Param('staffId') staffId: string, @Body() dto: UpdateStaffDto) { return this.service.updateStaff(this.getMerchantId(req), staffId, dto); }
-  @Delete('staff/:staffId')
-  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
-  deleteStaff(@Req() req: any, @Param('staffId') staffId: string) { return this.service.deleteStaff(this.getMerchantId(req), staffId); }
-  @Post('staff/:staffId/token')
-  @ApiOkResponse({ schema: { type: 'object', properties: { token: { type: 'string' } } } })
-  issueStaffToken(@Req() req: any, @Param('staffId') staffId: string) { return this.service.issueStaffToken(this.getMerchantId(req), staffId); }
-  @Delete('staff/:staffId/token')
-  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
-  revokeStaffToken(@Req() req: any, @Param('staffId') staffId: string) { return this.service.revokeStaffToken(this.getMerchantId(req), staffId); }
-  @Post('staff/:staffId/pin/regenerate')
-  @ApiOkResponse({ schema: { type: 'object', properties: { pinCode: { type: 'string' } } } })
-  regenerateStaffPersonalPin(@Req() req: any, @Param('staffId') staffId: string) {
-    return this.service.regenerateStaffPersonalPin(this.getMerchantId(req), staffId);
-  }
-
-  // Staff ↔ Outlet access & PINs
-  @Get('staff/:staffId/access')
-  @ApiOkResponse({ schema: { type: 'array', items: { type: 'object', properties: { outletId: { type: 'string' }, outletName: { type: 'string' }, pinCode: { type: 'string', nullable: true }, lastTxnAt: { type: 'string', nullable: true } } } } })
-  listStaffAccess(@Req() req: any, @Param('staffId') staffId: string) {
-    return this.service.listStaffAccess(this.getMerchantId(req), staffId);
-  }
-  @Post('staff/:staffId/access')
-  @ApiOkResponse({ schema: { type: 'object', properties: { outletId: { type: 'string' }, pinCode: { type: 'string' } } } })
-  addStaffAccess(@Req() req: any, @Param('staffId') staffId: string, @Body() body: { outletId: string }) {
-    return this.service.addStaffAccess(this.getMerchantId(req), staffId, String(body?.outletId||''));
-  }
-  @Delete('staff/:staffId/access/:outletId')
-  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
-  removeStaffAccess(@Req() req: any, @Param('staffId') staffId: string, @Param('outletId') outletId: string) {
-    return this.service.removeStaffAccess(this.getMerchantId(req), staffId, outletId);
-  }
-  @Post('staff/:staffId/access/:outletId/regenerate-pin')
-  @ApiOkResponse({ schema: { type: 'object', properties: { pinCode: { type: 'string' } } } })
-  regenerateStaffPin(@Req() req: any, @Param('staffId') staffId: string, @Param('outletId') outletId: string) {
-    return this.service.regenerateStaffPin(this.getMerchantId(req), staffId, outletId);
-  }
 
   // Transactions & Receipts (read-only)
   @Get('transactions')

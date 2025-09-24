@@ -1,6 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { MetricsService } from '../metrics.service';
+
 
 export interface CustomerFilters {
   search?: string;
@@ -27,7 +29,13 @@ export interface SegmentPayload {
 
 @Injectable()
 export class CustomerAudiencesService {
-  constructor(private readonly prisma: PrismaService) {}
+
+  private readonly logger = new Logger(CustomerAudiencesService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly metrics: MetricsService,
+  ) {}
 
   private buildCustomerWhere(merchantId: string, filters: CustomerFilters): Prisma.CustomerWhereInput {
     const base: Prisma.CustomerWhereInput = {};
@@ -79,7 +87,8 @@ export class CustomerAudiencesService {
       }),
       this.prisma.customer.count({ where }),
     ]);
-    return {
+
+    const result = {
       total,
       items: items.map((customer) => ({
         ...customer,
@@ -87,6 +96,29 @@ export class CustomerAudiencesService {
         segments: customer.segments.map((s) => ({ id: s.segmentId, name: s.segment.name })),
       })),
     };
+
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.customers.list',
+          merchantId,
+          filters: {
+            hasSearch: Boolean(filters.search),
+            segmentId: filters.segmentId ?? null,
+            tags: filters.tags?.length ?? 0,
+            gender: filters.gender?.length ?? 0,
+            minVisits: filters.minVisits ?? null,
+            maxVisits: filters.maxVisits ?? null,
+            rfmClasses: filters.rfmClasses?.length ?? 0,
+          },
+          limit: take,
+          offset: skip,
+          total,
+        }),
+      );
+      this.metrics.inc('portal_customers_list_total');
+    } catch {}
+    return result;
   }
 
   async getCustomer(merchantId: string, customerId: string) {
@@ -98,11 +130,26 @@ export class CustomerAudiencesService {
       },
     });
     if (!customer) throw new NotFoundException('Клиент не найден');
-    return {
+
+    const result = {
       ...customer,
       stats: customer.customerStats[0] ?? null,
       segments: customer.segments.map((s) => ({ id: s.segmentId, name: s.segment.name })),
     };
+
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.customers.get',
+          merchantId,
+          customerId,
+          hasStats: Boolean(customer.customerStats?.length),
+          segments: customer.segments.length,
+        }),
+      );
+      this.metrics.inc('portal_customers_get_total', { result: 'found' });
+    } catch {}
+    return result;
   }
 
   private buildSegmentWhere(merchantId: string, filters: any): Prisma.CustomerWhereInput {
@@ -145,15 +192,28 @@ export class CustomerAudiencesService {
   }
 
   async listSegments(merchantId: string) {
-    return this.prisma.customerSegment.findMany({
+
+    const segments = await this.prisma.customerSegment.findMany({
       where: { merchantId },
       orderBy: [{ archivedAt: 'asc' }, { createdAt: 'desc' }],
     });
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.audiences.list',
+          merchantId,
+          total: segments.length,
+        }),
+      );
+      this.metrics.inc('portal_audiences_list_total');
+    } catch {}
+    return segments;
   }
 
   async createSegment(merchantId: string, payload: SegmentPayload) {
     if (!payload.name?.trim()) throw new BadRequestException('Название сегмента обязательно');
-    return this.prisma.customerSegment.create({
+
+    const segment = await this.prisma.customerSegment.create({
       data: {
         merchantId,
         name: payload.name.trim(),
@@ -167,12 +227,25 @@ export class CustomerAudiencesService {
         updatedById: payload.actorId ?? null,
       },
     });
+
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.audiences.create',
+          merchantId,
+          segmentId: segment.id,
+          active: segment.isActive,
+        }),
+      );
+      this.metrics.inc('portal_audiences_changed_total', { action: 'create' });
+    } catch {}
+    return segment;
   }
 
   async updateSegment(merchantId: string, segmentId: string, payload: SegmentPayload) {
     const segment = await this.prisma.customerSegment.findFirst({ where: { merchantId, id: segmentId } });
     if (!segment) throw new NotFoundException('Сегмент не найден');
-    return this.prisma.customerSegment.update({
+    const updated = await this.prisma.customerSegment.update({
       where: { id: segmentId },
       data: {
         name: payload.name?.trim() ?? segment.name,
@@ -185,24 +258,62 @@ export class CustomerAudiencesService {
         updatedById: payload.actorId ?? segment.updatedById,
       },
     });
+
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.audiences.update',
+          merchantId,
+          segmentId,
+          active: updated.isActive,
+        }),
+      );
+      this.metrics.inc('portal_audiences_changed_total', { action: 'update' });
+    } catch {}
+    return updated;
   }
 
   async setSegmentActive(merchantId: string, segmentId: string, isActive: boolean) {
     const segment = await this.prisma.customerSegment.findFirst({ where: { merchantId, id: segmentId } });
     if (!segment) throw new NotFoundException('Сегмент не найден');
-    return this.prisma.customerSegment.update({
+
+    const updated = await this.prisma.customerSegment.update({
       where: { id: segmentId },
       data: { isActive },
     });
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.audiences.status',
+          merchantId,
+          segmentId,
+          active: updated.isActive,
+        }),
+      );
+      this.metrics.inc('portal_audiences_changed_total', { action: 'status' });
+    } catch {}
+    return updated;
   }
 
   async archiveSegment(merchantId: string, segmentId: string) {
     const segment = await this.prisma.customerSegment.findFirst({ where: { merchantId, id: segmentId } });
     if (!segment) throw new NotFoundException('Сегмент не найден');
-    return this.prisma.customerSegment.update({
+
+    const archived = await this.prisma.customerSegment.update({
       where: { id: segmentId },
       data: { archivedAt: new Date(), isActive: false },
     });
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.audiences.archive',
+          merchantId,
+          segmentId,
+        }),
+      );
+      this.metrics.inc('portal_audiences_changed_total', { action: 'archive' });
+    } catch {}
+    return archived;
   }
 
   async refreshSegmentMetrics(merchantId: string, segmentId: string) {
@@ -212,9 +323,22 @@ export class CustomerAudiencesService {
     const count = await this.prisma.customer.count({
       where: { ...where, segments: { some: { segmentId } } },
     });
-    return this.prisma.customerSegment.update({
+
+    const updated = await this.prisma.customerSegment.update({
       where: { id: segmentId },
       data: { customerCount: count, lastEvaluatedAt: new Date() },
     });
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.audiences.refresh',
+          merchantId,
+          segmentId,
+          customerCount: count,
+        }),
+      );
+      this.metrics.inc('portal_audience_refresh_total');
+    } catch {}
+    return updated;
   }
 }

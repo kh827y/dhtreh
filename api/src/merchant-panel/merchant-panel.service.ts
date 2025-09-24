@@ -3,7 +3,7 @@ import { AccessScope, Prisma, StaffOutletAccessStatus, StaffRole, StaffStatus } 
 import { MerchantsService } from '../merchants/merchants.service';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
-
+import { hashPassword, verifyPassword } from '../password.util';
 
 interface PaginationOptions {
   page: number;
@@ -73,6 +73,16 @@ export interface UpsertOutletPayload {
   longitude?: number | null;
 }
 
+type StaffAccessView = {
+  id: string;
+  outletId: string;
+  outletName?: string | null;
+  pinCode?: string | null;
+  status: StaffOutletAccessStatus;
+  lastTxnAt?: string | null;
+  transactionsTotal?: number | null;
+};
+
 @Injectable()
 export class MerchantPanelService {
   private readonly logger = new Logger(MerchantPanelService.name);
@@ -119,6 +129,26 @@ export class MerchantPanelService {
     throw new BadRequestException('Не удалось сгенерировать уникальный PIN');
   }
 
+  private async generateUniquePersonalPin(
+    tx: Prisma.TransactionClient,
+    merchantId: string,
+    excludeStaffId?: string,
+  ): Promise<string> {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      const pin = this.randomPin();
+      const clash = await tx.staff.findFirst({
+        where: {
+          merchantId,
+          pinCode: pin,
+          ...(excludeStaffId ? { id: { not: excludeStaffId } } : {}),
+        },
+        select: { id: true },
+      });
+      if (!clash) return pin;
+    }
+    throw new BadRequestException('Не удалось подобрать уникальный PIN');
+  }
+
   private staffInclude() {
     return {
       accesses: {
@@ -134,7 +164,32 @@ export class MerchantPanelService {
 
   private mapStaff(
     member: Prisma.StaffGetPayload<{ include: ReturnType<MerchantPanelService['staffInclude']> }>,
+    overrides: {
+      accesses?: StaffAccessView[];
+      outletsCount?: number | null;
+      lastActivityAt?: Date | string | null;
+      lastPortalLoginAt?: Date | string | null;
+      pinCode?: string | null;
+    } = {},
   ) {
+    const normalizeDate = (value?: Date | string | null) => {
+      if (!value) return null;
+      if (value instanceof Date) return value.toISOString();
+      return value;
+    };
+
+    const accesses: StaffAccessView[] = overrides.accesses
+      ? overrides.accesses
+      : member.accesses.map((access) => ({
+          id: access.id,
+          outletId: access.outletId,
+          outletName: access.outlet?.name ?? null,
+          pinCode: access.pinCode,
+          status: access.status,
+          lastTxnAt: access.lastTxnAt ? access.lastTxnAt.toISOString() : null,
+          transactionsTotal: null,
+        }));
+
     return {
       id: member.id,
       login: member.login,
@@ -149,19 +204,46 @@ export class MerchantPanelService {
       portalAccessEnabled: member.portalAccessEnabled,
       canAccessPortal: member.canAccessPortal,
       isOwner: member.isOwner,
-      accesses: member.accesses.map((access) => ({
-        id: access.id,
-        outletId: access.outletId,
-        outletName: access.outlet?.name ?? null,
-        pinCode: access.pinCode,
-        status: access.status,
-      })),
+      pinCode: overrides.pinCode ?? member.pinCode ?? null,
+      lastActivityAt: normalizeDate(overrides.lastActivityAt ?? member.lastActivityAt ?? null),
+      lastPortalLoginAt: normalizeDate(overrides.lastPortalLoginAt ?? member.lastPortalLoginAt ?? null),
+      outletsCount: overrides.outletsCount ?? null,
+      accesses,
       groups: member.accessGroupMemberships.map((m) => ({
         id: m.groupId,
         name: m.group.name,
         scope: m.group.scope,
       })),
     };
+  }
+
+  private async buildAccessViews(
+    merchantId: string,
+    staffId: string,
+    accesses: Array<Prisma.StaffOutletAccessGetPayload<{ include: { outlet: true } }>>,
+  ): Promise<StaffAccessView[]> {
+    if (!accesses.length) return [];
+    const outletIds = accesses.map((access) => access.outletId);
+    let countMap = new Map<string, number>();
+    if (outletIds.length) {
+      try {
+        const grouped = await this.prisma.transaction.groupBy({
+          by: ['staffId', 'outletId'],
+          where: { merchantId, staffId, outletId: { in: outletIds } },
+          _count: { _all: true },
+        });
+        countMap = new Map(grouped.map((row) => [`${row.staffId}:${row.outletId}`, row._count?._all ?? 0]));
+      } catch {}
+    }
+    return accesses.map<StaffAccessView>((access) => ({
+      id: access.id,
+      outletId: access.outletId,
+      outletName: access.outlet?.name ?? null,
+      pinCode: access.pinCode,
+      status: access.status,
+      lastTxnAt: access.lastTxnAt ? access.lastTxnAt.toISOString() : null,
+      transactionsTotal: countMap.get(`${staffId}:${access.outletId}`) ?? 0,
+    }));
   }
 
   private parseSchedule(schedule: any) {
@@ -267,6 +349,30 @@ export class MerchantPanelService {
       this.prisma.staff.count({ where: { merchantId, portalAccessEnabled: true } }),
     ]);
 
+    const staffIds = items.map((item) => item.id);
+    let outletsCountMap = new Map<string, number>();
+    let lastActivityMap = new Map<string, Date | null>();
+    if (staffIds.length) {
+      const [accessCounts, txnGroups] = await Promise.all([
+        this.prisma.staffOutletAccess
+          .groupBy({
+            by: ['staffId'],
+            where: { merchantId, staffId: { in: staffIds }, status: StaffOutletAccessStatus.ACTIVE },
+            _count: { _all: true },
+          })
+          .catch(() => [] as Array<{ staffId: string; _count: { _all: number } }>),
+        this.prisma.transaction
+          .groupBy({
+            by: ['staffId'],
+            where: { merchantId, staffId: { in: staffIds } },
+            _max: { createdAt: true },
+          })
+          .catch(() => [] as Array<{ staffId: string; _max: { createdAt: Date | null } }>),
+      ]);
+      outletsCountMap = new Map(accessCounts.map((row) => [row.staffId, row._count?._all ?? 0]));
+      lastActivityMap = new Map(txnGroups.map((row) => [row.staffId, row._max?.createdAt ?? null]));
+    }
+
     try {
       this.logger.log(
         JSON.stringify({
@@ -288,7 +394,13 @@ export class MerchantPanelService {
     } catch {}
 
     return {
-      items: items.map((member) => this.mapStaff(member)),
+      items: items.map((member) =>
+        this.mapStaff(member, {
+          outletsCount:
+            outletsCountMap.get(member.id) ?? member.accesses.filter((access) => access.status === StaffOutletAccessStatus.ACTIVE).length,
+          lastActivityAt: lastActivityMap.get(member.id) ?? member.lastActivityAt ?? null,
+        }),
+      ),
       meta: this.buildMeta(paging, total),
       counters: {
         active,
@@ -307,7 +419,13 @@ export class MerchantPanelService {
       include: this.staffInclude(),
     });
     if (!staff) throw new NotFoundException('Сотрудник не найден');
-    return this.mapStaff(staff);
+    const accesses = await this.buildAccessViews(merchantId, staff.id, staff.accesses);
+    return this.mapStaff(staff, {
+      accesses,
+      outletsCount: accesses.filter((access) => access.status === StaffOutletAccessStatus.ACTIVE).length,
+      lastActivityAt: staff.lastActivityAt ?? null,
+      lastPortalLoginAt: staff.lastPortalLoginAt ?? null,
+    });
   }
 
   private async syncAccessGroups(
@@ -400,22 +518,35 @@ export class MerchantPanelService {
 
   async createStaff(merchantId: string, payload: UpsertStaffPayload) {
     return this.prisma.$transaction(async (tx) => {
+      const pinCode = await this.generateUniquePersonalPin(tx, merchantId);
+      const trimmedPassword = payload.password?.toString().trim() ?? '';
+      if (trimmedPassword && trimmedPassword.length < 6) {
+        throw new BadRequestException('Пароль должен содержать минимум 6 символов');
+      }
+      const data: Prisma.StaffCreateInput = {
+        merchantId,
+        login: payload.login?.trim() || undefined,
+        email: payload.email?.trim().toLowerCase() || undefined,
+        phone: payload.phone?.trim() || undefined,
+        firstName: payload.firstName?.trim() || undefined,
+        lastName: payload.lastName?.trim() || undefined,
+        position: payload.position?.trim() || undefined,
+        comment: payload.comment?.trim() || undefined,
+        role: payload.role ?? StaffRole.CASHIER,
+        status: payload.status ?? StaffStatus.ACTIVE,
+        canAccessPortal: payload.canAccessPortal ?? false,
+        portalAccessEnabled: payload.portalAccessEnabled ?? false,
+        portalState: payload.portalAccessEnabled ? 'ENABLED' : 'DISABLED',
+        pinCode,
+      };
+      if (trimmedPassword) {
+        data.hash = hashPassword(trimmedPassword);
+        data.canAccessPortal = true;
+        data.portalAccessEnabled = true;
+        data.portalState = 'ENABLED';
+      }
       const staff = await tx.staff.create({
-        data: {
-          merchantId,
-          login: payload.login?.trim() || undefined,
-          email: payload.email?.trim().toLowerCase() || undefined,
-          phone: payload.phone?.trim() || undefined,
-          firstName: payload.firstName?.trim() || undefined,
-          lastName: payload.lastName?.trim() || undefined,
-          position: payload.position?.trim() || undefined,
-          comment: payload.comment?.trim() || undefined,
-          role: payload.role ?? StaffRole.CASHIER,
-          status: payload.status ?? StaffStatus.ACTIVE,
-          canAccessPortal: payload.canAccessPortal ?? false,
-          portalAccessEnabled: payload.portalAccessEnabled ?? false,
-          portalState: payload.portalAccessEnabled ? 'ENABLED' : 'DISABLED',
-        },
+        data,
         include: this.staffInclude(),
       });
 
@@ -451,27 +582,55 @@ export class MerchantPanelService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const trimmedPassword = payload.password?.toString().trim() ?? undefined;
+      if (trimmedPassword && trimmedPassword.length < 6) {
+        throw new BadRequestException('Пароль должен содержать минимум 6 символов');
+      }
+
+      if (trimmedPassword) {
+        const currentPassword = payload.currentPassword?.toString() ?? '';
+        if (staff.hash && !currentPassword) {
+          throw new BadRequestException('Текущий пароль обязателен для смены пароля');
+        }
+        if (staff.hash && currentPassword && !verifyPassword(currentPassword, staff.hash)) {
+          throw new BadRequestException('Текущий пароль указан неверно');
+        }
+      }
+
+      const updateData: Prisma.StaffUpdateInput = {
+        login: payload.login?.trim() ?? staff.login,
+        email: payload.email?.trim().toLowerCase() ?? staff.email,
+        phone: payload.phone?.trim() ?? staff.phone,
+        firstName: payload.firstName?.trim() ?? staff.firstName,
+        lastName: payload.lastName?.trim() ?? staff.lastName,
+        position: payload.position?.trim() ?? staff.position,
+        comment: payload.comment?.trim() ?? staff.comment,
+        role: payload.role ?? staff.role,
+        status: payload.status ?? staff.status,
+        canAccessPortal: payload.canAccessPortal ?? staff.canAccessPortal,
+        portalAccessEnabled: payload.portalAccessEnabled ?? staff.portalAccessEnabled,
+        portalState:
+          payload.portalAccessEnabled === true
+            ? 'ENABLED'
+            : payload.portalAccessEnabled === false
+              ? 'DISABLED'
+              : staff.portalState,
+      };
+
+      if (trimmedPassword !== undefined) {
+        if (trimmedPassword) {
+          updateData.hash = hashPassword(trimmedPassword);
+          updateData.canAccessPortal = true;
+          updateData.portalAccessEnabled = true;
+          updateData.portalState = 'ENABLED';
+        } else {
+          updateData.hash = null;
+        }
+      }
+
       await tx.staff.update({
         where: { id: staffId },
-        data: {
-          login: payload.login?.trim() ?? staff.login,
-          email: payload.email?.trim().toLowerCase() ?? staff.email,
-          phone: payload.phone?.trim() ?? staff.phone,
-          firstName: payload.firstName?.trim() ?? staff.firstName,
-          lastName: payload.lastName?.trim() ?? staff.lastName,
-          position: payload.position?.trim() ?? staff.position,
-          comment: payload.comment?.trim() ?? staff.comment,
-          role: payload.role ?? staff.role,
-          status: payload.status ?? staff.status,
-          canAccessPortal: payload.canAccessPortal ?? staff.canAccessPortal,
-          portalAccessEnabled: payload.portalAccessEnabled ?? staff.portalAccessEnabled,
-          portalState:
-            payload.portalAccessEnabled === true
-              ? 'ENABLED'
-              : payload.portalAccessEnabled === false
-                ? 'DISABLED'
-                : staff.portalState,
-        },
+        data: updateData,
       });
 
       if (payload.accessGroupIds) {
@@ -515,8 +674,125 @@ export class MerchantPanelService {
       );
       this.metrics.inc('portal_staff_status_changed_total', { status });
     } catch {}
-
     return this.getStaff(merchantId, staffId);
+  }
+
+  async listStaffAccesses(merchantId: string, staffId: string) {
+    const staff = await this.prisma.staff.findFirst({
+      where: { merchantId, id: staffId },
+      include: { accesses: { include: { outlet: true } } },
+    });
+    if (!staff) throw new NotFoundException('Сотрудник не найден');
+    return this.buildAccessViews(merchantId, staff.id, staff.accesses);
+  }
+
+  async addStaffAccess(merchantId: string, staffId: string, outletId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const [staff, outlet] = await Promise.all([
+        tx.staff.findFirst({ where: { merchantId, id: staffId } }),
+        tx.outlet.findFirst({ where: { merchantId, id: outletId } }),
+      ]);
+      if (!staff) throw new NotFoundException('Сотрудник не найден');
+      if (!outlet) throw new NotFoundException('Торговая точка не найдена');
+
+      const existing = await tx.staffOutletAccess.findUnique({
+        where: { merchantId_staffId_outletId: { merchantId, staffId, outletId } },
+        include: { outlet: true },
+      });
+
+      const pin = await this.generateUniquePin(tx, merchantId, existing?.id);
+      const record = await tx.staffOutletAccess.upsert({
+        where: { merchantId_staffId_outletId: { merchantId, staffId, outletId } },
+        update: {
+          status: StaffOutletAccessStatus.ACTIVE,
+          revokedAt: null,
+          pinCode: pin,
+          pinUpdatedAt: new Date(),
+        },
+        create: {
+          merchantId,
+          staffId,
+          outletId,
+          status: StaffOutletAccessStatus.ACTIVE,
+          pinCode: pin,
+        },
+        include: { outlet: true },
+      });
+
+      try {
+        this.logger.log(
+          JSON.stringify({ event: 'portal.staff.access.assign', merchantId, staffId, outletId }),
+        );
+        this.metrics.inc('portal_staff_pin_events_total', { action: 'assign' });
+      } catch {}
+
+      const [view] = await this.buildAccessViews(merchantId, staffId, [record]);
+      return view;
+    });
+  }
+
+  async removeStaffAccess(merchantId: string, staffId: string, outletId: string) {
+    const access = await this.prisma.staffOutletAccess.findUnique({
+      where: { merchantId_staffId_outletId: { merchantId, staffId, outletId } },
+    });
+    if (!access) throw new NotFoundException('Доступ не найден');
+    await this.prisma.staffOutletAccess.update({
+      where: { id: access.id },
+      data: { status: StaffOutletAccessStatus.REVOKED, revokedAt: new Date() },
+    });
+    try {
+      this.logger.log(
+        JSON.stringify({ event: 'portal.staff.access.revoke', merchantId, staffId, outletId }),
+      );
+      this.metrics.inc('portal_staff_pin_events_total', { action: 'revoke' });
+    } catch {}
+    return { ok: true };
+  }
+
+  async regenerateStaffOutletPin(merchantId: string, staffId: string, outletId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const access = await tx.staffOutletAccess.findUnique({
+        where: { merchantId_staffId_outletId: { merchantId, staffId, outletId } },
+        include: { outlet: true },
+      });
+      if (!access) throw new NotFoundException('Доступ не найден');
+      const pin = await this.generateUniquePin(tx, merchantId, access.id);
+      const updated = await tx.staffOutletAccess.update({
+        where: { id: access.id },
+        data: {
+          pinCode: pin,
+          pinUpdatedAt: new Date(),
+          status: StaffOutletAccessStatus.ACTIVE,
+          revokedAt: null,
+        },
+        include: { outlet: true },
+      });
+      try {
+        this.logger.log(
+          JSON.stringify({ event: 'portal.staff.pin.rotate', merchantId, staffId, outletId }),
+        );
+        this.metrics.inc('portal_staff_pin_events_total', { action: 'rotate' });
+      } catch {}
+      const [view] = await this.buildAccessViews(merchantId, staffId, [updated]);
+      return view;
+    });
+  }
+
+  async regenerateStaffPersonalPin(merchantId: string, staffId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const staff = await tx.staff.findFirst({ where: { merchantId, id: staffId } });
+      if (!staff) throw new NotFoundException('Сотрудник не найден');
+      const pinCode = await this.generateUniquePersonalPin(tx, merchantId, staffId);
+      await tx.staff.update({ where: { id: staffId }, data: { pinCode } });
+      try {
+        this.logger.log(
+          JSON.stringify({ event: 'portal.staff.pin.personal.rotate', merchantId, staffId }),
+        );
+        this.metrics.inc('portal_staff_pin_events_total', { action: 'personal_rotate' });
+      } catch {}
+      return { pinCode };
+    });
+
   }
 
   async rotateStaffPin(merchantId: string, accessId: string) {
@@ -544,7 +820,9 @@ export class MerchantPanelService {
         );
         this.metrics.inc('portal_staff_pin_events_total', { action: 'rotate' });
       } catch {}
-      return updated;
+      const [view] = await this.buildAccessViews(merchantId, updated.staffId, [updated]);
+      return view;
+
     });
   }
 
@@ -608,7 +886,7 @@ export class MerchantPanelService {
       );
       this.metrics.inc('portal_access_group_list_total');
     } catch {}
-      
+
     return {
       items: items.map((group) =>
         this.mapAccessGroup({ ...group, memberCount: group.members.length }),

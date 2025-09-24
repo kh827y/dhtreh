@@ -22,10 +22,20 @@ export class CashierController {
     return plainToInstance(CashierCredentialsDto, data, { enableImplicitConversion: true });
   }
 
+  @Get()
+  async summary(@Req() req: any): Promise<CashierCredentialsDto> {
+    return this.credentials(req);
+  }
+
   @Post('credentials/rotate')
   async rotateCredentials(@Req() req: any, @Body() body: RotateCashierDto): Promise<CashierRotationResultDto> {
     const result = await this.service.rotateCashierCredentials(this.getMerchantId(req), body?.regenerateLogin);
     return plainToInstance(CashierRotationResultDto, result, { enableImplicitConversion: true });
+  }
+
+  @Post('rotate')
+  async rotate(@Req() req: any, @Body() body: RotateCashierDto): Promise<CashierRotationResultDto> {
+    return this.rotateCredentials(req, body);
   }
 
   @Get('pins')
