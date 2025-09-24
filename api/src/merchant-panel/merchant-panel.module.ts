@@ -15,6 +15,7 @@ import { CashierResolver } from './resolvers/cashier.resolver';
 @Module({
   imports: [PrismaModule, MerchantsModule],
   providers: [MerchantPanelService, PortalGuard, StaffResolver, AccessGroupsResolver, OutletsResolver, CashierResolver],
+
   controllers: [StaffController, AccessGroupsController, OutletsController, CashierController],
   exports: [MerchantPanelService],
 })
