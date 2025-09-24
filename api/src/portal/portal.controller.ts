@@ -475,7 +475,7 @@ export class PortalController {
     return this.analytics.getReferralSummary(merchantId, this.computePeriod(period, from, to));
   }
   @Get('analytics/operations')
-  operations(@Req() req: any, @Query('period') period?: string, @Query('from') from?: string, @Query('to') to?: string) {
+  analyticsOperations(@Req() req: any, @Query('period') period?: string, @Query('from') from?: string, @Query('to') to?: string) {
     const merchantId = this.getMerchantId(req);
     return this.analytics.getOperationalMetrics(merchantId, this.computePeriod(period, from, to));
   }

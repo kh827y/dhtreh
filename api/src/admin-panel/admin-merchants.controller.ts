@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, Post, Put, Query, UseGuards } from '@nest
 import { ApiTags } from '@nestjs/swagger';
 import { AdminGuard } from '../admin.guard';
 import { AdminIpGuard } from '../admin-ip.guard';
-import { AdminMerchantsService, UpdateMerchantSettingsPayload } from './admin-merchants.service';
+import { AdminMerchantsService, type UpdateMerchantSettingsPayload } from './admin-merchants.service';
 
 interface ListQuery {
   search?: string;

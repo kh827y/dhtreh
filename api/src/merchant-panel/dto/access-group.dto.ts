@@ -1,7 +1,7 @@
 import { AccessScope } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ArgsType, Field, ID, InputType, Int, ObjectType, registerEnumType } from '@nestjs/graphql';
-import { IsArray, IsBoolean, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsArray, IsBoolean, IsEnum, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { PaginationQueryDto, createPaginatedResponseDto } from '../../common/dto/pagination.dto';
 
@@ -133,6 +133,7 @@ export class AccessGroupInput {
   permissions!: AccessGroupPermissionInput[];
 }
 
+@InputType()
 export class AccessGroupDtoInput extends AccessGroupInput {}
 
 @InputType()

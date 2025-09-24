@@ -79,7 +79,10 @@ export class PushCampaignsService {
         scheduledAt,
         timezone: original.timezone,
         status: 'SCHEDULED',
-        metadata: original.metadata,
+        metadata:
+          original.metadata != null
+            ? (original.metadata as unknown as Prisma.InputJsonValue)
+            : (Prisma.DbNull as Prisma.NullableJsonNullValueInput),
       },
     });
   }

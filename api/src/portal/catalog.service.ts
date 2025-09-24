@@ -342,15 +342,15 @@ export class PortalCatalogService {
     if (query.search) {
       const term = query.search.trim();
       if (term) {
-        where.AND = [
-          ...(where.AND ?? []),
-          {
-            OR: [
-              { name: { contains: term, mode: 'insensitive' } },
-              { sku: { contains: term, mode: 'insensitive' } },
-            ],
-          },
-        ];
+        const and: Prisma.ProductWhereInput[] = [];
+        if (where.AND) and.push(...(Array.isArray(where.AND) ? where.AND : [where.AND]));
+        and.push({
+          OR: [
+            { name: { contains: term, mode: 'insensitive' } },
+            { sku: { contains: term, mode: 'insensitive' } },
+          ],
+        });
+        where.AND = and;
       }
     }
     const [items, total] = await Promise.all([
@@ -629,15 +629,15 @@ export class PortalCatalogService {
     if (search) {
       const term = search.trim();
       if (term) {
-        where.AND = [
-          ...(where.AND ?? []),
-          {
-            OR: [
-              { name: { contains: term, mode: 'insensitive' } },
-              { address: { contains: term, mode: 'insensitive' } },
-            ],
-          },
-        ];
+        const and: Prisma.OutletWhereInput[] = [];
+        if (where.AND) and.push(...(Array.isArray(where.AND) ? where.AND : [where.AND]));
+        and.push({
+          OR: [
+            { name: { contains: term, mode: 'insensitive' } },
+            { address: { contains: term, mode: 'insensitive' } },
+          ],
+        });
+        where.AND = and;
       }
     }
     const [items, total] = await Promise.all([
@@ -674,7 +674,9 @@ export class PortalCatalogService {
           timezone: dto.timezone ?? null,
           scheduleEnabled,
           scheduleMode: schedule.mode,
-          scheduleJson: scheduleEnabled ? schedule : null,
+          scheduleJson: scheduleEnabled
+            ? (schedule as unknown as Prisma.InputJsonValue)
+            : (Prisma.DbNull as Prisma.NullableJsonNullValueInput),
           externalId: dto.externalId?.trim() ?? null,
           manualLocation: dto.manualLocation ?? false,
           latitude: this.toDecimal(dto.latitude),
@@ -721,9 +723,11 @@ export class PortalCatalogService {
     if (dto.schedule !== undefined) {
       const schedule = dto.schedule ?? { mode: 'CUSTOM', days: [] };
       data.scheduleMode = schedule.mode;
-      data.scheduleJson = showSchedule ? schedule : null;
+      data.scheduleJson = showSchedule
+        ? (schedule as unknown as Prisma.InputJsonValue)
+        : (Prisma.DbNull as Prisma.NullableJsonNullValueInput);
     } else if (dto.showSchedule !== undefined && !showSchedule) {
-      data.scheduleJson = null;
+      data.scheduleJson = Prisma.DbNull as Prisma.NullableJsonNullValueInput;
     }
     try {
       const updated = await this.prisma.outlet.update({ where: { id: outletId }, data });

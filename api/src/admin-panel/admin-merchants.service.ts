@@ -73,7 +73,7 @@ export class AdminMerchantsService {
       orderBy: { createdAt: 'desc' },
       include: {
         staff: { where: { isOwner: true }, take: 1 },
-        integrations: { select: { id: true, provider: true, status: true } },
+        integrations: { select: { id: true, provider: true, isActive: true } },
       },
     });
 
@@ -90,7 +90,7 @@ export class AdminMerchantsService {
       integrations: merchant.integrations.map((integration) => ({
         id: integration.id,
         provider: integration.provider,
-        status: integration.status,
+        status: integration.isActive ? 'ACTIVE' : 'INACTIVE',
       })),
     }));
   }
@@ -100,7 +100,7 @@ export class AdminMerchantsService {
       where: { id },
       include: {
         staff: { where: { isOwner: true }, take: 1 },
-        integrations: { select: { id: true, provider: true, status: true } },
+        integrations: { select: { id: true, provider: true, isActive: true } },
         settings: true,
       },
     });
@@ -121,7 +121,7 @@ export class AdminMerchantsService {
       integrations: merchant.integrations.map((integration) => ({
         id: integration.id,
         provider: integration.provider,
-        status: integration.status,
+        status: integration.isActive ? 'ACTIVE' : 'INACTIVE',
       })),
       settings: {
         qrTtlSec: settings.qrTtlSec,
@@ -192,7 +192,7 @@ export class AdminMerchantsService {
           portalEmail: payload.portalEmail?.trim().toLowerCase() ?? null,
           portalPasswordHash: payload.portalPassword ? await hashPassword(payload.portalPassword) : null,
           portalLoginEnabled: true,
-          cashierLogin: await this.ensureUniqueCashierLogin(tx, payload.name),
+          cashierLogin: await this.ensureUniqueCashierLogin(tx, payload.name!),
           cashierPassword9: this.randomDigits(9),
         },
       });

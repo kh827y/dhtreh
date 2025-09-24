@@ -1,4 +1,5 @@
-import { Args, Context, Mutation, Query, Resolver, UseGuards } from '@nestjs/graphql';
+import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
+import { UseGuards } from '@nestjs/common';
 import { PortalGuard } from '../../portal-auth/portal.guard';
 import { MerchantPanelService } from '../merchant-panel.service';
 import { CashierCredentialsDto, CashierPinDto, CashierRotationResultDto, RotateCashierInput } from '../dto/cashier.dto';

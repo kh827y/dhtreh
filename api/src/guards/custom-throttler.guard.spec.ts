@@ -2,7 +2,7 @@ import { CustomThrottlerGuard } from './custom-throttler.guard';
 
 describe('CustomThrottlerGuard.getTracker', () => {
   it('combines ip, path, merchantId, deviceId, staffId', async () => {
-    const g = new CustomThrottlerGuard();
+    const g = new CustomThrottlerGuard({} as any, {} as any, {} as any);
     const req: any = {
       ip: '127.0.0.1',
       route: { path: '/loyalty/commit' },

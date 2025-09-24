@@ -33,6 +33,8 @@ export interface UpsertStaffPayload {
   outletIds?: string[];
   accessGroupIds?: string[];
   pinStrategy?: 'KEEP' | 'ROTATE';
+  password?: string | null;
+  currentPassword?: string | null;
 }
 
 export interface AccessGroupPayload {
@@ -232,7 +234,12 @@ export class MerchantPanelService {
           where: { merchantId, staffId, outletId: { in: outletIds } },
           _count: { _all: true },
         });
-        countMap = new Map(grouped.map((row) => [`${row.staffId}:${row.outletId}`, row._count?._all ?? 0]));
+        countMap = new Map<string, number>(
+          grouped.map((row): [string, number] => [
+            `${row.staffId}:${row.outletId}`,
+            row._count?._all ?? 0,
+          ]),
+        );
       } catch {}
     }
     return accesses.map<StaffAccessView>((access) => ({
@@ -369,8 +376,12 @@ export class MerchantPanelService {
           })
           .catch(() => [] as Array<{ staffId: string; _max: { createdAt: Date | null } }>),
       ]);
-      outletsCountMap = new Map(accessCounts.map((row) => [row.staffId, row._count?._all ?? 0]));
-      lastActivityMap = new Map(txnGroups.map((row) => [row.staffId, row._max?.createdAt ?? null]));
+      outletsCountMap = new Map<string, number>(
+        accessCounts.map((row): [string, number] => [row.staffId, row._count?._all ?? 0]),
+      );
+      lastActivityMap = new Map<string, Date | null>(
+        txnGroups.map((row): [string, Date | null] => [row.staffId, row._max?.createdAt ?? null]),
+      );
     }
 
     try {
@@ -524,7 +535,7 @@ export class MerchantPanelService {
         throw new BadRequestException('Пароль должен содержать минимум 6 символов');
       }
       const data: Prisma.StaffCreateInput = {
-        merchantId,
+        merchant: { connect: { id: merchantId } },
         login: payload.login?.trim() || undefined,
         email: payload.email?.trim().toLowerCase() || undefined,
         phone: payload.phone?.trim() || undefined,
@@ -1047,7 +1058,10 @@ export class MerchantPanelService {
         hidden: payload.hidden ?? false,
         timezone: payload.timezone ?? null,
         scheduleEnabled: payload.schedule != null,
-        scheduleJson: this.buildScheduleJson(payload.schedule),
+        scheduleJson:
+          payload.schedule != null
+            ? (this.buildScheduleJson(payload.schedule) as Prisma.InputJsonValue)
+            : (Prisma.DbNull as Prisma.NullableJsonNullValueInput),
         externalId: payload.externalId ?? null,
         integrationProvider: payload.integrationProvider ?? null,
         integrationLocationCode: payload.integrationLocationCode ?? null,
@@ -1075,7 +1089,10 @@ export class MerchantPanelService {
         hidden: payload.hidden ?? outlet.hidden,
         timezone: payload.timezone ?? outlet.timezone,
         scheduleEnabled: payload.schedule != null ? true : outlet.scheduleEnabled,
-        scheduleJson: payload.schedule ? this.buildScheduleJson(payload.schedule) : outlet.scheduleJson,
+        scheduleJson:
+          payload.schedule
+            ? (this.buildScheduleJson(payload.schedule) as Prisma.InputJsonValue)
+            : undefined,
         externalId: payload.externalId ?? outlet.externalId,
         integrationProvider: payload.integrationProvider ?? outlet.integrationProvider,
         integrationLocationCode: payload.integrationLocationCode ?? outlet.integrationLocationCode,

@@ -1,4 +1,5 @@
-import { Args, Context, ID, Mutation, Query, Resolver, UseGuards } from '@nestjs/graphql';
+import { Args, Context, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
+import { UseGuards } from '@nestjs/common';
 import { PortalGuard } from '../../portal-auth/portal.guard';
 import { MerchantPanelService, AccessGroupFilters } from '../merchant-panel.service';
 import {

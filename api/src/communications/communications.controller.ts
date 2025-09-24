@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { PortalGuard } from '../portal-auth/portal.guard';
-import { CommunicationsService, TaskPayload, TemplatePayload } from './communications.service';
+import { CommunicationsService, type TaskPayload, type TemplatePayload } from './communications.service';
 import { CommunicationChannel } from '@prisma/client';
 
 @Controller('portal/communications')

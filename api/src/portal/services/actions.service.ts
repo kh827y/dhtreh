@@ -119,7 +119,7 @@ export class ActionsService {
             name: payload.audienceName ?? null,
           },
         } satisfies Prisma.JsonObject,
-        reward: payload.rule as unknown as Prisma.JsonValue,
+        reward: payload.rule as unknown as Prisma.InputJsonValue,
         startDate,
         endDate,
         maxUsagePerCustomer: usageLimit.type === 'UNLIMITED' ? null : usageLimit.value ?? (usageLimit.type === 'ONCE' ? 1 : null),
@@ -175,28 +175,31 @@ export class ActionsService {
   async duplicate(merchantId: string, campaignId: string): Promise<ActionListItemDto> {
     const campaign = await this.getCampaignEntity(merchantId, campaignId);
     const name = campaign.name.endsWith(' (копия)') ? campaign.name : `${campaign.name} (копия)`;
-
     const duplicated = await this.prisma.campaign.create({
       data: {
         merchantId,
         name,
         type: 'PRODUCT_BONUS',
         status: 'DRAFT',
-        content: campaign.content,
-        reward: campaign.reward,
+        content: campaign.content as unknown as Prisma.InputJsonValue,
+        reward:
+          campaign.reward != null
+            ? (campaign.reward as unknown as Prisma.InputJsonValue)
+            : (Prisma.DbNull as Prisma.NullableJsonNullValueInput),
         notificationChannels: campaign.notificationChannels,
-        metrics: campaign.metrics ?? {
-          revenue: 0,
-          expenses: 0,
-          purchases: 0,
-          roi: 0,
-        },
+        metrics:
+          (campaign.metrics as unknown as Prisma.InputJsonValue) ??
+          ({
+            revenue: 0,
+            expenses: 0,
+            purchases: 0,
+            roi: 0,
+          } satisfies Prisma.JsonObject),
       },
     });
 
     return this.mapCampaign(duplicated);
   }
-
   private validateCreatePayload(payload: CreateProductBonusActionPayload) {
     const name = payload.name?.trim();
     if (!name) {
