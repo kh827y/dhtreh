@@ -33,6 +33,22 @@ const BULK_ACTION_MAP: Record<ProductBulkAction, Prisma.ProductUpdateManyMutatio
   [ProductBulkAction.DELETE]: { deletedAt: new Date() },
 };
 
+function normalizeScheduleJson(schedule: any): Prisma.InputJsonValue {
+  if (!schedule) {
+    return { mode: 'CUSTOM', days: [] };
+  }
+  const mode = typeof schedule.mode === 'string' ? schedule.mode : 'CUSTOM';
+  const days = Array.isArray(schedule.days)
+    ? schedule.days.map((day: any) => ({
+        day: Number.isFinite(Number(day?.day)) ? Number(day.day) : 0,
+        enabled: !!day?.enabled,
+        opensAt: day?.opensAt ?? null,
+        closesAt: day?.closesAt ?? null,
+      }))
+    : [];
+  return { mode, days };
+}
+
 @Injectable()
 export class PortalCatalogService {
   private readonly logger = new Logger(PortalCatalogService.name);
@@ -342,15 +358,18 @@ export class PortalCatalogService {
     if (query.search) {
       const term = query.search.trim();
       if (term) {
-        where.AND = [
-          ...(where.AND ?? []),
-          {
-            OR: [
-              { name: { contains: term, mode: 'insensitive' } },
-              { sku: { contains: term, mode: 'insensitive' } },
-            ],
-          },
-        ];
+        const andConditions = Array.isArray(where.AND)
+          ? [...where.AND]
+          : where.AND
+            ? [where.AND]
+            : [];
+        andConditions.push({
+          OR: [
+            { name: { contains: term, mode: 'insensitive' } },
+            { sku: { contains: term, mode: 'insensitive' } },
+          ],
+        });
+        where.AND = andConditions;
       }
     }
     const [items, total] = await Promise.all([
@@ -629,15 +648,18 @@ export class PortalCatalogService {
     if (search) {
       const term = search.trim();
       if (term) {
-        where.AND = [
-          ...(where.AND ?? []),
-          {
-            OR: [
-              { name: { contains: term, mode: 'insensitive' } },
-              { address: { contains: term, mode: 'insensitive' } },
-            ],
-          },
-        ];
+        const andConditions = Array.isArray(where.AND)
+          ? [...where.AND]
+          : where.AND
+            ? [where.AND]
+            : [];
+        andConditions.push({
+          OR: [
+            { name: { contains: term, mode: 'insensitive' } },
+            { address: { contains: term, mode: 'insensitive' } },
+          ],
+        });
+        where.AND = andConditions;
       }
     }
     const [items, total] = await Promise.all([
@@ -659,7 +681,7 @@ export class PortalCatalogService {
     if (!name) throw new BadRequestException('Outlet name is required');
     if (!address) throw new BadRequestException('Outlet address is required');
     const scheduleEnabled = dto.showSchedule ?? false;
-    const schedule = dto.schedule && scheduleEnabled ? dto.schedule : { mode: 'CUSTOM', days: [] };
+    const schedulePayload = scheduleEnabled ? dto.schedule ?? { mode: 'CUSTOM', days: [] } : null;
     try {
       const created = await this.prisma.outlet.create({
         data: {
@@ -673,8 +695,8 @@ export class PortalCatalogService {
           adminEmails: dto.adminEmails?.map((email) => email.trim()).filter(Boolean) ?? [],
           timezone: dto.timezone ?? null,
           scheduleEnabled,
-          scheduleMode: schedule.mode,
-          scheduleJson: scheduleEnabled ? schedule : null,
+          scheduleMode: schedulePayload?.mode ?? 'CUSTOM',
+          scheduleJson: scheduleEnabled ? normalizeScheduleJson(schedulePayload) : Prisma.JsonNull,
           externalId: dto.externalId?.trim() ?? null,
           manualLocation: dto.manualLocation ?? false,
           latitude: this.toDecimal(dto.latitude),
@@ -719,11 +741,16 @@ export class PortalCatalogService {
     const showSchedule = dto.showSchedule !== undefined ? dto.showSchedule : outlet.scheduleEnabled;
     if (dto.showSchedule !== undefined) data.scheduleEnabled = showSchedule;
     if (dto.schedule !== undefined) {
-      const schedule = dto.schedule ?? { mode: 'CUSTOM', days: [] };
-      data.scheduleMode = schedule.mode;
-      data.scheduleJson = showSchedule ? schedule : null;
+      if (dto.schedule) {
+        data.scheduleEnabled = true;
+        data.scheduleMode = dto.schedule.mode ?? 'CUSTOM';
+        data.scheduleJson = normalizeScheduleJson(dto.schedule);
+      } else {
+        data.scheduleEnabled = false;
+        data.scheduleJson = Prisma.JsonNull;
+      }
     } else if (dto.showSchedule !== undefined && !showSchedule) {
-      data.scheduleJson = null;
+      data.scheduleJson = Prisma.JsonNull;
     }
     try {
       const updated = await this.prisma.outlet.update({ where: { id: outletId }, data });

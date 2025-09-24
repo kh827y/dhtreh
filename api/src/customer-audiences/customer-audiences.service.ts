@@ -57,11 +57,11 @@ export class CustomerAudiencesService {
       ];
     }
     const statsFilters: Prisma.CustomerStatsWhereInput = { merchantId };
-    if (filters.minVisits != null) {
-      statsFilters.visits = { gte: filters.minVisits };
-    }
-    if (filters.maxVisits != null) {
-      statsFilters.visits = { ...(statsFilters.visits ?? {}), lte: filters.maxVisits };
+    if (filters.minVisits != null || filters.maxVisits != null) {
+      const visits: Prisma.IntFilter = {};
+      if (filters.minVisits != null) visits.gte = filters.minVisits;
+      if (filters.maxVisits != null) visits.lte = filters.maxVisits;
+      statsFilters.visits = visits;
     }
     if (filters.rfmClasses?.length) {
       statsFilters.rfmClass = { in: filters.rfmClasses };

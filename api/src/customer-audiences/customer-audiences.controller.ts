@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { PortalGuard } from '../portal-auth/portal.guard';
-import { CustomerAudiencesService, CustomerFilters, SegmentPayload } from './customer-audiences.service';
+import { CustomerAudiencesService } from './customer-audiences.service';
+import type { CustomerFilters, SegmentPayload } from './customer-audiences.service';
 
 @Controller('portal')
 @UseGuards(PortalGuard)

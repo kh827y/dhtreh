@@ -91,10 +91,10 @@ export class OperationsLogService {
         skip: offset,
         take: limit,
         include: {
-          customer: { select: { id: true, name: true, phone: true } },
-          staff: { select: { id: true, firstName: true, lastName: true, status: true } },
-          outlet: { select: { id: true, name: true } },
-          device: { select: { id: true, type: true, label: true } },
+          customer: true,
+          staff: true,
+          outlet: true,
+          device: true,
         },
       }),
     ]);
@@ -111,10 +111,10 @@ export class OperationsLogService {
     const receipt = await this.prisma.receipt.findUnique({
       where: { id: receiptId },
       include: {
-        customer: { select: { id: true, name: true, phone: true } },
-        staff: { select: { id: true, firstName: true, lastName: true, status: true } },
-        outlet: { select: { id: true, name: true } },
-        device: { select: { id: true, type: true, label: true } },
+        customer: true,
+        staff: true,
+        outlet: true,
+        device: true,
       },
     });
 

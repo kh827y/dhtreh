@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { PortalGuard } from '../../portal-auth/portal.guard';
-import { LoyaltyProgramService, PromotionPayload } from '../loyalty-program.service';
+import { LoyaltyProgramService } from '../loyalty-program.service';
+import type { PromotionPayload } from '../loyalty-program.service';
 import { PromotionStatus } from '@prisma/client';
 
 @Controller('portal/loyalty/promotions')

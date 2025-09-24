@@ -1,669 +1,1377 @@
 "use client";
 
 import React from "react";
-import { Card, CardHeader, CardBody, Button, Skeleton } from "@loyalty/ui";
-import Toggle from "../../components/Toggle";
-import TagSelect from "../../components/TagSelect";
-import RangeSlider from "../../components/RangeSlider";
-import { Search, PlusCircle, X, Trash2, Users2 } from "lucide-react";
+import { Card, CardHeader, CardBody, Button, Skeleton, Icons } from "@loyalty/ui";
+import { formatDateTime } from "../customers/utils";
 
-const tableColumns = [
-  { key: 'name', label: 'Название' },
-  { key: 'participants', label: 'Участники' },
-  { key: 'age', label: 'Возраст' },
-  { key: 'gender', label: 'Пол' },
-  { key: 'averageCheck', label: 'Средний чек' },
-  { key: 'lastPurchaseDays', label: 'Дней с последней покупки' },
-  { key: 'purchaseCount', label: 'Количество покупок' },
-  { key: 'purchaseSum', label: 'Сумма покупок' },
-  { key: 'birthday', label: 'День рождения' },
-  { key: 'registrationDays', label: 'Дней с момента регистрации' },
-  { key: 'device', label: 'Устройство' },
-] as const;
+const { Search, RefreshCw, Plus, X, ChevronDown, ChevronUp } = Icons;
 
-type AudienceRow = {
+type Audience = {
   id: string;
   name: string;
-  participants: number;
-  age: string;
-  gender: string;
-  averageCheck: string;
-  lastPurchaseDays: string;
-  purchaseCount: string;
-  purchaseSum: string;
-  birthday: string;
-  registrationDays: string;
-  device: string;
-  settings: AudienceSettings;
-  members: AudienceMember[];
+  description?: string | null;
+  customerCount: number;
+  isActive: boolean;
+  archivedAt?: string | null;
+  tags?: string[] | null;
+  color?: string | null;
+  lastEvaluatedAt?: string | null;
 };
 
-type AudienceMember = {
-  id: string;
-  phone: string;
+type ScopeFilter = "ACTIVE" | "ARCHIVED" | "ALL";
+
+type Option = { value: string; label: string };
+
+const DEFAULT_PRODUCT_OPTIONS: Option[] = [
+  { value: "prod-1", label: "Лимонад" },
+  { value: "prod-2", label: "Бургер" },
+  { value: "prod-3", label: "Кофе" },
+  { value: "prod-4", label: "Салат" },
+];
+
+const LEVEL_OPTIONS: Option[] = [
+  { value: "bronze", label: "Bronze" },
+  { value: "silver", label: "Silver" },
+  { value: "gold", label: "Gold" },
+];
+
+const RFM_OPTIONS: Option[] = [
+  { value: "A", label: "A" },
+  { value: "B", label: "B" },
+  { value: "C", label: "C" },
+  { value: "D", label: "D" },
+];
+
+const DEVICE_OPTIONS: Option[] = [
+  { value: "android", label: "Android" },
+  { value: "ios", label: "iOS" },
+];
+
+const FALLBACK_OUTLETS: Option[] = [
+  { value: "outlet-1", label: "Точка на Тверской" },
+  { value: "outlet-2", label: "ТРЦ Авиапарк" },
+  { value: "outlet-3", label: "МЕГА Химки" },
+  { value: "outlet-4", label: "Онлайн" },
+];
+
+type AudienceFormResult = {
   name: string;
-  birthday: string;
-  age: number;
-  registrationDate: string;
+  filters: Record<string, any>;
+  rules: Record<string, any>;
 };
 
-type AudienceSettings = {
-  visitedEnabled: boolean;
-  visitedOutlets: string[];
-  productEnabled: boolean;
-  products: string[];
-  genderEnabled: boolean;
-  gender: 'male' | 'female' | '';
-  ageEnabled: boolean;
-  age: [number, number];
-  birthdayEnabled: boolean;
-  birthday: [number, number];
-  registrationEnabled: boolean;
-  registration: [number, number];
-  lastPurchaseEnabled: boolean;
-  lastPurchase: [number, number];
-  purchaseCountEnabled: boolean;
-  purchaseCount: [number, number];
-  averageCheckEnabled: boolean;
-  averageCheck: [number, number];
-  purchaseSumEnabled: boolean;
-  purchaseSum: [number, number];
-  levelEnabled: boolean;
-  level: string;
-  rfmRecencyEnabled: boolean;
-  rfmRecency: string;
-  rfmFrequencyEnabled: boolean;
-  rfmFrequency: string;
-  rfmMonetaryEnabled: boolean;
-  rfmMonetary: string;
-  deviceEnabled: boolean;
-  device: string;
+type CreateAudienceModalProps = {
+  open: boolean;
+  outlets: Option[];
+  products: Option[];
+  levels: Option[];
+  rfmOptions: Option[];
+  devices: Option[];
+  submitting: boolean;
+  error?: string | null;
+  onClose: () => void;
+  onSubmit: (payload: AudienceFormResult) => Promise<void> | void;
 };
-
-const defaultSettings: AudienceSettings = {
-  visitedEnabled: false,
-  visitedOutlets: [],
-  productEnabled: false,
-  products: [],
-  genderEnabled: false,
-  gender: '',
-  ageEnabled: false,
-  age: [0, 100],
-  birthdayEnabled: false,
-  birthday: [0, 365],
-  registrationEnabled: false,
-  registration: [0, 365],
-  lastPurchaseEnabled: false,
-  lastPurchase: [0, 365],
-  purchaseCountEnabled: false,
-  purchaseCount: [0, 1000],
-  averageCheckEnabled: false,
-  averageCheck: [0, 10000],
-  purchaseSumEnabled: false,
-  purchaseSum: [0, 200000],
-  levelEnabled: false,
-  level: '',
-  rfmRecencyEnabled: false,
-  rfmRecency: '',
-  rfmFrequencyEnabled: false,
-  rfmFrequency: '',
-  rfmMonetaryEnabled: false,
-  rfmMonetary: '',
-  deviceEnabled: false,
-  device: '',
-};
-
-const outletOptions = [
-  { value: 'outlet-1', label: 'Точка на Тверской' },
-  { value: 'outlet-2', label: 'ТРЦ Авиапарк' },
-  { value: 'outlet-3', label: 'МЕГА Химки' },
-  { value: 'outlet-4', label: 'Онлайн' },
-];
-
-const productOptions = [
-  { value: 'prod-1', label: 'Лимонад' },
-  { value: 'prod-2', label: 'Бургер' },
-  { value: 'prod-3', label: 'Кофе' },
-  { value: 'prod-4', label: 'Салат' },
-];
-
-const levelOptions = [
-  { value: 'bronze', label: 'Bronze' },
-  { value: 'silver', label: 'Silver' },
-  { value: 'gold', label: 'Gold' },
-];
-
-const rfmOptions = [
-  { value: 'A', label: 'A' },
-  { value: 'B', label: 'B' },
-  { value: 'C', label: 'C' },
-  { value: 'D', label: 'D' },
-];
-
-function generateSampleMembers(count: number): AudienceMember[] {
-  return Array.from({ length: count }).map((_, index) => {
-    const id = `cust-${index + 1}`;
-    return {
-      id,
-      phone: `+7 (9${(index % 9) + 10}) ${String(100 + index).slice(-3)}-${String(1000 + index).slice(-4, -2)}-${String(1000 + index).slice(-2)}`,
-      name: ['Алексей', 'Мария', 'Иван', 'Елена', 'Павел', 'Светлана'][index % 6],
-      birthday: new Date(1990 + (index % 20), index % 12, (index % 28) + 1).toISOString(),
-      age: 21 + (index % 25),
-      registrationDate: new Date(2022, index % 12, (index % 28) + 1).toISOString(),
-    };
-  });
-}
-
-const sampleAudiences: AudienceRow[] = [
-  {
-    id: 'aud-1',
-    name: 'Лояльные клиенты',
-    participants: 248,
-    age: '25-45',
-    gender: 'Смешанный',
-    averageCheck: '1 850 ₽',
-    lastPurchaseDays: '5',
-    purchaseCount: '8',
-    purchaseSum: '14 800 ₽',
-    birthday: '±7 дней',
-    registrationDays: '540',
-    device: 'iOS',
-    settings: {
-      ...defaultSettings,
-      visitedEnabled: true,
-      visitedOutlets: ['outlet-1', 'outlet-4'],
-      genderEnabled: false,
-      ageEnabled: true,
-      age: [25, 45],
-      lastPurchaseEnabled: true,
-      lastPurchase: [0, 30],
-      purchaseCountEnabled: true,
-      purchaseCount: [5, 20],
-      averageCheckEnabled: true,
-      averageCheck: [1000, 3000],
-      deviceEnabled: true,
-      device: 'iOS',
-    },
-    members: generateSampleMembers(12),
-  },
-  {
-    id: 'aud-2',
-    name: 'Новые за 30 дней',
-    participants: 92,
-    age: '18-35',
-    gender: 'Женский',
-    averageCheck: '1 200 ₽',
-    lastPurchaseDays: '12',
-    purchaseCount: '2',
-    purchaseSum: '2 400 ₽',
-    birthday: '—',
-    registrationDays: '30',
-    device: 'Android',
-    settings: {
-      ...defaultSettings,
-      registrationEnabled: true,
-      registration: [0, 30],
-      genderEnabled: true,
-      gender: 'female',
-      ageEnabled: true,
-      age: [18, 35],
-      visitedEnabled: true,
-      visitedOutlets: ['outlet-2'],
-    },
-    members: generateSampleMembers(8),
-  },
-  {
-    id: 'aud-3',
-    name: 'Заснувшие 60+',
-    participants: 134,
-    age: '30-60',
-    gender: 'Смешанный',
-    averageCheck: '2 300 ₽',
-    lastPurchaseDays: '72',
-    purchaseCount: '4',
-    purchaseSum: '9 200 ₽',
-    birthday: '—',
-    registrationDays: '820',
-    device: 'iOS',
-    settings: {
-      ...defaultSettings,
-      lastPurchaseEnabled: true,
-      lastPurchase: [60, 365],
-      purchaseSumEnabled: true,
-      purchaseSum: [5000, 20000],
-      levelEnabled: true,
-      level: 'silver',
-    },
-    members: generateSampleMembers(10),
-  },
-];
 
 export default function AudiencesPage() {
-  const [search, setSearch] = React.useState('');
-  const [audiences, setAudiences] = React.useState<AudienceRow[]>(sampleAudiences);
-  const [loading, setLoading] = React.useState(false);
-  const [modalMode, setModalMode] = React.useState<'create' | 'edit' | null>(null);
-  const [currentAudience, setCurrentAudience] = React.useState<AudienceRow | null>(null);
-  const [settings, setSettings] = React.useState<AudienceSettings>(defaultSettings);
-  const [audienceName, setAudienceName] = React.useState('');
-  const [tab, setTab] = React.useState<'settings' | 'members'>('settings');
-  const [memberSearch, setMemberSearch] = React.useState('');
-  const [saving, setSaving] = React.useState(false);
+  const [items, setItems] = React.useState<Audience[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+  const [search, setSearch] = React.useState("");
+  const [scope, setScope] = React.useState<ScopeFilter>("ACTIVE");
+  const [actionMessage, setActionMessage] = React.useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [actionLoading, setActionLoading] = React.useState<string | null>(null);
+  const [createOpen, setCreateOpen] = React.useState(false);
+  const [createError, setCreateError] = React.useState<string | null>(null);
+  const [createSubmitting, setCreateSubmitting] = React.useState(false);
+  const [outletOptions, setOutletOptions] = React.useState<Option[]>(FALLBACK_OUTLETS);
+  const [productOptions] = React.useState<Option[]>(DEFAULT_PRODUCT_OPTIONS);
 
-  const filtered = React.useMemo(() =>
-    audiences.filter((aud) => aud.name.toLowerCase().includes(search.toLowerCase())),
-  [audiences, search]);
-
-  const openCreate = () => {
-    setModalMode('create');
-    setAudienceName('');
-    setSettings(defaultSettings);
-    setCurrentAudience(null);
-    setTab('settings');
-  };
-
-  const openEdit = (audience: AudienceRow) => {
-    setModalMode('edit');
-    setAudienceName(audience.name);
-    setSettings(audience.settings);
-    setCurrentAudience(audience);
-    setTab('settings');
-  };
-
-  const closeModal = () => {
-    setModalMode(null);
-    setAudienceName('');
-    setSettings(defaultSettings);
-    setCurrentAudience(null);
-    setMemberSearch('');
-  };
-
-  const handleSubmit = () => {
-    if (!audienceName.trim()) {
-      alert('Укажите название аудитории');
-      return;
-    }
-    setSaving(true);
-    setTimeout(() => {
-      if (modalMode === 'create') {
-        const newAudience: AudienceRow = {
-          id: `aud-${Date.now()}`,
-          name: audienceName.trim(),
-          participants: Math.floor(Math.random() * 80) + 20,
-          age: settings.ageEnabled ? `${settings.age[0]}-${settings.age[1]}` : '—',
-          gender: settings.genderEnabled ? (settings.gender === 'male' ? 'Мужской' : 'Женский') : 'Смешанный',
-          averageCheck: `${(settings.averageCheckEnabled ? settings.averageCheck[0] : 1500).toLocaleString('ru-RU')} ₽`,
-          lastPurchaseDays: settings.lastPurchaseEnabled ? `${settings.lastPurchase[0]}-${settings.lastPurchase[1]}` : '—',
-          purchaseCount: settings.purchaseCountEnabled ? `${settings.purchaseCount[0]}-${settings.purchaseCount[1]}` : '—',
-          purchaseSum: settings.purchaseSumEnabled ? `${settings.purchaseSum[0].toLocaleString('ru-RU')} ₽` : '—',
-          birthday: settings.birthdayEnabled ? `${settings.birthday[0]}-${settings.birthday[1]} дней` : '—',
-          registrationDays: settings.registrationEnabled ? `${settings.registration[0]}-${settings.registration[1]}` : '—',
-          device: settings.deviceEnabled ? (settings.device === 'Android' ? 'Android' : 'iOS') : 'Смешанный',
-          settings,
-          members: generateSampleMembers(6),
-        };
-        setAudiences((prev) => [newAudience, ...prev]);
-      } else if (modalMode === 'edit' && currentAudience) {
-        setAudiences((prev) => prev.map((aud) => aud.id === currentAudience.id ? {
-          ...aud,
-          name: audienceName.trim(),
-          settings,
-        } : aud));
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/portal/audiences");
+      if (!res.ok) {
+        const message = await res.text();
+        throw new Error(message || "Не удалось загрузить аудитории");
       }
-      setSaving(false);
-      closeModal();
-    }, 400);
-  };
+      const payload = await res.json();
+      const list = Array.isArray(payload) ? payload : Array.isArray(payload?.items) ? payload.items : [];
+      setItems(list.map(normalizeAudience));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err ?? "Не удалось загрузить аудитории");
+      setError(message);
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  const handleDelete = () => {
-    if (!currentAudience) return;
-    if (!confirm('Удалить аудиторию?')) return;
-    setAudiences((prev) => prev.filter((aud) => aud.id !== currentAudience.id));
-    closeModal();
-  };
+  React.useEffect(() => {
+    load();
+  }, [load]);
 
-  const filteredMembers = React.useMemo(() => {
-    if (!currentAudience) return [] as AudienceMember[];
-    const term = memberSearch.trim().toLowerCase();
-    if (!term) return currentAudience.members;
-    return currentAudience.members.filter((m) =>
-      m.phone.toLowerCase().includes(term) ||
-      m.name.toLowerCase().includes(term),
-    );
-  }, [currentAudience, memberSearch]);
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch("/api/portal/outlets?status=active");
+        if (!response.ok) throw new Error("bad status");
+        const payload = await response.json();
+        const list = Array.isArray(payload?.items) ? payload.items : Array.isArray(payload) ? payload : [];
+        if (cancelled) return;
+        const mapped = list
+          .map((item: any) => ({ value: String(item.id ?? item.outletId ?? ""), label: item.name ?? item.title ?? "" }))
+          .filter((option: Option) => option.value && option.label);
+        if (mapped.length) {
+          setOutletOptions(mapped);
+        }
+      } catch {
+        if (!cancelled) {
+          setOutletOptions(FALLBACK_OUTLETS);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const filteredItems = React.useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return items.filter((audience) => {
+      if (scope === "ACTIVE" && (audience.archivedAt || !audience.isActive)) return false;
+      if (scope === "ARCHIVED" && !audience.archivedAt) return false;
+      if (query) {
+        const haystack = [
+          audience.name,
+          audience.description ?? "",
+          ...(audience.tags ?? []),
+        ]
+          .join(" ")
+          .toLowerCase();
+        if (!haystack.includes(query)) return false;
+      }
+      return true;
+    });
+  }, [items, scope, search]);
+
+  async function handleToggleActive(audience: Audience) {
+    setActionLoading(audience.id);
+    setActionMessage(null);
+    try {
+      const body = JSON.stringify({ active: !audience.isActive });
+      const res = await fetch(`/api/portal/audiences/${audience.id}/activate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+      });
+      if (!res.ok) {
+        const message = await res.text();
+        throw new Error(message || "Не удалось изменить статус аудитории");
+      }
+      setActionMessage({ type: "success", text: !audience.isActive ? "Аудитория активирована" : "Аудитория приостановлена" });
+      await load();
+    } catch (err: unknown) {
+      setActionMessage({
+        type: "error",
+        text: err instanceof Error ? err.message : String(err ?? "Ошибка при обновлении статуса"),
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function handleArchive(audience: Audience) {
+    if (audience.archivedAt) return;
+    setActionLoading(audience.id);
+    setActionMessage(null);
+    try {
+      const res = await fetch(`/api/portal/audiences/${audience.id}/archive`, { method: "POST" });
+      if (!res.ok) {
+        const message = await res.text();
+        throw new Error(message || "Не удалось архивировать аудиторию");
+      }
+      setActionMessage({ type: "success", text: "Аудитория отправлена в архив" });
+      await load();
+    } catch (err: unknown) {
+      setActionMessage({ type: "error", text: err instanceof Error ? err.message : String(err ?? "Ошибка архивации") });
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function handleRefresh(audience: Audience) {
+    setActionLoading(audience.id);
+    setActionMessage(null);
+    try {
+      const res = await fetch(`/api/portal/audiences/${audience.id}/refresh`, { method: "POST" });
+      if (!res.ok) {
+        const message = await res.text();
+        throw new Error(message || "Не удалось обновить метрики");
+      }
+      setActionMessage({ type: "success", text: "Метрики обновлены" });
+      await load();
+    } catch (err: unknown) {
+      setActionMessage({ type: "error", text: err instanceof Error ? err.message : String(err ?? "Ошибка обновления") });
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function handleCreateAudience(payload: AudienceFormResult) {
+    try {
+      setCreateSubmitting(true);
+      setCreateError(null);
+      const response = await fetch("/api/portal/audiences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || "Не удалось создать аудиторию");
+      }
+      setCreateOpen(false);
+      setActionMessage({ type: "success", text: "Аудитория создана" });
+      await load();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err ?? "Не удалось создать аудиторию");
+      setCreateError(message);
+    } finally {
+      setCreateSubmitting(false);
+    }
+  }
 
   return (
-    <div style={{ display: 'grid', gap: 20 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
-        <div>
-          <div style={{ fontSize: 24, fontWeight: 700 }}>Аудитории клиентов</div>
-          <div style={{ fontSize: 13, opacity: 0.7 }}>Сегментируйте клиентов по поведению и характеристикам</div>
-        </div>
-        <Button variant="primary" onClick={openCreate} startIcon={<PlusCircle size={18} />}>Создать аудиторию</Button>
-      </div>
-
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ position: 'relative', flex: '0 1 320px' }}>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Поиск по названию"
-            style={{ width: '100%', padding: '10px 36px 10px 12px', borderRadius: 10 }}
-          />
-          <Search size={16} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', opacity: 0.6 }} />
-        </div>
-      </div>
-
+    <div style={{ display: "grid", gap: 20 }}>
       <Card>
-        <CardHeader title="Аудитории" subtitle={`${filtered.length} записей`} />
-        <CardBody>
-          {loading ? (
-            <Skeleton height={220} />
-          ) : filtered.length ? (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 960 }}>
+        <CardHeader
+          title="Аудитории"
+          subtitle="Сегменты клиентов для таргетированных коммуникаций"
+          actions={
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <Button type="button" leftIcon={<Plus size={16} />} onClick={() => setCreateOpen(true)}>
+                Создать аудиторию
+              </Button>
+              <Button type="button" variant="secondary" leftIcon={<RefreshCw size={16} />} onClick={load}>
+                Обновить список
+              </Button>
+            </div>
+          }
+        />
+        <CardBody style={{ display: "grid", gap: 16 }}>
+          <FiltersPanel search={search} scope={scope} onSearchChange={setSearch} onScopeChange={setScope} />
+
+          {actionMessage && (
+            <div
+              style={{
+                padding: 12,
+                borderRadius: 12,
+                border:
+                  actionMessage.type === "success"
+                    ? "1px solid rgba(34,197,94,0.4)"
+                    : "1px solid rgba(248,113,113,0.4)",
+                background:
+                  actionMessage.type === "success"
+                    ? "rgba(34,197,94,0.12)"
+                    : "rgba(248,113,113,0.12)",
+                color: actionMessage.type === "success" ? "#bbf7d0" : "#fecaca",
+              }}
+            >
+              {actionMessage.text}
+            </div>
+          )}
+
+          {error ? (
+            <div style={errorBlockStyle} role="alert">
+              {error}
+            </div>
+          ) : loading ? (
+            <div style={{ display: "grid", gap: 12 }}>
+              {Array.from({ length: 4 }).map((_, index) => (
+                <Skeleton key={index} height={68} radius={12} />
+              ))}
+            </div>
+          ) : filteredItems.length ? (
+            <div style={{ overflowX: "auto" }}>
+              <table style={tableStyle}>
                 <thead>
                   <tr>
-                    {tableColumns.map((col) => (
-                      <th key={col.key as string} style={{ textAlign: 'left', padding: '10px 12px', fontSize: 11, opacity: 0.65, letterSpacing: 0.4, textTransform: 'uppercase', borderBottom: '1px solid rgba(148,163,184,0.18)' }}>
-                        {col.label}
-                      </th>
-                    ))}
+                    <th style={headerCellStyle}>Название</th>
+                    <th style={headerCellStyle}>Участников</th>
+                    <th style={headerCellStyle}>Статус</th>
+                    <th style={headerCellStyle}>Обновлено</th>
+                    <th style={headerCellStyle}>Теги</th>
+                    <th style={headerCellStyle}>Действия</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((aud) => (
-                    <tr key={aud.id} onClick={() => openEdit(aud)} style={{ cursor: 'pointer', borderBottom: '1px solid rgba(148,163,184,0.1)' }}>
-                      <td style={{ padding: '12px 12px', fontWeight: 600 }}>{aud.name}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.participants}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.age}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.gender}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.averageCheck}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.lastPurchaseDays}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.purchaseCount}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.purchaseSum}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.birthday}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.registrationDays}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.device}</td>
+                  {filteredItems.map((audience) => (
+                    <tr key={audience.id} style={rowStyle}>
+                      <td style={cellStyle}>
+                        <div style={{ display: "grid", gap: 4 }}>
+                          <span style={{ fontWeight: 600 }}>{audience.name}</span>
+                          {audience.description && (
+                            <span style={{ fontSize: 12, opacity: 0.7 }}>{audience.description}</span>
+                          )}
+                        </div>
+                      </td>
+                      <td style={cellStyle}>{audience.customerCount}</td>
+                      <td style={cellStyle}>{renderStatus(audience)}</td>
+                      <td style={cellStyle}>{formatDateTime(audience.lastEvaluatedAt)}</td>
+                      <td style={cellStyle}>{formatTags(audience.tags)}</td>
+                      <td style={cellStyle}>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => handleRefresh(audience)}
+                            disabled={actionLoading === audience.id}
+                          >
+                            Обновить
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => handleToggleActive(audience)}
+                            disabled={actionLoading === audience.id || Boolean(audience.archivedAt)}
+                          >
+                            {audience.isActive && !audience.archivedAt ? "Выключить" : "Включить"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => handleArchive(audience)}
+                            disabled={actionLoading === audience.id || Boolean(audience.archivedAt)}
+                          >
+                            В архив
+                          </Button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           ) : (
-            <div style={{ padding: 16, opacity: 0.7 }}>Аудитории не найдены</div>
+            <div style={{ padding: 32, textAlign: "center", opacity: 0.65 }}>
+              Аудитории не найдены. Измените фильтры или создайте новую аудиторию в админке.
+            </div>
           )}
         </CardBody>
       </Card>
 
-      {modalMode && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.74)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, zIndex: 90 }}>
-          <div style={{ width: 'min(960px, 96vw)', maxHeight: '94vh', overflow: 'auto', background: 'rgba(12,16,26,0.96)', borderRadius: 22, border: '1px solid rgba(148,163,184,0.16)', boxShadow: '0 28px 80px rgba(2,6,23,0.5)', display: 'grid', gridTemplateRows: 'auto 1fr auto' }}>
-            <div style={{ padding: '18px 24px', borderBottom: '1px solid rgba(148,163,184,0.16)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ fontSize: 18, fontWeight: 700 }}>{modalMode === 'create' ? 'Создать аудиторию' : audienceName}</div>
-                <div style={{ fontSize: 13, opacity: 0.65 }}>{modalMode === 'create' ? 'Настройте фильтры и сохраните аудиторию' : `${currentAudience?.participants ?? 0} участников`}</div>
-              </div>
-              <button className="btn btn-ghost" onClick={closeModal}><X size={18} /></button>
-            </div>
+      <CreateAudienceModal
+        open={createOpen}
+        outlets={outletOptions}
+        products={productOptions}
+        levels={LEVEL_OPTIONS}
+        rfmOptions={RFM_OPTIONS}
+        devices={DEVICE_OPTIONS}
+        submitting={createSubmitting}
+        error={createError}
+        onClose={() => {
+          if (!createSubmitting) {
+            setCreateOpen(false);
+            setCreateError(null);
+          }
+        }}
+        onSubmit={handleCreateAudience}
+      />
+    </div>
+  );
+}
 
-            <div style={{ padding: 24, display: 'grid', gap: 20 }}>
-              <div style={{ display: 'grid', gap: 8 }}>
-                <label style={{ fontSize: 13, opacity: 0.8 }}>Название *</label>
-                <input value={audienceName} onChange={(e) => setAudienceName(e.target.value)} placeholder="Например, Лояльные" style={{ padding: 12, borderRadius: 10 }} />
-              </div>
+type FiltersPanelProps = {
+  search: string;
+  scope: ScopeFilter;
+  onSearchChange: (value: string) => void;
+  onScopeChange: (value: ScopeFilter) => void;
+};
 
-              {modalMode === 'edit' && (
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <button className={tab === 'settings' ? 'btn btn-primary' : 'btn'} onClick={() => setTab('settings')}>Настройки</button>
-                  <button className={tab === 'members' ? 'btn btn-primary' : 'btn'} onClick={() => setTab('members')}>Состав аудитории</button>
-                </div>
-              )}
+function FiltersPanel({ search, scope, onSearchChange, onScopeChange }: FiltersPanelProps) {
+  return (
+    <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+      <label style={fieldStyle}>
+        <span style={labelStyle}>Поиск</span>
+        <div style={searchInputWrapperStyle}>
+          <Search size={16} style={{ opacity: 0.5 }} />
+          <input
+            style={searchInputStyle}
+            value={search}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="Название или тег аудитории"
+          />
+        </div>
+      </label>
+      <label style={fieldStyle}>
+        <span style={labelStyle}>Статус</span>
+        <select
+          style={inputStyle}
+          value={scope}
+          onChange={(event) => onScopeChange(event.target.value as ScopeFilter)}
+        >
+          <option value="ACTIVE">Активные</option>
+          <option value="ARCHIVED">Архив</option>
+          <option value="ALL">Все</option>
+        </select>
+      </label>
+    </div>
+  );
+}
 
-              {tab === 'settings' && (
-                <SettingsForm settings={settings} onChange={setSettings} />
-              )}
+function normalizeAudience(raw: any): Audience {
+  if (!raw || typeof raw !== "object") {
+    return {
+      id: "",
+      name: "Без названия",
+      customerCount: 0,
+      isActive: false,
+      archivedAt: null,
+      tags: [],
+      color: null,
+      lastEvaluatedAt: null,
+    };
+  }
+  return {
+    id: String(raw.id ?? ""),
+    name: String(raw.name ?? "Без названия"),
+    description: raw.description ?? null,
+    customerCount: Number(raw.customerCount ?? 0) || 0,
+    isActive: Boolean(raw.isActive),
+    archivedAt: raw.archivedAt ?? null,
+    tags: Array.isArray(raw.tags) ? raw.tags : null,
+    color: raw.color ?? null,
+    lastEvaluatedAt: raw.lastEvaluatedAt ?? null,
+  };
+}
 
-              {tab === 'members' && currentAudience && (
-                <div style={{ display: 'grid', gap: 16 }}>
-                  <div style={{ position: 'relative', maxWidth: 320 }}>
-                    <input
-                      value={memberSearch}
-                      onChange={(e) => setMemberSearch(e.target.value)}
-                      placeholder="Поиск по телефону или имени"
-                      style={{ width: '100%', padding: '10px 36px 10px 12px', borderRadius: 10 }}
-                    />
-                    <Search size={16} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', opacity: 0.6 }} />
-                  </div>
-                  <div style={{ maxHeight: 260, overflowY: 'auto', border: '1px solid rgba(148,163,184,0.18)', borderRadius: 14 }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                      <thead>
-                        <tr style={{ background: 'rgba(148,163,184,0.08)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-                          <th style={{ padding: '8px 12px', textAlign: 'left' }}>№</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'left' }}>Телефон</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'left' }}>Имя</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'left' }}>День рождения</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'left' }}>Возраст</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'left' }}>Дата регистрации</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredMembers.map((member, index) => (
-                          <tr key={member.id} style={{ borderBottom: '1px solid rgba(148,163,184,0.1)' }}>
-                            <td style={{ padding: '8px 12px' }}>{index + 1}</td>
-                            <td style={{ padding: '8px 12px' }}>{member.phone}</td>
-                            <td style={{ padding: '8px 12px' }}>{member.name}</td>
-                            <td style={{ padding: '8px 12px' }}>{new Date(member.birthday).toLocaleDateString('ru-RU')}</td>
-                            <td style={{ padding: '8px 12px' }}>{member.age}</td>
-                            <td style={{ padding: '8px 12px' }}>{new Date(member.registrationDate).toLocaleDateString('ru-RU')}</td>
-                          </tr>
-                        ))}
-                        {!filteredMembers.length && (
-                          <tr>
-                            <td colSpan={6} style={{ padding: 16, textAlign: 'center', opacity: 0.6 }}>Совпадения не найдены</td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
+function renderStatus(audience: Audience): string {
+  if (audience.archivedAt) return "В архиве";
+  return audience.isActive ? "Активна" : "Выключена";
+}
 
-            <div style={{ padding: '16px 24px', borderTop: '1px solid rgba(148,163,184,0.16)', display: 'flex', justifyContent: modalMode === 'edit' ? 'space-between' : 'flex-end', gap: 12 }}>
-              {modalMode === 'edit' && currentAudience && (
-                <Button variant="danger" startIcon={<Trash2 size={16} />} onClick={handleDelete}>Удалить аудиторию</Button>
-              )}
-              <div style={{ display: 'flex', gap: 12 }}>
-                <button className="btn" onClick={closeModal} disabled={saving}>Отмена</button>
-                <Button variant="primary" onClick={handleSubmit} disabled={saving} startIcon={<Users2 size={16} />}>
-                  {saving ? 'Сохраняем…' : 'Сохранить'}
-                </Button>
-              </div>
+function formatTags(tags?: string[] | null): string {
+  if (!tags?.length) return "—";
+  return tags.join(", ");
+}
+
+const tableStyle: React.CSSProperties = {
+  width: "100%",
+  minWidth: 840,
+  borderCollapse: "collapse",
+};
+
+const headerCellStyle: React.CSSProperties = {
+  textAlign: "left",
+  padding: "12px 10px",
+  fontSize: 12,
+  textTransform: "uppercase",
+  letterSpacing: 0.4,
+  opacity: 0.6,
+  borderBottom: "1px solid rgba(148,163,184,0.24)",
+};
+
+const rowStyle: React.CSSProperties = {
+  borderBottom: "1px solid rgba(148,163,184,0.12)",
+};
+
+const cellStyle: React.CSSProperties = {
+  padding: "14px 10px",
+  fontSize: 14,
+};
+
+const fieldStyle: React.CSSProperties = {
+  display: "grid",
+  gap: 6,
+};
+
+const labelStyle: React.CSSProperties = {
+  fontSize: 12,
+  opacity: 0.7,
+};
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "8px 12px",
+  borderRadius: 10,
+  border: "1px solid rgba(148,163,184,0.18)",
+  background: "rgba(15,23,42,0.45)",
+  color: "inherit",
+};
+
+const searchInputWrapperStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  padding: "0 10px",
+  borderRadius: 10,
+  border: "1px solid rgba(148,163,184,0.18)",
+  background: "rgba(15,23,42,0.45)",
+};
+
+const searchInputStyle: React.CSSProperties = {
+  ...inputStyle,
+  border: "none",
+  background: "transparent",
+  padding: "10px 0",
+};
+
+const errorBlockStyle: React.CSSProperties = {
+  padding: 16,
+  borderRadius: 12,
+  border: "1px solid rgba(248,113,113,0.4)",
+  background: "rgba(248,113,113,0.12)",
+  color: "#fecaca",
+};
+
+const audienceModalOverlayStyle: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(15,23,42,0.72)",
+  backdropFilter: "blur(8px)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  zIndex: 1000,
+};
+
+const audienceModalStyle: React.CSSProperties = {
+  width: "min(860px, 95vw)",
+  maxHeight: "92vh",
+  borderRadius: 18,
+  background: "#0f172a",
+  border: "1px solid rgba(148,163,184,0.22)",
+  boxShadow: "0 40px 120px rgba(15,23,42,0.5)",
+  display: "flex",
+  flexDirection: "column",
+};
+
+const audienceModalHeaderStyle: React.CSSProperties = {
+  padding: "22px 26px",
+  borderBottom: "1px solid rgba(148,163,184,0.18)",
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "flex-start",
+  gap: 16,
+};
+
+const audienceModalBodyStyle: React.CSSProperties = {
+  padding: "22px 26px",
+  display: "grid",
+  gap: 18,
+  overflowY: "auto",
+};
+
+const audienceModalFooterStyle: React.CSSProperties = {
+  padding: "18px 26px",
+  borderTop: "1px solid rgba(148,163,184,0.18)",
+  display: "flex",
+  justifyContent: "flex-end",
+  gap: 12,
+  background: "rgba(15,23,42,0.45)",
+};
+
+const audienceCloseButtonStyle: React.CSSProperties = {
+  background: "none",
+  border: "none",
+  color: "#f87171",
+  cursor: "pointer",
+  padding: 6,
+  borderRadius: 999,
+};
+
+const toggleRowLayout: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 16,
+};
+
+const toggleLabelStyle: React.CSSProperties = {
+  fontSize: 15,
+  fontWeight: 600,
+};
+
+const toggleSwitchBase: React.CSSProperties = {
+  width: 48,
+  height: 26,
+  borderRadius: 999,
+  border: "1px solid rgba(148,163,184,0.35)",
+  background: "rgba(30,41,59,0.9)",
+  position: "relative",
+  cursor: "pointer",
+  transition: "all 0.2s ease",
+};
+
+const toggleThumbStyle: React.CSSProperties = {
+  position: "absolute",
+  top: 3,
+  left: 3,
+  width: 20,
+  height: 20,
+  borderRadius: "50%",
+  background: "#fff",
+  transition: "transform 0.2s ease",
+};
+
+const chipStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "6px 10px",
+  borderRadius: 999,
+  background: "rgba(148,163,184,0.18)",
+  color: "#e2e8f0",
+  fontSize: 13,
+};
+
+const chipRemoveStyle: React.CSSProperties = {
+  border: "none",
+  background: "none",
+  color: "rgba(248,113,113,0.9)",
+  cursor: "pointer",
+  fontSize: 14,
+  lineHeight: 1,
+};
+
+const dropdownContainerStyle: React.CSSProperties = {
+  position: "relative",
+};
+
+const dropdownListStyle: React.CSSProperties = {
+  position: "absolute",
+  top: "calc(100% + 6px)",
+  left: 0,
+  right: 0,
+  borderRadius: 12,
+  border: "1px solid rgba(148,163,184,0.25)",
+  background: "rgba(15,23,42,0.95)",
+  maxHeight: 220,
+  overflowY: "auto",
+  zIndex: 20,
+  boxShadow: "0 20px 50px rgba(15,23,42,0.45)",
+};
+
+const dropdownItemStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  padding: "10px 14px",
+  cursor: "pointer",
+  fontSize: 14,
+};
+
+const pillButtonBase: React.CSSProperties = {
+  padding: "10px 18px",
+  borderRadius: 999,
+  border: "1px solid rgba(148,163,184,0.25)",
+  background: "rgba(15,23,42,0.45)",
+  color: "inherit",
+  cursor: "pointer",
+};
+
+function CreateAudienceModal({
+  open,
+  outlets,
+  products,
+  levels,
+  rfmOptions,
+  devices,
+  submitting,
+  error,
+  onClose,
+  onSubmit,
+}: CreateAudienceModalProps) {
+  const [form, setForm] = React.useState(audienceInitialState);
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({});
+
+  React.useEffect(() => {
+    if (open) {
+      setForm(audienceInitialState);
+      setFieldErrors({});
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  function update<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function validate(): boolean {
+    const errors: Record<string, string> = {};
+    if (!form.name.trim()) {
+      errors.name = "Укажите название аудитории";
+    }
+    if (form.visitedEnabled && form.visitedOutlets.length === 0) {
+      errors.visited = "Выберите минимум одну точку";
+    }
+    if (form.productEnabled && form.products.length === 0) {
+      errors.products = "Выберите минимум один товар";
+    }
+    if (form.genderEnabled && !form.gender) {
+      errors.gender = "Выберите пол";
+    }
+    const avgFrom = form.averageCheckFrom.trim() ? Number(form.averageCheckFrom) : null;
+    const avgTo = form.averageCheckTo.trim() ? Number(form.averageCheckTo) : null;
+    if (form.averageCheckEnabled) {
+      if ((avgFrom != null && Number.isNaN(avgFrom)) || (avgTo != null && Number.isNaN(avgTo))) {
+        errors.average = "Введите числа";
+      } else if (avgFrom != null && avgTo != null && avgFrom > avgTo) {
+        errors.average = "Значение 'от' не может быть больше 'до'";
+      }
+    }
+    const totalFrom = form.totalSpentFrom.trim() ? Number(form.totalSpentFrom) : null;
+    const totalTo = form.totalSpentTo.trim() ? Number(form.totalSpentTo) : null;
+    if (form.totalSpentEnabled) {
+      if ((totalFrom != null && Number.isNaN(totalFrom)) || (totalTo != null && Number.isNaN(totalTo))) {
+        errors.total = "Введите числа";
+      } else if (totalFrom != null && totalTo != null && totalFrom > totalTo) {
+        errors.total = "Значение 'от' не может быть больше 'до'";
+      }
+    }
+    if (form.levelEnabled && form.levels.length === 0) {
+      errors.level = "Выберите уровень";
+    }
+    if (form.rfmRecencyEnabled && !form.rfmRecency) {
+      errors.rfmRecency = "Выберите значение";
+    }
+    if (form.rfmFrequencyEnabled && !form.rfmFrequency) {
+      errors.rfmFrequency = "Выберите значение";
+    }
+    if (form.rfmMonetaryEnabled && !form.rfmMonetary) {
+      errors.rfmMonetary = "Выберите значение";
+    }
+    if (form.deviceEnabled && !form.device) {
+      errors.device = "Выберите устройство";
+    }
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  }
+
+  function buildPayload(): AudienceFormResult {
+    const filters: Record<string, any> = {};
+    if (form.visitedEnabled && form.visitedOutlets.length) filters.outletIds = form.visitedOutlets;
+    if (form.productEnabled && form.products.length) filters.productIds = form.products;
+    if (form.genderEnabled) filters.gender = form.gender;
+    if (form.ageEnabled) filters.ageRange = { from: form.age[0], to: form.age[1] };
+    if (form.birthdayEnabled) filters.birthdayOffset = { from: form.birthday[0], to: form.birthday[1] };
+    if (form.registrationEnabled) filters.registrationDays = { from: form.registration[0], to: form.registration[1] };
+    if (form.lastPurchaseEnabled) filters.lastPurchaseDays = { from: form.lastPurchase[0], to: form.lastPurchase[1] };
+    if (form.purchaseCountEnabled) filters.purchaseCount = { from: form.purchaseCount[0], to: form.purchaseCount[1] };
+    if (form.averageCheckEnabled)
+      filters.averageCheck = {
+        from: form.averageCheckFrom.trim() ? Number(form.averageCheckFrom) : null,
+        to: form.averageCheckTo.trim() ? Number(form.averageCheckTo) : null,
+      };
+    if (form.totalSpentEnabled)
+      filters.totalSpent = {
+        from: form.totalSpentFrom.trim() ? Number(form.totalSpentFrom) : null,
+        to: form.totalSpentTo.trim() ? Number(form.totalSpentTo) : null,
+      };
+    if (form.levelEnabled && form.levels.length) filters.levels = form.levels;
+    if (form.rfmRecencyEnabled) filters.rfmRecency = form.rfmRecency;
+    if (form.rfmFrequencyEnabled) filters.rfmFrequency = form.rfmFrequency;
+    if (form.rfmMonetaryEnabled) filters.rfmMonetary = form.rfmMonetary;
+    if (form.deviceEnabled) filters.device = form.device;
+
+    return {
+      name: form.name.trim(),
+      filters,
+      rules: filters,
+    };
+  }
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!validate()) return;
+    await onSubmit(buildPayload());
+  }
+
+  return (
+    <div style={audienceModalOverlayStyle} role="presentation">
+      <form onSubmit={handleSubmit} style={audienceModalStyle} role="dialog" aria-modal="true">
+        <div style={audienceModalHeaderStyle}>
+          <div style={{ display: "grid", gap: 4 }}>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>Создать аудиторию</div>
+            <div style={{ fontSize: 12, opacity: 0.65 }}>
+              Включайте условия, чтобы настроить сегмент под вашу задачу.
             </div>
           </div>
+          <button type="button" onClick={onClose} style={audienceCloseButtonStyle} aria-label="Закрыть">
+            <X size={16} />
+          </button>
+        </div>
+        <div style={audienceModalBodyStyle}>
+          <label style={fieldStyle}>
+            <span style={labelStyle}>Название*</span>
+            <input
+              style={inputStyle}
+              value={form.name}
+              onChange={(event) => update("name", event.target.value)}
+              placeholder="Например, Постоянные гости"
+            />
+            {fieldErrors.name && <FieldError>{fieldErrors.name}</FieldError>}
+          </label>
+
+          <Section>
+            <ToggleRow label="Посещал точку" enabled={form.visitedEnabled} onToggle={(value) => update("visitedEnabled", value)} />
+            {form.visitedEnabled && (
+              <div style={{ display: "grid", gap: 8 }}>
+                <MultiSelectControl
+                  placeholder="Выберите точки"
+                  options={outlets}
+                  selected={form.visitedOutlets}
+                  onChange={(next) => update("visitedOutlets", next)}
+                />
+                {fieldErrors.visited && <FieldError>{fieldErrors.visited}</FieldError>}
+              </div>
+            )}
+          </Section>
+
+          <Section>
+            <ToggleRow label="Покупал товар" enabled={form.productEnabled} onToggle={(value) => update("productEnabled", value)} />
+            {form.productEnabled && (
+              <div style={{ display: "grid", gap: 8 }}>
+                <MultiSelectControl
+                  placeholder="Выберите товары"
+                  options={products}
+                  selected={form.products}
+                  onChange={(next) => update("products", next)}
+                />
+                {fieldErrors.products && <FieldError>{fieldErrors.products}</FieldError>}
+              </div>
+            )}
+          </Section>
+
+          <Section>
+            <ToggleRow label="Пол" enabled={form.genderEnabled} onToggle={(value) => update("genderEnabled", value)} />
+            {form.genderEnabled && (
+              <div style={{ display: "flex", gap: 12 }}>
+                <PillButton active={form.gender === "male"} onClick={() => update("gender", "male")}>
+                  Мужской
+                </PillButton>
+                <PillButton active={form.gender === "female"} onClick={() => update("gender", "female")}>
+                  Женский
+                </PillButton>
+              </div>
+            )}
+          </Section>
+
+          <Section>
+            <ToggleRow label="Возраст" enabled={form.ageEnabled} onToggle={(value) => update("ageEnabled", value)} />
+            {form.ageEnabled && <RangeField min={0} max={100} value={form.age} onChange={(next) => update("age", next)} />}
+          </Section>
+
+          <Section>
+            <ToggleRow label="День рождения" enabled={form.birthdayEnabled} onToggle={(value) => update("birthdayEnabled", value)} />
+            {form.birthdayEnabled && <RangeField min={0} max={365} value={form.birthday} onChange={(next) => update("birthday", next)} />}
+          </Section>
+
+          <Section>
+            <ToggleRow
+              label="Дней с момента регистрации"
+              enabled={form.registrationEnabled}
+              onToggle={(value) => update("registrationEnabled", value)}
+            />
+            {form.registrationEnabled && <RangeField min={0} max={365} value={form.registration} onChange={(next) => update("registration", next)} />}
+          </Section>
+
+          <Section>
+            <ToggleRow
+              label="Дней с последней покупки"
+              enabled={form.lastPurchaseEnabled}
+              onToggle={(value) => update("lastPurchaseEnabled", value)}
+            />
+            {form.lastPurchaseEnabled && <RangeField min={0} max={365} value={form.lastPurchase} onChange={(next) => update("lastPurchase", next)} />}
+          </Section>
+
+          <Section>
+            <ToggleRow
+              label="Количество покупок"
+              enabled={form.purchaseCountEnabled}
+              onToggle={(value) => update("purchaseCountEnabled", value)}
+            />
+            {form.purchaseCountEnabled && <RangeField min={0} max={1000} value={form.purchaseCount} onChange={(next) => update("purchaseCount", next)} />}
+          </Section>
+
+          <Section>
+            <ToggleRow label="Средний чек" enabled={form.averageCheckEnabled} onToggle={(value) => update("averageCheckEnabled", value)} />
+            {form.averageCheckEnabled && (
+              <DualInputRow
+                fromLabel="От"
+                toLabel="до"
+                fromValue={form.averageCheckFrom}
+                toValue={form.averageCheckTo}
+                onChange={(from, to) => {
+                  update("averageCheckFrom", from);
+                  update("averageCheckTo", to);
+                }}
+              />
+            )}
+            {fieldErrors.average && <FieldError>{fieldErrors.average}</FieldError>}
+          </Section>
+
+          <Section>
+            <ToggleRow label="Сумма покупок" enabled={form.totalSpentEnabled} onToggle={(value) => update("totalSpentEnabled", value)} />
+            {form.totalSpentEnabled && (
+              <DualInputRow
+                fromLabel="От"
+                toLabel="до"
+                fromValue={form.totalSpentFrom}
+                toValue={form.totalSpentTo}
+                onChange={(from, to) => {
+                  update("totalSpentFrom", from);
+                  update("totalSpentTo", to);
+                }}
+              />
+            )}
+            {fieldErrors.total && <FieldError>{fieldErrors.total}</FieldError>}
+          </Section>
+
+          <Section>
+            <ToggleRow label="Уровень клиента" enabled={form.levelEnabled} onToggle={(value) => update("levelEnabled", value)} />
+            {form.levelEnabled && (
+              <div style={{ display: "grid", gap: 8 }}>
+                <MultiSelectControl
+                  placeholder="Выберите уровни"
+                  options={levels}
+                  selected={form.levels}
+                  onChange={(next) => update("levels", next)}
+                />
+                {fieldErrors.level && <FieldError>{fieldErrors.level}</FieldError>}
+              </div>
+            )}
+          </Section>
+
+          <Section>
+            <ToggleRow label="RFM Давность" enabled={form.rfmRecencyEnabled} onToggle={(value) => update("rfmRecencyEnabled", value)} />
+            {form.rfmRecencyEnabled && (
+              <SingleSelectControl
+                placeholder="Выберите класс"
+                options={rfmOptions}
+                value={form.rfmRecency}
+                onChange={(next) => update("rfmRecency", next)}
+              />
+            )}
+            {fieldErrors.rfmRecency && <FieldError>{fieldErrors.rfmRecency}</FieldError>}
+          </Section>
+
+          <Section>
+            <ToggleRow label="RFM Частота" enabled={form.rfmFrequencyEnabled} onToggle={(value) => update("rfmFrequencyEnabled", value)} />
+            {form.rfmFrequencyEnabled && (
+              <SingleSelectControl
+                placeholder="Выберите класс"
+                options={rfmOptions}
+                value={form.rfmFrequency}
+                onChange={(next) => update("rfmFrequency", next)}
+              />
+            )}
+            {fieldErrors.rfmFrequency && <FieldError>{fieldErrors.rfmFrequency}</FieldError>}
+          </Section>
+
+          <Section>
+            <ToggleRow label="RFM Деньги" enabled={form.rfmMonetaryEnabled} onToggle={(value) => update("rfmMonetaryEnabled", value)} />
+            {form.rfmMonetaryEnabled && (
+              <SingleSelectControl
+                placeholder="Выберите класс"
+                options={rfmOptions}
+                value={form.rfmMonetary}
+                onChange={(next) => update("rfmMonetary", next)}
+              />
+            )}
+            {fieldErrors.rfmMonetary && <FieldError>{fieldErrors.rfmMonetary}</FieldError>}
+          </Section>
+
+          <Section>
+            <ToggleRow label="Устройство" enabled={form.deviceEnabled} onToggle={(value) => update("deviceEnabled", value)} />
+            {form.deviceEnabled && (
+              <SingleSelectControl
+                placeholder="Выберите устройство"
+                options={devices}
+                value={form.device}
+                onChange={(next) => update("device", next)}
+              />
+            )}
+            {fieldErrors.device && <FieldError>{fieldErrors.device}</FieldError>}
+          </Section>
+
+          {error && <FieldError>{error}</FieldError>}
+        </div>
+        <div style={audienceModalFooterStyle}>
+          <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>
+            Отмена
+          </Button>
+          <Button type="submit" disabled={submitting}>
+            {submitting ? "Создаём…" : "Создать"}
+          </Button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function Section({ children }: { children: React.ReactNode }) {
+  return <div style={{ display: "grid", gap: 12 }}>{children}</div>;
+}
+
+function ToggleRow({ label, enabled, onToggle }: { label: string; enabled: boolean; onToggle: (value: boolean) => void }) {
+  return (
+    <div style={toggleRowLayout}>
+      <span style={toggleLabelStyle}>{label}</span>
+      <button
+        type="button"
+        onClick={() => onToggle(!enabled)}
+        style={{
+          ...toggleSwitchBase,
+          background: enabled ? "rgba(129,140,248,0.35)" : toggleSwitchBase.background,
+          borderColor: enabled ? "rgba(129,140,248,0.6)" : toggleSwitchBase.border as string,
+        }}
+        aria-pressed={enabled}
+      >
+        <span
+          style={{
+            ...toggleThumbStyle,
+            transform: enabled ? "translateX(22px)" : "translateX(0)",
+          }}
+        />
+      </button>
+    </div>
+  );
+}
+
+function RangeField({ min, max, value, onChange }: { min: number; max: number; value: RangeValue; onChange: (value: RangeValue) => void }) {
+  const [from, to] = value;
+  return (
+    <div style={{ display: "grid", gap: 10 }}>
+      <div style={{ display: "flex", gap: 12 }}>
+        <label style={{ display: "grid", gap: 6 }}>
+          <span style={labelStyle}>От</span>
+          <input
+            style={inputStyle}
+            type="number"
+            min={min}
+            max={to}
+            value={from}
+            onChange={(event) => {
+              const next = Math.min(Number(event.target.value) || min, to);
+              onChange([Math.max(min, next), to]);
+            }}
+          />
+        </label>
+        <label style={{ display: "grid", gap: 6 }}>
+          <span style={labelStyle}>До</span>
+          <input
+            style={inputStyle}
+            type="number"
+            min={from}
+            max={max}
+            value={to}
+            onChange={(event) => {
+              const next = Math.max(Number(event.target.value) || max, from);
+              onChange([from, Math.min(max, next)]);
+            }}
+          />
+        </label>
+      </div>
+      <RangeSlider min={min} max={max} value={value} onChange={onChange} />
+    </div>
+  );
+}
+
+function RangeSlider({ min, max, value, onChange }: { min: number; max: number; value: RangeValue; onChange: (value: RangeValue) => void }) {
+  const [from, to] = value;
+  return (
+    <div style={{ position: "relative", height: 32 }}>
+      <div
+        style={{
+          position: "absolute",
+          top: 14,
+          left: 0,
+          right: 0,
+          height: 4,
+          borderRadius: 999,
+          background: "rgba(148,163,184,0.25)",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          top: 14,
+          height: 4,
+          borderRadius: 999,
+          background: "rgba(129,140,248,0.55)",
+          left: `${((from - min) / (max - min)) * 100}%`,
+          right: `${100 - ((to - min) / (max - min)) * 100}%`,
+        }}
+      />
+      <input
+        type="range"
+        min={min}
+        max={max}
+        value={from}
+        onChange={(event) => {
+          const next = Math.min(Number(event.target.value) || min, to);
+          onChange([next, to]);
+        }}
+        style={{ position: "absolute", top: 0, left: 0, right: 0, width: "100%", background: "none" }}
+      />
+      <input
+        type="range"
+        min={min}
+        max={max}
+        value={to}
+        onChange={(event) => {
+          const next = Math.max(Number(event.target.value) || max, from);
+          onChange([from, next]);
+        }}
+        style={{ position: "absolute", top: 0, left: 0, right: 0, width: "100%", background: "none" }}
+      />
+    </div>
+  );
+}
+
+function MultiSelectControl({
+  placeholder,
+  options,
+  selected,
+  onChange,
+}: {
+  placeholder: string;
+  options: Option[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
+
+  React.useEffect(() => {
+    function handleClick(event: MouseEvent) {
+      if (!containerRef.current) return;
+      if (!containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    if (open) {
+      document.addEventListener("mousedown", handleClick);
+    }
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  function toggleValue(value: string) {
+    if (selected.includes(value)) {
+      onChange(selected.filter((item) => item !== value));
+    } else {
+      onChange([...selected, value]);
+    }
+  }
+
+  function clear() {
+    onChange([]);
+  }
+
+  const selectedOptions = selected
+    .map((value) => options.find((option) => option.value === value))
+    .filter((option): option is Option => Boolean(option));
+
+  return (
+    <div style={dropdownContainerStyle} ref={containerRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        style={{
+          ...inputStyle,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          cursor: "pointer",
+        }}
+      >
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          {selectedOptions.length === 0 ? (
+            <span style={{ opacity: 0.6 }}>{placeholder}</span>
+          ) : (
+            selectedOptions.map((option) => (
+              <span key={option.value} style={chipStyle}>
+                {option.label}
+                <button
+                  type="button"
+                  style={chipRemoveStyle}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    toggleValue(option.value);
+                  }}
+                >
+                  ×
+                </button>
+              </span>
+            ))
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {selectedOptions.length > 0 && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                clear();
+              }}
+              style={chipRemoveStyle}
+            >
+              ×
+            </button>
+          )}
+          {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </div>
+      </button>
+      {open && (
+        <div style={dropdownListStyle}>
+          {options.map((option) => {
+            const checked = selected.includes(option.value);
+            return (
+              <div
+                key={option.value}
+                style={{
+                  ...dropdownItemStyle,
+                  background: checked ? "rgba(129,140,248,0.18)" : "transparent",
+                  color: checked ? "#c7d2fe" : "inherit",
+                }}
+                onClick={() => toggleValue(option.value)}
+              >
+                <input type="checkbox" readOnly checked={checked} /> {option.label}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
 
-type SettingsFormProps = {
-  settings: AudienceSettings;
-  onChange: (next: AudienceSettings) => void;
-};
+function SingleSelectControl({
+  placeholder,
+  options,
+  value,
+  onChange,
+}: {
+  placeholder: string;
+  options: Option[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
 
-const SettingsForm: React.FC<SettingsFormProps> = ({ settings, onChange }) => {
-  const update = (patch: Partial<AudienceSettings>) => onChange({ ...settings, ...patch });
+  React.useEffect(() => {
+    function handleClick(event: MouseEvent) {
+      if (!containerRef.current) return;
+      if (!containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    if (open) document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  const current = options.find((option) => option.value === value);
 
   return (
-    <div style={{ display: 'grid', gap: 18 }}>
-      <ToggleRow
-        title="Посещал точку"
-        enabled={settings.visitedEnabled}
-        onToggle={(value) => update({ visitedEnabled: value })}
+    <div style={dropdownContainerStyle} ref={containerRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        style={{
+          ...inputStyle,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          cursor: "pointer",
+        }}
       >
-        <TagSelect
-          options={outletOptions}
-          value={settings.visitedOutlets}
-          onChange={(value) => update({ visitedOutlets: value })}
-          placeholder="Выберите торговые точки"
-        />
-      </ToggleRow>
-
-      <ToggleRow
-        title="Покупал товар"
-        enabled={settings.productEnabled}
-        onToggle={(value) => update({ productEnabled: value })}
-      >
-        <TagSelect
-          options={productOptions}
-          value={settings.products}
-          onChange={(value) => update({ products: value })}
-          placeholder="Выберите товары"
-        />
-      </ToggleRow>
-
-      <ToggleRow
-        title="Пол"
-        enabled={settings.genderEnabled}
-        onToggle={(value) => update({ genderEnabled: value })}
-      >
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button className={settings.gender === 'male' ? 'btn btn-primary' : 'btn'} onClick={() => update({ gender: 'male' })}>Мужской</button>
-          <button className={settings.gender === 'female' ? 'btn btn-primary' : 'btn'} onClick={() => update({ gender: 'female' })}>Женский</button>
+        <span style={{ opacity: current ? 1 : 0.6 }}>{current ? current.label : placeholder}</span>
+        {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+      </button>
+      {open && (
+        <div style={dropdownListStyle}>
+          {options.map((option) => (
+            <div
+              key={option.value}
+              style={{
+                ...dropdownItemStyle,
+                background: option.value === value ? "rgba(129,140,248,0.18)" : "transparent",
+                color: option.value === value ? "#c7d2fe" : "inherit",
+              }}
+              onClick={() => {
+                onChange(option.value);
+                setOpen(false);
+              }}
+            >
+              {option.label}
+            </div>
+          ))}
         </div>
-      </ToggleRow>
-
-      <ToggleRow
-        title="Возраст"
-        enabled={settings.ageEnabled}
-        onToggle={(value) => update({ ageEnabled: value })}
-      >
-        <RangeSlider min={0} max={100} value={settings.age} onChange={(value) => update({ age: value })} />
-      </ToggleRow>
-
-      <ToggleRow
-        title="День рождения"
-        enabled={settings.birthdayEnabled}
-        onToggle={(value) => update({ birthdayEnabled: value })}
-      >
-        <RangeSlider min={0} max={365} value={settings.birthday} onChange={(value) => update({ birthday: value })} />
-      </ToggleRow>
-
-      <ToggleRow
-        title="Дней с момента регистрации"
-        enabled={settings.registrationEnabled}
-        onToggle={(value) => update({ registrationEnabled: value })}
-      >
-        <RangeSlider min={0} max={1000} value={settings.registration} onChange={(value) => update({ registration: value })} />
-      </ToggleRow>
-
-      <ToggleRow
-        title="Дней с последней покупки"
-        enabled={settings.lastPurchaseEnabled}
-        onToggle={(value) => update({ lastPurchaseEnabled: value })}
-      >
-        <RangeSlider min={0} max={365} value={settings.lastPurchase} onChange={(value) => update({ lastPurchase: value })} />
-      </ToggleRow>
-
-      <ToggleRow
-        title="Количество покупок"
-        enabled={settings.purchaseCountEnabled}
-        onToggle={(value) => update({ purchaseCountEnabled: value })}
-      >
-        <RangeSlider min={0} max={1000} value={settings.purchaseCount} onChange={(value) => update({ purchaseCount: value })} />
-      </ToggleRow>
-
-      <ToggleRow
-        title="Средний чек"
-        enabled={settings.averageCheckEnabled}
-        onToggle={(value) => update({ averageCheckEnabled: value })}
-      >
-        <DualInputRange value={settings.averageCheck} onChange={(value) => update({ averageCheck: value })} prefix="₽" />
-      </ToggleRow>
-
-      <ToggleRow
-        title="Сумма покупок"
-        enabled={settings.purchaseSumEnabled}
-        onToggle={(value) => update({ purchaseSumEnabled: value })}
-      >
-        <DualInputRange value={settings.purchaseSum} onChange={(value) => update({ purchaseSum: value })} prefix="₽" />
-      </ToggleRow>
-
-      <ToggleRow
-        title="Уровень клиента"
-        enabled={settings.levelEnabled}
-        onToggle={(value) => update({ levelEnabled: value })}
-      >
-        <TagSelect options={levelOptions} value={settings.level ? [settings.level] : []} onChange={(value) => update({ level: value[0] || '' })} allowMultiple={false} placeholder="Выберите уровень" />
-      </ToggleRow>
-
-      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))' }}>
-        <ToggleRow title="RFM Давность" enabled={settings.rfmRecencyEnabled} onToggle={(value) => update({ rfmRecencyEnabled: value })}>
-          <TagSelect options={rfmOptions} value={settings.rfmRecency ? [settings.rfmRecency] : []} onChange={(value) => update({ rfmRecency: value[0] || '' })} allowMultiple={false} placeholder="Выберите" />
-        </ToggleRow>
-        <ToggleRow title="RFM Частота" enabled={settings.rfmFrequencyEnabled} onToggle={(value) => update({ rfmFrequencyEnabled: value })}>
-          <TagSelect options={rfmOptions} value={settings.rfmFrequency ? [settings.rfmFrequency] : []} onChange={(value) => update({ rfmFrequency: value[0] || '' })} allowMultiple={false} placeholder="Выберите" />
-        </ToggleRow>
-        <ToggleRow title="RFM Деньги" enabled={settings.rfmMonetaryEnabled} onToggle={(value) => update({ rfmMonetaryEnabled: value })}>
-          <TagSelect options={rfmOptions} value={settings.rfmMonetary ? [settings.rfmMonetary] : []} onChange={(value) => update({ rfmMonetary: value[0] || '' })} allowMultiple={false} placeholder="Выберите" />
-        </ToggleRow>
-      </div>
-
-      <ToggleRow
-        title="Устройство"
-        enabled={settings.deviceEnabled}
-        onToggle={(value) => update({ deviceEnabled: value })}
-      >
-        <TagSelect
-          options={[{ value: 'Android', label: 'Android' }, { value: 'iOS', label: 'iOS' }]}
-          value={settings.device ? [settings.device] : []}
-          onChange={(value) => update({ device: value[0] || '' })}
-          allowMultiple={false}
-          placeholder="Выберите платформу"
-        />
-      </ToggleRow>
+      )}
     </div>
   );
-};
+}
 
-type ToggleRowProps = {
-  title: string;
-  enabled: boolean;
-  onToggle: (value: boolean) => void;
-  children: React.ReactNode;
-};
-
-const ToggleRow: React.FC<ToggleRowProps> = ({ title, enabled, onToggle, children }) => (
-  <div style={{
-    border: '1px solid rgba(148,163,184,0.18)',
-    borderRadius: 16,
-    padding: 16,
-    background: 'rgba(148,163,184,0.06)',
-    display: 'grid',
-    gap: 12,
-  }}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-      <div style={{ fontWeight: 600, fontSize: 14 }}>{title}</div>
-      <Toggle checked={enabled} onChange={onToggle} label={enabled ? 'Вкл' : 'Выкл'} />
+function DualInputRow({
+  fromLabel,
+  toLabel,
+  fromValue,
+  toValue,
+  onChange,
+}: {
+  fromLabel: string;
+  toLabel: string;
+  fromValue: string;
+  toValue: string;
+  onChange: (from: string, to: string) => void;
+}) {
+  return (
+    <div style={{ display: "flex", gap: 12 }}>
+      <label style={{ display: "grid", gap: 6 }}>
+        <span style={labelStyle}>{fromLabel}</span>
+        <input
+          style={inputStyle}
+          value={fromValue}
+          onChange={(event) => onChange(event.target.value, toValue)}
+          placeholder="0"
+        />
+      </label>
+      <label style={{ display: "grid", gap: 6 }}>
+        <span style={labelStyle}>{toLabel}</span>
+        <input
+          style={inputStyle}
+          value={toValue}
+          onChange={(event) => onChange(fromValue, event.target.value)}
+          placeholder="0"
+        />
+      </label>
     </div>
-    {enabled && <div>{children}</div>}
-  </div>
-);
+  );
+}
 
-type DualInputRangeProps = {
-  value: [number, number];
-  onChange: (value: [number, number]) => void;
-  prefix?: string;
-};
+function PillButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        ...pillButtonBase,
+        background: active ? "rgba(129,140,248,0.2)" : pillButtonBase.background,
+        borderColor: active ? "rgba(129,140,248,0.6)" : pillButtonBase.border as string,
+        color: active ? "#c7d2fe" : pillButtonBase.color,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
 
-const DualInputRange: React.FC<DualInputRangeProps> = ({ value, onChange, prefix }) => (
-  <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-    <span style={{ opacity: 0.7 }}>От</span>
-    <input value={value[0]} onChange={(e) => onChange([Number(e.target.value || 0), value[1]])} style={{ padding: 10, borderRadius: 10, width: 120 }} />
-    <span style={{ opacity: 0.7 }}>до</span>
-    <input value={value[1]} onChange={(e) => onChange([value[0], Number(e.target.value || 0)])} style={{ padding: 10, borderRadius: 10, width: 120 }} />
-    {prefix && <span style={{ opacity: 0.7 }}>{prefix}</span>}
-  </div>
-);
+function FieldError({ children }: { children: React.ReactNode }) {
+  return <div style={{ color: "#fca5a5", fontSize: 12 }}>{children}</div>;
+}

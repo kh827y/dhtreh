@@ -33,6 +33,8 @@ export interface UpsertStaffPayload {
   outletIds?: string[];
   accessGroupIds?: string[];
   pinStrategy?: 'KEEP' | 'ROTATE';
+  password?: string | null;
+  currentPassword?: string | null;
 }
 
 export interface AccessGroupPayload {
@@ -63,7 +65,7 @@ export interface UpsertOutletPayload {
   works?: boolean;
   hidden?: boolean;
   timezone?: string | null;
-  schedule?: { mode: '24_7' | 'CUSTOM'; days: Array<{ day: number; enabled: boolean; opensAt?: string | null; closesAt?: string | null }> };
+  schedule?: { mode: '24_7' | 'CUSTOM'; days: Array<{ day: number; enabled: boolean; opensAt?: string | null; closesAt?: string | null }> } | null;
   externalId?: string | null;
   integrationProvider?: string | null;
   integrationLocationCode?: string | null;
@@ -369,8 +371,12 @@ export class MerchantPanelService {
           })
           .catch(() => [] as Array<{ staffId: string; _max: { createdAt: Date | null } }>),
       ]);
-      outletsCountMap = new Map(accessCounts.map((row) => [row.staffId, row._count?._all ?? 0]));
-      lastActivityMap = new Map(txnGroups.map((row) => [row.staffId, row._max?.createdAt ?? null]));
+      outletsCountMap = new Map<string, number>(
+        accessCounts.map((row) => [row.staffId, row._count?._all ?? 0] as [string, number]),
+      );
+      lastActivityMap = new Map<string, Date | null>(
+        txnGroups.map((row) => [row.staffId, row._max?.createdAt ?? null] as [string, Date | null]),
+      );
     }
 
     try {
@@ -524,7 +530,7 @@ export class MerchantPanelService {
         throw new BadRequestException('Пароль должен содержать минимум 6 символов');
       }
       const data: Prisma.StaffCreateInput = {
-        merchantId,
+        merchant: { connect: { id: merchantId } },
         login: payload.login?.trim() || undefined,
         email: payload.email?.trim().toLowerCase() || undefined,
         phone: payload.phone?.trim() || undefined,
@@ -1020,8 +1026,8 @@ export class MerchantPanelService {
     };
   }
 
-  private buildScheduleJson(payload: UpsertOutletPayload['schedule']) {
-    if (!payload) return null;
+  private buildScheduleJson(payload: UpsertOutletPayload['schedule']): Prisma.InputJsonValue | typeof Prisma.JsonNull {
+    if (!payload) return Prisma.JsonNull;
     return {
       mode: payload.mode,
       days: payload.days.map((day) => ({
@@ -1047,7 +1053,7 @@ export class MerchantPanelService {
         hidden: payload.hidden ?? false,
         timezone: payload.timezone ?? null,
         scheduleEnabled: payload.schedule != null,
-        scheduleJson: this.buildScheduleJson(payload.schedule),
+        scheduleJson: this.buildScheduleJson(payload.schedule ?? null),
         externalId: payload.externalId ?? null,
         integrationProvider: payload.integrationProvider ?? null,
         integrationLocationCode: payload.integrationLocationCode ?? null,
@@ -1063,27 +1069,32 @@ export class MerchantPanelService {
   async updateOutlet(merchantId: string, outletId: string, payload: UpsertOutletPayload) {
     const outlet = await this.prisma.outlet.findFirst({ where: { merchantId, id: outletId } });
     if (!outlet) throw new NotFoundException('Точка не найдена');
+    const data: Prisma.OutletUpdateInput = {
+      name: payload.name?.trim() || outlet.name,
+      description: payload.description?.trim() ?? outlet.description,
+      address: payload.address?.trim() ?? outlet.address,
+      phone: payload.phone?.trim() ?? outlet.phone,
+      adminEmails: payload.adminEmails ?? outlet.adminEmails,
+      status: payload.works === undefined ? outlet.status : payload.works ? 'ACTIVE' : 'INACTIVE',
+      hidden: payload.hidden ?? outlet.hidden,
+      timezone: payload.timezone ?? outlet.timezone,
+      externalId: payload.externalId ?? outlet.externalId,
+      integrationProvider: payload.integrationProvider ?? outlet.integrationProvider,
+      integrationLocationCode: payload.integrationLocationCode ?? outlet.integrationLocationCode,
+      integrationPayload: payload.integrationPayload ?? outlet.integrationPayload,
+      manualLocation: payload.manualLocation ?? outlet.manualLocation,
+      latitude: payload.latitude != null ? new Prisma.Decimal(payload.latitude) : outlet.latitude,
+      longitude: payload.longitude != null ? new Prisma.Decimal(payload.longitude) : outlet.longitude,
+    };
+
+    if (payload.schedule !== undefined) {
+      data.scheduleEnabled = payload.schedule !== null;
+      data.scheduleJson = this.buildScheduleJson(payload.schedule);
+    }
+
     const updated = await this.prisma.outlet.update({
       where: { id: outletId },
-      data: {
-        name: payload.name?.trim() || outlet.name,
-        description: payload.description?.trim() ?? outlet.description,
-        address: payload.address?.trim() ?? outlet.address,
-        phone: payload.phone?.trim() ?? outlet.phone,
-        adminEmails: payload.adminEmails ?? outlet.adminEmails,
-        status: payload.works === undefined ? outlet.status : payload.works ? 'ACTIVE' : 'INACTIVE',
-        hidden: payload.hidden ?? outlet.hidden,
-        timezone: payload.timezone ?? outlet.timezone,
-        scheduleEnabled: payload.schedule != null ? true : outlet.scheduleEnabled,
-        scheduleJson: payload.schedule ? this.buildScheduleJson(payload.schedule) : outlet.scheduleJson,
-        externalId: payload.externalId ?? outlet.externalId,
-        integrationProvider: payload.integrationProvider ?? outlet.integrationProvider,
-        integrationLocationCode: payload.integrationLocationCode ?? outlet.integrationLocationCode,
-        integrationPayload: payload.integrationPayload ?? outlet.integrationPayload,
-        manualLocation: payload.manualLocation ?? outlet.manualLocation,
-        latitude: payload.latitude != null ? new Prisma.Decimal(payload.latitude) : outlet.latitude,
-        longitude: payload.longitude != null ? new Prisma.Decimal(payload.longitude) : outlet.longitude,
-      },
+      data,
     });
     return this.mapOutlet(updated);
   }

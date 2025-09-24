@@ -88,7 +88,7 @@ export class TelegramCampaignsService {
         scheduledAt,
         timezone: original.timezone,
         status: 'SCHEDULED',
-        metadata: original.metadata,
+        metadata: (original.metadata ?? Prisma.JsonNull) as Prisma.InputJsonValue,
       },
     });
   }
