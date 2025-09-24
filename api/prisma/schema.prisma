@@ -5,41 +5,41 @@ datasource db {
 
 // Gifts catalog (spend points for internal rewards)
 model Gift {
-  id          String   @id @default(cuid())
-  merchantId  String
-  title       String
-  description String?
-  imageUrl    String?
-  costPoints  Int
-  active      Boolean  @default(true)
-  periodFrom  DateTime?
-  periodTo    DateTime?
+  id               String    @id @default(cuid())
+  merchantId       String
+  title            String
+  description      String?
+  imageUrl         String?
+  costPoints       Int
+  active           Boolean   @default(true)
+  periodFrom       DateTime?
+  periodTo         DateTime?
   perCustomerLimit Int?
-  inventory   Int?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  inventory        Int?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  merchant    Merchant @relation(fields: [merchantId], references: [id])
+  merchant    Merchant         @relation(fields: [merchantId], references: [id])
   redemptions GiftRedemption[]
 
   @@index([merchantId, active])
 }
 
 model GiftRedemption {
-  id          String   @id @default(cuid())
-  giftId      String
-  merchantId  String
-  customerId  String
-  code        String   @unique
-  state       String   @default("REDEEMED") // RESERVED | REDEEMED | CANCELED
-  createdAt   DateTime @default(now())
-  expiresAt   DateTime?
-  redeemedAt  DateTime?
-  canceledAt  DateTime?
+  id         String    @id @default(cuid())
+  giftId     String
+  merchantId String
+  customerId String
+  code       String    @unique
+  state      String    @default("REDEEMED") // RESERVED | REDEEMED | CANCELED
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime?
+  redeemedAt DateTime?
+  canceledAt DateTime?
 
-  gift        Gift     @relation(fields: [giftId], references: [id])
-  merchant    Merchant @relation(fields: [merchantId], references: [id])
-  customer    Customer @relation(fields: [customerId], references: [id])
+  gift     Gift     @relation(fields: [giftId], references: [id])
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+  customer Customer @relation(fields: [customerId], references: [id])
 
   @@index([merchantId, customerId, createdAt])
 }
@@ -75,6 +75,115 @@ enum StaffRole {
   CASHIER
 }
 
+enum StaffStatus {
+  ACTIVE
+  PENDING
+  SUSPENDED
+  FIRED
+  ARCHIVED
+}
+
+enum StaffOutletAccessStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+enum AccessScope {
+  PORTAL
+  CASHIER
+  API
+}
+
+enum StaffInvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+enum PromoCodeStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  EXPIRED
+  ARCHIVED
+}
+
+enum PromoCodeUsageLimitType {
+  UNLIMITED
+  ONCE_TOTAL
+  ONCE_PER_CUSTOMER
+  LIMITED_PER_CUSTOMER
+}
+
+enum PromotionStatus {
+  DRAFT
+  SCHEDULED
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELED
+  ARCHIVED
+}
+
+enum PromotionRewardType {
+  POINTS
+  DISCOUNT
+  CASHBACK
+  LEVEL_UP
+  CUSTOM
+}
+
+enum LoyaltyMechanicType {
+  TIERS
+  PURCHASE_LIMITS
+  WINBACK
+  BIRTHDAY
+  REGISTRATION_BONUS
+  EXPIRATION_REMINDER
+  REFERRAL
+  CUSTOM
+}
+
+enum MechanicStatus {
+  DISABLED
+  ENABLED
+  DRAFT
+}
+
+enum DataImportStatus {
+  UPLOADED
+  VALIDATING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELED
+}
+
+enum DataImportType {
+  CUSTOMERS
+  TRANSACTIONS
+  PRODUCTS
+  STAFF
+  PROMO_CODES
+}
+
+enum CommunicationChannel {
+  PUSH
+  SMS
+  EMAIL
+  TELEGRAM
+  INAPP
+}
+
+enum PortalAccessState {
+  ENABLED
+  DISABLED
+  INVITED
+  LOCKED
+}
+
 enum TxnType {
   EARN
   REDEEM
@@ -91,112 +200,137 @@ enum LedgerAccount {
 }
 
 model Merchant {
-  id        String            @id @default(cuid())
-  name      String
-  telegramWebhookSecret String?
-  telegramBotEnabled    Boolean   @default(false)
-  telegramBotToken      String?
-  rating    Float?
-  logo      String?
-  settings  MerchantSettings?
-  wallets   Wallet[]
-  holds     Hold[]
-  transactions Transaction[]
-  createdAt DateTime          @default(now())
-  Receipt   Receipt[]
-  outlets   Outlet[]
-  devices   Device[]
-  staff     Staff[]
-  consents  Consent[]
-  telegramBot TelegramBot?
-  subscription Subscription?
-  fraudChecks FraudCheck[]
-  integrations Integration[]
-  customerSegments CustomerSegment[]
-  campaigns Campaign[]
-  pushCampaigns PushCampaign[]
-  telegramCampaigns TelegramCampaign[]
-  reviewCount Int @default(0)
+  id                          String                       @id @default(cuid())
+  name                        String
+  telegramWebhookSecret       String?
+  telegramBotEnabled          Boolean                      @default(false)
+  telegramBotToken            String?
+  rating                      Float?
+  logo                        String?
+  settings                    MerchantSettings?
+  wallets                     Wallet[]
+  holds                       Hold[]
+  transactions                Transaction[]
+  createdAt                   DateTime                     @default(now())
+  Receipt                     Receipt[]
+  outlets                     Outlet[]
+  devices                     Device[]
+  staff                       Staff[]
+  consents                    Consent[]
+  telegramBot                 TelegramBot?
+  subscription                Subscription?
+  fraudChecks                 FraudCheck[]
+  integrations                Integration[]
+  customerSegments            CustomerSegment[]
+  campaigns                   Campaign[]
+  pushCampaigns               PushCampaign[]
+  telegramCampaigns           TelegramCampaign[]
+  reviewCount                 Int                          @default(0)
   // back-relations
-  campaignUsages CampaignUsage[]
-  reviews        Review[]
-  referralPrograms ReferralProgram[]
-  vouchers         Voucher[]
+  campaignUsages              CampaignUsage[]
+  reviews                     Review[]
+  referralPrograms            ReferralProgram[]
+  vouchers                    Voucher[]
+  promoCodes                  PromoCode[]
+  promoCodeMetrics            PromoCodeMetric[]
+  promoCodeUsages             PromoCodeUsage[]
+  promotions                  LoyaltyPromotion[]
+  promotionMetrics            LoyaltyPromotionMetric[]
+  promotionParticipants       PromotionParticipant[]
+  loyaltyTiers                LoyaltyTier[]
+  loyaltyTierAssignments      LoyaltyTierAssignment[]
+  loyaltyMechanics            LoyaltyMechanic[]
+  loyaltyMechanicLogs         LoyaltyMechanicLog[]
+  communicationTemplates      CommunicationTemplate[]
+  communicationTasks          CommunicationTask[]
+  communicationTaskRecipients CommunicationTaskRecipient[]
+  accessGroups                AccessGroup[]
+  staffGroupMemberships       StaffAccessGroup[]
+  staffInvitations            StaffInvitation[]
+  staffAccessLogs             StaffAccessLog[]
+  outletMetrics               OutletKpiDaily[]
+  staffMetrics                StaffKpiDaily[]
+  cashierSessions             CashierSession[]
+  dataImports                 DataImportJob[]
+  segmentMetrics              SegmentMetricSnapshot[]
   // analytics back-relations
-  customerStats     CustomerStats[]
-  kpiDaily          MerchantKpiDaily[]
+  customerStats               CustomerStats[]
+  kpiDaily                    MerchantKpiDaily[]
   // gifts
-  gifts             Gift[]
-  giftRedemptions   GiftRedemption[]
+  gifts                       Gift[]
+  giftRedemptions             GiftRedemption[]
   // staff access per outlet
-  staffAccesses     StaffOutletAccess[]
+  staffAccesses               StaffOutletAccess[]
   // catalog
-  productCategories ProductCategory[]
-  products          Product[]
+  productCategories           ProductCategory[]
+  products                    Product[]
+  productAttributes           ProductAttribute[]
+  productOptions              ProductOption[]
   // Portal auth
-  portalKeyHash        String?
-  portalEmail          String?  @unique
-  portalPasswordHash   String?
-  portalTotpSecret     String?
-  portalTotpEnabled    Boolean   @default(false)
-  portalLoginEnabled   Boolean   @default(true)
-  portalLastLoginAt    DateTime?
+  portalKeyHash               String?
+  portalEmail                 String?                      @unique
+  portalPasswordHash          String?
+  portalTotpSecret            String?
+  portalTotpEnabled           Boolean                      @default(false)
+  portalLoginEnabled          Boolean                      @default(true)
+  portalLastLoginAt           DateTime?
   // Cashier credentials (admin-managed)
-  cashierLogin         String?   @unique
-  cashierPassword9     String?
-  archivedAt           DateTime?
+  cashierLogin                String?                      @unique
+  cashierPassword9            String?
+  cashierPasswordUpdatedAt    DateTime?
+  archivedAt                  DateTime?
 }
 
 model MerchantSettings {
-  merchantId     String   @id
-  merchant       Merchant @relation(fields: [merchantId], references: [id])
-  earnBps        Int      @default(500)
-  redeemLimitBps Int      @default(5000)
-  qrTtlSec       Int      @default(120)
-  webhookUrl     String?
-  webhookSecret  String?
-  webhookKeyId   String?
-  webhookSecretNext String?
-  webhookKeyIdNext  String?
-  useWebhookNext    Boolean  @default(false)
-  pointsTtlDays     Int?
-  earnDelayDays     Int?    // задержка начисления (в днях)
-  redeemCooldownSec Int   @default(0)
-  earnCooldownSec   Int   @default(0)
-  redeemDailyCap    Int?
-  earnDailyCap      Int?
-  requireJwtForQuote Boolean @default(false)
-  requireBridgeSig   Boolean @default(false)
-  bridgeSecret       String?
-  bridgeSecretNext   String?
-  rulesJson          Json?
-  requireStaffKey    Boolean @default(false)
+  merchantId                            String    @id
+  merchant                              Merchant  @relation(fields: [merchantId], references: [id])
+  earnBps                               Int       @default(500)
+  redeemLimitBps                        Int       @default(5000)
+  qrTtlSec                              Int       @default(120)
+  webhookUrl                            String?
+  webhookSecret                         String?
+  webhookKeyId                          String?
+  webhookSecretNext                     String?
+  webhookKeyIdNext                      String?
+  useWebhookNext                        Boolean   @default(false)
+  pointsTtlDays                         Int?
+  earnDelayDays                         Int? // задержка начисления (в днях)
+  redeemCooldownSec                     Int       @default(0)
+  earnCooldownSec                       Int       @default(0)
+  redeemDailyCap                        Int?
+  earnDailyCap                          Int?
+  requireJwtForQuote                    Boolean   @default(false)
+  requireBridgeSig                      Boolean   @default(false)
+  bridgeSecret                          String?
+  bridgeSecretNext                      String?
+  rulesJson                             Json?
+  requireStaffKey                       Boolean   @default(false)
   // Telegram miniapp per merchant
-  telegramBotToken   String?
-  telegramBotUsername String?
-  telegramStartParamRequired Boolean @default(false)
-  miniappBaseUrl     String?
-  miniappThemePrimary String?
-  miniappThemeBg      String?
-  miniappLogoUrl      String?
-  outboxPausedUntil   DateTime?
-  smsSignature        String?
-  phone               String?
-  monthlyReports      Boolean  @default(false)
-  staffMotivationEnabled           Boolean @default(false)
-  staffMotivationNewCustomerPoints Int     @default(0)
-  staffMotivationExistingCustomerPoints Int @default(0)
-  staffMotivationLeaderboardPeriod String? 
-  staffMotivationCustomDays        Int?
-  updatedAt      DateTime @default(now())
+  telegramBotToken                      String?
+  telegramBotUsername                   String?
+  telegramStartParamRequired            Boolean   @default(false)
+  miniappBaseUrl                        String?
+  miniappThemePrimary                   String?
+  miniappThemeBg                        String?
+  miniappLogoUrl                        String?
+  outboxPausedUntil                     DateTime?
+  smsSignature                          String?
+  phone                                 String?
+  monthlyReports                        Boolean   @default(false)
+  staffMotivationEnabled                Boolean   @default(false)
+  staffMotivationNewCustomerPoints      Int       @default(0)
+  staffMotivationExistingCustomerPoints Int       @default(0)
+  staffMotivationLeaderboardPeriod      String?
+  staffMotivationCustomDays             Int?
+  updatedAt                             DateTime  @default(now())
 }
 
 model IdempotencyKey {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   merchantId String
   key        String
   response   Json
-  createdAt  DateTime @default(now())
+  createdAt  DateTime  @default(now())
   expiresAt  DateTime?
 
   @@unique([merchantId, key])
@@ -210,40 +344,44 @@ model Consent {
   consentAt  DateTime
   createdAt  DateTime @default(now())
 
-  merchant   Merchant @relation(fields: [merchantId], references: [id])
-  customer   Customer @relation(fields: [customerId], references: [id])
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+  customer Customer @relation(fields: [customerId], references: [id])
 
   @@id([merchantId, customerId])
 }
 
 model Customer {
-  id        String        @id @default(cuid())
-  phone     String?       @unique
-  tgId      String?       @unique
-  email     String?       @unique
-  name      String?
-  birthday  DateTime?
-  gender    String?
-  city      String?
-  tags      String[]
-  metadata  Json?
-  wallets   Wallet[]
-  holds     Hold[]
-  transactions Transaction[]
-  createdAt DateTime      @default(now())
-  Receipt   Receipt[]
-  consents  Consent[]
-  segments  SegmentCustomer[]
+  id                          String                       @id @default(cuid())
+  phone                       String?                      @unique
+  tgId                        String?                      @unique
+  email                       String?                      @unique
+  name                        String?
+  birthday                    DateTime?
+  gender                      String?
+  city                        String?
+  tags                        String[]
+  metadata                    Json?
+  wallets                     Wallet[]
+  holds                       Hold[]
+  transactions                Transaction[]
+  createdAt                   DateTime                     @default(now())
+  Receipt                     Receipt[]
+  consents                    Consent[]
+  segments                    SegmentCustomer[]
   // back-relations
-  campaignUsages    CampaignUsage[]
-  voucherUsages     VoucherUsage[]
-  reviews           Review[]
-  reviewReactions   ReviewReaction[]
-  referralsAsReferrer Referral[] @relation("ReferralReferrer")
-  referralsAsReferee  Referral[] @relation("ReferralReferee")
-  pushDevices       PushDevice[]
-  customerStats     CustomerStats[]
-  giftRedemptions   GiftRedemption[]
+  campaignUsages              CampaignUsage[]
+  voucherUsages               VoucherUsage[]
+  promoCodeUsages             PromoCodeUsage[]
+  reviews                     Review[]
+  reviewReactions             ReviewReaction[]
+  referralsAsReferrer         Referral[]                   @relation("ReferralReferrer")
+  referralsAsReferee          Referral[]                   @relation("ReferralReferee")
+  pushDevices                 PushDevice[]
+  customerStats               CustomerStats[]
+  giftRedemptions             GiftRedemption[]
+  promotionParticipants       PromotionParticipant[]
+  tierAssignments             LoyaltyTierAssignment[]
+  communicationTaskRecipients CommunicationTaskRecipient[]
 }
 
 model Wallet {
@@ -260,29 +398,29 @@ model Wallet {
 }
 
 model Hold {
-  id           String     @id @default(cuid())
-  customerId   String
-  customer     Customer   @relation(fields: [customerId], references: [id])
-  merchantId   String
-  merchant     Merchant   @relation(fields: [merchantId], references: [id])
-  mode         HoldMode
-  redeemAmount Int        @default(0)
-  earnPoints   Int        @default(0)
-  status       HoldStatus @default(PENDING)
-  orderId      String?
-  receiptId    String?
+  id            String     @id @default(cuid())
+  customerId    String
+  customer      Customer   @relation(fields: [customerId], references: [id])
+  merchantId    String
+  merchant      Merchant   @relation(fields: [merchantId], references: [id])
+  mode          HoldMode
+  redeemAmount  Int        @default(0)
+  earnPoints    Int        @default(0)
+  status        HoldStatus @default(PENDING)
+  orderId       String?
+  receiptId     String?
   total         Int?
   eligibleTotal Int?
-  qrJti        String?    @unique   // <— НОВОЕ: один hold на один QR
-  expiresAt    DateTime?
-  outletId     String?
-  deviceId     String?
-  staffId      String?
-  createdAt    DateTime   @default(now())
+  qrJti         String?    @unique // <— НОВОЕ: один hold на один QR
+  expiresAt     DateTime?
+  outletId      String?
+  deviceId      String?
+  staffId       String?
+  createdAt     DateTime   @default(now())
 
-  outlet       Outlet?    @relation(fields: [outletId], references: [id], onDelete: SetNull)
-  device       Device?    @relation(fields: [deviceId], references: [id], onDelete: SetNull)
-  staff        Staff?     @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  outlet Outlet? @relation(fields: [outletId], references: [id], onDelete: SetNull)
+  device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  staff  Staff?  @relation(fields: [staffId], references: [id], onDelete: SetNull)
 
   @@index([customerId, status])
   @@index([merchantId, status])
@@ -309,9 +447,9 @@ model Receipt {
   deviceId      String?
   staffId       String?
 
-  outlet       Outlet?    @relation(fields: [outletId], references: [id], onDelete: SetNull)
-  device       Device?    @relation(fields: [deviceId], references: [id], onDelete: SetNull)
-  staff        Staff?     @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  outlet Outlet? @relation(fields: [outletId], references: [id], onDelete: SetNull)
+  device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  staff  Staff?  @relation(fields: [staffId], references: [id], onDelete: SetNull)
 
   @@unique([merchantId, orderId])
   @@index([merchantId, createdAt])
@@ -334,9 +472,9 @@ model Transaction {
   deviceId   String?
   staffId    String?
 
-  outlet       Outlet?    @relation(fields: [outletId], references: [id], onDelete: SetNull)
-  device       Device?    @relation(fields: [deviceId], references: [id], onDelete: SetNull)
-  staff        Staff?     @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  outlet Outlet? @relation(fields: [outletId], references: [id], onDelete: SetNull)
+  device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  staff  Staff?  @relation(fields: [staffId], references: [id], onDelete: SetNull)
 
   @@index([customerId, createdAt])
   @@index([merchantId, createdAt])
@@ -347,145 +485,358 @@ model Transaction {
 }
 
 model QrNonce {
-  jti        String   @id                  // уникальный ID токена (JTI)
+  jti        String    @id // уникальный ID токена (JTI)
   customerId String
   merchantId String?
   issuedAt   DateTime
   expiresAt  DateTime
   usedAt     DateTime?
-  createdAt  DateTime @default(now())
+  createdAt  DateTime  @default(now())
 
   @@index([merchantId, usedAt])
 }
 
 model EventOutbox {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   merchantId  String
   eventType   String
   payload     Json
-  status      String   @default("PENDING")
-  retries     Int      @default(0)
+  status      String    @default("PENDING")
+  retries     Int       @default(0)
   nextRetryAt DateTime?
   lastError   String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([status, nextRetryAt])
   @@index([merchantId, createdAt])
 }
 
 model Outlet {
-  id          String    @id @default(cuid())
-  merchantId  String
-  merchant    Merchant  @relation(fields: [merchantId], references: [id])
-  name        String
-  address     String?
-  status      String    @default("ACTIVE") // ACTIVE | INACTIVE
-  hidden      Boolean   @default(false)
-  description String?
-  phone       String?
-  adminEmails String[]  @default([])
-  timezone    String?
-  scheduleEnabled Boolean @default(false)
-  scheduleMode String    @default("CUSTOM")
-  scheduleJson Json?
-  externalId  String?
-  manualLocation Boolean @default(false)
-  latitude    Decimal?  @db.Decimal(10, 7)
-  longitude   Decimal?  @db.Decimal(10, 7)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id                      String   @id @default(cuid())
+  merchantId              String
+  merchant                Merchant @relation(fields: [merchantId], references: [id])
+  name                    String
+  address                 String?
+  status                  String   @default("ACTIVE") // ACTIVE | INACTIVE
+  hidden                  Boolean  @default(false)
+  description             String?
+  phone                   String?
+  adminEmails             String[] @default([])
+  timezone                String?
+  code                    String?
+  tags                    String[] @default([])
+  scheduleEnabled         Boolean  @default(false)
+  scheduleMode            String   @default("CUSTOM")
+  scheduleJson            Json?
+  externalId              String?
+  integrationProvider     String?
+  integrationLocationCode String?
+  integrationPayload      Json?
+  manualLocation          Boolean  @default(false)
+  latitude                Decimal? @db.Decimal(10, 7)
+  longitude               Decimal? @db.Decimal(10, 7)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 
+  // обратные связи
+  devices               Device[]
+  holds                 Hold[]
+  receipts              Receipt[]
+  txns                  Transaction[]
+  staffAccesses         StaffOutletAccess[]
+  stocks                ProductStock[]
+  schedules             OutletSchedule[]
+  outletMetrics         OutletKpiDaily[]
+  cashierSessions       CashierSession[]
+  promoCodeUsages       PromoCodeUsage[]
+  promotionParticipants PromotionParticipant[]
+  staffMetrics          StaffKpiDaily[]
+
+  @@unique([merchantId, externalId])
+  @@unique([merchantId, code])
   @@index([merchantId])
   @@index([merchantId, status])
   @@index([merchantId, hidden])
-  @@unique([merchantId, externalId])
+}
 
-  // обратные связи
-  devices     Device[]
-  holds       Hold[]
-  receipts    Receipt[]
-  txns        Transaction[]
-  staffAccesses StaffOutletAccess[]
-  stocks      ProductStock[]
+model OutletSchedule {
+  id        String   @id @default(cuid())
+  outletId  String
+  dayOfWeek Int
+  opensAt   String?
+  closesAt  String?
+  isDayOff  Boolean  @default(false)
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  outlet Outlet @relation(fields: [outletId], references: [id], onDelete: Cascade)
+
+  @@unique([outletId, dayOfWeek])
+  @@index([outletId])
 }
 
 model Device {
-  id          String     @id @default(cuid())
-  merchantId  String
-  merchant    Merchant   @relation(fields: [merchantId], references: [id])
-  outletId    String?
-  outlet      Outlet?    @relation(fields: [outletId], references: [id], onDelete: SetNull)
-  type        DeviceType
-  label       String?
-  lastSeenAt  DateTime?
+  id           String     @id @default(cuid())
+  merchantId   String
+  merchant     Merchant   @relation(fields: [merchantId], references: [id])
+  outletId     String?
+  outlet       Outlet?    @relation(fields: [outletId], references: [id], onDelete: SetNull)
+  type         DeviceType
+  label        String?
+  lastSeenAt   DateTime?
   bridgeSecret String?
-  createdAt   DateTime   @default(now())
+  createdAt    DateTime   @default(now())
+
+  // обратные связи
+  holds           Hold[]
+  receipts        Receipt[]
+  txns            Transaction[]
+  cashierSessions CashierSession[]
 
   @@index([merchantId])
   @@index([merchantId, outletId])
-
-  // обратные связи
-  holds     Hold[]
-  receipts  Receipt[]
-  txns      Transaction[]
 }
 
 model Staff {
-  id          String     @id @default(cuid())
-  merchantId  String
-  merchant    Merchant   @relation(fields: [merchantId], references: [id])
-  login       String?
-  email       String?
-  role        StaffRole  @default(CASHIER)
-  status      String     @default("ACTIVE")
-  hash        String?
-  apiKeyHash  String?
-  allowedOutletId String?
-  allowedDeviceId String?
-  createdAt   DateTime   @default(now())
+  id                         String            @id @default(cuid())
+  merchantId                 String
+  merchant                   Merchant          @relation(fields: [merchantId], references: [id])
+  login                      String?
+  email                      String?
+  role                       StaffRole         @default(CASHIER)
+  status                     StaffStatus       @default(ACTIVE)
+  portalState                PortalAccessState @default(DISABLED)
+  hash                       String?
+  apiKeyHash                 String?
+  allowedOutletId            String?
+  allowedDeviceId            String?
+  createdAt                  DateTime          @default(now())
+  updatedAt                  DateTime          @updatedAt
   // Profile & access
-  firstName   String?
-  lastName    String?
-  position    String?
-  phone       String?
-  comment     String?
-  avatarUrl   String?
-  // Portal access flag (in addition to email presence)
-  canAccessPortal Boolean @default(false)
+  firstName                  String?
+  lastName                   String?
+  position                   String?
+  phone                      String?
+  comment                    String?
+  avatarUrl                  String?
+  hiredAt                    DateTime          @default(now())
+  firedAt                    DateTime?
+  terminationReason          String?
+  lastActivityAt             DateTime?
+  lastPortalLoginAt          DateTime?
+  lastCashierLoginAt         DateTime?
+  portalAccessEnabled        Boolean           @default(false)
+  portalInvitationSentAt     DateTime?
+  portalInvitationAcceptedAt DateTime?
+  portalAccessRevokedAt      DateTime?
+  // Portal access flag (legacy compatibility)
+  canAccessPortal            Boolean           @default(false)
   // Owner flag
-  isOwner     Boolean    @default(false)
+  isOwner                    Boolean           @default(false)
   // Staff-level PIN (legacy; per-outlet PINs are in StaffOutletAccess)
-  pinCode     String?
-
-  @@index([merchantId])
-  @@unique([merchantId, login])
-  @@index([merchantId, apiKeyHash])
+  pinCode                    String?
 
   // обратные связи
-  holds     Hold[]
-  receipts  Receipt[]
-  txns      Transaction[]
-  reviewResponses ReviewResponse[]
-  accesses  StaffOutletAccess[]
+  holds                         Hold[]
+  receipts                      Receipt[]
+  txns                          Transaction[]
+  reviewResponses               ReviewResponse[]
+  accesses                      StaffOutletAccess[]
+  accessGroupMemberships        StaffAccessGroup[]
+  accessGroupAssignments        StaffAccessGroup[]      @relation("StaffAccessGroupAssignedBy")
+  invitationsIssued             StaffInvitation[]       @relation("StaffInvitedBy")
+  invitation                    StaffInvitation?        @relation("StaffInvitationStaff")
+  issuedOutletPins              StaffOutletAccess[]     @relation("StaffOutletAccessIssuer")
+  promoCodesCreated             PromoCode[]             @relation("PromoCodeCreatedBy")
+  promoCodesUpdated             PromoCode[]             @relation("PromoCodeUpdatedBy")
+  promotionsCreated             LoyaltyPromotion[]      @relation("PromotionCreatedBy")
+  promotionsUpdated             LoyaltyPromotion[]      @relation("PromotionUpdatedBy")
+  communicationTemplatesCreated CommunicationTemplate[] @relation("CommunicationTemplateCreatedBy")
+  communicationTemplatesUpdated CommunicationTemplate[] @relation("CommunicationTemplateUpdatedBy")
+  communicationTasksCreated     CommunicationTask[]     @relation("CommunicationTaskCreatedBy")
+  mechanicLogs                  LoyaltyMechanicLog[]    @relation("MechanicLogActor")
+  mechanicsCreated              LoyaltyMechanic[]       @relation("MechanicCreatedBy")
+  mechanicsUpdated              LoyaltyMechanic[]       @relation("MechanicUpdatedBy")
+  tierAssignmentsAuthored       LoyaltyTierAssignment[] @relation("TierAssignedBy")
+  revokedOutletPins             StaffOutletAccess[]     @relation("StaffOutletAccessRevoker")
+  dataImportsStarted            DataImportJob[]         @relation("DataImportStartedBy")
+  accessLogs                    StaffAccessLog[]
+  accessLogActions              StaffAccessLog[]        @relation("StaffAccessLogActor")
+  accessGroupsCreated           AccessGroup[]           @relation("AccessGroupCreatedBy")
+  accessGroupsUpdated           AccessGroup[]           @relation("AccessGroupUpdatedBy")
+  segmentsCreated               CustomerSegment[]       @relation("SegmentCreatedBy")
+  segmentsUpdated               CustomerSegment[]       @relation("SegmentUpdatedBy")
+  promoCodeUsages               PromoCodeUsage[]
+  cashierSessions               CashierSession[]
+  staffMetricsDaily             StaffKpiDaily[]
+
+  @@unique([merchantId, login])
+  @@index([merchantId])
+  @@index([merchantId, apiKeyHash])
 }
 
 // Per-outlet access and PIN codes for staff
 model StaffOutletAccess {
-  id          String   @id @default(cuid())
-  merchantId  String
-  staffId     String
-  outletId    String
-  pinCode     String?
-  lastTxnAt   DateTime?
-  createdAt   DateTime @default(now())
+  id            String                  @id @default(cuid())
+  merchantId    String
+  staffId       String
+  outletId      String
+  status        StaffOutletAccessStatus @default(ACTIVE)
+  pinCode       String?
+  pinCodeHash   String?
+  pinIssuedAt   DateTime?               @default(now())
+  pinUpdatedAt  DateTime?
+  pinIssuedById String?
+  pinRetryCount Int                     @default(0)
+  revokedAt     DateTime?
+  revokedById   String?
+  lastTxnAt     DateTime?
+  createdAt     DateTime                @default(now())
 
-  merchant    Merchant @relation(fields: [merchantId], references: [id])
-  staff       Staff    @relation(fields: [staffId], references: [id])
-  outlet      Outlet   @relation(fields: [outletId], references: [id])
+  merchant    Merchant         @relation(fields: [merchantId], references: [id])
+  staff       Staff            @relation(fields: [staffId], references: [id])
+  outlet      Outlet           @relation(fields: [outletId], references: [id])
+  pinIssuedBy Staff?           @relation("StaffOutletAccessIssuer", fields: [pinIssuedById], references: [id])
+  revokedBy   Staff?           @relation("StaffOutletAccessRevoker", fields: [revokedById], references: [id])
+  sessions    CashierSession[]
 
   @@unique([merchantId, staffId, outletId])
   @@index([merchantId, outletId])
+  @@index([staffId, status])
+}
+
+model AccessGroup {
+  id          String      @id @default(cuid())
+  merchantId  String
+  name        String
+  description String?
+  scope       AccessScope @default(PORTAL)
+  isSystem    Boolean     @default(false)
+  isDefault   Boolean     @default(false)
+  metadata    Json?
+  createdById String?
+  updatedById String?
+  archivedAt  DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  merchant    Merchant                @relation(fields: [merchantId], references: [id])
+  createdBy   Staff?                  @relation("AccessGroupCreatedBy", fields: [createdById], references: [id])
+  updatedBy   Staff?                  @relation("AccessGroupUpdatedBy", fields: [updatedById], references: [id])
+  permissions AccessGroupPermission[]
+  members     StaffAccessGroup[]
+  invitations StaffInvitation[]
+
+  @@unique([merchantId, name, scope])
+  @@index([merchantId, scope])
+}
+
+model AccessGroupPermission {
+  id         String   @id @default(cuid())
+  groupId    String
+  resource   String
+  action     String
+  conditions Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  group AccessGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, resource, action])
+  @@index([groupId])
+}
+
+model StaffAccessGroup {
+  id           String   @id @default(cuid())
+  staffId      String
+  groupId      String
+  merchantId   String
+  assignedById String?
+  assignedAt   DateTime @default(now())
+  isPrimary    Boolean  @default(false)
+
+  staff      Staff       @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  group      AccessGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  merchant   Merchant    @relation(fields: [merchantId], references: [id])
+  assignedBy Staff?      @relation("StaffAccessGroupAssignedBy", fields: [assignedById], references: [id])
+
+  @@unique([staffId, groupId])
+  @@index([groupId])
+  @@index([merchantId])
+}
+
+model StaffInvitation {
+  id            String                @id @default(cuid())
+  merchantId    String
+  email         String
+  phone         String?
+  firstName     String?
+  lastName      String?
+  role          StaffRole             @default(CASHIER)
+  status        StaffInvitationStatus @default(PENDING)
+  accessGroupId String?
+  invitedById   String?
+  staffId       String?
+  token         String                @unique
+  expiresAt     DateTime
+  acceptedAt    DateTime?
+  revokedAt     DateTime?
+  metadata      Json?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  merchant    Merchant     @relation(fields: [merchantId], references: [id])
+  accessGroup AccessGroup? @relation(fields: [accessGroupId], references: [id])
+  invitedBy   Staff?       @relation("StaffInvitedBy", fields: [invitedById], references: [id])
+  staff       Staff?       @relation("StaffInvitationStaff", fields: [staffId], references: [id])
+
+  @@unique([staffId])
+  @@index([merchantId, status])
+  @@index([merchantId, email])
+}
+
+model StaffAccessLog {
+  id         String   @id @default(cuid())
+  merchantId String
+  staffId    String
+  actorId    String?
+  action     String
+  payload    Json?
+  createdAt  DateTime @default(now())
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+  staff    Staff    @relation(fields: [staffId], references: [id])
+  actor    Staff?   @relation("StaffAccessLogActor", fields: [actorId], references: [id])
+
+  @@index([merchantId, createdAt])
+  @@index([staffId, createdAt])
+}
+
+model CashierSession {
+  id          String    @id @default(cuid())
+  merchantId  String
+  staffId     String
+  outletId    String?
+  deviceId    String?
+  pinAccessId String?
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+  result      String?
+  ipAddress   String?
+  userAgent   String?
+  metadata    Json?
+  createdAt   DateTime  @default(now())
+
+  merchant  Merchant           @relation(fields: [merchantId], references: [id])
+  staff     Staff              @relation(fields: [staffId], references: [id])
+  outlet    Outlet?            @relation(fields: [outletId], references: [id])
+  device    Device?            @relation(fields: [deviceId], references: [id])
+  pinAccess StaffOutletAccess? @relation(fields: [pinAccessId], references: [id])
+
+  @@index([merchantId, startedAt])
+  @@index([staffId, startedAt])
 }
 
 model ProductCategory {
@@ -504,7 +855,7 @@ model ProductCategory {
   updatedAt   DateTime          @updatedAt
   deletedAt   DateTime?
 
-  products    Product[]
+  products Product[]
 
   @@unique([merchantId, slug])
   @@index([merchantId, order])
@@ -512,47 +863,49 @@ model ProductCategory {
 }
 
 model Product {
-  id             String          @id @default(cuid())
+  id             String           @id @default(cuid())
   merchantId     String
-  merchant       Merchant        @relation(fields: [merchantId], references: [id])
+  merchant       Merchant         @relation(fields: [merchantId], references: [id])
   categoryId     String?
   category       ProductCategory? @relation(fields: [categoryId], references: [id])
   name           String
   sku            String?
   description    String?
-  order          Int             @default(1000)
+  order          Int              @default(1000)
   iikoProductId  String?
-  hasVariants    Boolean         @default(false)
-  priceEnabled   Boolean         @default(true)
-  price          Decimal?        @db.Decimal(10, 2)
-  allowCart      Boolean         @default(true)
-  visible        Boolean         @default(true)
-  accruePoints   Boolean         @default(true)
-  allowRedeem    Boolean         @default(true)
-  redeemPercent  Int             @default(100)
-  weightValue    Decimal?        @db.Decimal(10, 3)
+  hasVariants    Boolean          @default(false)
+  priceEnabled   Boolean          @default(true)
+  price          Decimal?         @db.Decimal(10, 2)
+  allowCart      Boolean          @default(true)
+  visible        Boolean          @default(true)
+  accruePoints   Boolean          @default(true)
+  allowRedeem    Boolean          @default(true)
+  redeemPercent  Int              @default(100)
+  weightValue    Decimal?         @db.Decimal(10, 3)
   weightUnit     String?
-  heightCm       Decimal?        @db.Decimal(10, 2)
-  widthCm        Decimal?        @db.Decimal(10, 2)
-  depthCm        Decimal?        @db.Decimal(10, 2)
-  proteins       Decimal?        @db.Decimal(10, 2)
-  fats           Decimal?        @db.Decimal(10, 2)
-  carbs          Decimal?        @db.Decimal(10, 2)
-  calories       Decimal?        @db.Decimal(10, 2)
-  tags           String[]        @default([])
-  purchasesMonth Int             @default(0)
-  purchasesTotal Int             @default(0)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  heightCm       Decimal?         @db.Decimal(10, 2)
+  widthCm        Decimal?         @db.Decimal(10, 2)
+  depthCm        Decimal?         @db.Decimal(10, 2)
+  proteins       Decimal?         @db.Decimal(10, 2)
+  fats           Decimal?         @db.Decimal(10, 2)
+  carbs          Decimal?         @db.Decimal(10, 2)
+  calories       Decimal?         @db.Decimal(10, 2)
+  tags           String[]         @default([])
+  purchasesMonth Int              @default(0)
+  purchasesTotal Int              @default(0)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
   deletedAt      DateTime?
 
-  images   ProductImage[]
-  variants ProductVariant[]
-  stocks   ProductStock[]
+  images     ProductImage[]
+  variants   ProductVariant[]
+  stocks     ProductStock[]
+  attributes ProductAttribute[]
+  options    ProductOption[]
 
+  @@unique([merchantId, sku])
   @@index([merchantId, categoryId])
   @@index([merchantId, order])
-  @@unique([merchantId, sku])
 }
 
 model ProductImage {
@@ -568,15 +921,16 @@ model ProductImage {
 }
 
 model ProductVariant {
-  id        String   @id @default(cuid())
-  productId String
-  product   Product  @relation(fields: [productId], references: [id])
-  name      String
-  sku       String?
-  price     Decimal? @db.Decimal(10, 2)
-  notes     String?
-  position  Int      @default(0)
-  createdAt DateTime @default(now())
+  id           String                 @id @default(cuid())
+  productId    String
+  product      Product                @relation(fields: [productId], references: [id])
+  name         String
+  sku          String?
+  price        Decimal?               @db.Decimal(10, 2)
+  notes        String?
+  position     Int                    @default(0)
+  createdAt    DateTime               @default(now())
+  optionValues ProductVariantOption[]
 
   @@index([productId, position])
 }
@@ -597,130 +951,201 @@ model ProductStock {
   @@index([productId, outletId])
 }
 
+model ProductAttribute {
+  id         String   @id @default(cuid())
+  merchantId String
+  productId  String
+  key        String
+  value      String
+  valueType  String?
+  locale     String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+  product  Product  @relation(fields: [productId], references: [id])
+
+  @@unique([productId, key, locale])
+  @@index([productId, key])
+}
+
+model ProductOption {
+  id         String   @id @default(cuid())
+  merchantId String
+  productId  String
+  name       String
+  type       String? // select, multi-select, text
+  position   Int      @default(0)
+  isRequired Boolean  @default(false)
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  merchant       Merchant               @relation(fields: [merchantId], references: [id])
+  product        Product                @relation(fields: [productId], references: [id])
+  values         ProductOptionValue[]
+  variantOptions ProductVariantOption[]
+
+  @@index([productId, position])
+}
+
+model ProductOptionValue {
+  id         String   @id @default(cuid())
+  optionId   String
+  name       String
+  priceDelta Decimal? @db.Decimal(10, 2)
+  skuSuffix  String?
+  metadata   Json?
+  position   Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  option       ProductOption          @relation(fields: [optionId], references: [id])
+  variantLinks ProductVariantOption[]
+
+  @@index([optionId, position])
+}
+
+model ProductVariantOption {
+  id            String   @id @default(cuid())
+  variantId     String
+  optionId      String
+  optionValueId String
+  createdAt     DateTime @default(now())
+
+  variant     ProductVariant     @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  option      ProductOption      @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  optionValue ProductOptionValue @relation(fields: [optionValueId], references: [id], onDelete: Cascade)
+
+  @@unique([variantId, optionId])
+  @@index([optionValueId])
+}
+
 model LedgerEntry {
-  id          String         @id @default(cuid())
-  merchantId  String
-  customerId  String?
-  debit       LedgerAccount
-  credit      LedgerAccount
-  amount      Int
-  orderId     String?
-  receiptId   String?
-  outletId    String?
-  deviceId    String?
-  staffId     String?
-  meta        Json?
-  createdAt   DateTime       @default(now())
+  id         String        @id @default(cuid())
+  merchantId String
+  customerId String?
+  debit      LedgerAccount
+  credit     LedgerAccount
+  amount     Int
+  orderId    String?
+  receiptId  String?
+  outletId   String?
+  deviceId   String?
+  staffId    String?
+  meta       Json?
+  createdAt  DateTime      @default(now())
 
   @@index([merchantId, createdAt])
   @@index([merchantId, customerId, createdAt])
 }
 
 model EarnLot {
-  id            String   @id @default(cuid())
-  merchantId    String
-  customerId    String
-  points        Int
-  consumedPoints Int     @default(0)
-  earnedAt      DateTime
-  maturesAt     DateTime?
-  expiresAt     DateTime?
-  orderId       String?
-  receiptId     String?
-  outletId      String?
-  deviceId      String?
-  staffId       String?
-  status        String   @default("ACTIVE") // ACTIVE | PENDING
-  createdAt     DateTime @default(now())
+  id             String    @id @default(cuid())
+  merchantId     String
+  customerId     String
+  points         Int
+  consumedPoints Int       @default(0)
+  earnedAt       DateTime
+  maturesAt      DateTime?
+  expiresAt      DateTime?
+  orderId        String?
+  receiptId      String?
+  outletId       String?
+  deviceId       String?
+  staffId        String?
+  status         String    @default("ACTIVE") // ACTIVE | PENDING
+  createdAt      DateTime  @default(now())
 
   @@index([merchantId, customerId, earnedAt])
   @@index([merchantId, expiresAt])
 }
 
 model AdminAudit {
-  id          String   @id @default(cuid())
-  createdAt   DateTime @default(now())
-  actor       String
-  method      String
-  path        String
-  merchantId  String?
-  action      String?
-  payload     Json?
+  id         String   @id @default(cuid())
+  createdAt  DateTime @default(now())
+  actor      String
+  method     String
+  path       String
+  merchantId String?
+  action     String?
+  payload    Json?
 
   @@index([merchantId, createdAt])
 }
 
 model TelegramBot {
-  id                String   @id @default(cuid())
-  merchantId        String   @unique
-  botToken          String   @unique
-  botUsername       String   @unique
-  botId             String?
-  webhookUrl        String?
-  webhookSecret     String?
-  isActive          Boolean  @default(true)
-  welcomeMessage    String?
-  menuConfig        Json?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id             String   @id @default(cuid())
+  merchantId     String   @unique
+  botToken       String   @unique
+  botUsername    String   @unique
+  botId          String?
+  webhookUrl     String?
+  webhookSecret  String?
+  isActive       Boolean  @default(true)
+  welcomeMessage String?
+  menuConfig     Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  merchant          Merchant @relation(fields: [merchantId], references: [id])
+  merchant Merchant @relation(fields: [merchantId], references: [id])
 }
 
 model Plan {
-  id                String   @id @default(cuid())
-  name              String
-  displayName       String
-  price             Int
-  currency          String   @default("RUB")
-  interval          String
-  features          Json
-  maxTransactions   Int?
-  maxCustomers      Int?
-  maxOutlets        Int?
-  webhooksEnabled   Boolean  @default(true)
-  customBranding    Boolean  @default(false)
-  prioritySupport   Boolean  @default(false)
-  apiAccess         Boolean  @default(true)
-  isActive          Boolean  @default(true)
-  createdAt         DateTime @default(now())
+  id              String   @id @default(cuid())
+  name            String
+  displayName     String
+  price           Int
+  currency        String   @default("RUB")
+  interval        String
+  features        Json
+  maxTransactions Int?
+  maxCustomers    Int?
+  maxOutlets      Int?
+  webhooksEnabled Boolean  @default(true)
+  customBranding  Boolean  @default(false)
+  prioritySupport Boolean  @default(false)
+  apiAccess       Boolean  @default(true)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
 
-  subscriptions     Subscription[]
+  subscriptions Subscription[]
 }
 
 model Subscription {
-  id                String    @id @default(cuid())
-  merchantId        String    @unique
-  planId            String
-  status            String    @default("active")
+  id                 String    @id @default(cuid())
+  merchantId         String    @unique
+  planId             String
+  status             String    @default("active")
   currentPeriodStart DateTime
-  currentPeriodEnd  DateTime
-  cancelAt          DateTime?
-  canceledAt        DateTime?
-  trialEnd          DateTime?
-  metadata          Json?
-  autoRenew         Boolean   @default(true)
-  lastPaymentId     String?
-  reminderSent7Days Boolean   @default(false)
-  reminderSent1Day  Boolean   @default(false)
-  lastPaymentDate   DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  currentPeriodEnd   DateTime
+  cancelAt           DateTime?
+  canceledAt         DateTime?
+  trialEnd           DateTime?
+  metadata           Json?
+  autoRenew          Boolean   @default(true)
+  lastPaymentId      String?
+  reminderSent7Days  Boolean   @default(false)
+  reminderSent1Day   Boolean   @default(false)
+  lastPaymentDate    DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  plan              Plan      @relation(fields: [planId], references: [id])
-  merchant          Merchant  @relation(fields: [merchantId], references: [id])
-  payments          Payment[]
+  plan     Plan      @relation(fields: [planId], references: [id])
+  merchant Merchant  @relation(fields: [merchantId], references: [id])
+  payments Payment[]
 }
 
 // Junction table for customer segments
 model SegmentCustomer {
-  id          String   @id @default(cuid())
-  segmentId   String
-  customerId  String
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  segmentId  String
+  customerId String
+  createdAt  DateTime @default(now())
 
-  segment     CustomerSegment @relation(fields: [segmentId], references: [id])
-  customer    Customer        @relation(fields: [customerId], references: [id])
+  segment  CustomerSegment @relation(fields: [segmentId], references: [id])
+  customer Customer        @relation(fields: [customerId], references: [id])
 
   @@unique([segmentId, customerId])
 }
@@ -736,9 +1161,9 @@ model CampaignUsage {
   usedAt      DateTime @default(now())
   createdAt   DateTime @default(now())
 
-  campaign    Campaign @relation(fields: [campaignId], references: [id])
-  customer    Customer @relation(fields: [customerId], references: [id])
-  merchant    Merchant? @relation(fields: [merchantId], references: [id])
+  campaign Campaign  @relation(fields: [campaignId], references: [id])
+  customer Customer  @relation(fields: [customerId], references: [id])
+  merchant Merchant? @relation(fields: [merchantId], references: [id])
 
   @@index([campaignId])
   @@index([customerId])
@@ -746,37 +1171,37 @@ model CampaignUsage {
 
 // Email notifications
 model EmailNotification {
-  id          String   @id @default(cuid())
-  merchantId  String
-  customerId  String?
-  campaignId  String?
-  to          String
-  subject     String
-  template    String
-  variables   Json?
-  status      String   @default("PENDING")
-  messageId   String?
-  sentAt      DateTime?
-  error       String?
-  metadata    Json?
-  createdAt   DateTime @default(now())
+  id         String    @id @default(cuid())
+  merchantId String
+  customerId String?
+  campaignId String?
+  to         String
+  subject    String
+  template   String
+  variables  Json?
+  status     String    @default("PENDING")
+  messageId  String?
+  sentAt     DateTime?
+  error      String?
+  metadata   Json?
+  createdAt  DateTime  @default(now())
 }
 
 // Push devices registry
 model PushDevice {
-  id          String   @id @default(cuid())
-  customerId  String
-  merchantId  String?
-  deviceId    String?
-  token       String   @unique
-  platform    String
-  deviceInfo  Json?
+  id           String    @id @default(cuid())
+  customerId   String
+  merchantId   String?
+  deviceId     String?
+  token        String    @unique
+  platform     String
+  deviceInfo   Json?
   lastActiveAt DateTime?
-  lastUsed    DateTime @default(now())
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  
-  customer    Customer @relation(fields: [customerId], references: [id])
+  lastUsed     DateTime  @default(now())
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id])
 
   @@unique([customerId, deviceId])
   @@index([customerId])
@@ -784,40 +1209,40 @@ model PushDevice {
 
 // Push notifications log
 model PushNotification {
-  id           String   @id @default(cuid())
-  merchantId   String
-  customerId   String?
-  deviceId     String?
-  deviceToken  String?
-  title        String
-  body         String
-  type         String?
-  campaignId   String?
-  data         Json?
-  status       String   @default("PENDING")
-  messageId    String?
-  sentAt       DateTime?
-  error        String?
-  createdAt    DateTime @default(now())
+  id          String    @id @default(cuid())
+  merchantId  String
+  customerId  String?
+  deviceId    String?
+  deviceToken String?
+  title       String
+  body        String
+  type        String?
+  campaignId  String?
+  data        Json?
+  status      String    @default("PENDING")
+  messageId   String?
+  sentAt      DateTime?
+  error       String?
+  createdAt   DateTime  @default(now())
 }
 
 model PushCampaign {
-  id            String   @id @default(cuid())
-  merchantId    String
-  text          String
-  audience      String
-  scheduledAt   DateTime
-  timezone      String?
-  status        String   @default("SCHEDULED")
-  totalRecipients Int    @default(0)
-  sent          Int      @default(0)
-  failed        Int      @default(0)
-  archivedAt    DateTime?
-  metadata      Json?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String    @id @default(cuid())
+  merchantId      String
+  text            String
+  audience        String
+  scheduledAt     DateTime
+  timezone        String?
+  status          String    @default("SCHEDULED")
+  totalRecipients Int       @default(0)
+  sent            Int       @default(0)
+  failed          Int       @default(0)
+  archivedAt      DateTime?
+  metadata        Json?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  merchant      Merchant @relation(fields: [merchantId], references: [id])
+  merchant Merchant @relation(fields: [merchantId], references: [id])
 
   @@index([merchantId, status])
   @@index([merchantId, scheduledAt])
@@ -825,73 +1250,149 @@ model PushCampaign {
 
 // SMS notifications log
 model SmsNotification {
-  id          String   @id @default(cuid())
-  merchantId  String
-  customerId  String?
-  phone       String
-  message     String
-  type        String
-  status      String   @default("PENDING")
-  provider    String?
-  messageId   String?
-  cost        Float?   @default(0)
-  parts       Int?     @default(1)
-  sentAt      DateTime?
-  error       String?
-  campaignId  String?
-  metadata    Json?
-  createdAt   DateTime @default(now())
+  id         String    @id @default(cuid())
+  merchantId String
+  customerId String?
+  phone      String
+  message    String
+  type       String
+  status     String    @default("PENDING")
+  provider   String?
+  messageId  String?
+  cost       Float?    @default(0)
+  parts      Int?      @default(1)
+  sentAt     DateTime?
+  error      String?
+  campaignId String?
+  metadata   Json?
+  createdAt  DateTime  @default(now())
 }
 
 model TelegramCampaign {
-  id            String   @id @default(cuid())
-  merchantId    String
-  audienceId    String?
-  audienceName  String?
-  text          String
-  imageUrl      String?
-  scheduledAt   DateTime
-  timezone      String?
-  status        String   @default("SCHEDULED")
-  totalRecipients Int    @default(0)
-  sent          Int      @default(0)
-  failed        Int      @default(0)
-  archivedAt    DateTime?
-  metadata      Json?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String    @id @default(cuid())
+  merchantId      String
+  audienceId      String?
+  audienceName    String?
+  text            String
+  imageUrl        String?
+  scheduledAt     DateTime
+  timezone        String?
+  status          String    @default("SCHEDULED")
+  totalRecipients Int       @default(0)
+  sent            Int       @default(0)
+  failed          Int       @default(0)
+  archivedAt      DateTime?
+  metadata        Json?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  merchant      Merchant @relation(fields: [merchantId], references: [id])
+  merchant Merchant @relation(fields: [merchantId], references: [id])
 
   @@index([merchantId, status])
   @@index([merchantId, scheduledAt])
 }
 
+model CommunicationTemplate {
+  id          String               @id @default(cuid())
+  merchantId  String
+  name        String
+  channel     CommunicationChannel
+  subject     String?
+  content     Json
+  preview     Json?
+  isSystem    Boolean              @default(false)
+  createdById String?
+  updatedById String?
+  archivedAt  DateTime?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  merchant           Merchant            @relation(fields: [merchantId], references: [id])
+  createdBy          Staff?              @relation("CommunicationTemplateCreatedBy", fields: [createdById], references: [id])
+  updatedBy          Staff?              @relation("CommunicationTemplateUpdatedBy", fields: [updatedById], references: [id])
+  tasks              CommunicationTask[]
+  promotionsStart    LoyaltyPromotion[]  @relation("PromotionStartTemplate")
+  promotionsReminder LoyaltyPromotion[]  @relation("PromotionReminderTemplate")
+
+  @@index([merchantId, channel])
+}
+
+model CommunicationTask {
+  id          String               @id @default(cuid())
+  merchantId  String
+  channel     CommunicationChannel
+  templateId  String?
+  audienceId  String?
+  promotionId String?
+  createdById String?
+  status      String               @default("SCHEDULED")
+  scheduledAt DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+  failedAt    DateTime?
+  payload     Json?
+  filters     Json?
+  stats       Json?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  merchant   Merchant                     @relation(fields: [merchantId], references: [id])
+  template   CommunicationTemplate?       @relation(fields: [templateId], references: [id])
+  audience   CustomerSegment?             @relation(fields: [audienceId], references: [id])
+  promotion  LoyaltyPromotion?            @relation(fields: [promotionId], references: [id])
+  createdBy  Staff?                       @relation("CommunicationTaskCreatedBy", fields: [createdById], references: [id])
+  recipients CommunicationTaskRecipient[]
+
+  @@index([merchantId, status])
+  @@index([channel])
+}
+
+model CommunicationTaskRecipient {
+  id         String               @id @default(cuid())
+  taskId     String
+  merchantId String
+  customerId String?
+  channel    CommunicationChannel
+  status     String               @default("PENDING")
+  sentAt     DateTime?
+  error      String?
+  metadata   Json?
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+
+  task     CommunicationTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  merchant Merchant          @relation(fields: [merchantId], references: [id])
+  customer Customer?         @relation(fields: [customerId], references: [id])
+
+  @@index([taskId, status])
+  @@index([merchantId, channel])
+}
+
 // OTP codes
 model OtpCode {
-  id          String   @id @default(cuid())
-  phone       String
-  code        String
-  type        String?
-  attempts    Int      @default(0)
-  verified    Boolean  @default(false)
-  expiresAt   DateTime
-  merchantId  String?
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  phone      String
+  code       String
+  type       String?
+  attempts   Int      @default(0)
+  verified   Boolean  @default(false)
+  expiresAt  DateTime
+  merchantId String?
+  createdAt  DateTime @default(now())
 
   @@index([phone])
 }
 
 // Customer consent by channel
 model CustomerConsent {
-  id          String   @id @default(cuid())
-  customerId  String
-  merchantId  String
-  channel     String
-  status      String   // e.g. GRANTED / REVOKED
-  grantedAt   DateTime @default(now())
-  revokedAt   DateTime?
-  createdAt   DateTime @default(now())
+  id         String    @id @default(cuid())
+  customerId String
+  merchantId String
+  channel    String
+  status     String // e.g. GRANTED / REVOKED
+  grantedAt  DateTime  @default(now())
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
 
   @@unique([customerId, merchantId, channel])
 }
@@ -899,18 +1400,18 @@ model CustomerConsent {
 // Merchant stats for notifications
 model MerchantStats {
   id          String   @id @default(cuid())
-  merchantId  String  @unique
-  smsSent     Int     @default(0)
-  smsCost     Float   @default(0)
-  pushSent    Int     @default(0)
-  pushFailed  Int     @default(0)
-  emailSent   Int     @default(0)
+  merchantId  String   @unique
+  smsSent     Int      @default(0)
+  smsCost     Float    @default(0)
+  pushSent    Int      @default(0)
+  pushFailed  Int      @default(0)
+  emailSent   Int      @default(0)
   lastUpdated DateTime @default(now())
 }
 
 // Referral program
 model ReferralProgram {
-  id                String   @id @default(cuid())
+  id                String    @id @default(cuid())
   merchantId        String
   name              String
   description       String?
@@ -918,187 +1419,475 @@ model ReferralProgram {
   refereeReward     Int
   maxReferrals      Int?
   validUntil        DateTime?
-  isActive          Boolean  @default(true)
-  status            String   @default("ACTIVE")
-  minPurchaseAmount Int      @default(0)
-  expiryDays        Int      @default(30)
-  createdAt         DateTime @default(now())
+  isActive          Boolean   @default(true)
+  status            String    @default("ACTIVE")
+  minPurchaseAmount Int       @default(0)
+  expiryDays        Int       @default(30)
+  createdAt         DateTime  @default(now())
 
-  merchant          Merchant @relation(fields: [merchantId], references: [id])
-  referrals         Referral[]
-  personalCodes     PersonalReferralCode[]
+  merchant      Merchant               @relation(fields: [merchantId], references: [id])
+  referrals     Referral[]
+  personalCodes PersonalReferralCode[]
 }
 
 model Referral {
-  id            String   @id @default(cuid())
-  programId     String
-  referrerId    String
-  refereeId     String?
-  code          String   @unique
-  status        String   @default("PENDING")
-  activatedAt   DateTime?
-  completedAt   DateTime?
+  id             String    @id @default(cuid())
+  programId      String
+  referrerId     String
+  refereeId      String?
+  code           String    @unique
+  status         String    @default("PENDING")
+  activatedAt    DateTime?
+  completedAt    DateTime?
   purchaseAmount Int?
-  refereePhone  String?
-  refereeEmail  String?
-  channel       String?
-  expiresAt     DateTime?
-  createdAt     DateTime @default(now())
+  refereePhone   String?
+  refereeEmail   String?
+  channel        String?
+  expiresAt      DateTime?
+  createdAt      DateTime  @default(now())
 
-  program       ReferralProgram @relation(fields: [programId], references: [id])
-  referrer      Customer        @relation("ReferralReferrer", fields: [referrerId], references: [id])
-  referee       Customer?       @relation("ReferralReferee", fields: [refereeId], references: [id])
+  program  ReferralProgram @relation(fields: [programId], references: [id])
+  referrer Customer        @relation("ReferralReferrer", fields: [referrerId], references: [id])
+  referee  Customer?       @relation("ReferralReferee", fields: [refereeId], references: [id])
 }
 
 // Personal referral codes per customer
 model PersonalReferralCode {
-  id          String   @id @default(cuid())
-  customerId  String
-  merchantId  String
-  code        String   @unique
-  isActive    Boolean  @default(true)
-  programId   String?
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  customerId String
+  merchantId String
+  code       String   @unique
+  isActive   Boolean  @default(true)
+  programId  String?
+  createdAt  DateTime @default(now())
 
-  program     ReferralProgram? @relation(fields: [programId], references: [id])
+  program ReferralProgram? @relation(fields: [programId], references: [id])
 
   @@unique([customerId, merchantId])
 }
 
 // Voucher models
 model Voucher {
-  id                String   @id @default(cuid())
-  merchantId        String
-  name              String
-  description       String?
-  type              String    // DISCOUNT, GIFT_CARD, PROMO_CODE
-  valueType         String    // PERCENTAGE, FIXED_AMOUNT, POINTS
-  value             Int
-  minPurchase       Int?
-  maxUses           Int?
-  usedCount         Int       @default(0)
-  validFrom         DateTime?
-  validUntil        DateTime?
-  isActive          Boolean   @default(true)
-  metadata          Json?
-  status            String    @default("ACTIVE")
-  quantity          Int       @default(1)
-  remainingQuantity Int       @default(1)
-  maxUsesPerCustomer Int?
-  maxTotalUses      Int?
-  minPurchaseAmount Int?
-  applicableProducts String[]
+  id                   String    @id @default(cuid())
+  merchantId           String
+  name                 String
+  description          String?
+  type                 String // DISCOUNT, GIFT_CARD, PROMO_CODE
+  valueType            String // PERCENTAGE, FIXED_AMOUNT, POINTS
+  value                Int
+  minPurchase          Int?
+  maxUses              Int?
+  usedCount            Int       @default(0)
+  validFrom            DateTime?
+  validUntil           DateTime?
+  isActive             Boolean   @default(true)
+  metadata             Json?
+  status               String    @default("ACTIVE")
+  quantity             Int       @default(1)
+  remainingQuantity    Int       @default(1)
+  maxUsesPerCustomer   Int?
+  maxTotalUses         Int?
+  minPurchaseAmount    Int?
+  applicableProducts   String[]
   applicableCategories String[]
-  totalUsed         Int       @default(0)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  totalUsed            Int       @default(0)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
-  merchant   Merchant @relation(fields: [merchantId], references: [id])
-  codes             VoucherCode[]
-  usages            VoucherUsage[]
+  merchant Merchant       @relation(fields: [merchantId], references: [id])
+  codes    VoucherCode[]
+  usages   VoucherUsage[]
 }
 
 model VoucherCode {
-  id          String   @id @default(cuid())
-  voucherId   String
-  code        String   @unique
-  status      String   @default("ACTIVE")
-  maxUses     Int      @default(1)
-  usedCount   Int      @default(0)
-  validFrom   DateTime?
-  validUntil  DateTime?
-  createdAt   DateTime @default(now())
+  id         String    @id @default(cuid())
+  voucherId  String
+  code       String    @unique
+  status     String    @default("ACTIVE")
+  maxUses    Int       @default(1)
+  usedCount  Int       @default(0)
+  validFrom  DateTime?
+  validUntil DateTime?
+  createdAt  DateTime  @default(now())
 
-  voucher     Voucher  @relation(fields: [voucherId], references: [id])
-  usages      VoucherUsage[]
+  voucher Voucher        @relation(fields: [voucherId], references: [id])
+  usages  VoucherUsage[]
 }
 
 model VoucherUsage {
-  id          String   @id @default(cuid())
-  voucherId   String
-  codeId      String?
-  customerId  String
-  orderId     String?
-  amount      Int
-  metadata    Json?
-  usedAt      DateTime @default(now())
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  voucherId  String
+  codeId     String?
+  customerId String
+  orderId    String?
+  amount     Int
+  metadata   Json?
+  usedAt     DateTime @default(now())
+  createdAt  DateTime @default(now())
 
-  voucher     Voucher    @relation(fields: [voucherId], references: [id])
-  code        VoucherCode? @relation(fields: [codeId], references: [id])
-  customer    Customer   @relation(fields: [customerId], references: [id])
+  voucher  Voucher      @relation(fields: [voucherId], references: [id])
+  code     VoucherCode? @relation(fields: [codeId], references: [id])
+  customer Customer     @relation(fields: [customerId], references: [id])
 
   @@unique([voucherId, customerId, orderId])
 }
 
-model Payment {
-  id                String    @id @default(cuid())
-  subscriptionId    String
-  amount            Int
-  currency          String    @default("RUB")
-  status            String
-  paymentMethod     String?
-  invoiceId         String?
-  receiptUrl        String?
-  failureReason     String?
-  paidAt            DateTime?
-  provider          String?
-  merchantId        String?
-  metadata          Json?
-  refundedAt        DateTime?
-  createdAt         DateTime  @default(now())
+model PromoCode {
+  id                 String                  @id @default(cuid())
+  merchantId         String
+  segmentId          String?
+  code               String
+  name               String?
+  description        String?
+  status             PromoCodeStatus         @default(DRAFT)
+  usageLimitType     PromoCodeUsageLimitType @default(UNLIMITED)
+  usageLimitValue    Int?
+  cooldownDays       Int?
+  perCustomerLimit   Int?
+  requireVisit       Boolean                 @default(false)
+  visitLookbackHours Int?
+  grantPoints        Boolean                 @default(false)
+  pointsAmount       Int?
+  pointsExpireInDays Int?
+  assignTierId       String?
+  upgradeTierId      String?
+  autoArchiveAt      DateTime?
+  activeFrom         DateTime?
+  activeUntil        DateTime?
+  isHighlighted      Boolean                 @default(false)
+  metadata           Json?
+  createdById        String?
+  updatedById        String?
+  archivedAt         DateTime?
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
 
-  subscription      Subscription @relation(fields: [subscriptionId], references: [id])
+  merchant    Merchant         @relation(fields: [merchantId], references: [id])
+  segment     CustomerSegment? @relation(fields: [segmentId], references: [id])
+  assignTier  LoyaltyTier?     @relation("PromoCodeAssignTier", fields: [assignTierId], references: [id])
+  upgradeTier LoyaltyTier?     @relation("PromoCodeUpgradeTier", fields: [upgradeTierId], references: [id])
+  createdBy   Staff?           @relation("PromoCodeCreatedBy", fields: [createdById], references: [id])
+  updatedBy   Staff?           @relation("PromoCodeUpdatedBy", fields: [updatedById], references: [id])
+  usages      PromoCodeUsage[]
+  metrics     PromoCodeMetric?
+
+  @@unique([merchantId, code])
+  @@index([merchantId, status])
+  @@index([segmentId])
 }
 
-model FraudCheck {
-  id                String    @id @default(cuid())
-  merchantId        String
-  customerId        String
-  transactionId     String?
-  riskScore         Int
-  riskLevel         String
-  factors           String[]
-  blocked           Boolean   @default(false)
-  reviewed          Boolean   @default(false)
-  reviewedBy        String?
-  reviewNotes       String?
-  metadata          Json?
-  createdAt         DateTime  @default(now())
+model PromoCodeUsage {
+  id             String    @id @default(cuid())
+  promoCodeId    String
+  merchantId     String
+  customerId     String?
+  staffId        String?
+  outletId       String?
+  orderId        String?
+  status         String    @default("USED")
+  pointsIssued   Int?
+  pointsExpireAt DateTime?
+  reward         Json?
+  metadata       Json?
+  usedAt         DateTime  @default(now())
+  createdAt      DateTime  @default(now())
 
-  merchant          Merchant  @relation(fields: [merchantId], references: [id])
+  promoCode PromoCode @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
+  merchant  Merchant  @relation(fields: [merchantId], references: [id])
+  customer  Customer? @relation(fields: [customerId], references: [id])
+  staff     Staff?    @relation(fields: [staffId], references: [id])
+  outlet    Outlet?   @relation(fields: [outletId], references: [id])
+
+  @@index([promoCodeId, usedAt])
+  @@index([merchantId, usedAt])
+  @@index([customerId])
 }
 
-model Integration {
+model PromoCodeMetric {
   id                String    @id @default(cuid())
+  promoCodeId       String    @unique
   merchantId        String
-  type              String
-  provider          String
-  config            Json
-  credentials       Json?
-  isActive          Boolean   @default(true)
-  lastSync          DateTime?
-  errorCount        Int       @default(0)
-  lastError         String?
+  totalIssued       Int       @default(0)
+  totalRedeemed     Int       @default(0)
+  totalPointsIssued Int       @default(0)
+  totalCustomers    Int       @default(0)
+  usageByStatus     Json?
+  usageByPeriod     Json?
+  lastUsedAt        DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  merchant          Merchant  @relation(fields: [merchantId], references: [id])
+  promoCode PromoCode @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
+  merchant  Merchant  @relation(fields: [merchantId], references: [id])
+
+  @@index([merchantId])
+}
+
+model LoyaltyPromotion {
+  id                     String              @id @default(cuid())
+  merchantId             String
+  segmentId              String?
+  targetTierId           String?
+  name                   String
+  description            String?
+  status                 PromotionStatus     @default(DRAFT)
+  rewardType             PromotionRewardType
+  rewardValue            Int?
+  rewardMetadata         Json?
+  pointsExpireInDays     Int?
+  pushTemplateStartId    String?
+  pushTemplateReminderId String?
+  pushOnStart            Boolean             @default(false)
+  pushReminderEnabled    Boolean             @default(false)
+  reminderOffsetHours    Int?
+  autoLaunch             Boolean             @default(false)
+  startAt                DateTime?
+  endAt                  DateTime?
+  launchedAt             DateTime?
+  archivedAt             DateTime?
+  createdById            String?
+  updatedById            String?
+  metadata               Json?
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+
+  merchant             Merchant                @relation(fields: [merchantId], references: [id])
+  audience             CustomerSegment?        @relation(fields: [segmentId], references: [id])
+  targetTier           LoyaltyTier?            @relation("PromotionTargetTier", fields: [targetTierId], references: [id])
+  createdBy            Staff?                  @relation("PromotionCreatedBy", fields: [createdById], references: [id])
+  updatedBy            Staff?                  @relation("PromotionUpdatedBy", fields: [updatedById], references: [id])
+  pushTemplateStart    CommunicationTemplate?  @relation("PromotionStartTemplate", fields: [pushTemplateStartId], references: [id])
+  pushTemplateReminder CommunicationTemplate?  @relation("PromotionReminderTemplate", fields: [pushTemplateReminderId], references: [id])
+  metrics              LoyaltyPromotionMetric?
+  participants         PromotionParticipant[]
+  communicationTasks   CommunicationTask[]
+
+  @@index([merchantId, status])
+  @@index([segmentId])
+}
+
+model PromotionParticipant {
+  id              String    @id @default(cuid())
+  promotionId     String
+  merchantId      String
+  customerId      String
+  outletId        String?
+  joinedAt        DateTime  @default(now())
+  firstPurchaseAt DateTime?
+  lastPurchaseAt  DateTime?
+  purchasesCount  Int       @default(0)
+  totalSpent      Int       @default(0)
+  pointsIssued    Int       @default(0)
+  pointsRedeemed  Int       @default(0)
+  status          String    @default("ACTIVE")
+  metadata        Json?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  promotion LoyaltyPromotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  merchant  Merchant         @relation(fields: [merchantId], references: [id])
+  customer  Customer         @relation(fields: [customerId], references: [id])
+  outlet    Outlet?          @relation(fields: [outletId], references: [id])
+
+  @@unique([promotionId, customerId])
+  @@index([merchantId, status])
+}
+
+model LoyaltyPromotionMetric {
+  id                String   @id @default(cuid())
+  promotionId       String   @unique
+  merchantId        String
+  participantsCount Int      @default(0)
+  revenueGenerated  Int      @default(0)
+  revenueRedeemed   Int      @default(0)
+  pointsIssued      Int      @default(0)
+  pointsRedeemed    Int      @default(0)
+  charts            Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  promotion LoyaltyPromotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  merchant  Merchant         @relation(fields: [merchantId], references: [id])
+
+  @@index([merchantId])
+}
+
+model LoyaltyMechanic {
+  id          String              @id @default(cuid())
+  merchantId  String
+  type        LoyaltyMechanicType
+  name        String?
+  description String?
+  status      MechanicStatus      @default(DISABLED)
+  settings    Json?
+  createdById String?
+  updatedById String?
+  enabledAt   DateTime?
+  disabledAt  DateTime?
+  metadata    Json?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  merchant  Merchant             @relation(fields: [merchantId], references: [id])
+  createdBy Staff?               @relation("MechanicCreatedBy", fields: [createdById], references: [id])
+  updatedBy Staff?               @relation("MechanicUpdatedBy", fields: [updatedById], references: [id])
+  logs      LoyaltyMechanicLog[]
+
+  @@index([merchantId, type])
+}
+
+model LoyaltyMechanicLog {
+  id         String   @id @default(cuid())
+  mechanicId String
+  merchantId String
+  actorId    String?
+  action     String
+  payload    Json?
+  createdAt  DateTime @default(now())
+
+  mechanic LoyaltyMechanic @relation(fields: [mechanicId], references: [id], onDelete: Cascade)
+  merchant Merchant        @relation(fields: [merchantId], references: [id])
+  actor    Staff?          @relation("MechanicLogActor", fields: [actorId], references: [id])
+
+  @@index([mechanicId, createdAt])
+  @@index([merchantId, createdAt])
+}
+
+model LoyaltyTier {
+  id              String   @id @default(cuid())
+  merchantId      String
+  name            String
+  description     String?
+  thresholdAmount Int      @default(0)
+  earnRateBps     Int      @default(500)
+  redeemRateBps   Int?
+  isDefault       Boolean  @default(false)
+  isHidden        Boolean  @default(false)
+  isInitial       Boolean  @default(false)
+  color           String?
+  iconUrl         String?
+  order           Int      @default(0)
+  metadata        Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  merchant          Merchant                @relation(fields: [merchantId], references: [id])
+  benefits          LoyaltyTierBenefit[]
+  assignments       LoyaltyTierAssignment[]
+  promoCodes        PromoCode[]             @relation("PromoCodeAssignTier")
+  promoCodesUpgrade PromoCode[]             @relation("PromoCodeUpgradeTier")
+  promotions        LoyaltyPromotion[]      @relation("PromotionTargetTier")
+
+  @@unique([merchantId, name])
+  @@index([merchantId, order])
+}
+
+model LoyaltyTierBenefit {
+  id          String   @id @default(cuid())
+  tierId      String
+  title       String
+  description String?
+  value       Json?
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tier LoyaltyTier @relation(fields: [tierId], references: [id], onDelete: Cascade)
+
+  @@index([tierId, order])
+}
+
+model LoyaltyTierAssignment {
+  id           String    @id @default(cuid())
+  merchantId   String
+  customerId   String
+  tierId       String
+  assignedById String?
+  assignedAt   DateTime  @default(now())
+  expiresAt    DateTime?
+  source       String?   @default("auto")
+  notes        String?
+  metadata     Json?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  merchant   Merchant    @relation(fields: [merchantId], references: [id])
+  customer   Customer    @relation(fields: [customerId], references: [id])
+  tier       LoyaltyTier @relation(fields: [tierId], references: [id])
+  assignedBy Staff?      @relation("TierAssignedBy", fields: [assignedById], references: [id])
+
+  @@unique([merchantId, customerId])
+  @@index([tierId])
+}
+
+model Payment {
+  id             String    @id @default(cuid())
+  subscriptionId String
+  amount         Int
+  currency       String    @default("RUB")
+  status         String
+  paymentMethod  String?
+  invoiceId      String?
+  receiptUrl     String?
+  failureReason  String?
+  paidAt         DateTime?
+  provider       String?
+  merchantId     String?
+  metadata       Json?
+  refundedAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+}
+
+model FraudCheck {
+  id            String   @id @default(cuid())
+  merchantId    String
+  customerId    String
+  transactionId String?
+  riskScore     Int
+  riskLevel     String
+  factors       String[]
+  blocked       Boolean  @default(false)
+  reviewed      Boolean  @default(false)
+  reviewedBy    String?
+  reviewNotes   String?
+  metadata      Json?
+  createdAt     DateTime @default(now())
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+}
+
+model Integration {
+  id          String    @id @default(cuid())
+  merchantId  String
+  type        String
+  provider    String
+  config      Json
+  credentials Json?
+  isActive    Boolean   @default(true)
+  lastSync    DateTime?
+  errorCount  Int       @default(0)
+  lastError   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
 }
 
 model SyncLog {
-  id            String   @id @default(cuid())
-  createdAt     DateTime @default(now())
+  id            String    @id @default(cuid())
+  createdAt     DateTime  @default(now())
   merchantId    String?
   integrationId String?
   provider      String?
-  direction     String   // IN | OUT
+  direction     String // IN | OUT
   endpoint      String?
-  status        String?  // ok | error
+  status        String? // ok | error
   request       Json?
   response      Json?
   error         String?
-  retryCount    Int      @default(0)
+  retryCount    Int       @default(0)
   nextRetryAt   DateTime?
 
   @@index([merchantId, createdAt])
@@ -1112,44 +1901,60 @@ model CustomerSegment {
   description       String?
   type              String    @default("DYNAMIC")
   rules             Json
+  filters           Json?
+  metricsSnapshot   Json?
   customerCount     Int       @default(0)
   isActive          Boolean   @default(true)
+  tags              String[]  @default([])
+  color             String?
+  definitionVersion Int       @default(1)
+  source            String?   @default("builder")
+  createdById       String?
+  updatedById       String?
+  archivedAt        DateTime?
+  lastEvaluatedAt   DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  merchant          Merchant  @relation(fields: [merchantId], references: [id])
-  campaigns         Campaign[]
-  customers         SegmentCustomer[]
+  merchant           Merchant                @relation(fields: [merchantId], references: [id])
+  createdBy          Staff?                  @relation("SegmentCreatedBy", fields: [createdById], references: [id])
+  updatedBy          Staff?                  @relation("SegmentUpdatedBy", fields: [updatedById], references: [id])
+  campaigns          Campaign[]
+  customers          SegmentCustomer[]
+  promotions         LoyaltyPromotion[]
+  promoCodes         PromoCode[]
+  metricSnapshots    SegmentMetricSnapshot[]
+  communicationTasks CommunicationTask[]
 }
 
 model Campaign {
-  id                String    @id @default(cuid())
-  merchantId        String
-  name              String
-  description       String?
-  type              String
-  status            String    @default("draft")
-  segmentId         String?
-  content           Json
-  schedule          Json?
-  metrics           Json?
-  startAt           DateTime?
-  endAt             DateTime?
-  startDate         DateTime?
-  endDate           DateTime?
-  budget            Int?
-  maxUsageTotal     Int?
-  maxUsagePerCustomer Int?
+  id                   String    @id @default(cuid())
+  merchantId           String
+  name                 String
+  description          String?
+  type                 String
+  status               String    @default("draft")
+  segmentId            String?
+  content              Json
+  schedule             Json?
+  metrics              Json?
+  startAt              DateTime?
+  endAt                DateTime?
+  startDate            DateTime?
+  endDate              DateTime?
+  budget               Int?
+  maxUsageTotal        Int?
+  maxUsagePerCustomer  Int?
   notificationChannels String[]
-  targetSegmentId   String?
-  reward            Json?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  archivedAt        DateTime?
+  targetSegmentId      String?
+  reward               Json?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  archivedAt           DateTime?
 
-  merchant          Merchant  @relation(fields: [merchantId], references: [id])
-  segment           CustomerSegment? @relation(fields: [segmentId], references: [id])
-  usages            CampaignUsage[]
+  merchant Merchant         @relation(fields: [merchantId], references: [id])
+  segment  CustomerSegment? @relation(fields: [segmentId], references: [id])
+  usages   CampaignUsage[]
 
   @@index([merchantId, status])
   @@index([merchantId, archivedAt])
@@ -1157,79 +1962,79 @@ model Campaign {
 
 // Reviews system
 model Review {
-  id                String    @id @default(cuid())
-  merchantId        String
-  customerId        String
-  orderId           String?
-  rating            Int
-  title             String?
-  comment           String
-  photos            String[]
-  tags              String[]
-  isAnonymous       Boolean   @default(false)
-  status            String    @default("PENDING")
-  helpfulCount      Int       @default(0)
-  notHelpfulCount   Int       @default(0)
-  rewardPoints      Int       @default(0)
-  moderatedAt       DateTime?
-  moderatedBy       String?
-  moderationReason  String?
-  metadata          Json?
-  deletedAt         DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  merchantId       String
+  customerId       String
+  orderId          String?
+  rating           Int
+  title            String?
+  comment          String
+  photos           String[]
+  tags             String[]
+  isAnonymous      Boolean   @default(false)
+  status           String    @default("PENDING")
+  helpfulCount     Int       @default(0)
+  notHelpfulCount  Int       @default(0)
+  rewardPoints     Int       @default(0)
+  moderatedAt      DateTime?
+  moderatedBy      String?
+  moderationReason String?
+  metadata         Json?
+  deletedAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  merchant          Merchant  @relation(fields: [merchantId], references: [id])
-  customer          Customer  @relation(fields: [customerId], references: [id])
-  response          ReviewResponse?
-  reactions         ReviewReaction[]
+  merchant  Merchant         @relation(fields: [merchantId], references: [id])
+  customer  Customer         @relation(fields: [customerId], references: [id])
+  response  ReviewResponse?
+  reactions ReviewReaction[]
 }
 
 model ReviewResponse {
-  id                String    @id @default(cuid())
-  reviewId          String    @unique
-  staffId           String?
-  message           String
-  merchantId        String?
-  createdAt         DateTime  @default(now())
+  id         String   @id @default(cuid())
+  reviewId   String   @unique
+  staffId    String?
+  message    String
+  merchantId String?
+  createdAt  DateTime @default(now())
 
-  review            Review    @relation(fields: [reviewId], references: [id])
-  staff             Staff?    @relation(fields: [staffId], references: [id])
+  review Review @relation(fields: [reviewId], references: [id])
+  staff  Staff? @relation(fields: [staffId], references: [id])
 }
 
 model ReviewReaction {
-  id                String    @id @default(cuid())
-  reviewId          String
-  customerId        String
-  type              String
-  createdAt         DateTime  @default(now())
+  id         String   @id @default(cuid())
+  reviewId   String
+  customerId String
+  type       String
+  createdAt  DateTime @default(now())
 
-  review            Review    @relation(fields: [reviewId], references: [id])
-  customer          Customer  @relation(fields: [customerId], references: [id])
+  review   Review   @relation(fields: [reviewId], references: [id])
+  customer Customer @relation(fields: [customerId], references: [id])
 
   @@unique([reviewId, customerId])
 }
 
 // Aggregated per-customer stats per merchant
 model CustomerStats {
-  merchantId   String
-  customerId   String
-  firstSeenAt  DateTime @default(now())
-  lastSeenAt   DateTime @default(now())
-  lastOrderAt  DateTime?
-  visits       Int      @default(0)
-  totalSpent   Int      @default(0)
-  avgCheck     Float    @default(0)
-  rfmR         Int?
-  rfmF         Int?
-  rfmM         Int?
-  rfmScore     Int?
-  rfmClass     String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  merchantId  String
+  customerId  String
+  firstSeenAt DateTime  @default(now())
+  lastSeenAt  DateTime  @default(now())
+  lastOrderAt DateTime?
+  visits      Int       @default(0)
+  totalSpent  Int       @default(0)
+  avgCheck    Float     @default(0)
+  rfmR        Int?
+  rfmF        Int?
+  rfmM        Int?
+  rfmScore    Int?
+  rfmClass    String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  merchant     Merchant @relation(fields: [merchantId], references: [id])
-  customer     Customer @relation(fields: [customerId], references: [id])
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+  customer Customer @relation(fields: [customerId], references: [id])
 
   @@id([merchantId, customerId])
   @@index([merchantId, updatedAt])
@@ -1250,8 +2055,144 @@ model MerchantKpiDaily {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  merchant         Merchant @relation(fields: [merchantId], references: [id])
+  merchant Merchant @relation(fields: [merchantId], references: [id])
 
   @@unique([merchantId, date])
   @@index([merchantId, date])
+}
+
+model OutletKpiDaily {
+  id               String   @id @default(cuid())
+  merchantId       String
+  outletId         String
+  date             DateTime
+  revenue          Int      @default(0)
+  transactionCount Int      @default(0)
+  averageCheck     Float    @default(0)
+  pointsIssued     Int      @default(0)
+  pointsRedeemed   Int      @default(0)
+  customers        Int      @default(0)
+  newCustomers     Int      @default(0)
+  stampsIssued     Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+  outlet   Outlet   @relation(fields: [outletId], references: [id])
+
+  @@unique([outletId, date])
+  @@index([merchantId, date])
+}
+
+model StaffKpiDaily {
+  id               String   @id @default(cuid())
+  merchantId       String
+  staffId          String
+  outletId         String?
+  date             DateTime
+  performanceScore Int      @default(0)
+  salesCount       Int      @default(0)
+  salesAmount      Int      @default(0)
+  averageCheck     Float    @default(0)
+  pointsIssued     Int      @default(0)
+  pointsRedeemed   Int      @default(0)
+  giftsIssued      Int      @default(0)
+  newCustomers     Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+  staff    Staff    @relation(fields: [staffId], references: [id])
+  outlet   Outlet?  @relation(fields: [outletId], references: [id])
+
+  @@unique([staffId, outletId, date])
+  @@index([merchantId, date])
+}
+
+model SegmentMetricSnapshot {
+  id          String   @id @default(cuid())
+  merchantId  String
+  segmentId   String
+  periodStart DateTime
+  periodEnd   DateTime
+  metrics     Json
+  createdAt   DateTime @default(now())
+
+  merchant Merchant        @relation(fields: [merchantId], references: [id])
+  segment  CustomerSegment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+
+  @@index([segmentId, periodStart])
+  @@index([merchantId, periodStart])
+}
+
+model DataImportJob {
+  id             String           @id @default(cuid())
+  merchantId     String
+  type           DataImportType
+  status         DataImportStatus @default(UPLOADED)
+  sourceFileName String
+  sourceFileSize Int?
+  sourceMimeType String?
+  uploadedById   String?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  processedAt    DateTime?
+  totalRows      Int              @default(0)
+  successRows    Int              @default(0)
+  failedRows     Int              @default(0)
+  skippedRows    Int              @default(0)
+  settings       Json?
+  errorSummary   Json?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  merchant   Merchant          @relation(fields: [merchantId], references: [id])
+  uploadedBy Staff?            @relation("DataImportStartedBy", fields: [uploadedById], references: [id])
+  rows       DataImportRow[]
+  errors     DataImportError[]
+  metrics    DataImportMetric?
+
+  @@index([merchantId, type])
+  @@index([status])
+}
+
+model DataImportRow {
+  id             String   @id @default(cuid())
+  jobId          String
+  rowNumber      Int
+  rawData        Json
+  normalizedData Json?
+  status         String   @default("PENDING")
+  errorMessage   String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  job DataImportJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId, status])
+}
+
+model DataImportError {
+  id        String   @id @default(cuid())
+  jobId     String
+  rowNumber Int?
+  columnKey String?
+  code      String?
+  message   String
+  details   Json?
+  createdAt DateTime @default(now())
+
+  job DataImportJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+}
+
+model DataImportMetric {
+  id        String   @id @default(cuid())
+  jobId     String   @unique
+  stats     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  job DataImportJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
 }

@@ -1,48 +1,18 @@
 "use client";
 import React from "react";
-import { Card, CardHeader, CardBody, Button } from "@loyalty/ui";
+import { Card, CardHeader, CardBody, Button, Skeleton } from "@loyalty/ui";
 
 type OutletStatus = "WORKING" | "PAUSED";
 
 type Outlet = {
   id: string;
   name: string;
-  status: OutletStatus;
-  city: string;
-  street: string;
-  house: string;
-  description?: string;
+  address?: string | null;
+  description?: string | null;
+  phone?: string | null;
+  works?: boolean;
+  hidden?: boolean;
 };
-
-const OUTLETS: Outlet[] = [
-  {
-    id: "o-1",
-    name: "Тили-Тесто, Московской 56",
-    status: "WORKING",
-    city: "Новосибирск",
-    street: "Московская",
-    house: "56",
-    description: "Вход со стороны двора, рядом парковка",
-  },
-  {
-    id: "o-2",
-    name: "Тили-Тесто, Ленина 12",
-    status: "WORKING",
-    city: "Новосибирск",
-    street: "Ленина",
-    house: "12",
-    description: "На первой линии, 2 этаж",
-  },
-  {
-    id: "o-3",
-    name: "Даркстор, Берёзовая 3",
-    status: "PAUSED",
-    city: "Новосибирск",
-    street: "Берёзовая",
-    house: "3",
-    description: "Склад с выдачей курьерам",
-  },
-];
 
 const STATUS_TABS: { id: OutletStatus | "ALL"; label: string }[] = [
   { id: "WORKING", label: "Работают" },
@@ -52,18 +22,51 @@ const STATUS_TABS: { id: OutletStatus | "ALL"; label: string }[] = [
 export default function OutletsPage() {
   const [activeTab, setActiveTab] = React.useState<OutletStatus | "ALL">("WORKING");
   const [search, setSearch] = React.useState("");
+  const [items, setItems] = React.useState<Outlet[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState("");
+  const [total, setTotal] = React.useState(0);
 
-  const filtered = React.useMemo(() => {
-    const term = search.trim().toLowerCase();
-    return OUTLETS.filter((outlet) => {
-      if (activeTab !== "ALL" && outlet.status !== activeTab) return false;
-      if (!term) return true;
-      const haystack = `${outlet.name} ${outlet.city} ${outlet.street} ${outlet.house}`.toLowerCase();
-      return haystack.includes(term);
-    });
+  const statusLabel = (works?: boolean) => (works ? "Работает" : "Не работает");
+
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const qs = new URLSearchParams();
+      if (activeTab === "WORKING") qs.set("status", "active");
+      if (activeTab === "PAUSED") qs.set("status", "inactive");
+      const trimmed = search.trim();
+      if (trimmed) qs.set("search", trimmed);
+      const path = qs.toString() ? `/api/portal/outlets?${qs.toString()}` : "/api/portal/outlets";
+      const res = await fetch(path);
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      const list: Outlet[] = Array.isArray(data?.items)
+        ? data.items
+        : Array.isArray(data)
+          ? data
+          : [];
+      setItems(list);
+      setTotal(Number(data?.total) || list.length);
+    } catch (e: any) {
+      setError(String(e?.message || e || "Не удалось загрузить торговые точки"));
+    } finally {
+      setLoading(false);
+    }
   }, [activeTab, search]);
 
-  const highlight = (value: OutletStatus) => (value === "WORKING" ? "Работает" : "Не работает");
+  React.useEffect(() => {
+    const timeout = setTimeout(() => {
+      load();
+    }, 250);
+    return () => clearTimeout(timeout);
+  }, [load]);
+
+  const summary = React.useMemo(() => {
+    if (loading) return "Показано: —";
+    return `Показано: ${items.length} из ${total}`;
+  }, [items.length, loading, total]);
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
@@ -72,9 +75,12 @@ export default function OutletsPage() {
           <h1 style={{ margin: 0 }}>Торговые точки</h1>
           <div style={{ opacity: 0.75, fontSize: 14 }}>Следите за статусом точек, редактируйте и подключайте интеграции.</div>
         </div>
-        <a href="/outlets/new" style={{ textDecoration: "none" }}>
-          <Button variant="primary">Добавить торговую точку</Button>
-        </a>
+        <div style={{ display: "grid", gap: 8, justifyItems: "end" }}>
+          <a href="/outlets/new" style={{ textDecoration: "none" }}>
+            <Button variant="primary">Добавить торговую точку</Button>
+          </a>
+          <div style={{ fontSize: 13, opacity: 0.75 }}>{summary}</div>
+        </div>
       </div>
 
       <Card>
@@ -104,54 +110,69 @@ export default function OutletsPage() {
       </Card>
 
       <div style={{ display: "grid", gap: 12 }}>
-        {filtered.map((outlet) => (
-          <div
-            key={outlet.id}
-            role="button"
-            tabIndex={0}
-            onClick={() => window.alert(`Переход в профиль точки ${outlet.name}`)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                window.alert(`Переход в профиль точки ${outlet.name}`);
-              }
-            }}
-            className="glass"
-            style={{
-              padding: 20,
-              borderRadius: 14,
-              display: "grid",
-              gap: 8,
-              cursor: "pointer",
-              border: outlet.status === "WORKING" ? "1px solid rgba(37,211,102,0.25)" : "1px solid rgba(255,255,255,0.08)",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-              <div style={{ fontWeight: 600, fontSize: 18 }}>{outlet.name}</div>
-              <div
-                style={{
-                  padding: "4px 10px",
-                  borderRadius: 999,
-                  background: outlet.status === "WORKING" ? "rgba(37,211,102,0.15)" : "rgba(255,255,255,0.1)",
-                  color: outlet.status === "WORKING" ? "#4ade80" : "rgba(255,255,255,0.7)",
-                  fontSize: 12,
-                  fontWeight: 600,
-                }}
-              >
-                {highlight(outlet.status)}
+        {loading ? (
+          <Card>
+            <CardBody>
+              <Skeleton height={120} />
+            </CardBody>
+          </Card>
+        ) : items.length ? (
+          items.map((outlet) => (
+            <div
+              key={outlet.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => window.alert(`Переход в профиль точки ${outlet.name}`)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  window.alert(`Переход в профиль точки ${outlet.name}`);
+                }
+              }}
+              className="glass"
+              style={{
+                padding: 20,
+                borderRadius: 14,
+                display: "grid",
+                gap: 8,
+                cursor: "pointer",
+                border: outlet.works ? "1px solid rgba(37,211,102,0.25)" : "1px solid rgba(255,255,255,0.08)",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                <div style={{ fontWeight: 600, fontSize: 18 }}>{outlet.name}</div>
+                <div
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: 999,
+                    background: outlet.works ? "rgba(37,211,102,0.15)" : "rgba(255,255,255,0.1)",
+                    color: outlet.works ? "#4ade80" : "rgba(255,255,255,0.7)",
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                >
+                  {statusLabel(outlet.works)}
+                </div>
               </div>
+              <div style={{ opacity: 0.8 }}>
+                {outlet.address || "Адрес не указан"}
+              </div>
+              {outlet.description ? (
+                <div style={{ opacity: 0.65, fontSize: 13 }}>{outlet.description}</div>
+              ) : null}
+              {outlet.phone ? (
+                <div style={{ opacity: 0.65, fontSize: 12 }}>Телефон: {outlet.phone}</div>
+              ) : null}
             </div>
-            <div style={{ opacity: 0.8 }}>
-              {outlet.city}, {outlet.street}, {outlet.house}
-            </div>
-            {outlet.description && <div style={{ opacity: 0.65, fontSize: 13 }}>{outlet.description}</div>}
-          </div>
-        ))}
-        {!filtered.length && (
+          ))
+        ) : (
           <div className="glass" style={{ padding: 28, borderRadius: 14, textAlign: "center", opacity: 0.75 }}>
             По заданным условиям точки не найдены.
           </div>
         )}
+        {error && !loading ? (
+          <div style={{ color: "#f87171" }}>{error}</div>
+        ) : null}
       </div>
     </div>
   );

@@ -25,6 +25,21 @@
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
+## Domain modules
+
+Сервисы, отвечающие за доменные разделы портала:
+
+- `AdminPanelModule` — CRUD мерчантов, управление настройками Bridge/QR/Staff и Telegram-токенами.
+- `MerchantPanelModule` — сотрудники, группы доступа, торговые точки и кассовые PIN-ы, структурные логи (`portal.staff.*`) и метрики (`portal_staff_list_total`, `portal_staff_changed_total`, `portal_staff_pin_events_total`).
+- `LoyaltyProgramModule` — механики, акции, промокоды и журнал операций по лояльности.
+- `CustomerAudiencesModule` — клиенты, фильтрация и сегменты/аудитории с пересчётом метрик.
+- `CommunicationsModule` — шаблоны и задачи рассылок (push/SMS/email/telegram).
+
+## Observability updates
+
+- Метрики портала дополнились событиями списков сотрудников/групп и операциями с PIN (`portal_staff_*`, `portal_access_group_list_total`).
+- В юнит-тестах добавлено покрытие `MerchantPanelService.listStaff` для проверки пагинации, маппинга и инкремента счётчиков.
+
 ## Project setup
 
 ```bash
@@ -56,6 +71,8 @@ $ pnpm run test:e2e
 # test coverage
 $ pnpm run test:cov
 ```
+
+> Prisma Client генерируется автоматически перед запуском всех тестовых скриптов (`pretest`/`pretest:e2e`), дополнительных команд выполнять не нужно.
 
 ## Deployment
 

@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Card, CardHeader, CardBody, Chart } from "@loyalty/ui";
+import { Card, CardHeader, CardBody, Chart, Skeleton } from "@loyalty/ui";
 
 const periods = [
   { value: "7d", label: "Последние 7 дней" },
@@ -10,20 +10,107 @@ const periods = [
   { value: "ytd", label: "С начала года" },
 ];
 
-const labels = Array.from({ length: 21 }).map((_, idx) => `День ${idx + 1}`);
-const registrations = [12, 18, 16, 22, 24, 26, 18, 17, 21, 24, 27, 29, 31, 28, 30, 34, 35, 38, 36, 33, 37];
-const salesCount = [40, 42, 45, 46, 51, 54, 49, 52, 58, 63, 61, 65, 72, 68, 74, 78, 81, 79, 83, 86, 90];
-const salesAmount = salesCount.map((value, idx) => Math.round(value * (520 + idx * 18)));
+const PERIOD_QUERY: Record<string, string> = {
+  "7d": "week",
+  "30d": "month",
+  "90d": "quarter",
+  ytd: "year",
+};
+
+type DailyPoint = {
+  date: string;
+  revenue: number;
+  transactions: number;
+  customers: number;
+};
+
+type DashboardResponse = {
+  revenue?: {
+    totalRevenue?: number;
+    averageCheck?: number;
+    transactionCount?: number;
+    dailyRevenue?: DailyPoint[];
+  };
+  customers?: {
+    totalCustomers?: number;
+    newCustomers?: number;
+    activeCustomers?: number;
+    churnRate?: number;
+    retentionRate?: number;
+    averageVisitsPerCustomer?: number;
+    customerLifetimeValue?: number;
+  };
+  loyalty?: {
+    totalPointsIssued?: number;
+    totalPointsRedeemed?: number;
+    pointsRedemptionRate?: number;
+    activeWallets?: number;
+  };
+};
+
+function formatNumber(value?: number): string {
+  if (value === undefined || value === null || Number.isNaN(value)) return "—";
+  return new Intl.NumberFormat("ru-RU").format(value);
+}
+
+function formatCurrency(value?: number): string {
+  if (value === undefined || value === null || Number.isNaN(value)) return "—";
+  return new Intl.NumberFormat("ru-RU", {
+    style: "currency",
+    currency: "RUB",
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function formatPercent(value?: number): string {
+  if (value === undefined || value === null || Number.isNaN(value)) return "—";
+  return `${value.toFixed(1)}%`;
+}
 
 export default function AnalyticsDashboardPage() {
   const [period, setPeriod] = React.useState("30d");
-  const [hasFrequency] = React.useState(true);
+  const [data, setData] = React.useState<DashboardResponse | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState("");
+
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const query = PERIOD_QUERY[period] || "month";
+      const res = await fetch(`/api/portal/analytics/dashboard?period=${encodeURIComponent(query)}`);
+      if (!res.ok) throw new Error(await res.text());
+      const json = (await res.json()) as DashboardResponse;
+      setData(json);
+    } catch (e: any) {
+      setError(String(e?.message || e || "Не удалось загрузить отчёт"));
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [period]);
+
+  React.useEffect(() => {
+    load();
+  }, [load]);
+
+  const daily = React.useMemo(() => data?.revenue?.dailyRevenue ?? [], [data]);
 
   const chartOption = React.useMemo(() => {
-    const legend = ["Регистрации", "Количество продаж", "Сумма продаж"];
+    if (!daily.length) {
+      return {
+        grid: { left: 28, right: 18, top: 36, bottom: 48 },
+        xAxis: { type: "category", data: [], axisLine: { lineStyle: { color: "rgba(148,163,184,0.4)" } } },
+        yAxis: { type: "value", axisLabel: { color: "#cbd5f5" } },
+        series: [],
+      } as const;
+    }
+    const labels = daily.map((point) => point.date.slice(5));
+    const revenues = daily.map((point) => point.revenue);
+    const transactions = daily.map((point) => point.transactions);
     return {
       tooltip: { trigger: "axis" },
-      legend: { data: legend },
+      legend: { data: ["Выручка", "Транзакции"], textStyle: { color: "#cbd5f5" } },
       grid: { left: 28, right: 18, top: 36, bottom: 48 },
       xAxis: {
         type: "category",
@@ -36,7 +123,7 @@ export default function AnalyticsDashboardPage() {
       },
       yAxis: {
         type: "value",
-        name: "Метрики",
+        name: "Выручка",
         nameLocation: "center",
         nameGap: 44,
         axisLabel: { color: "#cbd5f5" },
@@ -44,47 +131,50 @@ export default function AnalyticsDashboardPage() {
       },
       series: [
         {
-          name: "Регистрации",
-          type: "line",
-          smooth: true,
-          symbol: "circle",
-          lineStyle: { width: 2, color: "#22c55e" },
-          itemStyle: { color: "#22c55e" },
-          areaStyle: { opacity: 0.12, color: "#22c55e" },
-          data: registrations,
-        },
-        {
-          name: "Количество продаж",
+          name: "Выручка",
           type: "line",
           smooth: true,
           symbol: "circle",
           lineStyle: { width: 2, color: "#38bdf8" },
           itemStyle: { color: "#38bdf8" },
           areaStyle: { opacity: 0.12, color: "#38bdf8" },
-          data: salesCount,
+          data: revenues,
         },
         {
-          name: "Сумма продаж",
-          type: "line",
-          smooth: true,
-          symbol: "circle",
-          lineStyle: { width: 2, color: "#f97316" },
-          itemStyle: { color: "#f97316" },
-          areaStyle: { opacity: 0.12, color: "#f97316" },
-          data: salesAmount,
+          name: "Транзакции",
+          type: "bar",
+          yAxisIndex: 0,
+          itemStyle: { color: "rgba(148,163,184,0.55)" },
+          data: transactions,
         },
       ],
     } as const;
-  }, []);
+  }, [daily]);
 
-  const metrics = React.useMemo(
-    () => [
-      { title: "Регистрации", value: "432", description: "За выбранный период" },
-      { title: "Продажи", value: "1 248", description: "Количество чеков" },
-      { title: "Сумма продаж", value: "12 420 000 ₽", description: "Выручка за период" },
-    ],
-    []
-  );
+  const metrics = React.useMemo(() => {
+    return [
+      {
+        title: "Выручка",
+        value: formatCurrency(data?.revenue?.totalRevenue),
+        description: "за выбранный период",
+      },
+      {
+        title: "Средний чек",
+        value: formatCurrency(data?.revenue?.averageCheck),
+        description: "средняя сумма покупки",
+      },
+      {
+        title: "Новые клиенты",
+        value: formatNumber(data?.customers?.newCustomers),
+        description: "зарегистрировались",
+      },
+      {
+        title: "Активные клиенты",
+        value: formatNumber(data?.customers?.activeCustomers),
+        description: "совершили покупку",
+      },
+    ];
+  }, [data]);
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
@@ -114,7 +204,9 @@ export default function AnalyticsDashboardPage() {
           <Card key={metric.title}>
             <CardBody>
               <div style={{ fontSize: 12, opacity: 0.7 }}>{metric.title}</div>
-              <div style={{ fontSize: 30, fontWeight: 700, marginTop: 6 }}>{metric.value}</div>
+              <div style={{ fontSize: 30, fontWeight: 700, marginTop: 6 }}>
+                {loading ? <Skeleton height={28} /> : metric.value}
+              </div>
               <div style={{ fontSize: 12, opacity: 0.6 }}>{metric.description}</div>
             </CardBody>
           </Card>
@@ -122,33 +214,65 @@ export default function AnalyticsDashboardPage() {
       </section>
 
       <Card>
-        <CardHeader title="Динамика показателей" subtitle="Регистрации, количество продаж и сумма по дням" />
+        <CardHeader title="Динамика показателей" subtitle="Выручка и число транзакций по дням" />
         <CardBody>
-          <Chart height={360} option={chartOption as any} />
-          <div style={{ marginTop: 12, fontSize: 12, opacity: 0.65 }}>Используйте ползунок, чтобы уточнить диапазон наблюдения</div>
-          <input type="range" min={0} max={100} defaultValue={80} style={{ width: "100%", marginTop: 12 }} aria-label="Диапазон временного окна" />
+          {loading ? (
+            <Skeleton height={360} />
+          ) : daily.length ? (
+            <Chart height={360} option={chartOption as any} />
+          ) : (
+            <div style={{ padding: 24, textAlign: "center", opacity: 0.7 }}>Нет данных за выбранный период</div>
+          )}
         </CardBody>
       </Card>
 
       <Card>
-        <CardHeader title="Бизнес-метрики" subtitle="Средние значения за всё время использования программы" />
+        <CardHeader title="Дополнительные метрики" subtitle="Retenion, отток и показатели программы лояльности" />
         <CardBody>
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-            <InfoBlock title="Средний чек" value="1 850 ₽" description="По всем операциям" />
-            {hasFrequency ? (
-              <InfoBlock title="Частота визитов" value="1.9" description="Для клиентов с ≥3 покупками" />
-            ) : (
-              <InfoBlock title="Частота визитов" value="—" description="Недостаточно данных для расчёта" />
-            )}
+            <InfoBlock
+              title="Удержание"
+              value={loading ? "—" : formatPercent(data?.customers?.retentionRate)}
+              description="Доля клиентов, вернувшихся за 30 дней"
+            />
+            <InfoBlock
+              title="Отток"
+              value={loading ? "—" : formatPercent(data?.customers?.churnRate)}
+              description="Неактивные клиенты"
+            />
+            <InfoBlock
+              title="Средние визиты"
+              value={
+                loading
+                  ? "—"
+                  : data?.customers?.averageVisitsPerCustomer !== undefined && data?.customers?.averageVisitsPerCustomer !== null
+                    ? `${data.customers.averageVisitsPerCustomer.toFixed(1)} / клиент`
+                    : "—"
+              }
+              description="Среднее число покупок"
+            />
+            <InfoBlock
+              title="Активные кошельки"
+              value={loading ? "—" : formatNumber(data?.loyalty?.activeWallets)}
+              description="С ненулевым балансом"
+            />
+            <InfoBlock
+              title="Начислено баллов"
+              value={loading ? "—" : formatNumber(data?.loyalty?.totalPointsIssued)}
+              description="За период"
+            />
+            <InfoBlock
+              title="Доля погашения"
+              value={loading ? "—" : formatPercent(data?.loyalty?.pointsRedemptionRate)}
+              description="Redeem vs earn"
+            />
           </div>
         </CardBody>
       </Card>
 
-      <footer style={{ fontSize: 12, opacity: 0.6, display: "flex", gap: 20, flexWrap: "wrap" }}>
-        <span>Ось X — дни отчётного периода</span>
-        <span>Ось Y — абсолютные значения</span>
-        <span>Легенда отвечает за выделенную серию</span>
-      </footer>
+      {error ? (
+        <div style={{ padding: 16, borderRadius: 12, border: "1px solid rgba(248,113,113,0.4)", color: "#fecaca" }}>{error}</div>
+      ) : null}
     </div>
   );
 }

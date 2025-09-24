@@ -36,6 +36,14 @@ import { VouchersModule } from './vouchers/vouchers.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PortalAuthModule } from './portal-auth/portal-auth.module';
 import { PortalModule } from './portal/portal.module';
+import { AdminPanelModule } from './admin-panel/admin-panel.module';
+import { MerchantPanelModule } from './merchant-panel/merchant-panel.module';
+import { LoyaltyProgramModule } from './loyalty-program/loyalty-program.module';
+import { CustomerAudiencesModule } from './customer-audiences/customer-audiences.module';
+import { CommunicationsModule } from './communications/communications.module';
+import { GraphQLModule } from '@nestjs/graphql';
+import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
+import { join } from 'path';
 // Optional Redis storage for Throttler
 let throttlerStorage: any = undefined;
 try {
@@ -62,6 +70,12 @@ try {
         ...(throttlerStorage ? { storage: throttlerStorage } : {}),
       },
     ]),
+    GraphQLModule.forRoot<ApolloDriverConfig>({
+      driver: ApolloDriver,
+      autoSchemaFile: join(process.cwd(), 'api', 'schema.gql'),
+      sortSchema: true,
+      context: ({ req }) => ({ req }),
+    }),
     PrismaModule,
     LoyaltyModule,
     MetricsModule,
@@ -83,6 +97,11 @@ try {
     ReferralModule,
     PortalAuthModule,
     PortalModule,
+    AdminPanelModule,
+    MerchantPanelModule,
+    LoyaltyProgramModule,
+    CustomerAudiencesModule,
+    CommunicationsModule,
   ],
   controllers: [HealthController, MetricsController],
   providers: [

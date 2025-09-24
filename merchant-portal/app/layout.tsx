@@ -2,6 +2,7 @@ import "@loyalty/ui/theme.css";
 import React from "react";
 import { Inter } from "next/font/google";
 import SidebarNav, { SidebarSection } from "../components/SidebarNav";
+import { cookies } from "next/headers";
 
 export const metadata = {
   title: "Merchant Portal",
@@ -94,7 +95,44 @@ const sections: SidebarSection[] = [
   },
 ];
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+async function fetchPortalProfile() {
+  try {
+    const store = cookies();
+    const token = store.get("portal_jwt")?.value;
+    if (!token) return null;
+    const base = (process.env.NEXT_PUBLIC_API_BASE || "http://localhost:3000").replace(/\/$/, "");
+    const res = await fetch(`${base}/portal/me`, {
+      headers: { authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as { merchantId: string; role?: string };
+  } catch {
+    return null;
+  }
+}
+
+function filterSectionsByRole(role?: string): SidebarSection[] {
+  if (!role) return sections;
+  const upper = role.toUpperCase();
+  if (upper === "CASHIER") {
+    return sections
+      .filter((section) => ["wizard", "loyalty"].includes(section.id))
+      .map((section) =>
+        section.id === "loyalty"
+          ? { ...section, items: section.items.filter((item) => item.href === "/loyalty/cashier") }
+          : section,
+      );
+  }
+  if (upper === "ANALYST") {
+    return sections.filter((section) => ["wizard", "analytics"].includes(section.id));
+  }
+  return sections;
+}
+
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const profile = await fetchPortalProfile();
+  const filteredSections = filterSectionsByRole(profile?.role);
   return (
     <html lang="ru" className="dark">
       <body className={inter.className} style={{ margin: 0 }}>
@@ -104,10 +142,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg, var(--brand-primary), var(--brand-accent))' }} />
               <b>Merchant Portal</b>
             </div>
-            <div style={{ fontSize: 12, opacity: .7 }}>v1</div>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', fontSize: 12, opacity: .7 }}>
+              {profile?.role ? <span>Роль: {profile.role}</span> : null}
+              <span>v1</span>
+            </div>
           </header>
           <aside style={{ borderRight: '1px solid rgba(255,255,255,.06)', padding: 8, overflow: 'auto' }}>
-            <SidebarNav sections={sections} />
+            <SidebarNav sections={filteredSections} />
           </aside>
           <main style={{ padding: 16 }}>
             {children}
