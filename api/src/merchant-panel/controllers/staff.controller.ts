@@ -24,7 +24,6 @@ export class StaffController {
   }
 
   @Get()
-  
   async list(@Req() req: any, @Query() query: StaffListQueryDto): Promise<StaffListResponseDto> {
     const { page, pageSize, ...rest } = query;
     const filters: StaffFilters = {
@@ -58,7 +57,6 @@ export class StaffController {
 
   @Post(':id/status')
   changeStatus(@Req() req: any, @Param('id') id: string, @Body() body: ChangeStaffStatusDto) {
-
     return this.service.changeStaffStatus(this.getMerchantId(req), id, body.status);
   }
 

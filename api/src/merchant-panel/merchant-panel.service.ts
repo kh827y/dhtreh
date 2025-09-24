@@ -1,7 +1,9 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { AccessScope, Prisma, StaffOutletAccessStatus, StaffRole, StaffStatus } from '@prisma/client';
 import { MerchantsService } from '../merchants/merchants.service';
 import { PrismaService } from '../prisma.service';
+import { MetricsService } from '../metrics.service';
+
 
 interface PaginationOptions {
   page: number;
@@ -73,7 +75,13 @@ export interface UpsertOutletPayload {
 
 @Injectable()
 export class MerchantPanelService {
-  constructor(private readonly prisma: PrismaService, private readonly merchants: MerchantsService) {}
+  private readonly logger = new Logger(MerchantPanelService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly merchants: MerchantsService,
+    private readonly metrics: MetricsService,
+  ) {}
 
   private normalizePagination(pagination?: Partial<PaginationOptions>): PaginationOptions {
     const page = Math.max(1, Math.floor(pagination?.page ?? 1));
@@ -259,6 +267,26 @@ export class MerchantPanelService {
       this.prisma.staff.count({ where: { merchantId, portalAccessEnabled: true } }),
     ]);
 
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.staff.list',
+          merchantId,
+          filters: {
+            status: filters.status,
+            outletId: filters.outletId,
+            groupId: filters.groupId,
+            portalOnly: filters.portalOnly,
+            hasSearch: Boolean(filters.search),
+          },
+          page: paging.page,
+          pageSize: paging.pageSize,
+          total,
+        }),
+      );
+      this.metrics.inc('portal_staff_list_total');
+    } catch {}
+
     return {
       items: items.map((member) => this.mapStaff(member)),
       meta: this.buildMeta(paging, total),
@@ -394,6 +422,18 @@ export class MerchantPanelService {
       await this.syncAccessGroups(tx, merchantId, staff.id, payload.accessGroupIds ?? []);
       await this.syncOutlets(tx, merchantId, staff.id, payload.outletIds ?? [], payload.pinStrategy ?? 'KEEP');
 
+      try {
+        this.logger.log(
+          JSON.stringify({
+            event: 'portal.staff.create',
+            merchantId,
+            staffId: staff.id,
+            role: staff.role,
+            portalAccessEnabled: staff.portalAccessEnabled,
+          }),
+        );
+        this.metrics.inc('portal_staff_changed_total', { action: 'create' });
+      } catch {}
       return this.getStaff(merchantId, staff.id);
     });
   }
@@ -441,6 +481,20 @@ export class MerchantPanelService {
         await this.syncOutlets(tx, merchantId, staffId, payload.outletIds, payload.pinStrategy ?? 'KEEP');
       }
 
+      try {
+        this.logger.log(
+          JSON.stringify({
+            event: 'portal.staff.update',
+            merchantId,
+            staffId,
+            role: payload.role ?? undefined,
+            portalAccessEnabled: payload.portalAccessEnabled ?? undefined,
+            status: payload.status ?? undefined,
+          }),
+        );
+        this.metrics.inc('portal_staff_changed_total', { action: 'update' });
+      } catch {}
+
       return this.getStaff(merchantId, staffId);
     });
   }
@@ -455,6 +509,13 @@ export class MerchantPanelService {
       where: { id: staffId },
       data: { status },
     });
+    try {
+      this.logger.log(
+        JSON.stringify({ event: 'portal.staff.status', merchantId, staffId, status }),
+      );
+      this.metrics.inc('portal_staff_status_changed_total', { status });
+    } catch {}
+
     return this.getStaff(merchantId, staffId);
   }
 
@@ -471,6 +532,18 @@ export class MerchantPanelService {
         data: { pinCode: pin, pinUpdatedAt: new Date() },
         include: { outlet: true, staff: true },
       });
+      try {
+        this.logger.log(
+          JSON.stringify({
+            event: 'portal.staff.pin.rotate',
+            merchantId,
+            accessId,
+            staffId: updated.staffId,
+            outletId: updated.outletId,
+          }),
+        );
+        this.metrics.inc('portal_staff_pin_events_total', { action: 'rotate' });
+      } catch {}
       return updated;
     });
   }
@@ -481,6 +554,12 @@ export class MerchantPanelService {
       data: { status: StaffOutletAccessStatus.REVOKED, revokedAt: new Date() },
     });
     if (!updated.count) throw new NotFoundException('PIN не найден или уже отозван');
+    try {
+      this.logger.log(
+        JSON.stringify({ event: 'portal.staff.pin.revoke', merchantId, accessId }),
+      );
+      this.metrics.inc('portal_staff_pin_events_total', { action: 'revoke' });
+    } catch {}
     return { ok: true };
   }
 
@@ -515,6 +594,21 @@ export class MerchantPanelService {
       this.prisma.accessGroup.count({ where }),
     ]);
 
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.access-group.list',
+          merchantId,
+          scope: filters.scope,
+          hasSearch: Boolean(filters.search),
+          page: paging.page,
+          pageSize: paging.pageSize,
+          total,
+        }),
+      );
+      this.metrics.inc('portal_access_group_list_total');
+    } catch {}
+      
     return {
       items: items.map((group) =>
         this.mapAccessGroup({ ...group, memberCount: group.members.length }),

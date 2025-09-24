@@ -11,11 +11,11 @@ import { StaffResolver } from './resolvers/staff.resolver';
 import { AccessGroupsResolver } from './resolvers/access-groups.resolver';
 import { OutletsResolver } from './resolvers/outlets.resolver';
 import { CashierResolver } from './resolvers/cashier.resolver';
+import { MetricsModule } from '../metrics.module';
 
 @Module({
-  imports: [PrismaModule, MerchantsModule],
+  imports: [PrismaModule, MerchantsModule, MetricsModule],
   providers: [MerchantPanelService, PortalGuard, StaffResolver, AccessGroupsResolver, OutletsResolver, CashierResolver],
-
   controllers: [StaffController, AccessGroupsController, OutletsController, CashierController],
   exports: [MerchantPanelService],
 })
