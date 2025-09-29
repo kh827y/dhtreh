@@ -1,11 +1,10 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { LoyaltyService } from '../loyalty/loyalty.service';
 import type { CreateGiftDto, UpdateGiftDto } from './dto';
 
 @Injectable()
 export class GiftsService {
-  constructor(private prisma: PrismaService, private loyalty: LoyaltyService) {}
+  constructor(private prisma: PrismaService) {}
 
   async listGifts(merchantId: string) {
     const now = new Date();
