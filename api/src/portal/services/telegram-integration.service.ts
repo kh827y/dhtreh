@@ -248,7 +248,8 @@ export class PortalTelegramIntegrationService {
     };
 
     if (normalizedCredentials !== undefined) {
-      updateData.credentials = normalizedCredentials as Prisma.InputJsonValue | null;
+      updateData.credentials =
+        normalizedCredentials === null ? Prisma.JsonNull : normalizedCredentials;
     }
 
     if (existing) {
@@ -262,7 +263,12 @@ export class PortalTelegramIntegrationService {
         provider: this.provider,
         type: baseData.type,
         config: nextConfig as Prisma.InputJsonValue,
-        credentials: normalizedCredentials ?? null,
+        credentials:
+          normalizedCredentials === undefined
+            ? undefined
+            : normalizedCredentials === null
+              ? Prisma.JsonNull
+              : normalizedCredentials,
         isActive: baseData.isActive,
         lastSync: baseData.lastSync,
         errorCount: baseData.errorCount,
