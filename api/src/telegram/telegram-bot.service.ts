@@ -10,6 +10,16 @@ interface BotConfig {
   webhookUrl: string;
 }
 
+interface TelegramWebhookInfo {
+  url: string;
+  has_custom_certificate: boolean;
+  pending_update_count: number;
+  last_error_date?: number;
+  last_error_message?: string;
+  max_connections: number;
+  ip_address?: string;
+}
+
 @Injectable()
 export class TelegramBotService {
   private readonly logger = new Logger(TelegramBotService.name);
@@ -76,6 +86,14 @@ export class TelegramBotService {
           telegramBotToken: botToken,
           telegramBotUsername: botInfo.username,
           miniappBaseUrl: `${this.configService.get('MINIAPP_BASE_URL')}?merchant=${merchantId}`,
+        },
+      });
+
+      await this.prisma.merchant.update({
+        where: { id: merchantId },
+        data: {
+          telegramBotEnabled: true,
+          telegramBotToken: botToken,
         },
       });
 
@@ -214,6 +232,22 @@ export class TelegramBotService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ commands }),
     });
+  }
+
+  async fetchBotInfo(token: string) {
+    return this.getBotInfo(token);
+  }
+
+  async fetchWebhookInfo(token: string): Promise<TelegramWebhookInfo> {
+    const response = await fetch(`https://api.telegram.org/bot${token}/getWebhookInfo`);
+    if (!response.ok) {
+      throw new Error(`Ошибка получения webhook: ${await response.text()}`);
+    }
+    const data = await response.json();
+    if (!data?.ok) {
+      throw new Error(String(data?.description || 'Telegram API error'));
+    }
+    return data.result as TelegramWebhookInfo;
   }
 
   async processWebhook(merchantId: string, update: any) {
@@ -515,6 +549,10 @@ export class TelegramBotService {
       }
       // Локально тоже уберем бота из карты
       this.bots.delete(merchantId);
+      await this.prisma.merchant.update({
+        where: { id: merchantId },
+        data: { telegramBotEnabled: false },
+      }).catch(() => null);
     } catch (error) {
       this.logger.error(`Ошибка деактивации бота для ${merchantId}:`, error);
       throw error;
