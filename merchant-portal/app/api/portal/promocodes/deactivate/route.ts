@@ -7,7 +7,7 @@ export async function POST(req: NextRequest) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      voucherId: body?.voucherId ? String(body.voucherId) : undefined,
+      promoCodeId: body?.promoCodeId ? String(body.promoCodeId) : undefined,
       code: body?.code ? String(body.code) : undefined,
     })
   });

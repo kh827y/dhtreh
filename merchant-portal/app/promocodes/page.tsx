@@ -175,7 +175,7 @@ export default function PromocodesPage() {
       const res = await fetch('/api/portal/promocodes/deactivate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ voucherId: row.id }),
+        body: JSON.stringify({ promoCodeId: row.id }),
       });
       if (!res.ok) throw new Error(await res.text());
       await load();
@@ -189,7 +189,7 @@ export default function PromocodesPage() {
       const res = await fetch('/api/portal/promocodes/activate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ voucherId: row.id }),
+        body: JSON.stringify({ promoCodeId: row.id }),
       });
       if (!res.ok) throw new Error(await res.text());
       await load();
