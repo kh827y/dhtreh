@@ -890,7 +890,7 @@ export class AnalyticsService {
       },
     };
   }
-
+  
   async getBirthdayMechanicMetrics(
     merchantId: string,
     period: DashboardPeriod,
