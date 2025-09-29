@@ -101,7 +101,11 @@ export class PortalTelegramIntegrationService {
         lastSyncAt: new Date(),
       });
       const state = await this.getState(merchantId);
-      return { ...state, message: 'Telegram Mini App подключена' };
+      const baseMessage = 'Telegram Mini App подключена';
+      const webhookMessage = result.webhookError
+        ? `. Не удалось установить webhook: ${result.webhookError}. Проверьте доступность API_BASE_URL и повторите проверку.`
+        : '';
+      return { ...state, message: `${baseMessage}${webhookMessage}` };
     } catch (error: any) {
       const description = error?.message ? String(error.message) : 'Не удалось подключить бота';
       throw new BadRequestException(description);

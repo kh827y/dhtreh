@@ -208,7 +208,7 @@ export default function TelegramMiniAppPage() {
       onClick={isEnabled ? disconnect : openConnectDialog}
       disabled={actionPending || loading || showConnectDialog}
       style={{
-        minWidth: 180,
+        padding: "10px 22px",
         background: isEnabled ? "#ef4444" : "#22c55e",
         color: "#0f172a",
         fontWeight: 600,
@@ -253,15 +253,12 @@ export default function TelegramMiniAppPage() {
                   </div>
                   <StatusBadge color={statusColor} label={statusLabel} />
                 </div>
-                {state?.botUsername && (
+                {isEnabled && state?.botUsername && (
                   <div style={{ fontSize: 14, opacity: 0.85 }}>
                     Подключен бот: <strong>{state.botUsername}</strong>
                   </div>
                 )}
                 <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>{actionButton}</div>
-                <div style={{ fontSize: 13, opacity: 0.65 }}>
-                  Пуши в механиках будут отправляться через подключённого Telegram-бота.
-                </div>
               </div>
             </div>
           </CardBody>
@@ -366,29 +363,54 @@ export default function TelegramMiniAppPage() {
         </Card>
       )}
 
-      <Card>
-        <CardHeader title="Возможности интеграции" />
-        <CardBody>
-          <ul style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 6, fontSize: 13 }}>
-            <li>Клиент может зарегистрироваться в вашей программе лояльности по QR-коду</li>
-            <li>Клиент сможет использовать бот для списания и начисления баллов</li>
-            <li>Рассылки, включая текст и изображения</li>
-          </ul>
-        </CardBody>
-      </Card>
+      {loading ? (
+        <Card>
+          <CardHeader title="Возможности интеграции" />
+          <CardBody>
+            <div style={{ display: "grid", gap: 10 }}>
+              <Skeleton height={14} />
+              <Skeleton height={14} />
+              <Skeleton height={14} />
+            </div>
+          </CardBody>
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader title="Возможности интеграции" />
+          <CardBody>
+            <ul style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 6, fontSize: 13 }}>
+              <li>Клиент может зарегистрироваться в вашей программе лояльности по QR-коду</li>
+              <li>Клиент сможет использовать бот для списания и начисления баллов</li>
+              <li>Рассылки, включая текст и изображения</li>
+            </ul>
+          </CardBody>
+        </Card>
+      )}
 
-      <Card>
-        <CardHeader title="Подключение" />
-        <CardBody>
-          <a
-            href="#"
-            onClick={(event) => event.preventDefault()}
-            style={{ color: "#38bdf8", fontSize: 13 }}
-          >
-            Справка по регистрации и использованию бота
-          </a>
-        </CardBody>
-      </Card>
+      {loading ? (
+        <Card>
+          <CardHeader title="Подключение" />
+          <CardBody>
+            <div style={{ display: "grid", gap: 10 }}>
+              <Skeleton height={14} />
+              <Skeleton height={14} width="70%" />
+            </div>
+          </CardBody>
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader title="Подключение" />
+          <CardBody>
+            <a
+              href="#"
+              onClick={(event) => event.preventDefault()}
+              style={{ color: "#38bdf8", fontSize: 13 }}
+            >
+              Справка по регистрации и использованию бота
+            </a>
+          </CardBody>
+        </Card>
+      )}
 
       {showConnectDialog && (
         <div
