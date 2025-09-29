@@ -63,8 +63,8 @@ export function useMiniappAuth(defaultMerchant: string) {
           localStorage.setItem('miniapp.customerId', r.customerId);
         }
         setError('');
-      } catch (e: any) {
-        setError(String(e?.message || e));
+      } catch (error) {
+        setError(error instanceof Error ? error.message : String(error));
       } finally {
         setLoading(false);
       }
