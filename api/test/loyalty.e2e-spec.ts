@@ -8,6 +8,37 @@ import { createHash } from 'crypto';
 type Wallet = { id: string; customerId: string; merchantId: string; balance: number };
 type Hold = { id: string; customerId: string; merchantId: string; mode: 'REDEEM'|'EARN'; redeemAmount?: number; earnPoints?: number; orderId?: string|null; total?: number|null; eligibleTotal?: number|null; status: string; expiresAt?: Date|null; outletId?: string|null; deviceId?: string|null; staffId?: string|null };
 type Receipt = { id: string; merchantId: string; customerId: string; orderId: string; receiptNumber?: string|null; total: number; eligibleTotal: number; redeemApplied: number; earnApplied: number; outletId?: string|null; deviceId?: string|null; staffId?: string|null };
+type PromoCodeRow = {
+  id: string;
+  merchantId: string;
+  code: string;
+  status: 'ACTIVE'|'PAUSED'|'ARCHIVED';
+  grantPoints: boolean;
+  pointsAmount: number|null;
+  pointsExpireInDays: number|null;
+  assignTierId: string|null;
+  usageLimitType: string;
+  usageLimitValue: number|null;
+  perCustomerLimit: number|null;
+  cooldownDays: number|null;
+  requireVisit: boolean;
+  visitLookbackHours: number|null;
+  activeFrom: Date|null;
+  activeUntil: Date|null;
+  metadata?: any;
+  createdAt: Date;
+  updatedAt: Date;
+};
+type PromoCodeUsageRow = {
+  id: string;
+  promoCodeId: string;
+  merchantId: string;
+  customerId: string;
+  orderId?: string|null;
+  pointsIssued?: number|null;
+  pointsExpireAt?: Date|null;
+  createdAt: Date;
+};
 
 describe('Loyalty (e2e)', () => {
   let app: INestApplication;
@@ -24,9 +55,10 @@ describe('Loyalty (e2e)', () => {
     devices: [] as { id: string; merchantId: string; type: 'SMART'|'PC_POS'|'VIRTUAL'; label?: string|null; bridgeSecret?: string|null }[],
     idem: new Map<string, any>(),
     earnLots: [] as Array<{ id: string; merchantId: string; customerId: string; points: number; consumedPoints: number; earnedAt: Date; maturesAt?: Date|null; expiresAt?: Date|null; orderId?: string|null; receiptId?: string|null; outletId?: string|null; deviceId?: string|null; staffId?: string|null; status: 'ACTIVE'|'PENDING' }>,
-    vouchers: [] as Array<{ id: string; merchantId: string; type?: 'DISCOUNT'|'PROMO_CODE'; valueType: 'PERCENTAGE'|'FIXED_AMOUNT'|'POINTS'; value: number; validFrom?: Date|null; validUntil?: Date|null; minPurchaseAmount?: number|null; totalUsed?: number; maxTotalUses?: number; maxUsesPerCustomer?: number }>,
-    voucherCodes: [] as Array<{ id: string; voucherId: string; code: string; validFrom?: Date|null; validUntil?: Date|null; maxUses?: number|null; usedCount?: number }>,
-    voucherUsages: [] as Array<{ id: string; voucherId: string; codeId: string; customerId: string; orderId?: string|null; amount: number }>,
+    promoCodes: [] as PromoCodeRow[],
+    promoCodeUsages: [] as PromoCodeUsageRow[],
+    promoCodeMetrics: new Map<string, { totalIssued: number; totalPointsIssued: number; totalCustomers: number; lastUsedAt?: Date | null }>(),
+    loyaltyTierAssignments: new Map<string, { merchantId: string; customerId: string; tierId: string; source: string; metadata?: any }>(),
   };
 
   const uuid = (() => { let i = 1; return () => `id-${i++}`; })();
@@ -194,30 +226,163 @@ describe('Loyalty (e2e)', () => {
     device: {
       findUnique: async (args: any) => state.devices.find(d => d.id === args.where.id) || null,
     },
-    voucherCode: {
+    $executeRaw: jest.fn(async () => 0),
+    promoCode: {
       findUnique: async (args: any) => {
-        if (args?.where?.code) return state.voucherCodes.find(c => c.code === args.where.code) || null;
-        if (args?.where?.id) return state.voucherCodes.find(c => c.id === args.where.id) || null;
+        if (args?.where?.id) return state.promoCodes.find(c => c.id === args.where.id) || null;
         return null;
+      },
+      findFirst: async (args: any) => {
+        const where = args?.where || {};
+        return (
+          state.promoCodes.find((c) => {
+            if (where.id && c.id !== where.id) return false;
+            if (where.merchantId && c.merchantId !== where.merchantId) return false;
+            if (where.code && c.code !== where.code) return false;
+            return true;
+          }) || null
+        );
+      },
+      findMany: async (args: any) => {
+        const where = args?.where || {};
+        let arr = state.promoCodes.slice();
+        if (where.merchantId) arr = arr.filter((c) => c.merchantId === where.merchantId);
+        if (where.status) {
+          if (typeof where.status === 'string') {
+            arr = arr.filter((c) => c.status === where.status);
+          } else if (Array.isArray(where.status?.in)) {
+            const set = new Set(where.status.in);
+            arr = arr.filter((c) => set.has(c.status));
+          }
+        }
+        arr = arr.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        if (typeof args?.take === 'number') arr = arr.slice(0, args.take);
+        const includeMetrics = args?.include?.metrics;
+        return arr.map((row) =>
+          includeMetrics
+            ? { ...row, metrics: state.promoCodeMetrics.get(row.id) || { totalIssued: 0, totalPointsIssued: 0, totalCustomers: 0 } }
+            : { ...row },
+        );
+      },
+      create: async (args: any) => {
+        const now = new Date();
+        const row: PromoCodeRow = {
+          id: args.data.id || uuid(),
+          merchantId: args.data.merchantId,
+          code: args.data.code,
+          status: args.data.status || 'ACTIVE',
+          grantPoints: !!args.data.grantPoints,
+          pointsAmount: args.data.pointsAmount ?? null,
+          pointsExpireInDays: args.data.pointsExpireInDays ?? null,
+          assignTierId: args.data.assignTierId ?? null,
+          usageLimitType: args.data.usageLimitType || 'UNLIMITED',
+          usageLimitValue: args.data.usageLimitValue ?? null,
+          perCustomerLimit: args.data.perCustomerLimit ?? null,
+          cooldownDays: args.data.cooldownDays ?? null,
+          requireVisit: !!args.data.requireVisit,
+          visitLookbackHours: args.data.visitLookbackHours ?? null,
+          activeFrom: args.data.activeFrom ?? null,
+          activeUntil: args.data.activeUntil ?? null,
+          metadata: args.data.metadata ?? null,
+          createdAt: now,
+          updatedAt: now,
+        };
+        state.promoCodes.push(row);
+        state.promoCodeMetrics.set(row.id, { totalIssued: 0, totalPointsIssued: 0, totalCustomers: 0, lastUsedAt: null });
+        return { ...row };
       },
       update: async (args: any) => {
-        const idx = state.voucherCodes.findIndex(c => c.id === args.where.id);
-        if (idx >= 0) {
-          const cur = state.voucherCodes[idx];
-          const usedCount = (args.data.usedCount != null) ? args.data.usedCount : cur.usedCount || 0;
-          state.voucherCodes[idx] = { ...cur, usedCount };
-          return state.voucherCodes[idx];
-        }
-        return null;
+        const idx = state.promoCodes.findIndex((c) => c.id === args.where.id);
+        if (idx < 0) return null;
+        const current = state.promoCodes[idx];
+        const updated: PromoCodeRow = {
+          ...current,
+          ...args.data,
+          updatedAt: new Date(),
+        };
+        if ('pointsAmount' in args.data) updated.pointsAmount = args.data.pointsAmount ?? null;
+        if ('pointsExpireInDays' in args.data) updated.pointsExpireInDays = args.data.pointsExpireInDays ?? null;
+        if ('assignTierId' in args.data) updated.assignTierId = args.data.assignTierId ?? null;
+        if ('usageLimitValue' in args.data) updated.usageLimitValue = args.data.usageLimitValue ?? null;
+        if ('perCustomerLimit' in args.data) updated.perCustomerLimit = args.data.perCustomerLimit ?? null;
+        if ('cooldownDays' in args.data) updated.cooldownDays = args.data.cooldownDays ?? null;
+        if ('visitLookbackHours' in args.data) updated.visitLookbackHours = args.data.visitLookbackHours ?? null;
+        if ('metadata' in args.data) updated.metadata = args.data.metadata ?? null;
+        state.promoCodes[idx] = updated;
+        return { ...updated };
       },
     },
-    voucher: {
-      findUnique: async (args: any) => state.vouchers.find(v => v.id === args.where.id) || null,
-      create: async (args: any) => { const v = { id: args.data.id || uuid(), ...args.data }; state.vouchers.push(v as any); return v; },
+    promoCodeUsage: {
+      findFirst: async (args: any) => {
+        const where = args?.where || {};
+        return (
+          state.promoCodeUsages.find((u) => {
+            if (where.promoCodeId && u.promoCodeId !== where.promoCodeId) return false;
+            if (where.customerId && u.customerId !== where.customerId) return false;
+            if (where.orderId !== undefined && (u.orderId ?? undefined) !== (where.orderId ?? undefined)) return false;
+            if (where.createdAt?.gte && u.createdAt < where.createdAt.gte) return false;
+            return true;
+          }) || null
+        );
+      },
+      create: async (args: any) => {
+        const row: PromoCodeUsageRow = {
+          id: uuid(),
+          promoCodeId: args.data.promoCodeId,
+          merchantId: args.data.merchantId,
+          customerId: args.data.customerId,
+          orderId: args.data.orderId ?? null,
+          pointsIssued: args.data.pointsIssued ?? null,
+          pointsExpireAt: args.data.pointsExpireAt ?? null,
+          createdAt: new Date(),
+        };
+        state.promoCodeUsages.push(row);
+        return { ...row };
+      },
+      count: async (args: any) => {
+        const where = args?.where || {};
+        return state.promoCodeUsages.filter((u) => {
+          if (where.promoCodeId && u.promoCodeId !== where.promoCodeId) return false;
+          if (where.customerId && u.customerId !== where.customerId) return false;
+          return true;
+        }).length;
+      },
     },
-    voucherUsage: {
-      findFirst: async (args: any) => state.voucherUsages.find(u => u.voucherId === args.where.voucherId && u.customerId === args.where.customerId && ((args.where.orderId ?? undefined) === (u.orderId ?? undefined))) || null,
-      create: async (args: any) => { const u = { id: uuid(), ...args.data }; state.voucherUsages.push(u as any); return u; },
+    promoCodeMetric: {
+      upsert: async (args: any) => {
+        const existing = state.promoCodeMetrics.get(args.where.promoCodeId);
+        if (existing) {
+          const upd = { ...existing };
+          if (args.update.totalIssued?.increment) upd.totalIssued += args.update.totalIssued.increment;
+          if (args.update.totalPointsIssued?.increment) upd.totalPointsIssued += args.update.totalPointsIssued.increment;
+          if (args.update.totalCustomers?.increment) upd.totalCustomers += args.update.totalCustomers.increment;
+          upd.lastUsedAt = new Date();
+          state.promoCodeMetrics.set(args.where.promoCodeId, upd);
+          return upd;
+        }
+        const created = {
+          totalIssued: args.create.totalIssued,
+          totalPointsIssued: args.create.totalPointsIssued,
+          totalCustomers: args.create.totalCustomers,
+          lastUsedAt: new Date(),
+        };
+        state.promoCodeMetrics.set(args.where.promoCodeId, created);
+        return created;
+      },
+    },
+    loyaltyTierAssignment: {
+      upsert: async (args: any) => {
+        const key = `${args.where.merchantId_customerId.merchantId}|${args.where.merchantId_customerId.customerId}`;
+        const row = {
+          merchantId: args.where.merchantId_customerId.merchantId,
+          customerId: args.where.merchantId_customerId.customerId,
+          tierId: args.create?.tierId ?? args.update?.tierId ?? null,
+          source: (args.create?.source ?? args.update?.source) || 'promocode',
+          metadata: args.create?.metadata ?? args.update?.metadata ?? null,
+        };
+        state.loyaltyTierAssignments.set(key, row);
+        return row;
+      },
     },
   };
 
@@ -237,15 +402,52 @@ describe('Loyalty (e2e)', () => {
     // staff for guard
     state.staff.push({ id: 'S1', merchantId: 'M-guard', apiKeyHash: createHash('sha256').update('staff-secret','utf8').digest('hex'), status: 'ACTIVE' });
 
-    // Seed a voucher TENOFF (10% off, min 500)
+    // Seed base promo codes for idempotency tests
     const now = new Date();
     const future = new Date(now.getTime() + 7*24*60*60*1000);
-    state.vouchers.push({ id: 'V-TEN', merchantId: 'M1', valueType: 'PERCENTAGE', value: 10, validFrom: null, validUntil: future, minPurchaseAmount: 500 });
-    state.voucherCodes.push({ id: 'VC-TEN', voucherId: 'V-TEN', code: 'TENOFF', validFrom: null, validUntil: future, maxUses: 1, usedCount: 0 });
+    state.promoCodes.push({
+      id: 'PC-TEN',
+      merchantId: 'M1',
+      code: 'TENOFF',
+      status: 'ACTIVE',
+      grantPoints: false,
+      pointsAmount: null,
+      pointsExpireInDays: null,
+      assignTierId: null,
+      usageLimitType: 'UNLIMITED',
+      usageLimitValue: null,
+      perCustomerLimit: null,
+      cooldownDays: null,
+      requireVisit: false,
+      visitLookbackHours: null,
+      activeFrom: null,
+      activeUntil: future,
+      metadata: null,
+      createdAt: now,
+      updatedAt: now,
+    });
 
-    // Seed M2 voucher TEN2 for combined promo+voucher test
-    state.vouchers.push({ id: 'V-TEN2', merchantId: 'M2', valueType: 'PERCENTAGE', value: 10, validFrom: null, validUntil: future, minPurchaseAmount: 0 });
-    state.voucherCodes.push({ id: 'VC-TEN2', voucherId: 'V-TEN2', code: 'TEN2', validFrom: null, validUntil: future, maxUses: 10, usedCount: 0 });
+    state.promoCodes.push({
+      id: 'PC-TEN2',
+      merchantId: 'M2',
+      code: 'TEN2',
+      status: 'ACTIVE',
+      grantPoints: false,
+      pointsAmount: null,
+      pointsExpireInDays: null,
+      assignTierId: null,
+      usageLimitType: 'UNLIMITED',
+      usageLimitValue: null,
+      perCustomerLimit: null,
+      cooldownDays: null,
+      requireVisit: false,
+      visitLookbackHours: null,
+      activeFrom: null,
+      activeUntil: future,
+      metadata: null,
+      createdAt: now,
+      updatedAt: now,
+    });
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -261,8 +463,27 @@ describe('Loyalty (e2e)', () => {
   it('POINTS promocode (EARN): commit adds additionalEarnPoints and is idempotent', async () => {
     const now = new Date();
     const future = new Date(now.getTime() + 7*24*60*60*1000);
-    state.vouchers.push({ id: 'V-P50', merchantId: 'M1', type: 'PROMO_CODE', valueType: 'POINTS', value: 50, validFrom: now, validUntil: future, minPurchaseAmount: 0 });
-    state.voucherCodes.push({ id: 'VC-P50', voucherId: 'V-P50', code: 'PROMO50', validFrom: now, validUntil: future, maxUses: 5, usedCount: 0 });
+    state.promoCodes.push({
+      id: 'PC-P50',
+      merchantId: 'M1',
+      code: 'PROMO50',
+      status: 'ACTIVE',
+      grantPoints: true,
+      pointsAmount: 50,
+      pointsExpireInDays: 14,
+      assignTierId: null,
+      usageLimitType: 'UNLIMITED',
+      usageLimitValue: null,
+      perCustomerLimit: null,
+      cooldownDays: null,
+      requireVisit: false,
+      visitLookbackHours: null,
+      activeFrom: now,
+      activeUntil: future,
+      metadata: { awardPoints: true },
+      createdAt: now,
+      updatedAt: now,
+    });
 
     const q = await request(app.getHttpServer())
       .post('/loyalty/quote')
@@ -270,125 +491,30 @@ describe('Loyalty (e2e)', () => {
       .expect(201);
     const holdId = q.body.holdId as string;
     const expectedBase = Number(q.body.pointsToEarn || 0); // for M1 default earnBps=1000 -> 100 points
-    const usagesBefore = state.voucherUsages.length;
+    const usagesBefore = state.promoCodeUsages.length;
 
     const c1 = await request(app.getHttpServer())
       .post('/loyalty/commit')
-      .send({ holdId, orderId: 'O-PROMO-1', voucherCode: 'PROMO50' })
+      .send({ holdId, orderId: 'O-PROMO-1', promoCode: 'PROMO50' })
       .expect(201);
 
     expect(c1.body.ok).toBe(true);
     expect(c1.body.earnApplied).toBe(expectedBase + 50);
 
-    const usagesAfterFirst = state.voucherUsages.length;
+    const usagesAfterFirst = state.promoCodeUsages.length;
     expect(usagesAfterFirst).toBe(usagesBefore + 1);
 
     const c2 = await request(app.getHttpServer())
       .post('/loyalty/commit')
-      .send({ holdId, orderId: 'O-PROMO-1', voucherCode: 'PROMO50' })
+      .send({ holdId, orderId: 'O-PROMO-1', promoCode: 'PROMO50' })
       .expect(201);
 
     expect(c2.body.alreadyCommitted).toBe(true);
-    const usagesAfterSecond = state.voucherUsages.length;
+    const usagesAfterSecond = state.promoCodeUsages.length;
     expect(usagesAfterSecond).toBe(usagesAfterFirst);
   });
 
-  it('Levels + voucher + promo (M2): EARN uses adjusted eligible and level bonus', async () => {
-    // Configure M2 with promos + levels
-    await prismaMock.merchantSettings.update({ where: { merchantId: 'M2' }, data: { rulesJson: {
-      rules: [],
-      promos: [ { then: { discountFixed: 50 } } ],
-      levelsCfg: { periodDays: 365, metric: 'earn', levels: [ { name: 'Base', threshold: 0 }, { name: 'Silver', threshold: 500 } ] },
-      levelBenefits: { earnBpsBonusByLevel: { Base: 0, Silver: 200 }, redeemLimitBpsBonusByLevel: { Base: 0, Silver: 1000 } },
-    }, updatedAt: new Date() } });
-
-    // Seed level to Silver: earn on 12000 -> ~600 points
-    const qSeed = await request(app.getHttpServer())
-      .post('/loyalty/quote')
-      .send({ merchantId: 'M2', userToken: 'C-cmb-1', mode: 'EARN', total: 12000, eligibleTotal: 12000 })
-      .expect(201);
-    await request(app.getHttpServer()).post('/loyalty/commit').send({ holdId: qSeed.body.holdId, orderId: 'OCMB-seed-1' }).expect(201);
-
-    // Now EARN with voucher 10% and promo -50: eligible 1000 -> 900 -> 850; earn bps 500 + 200 = 700 -> floor(850*0.07) = 59
-    const r = await request(app.getHttpServer())
-      .post('/loyalty/quote')
-      .send({ merchantId: 'M2', userToken: 'C-cmb-1', mode: 'EARN', total: 1000, eligibleTotal: 1000, voucherCode: 'TEN2' })
-      .expect(201);
-    expect(r.body.pointsToEarn).toBe(59);
-  });
-
-  it('Levels + voucher + promo (M2): REDEEM cap raised by level bonus and respects adjusted eligible', async () => {
-    // Given Silver level from previous test and wallet seeded >= 600
-    const q = await request(app.getHttpServer())
-      .post('/loyalty/quote')
-      .send({ merchantId: 'M2', userToken: 'C-cmb-1', mode: 'REDEEM', total: 1000, eligibleTotal: 1000, voucherCode: 'TEN2' })
-      .expect(201);
-    // eligible 1000 -> 900 -> 850; redeemLimitBps 5000 + 1000 = 6000 => cap 510; wallet >= 600 -> expect 510
-    expect(q.body.discountToApply).toBe(510);
-  });
-
-  it('Commit (REDEEM) with voucher applies expected redeemApplied after voucher+promo (M2)', async () => {
-    // Ensure promo for M2 is set (fixed 50)
-    await prismaMock.merchantSettings.update({ where: { merchantId: 'M2' }, data: { rulesJson: { promos: [ { then: { discountFixed: 50 } } ] }, updatedAt: new Date() } });
-    // Seed plenty of points
-    const qE = await request(app.getHttpServer())
-      .post('/loyalty/quote')
-      .send({ merchantId: 'M2', userToken: 'C-vp-3', mode: 'EARN', total: 10000, eligibleTotal: 10000 })
-      .expect(201);
-    await request(app.getHttpServer()).post('/loyalty/commit').send({ holdId: qE.body.holdId, orderId: 'OVP-seed-2' }).expect(201);
-
-    const qR = await request(app.getHttpServer())
-      .post('/loyalty/quote')
-      .send({ merchantId: 'M2', userToken: 'C-vp-3', mode: 'REDEEM', total: 1000, eligibleTotal: 1000, voucherCode: 'TEN2' })
-      .expect(201);
-    const hR = qR.body.holdId as string;
-    const cR = await request(app.getHttpServer())
-      .post('/loyalty/commit')
-      .send({ holdId: hR, orderId: 'OVP-commit-1', voucherCode: 'TEN2' })
-      .expect(201);
-    expect(cR.body.ok).toBe(true);
-    expect(cR.body.redeemApplied).toBe(425);
-  });
-
-  it('Quote (REDEEM) limit reflects voucher+promo discounted eligible (M2)', async () => {
-    // Ensure promo for M2 is set (fixed 50)
-    await prismaMock.merchantSettings.update({ where: { merchantId: 'M2' }, data: { rulesJson: { promos: [ { then: { discountFixed: 50 } } ] }, updatedAt: new Date() } });
-    // Seed balance by earning 10k total => ~500 points
-    const qE = await request(app.getHttpServer())
-      .post('/loyalty/quote')
-      .send({ merchantId: 'M2', userToken: 'C-vp-2', mode: 'EARN', total: 10000, eligibleTotal: 10000 })
-      .expect(201);
-    const hE = qE.body.holdId as string;
-    await request(app.getHttpServer()).post('/loyalty/commit').send({ holdId: hE, orderId: 'OVP-seed' }).expect(201);
-
-    // Redeem with voucher TEN2: eligible 1000 -> -10% => 900 -> -50 => 850; limit 50% => 425; wallet >= 425
-    const qR = await request(app.getHttpServer())
-      .post('/loyalty/quote')
-      .send({ merchantId: 'M2', userToken: 'C-vp-2', mode: 'REDEEM', total: 1000, eligibleTotal: 1000, voucherCode: 'TEN2' })
-      .expect(201);
-    expect(qR.body.discountToApply).toBe(425);
-  });
-
-  it('Quote order: voucher applied before promo, then points on remaining (M2)', async () => {
-    // Configure promo for M2: fixed 50
-    await prismaMock.merchantSettings.update({ where: { merchantId: 'M2' }, data: { rulesJson: { promos: [ { then: { discountFixed: 50 } } ] }, updatedAt: new Date() } });
-    const r = await request(app.getHttpServer())
-      .post('/loyalty/quote')
-      .send({ merchantId: 'M2', userToken: 'C-vp-1', mode: 'EARN', total: 1000, eligibleTotal: 1000, voucherCode: 'TEN2' })
-      .expect(201);
-    // 1000 - voucher 10% = 900; then promo -50 => 850; earn 5% => 42 or 42/43 after flooring
-    expect(r.body.pointsToEarn).toBe(42);
-  });
-
-  it('Quote (EARN) applies voucher discount before calculating points', async () => {
-    const r = await request(app.getHttpServer())
-      .post('/loyalty/quote')
-      .send({ merchantId: 'M1', userToken: 'C-vq-1', mode: 'EARN', total: 1000, eligibleTotal: 1000, voucherCode: 'TENOFF' })
-      .expect(201);
-    expect(r.body.pointsToEarn).toBe(90); // merchant earnBps 10% on 900 eligible
-  });
-
-  it('Commit with voucherCode is idempotent by orderId (voucherUsage created once)', async () => {
+  it('Commit with promoCode is idempotent by orderId (usage created once)', async () => {
     const q = await request(app.getHttpServer())
       .post('/loyalty/quote')
       .send({ merchantId: 'M1', userToken: 'C-vr-1', mode: 'EARN', total: 1000, eligibleTotal: 1000 })
@@ -398,18 +524,18 @@ describe('Loyalty (e2e)', () => {
 
     const c1 = await request(app.getHttpServer())
       .post('/loyalty/commit')
-      .send({ holdId, orderId, voucherCode: 'TENOFF' })
+      .send({ holdId, orderId, promoCode: 'TENOFF' })
       .expect(201);
     expect(c1.body.ok).toBe(true);
-    const usageCountAfterFirst = state.voucherUsages.length;
+    const usageCountAfterFirst = state.promoCodeUsages.length;
     expect(usageCountAfterFirst).toBeGreaterThanOrEqual(1);
 
     const c2 = await request(app.getHttpServer())
       .post('/loyalty/commit')
-      .send({ holdId, orderId, voucherCode: 'TENOFF' })
+      .send({ holdId, orderId, promoCode: 'TENOFF' })
       .expect(201);
     expect(c2.body.alreadyCommitted).toBe(true);
-    const usageCountAfterSecond = state.voucherUsages.length;
+    const usageCountAfterSecond = state.promoCodeUsages.length;
     expect(usageCountAfterSecond).toBe(usageCountAfterFirst);
   });
 
