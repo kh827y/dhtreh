@@ -203,8 +203,8 @@ export class PortalTelegramIntegrationService {
     return `${trimmed.slice(0, 4)}…${trimmed.slice(-4)}`;
   }
 
-  private extractTokenMask(credentials: Prisma.JsonValue | null | undefined): string | null {
-    if (!credentials || credentials === Prisma.JsonNull) return null;
+  private extractTokenMask(credentials: unknown): string | null {
+    if (!credentials || typeof credentials !== 'object') return null;
     try {
       const value = credentials as Record<string, any>;
       return typeof value?.tokenMask === 'string' ? value.tokenMask : null;
@@ -223,27 +223,36 @@ export class PortalTelegramIntegrationService {
       nextConfig.username = payload.username ?? null;
     }
 
-    let nextCredentials: Prisma.InputJsonValue | undefined;
+    let nextCredentials: Prisma.InputJsonValue | null | undefined;
     if (payload.tokenMask === undefined) {
-      nextCredentials = existing?.credentials ?? undefined;
+      nextCredentials = (existing?.credentials as Prisma.InputJsonValue | null | undefined) ?? undefined;
     } else if (payload.tokenMask === null) {
-      nextCredentials = Prisma.JsonNull;
+      nextCredentials = null;
     } else {
       nextCredentials = { tokenMask: payload.tokenMask };
     }
 
-    const data = {
+    const baseData = {
       type: 'COMMUNICATION',
-      config: nextConfig,
-      credentials: nextCredentials,
       isActive: payload.isActive,
       lastSync: payload.lastSyncAt ?? new Date(),
       errorCount: payload.error ? (existing?.errorCount ?? 0) + 1 : 0,
       lastError: payload.error ?? null,
-    } as Prisma.IntegrationUpdateInput;
+    };
+
+    const normalizedCredentials = nextCredentials === undefined ? undefined : nextCredentials;
+
+    const updateData: Prisma.IntegrationUpdateInput = {
+      ...baseData,
+      config: nextConfig as Prisma.InputJsonValue,
+    };
+
+    if (normalizedCredentials !== undefined) {
+      updateData.credentials = normalizedCredentials as Prisma.InputJsonValue | null;
+    }
 
     if (existing) {
-      await this.prisma.integration.update({ where: { id: existing.id }, data });
+      await this.prisma.integration.update({ where: { id: existing.id }, data: updateData });
       return existing.id;
     }
 
@@ -251,7 +260,13 @@ export class PortalTelegramIntegrationService {
       data: {
         merchantId,
         provider: this.provider,
-        ...data,
+        type: baseData.type,
+        config: nextConfig as Prisma.InputJsonValue,
+        credentials: normalizedCredentials ?? null,
+        isActive: baseData.isActive,
+        lastSync: baseData.lastSync,
+        errorCount: baseData.errorCount,
+        lastError: baseData.lastError,
       },
     });
     return created.id;
