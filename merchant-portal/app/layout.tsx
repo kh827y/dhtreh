@@ -31,7 +31,7 @@ const sections: SidebarSection[] = [
       { href: "/analytics/staff", label: "Активность сотрудников" },
       { href: "/analytics/referrals", label: "Реферальная программа" },
       { href: "/analytics/birthdays", label: "Дни рождения" },
-      { href: "/analytics/auto-return", label: "Автовозврат клиентов" },
+      { href: "/loyalty/mechanics/auto-return?tab=stats", label: "Автовозврат клиентов" },
     ],
   },
   {
