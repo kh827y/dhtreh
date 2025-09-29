@@ -1,15 +1,18 @@
-export const metadata = { title: 'Loyalty Miniapp', description: 'Клиентская мини‑аппа' };
+export const metadata = { title: "Loyalty Miniapp", description: "Клиентская мини‑аппа" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ru">
-      <body style={{ fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial', background: '#0b1220', color: '#e6edf3', margin: 0 }}>
-        <div style={{ maxWidth: 680, margin: '0 auto', padding: 16 }}>
-          <nav style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
-            <a href="/" style={{ color: '#89b4fa' }}>Главная</a>
-          </nav>
-          {children}
-        </div>
+      <body
+        style={{
+          fontFamily:
+            'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial',
+          background: '#f5f5ff',
+          color: '#1f1f33',
+          margin: 0,
+        }}
+      >
+        <div style={{ maxWidth: 520, margin: '0 auto', minHeight: '100vh' }}>{children}</div>
       </body>
     </html>
   );

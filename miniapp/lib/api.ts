@@ -1,6 +1,27 @@
 export type QrMintResp = { token: string; ttl: number };
 export type BalanceResp = { merchantId: string; customerId: string; balance: number };
 export type TransactionsResp = { items: Array<{ id: string; type: string; amount: number; orderId?: string|null; customerId: string; createdAt: string }>; nextBefore?: string|null };
+export type LevelsResp = {
+  merchantId: string;
+  customerId: string;
+  metric: 'earn'|'redeem'|'transactions';
+  periodDays: number;
+  value: number;
+  current: { name: string; threshold: number };
+  next: { name: string; threshold: number } | null;
+  progressToNext: number;
+};
+export type MechanicsLevelsResp = {
+  merchantId?: string;
+  levels?: Array<{
+    id?: string;
+    name?: string;
+    threshold?: number;
+    cashbackPercent?: number | null;
+    benefits?: { cashbackPercent?: number | null } | null;
+    rewardPercent?: number | null;
+  }>;
+};
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/$/, '');
 
@@ -29,6 +50,14 @@ export async function mintQr(customerId: string, merchantId?: string, ttlSec?: n
 
 export async function balance(merchantId: string, customerId: string): Promise<BalanceResp> {
   return http(`/loyalty/balance/${encodeURIComponent(merchantId)}/${encodeURIComponent(customerId)}`);
+}
+
+export async function levels(merchantId: string, customerId: string): Promise<LevelsResp> {
+  return http(`/levels/${encodeURIComponent(merchantId)}/${encodeURIComponent(customerId)}`);
+}
+
+export async function mechanicsLevels(merchantId: string): Promise<MechanicsLevelsResp> {
+  return http(`/loyalty/mechanics/levels/${encodeURIComponent(merchantId)}`);
 }
 
 export async function transactions(merchantId: string, customerId: string, limit = 20, before?: string): Promise<TransactionsResp> {
