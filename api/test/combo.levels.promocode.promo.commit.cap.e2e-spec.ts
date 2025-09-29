@@ -4,14 +4,13 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma.service';
 import { PromosService } from '../src/promos/promos.service';
-import { VouchersService } from '../src/vouchers/vouchers.service';
 
 /**
- * E2E: Voucher + Promo + Rules + Levels + Commit, затем повторный quote (per-order cap = 0).
- * Ожидание: eligible 1000 -> voucher -100 -> 900 -> promo -50 -> 850; level bonus Silver +1000 bps → cap = 510.
- * Первый quote -> cap=510, commit применяет 510. Второй quote по тому же orderId -> 0.
+ * E2E: Promo + Rules + Levels + Commit, затем повторный quote (per-order cap = 0).
+ * Ожидание: eligible 1000 -> promo -50 -> 950; level bonus Silver +1000 bps → cap = 570.
+ * Первый quote -> cap=570, commit применяет 570. Второй quote по тому же orderId -> 0.
  */
-describe('Combo: Voucher+Promo+Rules+Levels with Commit then repeat Quote (per-order cap) (e2e)', () => {
+describe('Combo: Promo+Rules+Levels with Commit then repeat Quote (per-order cap) (e2e)', () => {
   let app: INestApplication;
 
   const state = {
@@ -78,13 +77,11 @@ describe('Combo: Voucher+Promo+Rules+Levels with Commit then repeat Quote (per-o
     }),
   };
 
-  const vouchersMock: Partial<VouchersService> = { preview: async () => ({ canApply: true, discount: 100, voucherId: 'V1', codeId: 'VC1' } as any) };
   const promosMock: Partial<PromosService> = { preview: async () => ({ canApply: true, discount: 50, name: 'PROMO50' } as any) };
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(PrismaService).useValue(prismaMock)
-      .overrideProvider(VouchersService).useValue(vouchersMock)
       .overrideProvider(PromosService).useValue(promosMock)
       .compile();
     app = moduleFixture.createNestApplication();
@@ -93,25 +90,25 @@ describe('Combo: Voucher+Promo+Rules+Levels with Commit then repeat Quote (per-o
 
   afterAll(async () => { await app.close(); });
 
-  it('Quote(510) -> Commit -> Repeat Quote same order -> 0', async () => {
-    // First quote with voucher+promo+levels
+  it('Quote(570) -> Commit -> Repeat Quote same order -> 0', async () => {
+    // First quote with promo+levels
     const q = await request(app.getHttpServer())
       .post('/loyalty/quote')
-      .send({ merchantId: state.settings.merchantId, userToken: 'C-Combo', mode: 'REDEEM', orderId: 'ORD-COMBO', total: 1000, eligibleTotal: 1000, voucherCode: 'TENOFF' })
+      .send({ merchantId: state.settings.merchantId, userToken: 'C-Combo', mode: 'REDEEM', orderId: 'ORD-COMBO', total: 1000, eligibleTotal: 1000, promoCode: 'PROMO50' })
       .expect(201);
-    expect(q.body.discountToApply).toBe(510);
+    expect(q.body.discountToApply).toBe(570);
 
     // Commit
     const c = await request(app.getHttpServer())
       .post('/loyalty/commit')
-      .send({ holdId: q.body.holdId, orderId: 'ORD-COMBO' })
+      .send({ merchantId: state.settings.merchantId, holdId: q.body.holdId, orderId: 'ORD-COMBO' })
       .expect(201);
-    expect(c.body.redeemApplied).toBe(510);
+    expect(c.body.redeemApplied).toBe(570);
 
     // Second quote for the same order → remaining 0
     const q2 = await request(app.getHttpServer())
       .post('/loyalty/quote')
-      .send({ merchantId: state.settings.merchantId, userToken: 'C-Combo', mode: 'REDEEM', orderId: 'ORD-COMBO', total: 1000, eligibleTotal: 1000, voucherCode: 'TENOFF' })
+      .send({ merchantId: state.settings.merchantId, userToken: 'C-Combo', mode: 'REDEEM', orderId: 'ORD-COMBO', total: 1000, eligibleTotal: 1000, promoCode: 'PROMO50' })
       .expect(201);
     expect(q2.body.canRedeem).toBe(false);
     expect(q2.body.discountToApply).toBe(0);

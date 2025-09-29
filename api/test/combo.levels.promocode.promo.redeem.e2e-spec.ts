@@ -4,15 +4,14 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma.service';
 import { PromosService } from '../src/promos/promos.service';
-import { VouchersService } from '../src/vouchers/vouchers.service';
 
 /**
- * E2E: Voucher + Promo + Rules + Levels (redeem cap) in one quote.
- * Expected: eligible 1000 -> voucher -100 (10%) -> 900 -> promo -50 -> 850;
- * redeemBps = 5000 + 1000(Silver) = 6000 => cap = floor(850*0.6)=510.
+ * E2E: Promo + Rules + Levels (redeem cap) in one quote.
+ * Expected: eligible 1000 -> promo -50 -> 950;
+ * redeemBps = 5000 + 1000(Silver) = 6000 => cap = floor(950*0.6)=570.
  * Wallet has enough balance to cover cap.
  */
-describe('Combo: Voucher+Promo+Rules+Levels for REDEEM (e2e)', () => {
+describe('Combo: Promo+Rules+Levels for REDEEM (e2e)', () => {
   let app: INestApplication;
 
   const state = {
@@ -52,13 +51,11 @@ describe('Combo: Voucher+Promo+Rules+Levels for REDEEM (e2e)', () => {
     }),
   };
 
-  const vouchersMock: Partial<VouchersService> = { preview: async () => ({ canApply: true, discount: 100, voucherId: 'V1', codeId: 'VC1' } as any) };
   const promosMock: Partial<PromosService> = { preview: async () => ({ canApply: true, discount: 50, name: 'PROMO50' } as any) };
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(PrismaService).useValue(prismaMock)
-      .overrideProvider(VouchersService).useValue(vouchersMock)
       .overrideProvider(PromosService).useValue(promosMock)
       .compile();
     app = moduleFixture.createNestApplication();
@@ -67,12 +64,12 @@ describe('Combo: Voucher+Promo+Rules+Levels for REDEEM (e2e)', () => {
 
   afterAll(async () => { await app.close(); });
 
-  it('REDEEM cap = 510 after voucher+promo and Silver bonus', async () => {
+  it('REDEEM cap = 570 after promo and Silver bonus', async () => {
     const res = await request(app.getHttpServer())
       .post('/loyalty/quote')
-      .send({ merchantId: state.settings.merchantId, userToken: 'C-Combo', mode: 'REDEEM', total: 1000, eligibleTotal: 1000, voucherCode: 'TENOFF' })
+      .send({ merchantId: state.settings.merchantId, userToken: 'C-Combo', mode: 'REDEEM', total: 1000, eligibleTotal: 1000, promoCode: 'PROMO50' })
       .expect(201);
     expect(res.body.canRedeem).toBe(true);
-    expect(res.body.discountToApply).toBe(510);
+    expect(res.body.discountToApply).toBe(570);
   });
 });

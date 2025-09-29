@@ -325,8 +325,13 @@ export class PromoCodesService {
         orderId: params.orderId ?? null,
         pointsIssued: pointsIssued > 0 ? pointsIssued : null,
         pointsExpireAt: expiresAt,
-        reward: promo.assignTierId ? { tierId: promo.assignTierId } : null,
-        metadata: promo.metadata ?? null,
+        reward: promo.assignTierId
+          ? ({ tierId: promo.assignTierId } as Prisma.InputJsonValue)
+          : (Prisma.JsonNull as Prisma.NullableJsonNullValueInput),
+        metadata:
+          promo.metadata != null
+            ? (promo.metadata as Prisma.InputJsonValue)
+            : (Prisma.JsonNull as Prisma.NullableJsonNullValueInput),
       },
     });
 
