@@ -133,7 +133,7 @@ export default function IntegrationsPage() {
               <div style={{ display: 'grid', gap: 8 }}>
                 <div style={{ fontSize: 20, fontWeight: 700 }}>Telegram Mini App</div>
                 <div style={{ fontSize: 13, opacity: 0.75 }}>Программа лояльности в мини-приложении Telegram</div>
-                {telegram?.botUsername && (
+                {telegram?.enabled && telegram.botUsername && (
                   <div style={{ fontSize: 13, opacity: 0.85 }}>
                     Подключен бот: <span style={{ fontWeight: 600 }}>{telegram.botUsername}</span>
                   </div>

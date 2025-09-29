@@ -26,6 +26,23 @@ interface TelegramWebhookInfo {
   ip_address?: string;
 }
 
+interface RegisterBotResult {
+  success: boolean;
+  username: string;
+  webhookUrl: string;
+  webhookError?: string | null;
+}
+
+interface TelegramWebhookInfo {
+  url: string;
+  has_custom_certificate: boolean;
+  pending_update_count: number;
+  last_error_date?: number;
+  last_error_message?: string;
+  max_connections: number;
+  ip_address?: string;
+}
+
 @Injectable()
 export class TelegramBotService {
   private readonly logger = new Logger(TelegramBotService.name);
