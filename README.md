@@ -254,16 +254,18 @@ POINTS_TTL_BURN=1
 - Превью/сжигание баллов выполняют воркеры с указанными флагами. Метрики доступны на `GET /metrics`.
 - Полезные автотесты: `ttl.flow.e2e-spec.ts`, `ttl.fifo.e2e-spec.ts`, `levels.ttl.interplay.e2e-spec.ts`.
 
-## Ваучеры (Vouchers)
+## Промокоды (Promo Codes)
 
-Ваучеры позволяют применять скидку по коду. Поддержка типов: `PERCENTAGE` (процент) и `FIXED_AMOUNT` (фиксированная сумма). Простейшие ограничения: срок действия, минимальная сумма, лимит использований.
+Промокоды позволяют начислять дополнительные баллы, ускорять сгорание и повышать уровень клиента. Настройки доступны в портале мерчанта (`/promocodes`).
 
-- Эндпоинты:
-  - `POST /vouchers/preview` — { merchantId, code, eligibleTotal, customerId? } → { canApply, discount, voucherId, codeId, reason? }
-  - `POST /vouchers/issue` — { merchantId, valueType, value, code, validFrom?, validUntil?, minPurchaseAmount? } → { ok, voucherId }
-  - `POST /vouchers/redeem` — { merchantId, code, customerId, eligibleTotal, orderId? } → { ok, discount }
-  - `POST /vouchers/status` — { merchantId, code? , voucherId? } → { voucherId, codeId?, code?, voucherStatus, voucherActive, codeStatus, codeUsedCount, codeMaxUses, validFrom?, validUntil? }
-  - `POST /vouchers/deactivate` — { merchantId, code? , voucherId? } → { ok: true }
+- Эндпоинты портала:
+  - `GET /portal/promocodes?status=ACTIVE|ARCHIVE` — список последних промокодов с метриками.
+  - `POST /portal/promocodes/issue` — создание промокода. Тело соответствует `PortalPromoCodePayload` (код, описание, баллы, TTL, ограничения, период действия и т.д.). Возвращает `{ ok: true, promoCodeId }`.
+  - `POST /portal/promocodes/deactivate` — `{ promoCodeId }` переводит промокод в архив (паузит использование).
+  - `POST /portal/promocodes/activate` — `{ promoCodeId }` повторно активирует промокод.
+  - `PUT /portal/promocodes/:promoCodeId` — обновляет настройки существующего промокода.
+
+Промокод применяется при `POST /loyalty/quote|commit`, если передан `promoCode`.
 
 ## Лимиты списаний/начислений (cap’ы)
 

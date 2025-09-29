@@ -54,7 +54,7 @@ export default function Page() {
   const [deviceId, setDeviceId] = useState<string>('');
   const [staffId, setStaffId] = useState<string>('');
   const [category, setCategory] = useState<string>('');
-  const [voucherCode, setVoucherCode] = useState<string>('');
+  const [promoCode, setPromoCode] = useState<string>('');
   const [staffKey, setStaffKey] = useState<string>('');
   // cashier auth (merchant login + 9-digit password)
   const [merchantLogin, setMerchantLogin] = useState<string>('');
@@ -101,7 +101,7 @@ export default function Page() {
       const r = await fetch(`${API_BASE}/loyalty/quote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId, ...(staffKey ? { 'X-Staff-Key': staffKey } : {}) },
-        body: JSON.stringify({ merchantId, mode, userToken, orderId, total, eligibleTotal, outletId: outletId || undefined, deviceId: deviceId || undefined, staffId: staffId || undefined, category: category || undefined, voucherCode: voucherCode || undefined }),
+        body: JSON.stringify({ merchantId, mode, userToken, orderId, total, eligibleTotal, outletId: outletId || undefined, deviceId: deviceId || undefined, staffId: staffId || undefined, category: category || undefined, promoCode: promoCode || undefined }),
       });
       if (!r.ok) {
         const text = await r.text();
@@ -222,7 +222,7 @@ export default function Page() {
       const r = await fetch(`${API_BASE}/loyalty/commit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId, ...(staffKey?{ 'X-Staff-Key': staffKey }: {}) },
-        body: JSON.stringify({ merchantId, holdId, orderId, receiptNumber: '000001', requestId, voucherCode: voucherCode || undefined }),
+        body: JSON.stringify({ merchantId, holdId, orderId, receiptNumber: '000001', requestId, promoCode: promoCode || undefined }),
       });
       const data = await r.json();
       if (data?.ok) {
@@ -541,8 +541,8 @@ export default function Page() {
         </div>
         <div style={{ display: 'flex', gap: 12 }}>
           <label style={{ flex: 1 }}>
-            Промокод/ваучер (опц.):
-            <input value={voucherCode} onChange={(e)=>setVoucherCode(e.target.value)} style={{ width: '100%', padding: 8 }} placeholder="например, SAVE10 или BONUS100" />
+            Промокод (опц.):
+            <input value={promoCode} onChange={(e)=>setPromoCode(e.target.value)} style={{ width: '100%', padding: 8 }} placeholder="например, SAVE10 или BONUS100" />
           </label>
         </div>
 

@@ -25,7 +25,7 @@ export class LoyaltyApi {
   }
 
   // Endpoints
-  quote(body: { mode: 'redeem'|'earn'; merchantId: string; userToken: string; orderId: string; total: number; eligibleTotal: number; outletId?: string; deviceId?: string; staffId?: string; category?: string; voucherCode?: string }, opts?: { staffKey?: string; bridgeSignatureSecret?: string }) {
+  quote(body: { mode: 'redeem'|'earn'; merchantId: string; userToken: string; orderId: string; total: number; eligibleTotal: number; outletId?: string; deviceId?: string; staffId?: string; category?: string; promoCode?: string }, opts?: { staffKey?: string; bridgeSignatureSecret?: string }) {
     const json = JSON.stringify(body);
     const headers: any = {};
     if (opts?.staffKey) headers['X-Staff-Key'] = opts.staffKey;
@@ -33,7 +33,7 @@ export class LoyaltyApi {
     return this.http('/loyalty/quote', { method: 'POST', headers, body: json });
   }
 
-  commit(body: { merchantId: string; holdId: string; orderId: string; receiptNumber?: string; requestId?: string; voucherCode?: string }, opts?: { idempotencyKey?: string; bridgeSignatureSecret?: string }) {
+  commit(body: { merchantId: string; holdId: string; orderId: string; receiptNumber?: string; requestId?: string; promoCode?: string }, opts?: { idempotencyKey?: string; bridgeSignatureSecret?: string }) {
     const json = JSON.stringify(body);
     const headers: any = {};
     if (opts?.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey;
@@ -74,20 +74,6 @@ export class LoyaltyApi {
   publicSettings(merchantId: string) {
     return this.http(`/loyalty/settings/${encodeURIComponent(merchantId)}`);
   }
-
-  // Vouchers API
-  vouchers = {
-    preview: (args: { merchantId: string; code: string; eligibleTotal: number; customerId?: string }) =>
-      this.http('/vouchers/preview', { method: 'POST', body: JSON.stringify(args) }),
-    issue: (args: { merchantId: string; name?: string; valueType: 'PERCENTAGE'|'FIXED_AMOUNT'; value: number; code: string; validFrom?: string; validUntil?: string; minPurchaseAmount?: number }) =>
-      this.http('/vouchers/issue', { method: 'POST', body: JSON.stringify(args) }),
-    redeem: (args: { merchantId: string; code: string; customerId: string; eligibleTotal: number; orderId?: string }) =>
-      this.http('/vouchers/redeem', { method: 'POST', body: JSON.stringify(args) }),
-    status: (args: { merchantId: string; code?: string; voucherId?: string }) =>
-      this.http('/vouchers/status', { method: 'POST', body: JSON.stringify(args) }),
-    deactivate: (args: { merchantId: string; code?: string; voucherId?: string }) =>
-      this.http('/vouchers/deactivate', { method: 'POST', body: JSON.stringify(args) }),
-  } as const;
 
   // Referrals API (beta)
   referrals = {

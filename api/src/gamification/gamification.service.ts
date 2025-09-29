@@ -17,9 +17,9 @@ export interface CreateAchievementDto {
     value2?: number; // for between operator
   };
   reward?: {
-    type: 'POINTS' | 'VOUCHER' | 'BADGE' | 'MULTIPLIER';
+    type: 'POINTS' | 'PROMOCODE' | 'BADGE' | 'MULTIPLIER';
     value: number;
-    voucherId?: string;
+    promoCodeId?: string;
   };
   maxProgress?: number;
   expiresAt?: Date;

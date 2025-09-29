@@ -32,7 +32,6 @@ import { ReferralModule } from './referral/referral.module';
 import { LevelsModule } from './levels/levels.module';
 import { CampaignModule } from './campaigns/campaign.module';
 import { PromosModule } from './promos/promos.module';
-import { VouchersModule } from './vouchers/vouchers.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PortalAuthModule } from './portal-auth/portal-auth.module';
 import { PortalModule } from './portal/portal.module';
@@ -91,7 +90,6 @@ try {
     GiftsModule,
     LevelsModule,
     PromosModule,
-    VouchersModule,
     CampaignModule,
     NotificationsModule,
     ReferralModule,

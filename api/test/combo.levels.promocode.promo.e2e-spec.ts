@@ -4,14 +4,13 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma.service';
 import { PromosService } from '../src/promos/promos.service';
-import { VouchersService } from '../src/vouchers/vouchers.service';
 
 /**
- * E2E: Voucher + Promo + Rules + Levels (earn bonus) in one quote.
- * Expected: eligible 1000 -> voucher -100 (10%) -> 900 -> promo -50 -> 850;
- * earnBps = 500 + 200(Silver) = 700 => pointsToEarn = floor(850*0.07)=59.
+ * E2E: Promo + Rules + Levels (earn bonus) in one quote.
+ * Expected: eligible 1000 -> promo -50 -> 950;
+ * earnBps = 500 + 200(Silver) = 700 => pointsToEarn = floor(950*0.07)=66.
  */
-describe('Combo: Voucher+Promo+Rules+Levels (e2e)', () => {
+describe('Combo: Promo+Rules+Levels (e2e)', () => {
   let app: INestApplication;
 
   const state = {
@@ -52,9 +51,6 @@ describe('Combo: Voucher+Promo+Rules+Levels (e2e)', () => {
     }),
   };
 
-  const vouchersMock: Partial<VouchersService> = {
-    preview: async () => ({ canApply: true, discount: 100, voucherId: 'V1', codeId: 'VC1' } as any),
-  };
   const promosMock: Partial<PromosService> = {
     preview: async () => ({ canApply: true, discount: 50, name: 'PROMO50' } as any),
   };
@@ -62,7 +58,6 @@ describe('Combo: Voucher+Promo+Rules+Levels (e2e)', () => {
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(PrismaService).useValue(prismaMock)
-      .overrideProvider(VouchersService).useValue(vouchersMock)
       .overrideProvider(PromosService).useValue(promosMock)
       .compile();
     app = moduleFixture.createNestApplication();
@@ -71,11 +66,11 @@ describe('Combo: Voucher+Promo+Rules+Levels (e2e)', () => {
 
   afterAll(async () => { await app.close(); });
 
-  it('EARN: 59 points after voucher+promo and Silver bonus', async () => {
+  it('EARN: 66 points after promo and Silver bonus', async () => {
     const res = await request(app.getHttpServer())
       .post('/loyalty/quote')
-      .send({ merchantId: 'M-Combo', userToken: 'C-Combo', mode: 'EARN', total: 1000, eligibleTotal: 1000, voucherCode: 'TENOFF' })
+      .send({ merchantId: 'M-Combo', userToken: 'C-Combo', mode: 'EARN', total: 1000, eligibleTotal: 1000, promoCode: 'PROMO50' })
       .expect(201);
-    expect(res.body.pointsToEarn).toBe(59);
+    expect(res.body.pointsToEarn).toBe(66);
   });
 });
