@@ -3,7 +3,6 @@ import { PortalController } from './portal.controller';
 import { MerchantsModule } from '../merchants/merchants.module';
 import { PrismaModule } from '../prisma.module';
 import { PortalGuard } from '../portal-auth/portal.guard';
-import { VouchersModule } from '../vouchers/vouchers.module';
 import { PromoCodesModule } from '../promocodes/promocodes.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
@@ -23,7 +22,6 @@ import { PortalTelegramIntegrationService } from './services/telegram-integratio
   imports: [
     PrismaModule,
     MerchantsModule,
-    VouchersModule,
     PromoCodesModule,
     NotificationsModule,
     AnalyticsModule,

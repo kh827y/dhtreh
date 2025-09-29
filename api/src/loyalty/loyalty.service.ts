@@ -506,7 +506,7 @@ export class LoyaltyService {
     orderId: string,
     receiptNumber?: string,
     requestId?: string,
-    opts?: { additionalEarnPoints?: number; promoCode?: { promoCodeId: string; code?: string | null } },
+    opts?: { promoCode?: { promoCodeId: string; code?: string | null } },
   ) {
     const hold = await this.prisma.hold.findUnique({ where: { id: holdId } });
     if (!hold) throw new BadRequestException('Hold not found');
@@ -584,9 +584,8 @@ export class LoyaltyService {
           }
         }
       const baseEarnFromHold = hold.mode === 'EARN' ? Math.max(0, Math.floor(Number(hold.earnPoints || 0))) : 0;
-      const voucherBonus = Math.max(0, Math.floor(Number(opts?.additionalEarnPoints || 0)));
       const promoBonus = promoResult ? Math.max(0, Math.floor(Number(promoResult.pointsIssued || 0))) : 0;
-      const appliedEarnTotal = baseEarnFromHold + voucherBonus + promoBonus;
+      const appliedEarnTotal = baseEarnFromHold + promoBonus;
 
       if (appliedEarnTotal > 0) {
         // Проверяем, требуется ли задержка начисления. В юнит-тестах tx может не иметь merchantSettings — делаем fallback на this.prisma.
@@ -608,13 +607,13 @@ export class LoyaltyService {
             const maturesAt = new Date(Date.now() + delayDays * 24 * 60 * 60 * 1000);
             const earnLot = (tx as any)?.earnLot ?? (this.prisma as any)?.earnLot;
             if (earnLot?.create) {
-              if (baseEarnFromHold + voucherBonus > 0) {
+              if (baseEarnFromHold > 0) {
                 const expiresAtStd = ttlDays > 0 ? new Date(maturesAt.getTime() + ttlDays * 24 * 60 * 60 * 1000) : null;
                 await earnLot.create({
                   data: {
                     merchantId: hold.merchantId,
                     customerId: hold.customerId,
-                    points: baseEarnFromHold + voucherBonus,
+                    points: baseEarnFromHold,
                     consumedPoints: 0,
                     earnedAt: maturesAt,
                     maturesAt,
@@ -707,14 +706,14 @@ export class LoyaltyService {
           if (process.env.EARN_LOTS_FEATURE === '1' && appliedEarn > 0) {
             const earnLot = (tx as any)?.earnLot ?? (this.prisma as any)?.earnLot;
             if (earnLot?.create) {
-              if (baseEarnFromHold + voucherBonus > 0) {
+              if (baseEarnFromHold > 0) {
                 let expires: Date | null = null;
                 if (ttlDays > 0) expires = new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000);
                 await earnLot.create({
                   data: {
                     merchantId: hold.merchantId,
                     customerId: hold.customerId,
-                    points: baseEarnFromHold + voucherBonus,
+                    points: baseEarnFromHold,
                     consumedPoints: 0,
                     earnedAt: new Date(),
                     maturesAt: null,

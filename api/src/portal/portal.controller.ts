@@ -4,7 +4,6 @@ import { PortalGuard } from '../portal-auth/portal.guard';
 import { MerchantsService } from '../merchants/merchants.service';
 import { CreateDeviceDto, DeviceDto, LedgerEntryDto, MerchantSettingsRespDto, ReceiptDto, UpdateDeviceDto, UpdateMerchantSettingsDto } from '../merchants/dto';
 import { ErrorDto, TransactionItemDto } from '../loyalty/dto';
-import { VouchersService } from '../vouchers/vouchers.service';
 import { PromoCodesService, type PortalPromoCodePayload } from '../promocodes/promocodes.service';
 import { PromoCodeStatus } from '@prisma/client';
 import { NotificationsService, type BroadcastArgs } from '../notifications/notifications.service';
@@ -43,7 +42,6 @@ import { PortalTelegramIntegrationService } from './services/telegram-integratio
 export class PortalController {
   constructor(
     private readonly service: MerchantsService,
-    private readonly vouchers: VouchersService,
     private readonly promoCodes: PromoCodesService,
     private readonly notifications: NotificationsService,
     private readonly analytics: AnalyticsService,
@@ -175,31 +173,6 @@ export class PortalController {
     return this.customersService.remove(this.getMerchantId(req), String(customerId||''));
   }
 
-  // Vouchers (list/issue/deactivate)
-  @Get('vouchers')
-  @ApiOkResponse({ schema: { type: 'object', properties: { items: { type: 'array', items: { type: 'object', additionalProperties: true } } } } })
-  vouchersList(
-    @Req() req: any,
-    @Query('status') status?: string,
-    @Query('limit') limitStr?: string,
-  ) {
-    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200) : 50;
-    return this.vouchers.list({ merchantId: this.getMerchantId(req), status, limit });
-  }
-  @Post('vouchers/issue')
-  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' }, voucherId: { type: 'string' } } } })
-  vouchersIssue(
-    @Req() req: any,
-    @Body() body: { name?: string; valueType: 'PERCENTAGE'|'FIXED_AMOUNT'; value: number; code: string; validFrom?: string; validUntil?: string; minPurchaseAmount?: number },
-  ) {
-    return this.vouchers.issue({ merchantId: this.getMerchantId(req), ...body });
-  }
-  @Post('vouchers/deactivate')
-  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
-  vouchersDeactivate(@Req() req: any, @Body() body: { voucherId?: string; code?: string }) {
-    return this.vouchers.deactivate({ merchantId: this.getMerchantId(req), voucherId: body?.voucherId, code: body?.code });
-  }
-
   // Promocodes (POINTS) — list/issue/deactivate
   @Get('promocodes')
   @ApiOkResponse({ schema: { type: 'object', properties: { items: { type: 'array', items: { type: 'object', additionalProperties: true } } } } })
@@ -212,33 +185,35 @@ export class PortalController {
     return this.promoCodes.listForPortal(this.getMerchantId(req), status, limit);
   }
   @Post('promocodes/issue')
-  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' }, voucherId: { type: 'string' } } } })
+  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' }, promoCodeId: { type: 'string' } } } })
   promocodesIssue(
     @Req() req: any,
     @Body() body: PortalPromoCodePayload,
   ) {
-    return this.promoCodes.createFromPortal(this.getMerchantId(req), body);
+    return this.promoCodes
+      .createFromPortal(this.getMerchantId(req), body)
+      .then((created) => ({ ok: true, promoCodeId: created.id }));
   }
   @Post('promocodes/deactivate')
   @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
-  promocodesDeactivate(@Req() req: any, @Body() body: { voucherId?: string; code?: string }) {
-    if (!body?.voucherId) throw new NotFoundException('Промокод не найден');
-    return this.promoCodes.changeStatus(this.getMerchantId(req), body.voucherId, PromoCodeStatus.ARCHIVED);
+  promocodesDeactivate(@Req() req: any, @Body() body: { promoCodeId?: string; code?: string }) {
+    if (!body?.promoCodeId) throw new NotFoundException('Промокод не найден');
+    return this.promoCodes.changeStatus(this.getMerchantId(req), body.promoCodeId, PromoCodeStatus.ARCHIVED);
   }
   @Post('promocodes/activate')
   @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
-  promocodesActivate(@Req() req: any, @Body() body: { voucherId?: string; code?: string }) {
-    if (!body?.voucherId) throw new NotFoundException('Промокод не найден');
-    return this.promoCodes.changeStatus(this.getMerchantId(req), body.voucherId, PromoCodeStatus.ACTIVE);
+  promocodesActivate(@Req() req: any, @Body() body: { promoCodeId?: string; code?: string }) {
+    if (!body?.promoCodeId) throw new NotFoundException('Промокод не найден');
+    return this.promoCodes.changeStatus(this.getMerchantId(req), body.promoCodeId, PromoCodeStatus.ACTIVE);
   }
-  @Put('promocodes/:voucherId')
+  @Put('promocodes/:promoCodeId')
   @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
   promocodesUpdate(
     @Req() req: any,
-    @Param('voucherId') voucherId: string,
+    @Param('promoCodeId') promoCodeId: string,
     @Body() body: PortalPromoCodePayload,
   ) {
-    return this.promoCodes.updateFromPortal(this.getMerchantId(req), voucherId, body);
+    return this.promoCodes.updateFromPortal(this.getMerchantId(req), promoCodeId, body);
   }
 
   // Notifications broadcast (enqueue or dry-run)
