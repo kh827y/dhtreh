@@ -1,0 +1,522 @@
+.page {
+  padding-top: 24px;
+  padding-bottom: 40px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.profile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 18px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #dce6ff, #f1f5f9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #2563eb;
+  font-weight: 600;
+  font-size: 20px;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+}
+
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.profileText {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.greeting {
+  font-size: 14px;
+  color: #64748b;
+}
+
+.name {
+  font-size: 20px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.settingsButton {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
+}
+
+.settingsButton svg {
+  width: 20px;
+  height: 20px;
+  color: #334155;
+}
+
+.brand {
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+}
+
+.brand img {
+  height: 28px;
+  object-fit: contain;
+}
+
+.card {
+  background: #ffffff;
+  border-radius: 24px;
+  padding: 20px;
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
+}
+
+.balanceCard {
+  display: flex;
+  gap: 18px;
+  align-items: stretch;
+}
+
+.qrBlock {
+  flex: 0 0 132px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.qrFrame {
+  position: relative;
+  padding: 12px;
+  border-radius: 18px;
+  border: 1.5px dashed rgba(37, 99, 235, 0.45);
+  background: linear-gradient(145deg, rgba(37, 99, 235, 0.06), rgba(255, 255, 255, 0.9));
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.qrFrame:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.22);
+}
+
+.qrCanvas {
+  width: 96px;
+  height: 96px;
+  display: block;
+}
+
+.qrHint {
+  font-size: 12px;
+  color: #2563eb;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.qrHint svg {
+  width: 14px;
+  height: 14px;
+}
+
+.balanceInfo {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.balanceTitle {
+  font-size: 14px;
+  font-weight: 500;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.balanceAmount {
+  font-size: 32px;
+  font-weight: 700;
+  color: #1d4ed8;
+}
+
+.balanceMeta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.metaBadge {
+  flex: 1;
+  min-width: 120px;
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+  border-radius: 16px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.metaBadge span:last-child {
+  font-size: 18px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.actionsCard {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.promoForm {
+  display: flex;
+  gap: 12px;
+}
+
+.promoInput {
+  flex: 1;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  padding: 14px 16px;
+  font-size: 15px;
+  background: #ffffff;
+  color: #0f172a;
+}
+
+.promoInput::placeholder {
+  color: #94a3b8;
+}
+
+.primaryButton {
+  border: none;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 14px 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 15px 30px rgba(37, 99, 235, 0.3);
+}
+
+.promotionsButton {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 16px;
+  background: #ffffff;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  padding: 14px 18px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.06);
+  align-self: flex-start;
+}
+
+.promotionsBadge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  background: #ef4444;
+  color: #ffffff;
+  border-radius: 11px;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.historyCard {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.historyHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.historyTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.historyList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.historyItem {
+  background: #ffffff;
+  border-radius: 18px;
+  padding: 16px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.07);
+}
+
+.historyDetails {
+  display: flex;
+  gap: 12px;
+}
+
+.historyIcon {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+
+.historyText {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.historyType {
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.historyDate {
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.historyAmount {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.historyAmountPositive {
+  color: #22c55e;
+}
+
+.historyAmountNegative {
+  color: #ef4444;
+}
+
+.emptyState {
+  text-align: center;
+  padding: 32px 20px;
+  color: #94a3b8;
+  font-size: 14px;
+}
+
+.statusMessage {
+  margin-top: 18px;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.loadMore {
+  align-self: center;
+  border: none;
+  border-radius: 14px;
+  padding: 12px 22px;
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 24px;
+}
+
+.modalContent {
+  background: #ffffff;
+  border-radius: 24px;
+  padding: 24px;
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.modalTitle {
+  font-size: 20px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.modalDescription {
+  font-size: 14px;
+  color: #64748b;
+}
+
+.modalForm {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.modalLabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: #334155;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.modalInput,
+.modalSelect {
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  padding: 12px 14px;
+  font-size: 15px;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.modalActions {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.modalSecondary {
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 14px;
+  text-decoration: underline;
+}
+
+.qrModalCanvas {
+  width: min(320px, 70vw);
+  height: auto;
+}
+
+.backButton {
+  position: absolute;
+  top: 24px;
+  left: 24px;
+  border: none;
+  background: rgba(15, 23, 42, 0.75);
+  color: #ffffff;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+}
+
+.qrOnlyModal {
+  position: fixed;
+  inset: 0;
+  background: rgba(244, 247, 251, 0.97);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 55;
+}
+
+.qrOnlyWrapper {
+  background: #ffffff;
+  border-radius: 28px;
+  padding: 28px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
+}
+
+.devPanel {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 20px;
+  background: rgba(226, 232, 240, 0.6);
+  color: #334155;
+  font-size: 13px;
+}
+
+@media (max-width: 420px) {
+  .balanceCard {
+    flex-direction: column;
+  }
+
+  .qrBlock {
+    flex: 1;
+    flex-direction: row;
+    justify-content: flex-start;
+  }
+
+  .qrFrame {
+    padding: 10px;
+  }
+
+  .qrCanvas {
+    width: 84px;
+    height: 84px;
+  }
+
+  .balanceAmount {
+    font-size: 28px;
+  }
+
+  .promoForm {
+    flex-direction: column;
+  }
+
+  .primaryButton,
+  .promotionsButton {
+    width: 100%;
+  }
+}
