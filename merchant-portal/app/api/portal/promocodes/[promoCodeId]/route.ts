@@ -1,10 +1,10 @@
 import { NextRequest } from 'next/server';
 import { portalFetch } from '../../_lib';
 
-export async function PUT(req: NextRequest, { params }: { params: { voucherId: string } }) {
-  const voucherId = String(params?.voucherId || '');
-  if (!voucherId) {
-    return new Response('voucherId required', { status: 400 });
+export async function PUT(req: NextRequest, { params }: { params: { promoCodeId: string } }) {
+  const promoCodeId = String(params?.promoCodeId || '');
+  if (!promoCodeId) {
+    return new Response('promoCodeId required', { status: 400 });
   }
   const body = await req.json().catch(() => ({} as any));
   const payload: Record<string, any> = {
@@ -25,7 +25,7 @@ export async function PUT(req: NextRequest, { params }: { params: { voucherId: s
     validFrom: body?.validFrom ? String(body.validFrom) : undefined,
     validUntil: body?.validUntil ? String(body.validUntil) : undefined,
   };
-  return portalFetch(req, `/portal/promocodes/${encodeURIComponent(voucherId)}`, {
+  return portalFetch(req, `/portal/promocodes/${encodeURIComponent(promoCodeId)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),

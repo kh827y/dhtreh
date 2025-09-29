@@ -26,8 +26,8 @@ export class QuoteDto {
   @IsOptional() @IsString() requestId?: string;
   @ApiPropertyOptional({ description: 'Категория товара/чека для правил' })
   @IsOptional() @IsString() category?: string;
-  @ApiPropertyOptional({ description: 'Опциональный ваучер/промокод' })
-  @IsOptional() @IsString() voucherCode?: string;
+  @ApiPropertyOptional({ description: 'Опциональный промокод' })
+  @IsOptional() @IsString() promoCode?: string;
 }
 
 export class CommitDto {
@@ -43,8 +43,8 @@ export class CommitDto {
   @IsOptional() @IsString() provider?: string;
   @ApiPropertyOptional()
   @IsOptional() @IsString() requestId?: string;
-  @ApiPropertyOptional({ description: 'Опциональный ваучер/промокод для фиксации использования' })
-  @IsOptional() @IsString() voucherCode?: string;
+  @ApiPropertyOptional({ description: 'Опциональный промокод для фиксации использования' })
+  @IsOptional() @IsString() promoCode?: string;
 }
 
 export class QrMintDto {

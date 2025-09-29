@@ -188,7 +188,7 @@ X-Staff-Key: required_if_enabled
   "deviceId": "string", // optional
   "staffId": "string",  // optional
   "category": "string",  // optional (для правил промо)
-  "voucherCode": "string" // optional (применить ваучер перед расчётом)
+  "promoCode": "string" // optional (применить промокод перед расчётом)
 }
 
 Response 200 (REDEEM):
@@ -355,7 +355,7 @@ Response 200:
 
 Последовательность в расчёте `POST /loyalty/quote`:
 
-1) Ваучер (если указан `voucherCode`) — уменьшает `eligibleTotal` и `total`.
+1) Промокод (если указан `promoCode`) — уменьшает `eligibleTotal` и `total`.
 2) Промо‑правила (`rulesJson.promos`) — применяются к уменьшенному `eligibleTotal`.
 3) Базовые правила начисления/лимитов (`rulesJson.rules` или базовые ставки мерчанта).
 4) Бонусы уровня (Levels) — добавляются поверх базовых ставок: `earnBps += levelEarnBonus`, `redeemLimitBps += levelRedeemBonus`.
@@ -363,7 +363,7 @@ Response 200:
 Итоговые формулы (упрощённо):
 
 ```text
-eligible' = eligibleTotal - voucherDiscount(eligibleTotal) - promoDiscount(eligibleTotal)
+eligible' = eligibleTotal - promoDiscount(eligibleTotal)
 earnPoints = floor( eligible' * (earnBps_base + earnBps_bonus(level)) / 10000 )
 redeemCap  = floor( eligible' * (redeemBps_base + redeemBps_bonus(level)) / 10000 )
 ```
@@ -372,12 +372,12 @@ redeemCap  = floor( eligible' * (redeemBps_base + redeemBps_bonus(level)) / 1000
 
 - База мерчанта: `earnBps=500` (5%), `redeemLimitBps=5000` (50%).
 - Уровень клиента: Silver (`earnBpsBonus=+200`, `redeemLimitBpsBonus=+1000`).
-- Ваучер 10% и промо −50 на чек 1000.
+- Промокод 10% и промо −50 на чек 1000.
 
 Расчёт:
 
 ```
-eligible: 1000 → voucher -10% = 900 → promo -50 = 850
+eligible: 1000 → promo -50 = 950
 EARN: 850 * (500+200)/10000 = floor(850 * 0.07) = 59 баллов
 REDEEM cap: 850 * (5000+1000)/10000 = floor(850 * 0.6) = 510
 ```
@@ -395,7 +395,7 @@ X-Staff-Key: required_if_enabled
   "orderId": "string",
   "receiptNumber": "string", // optional
   "requestId": "string",      // optional
-  "voucherCode": "string"     // optional (идемпотентная фиксация использования ваучера)
+  "promoCode": "string"     // optional (идемпотентная фиксация использования промокода)
 }
 
 Response 200:
@@ -463,98 +463,17 @@ Response 200:
 }
 ```
 
-### Ваучеры
+### Промокоды
 
-#### 1. Предпросмотр скидки по ваучеру
-```http
-POST /vouchers/preview
-Content-Type: application/json
+Промокоды управляются через портал мерчанта. Основные операции:
 
-{
-  "merchantId": "M1",
-  "code": "TENOFF",
-  "eligibleTotal": 1000,
-  "customerId": "optional"
-}
+- `GET /portal/promocodes?status=ACTIVE|ARCHIVE` — список с метриками.
+- `POST /portal/promocodes/issue` — создание промокода (см. `PortalPromoCodePayload`).
+- `PUT /portal/promocodes/:promoCodeId` — обновление.
+- `POST /portal/promocodes/deactivate` / `POST /portal/promocodes/activate` — смена статуса.
 
-Response 200:
-{
-  "canApply": true,
-  "discount": 100,
-  "voucherId": "V1",
-  "codeId": "C1",
-  "reason": null
-}
-```
+В API лояльности промокод передаётся полем `promoCode` в `POST /loyalty/quote` и `POST /loyalty/commit`. При применении начисляются дополнительные баллы, TTL и уровень согласно настройкам.
 
-#### 2. Выпуск ваучера/кода
-```http
-POST /vouchers/issue
-Content-Type: application/json
-
-{
-  "merchantId": "M1",
-  "valueType": "PERCENTAGE", // или FIXED_AMOUNT
-  "value": 10,
-  "code": "TENOFF",
-  "validFrom": "2025-01-01T00:00:00Z",
-  "validUntil": "2025-12-31T23:59:59Z",
-  "minPurchaseAmount": 500
-}
-
-Response 200:
-{ "ok": true, "voucherId": "V1" }
-```
-
-#### 3. Фиксация использования ваучера (идемпотентно по orderId)
-```http
-POST /vouchers/redeem
-Content-Type: application/json
-
-{
-  "merchantId": "M1",
-  "code": "TENOFF",
-  "customerId": "C1",
-  "eligibleTotal": 1000,
-  "orderId": "ORDER-1"
-}
-
-Response 200:
-{ "ok": true, "discount": 100 }
-```
-
-#### 4. Статус ваучера/кода
-```http
-POST /vouchers/status
-Content-Type: application/json
-
-{ "merchantId": "M1", "code": "TENOFF" }
-
-Response 200:
-{
-  "voucherId": "V1",
-  "codeId": "C1",
-  "code": "TENOFF",
-  "voucherStatus": "ACTIVE",
-  "voucherActive": true,
-  "codeStatus": "ACTIVE",
-  "codeUsedCount": 0,
-  "codeMaxUses": 1,
-  "validFrom": "2025-01-01T00:00:00Z",
-  "validUntil": "2025-12-31T23:59:59Z"
-}
-```
-
-#### 5. Деактивация ваучера/кода
-```http
-POST /vouchers/deactivate
-Content-Type: application/json
-
-{ "merchantId": "M1", "code": "TENOFF" }
-
-Response 200:
-{ "ok": true }
-```
 
 ## Referrals (beta/preview)
 

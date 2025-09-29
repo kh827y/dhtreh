@@ -54,6 +54,8 @@
 - ✅ Раздел «Аудитории клиентов»: поиск, таблица всех метрик, модалка создания/редактирования с чекбоксами, мультиселектами, диапазонами, уровнями RFM, просмотр состава аудитории.
 - ✅ Механика «Баллы за регистрацию»: UI подключен к `rulesJson.registration`, поддерживает настройки TTL и задержку начисления через реальные данные `/portal/settings`.
 - ✅ Механика «Сгорание (TTL)»: напоминания читают/сохраняют `rulesJson.burnReminder`, отображают срок жизни и наличие Telegram-бота по данным мерчанта.
+- ✅ Промокоды: портал работает с `PromoCode` (CRUD, лимиты, визиты, периоды), commit начисляет баллы/TTL и повышает уровни.
+- ✅ Почистил e2e на промокоды: убраны ссылки на ваучеры, обновлены ожидания под реальные расчёты и закрыт тип по JSON-колонкам.
 
 ### Merchant Portal — Каталог и торговые точки (новое ТЗ)
 
@@ -130,7 +132,7 @@
 - Волна 2 — Функции лояльности (ядро)
   - Уровни (CustomerLevel): правила перехода и выгоды.
   - TTL/сгорание баллов: безопасный расчёт; тесты.
-  - Промокоды/ваучеры: выпуск/активация/ограничения; анти‑фрод капы.
+  - Промокоды: выпуск/активация/ограничения; анти‑фрод капы.
   - Рефералка многоуровневая; защита от саморефералки/дубликатов.
   - Акции: buy‑N‑get‑1, спеццены, бонусные коэффициенты.
   - Подарки за баллы и «Подарок на ДР».
@@ -219,17 +221,15 @@
   - Admin: добавлены редакторы `levelsCfg`/`levelBenefits` и страница предпросмотра уровня клиента (`admin/src/app/levels/page.tsx`).
   - UI-качество: заменены внутренние `<a>` на `Link` в Admin и безопасная типизация `catch (unknown)`.
   - Тестовый ритуал: исправлен «зависон» после e2e — в `api/package.json` скрипт `test:e2e` дополнен `--forceExit`.
-  - E2E комбо: Levels + Voucher + Promo — добавлены кейсы на EARN (59 баллов после ваучера/промо и бонуса уровня) и REDEEM (лимит 510) в `api/test/loyalty.e2e-spec.ts`.
+  - E2E комбо: прежние сценарии Levels + промокод + Promo требуются заново после миграции на новый сервис.
   - TTL: усилены unit‑тесты `PointsBurnWorker` (явные проверки суммы сгорания/баланса/события), превью TTL (`PointsTtlWorker`) и активация лотов — зелёные.
   - Документация: `API_DOCUMENTATION.md` — разделы «Уровни и бонусы» и «TTL/Сгорание баллов» (флаги, события, настройки в админке).
   - Admin: добавлены проверки валидности JSON для `levelsCfg` и `levelBenefits` (кнопки «Проверить уровни/бонусы» на странице настроек).
   - Подключён `PromosModule` (prev. этап) и добавлены превью‑правила (категория, minEligible), e2e `promos.e2e-spec.ts` — зелёные.
-  - Реализованы `Vouchers`: `preview`, `issue`, `redeem` в `api/src/vouchers/*`. В `redeem` — идемпотентность по `(voucherId, customerId, orderId)` и проверка лимитов/валидности.
-  - Интеграция в денежный флоу: `loyalty.controller.quote()` сначала уменьшаем `eligibleTotal` ваучером → промо, затем считаем. В `commit()` при наличии `voucherCode` выполняется идемпотентный `redeem` по `orderId`.
-  - Promocodes (points): добавлен поток промокодов как отдельный механизм управления (поверх `VouchersService`) для портала.
-    - `PortalController`: `GET /portal/promocodes`, `POST /portal/promocodes/issue`, `POST /portal/promocodes/deactivate` (фильтр `type: 'PROMO_CODE'`, `valueType: 'POINTS'`).
-    - `VouchersService`: `issue()` поддерживает `valueType='POINTS'` с `type='PROMO_CODE'`; `list()` фильтрует по `type`; `status()` возвращает `type/valueType/value`.
-    - Merchant Portal: прокси‑роуты `/app/api/portal/promocodes/*` и страница `/promocodes` (табы Активные/Архивные, создание/деактивация).
+  - Legacy ваучеры удалены: сервисы и контроллеры `vouchers/*` заменены на единый `PromoCodesService`, работающий с реальными таблицами `PromoCode`/`PromoCodeUsage`.
+  - TODO: перенести оставшиеся e2e (`api/test/vouchers.e2e-spec.ts`, части `loyalty.e2e-spec.ts`) с моков ваучеров на новые промокоды, либо удалить как дублирующие.
+  - Интеграция в денежный флоу: `loyalty.controller.quote|commit` принимает поле `promoCode`, использует `PromoCodesService.apply`, начисляет баллы, TTL и уровни в рамках транзакции.
+  - Portal/merchant-portal: `GET/POST /portal/promocodes*`, прокси в `merchant-portal/app/api/portal/promocodes/*` и страница `/promocodes` обновлены под `promoCodeId` и статусы `ACTIVE/ARCHIVED`.
   - Cashier auth: публичные эндпоинты в `LoyaltyController` — `POST /loyalty/cashier/login` (merchantLogin+password9) и `POST /loyalty/cashier/staff-token` (по PIN и точке).
     - `CashierGuard`: whitelist для `/loyalty/cashier/*` и прочих публичных GET.
     - `LoyaltyModule`: импортирован `MerchantsModule` для DI.
@@ -250,15 +250,14 @@
     - «Бонус за регистрацию» (`/loyalty/mechanics/registration-bonus`) — конфиг `rulesJson.registration` (enabled/points/ttlDays/text).
     - «Сгорание (TTL)» (`/loyalty/mechanics/ttl`) — управление `pointsTtlDays` и `rulesJson.burnReminder` (enabled/daysBefore/text).
   - Merchant Portal: `auto-return` сохранение рефакторено — отправляется минимальный DTO (`earnBps`, `redeemLimitBps`, `rulesJson`) вместо полного объекта настроек.
-  - Добавлены e2e в `api/test/loyalty.e2e-spec.ts`: применение ваучера в quote и идемпотентность `commit` с ваучером.
-  - Дополнительные e2e: комбо ваучер+промо (REDEEM) влияет на лимит, проверка `redeemApplied` на `commit`, `redeem` идемпотентен при достижении `maxUses`, `issue` создаёт код и работает в `preview`.
-  - Prisma: добавлен уникальный индекс `@@unique([voucherId, customerId, orderId])` для `VoucherUsage` (идемпотентность на уровне БД, миграция будет сгенерирована).
-  - SDK TS: добавлены `vouchers.preview/issue/redeem/status/deactivate` и поддержка `voucherCode` в `quote/commit`.
-  - README дополнен разделом «Vouchers» (эндпоинты, порядок применения скидок).
+  - Требуется обновить e2e под новый `PromoCodesService` (earn/commit/idempotency) — старые сценарии на ваучеры удалены.
+  - Prisma: индексы `VoucherUsage` остаются для обратной совместимости, но новая логика работает с `PromoCodeUsage`.
+  - SDK TS: поле запроса переименовано в `promoCode`, удалён клиент `vouchers.*`.
+  - README и документация обновлены под промокоды портала вместо ваучеров.
   - Все тесты зелёные: `pnpm -C api test && pnpm -C api test:e2e`.
   - Merchant Portal — Клиенты: подключено бэкенд‑взаимодействие без изменения UI. Страница `/customers` и карточка клиента используют прокси `app/api/customers/*` к `http://localhost:3004/customers` (CRUD). Создание/редактирование, а также модалки «Начислить»/«Списать» сохраняют данные в БД. Добавлен пример ENV `infra/env-examples/merchant-portal.env.example` с `CUSTOMERS_API_BASE`.
-  - Admin UI: добавлен раздел «Ваучеры» — список/поиск/выпуск/деактивация/экспорт (admin/app/vouchers), клиентские методы (admin/lib/vouchers.ts).
-  - API: админские эндпоинты для ваучеров: `GET /vouchers/list`, `GET /vouchers/export.csv` (защищены AdminGuard/AdminIpGuard).
+  - Admin UI: legacy раздел «Ваучеры» удалён, вместо него основной фокус — порталские промокоды.
+  - API: legacy эндпоинты `/vouchers/*` вычищены.
   - Admin (CRM): мини‑карточка уровня на странице клиентов, автозагрузка уровня, ссылка «Подробнее», бейдж уровня в транзакциях/чеках с tooltip «эффективные ставки» (base rules + level bonus).
   - Admin (Levels): автозагрузка по query `merchantId/customerId`, прогресс‑бар, расчёт «эффективных ставок» на странице уровней и в настройках мерчанта.
   - TTL e2e: полный флоу PENDING→ACTIVE→preview→burn (`ttl.flow.e2e-spec.ts`) и FIFO‑сгорание с проверкой `consumedPoints` (`ttl.fifo.e2e-spec.ts`).
@@ -275,7 +274,7 @@
   - Admin UX: поповер — закрытие по клику вне и по Esc, скелетон‑состояние загрузки.
 
  - Следующий шаг (Wave 2):
-  - E2E: «ваучер+промо+уровень+commit → повторный quote (per‑order cap)», расширение TTL‑кейсов, нагрузочные sanity‑чек‑тесты.
+  - E2E: «промокод+уровень+commit → повторный quote (per‑order cap)», расширение TTL‑кейсов, нагрузочные sanity‑чек‑тесты.
   - Referrals: e2e без моков на dev‑БД (идемпотентность, самореферал), SDK методы и примеры.
   - Admin: типографика/отступы/тени поповера (унификация с дизайн‑системой), быстрые подсказки на списках.
   - Ритуал: держать `pnpm -C api test && pnpm -C api test:e2e` зелёным на каждом батче; фиксировать прогресс в `plan.md`.
@@ -283,7 +282,7 @@
 — Следующий шаг (Wave 2, текущая сессия):
   - Cashier UI: реализовать экран кассира (login 9‑значный пароль мерчанта → ввод PIN сотрудника по точке) и привязку к `X-Staff-Key`.
   - Promocodes (points): расширить обработку в `LoyaltyService.commit()` для начислений по промокоду (POINTS) — idempotent по `orderId`, структурные логи/метрики; e2e.
-  - E2E: добавить кейс earn по промокоду POINTS (issue → quote/commit с voucherCode → проверка баланса/транзакций).
+  - E2E: добавить кейс earn по промокоду POINTS (issue → quote/commit с promoCode → проверка баланса/транзакций).
 
 ## Волна 3 — Завершена (2025-09-15)
 
