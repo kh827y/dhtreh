@@ -677,6 +677,220 @@ export class AnalyticsService {
     return { topOutlets, topStaff, peakHours, deviceUsage };
   }
 
+  async getAutoReturnMetrics(
+    merchantId: string,
+    period: DashboardPeriod,
+    outletId?: string,
+  ): Promise<{
+    period: { from: string; to: string; type: DashboardPeriod['type']; thresholdDays: number; giftPoints: number };
+    summary: {
+      invitations: number;
+      returned: number;
+      conversion: number;
+      pointsCost: number;
+      firstPurchaseRevenue: number;
+    };
+    distance: {
+      customers: number;
+      purchasesPerCustomer: number;
+      purchasesCount: number;
+      totalAmount: number;
+      averageCheck: number;
+    };
+    rfm: Array<{ segment: string; invitations: number; returned: number }>;
+    trends: {
+      attempts: Array<{ date: string; invitations: number; returns: number }>;
+      revenue: Array<{ date: string; total: number; firstPurchases: number }>;
+    };
+  }> {
+    const settings = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+      select: { rulesJson: true },
+    });
+
+    const rules = settings?.rulesJson && typeof settings.rulesJson === 'object' ? (settings.rulesJson as any) : {};
+    const autoReturn = rules && typeof rules === 'object' && rules.autoReturn && typeof rules.autoReturn === 'object'
+      ? rules.autoReturn
+      : {};
+
+    const thresholdDays = Math.max(1, Math.floor(Number(autoReturn?.days ?? autoReturn?.thresholdDays ?? 60) || 60));
+    const giftPoints = Math.max(0, Math.floor(Number(autoReturn?.giftPoints ?? 0) || 0));
+
+    const from = new Date(period.from);
+    const to = new Date(period.to);
+    const msInDay = 24 * 60 * 60 * 1000;
+    const thresholdMs = thresholdDays * msInDay;
+
+    const receiptWhereBase: any = {
+      merchantId,
+    };
+    if (outletId && outletId !== 'all') {
+      receiptWhereBase.outletId = outletId;
+    }
+
+    const receiptsInPeriod = await this.prisma.receipt.findMany({
+      where: {
+        ...receiptWhereBase,
+        createdAt: { gte: from, lte: to },
+      },
+      select: { customerId: true, total: true, createdAt: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const lastReceiptBefore = await this.prisma.receipt.groupBy({
+      by: ['customerId'],
+      where: {
+        ...receiptWhereBase,
+        createdAt: { lt: from },
+      },
+      _max: { createdAt: true },
+    });
+
+    const eligible = new Map<
+      string,
+      {
+        lastBefore: Date;
+        inviteDate: Date;
+        receipts: Array<{ date: Date; total: number }>;
+      }
+    >();
+
+    const cutoff = new Date(from.getTime() - thresholdMs);
+    for (const item of lastReceiptBefore) {
+      const customerId = item.customerId as string;
+      const last = item._max.createdAt;
+      if (!customerId || !last) continue;
+      if (last > cutoff) continue;
+      let inviteDate = new Date(last.getTime() + thresholdMs);
+      if (inviteDate < from) inviteDate = new Date(from);
+      if (inviteDate > to) continue;
+      eligible.set(customerId, { lastBefore: last, inviteDate, receipts: [] });
+    }
+
+    for (const receipt of receiptsInPeriod) {
+      const record = eligible.get(receipt.customerId);
+      if (!record) continue;
+      record.receipts.push({ date: receipt.createdAt, total: receipt.total });
+    }
+
+    const segments = [
+      { label: 'Недавние (<92 дней)', min: 0, max: 91 },
+      { label: 'Умеренные (92–184)', min: 92, max: 183 },
+      { label: 'Засыпающие (184–276)', min: 184, max: 275 },
+      { label: 'Спящие (276–368)', min: 276, max: 367 },
+      { label: 'Потерянные (>368)', min: 368, max: Number.POSITIVE_INFINITY },
+    ];
+
+    const segmentCounters = new Map<string, { invitations: number; returned: number }>();
+    for (const seg of segments) {
+      segmentCounters.set(seg.label, { invitations: 0, returned: 0 });
+    }
+
+    const invitesByDay = new Map<string, number>();
+    const returnsByDay = new Map<string, number>();
+    const revenueByDay = new Map<string, number>();
+    const firstRevenueByDay = new Map<string, number>();
+
+    let invitations = 0;
+    let returned = 0;
+    let firstPurchaseRevenue = 0;
+    let totalPurchases = 0;
+    let totalAmount = 0;
+
+    for (const [customerId, record] of eligible.entries()) {
+      invitations++;
+      const inviteKey = record.inviteDate.toISOString().slice(0, 10);
+      invitesByDay.set(inviteKey, (invitesByDay.get(inviteKey) ?? 0) + 1);
+
+      record.receipts.sort((a, b) => a.date.getTime() - b.date.getTime());
+      const first = record.receipts[0];
+      const hasReturned = Boolean(first && first.date >= record.inviteDate && first.date <= to);
+
+      const inactivityDays = Math.floor((from.getTime() - record.lastBefore.getTime()) / msInDay);
+      const segment = segments.find(seg => inactivityDays >= seg.min && inactivityDays <= seg.max);
+      if (segment) {
+        const bucket = segmentCounters.get(segment.label)!;
+        bucket.invitations += 1;
+        if (hasReturned) bucket.returned += 1;
+      }
+
+      if (!hasReturned) {
+        continue;
+      }
+
+      returned++;
+      if (first) {
+        firstPurchaseRevenue += first.total;
+        const firstKey = first.date.toISOString().slice(0, 10);
+        returnsByDay.set(firstKey, (returnsByDay.get(firstKey) ?? 0) + 1);
+        firstRevenueByDay.set(firstKey, (firstRevenueByDay.get(firstKey) ?? 0) + first.total);
+      }
+
+      let customerAmount = 0;
+      for (const [index, item] of record.receipts.entries()) {
+        customerAmount += item.total;
+        const key = item.date.toISOString().slice(0, 10);
+        revenueByDay.set(key, (revenueByDay.get(key) ?? 0) + item.total);
+      }
+      totalAmount += customerAmount;
+      totalPurchases += record.receipts.length;
+    }
+
+    const daysCount = Math.max(1, Math.floor((to.getTime() - from.getTime()) / msInDay) + 1);
+    const attemptsTrend: Array<{ date: string; invitations: number; returns: number }> = [];
+    const revenueTrend: Array<{ date: string; total: number; firstPurchases: number }> = [];
+    for (let i = 0; i < daysCount; i++) {
+      const current = new Date(from.getTime() + i * msInDay);
+      const key = current.toISOString().slice(0, 10);
+      attemptsTrend.push({
+        date: key,
+        invitations: invitesByDay.get(key) ?? 0,
+        returns: returnsByDay.get(key) ?? 0,
+      });
+      revenueTrend.push({
+        date: key,
+        total: revenueByDay.get(key) ?? 0,
+        firstPurchases: firstRevenueByDay.get(key) ?? 0,
+      });
+    }
+
+    const conversion = invitations > 0 ? (returned / invitations) * 100 : 0;
+    const purchasesPerCustomer = returned > 0 ? totalPurchases / returned : 0;
+    const averageCheck = totalPurchases > 0 ? totalAmount / totalPurchases : 0;
+
+    const summary = {
+      invitations,
+      returned,
+      conversion: Math.round(conversion * 10) / 10,
+      pointsCost: giftPoints * returned,
+      firstPurchaseRevenue,
+    };
+
+    const distance = {
+      customers: returned,
+      purchasesPerCustomer: Math.round(purchasesPerCustomer * 10) / 10,
+      purchasesCount: totalPurchases,
+      totalAmount,
+      averageCheck: Math.round(averageCheck * 10) / 10,
+    };
+
+    const rfm = segments.map(seg => {
+      const bucket = segmentCounters.get(seg.label)!;
+      return { segment: seg.label, invitations: bucket.invitations, returned: bucket.returned };
+    });
+
+    return {
+      period: { from: from.toISOString(), to: to.toISOString(), type: period.type, thresholdDays, giftPoints },
+      summary,
+      distance,
+      rfm,
+      trends: {
+        attempts: attemptsTrend,
+        revenue: revenueTrend,
+      },
+    };
+  }
+
   // Вспомогательные методы
 
   private getPreviousPeriod(period: DashboardPeriod): DashboardPeriod {
