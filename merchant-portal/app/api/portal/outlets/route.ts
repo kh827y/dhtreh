@@ -9,7 +9,30 @@ export async function GET(req: NextRequest) {
   if (status) qs.set('status', status);
   if (search) qs.set('search', search);
   const path = `/portal/outlets${qs.toString() ? `?${qs.toString()}` : ''}`;
-  return portalFetch(req, path, { method: 'GET' });
+  const proxied = await portalFetch(req, path, { method: 'GET' });
+  const raw = await proxied.text();
+  let data: any = null;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    // not json, return as-is
+    return new Response(raw, { status: proxied.status, headers: { 'Content-Type': proxied.headers.get('content-type') || 'text/plain' } });
+  }
+  if (!proxied.ok) {
+    return new Response(JSON.stringify(data), { status: proxied.status, headers: { 'Content-Type': 'application/json' } });
+  }
+  const sourceItems: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+  const items = sourceItems.map((o: any) => ({
+    id: String(o.id),
+    name: String(o.name || ''),
+    address: o.address ?? null,
+    description: o.description ?? null,
+    phone: o.phone ?? null,
+    works: typeof o.works === 'boolean' ? !!o.works : String(o.status || '').toUpperCase() === 'ACTIVE',
+    hidden: !!o.hidden,
+  }));
+  const total = Number(data?.meta?.total ?? items.length) || items.length;
+  return new Response(JSON.stringify({ items, total }), { status: proxied.status, headers: { 'Content-Type': 'application/json' } });
 }
 
 export async function POST(req: NextRequest) {
@@ -29,7 +52,6 @@ export async function POST(req: NextRequest) {
   if (body?.latitude !== undefined) payload.latitude = body.latitude == null ? null : Number(body.latitude);
   if (body?.longitude !== undefined) payload.longitude = body.longitude == null ? null : Number(body.longitude);
   if (body?.externalId !== undefined) payload.externalId = body.externalId == null ? null : String(body.externalId);
-  if (body?.showSchedule !== undefined) payload.showSchedule = !!body.showSchedule;
   if (body?.schedule !== undefined) payload.schedule = body.schedule;
   return portalFetch(req, '/portal/outlets', {
     method: 'POST',

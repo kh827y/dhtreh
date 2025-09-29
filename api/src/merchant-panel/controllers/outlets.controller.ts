@@ -35,6 +35,12 @@ export class OutletsController {
     return plainToInstance(OutletDto, outlet, { enableImplicitConversion: true });
   }
 
+  @Get(':id')
+  async get(@Req() req: any, @Param('id') id: string) {
+    const outlet = await this.service.getOutlet(this.getMerchantId(req), id);
+    return plainToInstance(OutletDto, outlet, { enableImplicitConversion: true });
+  }
+
   @Put(':id')
   async update(@Req() req: any, @Param('id') id: string, @Body() body: UpsertOutletDto) {
     const outlet = await this.service.updateOutlet(this.getMerchantId(req), id, body);

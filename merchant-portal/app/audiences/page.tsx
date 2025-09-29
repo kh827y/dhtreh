@@ -140,107 +140,106 @@ const rfmOptions = [
   { value: 'D', label: 'D' },
 ];
 
-function generateSampleMembers(count: number): AudienceMember[] {
-  return Array.from({ length: count }).map((_, index) => {
-    const id = `cust-${index + 1}`;
-    return {
-      id,
-      phone: `+7 (9${(index % 9) + 10}) ${String(100 + index).slice(-3)}-${String(1000 + index).slice(-4, -2)}-${String(1000 + index).slice(-2)}`,
-      name: ['Алексей', 'Мария', 'Иван', 'Елена', 'Павел', 'Светлана'][index % 6],
-      birthday: new Date(1990 + (index % 20), index % 12, (index % 28) + 1).toISOString(),
-      age: 21 + (index % 25),
-      registrationDate: new Date(2022, index % 12, (index % 28) + 1).toISOString(),
-    };
+// API helper
+async function api<T = any>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, {
+    ...init,
+    headers: { 'content-type': 'application/json', ...(init?.headers || {}) },
+    cache: 'no-store',
   });
+  const text = await res.text();
+  if (!res.ok) throw new Error(text || res.statusText);
+  try { return text ? JSON.parse(text) as T : (undefined as unknown as T); } catch { return (undefined as unknown as T); }
 }
 
-const sampleAudiences: AudienceRow[] = [
-  {
-    id: 'aud-1',
-    name: 'Лояльные клиенты',
-    participants: 248,
-    age: '25-45',
+function calculateAge(birthday: string): number {
+  try {
+    const d = new Date(birthday);
+    if (Number.isNaN(d.getTime())) return 0;
+    const now = new Date();
+    let age = now.getFullYear() - d.getFullYear();
+    const m = now.getMonth() - d.getMonth();
+    if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age -= 1;
+    return age;
+  } catch { return 0; }
+}
+
+function settingsToFilters(s: AudienceSettings) {
+  const filters: any = {};
+  if (s.genderEnabled && s.gender) filters.gender = [s.gender];
+  if (s.purchaseCountEnabled) {
+    filters.minVisits = s.purchaseCount?.[0];
+    filters.maxVisits = s.purchaseCount?.[1];
+  }
+  if (s.rfmRecencyEnabled && s.rfmRecency) filters.rfmClasses = [s.rfmRecency];
+  if (s.rfmFrequencyEnabled && s.rfmFrequency) filters.rfmClasses = [...(filters.rfmClasses || []), s.rfmFrequency];
+  if (s.rfmMonetaryEnabled && s.rfmMonetary) filters.rfmClasses = [...(filters.rfmClasses || []), s.rfmMonetary];
+  if (s.lastPurchaseEnabled) {
+    const now = new Date();
+    const from = new Date(now.getTime() - (s.lastPurchase?.[1] ?? 0) * 24 * 3600 * 1000);
+    const to = new Date(now.getTime() - (s.lastPurchase?.[0] ?? 0) * 24 * 3600 * 1000);
+    filters.lastVisitFrom = from.toISOString();
+    filters.lastVisitTo = to.toISOString();
+  }
+  // tags/level/device/birthday/age/products/outlets можно хранить в rules
+  return filters;
+}
+
+function filtersToDisplay(filters: any) {
+  const display = {
+    age: '—',
     gender: 'Смешанный',
-    averageCheck: '1 850 ₽',
-    lastPurchaseDays: '5',
-    purchaseCount: '8',
-    purchaseSum: '14 800 ₽',
-    birthday: '±7 дней',
-    registrationDays: '540',
-    device: 'iOS',
-    settings: {
-      ...defaultSettings,
-      visitedEnabled: true,
-      visitedOutlets: ['outlet-1', 'outlet-4'],
-      genderEnabled: false,
-      ageEnabled: true,
-      age: [25, 45],
-      lastPurchaseEnabled: true,
-      lastPurchase: [0, 30],
-      purchaseCountEnabled: true,
-      purchaseCount: [5, 20],
-      averageCheckEnabled: true,
-      averageCheck: [1000, 3000],
-      deviceEnabled: true,
-      device: 'iOS',
-    },
-    members: generateSampleMembers(12),
-  },
-  {
-    id: 'aud-2',
-    name: 'Новые за 30 дней',
-    participants: 92,
-    age: '18-35',
-    gender: 'Женский',
-    averageCheck: '1 200 ₽',
-    lastPurchaseDays: '12',
-    purchaseCount: '2',
-    purchaseSum: '2 400 ₽',
+    averageCheck: '—',
+    lastPurchaseDays: '—',
+    purchaseCount: '—',
+    purchaseSum: '—',
     birthday: '—',
-    registrationDays: '30',
-    device: 'Android',
-    settings: {
-      ...defaultSettings,
-      registrationEnabled: true,
-      registration: [0, 30],
-      genderEnabled: true,
-      gender: 'female',
-      ageEnabled: true,
-      age: [18, 35],
-      visitedEnabled: true,
-      visitedOutlets: ['outlet-2'],
-    },
-    members: generateSampleMembers(8),
-  },
-  {
-    id: 'aud-3',
-    name: 'Заснувшие 60+',
-    participants: 134,
-    age: '30-60',
-    gender: 'Смешанный',
-    averageCheck: '2 300 ₽',
-    lastPurchaseDays: '72',
-    purchaseCount: '4',
-    purchaseSum: '9 200 ₽',
-    birthday: '—',
-    registrationDays: '820',
-    device: 'iOS',
-    settings: {
-      ...defaultSettings,
-      lastPurchaseEnabled: true,
-      lastPurchase: [60, 365],
-      purchaseSumEnabled: true,
-      purchaseSum: [5000, 20000],
-      levelEnabled: true,
-      level: 'silver',
-    },
-    members: generateSampleMembers(10),
-  },
-];
+    registrationDays: '—',
+    device: '—',
+  } as Pick<AudienceRow, 'age'|'gender'|'averageCheck'|'lastPurchaseDays'|'purchaseCount'|'purchaseSum'|'birthday'|'registrationDays'|'device'>;
+  if (Array.isArray(filters?.gender) && filters.gender.length === 1) display.gender = filters.gender[0] === 'male' ? 'Мужской' : filters.gender[0] === 'female' ? 'Женский' : 'Смешанный';
+  if (filters?.minVisits != null || filters?.maxVisits != null) display.purchaseCount = `${filters.minVisits ?? 0}-${filters.maxVisits ?? '∞'}`;
+  if (filters?.lastVisitFrom || filters?.lastVisitTo) display.lastPurchaseDays = 'по периоду';
+  return display;
+}
+
+function segmentToAudienceRow(seg: any): AudienceRow {
+  const filters = seg.filters || {};
+  const d = filtersToDisplay(filters);
+  return {
+    id: String(seg.id),
+    name: String(seg.name || 'Без названия'),
+    participants: Number(seg.customerCount || 0),
+    age: d.age,
+    gender: d.gender,
+    averageCheck: d.averageCheck,
+    lastPurchaseDays: d.lastPurchaseDays,
+    purchaseCount: d.purchaseCount,
+    purchaseSum: d.purchaseSum,
+    birthday: d.birthday,
+    registrationDays: d.registrationDays,
+    device: d.device,
+    settings: defaultSettings,
+    members: [],
+  };
+}
+
+function mapMember(row: any): AudienceMember {
+  return {
+    id: String(row.id || ''),
+    phone: String(row.phone || ''),
+    name: String(row.name || row.phone || row.id || ''),
+    birthday: row.birthday ? String(row.birthday) : '',
+    age: row.birthday ? calculateAge(String(row.birthday)) : 0,
+    registrationDate: String(row.createdAt || ''),
+  };
+}
+
+// no sample data: always load from API
 
 export default function AudiencesPage() {
   const [search, setSearch] = React.useState('');
-  const [audiences, setAudiences] = React.useState<AudienceRow[]>(sampleAudiences);
+  const [audiences, setAudiences] = React.useState<AudienceRow[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [modalMode, setModalMode] = React.useState<'create' | 'edit' | null>(null);
   const [currentAudience, setCurrentAudience] = React.useState<AudienceRow | null>(null);
@@ -249,6 +248,41 @@ export default function AudiencesPage() {
   const [tab, setTab] = React.useState<'settings' | 'members'>('settings');
   const [memberSearch, setMemberSearch] = React.useState('');
   const [saving, setSaving] = React.useState(false);
+  const [membersLoading, setMembersLoading] = React.useState(false);
+
+  const loadAudiences = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const list = await api<any[]>(`/api/portal/audiences`);
+      const rows = Array.isArray(list) ? list.map(segmentToAudienceRow) : [];
+      setAudiences(rows);
+    } catch (e) {
+      console.error(e);
+      setAudiences([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => { loadAudiences(); }, [loadAudiences]);
+
+  // Load members when opening members tab
+  React.useEffect(() => {
+    const id = currentAudience?.id;
+    if (!id) return;
+    if (tab !== 'members') return;
+    setMembersLoading(true);
+    (async () => {
+      try {
+        const qs = new URLSearchParams({ segmentId: id, limit: '100' });
+        const res = await api<any>(`/api/customers?${qs.toString()}`);
+        const items = Array.isArray(res?.items) ? res.items : Array.isArray(res) ? res : [];
+        const mapped = items.map(mapMember);
+        setCurrentAudience((prev) => (prev && prev.id === id ? { ...prev, members: mapped } : prev));
+      } catch (e) { console.error(e); }
+      finally { setMembersLoading(false); }
+    })();
+  }, [tab, currentAudience?.id]);
 
   const filtered = React.useMemo(() =>
     audiences.filter((aud) => aud.name.toLowerCase().includes(search.toLowerCase())),
@@ -278,48 +312,36 @@ export default function AudiencesPage() {
     setMemberSearch('');
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!audienceName.trim()) {
       alert('Укажите название аудитории');
       return;
     }
     setSaving(true);
-    setTimeout(() => {
+    try {
+      const payload = { name: audienceName.trim(), rules: { ui: 'audience-settings' }, filters: settingsToFilters(settings) };
       if (modalMode === 'create') {
-        const newAudience: AudienceRow = {
-          id: `aud-${Date.now()}`,
-          name: audienceName.trim(),
-          participants: Math.floor(Math.random() * 80) + 20,
-          age: settings.ageEnabled ? `${settings.age[0]}-${settings.age[1]}` : '—',
-          gender: settings.genderEnabled ? (settings.gender === 'male' ? 'Мужской' : 'Женский') : 'Смешанный',
-          averageCheck: `${(settings.averageCheckEnabled ? settings.averageCheck[0] : 1500).toLocaleString('ru-RU')} ₽`,
-          lastPurchaseDays: settings.lastPurchaseEnabled ? `${settings.lastPurchase[0]}-${settings.lastPurchase[1]}` : '—',
-          purchaseCount: settings.purchaseCountEnabled ? `${settings.purchaseCount[0]}-${settings.purchaseCount[1]}` : '—',
-          purchaseSum: settings.purchaseSumEnabled ? `${settings.purchaseSum[0].toLocaleString('ru-RU')} ₽` : '—',
-          birthday: settings.birthdayEnabled ? `${settings.birthday[0]}-${settings.birthday[1]} дней` : '—',
-          registrationDays: settings.registrationEnabled ? `${settings.registration[0]}-${settings.registration[1]}` : '—',
-          device: settings.deviceEnabled ? (settings.device === 'Android' ? 'Android' : 'iOS') : 'Смешанный',
-          settings,
-          members: generateSampleMembers(6),
-        };
-        setAudiences((prev) => [newAudience, ...prev]);
+        await api(`/api/portal/audiences`, { method: 'POST', body: JSON.stringify(payload) });
       } else if (modalMode === 'edit' && currentAudience) {
-        setAudiences((prev) => prev.map((aud) => aud.id === currentAudience.id ? {
-          ...aud,
-          name: audienceName.trim(),
-          settings,
-        } : aud));
+        await api(`/api/portal/audiences/${encodeURIComponent(currentAudience.id)}`, { method: 'PUT', body: JSON.stringify(payload) });
       }
-      setSaving(false);
+      await loadAudiences();
       closeModal();
-    }, 400);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!currentAudience) return;
     if (!confirm('Удалить аудиторию?')) return;
-    setAudiences((prev) => prev.filter((aud) => aud.id !== currentAudience.id));
-    closeModal();
+    try {
+      await api(`/api/portal/audiences/${encodeURIComponent(currentAudience.id)}/archive`, { method: 'POST', body: JSON.stringify({}) });
+      await loadAudiences();
+      closeModal();
+    } catch (e) { console.error(e); }
   };
 
   const filteredMembers = React.useMemo(() => {

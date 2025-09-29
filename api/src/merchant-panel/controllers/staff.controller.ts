@@ -21,11 +21,9 @@ import {
   StaffListResponseDto,
   UpsertStaffDto,
   StaffDetailDto,
-  StaffSummaryDto,
   StaffOutletAccessDto,
   StaffPinDto,
 } from '../dto/staff.dto';
-import { plainToInstance } from 'class-transformer';
 import { ApiTags } from '@nestjs/swagger';
 
 @ApiTags('portal-staff')
@@ -41,7 +39,7 @@ export class StaffController {
   }
 
   @Get()
-  async list(@Req() req: any, @Query() query: StaffListQueryDto) {
+  async list(@Req() req: any, @Query() query: StaffListQueryDto): Promise<StaffListResponseDto> {
     const { page, pageSize, ...rest } = query;
     const filters: StaffFilters = {
       search: rest.search,
@@ -51,31 +49,25 @@ export class StaffController {
       portalOnly: rest.portalOnly,
     };
     const result = await this.service.listStaff(this.getMerchantId(req), filters, { page, pageSize });
-
-    const rawQuery = (req?.query ?? {}) as Record<string, unknown>;
-    const hasExplicitFilters = Object.keys(rawQuery).length > 0;
-    if (!hasExplicitFilters) {
-      return result.items.map((item) => plainToInstance(StaffSummaryDto, item, { enableImplicitConversion: true }));
-    }
-    return plainToInstance(StaffListResponseDto, result, { enableImplicitConversion: true });
+    return result as StaffListResponseDto;
   }
 
   @Get(':id')
   async get(@Req() req: any, @Param('id') id: string): Promise<StaffDetailDto> {
     const staff = await this.service.getStaff(this.getMerchantId(req), id);
-    return plainToInstance(StaffDetailDto, staff, { enableImplicitConversion: true });
+    return staff as StaffDetailDto;
   }
 
   @Post()
   async create(@Req() req: any, @Body() body: UpsertStaffDto) {
     const staff = await this.service.createStaff(this.getMerchantId(req), body);
-    return plainToInstance(StaffDetailDto, staff, { enableImplicitConversion: true });
+    return staff as StaffDetailDto;
   }
 
   @Put(':id')
   async update(@Req() req: any, @Param('id') id: string, @Body() body: UpsertStaffDto) {
     const staff = await this.service.updateStaff(this.getMerchantId(req), id, body);
-    return plainToInstance(StaffDetailDto, staff, { enableImplicitConversion: true });
+    return staff as StaffDetailDto;
   }
 
   @Post(':id/status')
@@ -97,13 +89,13 @@ export class StaffController {
   @Get(':id/access')
   async listAccess(@Req() req: any, @Param('id') id: string) {
     const items = await this.service.listStaffAccesses(this.getMerchantId(req), id);
-    return items.map((item) => plainToInstance(StaffOutletAccessDto, item, { enableImplicitConversion: true }));
+    return items as StaffOutletAccessDto[];
   }
 
   @Post(':id/access')
   async assignAccess(@Req() req: any, @Param('id') id: string, @Body() body: AssignStaffAccessDto) {
     const access = await this.service.addStaffAccess(this.getMerchantId(req), id, body.outletId);
-    return plainToInstance(StaffOutletAccessDto, access, { enableImplicitConversion: true });
+    return access as StaffOutletAccessDto;
   }
 
   @Delete(':id/access/:outletId')
@@ -114,12 +106,12 @@ export class StaffController {
   @Post(':id/access/:outletId/regenerate-pin')
   async regenerateOutletPin(@Req() req: any, @Param('id') id: string, @Param('outletId') outletId: string) {
     const access = await this.service.regenerateStaffOutletPin(this.getMerchantId(req), id, outletId);
-    return plainToInstance(StaffOutletAccessDto, access, { enableImplicitConversion: true });
+    return access as StaffOutletAccessDto;
   }
 
   @Post(':id/pin')
   async regeneratePersonalPin(@Req() req: any, @Param('id') id: string) {
     const result = await this.service.regenerateStaffPersonalPin(this.getMerchantId(req), id);
-    return plainToInstance(StaffPinDto, result, { enableImplicitConversion: true });
+    return result as StaffPinDto;
   }
 }

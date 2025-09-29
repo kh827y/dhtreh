@@ -118,52 +118,44 @@ export default function OutletsPage() {
           </Card>
         ) : items.length ? (
           items.map((outlet) => (
-            <div
-              key={outlet.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => window.alert(`Переход в профиль точки ${outlet.name}`)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  window.alert(`Переход в профиль точки ${outlet.name}`);
-                }
-              }}
-              className="glass"
-              style={{
-                padding: 20,
-                borderRadius: 14,
-                display: "grid",
-                gap: 8,
-                cursor: "pointer",
-                border: outlet.works ? "1px solid rgba(37,211,102,0.25)" : "1px solid rgba(255,255,255,0.08)",
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                <div style={{ fontWeight: 600, fontSize: 18 }}>{outlet.name}</div>
-                <div
-                  style={{
-                    padding: "4px 10px",
-                    borderRadius: 999,
-                    background: outlet.works ? "rgba(37,211,102,0.15)" : "rgba(255,255,255,0.1)",
-                    color: outlet.works ? "#4ade80" : "rgba(255,255,255,0.7)",
-                    fontSize: 12,
-                    fontWeight: 600,
-                  }}
-                >
-                  {statusLabel(outlet.works)}
+            <a key={outlet.id} href={`/outlets/${encodeURIComponent(outlet.id)}`} style={{ textDecoration: "none", color: "inherit" }}>
+              <div
+                className="glass"
+                style={{
+                  padding: 20,
+                  borderRadius: 14,
+                  display: "grid",
+                  gap: 8,
+                  cursor: "pointer",
+                  border: outlet.works ? "1px solid rgba(37,211,102,0.25)" : "1px solid rgba(255,255,255,0.08)",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                  <div style={{ fontWeight: 600, fontSize: 18 }}>{outlet.name}</div>
+                  <div
+                    style={{
+                      padding: "4px 10px",
+                      borderRadius: 999,
+                      background: outlet.works ? "rgba(37,211,102,0.15)" : "rgba(255,255,255,0.1)",
+                      color: outlet.works ? "#4ade80" : "rgba(255,255,255,0.7)",
+                      fontSize: 12,
+                      fontWeight: 600,
+                    }}
+                  >
+                    {statusLabel(outlet.works)}
+                  </div>
                 </div>
+                <div style={{ opacity: 0.8 }}>
+                  {outlet.address || "Адрес не указан"}
+                </div>
+                {outlet.description ? (
+                  <div style={{ opacity: 0.65, fontSize: 13 }}>{outlet.description}</div>
+                ) : null}
+                {outlet.phone ? (
+                  <div style={{ opacity: 0.65, fontSize: 12 }}>Телефон: {outlet.phone}</div>
+                ) : null}
               </div>
-              <div style={{ opacity: 0.8 }}>
-                {outlet.address || "Адрес не указан"}
-              </div>
-              {outlet.description ? (
-                <div style={{ opacity: 0.65, fontSize: 13 }}>{outlet.description}</div>
-              ) : null}
-              {outlet.phone ? (
-                <div style={{ opacity: 0.65, fontSize: 12 }}>Телефон: {outlet.phone}</div>
-              ) : null}
-            </div>
+            </a>
           ))
         ) : (
           <div className="glass" style={{ padding: 28, borderRadius: 14, textAlign: "center", opacity: 0.75 }}>

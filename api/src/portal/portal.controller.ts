@@ -6,6 +6,7 @@ import { CreateDeviceDto, DeviceDto, LedgerEntryDto, MerchantSettingsRespDto, Re
 import { ErrorDto, TransactionItemDto } from '../loyalty/dto';
 import { VouchersService } from '../vouchers/vouchers.service';
 import { NotificationsService, type BroadcastArgs } from '../notifications/notifications.service';
+import { PortalCustomersService } from './customers.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { CampaignService } from '../campaigns/campaign.service';
 import { GiftsService } from '../gifts/gifts.service';
@@ -50,6 +51,7 @@ export class PortalController {
     private readonly staffMotivation: StaffMotivationService,
     private readonly actions: ActionsService,
     private readonly operations: OperationsLogService,
+    private readonly customersService: PortalCustomersService,
   ) {}
 
   private getMerchantId(req: any) { return String((req as any).portalMerchantId || ''); }
@@ -121,6 +123,51 @@ export class PortalController {
   @ApiUnauthorizedResponse({ type: ErrorDto })
   customerSearch(@Req() req: any, @Query('phone') phone: string) {
     return this.service.findCustomerByPhone(this.getMerchantId(req), String(phone||''));
+  }
+
+  // ===== Customers CRUD =====
+  @Get('customers')
+  @ApiOkResponse({ schema: { type: 'array', items: { type: 'object', additionalProperties: true } } })
+  listCustomers(
+    @Req() req: any,
+    @Query('search') search?: string,
+    @Query('limit') limitStr?: string,
+    @Query('offset') offsetStr?: string,
+  ) {
+    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200) : 50;
+    const offset = offsetStr ? Math.max(parseInt(offsetStr, 10) || 0, 0) : 0;
+    return this.customersService.list(this.getMerchantId(req), { search, limit, offset });
+  }
+
+  @Get('customers/:customerId')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  getCustomer(@Req() req: any, @Param('customerId') customerId: string) {
+    return this.customersService.get(this.getMerchantId(req), String(customerId||''));
+  }
+
+  @Post('customers')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  createCustomer(
+    @Req() req: any,
+    @Body() body: { phone?: string; email?: string; name?: string; firstName?: string; lastName?: string; birthday?: string; gender?: string; tags?: string[] },
+  ) {
+    return this.customersService.create(this.getMerchantId(req), body || {});
+  }
+
+  @Put('customers/:customerId')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  updateCustomer(
+    @Req() req: any,
+    @Param('customerId') customerId: string,
+    @Body() body: { phone?: string; email?: string; name?: string; firstName?: string; lastName?: string; birthday?: string; gender?: string; tags?: string[] },
+  ) {
+    return this.customersService.update(this.getMerchantId(req), String(customerId||''), body || {});
+  }
+
+  @Delete('customers/:customerId')
+  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
+  deleteCustomer(@Req() req: any, @Param('customerId') customerId: string) {
+    return this.customersService.remove(this.getMerchantId(req), String(customerId||''));
   }
 
   // Vouchers (list/issue/deactivate)

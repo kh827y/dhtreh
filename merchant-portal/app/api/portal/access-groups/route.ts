@@ -41,14 +41,13 @@ export async function GET(req: NextRequest) {
   }
 }
 
-export async function POST() {
-  return Response.json({ error: "NotImplemented" }, { status: 501 });
+export async function POST(req: NextRequest) {
+  const body = await req.text();
+  return portalFetch(req, "/portal/access-groups", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body,
+  });
 }
 
-export async function PUT() {
-  return Response.json({ error: "NotImplemented" }, { status: 501 });
-}
-
-export async function DELETE() {
-  return Response.json({ error: "NotImplemented" }, { status: 501 });
-}
+// PUT/DELETE реализованы в [id]/route.ts

@@ -25,104 +25,7 @@ type Operation = {
 
 const { Search, ChevronLeft, ChevronRight, X } = Icons;
 
-const operations: Operation[] = [
-  {
-    id: "op-1",
-    datetime: new Date().toISOString(),
-    outlet: { id: "out-1", name: "Кофейня на Лиговском" },
-    client: { id: "cust-15", name: "Екатерина Петрова" },
-    manager: { id: "staff-4", name: "Алексей" },
-    rating: 5,
-    spent: 0,
-    earned: { amount: 320, source: "Начислено по акции: ACT-1045" },
-    total: 780,
-    paidByPoints: 0,
-    toPay: 780,
-    receipt: "000547",
-    carrier: { id: "card", name: "Пластиковая карта", code: "4213" },
-    type: "PURCHASE",
-  },
-  {
-    id: "op-2",
-    datetime: new Date(Date.now() - 3600 * 1000 * 26).toISOString(),
-    outlet: { id: "out-2", name: "Точка у метро Чкаловская" },
-    client: { id: "cust-21", name: "Дмитрий Соколов" },
-    manager: { id: "staff-6", name: "Мария" },
-    rating: 4,
-    spent: 150,
-    earned: { amount: 0, source: "" },
-    total: 920,
-    paidByPoints: 150,
-    toPay: 770,
-    receipt: "000541",
-    carrier: { id: "app", name: "Мобильное приложение", code: "8A2F" },
-    type: "PURCHASE",
-  },
-  {
-    id: "op-3",
-    datetime: new Date(Date.now() - 3600 * 1000 * 48).toISOString(),
-    outlet: { id: "out-1", name: "Кофейня на Лиговском" },
-    client: { id: "cust-30", name: "Михаил Иванов" },
-    manager: { id: "staff-4", name: "Алексей" },
-    rating: 0,
-    spent: 0,
-    earned: { amount: 500, source: "Регистрация" },
-    total: 0,
-    paidByPoints: 0,
-    toPay: 0,
-    receipt: "REG-203",
-    carrier: { id: "app", name: "Мобильное приложение", code: "5C90" },
-    type: "REGISTRATION",
-  },
-  {
-    id: "op-4",
-    datetime: new Date(Date.now() - 3600 * 1000 * 72).toISOString(),
-    outlet: { id: "out-3", name: "Pop-up в бизнес-центре" },
-    client: { id: "cust-41", name: "Анна Лебедева" },
-    manager: { id: "staff-9", name: "Сергей" },
-    rating: 5,
-    spent: 0,
-    earned: { amount: 1000, source: "Промокод WELCOME1000" },
-    total: 1240,
-    paidByPoints: 0,
-    toPay: 1240,
-    receipt: "000533",
-    carrier: { id: "phone", name: "Номер телефона", code: "+7 •• 55" },
-    type: "BIRTHDAY",
-  },
-  {
-    id: "op-5",
-    datetime: new Date(Date.now() - 3600 * 1000 * 96).toISOString(),
-    outlet: { id: "out-2", name: "Точка у метро Чкаловская" },
-    client: { id: "cust-52", name: "Владимир Ким" },
-    manager: { id: "staff-8", name: "Ирина" },
-    rating: 3,
-    spent: 200,
-    earned: { amount: 120, source: "Начислено по акции: ACT-1772" },
-    total: 860,
-    paidByPoints: 200,
-    toPay: 660,
-    receipt: "000528",
-    carrier: { id: "wallet", name: "Цифровая карта Wallet", code: "WLT-884" },
-    type: "PURCHASE",
-  },
-  {
-    id: "op-6",
-    datetime: new Date(Date.now() - 3600 * 1000 * 120).toISOString(),
-    outlet: { id: "out-1", name: "Кофейня на Лиговском" },
-    client: { id: "cust-62", name: "Евгения Смирнова" },
-    manager: { id: "staff-4", name: "Алексей" },
-    rating: 5,
-    spent: 0,
-    earned: { amount: 700, source: "Автовозврат" },
-    total: 0,
-    paidByPoints: 0,
-    toPay: 0,
-    receipt: "AUTO-118",
-    carrier: { id: "app", name: "Мобильное приложение", code: "6F2D" },
-    type: "AUTO_RETURN",
-  },
-];
+// убрали мок-данные; список загружается с сервера
 
 function formatDate(date: string) {
   return new Date(date).toLocaleDateString("ru-RU");
@@ -144,6 +47,41 @@ function formatPoints(value: number) {
   return value.toLocaleString("ru-RU");
 }
 
+function mapOperationFromDto(item: any): Operation {
+  const carrierType = String(item?.carrier?.type || '').toUpperCase();
+  const carrierIdMap: Record<string, string> = { PHONE: 'phone', APP: 'app', WALLET: 'wallet', CARD: 'card' };
+  const carrierNameMap: Record<string, string> = {
+    phone: 'Номер телефона',
+    app: 'Мобильное приложение',
+    wallet: 'Цифровая карта Wallet',
+    card: 'Пластиковая карта',
+  };
+  const carrierId = carrierIdMap[carrierType] || 'phone';
+  const carrierName = carrierNameMap[carrierId] || 'Номер телефона';
+  const receipt = String(item?.receiptNumber || item?.orderId || '');
+  const earnedAmount = Number(item?.earn?.amount || 0);
+  const spentAmount = Number(item?.redeem?.amount || 0);
+  const customerName = String(item?.customer?.name || item?.customer?.phone || 'Клиент');
+  const managerId = String(item?.staff?.id || '');
+  const managerName = String(item?.staff?.name || '—');
+  return {
+    id: String(item?.id || receipt),
+    datetime: String(item?.occurredAt || new Date().toISOString()),
+    outlet: { id: String(item?.outlet?.id || ''), name: String(item?.outlet?.name || '—') },
+    client: { id: String(item?.customer?.id || ''), name: customerName },
+    manager: { id: managerId, name: managerName },
+    rating: Number(item?.rating || 0),
+    spent: Math.max(0, spentAmount),
+    earned: { amount: Math.max(0, earnedAmount), source: String(item?.earn?.source || '') },
+    total: Number(item?.totalAmount || 0),
+    paidByPoints: Math.max(0, spentAmount),
+    toPay: Number(item?.totalAmount || 0),
+    receipt,
+    carrier: { id: carrierId, name: carrierName, code: String(item?.carrier?.code || '') },
+    type: 'PURCHASE',
+  };
+}
+
 export default function OperationsPage() {
   const [dateFrom, setDateFrom] = React.useState("");
   const [dateTo, setDateTo] = React.useState("");
@@ -156,37 +94,65 @@ export default function OperationsPage() {
   const [search, setSearch] = React.useState("");
   const [page, setPage] = React.useState(1);
   const [preview, setPreview] = React.useState<Operation | null>(null);
+  const [items, setItems] = React.useState<Operation[]>([]);
+  const [total, setTotal] = React.useState(0);
 
-  const filtered = React.useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return operations.filter((operation) => {
-      const dateValue = operation.datetime.slice(0, 10);
-      if (dateFrom && dateValue < dateFrom) return false;
-      if (dateTo && dateValue > dateTo) return false;
-      if (typeFilter !== "ALL" && operation.type !== typeFilter) return false;
-      if (directionFilter === "earn" && operation.earned.amount <= 0) return false;
-      if (directionFilter === "spend" && operation.spent <= 0) return false;
-      if (outletFilter !== "all" && operation.outlet.id !== outletFilter) return false;
-      if (managerFilter !== "all" && operation.manager.id !== managerFilter) return false;
-      if (carrierFilter !== "all" && operation.carrier.id !== carrierFilter) return false;
-      if (query && !operation.receipt.toLowerCase().includes(query)) return false;
-      return true;
+  // Подтягиваем реальные данные из БД через API-прокси
+  React.useEffect(() => {
+    let aborted = false;
+    async function load() {
+      const qs = new URLSearchParams();
+      if (dateFrom) qs.set("from", dateFrom);
+      if (dateTo) qs.set("to", dateTo);
+      if (managerFilter !== "all") qs.set("staffId", managerFilter);
+      if (outletFilter !== "all") qs.set("outletId", outletFilter);
+      // Направление: both -> ALL, earn -> EARN, spend -> REDEEM
+      const dir = directionFilter === "earn" ? "EARN" : directionFilter === "spend" ? "REDEEM" : "ALL";
+      qs.set("direction", dir);
+      if (search.trim()) qs.set("receiptNumber", search.trim());
+      // Переносим фильтр носителя (если нужен)
+      if (carrierFilter !== "all") {
+        const carrierMap: Record<string, string> = { phone: "PHONE", app: "APP", wallet: "WALLET", card: "CARD" };
+        const c = carrierMap[carrierFilter] || carrierFilter.toUpperCase();
+        qs.set("carrier", c);
+      }
+      const pageSize = 4;
+      qs.set("limit", String(pageSize));
+      qs.set("offset", String((page - 1) * pageSize));
+
+      const res = await fetch(`/api/operations/log?${qs.toString()}`, { cache: "no-store" });
+      const txt = await res.text();
+      if (!res.ok) throw new Error(txt || res.statusText);
+      const data = txt ? JSON.parse(txt) : { total: 0, items: [] };
+      const mapped: Operation[] = Array.isArray(data.items) ? data.items.map(mapOperationFromDto) : [];
+      if (!aborted) {
+        setItems(mapped);
+        setTotal(Number(data.total || mapped.length));
+      }
+    }
+    load().catch((e) => {
+      console.error(e);
+      if (!aborted) {
+        setItems([]);
+        setTotal(0);
+      }
     });
-  }, [dateFrom, dateTo, typeFilter, directionFilter, outletFilter, managerFilter, carrierFilter, search]);
+    return () => { aborted = true; };
+  }, [dateFrom, dateTo, typeFilter, directionFilter, outletFilter, managerFilter, carrierFilter, search, page]);
 
   React.useEffect(() => {
     setPage(1);
   }, [dateFrom, dateTo, typeFilter, directionFilter, outletFilter, managerFilter, carrierFilter, search]);
 
   const pageSize = 4;
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const pageItems = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const pageItems = items;
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
       <div style={{ display: "grid", gap: 4 }}>
         <div style={{ fontSize: 24, fontWeight: 700 }}>Журнал начисления баллов</div>
-        <div style={{ fontSize: 13, opacity: 0.65 }}>Всего: {filtered.length} записей</div>
+        <div style={{ fontSize: 13, opacity: 0.65 }}>Всего: {total} записей</div>
       </div>
 
       <Card>
@@ -272,7 +238,7 @@ export default function OperationsPage() {
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Введите номер"
-                  style={{ ...inputStyle, paddingLeft: 32 }}
+                  style={{ ...inputFieldStyle, paddingLeft: 32 }}
                 />
               </div>
             </FilterBlock>
@@ -284,10 +250,12 @@ export default function OperationsPage() {
         <CardHeader title="Список операций" />
         <CardBody style={{ display: "grid", gap: 12 }}>
           {pageItems.map((operation) => (
-            <button
+            <div
               key={operation.id}
-              type="button"
+              role="button"
+              tabIndex={0}
               onClick={() => setPreview(operation)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPreview(operation); } }}
               style={rowStyle}
             >
               <div style={rowGridStyle}>
@@ -301,7 +269,11 @@ export default function OperationsPage() {
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 12, fontSize: 12 }}>
                     <span>
                       Клиент: {" "}
-                      <a href={`/customers/${operation.client.id}`} style={{ color: "#818cf8" }}>
+                      <a
+                        href={`/customers/${operation.client.id}`}
+                        style={{ color: "#818cf8" }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         {operation.client.name}
                       </a>
                     </span>
@@ -328,7 +300,7 @@ export default function OperationsPage() {
                   </div>
                 </div>
               </div>
-            </button>
+            </div>
           ))}
           {!pageItems.length && (
             <div style={{ textAlign: "center", padding: 24, opacity: 0.6 }}>Нет операций для выбранных фильтров</div>
@@ -450,23 +422,25 @@ const SummaryCard: React.FC<SummaryCardProps> = ({ label, value }) => (
   </div>
 );
 
-const dateInputStyle: React.CSSProperties = {
-  ...inputStyle,
-  width: 140,
-};
-
-const selectStyle: React.CSSProperties = {
-  ...inputStyle,
-  minWidth: 180,
-};
-
-const inputStyle: React.CSSProperties = {
+const inputFieldStyle: React.CSSProperties = {
   padding: "10px 12px",
   borderRadius: 12,
   border: "1px solid rgba(255,255,255,0.12)",
   background: "rgba(15,23,42,0.6)",
   color: "inherit",
 };
+
+const dateInputStyle: React.CSSProperties = {
+  ...inputFieldStyle,
+  width: 140,
+};
+
+const selectStyle: React.CSSProperties = {
+  ...inputFieldStyle,
+  minWidth: 180,
+};
+
+ 
 
 const rowStyle: React.CSSProperties = {
   border: "1px solid rgba(148,163,184,0.14)",

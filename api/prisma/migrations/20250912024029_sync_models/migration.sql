@@ -151,20 +151,6 @@ CREATE TABLE "public"."Integration" (
 );
 
 -- CreateTable
-CREATE TABLE "public"."CustomerSegment" (
-    "id" TEXT NOT NULL,
-    "merchantId" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "description" TEXT,
-    "rules" JSONB NOT NULL,
-    "customerCount" INTEGER NOT NULL DEFAULT 0,
-    "isActive" BOOLEAN NOT NULL DEFAULT true,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-    "type" TEXT NOT NULL DEFAULT 'STATIC',
-
-    CONSTRAINT "CustomerSegment_pkey" PRIMARY KEY ("id")
-);
 
 -- CreateTable
 CREATE TABLE "public"."Campaign" (
@@ -564,7 +550,6 @@ ALTER TABLE "public"."FraudCheck" ADD CONSTRAINT "FraudCheck_merchantId_fkey" FO
 ALTER TABLE "public"."Integration" ADD CONSTRAINT "Integration_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "public"."CustomerSegment" ADD CONSTRAINT "CustomerSegment_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "public"."Campaign" ADD CONSTRAINT "Campaign_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

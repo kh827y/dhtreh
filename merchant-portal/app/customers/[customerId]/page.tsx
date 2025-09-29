@@ -2,12 +2,10 @@
 
 import React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import { Card, CardHeader, CardBody, Button, Icons } from "@loyalty/ui";
 import StarRating from "../../../components/StarRating";
 import {
-  customersMock,
-  getCustomerById,
   getFullName,
   type CustomerRecord,
   type CustomerTransaction,
@@ -39,29 +37,90 @@ type RedeemForm = {
 type AccrueErrors = Partial<Record<keyof AccrueForm, string>> & { amount?: string; manualPoints?: string };
 type RedeemErrors = Partial<Record<keyof RedeemForm, string>> & { amount?: string };
 
-type PageProps = {
-  params: { customerId: string | string[] };
-};
-
-export default function CustomerCardPage({ params }: PageProps) {
+export default function CustomerCardPage() {
   const router = useRouter();
-  const customerId = Array.isArray(params.customerId) ? params.customerId[0] : params.customerId;
-  const [customer, setCustomer] = React.useState<CustomerRecord | null>(() => getCustomerById(customerId) ?? null);
+  const params = useParams<{ customerId: string | string[] }>();
+  const customerIdRaw = Array.isArray(params.customerId) ? params.customerId[0] : params.customerId;
+  const customerId = String(customerIdRaw || '');
+  const [customer, setCustomer] = React.useState<CustomerRecord | null>(null);
   const [accrueOpen, setAccrueOpen] = React.useState(false);
   const [redeemOpen, setRedeemOpen] = React.useState(false);
   const [selectedTransaction, setSelectedTransaction] = React.useState<CustomerTransaction | null>(null);
   const [toast, setToast] = React.useState<string | null>(null);
   const [editOpen, setEditOpen] = React.useState(false);
+  const [existingLogins, setExistingLogins] = React.useState<string[]>([]);
+
+  // Хелпер для запросов к локальному прокси /api/customers
+  async function api<T = any>(url: string, init?: RequestInit): Promise<T> {
+    const res = await fetch(url, {
+      ...init,
+      headers: { "content-type": "application/json", ...(init?.headers || {}) },
+      cache: "no-store",
+    });
+    const ct = res.headers.get("content-type") || "";
+    const text = await res.text();
+    if (!res.ok) throw new Error(text || res.statusText);
+    if (ct.includes("application/json") || ct.includes("+json")) {
+      try {
+        return text ? ((JSON.parse(text) as unknown) as T) : ((undefined as unknown) as T);
+      } catch {
+        // fallthrough to heuristic parsing
+      }
+    }
+    const trimmed = (text || "").trim();
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      try {
+        return (JSON.parse(trimmed) as unknown) as T;
+      } catch {
+        // ignore
+      }
+    }
+    return ((undefined as unknown) as T);
+  }
 
   React.useEffect(() => {
-    setCustomer(getCustomerById(customerId) ?? null);
+    let aborted = false;
+    (async () => {
+      try {
+        const data = await api<CustomerRecord>(`/api/customers/${encodeURIComponent(customerId)}`);
+        if (!aborted) setCustomer(data ? normalizeCustomer(data) : null);
+      } catch (e) {
+        if (!aborted) setCustomer(null);
+        console.error(e);
+      }
+    })();
+    return () => {
+      aborted = true;
+    };
   }, [customerId]);
+
+  // Для проверки уникальности логинов в модалке редактирования
+  React.useEffect(() => {
+    let aborted = false;
+    (async () => {
+      try {
+        const list = await api<CustomerRecord[]>("/api/customers");
+        if (!aborted) setExistingLogins(Array.isArray(list) ? list.map((c) => c.login) : []);
+      } catch (e) {
+        console.error(e);
+      }
+    })();
+    return () => {
+      aborted = true;
+    };
+  }, []);
 
   React.useEffect(() => {
     if (!toast) return;
     const timeout = window.setTimeout(() => setToast(null), 4000);
     return () => window.clearTimeout(timeout);
   }, [toast]);
+
+  // Всегда вызываем хук, чтобы не нарушать порядок хуков между рендерами
+  const groups = React.useMemo(() => {
+    const base = ["Постоянные", "Стандарт", "VIP", "Новые", "Сонные"];
+    return Array.from(new Set([customer?.group, ...base].filter(Boolean) as string[]));
+  }, [customer?.group]);
 
   if (!customer) {
     return (
@@ -79,42 +138,67 @@ export default function CustomerCardPage({ params }: PageProps) {
 
   const fullName = getFullName(customer) || customer.login;
   const profileRows = buildProfileRows(customer);
-  const existingLogins = React.useMemo(() => customersMock.map((item) => item.login), []);
-  const groups = React.useMemo(
-    () => Array.from(new Set([customer.group, "Постоянные", "Стандарт", "VIP", "Новые", "Сонные"])),
-    [customer.group],
-  );
 
   function handleAccrueSuccess(message: string) {
     setToast(message);
     setAccrueOpen(false);
+    // Перечитать данные клиента после изменения на сервере
+    (async () => {
+      try {
+        const fresh = await api<CustomerRecord>(`/api/customers/${encodeURIComponent(customer.id)}`);
+        setCustomer(fresh ? normalizeCustomer(fresh) : customer);
+      } catch {}
+    })();
   }
 
   function handleRedeemSuccess(message: string) {
     setToast(message);
     setRedeemOpen(false);
+    (async () => {
+      try {
+        const fresh = await api<CustomerRecord>(`/api/customers/${encodeURIComponent(customer.id)}`);
+        setCustomer(fresh ? normalizeCustomer(fresh) : customer);
+      } catch {}
+    })();
   }
 
   async function handleEditSubmit(payload: CustomerFormPayload) {
-    setCustomer((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        login: payload.login.trim(),
-        firstName: payload.firstName.trim(),
-        lastName: payload.lastName.trim(),
-        email: payload.email.trim(),
-        birthday: payload.birthday,
-        age: payload.birthday ? calculateAge(payload.birthday) : prev.age,
-        tags: normalizeTags(payload.tags),
-        comment: payload.comment.trim(),
-        group: payload.group || prev.group,
-        blocked: payload.blockAccruals,
-        gender: payload.gender,
+    if (!customer) return;
+    const updated: CustomerRecord = {
+      ...customer,
+      login: payload.login.trim(),
+      firstName: payload.firstName.trim(),
+      lastName: payload.lastName.trim(),
+      email: payload.email.trim(),
+      birthday: payload.birthday,
+      age: payload.birthday ? calculateAge(payload.birthday) : customer.age,
+      tags: normalizeTags(payload.tags),
+      comment: payload.comment.trim(),
+      group: payload.group || customer.group,
+      blocked: payload.blockAccruals,
+      gender: payload.gender,
+    };
+    try {
+      const apiBody = {
+        phone: updated.login,
+        email: updated.email,
+        firstName: updated.firstName,
+        lastName: updated.lastName,
+        name: [updated.firstName, updated.lastName].filter(Boolean).join(" ").trim() || undefined,
+        birthday: updated.birthday,
+        gender: updated.gender,
+        tags: updated.tags,
       };
-    });
-    setToast("Данные клиента обновлены");
-    setEditOpen(false);
+      const saved = await api<CustomerRecord>(`/api/customers/${encodeURIComponent(customer.id)}` , {
+        method: "PUT",
+        body: JSON.stringify(apiBody),
+      });
+      setCustomer(saved || updated);
+      setToast("Данные клиента обновлены");
+      setEditOpen(false);
+    } catch (e: any) {
+      setToast(e?.message || "Ошибка при сохранении клиента");
+    }
   }
 
   return (
@@ -353,6 +437,44 @@ function calculateAge(birthday: string): number {
   }
 }
 
+function normalizeCustomer(input: any): CustomerRecord {
+  const c = input || {};
+  return {
+    id: String(c.id || ''),
+    login: String(c.login || c.phone || ''),
+    firstName: String(c.firstName || c.name?.split?.(' ')?.[0] || ''),
+    lastName: String(c.lastName || c.name?.split?.(' ')?.slice?.(1)?.join(' ') || ''),
+    email: String(c.email || ''),
+    visitFrequency: String(c.visitFrequency || '—'),
+    averageCheck: Number(c.averageCheck || 0),
+    birthday: String(c.birthday || ''),
+    age: Number(c.age || (c.birthday ? calculateAge(String(c.birthday)) : 0)),
+    gender: (c.gender === 'male' || c.gender === 'female' || c.gender === 'unknown') ? c.gender : 'unknown',
+    daysSinceLastVisit: Number(c.daysSinceLastVisit || 0),
+    visitCount: Number(c.visitCount || 0),
+    bonusBalance: Number(c.bonusBalance || c.balance || 0),
+    pendingBalance: Number(c.pendingBalance || 0),
+    level: String(c.level || '—'),
+    spendPreviousMonth: Number(c.spendPreviousMonth || 0),
+    spendCurrentMonth: Number(c.spendCurrentMonth || 0),
+    spendTotal: Number(c.spendTotal || 0),
+    stamps: Number(c.stamps || 0),
+    tags: Array.isArray(c.tags) ? c.tags : [],
+    registeredAt: String(c.registeredAt || new Date().toISOString()),
+    comment: String(c.comment || ''),
+    blocked: Boolean(c.blocked || false),
+    referrer: c.referrer ? String(c.referrer) : undefined,
+    group: String(c.group || 'Стандарт'),
+    inviteCode: String(c.inviteCode || 'INVITE'),
+    customerNumber: String(c.customerNumber || `CL-${String(c.id || '').slice(-4).padStart(4, '0')}`),
+    deviceNumber: c.deviceNumber ? String(c.deviceNumber) : undefined,
+    transactions: Array.isArray(c.transactions) ? c.transactions : [],
+    expiry: Array.isArray(c.expiry) ? c.expiry : [],
+    reviews: Array.isArray(c.reviews) ? c.reviews : [],
+    invited: Array.isArray(c.invited) ? c.invited : [],
+  };
+}
+
 function normalizeTags(tags: string): string[] {
   return tags
     .split(/[,;]+/)
@@ -544,10 +666,42 @@ const AccrueModal: React.FC<AccrueModalProps> = ({ customer, onClose, onSuccess 
     event.preventDefault();
     if (!validate()) return;
 
-    setSubmitting(true);
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    setSubmitting(false);
-    onSuccess("Баллы начислены");
+    try {
+      setSubmitting(true);
+      const amountValue = Number(form.amount.replace(",", "."));
+      const manualValue = form.manualPoints.trim() ? Number(form.manualPoints) : Math.round(amountValue * 0.1);
+      const outletName = outlets.find((o) => o.id === form.outletId)?.name || "Торговая точка";
+      const tx: CustomerTransaction = {
+        id: `txn-${Date.now()}`,
+        purchaseAmount: isFinite(amountValue) ? amountValue : 0,
+        change: manualValue,
+        details: form.manualPoints.trim() ? "Ручное начисление баллов" : "АвтонНачисление 10%",
+        datetime: new Date().toISOString(),
+        outlet: outletName,
+        rating: 0,
+        receipt: form.receipt || "",
+        manager: "Система",
+        carrier: "Телефон",
+        carrierCode: customer.login.slice(-4),
+        toPay: Math.max(0, (isFinite(amountValue) ? amountValue : 0)),
+        paidByPoints: 0,
+        total: Math.max(0, (isFinite(amountValue) ? amountValue : 0)),
+      };
+      const next: CustomerRecord = {
+        ...customer,
+        bonusBalance: Math.max(0, (customer.bonusBalance || 0) + manualValue),
+        transactions: [tx, ...(Array.isArray(customer.transactions) ? customer.transactions : [])],
+      };
+      await fetch(`/api/customers/${encodeURIComponent(customer.id)}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(next),
+        cache: "no-store",
+      });
+      onSuccess("Баллы начислены");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -680,10 +834,41 @@ const RedeemModal: React.FC<RedeemModalProps> = ({ customer, onClose, onSuccess 
     event.preventDefault();
     if (!validate()) return;
 
-    setSubmitting(true);
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    setSubmitting(false);
-    onSuccess("Баллы списаны");
+    try {
+      setSubmitting(true);
+      const points = Number(form.amount);
+      const outletName = outlets.find((o) => o.id === form.outletId)?.name || "Торговая точка";
+      const tx: CustomerTransaction = {
+        id: `txn-${Date.now()}`,
+        purchaseAmount: 0,
+        change: -Math.abs(points),
+        details: "Ручное списание баллов",
+        datetime: new Date().toISOString(),
+        outlet: outletName,
+        rating: 0,
+        receipt: "",
+        manager: "Система",
+        carrier: "Телефон",
+        carrierCode: customer.login.slice(-4),
+        toPay: 0,
+        paidByPoints: Math.abs(points),
+        total: 0,
+      };
+      const next: CustomerRecord = {
+        ...customer,
+        bonusBalance: Math.max(0, (customer.bonusBalance || 0) - Math.abs(points)),
+        transactions: [tx, ...(Array.isArray(customer.transactions) ? customer.transactions : [])],
+      };
+      await fetch(`/api/customers/${encodeURIComponent(customer.id)}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(next),
+        cache: "no-store",
+      });
+      onSuccess("Баллы списаны");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (

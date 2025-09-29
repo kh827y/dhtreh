@@ -2,7 +2,7 @@ import { Injectable, BadRequestException, ConflictException } from '@nestjs/comm
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
 import { Mode, QuoteDto } from './dto';
-import { HoldStatus, TxnType, WalletType, LedgerAccount } from '@prisma/client';
+import { HoldStatus, TxnType, WalletType, LedgerAccount, HoldMode } from '@prisma/client';
 import { randomUUID } from 'crypto';
 
 type QrMeta = { jti: string; iat: number; exp: number } | undefined;
@@ -220,6 +220,8 @@ export class LoyaltyService {
       await this.prisma.merchant.upsert({ where: { id: dto.merchantId }, update: {}, create: { id: dto.merchantId, name: dto.merchantId } });
     } catch {}
     const { redeemCooldownSec, earnCooldownSec, redeemDailyCap, earnDailyCap, rulesJson, earnBps: baseEarnBps, redeemLimitBps: baseRedeemLimitBps, updatedAt } = await this.getSettings(dto.merchantId);
+    const rulesConfig = rulesJson && typeof rulesJson === 'object' ? (rulesJson as Record<string, any>) : {};
+    const disallowSameReceipt = Boolean(rulesConfig.disallowEarnRedeemSameReceipt);
 
     // канал по типу устройства
     let channel: 'VIRTUAL'|'PC_POS'|'SMART' = 'VIRTUAL';
@@ -280,6 +282,32 @@ export class LoyaltyService {
 
     const modeUpper = String(dto.mode).toUpperCase();
     if (modeUpper === 'REDEEM') {
+      if (disallowSameReceipt && dto.orderId) {
+        const [existingEarnHold, existingReceipt] = await Promise.all([
+          this.prisma.hold.findFirst({
+            where: {
+              merchantId: dto.merchantId,
+              customerId: customer.id,
+              orderId: dto.orderId,
+              status: HoldStatus.PENDING,
+              mode: 'EARN' as HoldMode,
+            },
+          }),
+          this.prisma.receipt.findUnique({
+            where: { merchantId_orderId: { merchantId: dto.merchantId, orderId: dto.orderId } },
+          }).catch(() => null),
+        ]);
+        if (existingEarnHold || (existingReceipt && Math.max(0, existingReceipt.earnApplied || 0) > 0)) {
+          return {
+            canRedeem: false,
+            discountToApply: 0,
+            pointsToBurn: 0,
+            finalPayable: sanitizedTotal,
+            holdId: undefined,
+            message: 'Нельзя одновременно начислять и списывать баллы в одном чеке.',
+          };
+        }
+      }
       // антифрод: кулдаун и дневной лимит списаний
       if (redeemCooldownSec && redeemCooldownSec > 0) {
         const last = await this.prisma.transaction.findFirst({
@@ -376,6 +404,30 @@ export class LoyaltyService {
     }
 
     // ===== EARN =====
+    if (disallowSameReceipt && dto.orderId) {
+      const [existingRedeemHold, existingReceipt] = await Promise.all([
+        this.prisma.hold.findFirst({
+          where: {
+            merchantId: dto.merchantId,
+            customerId: customer.id,
+            orderId: dto.orderId,
+            status: HoldStatus.PENDING,
+            mode: 'REDEEM' as HoldMode,
+          },
+        }),
+        this.prisma.receipt.findUnique({
+          where: { merchantId_orderId: { merchantId: dto.merchantId, orderId: dto.orderId } },
+        }).catch(() => null),
+      ]);
+      if (existingRedeemHold || (existingReceipt && Math.max(0, existingReceipt.redeemApplied || 0) > 0)) {
+        return {
+          canEarn: false,
+          pointsToEarn: 0,
+          holdId: undefined,
+          message: 'Нельзя одновременно начислять и списывать баллы в одном чеке.',
+        };
+      }
+    }
     // антифрод: кулдаун и дневной лимит начислений
     if (earnCooldownSec && earnCooldownSec > 0) {
       const last = await this.prisma.transaction.findFirst({

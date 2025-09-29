@@ -1,15 +1,19 @@
 "use client";
 import React, { forwardRef } from 'react';
 
-type Variant = 'primary' | 'secondary' | 'ghost';
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
 
 type Size = 'sm' | 'md' | 'lg';
 
-export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+export interface ButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {
   variant?: Variant;
   size?: Size;
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
+  // aliases used in apps
+  startIcon?: React.ReactNode;
+  endIcon?: React.ReactNode;
+  children?: React.ReactNode;
 }
 
 const sizeClass = (s: Size) => {
@@ -21,10 +25,20 @@ const sizeClass = (s: Size) => {
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = 'primary', size = 'md', leftIcon, rightIcon, className, style, children, ...rest },
+  { variant = 'primary', size = 'md', leftIcon, rightIcon, startIcon, endIcon, className, style, children, ...rest },
   ref
 ) {
-  const vClass = variant === 'primary' ? 'btn-primary' : variant === 'secondary' ? 'btn-secondary' : 'btn-ghost';
+  // map aliases to canonical props and avoid leaking them to DOM
+  const leading = leftIcon ?? startIcon ?? null;
+  const trailing = rightIcon ?? endIcon ?? null;
+  const vClass =
+    variant === 'primary'
+      ? 'btn-primary'
+      : variant === 'secondary'
+      ? 'btn-secondary'
+      : variant === 'danger'
+      ? 'btn-danger'
+      : 'btn-ghost';
   return (
     <button
       ref={ref}
@@ -32,9 +46,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       style={{ ...sizeClass(size), ...(style || {}) }}
       {...rest}
     >
-      {leftIcon}
+      {leading}
       <span>{children}</span>
-      {rightIcon}
+      {trailing}
     </button>
   );
 });

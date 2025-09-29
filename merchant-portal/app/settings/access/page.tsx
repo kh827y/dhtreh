@@ -2,7 +2,7 @@
 import React from "react";
 import { Card, CardHeader, CardBody, Button, Skeleton } from "@loyalty/ui";
 
-const STORAGE_KEY = "portal.accessGroups";
+// Данные берём из бэкенда; локальное хранилище больше не используется
 
 const MODULES = [
   { id: "staff", label: "Сотрудники" },
@@ -10,6 +10,8 @@ const MODULES = [
   { id: "loyalty", label: "Программа лояльности" },
   { id: "analytics", label: "Аналитика" },
 ];
+
+const CRUD_ACTIONS = ['create', 'read', 'update', 'delete'] as const;
 
 type CrudMatrix = {
   create: boolean;
@@ -37,51 +39,54 @@ function defaultPermissions(): ModulePermissions {
   }, {} as ModulePermissions);
 }
 
-function loadStoredGroups(): AccessGroupRow[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (!stored) return [];
-    const parsed = JSON.parse(stored);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.map((item) => ({
-      id: String(item.id || ""),
-      name: String(item.name || "Без названия"),
-      membersCount: Number(item.membersCount || (Array.isArray(item.staffIds) ? item.staffIds.length : 0)),
-      staffIds: Array.isArray(item.staffIds) ? item.staffIds.map(String) : [],
-      permissions: { ...defaultPermissions(), ...(item.permissions || {}) },
-    }));
-  } catch {
-    return [];
-  }
-}
-
-function persistGroups(groups: AccessGroupRow[]) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(groups));
-  } catch {}
-}
-
-function mergeGroups(base: AccessGroupRow[], remote: any[]): AccessGroupRow[] {
+function mergeGroups(_base: AccessGroupRow[], remote: any[]): AccessGroupRow[] {
+  const normalized: AccessGroupRow[] = (remote || [])
+    .map((g: any, idx: number) => {
+      const rawId = g?.id ?? g?.code ?? g?.role ?? '';
+      const id = String(rawId).trim();
+      const rawName = (g?.name ?? g?.label ?? g?.role ?? id) || `Группа ${idx + 1}`;
+      const name = String(rawName).trim();
+      if (!id) return null;
+      return {
+        id,
+        name,
+        membersCount: Number(g?.memberCount ?? g?.membersCount ?? 0) || 0,
+        staffIds: [],
+        permissions: defaultPermissions(),
+      } as AccessGroupRow;
+    })
+    .filter(Boolean) as AccessGroupRow[];
+  // deduplicate by id
   const map = new Map<string, AccessGroupRow>();
-  base.forEach((group) => map.set(group.id, group));
-  (remote || []).forEach((group: any) => {
-    if (!group?.id) return;
-    const existing = map.get(group.id);
-    const permissions = existing ? existing.permissions : defaultPermissions();
-    const staffIds = existing ? existing.staffIds : [];
-    const name = String(group.name || existing?.name || group.id);
-    const count = typeof group.membersCount === "number" ? group.membersCount : staffIds.length;
-    map.set(group.id, {
-      id: group.id,
-      name,
-      membersCount: count,
-      staffIds,
-      permissions,
-    });
-  });
+  for (const g of normalized) {
+    if (!map.has(g.id)) map.set(g.id, g);
+  }
   return Array.from(map.values());
+}
+
+function permissionsToList(perm: ModulePermissions) {
+  const list: Array<{ resource: string; action: string; conditions?: string | null }> = [];
+  for (const module of MODULES) {
+    const p: CrudMatrix = perm[module.id] ?? ({ create: false, read: true, update: false, delete: false } as CrudMatrix);
+    CRUD_ACTIONS.forEach((action) => {
+      if (p[action]) list.push({ resource: module.id, action });
+    });
+  }
+  return list;
+}
+
+function listToPermissions(list: Array<{ resource: string; action: string }>): ModulePermissions {
+  const base = MODULES.reduce((acc, m) => { acc[m.id] = { create: false, read: false, update: false, delete: false }; return acc; }, {} as ModulePermissions);
+  for (const row of (list || [])) {
+    if (!row?.resource || !base[row.resource]) continue;
+    const actions = row.action === 'manage' ? [...CRUD_ACTIONS] : [row.action];
+    actions.forEach((action) => {
+      if (CRUD_ACTIONS.includes(action as (typeof CRUD_ACTIONS)[number])) {
+        (base[row.resource] as any)[action] = true;
+      }
+    });
+  }
+  return base;
 }
 
 export default function AccessSettingsPage() {
@@ -94,50 +99,76 @@ export default function AccessSettingsPage() {
   const [draft, setDraft] = React.useState<AccessGroupRow | null>(null);
   const [staffToAdd, setStaffToAdd] = React.useState<string>("");
   const [busy, setBusy] = React.useState(false);
-
-  React.useEffect(() => {
-    const stored = loadStoredGroups();
-    setGroups(stored);
-  }, []);
-
-  React.useEffect(() => {
-    async function load() {
-      setLoading(true);
-      try {
-        const [groupsRes, staffRes] = await Promise.all([
-          fetch("/api/portal/access-groups"),
-          fetch("/api/portal/staff"),
-        ]);
-        let remoteGroups: any[] = [];
-        if (groupsRes.ok) {
-          const g = await groupsRes.json();
-          if (Array.isArray(g)) remoteGroups = g;
-          else if (g?.items && Array.isArray(g.items)) remoteGroups = g.items;
-        }
-        let staffList: StaffOption[] = [];
-        if (staffRes.ok) {
-          const s = await staffRes.json();
-          if (Array.isArray(s)) {
-            staffList = s.map((row: any) => ({
-              id: row.id,
-              name: [row.firstName, row.lastName].filter(Boolean).join(" ") || row.login || row.email || row.id,
-              email: row.email || null,
-            }));
-          }
-        }
-        const merged = mergeGroups(loadStoredGroups(), remoteGroups).map((group) => ({
-          ...group,
-          membersCount: group.staffIds.length ? group.staffIds.length : group.membersCount,
-        }));
-        setGroups(merged);
-        setStaff(staffList);
-        persistGroups(merged);
-      } finally {
-        setLoading(false);
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const [groupsRes, staffRes] = await Promise.all([
+        fetch("/api/portal/access-groups"),
+        fetch("/api/portal/staff"),
+      ]);
+      if (!groupsRes.ok) {
+        const errText = await groupsRes.text().catch(() => "");
+        throw new Error(errText || "Не удалось получить группы доступа");
       }
+      if (!staffRes.ok) {
+        const errText = await staffRes.text().catch(() => "");
+        throw new Error(errText || "Не удалось получить сотрудников");
+      }
+
+      const groupsPayload = await groupsRes.json().catch(() => ({}));
+      const staffPayload = await staffRes.json().catch(() => ({}));
+
+      const remoteGroups: any[] = Array.isArray(groupsPayload?.items)
+        ? groupsPayload.items
+        : Array.isArray(groupsPayload)
+          ? groupsPayload
+          : [];
+      const staffRows: any[] = Array.isArray(staffPayload?.items)
+        ? staffPayload.items
+        : Array.isArray(staffPayload)
+          ? staffPayload
+          : [];
+
+      const staffList: StaffOption[] = staffRows.map((row: any) => ({
+        id: String(row?.id ?? ""),
+        name:
+          [row?.firstName, row?.lastName].filter(Boolean).join(" ") ||
+          row?.login ||
+          row?.email ||
+          String(row?.id ?? ""),
+        email: row?.email || null,
+      }));
+
+      const groupsWithMembers = mergeGroups([], remoteGroups).map((group) => ({
+        ...group,
+        staffIds: staffRows
+          .filter(
+            (member: any) =>
+              Array.isArray(member?.groups) && member.groups.some((gr: any) => String(gr?.id) === group.id),
+          )
+          .map((member: any) => String(member?.id ?? ""))
+          .filter((value: string) => Boolean(value)),
+        permissions: listToPermissions(
+          (remoteGroups.find((candidate) => String(candidate?.id) === group.id)?.permissions) || [],
+        ),
+      }));
+
+      setGroups(groupsWithMembers);
+      setStaff(staffList);
+      setBanner((prev) => (prev?.type === "error" ? null : prev));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Неизвестная ошибка загрузки";
+      setGroups([]);
+      setStaff([]);
+      setBanner({ type: "error", text: message });
+    } finally {
+      setLoading(false);
     }
-    load();
   }, []);
+
+  React.useEffect(() => {
+    load();
+  }, [load]);
 
   const openCreate = () => {
     setDraft({ id: "", name: "", membersCount: 0, staffIds: [], permissions: defaultPermissions() });
@@ -190,12 +221,20 @@ export default function AccessSettingsPage() {
     });
   }
 
-  function handleDelete(id: string) {
+  async function handleDelete(id: string) {
     if (!window.confirm("Удалить группу доступа?")) return;
-    const next = groups.filter((group) => group.id !== id);
-    setGroups(next);
-    persistGroups(next);
-    setBanner({ type: "success", text: "Группа удалена" });
+    try {
+      const res = await fetch(`/api/portal/access-groups/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        throw new Error(errText || "Не удалось удалить группу");
+      }
+      setBanner({ type: "success", text: "Группа удалена" });
+      await load();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Ошибка удаления группы";
+      setBanner({ type: "error", text: message });
+    }
   }
 
   const handleSave = async () => {
@@ -206,22 +245,28 @@ export default function AccessSettingsPage() {
     }
     setBusy(true);
     try {
-      let nextGroups = [...groups];
       if (modalMode === "create") {
-        const newGroup: AccessGroupRow = {
-          ...draft,
-          id: draft.id || `GROUP_${Date.now().toString(36)}`,
-          membersCount: draft.staffIds.length,
-        };
-        nextGroups = [...groups, newGroup];
-        setBanner({ type: "success", text: "Группа создана (локально)" });
+        const payload = { name: draft.name.trim(), permissions: permissionsToList(draft.permissions) };
+        const r = await fetch(`/api/portal/access-groups`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+        if (!r.ok) throw new Error(await r.text());
+        const created = await r.json();
+        const gid = created?.id || draft.id;
+        const membersRes = await fetch(`/api/portal/access-groups/${encodeURIComponent(gid)}/members`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ staffIds: draft.staffIds }) });
+        if (!membersRes.ok) throw new Error(await membersRes.text());
+        setBanner({ type: "success", text: "Группа создана" });
       } else if (modalMode === "edit") {
-        nextGroups = groups.map((group) => (group.id === draft.id ? { ...draft, membersCount: draft.staffIds.length } : group));
-        setBanner({ type: "success", text: "Группа обновлена (локально)" });
+        const payload = { name: draft.name.trim(), permissions: permissionsToList(draft.permissions) };
+        const r = await fetch(`/api/portal/access-groups/${encodeURIComponent(draft.id)}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+        if (!r.ok) throw new Error(await r.text());
+        const membersRes = await fetch(`/api/portal/access-groups/${encodeURIComponent(draft.id)}/members`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ staffIds: draft.staffIds }) });
+        if (!membersRes.ok) throw new Error(await membersRes.text());
+        setBanner({ type: "success", text: "Группа обновлена" });
       }
-      setGroups(nextGroups);
-      persistGroups(nextGroups);
       closeModal();
+      await load();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Ошибка сохранения";
+      setBanner({ type: "error", text: message });
     } finally {
       setBusy(false);
     }

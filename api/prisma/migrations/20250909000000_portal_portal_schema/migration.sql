@@ -67,26 +67,77 @@ DROP COLUMN "status",
 ADD COLUMN     "status" "public"."StaffStatus" NOT NULL DEFAULT 'ACTIVE';
 
 -- AlterTable
-ALTER TABLE "public"."StaffOutletAccess" ADD COLUMN     "pinCodeHash" TEXT,
-ADD COLUMN     "pinIssuedAt" TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP,
-ADD COLUMN     "pinIssuedById" TEXT,
-ADD COLUMN     "pinRetryCount" INTEGER NOT NULL DEFAULT 0,
-ADD COLUMN     "pinUpdatedAt" TIMESTAMP(3),
-ADD COLUMN     "revokedAt" TIMESTAMP(3),
-ADD COLUMN     "revokedById" TEXT,
-ADD COLUMN     "status" "public"."StaffOutletAccessStatus" NOT NULL DEFAULT 'ACTIVE';
+-- CreateTable
+CREATE TABLE "public"."StaffOutletAccess" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "staffId" TEXT NOT NULL,
+    "outletId" TEXT NOT NULL,
+    "status" "public"."StaffOutletAccessStatus" NOT NULL DEFAULT 'ACTIVE',
+    "pinCode" TEXT,
+    "pinCodeHash" TEXT,
+    "pinIssuedAt" TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP,
+    "pinIssuedById" TEXT,
+    "pinRetryCount" INTEGER NOT NULL DEFAULT 0,
+    "revokedAt" TIMESTAMP(3),
+    "revokedById" TEXT,
+    "lastTxnAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "StaffOutletAccess_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE INDEX "StaffOutletAccess_merchantId_outletId_idx" ON "public"."StaffOutletAccess"("merchantId","outletId");
+-- CreateIndex
+CREATE UNIQUE INDEX "StaffOutletAccess_merchantId_staffId_outletId_key" ON "public"."StaffOutletAccess"("merchantId","staffId","outletId");
+-- CreateIndex
+CREATE INDEX "StaffOutletAccess_staffId_status_idx" ON "public"."StaffOutletAccess"("staffId","status");
+
+-- AddForeignKey (base references)
+ALTER TABLE "public"."StaffOutletAccess" ADD CONSTRAINT "StaffOutletAccess_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "public"."StaffOutletAccess" ADD CONSTRAINT "StaffOutletAccess_staffId_fkey" FOREIGN KEY ("staffId") REFERENCES "public"."Staff"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "public"."StaffOutletAccess" ADD CONSTRAINT "StaffOutletAccess_outletId_fkey" FOREIGN KEY ("outletId") REFERENCES "public"."Outlet"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+-- SKIP SOA ALTER: ALTER TABLE "public"."StaffOutletAccess" ADD COLUMN     "pinCodeHash" TEXT,
+-- SKIP SOA ALTER: ADD COLUMN     "pinIssuedAt" TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP,
+-- SKIP SOA ALTER: ADD COLUMN     "pinIssuedById" TEXT,
+-- SKIP SOA ALTER: ADD COLUMN     "pinRetryCount" INTEGER NOT NULL DEFAULT 0,
+-- SKIP SOA ALTER: ADD COLUMN     "pinUpdatedAt" TIMESTAMP(3),
+-- SKIP SOA ALTER: ADD COLUMN     "revokedAt" TIMESTAMP(3),
+-- SKIP SOA ALTER: ADD COLUMN     "revokedById" TEXT,
+-- SKIP SOA ALTER: -- SKIP DUP STATUS: ADD COLUMN     "status" "public"."StaffOutletAccessStatus" NOT NULL DEFAULT 'ACTIVE';
 
 -- AlterTable
-ALTER TABLE "public"."CustomerSegment" ADD COLUMN     "archivedAt" TIMESTAMP(3),
-ADD COLUMN     "color" TEXT,
-ADD COLUMN     "createdById" TEXT,
-ADD COLUMN     "definitionVersion" INTEGER NOT NULL DEFAULT 1,
-ADD COLUMN     "filters" JSONB,
-ADD COLUMN     "lastEvaluatedAt" TIMESTAMP(3),
-ADD COLUMN     "metricsSnapshot" JSONB,
-ADD COLUMN     "source" TEXT DEFAULT 'builder',
-ADD COLUMN     "tags" TEXT[] DEFAULT ARRAY[]::TEXT[],
-ADD COLUMN     "updatedById" TEXT;
+-- CreateTable
+CREATE TABLE "public"."CustomerSegment" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "description" TEXT,
+    "type" TEXT NOT NULL DEFAULT 'DYNAMIC',
+    "rules" JSONB NOT NULL,
+    "filters" JSONB,
+    "metricsSnapshot" JSONB,
+    "customerCount" INTEGER NOT NULL DEFAULT 0,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "tags" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    "color" TEXT,
+    "definitionVersion" INTEGER NOT NULL DEFAULT 1,
+    "source" TEXT DEFAULT 'builder',
+    "createdById" TEXT,
+    "updatedById" TEXT,
+    "archivedAt" TIMESTAMP(3),
+    "lastEvaluatedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "CustomerSegment_pkey" PRIMARY KEY ("id")
+);
+-- Indexes
+CREATE INDEX "CustomerSegment_merchantId_active_idx" ON "public"."CustomerSegment"("merchantId","isActive");
+-- FKs
+ALTER TABLE "public"."CustomerSegment" ADD CONSTRAINT "CustomerSegment_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+-- SKIP DUP CS FK: ALTER TABLE "public"."CustomerSegment" ADD CONSTRAINT "CustomerSegment_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+-- SKIP DUP CS FK: ALTER TABLE "public"."CustomerSegment" ADD CONSTRAINT "CustomerSegment_updatedById_fkey" FOREIGN KEY ("updatedById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- CreateTable
 CREATE TABLE "public"."OutletSchedule" (
@@ -205,6 +256,132 @@ CREATE TABLE "public"."CashierSession" (
 );
 
 -- CreateTable
+-- CreateTable
+CREATE TABLE "public"."ProductCategory" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "parentId" TEXT,
+    "name" TEXT NOT NULL,
+    "slug" TEXT NOT NULL,
+    "description" TEXT,
+    "imageUrl" TEXT,
+    "order" INTEGER NOT NULL DEFAULT 1000,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+
+    CONSTRAINT "ProductCategory_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."Product" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "categoryId" TEXT,
+    "name" TEXT NOT NULL,
+    "sku" TEXT,
+    "description" TEXT,
+    "order" INTEGER NOT NULL DEFAULT 1000,
+    "iikoProductId" TEXT,
+    "hasVariants" BOOLEAN NOT NULL DEFAULT false,
+    "priceEnabled" BOOLEAN NOT NULL DEFAULT true,
+    "price" DECIMAL(10,2),
+    "allowCart" BOOLEAN NOT NULL DEFAULT true,
+    "visible" BOOLEAN NOT NULL DEFAULT true,
+    "accruePoints" BOOLEAN NOT NULL DEFAULT true,
+    "allowRedeem" BOOLEAN NOT NULL DEFAULT true,
+    "redeemPercent" INTEGER NOT NULL DEFAULT 100,
+    "weightValue" DECIMAL(10,3),
+    "weightUnit" TEXT,
+    "heightCm" DECIMAL(10,2),
+    "widthCm" DECIMAL(10,2),
+    "depthCm" DECIMAL(10,2),
+    "proteins" DECIMAL(10,2),
+    "fats" DECIMAL(10,2),
+    "carbs" DECIMAL(10,2),
+    "calories" DECIMAL(10,2),
+    "tags" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    "purchasesMonth" INTEGER NOT NULL DEFAULT 0,
+    "purchasesTotal" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+
+    CONSTRAINT "Product_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."ProductImage" (
+    "id" TEXT NOT NULL,
+    "productId" TEXT NOT NULL,
+    "url" TEXT NOT NULL,
+    "alt" TEXT,
+    "position" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "ProductImage_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."ProductVariant" (
+    "id" TEXT NOT NULL,
+    "productId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "sku" TEXT,
+    "price" DECIMAL(10,2),
+    "notes" TEXT,
+    "position" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "ProductVariant_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."ProductStock" (
+    "id" TEXT NOT NULL,
+    "productId" TEXT NOT NULL,
+    "outletId" TEXT,
+    "label" TEXT NOT NULL,
+    "price" DECIMAL(10,2),
+    "balance" DECIMAL(12,3),
+
+    CONSTRAINT "ProductStock_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ProductCategory_merchantId_slug_key" ON "public"."ProductCategory"("merchantId","slug");
+-- CreateIndex
+CREATE INDEX "ProductCategory_merchantId_order_idx" ON "public"."ProductCategory"("merchantId","order");
+-- CreateIndex
+CREATE INDEX "ProductCategory_merchantId_parentId_idx" ON "public"."ProductCategory"("merchantId","parentId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Product_merchantId_sku_key" ON "public"."Product"("merchantId","sku");
+-- CreateIndex
+CREATE INDEX "Product_merchantId_categoryId_idx" ON "public"."Product"("merchantId","categoryId");
+-- CreateIndex
+CREATE INDEX "Product_merchantId_order_idx" ON "public"."Product"("merchantId","order");
+
+-- CreateIndex
+CREATE INDEX "ProductImage_productId_position_idx" ON "public"."ProductImage"("productId","position");
+
+-- CreateIndex
+CREATE INDEX "ProductVariant_productId_position_idx" ON "public"."ProductVariant"("productId","position");
+
+-- AddForeignKey
+ALTER TABLE "public"."Product" ADD CONSTRAINT "Product_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+-- AddForeignKey
+ALTER TABLE "public"."Product" ADD CONSTRAINT "Product_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "public"."ProductCategory"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+-- AddForeignKey
+ALTER TABLE "public"."ProductCategory" ADD CONSTRAINT "ProductCategory_parentId_fkey" FOREIGN KEY ("parentId") REFERENCES "public"."ProductCategory"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+-- AddForeignKey
+ALTER TABLE "public"."ProductImage" ADD CONSTRAINT "ProductImage_productId_fkey" FOREIGN KEY ("productId") REFERENCES "public"."Product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+-- AddForeignKey
+ALTER TABLE "public"."ProductVariant" ADD CONSTRAINT "ProductVariant_productId_fkey" FOREIGN KEY ("productId") REFERENCES "public"."Product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+-- AddForeignKey
+ALTER TABLE "public"."ProductStock" ADD CONSTRAINT "ProductStock_productId_fkey" FOREIGN KEY ("productId") REFERENCES "public"."Product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+-- AddForeignKey
+ALTER TABLE "public"."ProductStock" ADD CONSTRAINT "ProductStock_outletId_fkey" FOREIGN KEY ("outletId") REFERENCES "public"."Outlet"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 CREATE TABLE "public"."ProductAttribute" (
     "id" TEXT NOT NULL,
     "merchantId" TEXT NOT NULL,
@@ -857,7 +1034,7 @@ CREATE UNIQUE INDEX "DataImportMetric_jobId_key" ON "public"."DataImportMetric"(
 CREATE UNIQUE INDEX "Outlet_merchantId_code_key" ON "public"."Outlet"("merchantId", "code");
 
 -- CreateIndex
-CREATE INDEX "StaffOutletAccess_staffId_status_idx" ON "public"."StaffOutletAccess"("staffId", "status");
+-- SKIP DUP INDEX: CREATE INDEX "StaffOutletAccess_staffId_status_idx" ON "public"."StaffOutletAccess"("staffId", "status");
 
 -- AddForeignKey
 ALTER TABLE "public"."OutletSchedule" ADD CONSTRAINT "OutletSchedule_outletId_fkey" FOREIGN KEY ("outletId") REFERENCES "public"."Outlet"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -1100,10 +1277,10 @@ ALTER TABLE "public"."LoyaltyTierAssignment" ADD CONSTRAINT "LoyaltyTierAssignme
 ALTER TABLE "public"."LoyaltyTierAssignment" ADD CONSTRAINT "LoyaltyTierAssignment_assignedById_fkey" FOREIGN KEY ("assignedById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "public"."CustomerSegment" ADD CONSTRAINT "CustomerSegment_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+-- SKIP DUP CS FK: ALTER TABLE "public"."CustomerSegment" ADD CONSTRAINT "CustomerSegment_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "public"."CustomerSegment" ADD CONSTRAINT "CustomerSegment_updatedById_fkey" FOREIGN KEY ("updatedById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+-- SKIP DUP CS FK: ALTER TABLE "public"."CustomerSegment" ADD CONSTRAINT "CustomerSegment_updatedById_fkey" FOREIGN KEY ("updatedById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "public"."OutletKpiDaily" ADD CONSTRAINT "OutletKpiDaily_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

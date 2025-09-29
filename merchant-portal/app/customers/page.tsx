@@ -4,10 +4,10 @@ import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card, CardHeader, CardBody, Button, Icons } from "@loyalty/ui";
-import { customersMock, type CustomerRecord, getFullName } from "./data";
+import { type CustomerRecord, getFullName } from "./data";
 import { CustomerFormModal, type CustomerFormPayload } from "./customer-form-modal";
 
-const { Plus, Upload, Edit3, Gift, ChevronLeft, ChevronRight, Search } = Icons;
+const { Plus, Upload, Edit3, Gift, ChevronLeft, ChevronRight, Search, Trash2 } = Icons;
 
 type Filters = {
   index: string;
@@ -31,16 +31,60 @@ const initialFilters: Filters = {
   age: "",
 };
 
-const groupsCatalog = Array.from(new Set(["Постоянные", "Стандарт", "Новые", "VIP", "Сонные", ...customersMock.map((c) => c.group)]));
+// Список групп будет получен из данных (см. ниже)
 const PAGE_SIZE = 8;
 
 export default function CustomersPage() {
   const router = useRouter();
-  const [customers, setCustomers] = React.useState<CustomerRecord[]>(customersMock);
+  const [customers, setCustomers] = React.useState<CustomerRecord[]>([]);
   const [filters, setFilters] = React.useState<Filters>(initialFilters);
   const [page, setPage] = React.useState(1);
   const [toast, setToast] = React.useState<string | null>(null);
   const [modalState, setModalState] = React.useState<{ mode: "create" | "edit"; customer?: CustomerRecord } | null>(null);
+
+  // Хелпер для запросов к локальному прокси /api/customers
+  async function api<T = any>(url: string, init?: RequestInit): Promise<T> {
+    const res = await fetch(url, {
+      ...init,
+      headers: { "content-type": "application/json", ...(init?.headers || {}) },
+      cache: "no-store",
+    });
+    const ct = res.headers.get("content-type") || "";
+    const text = await res.text();
+    if (!res.ok) throw new Error(text || res.statusText);
+    if (ct.includes("application/json") || ct.includes("+json")) {
+      try {
+        return text ? ((JSON.parse(text) as unknown) as T) : ((undefined as unknown) as T);
+      } catch {
+        // fallthrough to heuristic parsing
+      }
+    }
+    const trimmed = (text || "").trim();
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      try {
+        return (JSON.parse(trimmed) as unknown) as T;
+      } catch {
+        // ignore
+      }
+    }
+    return ((undefined as unknown) as T);
+  }
+
+  // Загрузка списка клиентов при монтировании
+  React.useEffect(() => {
+    let aborted = false;
+    (async () => {
+      try {
+        const data = await api<any[]>("/api/customers");
+        if (!aborted) setCustomers(Array.isArray(data) ? data.map(normalizeCustomer) : []);
+      } catch (e) {
+        console.error(e);
+      }
+    })();
+    return () => {
+      aborted = true;
+    };
+  }, []);
 
   const filteredCustomers = React.useMemo(() => {
     return customers.filter((customer, index) => {
@@ -92,6 +136,10 @@ export default function CustomersPage() {
   }, [toast]);
 
   const existingLogins = React.useMemo(() => customers.map((customer) => customer.login), [customers]);
+  const groupsCatalog = React.useMemo(
+    () => Array.from(new Set(["Постоянные", "Стандарт", "Новые", "VIP", "Сонные", ...customers.map((c) => c.group)])),
+    [customers],
+  );
 
   function openCreateModal() {
     setModalState({ mode: "create" });
@@ -99,6 +147,24 @@ export default function CustomersPage() {
 
   function openEditModal(customer: CustomerRecord) {
     setModalState({ mode: "edit", customer });
+  }
+
+  async function handleDelete(customer: CustomerRecord) {
+    if (!customer?.id) return;
+    const ok = window.confirm(`Удалить клиента ${getFullName(customer) || customer.login}?\nДействие нельзя отменить.`);
+    if (!ok) return;
+    try {
+      await api(`/api/customers/${encodeURIComponent(customer.id)}`, { method: 'DELETE' });
+      setCustomers((prev) => prev.filter((c) => c.id !== customer.id));
+      // Подстраховка: перечитать список с сервера
+      try {
+        const fresh = await api<any[]>("/api/customers");
+        if (Array.isArray(fresh)) setCustomers(fresh.map(normalizeCustomer));
+      } catch {}
+      setToast("Клиент удалён");
+    } catch (e: any) {
+      setToast(e?.message || 'Не удалось удалить клиента');
+    }
   }
 
   async function handleModalSubmit(payload: CustomerFormPayload) {
@@ -139,32 +205,71 @@ export default function CustomersPage() {
         reviews: [],
         invited: [],
       };
-
-      setCustomers((prev) => [newCustomer, ...prev]);
-      setToast("Клиент создан");
+      try {
+        const apiBody = {
+          phone: newCustomer.login,
+          email: newCustomer.email,
+          firstName: newCustomer.firstName,
+          lastName: newCustomer.lastName,
+          name: [newCustomer.firstName, newCustomer.lastName].filter(Boolean).join(" ").trim() || undefined,
+          birthday: newCustomer.birthday,
+          gender: newCustomer.gender,
+          tags: newCustomer.tags,
+        };
+        const created = await api<any>("/api/customers", { method: "POST", body: JSON.stringify(apiBody) });
+        const normalized = created ? normalizeCustomer(created) : newCustomer;
+        setCustomers((prev) => [normalized, ...prev]);
+        // Перечитываем список, чтобы убедиться, что сохранение прошло на бэкенде
+        try {
+          const fresh = await api<any[]>("/api/customers");
+          if (Array.isArray(fresh)) setCustomers(fresh.map(normalizeCustomer));
+        } catch {}
+        setToast("Клиент создан");
+      } catch (e: any) {
+        setToast(e?.message || "Ошибка при создании клиента");
+      }
     } else if (modalState.mode === "edit" && modalState.customer) {
       const { customer } = modalState;
-      setCustomers((prev) =>
-        prev.map((item) =>
-          item.id === customer.id
-            ? {
-                ...item,
-                login: payload.login.trim(),
-                firstName: payload.firstName.trim(),
-                lastName: payload.lastName.trim(),
-                email: payload.email.trim(),
-                birthday: payload.birthday,
-                age: payload.birthday ? calculateAge(payload.birthday) : item.age,
-                tags: normalizeTags(payload.tags),
-                comment: payload.comment.trim(),
-                group: payload.group || item.group,
-                blocked: payload.blockAccruals,
-                gender: payload.gender,
-              }
-            : item,
-        ),
-      );
-      setToast("Данные клиента обновлены");
+      const updated: CustomerRecord = {
+        ...customer,
+        login: payload.login.trim(),
+        firstName: payload.firstName.trim(),
+        lastName: payload.lastName.trim(),
+        email: payload.email.trim(),
+        birthday: payload.birthday,
+        age: payload.birthday ? calculateAge(payload.birthday) : customer.age,
+        tags: normalizeTags(payload.tags),
+        comment: payload.comment.trim(),
+        group: payload.group || customer.group,
+        blocked: payload.blockAccruals,
+        gender: payload.gender,
+      };
+      try {
+        const apiBody = {
+          phone: updated.login,
+          email: updated.email,
+          firstName: updated.firstName,
+          lastName: updated.lastName,
+          name: [updated.firstName, updated.lastName].filter(Boolean).join(" ").trim() || undefined,
+          birthday: updated.birthday,
+          gender: updated.gender,
+          tags: updated.tags,
+        };
+        const saved = await api<any>(`/api/customers/${encodeURIComponent(customer.id)}`, {
+          method: "PUT",
+          body: JSON.stringify(apiBody),
+        });
+        const normalized = saved ? normalizeCustomer(saved) : updated;
+        setCustomers((prev) => prev.map((item) => (item.id === customer.id ? normalized : item)));
+        // Перечитываем список из бэкенда для строгой синхронизации
+        try {
+          const fresh = await api<any[]>("/api/customers");
+          if (Array.isArray(fresh)) setCustomers(fresh.map(normalizeCustomer));
+        } catch {}
+        setToast("Данные клиента обновлены");
+      } catch (e: any) {
+        setToast(e?.message || "Ошибка при сохранении клиента");
+      }
     }
   }
 
@@ -327,6 +432,14 @@ export default function CustomersPage() {
                         >
                           <Edit3 size={16} />
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(customer)}
+                          title="Удалить"
+                          style={{ ...iconButtonStyle, color: '#fca5a5', borderColor: 'rgba(248,113,113,0.35)' }}
+                        >
+                          <Trash2 size={16} />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -441,6 +554,44 @@ function mapCustomerToForm(customer: CustomerRecord): Partial<CustomerFormPayloa
     blockAccruals: customer.blocked,
     gender: customer.gender,
     comment: customer.comment,
+  };
+}
+
+function normalizeCustomer(input: any): CustomerRecord {
+  const c = input || {};
+  return {
+    id: String(c.id || ''),
+    login: String(c.login || c.phone || ''),
+    firstName: String(c.firstName || c.name?.split?.(' ')?.[0] || ''),
+    lastName: String(c.lastName || c.name?.split?.(' ')?.slice?.(1)?.join(' ') || ''),
+    email: String(c.email || ''),
+    visitFrequency: String(c.visitFrequency || '—'),
+    averageCheck: Number(c.averageCheck || 0),
+    birthday: String(c.birthday || ''),
+    age: Number(c.age || (c.birthday ? calculateAge(String(c.birthday)) : 0)),
+    gender: (c.gender === 'male' || c.gender === 'female' || c.gender === 'unknown') ? c.gender : 'unknown',
+    daysSinceLastVisit: Number(c.daysSinceLastVisit || 0),
+    visitCount: Number(c.visitCount || 0),
+    bonusBalance: Number(c.bonusBalance || c.balance || 0),
+    pendingBalance: Number(c.pendingBalance || 0),
+    level: String(c.level || '—'),
+    spendPreviousMonth: Number(c.spendPreviousMonth || 0),
+    spendCurrentMonth: Number(c.spendCurrentMonth || 0),
+    spendTotal: Number(c.spendTotal || 0),
+    stamps: Number(c.stamps || 0),
+    tags: Array.isArray(c.tags) ? c.tags : [],
+    registeredAt: String(c.registeredAt || new Date().toISOString()),
+    comment: String(c.comment || ''),
+    blocked: Boolean(c.blocked || false),
+    referrer: c.referrer ? String(c.referrer) : undefined,
+    group: String(c.group || 'Стандарт'),
+    inviteCode: String(c.inviteCode || 'INVITE'),
+    customerNumber: String(c.customerNumber || `CL-${String(c.id || '').slice(-4).padStart(4, '0')}`),
+    deviceNumber: c.deviceNumber ? String(c.deviceNumber) : undefined,
+    transactions: Array.isArray(c.transactions) ? c.transactions : [],
+    expiry: Array.isArray(c.expiry) ? c.expiry : [],
+    reviews: Array.isArray(c.reviews) ? c.reviews : [],
+    invited: Array.isArray(c.invited) ? c.invited : [],
   };
 }
 

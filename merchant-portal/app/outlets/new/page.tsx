@@ -81,14 +81,14 @@ export default function CreateOutletPage() {
   const handleSaveBasic = () => {
     if (!name.trim()) {
       setBasicError("Заполните название торговой точки");
-      return;
+      return false;
     }
     if (!address.trim()) {
       setBasicError("Укажите адрес точки");
-      return;
+      return false;
     }
     setBasicError("");
-    setToast("Основные данные сохранены (демо).");
+    return true;
   };
 
   const handleSaveSchedule = () => {
@@ -96,27 +96,88 @@ export default function CreateOutletPage() {
       const hasEnabledDay = schedule.some((day) => day.enabled);
       if (!hasEnabledDay) {
         setScheduleMessage("Включите хотя бы один рабочий день");
-        return;
+        return false;
       }
     }
-    setScheduleMessage("Расписание сохранено (демо).");
-    setTimeout(() => setScheduleMessage(""), 3200);
+    setScheduleMessage("");
+    return true;
   };
 
   const handleSaveIntegrations = () => {
     if (!externalId.trim()) {
       setIntegrationsMessage("Укажите внешний идентификатор");
-      return;
+      return false;
     }
-    setIntegrationsMessage("Интеграции сохранены (демо).");
-    setTimeout(() => setIntegrationsMessage(""), 3200);
+    setIntegrationsMessage("");
+    return true;
   };
 
-  const submitCreate = () => {
-    handleSaveBasic();
-    if (!name.trim() || !address.trim()) return;
-    setToast("Точка создана (демо). Возврат к списку...");
-    window.setTimeout(() => router.push("/outlets"), 600);
+  const submitCreate = async () => {
+    const okBasic = handleSaveBasic();
+    if (!okBasic) return;
+    const okSchedule = handleSaveSchedule();
+    if (!okSchedule) return;
+    const okIntegr = handleSaveIntegrations();
+    if (!okIntegr) return;
+
+    // Build payload
+    const adminList = adminEmails
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    const dayIndex: Record<string, number> = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+    const payload: any = {
+      works,
+      hidden,
+      name: name.trim(),
+      description: description.trim() || null,
+      phone: phone.trim() || null,
+      address: address.trim(),
+      adminEmails: adminList,
+      timezone,
+      externalId: externalId.trim(),
+    };
+    if (showSchedule) {
+      payload.schedule = {
+        mode: mode === '24/7' ? '24_7' : 'CUSTOM',
+        days: schedule.map((d) => ({
+          day: String(dayIndex[d.id] ?? 0),
+          enabled: !!d.enabled,
+          opensAt: d.enabled ? d.from : null,
+          closesAt: d.enabled ? d.to : null,
+        })),
+      };
+    }
+
+    try {
+      const res = await fetch('/api/portal/outlets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        let msg: any = text;
+        try {
+          const json = JSON.parse(text);
+          msg = json?.message || json?.error || text;
+        } catch {}
+        const msgStr = String(msg || 'Не удалось создать торговую точку');
+        if (msgStr.toLowerCase().includes('externalid')) {
+          const friendly = 'Точка с таким внешним ID уже существует. Укажите уникальный внешний ID.';
+          setIntegrationsMessage(friendly);
+          setTab('INTEGRATIONS');
+          setToast(friendly);
+          return;
+        }
+        setToast(msgStr);
+        return;
+      }
+      setToast('Точка создана. Возврат к списку...');
+      window.setTimeout(() => router.push('/outlets'), 600);
+    } catch (e: any) {
+      setToast(String(e?.message || e || 'Ошибка при создании'));
+    }
   };
 
   return (
@@ -125,14 +186,6 @@ export default function CreateOutletPage() {
         <div style={{ display: "grid", gap: 4 }}>
           <h1 style={{ margin: 0 }}>Добавить торговую точку</h1>
           <div style={{ opacity: 0.75, fontSize: 14 }}>Заполните информацию по вкладкам, затем создайте точку.</div>
-        </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Button variant="ghost" onClick={() => router.push("/outlets")}>
-            Отменить
-          </Button>
-          <Button variant="primary" onClick={submitCreate}>
-            Создать точку
-          </Button>
         </div>
       </div>
 
@@ -225,10 +278,9 @@ export default function CreateOutletPage() {
 
             {basicError && <div style={{ color: "#f87171", fontSize: 13 }}>{basicError}</div>}
 
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <Button variant="primary" onClick={handleSaveBasic}>
-                Сохранить
-              </Button>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <Button variant="ghost" onClick={() => router.push("/outlets")}>Отменить</Button>
+              <Button variant="primary" onClick={submitCreate}>Создать точку</Button>
             </div>
           </CardBody>
         </Card>
@@ -304,9 +356,8 @@ export default function CreateOutletPage() {
             )}
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-              <Button variant="primary" onClick={handleSaveSchedule}>
-                Сохранить
-              </Button>
+              <Button variant="ghost" onClick={() => router.push("/outlets")}>Отменить</Button>
+              <Button variant="primary" onClick={submitCreate}>Создать точку</Button>
             </div>
             {scheduleMessage && <div style={{ color: scheduleMessage.includes("сохранено") ? "#4ade80" : "#f87171" }}>{scheduleMessage}</div>}
           </CardBody>
@@ -327,10 +378,9 @@ export default function CreateOutletPage() {
               />
             </label>
 
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <Button variant="primary" onClick={handleSaveIntegrations}>
-                Сохранить
-              </Button>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <Button variant="ghost" onClick={() => router.push("/outlets")}>Отменить</Button>
+              <Button variant="primary" onClick={submitCreate}>Создать точку</Button>
             </div>
             {integrationsMessage && <div style={{ color: integrationsMessage.includes("сохранены") ? "#4ade80" : "#f87171" }}>{integrationsMessage}</div>}
           </CardBody>

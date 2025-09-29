@@ -97,7 +97,7 @@ const sections: SidebarSection[] = [
 
 async function fetchPortalProfile() {
   try {
-    const store = cookies();
+    const store = await cookies();
     const token = store.get("portal_jwt")?.value;
     if (!token) return null;
     const base = (process.env.NEXT_PUBLIC_API_BASE || "http://localhost:3000").replace(/\/$/, "");

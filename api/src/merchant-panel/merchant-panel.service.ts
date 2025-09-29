@@ -4,6 +4,11 @@ import { MerchantsService } from '../merchants/merchants.service';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
 import { hashPassword, verifyPassword } from '../password.util';
+import type {
+  AccessGroupDto as AccessGroupDtoModel,
+  AccessGroupListResponseDto as AccessGroupListResponseDtoModel,
+  AccessGroupPermissionDto as AccessGroupPermissionDtoModel,
+} from './dto/access-group.dto';
 
 interface PaginationOptions {
   page: number;
@@ -48,6 +53,24 @@ export interface AccessGroupPayload {
 export interface AccessGroupFilters {
   scope?: AccessScope | 'ALL';
   search?: string;
+}
+
+interface AccessGroupPreset {
+  key: string;
+  name: string;
+  description?: string;
+  scope: AccessScope;
+  isSystem: boolean;
+  isDefault: boolean;
+  permissions: Array<{ resource: string; action: string; conditions?: any }>;
+}
+
+type CrudAction = 'create' | 'read' | 'update' | 'delete';
+
+const DEFAULT_CRUD_ACTIONS: CrudAction[] = ['create', 'read', 'update', 'delete'];
+
+function crudPermissions(resource: string, actions: CrudAction[] = DEFAULT_CRUD_ACTIONS) {
+  return actions.map((action) => ({ resource, action }));
 }
 
 export interface OutletFilters {
@@ -95,6 +118,60 @@ export class MerchantPanelService {
     private readonly metrics: MetricsService,
   ) {}
 
+  private readonly defaultAccessGroupPresets: AccessGroupPreset[] = [
+    {
+      key: 'owner',
+      name: 'Владелец',
+      description: 'Полный доступ ко всем разделам портала',
+      scope: AccessScope.PORTAL,
+      isSystem: true,
+      isDefault: true,
+      permissions: [
+        ...crudPermissions('staff'),
+        ...crudPermissions('outlets'),
+        ...crudPermissions('loyalty'),
+        ...crudPermissions('analytics'),
+      ],
+    },
+    {
+      key: 'manager',
+      name: 'Менеджер',
+      description: 'Работа с сотрудниками и программой лояльности',
+      scope: AccessScope.PORTAL,
+      isSystem: false,
+      isDefault: false,
+      permissions: [
+        ...crudPermissions('staff', ['read', 'update']),
+        ...crudPermissions('outlets', ['read', 'update']),
+        ...crudPermissions('loyalty', ['create', 'read', 'update']),
+        ...crudPermissions('analytics', ['read']),
+      ],
+    },
+    {
+      key: 'analyst',
+      name: 'Аналитик',
+      description: 'Доступ только на чтение для отчётности',
+      scope: AccessScope.PORTAL,
+      isSystem: false,
+      isDefault: false,
+      permissions: [
+        ...crudPermissions('analytics', ['read']),
+        ...crudPermissions('loyalty', ['read']),
+      ],
+    },
+    {
+      key: 'cashier',
+      name: 'Кассир',
+      description: 'Доступ к операциям на точке продаж',
+      scope: AccessScope.CASHIER,
+      isSystem: false,
+      isDefault: false,
+      permissions: [
+        ...crudPermissions('loyalty', ['read']),
+      ],
+    },
+  ];
+
   private normalizePagination(pagination?: Partial<PaginationOptions>): PaginationOptions {
     const page = Math.max(1, Math.floor(pagination?.page ?? 1));
     const pageSize = Math.max(1, Math.min(200, Math.floor(pagination?.pageSize ?? 20)));
@@ -104,6 +181,68 @@ export class MerchantPanelService {
   private buildMeta(pagination: PaginationOptions, total: number) {
     const totalPages = Math.max(1, Math.ceil(total / pagination.pageSize));
     return { page: pagination.page, pageSize: pagination.pageSize, total, totalPages };
+  }
+
+  private async ensureDefaultAccessGroups(merchantId: string) {
+    const existing = await this.prisma.accessGroup.findMany({
+      where: { merchantId },
+      select: { id: true, name: true, scope: true },
+    });
+    const existingKeys = new Set(
+      existing.map((group) => `${group.scope}:${group.name.trim().toLowerCase()}`),
+    );
+    const missingPresets = this.defaultAccessGroupPresets.filter((preset) => {
+      const key = `${preset.scope}:${preset.name.trim().toLowerCase()}`;
+      return !existingKeys.has(key);
+    });
+    if (!missingPresets.length) return;
+
+    let created = 0;
+    await this.prisma.$transaction(async (tx) => {
+      for (const preset of missingPresets) {
+        try {
+          const createdGroup = await tx.accessGroup.create({
+            data: {
+              merchantId,
+              name: preset.name,
+              description: preset.description ?? null,
+              scope: preset.scope,
+              isSystem: preset.isSystem,
+              isDefault: preset.isDefault,
+              metadata: { bootstrap: true, presetKey: preset.key } as Prisma.JsonObject,
+            },
+          });
+          if (preset.permissions.length) {
+            await tx.accessGroupPermission.createMany({
+              data: preset.permissions.map((permission) => ({
+                groupId: createdGroup.id,
+                resource: permission.resource,
+                action: permission.action,
+                conditions: permission.conditions ?? null,
+              })),
+            });
+          }
+          created += 1;
+        } catch (error: unknown) {
+          if (
+            error instanceof Prisma.PrismaClientKnownRequestError &&
+            (error.code === 'P2002' || error.code === 'P2003')
+          ) {
+            continue;
+          }
+          throw error;
+        }
+      }
+    });
+
+    if (created > 0) {
+      try {
+        this.logger.log(
+          JSON.stringify({ event: 'portal.access-group.bootstrap', merchantId, created }),
+        );
+        this.metrics.inc('portal_access_group_bootstrap_total', {}, created);
+      } catch {}
+    }
   }
 
   private randomPin(): string {
@@ -293,7 +432,21 @@ export class MerchantPanelService {
 
   private mapAccessGroup(
     group: Prisma.AccessGroupGetPayload<{ include: { permissions: true } }> & { memberCount?: number },
-  ) {
+  ): AccessGroupDtoModel {
+    const normalizeConditions = (value: Prisma.JsonValue | null): string | null => {
+      if (value == null) return null;
+      if (typeof value === 'string') return value;
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return null;
+      }
+    };
+    const permissions = group.permissions.map((permission) => ({
+      resource: permission.resource,
+      action: permission.action,
+      conditions: normalizeConditions(permission.conditions ?? null),
+    })) as AccessGroupPermissionDtoModel[];
     return {
       id: group.id,
       name: group.name,
@@ -302,12 +455,8 @@ export class MerchantPanelService {
       isSystem: group.isSystem,
       isDefault: group.isDefault,
       memberCount: group.memberCount ?? 0,
-      permissions: group.permissions.map((permission) => ({
-        resource: permission.resource,
-        action: permission.action,
-        conditions: permission.conditions ?? null,
-      })),
-    };
+      permissions,
+    } as AccessGroupDtoModel;
   }
 
   async listStaff(merchantId: string, filters: StaffFilters = {}, pagination?: Partial<PaginationOptions>) {
@@ -556,10 +705,7 @@ export class MerchantPanelService {
         data.portalAccessEnabled = true;
         data.portalState = 'ENABLED';
       }
-      const staff = await tx.staff.create({
-        data,
-        include: this.staffInclude(),
-      });
+      const staff = await tx.staff.create({ data, include: this.staffInclude() });
 
       await this.syncAccessGroups(tx, merchantId, staff.id, payload.accessGroupIds ?? []);
       await this.syncOutlets(tx, merchantId, staff.id, payload.outletIds ?? [], payload.pinStrategy ?? 'KEEP');
@@ -591,7 +737,6 @@ export class MerchantPanelService {
         throw new ForbiddenException('Нельзя изменить статус владельца');
       }
     }
-
     return this.prisma.$transaction(async (tx) => {
       const trimmedPassword = payload.password?.toString().trim() ?? undefined;
       if (trimmedPassword && trimmedPassword.length < 6) {
@@ -664,7 +809,6 @@ export class MerchantPanelService {
         );
         this.metrics.inc('portal_staff_changed_total', { action: 'update' });
       } catch {}
-
       return this.getStaff(merchantId, staffId);
     });
   }
@@ -858,6 +1002,7 @@ export class MerchantPanelService {
     pagination?: Partial<PaginationOptions>,
   ) {
     const paging = this.normalizePagination(pagination);
+    await this.ensureDefaultAccessGroups(merchantId);
     const where: Prisma.AccessGroupWhereInput = { merchantId };
     if (filters.scope && filters.scope !== 'ALL') {
       where.scope = filters.scope;
@@ -903,7 +1048,7 @@ export class MerchantPanelService {
         this.mapAccessGroup({ ...group, memberCount: group.members.length }),
       ),
       meta: this.buildMeta(paging, total),
-    };
+    } as AccessGroupListResponseDtoModel;
   }
 
   async createAccessGroup(merchantId: string, payload: AccessGroupPayload, actorId?: string) {
@@ -927,7 +1072,20 @@ export class MerchantPanelService {
       },
       include: { permissions: true },
     });
-    return this.mapAccessGroup({ ...group, memberCount: 0 });
+    const mapped = this.mapAccessGroup({ ...group, memberCount: 0 });
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.access-group.create',
+          merchantId,
+          groupId: mapped.id,
+          permissions: mapped.permissions.length,
+          actorId: actorId ?? null,
+        }),
+      );
+      this.metrics.inc('portal_access_group_write_total', { action: 'create' });
+    } catch {}
+    return mapped;
   }
 
   async updateAccessGroup(merchantId: string, groupId: string, payload: AccessGroupPayload, actorId?: string) {
@@ -962,7 +1120,20 @@ export class MerchantPanelService {
       });
       return reloaded!;
     });
-    return this.mapAccessGroup({ ...updated, memberCount: updated.members.length });
+    const mapped = this.mapAccessGroup({ ...updated, memberCount: updated.members.length });
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.access-group.update',
+          merchantId,
+          groupId: mapped.id,
+          permissions: mapped.permissions.length,
+          actorId: actorId ?? null,
+        }),
+      );
+      this.metrics.inc('portal_access_group_write_total', { action: 'update' });
+    } catch {}
+    return mapped;
   }
 
   async getAccessGroup(merchantId: string, groupId: string) {
@@ -983,6 +1154,12 @@ export class MerchantPanelService {
       await tx.accessGroupPermission.deleteMany({ where: { groupId } });
       await tx.accessGroup.delete({ where: { id: groupId } });
     });
+    try {
+      this.logger.log(
+        JSON.stringify({ event: 'portal.access-group.delete', merchantId, groupId }),
+      );
+      this.metrics.inc('portal_access_group_write_total', { action: 'delete' });
+    } catch {}
     return { ok: true };
   }
 
@@ -997,6 +1174,17 @@ export class MerchantPanelService {
         });
       }
     });
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.access-group.members.set',
+          merchantId,
+          groupId,
+          members: staffIds.length,
+        }),
+      );
+      this.metrics.inc('portal_access_group_write_total', { action: 'members' });
+    } catch {}
     return { ok: true };
   }
 

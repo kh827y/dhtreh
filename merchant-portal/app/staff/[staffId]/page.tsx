@@ -1,7 +1,9 @@
 "use client";
-import React from "react";
+import React, { use } from "react";
 import { Card, CardHeader, CardBody, Button, Skeleton } from "@loyalty/ui";
 import Toggle from "../../../components/Toggle";
+
+type StaffGroup = { id: string; name: string; scope?: string | null };
 
 type Staff = {
   id: string;
@@ -16,17 +18,22 @@ type Staff = {
   comment?: string | null;
   avatarUrl?: string | null;
   canAccessPortal?: boolean | null;
+  portalAccessEnabled?: boolean | null;
   isOwner?: boolean | null;
   lastActivityAt?: string | null;
+  lastPortalLoginAt?: string | null;
   pinCode?: string | null;
+  groups?: StaffGroup[];
 };
 
 type AccessRow = {
+  id: string;
   outletId: string;
   outletName: string;
   pinCode?: string | null;
   lastTxnAt?: string | null;
-  transactionsTotal?: number;
+  transactionsTotal?: number | null;
+  status?: string;
 };
 
 type Outlet = { id: string; name: string };
@@ -101,8 +108,9 @@ function mergeGroups(options: AccessGroup[], currentRole?: string | null) {
   return Array.from(map.values());
 }
 
-export default function StaffCardPage({ params }: { params: { staffId: string } }) {
-  const staffId = (typeof params?.staffId === "string" ? params.staffId : Array.isArray(params?.staffId) ? params.staffId[0] : "").toString();
+export default function StaffCardPage({ params }: { params: Promise<{ staffId: string }> }) {
+  const { staffId: promisedStaffId } = use(params);
+  const staffId = (typeof promisedStaffId === "string" ? promisedStaffId : "").toString();
 
   const [loading, setLoading] = React.useState(true);
   const [item, setItem] = React.useState<Staff | null>(null);
@@ -179,44 +187,69 @@ export default function StaffCardPage({ params }: { params: { staffId: string } 
     ensureGroupsLoaded();
   }, [ensureGroupsLoaded]);
 
-  async function load() {
+  const load = React.useCallback(async () => {
+    if (!staffId) return;
     setLoading(true);
     setError("");
     setBanner(null);
     try {
       const [staffRes, accessRes, outletsRes] = await Promise.all([
-        fetch("/api/portal/staff"),
+        fetch(`/api/portal/staff/${encodeURIComponent(staffId)}`),
         fetch(`/api/portal/staff/${encodeURIComponent(staffId)}/access`),
         fetch("/api/portal/outlets"),
       ]);
       if (!staffRes.ok) throw new Error(await staffRes.text());
       if (!accessRes.ok) throw new Error(await accessRes.text());
       if (!outletsRes.ok) throw new Error(await outletsRes.text());
-      const [staffList, accessData, outletsData] = await Promise.all([staffRes.json(), accessRes.json(), outletsRes.json()]);
-      const found = (Array.isArray(staffList) ? staffList : []).find((row: Staff) => row.id === staffId) || null;
-      if (!found) {
+      const [staffPayload, accessData, outletsData] = await Promise.all([staffRes.json(), accessRes.json(), outletsRes.json()]);
+      const detail: Staff | null = staffPayload && typeof staffPayload === "object" && staffPayload.id ? staffPayload : null;
+      if (!detail) {
         setError("Сотрудник не найден или недоступен");
         setItem(null);
       } else {
-        setItem(found);
+        setItem(detail);
         setAccessForm({
-          email: found.email || "",
-          role: (found.role || "CASHIER").toUpperCase(),
-          canAccessPortal: !!(found.isOwner || found.canAccessPortal),
+          email: detail.email || "",
+          role: (detail.role || "CASHIER").toUpperCase(),
+          canAccessPortal: !!(detail.isOwner || detail.portalAccessEnabled || detail.canAccessPortal),
         });
       }
-      setAccesses(Array.isArray(accessData) ? accessData : []);
-      setOutlets(Array.isArray(outletsData) ? outletsData : []);
+      const accessItems: any[] = Array.isArray(accessData?.items)
+        ? accessData.items
+        : Array.isArray(accessData)
+          ? accessData
+          : [];
+      const mappedAccesses: AccessRow[] = accessItems.map((row: any) => ({
+        id: String(row?.id ?? `${row?.outletId || ''}`),
+        outletId: String(row?.outletId ?? ''),
+        outletName: String(row?.outletName ?? row?.outletId ?? ''),
+        pinCode: row?.pinCode ?? null,
+        lastTxnAt: row?.lastTxnAt ?? null,
+        transactionsTotal: row?.transactionsTotal ?? null,
+        status: row?.status ?? null,
+      }));
+      setAccesses(mappedAccesses);
+
+      const outletsItems: any[] = Array.isArray(outletsData?.items)
+        ? outletsData.items
+        : Array.isArray(outletsData)
+          ? outletsData
+          : [];
+      const mappedOutlets: Outlet[] = outletsItems.map((outlet: any) => ({
+        id: String(outlet?.id ?? ''),
+        name: String(outlet?.name ?? outlet?.id ?? ''),
+      }));
+      setOutlets(mappedOutlets);
     } catch (e: any) {
       setError(String(e?.message || e || "Не удалось загрузить данные сотрудника"));
     } finally {
       setLoading(false);
     }
-  }
+  }, [staffId]);
 
   React.useEffect(() => {
     load();
-  }, [staffId]);
+  }, [load]);
 
   React.useEffect(() => {
     if (item) {
@@ -228,7 +261,7 @@ export default function StaffCardPage({ params }: { params: { staffId: string } 
         comment: item.comment || "",
       });
     }
-  }, [item?.id]);
+  }, [item]);
 
   const groupOptions = React.useMemo(() => mergeGroups(groups, item?.role), [groups, item?.role]);
   const canChangePassword = sessionStaffId === staffId;
@@ -388,8 +421,19 @@ export default function StaffCardPage({ params }: { params: { staffId: string } 
         body: JSON.stringify({ outletId: newOutletId }),
       });
       if (!res.ok) throw new Error(await res.text());
-      const added = await res.json();
-      setAccesses((prev) => [...prev, added]);
+      const addedPayload = await res.json();
+      const added: AccessRow | null = addedPayload && typeof addedPayload === 'object'
+        ? {
+            id: String(addedPayload?.id ?? `${addedPayload?.outletId || ''}`),
+            outletId: String(addedPayload?.outletId ?? ''),
+            outletName: String(addedPayload?.outletName ?? addedPayload?.outletId ?? ''),
+            pinCode: addedPayload?.pinCode ?? null,
+            lastTxnAt: addedPayload?.lastTxnAt ?? null,
+            transactionsTotal: addedPayload?.transactionsTotal ?? null,
+            status: addedPayload?.status ?? null,
+          }
+        : null;
+      if (added) setAccesses((prev) => [...prev, added]);
       setNewOutletId("");
       setBanner({ type: "success", text: "Точка добавлена" });
     } catch (e: any) {

@@ -1,0 +1,1330 @@
+-- CreateEnum
+CREATE TYPE "public"."StaffStatus" AS ENUM ('ACTIVE', 'PENDING', 'SUSPENDED', 'FIRED', 'ARCHIVED');
+
+-- CreateEnum
+CREATE TYPE "public"."StaffOutletAccessStatus" AS ENUM ('ACTIVE', 'REVOKED', 'EXPIRED');
+
+-- CreateEnum
+CREATE TYPE "public"."AccessScope" AS ENUM ('PORTAL', 'CASHIER', 'API');
+
+-- CreateEnum
+CREATE TYPE "public"."StaffInvitationStatus" AS ENUM ('PENDING', 'ACCEPTED', 'EXPIRED', 'REVOKED');
+
+-- CreateEnum
+CREATE TYPE "public"."PromoCodeStatus" AS ENUM ('DRAFT', 'ACTIVE', 'PAUSED', 'EXPIRED', 'ARCHIVED');
+
+-- CreateEnum
+CREATE TYPE "public"."PromoCodeUsageLimitType" AS ENUM ('UNLIMITED', 'ONCE_TOTAL', 'ONCE_PER_CUSTOMER', 'LIMITED_PER_CUSTOMER');
+
+-- CreateEnum
+CREATE TYPE "public"."PromotionStatus" AS ENUM ('DRAFT', 'SCHEDULED', 'ACTIVE', 'PAUSED', 'COMPLETED', 'CANCELED', 'ARCHIVED');
+
+-- CreateEnum
+CREATE TYPE "public"."PromotionRewardType" AS ENUM ('POINTS', 'DISCOUNT', 'CASHBACK', 'LEVEL_UP', 'CUSTOM');
+
+-- CreateEnum
+CREATE TYPE "public"."LoyaltyMechanicType" AS ENUM ('TIERS', 'PURCHASE_LIMITS', 'WINBACK', 'BIRTHDAY', 'REGISTRATION_BONUS', 'EXPIRATION_REMINDER', 'REFERRAL', 'CUSTOM');
+
+-- CreateEnum
+CREATE TYPE "public"."MechanicStatus" AS ENUM ('DISABLED', 'ENABLED', 'DRAFT');
+
+-- CreateEnum
+CREATE TYPE "public"."DataImportStatus" AS ENUM ('UPLOADED', 'VALIDATING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELED');
+
+-- CreateEnum
+CREATE TYPE "public"."DataImportType" AS ENUM ('CUSTOMERS', 'TRANSACTIONS', 'PRODUCTS', 'STAFF', 'PROMO_CODES');
+
+-- CreateEnum
+CREATE TYPE "public"."CommunicationChannel" AS ENUM ('PUSH', 'SMS', 'EMAIL', 'TELEGRAM', 'INAPP');
+
+-- CreateEnum
+CREATE TYPE "public"."PortalAccessState" AS ENUM ('ENABLED', 'DISABLED', 'INVITED', 'LOCKED');
+
+-- AlterTable
+ALTER TABLE "public"."Merchant" ADD COLUMN     "cashierPasswordUpdatedAt" TIMESTAMP(3);
+
+-- AlterTable
+ALTER TABLE "public"."Outlet" ADD COLUMN     "code" TEXT,
+ADD COLUMN     "integrationLocationCode" TEXT,
+ADD COLUMN     "integrationPayload" JSONB,
+ADD COLUMN     "integrationProvider" TEXT,
+ADD COLUMN     "tags" TEXT[] DEFAULT ARRAY[]::TEXT[];
+
+-- AlterTable
+ALTER TABLE "public"."Staff" ADD COLUMN     "firedAt" TIMESTAMP(3),
+ADD COLUMN     "hiredAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ADD COLUMN     "lastActivityAt" TIMESTAMP(3),
+ADD COLUMN     "lastCashierLoginAt" TIMESTAMP(3),
+ADD COLUMN     "lastPortalLoginAt" TIMESTAMP(3),
+ADD COLUMN     "portalAccessEnabled" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "portalAccessRevokedAt" TIMESTAMP(3),
+ADD COLUMN     "portalInvitationAcceptedAt" TIMESTAMP(3),
+ADD COLUMN     "portalInvitationSentAt" TIMESTAMP(3),
+ADD COLUMN     "portalState" "public"."PortalAccessState" NOT NULL DEFAULT 'DISABLED',
+ADD COLUMN     "terminationReason" TEXT,
+ADD COLUMN     "updatedAt" TIMESTAMP(3) NOT NULL,
+DROP COLUMN "status",
+ADD COLUMN     "status" "public"."StaffStatus" NOT NULL DEFAULT 'ACTIVE';
+
+-- AlterTable
+-- CreateTable
+CREATE TABLE "public"."StaffOutletAccess" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "staffId" TEXT NOT NULL,
+    "outletId" TEXT NOT NULL,
+    "status" "public"."StaffOutletAccessStatus" NOT NULL DEFAULT 'ACTIVE',
+    "pinCode" TEXT,
+    "pinCodeHash" TEXT,
+    "pinIssuedAt" TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP,
+    "pinIssuedById" TEXT,
+    "pinRetryCount" INTEGER NOT NULL DEFAULT 0,
+    "revokedAt" TIMESTAMP(3),
+    "revokedById" TEXT,
+    "lastTxnAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "StaffOutletAccess_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE INDEX "StaffOutletAccess_merchantId_outletId_idx" ON "public"."StaffOutletAccess"("merchantId","outletId");
+-- CreateIndex
+CREATE UNIQUE INDEX "StaffOutletAccess_merchantId_staffId_outletId_key" ON "public"."StaffOutletAccess"("merchantId","staffId","outletId");
+-- CreateIndex
+CREATE INDEX "StaffOutletAccess_staffId_status_idx" ON "public"."StaffOutletAccess"("staffId","status");
+
+-- AddForeignKey (base references)
+ALTER TABLE "public"."StaffOutletAccess" ADD CONSTRAINT "StaffOutletAccess_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "public"."StaffOutletAccess" ADD CONSTRAINT "StaffOutletAccess_staffId_fkey" FOREIGN KEY ("staffId") REFERENCES "public"."Staff"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "public"."StaffOutletAccess" ADD CONSTRAINT "StaffOutletAccess_outletId_fkey" FOREIGN KEY ("outletId") REFERENCES "public"."Outlet"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+-- SKIP SOA ALTER: ALTER TABLE "public"."StaffOutletAccess" ADD COLUMN     "pinCodeHash" TEXT,
+-- SKIP SOA ALTER: ADD COLUMN     "pinIssuedAt" TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP,
+-- SKIP SOA ALTER: ADD COLUMN     "pinIssuedById" TEXT,
+-- SKIP SOA ALTER: ADD COLUMN     "pinRetryCount" INTEGER NOT NULL DEFAULT 0,
+-- SKIP SOA ALTER: ADD COLUMN     "pinUpdatedAt" TIMESTAMP(3),
+-- SKIP SOA ALTER: ADD COLUMN     "revokedAt" TIMESTAMP(3),
+-- SKIP SOA ALTER: ADD COLUMN     "revokedById" TEXT,
+-- SKIP SOA ALTER: -- SKIP DUP STATUS: ADD COLUMN     "status" "public"."StaffOutletAccessStatus" NOT NULL DEFAULT 'ACTIVE';
+
+-- AlterTable
+-- CreateTable
+CREATE TABLE "public"."CustomerSegment" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "description" TEXT,
+    "type" TEXT NOT NULL DEFAULT 'DYNAMIC',
+    "rules" JSONB NOT NULL,
+    "filters" JSONB,
+    "metricsSnapshot" JSONB,
+    "customerCount" INTEGER NOT NULL DEFAULT 0,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "tags" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    "color" TEXT,
+    "definitionVersion" INTEGER NOT NULL DEFAULT 1,
+    "source" TEXT DEFAULT 'builder',
+    "createdById" TEXT,
+    "updatedById" TEXT,
+    "archivedAt" TIMESTAMP(3),
+    "lastEvaluatedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "CustomerSegment_pkey" PRIMARY KEY ("id")
+);
+-- Indexes
+CREATE INDEX "CustomerSegment_merchantId_active_idx" ON "public"."CustomerSegment"("merchantId","isActive");
+-- FKs
+ALTER TABLE "public"."CustomerSegment" ADD CONSTRAINT "CustomerSegment_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+-- SKIP DUP CS FK: ALTER TABLE "public"."CustomerSegment" ADD CONSTRAINT "CustomerSegment_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+-- SKIP DUP CS FK: ALTER TABLE "public"."CustomerSegment" ADD CONSTRAINT "CustomerSegment_updatedById_fkey" FOREIGN KEY ("updatedById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "public"."CustomerSegment" ADD COLUMN     "archivedAt" TIMESTAMP(3),
+ADD COLUMN     "color" TEXT,
+ADD COLUMN     "createdById" TEXT,
+ADD COLUMN     "definitionVersion" INTEGER NOT NULL DEFAULT 1,
+ADD COLUMN     "filters" JSONB,
+ADD COLUMN     "lastEvaluatedAt" TIMESTAMP(3),
+ADD COLUMN     "metricsSnapshot" JSONB,
+ADD COLUMN     "source" TEXT DEFAULT 'builder',
+ADD COLUMN     "tags" TEXT[] DEFAULT ARRAY[]::TEXT[],
+ADD COLUMN     "updatedById" TEXT;
+
+-- CreateTable
+CREATE TABLE "public"."OutletSchedule" (
+    "id" TEXT NOT NULL,
+    "outletId" TEXT NOT NULL,
+    "dayOfWeek" INTEGER NOT NULL,
+    "opensAt" TEXT,
+    "closesAt" TEXT,
+    "isDayOff" BOOLEAN NOT NULL DEFAULT false,
+    "notes" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "OutletSchedule_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."AccessGroup" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "description" TEXT,
+    "scope" "public"."AccessScope" NOT NULL DEFAULT 'PORTAL',
+    "isSystem" BOOLEAN NOT NULL DEFAULT false,
+    "isDefault" BOOLEAN NOT NULL DEFAULT false,
+    "metadata" JSONB,
+    "createdById" TEXT,
+    "updatedById" TEXT,
+    "archivedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "AccessGroup_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."AccessGroupPermission" (
+    "id" TEXT NOT NULL,
+    "groupId" TEXT NOT NULL,
+    "resource" TEXT NOT NULL,
+    "action" TEXT NOT NULL,
+    "conditions" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "AccessGroupPermission_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."StaffAccessGroup" (
+    "id" TEXT NOT NULL,
+    "staffId" TEXT NOT NULL,
+    "groupId" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "assignedById" TEXT,
+    "assignedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "isPrimary" BOOLEAN NOT NULL DEFAULT false,
+
+    CONSTRAINT "StaffAccessGroup_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."StaffInvitation" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
+    "phone" TEXT,
+    "firstName" TEXT,
+    "lastName" TEXT,
+    "role" "public"."StaffRole" NOT NULL DEFAULT 'CASHIER',
+    "status" "public"."StaffInvitationStatus" NOT NULL DEFAULT 'PENDING',
+    "accessGroupId" TEXT,
+    "invitedById" TEXT,
+    "staffId" TEXT,
+    "token" TEXT NOT NULL,
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+    "acceptedAt" TIMESTAMP(3),
+    "revokedAt" TIMESTAMP(3),
+    "metadata" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "StaffInvitation_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."StaffAccessLog" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "staffId" TEXT NOT NULL,
+    "actorId" TEXT,
+    "action" TEXT NOT NULL,
+    "payload" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "StaffAccessLog_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."CashierSession" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "staffId" TEXT NOT NULL,
+    "outletId" TEXT,
+    "deviceId" TEXT,
+    "pinAccessId" TEXT,
+    "startedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "endedAt" TIMESTAMP(3),
+    "result" TEXT,
+    "ipAddress" TEXT,
+    "userAgent" TEXT,
+    "metadata" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "CashierSession_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+-- CreateTable
+CREATE TABLE "public"."ProductCategory" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "parentId" TEXT,
+    "name" TEXT NOT NULL,
+    "slug" TEXT NOT NULL,
+    "description" TEXT,
+    "imageUrl" TEXT,
+    "order" INTEGER NOT NULL DEFAULT 1000,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+
+    CONSTRAINT "ProductCategory_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."Product" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "categoryId" TEXT,
+    "name" TEXT NOT NULL,
+    "sku" TEXT,
+    "description" TEXT,
+    "order" INTEGER NOT NULL DEFAULT 1000,
+    "iikoProductId" TEXT,
+    "hasVariants" BOOLEAN NOT NULL DEFAULT false,
+    "priceEnabled" BOOLEAN NOT NULL DEFAULT true,
+    "price" DECIMAL(10,2),
+    "allowCart" BOOLEAN NOT NULL DEFAULT true,
+    "visible" BOOLEAN NOT NULL DEFAULT true,
+    "accruePoints" BOOLEAN NOT NULL DEFAULT true,
+    "allowRedeem" BOOLEAN NOT NULL DEFAULT true,
+    "redeemPercent" INTEGER NOT NULL DEFAULT 100,
+    "weightValue" DECIMAL(10,3),
+    "weightUnit" TEXT,
+    "heightCm" DECIMAL(10,2),
+    "widthCm" DECIMAL(10,2),
+    "depthCm" DECIMAL(10,2),
+    "proteins" DECIMAL(10,2),
+    "fats" DECIMAL(10,2),
+    "carbs" DECIMAL(10,2),
+    "calories" DECIMAL(10,2),
+    "tags" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    "purchasesMonth" INTEGER NOT NULL DEFAULT 0,
+    "purchasesTotal" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+
+    CONSTRAINT "Product_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."ProductImage" (
+    "id" TEXT NOT NULL,
+    "productId" TEXT NOT NULL,
+    "url" TEXT NOT NULL,
+    "alt" TEXT,
+    "position" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "ProductImage_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."ProductVariant" (
+    "id" TEXT NOT NULL,
+    "productId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "sku" TEXT,
+    "price" DECIMAL(10,2),
+    "notes" TEXT,
+    "position" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "ProductVariant_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."ProductStock" (
+    "id" TEXT NOT NULL,
+    "productId" TEXT NOT NULL,
+    "outletId" TEXT,
+    "label" TEXT NOT NULL,
+    "price" DECIMAL(10,2),
+    "balance" DECIMAL(12,3),
+
+    CONSTRAINT "ProductStock_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ProductCategory_merchantId_slug_key" ON "public"."ProductCategory"("merchantId","slug");
+-- CreateIndex
+CREATE INDEX "ProductCategory_merchantId_order_idx" ON "public"."ProductCategory"("merchantId","order");
+-- CreateIndex
+CREATE INDEX "ProductCategory_merchantId_parentId_idx" ON "public"."ProductCategory"("merchantId","parentId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Product_merchantId_sku_key" ON "public"."Product"("merchantId","sku");
+-- CreateIndex
+CREATE INDEX "Product_merchantId_categoryId_idx" ON "public"."Product"("merchantId","categoryId");
+-- CreateIndex
+CREATE INDEX "Product_merchantId_order_idx" ON "public"."Product"("merchantId","order");
+
+-- CreateIndex
+CREATE INDEX "ProductImage_productId_position_idx" ON "public"."ProductImage"("productId","position");
+
+-- CreateIndex
+CREATE INDEX "ProductVariant_productId_position_idx" ON "public"."ProductVariant"("productId","position");
+
+-- AddForeignKey
+ALTER TABLE "public"."Product" ADD CONSTRAINT "Product_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+-- AddForeignKey
+ALTER TABLE "public"."Product" ADD CONSTRAINT "Product_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "public"."ProductCategory"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+-- AddForeignKey
+ALTER TABLE "public"."ProductCategory" ADD CONSTRAINT "ProductCategory_parentId_fkey" FOREIGN KEY ("parentId") REFERENCES "public"."ProductCategory"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+-- AddForeignKey
+ALTER TABLE "public"."ProductImage" ADD CONSTRAINT "ProductImage_productId_fkey" FOREIGN KEY ("productId") REFERENCES "public"."Product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+-- AddForeignKey
+ALTER TABLE "public"."ProductVariant" ADD CONSTRAINT "ProductVariant_productId_fkey" FOREIGN KEY ("productId") REFERENCES "public"."Product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+-- AddForeignKey
+ALTER TABLE "public"."ProductStock" ADD CONSTRAINT "ProductStock_productId_fkey" FOREIGN KEY ("productId") REFERENCES "public"."Product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+-- AddForeignKey
+ALTER TABLE "public"."ProductStock" ADD CONSTRAINT "ProductStock_outletId_fkey" FOREIGN KEY ("outletId") REFERENCES "public"."Outlet"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+CREATE TABLE "public"."ProductAttribute" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "productId" TEXT NOT NULL,
+    "key" TEXT NOT NULL,
+    "value" TEXT NOT NULL,
+    "valueType" TEXT,
+    "locale" TEXT,
+    "metadata" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ProductAttribute_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."ProductOption" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "productId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "type" TEXT,
+    "position" INTEGER NOT NULL DEFAULT 0,
+    "isRequired" BOOLEAN NOT NULL DEFAULT false,
+    "metadata" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ProductOption_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."ProductOptionValue" (
+    "id" TEXT NOT NULL,
+    "optionId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "priceDelta" DECIMAL(10,2),
+    "skuSuffix" TEXT,
+    "metadata" JSONB,
+    "position" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ProductOptionValue_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."ProductVariantOption" (
+    "id" TEXT NOT NULL,
+    "variantId" TEXT NOT NULL,
+    "optionId" TEXT NOT NULL,
+    "optionValueId" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "ProductVariantOption_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."CommunicationTemplate" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "channel" "public"."CommunicationChannel" NOT NULL,
+    "subject" TEXT,
+    "content" JSONB NOT NULL,
+    "preview" JSONB,
+    "isSystem" BOOLEAN NOT NULL DEFAULT false,
+    "createdById" TEXT,
+    "updatedById" TEXT,
+    "archivedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "CommunicationTemplate_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."CommunicationTask" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "channel" "public"."CommunicationChannel" NOT NULL,
+    "templateId" TEXT,
+    "audienceId" TEXT,
+    "promotionId" TEXT,
+    "createdById" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'SCHEDULED',
+    "scheduledAt" TIMESTAMP(3),
+    "startedAt" TIMESTAMP(3),
+    "completedAt" TIMESTAMP(3),
+    "failedAt" TIMESTAMP(3),
+    "payload" JSONB,
+    "filters" JSONB,
+    "stats" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "CommunicationTask_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."CommunicationTaskRecipient" (
+    "id" TEXT NOT NULL,
+    "taskId" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "customerId" TEXT,
+    "channel" "public"."CommunicationChannel" NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'PENDING',
+    "sentAt" TIMESTAMP(3),
+    "error" TEXT,
+    "metadata" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "CommunicationTaskRecipient_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."PromoCode" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "segmentId" TEXT,
+    "code" TEXT NOT NULL,
+    "name" TEXT,
+    "description" TEXT,
+    "status" "public"."PromoCodeStatus" NOT NULL DEFAULT 'DRAFT',
+    "usageLimitType" "public"."PromoCodeUsageLimitType" NOT NULL DEFAULT 'UNLIMITED',
+    "usageLimitValue" INTEGER,
+    "cooldownDays" INTEGER,
+    "perCustomerLimit" INTEGER,
+    "requireVisit" BOOLEAN NOT NULL DEFAULT false,
+    "visitLookbackHours" INTEGER,
+    "grantPoints" BOOLEAN NOT NULL DEFAULT false,
+    "pointsAmount" INTEGER,
+    "pointsExpireInDays" INTEGER,
+    "assignTierId" TEXT,
+    "upgradeTierId" TEXT,
+    "autoArchiveAt" TIMESTAMP(3),
+    "activeFrom" TIMESTAMP(3),
+    "activeUntil" TIMESTAMP(3),
+    "isHighlighted" BOOLEAN NOT NULL DEFAULT false,
+    "metadata" JSONB,
+    "createdById" TEXT,
+    "updatedById" TEXT,
+    "archivedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "PromoCode_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."PromoCodeUsage" (
+    "id" TEXT NOT NULL,
+    "promoCodeId" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "customerId" TEXT,
+    "staffId" TEXT,
+    "outletId" TEXT,
+    "orderId" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'USED',
+    "pointsIssued" INTEGER,
+    "pointsExpireAt" TIMESTAMP(3),
+    "reward" JSONB,
+    "metadata" JSONB,
+    "usedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "PromoCodeUsage_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."PromoCodeMetric" (
+    "id" TEXT NOT NULL,
+    "promoCodeId" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "totalIssued" INTEGER NOT NULL DEFAULT 0,
+    "totalRedeemed" INTEGER NOT NULL DEFAULT 0,
+    "totalPointsIssued" INTEGER NOT NULL DEFAULT 0,
+    "totalCustomers" INTEGER NOT NULL DEFAULT 0,
+    "usageByStatus" JSONB,
+    "usageByPeriod" JSONB,
+    "lastUsedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "PromoCodeMetric_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."LoyaltyPromotion" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "segmentId" TEXT,
+    "targetTierId" TEXT,
+    "name" TEXT NOT NULL,
+    "description" TEXT,
+    "status" "public"."PromotionStatus" NOT NULL DEFAULT 'DRAFT',
+    "rewardType" "public"."PromotionRewardType" NOT NULL,
+    "rewardValue" INTEGER,
+    "rewardMetadata" JSONB,
+    "pointsExpireInDays" INTEGER,
+    "pushTemplateStartId" TEXT,
+    "pushTemplateReminderId" TEXT,
+    "pushOnStart" BOOLEAN NOT NULL DEFAULT false,
+    "pushReminderEnabled" BOOLEAN NOT NULL DEFAULT false,
+    "reminderOffsetHours" INTEGER,
+    "autoLaunch" BOOLEAN NOT NULL DEFAULT false,
+    "startAt" TIMESTAMP(3),
+    "endAt" TIMESTAMP(3),
+    "launchedAt" TIMESTAMP(3),
+    "archivedAt" TIMESTAMP(3),
+    "createdById" TEXT,
+    "updatedById" TEXT,
+    "metadata" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "LoyaltyPromotion_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."PromotionParticipant" (
+    "id" TEXT NOT NULL,
+    "promotionId" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "customerId" TEXT NOT NULL,
+    "outletId" TEXT,
+    "joinedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "firstPurchaseAt" TIMESTAMP(3),
+    "lastPurchaseAt" TIMESTAMP(3),
+    "purchasesCount" INTEGER NOT NULL DEFAULT 0,
+    "totalSpent" INTEGER NOT NULL DEFAULT 0,
+    "pointsIssued" INTEGER NOT NULL DEFAULT 0,
+    "pointsRedeemed" INTEGER NOT NULL DEFAULT 0,
+    "status" TEXT NOT NULL DEFAULT 'ACTIVE',
+    "metadata" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "PromotionParticipant_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."LoyaltyPromotionMetric" (
+    "id" TEXT NOT NULL,
+    "promotionId" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "participantsCount" INTEGER NOT NULL DEFAULT 0,
+    "revenueGenerated" INTEGER NOT NULL DEFAULT 0,
+    "revenueRedeemed" INTEGER NOT NULL DEFAULT 0,
+    "pointsIssued" INTEGER NOT NULL DEFAULT 0,
+    "pointsRedeemed" INTEGER NOT NULL DEFAULT 0,
+    "charts" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "LoyaltyPromotionMetric_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."LoyaltyMechanic" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "type" "public"."LoyaltyMechanicType" NOT NULL,
+    "name" TEXT,
+    "description" TEXT,
+    "status" "public"."MechanicStatus" NOT NULL DEFAULT 'DISABLED',
+    "settings" JSONB,
+    "createdById" TEXT,
+    "updatedById" TEXT,
+    "enabledAt" TIMESTAMP(3),
+    "disabledAt" TIMESTAMP(3),
+    "metadata" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "LoyaltyMechanic_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."LoyaltyMechanicLog" (
+    "id" TEXT NOT NULL,
+    "mechanicId" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "actorId" TEXT,
+    "action" TEXT NOT NULL,
+    "payload" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "LoyaltyMechanicLog_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."LoyaltyTier" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "description" TEXT,
+    "thresholdAmount" INTEGER NOT NULL DEFAULT 0,
+    "earnRateBps" INTEGER NOT NULL DEFAULT 500,
+    "redeemRateBps" INTEGER,
+    "isDefault" BOOLEAN NOT NULL DEFAULT false,
+    "isHidden" BOOLEAN NOT NULL DEFAULT false,
+    "isInitial" BOOLEAN NOT NULL DEFAULT false,
+    "color" TEXT,
+    "iconUrl" TEXT,
+    "order" INTEGER NOT NULL DEFAULT 0,
+    "metadata" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "LoyaltyTier_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."LoyaltyTierBenefit" (
+    "id" TEXT NOT NULL,
+    "tierId" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "description" TEXT,
+    "value" JSONB,
+    "order" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "LoyaltyTierBenefit_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."LoyaltyTierAssignment" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "customerId" TEXT NOT NULL,
+    "tierId" TEXT NOT NULL,
+    "assignedById" TEXT,
+    "assignedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "expiresAt" TIMESTAMP(3),
+    "source" TEXT DEFAULT 'auto',
+    "notes" TEXT,
+    "metadata" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "LoyaltyTierAssignment_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."OutletKpiDaily" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "outletId" TEXT NOT NULL,
+    "date" TIMESTAMP(3) NOT NULL,
+    "revenue" INTEGER NOT NULL DEFAULT 0,
+    "transactionCount" INTEGER NOT NULL DEFAULT 0,
+    "averageCheck" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "pointsIssued" INTEGER NOT NULL DEFAULT 0,
+    "pointsRedeemed" INTEGER NOT NULL DEFAULT 0,
+    "customers" INTEGER NOT NULL DEFAULT 0,
+    "newCustomers" INTEGER NOT NULL DEFAULT 0,
+    "stampsIssued" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "OutletKpiDaily_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."StaffKpiDaily" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "staffId" TEXT NOT NULL,
+    "outletId" TEXT,
+    "date" TIMESTAMP(3) NOT NULL,
+    "performanceScore" INTEGER NOT NULL DEFAULT 0,
+    "salesCount" INTEGER NOT NULL DEFAULT 0,
+    "salesAmount" INTEGER NOT NULL DEFAULT 0,
+    "averageCheck" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "pointsIssued" INTEGER NOT NULL DEFAULT 0,
+    "pointsRedeemed" INTEGER NOT NULL DEFAULT 0,
+    "giftsIssued" INTEGER NOT NULL DEFAULT 0,
+    "newCustomers" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "StaffKpiDaily_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."SegmentMetricSnapshot" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "segmentId" TEXT NOT NULL,
+    "periodStart" TIMESTAMP(3) NOT NULL,
+    "periodEnd" TIMESTAMP(3) NOT NULL,
+    "metrics" JSONB NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "SegmentMetricSnapshot_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."DataImportJob" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "type" "public"."DataImportType" NOT NULL,
+    "status" "public"."DataImportStatus" NOT NULL DEFAULT 'UPLOADED',
+    "sourceFileName" TEXT NOT NULL,
+    "sourceFileSize" INTEGER,
+    "sourceMimeType" TEXT,
+    "uploadedById" TEXT,
+    "startedAt" TIMESTAMP(3),
+    "completedAt" TIMESTAMP(3),
+    "processedAt" TIMESTAMP(3),
+    "totalRows" INTEGER NOT NULL DEFAULT 0,
+    "successRows" INTEGER NOT NULL DEFAULT 0,
+    "failedRows" INTEGER NOT NULL DEFAULT 0,
+    "skippedRows" INTEGER NOT NULL DEFAULT 0,
+    "settings" JSONB,
+    "errorSummary" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "DataImportJob_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."DataImportRow" (
+    "id" TEXT NOT NULL,
+    "jobId" TEXT NOT NULL,
+    "rowNumber" INTEGER NOT NULL,
+    "rawData" JSONB NOT NULL,
+    "normalizedData" JSONB,
+    "status" TEXT NOT NULL DEFAULT 'PENDING',
+    "errorMessage" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "DataImportRow_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."DataImportError" (
+    "id" TEXT NOT NULL,
+    "jobId" TEXT NOT NULL,
+    "rowNumber" INTEGER,
+    "columnKey" TEXT,
+    "code" TEXT,
+    "message" TEXT NOT NULL,
+    "details" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "DataImportError_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."DataImportMetric" (
+    "id" TEXT NOT NULL,
+    "jobId" TEXT NOT NULL,
+    "stats" JSONB NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "DataImportMetric_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE INDEX "OutletSchedule_outletId_idx" ON "public"."OutletSchedule"("outletId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "OutletSchedule_outletId_dayOfWeek_key" ON "public"."OutletSchedule"("outletId", "dayOfWeek");
+
+-- CreateIndex
+CREATE INDEX "AccessGroup_merchantId_scope_idx" ON "public"."AccessGroup"("merchantId", "scope");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "AccessGroup_merchantId_name_scope_key" ON "public"."AccessGroup"("merchantId", "name", "scope");
+
+-- CreateIndex
+CREATE INDEX "AccessGroupPermission_groupId_idx" ON "public"."AccessGroupPermission"("groupId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "AccessGroupPermission_groupId_resource_action_key" ON "public"."AccessGroupPermission"("groupId", "resource", "action");
+
+-- CreateIndex
+CREATE INDEX "StaffAccessGroup_groupId_idx" ON "public"."StaffAccessGroup"("groupId");
+
+-- CreateIndex
+CREATE INDEX "StaffAccessGroup_merchantId_idx" ON "public"."StaffAccessGroup"("merchantId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "StaffAccessGroup_staffId_groupId_key" ON "public"."StaffAccessGroup"("staffId", "groupId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "StaffInvitation_token_key" ON "public"."StaffInvitation"("token");
+
+-- CreateIndex
+CREATE INDEX "StaffInvitation_merchantId_status_idx" ON "public"."StaffInvitation"("merchantId", "status");
+
+-- CreateIndex
+CREATE INDEX "StaffInvitation_merchantId_email_idx" ON "public"."StaffInvitation"("merchantId", "email");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "StaffInvitation_staffId_key" ON "public"."StaffInvitation"("staffId");
+
+-- CreateIndex
+CREATE INDEX "StaffAccessLog_merchantId_createdAt_idx" ON "public"."StaffAccessLog"("merchantId", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "StaffAccessLog_staffId_createdAt_idx" ON "public"."StaffAccessLog"("staffId", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "CashierSession_merchantId_startedAt_idx" ON "public"."CashierSession"("merchantId", "startedAt");
+
+-- CreateIndex
+CREATE INDEX "CashierSession_staffId_startedAt_idx" ON "public"."CashierSession"("staffId", "startedAt");
+
+-- CreateIndex
+CREATE INDEX "ProductAttribute_productId_key_idx" ON "public"."ProductAttribute"("productId", "key");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ProductAttribute_productId_key_locale_key" ON "public"."ProductAttribute"("productId", "key", "locale");
+
+-- CreateIndex
+CREATE INDEX "ProductOption_productId_position_idx" ON "public"."ProductOption"("productId", "position");
+
+-- CreateIndex
+CREATE INDEX "ProductOptionValue_optionId_position_idx" ON "public"."ProductOptionValue"("optionId", "position");
+
+-- CreateIndex
+CREATE INDEX "ProductVariantOption_optionValueId_idx" ON "public"."ProductVariantOption"("optionValueId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ProductVariantOption_variantId_optionId_key" ON "public"."ProductVariantOption"("variantId", "optionId");
+
+-- CreateIndex
+CREATE INDEX "CommunicationTemplate_merchantId_channel_idx" ON "public"."CommunicationTemplate"("merchantId", "channel");
+
+-- CreateIndex
+CREATE INDEX "CommunicationTask_merchantId_status_idx" ON "public"."CommunicationTask"("merchantId", "status");
+
+-- CreateIndex
+CREATE INDEX "CommunicationTask_channel_idx" ON "public"."CommunicationTask"("channel");
+
+-- CreateIndex
+CREATE INDEX "CommunicationTaskRecipient_taskId_status_idx" ON "public"."CommunicationTaskRecipient"("taskId", "status");
+
+-- CreateIndex
+CREATE INDEX "CommunicationTaskRecipient_merchantId_channel_idx" ON "public"."CommunicationTaskRecipient"("merchantId", "channel");
+
+-- CreateIndex
+CREATE INDEX "PromoCode_merchantId_status_idx" ON "public"."PromoCode"("merchantId", "status");
+
+-- CreateIndex
+CREATE INDEX "PromoCode_segmentId_idx" ON "public"."PromoCode"("segmentId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "PromoCode_merchantId_code_key" ON "public"."PromoCode"("merchantId", "code");
+
+-- CreateIndex
+CREATE INDEX "PromoCodeUsage_promoCodeId_usedAt_idx" ON "public"."PromoCodeUsage"("promoCodeId", "usedAt");
+
+-- CreateIndex
+CREATE INDEX "PromoCodeUsage_merchantId_usedAt_idx" ON "public"."PromoCodeUsage"("merchantId", "usedAt");
+
+-- CreateIndex
+CREATE INDEX "PromoCodeUsage_customerId_idx" ON "public"."PromoCodeUsage"("customerId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "PromoCodeMetric_promoCodeId_key" ON "public"."PromoCodeMetric"("promoCodeId");
+
+-- CreateIndex
+CREATE INDEX "PromoCodeMetric_merchantId_idx" ON "public"."PromoCodeMetric"("merchantId");
+
+-- CreateIndex
+CREATE INDEX "LoyaltyPromotion_merchantId_status_idx" ON "public"."LoyaltyPromotion"("merchantId", "status");
+
+-- CreateIndex
+CREATE INDEX "LoyaltyPromotion_segmentId_idx" ON "public"."LoyaltyPromotion"("segmentId");
+
+-- CreateIndex
+CREATE INDEX "PromotionParticipant_merchantId_status_idx" ON "public"."PromotionParticipant"("merchantId", "status");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "PromotionParticipant_promotionId_customerId_key" ON "public"."PromotionParticipant"("promotionId", "customerId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "LoyaltyPromotionMetric_promotionId_key" ON "public"."LoyaltyPromotionMetric"("promotionId");
+
+-- CreateIndex
+CREATE INDEX "LoyaltyPromotionMetric_merchantId_idx" ON "public"."LoyaltyPromotionMetric"("merchantId");
+
+-- CreateIndex
+CREATE INDEX "LoyaltyMechanic_merchantId_type_idx" ON "public"."LoyaltyMechanic"("merchantId", "type");
+
+-- CreateIndex
+CREATE INDEX "LoyaltyMechanicLog_mechanicId_createdAt_idx" ON "public"."LoyaltyMechanicLog"("mechanicId", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "LoyaltyMechanicLog_merchantId_createdAt_idx" ON "public"."LoyaltyMechanicLog"("merchantId", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "LoyaltyTier_merchantId_order_idx" ON "public"."LoyaltyTier"("merchantId", "order");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "LoyaltyTier_merchantId_name_key" ON "public"."LoyaltyTier"("merchantId", "name");
+
+-- CreateIndex
+CREATE INDEX "LoyaltyTierBenefit_tierId_order_idx" ON "public"."LoyaltyTierBenefit"("tierId", "order");
+
+-- CreateIndex
+CREATE INDEX "LoyaltyTierAssignment_tierId_idx" ON "public"."LoyaltyTierAssignment"("tierId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "LoyaltyTierAssignment_merchantId_customerId_key" ON "public"."LoyaltyTierAssignment"("merchantId", "customerId");
+
+-- CreateIndex
+CREATE INDEX "OutletKpiDaily_merchantId_date_idx" ON "public"."OutletKpiDaily"("merchantId", "date");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "OutletKpiDaily_outletId_date_key" ON "public"."OutletKpiDaily"("outletId", "date");
+
+-- CreateIndex
+CREATE INDEX "StaffKpiDaily_merchantId_date_idx" ON "public"."StaffKpiDaily"("merchantId", "date");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "StaffKpiDaily_staffId_outletId_date_key" ON "public"."StaffKpiDaily"("staffId", "outletId", "date");
+
+-- CreateIndex
+CREATE INDEX "SegmentMetricSnapshot_segmentId_periodStart_idx" ON "public"."SegmentMetricSnapshot"("segmentId", "periodStart");
+
+-- CreateIndex
+CREATE INDEX "SegmentMetricSnapshot_merchantId_periodStart_idx" ON "public"."SegmentMetricSnapshot"("merchantId", "periodStart");
+
+-- CreateIndex
+CREATE INDEX "DataImportJob_merchantId_type_idx" ON "public"."DataImportJob"("merchantId", "type");
+
+-- CreateIndex
+CREATE INDEX "DataImportJob_status_idx" ON "public"."DataImportJob"("status");
+
+-- CreateIndex
+CREATE INDEX "DataImportRow_jobId_status_idx" ON "public"."DataImportRow"("jobId", "status");
+
+-- CreateIndex
+CREATE INDEX "DataImportError_jobId_idx" ON "public"."DataImportError"("jobId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "DataImportMetric_jobId_key" ON "public"."DataImportMetric"("jobId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Outlet_merchantId_code_key" ON "public"."Outlet"("merchantId", "code");
+
+-- CreateIndex
+-- SKIP DUP INDEX: CREATE INDEX "StaffOutletAccess_staffId_status_idx" ON "public"."StaffOutletAccess"("staffId", "status");
+
+-- AddForeignKey
+ALTER TABLE "public"."OutletSchedule" ADD CONSTRAINT "OutletSchedule_outletId_fkey" FOREIGN KEY ("outletId") REFERENCES "public"."Outlet"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."StaffOutletAccess" ADD CONSTRAINT "StaffOutletAccess_pinIssuedById_fkey" FOREIGN KEY ("pinIssuedById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."StaffOutletAccess" ADD CONSTRAINT "StaffOutletAccess_revokedById_fkey" FOREIGN KEY ("revokedById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."AccessGroup" ADD CONSTRAINT "AccessGroup_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."AccessGroup" ADD CONSTRAINT "AccessGroup_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."AccessGroup" ADD CONSTRAINT "AccessGroup_updatedById_fkey" FOREIGN KEY ("updatedById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."AccessGroupPermission" ADD CONSTRAINT "AccessGroupPermission_groupId_fkey" FOREIGN KEY ("groupId") REFERENCES "public"."AccessGroup"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."StaffAccessGroup" ADD CONSTRAINT "StaffAccessGroup_staffId_fkey" FOREIGN KEY ("staffId") REFERENCES "public"."Staff"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."StaffAccessGroup" ADD CONSTRAINT "StaffAccessGroup_groupId_fkey" FOREIGN KEY ("groupId") REFERENCES "public"."AccessGroup"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."StaffAccessGroup" ADD CONSTRAINT "StaffAccessGroup_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."StaffAccessGroup" ADD CONSTRAINT "StaffAccessGroup_assignedById_fkey" FOREIGN KEY ("assignedById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."StaffInvitation" ADD CONSTRAINT "StaffInvitation_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."StaffInvitation" ADD CONSTRAINT "StaffInvitation_accessGroupId_fkey" FOREIGN KEY ("accessGroupId") REFERENCES "public"."AccessGroup"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."StaffInvitation" ADD CONSTRAINT "StaffInvitation_invitedById_fkey" FOREIGN KEY ("invitedById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."StaffInvitation" ADD CONSTRAINT "StaffInvitation_staffId_fkey" FOREIGN KEY ("staffId") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."StaffAccessLog" ADD CONSTRAINT "StaffAccessLog_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."StaffAccessLog" ADD CONSTRAINT "StaffAccessLog_staffId_fkey" FOREIGN KEY ("staffId") REFERENCES "public"."Staff"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."StaffAccessLog" ADD CONSTRAINT "StaffAccessLog_actorId_fkey" FOREIGN KEY ("actorId") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."CashierSession" ADD CONSTRAINT "CashierSession_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."CashierSession" ADD CONSTRAINT "CashierSession_staffId_fkey" FOREIGN KEY ("staffId") REFERENCES "public"."Staff"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."CashierSession" ADD CONSTRAINT "CashierSession_outletId_fkey" FOREIGN KEY ("outletId") REFERENCES "public"."Outlet"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."CashierSession" ADD CONSTRAINT "CashierSession_deviceId_fkey" FOREIGN KEY ("deviceId") REFERENCES "public"."Device"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."CashierSession" ADD CONSTRAINT "CashierSession_pinAccessId_fkey" FOREIGN KEY ("pinAccessId") REFERENCES "public"."StaffOutletAccess"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."ProductAttribute" ADD CONSTRAINT "ProductAttribute_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."ProductAttribute" ADD CONSTRAINT "ProductAttribute_productId_fkey" FOREIGN KEY ("productId") REFERENCES "public"."Product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."ProductOption" ADD CONSTRAINT "ProductOption_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."ProductOption" ADD CONSTRAINT "ProductOption_productId_fkey" FOREIGN KEY ("productId") REFERENCES "public"."Product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."ProductOptionValue" ADD CONSTRAINT "ProductOptionValue_optionId_fkey" FOREIGN KEY ("optionId") REFERENCES "public"."ProductOption"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."ProductVariantOption" ADD CONSTRAINT "ProductVariantOption_variantId_fkey" FOREIGN KEY ("variantId") REFERENCES "public"."ProductVariant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."ProductVariantOption" ADD CONSTRAINT "ProductVariantOption_optionId_fkey" FOREIGN KEY ("optionId") REFERENCES "public"."ProductOption"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."ProductVariantOption" ADD CONSTRAINT "ProductVariantOption_optionValueId_fkey" FOREIGN KEY ("optionValueId") REFERENCES "public"."ProductOptionValue"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."CommunicationTemplate" ADD CONSTRAINT "CommunicationTemplate_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."CommunicationTemplate" ADD CONSTRAINT "CommunicationTemplate_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."CommunicationTemplate" ADD CONSTRAINT "CommunicationTemplate_updatedById_fkey" FOREIGN KEY ("updatedById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."CommunicationTask" ADD CONSTRAINT "CommunicationTask_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."CommunicationTask" ADD CONSTRAINT "CommunicationTask_templateId_fkey" FOREIGN KEY ("templateId") REFERENCES "public"."CommunicationTemplate"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."CommunicationTask" ADD CONSTRAINT "CommunicationTask_audienceId_fkey" FOREIGN KEY ("audienceId") REFERENCES "public"."CustomerSegment"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."CommunicationTask" ADD CONSTRAINT "CommunicationTask_promotionId_fkey" FOREIGN KEY ("promotionId") REFERENCES "public"."LoyaltyPromotion"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."CommunicationTask" ADD CONSTRAINT "CommunicationTask_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."CommunicationTaskRecipient" ADD CONSTRAINT "CommunicationTaskRecipient_taskId_fkey" FOREIGN KEY ("taskId") REFERENCES "public"."CommunicationTask"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."CommunicationTaskRecipient" ADD CONSTRAINT "CommunicationTaskRecipient_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."CommunicationTaskRecipient" ADD CONSTRAINT "CommunicationTaskRecipient_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "public"."Customer"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."PromoCode" ADD CONSTRAINT "PromoCode_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."PromoCode" ADD CONSTRAINT "PromoCode_segmentId_fkey" FOREIGN KEY ("segmentId") REFERENCES "public"."CustomerSegment"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."PromoCode" ADD CONSTRAINT "PromoCode_assignTierId_fkey" FOREIGN KEY ("assignTierId") REFERENCES "public"."LoyaltyTier"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."PromoCode" ADD CONSTRAINT "PromoCode_upgradeTierId_fkey" FOREIGN KEY ("upgradeTierId") REFERENCES "public"."LoyaltyTier"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."PromoCode" ADD CONSTRAINT "PromoCode_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."PromoCode" ADD CONSTRAINT "PromoCode_updatedById_fkey" FOREIGN KEY ("updatedById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."PromoCodeUsage" ADD CONSTRAINT "PromoCodeUsage_promoCodeId_fkey" FOREIGN KEY ("promoCodeId") REFERENCES "public"."PromoCode"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."PromoCodeUsage" ADD CONSTRAINT "PromoCodeUsage_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."PromoCodeUsage" ADD CONSTRAINT "PromoCodeUsage_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "public"."Customer"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."PromoCodeUsage" ADD CONSTRAINT "PromoCodeUsage_staffId_fkey" FOREIGN KEY ("staffId") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."PromoCodeUsage" ADD CONSTRAINT "PromoCodeUsage_outletId_fkey" FOREIGN KEY ("outletId") REFERENCES "public"."Outlet"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."PromoCodeMetric" ADD CONSTRAINT "PromoCodeMetric_promoCodeId_fkey" FOREIGN KEY ("promoCodeId") REFERENCES "public"."PromoCode"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."PromoCodeMetric" ADD CONSTRAINT "PromoCodeMetric_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."LoyaltyPromotion" ADD CONSTRAINT "LoyaltyPromotion_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."LoyaltyPromotion" ADD CONSTRAINT "LoyaltyPromotion_segmentId_fkey" FOREIGN KEY ("segmentId") REFERENCES "public"."CustomerSegment"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."LoyaltyPromotion" ADD CONSTRAINT "LoyaltyPromotion_targetTierId_fkey" FOREIGN KEY ("targetTierId") REFERENCES "public"."LoyaltyTier"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."LoyaltyPromotion" ADD CONSTRAINT "LoyaltyPromotion_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."LoyaltyPromotion" ADD CONSTRAINT "LoyaltyPromotion_updatedById_fkey" FOREIGN KEY ("updatedById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."LoyaltyPromotion" ADD CONSTRAINT "LoyaltyPromotion_pushTemplateStartId_fkey" FOREIGN KEY ("pushTemplateStartId") REFERENCES "public"."CommunicationTemplate"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."LoyaltyPromotion" ADD CONSTRAINT "LoyaltyPromotion_pushTemplateReminderId_fkey" FOREIGN KEY ("pushTemplateReminderId") REFERENCES "public"."CommunicationTemplate"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."PromotionParticipant" ADD CONSTRAINT "PromotionParticipant_promotionId_fkey" FOREIGN KEY ("promotionId") REFERENCES "public"."LoyaltyPromotion"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."PromotionParticipant" ADD CONSTRAINT "PromotionParticipant_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."PromotionParticipant" ADD CONSTRAINT "PromotionParticipant_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "public"."Customer"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."PromotionParticipant" ADD CONSTRAINT "PromotionParticipant_outletId_fkey" FOREIGN KEY ("outletId") REFERENCES "public"."Outlet"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."LoyaltyPromotionMetric" ADD CONSTRAINT "LoyaltyPromotionMetric_promotionId_fkey" FOREIGN KEY ("promotionId") REFERENCES "public"."LoyaltyPromotion"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."LoyaltyPromotionMetric" ADD CONSTRAINT "LoyaltyPromotionMetric_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."LoyaltyMechanic" ADD CONSTRAINT "LoyaltyMechanic_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."LoyaltyMechanic" ADD CONSTRAINT "LoyaltyMechanic_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."LoyaltyMechanic" ADD CONSTRAINT "LoyaltyMechanic_updatedById_fkey" FOREIGN KEY ("updatedById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."LoyaltyMechanicLog" ADD CONSTRAINT "LoyaltyMechanicLog_mechanicId_fkey" FOREIGN KEY ("mechanicId") REFERENCES "public"."LoyaltyMechanic"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."LoyaltyMechanicLog" ADD CONSTRAINT "LoyaltyMechanicLog_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."LoyaltyMechanicLog" ADD CONSTRAINT "LoyaltyMechanicLog_actorId_fkey" FOREIGN KEY ("actorId") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."LoyaltyTier" ADD CONSTRAINT "LoyaltyTier_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."LoyaltyTierBenefit" ADD CONSTRAINT "LoyaltyTierBenefit_tierId_fkey" FOREIGN KEY ("tierId") REFERENCES "public"."LoyaltyTier"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."LoyaltyTierAssignment" ADD CONSTRAINT "LoyaltyTierAssignment_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."LoyaltyTierAssignment" ADD CONSTRAINT "LoyaltyTierAssignment_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "public"."Customer"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."LoyaltyTierAssignment" ADD CONSTRAINT "LoyaltyTierAssignment_tierId_fkey" FOREIGN KEY ("tierId") REFERENCES "public"."LoyaltyTier"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."LoyaltyTierAssignment" ADD CONSTRAINT "LoyaltyTierAssignment_assignedById_fkey" FOREIGN KEY ("assignedById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+-- SKIP DUP CS FK: ALTER TABLE "public"."CustomerSegment" ADD CONSTRAINT "CustomerSegment_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+-- SKIP DUP CS FK: ALTER TABLE "public"."CustomerSegment" ADD CONSTRAINT "CustomerSegment_updatedById_fkey" FOREIGN KEY ("updatedById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."OutletKpiDaily" ADD CONSTRAINT "OutletKpiDaily_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."OutletKpiDaily" ADD CONSTRAINT "OutletKpiDaily_outletId_fkey" FOREIGN KEY ("outletId") REFERENCES "public"."Outlet"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."StaffKpiDaily" ADD CONSTRAINT "StaffKpiDaily_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."StaffKpiDaily" ADD CONSTRAINT "StaffKpiDaily_staffId_fkey" FOREIGN KEY ("staffId") REFERENCES "public"."Staff"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."StaffKpiDaily" ADD CONSTRAINT "StaffKpiDaily_outletId_fkey" FOREIGN KEY ("outletId") REFERENCES "public"."Outlet"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."SegmentMetricSnapshot" ADD CONSTRAINT "SegmentMetricSnapshot_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."SegmentMetricSnapshot" ADD CONSTRAINT "SegmentMetricSnapshot_segmentId_fkey" FOREIGN KEY ("segmentId") REFERENCES "public"."CustomerSegment"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."DataImportJob" ADD CONSTRAINT "DataImportJob_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."DataImportJob" ADD CONSTRAINT "DataImportJob_uploadedById_fkey" FOREIGN KEY ("uploadedById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."DataImportRow" ADD CONSTRAINT "DataImportRow_jobId_fkey" FOREIGN KEY ("jobId") REFERENCES "public"."DataImportJob"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."DataImportError" ADD CONSTRAINT "DataImportError_jobId_fkey" FOREIGN KEY ("jobId") REFERENCES "public"."DataImportJob"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."DataImportMetric" ADD CONSTRAINT "DataImportMetric_jobId_fkey" FOREIGN KEY ("jobId") REFERENCES "public"."DataImportJob"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+

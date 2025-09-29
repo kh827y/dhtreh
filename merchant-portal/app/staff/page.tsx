@@ -1,6 +1,7 @@
 "use client";
 import React from "react";
 import { Card, CardHeader, CardBody, Button, Skeleton } from "@loyalty/ui";
+import { useRouter } from "next/navigation";
 import Toggle from "../../components/Toggle";
 
 type StaffOutletAccess = {
@@ -37,7 +38,7 @@ type Staff = {
 };
 
 type Outlet = { id: string; name: string };
-type AccessGroup = { id: string; name: string; membersCount?: number };
+type AccessGroup = { id: string; name: string; membersCount?: number; memberCount?: number };
 
 const DEFAULT_GROUPS: AccessGroup[] = [
   { id: "MERCHANT", name: "Владелец" },
@@ -74,8 +75,9 @@ function formatActivityDate(value?: string | null): string {
 }
 
 function getDisplayName(staff: Staff): string {
+  if (!staff) return "?";
   const composed = [staff.firstName, staff.lastName].filter(Boolean).join(" ");
-  return composed || staff.login || staff.email || staff.id;
+  return (composed || staff.login || staff.email || staff.phone || staff.position || staff.id || "?") as string;
 }
 
 function getRoleLabel(role?: string | null): string {
@@ -93,6 +95,7 @@ function hasPortalAccess(staff: Staff): boolean {
 }
 
 export default function StaffPage() {
+  const router = useRouter();
   const [items, setItems] = React.useState<Staff[]>([]);
   const [outlets, setOutlets] = React.useState<Outlet[]>([]);
   const [groups, setGroups] = React.useState<AccessGroup[]>([]);
@@ -136,11 +139,27 @@ export default function StaffPage() {
     return Array.from(unique).sort();
   }, [items]);
 
+  const uniqueGroups = React.useMemo(() => {
+    const map = new Map<string, AccessGroup>();
+    for (const g of groups) {
+      if (!g) continue;
+      const id = String((g as any).id ?? '').trim();
+      const name = String((g as any).name ?? '').trim();
+      const key = id || name;
+      if (!key) continue;
+      if (!map.has(key)) {
+        map.set(key, { id: id || key, name, membersCount: (g as any).membersCount, memberCount: (g as any).memberCount });
+      }
+    }
+    return Array.from(map.values());
+  }, [groups]);
+
   const filteredItems = React.useMemo(() => {
     const q = search.trim().toLowerCase();
     return items.filter((staff) => {
-      if (tab === "ACTIVE" && staff.status !== "ACTIVE") return false;
-      if (tab === "FIRED" && staff.status === "ACTIVE") return false;
+      const status = String(staff.status || '').trim().toUpperCase();
+      if (tab === "ACTIVE" && (status === "FIRED" || status === "ARCHIVED")) return false;
+      if (tab === "FIRED" && !(status === "FIRED" || status === "ARCHIVED")) return false;
       if (roleFilter !== "ALL" && (staff.role || "").toUpperCase() !== roleFilter) return false;
       if (outletFilter !== "ALL") {
         const accesses = Array.isArray(staff.accesses) ? staff.accesses : [];
@@ -168,12 +187,23 @@ export default function StaffPage() {
     });
   }, [items, tab, roleFilter, outletFilter, onlyPortal, search]);
 
+  const uniqueItems = React.useMemo(() => {
+    const seen = new Set<string>();
+    return filteredItems.filter((s) => {
+      const id = String(s?.id ?? "");
+      if (!id) return true;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  }, [filteredItems]);
+
   const recordsLabel = React.useMemo(() => {
     if (loading) return "Показано: —";
-    const visible = filteredItems.length;
+    const visible = uniqueItems.length;
     const total = meta.total ?? visible;
     return `Показано: ${visible} из ${total}`;
-  }, [filteredItems.length, loading, meta.total]);
+  }, [uniqueItems.length, loading, meta.total]);
 
   const ensureGroupsLoaded = React.useCallback(async () => {
     if (groupsLoading) return;
@@ -228,8 +258,6 @@ export default function StaffPage() {
       const qs = new URLSearchParams();
       qs.set("page", "1");
       qs.set("pageSize", "100");
-      if (tab === "ACTIVE") qs.set("status", "ACTIVE");
-      if (tab === "FIRED") qs.set("status", "FIRED");
       if (outletFilter !== "ALL") qs.set("outletId", outletFilter);
       if (onlyPortal) qs.set("portalOnly", "true");
       const trimmedSearch = search.trim();
@@ -239,16 +267,45 @@ export default function StaffPage() {
         fetch(`/api/portal/staff?${qs.toString()}`),
         fetch(`/api/portal/outlets`),
       ]);
+      if (staffRes.status === 401 || staffRes.status === 403) {
+        router.push('/login');
+        return;
+      }
       if (!staffRes.ok) throw new Error(await staffRes.text());
       if (!outletsRes.ok) throw new Error(await outletsRes.text());
       const staffPayload = await staffRes.json();
       const outletsPayload = await outletsRes.json();
 
-      const staffItems: Staff[] = Array.isArray(staffPayload?.items)
+      const staffItemsRaw: Staff[] = Array.isArray(staffPayload?.items)
         ? staffPayload.items
         : Array.isArray(staffPayload)
           ? staffPayload
           : [];
+      const staffItems = staffItemsRaw.map((it, idx) => {
+        const id = String((it as any)?.id ?? '');
+        const status = String((it as any)?.status ?? '').toUpperCase();
+        const role = String((it as any)?.role ?? '').toUpperCase();
+        const accesses = Array.isArray((it as any)?.accesses)
+          ? (it as any).accesses.map((a: any, k: number) => ({
+              id: String(a?.id ?? `${id}:${a?.outletId ?? k}`),
+              outletId: String(a?.outletId ?? ''),
+              outletName: a?.outletName ?? null,
+              pinCode: a?.pinCode ?? null,
+              status: String(a?.status ?? '').toUpperCase(),
+            }))
+          : [];
+        const groups = Array.isArray((it as any)?.groups)
+          ? (it as any).groups.map((g: any) => ({ id: String(g?.id ?? ''), name: String(g?.name ?? ''), scope: g?.scope }))
+          : [];
+        return {
+          ...it,
+          id,
+          status,
+          role,
+          accesses,
+          groups,
+        } as Staff;
+      });
       setItems(staffItems);
       const metaData = staffPayload?.meta;
       setMeta(
@@ -321,6 +378,7 @@ export default function StaffPage() {
         canAccessPortal: cPortal,
         portalAccessEnabled: cPortal,
         email: cPortal ? cEmail.trim() : undefined,
+        status: 'ACTIVE',
       };
       if (normalizedGroup) {
         payload.accessGroupIds = [normalizedGroup];
@@ -473,7 +531,7 @@ export default function StaffPage() {
         <CardBody>
           {loading ? (
             <Skeleton height={220} />
-          ) : filteredItems.length ? (
+          ) : uniqueItems.length ? (
             <div style={{ display: "grid", gap: 8 }}>
               <div
                 style={{
@@ -509,7 +567,7 @@ export default function StaffPage() {
                 </div>
                 <div>Доступ в панель управления</div>
               </div>
-              {filteredItems.map((staff) => {
+              {uniqueItems.map((staff, idx) => {
                 const displayName = getDisplayName(staff);
                 const secondary = staff.email || staff.phone || staff.position;
                 const portalsAccess = hasPortalAccess(staff);
@@ -518,7 +576,8 @@ export default function StaffPage() {
                   const active = accesses.filter((access) => access.status === "ACTIVE");
                   if (active.length === 0) return "—";
                   if (active.length === 1) {
-                    return active[0].outletName || "1 торговая точка";
+                    const only = active[0] as StaffOutletAccess;
+                    return only.outletName || "1 торговая точка";
                   }
                   return `${active.length} торговых точек`;
                 })();
@@ -529,7 +588,7 @@ export default function StaffPage() {
                 };
                 return (
                   <a
-                    key={staff.id}
+                    key={`${staff.id}-${idx}`}
                     href={`/staff/${encodeURIComponent(staff.id)}`}
                     style={{
                       display: "grid",
@@ -566,16 +625,7 @@ export default function StaffPage() {
                           fontSize: 18,
                         }}
                       >
-                        {staff.avatarUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={staff.avatarUrl}
-                            alt={displayName}
-                            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                          />
-                        ) : (
-                          displayName.slice(0, 1).toUpperCase()
-                        )}
+                        {(displayName || "?").slice(0, 1).toUpperCase()}
                       </div>
                       <div style={{ display: "grid", gap: 4 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -805,10 +855,14 @@ export default function StaffPage() {
                         style={{ padding: "10px 12px", borderRadius: 8 }}
                       >
                         <option value="">— выберите группу —</option>
-                        {groups.map((group) => (
-                          <option key={group.id} value={group.id}>
+                        {uniqueGroups.map((group, idx) => (
+                          <option key={`${group.id || group.name}-${idx}`} value={group.id || group.name}>
                             {group.name}{" "}
-                            {typeof group.membersCount === "number" ? `(${group.membersCount})` : ""}
+                            {typeof group.membersCount === "number"
+                              ? `(${group.membersCount})`
+                              : typeof group.memberCount === "number"
+                              ? `(${group.memberCount})`
+                              : ""}
                           </option>
                         ))}
                       </select>

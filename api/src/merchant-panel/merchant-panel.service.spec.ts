@@ -90,4 +90,86 @@ describe('MerchantPanelService', () => {
     );
     expect(metrics.inc).toHaveBeenCalledWith('portal_staff_list_total');
   });
+
+  it('listAccessGroups bootstraps defaults and maps response', async () => {
+    const createMock = jest
+      .fn()
+      .mockImplementation(({ data }) =>
+        Promise.resolve({
+          id: `grp_${data.name}`,
+          name: data.name,
+          description: data.description,
+          scope: data.scope,
+          isSystem: data.isSystem,
+          isDefault: data.isDefault,
+          permissions: [],
+        }),
+      );
+    const createManyMock = jest.fn().mockResolvedValue(undefined);
+    const countMock = jest.fn().mockResolvedValue(1);
+    const findManyMock = jest
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: 'grp_Владелец',
+          merchantId: 'mrc_1',
+          name: 'Владелец',
+          description: 'Полный доступ ко всем разделам портала',
+          scope: AccessScope.PORTAL,
+          isSystem: true,
+          isDefault: true,
+          permissions: [
+            { id: 'per_1', resource: 'staff', action: 'read', conditions: null },
+            { id: 'per_2', resource: 'staff', action: 'update', conditions: null },
+          ],
+          members: [{ id: 'm_1' }],
+        },
+      ]);
+
+    const prisma: any = {
+      accessGroup: {
+        count: countMock,
+        findMany: findManyMock,
+      },
+      accessGroupPermission: {
+        createMany: createManyMock,
+      },
+      staffAccessGroup: {
+        deleteMany: jest.fn(),
+      },
+      $transaction: jest.fn((arg: any) => {
+        if (typeof arg === 'function') {
+          const tx = {
+            accessGroup: { create: createMock },
+            accessGroupPermission: { createMany: createManyMock },
+          } as any;
+          return Promise.resolve(arg(tx));
+        }
+        if (Array.isArray(arg)) {
+          return Promise.all(arg);
+        }
+        return Promise.resolve();
+      }),
+    };
+
+    const merchants: any = {};
+    const metrics = { inc: jest.fn(), observe: jest.fn(), setGauge: jest.fn() } as any;
+
+    const service = new MerchantPanelService(prisma, merchants, metrics);
+    (service as any).logger = { log: jest.fn() };
+    const expectedCreated = ((service as any).defaultAccessGroupPresets || []).length || 0;
+    const result = await service.listAccessGroups('mrc_1', {}, { page: 1, pageSize: 20 });
+
+    expect(prisma.accessGroup.count).toHaveBeenCalledTimes(1);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+    expect(createMock).toHaveBeenCalled();
+    expect(createManyMock).toHaveBeenCalled();
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toEqual(
+      expect.objectContaining({ id: 'grp_Владелец', name: 'Владелец', memberCount: 1 }),
+    );
+    expect(metrics.inc).toHaveBeenCalledWith('portal_access_group_bootstrap_total', {}, expectedCreated);
+    expect(metrics.inc).toHaveBeenCalledWith('portal_access_group_list_total');
+  });
 });

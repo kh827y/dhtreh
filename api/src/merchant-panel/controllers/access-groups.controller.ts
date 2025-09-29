@@ -43,13 +43,13 @@ export class AccessGroupsController {
       search: rest.search,
     };
     const result = await this.service.listAccessGroups(this.getMerchantId(req), filters, { page, pageSize });
-    return plainToInstance(AccessGroupListResponseDto, result, { enableImplicitConversion: true });
+    return result;
   }
 
   @Post()
   async create(@Req() req: any, @Body() body: AccessGroupDtoInput & { actorId?: string }) {
     const group = await this.service.createAccessGroup(this.getMerchantId(req), body, body.actorId);
-    return plainToInstance(AccessGroupDto, group, { enableImplicitConversion: true });
+    return group;
   }
 
   @Put(':id')
@@ -59,7 +59,7 @@ export class AccessGroupsController {
     @Body() body: AccessGroupDtoInput & { actorId?: string },
   ) {
     const group = await this.service.updateAccessGroup(this.getMerchantId(req), id, body, body.actorId);
-    return plainToInstance(AccessGroupDto, group, { enableImplicitConversion: true });
+    return group;
   }
 
   @Delete(':id')
