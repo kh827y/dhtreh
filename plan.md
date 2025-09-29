@@ -228,6 +228,7 @@
   - Подключён `PromosModule` (prev. этап) и добавлены превью‑правила (категория, minEligible), e2e `promos.e2e-spec.ts` — зелёные.
   - Legacy ваучеры удалены: сервисы и контроллеры `vouchers/*` заменены на единый `PromoCodesService`, работающий с реальными таблицами `PromoCode`/`PromoCodeUsage`.
   - TODO: перенести оставшиеся e2e (`api/test/vouchers.e2e-spec.ts`, части `loyalty.e2e-spec.ts`) с моков ваучеров на новые промокоды, либо удалить как дублирующие.
+
   - Интеграция в денежный флоу: `loyalty.controller.quote|commit` принимает поле `promoCode`, использует `PromoCodesService.apply`, начисляет баллы, TTL и уровни в рамках транзакции.
   - Portal/merchant-portal: `GET/POST /portal/promocodes*`, прокси в `merchant-portal/app/api/portal/promocodes/*` и страница `/promocodes` обновлены под `promoCodeId` и статусы `ACTIVE/ARCHIVED`.
   - Cashier auth: публичные эндпоинты в `LoyaltyController` — `POST /loyalty/cashier/login` (merchantLogin+password9) и `POST /loyalty/cashier/staff-token` (по PIN и точке).
