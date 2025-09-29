@@ -9,7 +9,6 @@ interface BotConfig {
   merchantId: string;
   webhookUrl: string;
 }
-
 interface RegisterBotResult {
   success: boolean;
   username: string;
