@@ -15,10 +15,22 @@ import { TelegramCampaignsService } from './services/telegram-campaigns.service'
 import { StaffMotivationService } from './services/staff-motivation.service';
 import { ActionsService } from './services/actions.service';
 import { OperationsLogService } from './services/operations-log.service';
+import { TelegramModule } from '../telegram/telegram.module';
+import { PortalTelegramIntegrationService } from './services/telegram-integration.service';
 
 @Module({
-  imports: [PrismaModule, MerchantsModule, VouchersModule, NotificationsModule, AnalyticsModule, CampaignModule, GiftsModule],
+  imports: [PrismaModule, MerchantsModule, VouchersModule, NotificationsModule, AnalyticsModule, CampaignModule, GiftsModule, TelegramModule],
   controllers: [PortalController],
-  providers: [PortalGuard, PortalCatalogService, PushCampaignsService, TelegramCampaignsService, StaffMotivationService, ActionsService, OperationsLogService, PortalCustomersService],
+  providers: [
+    PortalGuard,
+    PortalCatalogService,
+    PushCampaignsService,
+    TelegramCampaignsService,
+    StaffMotivationService,
+    ActionsService,
+    OperationsLogService,
+    PortalCustomersService,
+    PortalTelegramIntegrationService,
+  ],
 })
 export class PortalModule {}
