@@ -243,6 +243,7 @@
     - «Автовозврат клиентов» (`/loyalty/mechanics/auto-return`) — конфиг `rulesJson.autoReturn` (enabled/days/text/giftPoints/giftTtlDays/repeat).
     - Автовозврат клиентов — подключены реальные настройки и статистика (правка `rulesJson.autoReturn`, аналитика `/portal/analytics/auto-return`, перенаправление из аналитики на таб «Статистика», удалён устаревший `/analytics/auto-return`).
     - «ДР‑поздравления» (`/loyalty/mechanics/birthday`) — конфиг `rulesJson.birthday` (enabled/daysBefore/daysAfter/text/giftPoints/giftTtlDays).
+    - ДР‑поздравления: добавлены реальные настройки и статистика — прокси `/api/portal/loyalty/birthday`, аналитика `/portal/analytics/birthday-mechanic`, UI таб «Статистика», редирект со старой страницы `/analytics/birthdays`.
     - «Бонус за регистрацию» (`/loyalty/mechanics/registration-bonus`) — конфиг `rulesJson.registration` (enabled/points/ttlDays/text).
     - «Сгорание (TTL)» (`/loyalty/mechanics/ttl`) — управление `pointsTtlDays` и `rulesJson.burnReminder` (enabled/daysBefore/text).
   - Merchant Portal: `auto-return` сохранение рефакторено — отправляется минимальный DTO (`earnBps`, `redeemLimitBps`, `rulesJson`) вместо полного объекта настроек.
