@@ -1257,6 +1257,10 @@ const result = await client.commit({
 | `/portal/push-campaigns/{id}/cancel` | POST | Отмена запланированной рассылки. |
 | `/portal/push-campaigns/{id}/archive` | POST | Перенос кампании в архив. |
 | `/portal/push-campaigns/{id}/duplicate` | POST | Копирование кампании с новым расписанием. |
+| `/portal/integrations/telegram-mini-app` | GET | Состояние интеграции Telegram Mini App (статус, ссылка, токен). |
+| `/portal/integrations/telegram-mini-app/connect` | POST | Подключение Telegram Mini App по токену бота. |
+| `/portal/integrations/telegram-mini-app/check` | POST | Проверка подключения и состояния Telegram-бота. |
+| `/portal/integrations/telegram-mini-app` | DELETE | Отключение Telegram Mini App для мерчанта. |
 | `/portal/telegram-campaigns?scope=ACTIVE\|ARCHIVED` | GET | Активные и архивные Telegram-рассылки. |
 | `/portal/telegram-campaigns` | POST | Создание Telegram-рассылки (аудитория, текст, опционально изображение и дата старта). |
 | `/portal/telegram-campaigns/{id}/cancel` | POST | Отмена Telegram-кампании до начала отправки. |

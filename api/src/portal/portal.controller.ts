@@ -32,6 +32,7 @@ import { TelegramCampaignsService, type TelegramCampaignScope } from './services
 import { StaffMotivationService, type UpdateStaffMotivationPayload } from './services/staff-motivation.service';
 import { ActionsService, type ActionsTab, type CreateProductBonusActionPayload, type UpdateActionStatusPayload } from './services/actions.service';
 import { OperationsLogService, type OperationsLogFilters } from './services/operations-log.service';
+import { PortalTelegramIntegrationService } from './services/telegram-integration.service';
 
 @ApiTags('portal')
 @Controller('portal')
@@ -52,6 +53,7 @@ export class PortalController {
     private readonly actions: ActionsService,
     private readonly operations: OperationsLogService,
     private readonly customersService: PortalCustomersService,
+    private readonly telegramIntegration: PortalTelegramIntegrationService,
   ) {}
 
   private getMerchantId(req: any) { return String((req as any).portalMerchantId || ''); }
@@ -581,6 +583,47 @@ export class PortalController {
   @ApiOkResponse({ schema: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, type: { type: 'string' }, provider: { type: 'string' }, isActive: { type: 'boolean' }, lastSync: { type: 'string', nullable: true }, errorCount: { type: 'number' } } } } })
   integrations(@Req() req: any) {
     return this.service.listIntegrations(this.getMerchantId(req));
+  }
+
+  @Get('integrations/telegram-mini-app')
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        enabled: { type: 'boolean' },
+        botUsername: { type: 'string', nullable: true },
+        botLink: { type: 'string', nullable: true },
+        miniappUrl: { type: 'string', nullable: true },
+        connectionHealthy: { type: 'boolean' },
+        lastSyncAt: { type: 'string', format: 'date-time', nullable: true },
+        integrationId: { type: 'string', nullable: true },
+        tokenMask: { type: 'string', nullable: true },
+        message: { type: 'string', nullable: true },
+      },
+    },
+  })
+  telegramMiniAppState(@Req() req: any) {
+    return this.telegramIntegration.getState(this.getMerchantId(req));
+  }
+
+  @Post('integrations/telegram-mini-app/connect')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  @ApiBadRequestResponse({ type: ErrorDto })
+  telegramMiniAppConnect(@Req() req: any, @Body() body: { token?: string }) {
+    return this.telegramIntegration.connect(this.getMerchantId(req), body?.token || '');
+  }
+
+  @Post('integrations/telegram-mini-app/check')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  @ApiBadRequestResponse({ type: ErrorDto })
+  telegramMiniAppCheck(@Req() req: any) {
+    return this.telegramIntegration.check(this.getMerchantId(req));
+  }
+
+  @Delete('integrations/telegram-mini-app')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  telegramMiniAppDisconnect(@Req() req: any) {
+    return this.telegramIntegration.disconnect(this.getMerchantId(req));
   }
 
   // Campaigns (portal list)
