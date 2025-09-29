@@ -5,6 +5,8 @@ import { MerchantsService } from '../merchants/merchants.service';
 import { CreateDeviceDto, DeviceDto, LedgerEntryDto, MerchantSettingsRespDto, ReceiptDto, UpdateDeviceDto, UpdateMerchantSettingsDto } from '../merchants/dto';
 import { ErrorDto, TransactionItemDto } from '../loyalty/dto';
 import { VouchersService } from '../vouchers/vouchers.service';
+import { PromoCodesService, type PortalPromoCodePayload } from '../promocodes/promocodes.service';
+import { PromoCodeStatus } from '@prisma/client';
 import { NotificationsService, type BroadcastArgs } from '../notifications/notifications.service';
 import { PortalCustomersService } from './customers.service';
 import { AnalyticsService } from '../analytics/analytics.service';
@@ -42,6 +44,7 @@ export class PortalController {
   constructor(
     private readonly service: MerchantsService,
     private readonly vouchers: VouchersService,
+    private readonly promoCodes: PromoCodesService,
     private readonly notifications: NotificationsService,
     private readonly analytics: AnalyticsService,
     private readonly campaigns: CampaignService,
@@ -206,54 +209,36 @@ export class PortalController {
     @Query('limit') limitStr?: string,
   ) {
     const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200) : 50;
-    return this.vouchers.list({ merchantId: this.getMerchantId(req), status, type: 'PROMO_CODE', limit });
+    return this.promoCodes.listForPortal(this.getMerchantId(req), status, limit);
   }
   @Post('promocodes/issue')
   @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' }, voucherId: { type: 'string' } } } })
   promocodesIssue(
     @Req() req: any,
-    @Body() body: { name?: string; description?: string; points: number; code: string; validFrom?: string; validUntil?: string; awardPoints?: boolean; burnEnabled?: boolean; burnDays?: number; levelEnabled?: boolean; levelId?: string; usageLimit?: 'none'|'once_total'|'once_per_customer'; usagePeriodEnabled?: boolean; usagePeriodDays?: number; recentVisitEnabled?: boolean; recentVisitHours?: number },
+    @Body() body: PortalPromoCodePayload,
   ) {
-    return this.vouchers.issue({
-      merchantId: this.getMerchantId(req),
-      name: body?.name,
-      description: body?.description,
-      valueType: 'POINTS',
-      value: Number(body?.points||0),
-      points: Number(body?.points||0),
-      code: body?.code,
-      validFrom: body?.validFrom,
-      validUntil: body?.validUntil,
-      awardPoints: body?.awardPoints,
-      burnEnabled: body?.burnEnabled,
-      burnDays: body?.burnDays,
-      levelEnabled: body?.levelEnabled,
-      levelId: body?.levelId,
-      usageLimit: body?.usageLimit,
-      usagePeriodEnabled: body?.usagePeriodEnabled,
-      usagePeriodDays: body?.usagePeriodDays,
-      recentVisitEnabled: body?.recentVisitEnabled,
-      recentVisitHours: body?.recentVisitHours,
-    });
+    return this.promoCodes.createFromPortal(this.getMerchantId(req), body);
   }
   @Post('promocodes/deactivate')
   @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
   promocodesDeactivate(@Req() req: any, @Body() body: { voucherId?: string; code?: string }) {
-    return this.vouchers.deactivate({ merchantId: this.getMerchantId(req), voucherId: body?.voucherId, code: body?.code });
+    if (!body?.voucherId) throw new NotFoundException('Промокод не найден');
+    return this.promoCodes.changeStatus(this.getMerchantId(req), body.voucherId, PromoCodeStatus.ARCHIVED);
   }
   @Post('promocodes/activate')
   @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
   promocodesActivate(@Req() req: any, @Body() body: { voucherId?: string; code?: string }) {
-    return this.vouchers.activate({ merchantId: this.getMerchantId(req), voucherId: body?.voucherId, code: body?.code });
+    if (!body?.voucherId) throw new NotFoundException('Промокод не найден');
+    return this.promoCodes.changeStatus(this.getMerchantId(req), body.voucherId, PromoCodeStatus.ACTIVE);
   }
   @Put('promocodes/:voucherId')
   @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
   promocodesUpdate(
     @Req() req: any,
     @Param('voucherId') voucherId: string,
-    @Body() body: { name?: string; description?: string; code?: string; points?: number; awardPoints?: boolean; burnEnabled?: boolean; burnDays?: number; levelEnabled?: boolean; levelId?: string; usageLimit?: 'none'|'once_total'|'once_per_customer'; usagePeriodEnabled?: boolean; usagePeriodDays?: number; recentVisitEnabled?: boolean; recentVisitHours?: number; validFrom?: string; validUntil?: string },
+    @Body() body: PortalPromoCodePayload,
   ) {
-    return this.vouchers.updatePromocode(this.getMerchantId(req), voucherId, body);
+    return this.promoCodes.updateFromPortal(this.getMerchantId(req), voucherId, body);
   }
 
   // Notifications broadcast (enqueue or dry-run)

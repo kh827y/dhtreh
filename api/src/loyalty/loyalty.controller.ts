@@ -16,6 +16,7 @@ import { verifyBridgeSignature as verifyBridgeSigUtil } from './bridge.util';
 import { validateTelegramInitData } from './telegram.util';
 import { PromosService } from '../promos/promos.service';
 import { VouchersService } from '../vouchers/vouchers.service';
+import { PromoCodesService } from '../promocodes/promocodes.service';
 
 @Controller('loyalty')
 @UseGuards(CashierGuard)
@@ -28,6 +29,7 @@ export class LoyaltyController {
     private readonly metrics: MetricsService,
     private readonly promos: PromosService,
     private readonly vouchers: VouchersService,
+    private readonly promoCodes: PromoCodesService,
     private readonly merchants: MerchantsService,
   ) {}
 
@@ -284,7 +286,6 @@ export class LoyaltyController {
   async commit(@Body() dto: CommitDto, @Res({ passthrough: true }) res: Response, @Req() req: Request & { requestId?: string }) {
     const t0 = Date.now();
     let data: any;
-    let extraEarnPoints = 0;
     // кешируем hold для извлечения контекста (merchantId, deviceId, staffId)
     let holdCached: any = null;
     try { holdCached = await this.prisma.hold.findUnique({ where: { id: dto.holdId } }); } catch {}
@@ -292,6 +293,14 @@ export class LoyaltyController {
     if (merchantIdEff) {
       await this.enforceRequireStaffKey(merchantIdEff, req);
     }
+    let promoCandidate: { id: string } | null = null;
+    if (dto.voucherCode && holdCached?.customerId && merchantIdEff) {
+      try {
+        const promo = await this.promoCodes.findActiveByCode(merchantIdEff, dto.voucherCode);
+        if (promo) promoCandidate = { id: promo.id };
+      } catch {}
+    }
+    let extraEarnPoints = 0;
     // проверка подписи Bridge до выполнения, с учётом устройства из hold
     try {
       const s = merchantIdEff ? await this.prisma.merchantSettings.findUnique({ where: { merchantId: merchantIdEff } }) : null;
@@ -325,7 +334,7 @@ export class LoyaltyController {
           } else {
             // Идемпотентная фиксация ваучера/промокода перед commit (если указан)
             try {
-              if (dto.voucherCode && holdCached?.customerId && merchantIdEff) {
+              if (!promoCandidate && dto.voucherCode && holdCached?.customerId && merchantIdEff) {
                 try {
                   const st = await this.vouchers.status({ merchantId: merchantIdEff, code: dto.voucherCode });
                   if (st && String(st.type) === 'PROMO_CODE' && String(st.valueType) === 'POINTS') {
@@ -338,7 +347,18 @@ export class LoyaltyController {
                 } catch {}
               }
             } catch {}
-            data = await this.service.commit(dto.holdId, dto.orderId, dto.receiptNumber, req.requestId ?? dto.requestId, { additionalEarnPoints: extraEarnPoints });
+            data = await this.service.commit(
+              dto.holdId,
+              dto.orderId,
+              dto.receiptNumber,
+              req.requestId ?? dto.requestId,
+              {
+                additionalEarnPoints: extraEarnPoints,
+                promoCode: promoCandidate
+                  ? { promoCodeId: promoCandidate.id, code: dto.voucherCode }
+                  : undefined,
+              },
+            );
             // если второй вызов пришёл после первого, когда hold уже COMMITTED,
             // commit() вернёт alreadyCommitted=true. Для идемпотентности нормализуем ответ к первому.
             if (data && typeof data === 'object' && (data as any).alreadyCommitted === true) {
@@ -355,7 +375,7 @@ export class LoyaltyController {
         } else {
           // нет merchantId — выполняем без сохранения идемпотентности (уникальный чек по orderId всё равно защитит)
           try {
-            if (dto.voucherCode && holdCached?.customerId && merchantIdEff) {
+            if (!promoCandidate && dto.voucherCode && holdCached?.customerId && merchantIdEff) {
               try {
                 const st = await this.vouchers.status({ merchantId: merchantIdEff, code: dto.voucherCode });
                 if (st && String(st.type) === 'PROMO_CODE' && String(st.valueType) === 'POINTS') {
@@ -368,11 +388,22 @@ export class LoyaltyController {
               } catch {}
             }
           } catch {}
-          data = await this.service.commit(dto.holdId, dto.orderId, dto.receiptNumber, req.requestId ?? dto.requestId, { additionalEarnPoints: extraEarnPoints });
+          data = await this.service.commit(
+            dto.holdId,
+            dto.orderId,
+            dto.receiptNumber,
+            req.requestId ?? dto.requestId,
+            {
+              additionalEarnPoints: extraEarnPoints,
+              promoCode: promoCandidate
+                ? { promoCodeId: promoCandidate.id, code: dto.voucherCode }
+                : undefined,
+            },
+          );
         }
       } else {
         try {
-          if (dto.voucherCode && holdCached?.customerId && merchantIdEff) {
+          if (!promoCandidate && dto.voucherCode && holdCached?.customerId && merchantIdEff) {
             try {
               const st = await this.vouchers.status({ merchantId: merchantIdEff, code: dto.voucherCode });
               if (st && String(st.type) === 'PROMO_CODE' && String(st.valueType) === 'POINTS') {
@@ -385,7 +416,16 @@ export class LoyaltyController {
             } catch {}
           }
         } catch {}
-        data = await this.service.commit(dto.holdId, dto.orderId, dto.receiptNumber, req.requestId ?? dto.requestId, { additionalEarnPoints: extraEarnPoints });
+        data = await this.service.commit(
+          dto.holdId,
+          dto.orderId,
+          dto.receiptNumber,
+          req.requestId ?? dto.requestId,
+          {
+            additionalEarnPoints: extraEarnPoints,
+            promoCode: promoCandidate ? { promoCodeId: promoCandidate.id, code: dto.voucherCode } : undefined,
+          },
+        );
       }
       this.metrics.inc('loyalty_commit_requests_total', { result: data?.alreadyCommitted ? 'already_committed' : 'ok' });
     } catch (e) {

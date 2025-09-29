@@ -4,6 +4,7 @@ import { MerchantsModule } from '../merchants/merchants.module';
 import { PrismaModule } from '../prisma.module';
 import { PortalGuard } from '../portal-auth/portal.guard';
 import { VouchersModule } from '../vouchers/vouchers.module';
+import { PromoCodesModule } from '../promocodes/promocodes.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
 import { CampaignModule } from '../campaigns/campaign.module';
@@ -19,7 +20,17 @@ import { TelegramModule } from '../telegram/telegram.module';
 import { PortalTelegramIntegrationService } from './services/telegram-integration.service';
 
 @Module({
-  imports: [PrismaModule, MerchantsModule, VouchersModule, NotificationsModule, AnalyticsModule, CampaignModule, GiftsModule, TelegramModule],
+  imports: [
+    PrismaModule,
+    MerchantsModule,
+    VouchersModule,
+    PromoCodesModule,
+    NotificationsModule,
+    AnalyticsModule,
+    CampaignModule,
+    GiftsModule,
+    TelegramModule,
+  ],
   controllers: [PortalController],
   providers: [
     PortalGuard,
