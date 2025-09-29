@@ -9,23 +9,70 @@ type Resp = { registeredViaReferral: number; purchasedViaReferral: number; refer
 type FilterOption = { value: string; label: string };
 
 const periodOptions: FilterOption[] = [
-  { value: "7d", label: "7 дней" },
-  { value: "30d", label: "30 дней" },
-  { value: "90d", label: "90 дней" },
-  { value: "custom", label: "Произвольный период" },
+  { value: "7d", label: "Последние 7 дней" },
+  { value: "30d", label: "Последние 30 дней" },
+  { value: "90d", label: "Последние 90 дней" },
+  { value: "custom", label: "Календарные периоды" },
 ];
 
-const quickRanges: Array<{ value: "yesterday" | "week" | "month" | "quarter" | "year"; label: string }> = [
+type QuickRangeValue = "yesterday" | "week" | "month" | "quarter" | "year";
+
+const quickRanges: Array<{ value: QuickRangeValue; label: string }> = [
   { value: "yesterday", label: "Вчера" },
-  { value: "week", label: "Неделя" },
-  { value: "month", label: "Месяц" },
-  { value: "quarter", label: "Квартал" },
-  { value: "year", label: "Год" },
+  { value: "week", label: "Текущая неделя" },
+  { value: "month", label: "Текущий месяц" },
+  { value: "quarter", label: "Текущий квартал" },
+  { value: "year", label: "Текущий год" },
 ];
+
+function startOfDay(date: Date) {
+  const next = new Date(date);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function endOfDay(date: Date) {
+  const next = new Date(date);
+  next.setHours(23, 59, 59, 999);
+  return next;
+}
+
+function buildQuery(period: FilterOption, range: QuickRangeValue) {
+  const params = new URLSearchParams();
+  const today = new Date();
+  if (period.value === "custom") {
+    if (range === "yesterday") {
+      const from = startOfDay(new Date(today));
+      from.setDate(from.getDate() - 1);
+      const to = endOfDay(new Date(from));
+      params.set("from", from.toISOString());
+      params.set("to", to.toISOString());
+    } else {
+      const mapping: Record<Exclude<QuickRangeValue, "yesterday">, string> = {
+        week: "week",
+        month: "month",
+        quarter: "quarter",
+        year: "year",
+      };
+      const value = mapping[range as Exclude<QuickRangeValue, "yesterday">];
+      if (value) {
+        params.set("period", value);
+      }
+    }
+  } else {
+    const days = period.value === "7d" ? 7 : period.value === "90d" ? 90 : 30;
+    const to = endOfDay(today);
+    const from = startOfDay(new Date(today));
+    from.setDate(from.getDate() - (days - 1));
+    params.set("from", from.toISOString());
+    params.set("to", to.toISOString());
+  }
+  return params;
+}
 
 export default function AnalyticsReferralsPage() {
   const [period, setPeriod] = React.useState<FilterOption>(periodOptions[1]);
-  const [range, setRange] = React.useState<(typeof quickRanges)[number]["value"]>("week");
+  const [range, setRange] = React.useState<QuickRangeValue>("week");
   const [data, setData] = React.useState<Resp | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [msg, setMsg] = React.useState("");
@@ -36,13 +83,17 @@ export default function AnalyticsReferralsPage() {
       setLoading(true);
       setMsg("");
       try {
-        const query = new URLSearchParams({ period: period.value, range }).toString();
-        const res = await fetch(`/api/portal/analytics/referral?${query}`);
+        const params = buildQuery(period, range);
+        const query = params.toString();
+        const res = await fetch(`/api/portal/analytics/referral${query ? `?${query}` : ""}`);
         const json = await res.json();
         if (!res.ok) throw new Error(json?.message || "Ошибка загрузки");
         if (!cancelled) setData(json);
       } catch (error: any) {
-        if (!cancelled) setMsg(String(error?.message || error));
+        if (!cancelled) {
+          setMsg(String(error?.message || error));
+          setData(null);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -81,9 +132,12 @@ export default function AnalyticsReferralsPage() {
             {quickRanges.map((item) => (
               <Button
                 key={item.value}
-                variant={range === item.value ? "primary" : "secondary"}
+                variant={range === item.value && period.value === "custom" ? "primary" : "secondary"}
                 size="sm"
-                onClick={() => setRange(item.value)}
+                onClick={() => {
+                  setPeriod(periodOptions.find((option) => option.value === "custom") || periodOptions[0]);
+                  setRange(item.value);
+                }}
               >
                 {item.label}
               </Button>
