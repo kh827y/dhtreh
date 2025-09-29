@@ -10,6 +10,23 @@ interface BotConfig {
   webhookUrl: string;
 }
 
+interface RegisterBotResult {
+  success: boolean;
+  username: string;
+  webhookUrl: string;
+  webhookError?: string | null;
+}
+
+interface TelegramWebhookInfo {
+  url: string;
+  has_custom_certificate: boolean;
+  pending_update_count: number;
+  last_error_date?: number;
+  last_error_message?: string;
+  max_connections: number;
+  ip_address?: string;
+}
+
 @Injectable()
 export class TelegramBotService {
   private readonly logger = new Logger(TelegramBotService.name);
@@ -60,11 +77,11 @@ export class TelegramBotService {
     }
   }
 
-  async registerBot(merchantId: string, botToken: string) {
+  async registerBot(merchantId: string, botToken: string): Promise<RegisterBotResult> {
     try {
       // Получаем информацию о боте
       const botInfo = await this.getBotInfo(botToken);
-      
+
       // Формируем URL вебхука и секрет
       const webhookUrl = `${this.configService.get('API_BASE_URL')}/telegram/webhook/${merchantId}`;
       const secret = crypto.randomBytes(16).toString('hex');
@@ -76,6 +93,14 @@ export class TelegramBotService {
           telegramBotToken: botToken,
           telegramBotUsername: botInfo.username,
           miniappBaseUrl: `${this.configService.get('MINIAPP_BASE_URL')}?merchant=${merchantId}`,
+        },
+      });
+
+      await this.prisma.merchant.update({
+        where: { id: merchantId },
+        data: {
+          telegramBotEnabled: true,
+          telegramBotToken: botToken,
         },
       });
 
@@ -102,7 +127,13 @@ export class TelegramBotService {
       });
 
       // Настраиваем webhook с секретом
-      await this.setWebhook(botToken, webhookUrl, secret);
+      let webhookError: string | null = null;
+      try {
+        await this.setWebhook(botToken, webhookUrl, secret);
+      } catch (error: any) {
+        webhookError = this.extractTelegramError(error);
+        this.logger.error(`Не удалось установить webhook для ${merchantId}:`, error);
+      }
 
       // Устанавливаем команды бота
       await this.setBotCommands(botToken);
@@ -119,11 +150,31 @@ export class TelegramBotService {
         success: true,
         username: botInfo.username,
         webhookUrl,
+        webhookError,
       };
     } catch (error) {
       this.logger.error(`Ошибка регистрации бота для ${merchantId}:`, error);
       throw error;
     }
+  }
+
+  private extractTelegramError(error: any): string {
+    const rawMessage = error?.message ? String(error.message) : '';
+    const trimmed = rawMessage.replace(/^Ошибка установки webhook:\s*/i, '').trim();
+    const jsonStart = trimmed.indexOf('{');
+    if (jsonStart !== -1) {
+      const jsonPayload = trimmed.slice(jsonStart);
+      try {
+        const parsed = JSON.parse(jsonPayload);
+        const description = parsed?.description || parsed?.result?.description;
+        if (typeof description === 'string') {
+          return description;
+        }
+      } catch {}
+    }
+    if (trimmed) return trimmed;
+    if (rawMessage) return rawMessage;
+    return 'Не удалось установить webhook';
   }
 
   async setupWebhook(merchantId: string) {
@@ -214,6 +265,22 @@ export class TelegramBotService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ commands }),
     });
+  }
+
+  async fetchBotInfo(token: string) {
+    return this.getBotInfo(token);
+  }
+
+  async fetchWebhookInfo(token: string): Promise<TelegramWebhookInfo> {
+    const response = await fetch(`https://api.telegram.org/bot${token}/getWebhookInfo`);
+    if (!response.ok) {
+      throw new Error(`Ошибка получения webhook: ${await response.text()}`);
+    }
+    const data = await response.json();
+    if (!data?.ok) {
+      throw new Error(String(data?.description || 'Telegram API error'));
+    }
+    return data.result as TelegramWebhookInfo;
   }
 
   async processWebhook(merchantId: string, update: any) {
@@ -515,6 +582,10 @@ export class TelegramBotService {
       }
       // Локально тоже уберем бота из карты
       this.bots.delete(merchantId);
+      await this.prisma.merchant.update({
+        where: { id: merchantId },
+        data: { telegramBotEnabled: false },
+      }).catch(() => null);
     } catch (error) {
       this.logger.error(`Ошибка деактивации бота для ${merchantId}:`, error);
       throw error;

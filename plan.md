@@ -24,6 +24,7 @@
 - [ ] Задокументировать поведение (README/PAGES) и проверить `/metrics` после изменений.
 - [x] Карточка сотрудника: подтянул реальные данные через `/portal/staff/:id`, починил загрузку точек/групп и совместимость с `React.use(params)`.
 - [x] Механика «Ограничения в баллах»: подключил TTL, запрет одновременного начисления/списания и задержку использования к /portal/settings и обновил UI.
+- [x] Telegram Mini App: подчистил UI (состояние кнопки, skeleton для блоков, скрытие данных после отключения — и на карточке интеграций тоже) и учёл предупреждение о webhook без падения подключения.
 
 1) Бэкенд — мерчанты/владелец/CRUD (минимальная версия, обратная совместимость)
 - Добавить в админ‑API: PUT/DELETE мерчанта; POST /merchants принимать ownerName и авто‑создавать сотрудника‑владельца (роль MERCHANT). До миграции — без новых полей, только `login`.
@@ -314,13 +315,15 @@
 ## Волна 4 — Прогресс (2025-09-15)
 
 - Выполнено:
-  - Evotor: валидация конфигов (AJV), `SyncLog` входящих вебхуков, метрики `pos_webhooks_total` и `pos_requests_total`/`pos_errors_total` в контроллере.
-  - ModulKassa/Poster: реализованы `POST /register` (OAuthGuard) с валидацией и upsert `Integration`; вебхуки пишут `SyncLog`; стандартизированы лейблы провайдера в метриках; e2e на вебхуки и метрики.
-  - E2E инфраструктура стабилизирована без open handles.
-  - Централизация POS‑метрик: `pos_requests_total`/`pos_errors_total`/`pos_webhooks_total` перенесены в prom‑client (`MetricsService`), роутинг через `inc()` без дублей.
-  - Негативные e2e: Evotor — неверная подпись вебхука → `SyncLog.status=error` и метрики; ModulKassa/Poster — `POST /register` с некорректным конфигом → 400 и `pos_requests_total{result="error"}`.
-  - DRY: общий helper `upsertIntegration()` для регистрации интеграций, используется в ModulKassa/Poster.
-  - Bridge: README дополнен (формат `X-Bridge-Signature`, заголовки, офлайн‑очередь/бэкенды, метрики/эндпоинты); `infra/env-examples/bridge.env.example` обновлён (переменные очереди).
+- Evotor: валидация конфигов (AJV), `SyncLog` входящих вебхуков, метрики `pos_webhooks_total` и `pos_requests_total`/`pos_errors_total` в контроллере.
+- ModulKassa/Poster: реализованы `POST /register` (OAuthGuard) с валидацией и upsert `Integration`; вебхуки пишут `SyncLog`; стандартизированы лейблы провайдера в метриках; e2e на вебхуки и метрики.
+- E2E инфраструктура стабилизирована без open handles.
+- Централизация POS‑метрик: `pos_requests_total`/`pos_errors_total`/`pos_webhooks_total` перенесены в prom‑client (`MetricsService`), роутинг через `inc()` без дублей.
+- Негативные e2e: Evotor — неверная подпись вебхука → `SyncLog.status=error` и метрики; ModulKassa/Poster — `POST /register` с некорректным конфигом → 400 и `pos_requests_total{result="error"}`.
+- DRY: общий helper `upsertIntegration()` для регистрации интеграций, используется в ModulKassa/Poster.
+- Bridge: README дополнен (формат `X-Bridge-Signature`, заголовки, офлайн‑очередь/бэкенды, метрики/эндпоинты); `infra/env-examples/bridge.env.example` обновлён (переменные очереди).
+- Merchant Portal: реализована карточка и страница подключения Telegram Mini App с реальными API (регистрация, проверка и отключение бота, обновление статусов интеграций); добавил модалку ввода токена и обновление настроек без заглушек.
+- API: привёл сервис Telegram Mini App к корректной работе с JSON-полями Prisma и устранил ошибки типизации TypeScript.
 
 - Следующие шаги:
   - Расширить общий helper для ERP/Shipper и перевести оставшиеся адаптеры.
