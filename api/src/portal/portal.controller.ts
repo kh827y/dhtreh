@@ -536,6 +536,28 @@ export class PortalController {
     const merchantId = this.getMerchantId(req);
     return this.analytics.getCustomerMetrics(merchantId, this.computePeriod(period, from, to));
   }
+  @Get('analytics/auto-return')
+  analyticsAutoReturn(
+    @Req() req: any,
+    @Query('period') period?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('outletId') outletId?: string,
+  ) {
+    const merchantId = this.getMerchantId(req);
+    return this.analytics.getAutoReturnMetrics(merchantId, this.computePeriod(period, from, to), outletId);
+  }
+  @Get('analytics/birthday-mechanic')
+  analyticsBirthdayMechanic(
+    @Req() req: any,
+    @Query('period') period?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('outletId') outletId?: string,
+  ) {
+    const merchantId = this.getMerchantId(req);
+    return this.analytics.getBirthdayMechanicMetrics(merchantId, this.computePeriod(period, from, to), outletId);
+  }
   @Get('analytics/loyalty')
   loyalty(@Req() req: any, @Query('period') period?: string, @Query('from') from?: string, @Query('to') to?: string) {
     const merchantId = this.getMerchantId(req);

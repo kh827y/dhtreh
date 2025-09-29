@@ -30,8 +30,8 @@ const sections: SidebarSection[] = [
       { href: "/analytics/outlets", label: "Активность торговых точек" },
       { href: "/analytics/staff", label: "Активность сотрудников" },
       { href: "/analytics/referrals", label: "Реферальная программа" },
-      { href: "/analytics/birthdays", label: "Дни рождения" },
-      { href: "/analytics/auto-return", label: "Автовозврат клиентов" },
+      { href: "/loyalty/mechanics/birthday?tab=stats", label: "Дни рождения" },
+      { href: "/loyalty/mechanics/auto-return?tab=stats", label: "Автовозврат клиентов" },
     ],
   },
   {

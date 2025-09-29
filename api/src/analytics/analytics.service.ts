@@ -677,6 +677,512 @@ export class AnalyticsService {
     return { topOutlets, topStaff, peakHours, deviceUsage };
   }
 
+  async getAutoReturnMetrics(
+    merchantId: string,
+    period: DashboardPeriod,
+    outletId?: string,
+  ): Promise<{
+    period: { from: string; to: string; type: DashboardPeriod['type']; thresholdDays: number; giftPoints: number };
+    summary: {
+      invitations: number;
+      returned: number;
+      conversion: number;
+      pointsCost: number;
+      firstPurchaseRevenue: number;
+    };
+    distance: {
+      customers: number;
+      purchasesPerCustomer: number;
+      purchasesCount: number;
+      totalAmount: number;
+      averageCheck: number;
+    };
+    rfm: Array<{ segment: string; invitations: number; returned: number }>;
+    trends: {
+      attempts: Array<{ date: string; invitations: number; returns: number }>;
+      revenue: Array<{ date: string; total: number; firstPurchases: number }>;
+    };
+  }> {
+    const settings = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+      select: { rulesJson: true },
+    });
+
+    const rules = settings?.rulesJson && typeof settings.rulesJson === 'object' ? (settings.rulesJson as any) : {};
+    const autoReturn = rules && typeof rules === 'object' && rules.autoReturn && typeof rules.autoReturn === 'object'
+      ? rules.autoReturn
+      : {};
+
+    const thresholdDays = Math.max(1, Math.floor(Number(autoReturn?.days ?? autoReturn?.thresholdDays ?? 60) || 60));
+    const giftPoints = Math.max(0, Math.floor(Number(autoReturn?.giftPoints ?? 0) || 0));
+
+    const from = new Date(period.from);
+    const to = new Date(period.to);
+    const msInDay = 24 * 60 * 60 * 1000;
+    const thresholdMs = thresholdDays * msInDay;
+
+    const receiptWhereBase: any = {
+      merchantId,
+    };
+    if (outletId && outletId !== 'all') {
+      receiptWhereBase.outletId = outletId;
+    }
+
+    const receiptsInPeriod = await this.prisma.receipt.findMany({
+      where: {
+        ...receiptWhereBase,
+        createdAt: { gte: from, lte: to },
+      },
+      select: { customerId: true, total: true, createdAt: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const lastReceiptBefore = await this.prisma.receipt.groupBy({
+      by: ['customerId'],
+      where: {
+        ...receiptWhereBase,
+        createdAt: { lt: from },
+      },
+      _max: { createdAt: true },
+    });
+
+    const eligible = new Map<
+      string,
+      {
+        lastBefore: Date;
+        inviteDate: Date;
+        receipts: Array<{ date: Date; total: number }>;
+      }
+    >();
+
+    const cutoff = new Date(from.getTime() - thresholdMs);
+    for (const item of lastReceiptBefore) {
+      const customerId = item.customerId as string;
+      const last = item._max.createdAt;
+      if (!customerId || !last) continue;
+      if (last > cutoff) continue;
+      let inviteDate = new Date(last.getTime() + thresholdMs);
+      if (inviteDate < from) inviteDate = new Date(from);
+      if (inviteDate > to) continue;
+      eligible.set(customerId, { lastBefore: last, inviteDate, receipts: [] });
+    }
+
+    for (const receipt of receiptsInPeriod) {
+      const record = eligible.get(receipt.customerId);
+      if (!record) continue;
+      record.receipts.push({ date: receipt.createdAt, total: receipt.total });
+    }
+
+    const segments = [
+      { label: 'Недавние (<92 дней)', min: 0, max: 91 },
+      { label: 'Умеренные (92–184)', min: 92, max: 183 },
+      { label: 'Засыпающие (184–276)', min: 184, max: 275 },
+      { label: 'Спящие (276–368)', min: 276, max: 367 },
+      { label: 'Потерянные (>368)', min: 368, max: Number.POSITIVE_INFINITY },
+    ];
+
+    const segmentCounters = new Map<string, { invitations: number; returned: number }>();
+    for (const seg of segments) {
+      segmentCounters.set(seg.label, { invitations: 0, returned: 0 });
+    }
+
+    const invitesByDay = new Map<string, number>();
+    const returnsByDay = new Map<string, number>();
+    const revenueByDay = new Map<string, number>();
+    const firstRevenueByDay = new Map<string, number>();
+
+    let invitations = 0;
+    let returned = 0;
+    let firstPurchaseRevenue = 0;
+    let totalPurchases = 0;
+    let totalAmount = 0;
+
+    for (const [customerId, record] of eligible.entries()) {
+      invitations++;
+      const inviteKey = record.inviteDate.toISOString().slice(0, 10);
+      invitesByDay.set(inviteKey, (invitesByDay.get(inviteKey) ?? 0) + 1);
+
+      record.receipts.sort((a, b) => a.date.getTime() - b.date.getTime());
+      const first = record.receipts[0];
+      const hasReturned = Boolean(first && first.date >= record.inviteDate && first.date <= to);
+
+      const inactivityDays = Math.floor((from.getTime() - record.lastBefore.getTime()) / msInDay);
+      const segment = segments.find(seg => inactivityDays >= seg.min && inactivityDays <= seg.max);
+      if (segment) {
+        const bucket = segmentCounters.get(segment.label)!;
+        bucket.invitations += 1;
+        if (hasReturned) bucket.returned += 1;
+      }
+
+      if (!hasReturned) {
+        continue;
+      }
+
+      returned++;
+      if (first) {
+        firstPurchaseRevenue += first.total;
+        const firstKey = first.date.toISOString().slice(0, 10);
+        returnsByDay.set(firstKey, (returnsByDay.get(firstKey) ?? 0) + 1);
+        firstRevenueByDay.set(firstKey, (firstRevenueByDay.get(firstKey) ?? 0) + first.total);
+      }
+
+      let customerAmount = 0;
+      for (const [index, item] of record.receipts.entries()) {
+        customerAmount += item.total;
+        const key = item.date.toISOString().slice(0, 10);
+        revenueByDay.set(key, (revenueByDay.get(key) ?? 0) + item.total);
+      }
+      totalAmount += customerAmount;
+      totalPurchases += record.receipts.length;
+    }
+
+    const daysCount = Math.max(1, Math.floor((to.getTime() - from.getTime()) / msInDay) + 1);
+    const attemptsTrend: Array<{ date: string; invitations: number; returns: number }> = [];
+    const revenueTrend: Array<{ date: string; total: number; firstPurchases: number }> = [];
+    for (let i = 0; i < daysCount; i++) {
+      const current = new Date(from.getTime() + i * msInDay);
+      const key = current.toISOString().slice(0, 10);
+      attemptsTrend.push({
+        date: key,
+        invitations: invitesByDay.get(key) ?? 0,
+        returns: returnsByDay.get(key) ?? 0,
+      });
+      revenueTrend.push({
+        date: key,
+        total: revenueByDay.get(key) ?? 0,
+        firstPurchases: firstRevenueByDay.get(key) ?? 0,
+      });
+    }
+
+    const conversion = invitations > 0 ? (returned / invitations) * 100 : 0;
+    const purchasesPerCustomer = returned > 0 ? totalPurchases / returned : 0;
+    const averageCheck = totalPurchases > 0 ? totalAmount / totalPurchases : 0;
+
+    const summary = {
+      invitations,
+      returned,
+      conversion: Math.round(conversion * 10) / 10,
+      pointsCost: giftPoints * returned,
+      firstPurchaseRevenue,
+    };
+
+    const distance = {
+      customers: returned,
+      purchasesPerCustomer: Math.round(purchasesPerCustomer * 10) / 10,
+      purchasesCount: totalPurchases,
+      totalAmount,
+      averageCheck: Math.round(averageCheck * 10) / 10,
+    };
+
+    const rfm = segments.map(seg => {
+      const bucket = segmentCounters.get(seg.label)!;
+      return { segment: seg.label, invitations: bucket.invitations, returned: bucket.returned };
+    });
+
+    return {
+      period: { from: from.toISOString(), to: to.toISOString(), type: period.type, thresholdDays, giftPoints },
+      summary,
+      distance,
+      rfm,
+      trends: {
+        attempts: attemptsTrend,
+        revenue: revenueTrend,
+      },
+    };
+  }
+
+  async getBirthdayMechanicMetrics(
+    merchantId: string,
+    period: DashboardPeriod,
+    outletId?: string,
+  ): Promise<{
+    period: {
+      from: string;
+      to: string;
+      type: DashboardPeriod['type'];
+      daysBefore: number;
+      onlyBuyers: boolean;
+      giftPoints: number;
+      giftTtlDays: number;
+      purchaseWindowDays: number;
+    };
+    summary: {
+      invitations: number;
+      purchasers: number;
+      conversion: number;
+      pointsIssued: number;
+      revenue: number;
+      firstPurchaseRevenue: number;
+      averageCheck: number;
+      customersWithPurchases: number;
+    };
+    demographics: {
+      gender: Array<{ group: string; invitations: number; purchases: number }>;
+      age: Array<{ bucket: string; invitations: number; purchases: number }>;
+    };
+    trends: {
+      timeline: Array<{ date: string; invitations: number; purchases: number }>;
+      revenue: Array<{ date: string; total: number; firstPurchases: number }>;
+    };
+  }> {
+    const settings = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+      select: { rulesJson: true },
+    });
+
+    const rules = settings?.rulesJson && typeof settings.rulesJson === 'object' ? (settings.rulesJson as any) : {};
+    const birthday = rules && typeof rules === 'object' && rules.birthday && typeof rules.birthday === 'object'
+      ? rules.birthday
+      : {};
+
+    const daysBefore = Math.max(0, Math.floor(Number(birthday?.daysBefore ?? birthday?.days ?? 5) || 5));
+    const onlyBuyers = Boolean(birthday?.onlyBuyers ?? birthday?.buyersOnly ?? birthday?.onlyCustomers ?? false);
+    const giftPoints = Math.max(0, Math.floor(Number(birthday?.giftPoints ?? 0) || 0));
+    const giftTtlDays = Math.max(0, Math.floor(Number(birthday?.giftTtlDays ?? birthday?.giftTtl ?? 0) || 0));
+    const purchaseWindowDays = Math.max(7, daysBefore + 7);
+
+    const empty = {
+      period: {
+        from: period.from.toISOString(),
+        to: period.to.toISOString(),
+        type: period.type,
+        daysBefore,
+        onlyBuyers,
+        giftPoints,
+        giftTtlDays,
+        purchaseWindowDays,
+      },
+      summary: {
+        invitations: 0,
+        purchasers: 0,
+        conversion: 0,
+        pointsIssued: 0,
+        revenue: 0,
+        firstPurchaseRevenue: 0,
+        averageCheck: 0,
+        customersWithPurchases: 0,
+      },
+      demographics: {
+        gender: [],
+        age: [],
+      },
+      trends: {
+        timeline: [],
+        revenue: [],
+      },
+    };
+
+    const customers = await this.prisma.customer.findMany({
+      where: { birthday: { not: null }, wallets: { some: { merchantId } } },
+      select: { id: true, birthday: true, gender: true },
+    });
+
+    if (!customers.length) {
+      return empty;
+    }
+
+    let statsMap: Map<string, { visits: number; totalSpent: number }> | null = null;
+    if (onlyBuyers) {
+      const stats = await this.prisma.customerStats.findMany({
+        where: { merchantId, customerId: { in: customers.map((c) => c.id) } },
+        select: { customerId: true, visits: true, totalSpent: true },
+      });
+      statsMap = new Map(stats.map((item) => [item.customerId, { visits: item.visits, totalSpent: item.totalSpent }]));
+    }
+
+    const msInDay = 24 * 60 * 60 * 1000;
+    const from = new Date(period.from);
+    from.setHours(0, 0, 0, 0);
+    const to = new Date(period.to);
+    to.setHours(0, 0, 0, 0);
+    const years: number[] = [];
+    for (let y = from.getFullYear() - 1; y <= to.getFullYear() + 1; y += 1) {
+      years.push(y);
+    }
+
+    type Event = { customerId: string; sendDate: Date; birthdayDate: Date; age: number; gender: string };
+    const events: Event[] = [];
+
+    for (const customer of customers) {
+      if (!customer.birthday) continue;
+      if (onlyBuyers) {
+        const stat = statsMap?.get(customer.id);
+        if (!stat || ((stat.visits ?? 0) <= 0 && (stat.totalSpent ?? 0) <= 0)) {
+          continue;
+        }
+      }
+
+      const birthDate = new Date(customer.birthday);
+      const birthMonth = birthDate.getMonth();
+      const birthDay = birthDate.getDate();
+      const birthYear = birthDate.getFullYear();
+
+      for (const year of years) {
+        const actual = new Date(year, birthMonth, birthDay);
+        actual.setHours(0, 0, 0, 0);
+        const sendDate = new Date(actual);
+        sendDate.setDate(sendDate.getDate() - daysBefore);
+        sendDate.setHours(0, 0, 0, 0);
+
+        if (sendDate < from || sendDate > to) {
+          continue;
+        }
+
+        const age = actual.getFullYear() - birthYear;
+        const gender = typeof customer.gender === 'string' && customer.gender ? customer.gender.toUpperCase() : 'UNKNOWN';
+
+        events.push({
+          customerId: customer.id,
+          sendDate,
+          birthdayDate: actual,
+          age,
+          gender,
+        });
+      }
+    }
+
+    if (!events.length) {
+      return empty;
+    }
+
+    const customerIds = Array.from(new Set(events.map((e) => e.customerId)));
+    const earliestBirthday = new Date(Math.min(...events.map((e) => e.birthdayDate.getTime())));
+    const latestBirthday = new Date(Math.max(...events.map((e) => e.birthdayDate.getTime())));
+    const receiptFrom = new Date(earliestBirthday.getTime() - msInDay);
+    const receiptTo = new Date(latestBirthday.getTime() + purchaseWindowDays * msInDay);
+
+    const receiptWhere: any = {
+      merchantId,
+      customerId: { in: customerIds },
+      createdAt: { gte: receiptFrom, lte: receiptTo },
+    };
+    if (outletId && outletId !== 'all') {
+      receiptWhere.outletId = outletId;
+    }
+
+    const receipts = await this.prisma.receipt.findMany({
+      where: receiptWhere,
+      select: { customerId: true, createdAt: true, total: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const receiptsByCustomer = new Map<string, Array<{ createdAt: Date; total: number }>>();
+    for (const receipt of receipts) {
+      if (!receiptsByCustomer.has(receipt.customerId)) {
+        receiptsByCustomer.set(receipt.customerId, []);
+      }
+      receiptsByCustomer.get(receipt.customerId)!.push({ createdAt: new Date(receipt.createdAt), total: receipt.total });
+    }
+
+    const attemptsMap = new Map<string, { invitations: number; purchases: number }>();
+    const revenueMap = new Map<string, { total: number; firstPurchases: number }>();
+    const genderMap = new Map<string, { invitations: number; purchases: number }>();
+    const ageMap = new Map<string, { invitations: number; purchases: number }>();
+
+    const customersWithPurchases = new Set<string>();
+    let purchasers = 0;
+    let totalRevenue = 0;
+    let firstPurchaseRevenue = 0;
+    let totalReceiptsCount = 0;
+
+    const ageBucket = (age: number) => {
+      if (age < 20) return 'До 20';
+      if (age < 30) return '20–29';
+      if (age < 40) return '30–39';
+      if (age < 50) return '40–49';
+      if (age < 60) return '50–59';
+      return '60+';
+    };
+
+    const genderLabel = (gender: string) => {
+      if (gender === 'MALE') return 'Мужчины';
+      if (gender === 'FEMALE') return 'Женщины';
+      return 'Не указано';
+    };
+
+    for (const event of events) {
+      const key = event.sendDate.toISOString().slice(0, 10);
+      const attempt = attemptsMap.get(key) ?? { invitations: 0, purchases: 0 };
+      attempt.invitations += 1;
+
+      const revenueEntry = revenueMap.get(key) ?? { total: 0, firstPurchases: 0 };
+
+      const customerReceipts = receiptsByCustomer.get(event.customerId) ?? [];
+      const windowEnd = new Date(event.birthdayDate.getTime() + purchaseWindowDays * msInDay);
+      const relevant = customerReceipts.filter((r) => r.createdAt >= event.birthdayDate && r.createdAt <= windowEnd);
+
+      const converted = relevant.length > 0;
+      if (converted) {
+        attempt.purchases += 1;
+        purchasers += 1;
+        customersWithPurchases.add(event.customerId);
+
+        const first = relevant[0];
+        const revenueSum = relevant.reduce((sum, r) => sum + (r.total || 0), 0);
+        revenueEntry.total += revenueSum;
+        revenueEntry.firstPurchases += first.total || 0;
+
+        totalRevenue += revenueSum;
+        firstPurchaseRevenue += first.total || 0;
+        totalReceiptsCount += relevant.length;
+      }
+
+      attemptsMap.set(key, attempt);
+      revenueMap.set(key, revenueEntry);
+
+      const gEntry = genderMap.get(genderLabel(event.gender)) ?? { invitations: 0, purchases: 0 };
+      gEntry.invitations += 1;
+      if (converted) gEntry.purchases += 1;
+      genderMap.set(genderLabel(event.gender), gEntry);
+
+      const aEntry = ageMap.get(ageBucket(event.age)) ?? { invitations: 0, purchases: 0 };
+      aEntry.invitations += 1;
+      if (converted) aEntry.purchases += 1;
+      ageMap.set(ageBucket(event.age), aEntry);
+    }
+
+    const timeline = Array.from(attemptsMap.entries())
+      .map(([date, value]) => ({ date, ...value }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+    const revenueTimeline = Array.from(revenueMap.entries())
+      .map(([date, value]) => ({ date, ...value }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    const genderStats = Array.from(genderMap.entries()).map(([group, value]) => ({ group, ...value }));
+    const ageStats = Array.from(ageMap.entries()).map(([bucket, value]) => ({ bucket, ...value }));
+
+    return {
+      period: {
+        from: period.from.toISOString(),
+        to: period.to.toISOString(),
+        type: period.type,
+        daysBefore,
+        onlyBuyers,
+        giftPoints,
+        giftTtlDays,
+        purchaseWindowDays,
+      },
+      summary: {
+        invitations: events.length,
+        purchasers,
+        conversion: events.length > 0 ? Math.round((purchasers / events.length) * 1000) / 10 : 0,
+        pointsIssued: giftPoints > 0 ? giftPoints * events.length : 0,
+        revenue: totalRevenue,
+        firstPurchaseRevenue,
+        averageCheck: totalReceiptsCount > 0 ? Math.round(totalRevenue / totalReceiptsCount) : 0,
+        customersWithPurchases: customersWithPurchases.size,
+      },
+      demographics: {
+        gender: genderStats,
+        age: ageStats,
+      },
+      trends: {
+        timeline,
+        revenue: revenueTimeline,
+      },
+    };
+  }
+
   // Вспомогательные методы
 
   private getPreviousPeriod(period: DashboardPeriod): DashboardPeriod {

@@ -178,6 +178,46 @@ export class AnalyticsController {
   }
 
   /**
+   * Автовозврат клиентов
+   */
+  @Get('auto-return/:merchantId')
+  @ApiOperation({ summary: 'Статистика механики автовозврата клиентов' })
+  @ApiQuery({ name: 'period', enum: ['day', 'week', 'month', 'quarter', 'year'], required: false })
+  @ApiQuery({ name: 'from', type: String, required: false })
+  @ApiQuery({ name: 'to', type: String, required: false })
+  @ApiQuery({ name: 'outletId', type: String, required: false })
+  async getAutoReturnMetrics(
+    @Param('merchantId') merchantId: string,
+    @Query('period') periodType?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('outletId') outletId?: string,
+  ) {
+    const period = this.getPeriod(periodType, from, to);
+    return this.analyticsService.getAutoReturnMetrics(merchantId, period, outletId);
+  }
+
+  /**
+   * Поздравления с днём рождения
+   */
+  @Get('birthday-mechanic/:merchantId')
+  @ApiOperation({ summary: 'Статистика механики поздравлений с днём рождения' })
+  @ApiQuery({ name: 'period', enum: ['day', 'week', 'month', 'quarter', 'year'], required: false })
+  @ApiQuery({ name: 'from', type: String, required: false })
+  @ApiQuery({ name: 'to', type: String, required: false })
+  @ApiQuery({ name: 'outletId', type: String, required: false })
+  async getBirthdayMechanicMetrics(
+    @Param('merchantId') merchantId: string,
+    @Query('period') periodType?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('outletId') outletId?: string,
+  ) {
+    const period = this.getPeriod(periodType, from, to);
+    return this.analyticsService.getBirthdayMechanicMetrics(merchantId, period, outletId);
+  }
+
+  /**
    * Метрики кампаний
    */
   @Get('campaigns/:merchantId')
