@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
+import { PromoCodesService, type PromoCodeApplyResult } from '../promocodes/promocodes.service';
 import { Mode, QuoteDto } from './dto';
 import { HoldStatus, TxnType, WalletType, LedgerAccount, HoldMode } from '@prisma/client';
 import { randomUUID } from 'crypto';
@@ -51,7 +52,11 @@ export class LoyaltyService {
       return { ok: true, transactionId: txn.id };
     });
   }
-  constructor(private prisma: PrismaService, private metrics: MetricsService) {}
+  constructor(
+    private prisma: PrismaService,
+    private metrics: MetricsService,
+    private promoCodes: PromoCodesService,
+  ) {}
 
   // ===== Earn Lots helpers (optional feature) =====
   private async consumeLots(tx: any, merchantId: string, customerId: string, amount: number, ctx: { orderId?: string|null }) {
@@ -496,7 +501,13 @@ export class LoyaltyService {
     });
   }
 
-  async commit(holdId: string, orderId: string, receiptNumber?: string, requestId?: string, opts?: { additionalEarnPoints?: number }) {
+  async commit(
+    holdId: string,
+    orderId: string,
+    receiptNumber?: string,
+    requestId?: string,
+    opts?: { additionalEarnPoints?: number; promoCode?: { promoCodeId: string; code?: string | null } },
+  ) {
     const hold = await this.prisma.hold.findUnique({ where: { id: holdId } });
     if (!hold) throw new BadRequestException('Hold not found');
     if (hold.expiresAt && hold.expiresAt.getTime() < Date.now()) {
@@ -527,6 +538,20 @@ export class LoyaltyService {
         // Накапливаем применённые суммы для чека
         let appliedRedeem = 0;
         let appliedEarn = 0;
+        let promoResult: PromoCodeApplyResult | null = null;
+        if (opts?.promoCode && hold.customerId) {
+          promoResult = await this.promoCodes.apply(tx, {
+            promoCodeId: opts.promoCode.promoCodeId,
+            merchantId: hold.merchantId,
+            customerId: hold.customerId,
+            staffId: hold.staffId ?? null,
+            outletId: hold.outletId ?? null,
+            orderId,
+          });
+          if (!promoResult) {
+            throw new BadRequestException('Промокод недоступен');
+          }
+        }
 
         // REDEEM
         if (hold.mode === 'REDEEM' && hold.redeemAmount > 0) {
@@ -558,7 +583,12 @@ export class LoyaltyService {
             this.metrics.inc('loyalty_ledger_entries_total', { type: 'redeem' });
           }
         }
-      if (hold.mode === 'EARN' && hold.earnPoints > 0) {
+      const baseEarnFromHold = hold.mode === 'EARN' ? Math.max(0, Math.floor(Number(hold.earnPoints || 0))) : 0;
+      const voucherBonus = Math.max(0, Math.floor(Number(opts?.additionalEarnPoints || 0)));
+      const promoBonus = promoResult ? Math.max(0, Math.floor(Number(promoResult.pointsIssued || 0))) : 0;
+      const appliedEarnTotal = baseEarnFromHold + voucherBonus + promoBonus;
+
+      if (appliedEarnTotal > 0) {
         // Проверяем, требуется ли задержка начисления. В юнит-тестах tx может не иметь merchantSettings — делаем fallback на this.prisma.
         let settings: any = null;
         const txHasMs = (tx as any)?.merchantSettings?.findUnique;
@@ -569,33 +599,58 @@ export class LoyaltyService {
         }
         const delayDays = Number((settings as any)?.earnDelayDays || 0) || 0;
         const ttlDays = Number((settings as any)?.pointsTtlDays || 0) || 0;
-        const add = Math.max(0, Math.floor(Number(opts?.additionalEarnPoints || 0)));
-        appliedEarn = Math.max(0, Math.floor(Number(hold.earnPoints || 0)) + add);
+        appliedEarn = appliedEarnTotal;
+        const promoExpireDays = promoResult?.pointsExpireInDays ?? null;
 
-        if (appliedEarn <= 0) {
-          // ничего не начисляем
-        } else if (delayDays > 0) {
+        if (delayDays > 0) {
           // Откладываем начисление: создаём PENDING lot и событие, баланс не трогаем до созревания
           if (process.env.EARN_LOTS_FEATURE === '1' && appliedEarn > 0) {
             const maturesAt = new Date(Date.now() + delayDays * 24 * 60 * 60 * 1000);
-            const expiresAt = ttlDays > 0 ? new Date(maturesAt.getTime() + ttlDays * 24 * 60 * 60 * 1000) : null;
             const earnLot = (tx as any)?.earnLot ?? (this.prisma as any)?.earnLot;
             if (earnLot?.create) {
-              await earnLot.create({ data: {
-                merchantId: hold.merchantId,
-                customerId: hold.customerId,
-                points: appliedEarn,
-                consumedPoints: 0,
-                earnedAt: maturesAt, // TTL считается от момента активации
-                maturesAt,
-                expiresAt,
-                orderId,
-                receiptId: null,
-                outletId: hold.outletId ?? null,
-                deviceId: hold.deviceId ?? null,
-                staffId: hold.staffId ?? null,
-                status: 'PENDING',
-              }});
+              if (baseEarnFromHold + voucherBonus > 0) {
+                const expiresAtStd = ttlDays > 0 ? new Date(maturesAt.getTime() + ttlDays * 24 * 60 * 60 * 1000) : null;
+                await earnLot.create({
+                  data: {
+                    merchantId: hold.merchantId,
+                    customerId: hold.customerId,
+                    points: baseEarnFromHold + voucherBonus,
+                    consumedPoints: 0,
+                    earnedAt: maturesAt,
+                    maturesAt,
+                    expiresAt: expiresAtStd,
+                    orderId,
+                    receiptId: null,
+                    outletId: hold.outletId ?? null,
+                    deviceId: hold.deviceId ?? null,
+                    staffId: hold.staffId ?? null,
+                    status: 'PENDING',
+                  },
+                });
+              }
+              if (promoBonus > 0) {
+                const promoExpiresAt = promoExpireDays
+                  ? new Date(maturesAt.getTime() + promoExpireDays * 24 * 60 * 60 * 1000)
+                  : null;
+                await earnLot.create({
+                  data: {
+                    merchantId: hold.merchantId,
+                    customerId: hold.customerId,
+                    points: promoBonus,
+                    consumedPoints: 0,
+                    earnedAt: maturesAt,
+                    maturesAt,
+                    expiresAt: promoExpiresAt,
+                    orderId,
+                    receiptId: null,
+                    outletId: hold.outletId ?? null,
+                    deviceId: hold.deviceId ?? null,
+                    staffId: hold.staffId ?? null,
+                    status: 'PENDING',
+                    metadata: opts?.promoCode ? { promoCodeId: opts.promoCode.promoCodeId } : undefined,
+                  },
+                });
+              }
             }
           }
           await tx.eventOutbox.create({ data: {
@@ -611,6 +666,15 @@ export class LoyaltyService {
               outletId: hold.outletId ?? null,
               deviceId: hold.deviceId ?? null,
               staffId: hold.staffId ?? null,
+              promoCode:
+                promoResult && opts?.promoCode
+                  ? {
+                      promoCodeId: opts.promoCode.promoCodeId,
+                      code: opts.promoCode.code ?? null,
+                      points: promoBonus,
+                      expiresInDays: promoExpireDays,
+                    }
+                  : undefined,
             } as any,
           }});
         } else {
@@ -641,25 +705,52 @@ export class LoyaltyService {
           }
           // Earn lots (optional)
           if (process.env.EARN_LOTS_FEATURE === '1' && appliedEarn > 0) {
-            let expires: Date | null = null;
-            if (ttlDays > 0) expires = new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000);
             const earnLot = (tx as any)?.earnLot ?? (this.prisma as any)?.earnLot;
             if (earnLot?.create) {
-              await earnLot.create({ data: {
-                merchantId: hold.merchantId,
-                customerId: hold.customerId,
-                points: appliedEarn,
-                consumedPoints: 0,
-                earnedAt: new Date(),
-                maturesAt: null,
-                expiresAt: expires,
-                orderId,
-                receiptId: null,
-                outletId: hold.outletId ?? null,
-                deviceId: hold.deviceId ?? null,
-                staffId: hold.staffId ?? null,
-                status: 'ACTIVE',
-              }});
+              if (baseEarnFromHold + voucherBonus > 0) {
+                let expires: Date | null = null;
+                if (ttlDays > 0) expires = new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000);
+                await earnLot.create({
+                  data: {
+                    merchantId: hold.merchantId,
+                    customerId: hold.customerId,
+                    points: baseEarnFromHold + voucherBonus,
+                    consumedPoints: 0,
+                    earnedAt: new Date(),
+                    maturesAt: null,
+                    expiresAt: expires,
+                    orderId,
+                    receiptId: null,
+                    outletId: hold.outletId ?? null,
+                    deviceId: hold.deviceId ?? null,
+                    staffId: hold.staffId ?? null,
+                    status: 'ACTIVE',
+                  },
+                });
+              }
+              if (promoBonus > 0) {
+                const expiresPromo = promoExpireDays
+                  ? new Date(Date.now() + promoExpireDays * 24 * 60 * 60 * 1000)
+                  : null;
+                await earnLot.create({
+                  data: {
+                    merchantId: hold.merchantId,
+                    customerId: hold.customerId,
+                    points: promoBonus,
+                    consumedPoints: 0,
+                    earnedAt: new Date(),
+                    maturesAt: null,
+                    expiresAt: expiresPromo,
+                    orderId,
+                    receiptId: null,
+                    outletId: hold.outletId ?? null,
+                    deviceId: hold.deviceId ?? null,
+                    staffId: hold.staffId ?? null,
+                    status: 'ACTIVE',
+                    metadata: opts?.promoCode ? { promoCodeId: opts.promoCode.promoCodeId } : undefined,
+                  },
+                });
+              }
             }
           }
         }
