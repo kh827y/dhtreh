@@ -77,7 +77,7 @@ export interface LegacyCampaignDto {
 
 type PromotionWithRelations = Prisma.LoyaltyPromotionGetPayload<{
   include?: {
-    audience?: true | Prisma.CustomerSegmentArgs;
+    audience?: true;
   };
 }>;
 

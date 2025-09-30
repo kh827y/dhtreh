@@ -48,7 +48,6 @@ export interface UpdateActionStatusPayload {
   action: 'PAUSE' | 'RESUME';
 }
 
-@Injectable()
 type PromotionEntity = Prisma.LoyaltyPromotionGetPayload<{
   include: { metrics: true; audience: true };
 }>;
@@ -191,7 +190,10 @@ export class ActionsService {
         status: PromotionStatus.DRAFT,
         segmentId: promotion.segmentId,
         rewardType: PromotionRewardType.CUSTOM,
-        rewardMetadata: promotion.rewardMetadata,
+        rewardMetadata:
+          promotion.rewardMetadata === null
+            ? Prisma.JsonNull
+            : (promotion.rewardMetadata as Prisma.InputJsonValue),
         metadata: {
           legacyCampaign: legacy,
         } as Prisma.InputJsonValue,
