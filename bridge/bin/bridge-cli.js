@@ -87,23 +87,35 @@ async function main() {
       console.error('API_BASE, ADMIN_KEY, MERCHANT_ID must be set');
       process.exit(2);
     }
-    const url = `${apiBase.replace(/\/$/, '')}/merchants/${encodeURIComponent(merchantId)}/devices`;
-    const devices = await reqAbs('GET', url, null, { 'X-Admin-Key': adminKey });
-    console.log(JSON.stringify({ merchantId, devices: devices.map(d => ({ id: d.id, outletId: d.outletId, label: d.label, hasBridgeSecret: !!d.bridgeSecret })) }, null, 2));
+    const url = `${apiBase.replace(/\/$/, '')}/merchants/${encodeURIComponent(merchantId)}/outlets`;
+    const outlets = await reqAbs('GET', url, null, { 'X-Admin-Key': adminKey });
+    console.log(JSON.stringify({
+      merchantId,
+      outlets: outlets.map(o => ({
+        id: o.id,
+        posType: o.posType || null,
+        status: o.status,
+        bridgeSecretIssued: !!o.bridgeSecretIssued,
+        bridgeSecretNextIssued: !!o.bridgeSecretNextIssued,
+        bridgeSecretUpdatedAt: o.bridgeSecretUpdatedAt || null,
+      })),
+    }, null, 2));
   } else if (cmd === 'rotate-secret') {
     const apiBase = process.env.API_BASE || '';
     const adminKey = process.env.ADMIN_KEY || '';
     const merchantId = process.env.MERCHANT_ID || '';
-    const deviceId = process.argv[3];
-    if (!apiBase || !adminKey || !merchantId || !deviceId) {
-      console.error('Usage: rotate-secret <deviceId> (requires API_BASE, ADMIN_KEY, MERCHANT_ID env)');
+    const outletId = process.argv[3];
+    const target = process.argv[4];
+    const next = target === '--next' || target === 'next';
+    if (!apiBase || !adminKey || !merchantId || !outletId) {
+      console.error('Usage: rotate-secret <outletId> [next] (requires API_BASE, ADMIN_KEY, MERCHANT_ID env)');
       process.exit(2);
     }
-    const url = `${apiBase.replace(/\/$/, '')}/merchants/${encodeURIComponent(merchantId)}/devices/${encodeURIComponent(deviceId)}/secret`;
+    const url = `${apiBase.replace(/\/$/, '')}/merchants/${encodeURIComponent(merchantId)}/outlets/${encodeURIComponent(outletId)}/bridge-secret${next ? '/next' : ''}`;
     const result = await reqAbs('POST', url, null, { 'X-Admin-Key': adminKey });
-    console.log(JSON.stringify({ ok: true, deviceId, secret: result.secret }, null, 2));
+    console.log(JSON.stringify({ ok: true, outletId, target: next ? 'bridgeSecretNext' : 'bridgeSecret', secret: result.secret }, null, 2));
   } else {
-    console.log('Usage: bridge-cli.js [status|flush|sign-test JSON|secret-status|rotate-secret <deviceId>]');
+    console.log('Usage: bridge-cli.js [status|flush|sign-test JSON|secret-status|rotate-secret <outletId> [next]]');
     process.exit(2);
   }
 }

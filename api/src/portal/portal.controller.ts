@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, Param, Post, Put, Query, UseGuards, Req,
 import { ApiBadRequestResponse, ApiExtraModels, ApiOkResponse, ApiTags, ApiUnauthorizedResponse, getSchemaPath } from '@nestjs/swagger';
 import { PortalGuard } from '../portal-auth/portal.guard';
 import { MerchantsService } from '../merchants/merchants.service';
-import { CreateDeviceDto, DeviceDto, LedgerEntryDto, MerchantSettingsRespDto, ReceiptDto, UpdateDeviceDto, UpdateMerchantSettingsDto } from '../merchants/dto';
+import { LedgerEntryDto, MerchantSettingsRespDto, ReceiptDto, UpdateMerchantSettingsDto, UpdateOutletPosDto, UpdateOutletStatusDto } from '../merchants/dto';
 import { ErrorDto, TransactionItemDto } from '../loyalty/dto';
 import { PromoCodesService, type PortalPromoCodePayload } from '../promocodes/promocodes.service';
 import { CommunicationChannel, PromoCodeStatus } from '@prisma/client';
@@ -832,25 +832,38 @@ export class PortalController {
     return this.service.deleteOutlet(this.getMerchantId(req), outletId);
   }
 
-  // Devices
-  @Get('devices')
-  @ApiOkResponse({ type: DeviceDto, isArray: true })
-  listDevices(@Req() req: any) { return this.service.listDevices(this.getMerchantId(req)); }
-  @Post('devices')
-  @ApiOkResponse({ type: DeviceDto })
-  createDevice(@Req() req: any, @Body() dto: CreateDeviceDto) { return this.service.createDevice(this.getMerchantId(req), dto.type as string, dto.outletId, dto.label); }
-  @Put('devices/:deviceId')
-  @ApiOkResponse({ type: DeviceDto })
-  updateDevice(@Req() req: any, @Param('deviceId') deviceId: string, @Body() dto: UpdateDeviceDto) { return this.service.updateDevice(this.getMerchantId(req), deviceId, dto); }
-  @Delete('devices/:deviceId')
-  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
-  deleteDevice(@Req() req: any, @Param('deviceId') deviceId: string) { return this.service.deleteDevice(this.getMerchantId(req), deviceId); }
-  @Post('devices/:deviceId/secret')
+  @Post('outlets/:outletId/bridge-secret')
   @ApiOkResponse({ schema: { type: 'object', properties: { secret: { type: 'string' } } } })
-  issueDeviceSecret(@Req() req: any, @Param('deviceId') deviceId: string) { return this.service.issueDeviceSecret(this.getMerchantId(req), deviceId); }
-  @Delete('devices/:deviceId/secret')
+  issueOutletBridgeSecret(@Req() req: any, @Param('outletId') outletId: string) {
+    return this.service.issueOutletBridgeSecret(this.getMerchantId(req), outletId);
+  }
+  @Delete('outlets/:outletId/bridge-secret')
   @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
-  revokeDeviceSecret(@Req() req: any, @Param('deviceId') deviceId: string) { return this.service.revokeDeviceSecret(this.getMerchantId(req), deviceId); }
+  revokeOutletBridgeSecret(@Req() req: any, @Param('outletId') outletId: string) {
+    return this.service.revokeOutletBridgeSecret(this.getMerchantId(req), outletId);
+  }
+  @Post('outlets/:outletId/bridge-secret/next')
+  @ApiOkResponse({ schema: { type: 'object', properties: { secret: { type: 'string' } } } })
+  issueOutletBridgeSecretNext(@Req() req: any, @Param('outletId') outletId: string) {
+    return this.service.issueOutletBridgeSecretNext(this.getMerchantId(req), outletId);
+  }
+  @Delete('outlets/:outletId/bridge-secret/next')
+  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
+  revokeOutletBridgeSecretNext(@Req() req: any, @Param('outletId') outletId: string) {
+    return this.service.revokeOutletBridgeSecretNext(this.getMerchantId(req), outletId);
+  }
+  @Put('outlets/:outletId/pos')
+  @ApiOkResponse({ type: PortalOutletDto })
+  updateOutletPos(@Req() req: any, @Param('outletId') outletId: string, @Body() dto: UpdateOutletPosDto) {
+    const merchantId = this.getMerchantId(req);
+    return this.service.updateOutletPos(merchantId, outletId, dto).then(() => this.catalog.getOutlet(merchantId, outletId));
+  }
+  @Put('outlets/:outletId/status')
+  @ApiOkResponse({ type: PortalOutletDto })
+  updateOutletStatus(@Req() req: any, @Param('outletId') outletId: string, @Body() dto: UpdateOutletStatusDto) {
+    const merchantId = this.getMerchantId(req);
+    return this.service.updateOutletStatus(merchantId, outletId, dto.status).then(() => this.catalog.getOutlet(merchantId, outletId));
+  }
 
   // Transactions & Receipts (read-only)
   @Get('transactions')

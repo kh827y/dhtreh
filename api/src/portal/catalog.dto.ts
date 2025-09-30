@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { DeviceType } from '@prisma/client';
 import { Type } from 'class-transformer';
 import { ArrayNotEmpty, IsArray, IsBoolean, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, Matches, Max, Min, ValidateNested } from 'class-validator';
 
@@ -284,6 +285,12 @@ export class PortalOutletDto {
   @ApiProperty() address!: string | null;
   @ApiProperty() works!: boolean;
   @ApiProperty() hidden!: boolean;
+  @ApiProperty() status!: string;
+  @ApiPropertyOptional({ enum: ['VIRTUAL', 'PC_POS', 'SMART'], nullable: true }) posType?: DeviceType | string | null;
+  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true }) posLastSeenAt?: Date | null;
+  @ApiProperty() bridgeSecretIssued!: boolean;
+  @ApiProperty() bridgeSecretNextIssued!: boolean;
+  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true }) bridgeSecretUpdatedAt?: Date | null;
   @ApiPropertyOptional() description?: string | null;
   @ApiPropertyOptional() phone?: string | null;
   @ApiProperty({ type: () => [String] }) adminEmails!: string[];

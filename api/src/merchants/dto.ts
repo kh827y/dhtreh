@@ -1,4 +1,4 @@
-import { IsBoolean, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { DeviceType, StaffRole } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -117,22 +117,6 @@ export class UpdateOutletDto {
   @IsOptional() @IsString() address?: string;
 }
 
-export class CreateDeviceDto {
-  @ApiProperty({ enum: DeviceType })
-  @IsString() type!: keyof typeof DeviceType | string;
-  @ApiPropertyOptional()
-  @IsOptional() @IsString() outletId?: string;
-  @ApiPropertyOptional()
-  @IsOptional() @IsString() label?: string;
-}
-
-export class UpdateDeviceDto {
-  @ApiPropertyOptional()
-  @IsOptional() @IsString() outletId?: string;
-  @ApiPropertyOptional()
-  @IsOptional() @IsString() label?: string;
-}
-
 export class CreateStaffDto {
   @ApiPropertyOptional()
   @IsOptional() @IsString() login?: string;
@@ -228,17 +212,15 @@ export class OutletDto {
   @ApiProperty() merchantId!: string;
   @ApiProperty() name!: string;
   @ApiPropertyOptional() address?: string|null;
+  @ApiProperty() status!: string;
+  @ApiProperty() hidden!: boolean;
+  @ApiPropertyOptional({ enum: DeviceType, nullable: true }) posType?: keyof typeof DeviceType | string | null;
+  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true }) posLastSeenAt?: Date|null;
+  @ApiProperty() bridgeSecretIssued!: boolean;
+  @ApiProperty() bridgeSecretNextIssued!: boolean;
+  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true }) bridgeSecretUpdatedAt?: Date|null;
   @ApiProperty() createdAt!: Date;
-}
-
-export class DeviceDto {
-  @ApiProperty() id!: string;
-  @ApiProperty() merchantId!: string;
-  @ApiPropertyOptional() outletId?: string|null;
-  @ApiProperty({ enum: DeviceType }) type!: keyof typeof DeviceType | string;
-  @ApiPropertyOptional() label?: string|null;
-  @ApiPropertyOptional() lastSeenAt?: Date|null;
-  @ApiProperty() createdAt!: Date;
+  @ApiProperty() updatedAt!: Date;
 }
 
 export class StaffDto {
@@ -257,6 +239,24 @@ export class StaffDto {
 export class SecretRespDto { @ApiProperty() secret!: string; }
 export class TokenRespDto { @ApiProperty() token!: string; }
 export class OkDto { @ApiProperty() ok!: boolean; }
+
+export class UpdateOutletPosDto {
+  @ApiPropertyOptional({ enum: DeviceType, description: 'Последний активный POS-тип', nullable: true })
+  @IsOptional()
+  @IsString()
+  posType?: keyof typeof DeviceType | string | null;
+
+  @ApiPropertyOptional({ type: String, format: 'date-time', description: 'Метка последней активности POS', nullable: true })
+  @IsOptional()
+  @IsDateString()
+  posLastSeenAt?: string | null;
+}
+
+export class UpdateOutletStatusDto {
+  @ApiProperty({ enum: ['ACTIVE', 'INACTIVE'] })
+  @IsIn(['ACTIVE', 'INACTIVE'])
+  status!: 'ACTIVE' | 'INACTIVE';
+}
 
 export class OutboxEventDto {
   @ApiProperty() id!: string;

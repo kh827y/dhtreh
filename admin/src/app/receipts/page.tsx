@@ -41,7 +41,6 @@ export default function ReceiptsPage() {
         <Link href="/">← Настройки</Link>
         <Link href="/outbox">Outbox</Link>
         <Link href="/outlets">Outlets</Link>
-        <Link href="/devices">Devices</Link>
         <Link href="/staff">Staff</Link>
         <Link href="/txns">Txns</Link>
       </div>

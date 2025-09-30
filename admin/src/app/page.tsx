@@ -115,7 +115,6 @@ export default function AdminPage() {
       <div style={{ display: 'flex', gap: 12, margin: '8px 0' }}>
         <Link href="/outbox">Outbox</Link>
         <Link href="/outlets">Outlets</Link>
-        <Link href="/devices">Devices</Link>
         <Link href="/staff">Staff</Link>
         <Link href="/docs/signature">Signature</Link>
         <Link href="/docs/rotation">Rotation</Link>
