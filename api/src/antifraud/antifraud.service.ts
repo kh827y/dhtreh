@@ -92,10 +92,10 @@ export class AntiFraudService {
         totalScore += geoScore.score;
         factors.push(...geoScore.factors);
       }
-      // 6. Проверка устройства
-      const deviceScore = await this.checkDevice(context);
-      totalScore += deviceScore.score;
-      factors.push(...deviceScore.factors);
+      // 6. Проверка торговой точки/устройства
+      const outletScore = await this.checkOutlet(context);
+      totalScore += outletScore.score;
+      factors.push(...outletScore.factors);
 
       // 7. Проверка на известные паттерны мошенничества
       const fraudPatternScore = await this.checkKnownFraudPatterns(context);
@@ -110,7 +110,7 @@ export class AntiFraudService {
 
       // Логирование подозрительных транзакций
       if (normalizedScore > 50) {
-        await this.logSuspiciousActivity(context, normalizedScore, factors);
+        await this.logSuspiciousActivity(context, normalizedScore, factors, riskLevel);
       }
 
       return {
@@ -353,44 +353,51 @@ export class AntiFraudService {
   /**
    * Проверка устройства
    */
-  private async checkDevice(context: TransactionContext) {
+  private async checkOutlet(context: TransactionContext) {
     const factors: string[] = [];
     let score = 0;
 
-    if (!context.deviceId) {
+    const outletOrDeviceId = context.outletId || context.deviceId;
+
+    if (!outletOrDeviceId) {
       score += 10;
-      factors.push('no_device_id');
+      factors.push('no_outlet_id');
       return { score, factors };
     }
 
-    // Проверка на новое устройство
-    const deviceHistory = await this.prisma.transaction.count({
-      where: {
-        customerId: context.customerId,
-        deviceId: context.deviceId,
-        createdAt: { lt: new Date(Date.now() - 24 * 60 * 60 * 1000) },
-      },
-    });
-
-    if (deviceHistory === 0) {
-      score += 15;
-      factors.push('new_device');
-    }
-
-    // Проверка на множественные устройства
-    const uniqueDevices = await this.prisma.transaction.findMany({
+    const scopeField = context.outletId ? 'outletId' : 'deviceId';
+    const legacyThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const outletHistory = await this.prisma.transaction.count({
       where: {
         customerId: context.customerId,
         merchantId: context.merchantId,
-        createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
-      },
-      select: { deviceId: true },
-      distinct: ['deviceId'],
+        [scopeField]: outletOrDeviceId,
+        createdAt: { lt: legacyThreshold },
+      } as any,
     });
 
-    if (uniqueDevices.length > 3) {
+    if (outletHistory === 0) {
+      score += 15;
+      factors.push('new_outlet');
+    }
+
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const distinctField = context.outletId ? 'outletId' : 'deviceId';
+    const uniqueOutlets = await this.prisma.transaction.findMany({
+      where: {
+        customerId: context.customerId,
+        merchantId: context.merchantId,
+        createdAt: { gte: weekAgo },
+      },
+      select: { [distinctField]: true } as any,
+      distinct: [distinctField] as any,
+    });
+
+    const uniqueCount = uniqueOutlets.filter((item: any) => !!item?.[distinctField]).length;
+
+    if (uniqueCount > 3) {
       score += 20;
-      factors.push(`multiple_devices:${uniqueDevices.length}`);
+      factors.push(`multiple_outlets:${uniqueCount}`);
     }
 
     return { score, factors };
@@ -450,7 +457,8 @@ export class AntiFraudService {
   private async logSuspiciousActivity(
     context: TransactionContext,
     score: number,
-    factors: string[]
+    factors: string[],
+    level: RiskLevel,
   ) {
     try {
       await this.prisma.adminAudit.create({
@@ -462,8 +470,10 @@ export class AntiFraudService {
           action: 'suspicious_activity_detected',
           payload: {
             customerId: context.customerId,
+            outletId: context.outletId ?? context.deviceId ?? null,
             score,
             factors,
+            riskLevel: level,
             context: JSON.parse(JSON.stringify(context)),
             timestamp: new Date().toISOString(),
           } as any,
@@ -471,7 +481,7 @@ export class AntiFraudService {
       });
 
       // Отправка алерта администраторам при критическом уровне
-      if (score >= 80) {
+      if (level === RiskLevel.CRITICAL) {
         await this.sendAdminAlert(context, score, factors);
       }
     } catch (error) {
@@ -579,9 +589,24 @@ export class AntiFraudService {
       },
     });
 
-    const blocked = audits.filter(a => (a.payload as any)?.score >= 80).length;
-    const reviewed = audits.filter(a => (a.payload as any)?.score >= 60).length;
+    const blocked = audits.filter(a => (a.payload as any)?.riskLevel === RiskLevel.CRITICAL).length;
+    const reviewed = audits.filter(a => (a.payload as any)?.riskLevel === RiskLevel.HIGH).length;
     const total = audits.length;
+
+    const factorCounts = new Map<string, number>();
+    for (const audit of audits) {
+      const payload: any = audit.payload ?? {};
+      const arr: string[] = Array.isArray(payload?.factors) ? payload.factors : [];
+      for (const factor of arr) {
+        const key = String(factor || '').split(':')[0];
+        factorCounts.set(key, (factorCounts.get(key) ?? 0) + 1);
+      }
+    }
+
+    const topFactors = Array.from(factorCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([factor, count]) => ({ factor, count }));
 
     return {
       period: `${days} days`,
@@ -590,6 +615,7 @@ export class AntiFraudService {
       reviewedTransactions: reviewed,
       blockRate: total > 0 ? (blocked / total * 100).toFixed(2) + '%' : '0%',
       reviewRate: total > 0 ? (reviewed / total * 100).toFixed(2) + '%' : '0%',
+      topFactors,
     };
   }
 
@@ -619,7 +645,7 @@ export class AntiFraudService {
           metadata: {
             type: context.type,
             deviceId: context.deviceId || null,
-            outletId: context.outletId || null,
+            outletId: context.outletId || context.deviceId || null,
             staffId: context.staffId || null,
           } as any,
         },
