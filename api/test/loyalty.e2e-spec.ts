@@ -34,6 +34,7 @@ type PromoCodeUsageRow = {
   promoCodeId: string;
   merchantId: string;
   customerId: string;
+  outletId?: string|null;
   orderId?: string|null;
   pointsIssued?: number|null;
   pointsExpireAt?: Date|null;
@@ -52,7 +53,7 @@ describe('Loyalty (e2e)', () => {
     transactions: [] as any[],
     eventOutbox: [] as any[],
     staff: [] as { id: string; merchantId: string; apiKeyHash?: string; status: string; allowedOutletId?: string|null; allowedDeviceId?: string|null }[],
-    devices: [] as { id: string; merchantId: string; type: 'SMART'|'PC_POS'|'VIRTUAL'; label?: string|null; bridgeSecret?: string|null }[],
+    devices: [] as { id: string; merchantId: string; outletId?: string|null; type: 'SMART'|'PC_POS'|'VIRTUAL'; label?: string|null; bridgeSecret?: string|null }[],
     idem: new Map<string, any>(),
     earnLots: [] as Array<{ id: string; merchantId: string; customerId: string; points: number; consumedPoints: number; earnedAt: Date; maturesAt?: Date|null; expiresAt?: Date|null; orderId?: string|null; receiptId?: string|null; outletId?: string|null; deviceId?: string|null; staffId?: string|null; status: 'ACTIVE'|'PENDING' }>,
     promoCodes: [] as PromoCodeRow[],
@@ -62,6 +63,16 @@ describe('Loyalty (e2e)', () => {
   };
 
   const uuid = (() => { let i = 1; return () => `id-${i++}`; })();
+
+  const resolveOutletId = (payload?: { outletId?: string|null; deviceId?: string|null }) => {
+    if (!payload) return null;
+    if (payload.outletId) return payload.outletId;
+    if (payload.deviceId) {
+      const dev = state.devices.find((d) => d.id === payload.deviceId);
+      if (dev?.outletId) return dev.outletId;
+    }
+    return null;
+  };
 
   const prismaMock: any = {
     $connect: jest.fn(async () => {}),
@@ -130,7 +141,27 @@ describe('Loyalty (e2e)', () => {
         if (args?.where?.qrJti) return state.holds.find(h => (h as any).qrJti === args.where.qrJti) || null;
         return null;
       },
-      create: async (args: any) => { const h: Hold = { id: args.data.id || uuid(), customerId: args.data.customerId, merchantId: args.data.merchantId, mode: args.data.mode, redeemAmount: args.data.redeemAmount, earnPoints: args.data.earnPoints, orderId: args.data.orderId ?? null, total: args.data.total ?? null, eligibleTotal: args.data.eligibleTotal ?? null, status: args.data.status, expiresAt: args.data.expiresAt ?? null, outletId: args.data.outletId ?? null, deviceId: args.data.deviceId ?? null, staffId: args.data.staffId ?? null } as any; state.holds.push(h); return h; },
+      create: async (args: any) => {
+        const outletId = resolveOutletId(args.data);
+        const h: Hold = {
+          id: args.data.id || uuid(),
+          customerId: args.data.customerId,
+          merchantId: args.data.merchantId,
+          mode: args.data.mode,
+          redeemAmount: args.data.redeemAmount,
+          earnPoints: args.data.earnPoints,
+          orderId: args.data.orderId ?? null,
+          total: args.data.total ?? null,
+          eligibleTotal: args.data.eligibleTotal ?? null,
+          status: args.data.status,
+          expiresAt: args.data.expiresAt ?? null,
+          outletId,
+          deviceId: args.data.deviceId ?? null,
+          staffId: args.data.staffId ?? null,
+        } as any;
+        state.holds.push(h);
+        return h;
+      },
       update: async (args: any) => { const h = state.holds.find(x => x.id === args.where.id)!; Object.assign(h, args.data); return h; },
     },
 
@@ -151,12 +182,35 @@ describe('Loyalty (e2e)', () => {
         }
         return arr.map(t => ({ ...t }));
       },
-      create: async (args: any) => { state.transactions.push({ id: uuid(), ...args.data, createdAt: new Date() }); return state.transactions[state.transactions.length - 1]; },
+      create: async (args: any) => {
+        const outletId = resolveOutletId(args.data);
+        const txn = { id: uuid(), ...args.data, outletId: outletId ?? args.data.outletId ?? null, createdAt: new Date() };
+        state.transactions.push(txn);
+        return txn;
+      },
     },
 
     receipt: {
       findUnique: async (args: any) => state.receipts.find(r => r.merchantId === args.where.merchantId_orderId.merchantId && r.orderId === args.where.merchantId_orderId.orderId) || null,
-      create: async (args: any) => { const r: Receipt = { id: uuid(), merchantId: args.data.merchantId, customerId: args.data.customerId, orderId: args.data.orderId, receiptNumber: args.data.receiptNumber ?? null, total: args.data.total, eligibleTotal: args.data.eligibleTotal, redeemApplied: args.data.redeemApplied, earnApplied: args.data.earnApplied, outletId: args.data.outletId ?? null, deviceId: args.data.deviceId ?? null, staffId: args.data.staffId ?? null }; state.receipts.push(r); return r; },
+      create: async (args: any) => {
+        const outletId = resolveOutletId(args.data);
+        const r: Receipt = {
+          id: uuid(),
+          merchantId: args.data.merchantId,
+          customerId: args.data.customerId,
+          orderId: args.data.orderId,
+          receiptNumber: args.data.receiptNumber ?? null,
+          total: args.data.total,
+          eligibleTotal: args.data.eligibleTotal,
+          redeemApplied: args.data.redeemApplied,
+          earnApplied: args.data.earnApplied,
+          outletId,
+          deviceId: args.data.deviceId ?? null,
+          staffId: args.data.staffId ?? null,
+        };
+        state.receipts.push(r);
+        return r;
+      },
     },
 
     eventOutbox: {
@@ -185,6 +239,7 @@ describe('Loyalty (e2e)', () => {
       },
       create: async (args: any) => {
         const d = args.data;
+        const outletId = resolveOutletId(d);
         const lot = {
           id: uuid(),
           merchantId: d.merchantId,
@@ -196,7 +251,7 @@ describe('Loyalty (e2e)', () => {
           expiresAt: d.expiresAt ? new Date(d.expiresAt) : null,
           orderId: d.orderId ?? null,
           receiptId: d.receiptId ?? null,
-          outletId: d.outletId ?? null,
+          outletId,
           deviceId: d.deviceId ?? null,
           staffId: d.staffId ?? null,
           status: d.status || 'ACTIVE',
@@ -326,11 +381,13 @@ describe('Loyalty (e2e)', () => {
         );
       },
       create: async (args: any) => {
+        const outletId = resolveOutletId(args.data);
         const row: PromoCodeUsageRow = {
           id: uuid(),
           promoCodeId: args.data.promoCodeId,
           merchantId: args.data.merchantId,
           customerId: args.data.customerId,
+          outletId: outletId ?? null,
           orderId: args.data.orderId ?? null,
           pointsIssued: args.data.pointsIssued ?? null,
           pointsExpireAt: args.data.pointsExpireAt ?? null,
