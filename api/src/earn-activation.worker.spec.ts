@@ -12,7 +12,7 @@ describe('EarnActivationWorker (unit)', () => {
     jest.spyOn(lockUtil, 'pgAdvisoryUnlock').mockResolvedValue(undefined);
 
     const maturedAt = new Date(Date.now() - 1000);
-    const pendingLot = { id: 'L1', merchantId: 'M1', customerId: 'C1', points: 70, consumedPoints: 0, maturesAt: maturedAt, earnedAt: null, status: 'PENDING', orderId: 'O1', outletId: null, deviceId: null, staffId: null } as any;
+    const pendingLot = { id: 'L1', merchantId: 'M1', customerId: 'C1', points: 70, consumedPoints: 0, maturesAt: maturedAt, earnedAt: null, status: 'PENDING', orderId: 'O1', outletId: null, staffId: null } as any;
 
     const tx = {
       earnLot: {

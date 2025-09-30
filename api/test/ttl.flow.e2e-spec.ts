@@ -10,7 +10,7 @@ describe('TTL full flow (lots + PENDING -> activation -> preview -> burn)', () =
   const state = {
     lots: [
       // matured in the past (40 days ago), will be ACTIVATED and immediately expired by TTL(30)
-      { id: 'L1', merchantId: 'M1', customerId: 'C1', points: 100, consumedPoints: 0, status: 'PENDING', maturesAt: d(40), earnedAt: null as any, orderId: 'O1', outletId: null, deviceId: null, staffId: null },
+      { id: 'L1', merchantId: 'M1', customerId: 'C1', points: 100, consumedPoints: 0, status: 'PENDING', maturesAt: d(40), earnedAt: null as any, orderId: 'O1', outletId: null, staffId: null },
     ] as any[],
     wallet: { id: 'W1', merchantId: 'M1', customerId: 'C1', type: 'POINTS', balance: 0 },
   };

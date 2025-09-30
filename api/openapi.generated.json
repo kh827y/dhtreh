@@ -2824,9 +2824,6 @@
           "outletId": {
             "type": "string"
           },
-          "deviceId": {
-            "type": "string"
-          },
           "staffId": {
             "type": "string"
           },
@@ -3070,7 +3067,8 @@
             "type": "number"
           },
           "orderId": {
-            "type": "object"
+            "type": "string",
+            "nullable": true
           },
           "customerId": {
             "type": "string"
@@ -3079,13 +3077,21 @@
             "type": "string"
           },
           "outletId": {
-            "type": "object"
+            "type": "string",
+            "nullable": true
           },
-          "deviceId": {
-            "type": "object"
+          "outletPosType": {
+            "type": "string",
+            "nullable": true
+          },
+          "outletLastSeenAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           },
           "staffId": {
-            "type": "object"
+            "type": "string",
+            "nullable": true
           }
         },
         "required": [

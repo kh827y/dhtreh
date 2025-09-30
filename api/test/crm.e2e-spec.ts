@@ -11,11 +11,11 @@ describe('CRM (e2e)', () => {
     customers: [{ id: 'C1', phone: '+79990000001' }, { id: 'C2', phone: '+79990000002' }],
     wallets: [{ id: 'W1', merchantId: 'M1', customerId: 'C1', balance: 150 }],
     txns: [
-      { id: 'T1', merchantId: 'M1', customerId: 'C1', type: 'EARN', amount: 50, orderId: 'O1', createdAt: new Date(), outletId: null, deviceId: null, staffId: null },
-      { id: 'T2', merchantId: 'M1', customerId: 'C1', type: 'REDEEM', amount: -25, orderId: 'O2', createdAt: new Date(Date.now()-3600_000), outletId: null, deviceId: null, staffId: null },
+      { id: 'T1', merchantId: 'M1', customerId: 'C1', type: 'EARN', amount: 50, orderId: 'O1', createdAt: new Date(), outletId: null, staffId: null },
+      { id: 'T2', merchantId: 'M1', customerId: 'C1', type: 'REDEEM', amount: -25, orderId: 'O2', createdAt: new Date(Date.now()-3600_000), outletId: null, staffId: null },
     ],
     receipts: [
-      { id: 'R1', merchantId: 'M1', customerId: 'C1', orderId: 'O1', total: 1000, eligibleTotal: 900, redeemApplied: 0, earnApplied: 50, createdAt: new Date(), outletId: null, deviceId: null, staffId: null },
+      { id: 'R1', merchantId: 'M1', customerId: 'C1', orderId: 'O1', total: 1000, eligibleTotal: 900, redeemApplied: 0, earnApplied: 50, createdAt: new Date(), outletId: null, staffId: null },
     ],
   };
 

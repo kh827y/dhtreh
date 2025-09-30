@@ -5,7 +5,7 @@ import { AppModule } from './../src/app.module';
 import { PrismaService } from './../src/prisma.service';
 
 // Local in-memory state for mocking Prisma in tests
-type Txn = { id: string; merchantId: string; customerId?: string|null; deviceId?: string|null; staffId?: string|null; createdAt: Date };
+type Txn = { id: string; merchantId: string; customerId?: string|null; outletId?: string|null; staffId?: string|null; createdAt: Date };
 
 describe('AntiFraud Guard (e2e)', () => {
   let app: INestApplication;
@@ -59,20 +59,31 @@ describe('AntiFraud Guard (e2e)', () => {
         return state.transactions.filter(t => {
           if (where.merchantId && t.merchantId !== where.merchantId) return false;
           if (where.customerId && t.customerId !== where.customerId) return false;
-          if (where.deviceId && t.deviceId !== where.deviceId) return false;
+          if (where.outletId && t.outletId !== where.outletId) return false;
           if (where.staffId && t.staffId !== where.staffId) return false;
           if (gte && !(t.createdAt >= gte)) return false;
           return true;
         }).slice();
       },
-      create: async (args: any) => { const t: Txn = { id: uuid(), merchantId: args.data.merchantId, customerId: args.data.customerId ?? null, deviceId: args.data.deviceId ?? null, staffId: args.data.staffId ?? null, createdAt: new Date() }; state.transactions.push(t); return t; },
+      create: async (args: any) => {
+        const t: Txn = {
+          id: uuid(),
+          merchantId: args.data.merchantId,
+          customerId: args.data.customerId ?? null,
+          outletId: args.data.outletId ?? null,
+          staffId: args.data.staffId ?? null,
+          createdAt: new Date(),
+        };
+        state.transactions.push(t);
+        return t;
+      },
       count: async (args: any) => {
         const where = args?.where || {};
         const gte: Date | undefined = where?.createdAt?.gte;
         return state.transactions.filter(t => {
           if (where.merchantId && t.merchantId !== where.merchantId) return false;
           if (where.customerId && t.customerId !== where.customerId) return false;
-          if (where.deviceId && t.deviceId !== where.deviceId) return false;
+          if (where.outletId && t.outletId !== where.outletId) return false;
           if (where.staffId && t.staffId !== where.staffId) return false;
           if (gte && !(t.createdAt >= gte)) return false;
           return true;
@@ -102,12 +113,6 @@ describe('AntiFraud Guard (e2e)', () => {
       findMany: async (_args: any) => state.audits.slice(),
     },
 
-    device: {
-      findUnique: async (_args: any) => null,
-      findMany: async (_args: any) => [],
-      update: async (_args: any) => null,
-      create: async (_args: any) => null,
-    },
   };
 
   beforeAll(async () => {
@@ -165,7 +170,7 @@ describe('AntiFraud Guard (e2e)', () => {
     expect(String(r2.body.message || '')).toMatch(/превышен лимит/);
   });
 
-  it('Factor block: blockFactors=["no_device_id"] -> блокировка по фактору', async () => {
+  it('Factor block: blockFactors=["no_outlet_id"] -> блокировка по фактору', async () => {
     // Включаем факторную блокировку
     state.merchantSettings.set('M-af', {
       ...(state.merchantSettings.get('M-af')!),
@@ -175,7 +180,7 @@ describe('AntiFraud Guard (e2e)', () => {
           device:   { limit: 999, windowSec: 60, dailyCap: 0, weeklyCap: 0 },
           staff:    { limit: 999, windowSec: 60, dailyCap: 0, weeklyCap: 0 },
           customer: { limit: 5,   windowSec: 60,  dailyCap: 0, weeklyCap: 0 },
-          blockFactors: ['no_device_id']
+          blockFactors: ['no_outlet_id']
         }
       }
     });
@@ -210,7 +215,7 @@ describe('AntiFraud Guard (e2e)', () => {
     // Сгенерируем 7 быстрых транзакций за последние 5 минут для увеличения скоринга (hourly > 5 и rapid > 2)
     const ts = new Date();
     for (let i = 0; i < 7; i++) {
-      state.transactions.push({ id: uuid(), merchantId: 'M-af2', customerId: 'C-crit', createdAt: new Date(ts.getTime() - 60 * 1000), deviceId: null, staffId: null });
+    state.transactions.push({ id: uuid(), merchantId: 'M-af2', customerId: 'C-crit', createdAt: new Date(ts.getTime() - 60 * 1000), outletId: null, staffId: null });
     }
 
     // Совершаем EARN на 2_000_000 -> очень высокий скоринг (earnPoints > 100000)
@@ -241,7 +246,7 @@ describe('AntiFraud Guard (e2e)', () => {
     });
 
     // Предзаполняем 1 транзакцию сегодня
-    state.transactions.push({ id: uuid(), merchantId: 'M-af', customerId: 'C-day', createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000), deviceId: null, staffId: null });
+    state.transactions.push({ id: uuid(), merchantId: 'M-af', customerId: 'C-day', createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000), outletId: null, staffId: null });
 
     const q = await request(app.getHttpServer())
       .post('/loyalty/quote')
@@ -270,11 +275,11 @@ describe('AntiFraud Guard (e2e)', () => {
     });
 
     // Уже есть 1 транзакция от устройства D-vel
-    state.transactions.push({ id: uuid(), merchantId: 'M-af', customerId: 'C-dev0', deviceId: 'D-vel', staffId: null, createdAt: new Date() });
+    state.transactions.push({ id: uuid(), merchantId: 'M-af', customerId: 'C-dev0', outletId: 'O-vel', staffId: null, createdAt: new Date() });
 
     const q = await request(app.getHttpServer())
       .post('/loyalty/quote')
-      .send({ merchantId: 'M-af', userToken: 'C-dev1', deviceId: 'D-vel', mode: 'EARN', total: 1000, eligibleTotal: 1000 })
+      .send({ merchantId: 'M-af', userToken: 'C-dev1', outletId: 'O-vel', mode: 'EARN', total: 1000, eligibleTotal: 1000 })
       .expect(201);
     const holdId = q.body.holdId as string;
     const r = await request(app.getHttpServer())
@@ -298,7 +303,7 @@ describe('AntiFraud Guard (e2e)', () => {
     });
 
     // Уже есть 1 транзакция от сотрудника S-vel
-    state.transactions.push({ id: uuid(), merchantId: 'M-af', customerId: 'C-stf0', staffId: 'S-vel', deviceId: null, createdAt: new Date() });
+    state.transactions.push({ id: uuid(), merchantId: 'M-af', customerId: 'C-stf0', staffId: 'S-vel', outletId: null, createdAt: new Date() });
 
     const q = await request(app.getHttpServer())
       .post('/loyalty/quote')
@@ -319,7 +324,7 @@ describe('AntiFraud Guard (e2e)', () => {
       rulesJson: { af: { merchant: { limit: 1, windowSec: 3600, dailyCap: 0, weeklyCap: 0 }, device: { limit: 999, windowSec: 3600 }, staff: { limit: 999, windowSec: 3600 }, customer: { limit: 999, windowSec: 3600 } } },
       updatedAt: new Date()
     });
-    state.transactions.push({ id: uuid(), merchantId: 'M-cap', customerId: 'C-x', deviceId: null, staffId: null, createdAt: new Date() });
+    state.transactions.push({ id: uuid(), merchantId: 'M-cap', customerId: 'C-x', outletId: null, staffId: null, createdAt: new Date() });
 
     const q = await request(app.getHttpServer())
       .post('/loyalty/quote')
@@ -352,10 +357,10 @@ describe('AntiFraud Guard (e2e)', () => {
       rulesJson: { af: { merchant: { limit: 999, windowSec: 3600 }, device: { limit: 0, windowSec: 3600 }, staff: { limit: 999, windowSec: 3600 }, customer: { limit: 999, windowSec: 3600 } } }
     });
 
-    // Рефанд с deviceId -> должен заблокироваться антифродом
+    // Рефанд с outletId -> должен заблокироваться антифродом
     await request(app.getHttpServer())
       .post('/loyalty/refund')
-      .send({ merchantId: 'M-ref', orderId: 'O-ref-1', refundTotal: 100, deviceId: 'D-ref' })
+      .send({ merchantId: 'M-ref', orderId: 'O-ref-1', refundTotal: 100, outletId: 'O-ref' })
       .expect(429);
   });
 
@@ -374,7 +379,7 @@ describe('AntiFraud Guard (e2e)', () => {
     });
 
     // Предзаполняем 1 транзакцию в пределах недели
-    state.transactions.push({ id: uuid(), merchantId: 'M-af', customerId: 'C-week', createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000), deviceId: null, staffId: null });
+    state.transactions.push({ id: uuid(), merchantId: 'M-af', customerId: 'C-week', createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000), outletId: null, staffId: null });
 
     const q = await request(app.getHttpServer())
       .post('/loyalty/quote')

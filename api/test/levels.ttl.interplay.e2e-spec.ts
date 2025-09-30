@@ -99,7 +99,7 @@ describe('Levels x TTL interplay (e2e)', () => {
     });
 
     // PENDING lot that matured in the past with 120 points → after activation, we cross Silver threshold
-    state.lots.push({ id: 'LOT-1', merchantId: 'M-L2', customerId: 'C-L2', points: 120, consumedPoints: 0, status: 'PENDING', maturesAt: d(2), earnedAt: null, orderId: 'O-L2-1', outletId: null, deviceId: null, staffId: null });
+    state.lots.push({ id: 'LOT-1', merchantId: 'M-L2', customerId: 'C-L2', points: 120, consumedPoints: 0, status: 'PENDING', maturesAt: d(2), earnedAt: null, orderId: 'O-L2-1', outletId: null, staffId: null });
 
     const moduleFixture: TestingModule = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(PrismaService)
