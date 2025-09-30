@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
 import { PromoCodesService, type PromoCodeApplyResult } from '../promocodes/promocodes.service';
 import { Mode, QuoteDto } from './dto';
+import { computeLevelState, parseLevelsConfig, resolveLevelBenefits } from './levels.util';
 import { HoldStatus, TxnType, WalletType, LedgerAccount, HoldMode } from '@prisma/client';
 import { randomUUID } from 'crypto';
 
@@ -155,41 +156,6 @@ export class LoyaltyService {
   }
 
   // ===== Levels integration (Wave 2) =====
-  private parseLevelsCfg(rulesJson: any): { periodDays: number; metric: 'earn'|'redeem'|'transactions'; levels: Array<{ name: string; threshold: number }> } {
-    try {
-      const cfg = (rulesJson && (rulesJson as any).levelsCfg) || null;
-      const levels: Array<{ name: string; threshold: number }> = Array.isArray(cfg?.levels)
-        ? cfg.levels.filter((x: any) => x && typeof x === 'object' && typeof x.name === 'string').map((x: any) => ({ name: String(x.name), threshold: Math.max(0, Number(x.threshold || 0)) }))
-        : [{ name: 'Base', threshold: 0 }];
-      const ordered = [...levels].sort((a,b) => a.threshold - b.threshold);
-      const periodDays = Number(cfg?.periodDays || 365) || 365;
-      const metric: 'earn'|'redeem'|'transactions' = (cfg?.metric === 'redeem' || cfg?.metric === 'transactions') ? cfg.metric : 'earn';
-      return { periodDays, metric, levels: ordered };
-    } catch { return { periodDays: 365, metric: 'earn', levels: [{ name: 'Base', threshold: 0 }] }; }
-  }
-
-  private async computeLevelBonus(merchantId: string, customerId: string, rulesJson: any): Promise<{ levelName: string; earnBpsBonus: number; redeemLimitBpsBonus: number }> {
-    const cfg = this.parseLevelsCfg(rulesJson);
-    const since = new Date(Date.now() - cfg.periodDays * 24 * 60 * 60 * 1000);
-    let value = 0;
-    if (cfg.metric === 'transactions') {
-      value = await this.prisma.transaction.count({ where: { merchantId, customerId, createdAt: { gte: since } } });
-    } else {
-      const type = cfg.metric === 'redeem' ? 'REDEEM' : 'EARN';
-      const items = await this.prisma.transaction.findMany({ where: { merchantId, customerId, type: type as any, createdAt: { gte: since } } });
-      value = items.reduce((sum, t: any) => sum + Math.abs(Number(t.amount || 0)), 0);
-    }
-    let current = cfg.levels[0];
-    for (const lvl of cfg.levels) { if (value >= lvl.threshold) current = lvl; else break; }
-    try { this.metrics.inc('levels_evaluations_total', { metric: cfg.metric }); } catch {}
-    const lb = (rulesJson && (rulesJson as any).levelBenefits) || {};
-    const earnMap = (lb as any).earnBpsBonusByLevel || {};
-    const redeemMap = (lb as any).redeemLimitBpsBonusByLevel || {};
-    const earnBpsBonus = Math.max(0, Number(earnMap?.[current.name] || 0) || 0);
-    const redeemLimitBpsBonus = Math.max(0, Number(redeemMap?.[current.name] || 0) || 0);
-    return { levelName: current.name, earnBpsBonus, redeemLimitBpsBonus };
-  }
-
   // ————— вспомогалки для идемпотентности по существующему hold —————
   private quoteFromExistingHold(mode: Mode, hold: any) {
     if (mode === Mode.REDEEM) {
@@ -244,7 +210,15 @@ export class LoyaltyService {
     let { earnBps, redeemLimitBps } = rulesFn({ channel, weekday: wd, eligibleTotal: sanitizedEligibleTotal, category: dto.category });
     // Apply level-based bonuses (if configured)
     try {
-      const bonus = await this.computeLevelBonus(dto.merchantId, customer.id, rulesJson);
+      const cfg = parseLevelsConfig(rulesJson);
+      const state = await computeLevelState({
+        prisma: this.prisma,
+        metrics: this.metrics,
+        merchantId: dto.merchantId,
+        customerId: customer.id,
+        config: cfg,
+      });
+      const bonus = resolveLevelBenefits(rulesJson, state.current.name);
       earnBps = Math.max(0, earnBps + bonus.earnBpsBonus);
       redeemLimitBps = Math.max(0, redeemLimitBps + bonus.redeemLimitBpsBonus);
     } catch {}
