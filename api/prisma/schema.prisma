@@ -528,6 +528,11 @@ model Outlet {
   manualLocation          Boolean  @default(false)
   latitude                Decimal? @db.Decimal(10, 7)
   longitude               Decimal? @db.Decimal(10, 7)
+  posType                 DeviceType?
+  posLastSeenAt           DateTime?
+  bridgeSecret            String?
+  bridgeSecretNext        String?
+  bridgeSecretUpdatedAt   DateTime?
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 
