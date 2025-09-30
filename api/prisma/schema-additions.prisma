@@ -11,14 +11,6 @@
 //  tags             String[]
 //  deletedAt        DateTime?
 
-// Добавить в модель Voucher:
-//  status           String    @default("ACTIVE")
-//  quantity         Int       @default(1)
-//  remainingQuantity Int      @default(1)
-//  maxUsesPerCustomer Int?
-//  maxTotalUses     Int?
-//  minPurchaseAmount Int?
-
 // Добавить в модель Subscription:
 //  autoRenew        Boolean   @default(true)
 //  lastPaymentId    String?
@@ -46,10 +38,6 @@
 
 // Добавить в модель CustomerSegment:
 //  type             String    @default("DYNAMIC")
-
-// Добавить в модель VoucherUsage:
-//  metadata         Json?
-//  usedAt           DateTime  @default(now())
 
 // Добавить в модель Merchant:
 //  rating           Float?

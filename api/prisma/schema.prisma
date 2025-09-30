@@ -226,7 +226,6 @@ model Merchant {
   // back-relations
   reviews                     Review[]
   referralPrograms            ReferralProgram[]
-  vouchers                    Voucher[]
   promoCodes                  PromoCode[]
   promoCodeMetrics            PromoCodeMetric[]
   promoCodeUsages             PromoCodeUsage[]
@@ -365,7 +364,6 @@ model Customer {
   consents                    Consent[]
   segments                    SegmentCustomer[]
   // back-relations
-  voucherUsages               VoucherUsage[]
   promoCodeUsages             PromoCodeUsage[]
   reviews                     Review[]
   reviewReactions             ReviewReaction[]
@@ -1403,72 +1401,6 @@ model PersonalReferralCode {
   program ReferralProgram? @relation(fields: [programId], references: [id])
 
   @@unique([customerId, merchantId])
-}
-
-// Voucher models
-model Voucher {
-  id                   String    @id @default(cuid())
-  merchantId           String
-  name                 String
-  description          String?
-  type                 String // DISCOUNT, GIFT_CARD, PROMO_CODE
-  valueType            String // PERCENTAGE, FIXED_AMOUNT, POINTS
-  value                Int
-  minPurchase          Int?
-  maxUses              Int?
-  usedCount            Int       @default(0)
-  validFrom            DateTime?
-  validUntil           DateTime?
-  isActive             Boolean   @default(true)
-  metadata             Json?
-  status               String    @default("ACTIVE")
-  quantity             Int       @default(1)
-  remainingQuantity    Int       @default(1)
-  maxUsesPerCustomer   Int?
-  maxTotalUses         Int?
-  minPurchaseAmount    Int?
-  applicableProducts   String[]
-  applicableCategories String[]
-  totalUsed            Int       @default(0)
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
-
-  merchant Merchant       @relation(fields: [merchantId], references: [id])
-  codes    VoucherCode[]
-  usages   VoucherUsage[]
-}
-
-model VoucherCode {
-  id         String    @id @default(cuid())
-  voucherId  String
-  code       String    @unique
-  status     String    @default("ACTIVE")
-  maxUses    Int       @default(1)
-  usedCount  Int       @default(0)
-  validFrom  DateTime?
-  validUntil DateTime?
-  createdAt  DateTime  @default(now())
-
-  voucher Voucher        @relation(fields: [voucherId], references: [id])
-  usages  VoucherUsage[]
-}
-
-model VoucherUsage {
-  id         String   @id @default(cuid())
-  voucherId  String
-  codeId     String?
-  customerId String
-  orderId    String?
-  amount     Int
-  metadata   Json?
-  usedAt     DateTime @default(now())
-  createdAt  DateTime @default(now())
-
-  voucher  Voucher      @relation(fields: [voucherId], references: [id])
-  code     VoucherCode? @relation(fields: [codeId], references: [id])
-  customer Customer     @relation(fields: [customerId], references: [id])
-
-  @@unique([voucherId, customerId, orderId])
 }
 
 model PromoCode {

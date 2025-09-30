@@ -255,7 +255,8 @@
     - «Сгорание (TTL)» (`/loyalty/mechanics/ttl`) — управление `pointsTtlDays` и `rulesJson.burnReminder` (enabled/daysBefore/text).
   - Merchant Portal: `auto-return` сохранение рефакторено — отправляется минимальный DTO (`earnBps`, `redeemLimitBps`, `rulesJson`) вместо полного объекта настроек.
   - Требуется обновить e2e под новый `PromoCodesService` (earn/commit/idempotency) — старые сценарии на ваучеры удалены.
-  - Prisma: индексы `VoucherUsage` остаются для обратной совместимости, но новая логика работает с `PromoCodeUsage`.
+  - Prisma: legacy таблицы `Voucher*` удалены — остались только `PromoCode*`, внешних интеграций/отчётов на них не осталось.
+  - Seeds/fixtures: генераторов записей ваучеров не осталось — чистка не требуется.
   - SDK TS: поле запроса переименовано в `promoCode`, удалён клиент `vouchers.*`.
   - README и документация обновлены под промокоды портала вместо ваучеров.
   - Все тесты зелёные: `pnpm -C api test && pnpm -C api test:e2e`.
@@ -268,7 +269,7 @@
   - Levels x TTL interplay: при metric=earn активация PENDING(120) поднимает уровень до Silver; quote на 1000 даёт 70 баллов (700 bps) — `levels.ttl.interplay.e2e-spec.ts`.
   - Метрики: e2e проверки /metrics после превью и burn (`metrics.workers.e2e-spec.ts`), gauge `loyalty_worker_last_tick_seconds`, счётчики burn.
   - Referrals: e2e‑заглушки контроллера с mock Prisma (`referral.e2e-spec.ts`); подключён `ReferralModule`, экспортирован `LoyaltyService` из `LoyaltyModule`.
-  - Docs: `API_DOCUMENTATION.md` — добавлены примеры конфигов уровней и раздел «Порядок применения» (Voucher → Promo → Rules + Levels) с формулами и примерами.
+  - Docs: `API_DOCUMENTATION.md` — добавлены примеры конфигов уровней и раздел «Порядок применения» (Promo → Rules + Levels) с формулами и примерами; подчёркнуто, что поддерживаются только промокоды.
   - Admin: единый поповер «эффективные ставки» (`admin/components/EffectiveRatesPopover.tsx`) подключён на страницах `customers` и `levels`.
   - E2E REDEEM: пер‑заказный cap — `redeem.order.cap.e2e-spec.ts` (учёт `receipt.redeemApplied`), дневной cap — `redeem.daily.cap.e2e-spec.ts` (rolling 24h) — оба зелёные.
   - Docs: `README.md` дополнен Quickstart «Levels + TTL». `API_DOCUMENTATION.md` — раздел «Referrals (beta/preview)» и примечания к REDEEM (per‑order cap и daily cap).

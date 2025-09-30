@@ -467,6 +467,8 @@ Response 200:
 
 Промокоды управляются через портал мерчанта. Основные операции:
 
+> Legacy ваучеры больше не поддерживаются: таблицы `Voucher*` удалены, внешних интеграций и отчётов на них не осталось.
+
 - `GET /portal/promocodes?status=ACTIVE|ARCHIVE` — список с метриками.
 - `POST /portal/promocodes/issue` — создание промокода (см. `PortalPromoCodePayload`).
 - `PUT /portal/promocodes/:promoCodeId` — обновление.
