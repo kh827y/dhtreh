@@ -941,18 +941,30 @@ export class LoyaltyService {
     });
   }
 
-  async transactions(merchantId: string, customerId: string, limit = 20, before?: Date, filters?: { outletId?: string|null; deviceId?: string|null; staffId?: string|null }) {
+  async transactions(merchantId: string, customerId: string, limit = 20, before?: Date, filters?: { outletId?: string|null; staffId?: string|null }) {
     const where: any = { merchantId, customerId };
     if (before) where.createdAt = { lt: before };
     if (filters?.outletId) where.outletId = filters.outletId;
-    if (filters?.deviceId) where.deviceId = filters.deviceId;
     if (filters?.staffId) where.staffId = filters.staffId;
     const items = await this.prisma.transaction.findMany({
       where,
       orderBy: { createdAt: 'desc' },
       take: Math.min(Math.max(limit, 1), 100),
+      include: { outlet: { select: { posType: true, posLastSeenAt: true } } },
     });
     const nextBefore = items.length > 0 ? items[items.length - 1].createdAt.toISOString() : null;
-    return { items, nextBefore };
+    const normalized = items.map((entity) => ({
+      id: entity.id,
+      type: entity.type,
+      amount: entity.amount,
+      orderId: entity.orderId ?? null,
+      customerId: entity.customerId,
+      createdAt: entity.createdAt.toISOString(),
+      outletId: entity.outletId ?? null,
+      outletPosType: entity.outlet?.posType ?? null,
+      outletLastSeenAt: entity.outlet?.posLastSeenAt ? entity.outlet.posLastSeenAt.toISOString() : null,
+      staffId: entity.staffId ?? null,
+    }));
+    return { items: normalized, nextBefore };
   }
 }

@@ -16,7 +16,8 @@ type Entry = {
   receiptId?: string|null;
   createdAt: string;
   outletId?: string|null;
-  deviceId?: string|null;
+  outletPosType?: string|null;
+  outletLastSeenAt?: string|null;
   staffId?: string|null;
 };
 
@@ -82,12 +83,17 @@ export default function LedgerPage() {
               <div style={{ color: '#666' }}>{new Date(e.createdAt).toLocaleString()}</div>
             </div>
             <div style={{ color: '#555', marginTop: 4 }}>
-              {e.customerId ? <>Customer: <code>{e.customerId}</code> · </> : null}
-              {e.orderId ? <>Order: <code>{e.orderId}</code> · </> : null}
-              {e.receiptId ? <>Receipt: <code>{e.receiptId}</code> · </> : null}
-              {e.staffId ? <>Staff: <code>{e.staffId}</code> · </> : null}
-              {e.deviceId ? <>Device: <code>{e.deviceId}</code> · </> : null}
-              {e.outletId ? <>Outlet: <code>{e.outletId}</code></> : null}
+              {[
+                e.customerId ? <>Customer: <code>{e.customerId}</code></> : null,
+                e.orderId ? <>Order: <code>{e.orderId}</code></> : null,
+                e.receiptId ? <>Receipt: <code>{e.receiptId}</code></> : null,
+                e.staffId ? <>Staff: <code>{e.staffId}</code></> : null,
+                e.outletId ? <>Outlet: <code>{e.outletId}</code></> : null,
+                e.outletPosType ? <>POS: <code>{e.outletPosType}</code></> : null,
+                e.outletLastSeenAt ? <>Last seen: {new Date(e.outletLastSeenAt).toLocaleString()}</> : null,
+              ]
+                .filter(Boolean)
+                .map((node, idx) => <span key={idx}>{idx > 0 ? ' · ' : null}{node}</span>)}
             </div>
           </div>
         ))}

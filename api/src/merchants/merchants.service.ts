@@ -370,6 +370,56 @@ export class MerchantsService {
     } as const;
   }
 
+  private mapOutletMeta(outlet?: { posType: DeviceType | null; posLastSeenAt: Date | null } | null) {
+    return {
+      outletPosType: outlet?.posType ?? null,
+      outletLastSeenAt: outlet?.posLastSeenAt ?? null,
+    } as const;
+  }
+
+  private mapReceipt(entity: any) {
+    return {
+      id: entity.id,
+      merchantId: entity.merchantId,
+      customerId: entity.customerId,
+      orderId: entity.orderId,
+      receiptNumber: entity.receiptNumber ?? null,
+      total: entity.total,
+      eligibleTotal: entity.eligibleTotal,
+      redeemApplied: entity.redeemApplied,
+      earnApplied: entity.earnApplied,
+      createdAt: entity.createdAt,
+      outletId: entity.outletId ?? null,
+      ...this.mapOutletMeta(entity.outlet ?? null),
+      staffId: entity.staffId ?? null,
+    } as const;
+  }
+
+  private mapTransaction(entity: any) {
+    return {
+      id: entity.id,
+      merchantId: entity.merchantId,
+      customerId: entity.customerId,
+      type: entity.type,
+      amount: entity.amount,
+      orderId: entity.orderId ?? null,
+      createdAt: entity.createdAt,
+      outletId: entity.outletId ?? null,
+      ...this.mapOutletMeta(entity.outlet ?? null),
+      staffId: entity.staffId ?? null,
+    } as const;
+  }
+
+  private async loadOutletMeta(merchantId: string, outletIds: (string | null | undefined)[]) {
+    const ids = Array.from(new Set(outletIds.filter((id): id is string => !!id)));
+    if (!ids.length) return new Map<string, { posType: DeviceType | null; posLastSeenAt: Date | null }>();
+    const outlets = await this.prisma.outlet.findMany({
+      where: { merchantId, id: { in: ids } },
+      select: { id: true, posType: true, posLastSeenAt: true },
+    });
+    return new Map(outlets.map((o) => [o.id, { posType: o.posType ?? null, posLastSeenAt: o.posLastSeenAt ?? null }]));
+  }
+
   private async ensureOutlet(merchantId: string, outletId: string) {
     const outlet = await this.prisma.outlet.findUnique({ where: { id: outletId } });
     if (!outlet || outlet.merchantId !== merchantId) throw new NotFoundException('Outlet not found');
@@ -751,17 +801,22 @@ export class MerchantsService {
     return { ok: true };
   }
 
-  async listTransactions(merchantId: string, params: { limit: number; before?: Date; from?: Date; to?: Date; type?: string; customerId?: string; outletId?: string; deviceId?: string; staffId?: string }) {
+  async listTransactions(merchantId: string, params: { limit: number; before?: Date; from?: Date; to?: Date; type?: string; customerId?: string; outletId?: string; staffId?: string }) {
     const where: any = { merchantId };
     if (params.type) where.type = params.type as any;
     if (params.customerId) where.customerId = params.customerId;
     if (params.outletId) where.outletId = params.outletId;
-    if (params.deviceId) where.deviceId = params.deviceId;
     if (params.staffId) where.staffId = params.staffId;
     if (params.before) where.createdAt = Object.assign(where.createdAt || {}, { lt: params.before });
     if (params.from) where.createdAt = Object.assign(where.createdAt || {}, { gte: params.from });
     if (params.to) where.createdAt = Object.assign(where.createdAt || {}, { lte: params.to });
-    return this.prisma.transaction.findMany({ where, orderBy: { createdAt: 'desc' }, take: params.limit });
+    const items = await this.prisma.transaction.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: params.limit,
+      include: { outlet: { select: { posType: true, posLastSeenAt: true } } },
+    });
+    return items.map((entity) => this.mapTransaction(entity));
   }
 
   async listReceipts(merchantId: string, params: { limit: number; before?: Date; orderId?: string; customerId?: string }) {
@@ -769,13 +824,26 @@ export class MerchantsService {
     if (params.orderId) where.orderId = params.orderId;
     if (params.customerId) where.customerId = params.customerId;
     if (params.before) where.createdAt = { lt: params.before };
-    return this.prisma.receipt.findMany({ where, orderBy: { createdAt: 'desc' }, take: params.limit });
+    const items = await this.prisma.receipt.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: params.limit,
+      include: { outlet: { select: { posType: true, posLastSeenAt: true } } },
+    });
+    return items.map((entity) => this.mapReceipt(entity));
   }
   async getReceipt(merchantId: string, receiptId: string) {
-    const r = await this.prisma.receipt.findUnique({ where: { id: receiptId } });
+    const r = await this.prisma.receipt.findUnique({
+      where: { id: receiptId },
+      include: { outlet: { select: { posType: true, posLastSeenAt: true } } },
+    });
     if (!r || r.merchantId !== merchantId) throw new NotFoundException('Receipt not found');
-    const tx = await this.prisma.transaction.findMany({ where: { merchantId, orderId: r.orderId }, orderBy: { createdAt: 'asc' } });
-    return { receipt: r, transactions: tx };
+    const tx = await this.prisma.transaction.findMany({
+      where: { merchantId, orderId: r.orderId },
+      orderBy: { createdAt: 'asc' },
+      include: { outlet: { select: { posType: true, posLastSeenAt: true } } },
+    });
+    return { receipt: this.mapReceipt(r), transactions: tx.map((entity) => this.mapTransaction(entity)) };
   }
 
   // Ledger
@@ -790,14 +858,34 @@ export class MerchantsService {
       // приблизительное сопоставление по мета.type
       where.meta = { path: ['mode'], equals: params.type === 'earn' || params.type === 'redeem' ? params.type.toUpperCase() : 'REFUND' } as any;
     }
-    return this.prisma.ledgerEntry.findMany({ where, orderBy: { createdAt: 'desc' }, take: params.limit });
+    const items = await this.prisma.ledgerEntry.findMany({ where, orderBy: { createdAt: 'desc' }, take: params.limit });
+    const outletMeta = await this.loadOutletMeta(merchantId, items.map((it) => it.outletId));
+    return items.map((entity) => {
+      const meta = entity.outletId ? outletMeta.get(entity.outletId) ?? null : null;
+      return {
+        id: entity.id,
+        merchantId: entity.merchantId,
+        customerId: entity.customerId ?? null,
+        debit: entity.debit,
+        credit: entity.credit,
+        amount: entity.amount,
+        orderId: entity.orderId ?? null,
+        receiptId: entity.receiptId ?? null,
+        outletId: entity.outletId ?? null,
+        outletPosType: meta?.posType ?? null,
+        outletLastSeenAt: meta?.posLastSeenAt ?? null,
+        staffId: entity.staffId ?? null,
+        meta: entity.meta ?? null,
+        createdAt: entity.createdAt,
+      } as const;
+    });
   }
 
   async exportLedgerCsv(merchantId: string, params: { limit: number; before?: Date; customerId?: string; from?: Date; to?: Date; type?: string }) {
     const items = await this.listLedger(merchantId, params);
-    const lines = [ 'id,customerId,debit,credit,amount,orderId,receiptId,createdAt,outletId,deviceId,staffId' ];
+    const lines = [ 'id,customerId,debit,credit,amount,orderId,receiptId,createdAt,outletId,outletPosType,outletLastSeenAt,staffId' ];
     for (const e of items) {
-      const row = [ e.id, e.customerId||'', e.debit, e.credit, e.amount, e.orderId||'', e.receiptId||'', e.createdAt.toISOString(), e.outletId||'', e.deviceId||'', e.staffId||'' ]
+      const row = [ e.id, e.customerId||'', e.debit, e.credit, e.amount, e.orderId||'', e.receiptId||'', e.createdAt.toISOString(), e.outletId||'', e.outletPosType||'', e.outletLastSeenAt ? new Date(e.outletLastSeenAt).toISOString() : '', e.staffId||'' ]
         .map(x => `"${String(x).replaceAll('"','""')}"`).join(',');
       lines.push(row);
     }
@@ -858,13 +946,33 @@ export class MerchantsService {
     if (params.customerId) where.customerId = params.customerId;
     if (params.before) where.createdAt = { lt: params.before };
     if (params.activeOnly) where.OR = [ { consumedPoints: null }, { consumedPoints: { lt: (undefined as any) } } ] as any; // prisma workaround placeholder
-    return this.prisma.earnLot.findMany({ where, orderBy: { earnedAt: 'desc' }, take: params.limit });
+    const items = await this.prisma.earnLot.findMany({ where, orderBy: { earnedAt: 'desc' }, take: params.limit });
+    const outletMeta = await this.loadOutletMeta(merchantId, items.map((it) => it.outletId));
+    return items.map((entity) => {
+      const meta = entity.outletId ? outletMeta.get(entity.outletId) ?? null : null;
+      return {
+        id: entity.id,
+        merchantId: entity.merchantId,
+        customerId: entity.customerId,
+        points: entity.points,
+        consumedPoints: entity.consumedPoints ?? 0,
+        earnedAt: entity.earnedAt,
+        expiresAt: entity.expiresAt ?? null,
+        orderId: entity.orderId ?? null,
+        receiptId: entity.receiptId ?? null,
+        outletId: entity.outletId ?? null,
+        outletPosType: meta?.posType ?? null,
+        outletLastSeenAt: meta?.posLastSeenAt ?? null,
+        staffId: entity.staffId ?? null,
+        createdAt: entity.createdAt,
+      } as const;
+    });
   }
   async exportEarnLotsCsv(merchantId: string, params: { limit: number; before?: Date; customerId?: string; activeOnly?: boolean }) {
     const items = await this.listEarnLots(merchantId, params);
-    const lines = [ 'id,customerId,points,consumedPoints,earnedAt,expiresAt,orderId,receiptId,outletId,deviceId,staffId' ];
+    const lines = [ 'id,customerId,points,consumedPoints,earnedAt,expiresAt,orderId,receiptId,outletId,outletPosType,outletLastSeenAt,staffId' ];
     for (const e of items) {
-      const row = [ e.id, e.customerId, e.points, e.consumedPoints||0, e.earnedAt.toISOString(), e.expiresAt?e.expiresAt.toISOString():'', e.orderId||'', e.receiptId||'', e.outletId||'', e.deviceId||'', e.staffId||'' ]
+      const row = [ e.id, e.customerId, e.points, e.consumedPoints||0, e.earnedAt.toISOString(), e.expiresAt?e.expiresAt.toISOString():'', e.orderId||'', e.receiptId||'', e.outletId||'', e.outletPosType||'', e.outletLastSeenAt ? new Date(e.outletLastSeenAt).toISOString() : '', e.staffId||'' ]
         .map(x => `"${String(x).replaceAll('"','""')}"`).join(',');
       lines.push(row);
     }

@@ -285,7 +285,8 @@ export class ReceiptDto {
   @ApiProperty() earnApplied!: number;
   @ApiProperty() createdAt!: Date;
   @ApiPropertyOptional() outletId?: string|null;
-  @ApiPropertyOptional() deviceId?: string|null;
+  @ApiPropertyOptional({ enum: DeviceType, nullable: true }) outletPosType?: keyof typeof DeviceType | string | null;
+  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true }) outletLastSeenAt?: Date|null;
   @ApiPropertyOptional() staffId?: string|null;
 }
 
@@ -305,7 +306,8 @@ export class LedgerEntryDto {
   @ApiPropertyOptional() orderId?: string|null;
   @ApiPropertyOptional() receiptId?: string|null;
   @ApiPropertyOptional() outletId?: string|null;
-  @ApiPropertyOptional() deviceId?: string|null;
+  @ApiPropertyOptional({ enum: DeviceType, nullable: true }) outletPosType?: keyof typeof DeviceType | string | null;
+  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true }) outletLastSeenAt?: Date|null;
   @ApiPropertyOptional() staffId?: string|null;
   @ApiPropertyOptional() meta?: any;
   @ApiProperty() createdAt!: Date;
@@ -322,7 +324,8 @@ export class EarnLotDto {
   @ApiPropertyOptional() orderId?: string|null;
   @ApiPropertyOptional() receiptId?: string|null;
   @ApiPropertyOptional() outletId?: string|null;
-  @ApiPropertyOptional() deviceId?: string|null;
+  @ApiPropertyOptional({ enum: DeviceType, nullable: true }) outletPosType?: keyof typeof DeviceType | string | null;
+  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true }) outletLastSeenAt?: Date|null;
   @ApiPropertyOptional() staffId?: string|null;
   @ApiProperty() createdAt!: Date;
 }

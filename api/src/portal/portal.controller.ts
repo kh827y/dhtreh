@@ -868,13 +868,13 @@ export class PortalController {
   // Transactions & Receipts (read-only)
   @Get('transactions')
   @ApiOkResponse({ schema: { type: 'array', items: { $ref: getSchemaPath(TransactionItemDto) } } })
-  listTransactions(@Req() req: any, @Query('limit') limitStr?: string, @Query('before') beforeStr?: string, @Query('from') fromStr?: string, @Query('to') toStr?: string, @Query('type') type?: string, @Query('customerId') customerId?: string, @Query('outletId') outletId?: string, @Query('deviceId') deviceId?: string, @Query('staffId') staffId?: string) {
+  listTransactions(@Req() req: any, @Query('limit') limitStr?: string, @Query('before') beforeStr?: string, @Query('from') fromStr?: string, @Query('to') toStr?: string, @Query('type') type?: string, @Query('customerId') customerId?: string, @Query('outletId') outletId?: string, @Query('staffId') staffId?: string) {
     const id = this.getMerchantId(req);
     const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200) : 50;
     const before = beforeStr ? new Date(beforeStr) : undefined;
     const from = fromStr ? new Date(fromStr) : undefined;
     const to = toStr ? new Date(toStr) : undefined;
-    return this.service.listTransactions(id, { limit, before, from, to, type, customerId, outletId, deviceId, staffId });
+    return this.service.listTransactions(id, { limit, before, from, to, type, customerId, outletId, staffId });
   }
 
   @Get('receipts')

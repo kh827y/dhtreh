@@ -374,14 +374,13 @@ export class MerchantsController {
     @Query('type') type?: string,
     @Query('customerId') customerId?: string,
     @Query('outletId') outletId?: string,
-    @Query('deviceId') deviceId?: string,
     @Query('staffId') staffId?: string,
   ) {
     const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200) : 50;
     const before = beforeStr ? new Date(beforeStr) : undefined;
     const from = fromStr ? new Date(fromStr) : undefined;
     const to = toStr ? new Date(toStr) : undefined;
-    return this.service.listTransactions(id, { limit, before, from, to, type, customerId, outletId, deviceId, staffId });
+    return this.service.listTransactions(id, { limit, before, from, to, type, customerId, outletId, staffId });
   }
   @Get(':id/receipts')
   @ApiOkResponse({ type: ReceiptDto, isArray: true })
@@ -418,13 +417,13 @@ export class MerchantsController {
     const batch = Math.min(Math.max(parseInt(batchStr, 10) || 1000, 100), 5000);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="receipts_${id}_${Date.now()}.csv"`);
-    res.write('id,orderId,customerId,total,eligibleTotal,redeemApplied,earnApplied,createdAt,outletId,staffId\n');
+    res.write('id,orderId,customerId,total,eligibleTotal,redeemApplied,earnApplied,createdAt,outletId,outletPosType,outletLastSeenAt,staffId\n');
     let before = beforeStr ? new Date(beforeStr) : undefined;
     while (true) {
       const page = await this.service.listReceipts(id, { limit: batch, before, orderId, customerId });
       if (!page.length) break;
       for (const r of page) {
-        const row = [r.id,r.orderId,r.customerId,r.total,r.eligibleTotal,r.redeemApplied,r.earnApplied,r.createdAt.toISOString(),(r.outletId||''),(r.staffId||'')]
+        const row = [r.id,r.orderId,r.customerId,r.total,r.eligibleTotal,r.redeemApplied,r.earnApplied,r.createdAt.toISOString(),(r.outletId||''),(r.outletPosType||''),(r.outletLastSeenAt?new Date(r.outletLastSeenAt).toISOString():''),(r.staffId||'')]
           .map(x=>`"${String(x).replaceAll('"','""')}"`).join(',');
         res.write(row + '\n');
       }
@@ -470,7 +469,7 @@ export class MerchantsController {
     const batch = Math.min(Math.max(parseInt(batchStr, 10) || 1000, 100), 5000);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="ledger_${id}_${Date.now()}.csv"`);
-    res.write('id,customerId,debit,credit,amount,orderId,receiptId,createdAt,outletId,deviceId,staffId\n');
+    res.write('id,customerId,debit,credit,amount,orderId,receiptId,createdAt,outletId,outletPosType,outletLastSeenAt,staffId\n');
     let before = beforeStr ? new Date(beforeStr) : undefined;
     const from = fromStr ? new Date(fromStr) : undefined;
     const to = toStr ? new Date(toStr) : undefined;
@@ -478,7 +477,7 @@ export class MerchantsController {
       const page = await this.service.listLedger(id, { limit: batch, before, customerId, from, to, type });
       if (!page.length) break;
       for (const e of page) {
-        const row = [ e.id, e.customerId||'', e.debit, e.credit, e.amount, e.orderId||'', e.receiptId||'', e.createdAt.toISOString(), e.outletId||'', e.deviceId||'', e.staffId||'' ]
+        const row = [ e.id, e.customerId||'', e.debit, e.credit, e.amount, e.orderId||'', e.receiptId||'', e.createdAt.toISOString(), e.outletId||'', e.outletPosType||'', e.outletLastSeenAt ? new Date(e.outletLastSeenAt).toISOString() : '', e.staffId||'' ]
           .map(x=>`"${String(x).replaceAll('"','""')}"`).join(',');
         res.write(row + '\n');
       }
@@ -543,22 +542,21 @@ export class MerchantsController {
     @Query('type') type?: string,
     @Query('customerId') customerId?: string,
     @Query('outletId') outletId?: string,
-    @Query('deviceId') deviceId?: string,
     @Query('staffId') staffId?: string,
     @Res() res?: any,
   ) {
     const batch = Math.min(Math.max(parseInt(batchStr, 10) || 1000, 100), 5000);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="transactions_${id}_${Date.now()}.csv"`);
-    res.write('id,type,amount,orderId,customerId,createdAt,outletId,deviceId,staffId\n');
+    res.write('id,type,amount,orderId,customerId,createdAt,outletId,outletPosType,outletLastSeenAt,staffId\n');
     let before = beforeStr ? new Date(beforeStr) : undefined;
     const from = fromStr ? new Date(fromStr) : undefined;
     const to = toStr ? new Date(toStr) : undefined;
     while (true) {
-      const page = await this.service.listTransactions(id, { limit: batch, before, from, to, type, customerId, outletId, deviceId, staffId });
+      const page = await this.service.listTransactions(id, { limit: batch, before, from, to, type, customerId, outletId, staffId });
       if (!page.length) break;
       for (const t of page) {
-        const row = [t.id,t.type,t.amount,(t.orderId||''),t.customerId,t.createdAt.toISOString(),(t.outletId||''),(t.deviceId||''),(t.staffId||'')]
+        const row = [t.id,t.type,t.amount,(t.orderId||''),t.customerId,t.createdAt.toISOString(),(t.outletId||''),(t.outletPosType||''),(t.outletLastSeenAt ? new Date(t.outletLastSeenAt).toISOString() : ''),(t.staffId||'')]
           .map(x=>`"${String(x).replaceAll('"','""')}"`).join(',');
         res.write(row + '\n');
       }

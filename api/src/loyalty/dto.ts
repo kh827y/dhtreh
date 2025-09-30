@@ -1,5 +1,6 @@
 import { IsEnum, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { DeviceType } from '@prisma/client';
 
 export enum Mode { REDEEM = 'redeem', EARN = 'earn' }
 
@@ -18,8 +19,6 @@ export class QuoteDto {
   @IsNumber() @Min(0) eligibleTotal: number;
   @ApiPropertyOptional()
   @IsOptional() @IsString() outletId?: string;
-  @ApiPropertyOptional()
-  @IsOptional() @IsString() deviceId?: string;
   @ApiPropertyOptional()
   @IsOptional() @IsString() staffId?: string;
   @ApiPropertyOptional()
@@ -69,9 +68,6 @@ export class RefundDto {
   // база возврата (если в исходном чеке были исключения); можно не указывать — возьмём пропорцию по total
   @ApiPropertyOptional({ minimum: 0 })
   @IsOptional() @IsNumber() @Min(0) refundEligibleTotal?: number;
-  // опциональная атрибуция устройства для проверки подписи Bridge при приоритете device.secret
-  @ApiPropertyOptional()
-  @IsOptional() @IsString() deviceId?: string;
 }
 
 // ====== Swagger DTOs for responses ======
@@ -133,7 +129,8 @@ export class TransactionItemDto {
   @ApiProperty() customerId!: string;
   @ApiProperty() createdAt!: string;
   @ApiPropertyOptional() outletId?: string|null;
-  @ApiPropertyOptional() deviceId?: string|null;
+  @ApiPropertyOptional({ enum: DeviceType, nullable: true }) outletPosType?: keyof typeof DeviceType | string | null;
+  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true }) outletLastSeenAt?: string|null;
   @ApiPropertyOptional() staffId?: string|null;
 }
 

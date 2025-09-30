@@ -243,7 +243,8 @@ export class LoyaltyController {
           } catch {}
         }
       }
-      const outlet = await this.resolveOutlet(dto.merchantId, dto.outletId ?? null, dto.deviceId ?? null);
+      const legacyDeviceId = (dto as any)?.deviceId ?? null;
+      const outlet = await this.resolveOutlet(dto.merchantId, dto.outletId ?? null, legacyDeviceId);
       const qrMeta = looksLikeJwt(dto.userToken) ? { jti: v.jti, iat: v.iat, exp: v.exp } : undefined;
       // проверка подписи Bridge при необходимости
       if (s?.requireBridgeSig) {
@@ -471,14 +472,15 @@ export class LoyaltyController {
           });
           receiptOutletId = rcp?.outletId ?? null;
         } catch {}
-        const outlet = await this.resolveOutlet(dto.merchantId, receiptOutletId, dto.deviceId ?? null);
+        const legacyDeviceId = (dto as any)?.deviceId ?? null;
+        const outlet = await this.resolveOutlet(dto.merchantId, receiptOutletId, legacyDeviceId);
         let secret: string | null = outlet?.bridgeSecret ?? null;
         let alt: string | null = outlet?.bridgeSecretNext ?? null;
         if (!secret && !alt) {
           secret = s?.bridgeSecret || null;
           alt = (s as any)?.bridgeSecretNext || null;
         }
-        const bodyForSig = JSON.stringify({ merchantId: dto.merchantId, orderId: dto.orderId, refundTotal: dto.refundTotal, refundEligibleTotal: dto.refundEligibleTotal ?? undefined, deviceId: dto.deviceId ?? undefined });
+        const bodyForSig = JSON.stringify({ merchantId: dto.merchantId, orderId: dto.orderId, refundTotal: dto.refundTotal, refundEligibleTotal: dto.refundEligibleTotal ?? undefined, ...(legacyDeviceId ? { deviceId: legacyDeviceId } : {}) });
         let ok = false;
         if (secret && verifyBridgeSigUtil(sig, bodyForSig, secret)) ok = true;
         else if (alt && verifyBridgeSigUtil(sig, bodyForSig, alt)) ok = true;
@@ -573,12 +575,11 @@ export class LoyaltyController {
     @Query('limit') limitStr?: string,
     @Query('before') beforeStr?: string,
     @Query('outletId') outletId?: string,
-    @Query('deviceId') deviceId?: string,
     @Query('staffId') staffId?: string,
   ) {
     const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 20, 1), 100) : 20;
     const before = beforeStr ? new Date(beforeStr) : undefined;
-    return this.service.transactions(merchantId, customerId, limit, before, { outletId, deviceId, staffId });
+    return this.service.transactions(merchantId, customerId, limit, before, { outletId, staffId });
   }
 
   // Публичные списки для фронтов (без AdminGuard)

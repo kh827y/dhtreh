@@ -21,7 +21,7 @@ export default function IntegrationDocs() {
       <h3>2) Прямая интеграция из CRM</h3>
       <ul>
         <li><b>Как работать:</b> CRM вызывает API: <code>POST /loyalty/quote</code> → <code>POST /loyalty/commit</code>.</li>
-        <li><b>Контекст:</b> передавайте <code>merchantId</code>, <code>outletId</code>, <code>deviceId</code>, <code>staffId</code> при наличии.</li>
+        <li><b>Контекст:</b> передавайте <code>merchantId</code>, <code>outletId</code>, <code>staffId</code> и POS-характеристики точки при наличии.</li>
         <li><b>Идентификатор клиента:</b> краткоживущий JWT из мини‑аппы (скан QR) или постоянный <code>customerId</code>.</li>
         <li><b>Надёжность:</b> используйте <code>Idempotency-Key</code> на <code>commit/refund</code>.</li>
         <li><b>Вебхуки:</b> настройте URL/секрет в «Настройки мерчанта», проверяйте <code>X-Loyalty-Signature</code>.</li>

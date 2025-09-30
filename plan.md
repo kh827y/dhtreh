@@ -14,6 +14,7 @@
 
 — Устройства: депрекация. UI/роуты удаляем, опираемся на Торговые точки.
   - [x] Бэкенд-агрегации/выгрузки перевёл на `outletId`: аналитика (Top Devices → Outlet usage c `posLastSeenAt`), воркер активации начислений, CRM-таймлайн, push-устройства (`outletDeviceKey`), интеграционные DTO и CSV/SDK.
+  - [x] DTO/ответы merchants/loyalty и клиенты (admin/bridge/cashier) очищены от `deviceId`, добавлены поля POS-агрегации (`outletPosType`, `outletLastSeenAt`).
 
 ## Батчи внедрения (план)
 
@@ -340,6 +341,7 @@
   - Расширить общий helper для ERP/Shipper и перевести оставшиеся адаптеры.
   - Добавить Admin‑виджеты по POS‑метрикам (`pos_*`) и краткий раздел API Docs о верификации `X-Bridge-Signature` в `loyalty.controller`.
   - Покрыть негативные сценарии вебхуков прочих провайдеров (assert `pos_errors_total`, `SyncLog.status=error`).
+  - Настроить CI для загрузки Prisma engines в офлайновых средах (экспорт `PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING`).
 
 ## Волна 4 — Аналитика (в работе 2025-09-15)
 

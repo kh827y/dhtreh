@@ -7,7 +7,6 @@ export default function TransactionsPage() {
   const [customerId, setCustomerId] = useState<string>('');
   const [type, setType] = useState<string>('');
   const [outletId, setOutletId] = useState<string>('');
-  const [deviceId, setDeviceId] = useState<string>('');
   const [staffId, setStaffId] = useState<string>('');
   const [limit, setLimit] = useState<number>(20);
   const [items, setItems] = useState<any[]>([]);
@@ -25,7 +24,6 @@ export default function TransactionsPage() {
         type: type || undefined,
         customerId: customerId || undefined,
         outletId: outletId || undefined,
-        deviceId: deviceId || undefined,
         staffId: staffId || undefined,
         from: from || undefined,
         to: to || undefined,
@@ -49,7 +47,6 @@ export default function TransactionsPage() {
         type: type || undefined,
         customerId: customerId || undefined,
         outletId: outletId || undefined,
-        deviceId: deviceId || undefined,
         staffId: staffId || undefined,
         from: from || undefined,
         to: to || undefined,
@@ -67,7 +64,6 @@ export default function TransactionsPage() {
     type: type || undefined,
     customerId: customerId || undefined,
     outletId: outletId || undefined,
-    deviceId: deviceId || undefined,
     staffId: staffId || undefined,
     from: from || undefined,
     to: to || undefined,
@@ -86,7 +82,6 @@ export default function TransactionsPage() {
           <option value="REFUND">REFUND</option>
         </select></label>
         <label>Outlet: <input value={outletId} onChange={e=>setOutletId(e.target.value)} /></label>
-        <label>Device: <input value={deviceId} onChange={e=>setDeviceId(e.target.value)} /></label>
         <label>Staff: <input value={staffId} onChange={e=>setStaffId(e.target.value)} /></label>
         <label>От (ISO): <input type="datetime-local" value={from} onChange={e=>setFrom(e.target.value)} /></label>
         <label>До (ISO): <input type="datetime-local" value={to} onChange={e=>setTo(e.target.value)} /></label>
@@ -103,7 +98,11 @@ export default function TransactionsPage() {
             <div>{tx.type}</div>
             <div>{tx.amount}</div>
             <div style={{ opacity:0.8 }}>order: {tx.orderId || '—'}</div>
-            <div style={{ opacity:0.8 }}>outlet: {tx.outletId || '—'} device: {tx.deviceId || '—'} staff: {tx.staffId || '—'}</div>
+            <div style={{ opacity:0.8 }}>
+              outlet: {tx.outletId || '—'} · POS: {tx.outletPosType || '—'}
+              {tx.outletLastSeenAt ? <> · last seen: {new Date(tx.outletLastSeenAt).toLocaleString()}</> : null}
+              · staff: {tx.staffId || '—'}
+            </div>
           </div>
         ))}
         {nextBefore && <button onClick={loadMore} disabled={loading} style={{ padding:'6px 10px' }}>Загрузить ещё</button>}

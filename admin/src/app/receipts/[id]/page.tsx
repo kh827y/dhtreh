@@ -7,8 +7,8 @@ const API = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
 const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
 const ADMIN_KEY = process.env.NEXT_PUBLIC_ADMIN_KEY || '';
 
-type Receipt = { id: string; orderId: string; customerId: string; total: number; eligibleTotal: number; redeemApplied: number; earnApplied: number; createdAt: string; outletId?: string|null; deviceId?: string|null; staffId?: string|null };
-type Txn = { id: string; type: string; amount: number; orderId?: string|null; customerId: string; createdAt: string; outletId?: string|null; deviceId?: string|null; staffId?: string|null };
+type Receipt = { id: string; orderId: string; customerId: string; total: number; eligibleTotal: number; redeemApplied: number; earnApplied: number; createdAt: string; outletId?: string|null; outletPosType?: string|null; outletLastSeenAt?: string|null; staffId?: string|null };
+type Txn = { id: string; type: string; amount: number; orderId?: string|null; customerId: string; createdAt: string; outletId?: string|null; outletPosType?: string|null; outletLastSeenAt?: string|null; staffId?: string|null };
 type OutboxEvent = { id: string; eventType: string; status: string; retries: number; lastError?: string|null; createdAt: string; payload: unknown };
 
 export default function ReceiptDetail({ params }: { params: { id: string } }) {
@@ -50,7 +50,11 @@ export default function ReceiptDetail({ params }: { params: { id: string } }) {
             <div><b>Customer:</b> <code>{receipt.customerId}</code></div>
             <div><b>Totals:</b> total={receipt.total} ₽ · eligible={receipt.eligibleTotal} ₽</div>
             <div><b>Applied:</b> redeem={receipt.redeemApplied} · earn={receipt.earnApplied}</div>
-            <div style={{ color: '#666' }}>Outlet: {receipt.outletId||'-'} · Device: {receipt.deviceId||'-'} · Staff: {receipt.staffId||'-'}</div>
+            <div style={{ color: '#666' }}>
+              Outlet: {receipt.outletId||'-'} · POS: {receipt.outletPosType||'-'}
+              {receipt.outletLastSeenAt ? <> · Last seen: {new Date(receipt.outletLastSeenAt).toLocaleString()}</> : null}
+              · Staff: {receipt.staffId||'-'}
+            </div>
             <div><b>Created:</b> {new Date(receipt.createdAt).toLocaleString()}</div>
           </div>
           <h3 style={{ marginTop: 16 }}>Транзакции</h3>
@@ -62,7 +66,11 @@ export default function ReceiptDetail({ params }: { params: { id: string } }) {
                   <span>{new Date(t.createdAt).toLocaleString()}</span>
                 </div>
                 <div>Amount: {t.amount>0?'+':''}{t.amount} ₽ · Customer: <code>{t.customerId}</code></div>
-                <div style={{ color: '#666' }}>Outlet: {t.outletId||'-'} · Device: {t.deviceId||'-'} · Staff: {t.staffId||'-'}</div>
+                <div style={{ color: '#666' }}>
+                  Outlet: {t.outletId||'-'} · POS: {t.outletPosType||'-'}
+                  {t.outletLastSeenAt ? <> · Last seen: {new Date(t.outletLastSeenAt).toLocaleString()}</> : null}
+                  · Staff: {t.staffId||'-'}
+                </div>
               </div>
             ))}
             {(!txns.length) && <div style={{ color: '#666' }}>Нет транзакций</div>}

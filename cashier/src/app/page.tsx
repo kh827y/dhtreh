@@ -18,7 +18,7 @@ type QuoteEarnResp = {
   holdId?: string;
   message?: string;
 };
-type Txn = { id: string; type: 'EARN'|'REDEEM'|'REFUND'|'ADJUST'; amount: number; orderId?: string|null; createdAt: string };
+type Txn = { id: string; type: 'EARN'|'REDEEM'|'REFUND'|'ADJUST'; amount: number; orderId?: string|null; createdAt: string; outletId?: string|null; outletPosType?: string|null; outletLastSeenAt?: string|null };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
 const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
@@ -48,10 +48,8 @@ export default function Page() {
 
   // контекст точки/устройства/сотрудника
   const [outlets, setOutlets] = useState<Array<{id:string; name:string}>>([]);
-  const [devices, setDevices] = useState<Array<{id:string; type:string; label?:string; outletId?:string}>>([]);
   const [staff, setStaff] = useState<Array<{id:string; login?:string; role:string}>>([]);
   const [outletId, setOutletId] = useState<string>('');
-  const [deviceId, setDeviceId] = useState<string>('');
   const [staffId, setStaffId] = useState<string>('');
   const [category, setCategory] = useState<string>('');
   const [promoCode, setPromoCode] = useState<string>('');
@@ -101,7 +99,7 @@ export default function Page() {
       const r = await fetch(`${API_BASE}/loyalty/quote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId, ...(staffKey ? { 'X-Staff-Key': staffKey } : {}) },
-        body: JSON.stringify({ merchantId, mode, userToken, orderId, total, eligibleTotal, outletId: outletId || undefined, deviceId: deviceId || undefined, staffId: staffId || undefined, category: category || undefined, promoCode: promoCode || undefined }),
+        body: JSON.stringify({ merchantId, mode, userToken, orderId, total, eligibleTotal, outletId: outletId || undefined, staffId: staffId || undefined, category: category || undefined, promoCode: promoCode || undefined }),
       });
       if (!r.ok) {
         const text = await r.text();
@@ -308,7 +306,7 @@ export default function Page() {
       const r = await fetch(`${API_BASE}/loyalty/refund`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(staffKey?{ 'X-Staff-Key': staffKey }: {}) },
-        body: JSON.stringify({ merchantId, orderId: refundOrderId, refundTotal, deviceId: deviceId || undefined }),
+        body: JSON.stringify({ merchantId, orderId: refundOrderId, refundTotal }),
       });
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
@@ -348,23 +346,20 @@ export default function Page() {
 
   useEffect(() => { setHistory([]); setHistNextBefore(null); }, [userToken, merchantId]);
 
-  // загрузка списков точек/устройств/сотрудников
+  // загрузка списков точек/сотрудников
   useEffect(() => {
     (async () => {
       try {
-        const [ro, rd, rs] = await Promise.all([
+        const [ro, rs] = await Promise.all([
           fetch(`${API_BASE}/loyalty/outlets/${merchantId}`),
-          fetch(`${API_BASE}/loyalty/devices/${merchantId}`),
           fetch(`${API_BASE}/loyalty/staff/${merchantId}`),
         ]);
-        const [lo, ld, ls] = await Promise.all([ro.json(), rd.json(), rs.json()]);
+        const [lo, ls] = await Promise.all([ro.json(), rs.json()]);
         setOutlets(Array.isArray(lo) ? lo : []);
-        setDevices(Array.isArray(ld) ? ld : []);
         setStaff(Array.isArray(ls) ? ls : []);
         try {
           const saved = JSON.parse(localStorage.getItem('cashier_ctx_v1') || '{}');
           if (saved?.outletId) setOutletId(saved.outletId);
-          if (saved?.deviceId) setDeviceId(saved.deviceId);
           if (saved?.staffId) setStaffId(saved.staffId);
           if (saved?.category) setCategory(saved.category);
         } catch {}
@@ -374,9 +369,9 @@ export default function Page() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('cashier_ctx_v1', JSON.stringify({ outletId, deviceId, staffId, category }));
+      localStorage.setItem('cashier_ctx_v1', JSON.stringify({ outletId, staffId, category }));
     } catch {}
-  }, [outletId, deviceId, staffId, category]);
+  }, [outletId, staffId, category]);
 
   return (
     <main style={{ maxWidth: 920, margin: '40px auto', fontFamily: 'system-ui, Arial' }}>
@@ -562,13 +557,6 @@ export default function Page() {
             </select>
           </label>
           <label>
-            Устройство:
-            <select value={deviceId} onChange={(e) => setDeviceId(e.target.value)} style={{ padding: 8, minWidth: 180 }}>
-              <option value="">(не выбрано)</option>
-              {devices.map(d => <option key={d.id} value={d.id}>{(d.label||d.type) + (d.outletId?` · ${d.outletId.slice(0,4)}`:'')}</option>)}
-            </select>
-          </label>
-          <label>
             Сотрудник:
             <select value={staffId} onChange={(e) => setStaffId(e.target.value)} style={{ padding: 8, minWidth: 180 }}>
               <option value="">(не выбрано)</option>
@@ -618,7 +606,13 @@ export default function Page() {
               <b>{h.type}</b>
               <span>{new Date(h.createdAt).toLocaleString()}</span>
             </div>
-            <div>Сумма: <b>{h.amount > 0 ? '+' : ''}{h.amount} ₽</b>{h.orderId ? ` · Заказ: ${h.orderId}` : ''}</div>
+            <div>
+              Сумма: <b>{h.amount > 0 ? '+' : ''}{h.amount} ₽</b>
+              {h.orderId ? ` · Заказ: ${h.orderId}` : ''}
+              {h.outletId ? ` · Точка: ${h.outletId}` : ''}
+              {h.outletPosType ? ` · POS: ${h.outletPosType}` : ''}
+              {h.outletLastSeenAt ? ` · Активность: ${new Date(h.outletLastSeenAt).toLocaleString()}` : ''}
+            </div>
           </div>
         ))}
         {(!history.length && !histBusy) && <div style={{ color: '#666' }}>Нет данных</div>}
