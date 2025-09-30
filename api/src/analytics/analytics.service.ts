@@ -641,13 +641,14 @@ export class AnalyticsService {
     });
 
     const usageCount = participantStats.reduce((sum, row) => sum + row._count._all, 0);
-    const uniqueParticipants = await this.prisma.promotionParticipant.count({
+    const uniqueParticipantGroups = await this.prisma.promotionParticipant.groupBy({
+      by: ['customerId'],
       where: {
         merchantId,
         joinedAt: { gte: period.from, lte: period.to },
       },
-      distinct: [Prisma.PromotionParticipantScalarFieldEnum.customerId],
     });
+    const uniqueParticipants = uniqueParticipantGroups.length;
 
     const campaignROI = totalRewardsIssued > 0
       ? ((Math.abs(campaignRevenue._sum.amount || 0) - totalRewardsIssued) / totalRewardsIssued) * 100
