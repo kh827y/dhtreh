@@ -127,6 +127,13 @@ E. Проверка результатов
 - «RFM-анализ» содержит справку, интерактивные таблицы и модалку настройки границ сегментов.
 - «Повторные продажи» и «Реферальная программа» используют тумблеры/быстрые вкладки, карточки метрик и распределения по покупкам/рефералам.
 
+### LoyaltyPromotion — акции и коммуникации
+
+- Сущность `LoyaltyPromotion` заменяет legacy-кампании: портал и API работают с единым CRUD `/portal/loyalty/promotions`.
+- Экспорт `type=campaigns` в `GET /reports/export/:merchantId` строится поверх `loyalty_promotions` и `promotion_participants`, в XLSX-отчёте появляется лист «Акции».
+- Статистика применения акции формируется из записей `PromotionParticipant` (участники, начисленные баллы, ROI) и доступна в `GET /portal/loyalty/promotions/:id`.
+- Уведомления (email/push/telegram) используют `promotionId`: шаблоны получают название акции, сроки и тип из `metadata.legacyCampaign`.
+
 ## Наблюдаемость: метрики и алерты
 
 Метрики доступны по `GET /metrics` (Prometheus, `text/plain; version=0.0.4`).

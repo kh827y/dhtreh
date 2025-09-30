@@ -344,6 +344,7 @@
 ## Волна 4 — Механики (в работе 2025-09-15)
 
 - [x] Вынес применение/экспорт/уведомления кампаний в `LoyaltyPromotionService` и добавил миграцию данных из `campaigns` в `loyalty_promotions`.
+- [x] Обновил README/API/docs под `LoyaltyPromotion`, добрал e2e (экспорт/применение/уведомления) и фронтовые тесты на новый формат.
 - [x] Портал и фронтенд `merchant-portal` переведены на новую сущность `LoyaltyPromotion` через прокси `/portal/loyalty/promotions` (backend контроллеры + Next API).
 - [x] Удалён legacy-модуль `Campaign`: Prisma-модель и миграции очищены, сервисы/отчёты/аналитика переведены на `LoyaltyPromotion` и `PromotionParticipant`.
 - [ ] Обновить страницу перечня механик: карточки с иконками/описаниями, тумблеры по ТЗ.
