@@ -60,6 +60,39 @@ export class EvotorService {
     private prisma: PrismaService,
   ) {}
 
+  private async resolveOutletId(merchantId: string, receipt: EvotorReceipt): Promise<string | null> {
+    const prismaAny = this.prisma as any;
+    try {
+      const device = await prismaAny.device.findUnique({
+        where: { id: `evotor_${receipt.deviceUuid}` },
+        select: { outletId: true },
+      });
+      if (device?.outletId) {
+        return device.outletId as string;
+      }
+    } catch {}
+
+    if (receipt.storeUuid) {
+      try {
+        const outlet = await prismaAny.outlet.findFirst({
+          where: {
+            merchantId,
+            OR: [
+              { externalId: receipt.storeUuid },
+              { integrationLocationCode: receipt.storeUuid },
+            ],
+          },
+          select: { id: true },
+        });
+        if (outlet?.id) {
+          return outlet.id as string;
+        }
+      } catch {}
+    }
+
+    return null;
+  }
+
   /**
    * Регистрация приложения в маркетплейсе Эвотор
    */
@@ -286,7 +319,7 @@ export class EvotorService {
    */
   private async handleSellReceipt(merchantId: string, receipt: EvotorReceipt) {
     try {
-      const deviceId = `evotor_${receipt.deviceUuid}`;
+      const outletId = await this.resolveOutletId(merchantId, receipt);
       const orderId = `evotor_${receipt.uuid}`;
       
       // Извлекаем телефон клиента
@@ -329,7 +362,7 @@ export class EvotorService {
           customer.id,
           orderId,
           receipt.total,
-          deviceId
+          outletId ?? undefined
         );
       }
 
@@ -358,6 +391,7 @@ export class EvotorService {
 
       // Выполняем возврат в программе лояльности
       const apiUrl = this.configService.get('API_BASE_URL');
+      const outletId = await this.resolveOutletId(merchantId, receipt);
       const response = await fetch(`${apiUrl}/loyalty/refund`, {
         method: 'POST',
         headers: {
@@ -368,7 +402,7 @@ export class EvotorService {
           merchantId,
           orderId: originalOrderId,
           refundTotal: Math.abs(receipt.total),
-          deviceId: `evotor_${receipt.deviceUuid}`,
+          ...(outletId ? { outletId } : {}),
         }),
       });
 
@@ -433,7 +467,7 @@ export class EvotorService {
     customerId: string,
     orderId: string,
     total: number,
-    deviceId: string
+    outletId?: string
   ) {
     try {
       const apiUrl = this.configService.get('API_BASE_URL');
@@ -472,7 +506,7 @@ export class EvotorService {
           orderId,
           total,
           eligibleTotal: total,
-          deviceId,
+          ...(outletId ? { outletId } : {}),
         }),
       });
 

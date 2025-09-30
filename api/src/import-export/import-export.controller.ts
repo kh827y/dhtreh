@@ -132,7 +132,6 @@ export class ImportExportController {
     @Query('type') type?: string,
     @Query('customerId') customerId?: string,
     @Query('outletId') outletId?: string,
-    @Query('deviceId') deviceId?: string,
     @Query('staffId') staffId?: string,
     @Query('batch') batchStr: string = '1000',
     @Res() res?: Response,
@@ -143,7 +142,7 @@ export class ImportExportController {
     const filename = `transactions_${merchantId}_${Date.now()}.csv`;
     res!.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res!.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    await this.importExportService.streamTransactionsCsv({ merchantId, from, to, type, customerId, outletId, deviceId, staffId }, res!, batch);
+    await this.importExportService.streamTransactionsCsv({ merchantId, from, to, type, customerId, outletId, staffId }, res!, batch);
     res!.end();
   }
 

@@ -37,7 +37,7 @@ describe('Portal Analytics (e2e smoke)', () => {
         customers: { totalCustomers: 0, newCustomers: 0, activeCustomers: 0, churnRate: 0, retentionRate: 100, customerLifetimeValue: 0, averageVisitsPerCustomer: 0, topCustomers: [] },
         loyalty: { totalPointsIssued: 0, totalPointsRedeemed: 0, pointsRedemptionRate: 0, averageBalance: 0, activeWallets: 0, programROI: 0, conversionRate: 0 },
         campaigns: { activeCampaigns: 0, campaignROI: 0, totalRewardsIssued: 0, campaignConversion: 0, topCampaigns: [] },
-        operations: { topOutlets: [], topStaff: [], peakHours: [], deviceUsage: [] },
+        operations: { topOutlets: [], topStaff: [], peakHours: [], outletUsage: [] },
       };
     },
   } as any;

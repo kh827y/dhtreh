@@ -25,7 +25,7 @@ export class LoyaltyApi {
   }
 
   // Endpoints
-  quote(body: { mode: 'redeem'|'earn'; merchantId: string; userToken: string; orderId: string; total: number; eligibleTotal: number; outletId?: string; deviceId?: string; staffId?: string; category?: string; promoCode?: string }, opts?: { staffKey?: string; bridgeSignatureSecret?: string }) {
+  quote(body: { mode: 'redeem'|'earn'; merchantId: string; userToken: string; orderId: string; total: number; eligibleTotal: number; outletId?: string; staffId?: string; category?: string; promoCode?: string }, opts?: { staffKey?: string; bridgeSignatureSecret?: string }) {
     const json = JSON.stringify(body);
     const headers: any = {};
     if (opts?.staffKey) headers['X-Staff-Key'] = opts.staffKey;
@@ -53,12 +53,11 @@ export class LoyaltyApi {
     return this.http(`/loyalty/balance/${encodeURIComponent(merchantId)}/${encodeURIComponent(customerId)}`);
   }
 
-  transactions(params: { merchantId: string; customerId: string; limit?: number; before?: string; outletId?: string; deviceId?: string; staffId?: string }) {
+  transactions(params: { merchantId: string; customerId: string; limit?: number; before?: string; outletId?: string; staffId?: string }) {
     const q = new URLSearchParams({ merchantId: params.merchantId, customerId: params.customerId });
     if (params.limit) q.set('limit', String(params.limit));
     if (params.before) q.set('before', params.before);
     if (params.outletId) q.set('outletId', params.outletId);
-    if (params.deviceId) q.set('deviceId', params.deviceId);
     if (params.staffId) q.set('staffId', params.staffId);
     return this.http(`/loyalty/transactions?${q.toString()}`);
   }

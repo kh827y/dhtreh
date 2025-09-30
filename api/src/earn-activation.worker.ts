@@ -61,7 +61,6 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
               amount: fresh.points,
               orderId: fresh.orderId ?? undefined,
               outletId: fresh.outletId ?? undefined,
-              deviceId: fresh.deviceId ?? undefined,
               staffId: fresh.staffId ?? undefined,
             },
           });
@@ -75,7 +74,6 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
               amount: fresh.points,
               orderId: fresh.orderId ?? undefined,
               outletId: fresh.outletId ?? undefined,
-              deviceId: fresh.deviceId ?? undefined,
               staffId: fresh.staffId ?? undefined,
               meta: { mode: 'EARN', kind: 'DELAYED' },
             }});
@@ -90,6 +88,7 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
               points: fresh.points,
               earnLotId: fresh.id,
               activatedAt: new Date().toISOString(),
+              outletId: fresh.outletId ?? null,
             } as any,
           }});
         });
