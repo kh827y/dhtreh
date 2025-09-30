@@ -197,6 +197,12 @@ NOTIFY_RPS_BY_MERCHANT="M-1=5,M-2=3"
 - `notifications_processed_total{type,result}` — обработка воркером (`sent`/`dry`/`retry`/`dead`/`throttled`).
 - `notifications_channel_attempts_total{channel}` / `..._sent_total{channel}` / `..._failed_total{channel}` — попытки/успехи/ошибки по каналам.
 
+### Миграция legacy push/telegram
+
+- До применения миграции `communication_tasks_unified` прогоните перенос исторических кампаний:
+  - `pnpm -C api ts-node ../scripts/migrate-communications.ts`
+- Скрипт копирует записи из `PushCampaign`/`TelegramCampaign` в `CommunicationTask` (поля текста, аудитории, статистики, изображения) и поддерживает повторный запуск.
+
 
 ## 🔄 CI/CD Pipeline
 

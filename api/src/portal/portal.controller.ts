@@ -5,7 +5,7 @@ import { MerchantsService } from '../merchants/merchants.service';
 import { CreateDeviceDto, DeviceDto, LedgerEntryDto, MerchantSettingsRespDto, ReceiptDto, UpdateDeviceDto, UpdateMerchantSettingsDto } from '../merchants/dto';
 import { ErrorDto, TransactionItemDto } from '../loyalty/dto';
 import { PromoCodesService, type PortalPromoCodePayload } from '../promocodes/promocodes.service';
-import { PromoCodeStatus } from '@prisma/client';
+import { CommunicationChannel, PromoCodeStatus } from '@prisma/client';
 import { NotificationsService, type BroadcastArgs } from '../notifications/notifications.service';
 import { PortalCustomersService } from './customers.service';
 import { AnalyticsService } from '../analytics/analytics.service';
@@ -28,8 +28,7 @@ import {
   CreatePortalOutletDto,
   UpdatePortalOutletDto,
 } from './catalog.dto';
-import { PushCampaignsService, type PushCampaignScope } from './services/push-campaigns.service';
-import { TelegramCampaignsService, type TelegramCampaignScope } from './services/telegram-campaigns.service';
+import { CommunicationsService } from '../communications/communications.service';
 import { StaffMotivationService, type UpdateStaffMotivationPayload } from './services/staff-motivation.service';
 import { ActionsService, type ActionsTab, type CreateProductBonusActionPayload, type UpdateActionStatusPayload } from './services/actions.service';
 import { OperationsLogService, type OperationsLogFilters } from './services/operations-log.service';
@@ -48,8 +47,7 @@ export class PortalController {
     private readonly campaigns: CampaignService,
     private readonly catalog: PortalCatalogService,
     private readonly gifts: GiftsService,
-    private readonly pushCampaigns: PushCampaignsService,
-    private readonly telegramCampaigns: TelegramCampaignsService,
+    private readonly communications: CommunicationsService,
     private readonly staffMotivation: StaffMotivationService,
     private readonly actions: ActionsService,
     private readonly operations: OperationsLogService,
@@ -97,11 +95,11 @@ export class PortalController {
     return { from, to, type: (periodType as any) || 'month' };
   }
 
-  private normalizePushScope(scope?: string): PushCampaignScope {
+  private normalizePushScope(scope?: string): 'ACTIVE' | 'ARCHIVED' {
     return scope === 'ARCHIVED' ? 'ARCHIVED' : 'ACTIVE';
   }
 
-  private normalizeTelegramScope(scope?: string): TelegramCampaignScope {
+  private normalizeTelegramScope(scope?: string): 'ACTIVE' | 'ARCHIVED' {
     return scope === 'ARCHIVED' ? 'ARCHIVED' : 'ACTIVE';
   }
 
@@ -114,6 +112,92 @@ export class PortalController {
     const upper = String(direction || '').toUpperCase();
     if (upper === 'EARN' || upper === 'REDEEM') return upper;
     return 'ALL';
+  }
+
+  private asRecord(value: unknown): Record<string, any> {
+    if (value && typeof value === 'object') return value as Record<string, any>;
+    return {};
+  }
+
+  private coerceCount(value: unknown): number {
+    const num = Number(value ?? 0);
+    return Number.isFinite(num) ? num : 0;
+  }
+
+  private extractMetadata(payload: Record<string, any>, stats: Record<string, any>) {
+    if (payload.metadata !== undefined) return payload.metadata;
+    if (stats.metadata !== undefined) return stats.metadata;
+    return null;
+  }
+
+  private mapPushTask(task: any) {
+    const payload = this.asRecord(task?.payload);
+    const stats = this.asRecord(task?.stats);
+    const snapshot = this.asRecord(task?.audienceSnapshot);
+    const audienceRaw =
+      task?.audienceName ?? snapshot.code ?? snapshot.legacyAudience ?? snapshot.audienceName ?? 'ALL';
+    const totalRecipients =
+      typeof task?.totalRecipients === 'number'
+        ? task.totalRecipients
+        : this.coerceCount(stats.totalRecipients ?? stats.total);
+    const sent =
+      typeof task?.sentCount === 'number' ? task.sentCount : this.coerceCount(stats.sent ?? stats.delivered);
+    const failed =
+      typeof task?.failedCount === 'number' ? task.failedCount : this.coerceCount(stats.failed ?? stats.errors);
+    const metadata = this.extractMetadata(payload, stats);
+
+    return {
+      id: task.id,
+      merchantId: task.merchantId,
+      text: typeof payload.text === 'string' ? payload.text : '',
+      audience: audienceRaw ? String(audienceRaw) : 'ALL',
+      scheduledAt: task.scheduledAt,
+      timezone: task.timezone ?? null,
+      status: task.status,
+      totalRecipients,
+      sent,
+      failed,
+      archivedAt: task.archivedAt ?? null,
+      metadata: metadata ?? null,
+      createdAt: task.createdAt,
+      updatedAt: task.updatedAt,
+    };
+  }
+
+  private mapTelegramTask(task: any) {
+    const payload = this.asRecord(task?.payload);
+    const stats = this.asRecord(task?.stats);
+    const snapshot = this.asRecord(task?.audienceSnapshot);
+    const media = this.asRecord(task?.media);
+    const totalRecipients =
+      typeof task?.totalRecipients === 'number'
+        ? task.totalRecipients
+        : this.coerceCount(stats.totalRecipients ?? stats.total);
+    const sent =
+      typeof task?.sentCount === 'number' ? task.sentCount : this.coerceCount(stats.sent ?? stats.delivered);
+    const failed =
+      typeof task?.failedCount === 'number' ? task.failedCount : this.coerceCount(stats.failed ?? stats.errors);
+    const metadata = this.extractMetadata(payload, stats);
+    const imageCandidate = media.imageUrl ?? payload.imageUrl;
+
+    return {
+      id: task.id,
+      merchantId: task.merchantId,
+      audienceId: task.audienceId ?? snapshot.legacyAudienceId ?? null,
+      audienceName: task.audienceName ?? snapshot.audienceName ?? null,
+      text: typeof payload.text === 'string' ? payload.text : '',
+      imageUrl: typeof imageCandidate === 'string' ? imageCandidate : null,
+      scheduledAt: task.scheduledAt,
+      timezone: task.timezone ?? null,
+      status: task.status,
+      totalRecipients,
+      sent,
+      failed,
+      archivedAt: task.archivedAt ?? null,
+      metadata: metadata ?? null,
+      createdAt: task.createdAt,
+      updatedAt: task.updatedAt,
+    };
   }
 
   @Get('me')
@@ -228,7 +312,10 @@ export class PortalController {
   @Get('push-campaigns')
   @ApiOkResponse({ schema: { type: 'array', items: { type: 'object', additionalProperties: true } } })
   listPushCampaigns(@Req() req: any, @Query('scope') scope?: string) {
-    return this.pushCampaigns.list(this.getMerchantId(req), this.normalizePushScope(scope));
+    const merchantId = this.getMerchantId(req);
+    return this.communications
+      .listChannelTasks(merchantId, CommunicationChannel.PUSH, this.normalizePushScope(scope))
+      .then(tasks => tasks.map(task => this.mapPushTask(task)));
   }
 
   @Post('push-campaigns')
@@ -237,24 +324,36 @@ export class PortalController {
     @Req() req: any,
     @Body() body: { text?: string; audience?: string; startAt?: string; scheduledAt?: string; timezone?: string },
   ) {
-    return this.pushCampaigns.create(this.getMerchantId(req), {
-      text: body?.text ?? '',
-      audience: body?.audience ?? '',
-      scheduledAt: body?.scheduledAt ?? body?.startAt ?? '',
-      timezone: body?.timezone,
-    });
+    const merchantId = this.getMerchantId(req);
+    return this.communications
+      .createTask(merchantId, {
+        channel: CommunicationChannel.PUSH,
+        scheduledAt: body?.scheduledAt ?? body?.startAt ?? null,
+        timezone: body?.timezone ?? null,
+        audienceCode: body?.audience ? String(body.audience) : undefined,
+        audienceName: body?.audience ? String(body.audience) : undefined,
+        payload: {
+          text: body?.text ?? '',
+          audience: body?.audience ?? null,
+        },
+      })
+      .then(task => this.mapPushTask(task));
   }
 
   @Post('push-campaigns/:campaignId/cancel')
   @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
   cancelPushCampaign(@Req() req: any, @Param('campaignId') campaignId: string) {
-    return this.pushCampaigns.markCanceled(this.getMerchantId(req), campaignId);
+    return this.communications
+      .updateTaskStatus(this.getMerchantId(req), campaignId, 'CANCELED')
+      .then(task => this.mapPushTask(task));
   }
 
   @Post('push-campaigns/:campaignId/archive')
   @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
   archivePushCampaign(@Req() req: any, @Param('campaignId') campaignId: string) {
-    return this.pushCampaigns.markArchived(this.getMerchantId(req), campaignId);
+    return this.communications
+      .updateTaskStatus(this.getMerchantId(req), campaignId, 'ARCHIVED')
+      .then(task => this.mapPushTask(task));
   }
 
   @Post('push-campaigns/:campaignId/duplicate')
@@ -264,16 +363,20 @@ export class PortalController {
     @Param('campaignId') campaignId: string,
     @Body() body: { scheduledAt?: string; startAt?: string },
   ) {
-    return this.pushCampaigns.duplicate(this.getMerchantId(req), campaignId, {
-      scheduledAt: body?.scheduledAt ?? body?.startAt,
-    });
+    const merchantId = this.getMerchantId(req);
+    return this.communications
+      .duplicateTask(merchantId, campaignId, { scheduledAt: body?.scheduledAt ?? body?.startAt ?? null })
+      .then(task => this.mapPushTask(task));
   }
 
   // ===== Telegram campaigns =====
   @Get('telegram-campaigns')
   @ApiOkResponse({ schema: { type: 'array', items: { type: 'object', additionalProperties: true } } })
   listTelegramCampaigns(@Req() req: any, @Query('scope') scope?: string) {
-    return this.telegramCampaigns.list(this.getMerchantId(req), this.normalizeTelegramScope(scope));
+    const merchantId = this.getMerchantId(req);
+    return this.communications
+      .listChannelTasks(merchantId, CommunicationChannel.TELEGRAM, this.normalizeTelegramScope(scope))
+      .then(tasks => tasks.map(task => this.mapTelegramTask(task)));
   }
 
   @Post('telegram-campaigns')
@@ -291,26 +394,40 @@ export class PortalController {
       timezone?: string;
     },
   ) {
-    return this.telegramCampaigns.create(this.getMerchantId(req), {
-      audienceId: body?.audienceId,
-      audienceName: body?.audienceName,
-      text: body?.text ?? '',
-      imageUrl: body?.imageUrl,
-      scheduledAt: body?.scheduledAt ?? body?.startAt ?? '',
-      timezone: body?.timezone,
-    });
+    const merchantId = this.getMerchantId(req);
+    return this.communications
+      .createTask(merchantId, {
+        channel: CommunicationChannel.TELEGRAM,
+        audienceId: body?.audienceId ?? undefined,
+        audienceName: body?.audienceName ?? undefined,
+        audienceSnapshot: {
+          legacyAudienceId: body?.audienceId ?? null,
+          audienceName: body?.audienceName ?? null,
+        },
+        scheduledAt: body?.scheduledAt ?? body?.startAt ?? null,
+        timezone: body?.timezone ?? null,
+        payload: {
+          text: body?.text ?? '',
+        },
+        media: body?.imageUrl ? { imageUrl: body.imageUrl } : undefined,
+      })
+      .then(task => this.mapTelegramTask(task));
   }
 
   @Post('telegram-campaigns/:campaignId/cancel')
   @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
   cancelTelegramCampaign(@Req() req: any, @Param('campaignId') campaignId: string) {
-    return this.telegramCampaigns.markCanceled(this.getMerchantId(req), campaignId);
+    return this.communications
+      .updateTaskStatus(this.getMerchantId(req), campaignId, 'CANCELED')
+      .then(task => this.mapTelegramTask(task));
   }
 
   @Post('telegram-campaigns/:campaignId/archive')
   @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
   archiveTelegramCampaign(@Req() req: any, @Param('campaignId') campaignId: string) {
-    return this.telegramCampaigns.markArchived(this.getMerchantId(req), campaignId);
+    return this.communications
+      .updateTaskStatus(this.getMerchantId(req), campaignId, 'ARCHIVED')
+      .then(task => this.mapTelegramTask(task));
   }
 
   @Post('telegram-campaigns/:campaignId/duplicate')
@@ -320,9 +437,10 @@ export class PortalController {
     @Param('campaignId') campaignId: string,
     @Body() body: { scheduledAt?: string; startAt?: string },
   ) {
-    return this.telegramCampaigns.duplicate(this.getMerchantId(req), campaignId, {
-      scheduledAt: body?.scheduledAt ?? body?.startAt,
-    });
+    const merchantId = this.getMerchantId(req);
+    return this.communications
+      .duplicateTask(merchantId, campaignId, { scheduledAt: body?.scheduledAt ?? body?.startAt ?? null })
+      .then(task => this.mapTelegramTask(task));
   }
 
   // ===== Staff motivation =====
