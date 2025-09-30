@@ -1,12 +1,12 @@
 import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { PortalGuard } from '../../portal-auth/portal.guard';
-import { LoyaltyProgramService, type PromoCodePayload } from '../loyalty-program.service';
+import { PromoCodesService, type LoyaltyPromoCodePayload } from '../../promocodes/promocodes.service';
 import { PromoCodeStatus } from '@prisma/client';
 
 @Controller('portal/loyalty/promocodes')
 @UseGuards(PortalGuard)
 export class PromoCodesController {
-  constructor(private readonly service: LoyaltyProgramService) {}
+  constructor(private readonly service: PromoCodesService) {}
 
   private merchantId(req: any) {
     return String(req.portalMerchantId);
@@ -19,12 +19,12 @@ export class PromoCodesController {
   }
 
   @Post()
-  create(@Req() req: any, @Body() body: PromoCodePayload) {
+  create(@Req() req: any, @Body() body: LoyaltyPromoCodePayload) {
     return this.service.createPromoCode(this.merchantId(req), body);
   }
 
   @Put(':id')
-  update(@Req() req: any, @Param('id') id: string, @Body() body: PromoCodePayload) {
+  update(@Req() req: any, @Param('id') id: string, @Body() body: LoyaltyPromoCodePayload) {
     return this.service.updatePromoCode(this.merchantId(req), id, body);
   }
 

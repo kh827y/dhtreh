@@ -264,6 +264,9 @@ POINTS_TTL_BURN=1
   - `POST /portal/promocodes/deactivate` — `{ promoCodeId }` переводит промокод в архив (паузит использование).
   - `POST /portal/promocodes/activate` — `{ promoCodeId }` повторно активирует промокод.
   - `PUT /portal/promocodes/:promoCodeId` — обновляет настройки существующего промокода.
+  - `GET /portal/loyalty/promocodes?status=ACTIVE|ARCHIVE|ALL` — список промокодов с «сырыми» полями для страницы лояльности.
+  - `POST /portal/loyalty/promocodes` — создание промокода через `LoyaltyPromoCodePayload` (сегменты, уровни, лимиты, autoArchive).
+  - `PUT /portal/loyalty/promocodes/:id` / `POST /portal/loyalty/promocodes/:id/status` / `POST /portal/loyalty/promocodes/bulk/status` — управление статусами/метаданными через тот же сервис `PromoCodesService`.
 
 Промокод применяется при `POST /loyalty/quote|commit`, если передан `promoCode`.
 
