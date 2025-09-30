@@ -4,6 +4,7 @@
 
 - `api` — сервер (NestJS + Prisma/PostgreSQL)
 - `admin` — панель администратора/настройки (Next.js)
+- 'merchant-portal' - панель управления мерчантов
 - `cashier` — виртуальный терминал кассира (Next.js)
 - `miniapp` — Telegram мини‑аппа клиента (Next.js)
 - `bridge` — локальный POS Bridge для касс/ПО
