@@ -225,7 +225,7 @@ export class CommunicationsService {
       audienceSnapshot: payload.audienceSnapshot ?? { code: audienceCode },
       payload: { ...(payload.payload ?? {}), text },
       timezone: payload.timezone ?? null,
-      stats: payload.stats ?? null,
+      stats: payload.stats ? (payload.stats as Prisma.InputJsonValue) : Prisma.JsonNull,
     });
   }
 
@@ -257,7 +257,7 @@ export class CommunicationsService {
       payload: { ...(payload.payload ?? {}), text },
       media: imageUrl ? { imageUrl } : payload.media ?? null,
       timezone: payload.timezone ?? null,
-      stats: payload.stats ?? null,
+      stats: payload.stats ? (payload.stats as Prisma.InputJsonValue) : Prisma.JsonNull,
     });
   }
 
@@ -309,7 +309,7 @@ export class CommunicationsService {
       failedAt: null,
       payload: (original.payload as Prisma.InputJsonValue) ?? null,
       filters: (original.filters as Prisma.InputJsonValue) ?? null,
-      stats: null,
+      stats: Prisma.JsonNull,
       media: (original.media as Prisma.InputJsonValue) ?? null,
       timezone: original.timezone,
       archivedAt: null,
@@ -386,7 +386,7 @@ export class CommunicationsService {
 
   private normalizeStats(stats?: Record<string, any> | null) {
     if (!stats) {
-      return { statsJson: null, totalRecipients: 0, sentCount: 0, failedCount: 0 };
+      return { statsJson: Prisma.JsonNull, totalRecipients: 0, sentCount: 0, failedCount: 0 };
     }
     const totalRecipients = this.toNumber(stats.totalRecipients ?? stats.total ?? 0);
     const sentCount = this.toNumber(stats.sent ?? stats.delivered ?? 0);
