@@ -1,3 +1,19 @@
+jest.mock('@prisma/client', () => {
+  const makeEnum = (values: string[]) =>
+    values.reduce((acc, key) => {
+      acc[key] = key;
+      return acc;
+    }, {} as Record<string, string>);
+
+  return {
+    PrismaClient: class {},
+    StaffStatus: makeEnum(['ACTIVE', 'PENDING']),
+    StaffRole: makeEnum(['MANAGER', 'CASHIER']),
+    AccessScope: makeEnum(['PORTAL', 'CASHIER']),
+    StaffOutletAccessStatus: makeEnum(['ACTIVE', 'REVOKED']),
+  };
+});
+
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
@@ -39,7 +55,7 @@ describe('Portal Analytics (e2e smoke)', () => {
       wallet: { count: jest.fn(async () => 0), aggregate: jest.fn(async () => ({ _avg: { balance: 0 } })) },
       receipt: { groupBy: jest.fn(async () => []) },
       customerStats: { findMany: jest.fn(async () => []) },
-      campaign: { count: jest.fn(async () => 0), findMany: jest.fn(async () => []) },
+      loyaltyPromotion: { count: jest.fn(async () => 0), findMany: jest.fn(async () => []) },
       segmentCustomer: { count: jest.fn(async () => 0) },
       outlet: { findMany: jest.fn(async () => []) },
       customer: { findMany: jest.fn(async () => []) },

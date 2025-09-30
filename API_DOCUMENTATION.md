@@ -1190,16 +1190,19 @@ const result = await client.commit({
 | `/portal/telegram-campaigns/{id}/duplicate` | POST | Создание копии Telegram-кампании. |
 | `/portal/staff-motivation` | GET | Текущие настройки мотивации персонала. |
 | `/portal/staff-motivation` | PUT | Обновление мотивации (включение/отключение, баллы, период рейтинга). |
-| `/portal/actions?tab=UPCOMING\|CURRENT\|PAST` | GET | Табличный список акций по вкладкам. |
-| `/portal/actions/{id}` | GET | Детальная информация по акции. |
-| `/portal/actions/product-bonus` | POST | Создание акции типа «акционные баллы на товары». |
-| `/portal/actions/{id}/status` | POST | Пауза или возобновление акции (`action=PAUSE|RESUME`). |
-| `/portal/actions/{id}/archive` | POST | Перенос акции в архив. |
-| `/portal/actions/{id}/duplicate` | POST | Создание черновика на основе существующей акции. |
+| `/portal/loyalty/promotions?status=ALL\|ACTIVE\|PAUSED\|SCHEDULED\|COMPLETED\|ARCHIVED` | GET | Список `LoyaltyPromotion` с агрегатами и аудиторией. |
+| `/portal/loyalty/promotions` | POST | Создание новой акции (название, аудитория, награда, расписание, push-настройки). |
+| `/portal/loyalty/promotions/{id}` | GET | Детальная карточка акции с участниками и статистикой применения. |
+| `/portal/loyalty/promotions/{id}` | PUT | Редактирование акции и её метаданных. |
+| `/portal/loyalty/promotions/{id}/status` | POST | Смена статуса (`DRAFT` → `ACTIVE`/`PAUSED`/`ARCHIVED`). |
+| `/portal/loyalty/promotions/bulk/status` | POST | Массовое изменение статусов по списку `ids`. |
+| `/portal/loyalty/promotions/{id}/duplicate` | POST | Создание черновика на основе существующей акции. |
 | `/portal/operations/log` | GET | Журнал начислений и списаний с фильтрами (даты, сотрудник, точка, направление). |
 | `/portal/operations/log/{receiptId}` | GET | Детали конкретной операции (состав транзакций, возможность отмены). |
 
 Каждый эндпоинт требует аутентифицированного вызова из Merchant Portal. Поля дат (`scheduledAt`, `startDate`, `endDate`) передаются в формате ISO 8601.
+
+Экспорт кампаний основан на `LoyaltyPromotion`: запрос `GET /reports/export/{merchantId}?type=campaigns&format=excel` добавляет лист «Акции» с названиями, статусами, периодами, использованием (`promotion_participants`) и начисленными баллами. Уведомления (`/email/campaign`, `PushService.sendCampaignNotification`) получают `promotionId`, название и тип акции из `metadata.legacyCampaign` и используют эти данные в шаблонах.
 
 ## Поддержка
 
