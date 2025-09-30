@@ -319,31 +319,51 @@ export class ReportService {
       fgColor: { argb: 'FFE0E0E0' },
     };
 
-    const campaigns = await this.prisma.campaign.findMany({
-      where: { merchantId: options.merchantId },
-      include: {
-        usages: {
-          where: {
-            usedAt: {
-              gte: options.period.from,
-              lte: options.period.to,
-            },
-          },
+    const participantStats = await this.prisma.promotionParticipant.groupBy({
+      by: ['promotionId'],
+      where: {
+        merchantId: options.merchantId,
+        joinedAt: {
+          gte: options.period.from,
+          lte: options.period.to,
         },
       },
+      _count: { _all: true },
+      _sum: { pointsIssued: true },
     });
 
-    campaigns.forEach(c => {
-      const totalRewards = c.usages.reduce((sum, u) => sum + (u.rewardValue || 0), 0);
-      
+    if (!participantStats.length) return;
+
+    const promotionIds = participantStats.map((row) => row.promotionId);
+    const promotions = await this.prisma.loyaltyPromotion.findMany({
+      where: { id: { in: promotionIds } },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        startAt: true,
+        endAt: true,
+        metadata: true,
+      },
+    });
+    const promotionMap = new Map(promotions.map((p) => [p.id, p]));
+
+    participantStats.forEach((stat) => {
+      const promotion = promotionMap.get(stat.promotionId);
+      if (!promotion) return;
+      const legacy = ((promotion.metadata as any)?.legacyCampaign ?? {}) as Record<string, any>;
       const row = sheet.addRow({
-        name: c.name,
-        type: this.getCampaignTypeLabel(c.type),
-        status: this.getCampaignStatusLabel(c.status),
-        startDate: c.startDate?.toLocaleDateString('ru-RU') || '',
-        endDate: c.endDate?.toLocaleDateString('ru-RU') || '',
-        usages: c.usages.length,
-        rewards: totalRewards,
+        name: promotion.name,
+        type: this.getCampaignTypeLabel(legacy.kind ?? 'LOYALTY_PROMOTION'),
+        status: this.getCampaignStatusLabel(promotion.status),
+        startDate:
+          promotion.startAt?.toLocaleDateString('ru-RU') ||
+          (legacy.startDate ? new Date(legacy.startDate).toLocaleDateString('ru-RU') : ''),
+        endDate:
+          promotion.endAt?.toLocaleDateString('ru-RU') ||
+          (legacy.endDate ? new Date(legacy.endDate).toLocaleDateString('ru-RU') : ''),
+        usages: stat._count._all,
+        rewards: stat._sum.pointsIssued ?? 0,
         roi: '0%',
       });
 
@@ -529,6 +549,7 @@ export class ReportService {
       BIRTHDAY: 'День рождения',
       REFERRAL: 'Реферальная',
       FIRST_PURCHASE: 'Первая покупка',
+      LOYALTY_PROMOTION: 'Программа лояльности',
     };
     return labels[type] || type;
   }

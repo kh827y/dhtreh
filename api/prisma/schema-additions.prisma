@@ -6,15 +6,6 @@
 //  tags             String[]
 //  metadata         Json?
 
-// Добавить в модель Campaign:
-//  description      String?
-//  budget           Int?
-//  maxUsageTotal    Int?
-//  maxUsagePerCustomer Int?
-//  notificationChannels String[]
-//  targetSegmentId  String?
-//  reward           Json?
-
 // Добавить в модель Review:
 //  title            String?
 //  tags             String[]
@@ -63,17 +54,6 @@
 // Добавить в модель Merchant:
 //  rating           Float?
 //  logo             String?
-
-model CampaignUsage {
-  id                String    @id @default(cuid())
-  campaignId        String
-  customerId        String
-  rewardValue       Int?
-  createdAt         DateTime  @default(now())
-  
-  @@index([campaignId])
-  @@index([customerId])
-}
 
 model SegmentCustomer {
   id                String    @id @default(cuid())

@@ -1,4 +1,4 @@
-import type { Campaign, LoyaltyPromotion, Prisma, PromotionStatus } from '@prisma/client';
+import type { LoyaltyPromotion, Prisma, PromotionStatus } from '@prisma/client';
 
 export type CampaignType =
   | 'BONUS'
@@ -74,12 +74,6 @@ export interface LegacyCampaignDto {
   updatedAt: Date;
   archivedAt?: Date | null;
 }
-
-type CampaignWithRelations = Prisma.CampaignGetPayload<{
-  include?: {
-    segment?: true | Prisma.CustomerSegmentArgs;
-  };
-}>;
 
 type PromotionWithRelations = Prisma.LoyaltyPromotionGetPayload<{
   include?: {
@@ -163,19 +157,6 @@ function normalizeCampaignReward(raw: any): CampaignReward {
   };
 }
 
-function mapCampaignStatus(status?: string | null): CampaignStatus {
-  switch (status) {
-    case 'ACTIVE':
-      return 'ACTIVE';
-    case 'PAUSED':
-      return 'PAUSED';
-    case 'COMPLETED':
-      return 'COMPLETED';
-    default:
-      return 'DRAFT';
-  }
-}
-
 function promotionStatusToCampaignStatus(status: PromotionStatus | null | undefined): CampaignStatus {
   switch (status) {
     case 'ACTIVE':
@@ -189,40 +170,12 @@ function promotionStatusToCampaignStatus(status: PromotionStatus | null | undefi
   }
 }
 
-function extractLegacyMetadata(source: LoyaltyPromotion | Campaign): Record<string, any> {
+function extractLegacyMetadata(source: LoyaltyPromotion): Record<string, any> {
   const raw: any = (source as any).metadata ?? {};
   if (raw && typeof raw === 'object' && raw.legacyCampaign && typeof raw.legacyCampaign === 'object') {
     return raw.legacyCampaign as Record<string, any>;
   }
   return raw && typeof raw === 'object' ? (raw as Record<string, any>) : {};
-}
-
-export function transformCampaignEntity(entity: CampaignWithRelations): LegacyCampaignDto {
-  const legacyRules = normalizeCampaignRules(entity.content ?? {});
-  const reward = normalizeCampaignReward(entity.reward ?? {});
-  const notificationChannels = asCampaignNotificationChannels(entity.notificationChannels ?? []);
-  return {
-    id: entity.id,
-    merchantId: entity.merchantId,
-    name: entity.name,
-    description: entity.description ?? undefined,
-    type: (entity.type as CampaignType) ?? 'BONUS',
-    status: mapCampaignStatus(entity.status),
-    startDate: entity.startDate ?? entity.startAt ?? null,
-    endDate: entity.endDate ?? entity.endAt ?? null,
-    targetSegmentId: entity.targetSegmentId ?? entity.segmentId ?? null,
-    segmentId: entity.segmentId ?? null,
-    rules: legacyRules,
-    reward,
-    budget: entity.budget ?? null,
-    maxUsagePerCustomer: entity.maxUsagePerCustomer ?? null,
-    maxUsageTotal: entity.maxUsageTotal ?? null,
-    notificationChannels,
-    metadata: entity.metrics ?? undefined,
-    createdAt: entity.createdAt,
-    updatedAt: entity.updatedAt,
-    archivedAt: entity.archivedAt ?? undefined,
-  };
 }
 
 export function transformPromotionEntity(entity: PromotionWithRelations): LegacyCampaignDto {
@@ -257,11 +210,6 @@ export function transformPromotionEntity(entity: PromotionWithRelations): Legacy
   };
 }
 
-export type LegacyCampaignSource = CampaignWithRelations | PromotionWithRelations;
-
-export function toLegacyCampaignDto(source: LegacyCampaignSource): LegacyCampaignDto {
-  if ((source as LoyaltyPromotion).rewardType !== undefined) {
-    return transformPromotionEntity(source as PromotionWithRelations);
-  }
-  return transformCampaignEntity(source as CampaignWithRelations);
+export function toLegacyCampaignDto(source: PromotionWithRelations | LoyaltyPromotion): LegacyCampaignDto {
+  return transformPromotionEntity(source as PromotionWithRelations);
 }

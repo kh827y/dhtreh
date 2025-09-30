@@ -31,7 +31,6 @@
 
 */
 -- DropForeignKey
-ALTER TABLE "public"."Campaign" DROP CONSTRAINT "Campaign_targetSegmentId_fkey";
 
 -- DropForeignKey
 ALTER TABLE "public"."CustomerConsent" DROP CONSTRAINT "CustomerConsent_customerId_fkey";
@@ -94,8 +93,6 @@ DROP INDEX "public"."Merchant_apiKey_key";
 DROP INDEX "public"."PersonalReferralCode_customerId_programId_key";
 
 -- AlterTable
-ALTER TABLE "public"."CampaignUsage" ADD COLUMN     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-ADD COLUMN     "merchantId" TEXT;
 
 -- AlterTable
 ALTER TABLE "public"."Customer" DROP COLUMN "updatedAt";
@@ -224,11 +221,6 @@ ALTER COLUMN "amount" SET NOT NULL;
 CREATE INDEX "AdminAudit_merchantId_createdAt_idx" ON "public"."AdminAudit"("merchantId", "createdAt");
 
 -- CreateIndex
-CREATE INDEX "CampaignUsage_campaignId_idx" ON "public"."CampaignUsage"("campaignId");
-
--- CreateIndex
-CREATE INDEX "CampaignUsage_customerId_idx" ON "public"."CampaignUsage"("customerId");
-
 -- CreateIndex
 CREATE UNIQUE INDEX "Customer_email_key" ON "public"."Customer"("email");
 
@@ -245,8 +237,6 @@ CREATE UNIQUE INDEX "PushDevice_token_key" ON "public"."PushDevice"("token");
 CREATE INDEX "PushDevice_customerId_idx" ON "public"."PushDevice"("customerId");
 
 -- AddForeignKey
-ALTER TABLE "public"."CampaignUsage" ADD CONSTRAINT "CampaignUsage_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
 -- AddForeignKey
 ALTER TABLE "public"."PersonalReferralCode" ADD CONSTRAINT "PersonalReferralCode_programId_fkey" FOREIGN KEY ("programId") REFERENCES "public"."ReferralProgram"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 

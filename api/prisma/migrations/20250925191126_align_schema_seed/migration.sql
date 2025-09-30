@@ -9,9 +9,6 @@
 DROP INDEX "public"."CustomerSegment_merchantId_active_idx";
 
 -- AlterTable
-ALTER TABLE "public"."Campaign" ADD COLUMN     "archivedAt" TIMESTAMP(3);
-
--- AlterTable
 ALTER TABLE "public"."MerchantSettings" ADD COLUMN     "staffMotivationCustomDays" INTEGER,
 ADD COLUMN     "staffMotivationEnabled" BOOLEAN NOT NULL DEFAULT false,
 ADD COLUMN     "staffMotivationExistingCustomerPoints" INTEGER NOT NULL DEFAULT 0,
@@ -94,12 +91,6 @@ CREATE INDEX "TelegramCampaign_merchantId_status_idx" ON "public"."TelegramCampa
 
 -- CreateIndex
 CREATE INDEX "TelegramCampaign_merchantId_scheduledAt_idx" ON "public"."TelegramCampaign"("merchantId", "scheduledAt");
-
--- CreateIndex
-CREATE INDEX "Campaign_merchantId_status_idx" ON "public"."Campaign"("merchantId", "status");
-
--- CreateIndex
-CREATE INDEX "Campaign_merchantId_archivedAt_idx" ON "public"."Campaign"("merchantId", "archivedAt");
 
 -- CreateIndex
 CREATE INDEX "Outlet_merchantId_status_idx" ON "public"."Outlet"("merchantId", "status");
