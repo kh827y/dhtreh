@@ -19,7 +19,6 @@ function makePrismaMock() {
 
 describe('NotificationDispatcherWorker - errors/retries', () => {
   const push = { sendPush: jest.fn(async () => ({ total: 1, sent: 1, failed: 0 })), sendToTopic: jest.fn(async () => ({ success: true })) } as any;
-  const sms = { sendBulkNotification: jest.fn(async () => ({ total: 1, sent: 1, failed: 0 })), sendNotification: jest.fn(async () => true) } as any;
   const email = { sendEmail: jest.fn(async () => true) } as any;
   const metrics = new MetricsService();
 
@@ -36,14 +35,14 @@ describe('NotificationDispatcherWorker - errors/retries', () => {
 
     const now = new Date();
     prisma.eventOutbox.findMany.mockResolvedValue([
-      { id: 'E1', merchantId: 'M-1', eventType: 'notify.broadcast', payload: { channel: 'SMS', template: { text: 'Hi' } }, status: 'PENDING', retries: 0, nextRetryAt: null, lastError: null, createdAt: now },
+      { id: 'E1', merchantId: 'M-1', eventType: 'notify.broadcast', payload: { channel: 'PUSH', template: { text: 'Hi' } }, status: 'PENDING', retries: 0, nextRetryAt: null, lastError: null, createdAt: now },
     ]);
     prisma.eventOutbox.updateMany.mockResolvedValue({ count: 1 });
     // First update (mark SENT) throws, then retry update succeeds
     prisma.eventOutbox.update.mockImplementationOnce(() => { throw new Error('db error'); });
     prisma.eventOutbox.update.mockResolvedValue({});
 
-    const w = new Worker(prisma as any, metrics, push, sms, email);
+    const w = new Worker(prisma as any, metrics, push, email);
     await (w as any).tick();
 
     const calls = prisma.eventOutbox.update.mock.calls.map((c: any[]) => c[0]);
@@ -60,14 +59,14 @@ describe('NotificationDispatcherWorker - errors/retries', () => {
 
     const now = new Date();
     prisma.eventOutbox.findMany.mockResolvedValue([
-      { id: 'E2', merchantId: 'M-1', eventType: 'notify.broadcast', payload: { channel: 'SMS', template: { text: 'Hi' } }, status: 'PENDING', retries: 0, nextRetryAt: null, lastError: null, createdAt: now },
+      { id: 'E2', merchantId: 'M-1', eventType: 'notify.broadcast', payload: { channel: 'PUSH', template: { text: 'Hi' } }, status: 'PENDING', retries: 0, nextRetryAt: null, lastError: null, createdAt: now },
     ]);
     prisma.eventOutbox.updateMany.mockResolvedValue({ count: 1 });
     // First update throws to trigger catch
     prisma.eventOutbox.update.mockImplementationOnce(() => { throw new Error('hard err'); });
     prisma.eventOutbox.update.mockResolvedValue({});
 
-    const w = new Worker(prisma as any, metrics, push, sms, email);
+    const w = new Worker(prisma as any, metrics, push, email);
     // private method access for tests
     await (w as any).tick();
 
@@ -89,7 +88,7 @@ describe('NotificationDispatcherWorker - errors/retries', () => {
     prisma.eventOutbox.updateMany.mockResolvedValue({ count: 1 });
     prisma.eventOutbox.update.mockResolvedValue({});
 
-    const w = new Worker(prisma as any, metrics, push, sms, email);
+    const w = new Worker(prisma as any, metrics, push, email);
     await (w as any).tick();
 
     const calls = prisma.eventOutbox.update.mock.calls.map((c: any[]) => c[0]);
@@ -108,12 +107,11 @@ describe('NotificationDispatcherWorker - errors/retries', () => {
     prisma.eventOutbox.updateMany.mockResolvedValue({ count: 1 });
     prisma.eventOutbox.update.mockResolvedValue({});
 
-    const w = new Worker(prisma as any, metrics, push, sms, email);
+    const w = new Worker(prisma as any, metrics, push, email);
     await (w as any).tick();
 
     // In test env, it shouldn't call providers for notify.test
     expect(email.sendEmail).not.toHaveBeenCalled();
-    expect(sms.sendNotification).not.toHaveBeenCalled();
 
     const calls = prisma.eventOutbox.update.mock.calls.map((c: any[]) => c[0]);
     const sent = calls.find((u: any) => u?.data?.status === 'SENT' && u?.data?.lastError === 'test-env');

@@ -47,15 +47,6 @@ TINKOFF_NOTIFICATION_URL="https://yourdomain.com/api/payment/webhook"
 
 ## Уведомления
 
-### SMS (SMSC.RU)
-```env
-SMS_PROVIDER="smsc"
-SMSC_LOGIN="your-login"
-SMSC_PASSWORD="your-password"
-SMSC_SENDER="LOYALTY" # Имя отправителя (до 11 символов)
-SMS_TEST_MODE="false"  # true для тестового режима
-```
-
 ### Push-уведомления (Firebase)
 ```env
 PUSH_PROVIDER="fcm"
@@ -195,12 +186,6 @@ YOOKASSA_SHOP_ID="test-shop-id"
 YOOKASSA_SECRET_KEY="test-secret-key"
 PAYMENT_RETURN_URL="http://localhost:3000/payment/success"
 
-# SMS (тестовый режим)
-SMS_PROVIDER="smsc"
-SMSC_LOGIN="test"
-SMSC_PASSWORD="test"
-SMS_TEST_MODE="true"
-
 # Разработка
 NODE_ENV="development"
 LOG_LEVEL="debug"
@@ -223,13 +208,6 @@ PAYMENT_PROVIDER="yookassa"
 YOOKASSA_SHOP_ID="real-shop-id"
 YOOKASSA_SECRET_KEY="real-secret-key"
 PAYMENT_RETURN_URL="https://loyalty.yourdomain.com/payment/success"
-
-# Реальные SMS
-SMS_PROVIDER="smsc"
-SMSC_LOGIN="real-login"
-SMSC_PASSWORD="real-password"
-SMSC_SENDER="YOURBRAND"
-SMS_TEST_MODE="false"
 
 # Push уведомления
 PUSH_PROVIDER="fcm"
@@ -259,7 +237,6 @@ BCRYPT_ROUNDS="12"
 
 Для production также требуются:
 - Настройки выбранного платежного провайдера
-- Настройки SMS провайдера (если используются SMS)
 - CORS_ORIGINS для безопасности
 
 ## Генерация секретных ключей

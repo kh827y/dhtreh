@@ -14,7 +14,7 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
 
 export type BroadcastArgs = {
   merchantId: string;
-  channel: 'EMAIL'|'PUSH'|'SMS'|'ALL';
+  channel: 'EMAIL'|'PUSH'|'ALL';
   segmentId?: string;
   template?: { subject?: string; text?: string; html?: string };
   variables?: any;
@@ -25,6 +25,6 @@ export async function broadcast(args: BroadcastArgs): Promise<{ ok: true; dryRun
   return http(`/notifications/broadcast`, { method: 'POST', body: JSON.stringify(args) });
 }
 
-export async function testNotification(args: { merchantId: string; channel: 'EMAIL'|'PUSH'|'SMS'; to: string; template?: { subject?: string; text?: string; html?: string } }): Promise<{ ok: true }>{
+export async function testNotification(args: { merchantId: string; channel: 'EMAIL'|'PUSH'; to: string; template?: { subject?: string; text?: string; html?: string } }): Promise<{ ok: true }>{
   return http(`/notifications/test`, { method: 'POST', body: JSON.stringify(args) });
 }

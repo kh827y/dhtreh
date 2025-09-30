@@ -147,7 +147,7 @@ docker-compose -f docker-compose.production.yml logs -f
 curl http://localhost:3000/health
 ```
 
-## ✉️ Уведомления (Email/SMS/Push)
+## ✉️ Уведомления (Email/Push)
 
 ### Переменные окружения (API/worker)
 
@@ -162,9 +162,6 @@ SMTP_USER=mailer@example.com
 SMTP_PASSWORD=***
 SMTP_FROM="Loyalty <noreply@example.com>"
 
-# SMS
-SMS_PROVIDER=smsc
-SMS_TEST_MODE=true  # включайте false в проде после проверки
 
 # Push (FCM)
 # Вставьте JSON service account в одну строку (экранируйте кавычки)
@@ -183,11 +180,11 @@ NOTIFY_RPS_DEFAULT=0
 NOTIFY_RPS_BY_MERCHANT="M-1=5,M-2=3"
 ```
 
-В `docker-compose.production.yml` сервис `worker` уже запускается с `NO_HTTP=1` и `WORKERS_ENABLED=1`. При необходимости добавьте переменные `SMTP_*`, `SMS_*`, `FIREBASE_SERVICE_ACCOUNT`, `NOTIFY_*` в секцию `environment` сервиса `worker` (и `api`, если хотите отправку из API‑контекста).
+В `docker-compose.production.yml` сервис `worker` уже запускается с `NO_HTTP=1` и `WORKERS_ENABLED=1`. При необходимости добавьте переменные `SMTP_*`, `FIREBASE_SERVICE_ACCOUNT`, `NOTIFY_*` в секцию `environment` сервиса `worker` (и `api`, если хотите отправку из API‑контекста).
 
 ### Доступ из Admin UI
 
-- Страница: `admin/app/notifications` — рассылки по каналам `ALL/EMAIL/SMS/PUSH`, поддержан `dry‑run` (предварительная оценка получателей).
+- Страница: `admin/app/notifications` — рассылки по каналам `ALL/EMAIL/PUSH`, поддержан `dry‑run` (предварительная оценка получателей).
 - Для вызова API используется заголовок `X-Admin-Key` (см. `ADMIN_KEY`).
 - Рекомендуется ограничить доступ по IP для административных эндпоинтов (переменная `ADMIN_IP_WHITELIST`, если используется `AdminIpGuard`).
 

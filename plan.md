@@ -295,13 +295,13 @@
 
 - Выполнено:
   - Заготовка уведомлений: `NotificationsService.broadcast/test` — постановка задач в Outbox (`eventType=notify.*`), метрика `notifications_enqueued_total`.
-  - Подключён `NotificationsModule` в `AppModule` (используем существующие Email/Push/SMS контроллеры для дальнейшей интеграции).
+  - Подключён `NotificationsModule` в `AppModule` (используем существующие Email/Push контроллеры для дальнейшей интеграции).
   - Admin UI: добавлена страница `admin/app/notifications` с формой рассылки (канал, сегмент, шаблон), поддержкой `dry-run`, выводом оценки получателей, выпадающим списком сегментов (`getSegmentsAdmin`).
   - Worker: создан `NotificationDispatcherWorker` (обработка `notify.broadcast`/`notify.test`), исключены `notify.*` из `OutboxDispatcherWorker`. Метрики `notifications_processed_total` и liveness.
   - Worker: добавлены per‑channel метрики (`notifications_channel_attempts_total/sent_total/failed_total` с label `channel`) и запись аудита в `AdminAudit` для событий broadcast.
   - Worker: внедрён per‑merchant RPS‑троттлинг (`NOTIFY_RPS_DEFAULT`, `NOTIFY_RPS_BY_MERCHANT`), события при ограничении переносятся на +1s; покрыто unit‑тестом `notification-dispatcher.worker.spec.ts`.
-  - README и `infra/env-examples/api.env.example`: добавлены раздел и переменные для SMTP/SMS/FCM и настроек воркера уведомлений.
-  - Dry-run: `NotificationsService.broadcast()` возвращает `estimated` по сегменту или каналам (email/sms/push) на основе Prisma счётчиков и consent’ов.
+  - README и `infra/env-examples/api.env.example`: добавлены раздел и переменные для SMTP/FCM и настроек воркера уведомлений.
+  - Dry-run: `NotificationsService.broadcast()` возвращает `estimated` по сегменту или каналам (email/push) на основе Prisma счётчиков и consent’ов.
   - Admin UI: i18n (RU/EN), a11y‑лейблы, skeleton‑лоадеры для сегментов; предпросмотр шаблонов с `{{var}}`.
   - Метрики: пер‑канальные метрики дополнены лейблом `merchantId` для разреза по мерчанту.
   - Тесты: добавлены unit‑тесты воркера на троттлинг и ветви ошибок/ретраев (`notification-dispatcher.worker.spec.ts`, `notification-dispatcher.errors.spec.ts`).

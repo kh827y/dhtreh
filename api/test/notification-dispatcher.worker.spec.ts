@@ -22,7 +22,6 @@ function makePrismaMock() {
 
 describe('NotificationDispatcherWorker - RPS throttle', () => {
   const push = { sendPush: jest.fn(async () => ({ total: 2, sent: 2, failed: 0 })), sendToTopic: jest.fn(async () => ({ success: true })) } as any;
-  const sms = { sendBulkNotification: jest.fn(async () => ({ total: 2, sent: 2, failed: 0 })) } as any;
   const email = { sendEmail: jest.fn(async () => true) } as any;
   const metrics = new MetricsService();
 
@@ -47,13 +46,13 @@ describe('NotificationDispatcherWorker - RPS throttle', () => {
     // Two events for same merchant
     const now = new Date();
     prisma.eventOutbox.findMany.mockResolvedValue([
-      { id: 'E1', merchantId: 'M-1', eventType: 'notify.broadcast', payload: { channel: 'SMS', template: { text: 'Hi' } }, status: 'PENDING', retries: 0, nextRetryAt: null, lastError: null, createdAt: now },
-      { id: 'E2', merchantId: 'M-1', eventType: 'notify.broadcast', payload: { channel: 'SMS', template: { text: 'Hi' } }, status: 'PENDING', retries: 0, nextRetryAt: null, lastError: null, createdAt: now },
+      { id: 'E1', merchantId: 'M-1', eventType: 'notify.broadcast', payload: { channel: 'PUSH', template: { text: 'Hi' } }, status: 'PENDING', retries: 0, nextRetryAt: null, lastError: null, createdAt: now },
+      { id: 'E2', merchantId: 'M-1', eventType: 'notify.broadcast', payload: { channel: 'PUSH', template: { text: 'Hi' } }, status: 'PENDING', retries: 0, nextRetryAt: null, lastError: null, createdAt: now },
     ]);
     prisma.eventOutbox.updateMany.mockResolvedValue({ count: 1 });
     prisma.eventOutbox.update.mockResolvedValue({});
 
-    const w = new Worker(prisma as any, metrics, push, sms, email);
+    const w = new Worker(prisma as any, metrics, push, email);
     // Load RPS config without starting interval
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (w as any).loadRpsConfig();

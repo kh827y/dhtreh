@@ -1,7 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
-import { SmsService } from '../notifications/sms/sms.service';
 import { EmailService } from '../notifications/email/email.service';
 import * as crypto from 'crypto';
 
@@ -22,7 +21,7 @@ export interface CreateReferralDto {
   referrerId: string; // ID приглашающего клиента
   refereePhone?: string;
   refereeEmail?: string;
-  channel?: 'SMS' | 'EMAIL' | 'LINK' | 'QR';
+  channel?: 'EMAIL' | 'LINK' | 'QR';
 }
 
 export interface ReferralStats {
@@ -44,7 +43,6 @@ export class ReferralService {
   constructor(
     private prisma: PrismaService,
     private loyaltyService: LoyaltyService,
-    private smsService: SmsService,
     private emailService: EmailService,
   ) {}
 
@@ -137,9 +135,7 @@ export class ReferralService {
     });
 
     // Отправляем приглашение
-    if (dto.channel === 'SMS' && dto.refereePhone) {
-      await this.sendReferralSms(referral);
-    } else if (dto.channel === 'EMAIL' && dto.refereeEmail) {
+    if (dto.channel === 'EMAIL' && dto.refereeEmail) {
       await this.sendReferralEmail(referral);
     }
 
@@ -500,23 +496,6 @@ export class ReferralService {
     return personal?.code || null;
   }
 
-  private async sendReferralSms(referral: any) {
-    const message = `${referral.referrer.name || 'Ваш друг'} приглашает вас в программу лояльности ${referral.program.merchant.name}! 
-Получите ${referral.program.refereeReward} баллов при регистрации. 
-Ваш код: ${referral.code}
-Ссылка: ${this.generateReferralLink(referral.program.merchantId, referral.code)}`;
-
-    await this.smsService.sendNotification({
-      merchantId: referral.program.merchantId,
-      phone: referral.refereePhone,
-      message,
-      type: 'MARKETING',
-      metadata: {
-        referralId: referral.id,
-      },
-    }).catch(console.error);
-  }
-
   private async sendReferralEmail(referral: any) {
     await this.emailService.sendEmail({
       to: referral.refereeEmail,
@@ -539,18 +518,6 @@ export class ReferralService {
     });
 
     if (!referrer) return;
-
-    const message = `Отличные новости! Ваш друг совершил первую покупку. 
-Вам начислено ${referral.program.referrerReward} баллов!`;
-
-    if (referrer.phone) {
-      await this.smsService.sendNotification({
-        merchantId: referral.program.merchantId,
-        customerId: referrer.id,
-        message,
-        type: 'TRANSACTIONAL',
-      }).catch(console.error);
-    }
 
     if (referrer.email) {
       await this.emailService.sendEmail({

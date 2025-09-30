@@ -1,7 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import ExcelJS from 'exceljs';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaService } from './../src/prisma.service';
 import { MetricsService } from './../src/metrics.service';
@@ -10,9 +9,7 @@ import { PushService } from './../src/notifications/push/push.service';
 import { EmailService } from './../src/notifications/email/email.service';
 import { getJose } from './../src/loyalty/token.util';
 import { LoyaltyProgramModule } from './../src/loyalty-program/loyalty-program.module';
-import { ReportModule } from './../src/reports/report.module';
 import { NotificationsModule } from './../src/notifications/notifications.module';
-import { ReportService } from './../src/reports/report.service';
 jest.mock('@prisma/client', () => {
   const makeEnum = (values: string[]) =>
     values.reduce((acc, key) => {
@@ -39,7 +36,7 @@ jest.mock('@prisma/client', () => {
     MechanicStatus: makeEnum(['DISABLED', 'ENABLED', 'DRAFT']),
     DataImportStatus: makeEnum(['UPLOADED', 'VALIDATING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELED']),
     DataImportType: makeEnum(['CUSTOMERS', 'TRANSACTIONS', 'PRODUCTS', 'STAFF', 'PROMO_CODES']),
-    CommunicationChannel: makeEnum(['PUSH', 'SMS', 'EMAIL', 'TELEGRAM', 'INAPP']),
+    CommunicationChannel: makeEnum(['PUSH', 'EMAIL', 'TELEGRAM', 'INAPP']),
     PortalAccessState: makeEnum(['ENABLED', 'DISABLED', 'INVITED', 'LOCKED']),
     TxnType: makeEnum(['EARN', 'REDEEM', 'REFUND', 'ADJUST', 'CAMPAIGN', 'REFERRAL']),
     LedgerAccount: makeEnum(['CUSTOMER_BALANCE', 'MERCHANT_LIABILITY', 'RESERVED']),
@@ -488,7 +485,6 @@ const emailServiceStub = {
   sendEmail: jest.fn(),
   sendWelcomeEmail: jest.fn(),
   sendTransactionEmail: jest.fn(),
-  sendReportEmail: jest.fn(),
   sendPointsReminder: jest.fn(),
   getTemplates: jest.fn(async () => []),
 };
@@ -512,7 +508,6 @@ describe('LoyaltyPromotion integration (e2e)', () => {
       imports: [
         ConfigModule.forRoot({ isGlobal: true }),
         LoyaltyProgramModule,
-        ReportModule,
         NotificationsModule,
       ],
     })
@@ -549,72 +544,6 @@ describe('LoyaltyPromotion integration (e2e)', () => {
     state.customers.set('C1', { id: 'C1', merchantId: 'M-1', email: 'user@example.com', phone: '+79990000000', name: 'Demo User' });
     state.customers.set('C2', { id: 'C2', merchantId: 'M-1', email: null, phone: '+79991111111', name: 'Anon' });
     state.pushDevices.push({ id: `device-${pushDeviceSeq++}`, merchantId: 'M-1', customerId: 'C1', token: 'push-token', isActive: true });
-  });
-
-  it('exports promotions via reports/export with XLSX sheet', async () => {
-    const now = new Date();
-    const promotion = await prismaMock.loyaltyPromotion.create({
-      data: {
-        merchantId: 'M-1',
-        name: 'Двойные баллы',
-        status: PromotionStatus.ACTIVE,
-        rewardType: 'CUSTOM',
-        rewardMetadata: { type: 'POINTS', value: 100 },
-        metadata: { legacyCampaign: { kind: 'BONUS', startDate: now.toISOString(), endDate: now.toISOString() } },
-        startAt: now,
-        endAt: now,
-      },
-    });
-    state.participants.push(
-      {
-        id: `pp-${participantSeq++}`,
-        promotionId: promotion.id,
-        merchantId: 'M-1',
-        customerId: 'C1',
-        pointsIssued: 150,
-        joinedAt: now,
-        createdAt: now,
-      },
-      {
-        id: `pp-${participantSeq++}`,
-        promotionId: promotion.id,
-        merchantId: 'M-1',
-        customerId: 'C2',
-        pointsIssued: 50,
-        joinedAt: now,
-        createdAt: now,
-      },
-    );
-
-    const reportService = app.get(ReportService);
-    const periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    periodStart.setHours(0, 0, 0, 0);
-    const periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    periodEnd.setHours(23, 59, 59, 999);
-    const buffer = await reportService.generateReport({
-      merchantId: 'M-1',
-      type: 'campaigns',
-      format: 'excel',
-      period: { from: periodStart, to: periodEnd, type: 'month' },
-    });
-
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer as Buffer);
-    const sheet = workbook.getWorksheet('Акции');
-    expect(sheet).toBeDefined();
-    let promotionRow: any[] | null = null;
-    sheet!.eachRow((row) => {
-      const values = row.values as any[];
-      const normalized = values.map((value) => (value && typeof value === 'object' && 'text' in value ? value.text : value));
-      if (normalized.includes('Двойные баллы')) {
-        promotionRow = normalized;
-      }
-    });
-    expect(promotionRow).not.toBeNull();
-    expect(promotionRow![1]).toBe('Двойные баллы');
-    expect(promotionRow![3]).toBe('Активна');
-    expect(promotionRow![6]).toBe(2);
-    expect(promotionRow![7]).toBe(200);
   });
 
   it('creates, updates and reads promotion usage stats', async () => {

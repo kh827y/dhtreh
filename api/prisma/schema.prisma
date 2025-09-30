@@ -171,7 +171,6 @@ enum DataImportType {
 
 enum CommunicationChannel {
   PUSH
-  SMS
   EMAIL
   TELEGRAM
   INAPP
@@ -1199,26 +1198,6 @@ model PushNotification {
   sentAt      DateTime?
   error       String?
   createdAt   DateTime  @default(now())
-}
-
-// SMS notifications log
-model SmsNotification {
-  id         String    @id @default(cuid())
-  merchantId String
-  customerId String?
-  phone      String
-  message    String
-  type       String
-  status     String    @default("PENDING")
-  provider   String?
-  messageId  String?
-  cost       Float?    @default(0)
-  parts      Int?      @default(1)
-  sentAt     DateTime?
-  error      String?
-  campaignId String?
-  metadata   Json?
-  createdAt  DateTime  @default(now())
 }
 
 model CommunicationTemplate {

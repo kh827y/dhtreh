@@ -10,7 +10,7 @@ export type CampaignType =
 
 export type CampaignStatus = 'DRAFT' | 'ACTIVE' | 'PAUSED' | 'COMPLETED';
 
-export type CampaignNotificationChannel = 'SMS' | 'TELEGRAM' | 'PUSH';
+export type CampaignNotificationChannel = 'TELEGRAM' | 'PUSH';
 
 export interface CampaignRules {
   minPurchaseAmount?: number;
@@ -85,7 +85,7 @@ function asCampaignNotificationChannels(value: any): CampaignNotificationChannel
   if (!Array.isArray(value)) return [];
   return value
     .map((item) => {
-      if (item === 'SMS' || item === 'TELEGRAM' || item === 'PUSH') return item;
+      if (item === 'TELEGRAM' || item === 'PUSH') return item;
       return null;
     })
     .filter((item): item is CampaignNotificationChannel => item !== null);

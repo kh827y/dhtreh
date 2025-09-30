@@ -35,7 +35,7 @@ CREATE TYPE "public"."DataImportStatus" AS ENUM ('UPLOADED', 'VALIDATING', 'PROC
 CREATE TYPE "public"."DataImportType" AS ENUM ('CUSTOMERS', 'TRANSACTIONS', 'PRODUCTS', 'STAFF', 'PROMO_CODES');
 
 -- CreateEnum
-CREATE TYPE "public"."CommunicationChannel" AS ENUM ('PUSH', 'SMS', 'EMAIL', 'TELEGRAM', 'INAPP');
+CREATE TYPE "public"."CommunicationChannel" AS ENUM ('PUSH', 'EMAIL', 'TELEGRAM', 'INAPP');
 
 -- CreateEnum
 CREATE TYPE "public"."PortalAccessState" AS ENUM ('ENABLED', 'DISABLED', 'INVITED', 'LOCKED');

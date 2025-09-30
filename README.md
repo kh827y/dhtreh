@@ -130,7 +130,7 @@ E. Проверка результатов
 ### LoyaltyPromotion — акции и коммуникации
 
 - Сущность `LoyaltyPromotion` заменяет legacy-кампании: портал и API работают с единым CRUD `/portal/loyalty/promotions`.
-- Экспорт `type=campaigns` в `GET /reports/export/:merchantId` строится поверх `loyalty_promotions` и `promotion_participants`, в XLSX-отчёте появляется лист «Акции».
+- Исторические `GET /reports/export/:merchantId` отключены — используйте аналитику портала или выгрузку через API лояльности.
 - Статистика применения акции формируется из записей `PromotionParticipant` (участники, начисленные баллы, ROI) и доступна в `GET /portal/loyalty/promotions/:id`.
 - Уведомления (email/push/telegram) используют `promotionId`: шаблоны получают название акции, сроки и тип из `metadata.legacyCampaign`.
 
@@ -289,14 +289,13 @@ POINTS_TTL_BURN=1
 
 Волна 3 добавляет заготовку рассылок:
 
-- Админка: `admin/app/notifications` — форма для широковещательной рассылки по каналу `ALL/EMAIL/SMS/PUSH`, есть `dry-run`.
+- Админка: `admin/app/notifications` — форма для широковещательной рассылки по каналу `ALL/EMAIL/PUSH`, есть `dry-run`.
 - API: `POST /notifications/broadcast` и `POST /notifications/test` (защищено `AdminGuard`/`AdminIpGuard`).
-- Воркер: `NotificationDispatcherWorker` читает события `notify.*` из `EventOutbox` и отправляет через существующие сервисы `EmailService`/`SmsService`/`PushService`.
+- Воркер: `NotificationDispatcherWorker` читает события `notify.*` из `EventOutbox` и отправляет через существующие сервисы `EmailService`/`PushService`.
 
 ENV подсказки:
 
 - Email: `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`.
-- SMS: `SMS_PROVIDER` (по умолчанию `smsc`), `SMS_TEST_MODE=true` для безопасной отладки.
 - Push: `FIREBASE_SERVICE_ACCOUNT` — JSON service account (строкой).
 - Воркер: `WORKERS_ENABLED=1`, опционально `NOTIFY_WORKER_INTERVAL_MS`, `NOTIFY_WORKER_BATCH`.
   - Троттлинг RPS: `NOTIFY_RPS_DEFAULT` (по умолчанию на мерчанта; `0` — без ограничений), `NOTIFY_RPS_BY_MERCHANT` (`M-1=5,M-2=3`).
@@ -305,7 +304,7 @@ ENV подсказки:
 
 - `notifications_enqueued_total{type}` — количество поставленных в outbox задач (`broadcast`/`test`).
 - `notifications_processed_total{type,result}` — обработанные воркером события (`broadcast`/`test` + `sent`/`dry`/`retry`/`dead`/`throttled`).
-- `notifications_channel_attempts_total{channel,merchantId}` — попытки отправки по каналам (`EMAIL`/`SMS`/`PUSH`).
+- `notifications_channel_attempts_total{channel,merchantId}` — попытки отправки по каналам (`EMAIL`/`PUSH`).
 - `notifications_channel_sent_total{channel,merchantId}` — успешно отправленные по каналам.
 - `notifications_channel_failed_total{channel,merchantId}` — неуспешные по каналам.
 
@@ -329,13 +328,12 @@ ENV подсказки:
 
 Волна 3 добавляет заготовку рассылок:
 
-- Админка: `admin/app/notifications` — форма для широковещательной рассылки по каналу `ALL/EMAIL/SMS/PUSH`, есть `dry-run`.
+- Админка: `admin/app/notifications` — форма для широковещательной рассылки по каналу `ALL/EMAIL/PUSH`, есть `dry-run`.
 - API: `POST /notifications/broadcast` и `POST /notifications/test` (защищено `AdminGuard`/`AdminIpGuard`).
-- Воркер: `NotificationDispatcherWorker` читает события `notify.*` из `EventOutbox` и отправляет через существующие сервисы `EmailService`/`SmsService`/`PushService`.
+- Воркер: `NotificationDispatcherWorker` читает события `notify.*` из `EventOutbox` и отправляет через существующие сервисы `EmailService`/`PushService`.
 
 ENV подсказки:
 
 - Email: `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`.
-- SMS: `SMS_PROVIDER` (по умолчанию `smsc`), `SMS_TEST_MODE=true` для безопасной отладки.
 - Push: `FIREBASE_SERVICE_ACCOUNT` — JSON service account (строкой).
 - Воркер: `WORKERS_ENABLED=1`, опционально `NOTIFY_WORKER_INTERVAL_MS`, `NOTIFY_WORKER_BATCH`.

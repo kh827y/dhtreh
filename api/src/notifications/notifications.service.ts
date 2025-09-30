@@ -4,7 +4,7 @@ import { MetricsService } from '../metrics.service';
 
 export type BroadcastArgs = {
   merchantId: string;
-  channel: 'EMAIL'|'PUSH'|'SMS'|'ALL';
+  channel: 'EMAIL'|'PUSH'|'ALL';
   segmentId?: string;
   template?: { subject?: string; text?: string; html?: string };
   variables?: any;
@@ -40,7 +40,7 @@ export class NotificationsService {
     return { ok: true };
   }
 
-  async test(merchantId: string, channel: 'EMAIL'|'PUSH'|'SMS', to: string, template?: { subject?: string; text?: string; html?: string }) {
+  async test(merchantId: string, channel: 'EMAIL'|'PUSH', to: string, template?: { subject?: string; text?: string; html?: string }) {
     if (!merchantId) throw new BadRequestException('merchantId required');
     if (!channel) throw new BadRequestException('channel required');
     if (!to) throw new BadRequestException('to required');
@@ -52,7 +52,7 @@ export class NotificationsService {
     return { ok: true };
   }
 
-  private async estimateRecipients(merchantId: string, channel: 'EMAIL'|'PUSH'|'SMS'|'ALL', segmentId?: string): Promise<number> {
+  private async estimateRecipients(merchantId: string, channel: 'EMAIL'|'PUSH'|'ALL', segmentId?: string): Promise<number> {
     try {
       if (segmentId) {
         const size = await this.prisma.segmentCustomer.count({ where: { segmentId } });
@@ -60,7 +60,6 @@ export class NotificationsService {
       }
       // Per-channel estimations
       let emailCount = 0;
-      let smsCount = 0;
       let pushCount = 0;
       if (channel === 'EMAIL' || channel === 'ALL') {
         // Customers of merchant with non-null email (via CustomerStats relation)
@@ -71,22 +70,13 @@ export class NotificationsService {
           emailCount = Math.min(emailCount || granted, Math.max(emailCount, granted));
         } catch {}
       }
-      if (channel === 'SMS' || channel === 'ALL') {
-        // Use consents if present
-        smsCount = await this.prisma.customerConsent.count({ where: { merchantId, channel: 'SMS', status: 'GRANTED' } });
-        if (!smsCount) {
-          // Fallback: customers with phone under merchant
-          smsCount = await (this.prisma as any).customerStats.count({ where: { merchantId, customer: { phone: { not: null } } } });
-        }
-      }
       if (channel === 'PUSH' || channel === 'ALL') {
         // Distinct customers with active devices
         const groups = await (this.prisma as any).pushDevice.groupBy({ by: ['customerId'], where: { merchantId, isActive: true }, _count: true });
         pushCount = Array.isArray(groups) ? groups.length : 0;
       }
-      if (channel === 'ALL') return Math.max(emailCount, smsCount, pushCount);
+      if (channel === 'ALL') return Math.max(emailCount, pushCount);
       if (channel === 'EMAIL') return emailCount;
-      if (channel === 'SMS') return smsCount;
       if (channel === 'PUSH') return pushCount;
       return 0;
     } catch {
