@@ -255,15 +255,14 @@ export class ImportExportService {
   /**
    * Потоковый экспорт транзакций в CSV (батчами)
    */
-  async streamTransactionsCsv(params: { merchantId: string; from?: Date; to?: Date; type?: string; customerId?: string; outletId?: string; deviceId?: string; staffId?: string; }, res: Response, batch = 1000) {
+  async streamTransactionsCsv(params: { merchantId: string; from?: Date; to?: Date; type?: string; customerId?: string; outletId?: string; staffId?: string; }, res: Response, batch = 1000) {
     const where: any = { merchantId: params.merchantId };
     if (params.type) where.type = params.type as any;
     if (params.customerId) where.customerId = params.customerId;
     if (params.outletId) where.outletId = params.outletId;
-    if (params.deviceId) where.deviceId = params.deviceId;
     if (params.staffId) where.staffId = params.staffId;
     if (params.from || params.to) where.createdAt = Object.assign({}, params.from ? { gte: params.from } : {}, params.to ? { lte: params.to } : {});
-    res.write(['id','type','amount','orderId','customerId','createdAt','outletId','deviceId','staffId'].join(';') + '\n');
+    res.write(['id','type','amount','orderId','customerId','createdAt','outletId','staffId'].join(';') + '\n');
     let before: Date | undefined = undefined;
     while (true) {
       const page = await this.prisma.transaction.findMany({
@@ -273,7 +272,7 @@ export class ImportExportService {
       });
       if (!page.length) break;
       for (const t of page) {
-        const row = [ t.id, t.type, t.amount, t.orderId||'', t.customerId||'', t.createdAt.toISOString(), t.outletId||'', t.deviceId||'', t.staffId||'' ]
+        const row = [ t.id, t.type, t.amount, t.orderId||'', t.customerId||'', t.createdAt.toISOString(), t.outletId||'', t.staffId||'' ]
           .map(v => this.csvCell(String(v ?? ''))).join(';');
         res.write(row + '\n');
       }

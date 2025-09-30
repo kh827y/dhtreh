@@ -59,7 +59,7 @@ export interface OperationalMetrics {
   topOutlets: OutletPerformance[];
   topStaff: StaffPerformance[];
   peakHours: string[];
-  deviceUsage: DeviceStats[];
+  outletUsage: OutletUsageStats[];
 }
 
 export interface CustomerPortraitMetrics {
@@ -147,9 +147,9 @@ interface StaffPerformance {
   averageCheck: number;
 }
 
-interface DeviceStats {
-  deviceId: string;
-  type: string;
+interface OutletUsageStats {
+  outletId: string;
+  name: string;
   transactions: number;
   lastActive: Date | null;
 }
@@ -673,14 +673,14 @@ export class AnalyticsService {
    * Операционные метрики
    */
   async getOperationalMetrics(merchantId: string, period: DashboardPeriod): Promise<OperationalMetrics> {
-    const [topOutlets, topStaff, peakHours, deviceUsage] = await Promise.all([
+    const [topOutlets, topStaff, peakHours, outletUsage] = await Promise.all([
       this.getTopOutlets(merchantId, period),
       this.getTopStaff(merchantId, period),
       this.getPeakHours(merchantId, period),
-      this.getDeviceUsage(merchantId, period),
+      this.getOutletUsage(merchantId, period),
     ]);
 
-    return { topOutlets, topStaff, peakHours, deviceUsage };
+    return { topOutlets, topStaff, peakHours, outletUsage };
   }
 
   async getAutoReturnMetrics(
@@ -1463,27 +1463,44 @@ export class AnalyticsService {
     return top3.map(h => `${h.hour}:00-${h.hour + 1}:00`);
   }
 
-  private async getDeviceUsage(merchantId: string, period: DashboardPeriod): Promise<DeviceStats[]> {
-    const [devices, grouped] = await Promise.all([
-      this.prisma.device.findMany({ where: { merchantId }, select: { id: true, type: true } }),
+  private async getOutletUsage(merchantId: string, period: DashboardPeriod): Promise<OutletUsageStats[]> {
+    const [outlets, grouped] = await Promise.all([
+      this.prisma.outlet.findMany({
+        where: { merchantId },
+        select: { id: true, name: true, posLastSeenAt: true },
+      }),
       this.prisma.transaction.groupBy({
-        by: ['deviceId'],
-        where: { merchantId, createdAt: { gte: period.from, lte: period.to }, deviceId: { not: null } },
+        by: ['outletId'],
+        where: {
+          merchantId,
+          createdAt: { gte: period.from, lte: period.to },
+          outletId: { not: null },
+        },
         _count: { _all: true },
         _max: { createdAt: true },
       }),
     ]);
-    const map = new Map<string, { transactions: number; lastActive: Date | null }>();
+
+    const map = new Map<string, { transactions: number; lastTxnAt: Date | null }>();
     for (const g of grouped) {
-      if (!g.deviceId) continue;
-      map.set(g.deviceId, { transactions: g._count._all || 0, lastActive: (g._max.createdAt as Date) || null });
+      if (!g.outletId) continue;
+      map.set(g.outletId, {
+        transactions: g._count._all || 0,
+        lastTxnAt: (g._max.createdAt as Date) || null,
+      });
     }
-    const rows: DeviceStats[] = devices.map(d => ({
-      deviceId: d.id,
-      type: d.type as any,
-      transactions: map.get(d.id)?.transactions || 0,
-      lastActive: map.get(d.id)?.lastActive || null,
-    }));
+
+    const rows: OutletUsageStats[] = outlets.map(outlet => {
+      const aggregate = map.get(outlet.id);
+      const lastActive = outlet.posLastSeenAt ?? aggregate?.lastTxnAt ?? null;
+      return {
+        outletId: outlet.id,
+        name: outlet.name || outlet.id,
+        transactions: aggregate?.transactions || 0,
+        lastActive,
+      };
+    });
+
     rows.sort((a, b) => b.transactions - a.transactions);
     return rows;
   }

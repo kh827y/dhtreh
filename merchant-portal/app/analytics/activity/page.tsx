@@ -4,8 +4,8 @@ import { Card, CardHeader, CardBody, Skeleton } from '@loyalty/ui';
 
 type OutletPerf = { id: string; name: string; revenue: number; transactions: number; growth: number };
 type StaffPerf = { id: string; name: string; transactions: number; revenue: number; averageCheck: number };
-type DeviceStats = { deviceId: string; type: string; transactions: number; lastActive: string | null };
-type Resp = { topOutlets: OutletPerf[]; topStaff: StaffPerf[]; peakHours: string[]; deviceUsage: DeviceStats[] };
+type OutletUsage = { outletId: string; name: string; transactions: number; lastActive: string | null };
+type Resp = { topOutlets: OutletPerf[]; topStaff: StaffPerf[]; peakHours: string[]; outletUsage: OutletUsage[] };
 
 export default function AnalyticsActivityPage() {
   const [data, setData] = React.useState<Resp | null>(null);
@@ -72,21 +72,21 @@ export default function AnalyticsActivityPage() {
         </CardBody>
       </Card>
       <Card>
-        <CardHeader title="Устройства" />
+        <CardHeader title="Активность точек" />
         <CardBody>
           {loading ? <Skeleton height={160} /> : (
             <div style={{ display:'grid', gap: 6 }}>
-              {(data?.deviceUsage||[]).map(d=> (
-                <div key={d.deviceId} style={{ display:'grid', gridTemplateColumns:'1fr 140px 120px', gap: 8, borderBottom:'1px solid rgba(255,255,255,.06)', padding:'6px 0' }}>
+              {(data?.outletUsage||[]).map(o=> (
+                <div key={o.outletId} style={{ display:'grid', gridTemplateColumns:'1fr 140px 160px', gap: 8, borderBottom:'1px solid rgba(255,255,255,.06)', padding:'6px 0' }}>
                   <div>
-                    <div style={{ fontWeight:600 }}>{d.deviceId}</div>
-                    <div style={{ opacity:.7, fontSize:12 }}>{d.type}</div>
+                    <div style={{ fontWeight:600 }}>{o.name || o.outletId}</div>
+                    <div style={{ opacity:.7, fontSize:12 }}>{o.outletId}</div>
                   </div>
-                  <div>Чеки: {d.transactions}</div>
-                  <div>Активность: {d.lastActive ? new Date(d.lastActive).toLocaleString() : '—'}</div>
+                  <div>Чеки: {o.transactions}</div>
+                  <div>POS активен: {o.lastActive ? new Date(o.lastActive).toLocaleString() : '—'}</div>
                 </div>
               ))}
-              {!data?.deviceUsage?.length && <div style={{ opacity:.7 }}>Нет данных</div>}
+              {!data?.outletUsage?.length && <div style={{ opacity:.7 }}>Нет данных</div>}
             </div>
           )}
           {msg && <div style={{ color:'#f87171', marginTop:8 }}>{msg}</div>}

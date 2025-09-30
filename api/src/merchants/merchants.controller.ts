@@ -418,13 +418,13 @@ export class MerchantsController {
     const batch = Math.min(Math.max(parseInt(batchStr, 10) || 1000, 100), 5000);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="receipts_${id}_${Date.now()}.csv"`);
-    res.write('id,orderId,customerId,total,eligibleTotal,redeemApplied,earnApplied,createdAt,outletId,deviceId,staffId\n');
+    res.write('id,orderId,customerId,total,eligibleTotal,redeemApplied,earnApplied,createdAt,outletId,staffId\n');
     let before = beforeStr ? new Date(beforeStr) : undefined;
     while (true) {
       const page = await this.service.listReceipts(id, { limit: batch, before, orderId, customerId });
       if (!page.length) break;
       for (const r of page) {
-        const row = [r.id,r.orderId,r.customerId,r.total,r.eligibleTotal,r.redeemApplied,r.earnApplied,r.createdAt.toISOString(),(r.outletId||''),(r.deviceId||''),(r.staffId||'')]
+        const row = [r.id,r.orderId,r.customerId,r.total,r.eligibleTotal,r.redeemApplied,r.earnApplied,r.createdAt.toISOString(),(r.outletId||''),(r.staffId||'')]
           .map(x=>`"${String(x).replaceAll('"','""')}"`).join(',');
         res.write(row + '\n');
       }

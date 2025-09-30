@@ -43,7 +43,7 @@ describe('EarnActivationWorker (unit)', () => {
     expect(tx.earnLot.update).toHaveBeenCalledWith({ where: { id: 'L1' }, data: { status: 'ACTIVE', earnedAt: maturedAt } });
     expect(tx.wallet.update).toHaveBeenCalledWith({ where: { id: 'W1' }, data: { balance: 10 + 70 } });
     expect(tx.transaction.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ merchantId: 'M1', customerId: 'C1', type: 'EARN', amount: 70 }) }));
-    expect(tx.eventOutbox.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ eventType: 'loyalty.earn.activated' }) }));
+    expect(tx.eventOutbox.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ eventType: 'loyalty.earn.activated', payload: expect.objectContaining({ outletId: null }) }) }));
   });
 
   it('skips if lot is not matured yet', async () => {

@@ -60,11 +60,11 @@ export class PushController {
   /**
    * Деактивировать устройство
    */
-  @Delete('device/:deviceId')
+  @Delete('device/:outletDeviceKey')
   @ApiOperation({ summary: 'Деактивировать устройство' })
   @ApiResponse({ status: 200, description: 'Устройство деактивировано' })
-  async deactivateDevice(@Param('deviceId') deviceId: string) {
-    await this.pushService.deactivateDevice(deviceId);
+  async deactivateDevice(@Param('outletDeviceKey') outletDeviceKey: string) {
+    await this.pushService.deactivateDevice(outletDeviceKey);
     return { success: true };
   }
 

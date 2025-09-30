@@ -8,8 +8,8 @@ describe('CSV Exports (e2e)', () => {
   let app: INestApplication;
 
   const state = {
-    receipts: [] as Array<{ id: string; merchantId: string; customerId: string; orderId: string; total: number; eligibleTotal: number; redeemApplied: number; earnApplied: number; createdAt: Date; outletId?: string|null; deviceId?: string|null; staffId?: string|null }>,
-    transactions: [] as Array<{ id: string; merchantId: string; customerId: string; type: string; amount: number; orderId?: string|null; createdAt: Date; outletId?: string|null; deviceId?: string|null; staffId?: string|null }>,
+    receipts: [] as Array<{ id: string; merchantId: string; customerId: string; orderId: string; total: number; eligibleTotal: number; redeemApplied: number; earnApplied: number; createdAt: Date; outletId?: string|null; staffId?: string|null }>,
+    transactions: [] as Array<{ id: string; merchantId: string; customerId: string; type: string; amount: number; orderId?: string|null; createdAt: Date; outletId?: string|null; staffId?: string|null }>,
   };
   const uuid = (() => { let i = 1; return () => `id-${i++}`; })();
 
@@ -39,8 +39,8 @@ describe('CSV Exports (e2e)', () => {
   beforeAll(async () => {
     process.env.ADMIN_KEY = 'test-admin-key';
     const now = new Date();
-    state.receipts.push({ id: uuid(), merchantId: 'M1', customerId: 'C1', orderId: 'O1', total: 1000, eligibleTotal: 900, redeemApplied: 100, earnApplied: 50, createdAt: now, outletId: null, deviceId: null, staffId: null });
-    state.receipts.push({ id: uuid(), merchantId: 'M1', customerId: 'C2', orderId: 'O2', total: 500, eligibleTotal: 500, redeemApplied: 0, earnApplied: 25, createdAt: new Date(now.getTime()-3600_000), outletId: null, deviceId: null, staffId: null });
+    state.receipts.push({ id: uuid(), merchantId: 'M1', customerId: 'C1', orderId: 'O1', total: 1000, eligibleTotal: 900, redeemApplied: 100, earnApplied: 50, createdAt: now, outletId: null, staffId: null });
+    state.receipts.push({ id: uuid(), merchantId: 'M1', customerId: 'C2', orderId: 'O2', total: 500, eligibleTotal: 500, redeemApplied: 0, earnApplied: 25, createdAt: new Date(now.getTime()-3600_000), outletId: null, staffId: null });
     state.transactions.push({ id: uuid(), merchantId: 'M1', customerId: 'C1', type: 'EARN', amount: 50, orderId: 'O1', createdAt: now });
     state.transactions.push({ id: uuid(), merchantId: 'M1', customerId: 'C1', type: 'REDEEM', amount: -100, orderId: 'O3', createdAt: new Date(now.getTime()-7200_000) });
 
@@ -60,7 +60,7 @@ describe('CSV Exports (e2e)', () => {
       .set('X-Admin-Key', 'test-admin-key')
       .expect(200);
     expect(typeof res.text).toBe('string');
-    expect(res.text.split('\n')[0]).toContain('id,orderId,customerId,total,eligibleTotal,redeemApplied,earnApplied,createdAt,outletId,deviceId,staffId');
+    expect(res.text.split('\n')[0]).toContain('id,orderId,customerId,total,eligibleTotal,redeemApplied,earnApplied,createdAt,outletId,staffId');
   });
 
   it('GET /merchants/:id/transactions.csv returns CSV with header', async () => {
@@ -69,6 +69,6 @@ describe('CSV Exports (e2e)', () => {
       .set('X-Admin-Key', 'test-admin-key')
       .expect(200);
     expect(typeof res.text).toBe('string');
-    expect(res.text.split('\n')[0]).toContain('id,type,amount,orderId,customerId,createdAt,outletId,deviceId,staffId');
+    expect(res.text.split('\n')[0]).toContain('id,type,amount,orderId,customerId,createdAt,outletId,staffId');
   });
 });

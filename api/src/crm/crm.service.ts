@@ -150,8 +150,8 @@ export class CrmService {
       }),
     ]);
     const events: Array<{ type: string; at: string; data: any }> = [];
-    for (const t of txs) events.push({ type: 'transaction', at: t.createdAt.toISOString(), data: { id: t.id, amount: t.amount, txnType: t.type, orderId: t.orderId, outletId: t.outletId, deviceId: t.deviceId, staffId: t.staffId } });
-    for (const r of rcs) events.push({ type: 'receipt', at: r.createdAt.toISOString(), data: { id: r.id, orderId: r.orderId, total: r.total, redeemApplied: r.redeemApplied, earnApplied: r.earnApplied, outletId: r.outletId, deviceId: r.deviceId, staffId: r.staffId } });
+    for (const t of txs) events.push({ type: 'transaction', at: t.createdAt.toISOString(), data: { id: t.id, amount: t.amount, txnType: t.type, orderId: t.orderId, outletId: t.outletId, staffId: t.staffId } });
+    for (const r of rcs) events.push({ type: 'receipt', at: r.createdAt.toISOString(), data: { id: r.id, orderId: r.orderId, total: r.total, redeemApplied: r.redeemApplied, earnApplied: r.earnApplied, outletId: r.outletId, staffId: r.staffId } });
     for (const p of promotions) {
       events.push({
         type: 'campaign',
