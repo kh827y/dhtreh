@@ -184,8 +184,8 @@ export async function previewRules(merchantId: string, args: { channel: 'SMART'|
 // ===== CRM helpers =====
 export type CustomerSummary = {
   balance: number;
-  recentTx: Array<{ id: string; type: string; amount: number; orderId?: string; createdAt: string; outletId?: string; deviceId?: string; staffId?: string }>;
-  recentReceipts: Array<{ id: string; orderId: string; customerId: string; total: number; eligibleTotal: number; redeemApplied: number; earnApplied: number; createdAt: string; outletId?: string; deviceId?: string; staffId?: string }>;
+  recentTx: Array<{ id: string; type: string; amount: number; orderId?: string; createdAt: string; outletId?: string; outletPosType?: string | null; outletLastSeenAt?: string | null; staffId?: string }>;
+  recentReceipts: Array<{ id: string; orderId: string; customerId: string; total: number; eligibleTotal: number; redeemApplied: number; earnApplied: number; createdAt: string; outletId?: string; outletPosType?: string | null; outletLastSeenAt?: string | null; staffId?: string }>;
 };
 
 export async function customerSearch(merchantId: string, phone: string): Promise<{ customerId: string; phone: string; balance: number } | null> {
@@ -196,7 +196,7 @@ export async function customerSummary(merchantId: string, customerId: string): P
   return http(`/merchants/${encodeURIComponent(merchantId)}/customer/summary?customerId=${encodeURIComponent(customerId)}`);
 }
 
-export function transactionsCsvUrl(merchantId: string, params: { limit?: number; before?: string; from?: string; to?: string; type?: string; customerId?: string; outletId?: string; deviceId?: string; staffId?: string }): string {
+export function transactionsCsvUrl(merchantId: string, params: { limit?: number; before?: string; from?: string; to?: string; type?: string; customerId?: string; outletId?: string; staffId?: string }): string {
   const p = new URLSearchParams();
   if (params.limit != null) p.set('limit', String(params.limit));
   if (params.before) p.set('before', params.before);
@@ -205,7 +205,6 @@ export function transactionsCsvUrl(merchantId: string, params: { limit?: number;
   if (params.type) p.set('type', params.type);
   if (params.customerId) p.set('customerId', params.customerId);
   if (params.outletId) p.set('outletId', params.outletId);
-  if (params.deviceId) p.set('deviceId', params.deviceId);
   if (params.staffId) p.set('staffId', params.staffId);
   return `/api/admin/merchants/${encodeURIComponent(merchantId)}/transactions.csv?${p.toString()}`;
 }
@@ -220,7 +219,7 @@ export function receiptsCsvUrl(merchantId: string, params: { limit?: number; bef
 }
 
 // Paged lists for CRM
-export async function listTransactionsAdmin(merchantId: string, params: { limit?: number; before?: string; from?: string; to?: string; type?: string; customerId?: string; outletId?: string; deviceId?: string; staffId?: string }): Promise<{ items: any[]; nextBefore: string | null }> {
+export async function listTransactionsAdmin(merchantId: string, params: { limit?: number; before?: string; from?: string; to?: string; type?: string; customerId?: string; outletId?: string; staffId?: string }): Promise<{ items: any[]; nextBefore: string | null }> {
   const p = new URLSearchParams();
   if (params.limit != null) p.set('limit', String(params.limit));
   if (params.before) p.set('before', params.before);
@@ -229,7 +228,6 @@ export async function listTransactionsAdmin(merchantId: string, params: { limit?
   if (params.type) p.set('type', params.type);
   if (params.customerId) p.set('customerId', params.customerId);
   if (params.outletId) p.set('outletId', params.outletId);
-  if (params.deviceId) p.set('deviceId', params.deviceId);
   if (params.staffId) p.set('staffId', params.staffId);
   const qs = p.toString();
   const res: any = await http(`/merchants/${encodeURIComponent(merchantId)}/transactions${qs?`?${qs}`:''}`);

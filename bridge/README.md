@@ -34,7 +34,7 @@ env BRIDGE_PORT=18080 API_BASE=http://localhost:3000 pnpm start
 - BRIDGE_PORT: порт (по умолчанию 18080)
 - API_BASE: базовый URL API (по умолчанию http://localhost:3000)
 - MERCHANT_ID: дефолтный мерчант, если не приходит в запросе
-- OUTLET_ID / DEVICE_ID: дефолтная атрибуция
+- OUTLET_ID: дефолтная атрибуция точки
 - STAFF_KEY: ключ кассира (проксируется как X-Staff-Key)
 - BRIDGE_SECRET: секрет для подписи X-Bridge-Signature
 - FLUSH_INTERVAL_MS: период фона догона очереди (по умолчанию 5000)

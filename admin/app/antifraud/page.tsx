@@ -194,19 +194,19 @@ export default function AntiFraudPage() {
       return hour >= 0 && hour < 6; // 00:00 - 06:00
     });
     
-    // Group by outlet/device
+    // Group by outlet/POS type
     const byOutlet = new Map<string, any[]>();
     for (const tx of nightTxs) {
-      const key = `${tx.outletId || 'unknown'}/${tx.deviceId || 'unknown'}`;
+      const key = `${tx.outletId || 'unknown'}/${tx.outletPosType || 'unknown'}`;
       if (!byOutlet.has(key)) {
         byOutlet.set(key, []);
       }
       byOutlet.get(key)!.push(tx);
     }
-    
+
     const nightStats = Array.from(byOutlet.entries()).map(([key, txs]) => ({
       outlet: key.split('/')[0],
-      device: key.split('/')[1],
+      posType: key.split('/')[1],
       count: txs.length,
       totalAmount: txs.reduce((sum, tx) => sum + Math.abs(tx.amount), 0),
       transactions: txs,
@@ -220,7 +220,7 @@ export default function AntiFraudPage() {
     const refundStats = new Map<string, { total: number; refunded: number; receipts: any[] }>();
     
     for (const receipt of receipts) {
-      const key = `${receipt.outletId || 'unknown'}/${receipt.deviceId || 'unknown'}`;
+      const key = `${receipt.outletId || 'unknown'}/${receipt.outletPosType || 'unknown'}`;
       if (!refundStats.has(key)) {
         refundStats.set(key, { total: 0, refunded: 0, receipts: [] });
       }
@@ -237,7 +237,7 @@ export default function AntiFraudPage() {
     const highRefundRate = Array.from(refundStats.entries())
       .map(([key, stats]) => ({
         outlet: key.split('/')[0],
-        device: key.split('/')[1],
+        posType: key.split('/')[1],
         totalReceipts: stats.total,
         refundedReceipts: stats.refunded,
         refundRate: ((stats.refunded / stats.total) * 100).toFixed(1),
@@ -396,7 +396,7 @@ export default function AntiFraudPage() {
                   <strong>Outlet:</strong> {activity.outlet}
                 </div>
                 <div>
-                  <strong>Device:</strong> {activity.device}
+                  <strong>POS:</strong> {activity.posType}
                 </div>
                 <div>
                   <strong>Transactions:</strong> {activity.count}
@@ -422,7 +422,7 @@ export default function AntiFraudPage() {
                   <strong>Outlet:</strong> {location.outlet}
                 </div>
                 <div>
-                  <strong>Device:</strong> {location.device}
+                  <strong>POS:</strong> {location.posType}
                 </div>
                 <div>
                   <strong style={{ color: '#fab387' }}>Refund Rate:</strong> {location.refundRate}%

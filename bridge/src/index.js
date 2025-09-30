@@ -37,7 +37,6 @@ const PORT = Number(process.env.BRIDGE_PORT || 18080);
 const API = process.env.API_BASE || 'http://localhost:3000';
 const DEFAULT_MERCHANT = process.env.MERCHANT_ID || 'M-1';
 const DEFAULT_OUTLET = process.env.OUTLET_ID || '';
-const DEFAULT_DEVICE = process.env.DEVICE_ID || '';
 const STAFF_KEY = process.env.STAFF_KEY || '';
 const BRIDGE_SECRET = process.env.BRIDGE_SECRET || '';
 const FLUSH_INTERVAL_MS = Number(process.env.FLUSH_INTERVAL_MS || 5000);
@@ -131,9 +130,8 @@ app.post('/quote', async (req, res) => {
     const eligibleTotal = Number(b.eligibleTotal || total);
     const userToken = b.userToken || '';
     const outletId = b.outletId || DEFAULT_OUTLET || undefined;
-    const deviceId = b.deviceId || DEFAULT_DEVICE || undefined;
     if (!orderId) return res.status(400).json({ error: 'orderId required' });
-    const data = await callApi('/loyalty/quote', { mode, merchantId, orderId, total, eligibleTotal, userToken, outletId, deviceId });
+    const data = await callApi('/loyalty/quote', { mode, merchantId, orderId, total, eligibleTotal, userToken, outletId });
     res.json(data);
   } catch (e) {
     res.status(502).json({ error: String(e.message || e) });
@@ -170,15 +168,14 @@ app.post('/refund', async (req, res) => {
     const orderId = b.orderId;
     const refundTotal = Number(b.refundTotal || 0);
     const refundEligibleTotal = b.refundEligibleTotal != null ? Number(b.refundEligibleTotal) : undefined;
-    const deviceId = b.deviceId || DEFAULT_DEVICE || undefined;
     if (!orderId) return res.status(400).json({ error: 'orderId required' });
     const idemKey = b.idempotencyKey || `refund:${merchantId}:${orderId}:${refundTotal}`;
     try {
-      const body = { merchantId, orderId, refundTotal, refundEligibleTotal, ...(deviceId ? { deviceId } : {}) };
+    const body = { merchantId, orderId, refundTotal, refundEligibleTotal };
       const data = await callApi('/loyalty/refund', body, { idempotencyKey: idemKey });
       res.json(data);
     } catch (e) {
-      const body = { merchantId, orderId, refundTotal, refundEligibleTotal, ...(deviceId ? { deviceId } : {}) };
+      const body = { merchantId, orderId, refundTotal, refundEligibleTotal };
       const id = queue.enqueue('refund', body, idemKey);
       metrics.queue_enqueued_total++;
       res.status(202).json({ queued: true, id, reason: String(e.message || e) });
@@ -222,7 +219,6 @@ app.get('/config', (req, res) => {
     apiBase: API,
     merchantId: DEFAULT_MERCHANT,
     outletId: DEFAULT_OUTLET || null,
-    deviceId: DEFAULT_DEVICE || null,
     hasStaffKey: !!STAFF_KEY,
     hasBridgeSecret: !!BRIDGE_SECRET,
     port: PORT,

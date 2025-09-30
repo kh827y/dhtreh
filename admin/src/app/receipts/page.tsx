@@ -7,7 +7,7 @@ const API = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
 const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
 const ADMIN_KEY = process.env.NEXT_PUBLIC_ADMIN_KEY || '';
 
-type Receipt = { id: string; orderId: string; customerId: string; total: number; eligibleTotal: number; redeemApplied: number; earnApplied: number; createdAt: string; outletId?: string|null; deviceId?: string|null; staffId?: string|null };
+type Receipt = { id: string; orderId: string; customerId: string; total: number; eligibleTotal: number; redeemApplied: number; earnApplied: number; createdAt: string; outletId?: string|null; outletPosType?: string|null; outletLastSeenAt?: string|null; staffId?: string|null };
 
 export default function ReceiptsPage() {
   const [items, setItems] = useState<Receipt[]>([]);
@@ -61,7 +61,11 @@ export default function ReceiptsPage() {
               <span>{new Date(r.createdAt).toLocaleString()}</span>
             </div>
             <div>Клиент: <code>{r.customerId}</code> · Итого: {r.total} ₽ · База: {r.eligibleTotal} ₽ · Списано: {r.redeemApplied} · Начислено: {r.earnApplied}</div>
-            <div style={{ color: '#666' }}>Outlet: {r.outletId||'-'} · Device: {r.deviceId||'-'} · Staff: {r.staffId||'-'}</div>
+            <div style={{ color: '#666' }}>
+              Outlet: {r.outletId||'-'} · POS: {r.outletPosType||'-'}
+              {r.outletLastSeenAt ? <> · Last seen: {new Date(r.outletLastSeenAt).toLocaleString()}</> : null}
+              · Staff: {r.staffId||'-'}
+            </div>
           </div>
         ))}
         {(!items.length && !loading) && <div style={{ color: '#666' }}>Нет чеков</div>}
