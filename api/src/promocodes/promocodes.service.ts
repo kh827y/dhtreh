@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
   Prisma,
   PromoCode,
@@ -26,6 +26,31 @@ export type PortalPromoCodePayload = {
   validUntil?: string;
 };
 
+export type LoyaltyPromoCodePayload = {
+  code: string;
+  name?: string | null;
+  description?: string | null;
+  status?: PromoCodeStatus;
+  segmentId?: string | null;
+  usageLimitType?: PromoCodeUsageLimitType;
+  usageLimitValue?: number | null;
+  cooldownDays?: number | null;
+  perCustomerLimit?: number | null;
+  requireVisit?: boolean;
+  visitLookbackHours?: number | null;
+  grantPoints?: boolean;
+  pointsAmount?: number | null;
+  pointsExpireInDays?: number | null;
+  assignTierId?: string | null;
+  upgradeTierId?: string | null;
+  activeFrom?: Date | string | null;
+  activeUntil?: Date | string | null;
+  autoArchiveAt?: Date | string | null;
+  isHighlighted?: boolean;
+  metadata?: any;
+  actorId?: string;
+};
+
 export type PromoCodeApplyResult = {
   promoCode: PromoCode;
   pointsIssued: number;
@@ -37,6 +62,35 @@ export class PromoCodesService {
   private readonly logger = new Logger(PromoCodesService.name);
 
   constructor(private readonly prisma: PrismaService, private readonly metrics: MetricsService) {}
+
+  private logEvent(event: string, payload: Record<string, unknown>) {
+    try {
+      this.logger.log(JSON.stringify({ event, ...payload }));
+    } catch {}
+  }
+
+  private incMetric(name: string, labels?: Record<string, string>, value?: number) {
+    try {
+      this.metrics.inc(name, labels, value);
+    } catch {}
+  }
+
+  private logListEvent(merchantId: string, status: string, total: number) {
+    this.logEvent('portal.loyalty.promocodes.list', { merchantId, status, total });
+    this.incMetric('portal_loyalty_promocodes_list_total');
+  }
+
+  private logChangeEvent(
+    suffix: 'create' | 'update' | 'status' | 'bulkStatus',
+    payload: Record<string, unknown>,
+    action: 'create' | 'update' | 'status' | 'bulk-status',
+    value = 1,
+  ) {
+    this.logEvent(`portal.promocodes.${suffix}`, payload);
+    this.incMetric('portal_promocodes_changed_total', { action }, value);
+    this.logEvent(`portal.loyalty.promocodes.${suffix}`, payload);
+    this.incMetric('portal_loyalty_promocodes_changed_total', { action }, value);
+  }
 
   private toMetadata(payload: PortalPromoCodePayload) {
     return {
@@ -105,7 +159,24 @@ export class PromoCodesService {
       take: limit,
     });
 
+    const statusLabel = scope && scope !== 'ALL' ? scope : 'ALL';
+    this.logListEvent(merchantId, statusLabel ?? 'ALL', promoCodes.length);
+
     return { items: promoCodes.map((row) => this.mapToPortalRow(row)) };
+  }
+
+  async listPromoCodes(merchantId: string, status?: PromoCodeStatus | 'ALL') {
+    const where: Prisma.PromoCodeWhereInput = { merchantId };
+    if (status && status !== 'ALL') where.status = status;
+
+    const promoCodes = await this.prisma.promoCode.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: { metrics: true },
+    });
+
+    this.logListEvent(merchantId, status ?? 'ALL', promoCodes.length);
+    return promoCodes;
   }
 
   private payloadToPrisma(merchantId: string, payload: PortalPromoCodePayload, status?: PromoCodeStatus) {
@@ -163,12 +234,7 @@ export class PromoCodesService {
     const exists = await this.prisma.promoCode.findFirst({ where: { merchantId, code: data.code } });
     if (exists) throw new BadRequestException('Промокод уже существует');
     const created = await this.prisma.promoCode.create({ data });
-    try {
-      this.logger.log(
-        JSON.stringify({ event: 'portal.promocodes.create', merchantId, promoCodeId: created.id, status: created.status }),
-      );
-      this.metrics.inc('portal_promocodes_changed_total', { action: 'create' });
-    } catch {}
+    this.logChangeEvent('create', { merchantId, promoCodeId: created.id, status: created.status }, 'create');
     return created;
   }
 
@@ -181,32 +247,140 @@ export class PromoCodesService {
       where: { id: promoCodeId },
       data,
     });
-    try {
-      this.logger.log(
-        JSON.stringify({ event: 'portal.promocodes.update', merchantId, promoCodeId: updated.id, status: updated.status }),
-      );
-      this.metrics.inc('portal_promocodes_changed_total', { action: 'update' });
-    } catch {}
+    this.logChangeEvent('update', { merchantId, promoCodeId: updated.id, status: updated.status }, 'update');
     return updated;
   }
 
-  async changeStatus(merchantId: string, promoCodeId: string, status: PromoCodeStatus) {
+  async changeStatus(merchantId: string, promoCodeId: string, status: PromoCodeStatus, actorId?: string) {
     const promoCode = await this.prisma.promoCode.findFirst({ where: { id: promoCodeId, merchantId } });
     if (!promoCode) throw new BadRequestException('Промокод не найден');
     const updated = await this.prisma.promoCode.update({
       where: { id: promoCodeId },
       data: {
         status,
-        archivedAt: status === PromoCodeStatus.ARCHIVED ? new Date() : null,
+        archivedAt: status === PromoCodeStatus.ARCHIVED ? new Date() : promoCode.archivedAt,
+        updatedById: actorId ?? promoCode.updatedById ?? null,
       },
     });
-    try {
-      this.logger.log(
-        JSON.stringify({ event: 'portal.promocodes.status', merchantId, promoCodeId: updated.id, status: updated.status }),
-      );
-      this.metrics.inc('portal_promocodes_changed_total', { action: 'status' });
-    } catch {}
+    this.logChangeEvent('status', { merchantId, promoCodeId: updated.id, status: updated.status }, 'status');
     return updated;
+  }
+
+  async createPromoCode(merchantId: string, payload: LoyaltyPromoCodePayload) {
+    if (!payload.code?.trim()) throw new BadRequestException('Код обязателен');
+    const exists = await this.prisma.promoCode.findFirst({ where: { merchantId, code: payload.code.trim() } });
+    if (exists) throw new BadRequestException('Промокод уже существует');
+
+    const promoCode = await this.prisma.promoCode.create({
+      data: {
+        merchantId,
+        code: payload.code.trim(),
+        name: payload.name ?? null,
+        description: payload.description ?? null,
+        status: payload.status ?? PromoCodeStatus.DRAFT,
+        segmentId: payload.segmentId ?? null,
+        usageLimitType: payload.usageLimitType ?? PromoCodeUsageLimitType.UNLIMITED,
+        usageLimitValue: payload.usageLimitValue ?? null,
+        cooldownDays: payload.cooldownDays ?? null,
+        perCustomerLimit: payload.perCustomerLimit ?? null,
+        requireVisit: payload.requireVisit ?? false,
+        visitLookbackHours: payload.visitLookbackHours ?? null,
+        grantPoints: payload.grantPoints ?? false,
+        pointsAmount: payload.pointsAmount ?? null,
+        pointsExpireInDays: payload.pointsExpireInDays ?? null,
+        assignTierId: payload.assignTierId ?? null,
+        upgradeTierId: payload.upgradeTierId ?? null,
+        activeFrom: payload.activeFrom ? new Date(payload.activeFrom) : null,
+        activeUntil: payload.activeUntil ? new Date(payload.activeUntil) : null,
+        autoArchiveAt: payload.autoArchiveAt ? new Date(payload.autoArchiveAt) : null,
+        isHighlighted: payload.isHighlighted ?? false,
+        metadata: payload.metadata ?? null,
+        createdById: payload.actorId ?? null,
+        updatedById: payload.actorId ?? null,
+      },
+    });
+
+    this.logChangeEvent('create', { merchantId, promoCodeId: promoCode.id, status: promoCode.status }, 'create');
+    return promoCode;
+  }
+
+  async updatePromoCode(merchantId: string, promoCodeId: string, payload: LoyaltyPromoCodePayload) {
+    const promoCode = await this.prisma.promoCode.findFirst({ where: { merchantId, id: promoCodeId } });
+    if (!promoCode) throw new NotFoundException('Промокод не найден');
+
+    const updated = await this.prisma.promoCode.update({
+      where: { id: promoCodeId },
+      data: {
+        code: payload.code?.trim() ?? promoCode.code,
+        name: payload.name ?? promoCode.name,
+        description: payload.description ?? promoCode.description,
+        status: payload.status ?? promoCode.status,
+        segmentId: payload.segmentId ?? promoCode.segmentId,
+        usageLimitType: payload.usageLimitType ?? promoCode.usageLimitType,
+        usageLimitValue: payload.usageLimitValue ?? promoCode.usageLimitValue,
+        cooldownDays: payload.cooldownDays ?? promoCode.cooldownDays,
+        perCustomerLimit: payload.perCustomerLimit ?? promoCode.perCustomerLimit,
+        requireVisit: payload.requireVisit ?? promoCode.requireVisit,
+        visitLookbackHours: payload.visitLookbackHours ?? promoCode.visitLookbackHours,
+        grantPoints: payload.grantPoints ?? promoCode.grantPoints,
+        pointsAmount: payload.pointsAmount ?? promoCode.pointsAmount,
+        pointsExpireInDays: payload.pointsExpireInDays ?? promoCode.pointsExpireInDays,
+        assignTierId: payload.assignTierId ?? promoCode.assignTierId,
+        upgradeTierId: payload.upgradeTierId ?? promoCode.upgradeTierId,
+        activeFrom: payload.activeFrom ? new Date(payload.activeFrom) : promoCode.activeFrom,
+        activeUntil: payload.activeUntil ? new Date(payload.activeUntil) : promoCode.activeUntil,
+        autoArchiveAt: payload.autoArchiveAt ? new Date(payload.autoArchiveAt) : promoCode.autoArchiveAt,
+        isHighlighted: payload.isHighlighted ?? promoCode.isHighlighted,
+        metadata: payload.metadata ?? promoCode.metadata,
+        updatedById: payload.actorId ?? promoCode.updatedById,
+      },
+    });
+
+    this.logChangeEvent('update', { merchantId, promoCodeId, status: updated.status }, 'update');
+    return updated;
+  }
+
+  async changePromoCodeStatus(merchantId: string, promoCodeId: string, status: PromoCodeStatus, actorId?: string) {
+    const promoCode = await this.prisma.promoCode.findFirst({ where: { merchantId, id: promoCodeId } });
+    if (!promoCode) throw new NotFoundException('Промокод не найден');
+
+    const updated = await this.prisma.promoCode.update({
+      where: { id: promoCodeId },
+      data: {
+        status,
+        updatedById: actorId ?? promoCode.updatedById,
+        archivedAt: status === PromoCodeStatus.ARCHIVED ? new Date() : promoCode.archivedAt,
+      },
+    });
+
+    this.logChangeEvent('status', { merchantId, promoCodeId, status }, 'status');
+    return updated;
+  }
+
+  async bulkArchivePromoCodes(merchantId: string, promoCodeIds: string[], status: PromoCodeStatus, actorId?: string) {
+    if (!promoCodeIds.length) return { updated: 0 };
+
+    const results = await this.prisma.$transaction(
+      promoCodeIds.map((id) =>
+        this.prisma.promoCode.updateMany({
+          where: { id, merchantId },
+          data: {
+            status,
+            updatedById: actorId ?? undefined,
+            archivedAt: status === PromoCodeStatus.ARCHIVED ? new Date() : undefined,
+          },
+        }),
+      ),
+    );
+
+    const updated = results.reduce((acc, res) => acc + res.count, 0);
+    this.logChangeEvent(
+      'bulkStatus',
+      { merchantId, status, ids: promoCodeIds.length, updated },
+      'bulk-status',
+      updated || 1,
+    );
+    return { updated };
   }
 
   async findActiveByCode(merchantId: string, code: string) {

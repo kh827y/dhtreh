@@ -174,6 +174,10 @@ describe('Portal promocodes (e2e)', () => {
     await app.close();
   });
 
+  beforeEach(() => {
+    metricsMock.inc.mockClear();
+  });
+
   it('issues new promo code via portal and returns it in list', async () => {
     const res = await request(app.getHttpServer())
       .post('/portal/promocodes/issue')
@@ -203,6 +207,10 @@ describe('Portal promocodes (e2e)', () => {
     expect(created).toBeTruthy();
     expect(created.metadata.usageLimit).toBe('once_per_customer');
     expect(created.metadata.usagePeriod.days).toBe(7);
+
+    expect(metricsMock.inc).toHaveBeenCalledWith('portal_promocodes_changed_total', { action: 'create' }, 1);
+    expect(metricsMock.inc).toHaveBeenCalledWith('portal_loyalty_promocodes_changed_total', { action: 'create' }, 1);
+    expect(metricsMock.inc).toHaveBeenCalledWith('portal_loyalty_promocodes_list_total', undefined, undefined);
   });
 
   it('deactivates and reactivates promo code, filtering by status', async () => {
@@ -228,6 +236,12 @@ describe('Portal promocodes (e2e)', () => {
       .expect(201);
 
     expect(state.promoCodes.find((c) => c.id === existing!.id)?.status).toBe(PromoCodeStatus.ACTIVE);
+
+    expect(metricsMock.inc).toHaveBeenCalledWith('portal_promocodes_changed_total', { action: 'status' }, 1);
+    expect(metricsMock.inc).toHaveBeenCalledWith('portal_loyalty_promocodes_changed_total', { action: 'status' }, 1);
+    expect(metricsMock.inc).toHaveBeenCalledWith('portal_loyalty_promocodes_list_total', undefined, undefined);
+    expect(metricsMock.inc.mock.calls.filter((call) => call[0] === 'portal_promocodes_changed_total' && call[1]?.action === 'status')).toHaveLength(2);
+    expect(metricsMock.inc.mock.calls.filter((call) => call[0] === 'portal_loyalty_promocodes_changed_total' && call[1]?.action === 'status')).toHaveLength(2);
   });
 
   it('updates promo code configuration from portal', async () => {
@@ -257,5 +271,8 @@ describe('Portal promocodes (e2e)', () => {
     expect(updated.usageLimitType).toBe('ONCE_TOTAL');
     expect(updated.requireVisit).toBe(true);
     expect(updated.visitLookbackHours).toBe(48);
+
+    expect(metricsMock.inc).toHaveBeenCalledWith('portal_promocodes_changed_total', { action: 'update' }, 1);
+    expect(metricsMock.inc).toHaveBeenCalledWith('portal_loyalty_promocodes_changed_total', { action: 'update' }, 1);
   });
 });
