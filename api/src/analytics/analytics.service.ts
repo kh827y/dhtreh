@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { ConfigService } from '@nestjs/config';
-import { PromotionStatus } from '@prisma/client';
+import { Prisma, PromotionStatus } from '@prisma/client';
 
 export interface DashboardPeriod {
   from: Date;
@@ -646,7 +646,7 @@ export class AnalyticsService {
         merchantId,
         joinedAt: { gte: period.from, lte: period.to },
       },
-      distinct: ['customerId'],
+      distinct: [Prisma.PromotionParticipantScalarFieldEnum.customerId],
     });
 
     const campaignROI = totalRewardsIssued > 0
