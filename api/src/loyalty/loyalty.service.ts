@@ -162,20 +162,12 @@ export class LoyaltyService {
     return 'VIRTUAL';
   }
 
-  private async resolveOutletContext(merchantId: string, input: { outletId?: string | null; deviceId?: string | null }) {
-    const { outletId, deviceId } = input;
+  private async resolveOutletContext(merchantId: string, input: { outletId?: string | null }) {
+    const { outletId } = input;
     let outlet: { id: string; posType: DeviceType | null } | null = null;
     if (outletId) {
       try {
         outlet = await this.prisma.outlet.findFirst({ where: { id: outletId, merchantId }, select: { id: true, posType: true } });
-      } catch {}
-    }
-    if (!outlet && deviceId) {
-      try {
-        outlet = await this.prisma.outlet.findFirst({
-          where: { merchantId, devices: { some: { id: deviceId } } },
-          select: { id: true, posType: true },
-        });
       } catch {}
     }
     const channel = this.normalizeChannel(outlet?.posType ?? null);
@@ -221,7 +213,7 @@ export class LoyaltyService {
     const rulesConfig = rulesJson && typeof rulesJson === 'object' ? (rulesJson as Record<string, any>) : {};
     const disallowSameReceipt = Boolean(rulesConfig.disallowEarnRedeemSameReceipt);
 
-    const outletCtx = await this.resolveOutletContext(dto.merchantId, { outletId: dto.outletId ?? null, deviceId: dto.deviceId ?? null });
+    const outletCtx = await this.resolveOutletContext(dto.merchantId, { outletId: dto.outletId ?? null });
     const channel = outletCtx.channel;
     const effectiveOutletId = outletCtx.outletId ?? null;
 
@@ -402,7 +394,6 @@ export class LoyaltyService {
             expiresAt: qr?.exp ? new Date(qr.exp * 1000) : null,
             status: HoldStatus.PENDING,
             outletId: effectiveOutletId,
-            deviceId: dto.deviceId ?? null,
             staffId: dto.staffId ?? null,
           }
         });
@@ -499,7 +490,6 @@ export class LoyaltyService {
           expiresAt: qr?.exp ? new Date(qr.exp * 1000) : null,
           status: HoldStatus.PENDING,
           outletId: effectiveOutletId,
-          deviceId: dto.deviceId ?? null,
           staffId: dto.staffId ?? null,
         }
       });
@@ -572,7 +562,7 @@ export class LoyaltyService {
           appliedRedeem = amount;
           await tx.wallet.update({ where: { id: wallet.id }, data: { balance: fresh!.balance - amount } });
           await tx.transaction.create({
-            data: { customerId: hold.customerId, merchantId: hold.merchantId, type: TxnType.REDEEM, amount: -amount, orderId, outletId: hold.outletId, deviceId: hold.deviceId, staffId: hold.staffId }
+            data: { customerId: hold.customerId, merchantId: hold.merchantId, type: TxnType.REDEEM, amount: -amount, orderId, outletId: hold.outletId, staffId: hold.staffId }
           });
           // Earn lots consumption (optional)
           if (process.env.EARN_LOTS_FEATURE === '1' && amount > 0) {
@@ -588,7 +578,6 @@ export class LoyaltyService {
               amount,
               orderId,
               outletId: hold.outletId ?? null,
-              deviceId: hold.deviceId ?? null,
               staffId: hold.staffId ?? null,
               meta: { mode: 'REDEEM' },
             }});
@@ -633,7 +622,6 @@ export class LoyaltyService {
                     orderId,
                     receiptId: null,
                     outletId: hold.outletId ?? null,
-                    deviceId: hold.deviceId ?? null,
                     staffId: hold.staffId ?? null,
                     status: 'PENDING',
                   },
@@ -655,7 +643,6 @@ export class LoyaltyService {
                     orderId,
                     receiptId: null,
                     outletId: hold.outletId ?? null,
-                    deviceId: hold.deviceId ?? null,
                     staffId: hold.staffId ?? null,
                     status: 'PENDING',
                     metadata: opts?.promoCode ? { promoCodeId: opts.promoCode.promoCodeId } : undefined,
@@ -675,7 +662,6 @@ export class LoyaltyService {
               points: appliedEarn,
               maturesAt: new Date(Date.now() + delayDays * 24 * 60 * 60 * 1000).toISOString(),
               outletId: hold.outletId ?? null,
-              deviceId: hold.deviceId ?? null,
               staffId: hold.staffId ?? null,
               promoCode:
                 promoResult && opts?.promoCode
@@ -695,7 +681,7 @@ export class LoyaltyService {
             await tx.wallet.update({ where: { id: wallet.id }, data: { balance: fresh!.balance + appliedEarn } });
           }
           await tx.transaction.create({
-            data: { customerId: hold.customerId, merchantId: hold.merchantId, type: TxnType.EARN, amount: appliedEarn, orderId, outletId: hold.outletId, deviceId: hold.deviceId, staffId: hold.staffId }
+            data: { customerId: hold.customerId, merchantId: hold.merchantId, type: TxnType.EARN, amount: appliedEarn, orderId, outletId: hold.outletId, staffId: hold.staffId }
           });
           // Ledger mirror (optional)
           if (process.env.LEDGER_FEATURE === '1' && appliedEarn > 0) {
@@ -707,7 +693,6 @@ export class LoyaltyService {
               amount: appliedEarn,
               orderId,
               outletId: hold.outletId ?? null,
-              deviceId: hold.deviceId ?? null,
               staffId: hold.staffId ?? null,
               meta: { mode: 'EARN' },
             }});
@@ -733,7 +718,6 @@ export class LoyaltyService {
                     orderId,
                     receiptId: null,
                     outletId: hold.outletId ?? null,
-                    deviceId: hold.deviceId ?? null,
                     staffId: hold.staffId ?? null,
                     status: 'ACTIVE',
                   },
@@ -755,7 +739,6 @@ export class LoyaltyService {
                     orderId,
                     receiptId: null,
                     outletId: hold.outletId ?? null,
-                    deviceId: hold.deviceId ?? null,
                     staffId: hold.staffId ?? null,
                     status: 'ACTIVE',
                     metadata: opts?.promoCode ? { promoCodeId: opts.promoCode.promoCodeId } : undefined,
@@ -783,7 +766,6 @@ export class LoyaltyService {
             redeemApplied: appliedRedeem,
             earnApplied: appliedEarn,
             outletId: hold.outletId ?? null,
-            deviceId: hold.deviceId ?? null,
             staffId: hold.staffId ?? null,
           }
         });
@@ -791,9 +773,6 @@ export class LoyaltyService {
         const touchTs = new Date();
         if (hold.outletId) {
           try { await tx.outlet.update({ where: { id: hold.outletId }, data: { posLastSeenAt: touchTs } }); } catch {}
-        }
-        if (hold.deviceId) {
-          try { await tx.device.update({ where: { id: hold.deviceId }, data: { lastSeenAt: touchTs } }); } catch {}
         }
         // Пишем событие в outbox (минимально)
         await tx.eventOutbox.create({
@@ -811,7 +790,6 @@ export class LoyaltyService {
               receiptId: created.id,
               createdAt: new Date().toISOString(),
               outletId: hold.outletId ?? null,
-              deviceId: hold.deviceId ?? null,
               staffId: hold.staffId ?? null,
               requestId: requestId ?? null,
             } as any,
@@ -871,7 +849,7 @@ export class LoyaltyService {
         const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
         await tx.wallet.update({ where: { id: wallet.id }, data: { balance: (fresh!.balance + pointsToRestore) } });
         await tx.transaction.create({
-          data: { customerId: receipt.customerId, merchantId, type: TxnType.REFUND, amount: pointsToRestore, orderId, outletId: receipt.outletId, deviceId: receipt.deviceId, staffId: receipt.staffId }
+          data: { customerId: receipt.customerId, merchantId, type: TxnType.REFUND, amount: pointsToRestore, orderId, outletId: receipt.outletId, staffId: receipt.staffId }
         });
         if (process.env.EARN_LOTS_FEATURE === '1') {
           await this.unconsumeLots(tx, merchantId, receipt.customerId, pointsToRestore, { orderId });
@@ -885,7 +863,6 @@ export class LoyaltyService {
             amount: pointsToRestore,
             orderId,
             outletId: receipt.outletId ?? null,
-            deviceId: receipt.deviceId ?? null,
             staffId: receipt.staffId ?? null,
             meta: { mode: 'REFUND', kind: 'restore' },
           }});
@@ -896,7 +873,7 @@ export class LoyaltyService {
         const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
         await tx.wallet.update({ where: { id: wallet.id }, data: { balance: (fresh!.balance - pointsToRevoke) } });
         await tx.transaction.create({
-          data: { customerId: receipt.customerId, merchantId, type: TxnType.REFUND, amount: -pointsToRevoke, orderId, outletId: receipt.outletId, deviceId: receipt.deviceId, staffId: receipt.staffId }
+          data: { customerId: receipt.customerId, merchantId, type: TxnType.REFUND, amount: -pointsToRevoke, orderId, outletId: receipt.outletId, staffId: receipt.staffId }
         });
         if (process.env.EARN_LOTS_FEATURE === '1') {
           await this.revokeLots(tx, merchantId, receipt.customerId, pointsToRevoke, { orderId });
@@ -910,7 +887,6 @@ export class LoyaltyService {
             amount: pointsToRevoke,
             orderId,
             outletId: receipt.outletId ?? null,
-            deviceId: receipt.deviceId ?? null,
             staffId: receipt.staffId ?? null,
             meta: { mode: 'REFUND', kind: 'revoke' },
           }});
@@ -931,7 +907,6 @@ export class LoyaltyService {
             pointsRevoked: pointsToRevoke,
             createdAt: new Date().toISOString(),
             outletId: receipt.outletId ?? null,
-            deviceId: receipt.deviceId ?? null,
             staffId: receipt.staffId ?? null,
             requestId: requestId ?? null,
           } as any,
