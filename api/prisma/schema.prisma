@@ -223,8 +223,6 @@ model Merchant {
   integrations                Integration[]
   customerSegments            CustomerSegment[]
   campaigns                   Campaign[]
-  pushCampaigns               PushCampaign[]
-  telegramCampaigns           TelegramCampaign[]
   reviewCount                 Int                          @default(0)
   // back-relations
   campaignUsages              CampaignUsage[]
@@ -1226,28 +1224,6 @@ model PushNotification {
   createdAt   DateTime  @default(now())
 }
 
-model PushCampaign {
-  id              String    @id @default(cuid())
-  merchantId      String
-  text            String
-  audience        String
-  scheduledAt     DateTime
-  timezone        String?
-  status          String    @default("SCHEDULED")
-  totalRecipients Int       @default(0)
-  sent            Int       @default(0)
-  failed          Int       @default(0)
-  archivedAt      DateTime?
-  metadata        Json?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-
-  merchant Merchant @relation(fields: [merchantId], references: [id])
-
-  @@index([merchantId, status])
-  @@index([merchantId, scheduledAt])
-}
-
 // SMS notifications log
 model SmsNotification {
   id         String    @id @default(cuid())
@@ -1266,30 +1242,6 @@ model SmsNotification {
   campaignId String?
   metadata   Json?
   createdAt  DateTime  @default(now())
-}
-
-model TelegramCampaign {
-  id              String    @id @default(cuid())
-  merchantId      String
-  audienceId      String?
-  audienceName    String?
-  text            String
-  imageUrl        String?
-  scheduledAt     DateTime
-  timezone        String?
-  status          String    @default("SCHEDULED")
-  totalRecipients Int       @default(0)
-  sent            Int       @default(0)
-  failed          Int       @default(0)
-  archivedAt      DateTime?
-  metadata        Json?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-
-  merchant Merchant @relation(fields: [merchantId], references: [id])
-
-  @@index([merchantId, status])
-  @@index([merchantId, scheduledAt])
 }
 
 model CommunicationTemplate {
@@ -1323,6 +1275,8 @@ model CommunicationTask {
   channel     CommunicationChannel
   templateId  String?
   audienceId  String?
+  audienceName String?
+  audienceSnapshot Json?
   promotionId String?
   createdById String?
   status      String               @default("SCHEDULED")
@@ -1333,6 +1287,12 @@ model CommunicationTask {
   payload     Json?
   filters     Json?
   stats       Json?
+  media       Json?
+  timezone    String?
+  archivedAt  DateTime?
+  totalRecipients Int               @default(0)
+  sentCount   Int                   @default(0)
+  failedCount Int                   @default(0)
   createdAt   DateTime             @default(now())
   updatedAt   DateTime             @updatedAt
 

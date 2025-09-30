@@ -10,13 +10,12 @@ import { CampaignModule } from '../campaigns/campaign.module';
 import { GiftsModule } from '../gifts/gifts.module';
 import { PortalCatalogService } from './catalog.service';
 import { PortalCustomersService } from './customers.service';
-import { PushCampaignsService } from './services/push-campaigns.service';
-import { TelegramCampaignsService } from './services/telegram-campaigns.service';
 import { StaffMotivationService } from './services/staff-motivation.service';
 import { ActionsService } from './services/actions.service';
 import { OperationsLogService } from './services/operations-log.service';
 import { TelegramModule } from '../telegram/telegram.module';
 import { PortalTelegramIntegrationService } from './services/telegram-integration.service';
+import { CommunicationsModule } from '../communications/communications.module';
 
 @Module({
   imports: [
@@ -28,13 +27,12 @@ import { PortalTelegramIntegrationService } from './services/telegram-integratio
     CampaignModule,
     GiftsModule,
     TelegramModule,
+    CommunicationsModule,
   ],
   controllers: [PortalController],
   providers: [
     PortalGuard,
     PortalCatalogService,
-    PushCampaignsService,
-    TelegramCampaignsService,
     StaffMotivationService,
     ActionsService,
     OperationsLogService,

@@ -33,8 +33,15 @@ export class CommunicationsController {
   }
 
   @Get('tasks')
-  listTasks(@Req() req: any, @Query() query: { channel?: CommunicationChannel | 'ALL'; status?: string }) {
-    return this.service.listTasks(this.merchantId(req), query.channel, query.status);
+  listTasks(
+    @Req() req: any,
+    @Query() query: { channel?: CommunicationChannel | 'ALL'; status?: string; scope?: 'ACTIVE' | 'ARCHIVED' },
+  ) {
+    return this.service.listTasks(this.merchantId(req), {
+      channel: query.channel,
+      status: query.status,
+      scope: query.scope,
+    });
   }
 
   @Post('tasks')
