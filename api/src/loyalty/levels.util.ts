@@ -54,7 +54,9 @@ export async function computeLevelState(args: {
   } else {
     const type = config.metric === 'redeem' ? 'REDEEM' : 'EARN';
     const items = await prisma.transaction.findMany({ where: { merchantId, customerId, type, createdAt: { gte: since } } });
-    value = items.reduce<number>((sum, t) => sum + Math.abs(Number(t?.amount ?? 0) || 0), 0);
+    for (const item of items) {
+      value += Math.abs(Number(item?.amount ?? 0) || 0);
+    }
   }
 
   let current = config.levels[0];
