@@ -31,6 +31,23 @@ export class LoyaltyController {
     private readonly merchants: MerchantsService,
   ) {}
 
+  private async resolveOutlet(merchantId?: string, outletId?: string | null, deviceId?: string | null) {
+    if (!merchantId) return null;
+    if (outletId) {
+      try {
+        const found = await this.prisma.outlet.findFirst({ where: { id: outletId, merchantId } });
+        if (found) return found;
+      } catch {}
+    }
+    if (deviceId) {
+      try {
+        const found = await this.prisma.outlet.findFirst({ where: { merchantId, devices: { some: { id: deviceId } } } });
+        if (found) return found;
+      } catch {}
+    }
+    return null;
+  }
+
   // Plain ID или JWT
   private async resolveFromToken(userToken: string) {
     if (looksLikeJwt(userToken)) {
@@ -226,12 +243,17 @@ export class LoyaltyController {
           } catch {}
         }
       }
+      const outlet = await this.resolveOutlet(dto.merchantId, dto.outletId ?? null, dto.deviceId ?? null);
       const qrMeta = looksLikeJwt(dto.userToken) ? { jti: v.jti, iat: v.iat, exp: v.exp } : undefined;
       // проверка подписи Bridge при необходимости
       if (s?.requireBridgeSig) {
         const sig = (req.headers['x-bridge-signature'] as string | undefined) || '';
-        let secret = dto.deviceId ? (await this.prisma.device.findUnique({ where: { id: dto.deviceId } }))?.bridgeSecret : (s.bridgeSecret || null);
-        const alt = dto.deviceId ? null : ((s as any).bridgeSecretNext || null);
+        let secret: string | null = outlet?.bridgeSecret ?? null;
+        let alt: string | null = outlet?.bridgeSecretNext ?? null;
+        if (!secret && !alt) {
+          secret = s?.bridgeSecret || null;
+          alt = (s as any)?.bridgeSecretNext || null;
+        }
         const bodyForSig = JSON.stringify(dto);
         let ok = false;
         if (secret && verifyBridgeSigUtil(sig, bodyForSig, secret)) ok = true;
@@ -250,8 +272,8 @@ export class LoyaltyController {
           adjTotal = Math.max(0, adjTotal - d);
         }
       } catch {}
-
-      const data = await this.service.quote({ ...dto, total: adjTotal, eligibleTotal: adjEligible, staffId, userToken: v.customerId }, qrMeta);
+      const normalizedOutletId = dto.outletId ?? outlet?.id ?? undefined;
+      const data = await this.service.quote({ ...dto, outletId: normalizedOutletId, total: adjTotal, eligibleTotal: adjEligible, staffId, userToken: v.customerId }, qrMeta);
       this.metrics.inc('loyalty_quote_requests_total', { result: 'ok' });
       return data;
     } catch (e: any) {
@@ -294,14 +316,17 @@ export class LoyaltyController {
       const s = merchantIdEff ? await this.prisma.merchantSettings.findUnique({ where: { merchantId: merchantIdEff } }) : null;
       if (s?.requireBridgeSig) {
         const sig = (req.headers['x-bridge-signature'] as string | undefined) || '';
-        let secret: string | null = s.bridgeSecret || null;
-        let alt: string | null = (s as any).bridgeSecretNext || null;
-        try {
-          if (holdCached?.deviceId) {
-            const dev = await this.prisma.device.findUnique({ where: { id: holdCached.deviceId } });
-            if (dev?.bridgeSecret) { secret = dev.bridgeSecret; alt = null; }
-          }
-        } catch {}
+        const outlet = await this.resolveOutlet(merchantIdEff, holdCached?.outletId ?? null, holdCached?.deviceId ?? null);
+        if (outlet && outlet.id && holdCached?.id && !holdCached.outletId) {
+          try { await this.prisma.hold.update({ where: { id: holdCached.id }, data: { outletId: outlet.id } }); } catch {}
+          (holdCached as any).outletId = outlet.id;
+        }
+        let secret: string | null = outlet?.bridgeSecret ?? null;
+        let alt: string | null = outlet?.bridgeSecretNext ?? null;
+        if (!secret && !alt) {
+          secret = s?.bridgeSecret || null;
+          alt = (s as any)?.bridgeSecretNext || null;
+        }
         const bodyForSig = JSON.stringify({ merchantId: merchantIdEff, holdId: dto.holdId, orderId: dto.orderId, receiptNumber: dto.receiptNumber ?? undefined });
         let ok = false;
         if (secret && verifyBridgeSigUtil(sig, bodyForSig, secret)) ok = true;
@@ -438,14 +463,21 @@ export class LoyaltyController {
       const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId: dto.merchantId } });
       if (s?.requireBridgeSig) {
         const sig = (req.headers['x-bridge-signature'] as string | undefined) || '';
-        let secret: string | null = s.bridgeSecret || null;
-        let alt: string | null = (s as any).bridgeSecretNext || null;
+        let receiptOutletId: string | null = null;
         try {
-          if (dto.deviceId) {
-            const dev = await this.prisma.device.findUnique({ where: { id: dto.deviceId } });
-            if (dev?.bridgeSecret) { secret = dev.bridgeSecret; alt = null; }
-          }
+          const rcp = await this.prisma.receipt.findUnique({
+            where: { merchantId_orderId: { merchantId: dto.merchantId, orderId: dto.orderId } },
+            select: { outletId: true },
+          });
+          receiptOutletId = rcp?.outletId ?? null;
         } catch {}
+        const outlet = await this.resolveOutlet(dto.merchantId, receiptOutletId, dto.deviceId ?? null);
+        let secret: string | null = outlet?.bridgeSecret ?? null;
+        let alt: string | null = outlet?.bridgeSecretNext ?? null;
+        if (!secret && !alt) {
+          secret = s?.bridgeSecret || null;
+          alt = (s as any)?.bridgeSecretNext || null;
+        }
         const bodyForSig = JSON.stringify({ merchantId: dto.merchantId, orderId: dto.orderId, refundTotal: dto.refundTotal, refundEligibleTotal: dto.refundEligibleTotal ?? undefined, deviceId: dto.deviceId ?? undefined });
         let ok = false;
         if (secret && verifyBridgeSigUtil(sig, bodyForSig, secret)) ok = true;

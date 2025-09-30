@@ -4,7 +4,7 @@ import { MetricsService } from '../metrics.service';
 import { PromoCodesService, type PromoCodeApplyResult } from '../promocodes/promocodes.service';
 import { Mode, QuoteDto } from './dto';
 import { computeLevelState, parseLevelsConfig, resolveLevelBenefits } from './levels.util';
-import { HoldStatus, TxnType, WalletType, LedgerAccount, HoldMode } from '@prisma/client';
+import { HoldStatus, TxnType, WalletType, LedgerAccount, HoldMode, DeviceType } from '@prisma/client';
 import { randomUUID } from 'crypto';
 
 type QrMeta = { jti: string; iat: number; exp: number } | undefined;
@@ -99,8 +99,8 @@ export class LoyaltyService {
   // ====== Кеш правил ======
   private rulesCache = new Map<string, { updatedAt: string; baseEarnBps: number; baseRedeemLimitBps: number; fn: (args: { channel: 'VIRTUAL'|'PC_POS'|'SMART'; weekday: number; eligibleTotal: number; category?: string }) => { earnBps: number; redeemLimitBps: number } }>();
 
-  private compileRules(merchantId: string, base: { earnBps: number; redeemLimitBps: number }, rulesJson: any, updatedAt: Date | null | undefined) {
-    const key = merchantId;
+  private compileRules(merchantId: string, outletId: string | null, base: { earnBps: number; redeemLimitBps: number }, rulesJson: any, updatedAt: Date | null | undefined) {
+    const key = `${merchantId}:${outletId ?? '-'}`;
     const stamp = updatedAt ? updatedAt.toISOString() : '0';
     const cached = this.rulesCache.get(key);
     if (cached && cached.updatedAt === stamp && cached.baseEarnBps === base.earnBps && cached.baseRedeemLimitBps === base.redeemLimitBps) return cached.fn;
@@ -155,6 +155,33 @@ export class LoyaltyService {
     };
   }
 
+  private normalizeChannel(raw: DeviceType | null | undefined): 'VIRTUAL'|'PC_POS'|'SMART' {
+    if (!raw) return 'VIRTUAL';
+    if (raw === DeviceType.SMART) return 'SMART';
+    if (raw === DeviceType.PC_POS) return 'PC_POS';
+    return 'VIRTUAL';
+  }
+
+  private async resolveOutletContext(merchantId: string, input: { outletId?: string | null; deviceId?: string | null }) {
+    const { outletId, deviceId } = input;
+    let outlet: { id: string; posType: DeviceType | null } | null = null;
+    if (outletId) {
+      try {
+        outlet = await this.prisma.outlet.findFirst({ where: { id: outletId, merchantId }, select: { id: true, posType: true } });
+      } catch {}
+    }
+    if (!outlet && deviceId) {
+      try {
+        outlet = await this.prisma.outlet.findFirst({
+          where: { merchantId, devices: { some: { id: deviceId } } },
+          select: { id: true, posType: true },
+        });
+      } catch {}
+    }
+    const channel = this.normalizeChannel(outlet?.posType ?? null);
+    return { outletId: outlet?.id ?? null, channel };
+  }
+
   // ===== Levels integration (Wave 2) =====
   // ————— вспомогалки для идемпотентности по существующему hold —————
   private quoteFromExistingHold(mode: Mode, hold: any) {
@@ -194,19 +221,16 @@ export class LoyaltyService {
     const rulesConfig = rulesJson && typeof rulesJson === 'object' ? (rulesJson as Record<string, any>) : {};
     const disallowSameReceipt = Boolean(rulesConfig.disallowEarnRedeemSameReceipt);
 
-    // канал по типу устройства
-    let channel: 'VIRTUAL'|'PC_POS'|'SMART' = 'VIRTUAL';
-    if (dto.deviceId) {
-      const dev = await this.prisma.device.findUnique({ where: { id: dto.deviceId } });
-      if (dev) channel = dev.type as any;
-    }
+    const outletCtx = await this.resolveOutletContext(dto.merchantId, { outletId: dto.outletId ?? null, deviceId: dto.deviceId ?? null });
+    const channel = outletCtx.channel;
+    const effectiveOutletId = outletCtx.outletId ?? null;
 
     // Нормализуем суммы (защита от отрицательных/NaN)
     const sanitizedTotal = Math.max(0, Math.floor(Number((dto as any).total ?? 0)));
     const sanitizedEligibleTotal = Math.max(0, Math.floor(Number((dto as any).eligibleTotal ?? 0)));
     // применяем правила для earnBps/redeemLimitBps (с кешом)
     const wd = new Date().getDay();
-    const rulesFn = this.compileRules(dto.merchantId, { earnBps: baseEarnBps, redeemLimitBps: baseRedeemLimitBps }, rulesJson, updatedAt);
+    const rulesFn = this.compileRules(dto.merchantId, effectiveOutletId, { earnBps: baseEarnBps, redeemLimitBps: baseRedeemLimitBps }, rulesJson, updatedAt);
     let { earnBps, redeemLimitBps } = rulesFn({ channel, weekday: wd, eligibleTotal: sanitizedEligibleTotal, category: dto.category });
     // Apply level-based bonuses (if configured)
     try {
@@ -228,6 +252,12 @@ export class LoyaltyService {
       const existing = await this.prisma.hold.findUnique({ where: { qrJti: qr.jti } });
       if (existing) {
         if (existing.status === HoldStatus.PENDING) {
+          if (effectiveOutletId && existing.outletId !== effectiveOutletId) {
+            try {
+              await this.prisma.hold.update({ where: { id: existing.id }, data: { outletId: effectiveOutletId } });
+              (existing as any).outletId = effectiveOutletId;
+            } catch {}
+          }
           // идемпотентно отдадим тот же расчёт/holdId
           return this.quoteFromExistingHold(dto.mode, existing);
         }
@@ -251,7 +281,15 @@ export class LoyaltyService {
         // гонка: пока мы шли сюда, кто-то другой успел использовать QR — проверим hold ещё раз
         const again = await this.prisma.hold.findUnique({ where: { qrJti: qr.jti } });
         if (again) {
-          if (again.status === HoldStatus.PENDING) return this.quoteFromExistingHold(dto.mode, again);
+          if (again.status === HoldStatus.PENDING) {
+            if (effectiveOutletId && again.outletId !== effectiveOutletId) {
+              try {
+                await this.prisma.hold.update({ where: { id: again.id }, data: { outletId: effectiveOutletId } });
+                (again as any).outletId = effectiveOutletId;
+              } catch {}
+            }
+            return this.quoteFromExistingHold(dto.mode, again);
+          }
           throw new BadRequestException('QR токен уже использован. Попросите клиента обновить QR.');
         }
         // иначе считаем, что QR использован
@@ -363,7 +401,7 @@ export class LoyaltyService {
             qrJti: qr?.jti ?? null,
             expiresAt: qr?.exp ? new Date(qr.exp * 1000) : null,
             status: HoldStatus.PENDING,
-            outletId: dto.outletId ?? null,
+            outletId: effectiveOutletId,
             deviceId: dto.deviceId ?? null,
             staffId: dto.staffId ?? null,
           }
@@ -460,7 +498,7 @@ export class LoyaltyService {
           qrJti: qr?.jti ?? null,
           expiresAt: qr?.exp ? new Date(qr.exp * 1000) : null,
           status: HoldStatus.PENDING,
-          outletId: dto.outletId ?? null,
+          outletId: effectiveOutletId,
           deviceId: dto.deviceId ?? null,
           staffId: dto.staffId ?? null,
         }
@@ -749,9 +787,13 @@ export class LoyaltyService {
             staffId: hold.staffId ?? null,
           }
         });
-        // обновим lastSeen у устройства, если передано
+        // обновим lastSeen у торговой точки/устройства
+        const touchTs = new Date();
+        if (hold.outletId) {
+          try { await tx.outlet.update({ where: { id: hold.outletId }, data: { posLastSeenAt: touchTs } }); } catch {}
+        }
         if (hold.deviceId) {
-          try { await tx.device.update({ where: { id: hold.deviceId }, data: { lastSeenAt: new Date() } }); } catch {}
+          try { await tx.device.update({ where: { id: hold.deviceId }, data: { lastSeenAt: touchTs } }); } catch {}
         }
         // Пишем событие в outbox (минимально)
         await tx.eventOutbox.create({
