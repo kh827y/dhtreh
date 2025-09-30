@@ -60,7 +60,7 @@
   - `API_BASE=http://localhost:3000`
   - `MERCHANT_ID=M-1`
   - `BRIDGE_PORT=18080`
-  - (опц.) `STAFF_KEY=...`, `BRIDGE_SECRET=...`, `OUTLET_ID=...`, `DEVICE_ID=...`
+  - (опц.) `STAFF_KEY=...`, `BRIDGE_SECRET=...`, `OUTLET_ID=...` (legacy: `DEVICE_ID`)
   - В проде: `BRIDGE_SECRET` обязателен (Bridge завершит работу при старте, если не задан)
 - `pnpm i` → `pnpm start` (http://127.0.0.1:18080)
 
@@ -71,6 +71,15 @@
 - `Outlet.bridgeSecret` — первый ненулевой `bridgeSecret` среди устройств точки (по тому же порядку сортировки).
 - `Outlet.bridgeSecretNext` — резерв для ротации секрета мостика (заполняется приложениями).
 - `Outlet.bridgeSecretUpdatedAt` — когда `bridgeSecret` был синхронизирован из устройств (миграции и будущий воркер обновляют поле).
+
+API управления секретами/статусами точек:
+
+- Выдача/ревокация секрета: `POST /merchants/:id/outlets/:outletId/bridge-secret` и `DELETE .../bridge-secret`.
+- Ротация next-секрета: `POST /merchants/:id/outlets/:outletId/bridge-secret/next` / `DELETE .../bridge-secret/next`.
+- Обновление POS-статуса: `PUT /merchants/:id/outlets/:outletId/pos` (поля `posType`, `posLastSeenAt`).
+- Переключение точки (ACTIVE/INACTIVE): `PUT /merchants/:id/outlets/:outletId/status`.
+
+> Новые клиенты POS Bridge используют `outletId` + `bridgeSecret`. Поддержка `deviceId` сохранена только для обратной совместимости.
 
 > Миграция `20251025120000_device_pos_fields` переносит существующие данные из таблицы `Device` в новые поля `Outlet` по этим правилам, чтобы сервисы могли работать только с торговыми точками.
 
@@ -323,7 +332,7 @@ ENV подсказки:
 
 - API: `DATABASE_URL`, `ADMIN_KEY`, `ADMIN_SESSION_SECRET`, `QR_JWT_SECRET` (не `dev_change_me`), `CORS_ORIGINS` обязательны; `WORKERS_ENABLED=1` в отдельном процессе.
 - Admin: `API_BASE` (абсолютный URL), `ADMIN_UI_ADMIN_PASSWORD`, `ADMIN_SESSION_SECRET`.
-- Bridge: `API_BASE` (абсолютный URL), `MERCHANT_ID`, `BRIDGE_SECRET`.
+- Bridge: `API_BASE` (абсолютный URL), `MERCHANT_ID`, `OUTLET_ID`, `BRIDGE_SECRET` (legacy `DEVICE_ID` поддерживается для старых клиентов).
 
 ## Дополнительно
 - (опц.) Redis для rate limiting: поднимите `redis:7` и задайте `REDIS_URL=redis://localhost:6379` в `api` — лимиты будут распределёнными.

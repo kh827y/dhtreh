@@ -2,7 +2,8 @@ import { Injectable, NotFoundException, BadRequestException, UnauthorizedExcepti
 import { getJose } from '../loyalty/token.util';
 import { hashPassword, verifyPassword } from '../password.util';
 import { PrismaService } from '../prisma.service';
-import { CreateStaffDto, UpdateDeviceDto, UpdateMerchantSettingsDto, UpdateOutletDto, UpdateStaffDto } from './dto';
+import { DeviceType } from '@prisma/client';
+import { CreateStaffDto, UpdateMerchantSettingsDto, UpdateOutletDto, UpdateStaffDto, UpdateOutletPosDto } from './dto';
 // Lazy Ajv import to avoid TS2307 when dependency isn't installed yet
 const __AjvLib: any = (() => { try { return require('ajv'); } catch { return null; } })();
 
@@ -351,57 +352,95 @@ export class MerchantsService {
   }
 
   // Outlets
+  private mapOutlet(entity: any) {
+    return {
+      id: entity.id,
+      merchantId: entity.merchantId,
+      name: entity.name,
+      address: entity.address ?? null,
+      status: entity.status,
+      hidden: !!entity.hidden,
+      posType: entity.posType ?? null,
+      posLastSeenAt: entity.posLastSeenAt ?? null,
+      bridgeSecretIssued: !!entity.bridgeSecret,
+      bridgeSecretNextIssued: !!entity.bridgeSecretNext,
+      bridgeSecretUpdatedAt: entity.bridgeSecretUpdatedAt ?? null,
+      createdAt: entity.createdAt,
+      updatedAt: entity.updatedAt,
+    } as const;
+  }
+
+  private async ensureOutlet(merchantId: string, outletId: string) {
+    const outlet = await this.prisma.outlet.findUnique({ where: { id: outletId } });
+    if (!outlet || outlet.merchantId !== merchantId) throw new NotFoundException('Outlet not found');
+    return outlet;
+  }
+
   async listOutlets(merchantId: string) {
-    return this.prisma.outlet.findMany({ where: { merchantId }, orderBy: { createdAt: 'asc' } });
+    const items = await this.prisma.outlet.findMany({ where: { merchantId }, orderBy: { createdAt: 'asc' } });
+    return items.map((out) => this.mapOutlet(out));
   }
   async createOutlet(merchantId: string, name: string, address?: string) {
     await this.ensureMerchant(merchantId);
-    return this.prisma.outlet.create({ data: { merchantId, name, address: address ?? null } });
+    const created = await this.prisma.outlet.create({ data: { merchantId, name, address: address ?? null } });
+    return this.mapOutlet(created);
   }
   async updateOutlet(merchantId: string, outletId: string, dto: UpdateOutletDto) {
-    const out = await this.prisma.outlet.findUnique({ where: { id: outletId } });
-    if (!out || out.merchantId !== merchantId) throw new NotFoundException('Outlet not found');
-    return this.prisma.outlet.update({ where: { id: outletId }, data: { name: dto.name ?? undefined, address: dto.address ?? undefined } });
+    await this.ensureOutlet(merchantId, outletId);
+    const updated = await this.prisma.outlet.update({ where: { id: outletId }, data: { name: dto.name ?? undefined, address: dto.address ?? undefined } });
+    return this.mapOutlet(updated);
   }
   async deleteOutlet(merchantId: string, outletId: string) {
-    const out = await this.prisma.outlet.findUnique({ where: { id: outletId } });
-    if (!out || out.merchantId !== merchantId) throw new NotFoundException('Outlet not found');
+    await this.ensureOutlet(merchantId, outletId);
     await this.prisma.outlet.delete({ where: { id: outletId } });
     return { ok: true };
   }
 
-  // Devices
-  async listDevices(merchantId: string) {
-    return this.prisma.device.findMany({ where: { merchantId }, orderBy: { createdAt: 'asc' } });
+  async issueOutletBridgeSecret(merchantId: string, outletId: string) {
+    await this.ensureOutlet(merchantId, outletId);
+    const secret = this.randToken();
+    await this.prisma.outlet.update({ where: { id: outletId }, data: { bridgeSecret: secret, bridgeSecretUpdatedAt: new Date() } });
+    return { secret };
   }
-  async createDevice(merchantId: string, type: string, outletId?: string, label?: string) {
-    await this.ensureMerchant(merchantId);
-    return this.prisma.device.create({ data: { merchantId, type: type as any, outletId: outletId ?? null, label: label ?? null } });
+  async revokeOutletBridgeSecret(merchantId: string, outletId: string) {
+    await this.ensureOutlet(merchantId, outletId);
+    await this.prisma.outlet.update({ where: { id: outletId }, data: { bridgeSecret: null, bridgeSecretUpdatedAt: new Date() } });
+    return { ok: true };
   }
-  async updateDevice(merchantId: string, deviceId: string, dto: UpdateDeviceDto) {
-    const dev = await this.prisma.device.findUnique({ where: { id: deviceId } });
-    if (!dev || dev.merchantId !== merchantId) throw new NotFoundException('Device not found');
-    return this.prisma.device.update({ where: { id: deviceId }, data: { outletId: dto.outletId ?? undefined, label: dto.label ?? undefined } });
+  async issueOutletBridgeSecretNext(merchantId: string, outletId: string) {
+    await this.ensureOutlet(merchantId, outletId);
+    const secret = this.randToken();
+    await this.prisma.outlet.update({ where: { id: outletId }, data: { bridgeSecretNext: secret } });
+    return { secret };
   }
-  async deleteDevice(merchantId: string, deviceId: string) {
-    const dev = await this.prisma.device.findUnique({ where: { id: deviceId } });
-    if (!dev || dev.merchantId !== merchantId) throw new NotFoundException('Device not found');
-    await this.prisma.device.delete({ where: { id: deviceId } });
+  async revokeOutletBridgeSecretNext(merchantId: string, outletId: string) {
+    await this.ensureOutlet(merchantId, outletId);
+    await this.prisma.outlet.update({ where: { id: outletId }, data: { bridgeSecretNext: null } });
     return { ok: true };
   }
 
-  async issueDeviceSecret(merchantId: string, deviceId: string) {
-    const dev = await this.prisma.device.findUnique({ where: { id: deviceId } });
-    if (!dev || dev.merchantId !== merchantId) throw new NotFoundException('Device not found');
-    const secret = this.randToken();
-    await this.prisma.device.update({ where: { id: deviceId }, data: { bridgeSecret: secret } });
-    return { secret };
+  private normalizePosType(input?: string | null) {
+    if (input === undefined) return undefined;
+    if (input === null || input === '') return null;
+    const upper = String(input).toUpperCase();
+    if (upper === 'PC_POS' || upper === 'SMART' || upper === 'VIRTUAL') return upper as DeviceType;
+    throw new BadRequestException('Invalid posType');
   }
-  async revokeDeviceSecret(merchantId: string, deviceId: string) {
-    const dev = await this.prisma.device.findUnique({ where: { id: deviceId } });
-    if (!dev || dev.merchantId !== merchantId) throw new NotFoundException('Device not found');
-    await this.prisma.device.update({ where: { id: deviceId }, data: { bridgeSecret: null } });
-    return { ok: true };
+
+  async updateOutletPos(merchantId: string, outletId: string, dto: UpdateOutletPosDto) {
+    await this.ensureOutlet(merchantId, outletId);
+    const data: any = {};
+    if (dto.posType !== undefined) data.posType = this.normalizePosType(dto.posType ?? null);
+    if (dto.posLastSeenAt !== undefined) data.posLastSeenAt = dto.posLastSeenAt ? new Date(dto.posLastSeenAt) : null;
+    const updated = await this.prisma.outlet.update({ where: { id: outletId }, data });
+    return this.mapOutlet(updated);
+  }
+
+  async updateOutletStatus(merchantId: string, outletId: string, status: 'ACTIVE' | 'INACTIVE') {
+    if (status !== 'ACTIVE' && status !== 'INACTIVE') throw new BadRequestException('Invalid status');
+    await this.ensureOutlet(merchantId, outletId);
+    const updated = await this.prisma.outlet.update({ where: { id: outletId }, data: { status } });
+    return this.mapOutlet(updated);
   }
 
   // Staff

@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, UseGuards, Query, UseInterceptors, Res } from '@nestjs/common';
 import { MerchantsService } from './merchants.service';
-import { CreateDeviceDto, CreateOutletDto, CreateStaffDto, UpdateDeviceDto, UpdateMerchantSettingsDto, UpdateOutletDto, UpdateStaffDto, MerchantSettingsRespDto, OutletDto, DeviceDto, StaffDto, SecretRespDto, TokenRespDto, OkDto, OutboxEventDto, BulkUpdateRespDto, ReceiptDto, CustomerSearchRespDto, LedgerEntryDto } from './dto';
+import { CreateOutletDto, CreateStaffDto, UpdateMerchantSettingsDto, UpdateOutletDto, UpdateStaffDto, MerchantSettingsRespDto, OutletDto, StaffDto, SecretRespDto, TokenRespDto, OkDto, OutboxEventDto, BulkUpdateRespDto, ReceiptDto, CustomerSearchRespDto, LedgerEntryDto, UpdateOutletPosDto, UpdateOutletStatusDto } from './dto';
 import { AdminGuard } from '../admin.guard';
 import { AdminIpGuard } from '../admin-ip.guard';
 import { ApiBadRequestResponse, ApiExtraModels, ApiHeader, ApiNotFoundResponse, ApiOkResponse, ApiTags, ApiUnauthorizedResponse, getSchemaPath } from '@nestjs/swagger';
@@ -127,49 +127,47 @@ export class MerchantsController {
   deleteOutlet(@Param('id') id: string, @Param('outletId') outletId: string) {
     return this.service.deleteOutlet(id, outletId);
   }
-
-  // Devices
-  @Get(':id/devices')
-  @ApiOkResponse({ type: DeviceDto, isArray: true })
-  @ApiUnauthorizedResponse({ type: ErrorDto })
-  listDevices(@Param('id') id: string) {
-    return this.service.listDevices(id);
-  }
-  @Post(':id/devices')
-  @ApiOkResponse({ type: DeviceDto })
-  @ApiUnauthorizedResponse({ type: ErrorDto })
-  @ApiBadRequestResponse({ type: ErrorDto })
-  createDevice(@Param('id') id: string, @Body() dto: CreateDeviceDto) {
-    return this.service.createDevice(id, dto.type as string, dto.outletId, dto.label);
-  }
-  @Put(':id/devices/:deviceId')
-  @ApiOkResponse({ type: DeviceDto })
-  @ApiUnauthorizedResponse({ type: ErrorDto })
-  @ApiNotFoundResponse({ type: ErrorDto })
-  updateDevice(@Param('id') id: string, @Param('deviceId') deviceId: string, @Body() dto: UpdateDeviceDto) {
-    return this.service.updateDevice(id, deviceId, dto);
-  }
-  @Delete(':id/devices/:deviceId')
-  @ApiOkResponse({ type: OkDto })
-  @ApiUnauthorizedResponse({ type: ErrorDto })
-  @ApiNotFoundResponse({ type: ErrorDto })
-  deleteDevice(@Param('id') id: string, @Param('deviceId') deviceId: string) {
-    return this.service.deleteDevice(id, deviceId);
-  }
-
-  @Post(':id/devices/:deviceId/secret')
+  @Post(':id/outlets/:outletId/bridge-secret')
   @ApiOkResponse({ type: SecretRespDto })
   @ApiUnauthorizedResponse({ type: ErrorDto })
   @ApiNotFoundResponse({ type: ErrorDto })
-  issueDeviceSecret(@Param('id') id: string, @Param('deviceId') deviceId: string) {
-    return this.service.issueDeviceSecret(id, deviceId);
+  issueOutletBridgeSecret(@Param('id') id: string, @Param('outletId') outletId: string) {
+    return this.service.issueOutletBridgeSecret(id, outletId);
   }
-  @Delete(':id/devices/:deviceId/secret')
+  @Delete(':id/outlets/:outletId/bridge-secret')
   @ApiOkResponse({ type: OkDto })
   @ApiUnauthorizedResponse({ type: ErrorDto })
   @ApiNotFoundResponse({ type: ErrorDto })
-  revokeDeviceSecret(@Param('id') id: string, @Param('deviceId') deviceId: string) {
-    return this.service.revokeDeviceSecret(id, deviceId);
+  revokeOutletBridgeSecret(@Param('id') id: string, @Param('outletId') outletId: string) {
+    return this.service.revokeOutletBridgeSecret(id, outletId);
+  }
+  @Post(':id/outlets/:outletId/bridge-secret/next')
+  @ApiOkResponse({ type: SecretRespDto })
+  @ApiUnauthorizedResponse({ type: ErrorDto })
+  @ApiNotFoundResponse({ type: ErrorDto })
+  issueOutletBridgeSecretNext(@Param('id') id: string, @Param('outletId') outletId: string) {
+    return this.service.issueOutletBridgeSecretNext(id, outletId);
+  }
+  @Delete(':id/outlets/:outletId/bridge-secret/next')
+  @ApiOkResponse({ type: OkDto })
+  @ApiUnauthorizedResponse({ type: ErrorDto })
+  @ApiNotFoundResponse({ type: ErrorDto })
+  revokeOutletBridgeSecretNext(@Param('id') id: string, @Param('outletId') outletId: string) {
+    return this.service.revokeOutletBridgeSecretNext(id, outletId);
+  }
+  @Put(':id/outlets/:outletId/pos')
+  @ApiOkResponse({ type: OutletDto })
+  @ApiUnauthorizedResponse({ type: ErrorDto })
+  @ApiNotFoundResponse({ type: ErrorDto })
+  updateOutletPos(@Param('id') id: string, @Param('outletId') outletId: string, @Body() dto: UpdateOutletPosDto) {
+    return this.service.updateOutletPos(id, outletId, dto);
+  }
+  @Put(':id/outlets/:outletId/status')
+  @ApiOkResponse({ type: OutletDto })
+  @ApiUnauthorizedResponse({ type: ErrorDto })
+  @ApiNotFoundResponse({ type: ErrorDto })
+  updateOutletStatus(@Param('id') id: string, @Param('outletId') outletId: string, @Body() dto: UpdateOutletStatusDto) {
+    return this.service.updateOutletStatus(id, outletId, dto.status);
   }
 
   // Staff
