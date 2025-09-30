@@ -11,9 +11,11 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
       const body = req.body || {};
       const q = req.query || {};
       const merchantId = body.merchantId || q.merchantId || '';
+      const outletId = body.outletId || q.outletId || '';
       const deviceId = body.deviceId || q.deviceId || '';
       const staffId = body.staffId || q.staffId || '';
-      return [ip, path, merchantId, deviceId, staffId].filter(Boolean).join('|');
+      const outletKey = outletId || deviceId || '';
+      return [ip, path, merchantId, outletKey, staffId].filter(Boolean).join('|');
     } catch {
       return await super.getTracker(req as any);
     }
