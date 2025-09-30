@@ -1624,6 +1624,8 @@ model LoyaltyPromotion {
 
   @@index([merchantId, status])
   @@index([segmentId])
+  @@index([merchantId, archivedAt])
+  @@map("loyalty_promotions")
 }
 
 model PromotionParticipant {

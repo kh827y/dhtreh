@@ -965,6 +965,31 @@ async function createPromotions(prisma, merchantId, segments, tiers, staff, temp
     },
   });
 
+  const flash = await prisma.loyaltyPromotion.upsert({
+    where: { id: 'promo-flash' },
+    update: {
+      status: 'DRAFT',
+      metadata: { lastEditedBy: staff.manager.id },
+    },
+    create: {
+      id: 'promo-flash',
+      merchantId,
+      name: 'Флеш-распродажа выходного дня',
+      description: 'Бонусные баллы за визит в ближайший уикенд',
+      status: 'DRAFT',
+      rewardType: 'POINTS',
+      rewardValue: 20,
+      rewardMetadata: { percent: 20, minReceipt: 80000 },
+      pushOnStart: false,
+      pushReminderEnabled: false,
+      autoLaunch: false,
+      pointsExpireInDays: 7,
+      metadata: { checklist: ['Подтвердить товары', 'Согласовать баннер'] },
+      createdById: staff.manager.id,
+      updatedById: staff.manager.id,
+    },
+  });
+
   await prisma.promotionParticipant.createMany({
     data: [
       {
@@ -1047,6 +1072,14 @@ async function createPromotions(prisma, merchantId, segments, tiers, staff, temp
         status: 'SCHEDULED',
         scheduledAt: nowMinus({ days: -4 }),
       },
+      {
+        id: 'task-flash-draft',
+        merchantId,
+        channel: 'PUSH',
+        promotionId: flash.id,
+        createdById: staff.manager.id,
+        status: 'DRAFT',
+      },
     ],
     skipDuplicates: true,
   });
@@ -1075,7 +1108,7 @@ async function createPromotions(prisma, merchantId, segments, tiers, staff, temp
     skipDuplicates: true,
   });
 
-  return { spring, upcoming };
+  return { spring, upcoming, flash };
 }
 async function createMechanics(prisma, merchantId, staff) {
   await prisma.loyaltyMechanic.upsert({

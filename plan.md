@@ -37,6 +37,7 @@
 - Merchant: cashierLogin(unique), cashierPassword9, archivedAt.
 - AccessGroup/AccessGroupMember; StaffOutletAccess (staff↔outlet + pinCode, lastTxnAt).
 - Методы Admin/Portal для управления пинкодами и доступами.
+- LoyaltyPromotion: вынесена отдельная таблица `loyalty_promotions`, миграция и сиды обновлены.
 
 3) Портал/Админ — фронтенд
 - Удалить «Устройства», усилить «Торговые точки».
