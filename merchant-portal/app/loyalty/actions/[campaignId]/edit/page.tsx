@@ -45,7 +45,7 @@ export default function CampaignEditPage(){
     (async()=>{
       setLoading(true); setMsg('');
       try {
-        const r = await fetch(`/api/portal/campaigns/${encodeURIComponent(String(campaignId||''))}`);
+        const r = await fetch(`/api/portal/loyalty/promotions/${encodeURIComponent(String(campaignId||''))}`);
         if (!r.ok) throw new Error(await r.text());
         const c = await r.json();
         setName(c.name||'');
@@ -105,7 +105,7 @@ export default function CampaignEditPage(){
           outlets: outletsCsv ? outletsCsv.split(',').map(s=>s.trim()).filter(Boolean) : undefined,
         },
       };
-      const r = await fetch(`/api/portal/campaigns/${encodeURIComponent(String(campaignId||''))}`, { method: 'PUT', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(dto) });
+      const r = await fetch(`/api/portal/loyalty/promotions/${encodeURIComponent(String(campaignId||''))}`, { method: 'PUT', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(dto) });
       if (!r.ok) throw new Error(await r.text());
       router.push(`/loyalty/actions/${encodeURIComponent(String(campaignId||''))}`);
     } catch(e:any) { setMsg(String(e?.message||e)); }
