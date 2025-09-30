@@ -51,7 +51,6 @@ describe('AntiFraudGuard', () => {
       earnPoints: 100,
       redeemAmount: 0,
       outletId: null,
-      deviceId: null,
       staffId: 'S-1',
     });
     prisma.merchantSettings.findUnique.mockResolvedValue({
@@ -73,7 +72,7 @@ describe('AntiFraudGuard', () => {
     expect(antifraud.checkTransaction).not.toHaveBeenCalled();
   });
 
-  it('использует deviceId в лимитах, если outletId отсутствует', async () => {
+  it('использует outletId в лимитах, если он указан', async () => {
     prisma.hold.findUnique.mockResolvedValue({
       id: 'H-2',
       merchantId: 'M-1',
@@ -81,8 +80,7 @@ describe('AntiFraudGuard', () => {
       mode: 'EARN',
       earnPoints: 200,
       redeemAmount: 0,
-      outletId: null,
-      deviceId: 'D-1',
+      outletId: 'O-1',
       staffId: 'S-2',
     });
     prisma.merchantSettings.findUnique.mockResolvedValue({
@@ -107,7 +105,7 @@ describe('AntiFraudGuard', () => {
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
     expect(prisma.transaction.count).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ deviceId: 'D-1' }),
+        where: expect.objectContaining({ outletId: 'O-1' }),
       }),
     );
     expect(alerts.antifraudBlocked).not.toHaveBeenCalled();

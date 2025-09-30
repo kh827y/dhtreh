@@ -92,7 +92,7 @@ const state = {
   metrics: new Map<string, any>(),
   participants: [] as ParticipantRecord[],
   customers: new Map<string, CustomerRecord>(),
-  pushDevices: [] as Array<{ id: string; deviceId: string; merchantId: string; customerId: string; token: string; isActive: boolean }>,
+  pushDevices: [] as Array<{ id: string; outletDeviceKey: string; merchantId: string; customerId: string; token: string; isActive: boolean }>,
   pushNotifications: [] as any[],
   emailNotifications: [] as any[],
 };
@@ -376,24 +376,37 @@ const prismaMock: any = {
       if (where?.isActive !== undefined) {
         list = list.filter((item) => item.isActive === where.isActive);
       }
-      return list.map((item) => ({ ...item }));
+      return list.map((item) => ({ ...item, deviceId: item.outletDeviceKey }));
     }),
     update: jest.fn(async ({ where, data }: any) => {
       const device = state.pushDevices.find((item) => item.id === where.id);
       if (!device) throw new Error('Device not found');
-      Object.assign(device, data);
-      return { ...device };
+      const patch = { ...data };
+      if ('deviceId' in patch) {
+        device.outletDeviceKey = patch.deviceId;
+        delete patch.deviceId;
+      }
+      Object.assign(device, patch);
+      return { ...device, deviceId: device.outletDeviceKey };
     }),
     upsert: jest.fn(async ({ where, create, update }: any) => {
-      const existing = state.pushDevices.find((item) => item.customerId === where.customerId_deviceId.customerId && item.deviceId === where.customerId_deviceId.deviceId);
+      const existing = state.pushDevices.find((item) => item.customerId === where.customerId_deviceId.customerId && item.outletDeviceKey === where.customerId_deviceId.deviceId);
       if (existing) {
-        Object.assign(existing, update);
-        return { ...existing };
+        const patch = { ...update };
+        if ('deviceId' in patch) {
+          existing.outletDeviceKey = patch.deviceId;
+          delete patch.deviceId;
+        }
+        Object.assign(existing, patch);
+        return { ...existing, deviceId: existing.outletDeviceKey };
       }
       const id = `device-${pushDeviceSeq++}`;
-      const record = { id, ...create };
+      const createCopy = { ...create };
+      const outletDeviceKey = createCopy.deviceId;
+      delete createCopy.deviceId;
+      const record = { id, outletDeviceKey, ...createCopy };
       state.pushDevices.push(record);
-      return { ...record };
+      return { ...record, deviceId: record.outletDeviceKey };
     }),
   },
   pushNotification: {
@@ -502,7 +515,7 @@ describe('LoyaltyPromotion integration (e2e)', () => {
     resetState();
     state.customers.set('C1', { id: 'C1', merchantId: 'M-1', email: 'user@example.com', phone: '+79990000000', name: 'Demo User' });
     state.customers.set('C2', { id: 'C2', merchantId: 'M-1', email: null, phone: '+79991111111', name: 'Anon' });
-    state.pushDevices.push({ id: `device-${pushDeviceSeq}`, deviceId: `device-key-${pushDeviceSeq}`, merchantId: 'M-1', customerId: 'C1', token: 'push-token', isActive: true }); pushDeviceSeq++;
+    state.pushDevices.push({ id: `device-${pushDeviceSeq}`, outletDeviceKey: `outlet-device-${pushDeviceSeq}`, merchantId: 'M-1', customerId: 'C1', token: 'push-token', isActive: true }); pushDeviceSeq++;
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [
@@ -543,7 +556,7 @@ describe('LoyaltyPromotion integration (e2e)', () => {
     resetState();
     state.customers.set('C1', { id: 'C1', merchantId: 'M-1', email: 'user@example.com', phone: '+79990000000', name: 'Demo User' });
     state.customers.set('C2', { id: 'C2', merchantId: 'M-1', email: null, phone: '+79991111111', name: 'Anon' });
-    state.pushDevices.push({ id: `device-${pushDeviceSeq}`, deviceId: `device-key-${pushDeviceSeq}`, merchantId: 'M-1', customerId: 'C1', token: 'push-token', isActive: true }); pushDeviceSeq++;
+    state.pushDevices.push({ id: `device-${pushDeviceSeq}`, outletDeviceKey: `outlet-device-${pushDeviceSeq}`, merchantId: 'M-1', customerId: 'C1', token: 'push-token', isActive: true }); pushDeviceSeq++;
   });
 
   it('creates, updates and reads promotion usage stats', async () => {

@@ -49,8 +49,8 @@ X-Bridge-Signature: v1,ts=1234567890,sig=base64signature
 
 Где применяется (включается per-merchant настройкой `requireBridgeSig`):
 - `POST /loyalty/quote` — при включённой настройке, сигнатура обязательна.
-- `POST /loyalty/commit` — проверяется до выполнения; если hold привязан к устройству, используется секрет устройства (`Device.bridgeSecret`) вместо мерчантского.
-- `POST /loyalty/refund` — аналогично `commit`; новые клиенты передают только `outletId` (поле `deviceId` поддерживается для легаси-запросов).
+- `POST /loyalty/commit` — проверяется до выполнения; если hold привязан к торговой точке, используется секрет точки (`Outlet.bridgeSecret` или `bridgeSecretNext`) вместо мерчантского.
+- `POST /loyalty/refund` — аналогично `commit`; для новых интеграций требуется `outletId`.
 - `POST /loyalty/qr` — если нет TeleAuth и Staff-Key, при включённой настройке требуется подпись.
 
 Совместимость со Staff-Key: если у мерчанта включено требование Staff-Key (`requireStaffKey`), допускается либо `X-Staff-Key`, либо `X-Bridge-Signature` (см. `loyalty.controller.ts: enforceRequireStaffKey`).
@@ -185,7 +185,6 @@ X-Staff-Key: required_if_enabled
   "total": 1000,
   "eligibleTotal": 1000,
   "outletId": "string", // optional
-  "deviceId": "string", // optional
   "staffId": "string",  // optional
   "category": "string",  // optional (для правил промо)
   "promoCode": "string" // optional (применить промокод перед расчётом)
@@ -420,7 +419,6 @@ X-Staff-Key: required_if_enabled
   "orderId": "string",
   "refundTotal": 1000,
   "refundEligibleTotal": 1000 // optional
-  // legacy: допустимо передавать deviceId для старых интеграций
 }
 
 Response 200:
@@ -1070,7 +1068,7 @@ Content-Type: application/json
   "customerId": "string",
   "amount": 10000,
   "type": "REDEEM",
-  "deviceId": "string",
+  "outletId": "string",
   "ipAddress": "192.168.1.1"
 }
 
@@ -1080,7 +1078,7 @@ Response 200:
   "score": 25,
   "factors": [
     "large_amount:10000",
-    "new_device"
+    "new_outlet"
   ],
   "shouldBlock": false,
   "shouldReview": false

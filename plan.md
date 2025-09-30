@@ -14,7 +14,8 @@
 
 — Устройства: депрекация. UI/роуты удаляем, опираемся на Торговые точки.
   - [x] Бэкенд-агрегации/выгрузки перевёл на `outletId`: аналитика (Top Devices → Outlet usage c `posLastSeenAt`), воркер активации начислений, CRM-таймлайн, push-устройства (`outletDeviceKey`), интеграционные DTO и CSV/SDK.
-  - [x] DTO/ответы merchants/loyalty и клиенты (admin/bridge/cashier) очищены от `deviceId`, добавлены поля POS-агрегации (`outletPosType`, `outletLastSeenAt`).
+- [x] DTO/ответы merchants/loyalty и клиенты (admin/bridge/cashier) очищены от `deviceId`, добавлены поля POS-агрегации (`outletPosType`, `outletLastSeenAt`).
+- [x] OpenAPI/документация и e2e/контрактные тесты приведены к схеме без `deviceId`; зафиксированы outlet-секреты.
 
 ## Батчи внедрения (план)
 

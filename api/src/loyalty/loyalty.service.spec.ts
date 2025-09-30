@@ -48,7 +48,7 @@ describe('LoyaltyService.commit idempotency', () => {
 
   it('commit EARN creates receipt and returns ok', async () => {
     const prisma = mkPrisma();
-    const hold = { id: 'H2', merchantId: 'M-1', customerId: 'C-2', status: 'PENDING', mode: 'EARN', earnPoints: 5, outletId: null, deviceId: null, staffId: null, total: 100, eligibleTotal: 100 };
+    const hold = { id: 'H2', merchantId: 'M-1', customerId: 'C-2', status: 'PENDING', mode: 'EARN', earnPoints: 5, outletId: null, staffId: null, total: 100, eligibleTotal: 100 };
     prisma.hold.findUnique.mockResolvedValue(hold);
     prisma.wallet.findFirst.mockResolvedValue({ id: 'W2', balance: 0, type: 'POINTS' });
     let txUsed: any;
@@ -65,7 +65,7 @@ describe('LoyaltyService.commit idempotency', () => {
 
   it('commit touches outlet when present', async () => {
     const prisma = mkPrisma();
-    const hold = { id: 'H3', merchantId: 'M-1', customerId: 'C-3', status: 'PENDING', mode: 'EARN', earnPoints: 5, outletId: 'OUT-1', deviceId: null, staffId: null, total: 100, eligibleTotal: 100 };
+    const hold = { id: 'H3', merchantId: 'M-1', customerId: 'C-3', status: 'PENDING', mode: 'EARN', earnPoints: 5, outletId: 'OUT-1', staffId: null, total: 100, eligibleTotal: 100 };
     prisma.hold.findUnique.mockResolvedValue(hold);
     prisma.wallet.findFirst.mockResolvedValue({ id: 'W3', balance: 0, type: 'POINTS' });
     let txUsed: any;

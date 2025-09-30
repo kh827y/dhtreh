@@ -56,23 +56,22 @@ describe('AntiFraudService (outlet factors)', () => {
     expect(result.factors).toEqual(expect.arrayContaining(['new_outlet', 'multiple_outlets:4']));
   });
 
-  it('фолбэчит на deviceId, если outletId не передан', async () => {
-    prisma.transaction.count.mockResolvedValueOnce(2);
-    prisma.transaction.findMany.mockResolvedValueOnce([{ deviceId: 'D-1' }]);
+  it('не добавляет no_outlet_id, если outletId указан и есть история', async () => {
+    prisma.transaction.count.mockResolvedValueOnce(3);
+    prisma.transaction.findMany.mockResolvedValueOnce([{ outletId: 'O-1' }, { outletId: 'O-2' }]);
 
     const result = await (service as any).checkOutlet({
       merchantId: 'M-1',
       customerId: 'C-2',
       amount: 50,
       type: 'REDEEM',
-      deviceId: 'D-1',
+      outletId: 'O-1',
     });
 
     expect(prisma.transaction.count).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ deviceId: 'D-1' }) }),
+      expect.objectContaining({ where: expect.objectContaining({ outletId: 'O-1' }) }),
     );
     expect(result.factors).not.toContain('no_outlet_id');
-    expect(result.factors).toHaveLength(0);
   });
 
   it('сводит статистику с учётом riskLevel и факторов', async () => {

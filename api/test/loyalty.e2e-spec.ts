@@ -6,8 +6,34 @@ import { PrismaService } from './../src/prisma.service';
 import { createHash } from 'crypto';
 
 type Wallet = { id: string; customerId: string; merchantId: string; balance: number };
-type Hold = { id: string; customerId: string; merchantId: string; mode: 'REDEEM'|'EARN'; redeemAmount?: number; earnPoints?: number; orderId?: string|null; total?: number|null; eligibleTotal?: number|null; status: string; expiresAt?: Date|null; outletId?: string|null; deviceId?: string|null; staffId?: string|null };
-type Receipt = { id: string; merchantId: string; customerId: string; orderId: string; receiptNumber?: string|null; total: number; eligibleTotal: number; redeemApplied: number; earnApplied: number; outletId?: string|null; deviceId?: string|null; staffId?: string|null };
+type Hold = {
+  id: string;
+  customerId: string;
+  merchantId: string;
+  mode: 'REDEEM'|'EARN';
+  redeemAmount?: number;
+  earnPoints?: number;
+  orderId?: string|null;
+  total?: number|null;
+  eligibleTotal?: number|null;
+  status: string;
+  expiresAt?: Date|null;
+  outletId?: string|null;
+  staffId?: string|null;
+};
+type Receipt = {
+  id: string;
+  merchantId: string;
+  customerId: string;
+  orderId: string;
+  receiptNumber?: string|null;
+  total: number;
+  eligibleTotal: number;
+  redeemApplied: number;
+  earnApplied: number;
+  outletId?: string|null;
+  staffId?: string|null;
+};
 type PromoCodeRow = {
   id: string;
   merchantId: string;
@@ -52,10 +78,18 @@ describe('Loyalty (e2e)', () => {
     receipts: [] as Receipt[],
     transactions: [] as any[],
     eventOutbox: [] as any[],
-    staff: [] as { id: string; merchantId: string; apiKeyHash?: string; status: string; allowedOutletId?: string|null; allowedDeviceId?: string|null }[],
-    devices: [] as { id: string; merchantId: string; outletId?: string|null; type: 'SMART'|'PC_POS'|'VIRTUAL'; label?: string|null; bridgeSecret?: string|null }[],
+    staff: [] as { id: string; merchantId: string; apiKeyHash?: string; status: string; allowedOutletId?: string|null }[],
+    outlets: [] as Array<{
+      id: string;
+      merchantId: string;
+      name?: string|null;
+      bridgeSecret?: string|null;
+      bridgeSecretNext?: string|null;
+      posType?: 'SMART'|'PC_POS'|'VIRTUAL'|null;
+      isDefault?: boolean;
+    }>,
     idem: new Map<string, any>(),
-    earnLots: [] as Array<{ id: string; merchantId: string; customerId: string; points: number; consumedPoints: number; earnedAt: Date; maturesAt?: Date|null; expiresAt?: Date|null; orderId?: string|null; receiptId?: string|null; outletId?: string|null; deviceId?: string|null; staffId?: string|null; status: 'ACTIVE'|'PENDING' }>,
+    earnLots: [] as Array<{ id: string; merchantId: string; customerId: string; points: number; consumedPoints: number; earnedAt: Date; maturesAt?: Date|null; expiresAt?: Date|null; orderId?: string|null; receiptId?: string|null; outletId?: string|null; staffId?: string|null; status: 'ACTIVE'|'PENDING' }>,
     promoCodes: [] as PromoCodeRow[],
     promoCodeUsages: [] as PromoCodeUsageRow[],
     promoCodeMetrics: new Map<string, { totalIssued: number; totalPointsIssued: number; totalCustomers: number; lastUsedAt?: Date | null }>(),
@@ -64,15 +98,7 @@ describe('Loyalty (e2e)', () => {
 
   const uuid = (() => { let i = 1; return () => `id-${i++}`; })();
 
-  const resolveOutletId = (payload?: { outletId?: string|null; deviceId?: string|null }) => {
-    if (!payload) return null;
-    if (payload.outletId) return payload.outletId;
-    if (payload.deviceId) {
-      const dev = state.devices.find((d) => d.id === payload.deviceId);
-      if (dev?.outletId) return dev.outletId;
-    }
-    return null;
-  };
+  const resolveOutletId = (payload?: { outletId?: string|null }) => (payload?.outletId ?? null);
 
   const prismaMock: any = {
     $connect: jest.fn(async () => {}),
@@ -88,7 +114,7 @@ describe('Loyalty (e2e)', () => {
         transactions: state.transactions.map(t => ({ ...t })),
         eventOutbox: state.eventOutbox.map(e => ({ ...e })),
         staff: state.staff.map(s => ({ ...s })),
-        devices: state.devices.map(d => ({ ...d })),
+        outlets: state.outlets.map(o => ({ ...o })),
         idem: new Map(state.idem),
       };
       try {
@@ -103,7 +129,7 @@ describe('Loyalty (e2e)', () => {
         state.transactions = snap.transactions;
         state.eventOutbox = snap.eventOutbox;
         state.staff = snap.staff;
-        state.devices = snap.devices;
+        state.outlets = snap.outlets;
         state.idem = snap.idem;
         throw e;
       }
@@ -156,7 +182,6 @@ describe('Loyalty (e2e)', () => {
           status: args.data.status,
           expiresAt: args.data.expiresAt ?? null,
           outletId,
-          deviceId: args.data.deviceId ?? null,
           staffId: args.data.staffId ?? null,
         } as any;
         state.holds.push(h);
@@ -205,7 +230,6 @@ describe('Loyalty (e2e)', () => {
           redeemApplied: args.data.redeemApplied,
           earnApplied: args.data.earnApplied,
           outletId,
-          deviceId: args.data.deviceId ?? null,
           staffId: args.data.staffId ?? null,
         };
         state.receipts.push(r);
@@ -252,7 +276,6 @@ describe('Loyalty (e2e)', () => {
           orderId: d.orderId ?? null,
           receiptId: d.receiptId ?? null,
           outletId,
-          deviceId: d.deviceId ?? null,
           staffId: d.staffId ?? null,
           status: d.status || 'ACTIVE',
         } as any;
@@ -278,8 +301,32 @@ describe('Loyalty (e2e)', () => {
       create: async (_args: any) => ({}),
     },
 
-    device: {
-      findUnique: async (args: any) => state.devices.find(d => d.id === args.where.id) || null,
+    outlet: {
+      findUnique: async (args: any) => {
+        const row = state.outlets.find((o) => o.id === args.where.id) || null;
+        if (!row) return null;
+        if (!args?.select) return { ...row };
+        const picked: any = {};
+        for (const key of Object.keys(args.select)) {
+          if (args.select[key]) picked[key] = (row as any)[key];
+        }
+        return picked;
+      },
+      findFirst: async (args: any = {}) => {
+        const where = args.where || {};
+        let list = state.outlets.slice();
+        if (where.merchantId) list = list.filter((o) => o.merchantId === where.merchantId);
+        if (where.id) list = list.filter((o) => o.id === where.id);
+        if (where.isDefault === true) list = list.filter((o) => o.isDefault);
+        const row = list[0] || null;
+        if (!row) return null;
+        if (!args?.select) return { ...row };
+        const picked: any = {};
+        for (const key of Object.keys(args.select)) {
+          if (args.select[key]) picked[key] = (row as any)[key];
+        }
+        return picked;
+      },
     },
     $executeRaw: jest.fn(async () => 0),
     promoCode: {
