@@ -225,12 +225,14 @@ export class EmailService {
     subject: string,
     content: string
   ) {
-    const campaign = await this.prisma.campaign.findUnique({
+    const promotion = await this.prisma.loyaltyPromotion.findUnique({
       where: { id: campaignId },
       include: { merchant: true },
     });
 
-    if (!campaign) return;
+    if (!promotion) return;
+
+    const legacy = ((promotion.metadata as any)?.legacyCampaign ?? {}) as Record<string, any>;
 
     const customers = await this.prisma.customer.findMany({
       where: {
@@ -247,14 +249,14 @@ export class EmailService {
         template: 'campaign',
         data: {
           customerName: customer.name || 'Уважаемый клиент',
-          merchantName: campaign.merchant.name,
-          campaignName: campaign.name,
+          merchantName: promotion.merchant.name,
+          campaignName: promotion.name,
           content,
-          campaignType: campaign.type,
-          startDate: campaign.startDate?.toLocaleDateString('ru-RU'),
-          endDate: campaign.endDate?.toLocaleDateString('ru-RU'),
+          campaignType: legacy.kind ?? 'LOYALTY_PROMOTION',
+          startDate: promotion.startAt?.toLocaleDateString('ru-RU') ?? legacy.startDate ?? null,
+          endDate: promotion.endAt?.toLocaleDateString('ru-RU') ?? legacy.endDate ?? null,
         },
-        merchantId: campaign.merchantId,
+        merchantId: promotion.merchantId,
         customerId: customer.id,
         campaignId,
       });

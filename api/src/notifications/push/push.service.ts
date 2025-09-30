@@ -253,16 +253,19 @@ export class PushService {
     body: string,
     image?: string
   ) {
-    const campaign = await this.prisma.campaign.findUnique({
+    const promotion = await this.prisma.loyaltyPromotion.findUnique({
       where: { id: campaignId },
+      select: { merchantId: true, name: true, metadata: true },
     });
 
-    if (!campaign) {
+    if (!promotion) {
       throw new BadRequestException('Кампания не найдена');
     }
 
+    const legacy = ((promotion.metadata as any)?.legacyCampaign ?? {}) as Record<string, any>;
+
     return this.sendPush({
-      merchantId: campaign.merchantId,
+      merchantId: promotion.merchantId,
       customerIds,
       title,
       body,
@@ -270,8 +273,8 @@ export class PushService {
       type: 'CAMPAIGN',
       campaignId,
       data: {
-        campaignType: campaign.type,
-        campaignName: campaign.name,
+        campaignType: legacy.kind ?? 'LOYALTY_PROMOTION',
+        campaignName: promotion.name,
       },
     });
   }

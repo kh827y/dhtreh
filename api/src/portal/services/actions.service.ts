@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Campaign, Prisma } from '@prisma/client';
+import { LoyaltyPromotion, Prisma, PromotionRewardType, PromotionStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 
 export type ActionsTab = 'UPCOMING' | 'CURRENT' | 'PAST';
@@ -49,36 +49,36 @@ export interface UpdateActionStatusPayload {
 }
 
 @Injectable()
+type PromotionEntity = Prisma.LoyaltyPromotionGetPayload<{
+  include: { metrics: true; audience: true };
+}>;
+
+@Injectable()
 export class ActionsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async list(merchantId: string, tab: ActionsTab, search?: string): Promise<{ total: number; items: ActionListItemDto[] }> {
-    const where: Prisma.CampaignWhereInput = {
-      merchantId,
-      type: 'PRODUCT_BONUS',
-      archivedAt: tab === 'PAST' ? { not: null } : null,
-      name: search ? { contains: search, mode: 'insensitive' } : undefined,
-    };
-
-    const campaigns = await this.prisma.campaign.findMany({
-      where,
+    const promotions = await this.prisma.loyaltyPromotion.findMany({
+      where: {
+        merchantId,
+        metadata: { path: ['legacyCampaign', 'kind'], equals: 'PRODUCT_BONUS' },
+        name: search ? { contains: search, mode: 'insensitive' } : undefined,
+      },
       orderBy: { createdAt: 'desc' },
+      include: { metrics: true, audience: true },
     });
 
-    const filtered = campaigns.filter(c => this.classifyTab(c) === tab);
+    const filtered = promotions.filter((promotion) => this.classifyTab(promotion) === tab);
 
     return {
       total: filtered.length,
-      items: filtered.map(c => this.mapCampaign(c)),
+      items: filtered.map((promotion) => this.mapPromotion(promotion)),
     };
   }
 
   async getById(merchantId: string, campaignId: string): Promise<ActionListItemDto> {
-    const campaign = await this.prisma.campaign.findUnique({ where: { id: campaignId } });
-    if (!campaign || campaign.merchantId !== merchantId || campaign.type !== 'PRODUCT_BONUS') {
-      throw new NotFoundException('Акция не найдена');
-    }
-    return this.mapCampaign(campaign);
+    const promotion = await this.getPromotionEntity(merchantId, campaignId);
+    return this.mapPromotion(promotion);
   }
 
   async createProductBonus(merchantId: string, payload: CreateProductBonusActionPayload): Promise<ActionListItemDto> {
@@ -103,102 +103,103 @@ export class ActionsService {
       }
     }
 
-    const created = await this.prisma.campaign.create({
-      data: {
-        merchantId,
-        name: payload.name.trim(),
-        type: 'PRODUCT_BONUS',
-        status,
-        content: {
-          kind: 'PRODUCT_BONUS',
-          productIds: payload.productIds,
-          rule: payload.rule,
-          usageLimit,
-          audience: {
-            id: payload.audienceId ?? null,
-            name: payload.audienceName ?? null,
-          },
-        } satisfies Prisma.JsonObject,
-        reward: payload.rule as unknown as Prisma.InputJsonValue,
-        startDate,
-        endDate,
-        maxUsagePerCustomer: usageLimit.type === 'UNLIMITED' ? null : usageLimit.value ?? (usageLimit.type === 'ONCE' ? 1 : null),
-        targetSegmentId: payload.audienceId ?? null,
+    const metadata: Prisma.InputJsonValue = {
+      legacyCampaign: {
+        kind: 'PRODUCT_BONUS',
+        rule: payload.rule,
+        productIds: payload.productIds,
+        usageLimit,
+        audience: {
+          id: payload.audienceId ?? null,
+          name: payload.audienceName ?? null,
+        },
         metrics: {
           revenue: 0,
           expenses: 0,
           purchases: 0,
           roi: 0,
-        } satisfies Prisma.JsonObject,
-        notificationChannels: [],
+        },
+      },
+    } satisfies Prisma.JsonObject;
+
+    const created = await this.prisma.loyaltyPromotion.create({
+      data: {
+        merchantId,
+        name: payload.name.trim(),
+        description: null,
+        status: status as PromotionStatus,
+        segmentId: payload.audienceId ?? null,
+        rewardType: PromotionRewardType.CUSTOM,
+        rewardMetadata: { rule: payload.rule, kind: 'PRODUCT_BONUS' },
+        startAt: startDate,
+        endAt: endDate,
+        archivedAt: null,
+        metadata,
       },
     });
 
-    return this.mapCampaign(created);
+    const full = await this.getPromotionEntity(merchantId, created.id);
+    return this.mapPromotion(full);
   }
 
   async updateStatus(merchantId: string, campaignId: string, payload: UpdateActionStatusPayload): Promise<ActionListItemDto> {
-    const campaign = await this.getCampaignEntity(merchantId, campaignId);
+    const promotion = await this.getPromotionEntity(merchantId, campaignId);
 
-    let status = campaign.status;
+    let status = promotion.status;
     if (payload.action === 'PAUSE') {
-      status = 'PAUSED';
+      status = PromotionStatus.PAUSED;
     } else if (payload.action === 'RESUME') {
       const now = new Date();
-      if (campaign.startDate && campaign.startDate > now) {
-        status = 'SCHEDULED';
+      if (promotion.startAt && promotion.startAt > now) {
+        status = PromotionStatus.SCHEDULED;
       } else {
-        status = 'ACTIVE';
+        status = PromotionStatus.ACTIVE;
       }
     }
 
-    const updated = await this.prisma.campaign.update({
-      where: { id: campaign.id },
+    await this.prisma.loyaltyPromotion.update({
+      where: { id: promotion.id },
       data: { status },
     });
 
-    return this.mapCampaign(updated);
+    const updated = await this.getPromotionEntity(merchantId, campaignId);
+    return this.mapPromotion(updated);
   }
 
   async archive(merchantId: string, campaignId: string): Promise<ActionListItemDto> {
-    await this.getCampaignEntity(merchantId, campaignId);
-    const archived = await this.prisma.campaign.update({
+    await this.getPromotionEntity(merchantId, campaignId);
+    await this.prisma.loyaltyPromotion.update({
       where: { id: campaignId },
       data: {
-        status: 'ARCHIVED',
+        status: PromotionStatus.ARCHIVED,
         archivedAt: new Date(),
       },
     });
-    return this.mapCampaign(archived);
+    const archived = await this.getPromotionEntity(merchantId, campaignId);
+    return this.mapPromotion(archived);
   }
 
   async duplicate(merchantId: string, campaignId: string): Promise<ActionListItemDto> {
-    const campaign = await this.getCampaignEntity(merchantId, campaignId);
-    const name = campaign.name.endsWith(' (копия)') ? campaign.name : `${campaign.name} (копия)`;
-    const duplicated = await this.prisma.campaign.create({
+    const promotion = await this.getPromotionEntity(merchantId, campaignId);
+    const legacy = this.extractLegacyCampaign(promotion);
+    const name = promotion.name.endsWith(' (копия)') ? promotion.name : `${promotion.name} (копия)`;
+    const duplicated = await this.prisma.loyaltyPromotion.create({
       data: {
         merchantId,
         name,
-        type: 'PRODUCT_BONUS',
-        status: 'DRAFT',
-        content: campaign.content as unknown as Prisma.InputJsonValue,
-        reward:
-          campaign.reward != null
-            ? (campaign.reward as unknown as Prisma.InputJsonValue)
-            : (Prisma.DbNull as Prisma.NullableJsonNullValueInput),
-        notificationChannels: campaign.notificationChannels,
-        metrics:
-          (campaign.metrics as unknown as Prisma.InputJsonValue) ??
-          ({
-            revenue: 0,
-            expenses: 0,
-            purchases: 0,
-            roi: 0,
-          } satisfies Prisma.JsonObject),
+        description: promotion.description ?? null,
+        status: PromotionStatus.DRAFT,
+        segmentId: promotion.segmentId,
+        rewardType: PromotionRewardType.CUSTOM,
+        rewardMetadata: promotion.rewardMetadata,
+        metadata: {
+          legacyCampaign: legacy,
+        } as Prisma.InputJsonValue,
       },
     });
 
-    return this.mapCampaign(duplicated);
+    const full = await this.getPromotionEntity(merchantId, duplicated.id);
+    return this.mapPromotion(full);
   }
   private validateCreatePayload(payload: CreateProductBonusActionPayload) {
     const name = payload.name?.trim();
@@ -245,48 +246,55 @@ export class ActionsService {
     return { type: 'N_TIMES', value: payload.usageLimitValue ?? null };
   }
 
-  private classifyTab(campaign: Campaign): ActionsTab {
-    if (campaign.archivedAt || campaign.status === 'ARCHIVED' || campaign.status === 'COMPLETED') {
+  private classifyTab(promotion: PromotionEntity): ActionsTab {
+    if (promotion.archivedAt || promotion.status === PromotionStatus.ARCHIVED || promotion.status === PromotionStatus.COMPLETED) {
       return 'PAST';
     }
 
     const now = new Date();
-    const start = campaign.startDate ?? campaign.startAt ?? null;
-    const end = campaign.endDate ?? campaign.endAt ?? null;
+    const start = promotion.startAt ?? null;
+    const end = promotion.endAt ?? null;
 
     if (end && end < now) {
       return 'PAST';
     }
 
-    if (campaign.status === 'DRAFT' || (start && start > now)) {
+    if (promotion.status === PromotionStatus.DRAFT || (start && start > now)) {
       return 'UPCOMING';
     }
 
     return 'CURRENT';
   }
 
-  private mapCampaign(campaign: Campaign): ActionListItemDto {
-    const content = (campaign.content as any) ?? {};
-    const metrics = (campaign.metrics as any) ?? {};
-    const usageLimit = content.usageLimit ?? { type: 'UNLIMITED', value: null };
-    const audience = content.audience ?? { id: campaign.targetSegmentId ?? null, name: null };
+  private extractLegacyCampaign(promotion: LoyaltyPromotion | PromotionEntity) {
+    const metadata = (promotion.metadata as any) ?? {};
+    if (metadata && typeof metadata === 'object' && metadata.legacyCampaign) {
+      return metadata.legacyCampaign as Record<string, any>;
+    }
+    return {} as Record<string, any>;
+  }
 
-    const expenses = Number(metrics.expenses ?? 0) || 0;
-    const revenue = Number(metrics.revenue ?? 0) || 0;
-    const purchases = Number(metrics.purchases ?? 0) || 0;
-    const roi = Number.isFinite(metrics.roi)
-      ? Number(metrics.roi)
-      : expenses > 0
-      ? Math.round(((revenue - expenses) / expenses) * 1000) / 10
-      : 0;
+  private mapPromotion(promotion: PromotionEntity): ActionListItemDto {
+    const legacy = this.extractLegacyCampaign(promotion);
+    const usageLimit = legacy.usageLimit ?? { type: 'UNLIMITED', value: null };
+    const audienceMeta = legacy.audience ?? {};
+    const audience = {
+      id: audienceMeta.id ?? promotion.segmentId ?? null,
+      name: audienceMeta.name ?? promotion.audience?.name ?? null,
+    };
+    const metrics = promotion.metrics ?? null;
+    const expenses = Number(metrics?.pointsIssued ?? legacy.metrics?.expenses ?? 0) || 0;
+    const revenue = Number(metrics?.revenueGenerated ?? legacy.metrics?.revenue ?? 0) || 0;
+    const purchases = Number(legacy.metrics?.purchases ?? metrics?.participantsCount ?? 0) || 0;
+    const roi = expenses > 0 ? Math.round(((revenue - expenses) / expenses) * 1000) / 10 : 0;
 
     return {
-      id: campaign.id,
-      name: campaign.name,
-      status: campaign.status,
-      badges: this.buildBadges(content, campaign),
-      startDate: (campaign.startDate ?? campaign.startAt)?.toISOString() ?? null,
-      endDate: (campaign.endDate ?? campaign.endAt)?.toISOString() ?? null,
+      id: promotion.id,
+      name: promotion.name,
+      status: promotion.status,
+      badges: this.buildBadges(legacy, promotion),
+      startDate: promotion.startAt?.toISOString() ?? null,
+      endDate: promotion.endAt?.toISOString() ?? null,
       metrics: {
         roi,
         revenue,
@@ -298,17 +306,17 @@ export class ActionsService {
     };
   }
 
-  private buildBadges(content: any, campaign: Campaign): string[] {
+  private buildBadges(content: any, promotion: PromotionEntity): string[] {
     const badges: string[] = [];
     if (content?.kind === 'PRODUCT_BONUS') {
       badges.push('Акционные баллы на товары');
     }
 
-    if (!campaign.endDate && !campaign.endAt) {
+    if (!promotion.endAt) {
       badges.push('Бессрочная');
     }
 
-    if (campaign.status === 'PAUSED') {
+    if (promotion.status === PromotionStatus.PAUSED) {
       badges.push('Пауза');
     }
 
@@ -326,11 +334,14 @@ export class ActionsService {
     return date;
   }
 
-  private async getCampaignEntity(merchantId: string, campaignId: string): Promise<Campaign> {
-    const campaign = await this.prisma.campaign.findUnique({ where: { id: campaignId } });
-    if (!campaign || campaign.merchantId !== merchantId || campaign.type !== 'PRODUCT_BONUS') {
+  private async getPromotionEntity(merchantId: string, campaignId: string): Promise<PromotionEntity> {
+    const promotion = await this.prisma.loyaltyPromotion.findFirst({
+      where: { id: campaignId, merchantId },
+      include: { metrics: true, audience: true },
+    });
+    if (!promotion || this.extractLegacyCampaign(promotion)?.kind !== 'PRODUCT_BONUS') {
       throw new NotFoundException('Акция не найдена');
     }
-    return campaign;
+    return promotion;
   }
 }

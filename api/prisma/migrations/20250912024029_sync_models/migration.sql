@@ -151,48 +151,6 @@ CREATE TABLE "public"."Integration" (
 );
 
 -- CreateTable
-
--- CreateTable
-CREATE TABLE "public"."Campaign" (
-    "id" TEXT NOT NULL,
-    "merchantId" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "type" TEXT NOT NULL,
-    "status" TEXT NOT NULL DEFAULT 'draft',
-    "segmentId" TEXT,
-    "targetSegmentId" TEXT,
-    "content" JSONB NOT NULL,
-    "schedule" JSONB,
-    "metrics" JSONB,
-    "startAt" TIMESTAMP(3),
-    "endAt" TIMESTAMP(3),
-    "description" TEXT,
-    "startDate" TIMESTAMP(3),
-    "endDate" TIMESTAMP(3),
-    "reward" JSONB,
-    "maxUsageTotal" INTEGER,
-    "maxUsagePerCustomer" INTEGER,
-    "budget" INTEGER,
-    "notificationChannels" TEXT[],
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "Campaign_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "public"."CampaignUsage" (
-    "id" TEXT NOT NULL,
-    "campaignId" TEXT NOT NULL,
-    "customerId" TEXT NOT NULL,
-    "rewardType" TEXT,
-    "rewardValue" INTEGER,
-    "usedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "CampaignUsage_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
 CREATE TABLE "public"."SegmentCustomer" (
     "id" TEXT NOT NULL,
     "segmentId" TEXT NOT NULL,
@@ -550,21 +508,6 @@ ALTER TABLE "public"."FraudCheck" ADD CONSTRAINT "FraudCheck_merchantId_fkey" FO
 ALTER TABLE "public"."Integration" ADD CONSTRAINT "Integration_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-
--- AddForeignKey
-ALTER TABLE "public"."Campaign" ADD CONSTRAINT "Campaign_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "public"."Campaign" ADD CONSTRAINT "Campaign_segmentId_fkey" FOREIGN KEY ("segmentId") REFERENCES "public"."CustomerSegment"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "public"."Campaign" ADD CONSTRAINT "Campaign_targetSegmentId_fkey" FOREIGN KEY ("targetSegmentId") REFERENCES "public"."CustomerSegment"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "public"."CampaignUsage" ADD CONSTRAINT "CampaignUsage_campaignId_fkey" FOREIGN KEY ("campaignId") REFERENCES "public"."Campaign"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "public"."CampaignUsage" ADD CONSTRAINT "CampaignUsage_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "public"."Customer"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "public"."SegmentCustomer" ADD CONSTRAINT "SegmentCustomer_segmentId_fkey" FOREIGN KEY ("segmentId") REFERENCES "public"."CustomerSegment"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

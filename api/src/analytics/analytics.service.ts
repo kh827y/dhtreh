@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { ConfigService } from '@nestjs/config';
+import { PromotionStatus } from '@prisma/client';
 
 export interface DashboardPeriod {
   from: Date;
@@ -611,19 +612,24 @@ export class AnalyticsService {
    * Метрики кампаний
    */
   async getCampaignMetrics(merchantId: string, period: DashboardPeriod): Promise<CampaignMetrics> {
-    const activeCampaigns = await this.prisma.campaign.count({
-      where: { merchantId, status: 'ACTIVE' },
+    const activeCampaigns = await this.prisma.loyaltyPromotion.count({
+      where: { merchantId, status: PromotionStatus.ACTIVE, archivedAt: null },
     });
 
-    const usage = await this.prisma.campaignUsage.findMany({
+    const participantStats = await this.prisma.promotionParticipant.groupBy({
+      by: ['promotionId'],
       where: {
-        campaign: { merchantId },
-        usedAt: { gte: period.from, lte: period.to },
+        merchantId,
+        joinedAt: { gte: period.from, lte: period.to },
       },
-      include: { campaign: true },
+      _count: { _all: true },
+      _sum: { pointsIssued: true },
     });
 
-    const totalRewardsIssued = usage.reduce((sum, u) => sum + (u.rewardValue || 0), 0);
+    const totalRewardsIssued = participantStats.reduce(
+      (sum, row) => sum + (row._sum.pointsIssued ?? 0),
+      0,
+    );
 
     const campaignRevenue = await this.prisma.transaction.aggregate({
       where: {
@@ -634,22 +640,21 @@ export class AnalyticsService {
       _sum: { amount: true },
     });
 
+    const usageCount = participantStats.reduce((sum, row) => sum + row._count._all, 0);
+    const uniqueParticipants = await this.prisma.promotionParticipant.count({
+      where: {
+        merchantId,
+        joinedAt: { gte: period.from, lte: period.to },
+      },
+      distinct: ['customerId'],
+    });
+
     const campaignROI = totalRewardsIssued > 0
       ? ((Math.abs(campaignRevenue._sum.amount || 0) - totalRewardsIssued) / totalRewardsIssued) * 100
       : 0;
 
-    const targetedCustomers = await this.prisma.segmentCustomer.count({
-      where: {
-        segment: {
-          campaigns: {
-            some: { merchantId, status: 'ACTIVE' },
-          },
-        },
-      },
-    });
-
-    const campaignConversion = targetedCustomers > 0
-      ? (usage.length / targetedCustomers) * 100
+    const campaignConversion = uniqueParticipants > 0
+      ? (usageCount / uniqueParticipants) * 100
       : 0;
 
     const topCampaigns = await this.getTopCampaigns(merchantId, period, 5);
@@ -1366,26 +1371,39 @@ export class AnalyticsService {
   }
 
   private async getTopCampaigns(merchantId: string, period: DashboardPeriod, limit: number): Promise<CampaignPerformance[]> {
-    const campaigns = await this.prisma.campaign.findMany({
-      where: { merchantId },
-      include: {
-        usages: {
-          where: {
-            usedAt: { gte: period.from, lte: period.to },
-          },
-        },
+    const aggregates = await this.prisma.promotionParticipant.groupBy({
+      by: ['promotionId'],
+      where: {
+        merchantId,
+        joinedAt: { gte: period.from, lte: period.to },
       },
+      _count: { _all: true },
+      _sum: { pointsIssued: true },
       take: limit,
+      orderBy: { _sum: { pointsIssued: 'desc' } },
     });
 
-    return campaigns.map(campaign => ({
-      id: campaign.id,
-      name: campaign.name,
-      type: campaign.type,
-      usageCount: campaign.usages.length,
-      totalRewards: campaign.usages.reduce((sum, u) => sum + (u.rewardValue || 0), 0),
-      roi: 0,
-    }));
+    const ids = aggregates.map((row) => row.promotionId);
+    if (ids.length === 0) return [];
+
+    const promotions = await this.prisma.loyaltyPromotion.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, name: true, metadata: true },
+    });
+    const map = new Map(promotions.map((promo) => [promo.id, promo]));
+
+    return aggregates.map((row) => {
+      const promotion = map.get(row.promotionId);
+      const legacy = ((promotion?.metadata as any)?.legacyCampaign ?? {}) as Record<string, any>;
+      return {
+        id: row.promotionId,
+        name: promotion?.name ?? row.promotionId,
+        type: legacy.kind ?? 'LOYALTY_PROMOTION',
+        usageCount: row._count._all,
+        totalRewards: row._sum.pointsIssued ?? 0,
+        roi: 0,
+      };
+    });
   }
 
   private async getTopOutlets(merchantId: string, period: DashboardPeriod): Promise<OutletPerformance[]> {

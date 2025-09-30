@@ -2,10 +2,10 @@ import { ActionsService } from '../actions.service';
 
 describe('ActionsService', () => {
   const prisma = {
-    campaign: {
+    loyaltyPromotion: {
       create: jest.fn(),
       findMany: jest.fn(),
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn(),
     },
   } as any;
@@ -32,21 +32,26 @@ describe('ActionsService', () => {
 
   it('creates scheduled action with correct status and badges', async () => {
     const startDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-    prisma.campaign.create.mockResolvedValue({
+    prisma.loyaltyPromotion.create.mockResolvedValue({ id: 'a1' });
+    prisma.loyaltyPromotion.findFirst.mockResolvedValue({
       id: 'a1',
       merchantId: 'm1',
       name: 'Двойные баллы',
-      type: 'PRODUCT_BONUS',
       status: 'SCHEDULED',
-      content: { kind: 'PRODUCT_BONUS', usageLimit: { type: 'UNLIMITED' } },
-      metrics: { revenue: 0, expenses: 0, purchases: 0, roi: 0 },
-      startDate: new Date(startDate),
-      endDate: null,
-      targetSegmentId: null,
-      notificationChannels: [],
-      archivedAt: null,
-      startAt: null,
+      segmentId: null,
+      rewardMetadata: { rule: { mode: 'MULTIPLIER', value: 2 } },
+      metadata: {
+        legacyCampaign: {
+          kind: 'PRODUCT_BONUS',
+          usageLimit: { type: 'UNLIMITED', value: null },
+          metrics: { revenue: 0, expenses: 0, purchases: 0, roi: 0 },
+        },
+      },
+      startAt: new Date(startDate),
       endAt: null,
+      archivedAt: null,
+      metrics: null,
+      audience: null,
     });
 
     const result = await service.createProductBonus('m1', {
@@ -58,7 +63,7 @@ describe('ActionsService', () => {
       enabled: true,
     });
 
-    expect(prisma.campaign.create).toHaveBeenCalledWith(
+    expect(prisma.loyaltyPromotion.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ status: 'SCHEDULED', merchantId: 'm1' }),
       }),

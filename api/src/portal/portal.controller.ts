@@ -9,7 +9,6 @@ import { CommunicationChannel, PromoCodeStatus } from '@prisma/client';
 import { NotificationsService, type BroadcastArgs } from '../notifications/notifications.service';
 import { PortalCustomersService } from './customers.service';
 import { AnalyticsService } from '../analytics/analytics.service';
-import { CampaignService } from '../campaigns/campaign.service';
 import { GiftsService } from '../gifts/gifts.service';
 import { PortalCatalogService } from './catalog.service';
 import {
@@ -44,7 +43,6 @@ export class PortalController {
     private readonly promoCodes: PromoCodesService,
     private readonly notifications: NotificationsService,
     private readonly analytics: AnalyticsService,
-    private readonly campaigns: CampaignService,
     private readonly catalog: PortalCatalogService,
     private readonly gifts: GiftsService,
     private readonly communications: CommunicationsService,
@@ -702,36 +700,6 @@ export class PortalController {
   @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
   telegramMiniAppDisconnect(@Req() req: any) {
     return this.telegramIntegration.disconnect(this.getMerchantId(req));
-  }
-
-  // Campaigns (portal list)
-  @Get('campaigns')
-  @ApiOkResponse({ schema: { type: 'array', items: { type: 'object', additionalProperties: true } } })
-  campaignsList(@Req() req: any, @Query('status') status?: string) {
-    return this.campaigns.getCampaigns(this.getMerchantId(req), status);
-  }
-  @Post('campaigns')
-  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
-  createCampaign(@Req() req: any, @Body() body: any) {
-    const merchantId = this.getMerchantId(req);
-    const dto = Object.assign({}, body || {}, { merchantId });
-    return this.campaigns.createCampaign(dto);
-  }
-  @Get('campaigns/:campaignId')
-  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
-  async campaignDetails(@Req() req: any, @Param('campaignId') campaignId: string) {
-    const merchantId = this.getMerchantId(req);
-    const c: any = await this.campaigns.getCampaign(String(campaignId||''));
-    if (!c || c.merchantId !== merchantId) throw new NotFoundException();
-    return c;
-  }
-  @Put('campaigns/:campaignId')
-  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
-  async updateCampaign(@Req() req: any, @Param('campaignId') campaignId: string, @Body() body: any) {
-    const merchantId = this.getMerchantId(req);
-    const c: any = await this.campaigns.getCampaign(String(campaignId||''));
-    if (!c || c.merchantId !== merchantId) throw new NotFoundException();
-    return this.campaigns.updateCampaign(String(campaignId||''), body || {});
   }
 
   // Gifts (portal list)

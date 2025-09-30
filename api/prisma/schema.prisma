@@ -222,10 +222,8 @@ model Merchant {
   fraudChecks                 FraudCheck[]
   integrations                Integration[]
   customerSegments            CustomerSegment[]
-  campaigns                   Campaign[]
   reviewCount                 Int                          @default(0)
   // back-relations
-  campaignUsages              CampaignUsage[]
   reviews                     Review[]
   referralPrograms            ReferralProgram[]
   vouchers                    Voucher[]
@@ -367,7 +365,6 @@ model Customer {
   consents                    Consent[]
   segments                    SegmentCustomer[]
   // back-relations
-  campaignUsages              CampaignUsage[]
   voucherUsages               VoucherUsage[]
   promoCodeUsages             PromoCodeUsage[]
   reviews                     Review[]
@@ -1148,24 +1145,6 @@ model SegmentCustomer {
   @@unique([segmentId, customerId])
 }
 
-// Campaign usage tracking
-model CampaignUsage {
-  id          String   @id @default(cuid())
-  campaignId  String
-  customerId  String
-  merchantId  String?
-  rewardType  String?
-  rewardValue Int?
-  usedAt      DateTime @default(now())
-  createdAt   DateTime @default(now())
-
-  campaign Campaign  @relation(fields: [campaignId], references: [id])
-  customer Customer  @relation(fields: [customerId], references: [id])
-  merchant Merchant? @relation(fields: [merchantId], references: [id])
-
-  @@index([campaignId])
-  @@index([customerId])
-}
 
 // Email notifications
 model EmailNotification {
@@ -1881,45 +1860,11 @@ model CustomerSegment {
   merchant           Merchant                @relation(fields: [merchantId], references: [id])
   createdBy          Staff?                  @relation("SegmentCreatedBy", fields: [createdById], references: [id])
   updatedBy          Staff?                  @relation("SegmentUpdatedBy", fields: [updatedById], references: [id])
-  campaigns          Campaign[]
   customers          SegmentCustomer[]
   promotions         LoyaltyPromotion[]
   promoCodes         PromoCode[]
   metricSnapshots    SegmentMetricSnapshot[]
   communicationTasks CommunicationTask[]
-}
-
-model Campaign {
-  id                   String    @id @default(cuid())
-  merchantId           String
-  name                 String
-  description          String?
-  type                 String
-  status               String    @default("draft")
-  segmentId            String?
-  content              Json
-  schedule             Json?
-  metrics              Json?
-  startAt              DateTime?
-  endAt                DateTime?
-  startDate            DateTime?
-  endDate              DateTime?
-  budget               Int?
-  maxUsageTotal        Int?
-  maxUsagePerCustomer  Int?
-  notificationChannels String[]
-  targetSegmentId      String?
-  reward               Json?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
-  archivedAt           DateTime?
-
-  merchant Merchant         @relation(fields: [merchantId], references: [id])
-  segment  CustomerSegment? @relation(fields: [segmentId], references: [id])
-  usages   CampaignUsage[]
-
-  @@index([merchantId, status])
-  @@index([merchantId, archivedAt])
 }
 
 // Reviews system

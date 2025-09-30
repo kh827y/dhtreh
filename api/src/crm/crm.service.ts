@@ -139,15 +139,32 @@ export class CrmService {
   }
 
   async getCustomerTimeline(merchantId: string, customerId: string, limit = 50) {
-    const [txs, rcs, usages] = await Promise.all([
+    const [txs, rcs, promotions] = await Promise.all([
       this.prisma.transaction.findMany({ where: { merchantId, customerId }, orderBy: { createdAt: 'desc' }, take: limit }),
       this.prisma.receipt.findMany({ where: { merchantId, customerId }, orderBy: { createdAt: 'desc' }, take: Math.min(limit, 50) }),
-      this.prisma.campaignUsage.findMany({ where: { customerId, campaign: { merchantId } }, orderBy: { usedAt: 'desc' }, take: Math.min(limit, 50), include: { campaign: true } }),
+      this.prisma.promotionParticipant.findMany({
+        where: { merchantId, customerId },
+        orderBy: { joinedAt: 'desc' },
+        take: Math.min(limit, 50),
+        include: { promotion: true },
+      }),
     ]);
     const events: Array<{ type: string; at: string; data: any }> = [];
     for (const t of txs) events.push({ type: 'transaction', at: t.createdAt.toISOString(), data: { id: t.id, amount: t.amount, txnType: t.type, orderId: t.orderId, outletId: t.outletId, deviceId: t.deviceId, staffId: t.staffId } });
     for (const r of rcs) events.push({ type: 'receipt', at: r.createdAt.toISOString(), data: { id: r.id, orderId: r.orderId, total: r.total, redeemApplied: r.redeemApplied, earnApplied: r.earnApplied, outletId: r.outletId, deviceId: r.deviceId, staffId: r.staffId } });
-    for (const u of usages) events.push({ type: 'campaign', at: u.usedAt.toISOString(), data: { id: u.id, campaignId: u.campaignId, campaignName: u.campaign?.name, rewardType: u.rewardType, rewardValue: u.rewardValue } });
+    for (const p of promotions) {
+      events.push({
+        type: 'campaign',
+        at: p.joinedAt.toISOString(),
+        data: {
+          id: p.id,
+          campaignId: p.promotionId,
+          campaignName: p.promotion?.name,
+          pointsIssued: p.pointsIssued,
+          status: p.status,
+        },
+      });
+    }
     events.sort((a, b) => (a.at > b.at ? -1 : a.at < b.at ? 1 : 0));
     return { items: events.slice(0, limit) };
   }
