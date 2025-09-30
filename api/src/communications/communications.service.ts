@@ -225,7 +225,6 @@ export class CommunicationsService {
       audienceSnapshot: payload.audienceSnapshot ?? { code: audienceCode },
       payload: { ...(payload.payload ?? {}), text },
       timezone: payload.timezone ?? null,
-      stats: payload.stats ? (payload.stats as Prisma.InputJsonValue) : Prisma.JsonNull,
     });
   }
 
@@ -257,7 +256,6 @@ export class CommunicationsService {
       payload: { ...(payload.payload ?? {}), text },
       media: imageUrl ? { imageUrl } : payload.media ?? null,
       timezone: payload.timezone ?? null,
-      stats: payload.stats ? (payload.stats as Prisma.InputJsonValue) : Prisma.JsonNull,
     });
   }
 
