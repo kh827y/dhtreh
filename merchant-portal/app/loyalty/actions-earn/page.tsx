@@ -187,7 +187,7 @@ export default function ActionsEarnPage() {
       setLoading(true);
       setError('');
       try {
-        const res = await fetch('/api/portal/campaigns');
+        const res = await fetch('/api/portal/loyalty/promotions');
         if (!res.ok) throw new Error(await res.text());
         const json = await res.json();
         if (cancelled) return;
@@ -293,7 +293,7 @@ export default function ActionsEarnPage() {
         },
         rules: {},
       };
-      await fetch('/api/portal/campaigns', {
+      await fetch('/api/portal/loyalty/promotions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

@@ -29,7 +29,7 @@ export default function CampaignDetailsPage(){
   async function load(){
     setLoading(true); setMsg('');
     try {
-      const r = await fetch(`/api/portal/campaigns/${encodeURIComponent(campaignId)}`);
+      const r = await fetch(`/api/portal/loyalty/promotions/${encodeURIComponent(campaignId)}`);
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
       setC(data||null);

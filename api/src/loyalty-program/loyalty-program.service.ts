@@ -1,5 +1,16 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { LoyaltyMechanicType, MechanicStatus, Prisma, PromotionRewardType, PromotionStatus } from '@prisma/client';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  LoyaltyMechanicType,
+  MechanicStatus,
+  Prisma,
+  PromotionRewardType,
+  PromotionStatus,
+} from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
 
@@ -66,7 +77,6 @@ export interface PromotionPayload {
   actorId?: string;
 }
 
-
 export interface OperationsLogFilters {
   type?: 'MECHANIC' | 'PROMO_CODE' | 'PROMOTION';
   from?: Date | string;
@@ -98,7 +108,9 @@ export class LoyaltyProgramService {
     return Math.round(parsed);
   }
 
-  private extractMinPayment(metadata: Prisma.JsonValue | null | undefined): number | null {
+  private extractMinPayment(
+    metadata: Prisma.JsonValue | null | undefined,
+  ): number | null {
     if (!metadata || typeof metadata !== 'object') return null;
     const meta = metadata as Record<string, unknown>;
     const raw = meta?.minPaymentAmount ?? meta?.minPayment;
@@ -139,53 +151,73 @@ export class LoyaltyProgramService {
       by: ['tierId'],
       where: {
         merchantId,
-        OR: [
-          { expiresAt: null },
-          { expiresAt: { gt: new Date() } },
-        ],
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
       },
       _count: { _all: true },
     });
-    const assignmentsMap = new Map<string, number>(assignmentGroups.map((row) => [row.tierId, row._count._all]));
+    const assignmentsMap = new Map<string, number>(
+      assignmentGroups.map((row) => [row.tierId, row._count._all]),
+    );
     try {
-      this.logger.log(JSON.stringify({ event: 'portal.loyalty.tiers.list', merchantId, total: tiers.length }));
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.loyalty.tiers.list',
+          merchantId,
+          total: tiers.length,
+        }),
+      );
       this.metrics.inc('portal_loyalty_tiers_list_total');
     } catch {}
-    return tiers.map((tier) => this.mapTier(tier, assignmentsMap.get(tier.id) ?? 0));
+    return tiers.map((tier) =>
+      this.mapTier(tier, assignmentsMap.get(tier.id) ?? 0),
+    );
   }
 
   async getTier(merchantId: string, tierId: string): Promise<TierDto> {
-    const tier = await this.prisma.loyaltyTier.findFirst({ where: { merchantId, id: tierId } });
+    const tier = await this.prisma.loyaltyTier.findFirst({
+      where: { merchantId, id: tierId },
+    });
     if (!tier) throw new NotFoundException('Уровень не найден');
     const customersCount = await this.prisma.loyaltyTierAssignment.count({
       where: {
         merchantId,
         tierId,
-        OR: [
-          { expiresAt: null },
-          { expiresAt: { gt: new Date() } },
-        ],
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
       },
     });
     return this.mapTier(tier, customersCount);
   }
 
   async createTier(merchantId: string, payload: TierPayload): Promise<TierDto> {
-    if (!payload?.name?.trim()) throw new BadRequestException('Название обязательно');
+    if (!payload?.name?.trim())
+      throw new BadRequestException('Название обязательно');
     const name = payload.name.trim();
     const thresholdAmount = this.sanitizeAmount(payload.thresholdAmount, 0);
     const earnRateBps = this.sanitizePercent(payload.earnRatePercent, 0);
-    const redeemRateBps = payload.redeemRatePercent != null ? this.sanitizePercent(payload.redeemRatePercent, 0) : null;
-    const minPaymentAmount = payload.minPaymentAmount != null ? this.sanitizeAmount(payload.minPaymentAmount, 0) : null;
-    const metadata = minPaymentAmount != null ? { minPaymentAmount } : undefined;
+    const redeemRateBps =
+      payload.redeemRatePercent != null
+        ? this.sanitizePercent(payload.redeemRatePercent, 0)
+        : null;
+    const minPaymentAmount =
+      payload.minPaymentAmount != null
+        ? this.sanitizeAmount(payload.minPaymentAmount, 0)
+        : null;
+    const metadata =
+      minPaymentAmount != null ? { minPaymentAmount } : undefined;
     const isInitial = !!payload.isInitial;
     const isHidden = !!payload.isHidden;
 
     const created = await this.prisma.$transaction(async (tx) => {
       if (isInitial) {
-        await tx.loyaltyTier.updateMany({ where: { merchantId }, data: { isInitial: false, isDefault: false } });
+        await tx.loyaltyTier.updateMany({
+          where: { merchantId },
+          data: { isInitial: false, isDefault: false },
+        });
       }
-      const orderAggregate = await tx.loyaltyTier.aggregate({ where: { merchantId }, _max: { order: true } });
+      const orderAggregate = await tx.loyaltyTier.aggregate({
+        where: { merchantId },
+        _max: { order: true },
+      });
       const nextOrder = (orderAggregate._max.order ?? 0) + 1;
       const tier = await tx.loyaltyTier.create({
         data: {
@@ -207,49 +239,84 @@ export class LoyaltyProgramService {
     });
 
     try {
-      this.logger.log(JSON.stringify({ event: 'portal.loyalty.tiers.create', merchantId, tierId: created.id }));
-      this.metrics.inc('portal_loyalty_tiers_write_total', { action: 'create' });
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.loyalty.tiers.create',
+          merchantId,
+          tierId: created.id,
+        }),
+      );
+      this.metrics.inc('portal_loyalty_tiers_write_total', {
+        action: 'create',
+      });
     } catch {}
     return this.mapTier(created, 0);
   }
 
-  async updateTier(merchantId: string, tierId: string, payload: TierPayload): Promise<TierDto> {
-    const tier = await this.prisma.loyaltyTier.findFirst({ where: { merchantId, id: tierId } });
+  async updateTier(
+    merchantId: string,
+    tierId: string,
+    payload: TierPayload,
+  ): Promise<TierDto> {
+    const tier = await this.prisma.loyaltyTier.findFirst({
+      where: { merchantId, id: tierId },
+    });
     if (!tier) throw new NotFoundException('Уровень не найден');
 
     const name = payload.name?.trim();
     const thresholdAmount =
-      payload.thresholdAmount != null ? this.sanitizeAmount(payload.thresholdAmount, tier.thresholdAmount) : tier.thresholdAmount;
+      payload.thresholdAmount != null
+        ? this.sanitizeAmount(payload.thresholdAmount, tier.thresholdAmount)
+        : tier.thresholdAmount;
     const earnRateBps =
-      payload.earnRatePercent != null ? this.sanitizePercent(payload.earnRatePercent, tier.earnRateBps) : tier.earnRateBps;
+      payload.earnRatePercent != null
+        ? this.sanitizePercent(payload.earnRatePercent, tier.earnRateBps)
+        : tier.earnRateBps;
     const redeemRateBps =
       payload.redeemRatePercent != null
-        ? this.sanitizePercent(payload.redeemRatePercent, tier.redeemRateBps ?? 0)
+        ? this.sanitizePercent(
+            payload.redeemRatePercent,
+            tier.redeemRateBps ?? 0,
+          )
         : tier.redeemRateBps;
     const minPaymentAmount =
       payload.minPaymentAmount != null
         ? this.sanitizeAmount(payload.minPaymentAmount, 0)
         : this.extractMinPayment(tier.metadata);
-    const metadataBase = tier.metadata && typeof tier.metadata === 'object' && !Array.isArray(tier.metadata)
-      ? { ...(tier.metadata as Record<string, unknown>) }
-      : {} as Record<string, unknown>;
-    if ('value' in metadataBase && metadataBase.value === 'JsonNull') delete (metadataBase as any).value;
+    const metadataBase =
+      tier.metadata &&
+      typeof tier.metadata === 'object' &&
+      !Array.isArray(tier.metadata)
+        ? { ...(tier.metadata as Record<string, unknown>) }
+        : ({} as Record<string, unknown>);
+    if ('value' in metadataBase && metadataBase.value === 'JsonNull')
+      delete (metadataBase as any).value;
     const metadata = metadataBase;
-    if (payload.minPaymentAmount != null) metadata.minPaymentAmount = minPaymentAmount;
-    else if (payload.minPaymentAmount === null) delete metadata.minPaymentAmount;
+    if (payload.minPaymentAmount != null)
+      metadata.minPaymentAmount = minPaymentAmount;
+    else if (payload.minPaymentAmount === null)
+      delete metadata.minPaymentAmount;
 
-    const isInitial = payload.isInitial != null ? !!payload.isInitial : tier.isInitial;
-    const isHidden = payload.isHidden != null ? !!payload.isHidden : tier.isHidden;
+    const isInitial =
+      payload.isInitial != null ? !!payload.isInitial : tier.isInitial;
+    const isHidden =
+      payload.isHidden != null ? !!payload.isHidden : tier.isHidden;
 
     const updated = await this.prisma.$transaction(async (tx) => {
       if (isInitial) {
-        await tx.loyaltyTier.updateMany({ where: { merchantId, NOT: { id: tierId } }, data: { isInitial: false, isDefault: false } });
+        await tx.loyaltyTier.updateMany({
+          where: { merchantId, NOT: { id: tierId } },
+          data: { isInitial: false, isDefault: false },
+        });
       }
       const next = await tx.loyaltyTier.update({
         where: { id: tierId },
         data: {
           name: name ?? tier.name,
-          description: payload.description !== undefined ? payload.description?.trim() ?? null : tier.description,
+          description:
+            payload.description !== undefined
+              ? (payload.description?.trim() ?? null)
+              : tier.description,
           thresholdAmount,
           earnRateBps,
           redeemRateBps,
@@ -257,39 +324,68 @@ export class LoyaltyProgramService {
           isDefault: isInitial,
           isHidden,
           color: payload.color ?? tier.color,
-          metadata: Object.keys(metadata).length ? (metadata as Prisma.InputJsonValue) : Prisma.JsonNull,
+          metadata: Object.keys(metadata).length
+            ? (metadata as Prisma.InputJsonValue)
+            : Prisma.JsonNull,
         },
       });
       return next;
     });
 
     try {
-      this.logger.log(JSON.stringify({ event: 'portal.loyalty.tiers.update', merchantId, tierId }));
-      this.metrics.inc('portal_loyalty_tiers_write_total', { action: 'update' });
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.loyalty.tiers.update',
+          merchantId,
+          tierId,
+        }),
+      );
+      this.metrics.inc('portal_loyalty_tiers_write_total', {
+        action: 'update',
+      });
     } catch {}
     const customersCount = await this.prisma.loyaltyTierAssignment.count({
       where: {
         merchantId,
         tierId,
-        OR: [
-          { expiresAt: null },
-          { expiresAt: { gt: new Date() } },
-        ],
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
       },
     });
     return this.mapTier(updated, customersCount);
   }
 
-  async deleteTier(merchantId: string, tierId: string): Promise<{ ok: boolean }> {
-    const tier = await this.prisma.loyaltyTier.findFirst({ where: { merchantId, id: tierId } });
+  async deleteTier(
+    merchantId: string,
+    tierId: string,
+  ): Promise<{ ok: boolean }> {
+    const tier = await this.prisma.loyaltyTier.findFirst({
+      where: { merchantId, id: tierId },
+    });
     if (!tier) throw new NotFoundException('Уровень не найден');
-    const assignments = await this.prisma.loyaltyTierAssignment.count({ where: { merchantId, tierId, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] } });
-    if (assignments > 0) throw new BadRequestException('Нельзя удалить уровень, пока в нём есть клиенты');
+    const assignments = await this.prisma.loyaltyTierAssignment.count({
+      where: {
+        merchantId,
+        tierId,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
+    });
+    if (assignments > 0)
+      throw new BadRequestException(
+        'Нельзя удалить уровень, пока в нём есть клиенты',
+      );
 
     await this.prisma.loyaltyTier.delete({ where: { id: tierId } });
     try {
-      this.logger.log(JSON.stringify({ event: 'portal.loyalty.tiers.delete', merchantId, tierId }));
-      this.metrics.inc('portal_loyalty_tiers_write_total', { action: 'delete' });
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.loyalty.tiers.delete',
+          merchantId,
+          tierId,
+        }),
+      );
+      this.metrics.inc('portal_loyalty_tiers_write_total', {
+        action: 'delete',
+      });
     } catch {}
     return { ok: true };
   }
@@ -299,8 +395,11 @@ export class LoyaltyProgramService {
     if (status && status !== 'ALL') {
       where.status = status;
     }
-    
-    const mechanics = await this.prisma.loyaltyMechanic.findMany({ where, orderBy: { createdAt: 'desc' } });
+
+    const mechanics = await this.prisma.loyaltyMechanic.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+    });
     try {
       this.logger.log(
         JSON.stringify({
@@ -340,13 +439,21 @@ export class LoyaltyProgramService {
           status: mechanic.status,
         }),
       );
-      this.metrics.inc('portal_loyalty_mechanics_changed_total', { action: 'create' });
+      this.metrics.inc('portal_loyalty_mechanics_changed_total', {
+        action: 'create',
+      });
     } catch {}
     return mechanic;
   }
 
-  async updateMechanic(merchantId: string, mechanicId: string, payload: MechanicPayload) {
-    const mechanic = await this.prisma.loyaltyMechanic.findFirst({ where: { merchantId, id: mechanicId } });
+  async updateMechanic(
+    merchantId: string,
+    mechanicId: string,
+    payload: MechanicPayload,
+  ) {
+    const mechanic = await this.prisma.loyaltyMechanic.findFirst({
+      where: { merchantId, id: mechanicId },
+    });
     if (!mechanic) throw new NotFoundException('Механика не найдена');
 
     const updated = await this.prisma.loyaltyMechanic.update({
@@ -371,21 +478,32 @@ export class LoyaltyProgramService {
           status: updated.status,
         }),
       );
-      this.metrics.inc('portal_loyalty_mechanics_changed_total', { action: 'update' });
+      this.metrics.inc('portal_loyalty_mechanics_changed_total', {
+        action: 'update',
+      });
     } catch {}
     return updated;
   }
 
-  async changeMechanicStatus(merchantId: string, mechanicId: string, status: MechanicStatus, actorId?: string) {
-    const mechanic = await this.prisma.loyaltyMechanic.findFirst({ where: { merchantId, id: mechanicId } });
+  async changeMechanicStatus(
+    merchantId: string,
+    mechanicId: string,
+    status: MechanicStatus,
+    actorId?: string,
+  ) {
+    const mechanic = await this.prisma.loyaltyMechanic.findFirst({
+      where: { merchantId, id: mechanicId },
+    });
     if (!mechanic) throw new NotFoundException('Механика не найдена');
     const updated = await this.prisma.loyaltyMechanic.update({
       where: { id: mechanicId },
       data: {
         status,
         updatedById: actorId ?? mechanic.updatedById,
-        enabledAt: status === MechanicStatus.ENABLED ? new Date() : mechanic.enabledAt,
-        disabledAt: status === MechanicStatus.DISABLED ? new Date() : mechanic.disabledAt,
+        enabledAt:
+          status === MechanicStatus.ENABLED ? new Date() : mechanic.enabledAt,
+        disabledAt:
+          status === MechanicStatus.DISABLED ? new Date() : mechanic.disabledAt,
       },
     });
 
@@ -398,13 +516,17 @@ export class LoyaltyProgramService {
           status,
         }),
       );
-      this.metrics.inc('portal_loyalty_mechanics_changed_total', { action: 'status' });
+      this.metrics.inc('portal_loyalty_mechanics_changed_total', {
+        action: 'status',
+      });
     } catch {}
     return updated;
   }
 
   async deleteMechanic(merchantId: string, mechanicId: string) {
-    const mechanic = await this.prisma.loyaltyMechanic.findFirst({ where: { merchantId, id: mechanicId } });
+    const mechanic = await this.prisma.loyaltyMechanic.findFirst({
+      where: { merchantId, id: mechanicId },
+    });
     if (!mechanic) throw new NotFoundException('Механика не найдена');
     await this.prisma.loyaltyMechanic.delete({ where: { id: mechanicId } });
 
@@ -416,7 +538,9 @@ export class LoyaltyProgramService {
           mechanicId,
         }),
       );
-      this.metrics.inc('portal_loyalty_mechanics_changed_total', { action: 'delete' });
+      this.metrics.inc('portal_loyalty_mechanics_changed_total', {
+        action: 'delete',
+      });
     } catch {}
     return { ok: true };
   }
@@ -430,7 +554,14 @@ export class LoyaltyProgramService {
     const promotions = await this.prisma.loyaltyPromotion.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      include: { metrics: true },
+      include: {
+        metrics: true,
+        audience: {
+          include: {
+            _count: { select: { customers: true } },
+          },
+        },
+      },
     });
 
     try {
@@ -448,7 +579,8 @@ export class LoyaltyProgramService {
   }
 
   async createPromotion(merchantId: string, payload: PromotionPayload) {
-    if (!payload.name?.trim()) throw new BadRequestException('Название акции обязательно');
+    if (!payload.name?.trim())
+      throw new BadRequestException('Название акции обязательно');
 
     const promotion = await this.prisma.loyaltyPromotion.create({
       data: {
@@ -485,13 +617,21 @@ export class LoyaltyProgramService {
           status: promotion.status,
         }),
       );
-      this.metrics.inc('portal_loyalty_promotions_changed_total', { action: 'create' });
+      this.metrics.inc('portal_loyalty_promotions_changed_total', {
+        action: 'create',
+      });
     } catch {}
     return promotion;
   }
 
-  async updatePromotion(merchantId: string, promotionId: string, payload: PromotionPayload) {
-    const promotion = await this.prisma.loyaltyPromotion.findFirst({ where: { merchantId, id: promotionId } });
+  async updatePromotion(
+    merchantId: string,
+    promotionId: string,
+    payload: PromotionPayload,
+  ) {
+    const promotion = await this.prisma.loyaltyPromotion.findFirst({
+      where: { merchantId, id: promotionId },
+    });
     if (!promotion) throw new NotFoundException('Акция не найдена');
 
     const updated = await this.prisma.loyaltyPromotion.update({
@@ -505,14 +645,21 @@ export class LoyaltyProgramService {
         rewardType: payload.rewardType ?? promotion.rewardType,
         rewardValue: payload.rewardValue ?? promotion.rewardValue,
         rewardMetadata: payload.rewardMetadata ?? promotion.rewardMetadata,
-        pointsExpireInDays: payload.pointsExpireInDays ?? promotion.pointsExpireInDays,
-        pushTemplateStartId: payload.pushTemplateStartId ?? promotion.pushTemplateStartId,
-        pushTemplateReminderId: payload.pushTemplateReminderId ?? promotion.pushTemplateReminderId,
+        pointsExpireInDays:
+          payload.pointsExpireInDays ?? promotion.pointsExpireInDays,
+        pushTemplateStartId:
+          payload.pushTemplateStartId ?? promotion.pushTemplateStartId,
+        pushTemplateReminderId:
+          payload.pushTemplateReminderId ?? promotion.pushTemplateReminderId,
         pushOnStart: payload.pushOnStart ?? promotion.pushOnStart,
-        pushReminderEnabled: payload.pushReminderEnabled ?? promotion.pushReminderEnabled,
-        reminderOffsetHours: payload.reminderOffsetHours ?? promotion.reminderOffsetHours,
+        pushReminderEnabled:
+          payload.pushReminderEnabled ?? promotion.pushReminderEnabled,
+        reminderOffsetHours:
+          payload.reminderOffsetHours ?? promotion.reminderOffsetHours,
         autoLaunch: payload.autoLaunch ?? promotion.autoLaunch,
-        startAt: payload.startAt ? new Date(payload.startAt) : promotion.startAt,
+        startAt: payload.startAt
+          ? new Date(payload.startAt)
+          : promotion.startAt,
         endAt: payload.endAt ? new Date(payload.endAt) : promotion.endAt,
         metadata: payload.metadata ?? promotion.metadata,
         updatedById: payload.actorId ?? promotion.updatedById,
@@ -528,13 +675,45 @@ export class LoyaltyProgramService {
           status: updated.status,
         }),
       );
-      this.metrics.inc('portal_loyalty_promotions_changed_total', { action: 'update' });
+      this.metrics.inc('portal_loyalty_promotions_changed_total', {
+        action: 'update',
+      });
     } catch {}
     return updated;
   }
 
-  async changePromotionStatus(merchantId: string, promotionId: string, status: PromotionStatus, actorId?: string) {
-    const promotion = await this.prisma.loyaltyPromotion.findFirst({ where: { merchantId, id: promotionId } });
+  async getPromotion(merchantId: string, promotionId: string) {
+    const promotion = await this.prisma.loyaltyPromotion.findFirst({
+      where: { merchantId, id: promotionId },
+      include: {
+        metrics: true,
+        audience: {
+          include: {
+            _count: { select: { customers: true } },
+          },
+        },
+        participants: {
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+          include: {
+            customer: true,
+          },
+        },
+      },
+    });
+    if (!promotion) throw new NotFoundException('Акция не найдена');
+    return promotion;
+  }
+
+  async changePromotionStatus(
+    merchantId: string,
+    promotionId: string,
+    status: PromotionStatus,
+    actorId?: string,
+  ) {
+    const promotion = await this.prisma.loyaltyPromotion.findFirst({
+      where: { merchantId, id: promotionId },
+    });
     if (!promotion) throw new NotFoundException('Акция не найдена');
 
     const updated = await this.prisma.loyaltyPromotion.update({
@@ -542,8 +721,12 @@ export class LoyaltyProgramService {
       data: {
         status,
         updatedById: actorId ?? promotion.updatedById,
-        launchedAt: status === PromotionStatus.ACTIVE ? new Date() : promotion.launchedAt,
-        archivedAt: status === PromotionStatus.ARCHIVED ? new Date() : promotion.archivedAt,
+        launchedAt:
+          status === PromotionStatus.ACTIVE ? new Date() : promotion.launchedAt,
+        archivedAt:
+          status === PromotionStatus.ARCHIVED
+            ? new Date()
+            : promotion.archivedAt,
       },
     });
 
@@ -556,12 +739,19 @@ export class LoyaltyProgramService {
           status,
         }),
       );
-      this.metrics.inc('portal_loyalty_promotions_changed_total', { action: 'status' });
+      this.metrics.inc('portal_loyalty_promotions_changed_total', {
+        action: 'status',
+      });
     } catch {}
     return updated;
   }
 
-  async bulkUpdatePromotionStatus(merchantId: string, promotionIds: string[], status: PromotionStatus, actorId?: string) {
+  async bulkUpdatePromotionStatus(
+    merchantId: string,
+    promotionIds: string[],
+    status: PromotionStatus,
+    actorId?: string,
+  ) {
     if (!promotionIds.length) return { updated: 0 };
     const results = await this.prisma.$transaction(
       promotionIds.map((id) =>
@@ -570,8 +760,10 @@ export class LoyaltyProgramService {
           data: {
             status,
             updatedById: actorId ?? undefined,
-            launchedAt: status === PromotionStatus.ACTIVE ? new Date() : undefined,
-            archivedAt: status === PromotionStatus.ARCHIVED ? new Date() : undefined,
+            launchedAt:
+              status === PromotionStatus.ACTIVE ? new Date() : undefined,
+            archivedAt:
+              status === PromotionStatus.ARCHIVED ? new Date() : undefined,
           },
         }),
       ),
@@ -588,11 +780,14 @@ export class LoyaltyProgramService {
           updated,
         }),
       );
-      this.metrics.inc('portal_loyalty_promotions_changed_total', { action: 'bulk-status' }, updated || 1);
+      this.metrics.inc(
+        'portal_loyalty_promotions_changed_total',
+        { action: 'bulk-status' },
+        updated || 1,
+      );
     } catch {}
     return { updated };
   }
-
 
   async operationsLog(merchantId: string, filters: OperationsLogFilters = {}) {
     const from = filters.from ? new Date(filters.from) : undefined;

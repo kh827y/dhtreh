@@ -68,7 +68,7 @@ export default function CampaignCreatePage(){
           outlets: outletsCsv ? arrCsv(outletsCsv) : undefined,
         },
       };
-      const r = await fetch('/api/portal/campaigns', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(dto) });
+      const r = await fetch('/api/portal/loyalty/promotions', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(dto) });
       if (!r.ok) throw new Error(await r.text());
       const c = await r.json();
       router.push(`/loyalty/actions/${encodeURIComponent(c.id)}`);
