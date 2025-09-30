@@ -33,7 +33,7 @@
 - `MerchantPanelModule` — сотрудники, группы доступа, торговые точки и кассовые PIN-ы, структурные логи (`portal.staff.*`) и метрики (`portal_staff_list_total`, `portal_staff_changed_total`, `portal_staff_pin_events_total`).
 - `LoyaltyProgramModule` — механики, акции, промокоды и журнал операций по лояльности со структурными логами (`portal.loyalty.*`) и метриками (`portal_loyalty_*`).
 - `CustomerAudiencesModule` — клиенты, фильтрация и сегменты/аудитории с пересчётом метрик, логами (`portal.customers.*`, `portal.audiences.*`) и счётчиками (`portal_customers_*`, `portal_audiences_*`).
-- `CommunicationsModule` — шаблоны и задачи рассылок (push/SMS/email/telegram) с логами (`portal.communications.*`) и метриками (`portal_communications_*`).
+- `CommunicationsModule` — шаблоны и задачи рассылок (push/email/telegram) с логами (`portal.communications.*`) и метриками (`portal_communications_*`).
 
 ## Observability updates
 

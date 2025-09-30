@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma.service';
 import { PaymentService } from '../payments/payment.service';
-import { SmsService } from '../notifications/sms/sms.service';
 import { PushService } from '../notifications/push/push.service';
 import { MetricsService } from '../metrics.service';
 
@@ -15,7 +14,6 @@ export class SubscriptionCronService {
   constructor(
     private prisma: PrismaService,
     private paymentService: PaymentService,
-    private smsService: SmsService,
     private pushService: PushService,
     private metrics: MetricsService,
   ) {}
@@ -472,16 +470,6 @@ export class SubscriptionCronService {
         ? 'Ваша подписка успешно продлена на следующий месяц'
         : 'Не удалось автоматически продлить подписку. Пожалуйста, обновите платежные данные';
 
-      // SMS уведомление
-      if (merchant.settings?.phone) {
-        await this.smsService.sendNotification({
-          merchantId,
-          phone: merchant.settings.phone,
-          message,
-          type: 'TRANSACTIONAL',
-        }).catch(console.error);
-      }
-
       // Push уведомление
       await this.pushService.sendToTopic(merchantId, title, message).catch(console.error);
 
@@ -498,15 +486,6 @@ export class SubscriptionCronService {
 
       const merchant = subscription.merchant;
       
-      if (merchant.settings?.phone) {
-        await this.smsService.sendNotification({
-          merchantId: subscription.merchantId,
-          phone: merchant.settings.phone,
-          message,
-          type: 'TRANSACTIONAL',
-        }).catch(console.error);
-      }
-
       await this.pushService.sendToTopic(
         subscription.merchantId,
         'Напоминание о подписке',

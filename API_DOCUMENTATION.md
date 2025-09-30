@@ -1204,7 +1204,7 @@ const result = await client.commit({
 
 Каждый эндпоинт требует аутентифицированного вызова из Merchant Portal. Поля дат (`scheduledAt`, `startDate`, `endDate`) передаются в формате ISO 8601.
 
-Экспорт кампаний основан на `LoyaltyPromotion`: запрос `GET /reports/export/{merchantId}?type=campaigns&format=excel` добавляет лист «Акции» с названиями, статусами, периодами, использованием (`promotion_participants`) и начисленными баллами. Уведомления (`/email/campaign`, `PushService.sendCampaignNotification`) получают `promotionId`, название и тип акции из `metadata.legacyCampaign` и используют эти данные в шаблонах.
+Экспорт кампаний через `GET /reports/export/{merchantId}?type=campaigns&format=excel` отключён. Для выгрузки воспользуйтесь API аудитории/промо (`/portal/loyalty/promotions`) или подключите BI-инструмент к базе данных.
 
 ## Поддержка
 

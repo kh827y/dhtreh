@@ -31,7 +31,7 @@ export class NotificationsController {
 
   @Post('test')
   @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
-  async test(@Body() body: { merchantId: string; channel: 'EMAIL'|'PUSH'|'SMS'; to: string; template?: { subject?: string; text?: string; html?: string } }, @Req() req: any) {
+  async test(@Body() body: { merchantId: string; channel: 'EMAIL'|'PUSH'; to: string; template?: { subject?: string; text?: string; html?: string } }, @Req() req: any) {
     const res = await this.svc.test(body.merchantId, body.channel, body.to, body.template);
     try {
       await this.prisma.adminAudit.create({ data: {

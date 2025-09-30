@@ -132,7 +132,7 @@ export default function NotificationsPage() {
 
   // Test send
   const [testTo, setTestTo] = useState<string>('');
-  const [testChannel, setTestChannel] = useState<'EMAIL'|'PUSH'|'SMS'>('EMAIL');
+  const [testChannel, setTestChannel] = useState<'EMAIL'|'PUSH'>('EMAIL');
   const [testSubject, setTestSubject] = useState<string>('');
   const [testText, setTestText] = useState<string>('');
   const [testHtml, setTestHtml] = useState<string>('');
@@ -143,9 +143,6 @@ export default function NotificationsPage() {
     if (ch === 'EMAIL') {
       if (!subject.trim()) return 'Для EMAIL требуется Subject';
       if (!text.trim() && !html.trim()) return 'Для EMAIL требуется Text или HTML';
-    }
-    if (ch === 'SMS') {
-      if (!text.trim()) return 'Для SMS требуется Text';
     }
     if (ch === 'PUSH') {
       if (!subject.trim() && !text.trim()) return 'Для PUSH требуется Subject или Text';
@@ -213,7 +210,6 @@ export default function NotificationsPage() {
               <option value="ALL">ALL</option>
               <option value="EMAIL">EMAIL</option>
               <option value="PUSH">PUSH</option>
-              <option value="SMS">SMS</option>
             </select>
           </label>
           <label>{t('segment')}:
@@ -275,7 +271,6 @@ export default function NotificationsPage() {
             <select aria-label="Test Channel" value={testChannel} onChange={e=>setTestChannel(e.target.value as any)} style={{ marginLeft: 8 }}>
               <option value="EMAIL">EMAIL</option>
               <option value="PUSH">PUSH</option>
-              <option value="SMS">SMS</option>
             </select>
           </label>
           <input aria-label={t('recipient')} placeholder={t('recipient')} value={testTo} onChange={e=>setTestTo(e.target.value)} />

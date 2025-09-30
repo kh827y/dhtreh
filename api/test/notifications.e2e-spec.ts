@@ -51,7 +51,7 @@ describe('Notifications API (e2e)', () => {
     const res = await request(app.getHttpServer())
       .post('/notifications/test')
       .set('X-Admin-Key', 'test-admin-key')
-      .send({ merchantId: 'M1', channel: 'SMS', to: '+70000000000', template: { text: 'hi' } });
+      .send({ merchantId: 'M1', channel: 'EMAIL', to: 'user@example.com', template: { subject: 'Hi', text: 'hi' } });
     expect([200,201]).toContain(res.status);
     expect(res.body.ok).toBe(true);
     expect(prismaMock.adminAudit.create).toHaveBeenCalled();

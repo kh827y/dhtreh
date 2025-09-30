@@ -6,7 +6,7 @@ import { Card, CardHeader, CardBody, Button, Skeleton } from '@loyalty/ui';
 const TYPES = ['BONUS','DISCOUNT','CASHBACK','BIRTHDAY','REFERRAL','FIRST_PURCHASE'] as const;
 const STATUSES = ['DRAFT','ACTIVE','PAUSED','COMPLETED'] as const;
 const REWARD_TYPES = ['POINTS','PERCENT','FIXED','PRODUCT'] as const;
-const CHANNELS = ['SMS','TELEGRAM','PUSH'] as const;
+const CHANNELS = ['TELEGRAM','PUSH'] as const;
 
 export default function CampaignEditPage(){
   const { campaignId } = useParams<{ campaignId: string }>();

@@ -82,7 +82,7 @@ export class LoyaltyApi {
       if (opts?.apiKey) headers['X-API-Key'] = opts.apiKey;
       return this.http('/referral/program', { method: 'POST', headers, body: JSON.stringify(args) });
     },
-    create: (args: { merchantId: string; referrerId: string; refereePhone?: string; refereeEmail?: string; channel?: 'SMS'|'EMAIL'|'LINK'|'QR' }, opts?: { apiKey?: string }) => {
+    create: (args: { merchantId: string; referrerId: string; refereePhone?: string; refereeEmail?: string; channel?: 'EMAIL'|'LINK'|'QR' }, opts?: { apiKey?: string }) => {
       const headers: any = {};
       if (opts?.apiKey) headers['X-API-Key'] = opts.apiKey;
       return this.http('/referral/create', { method: 'POST', headers, body: JSON.stringify(args) });

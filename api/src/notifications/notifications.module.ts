@@ -1,7 +1,4 @@
 import { Module } from '@nestjs/common';
-import { SmsController } from './sms/sms.controller';
-import { SmsService } from './sms/sms.service';
-import { SmscProvider } from './sms/providers/smsc.provider';
 import { PushController } from './push/push.controller';
 import { PushService } from './push/push.service';
 import { FcmProvider } from './push/providers/fcm.provider';
@@ -14,8 +11,8 @@ import { ConfigModule } from '@nestjs/config';
 
 @Module({
   imports: [PrismaModule, ConfigModule],
-  controllers: [SmsController, PushController, EmailController, NotificationsController],
-  providers: [SmsService, SmscProvider, PushService, FcmProvider, EmailService, NotificationsService],
-  exports: [SmsService, PushService, EmailService, NotificationsService],
+  controllers: [PushController, EmailController, NotificationsController],
+  providers: [PushService, FcmProvider, EmailService, NotificationsService],
+  exports: [PushService, EmailService, NotificationsService],
 })
 export class NotificationsModule {}

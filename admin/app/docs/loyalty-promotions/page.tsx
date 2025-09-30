@@ -32,9 +32,9 @@ export default function LoyaltyPromotionsDocsPage() {
 
       <h3>Экспорт и аналитика</h3>
       <p>
-        В отчёте <code>GET /reports/export/:merchantId?type=campaigns&amp;format=excel</code> добавлен лист «Акции». Он собирает
-        данные из таблиц <code>loyalty_promotions</code> и <code>promotion_participants</code>, отражает периоды действия,
-        количество активаций, начисленные баллы и статус. Эти же данные используются на дашборде кампаний портала.
+        Экспорт <code>/reports/export</code> отключён: для выгрузок используйте API портала (фильтры на <code>/portal/loyalty/promotions</code>)
+        или подключайте внешние BI-дашборды к базе. Дашборд кампаний в портале продолжает опираться на таблицы
+        <code>loyalty_promotions</code> и <code>promotion_participants</code>.
       </p>
 
       <h3>Нотификации</h3>

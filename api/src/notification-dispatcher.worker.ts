@@ -2,7 +2,6 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { PrismaService } from './prisma.service';
 import { MetricsService } from './metrics.service';
 import { PushService } from './notifications/push/push.service';
-import { SmsService } from './notifications/sms/sms.service';
 import { EmailService } from './notifications/email/email.service';
 import { pgTryAdvisoryLock, pgAdvisoryUnlock } from './pg-lock.util';
 
@@ -33,7 +32,6 @@ export class NotificationDispatcherWorker implements OnModuleInit, OnModuleDestr
     private prisma: PrismaService,
     private metrics: MetricsService,
     private push: PushService,
-    private sms: SmsService,
     private email: EmailService,
   ) {}
 
@@ -151,7 +149,6 @@ export class NotificationDispatcherWorker implements OnModuleInit, OnModuleDestr
 
         // Accumulators for per-channel metrics
         let pushAttempted = 0, pushSent = 0, pushFailed = 0;
-        let smsAttempted = 0, smsSent = 0, smsFailed = 0;
         let emailAttempted = 0, emailSent = 0, emailFailed = 0;
 
         // PUSH
@@ -165,18 +162,6 @@ export class NotificationDispatcherWorker implements OnModuleInit, OnModuleDestr
             } else {
               const r = await this.push.sendToTopic(merchantId, this.applyVars(titleRaw, dataVars) || 'Сообщение', this.applyVars(textRaw, dataVars) || 'У вас новое сообщение', Object.fromEntries(Object.entries(dataVars).map(([k,v])=>[k,String(v)])));
               pushAttempted += 1; pushSent += r.success ? 1 : 0; pushFailed += r.success ? 0 : 1;
-            }
-          } catch {}
-        }
-
-        // SMS
-        if (ch === 'SMS' || ch === 'ALL') {
-          try {
-            if (customerIds.length > 0) {
-              const r = await this.sms.sendBulkNotification(merchantId, customerIds, this.applyVars(textRaw || titleRaw, dataVars) || 'Сообщение');
-              smsAttempted += r.total ?? customerIds.length;
-              smsSent += r.sent ?? 0;
-              smsFailed += r.failed ?? Math.max(0, (r.total ?? customerIds.length) - (r.sent ?? 0));
             }
           } catch {}
         }
@@ -204,9 +189,6 @@ export class NotificationDispatcherWorker implements OnModuleInit, OnModuleDestr
           if (pushAttempted) this.metrics.inc('notifications_channel_attempts_total', { channel: 'PUSH', merchantId }, pushAttempted);
           if (pushSent) this.metrics.inc('notifications_channel_sent_total', { channel: 'PUSH', merchantId }, pushSent);
           if (pushFailed) this.metrics.inc('notifications_channel_failed_total', { channel: 'PUSH', merchantId }, pushFailed);
-          if (smsAttempted) this.metrics.inc('notifications_channel_attempts_total', { channel: 'SMS', merchantId }, smsAttempted);
-          if (smsSent) this.metrics.inc('notifications_channel_sent_total', { channel: 'SMS', merchantId }, smsSent);
-          if (smsFailed) this.metrics.inc('notifications_channel_failed_total', { channel: 'SMS', merchantId }, smsFailed);
           if (emailAttempted) this.metrics.inc('notifications_channel_attempts_total', { channel: 'EMAIL', merchantId }, emailAttempted);
           if (emailSent) this.metrics.inc('notifications_channel_sent_total', { channel: 'EMAIL', merchantId }, emailSent);
           if (emailFailed) this.metrics.inc('notifications_channel_failed_total', { channel: 'EMAIL', merchantId }, emailFailed);
@@ -226,7 +208,6 @@ export class NotificationDispatcherWorker implements OnModuleInit, OnModuleDestr
                 channel: ch,
                 segmentId: segmentId || null,
                 push: { attempted: pushAttempted, sent: pushSent, failed: pushFailed },
-                sms: { attempted: smsAttempted, sent: smsSent, failed: smsFailed },
                 email: { attempted: emailAttempted, sent: emailSent, failed: emailFailed },
               },
             },
@@ -247,9 +228,7 @@ export class NotificationDispatcherWorker implements OnModuleInit, OnModuleDestr
           await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'SENT', lastError: 'test-env' } });
           return;
         }
-        if (ch === 'SMS') {
-          await this.sms.sendNotification({ merchantId, phone: to, message: text || subject, type: 'MARKETING' });
-        } else if (ch === 'EMAIL') {
+        if (ch === 'EMAIL') {
           await this.email.sendEmail({ to, subject, template: 'campaign', data: { customerName: '', merchantName: '', campaignName: subject, content: html || text }, merchantId });
         } else if (ch === 'PUSH') {
           // No direct token send; mark as sent
