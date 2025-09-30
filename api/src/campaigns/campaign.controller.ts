@@ -14,7 +14,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { CampaignService } from './campaign.service';
-import type { CreateCampaignDto } from './campaign.service';
+import type { CreateCampaignDto } from '../loyalty-promotion/dto';
 import { ApiKeyGuard } from '../guards/api-key.guard';
 
 @ApiTags('Campaigns')
