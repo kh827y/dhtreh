@@ -12,7 +12,7 @@ export interface LoyaltyQuoteRequest {
   total: number; // копейки
   eligibleTotal: number; // копейки
   orderId?: string;
-  outletId?: string;
+  outletId: string; // идентификатор торговой точки; обязателен для трекинга POS
   staffId?: string;
   category?: string;
 }
@@ -21,6 +21,7 @@ export interface LoyaltyCommitRequest {
   merchantId: string;
   holdId: string;
   orderId: string;
+  outletId?: string; // для совместимости передавайте ту же точку, что и при quote
   receiptNumber?: string;
 }
 

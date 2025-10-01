@@ -15,6 +15,7 @@
 — Устройства: депрекация. UI/роуты удаляем, опираемся на Торговые точки.
   - [x] Бэкенд-агрегации/выгрузки перевёл на `outletId`: аналитика (Top Devices → Outlet usage c `posLastSeenAt`), воркер активации начислений, CRM-таймлайн, push-устройства (реестр по `outletId`), интеграционные DTO и CSV/SDK.
 - [x] DTO/ответы merchants/loyalty и клиенты (admin/bridge/cashier) очищены от `deviceId`, добавлены поля POS-агрегации (`outletPosType`, `outletLastSeenAt`).
+- [x] Staff DTO/SDK/doc: `allowedDeviceId` убран, публичные схемы и коллекции пересобраны под `allowedOutletId`/`outletId`.
 - [x] OpenAPI/документация и e2e/контрактные тесты приведены к схеме без `deviceId`; зафиксированы outlet-секреты.
   - [x] LoyaltyController окончательно отказался от `deviceId`: подпись Bridge/hold кешируются только по `outletId`, публичные DTO и роуты очищены.
 - [x] LoyaltyService: расчёт/commit/refund и outbox работают только с `outletId`, записи `deviceId` прекращены.
