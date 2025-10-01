@@ -1296,19 +1296,26 @@ model MerchantStats {
 
 // Referral program
 model ReferralProgram {
-  id                String    @id @default(cuid())
-  merchantId        String
-  name              String
-  description       String?
-  referrerReward    Int
-  refereeReward     Int
-  maxReferrals      Int?
-  validUntil        DateTime?
-  isActive          Boolean   @default(true)
-  status            String    @default("ACTIVE")
-  minPurchaseAmount Int       @default(0)
-  expiryDays        Int       @default(30)
-  createdAt         DateTime  @default(now())
+  id                    String    @id @default(cuid())
+  merchantId            String
+  name                  String
+  description           String?
+  referrerReward        Float
+  refereeReward         Float
+  maxReferrals          Int?
+  validUntil            DateTime?
+  isActive              Boolean   @default(true)
+  status                String    @default("ACTIVE")
+  minPurchaseAmount     Int       @default(0)
+  expiryDays            Int       @default(30)
+  rewardTrigger         String    @default("first")
+  rewardType            String    @default("FIXED")
+  multiLevel            Boolean   @default(false)
+  levelRewards          Json?
+  stackWithRegistration Boolean   @default(false)
+  messageTemplate       String?
+  placeholders          String[]  @default([])
+  createdAt             DateTime  @default(now())
 
   merchant      Merchant               @relation(fields: [merchantId], references: [id])
   referrals     Referral[]

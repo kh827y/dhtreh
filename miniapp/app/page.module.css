@@ -115,10 +115,60 @@
   cursor: pointer;
 }
 
+.profileHint {
+  font-size: 13px;
+  color: #6f6f94;
+}
+
 .header {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.inviteBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.inviteFriendButton {
+  background: linear-gradient(135deg, #34d399, #059669);
+  color: #ffffff;
+  border: none;
+  border-radius: 16px;
+  padding: 14px 20px;
+  font-size: 15px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 18px 35px rgba(5, 150, 105, 0.25);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.inviteFriendButton:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 22px 40px rgba(5, 150, 105, 0.28);
+}
+
+.inviteFriendButton:active {
+  transform: scale(0.98);
+}
+
+.inviteCodeBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #036855;
+  background: rgba(52, 211, 153, 0.16);
+  border-radius: 14px;
+  padding: 8px 12px;
 }
 
 .headerIconButton {

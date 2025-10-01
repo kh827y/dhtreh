@@ -467,6 +467,13 @@ export type ReferralProgramDto = {
   maxReferrals?: number;
   expiryDays?: number;
   status?: 'ACTIVE'|'PAUSED'|'COMPLETED';
+  rewardTrigger?: 'first'|'all';
+  rewardType?: 'FIXED'|'PERCENT';
+  multiLevel?: boolean;
+  levelRewards?: Array<{ level: number; enabled?: boolean; reward?: number }>;
+  stackWithRegistration?: boolean;
+  messageTemplate?: string;
+  placeholders?: string[];
 };
 
 export async function getActiveReferralProgram(merchantId: string) {

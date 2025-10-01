@@ -261,6 +261,7 @@ export default function ReferralProgramSettingsPage() {
       stackWithRegistration: state.stackWithRegistration,
       friendReward,
       message: state.message.trim(),
+      placeholders: state.placeholders,
     };
 
     if (state.multiLevel) {
