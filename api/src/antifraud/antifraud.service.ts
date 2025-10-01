@@ -24,7 +24,6 @@ export interface TransactionContext {
   customerId: string;
   amount: number;
   type: 'EARN' | 'REDEEM';
-  deviceId?: string;
   outletId?: string;
   staffId?: string;
   ipAddress?: string;
@@ -357,23 +356,22 @@ export class AntiFraudService {
     const factors: string[] = [];
     let score = 0;
 
-    const outletOrDeviceId = context.outletId || context.deviceId;
+    const { outletId } = context;
 
-    if (!outletOrDeviceId) {
+    if (!outletId) {
       score += 10;
       factors.push('no_outlet_id');
       return { score, factors };
     }
 
-    const scopeField = context.outletId ? 'outletId' : 'deviceId';
     const legacyThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const outletHistory = await this.prisma.transaction.count({
       where: {
         customerId: context.customerId,
         merchantId: context.merchantId,
-        [scopeField]: outletOrDeviceId,
+        outletId,
         createdAt: { lt: legacyThreshold },
-      } as any,
+      },
     });
 
     if (outletHistory === 0) {
@@ -382,18 +380,17 @@ export class AntiFraudService {
     }
 
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const distinctField = context.outletId ? 'outletId' : 'deviceId';
     const uniqueOutlets = await this.prisma.transaction.findMany({
       where: {
         customerId: context.customerId,
         merchantId: context.merchantId,
         createdAt: { gte: weekAgo },
       },
-      select: { [distinctField]: true } as any,
-      distinct: [distinctField] as any,
+      select: { outletId: true },
+      distinct: ['outletId'],
     });
 
-    const uniqueCount = uniqueOutlets.filter((item: any) => !!item?.[distinctField]).length;
+    const uniqueCount = uniqueOutlets.filter((item: any) => !!item?.outletId).length;
 
     if (uniqueCount > 3) {
       score += 20;
@@ -470,7 +467,7 @@ export class AntiFraudService {
           action: 'suspicious_activity_detected',
           payload: {
             customerId: context.customerId,
-            outletId: context.outletId ?? context.deviceId ?? null,
+            outletId: context.outletId ?? null,
             score,
             factors,
             riskLevel: level,
@@ -644,8 +641,7 @@ export class AntiFraudService {
           blocked: !!score.shouldBlock,
           metadata: {
             type: context.type,
-            deviceId: context.deviceId || null,
-            outletId: context.outletId || context.deviceId || null,
+            outletId: context.outletId || null,
             staffId: context.staffId || null,
           } as any,
         },

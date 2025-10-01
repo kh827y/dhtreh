@@ -13,7 +13,6 @@ export interface LoyaltyQuoteRequest {
   eligibleTotal: number; // копейки
   orderId?: string;
   outletId?: string;
-  deviceId?: string;
   staffId?: string;
   category?: string;
 }

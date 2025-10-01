@@ -10,7 +10,6 @@ export interface RegisterDeviceDto {
   token: string;
   platform: 'ios' | 'android' | 'web';
   outletId?: string;
-  outletDeviceKey?: string;
   deviceInfo?: {
     model?: string;
     os?: string;
@@ -64,8 +63,8 @@ export class PushService {
       throw new BadRequestException('Клиент не найден');
     }
 
-    const deviceKey = dto.outletDeviceKey || dto.outletId || dto.token;
-    if (!deviceKey) {
+    const outletKey = dto.outletId || dto.token;
+    if (!outletKey) {
       throw new BadRequestException('Не удалось определить идентификатор устройства');
     }
 
@@ -77,15 +76,15 @@ export class PushService {
     // Сохраняем или обновляем токен устройства
     const device = await this.prisma.pushDevice.upsert({
       where: {
-        customerId_deviceId: {
+        customerId_outletId: {
           customerId: dto.customerId,
-          deviceId: deviceKey,
+          outletId: outletKey,
         },
       },
       create: {
         customerId: dto.customerId,
         merchantId: dto.merchantId,
-        deviceId: deviceKey,
+        outletId: outletKey,
         token: dto.token,
         platform: dto.platform,
         deviceInfo,
@@ -109,7 +108,7 @@ export class PushService {
 
     return {
       success: true,
-      outletDeviceKey: device.deviceId,
+      outletId: device.outletId,
     };
   }
 
@@ -138,7 +137,7 @@ export class PushService {
 
     // Отправляем уведомления
     const results = await Promise.all(
-      tokens.map(async ({ token, customerId, outletDeviceKey, registrationId }) => {
+      tokens.map(async ({ token, customerId, outletId, registrationId }) => {
         const result = await this.provider.sendPush({
           token,
           title: dto.title,
@@ -158,7 +157,7 @@ export class PushService {
           data: {
             merchantId: dto.merchantId,
             customerId,
-            deviceId: outletDeviceKey,
+            outletId,
             deviceToken: token,
             title: dto.title,
             body: dto.body,
@@ -340,7 +339,7 @@ export class PushService {
       where,
       select: {
         id: true,
-        deviceId: true,
+        outletId: true,
         token: true,
         customerId: true,
       },
@@ -349,7 +348,7 @@ export class PushService {
     return devices.map(d => ({
       token: d.token,
       customerId: d.customerId,
-      outletDeviceKey: d.deviceId,
+      outletId: d.outletId,
       registrationId: d.id,
     }));
   }
@@ -513,9 +512,9 @@ export class PushService {
   /**
    * Деактивировать устройство
    */
-  async deactivateDevice(outletDeviceKey: string) {
+  async deactivateDevice(outletId: string) {
     await this.prisma.pushDevice.updateMany({
-      where: { deviceId: outletDeviceKey },
+      where: { outletId },
       data: { isActive: false },
     });
   }

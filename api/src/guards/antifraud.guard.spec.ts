@@ -113,7 +113,7 @@ describe('AntiFraudGuard', () => {
     })).toBe(true);
     expect(alerts.antifraudBlocked).not.toHaveBeenCalled();
     expect(antifraud.checkTransaction).toHaveBeenCalledWith(
-      expect.not.objectContaining({ deviceId: expect.anything() }),
+      expect.objectContaining({ outletId: 'O-1' }),
     );
   });
 });
