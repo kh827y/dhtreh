@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, UnauthorizedExcepti
 import { getJose } from '../loyalty/token.util';
 import { hashPassword, verifyPassword } from '../password.util';
 import { PrismaService } from '../prisma.service';
-import { DeviceType } from '@prisma/client';
+import { DeviceType, StaffOutletAccessStatus, StaffStatus, Prisma } from '@prisma/client';
 import { CreateStaffDto, UpdateMerchantSettingsDto, UpdateOutletDto, UpdateStaffDto, UpdateOutletPosDto } from './dto';
 // Lazy Ajv import to avoid TS2307 when dependency isn't installed yet
 const __AjvLib: any = (() => { try { return require('ajv'); } catch { return null; } })();
@@ -91,20 +91,54 @@ export class MerchantsService {
   async issueStaffTokenByPin(merchantLogin: string, password9: string, staffIdOrLogin: string, outletId: string, pinCode: string) {
     const auth = await this.authenticateCashier(merchantLogin, password9);
     const merchantId = auth.merchantId;
+    const normalizedPin = String(pinCode || '').trim();
+    if (!normalizedPin) throw new UnauthorizedException('Invalid PIN');
+
     const searchValue = String(staffIdOrLogin || '').trim();
     let staff = searchValue
-      ? await this.prisma.staff.findFirst({ where: { merchantId, OR: [ { id: searchValue }, { login: searchValue } ] } })
+      ? await this.prisma.staff.findFirst({ where: { merchantId, OR: [{ id: searchValue }, { login: searchValue }] } })
       : null;
-    if (!staff) {
-      staff = await this.prisma.staff.findFirst({ where: { merchantId, pinCode: pinCode || '' } });
+
+    const baseWhere: Prisma.StaffOutletAccessWhereInput = {
+      merchantId,
+      pinCode: normalizedPin,
+      status: StaffOutletAccessStatus.ACTIVE,
+    };
+    if (outletId) baseWhere.outletId = outletId;
+    if (staff) baseWhere.staffId = staff.id;
+
+    let access = await this.prisma.staffOutletAccess.findFirst({ where: baseWhere, include: { staff: true } });
+
+    if (!access && staff) {
+      const fallbackWhere: Prisma.StaffOutletAccessWhereInput = {
+        merchantId,
+        staffId: staff.id,
+        pinCode: normalizedPin,
+        status: StaffOutletAccessStatus.ACTIVE,
+      };
+      access = await this.prisma.staffOutletAccess.findFirst({ where: fallbackWhere, include: { staff: true } });
     }
-    if (!staff || staff.merchantId !== merchantId) throw new NotFoundException('Staff not found');
-    if ((staff.pinCode || '') !== String(pinCode || '')) throw new UnauthorizedException('Invalid PIN');
-    if (staff.status && staff.status !== 'ACTIVE') throw new UnauthorizedException('Staff inactive');
-    if (outletId) {
-      const access = await (this.prisma as any).staffOutletAccess.findUnique({ where: { merchantId_staffId_outletId: { merchantId, staffId: staff.id, outletId } } });
-      if (!access) throw new UnauthorizedException('Outlet access not granted');
+
+    if (!access) {
+      access = await this.prisma.staffOutletAccess.findFirst({
+        where: { merchantId, pinCode: normalizedPin, status: StaffOutletAccessStatus.ACTIVE },
+        include: { staff: true },
+      });
     }
+
+    if (!access || !access.staff || access.staff.merchantId !== merchantId) {
+      throw new UnauthorizedException('Invalid PIN');
+    }
+
+    if (outletId && access.outletId !== outletId) {
+      throw new UnauthorizedException('Outlet access not granted');
+    }
+
+    staff = access.staff;
+    if (staff.status && staff.status !== StaffStatus.ACTIVE) {
+      throw new UnauthorizedException('Staff inactive');
+    }
+
     return this.issueStaffToken(merchantId, staff.id);
   }
   private ajv: { validate: (schema: any, data: any) => boolean; errorsText: (errs?: any, opts?: any) => string; errors?: any };

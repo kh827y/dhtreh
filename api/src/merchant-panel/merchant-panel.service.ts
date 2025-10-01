@@ -678,7 +678,6 @@ export class MerchantPanelService {
 
   async createStaff(merchantId: string, payload: UpsertStaffPayload) {
     return this.prisma.$transaction(async (tx) => {
-      const pinCode = await this.generateUniquePersonalPin(tx, merchantId);
       const trimmedPassword = payload.password?.toString().trim() ?? '';
       if (trimmedPassword && trimmedPassword.length < 6) {
         throw new BadRequestException('Пароль должен содержать минимум 6 символов');
@@ -697,7 +696,7 @@ export class MerchantPanelService {
         canAccessPortal: payload.canAccessPortal ?? false,
         portalAccessEnabled: payload.portalAccessEnabled ?? false,
         portalState: payload.portalAccessEnabled ? 'ENABLED' : 'DISABLED',
-        pinCode,
+        pinCode: null,
       };
       if (trimmedPassword) {
         data.hash = hashPassword(trimmedPassword);

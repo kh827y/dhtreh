@@ -38,14 +38,15 @@ type Staff = {
 };
 
 type Outlet = { id: string; name: string };
-type AccessGroup = { id: string; name: string; membersCount?: number; memberCount?: number };
-
-const DEFAULT_GROUPS: AccessGroup[] = [
-  { id: "MERCHANT", name: "Владелец" },
-  { id: "MANAGER", name: "Менеджер" },
-  { id: "ANALYST", name: "Аналитик" },
-  { id: "CASHIER", name: "Кассир" },
-];
+type AccessGroup = {
+  id: string;
+  name: string;
+  membersCount?: number;
+  memberCount?: number;
+  isSystem?: boolean;
+  isDefault?: boolean;
+  scope?: string | null;
+};
 
 function formatActivityDate(value?: string | null): string {
   if (!value) return "—";
@@ -141,17 +142,25 @@ export default function StaffPage() {
 
   const uniqueGroups = React.useMemo(() => {
     const map = new Map<string, AccessGroup>();
-    for (const g of groups) {
-      if (!g) continue;
-      const id = String((g as any).id ?? '').trim();
-      const name = String((g as any).name ?? '').trim();
+    for (const raw of groups) {
+      if (!raw) continue;
+      const id = String((raw as any).id ?? '').trim();
+      const name = String((raw as any).name ?? '').trim();
       const key = id || name;
       if (!key) continue;
       if (!map.has(key)) {
-        map.set(key, { id: id || key, name, membersCount: (g as any).membersCount, memberCount: (g as any).memberCount });
+        map.set(key, {
+          id: id || key,
+          name,
+          membersCount: (raw as any).membersCount ?? (raw as any).memberCount,
+          memberCount: (raw as any).memberCount,
+          isSystem: Boolean((raw as any).isSystem),
+          isDefault: Boolean((raw as any).isDefault),
+          scope: (raw as any).scope ?? null,
+        });
       }
     }
-    return Array.from(map.values());
+    return Array.from(map.values()).filter((group) => !group.isSystem);
   }, [groups]);
 
   const filteredItems = React.useMemo(() => {
@@ -209,30 +218,28 @@ export default function StaffPage() {
     if (groupsLoading) return;
     setGroupsLoading(true);
     try {
-      let list: AccessGroup[] = [];
-      try {
-        const res = await fetch("/api/portal/access-groups");
-        if (res.ok) {
-          const payload = await res.json();
-          if (Array.isArray(payload)) list = payload;
-          else if (payload?.items && Array.isArray(payload.items)) list = payload.items;
-        }
-      } catch {}
-      if (typeof window !== "undefined") {
-        try {
-          const stored = window.localStorage.getItem("portal.accessGroups");
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            if (Array.isArray(parsed)) {
-              const map = new Map<string, AccessGroup>((list || []).map((g) => [g.id, g]));
-              parsed.forEach((g: AccessGroup) => { if (g?.id) map.set(g.id, g); });
-              list = Array.from(map.values());
-            }
-          }
-        } catch {}
-      }
-      if (!list.length) list = DEFAULT_GROUPS;
-      setGroups(list);
+      const res = await fetch("/api/portal/access-groups");
+      if (!res.ok) throw new Error(await res.text());
+      const payload = await res.json().catch(() => ({}));
+      const source: any[] = Array.isArray(payload?.items)
+        ? payload.items
+        : Array.isArray(payload)
+          ? payload
+          : [];
+      const normalized: AccessGroup[] = source
+        .map((item: any) => ({
+          id: String(item?.id ?? ""),
+          name: String(item?.name ?? item?.code ?? ""),
+          membersCount: item?.membersCount ?? item?.memberCount ?? 0,
+          memberCount: item?.memberCount ?? item?.membersCount ?? 0,
+          isSystem: Boolean(item?.isSystem),
+          isDefault: Boolean(item?.isDefault),
+          scope: item?.scope ?? null,
+        }))
+        .filter((group) => group.id || group.name);
+      setGroups(normalized.filter((group) => !group.isSystem));
+    } catch {
+      setGroups([]);
     } finally {
       setGroupsLoading(false);
     }
@@ -357,10 +364,10 @@ export default function StaffPage() {
   const canSubmitCreate = React.useMemo(() => {
     if (!cFirstName.trim()) return false;
     if (cPortal) {
-      return Boolean(cGroup && cEmail.trim());
+      return Boolean(cGroup && cEmail.trim() && cPassword.trim());
     }
     return true;
-  }, [cFirstName, cPortal, cGroup, cEmail]);
+  }, [cFirstName, cPortal, cGroup, cEmail, cPassword]);
 
   async function handleCreate() {
     if (!canSubmitCreate) return;
@@ -368,6 +375,12 @@ export default function StaffPage() {
     setCreateError("");
     try {
       const normalizedGroup = cGroup.trim();
+      const trimmedPassword = cPassword.trim();
+      if (cPortal && trimmedPassword.length < 6) {
+        setCreateError("Пароль должен содержать минимум 6 символов");
+        setSubmitting(false);
+        return;
+      }
       const payload: Record<string, any> = {
         firstName: cFirstName.trim(),
         lastName: cLastName.trim() || undefined,
@@ -382,13 +395,9 @@ export default function StaffPage() {
       };
       if (normalizedGroup) {
         payload.accessGroupIds = [normalizedGroup];
-        const upper = normalizedGroup.toUpperCase();
-        if (["MERCHANT", "MANAGER", "ANALYST", "CASHIER"].includes(upper)) {
-          payload.role = upper;
-        }
       }
-      if (!payload.role && !cPortal) {
-        payload.role = "CASHIER";
+      if (cPortal) {
+        payload.password = trimmedPassword;
       }
       const res = await fetch("/api/portal/staff", {
         method: "POST",
