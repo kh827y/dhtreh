@@ -42,11 +42,15 @@ function defaultPermissions(): ModulePermissions {
 function mergeGroups(_base: AccessGroupRow[], remote: any[]): AccessGroupRow[] {
   const normalized: AccessGroupRow[] = (remote || [])
     .map((g: any, idx: number) => {
-      const rawId = g?.id ?? g?.code ?? g?.role ?? '';
+      const scope = String(g?.scope ?? "").toUpperCase();
+      const isSystem = Boolean(g?.isSystem);
+      if (isSystem) return null;
+      if (scope && scope !== "PORTAL") return null;
+      const rawId = g?.id ?? g?.code ?? g?.role ?? "";
       const id = String(rawId).trim();
       const rawName = (g?.name ?? g?.label ?? g?.role ?? id) || `Группа ${idx + 1}`;
       const name = String(rawName).trim();
-      if (!id) return null;
+      if (!id || !name) return null;
       return {
         id,
         name,
@@ -61,7 +65,7 @@ function mergeGroups(_base: AccessGroupRow[], remote: any[]): AccessGroupRow[] {
   for (const g of normalized) {
     if (!map.has(g.id)) map.set(g.id, g);
   }
-  return Array.from(map.values());
+  return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, "ru"));
 }
 
 function permissionsToList(perm: ModulePermissions) {
