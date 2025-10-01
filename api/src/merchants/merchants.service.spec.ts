@@ -57,4 +57,33 @@ describe('MerchantsService rulesJson validation', () => {
     expect(r.earnBps).toBe(500);
     expect(r.rulesJson).toEqual(okRules);
   });
+
+  it('normalizes antifraud device limits to outlet and rewrites block factors', async () => {
+    const svc = makeSvc();
+    const payload = {
+      af: {
+        merchant: { limit: 10, windowSec: 60 },
+        device: { limit: 5, windowSec: 120 },
+        staff: { limit: 3, windowSec: 60 },
+        customer: { limit: 2, windowSec: 60 },
+        blockFactors: ['no_device_id', 'velocity'],
+      },
+    };
+
+    const result = await svc.updateSettings('M-1', 500, 5000,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      undefined,
+      payload,
+    );
+
+    expect(result.rulesJson).toEqual({
+      af: {
+        merchant: { limit: 10, windowSec: 60 },
+        outlet: { limit: 5, windowSec: 120 },
+        staff: { limit: 3, windowSec: 60 },
+        customer: { limit: 2, windowSec: 60 },
+        blockFactors: ['no_outlet_id', 'velocity'],
+      },
+    });
+  });
 });

@@ -14,7 +14,7 @@ export default function AntiFraudPage() {
   });
   const [af, setAf] = useState<{
     merchant: { limit: number; windowSec: number; dailyCap: number; weeklyCap: number };
-    device: { limit: number; windowSec: number; dailyCap: number; weeklyCap: number };
+    outlet: { limit: number; windowSec: number; dailyCap: number; weeklyCap: number };
     staff: { limit: number; windowSec: number; dailyCap: number; weeklyCap: number };
     customer: { limit: number; windowSec: number; dailyCap: number; weeklyCap: number };
   } | null>(null);
@@ -63,9 +63,10 @@ export default function AntiFraudPage() {
         afObj = (rules as any).af || null;
       }
       const def = (limit: number, windowSec: number, dailyCap = 0, weeklyCap = 0) => ({ limit, windowSec, dailyCap, weeklyCap });
+      const outletCfg = afObj?.outlet || afObj?.device || null;
       setAf({
         merchant: afObj?.merchant || def(200, 3600, 0, 0),
-        device: afObj?.device || def(20, 600, 0, 0),
+        outlet: outletCfg || def(20, 600, 0, 0),
         staff: afObj?.staff || def(60, 600, 0, 0),
         customer: afObj?.customer || def(5, 120, 0, 0),
       });
@@ -272,18 +273,18 @@ export default function AntiFraudPage() {
               </label>
             </fieldset>
             <fieldset style={{ border: '1px solid #313244', borderRadius: 6, padding: 12 }}>
-              <legend>Device</legend>
+              <legend>Outlet</legend>
               <label>Лимит
-                <input type="number" value={af.device.limit} onChange={e=>setAf({ ...af, device: { ...af.device, limit: Number(e.target.value) } })} style={{ marginLeft: 8 }} />
+                <input type="number" value={af.outlet.limit} onChange={e=>setAf({ ...af, outlet: { ...af.outlet, limit: Number(e.target.value) } })} style={{ marginLeft: 8 }} />
               </label>
               <label style={{ marginLeft: 12 }}>Окно (сек)
-                <input type="number" value={af.device.windowSec} onChange={e=>setAf({ ...af, device: { ...af.device, windowSec: Number(e.target.value) } })} style={{ marginLeft: 8 }} />
+                <input type="number" value={af.outlet.windowSec} onChange={e=>setAf({ ...af, outlet: { ...af.outlet, windowSec: Number(e.target.value) } })} style={{ marginLeft: 8 }} />
               </label>
               <label style={{ marginLeft: 12 }}>Дневной кап
-                <input type="number" value={af.device.dailyCap} onChange={e=>setAf({ ...af, device: { ...af.device, dailyCap: Number(e.target.value) } })} style={{ marginLeft: 8 }} />
+                <input type="number" value={af.outlet.dailyCap} onChange={e=>setAf({ ...af, outlet: { ...af.outlet, dailyCap: Number(e.target.value) } })} style={{ marginLeft: 8 }} />
               </label>
               <label style={{ marginLeft: 12 }}>Недельный кап
-                <input type="number" value={af.device.weeklyCap} onChange={e=>setAf({ ...af, device: { ...af.device, weeklyCap: Number(e.target.value) } })} style={{ marginLeft: 8 }} />
+                <input type="number" value={af.outlet.weeklyCap} onChange={e=>setAf({ ...af, outlet: { ...af.outlet, weeklyCap: Number(e.target.value) } })} style={{ marginLeft: 8 }} />
               </label>
             </fieldset>
             <fieldset style={{ border: '1px solid #313244', borderRadius: 6, padding: 12 }}>

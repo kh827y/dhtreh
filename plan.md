@@ -20,6 +20,7 @@
   - [x] LoyaltyController окончательно отказался от `deviceId`: подпись Bridge/hold кешируются только по `outletId`, публичные DTO и роуты очищены.
 - [x] LoyaltyService: расчёт/commit/refund и outbox работают только с `outletId`, записи `deviceId` прекращены.
 - [x] Guard'ы: троттлер, антифрод и кассир работают без `deviceId`, опираются на `outletId` и роли сотрудников.
+- [x] AntiFraud конфиг: UI/сервис переименовали `af.device` → `af.outlet`, добавлена миграция по rulesJson.
 - [x] Device-модель убрана окончательно: миграция добрала `bridgeSecret`/`lastSeen`, ограничение сотрудников переведено на точки, Prisma очищена от `deviceId`.
 
 ## Батчи внедрения (план)
