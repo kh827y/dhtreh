@@ -28,9 +28,6 @@ type AccessGroupRow = {
   membersCount: number;
   staffIds: string[];
   permissions: ModulePermissions;
-  isSystem?: boolean;
-  isDefault?: boolean;
-  scope?: string | null;
 };
 
 type StaffOption = { id: string; name: string; email?: string | null };
@@ -56,9 +53,6 @@ function mergeGroups(_base: AccessGroupRow[], remote: any[]): AccessGroupRow[] {
         membersCount: Number(g?.memberCount ?? g?.membersCount ?? 0) || 0,
         staffIds: [],
         permissions: defaultPermissions(),
-        isSystem: Boolean(g?.isSystem),
-        isDefault: Boolean(g?.isDefault),
-        scope: g?.scope ?? null,
       } as AccessGroupRow;
     })
     .filter(Boolean) as AccessGroupRow[];
@@ -67,7 +61,7 @@ function mergeGroups(_base: AccessGroupRow[], remote: any[]): AccessGroupRow[] {
   for (const g of normalized) {
     if (!map.has(g.id)) map.set(g.id, g);
   }
-  return Array.from(map.values()).filter((group) => !group.isSystem);
+  return Array.from(map.values());
 }
 
 function permissionsToList(perm: ModulePermissions) {
