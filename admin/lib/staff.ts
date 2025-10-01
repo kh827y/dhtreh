@@ -6,7 +6,7 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
   return await res.json() as T;
 }
 
-export type Staff = { id: string; merchantId: string; login?: string | null; email?: string | null; role: string; status: string; allowedOutletId?: string | null; allowedDeviceId?: string | null; apiKeyHash?: string | null; createdAt: string };
+export type Staff = { id: string; merchantId: string; login?: string | null; email?: string | null; role: string; status: string; allowedOutletId?: string | null; apiKeyHash?: string | null; createdAt: string };
 
 export async function listStaff(merchantId: string): Promise<Staff[]> {
   return http(`/merchants/${encodeURIComponent(merchantId)}/staff`);
@@ -14,7 +14,7 @@ export async function listStaff(merchantId: string): Promise<Staff[]> {
 export async function createStaff(merchantId: string, dto: { login?: string; email?: string; role?: string }): Promise<Staff> {
   return http(`/merchants/${encodeURIComponent(merchantId)}/staff`, { method: 'POST', body: JSON.stringify(dto) });
 }
-export async function updateStaff(merchantId: string, staffId: string, dto: { login?: string; email?: string; role?: string; status?: string; allowedOutletId?: string; allowedDeviceId?: string }): Promise<Staff> {
+export async function updateStaff(merchantId: string, staffId: string, dto: { login?: string; email?: string; role?: string; status?: string; allowedOutletId?: string }): Promise<Staff> {
   return http(`/merchants/${encodeURIComponent(merchantId)}/staff/${encodeURIComponent(staffId)}`, { method: 'PUT', body: JSON.stringify(dto) });
 }
 export async function deleteStaff(merchantId: string, staffId: string): Promise<{ ok: boolean }> {

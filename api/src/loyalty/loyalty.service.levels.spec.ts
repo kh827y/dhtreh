@@ -27,7 +27,6 @@ function mkPrisma(overrides: any = {}) {
       // Customer earned total 600 within period -> Silver
       findMany: jest.fn(async () => ([ { amount: 300 }, { amount: 300 } ])),
     },
-    device: { findUnique: jest.fn(async () => null) },
     hold: { findUnique: jest.fn(async () => null), create: jest.fn(async (args: any) => ({ id: 'H1', ...args?.data })) },
     wallet: {
       findFirst: jest.fn(async () => null),

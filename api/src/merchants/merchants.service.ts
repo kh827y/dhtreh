@@ -543,7 +543,6 @@ export class MerchantsService {
     if (dto.role !== undefined) data.role = dto.role as any;
     if (dto.status !== undefined) data.status = dto.status;
     if (dto.allowedOutletId !== undefined) data.allowedOutletId = dto.allowedOutletId || null;
-    if (dto.allowedDeviceId !== undefined) data.allowedDeviceId = dto.allowedDeviceId || null;
     if (dto.firstName !== undefined) data.firstName = dto.firstName != null && String(dto.firstName).trim() ? String(dto.firstName).trim() : null;
     if (dto.lastName !== undefined) data.lastName = dto.lastName != null && String(dto.lastName).trim() ? String(dto.lastName).trim() : null;
     if (dto.position !== undefined) data.position = dto.position != null && String(dto.position).trim() ? String(dto.position).trim() : null;

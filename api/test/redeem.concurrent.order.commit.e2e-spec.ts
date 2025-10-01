@@ -40,7 +40,6 @@ describe('REDEEM concurrent commit per-order idempotency (e2e)', () => {
         create: async (args: any) => { const r = { id: 'R1', ...args.data }; state.receipts.push(r); return r; },
       },
       eventOutbox: { create: async ()=>({}) },
-      device: { update: async ()=>({}) },
     }),
     merchant: { upsert: async ()=>({}) },
     merchantSettings: { findUnique: async (args: any) => ({ merchantId: args.where.merchantId, earnBps: 500, redeemLimitBps: 5000, updatedAt: new Date(), rulesJson: null }) },
@@ -61,7 +60,6 @@ describe('REDEEM concurrent commit per-order idempotency (e2e)', () => {
       findUnique: async (args: any) => state.receipts.find(r=>r.merchantId===args.where.merchantId_orderId.merchantId && r.orderId===args.where.merchantId_orderId.orderId) || null,
       create: async (args: any) => { const r = { id: 'R1', ...args.data }; state.receipts.push(r); return r; },
     },
-    device: { findUnique: async ()=>null },
     eventOutbox: { create: async ()=>({}) },
   };
 

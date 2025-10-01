@@ -32,7 +32,6 @@ describe('Levels bonuses with commit (e2e)', () => {
       count: async (args: any) => state.txns.filter(t => t.merchantId === args.where.merchantId && t.customerId === args.where.customerId && (!args.where.createdAt?.gte || t.createdAt >= args.where.createdAt.gte)).length,
       create: async (args: any) => { state.txns.push({ merchantId: args.data.merchantId, customerId: args.data.customerId, type: args.data.type, amount: args.data.amount, createdAt: new Date() } as any); return { id: 'T1', ...args.data }; },
     },
-    device: { findUnique: async () => null },
     hold: {
       findUnique: async (args: any) => state.holds.find(h => h.id === args.where.id) || null,
       create: async (args: any) => { const h = { id: 'H1', ...args.data }; state.holds.push(h); return h; },

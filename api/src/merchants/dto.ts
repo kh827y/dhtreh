@@ -154,8 +154,6 @@ export class UpdateStaffDto {
   @ApiPropertyOptional()
   @IsOptional() @IsString() allowedOutletId?: string;
   @ApiPropertyOptional()
-  @IsOptional() @IsString() allowedDeviceId?: string;
-  @ApiPropertyOptional()
   @IsOptional() @IsString() firstName?: string;
   @ApiPropertyOptional()
   @IsOptional() @IsString() lastName?: string;
@@ -231,7 +229,6 @@ export class StaffDto {
   @ApiProperty({ enum: StaffRole }) role!: keyof typeof StaffRole | string;
   @ApiProperty() status!: string;
   @ApiPropertyOptional() allowedOutletId?: string|null;
-  @ApiPropertyOptional() allowedDeviceId?: string|null;
   @ApiPropertyOptional() apiKeyHash?: string|null;
   @ApiProperty() createdAt!: Date;
 }

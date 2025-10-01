@@ -79,9 +79,9 @@ API управления секретами/статусами точек:
 - Обновление POS-статуса: `PUT /merchants/:id/outlets/:outletId/pos` (поля `posType`, `posLastSeenAt`).
 - Переключение точки (ACTIVE/INACTIVE): `PUT /merchants/:id/outlets/:outletId/status`.
 
-> Новые клиенты POS Bridge используют `outletId` + `bridgeSecret`. Поддержка `deviceId` сохранена только для обратной совместимости.
+> POS Bridge теперь опирается только на `outletId` + `bridgeSecret`: таблица `Device` удалена, а `deviceId` больше не хранится в моделях.
 
-> Миграция `20251025120000_device_pos_fields` переносит существующие данные из таблицы `Device` в новые поля `Outlet` по этим правилам, чтобы сервисы могли работать только с торговыми точками.
+> Миграция `20251201090000_remove_device_table` добирает остаточные `bridgeSecret`/`lastSeen`, переносит ограничения сотрудников на точки и удаляет все поля `deviceId`. Ранее миграция `20251025120000_device_pos_fields` перенесла первичные данные из `Device` в `Outlet`.
 
 ## Проверка E2E (понятно и по шагам)
 

@@ -25,8 +25,7 @@ describe('OperationsLogService', () => {
           merchantId: 'm1',
           customer: { id: 'c1', name: 'Иван', phone: '+79990001122' },
           staff: { id: 's1', firstName: 'Анна', lastName: 'Смирнова', status: 'ACTIVE' },
-          outlet: { id: 'o1', name: 'Главный зал' },
-          device: { id: 'd1', type: 'SMART', label: 'Касса 1' },
+          outlet: { id: 'o1', name: 'Главный зал', posType: 'SMART', code: 'POS-1' },
           redeemApplied: 100,
           earnApplied: 50,
           total: 1200,
@@ -46,7 +45,7 @@ describe('OperationsLogService', () => {
       rating: 4,
       redeem: { amount: 100 },
       earn: { amount: 50 },
-      carrier: { type: 'SMART', label: 'Касса 1' },
+      carrier: { type: 'SMART', label: 'Главный зал', code: 'POS-1' },
     });
   });
 });

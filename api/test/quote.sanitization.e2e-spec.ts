@@ -30,7 +30,6 @@ describe('Quote sanitization (e2e)', () => {
     },
     eventOutbox: { create: async (_args: any) => ({}) },
     transaction: { findFirst: async ()=>null, findMany: async ()=>[], create: async ()=>({ id:'T1'}) },
-    device: { findUnique: async ()=>null },
     $transaction: async (fn: (tx: any)=>Promise<any>) => fn({
       merchant: { upsert: async ()=>({}) },
       wallet: {
@@ -42,7 +41,6 @@ describe('Quote sanitization (e2e)', () => {
       hold: { create: async (args: any) => ({ ...args.data, id: 'H1' }) },
       eventOutbox: { create: async (_args: any) => ({}) },
       transaction: { create: async ()=>({ id:'T1'}) },
-      device: { update: async ()=>({}) },
     }),
   };
 

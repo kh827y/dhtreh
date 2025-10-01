@@ -62,16 +62,6 @@ export class EvotorService {
 
   private async resolveOutletId(merchantId: string, receipt: EvotorReceipt): Promise<string | null> {
     const prismaAny = this.prisma as any;
-    try {
-      const device = await prismaAny.device.findUnique({
-        where: { id: `evotor_${receipt.deviceUuid}` },
-        select: { outletId: true },
-      });
-      if (device?.outletId) {
-        return device.outletId as string;
-      }
-    } catch {}
-
     if (receipt.storeUuid) {
       try {
         const outlet = await prismaAny.outlet.findFirst({
@@ -135,20 +125,6 @@ export class EvotorService {
 
       // Подписываемся на вебхуки
       await this.subscribeToWebhooks(evotorToken, integration.id);
-
-      // Создаем устройства в нашей системе
-      for (const device of devices) {
-        await prismaAny.device.create({
-          data: {
-            id: `evotor_${device.uuid}`,
-            merchantId,
-            type: 'SMART',
-            label: device.name,
-            outletId: stores.find(s => s.uuid === device.storeUuid)?.id,
-            createdAt: new Date(),
-          },
-        });
-      }
 
       return {
         success: true,
@@ -740,10 +716,13 @@ export class EvotorService {
       },
     });
 
-    const devices = await this.prisma.device.count({
+    const outletCount = await this.prisma.outlet.count({
       where: {
         merchantId,
-        id: { startsWith: 'evotor_' },
+        OR: [
+          { integrationProvider: 'EVOTOR' },
+          { integrationLocationCode: { startsWith: 'evotor_' } },
+        ],
       },
     });
 
@@ -755,7 +734,7 @@ export class EvotorService {
       lastError: integration.lastError,
       stats: {
         receiptsProcessed: receipts,
-        devicesConnected: devices,
+        devicesConnected: outletCount,
         period: '30 days',
       },
     };

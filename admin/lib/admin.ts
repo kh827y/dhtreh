@@ -256,7 +256,6 @@ export type Staff = {
   status: 'ACTIVE' | 'INACTIVE';
   apiKeyHash?: string | null;
   allowedOutletId?: string | null;
-  allowedDeviceId?: string | null;
   createdAt: string;
   updatedAt?: string | null;
 };
