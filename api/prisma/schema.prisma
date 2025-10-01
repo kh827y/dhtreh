@@ -1171,7 +1171,7 @@ model PushDevice {
   id           String    @id @default(cuid())
   customerId   String
   merchantId   String?
-  deviceId     String?
+  outletId     String?
   token        String    @unique
   platform     String
   deviceInfo   Json?
@@ -1182,7 +1182,7 @@ model PushDevice {
 
   customer Customer @relation(fields: [customerId], references: [id])
 
-  @@unique([customerId, deviceId])
+  @@unique([customerId, outletId])
   @@index([customerId])
 }
 
@@ -1191,7 +1191,7 @@ model PushNotification {
   id          String    @id @default(cuid())
   merchantId  String
   customerId  String?
-  deviceId    String?
+  outletId    String?
   deviceToken String?
   title       String
   body        String
