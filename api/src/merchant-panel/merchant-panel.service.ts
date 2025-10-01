@@ -270,26 +270,6 @@ export class MerchantPanelService {
     throw new BadRequestException('Не удалось сгенерировать уникальный PIN');
   }
 
-  private async generateUniquePersonalPin(
-    tx: Prisma.TransactionClient,
-    merchantId: string,
-    excludeStaffId?: string,
-  ): Promise<string> {
-    for (let attempt = 0; attempt < 200; attempt += 1) {
-      const pin = this.randomPin();
-      const clash = await tx.staff.findFirst({
-        where: {
-          merchantId,
-          pinCode: pin,
-          ...(excludeStaffId ? { id: { not: excludeStaffId } } : {}),
-        },
-        select: { id: true },
-      });
-      if (!clash) return pin;
-    }
-    throw new BadRequestException('Не удалось подобрать уникальный PIN');
-  }
-
   private staffInclude() {
     return {
       accesses: {
@@ -310,7 +290,6 @@ export class MerchantPanelService {
       outletsCount?: number | null;
       lastActivityAt?: Date | string | null;
       lastPortalLoginAt?: Date | string | null;
-      pinCode?: string | null;
     } = {},
   ) {
     const normalizeDate = (value?: Date | string | null) => {
@@ -345,7 +324,7 @@ export class MerchantPanelService {
       portalAccessEnabled: member.portalAccessEnabled,
       canAccessPortal: member.canAccessPortal,
       isOwner: member.isOwner,
-      pinCode: overrides.pinCode ?? member.pinCode ?? null,
+      pinCode: null,
       lastActivityAt: normalizeDate(overrides.lastActivityAt ?? member.lastActivityAt ?? null),
       lastPortalLoginAt: normalizeDate(overrides.lastPortalLoginAt ?? member.lastPortalLoginAt ?? null),
       outletsCount: overrides.outletsCount ?? null,
@@ -678,7 +657,6 @@ export class MerchantPanelService {
 
   async createStaff(merchantId: string, payload: UpsertStaffPayload) {
     const staffId = await this.prisma.$transaction(async (tx) => {
-      const pinCode = await this.generateUniquePersonalPin(tx, merchantId);
       const trimmedPassword = payload.password?.toString().trim() ?? '';
       if (trimmedPassword && trimmedPassword.length < 6) {
         throw new BadRequestException('Пароль должен содержать минимум 6 символов');
@@ -697,7 +675,6 @@ export class MerchantPanelService {
         canAccessPortal: payload.canAccessPortal ?? false,
         portalAccessEnabled: payload.portalAccessEnabled ?? false,
         portalState: payload.portalAccessEnabled ? 'ENABLED' : 'DISABLED',
-        pinCode,
       };
       if (trimmedPassword) {
         data.hash = hashPassword(trimmedPassword);
@@ -932,23 +909,6 @@ export class MerchantPanelService {
       const [view] = await this.buildAccessViews(merchantId, staffId, [updated]);
       return view;
     });
-  }
-
-  async regenerateStaffPersonalPin(merchantId: string, staffId: string) {
-    return this.prisma.$transaction(async (tx) => {
-      const staff = await tx.staff.findFirst({ where: { merchantId, id: staffId } });
-      if (!staff) throw new NotFoundException('Сотрудник не найден');
-      const pinCode = await this.generateUniquePersonalPin(tx, merchantId, staffId);
-      await tx.staff.update({ where: { id: staffId }, data: { pinCode } });
-      try {
-        this.logger.log(
-          JSON.stringify({ event: 'portal.staff.pin.personal.rotate', merchantId, staffId }),
-        );
-        this.metrics.inc('portal_staff_pin_events_total', { action: 'personal_rotate' });
-      } catch {}
-      return { pinCode };
-    });
-
   }
 
   async rotateStaffPin(merchantId: string, accessId: string) {

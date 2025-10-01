@@ -76,7 +76,7 @@ describe('MerchantPanelService', () => {
     expect(item.id).toBe('stf_1');
     expect(item.email).toBe('john@example.com');
     expect(item.role).toBe(StaffRole.MERCHANT);
-    expect(item.pinCode).toBe('9876');
+    expect(item.pinCode).toBeNull();
     expect(item.outletsCount).toBe(1);
     expect(item.lastActivityAt).toBe(new Date('2024-01-03T12:00:00.000Z').toISOString());
     expect(Array.isArray(item.accesses)).toBe(true);

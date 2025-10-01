@@ -206,13 +206,6 @@ export class StaffDetailDto extends StaffSummaryDto {
 }
 
 @ObjectType()
-export class StaffPinDto {
-  @Field(() => String, { nullable: true })
-  @ApiPropertyOptional({ description: 'Новый персональный PIN сотрудника' })
-  pinCode?: string | null;
-}
-
-@ObjectType()
 export class StaffCountersDto {
   @Field(() => Int)
   @ApiProperty({ description: 'Активные сотрудники' })
@@ -379,4 +372,3 @@ export class ChangeStaffStatusInput {
 }
 
 export class ChangeStaffStatusDto extends ChangeStaffStatusInput {}
-

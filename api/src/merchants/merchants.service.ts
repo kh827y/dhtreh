@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, UnauthorizedExcepti
 import { getJose } from '../loyalty/token.util';
 import { hashPassword, verifyPassword } from '../password.util';
 import { PrismaService } from '../prisma.service';
-import { DeviceType } from '@prisma/client';
+import { DeviceType, StaffOutletAccessStatus, StaffStatus } from '@prisma/client';
 import { CreateStaffDto, UpdateMerchantSettingsDto, UpdateOutletDto, UpdateStaffDto, UpdateOutletPosDto } from './dto';
 // Lazy Ajv import to avoid TS2307 when dependency isn't installed yet
 const __AjvLib: any = (() => { try { return require('ajv'); } catch { return null; } })();
@@ -51,14 +51,15 @@ export class MerchantsService {
     for (let i=0;i<9;i++) s += Math.floor(Math.random() * 10);
     return s;
   }
-  private async generateUniqueStaffPin(merchantId: string, excludeStaffId?: string): Promise<string> {
+  private async generateUniqueOutletPin(merchantId: string, excludeAccessId?: string): Promise<string> {
     for (let attempt = 0; attempt < 120; attempt++) {
       const candidate = this.randomPin4();
-      const clash = await this.prisma.staff.findFirst({
+      const clash = await this.prisma.staffOutletAccess.findFirst({
         where: {
           merchantId,
           pinCode: candidate,
-          ...(excludeStaffId ? { id: { not: excludeStaffId } } : {}),
+          status: StaffOutletAccessStatus.ACTIVE,
+          ...(excludeAccessId ? { id: { not: excludeAccessId } } : {}),
         },
         select: { id: true },
       });
@@ -92,20 +93,41 @@ export class MerchantsService {
     const auth = await this.authenticateCashier(merchantLogin, password9);
     const merchantId = auth.merchantId;
     const searchValue = String(staffIdOrLogin || '').trim();
-    let staff = searchValue
-      ? await this.prisma.staff.findFirst({ where: { merchantId, OR: [ { id: searchValue }, { login: searchValue } ] } })
+    let staffRecord = searchValue
+      ? await this.prisma.staff.findFirst({
+          where: { merchantId, OR: [{ id: searchValue }, { login: searchValue }] },
+        })
       : null;
-    if (!staff) {
-      staff = await this.prisma.staff.findFirst({ where: { merchantId, pinCode: pinCode || '' } });
+
+    let access = null as any;
+    if (staffRecord) {
+      access = await this.prisma.staffOutletAccess.findUnique({
+        where: { merchantId_staffId_outletId: { merchantId, staffId: staffRecord.id, outletId } },
+      });
+      if (!access || access.pinCode !== pinCode || access.status !== StaffOutletAccessStatus.ACTIVE) {
+        throw new UnauthorizedException('Invalid PIN or outlet access');
+      }
+    } else {
+      access = await this.prisma.staffOutletAccess.findFirst({
+        where: {
+          merchantId,
+          outletId,
+          pinCode,
+          status: StaffOutletAccessStatus.ACTIVE,
+        },
+        include: { staff: true },
+      });
+      staffRecord = access?.staff ?? null;
     }
-    if (!staff || staff.merchantId !== merchantId) throw new NotFoundException('Staff not found');
-    if ((staff.pinCode || '') !== String(pinCode || '')) throw new UnauthorizedException('Invalid PIN');
-    if (staff.status && staff.status !== 'ACTIVE') throw new UnauthorizedException('Staff inactive');
-    if (outletId) {
-      const access = await (this.prisma as any).staffOutletAccess.findUnique({ where: { merchantId_staffId_outletId: { merchantId, staffId: staff.id, outletId } } });
-      if (!access) throw new UnauthorizedException('Outlet access not granted');
+
+    if (!access || !staffRecord || staffRecord.merchantId !== merchantId) {
+      throw new NotFoundException('Staff not found');
     }
-    return this.issueStaffToken(merchantId, staff.id);
+    if (staffRecord.status && staffRecord.status !== StaffStatus.ACTIVE) {
+      throw new UnauthorizedException('Staff inactive');
+    }
+
+    return this.issueStaffToken(merchantId, staffRecord.id);
   }
   private ajv: { validate: (schema: any, data: any) => boolean; errorsText: (errs?: any, opts?: any) => string; errors?: any };
   private rulesSchema = {
@@ -557,7 +579,6 @@ export class MerchantsService {
       data.hash = hashPassword(password);
       data.canAccessPortal = true;
     }
-    data.pinCode = await this.generateUniqueStaffPin(merchantId);
     return this.prisma.staff.create({ data });
   }
   async updateStaff(merchantId: string, staffId: string, dto: UpdateStaffDto) {
@@ -632,11 +653,19 @@ export class MerchantsService {
     ]);
     if (!user || user.merchantId !== merchantId) throw new NotFoundException('Staff not found');
     if (!outlet || outlet.merchantId !== merchantId) throw new NotFoundException('Outlet not found');
-    const pinCode = this.randomPin4();
+    const existing = await (this.prisma as any).staffOutletAccess.findUnique({
+      where: { merchantId_staffId_outletId: { merchantId, staffId, outletId } },
+    });
+    const pinCode = await this.generateUniqueOutletPin(merchantId, existing?.id);
     await (this.prisma as any).staffOutletAccess.upsert({
       where: { merchantId_staffId_outletId: { merchantId, staffId, outletId } },
-      update: { pinCode },
-      create: { merchantId, staffId, outletId, pinCode },
+      update: {
+        pinCode,
+        status: StaffOutletAccessStatus.ACTIVE,
+        revokedAt: null,
+        pinUpdatedAt: new Date(),
+      },
+      create: { merchantId, staffId, outletId, pinCode, status: StaffOutletAccessStatus.ACTIVE },
     });
     return { outletId, outletName: outlet.name || outletId, pinCode, lastTxnAt: null, transactionsTotal: 0 } as any;
   }
@@ -649,24 +678,54 @@ export class MerchantsService {
     return { ok: true } as any;
   }
   async regenerateStaffPersonalPin(merchantId: string, staffId: string) {
-    const user = await this.prisma.staff.findUnique({ where: { id: staffId } });
-    if (!user || user.merchantId !== merchantId) throw new NotFoundException('Staff not found');
-    const pinCode = await this.generateUniqueStaffPin(merchantId, staffId);
-    await this.prisma.staff.update({ where: { id: staffId }, data: { pinCode } });
+    const staff = await this.prisma.staff.findFirst({ where: { id: staffId, merchantId } });
+    if (!staff) throw new NotFoundException('Staff not found');
+    const access = await this.prisma.staffOutletAccess.findFirst({
+      where: { merchantId, staffId, status: StaffOutletAccessStatus.ACTIVE },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!access) {
+      throw new BadRequestException('Для сотрудника нет активных торговых точек');
+    }
+    const pinCode = await this.generateUniqueOutletPin(merchantId, access.id);
+    await this.prisma.staffOutletAccess.update({
+      where: { id: access.id },
+      data: { pinCode, pinUpdatedAt: new Date(), status: StaffOutletAccessStatus.ACTIVE, revokedAt: null },
+    });
     return { pinCode } as any;
   }
   async regenerateStaffPin(merchantId: string, staffId: string, outletId: string) {
     const user = await this.prisma.staff.findUnique({ where: { id: staffId } });
     if (!user || user.merchantId !== merchantId) throw new NotFoundException('Staff not found');
-    const pinCode = this.randomPin4();
-    await (this.prisma as any).staffOutletAccess.update({ where: { merchantId_staffId_outletId: { merchantId, staffId, outletId } }, data: { pinCode } });
+    const access = await (this.prisma as any).staffOutletAccess.findUnique({
+      where: { merchantId_staffId_outletId: { merchantId, staffId, outletId } },
+    });
+    if (!access) throw new NotFoundException('Outlet access not granted');
+    const pinCode = await this.generateUniqueOutletPin(merchantId, access.id);
+    await (this.prisma as any).staffOutletAccess.update({
+      where: { merchantId_staffId_outletId: { merchantId, staffId, outletId } },
+      data: { pinCode, pinUpdatedAt: new Date(), status: StaffOutletAccessStatus.ACTIVE, revokedAt: null },
+    });
     return { outletId, pinCode } as any;
   }
 
   async getStaffAccessByPin(merchantId: string, pinCode: string) {
     if (!merchantId) throw new BadRequestException('merchantId required');
-    const staff = await this.prisma.staff.findFirst({ where: { merchantId, pinCode, status: 'ACTIVE' } });
-    if (!staff) throw new NotFoundException('Staff not found');
+    const access = await this.prisma.staffOutletAccess.findFirst({
+      where: {
+        merchantId,
+        pinCode,
+        status: StaffOutletAccessStatus.ACTIVE,
+      },
+      include: { staff: true },
+    });
+    const staff = access?.staff;
+    if (!access || !staff || staff.merchantId !== merchantId) {
+      throw new NotFoundException('Staff not found');
+    }
+    if (staff.status && staff.status !== StaffStatus.ACTIVE) {
+      throw new UnauthorizedException('Staff inactive');
+    }
     const accesses = await this.listStaffAccess(merchantId, staff.id);
     return {
       staff: {
@@ -675,7 +734,7 @@ export class MerchantsService {
         firstName: staff.firstName || undefined,
         lastName: staff.lastName || undefined,
         role: staff.role,
-        pinCode: staff.pinCode || undefined,
+        pinCode: access.pinCode || undefined,
       },
       accesses,
     };

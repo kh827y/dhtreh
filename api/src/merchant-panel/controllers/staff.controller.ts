@@ -22,7 +22,6 @@ import {
   UpsertStaffDto,
   StaffDetailDto,
   StaffOutletAccessDto,
-  StaffPinDto,
 } from '../dto/staff.dto';
 import { ApiTags } from '@nestjs/swagger';
 
@@ -109,9 +108,4 @@ export class StaffController {
     return access as StaffOutletAccessDto;
   }
 
-  @Post(':id/pin')
-  async regeneratePersonalPin(@Req() req: any, @Param('id') id: string) {
-    const result = await this.service.regenerateStaffPersonalPin(this.getMerchantId(req), id);
-    return result as StaffPinDto;
-  }
 }

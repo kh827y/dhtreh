@@ -2,9 +2,17 @@
 import React from 'react';
 import { Card, CardHeader, CardBody, Button, Skeleton } from '@loyalty/ui';
 
-type CashierCreds = { login: string|null; password: string|null; hasPassword: boolean };
-type StaffRow = { id: string; login?: string; role: string; outletsCount?: number; lastActivityAt?: string|null };
-type AccessRow = { outletId: string; outletName: string; pinCode?: string|null; lastTxnAt?: string|null };
+type CashierCreds = { login: string | null; password: string | null; hasPassword: boolean };
+type CashierPin = {
+  id: string;
+  staffId: string;
+  staffName?: string | null;
+  outletId: string;
+  outletName?: string | null;
+  pinCode?: string | null;
+  status?: string | null;
+  updatedAt?: string | null;
+};
 
 export default function CashierPanelPage() {
   const [loading, setLoading] = React.useState(true);
@@ -12,11 +20,7 @@ export default function CashierPanelPage() {
   const [creds, setCreds] = React.useState<CashierCreds|null>(null);
   const [rotBusy, setRotBusy] = React.useState(false);
   const [lastPassword, setLastPassword] = React.useState<string>('');
-  const [regenLogin, setRegenLogin] = React.useState(false);
-
-  const [staff, setStaff] = React.useState<StaffRow[]>([]);
-  const [exp, setExp] = React.useState<Record<string, boolean>>({});
-  const [accessMap, setAccessMap] = React.useState<Record<string, AccessRow[]>>({});
+  const [pins, setPins] = React.useState<CashierPin[]>([]);
 
   const formatPassword = React.useCallback((value?: string | null) => {
     if (!value) return '—';
@@ -33,59 +37,73 @@ export default function CashierPanelPage() {
     try {
       const r = await fetch('/api/portal/cashier');
       const data = await r.json();
-      setCreds({ login: data?.login ?? null, password: data?.password ?? null, hasPassword: !!data?.hasPassword });
-    } catch (e:any) { setMsg(String(e?.message||e)); }
+      setCreds({
+        login: data?.login ?? null,
+        password: data?.password ?? null,
+        hasPassword: !!data?.hasPassword,
+      });
+    } catch (e: any) {
+      setMsg(String(e?.message || e));
+    }
   }
-  async function loadStaff() {
+  async function loadPins() {
     try {
-      const r = await fetch('/api/portal/staff');
+      const r = await fetch('/api/portal/cashier/pins');
+      if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
-      setStaff(Array.isArray(data) ? data : []);
-    } catch (e:any) { setMsg(String(e?.message||e)); }
+      if (Array.isArray(data)) {
+        setPins(
+          data.map((item: any) => ({
+            id: String(item?.id ?? ''),
+            staffId: String(item?.staffId ?? ''),
+            staffName: item?.staffName ?? null,
+            outletId: String(item?.outletId ?? ''),
+            outletName: item?.outletName ?? null,
+            pinCode: item?.pinCode ?? null,
+            status: item?.status ?? null,
+            updatedAt: item?.updatedAt ?? null,
+          })),
+        );
+      } else {
+        setPins([]);
+      }
+    } catch (e: any) {
+      setMsg(String(e?.message || e));
+    }
   }
   React.useEffect(()=>{
-    (async()=>{ setLoading(true); setMsg(''); await Promise.all([loadCreds(), loadStaff()]); setLoading(false); })();
+    (async () => {
+      setLoading(true);
+      setMsg('');
+      await Promise.all([loadCreds(), loadPins()]);
+      setLoading(false);
+    })();
   },[]);
 
   async function rotate() {
-    setRotBusy(true); setMsg('');
+    setRotBusy(true);
+    setMsg('');
     try {
-      const r = await fetch('/api/portal/cashier/rotate', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ regenerateLogin: regenLogin }) });
+      const r = await fetch('/api/portal/cashier/rotate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ regenerateLogin: false }),
+      });
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
       const nextPassword = String(data?.password || '');
       setLastPassword(nextPassword);
-      setCreds(prev => ({ login: data?.login ?? prev?.login ?? null, password: nextPassword || prev?.password || null, hasPassword: true }));
+      setCreds((prev) => ({
+        login: data?.login ?? prev?.login ?? null,
+        password: nextPassword || prev?.password || null,
+        hasPassword: true,
+      }));
       await loadCreds();
-    } catch (e:any) { setMsg(String(e?.message||e)); }
-    finally { setRotBusy(false); }
-  }
-
-  async function toggleAccess(staffId: string) {
-    const now = !!exp[staffId];
-    setExp(s => ({ ...s, [staffId]: !now }));
-    if (!now) {
-      try {
-        const r = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}/access`);
-        const data = await r.json();
-        setAccessMap(m => ({ ...m, [staffId]: Array.isArray(data) ? data : [] }));
-      } catch (e:any) { setMsg(String(e?.message||e)); }
+    } catch (e: any) {
+      setMsg(String(e?.message || e));
+    } finally {
+      setRotBusy(false);
     }
-  }
-  async function regenPin(staffId: string, outletId: string) {
-    try {
-      const r = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}/access/${encodeURIComponent(outletId)}/regenerate-pin`, { method: 'POST' });
-      if (!r.ok) throw new Error(await r.text());
-      await toggleAccess(staffId); // collapse
-      await toggleAccess(staffId); // re-expand and reload
-    } catch (e:any) { setMsg(String(e?.message||e)); }
-  }
-  async function revokeAccess(staffId: string, outletId: string) {
-    try {
-      const r = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}/access/${encodeURIComponent(outletId)}`, { method: 'DELETE' });
-      if (!r.ok) throw new Error(await r.text());
-      await toggleAccess(staffId); await toggleAccess(staffId);
-    } catch (e:any) { setMsg(String(e?.message||e)); }
   }
 
   return (
@@ -126,11 +144,14 @@ export default function CashierPanelPage() {
                   </div>
                 </div>
               </div>
-              <div style={{ display:'grid', gap: 6, alignContent:'start' }}>
-                <label style={{ display:'flex', alignItems:'center', gap: 8 }}>
-                  <input type="checkbox" checked={regenLogin} onChange={e=>setRegenLogin(e.target.checked)} /> Сгенерировать новый логин
-                </label>
-                <Button variant="primary" disabled={rotBusy} onClick={rotate}>{rotBusy ? 'Обновление…' : 'Сгенерировать пароль'}</Button>
+              <div style={{ display: 'grid', gap: 6, alignContent: 'start' }}>
+                <Button
+                  variant="primary"
+                  disabled={rotBusy}
+                  onClick={rotate}
+                >
+                  {rotBusy ? 'Обновление…' : 'Сгенерировать пароль'}
+                </Button>
               </div>
               {msg && <div style={{ gridColumn:'1/-1', color:'#f87171' }}>{msg}</div>}
               {lastPassword && (
@@ -146,49 +167,56 @@ export default function CashierPanelPage() {
       </Card>
 
       <Card>
-        <CardHeader title="Пин‑коды сотрудников по точкам" subtitle="Управление доступом к панели кассира" />
+        <CardHeader title="Пин‑коды сотрудников по точкам" />
         <CardBody>
+          <div style={{ fontSize: 13, opacity: 0.8, marginBottom: 16 }}>
+            У каждого вашего сотрудника есть личный PIN код, запрашиваемый доступа в панель кассира. Это нужно для безопасности и правильного ведения статистики. Вы можете управлять сотрудниками в разделе <span style={{ fontStyle: 'italic' }}>Настройка -&gt; Сотрудники</span> (<a href="/staff" style={{ color: 'var(--brand-primary)' }}>/staff</a>).
+          </div>
           {loading ? (
             <Skeleton height={160} />
           ) : (
-            <div style={{ display:'grid', gap: 8 }}>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 160px 180px 120px 120px', fontSize:12, opacity:.8 }}>
-                <div>Сотрудник</div>
-                <div>Роль</div>
-                <div>Точек доступа</div>
-                <div>Последняя активность</div>
-                <div>Действия</div>
+            <div style={{ display: 'grid', gap: 8 }}>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'minmax(240px, 1fr) minmax(200px, 1fr) 120px',
+                fontSize: 12,
+                opacity: 0.75,
+              }}>
+                <div>Имя сотрудника</div>
+                <div>Торговая точка</div>
+                <div>Пин-код</div>
               </div>
-              {staff.map(s => (
-                <div key={s.id} style={{ display:'grid', gridTemplateColumns:'1fr 160px 180px 120px 120px', gap: 8, padding:'8px 0', borderBottom:'1px solid rgba(255,255,255,.06)' }}>
-                  <div>
-                    <div style={{ fontWeight:600 }}>{s.login || s.id}</div>
-                    <div style={{ opacity:.8, fontSize:12 }}>{s.id}</div>
-                  </div>
-                  <div>{s.role}</div>
-                  <div>{s.outletsCount ?? '—'}</div>
-                  <div>{s.lastActivityAt ? new Date(s.lastActivityAt).toLocaleString() : '—'}</div>
-                  <div><Button size="sm" onClick={()=>toggleAccess(s.id)}>{exp[s.id] ? 'Скрыть пины' : 'Показать пины'}</Button></div>
-                  {exp[s.id] && (
-                    <div style={{ gridColumn:'1/-1', padding: '8px 10px', background: 'rgba(255,255,255,.03)', borderRadius: 8 }}>
-                      <div style={{ display:'grid', gap: 6 }}>
-                        {(accessMap[s.id]||[]).map(a => (
-                          <div key={a.outletId} style={{ display:'grid', gridTemplateColumns:'1fr 120px 180px 160px', gap: 8, alignItems:'center' }}>
-                            <div><b>{a.outletName}</b> <span style={{ opacity:.6, fontSize:12 }}>({a.outletId})</span></div>
-                            <div style={{ fontVariantNumeric:'tabular-nums' }}>PIN: <b>{a.pinCode || '—'}</b></div>
-                            <div>
-                              <Button size="sm" variant="secondary" onClick={()=>regenPin(s.id, a.outletId)}>Обновить PIN</Button>
-                              <Button size="sm" style={{ marginLeft: 8 }} variant="ghost" onClick={()=>revokeAccess(s.id, a.outletId)}>Отозвать</Button>
-                            </div>
-                            <div style={{ opacity:.7, fontSize:12 }}>{a.lastTxnAt ? ('посл.: ' + new Date(a.lastTxnAt).toLocaleString()) : ''}</div>
-                          </div>
-                        ))}
-                        {!(accessMap[s.id]||[]).length && <div style={{ opacity:.7 }}>Нет точек. Добавьте доступ на странице сотрудника.</div>}
+              {pins
+                .filter((row) => (row.status ?? '').toUpperCase() !== 'REVOKED')
+                .map((row) => {
+                  const rawStaff = (row.staffName || '').trim();
+                  const rawOutlet = (row.outletName || '').trim();
+                  const staffDisplay = rawStaff || '—';
+                  const outletDisplay = rawOutlet || '—';
+                  const pinDisplay = (row.pinCode || '').trim();
+                  return (
+                    <div
+                      key={row.id}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'minmax(240px, 1fr) minmax(200px, 1fr) 120px',
+                        gap: 12,
+                        alignItems: 'center',
+                        padding: '8px 0',
+                        borderBottom: '1px solid rgba(255,255,255,.06)',
+                      }}
+                    >
+                      <div style={{ fontWeight: 600 }}>{staffDisplay}</div>
+                      <div>{outletDisplay}</div>
+                      <div style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
+                        {pinDisplay || '—'}
                       </div>
                     </div>
-                  )}
-                </div>
-              ))}
+                  );
+                })}
+              {!pins.length && (
+                <div style={{ opacity: 0.7, fontSize: 13 }}>У сотрудников нет выданных пин-кодов. Добавьте доступы в карточке сотрудника.</div>
+              )}
             </div>
           )}
         </CardBody>
