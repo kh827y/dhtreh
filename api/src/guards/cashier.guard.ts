@@ -18,7 +18,6 @@ export class CashierGuard implements CanActivate {
       path.startsWith('/loyalty/settings/') ||
       path === '/loyalty/transactions' ||
       path.startsWith('/loyalty/outlets/') ||
-      path.startsWith('/loyalty/devices/') ||
       path.startsWith('/loyalty/staff/')
     );
     const isAlwaysPublic = (
@@ -45,7 +44,6 @@ export class CashierGuard implements CanActivate {
     const staff = await this.prisma.staff.findFirst({ where: { merchantId: merchantIdForStaff, apiKeyHash: hash, status: 'ACTIVE' } });
     if (!staff) return false;
     if (staff.allowedOutletId && body.outletId && staff.allowedOutletId !== body.outletId) return false;
-    if (staff.allowedDeviceId && body.deviceId && staff.allowedDeviceId !== body.deviceId) return false;
     return true;
   }
 }

@@ -3,7 +3,7 @@ import { ApiBadRequestResponse, ApiExtraModels, ApiHeader, ApiOkResponse, ApiTag
 import { Throttle } from '@nestjs/throttler';
 import { LoyaltyService } from './loyalty.service';
 import { MerchantsService } from '../merchants/merchants.service';
-import { CommitDto, QrMintDto, QuoteDto, RefundDto, QuoteRedeemRespDto, QuoteEarnRespDto, CommitRespDto, RefundRespDto, QrMintRespDto, OkDto, BalanceDto, PublicSettingsDto, TransactionsRespDto, PublicOutletDto, PublicDeviceDto, PublicStaffDto, ConsentGetRespDto, ErrorDto } from './dto';
+import { CommitDto, QrMintDto, QuoteDto, RefundDto, QuoteRedeemRespDto, QuoteEarnRespDto, CommitRespDto, RefundRespDto, QrMintRespDto, OkDto, BalanceDto, PublicSettingsDto, TransactionsRespDto, PublicOutletDto, PublicStaffDto, ConsentGetRespDto, ErrorDto } from './dto';
 import { looksLikeJwt, signQrToken, verifyQrToken } from './token.util';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
@@ -31,17 +31,11 @@ export class LoyaltyController {
     private readonly merchants: MerchantsService,
   ) {}
 
-  private async resolveOutlet(merchantId?: string, outletId?: string | null, deviceId?: string | null) {
+  private async resolveOutlet(merchantId?: string, outletId?: string | null) {
     if (!merchantId) return null;
     if (outletId) {
       try {
         const found = await this.prisma.outlet.findFirst({ where: { id: outletId, merchantId } });
-        if (found) return found;
-      } catch {}
-    }
-    if (deviceId) {
-      try {
-        const found = await this.prisma.outlet.findFirst({ where: { merchantId, devices: { some: { id: deviceId } } } });
         if (found) return found;
       } catch {}
     }
@@ -243,8 +237,7 @@ export class LoyaltyController {
           } catch {}
         }
       }
-      const legacyDeviceId = (dto as any)?.deviceId ?? null;
-      const outlet = await this.resolveOutlet(dto.merchantId, dto.outletId ?? null, legacyDeviceId);
+      const outlet = await this.resolveOutlet(dto.merchantId, dto.outletId ?? null);
       const qrMeta = looksLikeJwt(dto.userToken) ? { jti: v.jti, iat: v.iat, exp: v.exp } : undefined;
       // проверка подписи Bridge при необходимости
       if (s?.requireBridgeSig) {
@@ -255,7 +248,9 @@ export class LoyaltyController {
           secret = s?.bridgeSecret || null;
           alt = (s as any)?.bridgeSecretNext || null;
         }
-        const bodyForSig = JSON.stringify(dto);
+        const dtoForSig = { ...(dto as any) };
+        delete dtoForSig.deviceId;
+        const bodyForSig = JSON.stringify(dtoForSig);
         let ok = false;
         if (secret && verifyBridgeSigUtil(sig, bodyForSig, secret)) ok = true;
         else if (alt && verifyBridgeSigUtil(sig, bodyForSig, alt)) ok = true;
@@ -298,7 +293,7 @@ export class LoyaltyController {
   async commit(@Body() dto: CommitDto, @Res({ passthrough: true }) res: Response, @Req() req: Request & { requestId?: string }) {
     const t0 = Date.now();
     let data: any;
-    // кешируем hold для извлечения контекста (merchantId, deviceId, staffId)
+    // кешируем hold для извлечения контекста (merchantId, outletId, staffId)
     let holdCached: any = null;
     try { holdCached = await this.prisma.hold.findUnique({ where: { id: dto.holdId } }); } catch {}
     const merchantIdEff = dto.merchantId || holdCached?.merchantId;
@@ -312,16 +307,12 @@ export class LoyaltyController {
         if (promo) promoCandidate = { id: promo.id };
       } catch {}
     }
-    // проверка подписи Bridge до выполнения, с учётом устройства из hold
+    // проверка подписи Bridge до выполнения, с учётом outlet из hold
     try {
       const s = merchantIdEff ? await this.prisma.merchantSettings.findUnique({ where: { merchantId: merchantIdEff } }) : null;
       if (s?.requireBridgeSig) {
         const sig = (req.headers['x-bridge-signature'] as string | undefined) || '';
-        const outlet = await this.resolveOutlet(merchantIdEff, holdCached?.outletId ?? null, holdCached?.deviceId ?? null);
-        if (outlet && outlet.id && holdCached?.id && !holdCached.outletId) {
-          try { await this.prisma.hold.update({ where: { id: holdCached.id }, data: { outletId: outlet.id } }); } catch {}
-          (holdCached as any).outletId = outlet.id;
-        }
+        const outlet = await this.resolveOutlet(merchantIdEff, holdCached?.outletId ?? null);
         let secret: string | null = outlet?.bridgeSecret ?? null;
         let alt: string | null = outlet?.bridgeSecretNext ?? null;
         if (!secret && !alt) {
@@ -472,15 +463,14 @@ export class LoyaltyController {
           });
           receiptOutletId = rcp?.outletId ?? null;
         } catch {}
-        const legacyDeviceId = (dto as any)?.deviceId ?? null;
-        const outlet = await this.resolveOutlet(dto.merchantId, receiptOutletId, legacyDeviceId);
+        const outlet = await this.resolveOutlet(dto.merchantId, receiptOutletId);
         let secret: string | null = outlet?.bridgeSecret ?? null;
         let alt: string | null = outlet?.bridgeSecretNext ?? null;
         if (!secret && !alt) {
           secret = s?.bridgeSecret || null;
           alt = (s as any)?.bridgeSecretNext || null;
         }
-        const bodyForSig = JSON.stringify({ merchantId: dto.merchantId, orderId: dto.orderId, refundTotal: dto.refundTotal, refundEligibleTotal: dto.refundEligibleTotal ?? undefined, ...(legacyDeviceId ? { deviceId: legacyDeviceId } : {}) });
+        const bodyForSig = JSON.stringify({ merchantId: dto.merchantId, orderId: dto.orderId, refundTotal: dto.refundTotal, refundEligibleTotal: dto.refundEligibleTotal ?? undefined });
         let ok = false;
         if (secret && verifyBridgeSigUtil(sig, bodyForSig, secret)) ok = true;
         else if (alt && verifyBridgeSigUtil(sig, bodyForSig, alt)) ok = true;
@@ -589,14 +579,6 @@ export class LoyaltyController {
   async publicOutlets(@Param('merchantId') merchantId: string) {
     const items = await this.prisma.outlet.findMany({ where: { merchantId }, orderBy: { name: 'asc' } });
     return items.map(o => ({ id: o.id, name: o.name, address: o.address ?? undefined }));
-  }
-
-  @Get('devices/:merchantId')
-  @Throttle({ default: { limit: 60, ttl: 60_000 } })
-  @ApiOkResponse({ schema: { type: 'array', items: { $ref: getSchemaPath(PublicDeviceDto) } } })
-  async publicDevices(@Param('merchantId') merchantId: string) {
-    const items = await this.prisma.device.findMany({ where: { merchantId }, orderBy: { createdAt: 'asc' } });
-    return items.map(d => ({ id: d.id, type: d.type, label: d.label ?? undefined, outletId: d.outletId ?? undefined }));
   }
 
   @Get('staff/:merchantId')
