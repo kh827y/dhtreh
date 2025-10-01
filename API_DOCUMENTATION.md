@@ -184,7 +184,7 @@ X-Staff-Key: required_if_enabled
   "orderId": "string",
   "total": 1000,
   "eligibleTotal": 1000,
-  "outletId": "string", // optional
+  "outletId": "string", // обязательный для POS интеграций идентификатор торговой точки
   "staffId": "string",  // optional
   "category": "string",  // optional (для правил промо)
   "promoCode": "string" // optional (применить промокод перед расчётом)

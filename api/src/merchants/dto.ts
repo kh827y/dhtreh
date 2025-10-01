@@ -151,7 +151,7 @@ export class UpdateStaffDto {
   @IsOptional() @IsString() role?: keyof typeof StaffRole | string;
   @ApiPropertyOptional()
   @IsOptional() @IsString() status?: string;
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Ограничение доступа сотрудника на конкретную торговую точку' })
   @IsOptional() @IsString() allowedOutletId?: string;
   @ApiPropertyOptional()
   @IsOptional() @IsString() firstName?: string;
@@ -228,7 +228,8 @@ export class StaffDto {
   @ApiPropertyOptional() email?: string|null;
   @ApiProperty({ enum: StaffRole }) role!: keyof typeof StaffRole | string;
   @ApiProperty() status!: string;
-  @ApiPropertyOptional() allowedOutletId?: string|null;
+  @ApiPropertyOptional({ description: 'Ограничение доступа сотрудника на конкретную торговую точку' })
+  allowedOutletId?: string|null;
   @ApiPropertyOptional() apiKeyHash?: string|null;
   @ApiProperty() createdAt!: Date;
 }

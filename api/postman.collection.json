@@ -235,7 +235,7 @@
             "auth": null,
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"mode\": \"<string>\",\n  \"merchantId\": \"<string>\",\n  \"userToken\": \"<string>\",\n  \"orderId\": \"<string>\",\n  \"total\": \"<number>\",\n  \"eligibleTotal\": \"<number>\",\n  \"outletId\": \"<string>\",\n  \"deviceId\": \"<string>\",\n  \"staffId\": \"<string>\",\n  \"requestId\": \"<string>\",\n  \"category\": \"<string>\"\n}",
+              "raw": "{\n  \"mode\": \"<string>\",\n  \"merchantId\": \"<string>\",\n  \"userToken\": \"<string>\",\n  \"orderId\": \"<string>\",\n  \"total\": \"<number>\",\n  \"eligibleTotal\": \"<number>\",\n  \"outletId\": \"<string>\",\n  \"staffId\": \"<string>\",\n  \"requestId\": \"<string>\",\n  \"category\": \"<string>\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -279,7 +279,7 @@
                 "method": "POST",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"mode\": \"<string>\",\n  \"merchantId\": \"<string>\",\n  \"userToken\": \"<string>\",\n  \"orderId\": \"<string>\",\n  \"total\": \"<number>\",\n  \"eligibleTotal\": \"<number>\",\n  \"outletId\": \"<string>\",\n  \"deviceId\": \"<string>\",\n  \"staffId\": \"<string>\",\n  \"requestId\": \"<string>\",\n  \"category\": \"<string>\"\n}",
+                  "raw": "{\n  \"mode\": \"<string>\",\n  \"merchantId\": \"<string>\",\n  \"userToken\": \"<string>\",\n  \"orderId\": \"<string>\",\n  \"total\": \"<number>\",\n  \"eligibleTotal\": \"<number>\",\n  \"outletId\": \"<string>\",\n  \"staffId\": \"<string>\",\n  \"requestId\": \"<string>\",\n  \"category\": \"<string>\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -334,7 +334,7 @@
                 "method": "POST",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"mode\": \"<string>\",\n  \"merchantId\": \"<string>\",\n  \"userToken\": \"<string>\",\n  \"orderId\": \"<string>\",\n  \"total\": \"<number>\",\n  \"eligibleTotal\": \"<number>\",\n  \"outletId\": \"<string>\",\n  \"deviceId\": \"<string>\",\n  \"staffId\": \"<string>\",\n  \"requestId\": \"<string>\",\n  \"category\": \"<string>\"\n}",
+                  "raw": "{\n  \"mode\": \"<string>\",\n  \"merchantId\": \"<string>\",\n  \"userToken\": \"<string>\",\n  \"orderId\": \"<string>\",\n  \"total\": \"<number>\",\n  \"eligibleTotal\": \"<number>\",\n  \"outletId\": \"<string>\",\n  \"staffId\": \"<string>\",\n  \"requestId\": \"<string>\",\n  \"category\": \"<string>\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -1340,12 +1340,6 @@
                 },
                 {
                   "disabled": false,
-                  "key": "deviceId",
-                  "value": "<string>",
-                  "description": "(Required) "
-                },
-                {
-                  "disabled": false,
                   "key": "staffId",
                   "value": "<string>",
                   "description": "(Required) "
@@ -1393,10 +1387,6 @@
                     },
                     {
                       "key": "outletId",
-                      "value": "<string>"
-                    },
-                    {
-                      "key": "deviceId",
                       "value": "<string>"
                     },
                     {
@@ -3038,1354 +3028,6 @@
           }
         },
         {
-          "id": "065091f5-139c-4e55-ae33-a3bd22bd8329",
-          "name": "Merchants Controller list Devices",
-          "request": {
-            "name": "Merchants Controller list Devices",
-            "description": {},
-            "url": {
-              "path": [
-                "merchants",
-                ":id",
-                "devices"
-              ],
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "query": [],
-              "variable": [
-                {
-                  "disabled": false,
-                  "type": "any",
-                  "value": "<string>",
-                  "key": "id",
-                  "description": "(Required) "
-                }
-              ]
-            },
-            "header": [
-              {
-                "disabled": false,
-                "description": "(Required) Админ-ключ (в проде проксируется сервером админки)",
-                "key": "X-Admin-Key",
-                "value": "<string>"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "method": "GET",
-            "auth": null
-          },
-          "response": [
-            {
-              "id": "9cface8b-0026-4c10-ae47-46d7fc75542e",
-              "originalRequest": {
-                "url": {
-                  "path": [
-                    "merchants",
-                    ":id",
-                    "devices"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "query": [],
-                  "variable": [
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "id",
-                      "description": "(Required) "
-                    }
-                  ]
-                },
-                "header": [
-                  {
-                    "disabled": false,
-                    "description": "(Required) Админ-ключ (в проде проксируется сервером админки)",
-                    "key": "X-Admin-Key",
-                    "value": "<string>"
-                  },
-                  {
-                    "key": "Accept",
-                    "value": "application/json"
-                  }
-                ],
-                "method": "GET",
-                "body": {}
-              },
-              "status": "OK",
-              "code": 200,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "[\n  {\n    \"id\": \"cillum\",\n    \"merchantId\": \"quis eiusmod commodo aute\",\n    \"type\": \"VIRTUAL\",\n    \"createdAt\": \"1975-09-18T12:35:16.561Z\",\n    \"outletId\": {},\n    \"label\": {},\n    \"lastSeenAt\": {}\n  },\n  {\n    \"id\": \"sint enim ad\",\n    \"merchantId\": \"sunt Ut veniam reprehenderit\",\n    \"type\": \"SMART\",\n    \"createdAt\": \"2003-08-01T01:58:20.544Z\",\n    \"outletId\": {},\n    \"label\": {},\n    \"lastSeenAt\": {}\n  }\n]",
-              "cookie": [],
-              "_postman_previewlanguage": "json"
-            },
-            {
-              "id": "0ce0f10b-a6e2-4b52-97a0-f4d589e7af78",
-              "originalRequest": {
-                "url": {
-                  "path": [
-                    "merchants",
-                    ":id",
-                    "devices"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "query": [],
-                  "variable": [
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "id",
-                      "description": "(Required) "
-                    }
-                  ]
-                },
-                "header": [
-                  {
-                    "disabled": false,
-                    "description": "(Required) Админ-ключ (в проде проксируется сервером админки)",
-                    "key": "X-Admin-Key",
-                    "value": "<string>"
-                  },
-                  {
-                    "key": "Accept",
-                    "value": "application/json"
-                  }
-                ],
-                "method": "GET",
-                "body": {}
-              },
-              "status": "Unauthorized",
-              "code": 401,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"error\": \"dolore\",\n  \"message\": \"id consequat\",\n  \"statusCode\": 34978246.227909,\n  \"requestId\": \"ad dolore Excepteur laboris\",\n  \"path\": \"occaecat reprehenderit commodo\",\n  \"timestamp\": \"officia commodo elit\"\n}",
-              "cookie": [],
-              "_postman_previewlanguage": "json"
-            }
-          ],
-          "event": [],
-          "protocolProfileBehavior": {
-            "disableBodyPruning": true
-          }
-        },
-        {
-          "id": "8d44cc9c-1bca-4247-b2f6-fc36a2729dcb",
-          "name": "Merchants Controller create Device",
-          "request": {
-            "name": "Merchants Controller create Device",
-            "description": {},
-            "url": {
-              "path": [
-                "merchants",
-                ":id",
-                "devices"
-              ],
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "query": [],
-              "variable": [
-                {
-                  "disabled": false,
-                  "type": "any",
-                  "value": "<string>",
-                  "key": "id",
-                  "description": "(Required) "
-                }
-              ]
-            },
-            "header": [
-              {
-                "disabled": false,
-                "description": "(Required) Админ-ключ (в проде проксируется сервером админки)",
-                "key": "X-Admin-Key",
-                "value": "<string>"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "method": "POST",
-            "auth": null,
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"type\": \"<string>\",\n  \"outletId\": \"<string>\",\n  \"label\": \"<string>\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": [
-            {
-              "id": "3c8dc480-565f-472b-8341-5309fdf31aef",
-              "originalRequest": {
-                "url": {
-                  "path": [
-                    "merchants",
-                    ":id",
-                    "devices"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "query": [],
-                  "variable": [
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "id",
-                      "description": "(Required) "
-                    }
-                  ]
-                },
-                "header": [
-                  {
-                    "disabled": false,
-                    "description": "(Required) Админ-ключ (в проде проксируется сервером админки)",
-                    "key": "X-Admin-Key",
-                    "value": "<string>"
-                  },
-                  {
-                    "key": "Accept",
-                    "value": "application/json"
-                  }
-                ],
-                "method": "POST",
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"type\": \"<string>\",\n  \"outletId\": \"<string>\",\n  \"label\": \"<string>\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"id\": \"eiusmod esse eu minim\",\n  \"merchantId\": \"exercitation dolore dolo\",\n  \"type\": \"VIRTUAL\",\n  \"createdAt\": \"1966-02-13T17:14:33.984Z\",\n  \"outletId\": {},\n  \"label\": {},\n  \"lastSeenAt\": {}\n}",
-              "cookie": [],
-              "_postman_previewlanguage": "json"
-            },
-            {
-              "id": "2784f30c-441c-473b-b477-55cd6be3d667",
-              "originalRequest": {
-                "url": {
-                  "path": [
-                    "merchants",
-                    ":id",
-                    "devices"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "query": [],
-                  "variable": [
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "id",
-                      "description": "(Required) "
-                    }
-                  ]
-                },
-                "header": [
-                  {
-                    "disabled": false,
-                    "description": "(Required) Админ-ключ (в проде проксируется сервером админки)",
-                    "key": "X-Admin-Key",
-                    "value": "<string>"
-                  },
-                  {
-                    "key": "Accept",
-                    "value": "application/json"
-                  }
-                ],
-                "method": "POST",
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"type\": \"<string>\",\n  \"outletId\": \"<string>\",\n  \"label\": \"<string>\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              },
-              "status": "Bad Request",
-              "code": 400,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"error\": \"dolore\",\n  \"message\": \"id consequat\",\n  \"statusCode\": 34978246.227909,\n  \"requestId\": \"ad dolore Excepteur laboris\",\n  \"path\": \"occaecat reprehenderit commodo\",\n  \"timestamp\": \"officia commodo elit\"\n}",
-              "cookie": [],
-              "_postman_previewlanguage": "json"
-            },
-            {
-              "id": "771c0211-dfaf-4686-ba81-6be4bb71471f",
-              "originalRequest": {
-                "url": {
-                  "path": [
-                    "merchants",
-                    ":id",
-                    "devices"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "query": [],
-                  "variable": [
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "id",
-                      "description": "(Required) "
-                    }
-                  ]
-                },
-                "header": [
-                  {
-                    "disabled": false,
-                    "description": "(Required) Админ-ключ (в проде проксируется сервером админки)",
-                    "key": "X-Admin-Key",
-                    "value": "<string>"
-                  },
-                  {
-                    "key": "Accept",
-                    "value": "application/json"
-                  }
-                ],
-                "method": "POST",
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"type\": \"<string>\",\n  \"outletId\": \"<string>\",\n  \"label\": \"<string>\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              },
-              "status": "Unauthorized",
-              "code": 401,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"error\": \"dolore\",\n  \"message\": \"id consequat\",\n  \"statusCode\": 34978246.227909,\n  \"requestId\": \"ad dolore Excepteur laboris\",\n  \"path\": \"occaecat reprehenderit commodo\",\n  \"timestamp\": \"officia commodo elit\"\n}",
-              "cookie": [],
-              "_postman_previewlanguage": "json"
-            }
-          ],
-          "event": [],
-          "protocolProfileBehavior": {
-            "disableBodyPruning": true
-          }
-        },
-        {
-          "id": "863d8a77-8cff-45e1-be31-8f03eee33478",
-          "name": "Merchants Controller update Device",
-          "request": {
-            "name": "Merchants Controller update Device",
-            "description": {},
-            "url": {
-              "path": [
-                "merchants",
-                ":id",
-                "devices",
-                ":deviceId"
-              ],
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "query": [],
-              "variable": [
-                {
-                  "disabled": false,
-                  "type": "any",
-                  "value": "<string>",
-                  "key": "id",
-                  "description": "(Required) "
-                },
-                {
-                  "disabled": false,
-                  "type": "any",
-                  "value": "<string>",
-                  "key": "deviceId",
-                  "description": "(Required) "
-                }
-              ]
-            },
-            "header": [
-              {
-                "disabled": false,
-                "description": "(Required) Админ-ключ (в проде проксируется сервером админки)",
-                "key": "X-Admin-Key",
-                "value": "<string>"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "method": "PUT",
-            "auth": null,
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"outletId\": \"<string>\",\n  \"label\": \"<string>\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": [
-            {
-              "id": "52aa8b06-f12f-41b2-aa58-2f9a09dc64aa",
-              "originalRequest": {
-                "url": {
-                  "path": [
-                    "merchants",
-                    ":id",
-                    "devices",
-                    ":deviceId"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "query": [],
-                  "variable": [
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "id",
-                      "description": "(Required) "
-                    },
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "deviceId",
-                      "description": "(Required) "
-                    }
-                  ]
-                },
-                "header": [
-                  {
-                    "disabled": false,
-                    "description": "(Required) Админ-ключ (в проде проксируется сервером админки)",
-                    "key": "X-Admin-Key",
-                    "value": "<string>"
-                  },
-                  {
-                    "key": "Accept",
-                    "value": "application/json"
-                  }
-                ],
-                "method": "PUT",
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"outletId\": \"<string>\",\n  \"label\": \"<string>\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"id\": \"eiusmod esse eu minim\",\n  \"merchantId\": \"exercitation dolore dolo\",\n  \"type\": \"VIRTUAL\",\n  \"createdAt\": \"1966-02-13T17:14:33.984Z\",\n  \"outletId\": {},\n  \"label\": {},\n  \"lastSeenAt\": {}\n}",
-              "cookie": [],
-              "_postman_previewlanguage": "json"
-            },
-            {
-              "id": "5a19d68c-35e8-4698-b64b-5515221e7bde",
-              "originalRequest": {
-                "url": {
-                  "path": [
-                    "merchants",
-                    ":id",
-                    "devices",
-                    ":deviceId"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "query": [],
-                  "variable": [
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "id",
-                      "description": "(Required) "
-                    },
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "deviceId",
-                      "description": "(Required) "
-                    }
-                  ]
-                },
-                "header": [
-                  {
-                    "disabled": false,
-                    "description": "(Required) Админ-ключ (в проде проксируется сервером админки)",
-                    "key": "X-Admin-Key",
-                    "value": "<string>"
-                  },
-                  {
-                    "key": "Accept",
-                    "value": "application/json"
-                  }
-                ],
-                "method": "PUT",
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"outletId\": \"<string>\",\n  \"label\": \"<string>\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              },
-              "status": "Unauthorized",
-              "code": 401,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"error\": \"dolore\",\n  \"message\": \"id consequat\",\n  \"statusCode\": 34978246.227909,\n  \"requestId\": \"ad dolore Excepteur laboris\",\n  \"path\": \"occaecat reprehenderit commodo\",\n  \"timestamp\": \"officia commodo elit\"\n}",
-              "cookie": [],
-              "_postman_previewlanguage": "json"
-            },
-            {
-              "id": "74d870eb-1f7f-49e4-b9a9-66a0044a29a3",
-              "originalRequest": {
-                "url": {
-                  "path": [
-                    "merchants",
-                    ":id",
-                    "devices",
-                    ":deviceId"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "query": [],
-                  "variable": [
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "id",
-                      "description": "(Required) "
-                    },
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "deviceId",
-                      "description": "(Required) "
-                    }
-                  ]
-                },
-                "header": [
-                  {
-                    "disabled": false,
-                    "description": "(Required) Админ-ключ (в проде проксируется сервером админки)",
-                    "key": "X-Admin-Key",
-                    "value": "<string>"
-                  },
-                  {
-                    "key": "Accept",
-                    "value": "application/json"
-                  }
-                ],
-                "method": "PUT",
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"outletId\": \"<string>\",\n  \"label\": \"<string>\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              },
-              "status": "Not Found",
-              "code": 404,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"error\": \"dolore\",\n  \"message\": \"id consequat\",\n  \"statusCode\": 34978246.227909,\n  \"requestId\": \"ad dolore Excepteur laboris\",\n  \"path\": \"occaecat reprehenderit commodo\",\n  \"timestamp\": \"officia commodo elit\"\n}",
-              "cookie": [],
-              "_postman_previewlanguage": "json"
-            }
-          ],
-          "event": [],
-          "protocolProfileBehavior": {
-            "disableBodyPruning": true
-          }
-        },
-        {
-          "id": "269e8e68-a31b-40bb-a262-4243ba945923",
-          "name": "Merchants Controller delete Device",
-          "request": {
-            "name": "Merchants Controller delete Device",
-            "description": {},
-            "url": {
-              "path": [
-                "merchants",
-                ":id",
-                "devices",
-                ":deviceId"
-              ],
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "query": [],
-              "variable": [
-                {
-                  "disabled": false,
-                  "type": "any",
-                  "value": "<string>",
-                  "key": "id",
-                  "description": "(Required) "
-                },
-                {
-                  "disabled": false,
-                  "type": "any",
-                  "value": "<string>",
-                  "key": "deviceId",
-                  "description": "(Required) "
-                }
-              ]
-            },
-            "header": [
-              {
-                "disabled": false,
-                "description": "(Required) Админ-ключ (в проде проксируется сервером админки)",
-                "key": "X-Admin-Key",
-                "value": "<string>"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "method": "DELETE",
-            "auth": null
-          },
-          "response": [
-            {
-              "id": "3c17e481-e80a-406b-9be9-689643ec5dab",
-              "originalRequest": {
-                "url": {
-                  "path": [
-                    "merchants",
-                    ":id",
-                    "devices",
-                    ":deviceId"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "query": [],
-                  "variable": [
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "id",
-                      "description": "(Required) "
-                    },
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "deviceId",
-                      "description": "(Required) "
-                    }
-                  ]
-                },
-                "header": [
-                  {
-                    "disabled": false,
-                    "description": "(Required) Админ-ключ (в проде проксируется сервером админки)",
-                    "key": "X-Admin-Key",
-                    "value": "<string>"
-                  },
-                  {
-                    "key": "Accept",
-                    "value": "application/json"
-                  }
-                ],
-                "method": "DELETE",
-                "body": {}
-              },
-              "status": "OK",
-              "code": 200,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"ok\": false\n}",
-              "cookie": [],
-              "_postman_previewlanguage": "json"
-            },
-            {
-              "id": "0fd447c0-e70f-49d7-8d0a-b69f18940650",
-              "originalRequest": {
-                "url": {
-                  "path": [
-                    "merchants",
-                    ":id",
-                    "devices",
-                    ":deviceId"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "query": [],
-                  "variable": [
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "id",
-                      "description": "(Required) "
-                    },
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "deviceId",
-                      "description": "(Required) "
-                    }
-                  ]
-                },
-                "header": [
-                  {
-                    "disabled": false,
-                    "description": "(Required) Админ-ключ (в проде проксируется сервером админки)",
-                    "key": "X-Admin-Key",
-                    "value": "<string>"
-                  },
-                  {
-                    "key": "Accept",
-                    "value": "application/json"
-                  }
-                ],
-                "method": "DELETE",
-                "body": {}
-              },
-              "status": "Unauthorized",
-              "code": 401,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"error\": \"dolore\",\n  \"message\": \"id consequat\",\n  \"statusCode\": 34978246.227909,\n  \"requestId\": \"ad dolore Excepteur laboris\",\n  \"path\": \"occaecat reprehenderit commodo\",\n  \"timestamp\": \"officia commodo elit\"\n}",
-              "cookie": [],
-              "_postman_previewlanguage": "json"
-            },
-            {
-              "id": "eb61b4eb-c653-4e3c-9c78-d614d5761558",
-              "originalRequest": {
-                "url": {
-                  "path": [
-                    "merchants",
-                    ":id",
-                    "devices",
-                    ":deviceId"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "query": [],
-                  "variable": [
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "id",
-                      "description": "(Required) "
-                    },
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "deviceId",
-                      "description": "(Required) "
-                    }
-                  ]
-                },
-                "header": [
-                  {
-                    "disabled": false,
-                    "description": "(Required) Админ-ключ (в проде проксируется сервером админки)",
-                    "key": "X-Admin-Key",
-                    "value": "<string>"
-                  },
-                  {
-                    "key": "Accept",
-                    "value": "application/json"
-                  }
-                ],
-                "method": "DELETE",
-                "body": {}
-              },
-              "status": "Not Found",
-              "code": 404,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"error\": \"dolore\",\n  \"message\": \"id consequat\",\n  \"statusCode\": 34978246.227909,\n  \"requestId\": \"ad dolore Excepteur laboris\",\n  \"path\": \"occaecat reprehenderit commodo\",\n  \"timestamp\": \"officia commodo elit\"\n}",
-              "cookie": [],
-              "_postman_previewlanguage": "json"
-            }
-          ],
-          "event": [],
-          "protocolProfileBehavior": {
-            "disableBodyPruning": true
-          }
-        },
-        {
-          "id": "8027177a-21ec-434d-b1ea-4cfc74528fda",
-          "name": "Merchants Controller issue Device Secret",
-          "request": {
-            "name": "Merchants Controller issue Device Secret",
-            "description": {},
-            "url": {
-              "path": [
-                "merchants",
-                ":id",
-                "devices",
-                ":deviceId",
-                "secret"
-              ],
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "query": [],
-              "variable": [
-                {
-                  "disabled": false,
-                  "type": "any",
-                  "value": "<string>",
-                  "key": "id",
-                  "description": "(Required) "
-                },
-                {
-                  "disabled": false,
-                  "type": "any",
-                  "value": "<string>",
-                  "key": "deviceId",
-                  "description": "(Required) "
-                }
-              ]
-            },
-            "header": [
-              {
-                "disabled": false,
-                "description": "(Required) Админ-ключ (в проде проксируется сервером админки)",
-                "key": "X-Admin-Key",
-                "value": "<string>"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "method": "POST",
-            "auth": null
-          },
-          "response": [
-            {
-              "id": "3a53efcb-c4aa-4c28-810d-0f567adbff31",
-              "originalRequest": {
-                "url": {
-                  "path": [
-                    "merchants",
-                    ":id",
-                    "devices",
-                    ":deviceId",
-                    "secret"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "query": [],
-                  "variable": [
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "id",
-                      "description": "(Required) "
-                    },
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "deviceId",
-                      "description": "(Required) "
-                    }
-                  ]
-                },
-                "header": [
-                  {
-                    "disabled": false,
-                    "description": "(Required) Админ-ключ (в проде проксируется сервером админки)",
-                    "key": "X-Admin-Key",
-                    "value": "<string>"
-                  },
-                  {
-                    "key": "Accept",
-                    "value": "application/json"
-                  }
-                ],
-                "method": "POST",
-                "body": {}
-              },
-              "status": "OK",
-              "code": 200,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"secret\": \"laborum esse magna aliquip voluptate\"\n}",
-              "cookie": [],
-              "_postman_previewlanguage": "json"
-            },
-            {
-              "id": "d9730be6-fda5-407d-a553-b0672b39ffe3",
-              "originalRequest": {
-                "url": {
-                  "path": [
-                    "merchants",
-                    ":id",
-                    "devices",
-                    ":deviceId",
-                    "secret"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "query": [],
-                  "variable": [
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "id",
-                      "description": "(Required) "
-                    },
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "deviceId",
-                      "description": "(Required) "
-                    }
-                  ]
-                },
-                "header": [
-                  {
-                    "disabled": false,
-                    "description": "(Required) Админ-ключ (в проде проксируется сервером админки)",
-                    "key": "X-Admin-Key",
-                    "value": "<string>"
-                  },
-                  {
-                    "key": "Accept",
-                    "value": "application/json"
-                  }
-                ],
-                "method": "POST",
-                "body": {}
-              },
-              "status": "Unauthorized",
-              "code": 401,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"error\": \"dolore\",\n  \"message\": \"id consequat\",\n  \"statusCode\": 34978246.227909,\n  \"requestId\": \"ad dolore Excepteur laboris\",\n  \"path\": \"occaecat reprehenderit commodo\",\n  \"timestamp\": \"officia commodo elit\"\n}",
-              "cookie": [],
-              "_postman_previewlanguage": "json"
-            },
-            {
-              "id": "5a7e2379-c018-42b2-908d-2e4c4edc8673",
-              "originalRequest": {
-                "url": {
-                  "path": [
-                    "merchants",
-                    ":id",
-                    "devices",
-                    ":deviceId",
-                    "secret"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "query": [],
-                  "variable": [
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "id",
-                      "description": "(Required) "
-                    },
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "deviceId",
-                      "description": "(Required) "
-                    }
-                  ]
-                },
-                "header": [
-                  {
-                    "disabled": false,
-                    "description": "(Required) Админ-ключ (в проде проксируется сервером админки)",
-                    "key": "X-Admin-Key",
-                    "value": "<string>"
-                  },
-                  {
-                    "key": "Accept",
-                    "value": "application/json"
-                  }
-                ],
-                "method": "POST",
-                "body": {}
-              },
-              "status": "Not Found",
-              "code": 404,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"error\": \"dolore\",\n  \"message\": \"id consequat\",\n  \"statusCode\": 34978246.227909,\n  \"requestId\": \"ad dolore Excepteur laboris\",\n  \"path\": \"occaecat reprehenderit commodo\",\n  \"timestamp\": \"officia commodo elit\"\n}",
-              "cookie": [],
-              "_postman_previewlanguage": "json"
-            }
-          ],
-          "event": [],
-          "protocolProfileBehavior": {
-            "disableBodyPruning": true
-          }
-        },
-        {
-          "id": "fbfe21c4-1465-4619-baf6-48122039928f",
-          "name": "Merchants Controller revoke Device Secret",
-          "request": {
-            "name": "Merchants Controller revoke Device Secret",
-            "description": {},
-            "url": {
-              "path": [
-                "merchants",
-                ":id",
-                "devices",
-                ":deviceId",
-                "secret"
-              ],
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "query": [],
-              "variable": [
-                {
-                  "disabled": false,
-                  "type": "any",
-                  "value": "<string>",
-                  "key": "id",
-                  "description": "(Required) "
-                },
-                {
-                  "disabled": false,
-                  "type": "any",
-                  "value": "<string>",
-                  "key": "deviceId",
-                  "description": "(Required) "
-                }
-              ]
-            },
-            "header": [
-              {
-                "disabled": false,
-                "description": "(Required) Админ-ключ (в проде проксируется сервером админки)",
-                "key": "X-Admin-Key",
-                "value": "<string>"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "method": "DELETE",
-            "auth": null
-          },
-          "response": [
-            {
-              "id": "1f0051c3-df8a-4dc8-ac3e-cc06e45d9759",
-              "originalRequest": {
-                "url": {
-                  "path": [
-                    "merchants",
-                    ":id",
-                    "devices",
-                    ":deviceId",
-                    "secret"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "query": [],
-                  "variable": [
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "id",
-                      "description": "(Required) "
-                    },
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "deviceId",
-                      "description": "(Required) "
-                    }
-                  ]
-                },
-                "header": [
-                  {
-                    "disabled": false,
-                    "description": "(Required) Админ-ключ (в проде проксируется сервером админки)",
-                    "key": "X-Admin-Key",
-                    "value": "<string>"
-                  },
-                  {
-                    "key": "Accept",
-                    "value": "application/json"
-                  }
-                ],
-                "method": "DELETE",
-                "body": {}
-              },
-              "status": "OK",
-              "code": 200,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"ok\": false\n}",
-              "cookie": [],
-              "_postman_previewlanguage": "json"
-            },
-            {
-              "id": "4d799877-8a45-4be2-b541-44fe1e3574fc",
-              "originalRequest": {
-                "url": {
-                  "path": [
-                    "merchants",
-                    ":id",
-                    "devices",
-                    ":deviceId",
-                    "secret"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "query": [],
-                  "variable": [
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "id",
-                      "description": "(Required) "
-                    },
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "deviceId",
-                      "description": "(Required) "
-                    }
-                  ]
-                },
-                "header": [
-                  {
-                    "disabled": false,
-                    "description": "(Required) Админ-ключ (в проде проксируется сервером админки)",
-                    "key": "X-Admin-Key",
-                    "value": "<string>"
-                  },
-                  {
-                    "key": "Accept",
-                    "value": "application/json"
-                  }
-                ],
-                "method": "DELETE",
-                "body": {}
-              },
-              "status": "Unauthorized",
-              "code": 401,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"error\": \"dolore\",\n  \"message\": \"id consequat\",\n  \"statusCode\": 34978246.227909,\n  \"requestId\": \"ad dolore Excepteur laboris\",\n  \"path\": \"occaecat reprehenderit commodo\",\n  \"timestamp\": \"officia commodo elit\"\n}",
-              "cookie": [],
-              "_postman_previewlanguage": "json"
-            },
-            {
-              "id": "ef53d14b-5497-45d2-b0e4-850ba408f6ab",
-              "originalRequest": {
-                "url": {
-                  "path": [
-                    "merchants",
-                    ":id",
-                    "devices",
-                    ":deviceId",
-                    "secret"
-                  ],
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "query": [],
-                  "variable": [
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "id",
-                      "description": "(Required) "
-                    },
-                    {
-                      "disabled": false,
-                      "type": "any",
-                      "value": "<string>",
-                      "key": "deviceId",
-                      "description": "(Required) "
-                    }
-                  ]
-                },
-                "header": [
-                  {
-                    "disabled": false,
-                    "description": "(Required) Админ-ключ (в проде проксируется сервером админки)",
-                    "key": "X-Admin-Key",
-                    "value": "<string>"
-                  },
-                  {
-                    "key": "Accept",
-                    "value": "application/json"
-                  }
-                ],
-                "method": "DELETE",
-                "body": {}
-              },
-              "status": "Not Found",
-              "code": 404,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"error\": \"dolore\",\n  \"message\": \"id consequat\",\n  \"statusCode\": 34978246.227909,\n  \"requestId\": \"ad dolore Excepteur laboris\",\n  \"path\": \"occaecat reprehenderit commodo\",\n  \"timestamp\": \"officia commodo elit\"\n}",
-              "cookie": [],
-              "_postman_previewlanguage": "json"
-            }
-          ],
-          "event": [],
-          "protocolProfileBehavior": {
-            "disableBodyPruning": true
-          }
-        },
-        {
           "id": "3ded3c25-6dce-4afa-a579-c65a3312d0d9",
           "name": "Merchants Controller list Staff",
           "request": {
@@ -4473,7 +3115,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "[\n  {\n    \"id\": \"enim esse ut occaecat\",\n    \"merchantId\": \"Excepteur exercitation ex\",\n    \"role\": \"ADMIN\",\n    \"status\": \"ipsum aute\",\n    \"createdAt\": \"2009-10-22T01:07:50.695Z\",\n    \"login\": {},\n    \"email\": {},\n    \"allowedOutletId\": {},\n    \"allowedDeviceId\": {},\n    \"apiKeyHash\": {}\n  },\n  {\n    \"id\": \"voluptate\",\n    \"merchantId\": \"dolore ea minim deserunt\",\n    \"role\": \"ADMIN\",\n    \"status\": \"dolore aliqua incididunt ullamco\",\n    \"createdAt\": \"2008-07-01T09:36:26.715Z\",\n    \"login\": {},\n    \"email\": {},\n    \"allowedOutletId\": {},\n    \"allowedDeviceId\": {},\n    \"apiKeyHash\": {}\n  }\n]",
+              "body": "[\n  {\n    \"id\": \"enim esse ut occaecat\",\n    \"merchantId\": \"Excepteur exercitation ex\",\n    \"role\": \"ADMIN\",\n    \"status\": \"ipsum aute\",\n    \"createdAt\": \"2009-10-22T01:07:50.695Z\",\n    \"login\": {},\n    \"email\": {},\n    \"allowedOutletId\": {},\n    \"apiKeyHash\": {}\n  },\n  {\n    \"id\": \"voluptate\",\n    \"merchantId\": \"dolore ea minim deserunt\",\n    \"role\": \"ADMIN\",\n    \"status\": \"dolore aliqua incididunt ullamco\",\n    \"createdAt\": \"2008-07-01T09:36:26.715Z\",\n    \"login\": {},\n    \"email\": {},\n    \"allowedOutletId\": {},\n    \"apiKeyHash\": {}\n  }\n]",
               "cookie": [],
               "_postman_previewlanguage": "json"
             },
@@ -4642,7 +3284,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"id\": \"incididunt non adipisicing irur\",\n  \"merchantId\": \"sunt ipsum\",\n  \"role\": \"MANAGER\",\n  \"status\": \"nostrud sunt\",\n  \"createdAt\": \"1954-10-13T19:01:17.244Z\",\n  \"login\": {},\n  \"email\": {},\n  \"allowedOutletId\": {},\n  \"allowedDeviceId\": {},\n  \"apiKeyHash\": {}\n}",
+              "body": "{\n  \"id\": \"incididunt non adipisicing irur\",\n  \"merchantId\": \"sunt ipsum\",\n  \"role\": \"MANAGER\",\n  \"status\": \"nostrud sunt\",\n  \"createdAt\": \"1954-10-13T19:01:17.244Z\",\n  \"login\": {},\n  \"email\": {},\n  \"allowedOutletId\": {},\n  \"apiKeyHash\": {}\n}",
               "cookie": [],
               "_postman_previewlanguage": "json"
             },
@@ -4822,7 +3464,7 @@
             "auth": null,
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"login\": \"<string>\",\n  \"email\": \"<string>\",\n  \"role\": \"<string>\",\n  \"status\": \"<string>\",\n  \"allowedOutletId\": \"<string>\",\n  \"allowedDeviceId\": \"<string>\"\n}",
+              "raw": "{\n  \"login\": \"<string>\",\n  \"email\": \"<string>\",\n  \"role\": \"<string>\",\n  \"status\": \"<string>\",\n  \"allowedOutletId\": \"<string>\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4877,7 +3519,7 @@
                 "method": "PUT",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"login\": \"<string>\",\n  \"email\": \"<string>\",\n  \"role\": \"<string>\",\n  \"status\": \"<string>\",\n  \"allowedOutletId\": \"<string>\",\n  \"allowedDeviceId\": \"<string>\"\n}",
+                  "raw": "{\n  \"login\": \"<string>\",\n  \"email\": \"<string>\",\n  \"role\": \"<string>\",\n  \"status\": \"<string>\",\n  \"allowedOutletId\": \"<string>\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -4893,7 +3535,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"id\": \"incididunt non adipisicing irur\",\n  \"merchantId\": \"sunt ipsum\",\n  \"role\": \"MANAGER\",\n  \"status\": \"nostrud sunt\",\n  \"createdAt\": \"1954-10-13T19:01:17.244Z\",\n  \"login\": {},\n  \"email\": {},\n  \"allowedOutletId\": {},\n  \"allowedDeviceId\": {},\n  \"apiKeyHash\": {}\n}",
+              "body": "{\n  \"id\": \"incididunt non adipisicing irur\",\n  \"merchantId\": \"sunt ipsum\",\n  \"role\": \"MANAGER\",\n  \"status\": \"nostrud sunt\",\n  \"createdAt\": \"1954-10-13T19:01:17.244Z\",\n  \"login\": {},\n  \"email\": {},\n  \"allowedOutletId\": {},\n  \"apiKeyHash\": {}\n}",
               "cookie": [],
               "_postman_previewlanguage": "json"
             },
@@ -4943,7 +3585,7 @@
                 "method": "PUT",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"login\": \"<string>\",\n  \"email\": \"<string>\",\n  \"role\": \"<string>\",\n  \"status\": \"<string>\",\n  \"allowedOutletId\": \"<string>\",\n  \"allowedDeviceId\": \"<string>\"\n}",
+                  "raw": "{\n  \"login\": \"<string>\",\n  \"email\": \"<string>\",\n  \"role\": \"<string>\",\n  \"status\": \"<string>\",\n  \"allowedOutletId\": \"<string>\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -5009,7 +3651,7 @@
                 "method": "PUT",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"login\": \"<string>\",\n  \"email\": \"<string>\",\n  \"role\": \"<string>\",\n  \"status\": \"<string>\",\n  \"allowedOutletId\": \"<string>\",\n  \"allowedDeviceId\": \"<string>\"\n}",
+                  "raw": "{\n  \"login\": \"<string>\",\n  \"email\": \"<string>\",\n  \"role\": \"<string>\",\n  \"status\": \"<string>\",\n  \"allowedOutletId\": \"<string>\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -6802,12 +5444,6 @@
                 },
                 {
                   "disabled": false,
-                  "key": "deviceId",
-                  "value": "<string>",
-                  "description": "(Required) "
-                },
-                {
-                  "disabled": false,
                   "key": "staffId",
                   "value": "<string>",
                   "description": "(Required) "
@@ -6873,10 +5509,6 @@
                       "value": "<string>"
                     },
                     {
-                      "key": "deviceId",
-                      "value": "<string>"
-                    },
-                    {
                       "key": "staffId",
                       "value": "<string>"
                     }
@@ -6914,7 +5546,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "[\n  {\n    \"id\": \"ut tempor\",\n    \"type\": \"REFUND\",\n    \"amount\": 63505273.97173026,\n    \"customerId\": \"sunt pariatur\",\n    \"createdAt\": \"ullamco nisi minim dolore\",\n    \"orderId\": {},\n    \"outletId\": {},\n    \"deviceId\": {},\n    \"staffId\": {}\n  },\n  {\n    \"id\": \"ex Duis ipsum\",\n    \"type\": \"REDEEM\",\n    \"amount\": 36428386.1884208,\n    \"customerId\": \"in labore consectetur\",\n    \"createdAt\": \"ex nostrud\",\n    \"orderId\": {},\n    \"outletId\": {},\n    \"deviceId\": {},\n    \"staffId\": {}\n  }\n]",
+              "body": "[\n  {\n    \"id\": \"ut tempor\",\n    \"type\": \"REFUND\",\n    \"amount\": 63505273.97173026,\n    \"customerId\": \"sunt pariatur\",\n    \"createdAt\": \"ullamco nisi minim dolore\",\n    \"orderId\": {},\n    \"outletId\": {},\n    \"staffId\": {}\n  },\n  {\n    \"id\": \"ex Duis ipsum\",\n    \"type\": \"REDEEM\",\n    \"amount\": 36428386.1884208,\n    \"customerId\": \"in labore consectetur\",\n    \"createdAt\": \"ex nostrud\",\n    \"orderId\": {},\n    \"outletId\": {},\n    \"staffId\": {}\n  }\n]",
               "cookie": [],
               "_postman_previewlanguage": "json"
             },
@@ -6949,10 +5581,6 @@
                     },
                     {
                       "key": "outletId",
-                      "value": "<string>"
-                    },
-                    {
-                      "key": "deviceId",
                       "value": "<string>"
                     },
                     {
@@ -7133,7 +5761,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "[\n  {\n    \"id\": \"adipisicing elit minim\",\n    \"merchantId\": \"nulla proident elit\",\n    \"customerId\": \"Duis esse et ad\",\n    \"orderId\": \"cillum eu mollit non\",\n    \"total\": 71230120.47990415,\n    \"eligibleTotal\": -54567790.1269193,\n    \"redeemApplied\": 76655179.66066352,\n    \"earnApplied\": 23168027.616624847,\n    \"createdAt\": \"1974-04-25T02:41:02.639Z\",\n    \"receiptNumber\": {},\n    \"outletId\": {},\n    \"deviceId\": {},\n    \"staffId\": {}\n  },\n  {\n    \"id\": \"ipsum\",\n    \"merchantId\": \"dolor consectetur proident\",\n    \"customerId\": \"incididunt aute\",\n    \"orderId\": \"ut nulla \",\n    \"total\": 85055037.31286246,\n    \"eligibleTotal\": 94734857.86208817,\n    \"redeemApplied\": 42170466.148482025,\n    \"earnApplied\": 92511266.05942047,\n    \"createdAt\": \"1957-11-08T11:31:06.015Z\",\n    \"receiptNumber\": {},\n    \"outletId\": {},\n    \"deviceId\": {},\n    \"staffId\": {}\n  }\n]",
+              "body": "[\n  {\n    \"id\": \"adipisicing elit minim\",\n    \"merchantId\": \"nulla proident elit\",\n    \"customerId\": \"Duis esse et ad\",\n    \"orderId\": \"cillum eu mollit non\",\n    \"total\": 71230120.47990415,\n    \"eligibleTotal\": -54567790.1269193,\n    \"redeemApplied\": 76655179.66066352,\n    \"earnApplied\": 23168027.616624847,\n    \"createdAt\": \"1974-04-25T02:41:02.639Z\",\n    \"receiptNumber\": {},\n    \"outletId\": {},\n    \"staffId\": {}\n  },\n  {\n    \"id\": \"ipsum\",\n    \"merchantId\": \"dolor consectetur proident\",\n    \"customerId\": \"incididunt aute\",\n    \"orderId\": \"ut nulla \",\n    \"total\": 85055037.31286246,\n    \"eligibleTotal\": 94734857.86208817,\n    \"redeemApplied\": 42170466.148482025,\n    \"earnApplied\": 92511266.05942047,\n    \"createdAt\": \"1957-11-08T11:31:06.015Z\",\n    \"receiptNumber\": {},\n    \"outletId\": {},\n    \"staffId\": {}\n  }\n]",
               "cookie": [],
               "_postman_previewlanguage": "json"
             },
@@ -7314,7 +5942,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"receipt\": {\n    \"id\": \"consequat eu do\",\n    \"merchantId\": \"cupidatat nostrud mo\",\n    \"customerId\": \"Duis qui\",\n    \"orderId\": \"aliqua exercitation consectetur adipisicing\",\n    \"total\": 269848.1386591494,\n    \"eligibleTotal\": 31057522.408547953,\n    \"redeemApplied\": -23849636.612262875,\n    \"earnApplied\": -98300071.1397962,\n    \"createdAt\": \"2014-12-28T13:58:22.424Z\",\n    \"receiptNumber\": {},\n    \"outletId\": {},\n    \"deviceId\": {},\n    \"staffId\": {}\n  },\n  \"transactions\": [\n    {\n      \"id\": \"commodo\",\n      \"type\": \"ADJUST\",\n      \"amount\": 96594638.26031098,\n      \"customerId\": \"laboris quis\",\n      \"createdAt\": \"exercitation quis\",\n      \"orderId\": {},\n      \"outletId\": {},\n      \"deviceId\": {},\n      \"staffId\": {}\n    },\n    {\n      \"id\": \"proident amet\",\n      \"type\": \"ADJUST\",\n      \"amount\": 3482971.435842335,\n      \"customerId\": \"irure\",\n      \"createdAt\": \"Excepteur reprehenderit dolore sed ullamco\",\n      \"orderId\": {},\n      \"outletId\": {},\n      \"deviceId\": {},\n      \"staffId\": {}\n    }\n  ]\n}",
+              "body": "{\n  \"receipt\": {\n    \"id\": \"consequat eu do\",\n    \"merchantId\": \"cupidatat nostrud mo\",\n    \"customerId\": \"Duis qui\",\n    \"orderId\": \"aliqua exercitation consectetur adipisicing\",\n    \"total\": 269848.1386591494,\n    \"eligibleTotal\": 31057522.408547953,\n    \"redeemApplied\": -23849636.612262875,\n    \"earnApplied\": -98300071.1397962,\n    \"createdAt\": \"2014-12-28T13:58:22.424Z\",\n    \"receiptNumber\": {},\n    \"outletId\": {},\n    \"staffId\": {}\n  },\n  \"transactions\": [\n    {\n      \"id\": \"commodo\",\n      \"type\": \"ADJUST\",\n      \"amount\": 96594638.26031098,\n      \"customerId\": \"laboris quis\",\n      \"createdAt\": \"exercitation quis\",\n      \"orderId\": {},\n      \"outletId\": {},\n      \"staffId\": {}\n    },\n    {\n      \"id\": \"proident amet\",\n      \"type\": \"ADJUST\",\n      \"amount\": 3482971.435842335,\n      \"customerId\": \"irure\",\n      \"createdAt\": \"Excepteur reprehenderit dolore sed ullamco\",\n      \"orderId\": {},\n      \"outletId\": {},\n      \"staffId\": {}\n    }\n  ]\n}",
               "cookie": [],
               "_postman_previewlanguage": "json"
             },
@@ -7749,7 +6377,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"balance\": 48213027.20544982,\n  \"recentTx\": [\n    {\n      \"id\": \"est ea voluptate ut\",\n      \"type\": \"REDEEM\",\n      \"amount\": -32491863.30875458,\n      \"customerId\": \"Lorem sunt ipsum\",\n      \"createdAt\": \"Excepteur enim mollit\",\n      \"orderId\": {},\n      \"outletId\": {},\n      \"deviceId\": {},\n      \"staffId\": {}\n    },\n    {\n      \"id\": \"et consectetur laborum\",\n      \"type\": \"ADJUST\",\n      \"amount\": -88272723.44079882,\n      \"customerId\": \"Duis eu cillum aute qui\",\n      \"createdAt\": \"dolor commodo consequat Lo\",\n      \"orderId\": {},\n      \"outletId\": {},\n      \"deviceId\": {},\n      \"staffId\": {}\n    }\n  ],\n  \"recentReceipts\": [\n    {\n      \"id\": \"nostrud sunt et\",\n      \"merchantId\": \"qui dolore magna\",\n      \"customerId\": \"incididunt esse nulla\",\n      \"orderId\": \"sint ex nisi aliquip\",\n      \"total\": 11280568.673878431,\n      \"eligibleTotal\": -8703006.40122892,\n      \"redeemApplied\": -46891457.78152928,\n      \"earnApplied\": 93118263.16793841,\n      \"createdAt\": \"2015-09-13T13:10:49.129Z\",\n      \"receiptNumber\": {},\n      \"outletId\": {},\n      \"deviceId\": {},\n      \"staffId\": {}\n    },\n    {\n      \"id\": \"commodo dolor\",\n      \"merchantId\": \"cupidatat fugiat voluptate\",\n      \"customerId\": \"mollit id\",\n      \"orderId\": \"ex dolor cupidatat ut anim\",\n      \"total\": 43779314.792839706,\n      \"eligibleTotal\": 30143491.614769995,\n      \"redeemApplied\": -74312704.33730184,\n      \"earnApplied\": 16145140.273601428,\n      \"createdAt\": \"1964-07-22T03:43:29.135Z\",\n      \"receiptNumber\": {},\n      \"outletId\": {},\n      \"deviceId\": {},\n      \"staffId\": {}\n    }\n  ]\n}",
+              "body": "{\n  \"balance\": 48213027.20544982,\n  \"recentTx\": [\n    {\n      \"id\": \"est ea voluptate ut\",\n      \"type\": \"REDEEM\",\n      \"amount\": -32491863.30875458,\n      \"customerId\": \"Lorem sunt ipsum\",\n      \"createdAt\": \"Excepteur enim mollit\",\n      \"orderId\": {},\n      \"outletId\": {},\n      \"staffId\": {}\n    },\n    {\n      \"id\": \"et consectetur laborum\",\n      \"type\": \"ADJUST\",\n      \"amount\": -88272723.44079882,\n      \"customerId\": \"Duis eu cillum aute qui\",\n      \"createdAt\": \"dolor commodo consequat Lo\",\n      \"orderId\": {},\n      \"outletId\": {},\n      \"staffId\": {}\n    }\n  ],\n  \"recentReceipts\": [\n    {\n      \"id\": \"nostrud sunt et\",\n      \"merchantId\": \"qui dolore magna\",\n      \"customerId\": \"incididunt esse nulla\",\n      \"orderId\": \"sint ex nisi aliquip\",\n      \"total\": 11280568.673878431,\n      \"eligibleTotal\": -8703006.40122892,\n      \"redeemApplied\": -46891457.78152928,\n      \"earnApplied\": 93118263.16793841,\n      \"createdAt\": \"2015-09-13T13:10:49.129Z\",\n      \"receiptNumber\": {},\n      \"outletId\": {},\n      \"staffId\": {}\n    },\n    {\n      \"id\": \"commodo dolor\",\n      \"merchantId\": \"cupidatat fugiat voluptate\",\n      \"customerId\": \"mollit id\",\n      \"orderId\": \"ex dolor cupidatat ut anim\",\n      \"total\": 43779314.792839706,\n      \"eligibleTotal\": 30143491.614769995,\n      \"redeemApplied\": -74312704.33730184,\n      \"earnApplied\": 16145140.273601428,\n      \"createdAt\": \"1964-07-22T03:43:29.135Z\",\n      \"receiptNumber\": {},\n      \"outletId\": {},\n      \"staffId\": {}\n    }\n  ]\n}",
               "cookie": [],
               "_postman_previewlanguage": "json"
             },
@@ -8031,12 +6659,6 @@
                 },
                 {
                   "disabled": false,
-                  "key": "deviceId",
-                  "value": "<string>",
-                  "description": "(Required) "
-                },
-                {
-                  "disabled": false,
                   "key": "staffId",
                   "value": "<string>",
                   "description": "(Required) "
@@ -8095,10 +6717,6 @@
                     },
                     {
                       "key": "outletId",
-                      "value": "<string>"
-                    },
-                    {
-                      "key": "deviceId",
                       "value": "<string>"
                     },
                     {

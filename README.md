@@ -80,6 +80,7 @@ API управления секретами/статусами точек:
 - Переключение точки (ACTIVE/INACTIVE): `PUT /merchants/:id/outlets/:outletId/status`.
 
 > POS Bridge теперь опирается только на `outletId` + `bridgeSecret`: таблица `Device` удалена, а `deviceId` больше не хранится в моделях.
+> DTO и SDK сотрудников очищены от `allowedDeviceId`: ограничения задаются только через `allowedOutletId`, все публичные схемы и Postman обновлены.
 
 > Миграция `20251201090000_remove_device_table` добирает остаточные `bridgeSecret`/`lastSeen`, переносит ограничения сотрудников на точки и удаляет все поля `deviceId`. Ранее миграция `20251025120000_device_pos_fields` перенесла первичные данные из `Device` в `Outlet`.
 

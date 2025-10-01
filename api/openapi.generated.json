@@ -4,7 +4,6 @@
     "/healthz": {
       "get": {
         "operationId": "HealthController_health",
-        "parameters": [],
         "responses": {
           "200": {
             "description": ""
@@ -18,7 +17,6 @@
     "/readyz": {
       "get": {
         "operationId": "HealthController_ready",
-        "parameters": [],
         "responses": {
           "200": {
             "description": ""
@@ -32,7 +30,6 @@
     "/metrics": {
       "get": {
         "operationId": "MetricsController_metricsEndpoint",
-        "parameters": [],
         "responses": {
           "200": {
             "description": ""
@@ -183,7 +180,6 @@
     "/loyalty/cancel": {
       "post": {
         "operationId": "LoyaltyController_cancel",
-        "parameters": [],
         "responses": {
           "200": {
             "description": "",
@@ -272,7 +268,6 @@
     "/loyalty/qr": {
       "post": {
         "operationId": "LoyaltyController_mintQr",
-        "parameters": [],
         "requestBody": {
           "required": true,
           "content": {
@@ -403,7 +398,6 @@
     "/loyalty/teleauth": {
       "post": {
         "operationId": "LoyaltyController_teleauth",
-        "parameters": [],
         "responses": {
           "201": {
             "description": ""
@@ -452,14 +446,6 @@
           },
           {
             "name": "outletId",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "deviceId",
             "required": true,
             "in": "query",
             "schema": {
@@ -597,7 +583,6 @@
       },
       "post": {
         "operationId": "LoyaltyController_setConsent",
-        "parameters": [],
         "responses": {
           "200": {
             "description": "",
@@ -948,399 +933,6 @@
           },
           {
             "name": "outletId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OkDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorDto"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "merchants"
-        ]
-      }
-    },
-    "/merchants/{id}/devices": {
-      "get": {
-        "operationId": "MerchantsController_listDevices",
-        "parameters": [
-          {
-            "name": "X-Admin-Key",
-            "in": "header",
-            "description": "Админ-ключ (в проде проксируется сервером админки)",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/DeviceDto"
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorDto"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "merchants"
-        ]
-      },
-      "post": {
-        "operationId": "MerchantsController_createDevice",
-        "parameters": [
-          {
-            "name": "X-Admin-Key",
-            "in": "header",
-            "description": "Админ-ключ (в проде проксируется сервером админки)",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateDeviceDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DeviceDto"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorDto"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "merchants"
-        ]
-      }
-    },
-    "/merchants/{id}/devices/{deviceId}": {
-      "put": {
-        "operationId": "MerchantsController_updateDevice",
-        "parameters": [
-          {
-            "name": "X-Admin-Key",
-            "in": "header",
-            "description": "Админ-ключ (в проде проксируется сервером админки)",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "deviceId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateDeviceDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DeviceDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorDto"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "merchants"
-        ]
-      },
-      "delete": {
-        "operationId": "MerchantsController_deleteDevice",
-        "parameters": [
-          {
-            "name": "X-Admin-Key",
-            "in": "header",
-            "description": "Админ-ключ (в проде проксируется сервером админки)",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "deviceId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OkDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorDto"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "merchants"
-        ]
-      }
-    },
-    "/merchants/{id}/devices/{deviceId}/secret": {
-      "post": {
-        "operationId": "MerchantsController_issueDeviceSecret",
-        "parameters": [
-          {
-            "name": "X-Admin-Key",
-            "in": "header",
-            "description": "Админ-ключ (в проде проксируется сервером админки)",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "deviceId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SecretRespDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorDto"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "merchants"
-        ]
-      },
-      "delete": {
-        "operationId": "MerchantsController_revokeDeviceSecret",
-        "parameters": [
-          {
-            "name": "X-Admin-Key",
-            "in": "header",
-            "description": "Админ-ключ (в проде проксируется сервером админки)",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "deviceId",
             "required": true,
             "in": "path",
             "schema": {
@@ -2183,14 +1775,6 @@
             }
           },
           {
-            "name": "deviceId",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
             "name": "staffId",
             "required": true,
             "in": "query",
@@ -2666,14 +2250,6 @@
           },
           {
             "name": "outletId",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "deviceId",
             "required": true,
             "in": "query",
             "schema": {
@@ -3375,10 +2951,8 @@
             "type": "string"
           },
           "allowedOutletId": {
-            "type": "object"
-          },
-          "allowedDeviceId": {
-            "type": "object"
+            "type": "object",
+            "description": "Ограничение доступа сотрудника на конкретную торговую точку"
           },
           "apiKeyHash": {
             "type": "object"
@@ -3436,10 +3010,8 @@
             "type": "string"
           },
           "allowedOutletId": {
-            "type": "string"
-          },
-          "allowedDeviceId": {
-            "type": "string"
+            "type": "string",
+            "description": "Ограничение доступа сотрудника на конкретную торговую точку"
           }
         }
       },
@@ -3551,9 +3123,6 @@
             "type": "string"
           },
           "outletId": {
-            "type": "object"
-          },
-          "deviceId": {
             "type": "object"
           },
           "staffId": {
