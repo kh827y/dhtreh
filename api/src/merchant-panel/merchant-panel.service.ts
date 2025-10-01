@@ -3,6 +3,7 @@ import { AccessScope, Prisma, StaffOutletAccessStatus, StaffRole, StaffStatus } 
 import { MerchantsService } from '../merchants/merchants.service';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
+import { ReviewService, PortalReviewFilters, ReviewSettingsInput } from '../reviews/review.service';
 import { hashPassword, verifyPassword } from '../password.util';
 import type {
   AccessGroupDto as AccessGroupDtoModel,
@@ -116,6 +117,7 @@ export class MerchantPanelService {
     private readonly prisma: PrismaService,
     private readonly merchants: MerchantsService,
     private readonly metrics: MetricsService,
+    private readonly reviews: ReviewService,
   ) {}
 
   private readonly defaultAccessGroupPresets: AccessGroupPreset[] = [
@@ -1147,6 +1149,18 @@ export class MerchantPanelService {
       this.metrics.inc('portal_access_group_write_total', { action: 'members' });
     } catch {}
     return { ok: true };
+  }
+
+  async listReviews(merchantId: string, filters: PortalReviewFilters = {}) {
+    return this.reviews.listPortalReviews(merchantId, filters);
+  }
+
+  async getReviewSettings(merchantId: string) {
+    return this.reviews.getReviewSettings(merchantId);
+  }
+
+  async updateReviewSettings(merchantId: string, payload: ReviewSettingsInput) {
+    return this.reviews.updateReviewSettings(merchantId, payload);
   }
 
   async listOutlets(merchantId: string, filters: OutletFilters = {}, pagination?: Partial<PaginationOptions>) {

@@ -230,6 +230,7 @@ model Merchant {
   promotions                  LoyaltyPromotion[]
   promotionMetrics            LoyaltyPromotionMetric[]
   promotionParticipants       PromotionParticipant[]
+  reviewSettings              ReviewSettings?
   loyaltyTiers                LoyaltyTier[]
   loyaltyTierAssignments      LoyaltyTierAssignment[]
   loyaltyMechanics            LoyaltyMechanic[]
@@ -1807,6 +1808,27 @@ model ReviewReaction {
   customer Customer @relation(fields: [customerId], references: [id])
 
   @@unique([reviewId, customerId])
+}
+
+model ReviewSettings {
+  merchantId      String    @id
+  notifyEnabled   Boolean   @default(false)
+  notifyThreshold Int       @default(5)
+  emailEnabled    Boolean   @default(false)
+  emailRecipients String[]  @default([])
+  telegramEnabled Boolean   @default(false)
+  shareEnabled    Boolean   @default(false)
+  shareThreshold  Int       @default(5)
+  shareYandex     Boolean   @default(false)
+  shareTwoGis     Boolean   @default(false)
+  shareGoogle     Boolean   @default(false)
+  shareYandexUrl  String?
+  shareTwoGisUrl  String?
+  shareGoogleUrl  String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 }
 
 // Aggregated per-customer stats per merchant

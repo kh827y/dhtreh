@@ -1,4 +1,6 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import type { ReviewSettings as ReviewSettingsModel } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 
@@ -8,10 +10,14 @@ export interface CreateReviewDto {
   orderId?: string;
   rating: number; // 1-5
   title?: string;
-  comment: string;
+  comment?: string;
   photos?: string[];
   tags?: string[];
   isAnonymous?: boolean;
+  transactionId?: string;
+  staffId?: string;
+  outletId?: string;
+  source?: 'miniapp' | 'portal' | 'api' | string;
 }
 
 export interface CreateReviewResponseDto {
@@ -32,6 +38,79 @@ export interface ReviewStats {
   recentReviews: any[];
 }
 
+export interface ReviewSettingsInput {
+  notifyEnabled?: boolean;
+  notifyThreshold?: number;
+  emailEnabled?: boolean;
+  emailRecipients?: string[];
+  telegramEnabled?: boolean;
+  shareEnabled?: boolean;
+  shareThreshold?: number;
+  shareYandex?: { enabled?: boolean; url?: string | null };
+  shareTwoGis?: { enabled?: boolean; url?: string | null };
+  shareGoogle?: { enabled?: boolean; url?: string | null };
+}
+
+export interface ReviewSettingsDto {
+  merchantId: string;
+  notifyEnabled: boolean;
+  notifyThreshold: number;
+  emailEnabled: boolean;
+  emailRecipients: string[];
+  telegramEnabled: boolean;
+  shareEnabled: boolean;
+  shareThreshold: number;
+  sharePlatforms: {
+    yandex: { enabled: boolean; url: string | null };
+    twoGis: { enabled: boolean; url: string | null };
+    google: { enabled: boolean; url: string | null };
+  };
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface PublicReviewSettingsDto {
+  shareEnabled: boolean;
+  shareThreshold: number;
+  sharePlatforms: {
+    yandex?: { enabled: boolean; url: string | null };
+    twoGis?: { enabled: boolean; url: string | null };
+    google?: { enabled: boolean; url: string | null };
+  };
+}
+
+export interface PortalReviewFilters {
+  withCommentOnly?: boolean;
+  ratingGte?: number;
+  staffId?: string;
+  outletId?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface PortalReviewListItem {
+  id: string;
+  rating: number;
+  comment: string | null;
+  createdAt: Date;
+  orderId?: string | null;
+  customer: { id: string; name: string | null; phone: string | null };
+  staff: { id: string; name: string | null } | null;
+  outlet: { id: string; name: string | null } | null;
+  hasResponse: boolean;
+}
+
+export interface PortalReviewListResponse {
+  items: PortalReviewListItem[];
+  total: number;
+  hasMore: boolean;
+  stats: ReviewStats;
+  filters: {
+    outlets: Array<{ id: string; name: string | null }>;
+    staff: Array<{ id: string; name: string | null }>;
+  };
+}
+
 @Injectable()
 export class ReviewService {
   constructor(
@@ -43,55 +122,100 @@ export class ReviewService {
    * Создать отзыв
    */
   async createReview(dto: CreateReviewDto) {
-    // Проверяем, что клиент делал покупку у мерчанта
-    const hasPurchase = await this.prisma.transaction.findFirst({
-      where: {
-        customerId: dto.customerId,
-        merchantId: dto.merchantId,
-        type: 'EARN',
-      },
-    });
-
-    if (!hasPurchase && !dto.orderId) {
-      throw new BadRequestException('Вы можете оставить отзыв только после покупки');
+    const rating = Math.round(dto.rating);
+    if (rating < 1 || rating > 5) {
+      throw new BadRequestException('Рейтинг должен быть от 1 до 5');
     }
 
-    // Проверяем, не оставлял ли уже отзыв на этот заказ
-    if (dto.orderId) {
-      const existingReview = await this.prisma.review.findFirst({
+    const comment = (dto.comment ?? '').trim();
+    const photos = Array.isArray(dto.photos) ? dto.photos.filter((item) => typeof item === 'string' && item.length > 0) : [];
+    const tags = Array.isArray(dto.tags) ? dto.tags.filter((item) => typeof item === 'string' && item.length > 0) : [];
+
+    const relatedTxn = await this.resolveRelatedTransaction(
+      dto.merchantId,
+      dto.customerId,
+      dto.transactionId,
+      dto.orderId,
+    );
+
+    if (!relatedTxn) {
+      const hasPurchase = await this.prisma.transaction.findFirst({
         where: {
           customerId: dto.customerId,
-          orderId: dto.orderId,
+          merchantId: dto.merchantId,
         },
       });
+      if (!hasPurchase) {
+        throw new BadRequestException('Вы можете оставить отзыв только после покупки');
+      }
+    }
 
-      if (existingReview) {
+    const orderIdToStore = dto.orderId || relatedTxn?.orderId || dto.transactionId || undefined;
+
+    if (orderIdToStore) {
+      const existingReviewByOrder = await this.prisma.review.findFirst({
+        where: {
+          merchantId: dto.merchantId,
+          customerId: dto.customerId,
+          orderId: orderIdToStore,
+        },
+      });
+      if (existingReviewByOrder) {
         throw new BadRequestException('Вы уже оставили отзыв на этот заказ');
       }
     }
 
-    // Валидация рейтинга
-    if (dto.rating < 1 || dto.rating > 5) {
-      throw new BadRequestException('Рейтинг должен быть от 1 до 5');
+    const transactionIdForCheck = dto.transactionId || relatedTxn?.id;
+    if (transactionIdForCheck) {
+      const existingReviewByTxn = await this.prisma.review.findFirst({
+        where: {
+          merchantId: dto.merchantId,
+          customerId: dto.customerId,
+          metadata: {
+            path: ['transactionId'],
+            equals: transactionIdForCheck,
+          },
+        },
+      });
+      if (existingReviewByTxn) {
+        throw new BadRequestException('Вы уже оставили отзыв на эту покупку');
+      }
     }
 
-    // Создаем отзыв
+    const rewardPoints = this.calculateReviewReward(rating, comment.length, photos.length);
+
+    const metadata: Record<string, unknown> = {
+      timestamp: new Date().toISOString(),
+      source: dto.source || 'api',
+      userAgent: dto.source || 'api',
+    };
+
+    if (relatedTxn) {
+      metadata.transactionId = relatedTxn.id;
+      metadata.transactionType = relatedTxn.type;
+      metadata.amount = relatedTxn.amount;
+      if (relatedTxn.staffId) metadata.staffId = relatedTxn.staffId;
+      if (relatedTxn.outletId) metadata.outletId = relatedTxn.outletId;
+    } else {
+      if (dto.transactionId) metadata.transactionId = dto.transactionId;
+      if (dto.staffId) metadata.staffId = dto.staffId;
+      if (dto.outletId) metadata.outletId = dto.outletId;
+    }
+
     const review = await this.prisma.review.create({
       data: {
         merchantId: dto.merchantId,
         customerId: dto.customerId,
-        orderId: dto.orderId,
-        rating: dto.rating,
-        title: dto.title,
-        comment: dto.comment,
-        photos: dto.photos || [],
-        tags: dto.tags || [],
+        orderId: orderIdToStore,
+        rating,
+        title: dto.title?.trim() || null,
+        comment,
+        photos,
+        tags,
         isAnonymous: dto.isAnonymous || false,
-        status: 'PENDING', // Требует модерации
-        metadata: {
-          userAgent: 'api',
-          timestamp: new Date(),
-        },
+        status: 'PENDING',
+        rewardPoints,
+        metadata: metadata as Prisma.InputJsonValue,
       },
       include: {
         customer: {
@@ -103,9 +227,6 @@ export class ReviewService {
       },
     });
 
-    // Начисляем баллы за отзыв
-    const rewardPoints = this.calculateReviewReward(dto.rating, dto.comment.length, dto.photos?.length || 0);
-    
     if (rewardPoints > 0) {
       await this.loyaltyService.earn({
         customerId: dto.customerId,
@@ -115,7 +236,6 @@ export class ReviewService {
       });
     }
 
-    // Обновляем статистику мерчанта
     await this.updateMerchantRating(dto.merchantId);
 
     return {
@@ -525,7 +645,303 @@ export class ReviewService {
     });
   }
 
+  async getReviewSettings(merchantId: string): Promise<ReviewSettingsDto> {
+    const record = await this.prisma.reviewSettings.findUnique({ where: { merchantId } }).catch(() => null);
+    return this.mapReviewSettingsDto(merchantId, record ?? undefined);
+  }
+
+  async updateReviewSettings(merchantId: string, input: ReviewSettingsInput): Promise<ReviewSettingsDto> {
+    const payload = this.prepareSettingsPayload(input);
+    const record = await this.prisma.reviewSettings.upsert({
+      where: { merchantId },
+      update: payload,
+      create: { merchantId, ...payload },
+    });
+    return this.mapReviewSettingsDto(merchantId, record);
+  }
+
+  async getPublicReviewSettings(merchantId: string): Promise<PublicReviewSettingsDto> {
+    const settings = await this.getReviewSettings(merchantId);
+    const sharePlatforms: PublicReviewSettingsDto['sharePlatforms'] = {};
+    if (settings.sharePlatforms.yandex.enabled && settings.sharePlatforms.yandex.url) {
+      sharePlatforms.yandex = {
+        enabled: true,
+        url: settings.sharePlatforms.yandex.url,
+      };
+    }
+    if (settings.sharePlatforms.twoGis.enabled && settings.sharePlatforms.twoGis.url) {
+      sharePlatforms.twoGis = {
+        enabled: true,
+        url: settings.sharePlatforms.twoGis.url,
+      };
+    }
+    if (settings.sharePlatforms.google.enabled && settings.sharePlatforms.google.url) {
+      sharePlatforms.google = {
+        enabled: true,
+        url: settings.sharePlatforms.google.url,
+      };
+    }
+    return {
+      shareEnabled: settings.shareEnabled,
+      shareThreshold: settings.shareThreshold,
+      sharePlatforms,
+    };
+  }
+
+  async listPortalReviews(
+    merchantId: string,
+    filters: PortalReviewFilters = {},
+  ): Promise<PortalReviewListResponse> {
+    const limit = Math.min(Math.max(filters.limit ?? 50, 1), 100);
+    const offset = Math.max(filters.offset ?? 0, 0);
+
+    const where: Prisma.ReviewWhereInput = {
+      merchantId,
+      deletedAt: null,
+      status: 'APPROVED',
+    };
+
+    const andConditions: Prisma.ReviewWhereInput[] = [];
+    if (filters.withCommentOnly) {
+      andConditions.push({ comment: { not: '' } });
+    }
+    if (filters.ratingGte) {
+      andConditions.push({ rating: { gte: filters.ratingGte } });
+    }
+    if (filters.staffId) {
+      andConditions.push({
+        metadata: {
+          path: ['staffId'],
+          equals: filters.staffId,
+        },
+      });
+    }
+    if (filters.outletId) {
+      andConditions.push({
+        metadata: {
+          path: ['outletId'],
+          equals: filters.outletId,
+        },
+      });
+    }
+    if (andConditions.length) {
+      where.AND = andConditions;
+    }
+
+    const [rawItems, total, stats, metadataPool] = await Promise.all([
+      this.prisma.review.findMany({
+        where,
+        include: {
+          customer: {
+            select: {
+              id: true,
+              name: true,
+              phone: true,
+            },
+          },
+          response: {
+            select: { id: true },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: offset,
+        take: limit,
+      }),
+      this.prisma.review.count({ where }),
+      this.getReviewStats(merchantId),
+      this.prisma.review.findMany({
+        where: { merchantId, status: 'APPROVED', deletedAt: null },
+        select: { metadata: true },
+      }),
+    ]);
+
+    const staffIds = new Set<string>();
+    const outletIds = new Set<string>();
+    for (const entry of metadataPool) {
+      const meta = this.extractReviewMeta(entry.metadata);
+      if (meta.staffId) staffIds.add(meta.staffId);
+      if (meta.outletId) outletIds.add(meta.outletId);
+    }
+
+    const [staffRecords, outletRecords] = await Promise.all([
+      staffIds.size
+        ? this.prisma.staff.findMany({
+            where: { merchantId, id: { in: Array.from(staffIds) } },
+            select: { id: true, firstName: true, lastName: true, login: true },
+          })
+        : [],
+      outletIds.size
+        ? this.prisma.outlet.findMany({
+            where: { merchantId, id: { in: Array.from(outletIds) } },
+            select: { id: true, name: true },
+          })
+        : [],
+    ]);
+
+    const staffMap = new Map<string, { id: string; name: string | null }>();
+    for (const staff of staffRecords) {
+      const name = `${staff.firstName ?? ''} ${staff.lastName ?? ''}`.trim() || staff.login || staff.id;
+      staffMap.set(staff.id, { id: staff.id, name });
+    }
+
+    const outletMap = new Map<string, { id: string; name: string | null }>();
+    for (const outlet of outletRecords) {
+      outletMap.set(outlet.id, { id: outlet.id, name: outlet.name ?? outlet.id });
+    }
+
+    const items: PortalReviewListItem[] = rawItems.map((review) => {
+      const meta = this.extractReviewMeta(review.metadata as Prisma.JsonValue | null);
+      const staff = meta.staffId
+        ? staffMap.get(meta.staffId) ?? { id: meta.staffId, name: 'Сотрудник удалён' }
+        : null;
+      const outlet = meta.outletId
+        ? outletMap.get(meta.outletId) ?? { id: meta.outletId, name: 'Точка удалена' }
+        : null;
+
+      return {
+        id: review.id,
+        rating: review.rating,
+        comment: review.comment || null,
+        createdAt: review.createdAt,
+        orderId: review.orderId ?? null,
+        customer: {
+          id: review.customer?.id ?? review.customerId,
+          name: review.customer?.name ?? null,
+          phone: review.customer?.phone ?? null,
+        },
+        staff,
+        outlet,
+        hasResponse: !!review.response,
+      };
+    });
+
+    const outletOptions = Array.from(outletIds).map((id) => outletMap.get(id) ?? { id, name: 'Точка удалена' });
+    outletOptions.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    const staffOptions = Array.from(staffIds).map((id) => staffMap.get(id) ?? { id, name: 'Сотрудник удалён' });
+    staffOptions.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+    return {
+      items,
+      total,
+      hasMore: offset + rawItems.length < total,
+      stats,
+      filters: {
+        outlets: outletOptions,
+        staff: staffOptions,
+      },
+    };
+  }
+
   // Вспомогательные методы
+
+  private async resolveRelatedTransaction(
+    merchantId: string,
+    customerId: string,
+    transactionId?: string,
+    orderId?: string,
+  ) {
+    if (transactionId) {
+      const txn = await this.prisma.transaction.findFirst({
+        where: { id: transactionId, merchantId, customerId },
+      });
+      if (txn) return txn;
+    }
+
+    if (orderId) {
+      const txn = await this.prisma.transaction.findFirst({
+        where: { merchantId, customerId, orderId },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (txn) return txn;
+    }
+
+    return null;
+  }
+
+  private prepareSettingsPayload(input: ReviewSettingsInput) {
+    const notifyThreshold = this.clampThreshold(input.notifyThreshold, 5);
+    const shareThreshold = this.clampThreshold(input.shareThreshold, 5);
+    const emailRecipients = Array.isArray(input.emailRecipients)
+      ? input.emailRecipients
+          .map((email) => (typeof email === 'string' ? email.trim() : ''))
+          .filter((email, index, self) => email.length > 0 && self.indexOf(email) === index)
+      : [];
+
+    return {
+      notifyEnabled: !!input.notifyEnabled,
+      notifyThreshold,
+      emailEnabled: !!input.emailEnabled,
+      emailRecipients,
+      telegramEnabled: !!input.telegramEnabled,
+      shareEnabled: !!input.shareEnabled,
+      shareThreshold,
+      shareYandex: !!input.shareYandex?.enabled,
+      shareTwoGis: !!input.shareTwoGis?.enabled,
+      shareGoogle: !!input.shareGoogle?.enabled,
+      shareYandexUrl: this.sanitizeUrl(input.shareYandex?.url),
+      shareTwoGisUrl: this.sanitizeUrl(input.shareTwoGis?.url),
+      shareGoogleUrl: this.sanitizeUrl(input.shareGoogle?.url),
+    } satisfies Omit<Prisma.ReviewSettingsUncheckedCreateInput, 'merchantId'>;
+  }
+
+  private sanitizeUrl(raw?: string | null): string | null {
+    if (!raw) return null;
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    return trimmed.startsWith('http://') || trimmed.startsWith('https://') ? trimmed : `https://${trimmed}`;
+  }
+
+  private clampThreshold(value: number | undefined, fallback: number) {
+    if (typeof value !== 'number' || Number.isNaN(value)) return fallback;
+    return Math.min(5, Math.max(1, Math.round(value)));
+  }
+
+  private mapReviewSettingsDto(
+    merchantId: string,
+    record?: ReviewSettingsModel | null,
+  ): ReviewSettingsDto {
+    const createdAt = record?.createdAt ?? new Date();
+    const updatedAt = record?.updatedAt ?? createdAt;
+    return {
+      merchantId,
+      notifyEnabled: record?.notifyEnabled ?? false,
+      notifyThreshold: record?.notifyThreshold ?? 5,
+      emailEnabled: record?.emailEnabled ?? false,
+      emailRecipients: record?.emailRecipients ?? [],
+      telegramEnabled: record?.telegramEnabled ?? false,
+      shareEnabled: record?.shareEnabled ?? false,
+      shareThreshold: record?.shareThreshold ?? 5,
+      sharePlatforms: {
+        yandex: {
+          enabled: record?.shareYandex ?? false,
+          url: record?.shareYandexUrl ?? null,
+        },
+        twoGis: {
+          enabled: record?.shareTwoGis ?? false,
+          url: record?.shareTwoGisUrl ?? null,
+        },
+        google: {
+          enabled: record?.shareGoogle ?? false,
+          url: record?.shareGoogleUrl ?? null,
+        },
+      },
+      createdAt,
+      updatedAt,
+    };
+  }
+
+  private extractReviewMeta(meta: Prisma.JsonValue | null | undefined): {
+    staffId?: string;
+    outletId?: string;
+    transactionId?: string;
+  } {
+    if (!meta || typeof meta !== 'object') return {};
+    const value = meta as Record<string, unknown>;
+    const staffId = typeof value.staffId === 'string' ? value.staffId : undefined;
+    const outletId = typeof value.outletId === 'string' ? value.outletId : undefined;
+    const transactionId = typeof value.transactionId === 'string' ? value.transactionId : undefined;
+    return { staffId, outletId, transactionId };
+  }
 
   private calculateReviewReward(rating: number, commentLength: number, photoCount: number): number {
     let points = 0;

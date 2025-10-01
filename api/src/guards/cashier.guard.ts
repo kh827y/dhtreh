@@ -18,14 +18,16 @@ export class CashierGuard implements CanActivate {
       path.startsWith('/loyalty/settings/') ||
       path === '/loyalty/transactions' ||
       path.startsWith('/loyalty/outlets/') ||
-      path.startsWith('/loyalty/staff/')
+      path.startsWith('/loyalty/staff/') ||
+      path.startsWith('/loyalty/reviews/settings')
     );
     const isAlwaysPublic = (
       path === '/loyalty/teleauth' ||
       path === '/loyalty/consent' ||
       path === '/loyalty/cashier/login' ||
       path === '/loyalty/cashier/staff-token' ||
-      path === '/loyalty/cashier/staff-access'
+      path === '/loyalty/cashier/staff-access' ||
+      path === '/loyalty/reviews'
     );
     if (isPublicGet || isAlwaysPublic) return true;
 

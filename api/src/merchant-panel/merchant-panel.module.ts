@@ -12,11 +12,13 @@ import { AccessGroupsResolver } from './resolvers/access-groups.resolver';
 import { OutletsResolver } from './resolvers/outlets.resolver';
 import { CashierResolver } from './resolvers/cashier.resolver';
 import { MetricsModule } from '../metrics.module';
+import { ReviewModule } from '../reviews/review.module';
+import { ReviewsController } from './controllers/reviews.controller';
 
 @Module({
-  imports: [PrismaModule, MerchantsModule, MetricsModule],
+  imports: [PrismaModule, MerchantsModule, MetricsModule, ReviewModule],
   providers: [MerchantPanelService, PortalGuard, StaffResolver, AccessGroupsResolver, OutletsResolver, CashierResolver],
-  controllers: [StaffController, AccessGroupsController, OutletsController, CashierController],
+  controllers: [StaffController, AccessGroupsController, OutletsController, CashierController, ReviewsController],
   exports: [MerchantPanelService],
 })
 export class MerchantPanelModule {}

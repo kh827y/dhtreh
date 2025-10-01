@@ -1,0 +1,21 @@
+CREATE TABLE IF NOT EXISTS "ReviewSettings" (
+  "merchantId" TEXT NOT NULL,
+  "notifyEnabled" BOOLEAN NOT NULL DEFAULT false,
+  "notifyThreshold" INTEGER NOT NULL DEFAULT 5,
+  "emailEnabled" BOOLEAN NOT NULL DEFAULT false,
+  "emailRecipients" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+  "telegramEnabled" BOOLEAN NOT NULL DEFAULT false,
+  "shareEnabled" BOOLEAN NOT NULL DEFAULT false,
+  "shareThreshold" INTEGER NOT NULL DEFAULT 5,
+  "shareYandex" BOOLEAN NOT NULL DEFAULT false,
+  "shareTwoGis" BOOLEAN NOT NULL DEFAULT false,
+  "shareGoogle" BOOLEAN NOT NULL DEFAULT false,
+  "shareYandexUrl" TEXT,
+  "shareTwoGisUrl" TEXT,
+  "shareGoogleUrl" TEXT,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "ReviewSettings_pkey" PRIMARY KEY ("merchantId"),
+  CONSTRAINT "ReviewSettings_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "Merchant"("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+

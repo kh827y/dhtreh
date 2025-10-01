@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Get, Param, Query, BadRequestException, Res, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { Body, Controller, Post, Get, Param, Query, BadRequestException, Res, Req, UnauthorizedException, UseGuards, Inject, forwardRef } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiExtraModels, ApiHeader, ApiOkResponse, ApiTags, ApiUnauthorizedResponse, getSchemaPath } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { LoyaltyService } from './loyalty.service';
@@ -16,6 +16,7 @@ import { verifyBridgeSignature as verifyBridgeSigUtil } from './bridge.util';
 import { validateTelegramInitData } from './telegram.util';
 import { PromosService } from '../promos/promos.service';
 import { PromoCodesService } from '../promocodes/promocodes.service';
+import { ReviewService } from '../reviews/review.service';
 
 @Controller('loyalty')
 @UseGuards(CashierGuard)
@@ -29,6 +30,8 @@ export class LoyaltyController {
     private readonly promos: PromosService,
     private readonly promoCodes: PromoCodesService,
     private readonly merchants: MerchantsService,
+    @Inject(forwardRef(() => ReviewService))
+    private readonly reviews: ReviewService,
   ) {}
 
   private async resolveOutlet(merchantId?: string, outletId?: string | null) {
@@ -568,6 +571,42 @@ export class LoyaltyController {
     const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 20, 1), 100) : 20;
     const before = beforeStr ? new Date(beforeStr) : undefined;
     return this.service.transactions(merchantId, customerId, limit, before, { outletId, staffId });
+  }
+
+  @Post('reviews')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  async createCustomerReview(@Body() body: any) {
+    const merchantId = typeof body?.merchantId === 'string' ? body.merchantId.trim() : '';
+    const customerId = typeof body?.customerId === 'string' ? body.customerId.trim() : '';
+    const rating = Number(body?.rating);
+
+    if (!merchantId || !customerId) {
+      throw new BadRequestException('merchantId and customerId required');
+    }
+    if (!Number.isFinite(rating)) {
+      throw new BadRequestException('rating required');
+    }
+
+    return this.reviews.createReview({
+      merchantId,
+      customerId,
+      rating,
+      orderId: typeof body?.orderId === 'string' ? body.orderId : undefined,
+      comment: typeof body?.comment === 'string' ? body.comment : '',
+      transactionId: typeof body?.transactionId === 'string' ? body.transactionId : undefined,
+      photos: Array.isArray(body?.photos) ? body.photos : undefined,
+      tags: Array.isArray(body?.tags) ? body.tags : undefined,
+      source: 'miniapp',
+    });
+  }
+
+  @Get('reviews/settings/:merchantId')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async publicReviewSettings(@Param('merchantId') merchantId: string) {
+    if (!merchantId) {
+      throw new BadRequestException('merchantId required');
+    }
+    return this.reviews.getPublicReviewSettings(merchantId);
   }
 
   // Публичные списки для фронтов (без AdminGuard)

@@ -40,6 +40,27 @@ export type ReferralLinkResp = {
   };
 };
 
+export type ReviewPublicSettings = {
+  shareEnabled: boolean;
+  shareThreshold: number;
+  sharePlatforms: {
+    yandex?: { enabled: boolean; url: string | null };
+    twoGis?: { enabled: boolean; url: string | null };
+    google?: { enabled: boolean; url: string | null };
+  };
+};
+
+export type ReviewSubmitPayload = {
+  merchantId: string;
+  customerId: string;
+  rating: number;
+  comment?: string;
+  orderId?: string;
+  transactionId?: string;
+  photos?: string[];
+  tags?: string[];
+};
+
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/$/, '');
 
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
@@ -97,4 +118,15 @@ export async function referralLink(customerId: string, merchantId: string): Prom
 
 export async function referralActivate(code: string, customerId: string): Promise<{ success: boolean; message?: string; referralId?: string }> {
   return http('/referral/activate', { method: 'POST', body: JSON.stringify({ code, refereeId: customerId }) });
+}
+
+export async function reviewSettingsPublic(merchantId: string): Promise<ReviewPublicSettings> {
+  return http(`/loyalty/reviews/settings/${encodeURIComponent(merchantId)}`);
+}
+
+export async function submitReview(payload: ReviewSubmitPayload) {
+  return http('/loyalty/reviews', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }

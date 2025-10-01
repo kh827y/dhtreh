@@ -63,8 +63,13 @@ describe('MerchantPanelService', () => {
     };
     const merchants: any = {};
     const metrics = { inc: jest.fn(), observe: jest.fn(), setGauge: jest.fn() } as any;
+    const reviews = {
+      listPortalReviews: jest.fn(),
+      getReviewSettings: jest.fn(),
+      updateReviewSettings: jest.fn(),
+    } as any;
 
-    const service = new MerchantPanelService(prisma, merchants, metrics);
+    const service = new MerchantPanelService(prisma, merchants, metrics, reviews);
     const result = await service.listStaff('mrc_1', {}, { page: 1, pageSize: 20 });
 
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
@@ -155,8 +160,13 @@ describe('MerchantPanelService', () => {
 
     const merchants: any = {};
     const metrics = { inc: jest.fn(), observe: jest.fn(), setGauge: jest.fn() } as any;
+    const reviews = {
+      listPortalReviews: jest.fn(),
+      getReviewSettings: jest.fn(),
+      updateReviewSettings: jest.fn(),
+    } as any;
 
-    const service = new MerchantPanelService(prisma, merchants, metrics);
+    const service = new MerchantPanelService(prisma, merchants, metrics, reviews);
     (service as any).logger = { log: jest.fn() };
     const expectedCreated = ((service as any).defaultAccessGroupPresets || []).length || 0;
     const result = await service.listAccessGroups('mrc_1', {}, { page: 1, pageSize: 20 });

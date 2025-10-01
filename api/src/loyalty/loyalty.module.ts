@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { LoyaltyService } from './loyalty.service';
 import { LoyaltyController } from './loyalty.controller';
 import { PrismaModule } from '../prisma.module';
@@ -11,6 +11,7 @@ import { AntifraudModule } from '../antifraud/antifraud.module';
 import { PromosModule } from '../promos/promos.module';
 import { PromoCodesModule } from '../promocodes/promocodes.module';
 import { MerchantsModule } from '../merchants/merchants.module';
+import { ReviewModule } from '../reviews/review.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { MerchantsModule } from '../merchants/merchants.module';
     PromosModule,
     PromoCodesModule,
     MerchantsModule,
+    forwardRef(() => ReviewModule),
   ],
   providers: [LoyaltyService, CashierGuard, SubscriptionGuard, AntiFraudGuard],
   controllers: [LoyaltyController],

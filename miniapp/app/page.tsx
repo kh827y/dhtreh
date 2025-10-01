@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import QrCanvas from "../components/QrCanvas";
 import {
   balance,
@@ -13,11 +13,15 @@ import {
   transactions,
   referralLink,
   referralActivate,
+  reviewSettingsPublic,
+  submitReview,
 } from "../lib/api";
+import type { ReviewPublicSettings } from "../lib/api";
 import Spinner from "../components/Spinner";
 import Toast from "../components/Toast";
 import { useMiniappAuth } from "../lib/useMiniapp";
 import styles from "./page.module.css";
+import { ReviewPrompt } from "../components/ReviewPrompt";
 
 const DEV_UI =
   (process.env.NEXT_PUBLIC_MINIAPP_DEV_UI || "").toLowerCase() === "true" ||
@@ -62,6 +66,8 @@ type TelegramWebApp = {
   ready?: () => void;
   expand?: () => void;
   requestPhoneNumber?: () => Promise<unknown>;
+  openLink?: (url: string, options?: { try_instant_view?: boolean }) => void;
+  openTelegramLink?: (url: string) => void;
 };
 
 type TelegramWindow = Window & { Telegram?: { WebApp?: TelegramWebApp } };
@@ -100,6 +106,28 @@ function getTelegramUser(): TelegramUser | null {
   }
 }
 
+function openExternalLink(url: string) {
+  if (!url) return;
+  try {
+    const tg = getTelegramWebApp();
+    if (tg?.openLink) {
+      tg.openLink(url, { try_instant_view: false });
+      return;
+    }
+  } catch {
+    // ignore
+  }
+  if (typeof window !== 'undefined') {
+    window.open(url, '_blank', 'noopener');
+  }
+}
+
+const SHARE_BUTTON_STYLE: Record<string, { background: string; color: string }> = {
+  twoGis: { background: 'linear-gradient(135deg,#34d399,#059669)', color: '#ffffff' },
+  yandex: { background: '#FACC15', color: '#1f2937' },
+  google: { background: 'linear-gradient(135deg,#2563eb,#1d4ed8)', color: '#ffffff' },
+};
+
 function resolveErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;
@@ -123,6 +151,11 @@ function formatTxType(type: string): { title: string; tone: "earn" | "redeem" | 
 function formatAmount(amount: number): string {
   const sign = amount > 0 ? "+" : amount < 0 ? "" : "";
   return `${sign}${amount.toLocaleString("ru-RU", { maximumFractionDigits: 2 })}`;
+}
+
+function isReviewEligibleTransaction(tx: TransactionItem): boolean {
+  const type = (tx.type || '').toLowerCase();
+  return type.includes('earn') || type.includes('redeem');
 }
 
 function getProgressPercent(levelInfo: LevelInfo | null): number {
@@ -207,6 +240,15 @@ export default function Page() {
   const [referralLoading, setReferralLoading] = useState<boolean>(false);
   const [inviteCode, setInviteCode] = useState<string>("");
   const [inviteApplied, setInviteApplied] = useState<boolean>(false);
+  const [reviewPromptVisible, setReviewPromptVisible] = useState<boolean>(false);
+  const [reviewTarget, setReviewTarget] = useState<{ transactionId?: string; orderId?: string | null } | null>(null);
+  const [reviewSubmitting, setReviewSubmitting] = useState<boolean>(false);
+  const [lastReviewRating, setLastReviewRating] = useState<number>(0);
+  const [sharePromptVisible, setSharePromptVisible] = useState<boolean>(false);
+  const [reviewSettings, setReviewSettings] = useState<ReviewPublicSettings | null>(null);
+  const reviewHandledRef = useRef<Set<string>>(new Set());
+  const latestTxRef = useRef<string | null>(null);
+  const initialTxLoadedRef = useRef<boolean>(false);
 
   useEffect(() => {
     const tgUser = getTelegramUser();
@@ -250,6 +292,20 @@ export default function Page() {
   }, []);
 
   useEffect(() => {
+    try {
+      const raw = localStorage.getItem('miniapp.review.handled');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          reviewHandledRef.current = new Set(parsed.map((value: unknown) => String(value)));
+        }
+      }
+    } catch {
+      reviewHandledRef.current = new Set();
+    }
+  }, []);
+
+  useEffect(() => {
     setLoading(auth.loading);
     setError(auth.error);
     if (!auth.loading) {
@@ -257,6 +313,24 @@ export default function Page() {
       if (auth.theme.ttl) setTtl(auth.theme.ttl);
     }
   }, [auth.loading, auth.error, auth.customerId, auth.theme]);
+
+  useEffect(() => {
+    if (!merchantId) {
+      setReviewSettings(null);
+      return;
+    }
+    let cancelled = false;
+    reviewSettingsPublic(merchantId)
+      .then((settings) => {
+        if (!cancelled) setReviewSettings(settings);
+      })
+      .catch(() => {
+        if (!cancelled) setReviewSettings(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [merchantId]);
 
   const retry = useCallback(
     async <T,>(fn: () => Promise<T>, tries = 2, delayMs = 500): Promise<T> => {
@@ -270,6 +344,81 @@ export default function Page() {
     },
     []
   );
+
+  const makeReviewKey = useCallback((target: { transactionId?: string; orderId?: string | null } | null) => {
+    if (!target) return '';
+    if (target.transactionId) return `tx:${target.transactionId}`;
+    if (target.orderId) return `order:${target.orderId}`;
+    return '';
+  }, []);
+
+  const markReviewHandled = useCallback((target: { transactionId?: string; orderId?: string | null } | null) => {
+    const key = makeReviewKey(target);
+    if (!key) return;
+    reviewHandledRef.current.add(key);
+    try {
+      localStorage.setItem('miniapp.review.handled', JSON.stringify(Array.from(reviewHandledRef.current)));
+    } catch {
+      // ignore persistence errors
+    }
+  }, [makeReviewKey]);
+
+  const shareLinks = useMemo(() => {
+    if (!reviewSettings?.shareEnabled) return [] as Array<{ key: string; label: string; url: string }>;
+    const items: Array<{ key: string; label: string; url: string }> = [];
+    const mapping: Array<{ key: 'twoGis' | 'yandex' | 'google'; label: string }> = [
+      { key: 'twoGis', label: '2ГИС' },
+      { key: 'yandex', label: 'Яндекс Карты' },
+      { key: 'google', label: 'Google' },
+    ];
+    for (const entry of mapping) {
+      const platform = reviewSettings.sharePlatforms?.[entry.key];
+      if (platform?.enabled && platform.url) {
+        items.push({ key: entry.key, label: entry.label, url: platform.url });
+      }
+    }
+    return items;
+  }, [reviewSettings]);
+
+  const handleReviewClose = useCallback(() => {
+    markReviewHandled(reviewTarget);
+    setReviewPromptVisible(false);
+    setReviewTarget(null);
+  }, [reviewTarget, markReviewHandled]);
+
+  const handleReviewSubmit = useCallback(async (value: number, text: string) => {
+    if (!merchantId || !customerId || !reviewTarget) return;
+    setReviewSubmitting(true);
+    try {
+      await submitReview({
+        merchantId,
+        customerId,
+        rating: value,
+        comment: text,
+        transactionId: reviewTarget.transactionId,
+        orderId: reviewTarget.orderId ?? undefined,
+      });
+      setToast({ msg: 'Спасибо за отзыв!', type: 'success' });
+      markReviewHandled(reviewTarget);
+      setReviewPromptVisible(false);
+      setReviewTarget(null);
+      setLastReviewRating(value);
+      if (reviewSettings?.shareEnabled && value >= (reviewSettings.shareThreshold ?? 5) && shareLinks.length > 0) {
+        setSharePromptVisible(true);
+      } else {
+        setSharePromptVisible(false);
+      }
+    } catch (error) {
+      const message = resolveErrorMessage(error);
+      setToast({ msg: message || 'Не удалось отправить отзыв', type: 'error' });
+    } finally {
+      setReviewSubmitting(false);
+    }
+  }, [merchantId, customerId, reviewTarget, reviewSettings, shareLinks, markReviewHandled]);
+
+  const handleShareClose = useCallback(() => {
+    setSharePromptVisible(false);
+  }, []);
 
   const doMint = useCallback(async () => {
     if (!customerId) {
@@ -394,6 +543,29 @@ export default function Page() {
   }, [customerId, syncConsent, loadBalance, loadTx, loadLevels]);
 
   useEffect(() => {
+    if (!merchantId || !customerId) return;
+    if (!tx.length) return;
+    const newest = tx[0];
+    if (!newest?.id) return;
+
+    if (!initialTxLoadedRef.current) {
+      initialTxLoadedRef.current = true;
+      latestTxRef.current = newest.id;
+      return;
+    }
+
+    if (latestTxRef.current === newest.id) return;
+    latestTxRef.current = newest.id;
+
+    const key = makeReviewKey({ transactionId: newest.id, orderId: newest.orderId ?? null });
+    if (key && reviewHandledRef.current.has(key)) return;
+    if (!isReviewEligibleTransaction(newest)) return;
+
+    setReviewTarget({ transactionId: newest.id, orderId: newest.orderId ?? null });
+    setReviewPromptVisible(true);
+  }, [tx, merchantId, customerId, makeReviewKey]);
+
+  useEffect(() => {
     if (!customerId) {
       setReferralEnabled(false);
       setReferralInfo(null);
@@ -495,8 +667,8 @@ export default function Page() {
     const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(referralInfo.link)}&text=${encodeURIComponent(message)}`;
     try {
       const tg = getTelegramWebApp();
-      if (tg && typeof (tg as any).openTelegramLink === "function") {
-        (tg as any).openTelegramLink(shareUrl);
+      if (tg?.openTelegramLink) {
+        tg.openTelegramLink(shareUrl);
         setToast({ msg: "Откройте Telegram, чтобы отправить приглашение", type: "success" });
         return;
       }
@@ -858,6 +1030,100 @@ export default function Page() {
       {error && !loading && <div className={styles.error}>{error}</div>}
 
       {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
+
+      <ReviewPrompt
+        visible={reviewPromptVisible}
+        onClose={handleReviewClose}
+        onSubmit={handleReviewSubmit}
+        loading={reviewSubmitting}
+      />
+
+      {sharePromptVisible && shareLinks.length > 0 && (
+        <div
+          onClick={handleShareClose}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(23,24,43,0.45)',
+            backdropFilter: 'blur(6px)',
+            display: 'flex',
+            alignItems: 'flex-end',
+            justifyContent: 'center',
+            padding: '0 16px 24px',
+            zIndex: 85,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: 460,
+              background: '#ffffff',
+              borderRadius: '22px 22px 0 0',
+              padding: '26px 22px 28px',
+              boxShadow: '0 -18px 40px rgba(42,47,89,0.18)',
+              display: 'grid',
+              gap: 18,
+              position: 'relative',
+            }}
+          >
+            <button
+              onClick={handleShareClose}
+              style={{
+                position: 'absolute',
+                top: 12,
+                right: 18,
+                border: 'none',
+                background: 'transparent',
+                color: '#6b7280',
+                cursor: 'pointer',
+                fontSize: 20,
+              }}
+              aria-label="Закрыть"
+            >
+              ✕
+            </button>
+            <div style={{ display: 'grid', gap: 8 }}>
+              <div style={{ fontSize: 18, fontWeight: 700 }}>Мы рады, что вам понравилось!</div>
+              <div style={{ fontSize: 13, color: '#6b7280' }}>
+                Пожалуйста, поделитесь своим отзывом в любимом сервисе.
+              </div>
+              {lastReviewRating > 0 && (
+                <div style={{ fontSize: 12, color: '#9ca3af' }}>Ваша оценка: {lastReviewRating} ⭐</div>
+              )}
+            </div>
+            <div style={{ display: 'grid', gap: 12 }}>
+              {shareLinks.map((link) => {
+                const palette = SHARE_BUTTON_STYLE[link.key] || {
+                  background: '#1f2937',
+                  color: '#ffffff',
+                };
+                return (
+                  <button
+                    key={link.key}
+                    onClick={() => {
+                      openExternalLink(link.url);
+                      handleShareClose();
+                    }}
+                    style={{
+                      padding: '14px 16px',
+                      borderRadius: 14,
+                      border: 'none',
+                      background: palette.background,
+                      color: palette.color,
+                      fontWeight: 700,
+                      fontSize: 15,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {link.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {showQrModal && (
         <div className={styles.modalBackdrop} onClick={() => setShowQrModal(false)}>

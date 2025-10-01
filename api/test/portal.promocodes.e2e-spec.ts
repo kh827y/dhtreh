@@ -42,7 +42,12 @@ describe('Portal promocodes (e2e)', () => {
   const metricsMock = {
     inc: jest.fn(),
     observe: jest.fn(),
-  } as unknown as MetricsService;
+    setGauge: jest.fn(),
+    increment: jest.fn(),
+    exportProm: jest.fn(async () => ''),
+    recordHttp: jest.fn(),
+    onModuleDestroy: jest.fn(),
+  } as unknown as jest.Mocked<MetricsService>;
 
   const prismaMock: any = {
     $connect: jest.fn(async () => {}),
