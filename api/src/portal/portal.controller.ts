@@ -32,6 +32,7 @@ import { StaffMotivationService, type UpdateStaffMotivationPayload } from './ser
 import { ActionsService, type ActionsTab, type CreateProductBonusActionPayload, type UpdateActionStatusPayload } from './services/actions.service';
 import { OperationsLogService, type OperationsLogFilters } from './services/operations-log.service';
 import { PortalTelegramIntegrationService } from './services/telegram-integration.service';
+import { ReferralService, type ReferralProgramSettingsDto } from '../referral/referral.service';
 
 @ApiTags('portal')
 @Controller('portal')
@@ -51,6 +52,7 @@ export class PortalController {
     private readonly operations: OperationsLogService,
     private readonly customersService: PortalCustomersService,
     private readonly telegramIntegration: PortalTelegramIntegrationService,
+    private readonly referrals: ReferralService,
   ) {}
 
   private getMerchantId(req: any) { return String((req as any).portalMerchantId || ''); }
@@ -118,8 +120,42 @@ export class PortalController {
   }
 
   private coerceCount(value: unknown): number {
-    const num = Number(value ?? 0);
-    return Number.isFinite(num) ? num : 0;
+    const num = Number(value);
+    if (!Number.isFinite(num)) return 0;
+    return Math.max(0, Math.round(num));
+  }
+
+  private normalizeReferralProgramPayload(body: any): ReferralProgramSettingsDto {
+    const rewardTrigger: ReferralProgramSettingsDto['rewardTrigger'] = body?.rewardTrigger === 'all' ? 'all' : 'first';
+    const rewardType: ReferralProgramSettingsDto['rewardType'] =
+      body?.rewardType === 'PERCENT' || body?.rewardType === 'percent' ? 'percent' : 'fixed';
+    const rewardValueRaw = Number(body?.rewardValue ?? 0);
+    const friendRewardRaw = Number(body?.friendReward ?? 0);
+    const placeholders = Array.isArray(body?.placeholders)
+      ? body.placeholders
+          .map((item: any) => (typeof item === 'string' ? item.trim() : ''))
+          .filter((item: string) => item.length > 0)
+      : undefined;
+    const levels = Array.isArray(body?.levels)
+      ? body.levels.map((item: any) => ({
+          level: Number(item?.level ?? 0),
+          enabled: Boolean(item?.enabled),
+          reward: Number(item?.reward ?? 0),
+        }))
+      : [];
+
+    return {
+      enabled: Boolean(body?.enabled),
+      rewardTrigger,
+      rewardType,
+      multiLevel: Boolean(body?.multiLevel),
+      rewardValue: Number.isFinite(rewardValueRaw) ? rewardValueRaw : 0,
+      levels,
+      friendReward: Number.isFinite(friendRewardRaw) ? friendRewardRaw : 0,
+      stackWithRegistration: Boolean(body?.stackWithRegistration),
+      message: typeof body?.message === 'string' ? body.message : '',
+      placeholders,
+    };
   }
 
   private extractMetadata(payload: Record<string, any>, stats: Record<string, any>) {
@@ -536,6 +572,17 @@ export class PortalController {
   @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
   duplicateAction(@Req() req: any, @Param('campaignId') campaignId: string) {
     return this.actions.duplicate(this.getMerchantId(req), campaignId);
+  }
+
+  @Get('referrals/program')
+  referralProgramSettings(@Req() req: any) {
+    return this.referrals.getProgramSettingsForMerchant(this.getMerchantId(req));
+  }
+
+  @Put('referrals/program')
+  updateReferralProgramSettings(@Req() req: any, @Body() body: any) {
+    const payload = this.normalizeReferralProgramPayload(body);
+    return this.referrals.updateProgramSettingsFromPortal(this.getMerchantId(req), payload);
   }
 
   // ===== Operations journal =====

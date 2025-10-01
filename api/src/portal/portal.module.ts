@@ -15,6 +15,7 @@ import { OperationsLogService } from './services/operations-log.service';
 import { TelegramModule } from '../telegram/telegram.module';
 import { PortalTelegramIntegrationService } from './services/telegram-integration.service';
 import { CommunicationsModule } from '../communications/communications.module';
+import { ReferralModule } from '../referral/referral.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { CommunicationsModule } from '../communications/communications.module';
     GiftsModule,
     TelegramModule,
     CommunicationsModule,
+    ReferralModule,
   ],
   controllers: [PortalController],
   providers: [

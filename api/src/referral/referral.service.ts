@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { EmailService } from '../notifications/email/email.service';
@@ -8,12 +9,19 @@ export interface CreateReferralProgramDto {
   merchantId: string;
   name: string;
   description?: string;
-  referrerReward: number; // Баллы для приглашающего
+  referrerReward: number; // Баллы для приглашающего или процент при rewardType === 'PERCENT'
   refereeReward: number;  // Баллы для приглашенного
   minPurchaseAmount?: number; // Минимальная сумма первой покупки
   maxReferrals?: number; // Максимум рефералов на человека
   expiryDays?: number; // Срок действия реферальной ссылки
   status?: 'ACTIVE' | 'PAUSED' | 'COMPLETED';
+  rewardTrigger?: 'first' | 'all';
+  rewardType?: 'FIXED' | 'PERCENT';
+  multiLevel?: boolean;
+  levelRewards?: Array<{ level: number; enabled: boolean; reward: number }>;
+  stackWithRegistration?: boolean;
+  messageTemplate?: string;
+  placeholders?: string[];
 }
 
 export interface CreateReferralDto {
@@ -23,6 +31,24 @@ export interface CreateReferralDto {
   refereeEmail?: string;
   channel?: 'EMAIL' | 'LINK' | 'QR';
 }
+
+type RewardTrigger = 'first' | 'all';
+type RewardMode = 'FIXED' | 'PERCENT';
+
+export interface ReferralProgramSettingsDto {
+  enabled: boolean;
+  rewardTrigger: RewardTrigger;
+  rewardType: 'fixed' | 'percent';
+  multiLevel: boolean;
+  rewardValue: number;
+  levels: Array<{ level: number; enabled: boolean; reward: number }>;
+  friendReward: number;
+  stackWithRegistration: boolean;
+  message: string;
+  placeholders?: string[];
+}
+
+const REFERRAL_PLACEHOLDERS = ['{businessname}', '{bonusamount}', '{code}', '{link}'] as const;
 
 export interface ReferralStats {
   totalReferrals: number;
@@ -62,17 +88,35 @@ export class ReferralService {
       throw new BadRequestException('У мерчанта уже есть активная реферальная программа');
     }
 
+    const rewardType: RewardMode = dto.rewardType === 'PERCENT' ? 'PERCENT' : 'FIXED';
+    const rewardTrigger: RewardTrigger = dto.rewardTrigger === 'all' ? 'all' : 'first';
+    const multiLevel = Boolean(dto.multiLevel);
+    const baseReward = this.roundTwo(dto.referrerReward ?? 0);
+    const levels = this.normalizeLevels(dto.levelRewards, multiLevel, rewardType, baseReward);
+    const levelRewardsJson = multiLevel ? levels : Prisma.JsonNull;
+    const referrerReward = multiLevel
+      ? levels.find((level) => level.level === 1)?.reward ?? 0
+      : baseReward;
+
     return this.prisma.referralProgram.create({
       data: {
         merchantId: dto.merchantId,
         name: dto.name,
         description: dto.description,
-        referrerReward: dto.referrerReward,
-        refereeReward: dto.refereeReward,
+        referrerReward,
+        refereeReward: this.roundTwo(dto.refereeReward ?? 0),
         minPurchaseAmount: dto.minPurchaseAmount || 0,
         maxReferrals: dto.maxReferrals || 100,
         expiryDays: dto.expiryDays || 30,
         status: dto.status || 'ACTIVE',
+        isActive: (dto.status || 'ACTIVE') === 'ACTIVE',
+        rewardTrigger,
+        rewardType,
+        multiLevel,
+        levelRewards: levelRewardsJson,
+        stackWithRegistration: Boolean(dto.stackWithRegistration),
+        messageTemplate: this.normalizeMessageTemplate(dto.messageTemplate),
+        placeholders: this.normalizePlaceholders(dto.placeholders),
       },
     });
   }
@@ -223,6 +267,7 @@ export class ReferralService {
         program: {
           merchantId,
           status: 'ACTIVE',
+          isActive: true,
         },
       },
       include: {
@@ -240,6 +285,8 @@ export class ReferralService {
     }
 
     // Обновляем статус реферала
+    const rewardAmount = this.computeReferrerReward(referral.program as Prisma.ReferralProgram, purchaseAmount);
+
     await this.prisma.referral.update({
       where: { id: referral.id },
       data: {
@@ -250,22 +297,22 @@ export class ReferralService {
     });
 
     // Начисляем бонус приглашающему
-    if (referral.program.referrerReward > 0) {
+    if (rewardAmount > 0) {
       await this.loyaltyService.earn({
         customerId: referral.referrerId,
         merchantId,
-        amount: referral.program.referrerReward,
+        amount: rewardAmount,
         orderId: `referral_reward_${referral.id}`,
       });
 
       // Уведомляем приглашающего
-      await this.notifyReferrerAboutCompletion(referral);
+      await this.notifyReferrerAboutCompletion(referral, rewardAmount);
     }
 
     return {
       success: true,
       referralId: referral.id,
-      rewardIssued: referral.program.referrerReward,
+      rewardIssued: rewardAmount,
     };
   }
 
@@ -300,12 +347,21 @@ export class ReferralService {
     const totalReferrals = program.referrals.length;
     const successfulReferrals = program.referrals.filter(r => r.status === 'COMPLETED').length;
     const pendingReferrals = program.referrals.filter(r => r.status === 'PENDING').length;
-    
-    const totalRewardsIssued = successfulReferrals * program.referrerReward + 
-                              program.referrals.filter(r => r.status === 'ACTIVATED' || r.status === 'COMPLETED').length * program.refereeReward;
-    
-    const conversionRate = totalReferrals > 0 
-      ? (successfulReferrals / totalReferrals) * 100 
+    const friendReward = this.roundTwo(program.refereeReward ?? 0);
+    const baseProgram = program as unknown as Prisma.ReferralProgram;
+
+    let totalRewardsIssued = 0;
+    for (const referral of program.referrals) {
+      if (referral.status === 'COMPLETED') {
+        totalRewardsIssued += friendReward;
+        totalRewardsIssued += this.computeReferrerReward(baseProgram, referral.purchaseAmount ?? undefined);
+      } else if (referral.status === 'ACTIVATED') {
+        totalRewardsIssued += friendReward;
+      }
+    }
+
+    const conversionRate = totalReferrals > 0
+      ? (successfulReferrals / totalReferrals) * 100
       : 0;
 
     // Группируем по приглашающим
@@ -332,7 +388,7 @@ export class ReferralService {
       referrer.referralsCount++;
       
       if (referral.status === 'COMPLETED') {
-        referrer.rewardsEarned += program.referrerReward;
+        referrer.rewardsEarned += this.computeReferrerReward(baseProgram, referral.purchaseAmount ?? undefined);
       }
     }
 
@@ -380,8 +436,11 @@ export class ReferralService {
     };
 
     for (const referral of referrals) {
+      const programData = referral.program as unknown as Prisma.ReferralProgram;
+      let reward = 0;
       if (referral.status === 'COMPLETED') {
-        stats.totalEarned += referral.program.referrerReward;
+        reward = this.computeReferrerReward(programData, referral.purchaseAmount ?? undefined);
+        stats.totalEarned += reward;
       }
 
       stats.referrals.push({
@@ -393,7 +452,7 @@ export class ReferralService {
         createdAt: referral.createdAt,
         activatedAt: referral.activatedAt,
         completedAt: referral.completedAt,
-        reward: referral.status === 'COMPLETED' ? referral.program.referrerReward : 0,
+        reward,
       });
     }
 
@@ -409,6 +468,10 @@ export class ReferralService {
       where: {
         merchantId,
         status: 'ACTIVE',
+        isActive: true,
+      },
+      include: {
+        merchant: { select: { name: true } },
       },
     });
 
@@ -438,10 +501,15 @@ export class ReferralService {
       link: this.generateReferralLink(merchantId, referralCode),
       qrCode: this.generateQrCodeUrl(merchantId, referralCode),
       program: {
+        id: program.id,
         name: program.name,
         description: program.description,
-        referrerReward: program.referrerReward,
-        refereeReward: program.refereeReward,
+        rewardType: program.rewardType,
+        referrerReward: this.roundTwo(program.referrerReward ?? 0),
+        refereeReward: this.roundTwo(program.refereeReward ?? 0),
+        merchantName: program.merchant?.name || '',
+        messageTemplate: this.normalizeMessageTemplate(program.messageTemplate),
+        placeholders: this.normalizePlaceholders(program.placeholders),
       },
     };
   }
@@ -512,7 +580,7 @@ export class ReferralService {
     }).catch(console.error);
   }
 
-  private async notifyReferrerAboutCompletion(referral: any) {
+  private async notifyReferrerAboutCompletion(referral: any, reward: number) {
     const referrer = await this.prisma.customer.findUnique({
       where: { id: referral.referrerId },
     });
@@ -526,7 +594,7 @@ export class ReferralService {
         template: 'referral_completed',
         data: {
           customerName: referrer.name || 'Уважаемый клиент',
-          reward: referral.program.referrerReward,
+          reward,
         },
         merchantId: referral.program.merchantId,
         customerId: referrer.id,
@@ -537,6 +605,89 @@ export class ReferralService {
   private configService = {
     get: (key: string) => process.env[key],
   };
+
+  private roundTwo(value: number | null | undefined) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return 0;
+    return Math.round(value * 100) / 100;
+  }
+
+  private normalizePlaceholders(input?: string[] | null): string[] {
+    const set = new Set<string>();
+    if (Array.isArray(input)) {
+      for (const item of input) {
+        if (typeof item !== 'string') continue;
+        const normalized = item.trim().toLowerCase();
+        const original = REFERRAL_PLACEHOLDERS.find((p) => p === normalized);
+        if (original) set.add(original);
+      }
+    }
+    if (!set.size) {
+      REFERRAL_PLACEHOLDERS.forEach((placeholder) => set.add(placeholder));
+    }
+    return Array.from(set);
+  }
+
+  private normalizeMessageTemplate(message?: string | null) {
+    const fallback = 'Расскажите друзьям о нашей программе и получите бонус. Делитесь ссылкой {link} или промокодом {code}.';
+    if (typeof message !== 'string') return fallback;
+    const trimmed = message.trim();
+    if (!trimmed) return fallback;
+    return trimmed.slice(0, 300);
+  }
+
+  private normalizeLevels(
+    levels: any,
+    multiLevel: boolean,
+    rewardType: RewardMode,
+    baseReward: number,
+  ): Array<{ level: number; enabled: boolean; reward: number }> {
+    const source = Array.isArray(levels) ? levels : [];
+    const normalized: Array<{ level: number; enabled: boolean; reward: number }> = [];
+    for (let level = 1; level <= 5; level += 1) {
+      const found = source.find((item: any) => Number(item?.level) === level) || {};
+      const mandatory = level <= 2;
+      const enabled = multiLevel ? (mandatory ? true : Boolean(found.enabled)) : false;
+      const raw = multiLevel ? Number(found.reward ?? (level === 1 ? baseReward : 0)) : 0;
+      let reward = Number.isFinite(raw) ? raw : 0;
+      if (reward < 0) reward = 0;
+      if (rewardType === 'PERCENT' && reward > 100) reward = 100;
+      normalized.push({ level, enabled, reward: this.roundTwo(reward) });
+    }
+    return normalized;
+  }
+
+  private computeReferrerReward(program: Prisma.ReferralProgram, purchaseAmount?: number) {
+    const base = this.roundTwo(program.referrerReward ?? 0);
+    if (program.rewardType === 'PERCENT') {
+      const amount = typeof purchaseAmount === 'number' && Number.isFinite(purchaseAmount) ? purchaseAmount : 0;
+      if (amount <= 0 || base <= 0) return 0;
+      return this.roundTwo((amount * base) / 100);
+    }
+    return base;
+  }
+
+  private mapProgramToSettings(
+    program: Prisma.ReferralProgram & { merchant?: { name: string } | null },
+  ) {
+    const rewardMode: RewardMode = program.rewardType === 'PERCENT' ? 'PERCENT' : 'FIXED';
+    const rewardTrigger: RewardTrigger = program.rewardTrigger === 'all' ? 'all' : 'first';
+    const baseReward = this.roundTwo(program.referrerReward ?? 0);
+    const levels = this.normalizeLevels(program.levelRewards, program.multiLevel ?? false, rewardMode, baseReward);
+    return {
+      programId: program.id,
+      enabled: program.status === 'ACTIVE' && program.isActive !== false,
+      rewardTrigger,
+      rewardType: rewardMode === 'PERCENT' ? 'percent' : 'fixed',
+      multiLevel: Boolean(program.multiLevel),
+      rewardValue: baseReward,
+      levels,
+      friendReward: this.roundTwo(program.refereeReward ?? 0),
+      stackWithRegistration: Boolean(program.stackWithRegistration),
+      message: this.normalizeMessageTemplate(program.messageTemplate),
+      placeholders: this.normalizePlaceholders(program.placeholders),
+      merchantName: program.merchant?.name || '',
+    };
+  }
 
   /**
    * Получить активную программу
@@ -550,13 +701,138 @@ export class ReferralService {
     });
   }
 
+  async getProgramSettingsForMerchant(merchantId: string) {
+    const program = await this.prisma.referralProgram.findFirst({
+      where: { merchantId },
+      orderBy: { createdAt: 'desc' },
+      include: { merchant: { select: { name: true } } },
+    });
+
+    if (!program) {
+      return {
+        programId: null,
+        enabled: false,
+        rewardTrigger: 'first' as RewardTrigger,
+        rewardType: 'fixed',
+        multiLevel: false,
+        rewardValue: 300,
+        levels: this.normalizeLevels([], false, 'FIXED', 300),
+        friendReward: 0,
+        stackWithRegistration: false,
+        message: this.normalizeMessageTemplate(null),
+        placeholders: this.normalizePlaceholders(null),
+        merchantName: '',
+      };
+    }
+
+    return this.mapProgramToSettings(program);
+  }
+
+  async updateProgramSettingsFromPortal(merchantId: string, payload: ReferralProgramSettingsDto) {
+    const existing = await this.prisma.referralProgram.findFirst({
+      where: { merchantId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const rewardType: RewardMode = payload.rewardType === 'percent' ? 'PERCENT' : 'FIXED';
+    const rewardTrigger: RewardTrigger = payload.rewardTrigger === 'all' ? 'all' : 'first';
+    const multiLevel = Boolean(payload.multiLevel);
+    const normalizedLevels = this.normalizeLevels(payload.levels, multiLevel, rewardType, payload.rewardValue);
+    const baseReward = multiLevel
+      ? normalizedLevels.find((level) => level.level === 1)?.reward ?? 0
+      : payload.rewardValue;
+    const friendReward = this.roundTwo(payload.friendReward);
+    const status = payload.enabled ? 'ACTIVE' : 'PAUSED';
+
+    const data: Prisma.ReferralProgramUpdateInput = {
+      rewardTrigger,
+      rewardType,
+      multiLevel,
+      levelRewards: multiLevel ? normalizedLevels : Prisma.JsonNull,
+      referrerReward: this.roundTwo(baseReward),
+      refereeReward: friendReward,
+      stackWithRegistration: payload.stackWithRegistration,
+      messageTemplate: this.normalizeMessageTemplate(payload.message),
+      placeholders: this.normalizePlaceholders(payload.placeholders ?? existing?.placeholders ?? null),
+      status,
+      isActive: payload.enabled,
+    };
+
+    if (existing) {
+      await this.prisma.referralProgram.update({
+        where: { id: existing.id },
+        data,
+      });
+    } else {
+      await this.prisma.referralProgram.create({
+        data: {
+          merchantId,
+          name: 'Реферальная программа',
+          description: null,
+          minPurchaseAmount: 0,
+          maxReferrals: 100,
+          expiryDays: 30,
+          ...data,
+        },
+      });
+    }
+
+    return this.getProgramSettingsForMerchant(merchantId);
+  }
+
   /**
    * Обновить программу
    */
   async updateProgram(programId: string, dto: Partial<CreateReferralProgramDto>) {
+    const existing = await this.prisma.referralProgram.findUnique({ where: { id: programId } });
+    if (!existing) {
+      throw new BadRequestException('Реферальная программа не найдена');
+    }
+
+    const rewardType: RewardMode = dto.rewardType
+      ? dto.rewardType === 'PERCENT' ? 'PERCENT' : 'FIXED'
+      : (existing.rewardType === 'PERCENT' ? 'PERCENT' : 'FIXED');
+    const rewardTrigger: RewardTrigger = dto.rewardTrigger === 'all'
+      ? 'all'
+      : existing.rewardTrigger === 'all'
+        ? 'all'
+        : 'first';
+    const multiLevel = dto.multiLevel !== undefined ? dto.multiLevel : existing.multiLevel;
+    const baseRewardInput = dto.referrerReward !== undefined ? dto.referrerReward : existing.referrerReward;
+    const normalizedLevels = this.normalizeLevels(
+      dto.levelRewards !== undefined ? dto.levelRewards : existing.levelRewards,
+      multiLevel,
+      rewardType,
+      baseRewardInput ?? 0,
+    );
+    const referrerReward = multiLevel
+      ? normalizedLevels.find((level) => level.level === 1)?.reward ?? 0
+      : this.roundTwo(baseRewardInput ?? 0);
+    const refereeReward = dto.refereeReward !== undefined ? dto.refereeReward : existing.refereeReward;
+    const status = dto.status ?? existing.status;
+    const messageTemplate = dto.messageTemplate ?? existing.messageTemplate;
+    const placeholders = dto.placeholders ?? existing.placeholders;
+
     return this.prisma.referralProgram.update({
       where: { id: programId },
-      data: dto,
+      data: {
+        name: dto.name ?? existing.name,
+        description: dto.description ?? existing.description ?? null,
+        referrerReward,
+        refereeReward: this.roundTwo(refereeReward ?? 0),
+        minPurchaseAmount: dto.minPurchaseAmount ?? existing.minPurchaseAmount,
+        maxReferrals: dto.maxReferrals ?? existing.maxReferrals,
+        expiryDays: dto.expiryDays ?? existing.expiryDays,
+        status,
+        isActive: status === 'ACTIVE',
+        rewardTrigger,
+        rewardType,
+        multiLevel,
+        levelRewards: multiLevel ? normalizedLevels : Prisma.JsonNull,
+        stackWithRegistration: dto.stackWithRegistration ?? existing.stackWithRegistration,
+        messageTemplate: this.normalizeMessageTemplate(messageTemplate),
+        placeholders: this.normalizePlaceholders(placeholders),
+      },
     });
   }
 
