@@ -62,6 +62,7 @@ type TelegramWebApp = {
   ready?: () => void;
   expand?: () => void;
   requestPhoneNumber?: () => Promise<unknown>;
+  openTelegramLink?: (url: string) => void;
 };
 
 type TelegramWindow = Window & { Telegram?: { WebApp?: TelegramWebApp } };
@@ -207,6 +208,8 @@ export default function Page() {
   const [referralLoading, setReferralLoading] = useState<boolean>(false);
   const [inviteCode, setInviteCode] = useState<string>("");
   const [inviteApplied, setInviteApplied] = useState<boolean>(false);
+  const [promoCode, setPromoCode] = useState<string>("");
+  const [promoLoading, setPromoLoading] = useState<boolean>(false);
 
   useEffect(() => {
     const tgUser = getTelegramUser();
@@ -304,6 +307,20 @@ export default function Page() {
     }
   }, [customerId, merchantId, retry]);
 
+  const mapTransactions = useCallback(
+    (items: Array<{ id: string; type: string; amount: number; createdAt: string }>) => {
+      return items
+        .filter((i) => i && typeof i === "object")
+        .map((i) => ({
+          id: i.id,
+          type: i.type,
+          amount: i.amount,
+          createdAt: i.createdAt,
+        }));
+    },
+    []
+  );
+
   const loadTx = useCallback(async () => {
     if (!customerId) {
       setStatus("Нет customerId");
@@ -311,9 +328,7 @@ export default function Page() {
     }
     try {
       const r = await retry(() => transactions(merchantId, customerId, 20));
-      setTx(
-        r.items.map((i) => ({ id: i.id, type: i.type, amount: i.amount, createdAt: i.createdAt }))
-      );
+      setTx(mapTransactions(r.items));
       setNextBefore(r.nextBefore || null);
       setStatus("История обновлена");
     } catch (error) {
@@ -321,22 +336,19 @@ export default function Page() {
       setStatus(`Ошибка истории: ${message}`);
       setToast({ msg: "Не удалось обновить историю", type: "error" });
     }
-  }, [customerId, merchantId, retry]);
+  }, [customerId, merchantId, retry, mapTransactions]);
 
   const loadMore = useCallback(async () => {
     if (!customerId || !nextBefore) return;
     try {
       const r = await transactions(merchantId, customerId, 20, nextBefore);
-      setTx((prev) => [
-        ...prev,
-        ...r.items.map((i) => ({ id: i.id, type: i.type, amount: i.amount, createdAt: i.createdAt })),
-      ]);
+      setTx((prev) => [...prev, ...mapTransactions(r.items)]);
       setNextBefore(r.nextBefore || null);
     } catch (error) {
       const message = resolveErrorMessage(error);
       setStatus(`Ошибка подгрузки: ${message}`);
     }
-  }, [merchantId, customerId, nextBefore]);
+  }, [merchantId, customerId, nextBefore, mapTransactions]);
 
   const loadLevels = useCallback(async () => {
     if (!customerId) return;
@@ -495,8 +507,8 @@ export default function Page() {
     const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(referralInfo.link)}&text=${encodeURIComponent(message)}`;
     try {
       const tg = getTelegramWebApp();
-      if (tg && typeof (tg as any).openTelegramLink === "function") {
-        (tg as any).openTelegramLink(shareUrl);
+      if (tg?.openTelegramLink) {
+        tg.openTelegramLink(shareUrl);
         setToast({ msg: "Откройте Telegram, чтобы отправить приглашение", type: "success" });
         return;
       }
@@ -533,6 +545,41 @@ export default function Page() {
   const availablePromotions = useMemo(
     () => tx.filter((item) => /promo|campaign/i.test(item.type)).length,
     [tx]
+  );
+
+  const handlePromoActivate = useCallback(
+    async (event?: FormEvent<HTMLFormElement>) => {
+      event?.preventDefault();
+      const code = promoCode.trim();
+      if (!code) {
+        setToast({ msg: "Введите промокод", type: "error" });
+        return;
+      }
+      if (!customerId) {
+        setToast({ msg: "Не удалось определить клиента", type: "error" });
+        return;
+      }
+      setPromoLoading(true);
+      try {
+        const result = await referralActivate(code, customerId);
+        if (result.success) {
+          setToast({ msg: "Промокод активирован", type: "success" });
+          setPromoCode("");
+          await Promise.allSettled([loadBalance(), loadTx()]);
+        } else {
+          setToast({
+            msg: result.message ? `Не удалось активировать: ${result.message}` : "Промокод не подошёл",
+            type: "error",
+          });
+        }
+      } catch (error) {
+        const message = resolveErrorMessage(error);
+        setToast({ msg: `Не удалось активировать: ${message}`, type: "error" });
+      } finally {
+        setPromoLoading(false);
+      }
+    },
+    [promoCode, customerId, loadBalance, loadTx]
   );
 
   const cashbackPercent = useMemo(() => {
@@ -763,10 +810,23 @@ export default function Page() {
           )}
 
           <section className={`${styles.actionsRow} ${styles.appear} ${styles.delay3}`}>
-            <div className={styles.promoInputBlock}>
-              <input className={styles.promoInput} placeholder="Введите промокод" />
-              <button className={styles.promoButton}>Активировать</button>
-            </div>
+            <form className={styles.promoInputBlock} onSubmit={handlePromoActivate}>
+              <input
+                className={styles.promoInput}
+                placeholder="Введите промокод"
+                value={promoCode}
+                onChange={(event) => setPromoCode(event.target.value)}
+                disabled={promoLoading}
+                aria-label="Введите промокод"
+              />
+              <button
+                type="submit"
+                className={styles.promoButton}
+                disabled={promoLoading || !promoCode.trim()}
+              >
+                {promoLoading ? "Подождите" : "Активировать"}
+              </button>
+            </form>
             <button className={styles.promotionsButton}>
               <span>Акции</span>
               <span className={styles.promotionsBadge}>{availablePromotions}</span>
