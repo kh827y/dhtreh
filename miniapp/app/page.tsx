@@ -77,6 +77,7 @@ type TransactionItem = {
   type: string;
   amount: number;
   createdAt: string;
+  orderId?: string | null;
 };
 
 const genderOptions: Array<{ value: "male" | "female"; label: string }> = [
@@ -127,6 +128,8 @@ const SHARE_BUTTON_STYLE: Record<string, { background: string; color: string }> 
   yandex: { background: '#FACC15', color: '#1f2937' },
   google: { background: 'linear-gradient(135deg,#2563eb,#1d4ed8)', color: '#ffffff' },
 };
+
+const REVIEW_POLL_INTERVAL_MS = 5_000;
 
 function resolveErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -461,7 +464,13 @@ export default function Page() {
     try {
       const r = await retry(() => transactions(merchantId, customerId, 20));
       setTx(
-        r.items.map((i) => ({ id: i.id, type: i.type, amount: i.amount, createdAt: i.createdAt }))
+        r.items.map((i) => ({
+          id: i.id,
+          type: i.type,
+          amount: i.amount,
+          createdAt: i.createdAt,
+          orderId: i.orderId ?? null,
+        }))
       );
       setNextBefore(r.nextBefore || null);
       setStatus("История обновлена");
@@ -478,7 +487,13 @@ export default function Page() {
       const r = await transactions(merchantId, customerId, 20, nextBefore);
       setTx((prev) => [
         ...prev,
-        ...r.items.map((i) => ({ id: i.id, type: i.type, amount: i.amount, createdAt: i.createdAt })),
+        ...r.items.map((i) => ({
+          id: i.id,
+          type: i.type,
+          amount: i.amount,
+          createdAt: i.createdAt,
+          orderId: i.orderId ?? null,
+        })),
       ]);
       setNextBefore(r.nextBefore || null);
     } catch (error) {
@@ -541,6 +556,52 @@ export default function Page() {
       loadLevels();
     }
   }, [customerId, syncConsent, loadBalance, loadTx, loadLevels]);
+
+  useEffect(() => {
+    if (!customerId) return;
+    let cancelled = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let inFlight = false;
+
+    const poll = async () => {
+      if (cancelled || inFlight) {
+        schedule(REVIEW_POLL_INTERVAL_MS);
+        return;
+      }
+      inFlight = true;
+      try {
+        await loadTx();
+      } finally {
+        inFlight = false;
+        if (!cancelled) {
+          schedule(REVIEW_POLL_INTERVAL_MS);
+        }
+      }
+    };
+
+    function schedule(delay: number) {
+      if (timeout) clearTimeout(timeout);
+      timeout = setTimeout(() => {
+        void poll();
+      }, Math.max(0, delay));
+    }
+
+    schedule(REVIEW_POLL_INTERVAL_MS);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible" && !cancelled) {
+        schedule(0);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      cancelled = true;
+      if (timeout) clearTimeout(timeout);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [customerId, loadTx]);
 
   useEffect(() => {
     if (!merchantId || !customerId) return;
