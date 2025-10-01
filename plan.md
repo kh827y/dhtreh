@@ -17,7 +17,8 @@
 - [x] DTO/ответы merchants/loyalty и клиенты (admin/bridge/cashier) очищены от `deviceId`, добавлены поля POS-агрегации (`outletPosType`, `outletLastSeenAt`).
 - [x] OpenAPI/документация и e2e/контрактные тесты приведены к схеме без `deviceId`; зафиксированы outlet-секреты.
   - [x] LoyaltyController окончательно отказался от `deviceId`: подпись Bridge/hold кешируются только по `outletId`, публичные DTO и роуты очищены.
-  - [x] LoyaltyService: расчёт/commit/refund и outbox работают только с `outletId`, записи `deviceId` прекращены.
+- [x] LoyaltyService: расчёт/commit/refund и outbox работают только с `outletId`, записи `deviceId` прекращены.
+- [x] Guard'ы: троттлер, антифрод и кассир работают без `deviceId`, опираются на `outletId` и роли сотрудников.
 
 ## Батчи внедрения (план)
 

@@ -36,7 +36,6 @@ export class AntiFraudGuard implements CanActivate {
     let merchantId: string | undefined = req.body?.merchantId || req?.params?.merchantId || req?.query?.merchantId;
     let customerId: string | undefined = req.body?.customerId;
     let outletId: string | undefined = req.body?.outletId || req?.params?.outletId || req?.query?.outletId;
-    let deviceId: string | undefined = req.body?.deviceId || req?.params?.deviceId || req?.query?.deviceId;
     let staffId: string | undefined = req.body?.staffId;
 
     if (isCommit) {
@@ -48,7 +47,6 @@ export class AntiFraudGuard implements CanActivate {
             merchantId = hold.merchantId || merchantId;
             customerId = hold.customerId || customerId;
             outletId = hold.outletId || outletId;
-            deviceId = hold.deviceId || deviceId;
             staffId = hold.staffId || staffId;
           }
         } catch {}
@@ -61,7 +59,7 @@ export class AntiFraudGuard implements CanActivate {
     // Defaults from ENV
     let limits = {
       customer: { limit: envNum('AF_LIMIT_CUSTOMER', 5), windowSec: envNum('AF_WINDOW_CUSTOMER_SEC', 120), dailyCap: envNum('AF_DAILY_CAP_CUSTOMER', 0), weeklyCap: envNum('AF_WEEKLY_CAP_CUSTOMER', 0) },
-      outlet:   { limit: envNum('AF_LIMIT_OUTLET', envNum('AF_LIMIT_DEVICE', 20)), windowSec: envNum('AF_WINDOW_OUTLET_SEC', envNum('AF_WINDOW_DEVICE_SEC', 600)), dailyCap: envNum('AF_DAILY_CAP_OUTLET', envNum('AF_DAILY_CAP_DEVICE', 0)),   weeklyCap: envNum('AF_WEEKLY_CAP_OUTLET', envNum('AF_WEEKLY_CAP_DEVICE', 0)) },
+      outlet:   { limit: envNum('AF_LIMIT_OUTLET', 20), windowSec: envNum('AF_WINDOW_OUTLET_SEC', 600), dailyCap: envNum('AF_DAILY_CAP_OUTLET', 0),   weeklyCap: envNum('AF_WEEKLY_CAP_OUTLET', 0) },
       staff:    { limit: envNum('AF_LIMIT_STAFF', 60), windowSec: envNum('AF_WINDOW_STAFF_SEC', 600), dailyCap: envNum('AF_DAILY_CAP_STAFF', 0),     weeklyCap: envNum('AF_WEEKLY_CAP_STAFF', 0) },
       merchant: { limit: envNum('AF_LIMIT_MERCHANT', 200), windowSec: envNum('AF_WINDOW_MERCHANT_SEC', 3600), dailyCap: envNum('AF_DAILY_CAP_MERCHANT', 0), weeklyCap: envNum('AF_WEEKLY_CAP_MERCHANT', 0) },
     } as const;
@@ -89,12 +87,11 @@ export class AntiFraudGuard implements CanActivate {
 
     // Helper for block
     const resolvedOutletId = outletId || undefined;
-    const legacyDeviceId = deviceId || undefined;
     const block = (scope: string, count: number, limit: number) => {
       this.metrics.inc('antifraud_velocity_block_total', { scope, operation: isCommit ? 'commit' : 'refund' });
       try {
         this.alerts
-          .antifraudBlocked({ merchantId, reason: 'velocity', scope, ctx: { customerId, outletId: resolvedOutletId ?? legacyDeviceId, deviceId: legacyDeviceId, staffId } })
+          .antifraudBlocked({ merchantId, reason: 'velocity', scope, ctx: { customerId, outletId: resolvedOutletId, staffId } })
           .catch(() => {});
       } catch {}
       throw new HttpException(`Антифрод: превышен лимит операций (${scope}=${count}/${limit})`, HttpStatus.TOO_MANY_REQUESTS);
@@ -127,19 +124,6 @@ export class AntiFraudGuard implements CanActivate {
       if (limits.outlet.weeklyCap && limits.outlet.weeklyCap > 0) {
         const weekly = await this.prisma.transaction.count({ where: { merchantId, outletId: resolvedOutletId, createdAt: { gte: startOfWeek } } });
         if (weekly >= limits.outlet.weeklyCap) block('outlet_weekly', weekly, limits.outlet.weeklyCap);
-      }
-    } else if (legacyDeviceId) {
-      // Backward compatibility: fallback to device-based limits if outlet is отсутствует
-      const from = new Date(now - limits.outlet.windowSec * 1000);
-      const count = await this.prisma.transaction.count({ where: { merchantId, deviceId: legacyDeviceId, createdAt: { gte: from } } });
-      if (count >= limits.outlet.limit) block('device', count, limits.outlet.limit);
-      if (limits.outlet.dailyCap && limits.outlet.dailyCap > 0) {
-        const daily = await this.prisma.transaction.count({ where: { merchantId, deviceId: legacyDeviceId, createdAt: { gte: since24h } } });
-        if (daily >= limits.outlet.dailyCap) block('device_daily', daily, limits.outlet.dailyCap);
-      }
-      if (limits.outlet.weeklyCap && limits.outlet.weeklyCap > 0) {
-        const weekly = await this.prisma.transaction.count({ where: { merchantId, deviceId: legacyDeviceId, createdAt: { gte: startOfWeek } } });
-        if (weekly >= limits.outlet.weeklyCap) block('device_weekly', weekly, limits.outlet.weeklyCap);
       }
     }
 
@@ -188,7 +172,6 @@ export class AntiFraudGuard implements CanActivate {
               customerId: hold.customerId,
               amount: hold.mode === 'REDEEM' ? Math.abs(hold.redeemAmount || 0) : Math.abs(hold.earnPoints || 0),
               type: hold.mode === 'REDEEM' ? 'REDEEM' as const : 'EARN' as const,
-              deviceId: hold.deviceId || undefined,
               outletId: hold.outletId || undefined,
               staffId: hold.staffId || undefined,
               ipAddress: ipAddr,
@@ -198,16 +181,17 @@ export class AntiFraudGuard implements CanActivate {
             try {
               const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId: hold.merchantId } });
               const af = s && s.rulesJson && (s.rulesJson as any).af ? (s.rulesJson as any).af : null;
-              const blockFactors: string[] = Array.isArray(af?.blockFactors) ? af.blockFactors : [];
-              const hasLegacyOnly = blockFactors.includes('no_device_id');
-              const hasOutletRule = blockFactors.includes('no_outlet_id');
-              const shouldApplyNoOutlet = (hasOutletRule || hasLegacyOnly) && !hold.outletId;
+              const blockFactors: string[] = Array.isArray(af?.blockFactors)
+                ? (af.blockFactors as string[]).map((f) => (f === 'no_device_id' ? 'no_outlet_id' : f))
+                : [];
+              const hasOutletRule = blockFactors.includes('no_outlet_id') || blockFactors.includes('no_device_id');
+              const shouldApplyNoOutlet = hasOutletRule && !hold.outletId;
               if (shouldApplyNoOutlet) {
-                const factor = hasOutletRule ? 'no_outlet_id' : 'no_device_id';
+                const factor = 'no_outlet_id';
                 this.metrics.inc('antifraud_block_factor_total', { factor });
                 try {
                   this.alerts
-                    .antifraudBlocked({ merchantId: hold.merchantId, reason: 'factor', factor, ctx: { customerId: hold.customerId, outletId: hold.outletId || hold.deviceId, deviceId: hold.deviceId, staffId: hold.staffId } })
+                    .antifraudBlocked({ merchantId: hold.merchantId, reason: 'factor', factor, ctx: { customerId: hold.customerId, outletId: hold.outletId || undefined, staffId: hold.staffId } })
                     .catch(() => {});
                 } catch {}
                 throw new HttpException(`Антифрод: заблокировано правилом по фактору (${factor})`, HttpStatus.TOO_MANY_REQUESTS);
@@ -222,7 +206,7 @@ export class AntiFraudGuard implements CanActivate {
               this.metrics.inc('antifraud_blocked_total', { level: score.level, reason: 'risk' });
               try {
                 this.alerts
-                  .antifraudBlocked({ merchantId: hold.merchantId, reason: 'risk', level: String(score.level), ctx: { customerId: hold.customerId, outletId: hold.outletId || hold.deviceId, deviceId: hold.deviceId, staffId: hold.staffId } })
+                  .antifraudBlocked({ merchantId: hold.merchantId, reason: 'risk', level: String(score.level), ctx: { customerId: hold.customerId, outletId: hold.outletId || undefined, staffId: hold.staffId } })
                   .catch(() => {});
               } catch {}
               throw new HttpException(`Антифрод: высокий риск (${score.level}). Факторы: ${score.factors?.slice(0,5).join(', ')}`, HttpStatus.TOO_MANY_REQUESTS);
@@ -232,16 +216,21 @@ export class AntiFraudGuard implements CanActivate {
             try {
               const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId: hold.merchantId } });
               const af = s && s.rulesJson && (s.rulesJson as any).af ? (s.rulesJson as any).af : null;
-              blockFactors = Array.isArray(af?.blockFactors) ? af.blockFactors : [];
+              blockFactors = Array.isArray(af?.blockFactors)
+                ? (af.blockFactors as string[]).map((f) => (f === 'no_device_id' ? 'no_outlet_id' : f))
+                : [];
             } catch {}
             if (blockFactors.length && Array.isArray(score.factors)) {
-              const factorKeys = score.factors.map((f: string) => String(f || '').split(':')[0]);
+              const factorKeys = score.factors.map((f: string) => {
+                const key = String(f || '').split(':')[0];
+                return key === 'no_device_id' ? 'no_outlet_id' : key;
+              });
               const matched = factorKeys.find((f: string) => blockFactors.includes(f));
               if (matched) {
                 this.metrics.inc('antifraud_block_factor_total', { factor: matched });
                 try {
                   this.alerts
-                    .antifraudBlocked({ merchantId: hold.merchantId, reason: 'factor', factor: matched, ctx: { customerId: hold.customerId, outletId: hold.outletId || hold.deviceId, deviceId: hold.deviceId, staffId: hold.staffId } })
+                    .antifraudBlocked({ merchantId: hold.merchantId, reason: 'factor', factor: matched, ctx: { customerId: hold.customerId, outletId: hold.outletId || undefined, staffId: hold.staffId } })
                     .catch(() => {});
                 } catch {}
                 throw new HttpException(`Антифрод: заблокировано правилом по фактору (${matched})`, HttpStatus.TOO_MANY_REQUESTS);

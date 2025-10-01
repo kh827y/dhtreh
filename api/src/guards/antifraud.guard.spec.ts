@@ -67,7 +67,10 @@ describe('AntiFraudGuard', () => {
 
     await expect(guard.canActivate(ctx)).rejects.toThrow(HttpException);
     expect(alerts.antifraudBlocked).toHaveBeenCalledWith(
-      expect.objectContaining({ factor: 'no_outlet_id' }),
+      expect.objectContaining({
+        factor: 'no_outlet_id',
+        ctx: expect.objectContaining({ outletId: undefined, staffId: 'S-1' }),
+      }),
     );
     expect(antifraud.checkTransaction).not.toHaveBeenCalled();
   });
@@ -103,12 +106,14 @@ describe('AntiFraudGuard', () => {
     });
 
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
-    expect(prisma.transaction.count).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({ outletId: 'O-1' }),
-      }),
-    );
+    const countCalls = prisma.transaction.count.mock.calls;
+    expect(countCalls.some((args: any[]) => {
+      const where = args[0]?.where || {};
+      return where.outletId === 'O-1';
+    })).toBe(true);
     expect(alerts.antifraudBlocked).not.toHaveBeenCalled();
-    expect(antifraud.checkTransaction).toHaveBeenCalled();
+    expect(antifraud.checkTransaction).toHaveBeenCalledWith(
+      expect.not.objectContaining({ deviceId: expect.anything() }),
+    );
   });
 });

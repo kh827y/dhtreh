@@ -15,7 +15,7 @@ describe('CustomThrottlerGuard.getTracker', () => {
     expect(parts).not.toContain('undefined');
   });
 
-  it('формирует ключ без outletId, если он отсутствует', async () => {
+  it('использует staffId, если outletId отсутствует', async () => {
     const g = new CustomThrottlerGuard({} as any, {} as any, {} as any);
     const req: any = {
       ip: '10.0.0.1',
@@ -26,6 +26,7 @@ describe('CustomThrottlerGuard.getTracker', () => {
     const key = await (g as any).getTracker(req);
     const parts = key.split('|');
     expect(parts).toContain('M-2');
+    expect(parts).toContain('S-2');
     expect(parts).not.toContain('undefined');
   });
 });
