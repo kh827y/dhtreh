@@ -1,5 +1,5 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, ReferralProgram } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { EmailService } from '../notifications/email/email.service';
@@ -285,7 +285,7 @@ export class ReferralService {
     }
 
     // Обновляем статус реферала
-    const rewardAmount = this.computeReferrerReward(referral.program as Prisma.ReferralProgram, purchaseAmount);
+    const rewardAmount = this.computeReferrerReward(referral.program as ReferralProgram, purchaseAmount);
 
     await this.prisma.referral.update({
       where: { id: referral.id },
@@ -348,7 +348,7 @@ export class ReferralService {
     const successfulReferrals = program.referrals.filter(r => r.status === 'COMPLETED').length;
     const pendingReferrals = program.referrals.filter(r => r.status === 'PENDING').length;
     const friendReward = this.roundTwo(program.refereeReward ?? 0);
-    const baseProgram = program as unknown as Prisma.ReferralProgram;
+    const baseProgram = program as unknown as ReferralProgram;
 
     let totalRewardsIssued = 0;
     for (const referral of program.referrals) {
@@ -436,7 +436,7 @@ export class ReferralService {
     };
 
     for (const referral of referrals) {
-      const programData = referral.program as unknown as Prisma.ReferralProgram;
+      const programData = referral.program as unknown as ReferralProgram;
       let reward = 0;
       if (referral.status === 'COMPLETED') {
         reward = this.computeReferrerReward(programData, referral.purchaseAmount ?? undefined);
@@ -611,7 +611,7 @@ export class ReferralService {
     return Math.round(value * 100) / 100;
   }
 
-  private normalizePlaceholders(input?: string[] | null): string[] {
+  private normalizePlaceholders(input?: unknown): string[] {
     const set = new Set<string>();
     if (Array.isArray(input)) {
       for (const item of input) {
@@ -656,7 +656,7 @@ export class ReferralService {
     return normalized;
   }
 
-  private computeReferrerReward(program: Prisma.ReferralProgram, purchaseAmount?: number) {
+  private computeReferrerReward(program: ReferralProgram, purchaseAmount?: number) {
     const base = this.roundTwo(program.referrerReward ?? 0);
     if (program.rewardType === 'PERCENT') {
       const amount = typeof purchaseAmount === 'number' && Number.isFinite(purchaseAmount) ? purchaseAmount : 0;
@@ -667,7 +667,7 @@ export class ReferralService {
   }
 
   private mapProgramToSettings(
-    program: Prisma.ReferralProgram & { merchant?: { name: string } | null },
+    program: ReferralProgram & { merchant?: { name: string } | null },
   ) {
     const rewardMode: RewardMode = program.rewardType === 'PERCENT' ? 'PERCENT' : 'FIXED';
     const rewardTrigger: RewardTrigger = program.rewardTrigger === 'all' ? 'all' : 'first';
@@ -744,7 +744,11 @@ export class ReferralService {
     const friendReward = this.roundTwo(payload.friendReward);
     const status = payload.enabled ? 'ACTIVE' : 'PAUSED';
 
-    const data: Prisma.ReferralProgramUpdateInput = {
+    const normalizedPlaceholders = this.normalizePlaceholders(
+      payload.placeholders ?? existing?.placeholders ?? null,
+    );
+
+    const data = {
       rewardTrigger,
       rewardType,
       multiLevel,
@@ -753,10 +757,10 @@ export class ReferralService {
       refereeReward: friendReward,
       stackWithRegistration: payload.stackWithRegistration,
       messageTemplate: this.normalizeMessageTemplate(payload.message),
-      placeholders: this.normalizePlaceholders(payload.placeholders ?? existing?.placeholders ?? null),
+      placeholders: normalizedPlaceholders,
       status,
       isActive: payload.enabled,
-    };
+    } satisfies Prisma.ReferralProgramUpdateInput;
 
     if (existing) {
       await this.prisma.referralProgram.update({
