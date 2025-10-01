@@ -38,14 +38,15 @@ type Staff = {
 };
 
 type Outlet = { id: string; name: string };
-type AccessGroup = { id: string; name: string; membersCount?: number; memberCount?: number };
-
-const DEFAULT_GROUPS: AccessGroup[] = [
-  { id: "MERCHANT", name: "Владелец" },
-  { id: "MANAGER", name: "Менеджер" },
-  { id: "ANALYST", name: "Аналитик" },
-  { id: "CASHIER", name: "Кассир" },
-];
+type AccessGroup = {
+  id: string;
+  name: string;
+  scope?: string | null;
+  membersCount?: number;
+  memberCount?: number;
+  isSystem?: boolean;
+  isDefault?: boolean;
+};
 
 function formatActivityDate(value?: string | null): string {
   if (!value) return "—";
@@ -143,15 +144,26 @@ export default function StaffPage() {
     const map = new Map<string, AccessGroup>();
     for (const g of groups) {
       if (!g) continue;
-      const id = String((g as any).id ?? '').trim();
-      const name = String((g as any).name ?? '').trim();
-      const key = id || name;
-      if (!key) continue;
-      if (!map.has(key)) {
-        map.set(key, { id: id || key, name, membersCount: (g as any).membersCount, memberCount: (g as any).memberCount });
+      const id = String((g as any).id ?? "").trim();
+      const name = String((g as any).name ?? "").trim();
+      const scope = String((g as any).scope ?? "").toUpperCase();
+      const isSystem = Boolean((g as any).isSystem);
+      if (!id || !name) continue;
+      if (isSystem) continue;
+      if (scope && scope !== "PORTAL") continue;
+      if (!map.has(id)) {
+        map.set(id, {
+          id,
+          name,
+          scope: (g as any).scope ?? null,
+          isSystem,
+          isDefault: Boolean((g as any).isDefault),
+          membersCount: Number((g as any).membersCount ?? (g as any).memberCount ?? 0) || 0,
+          memberCount: Number((g as any).memberCount ?? (g as any).membersCount ?? 0) || 0,
+        });
       }
     }
-    return Array.from(map.values());
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, "ru"));
   }, [groups]);
 
   const filteredItems = React.useMemo(() => {
@@ -218,21 +230,18 @@ export default function StaffPage() {
           else if (payload?.items && Array.isArray(payload.items)) list = payload.items;
         }
       } catch {}
-      if (typeof window !== "undefined") {
-        try {
-          const stored = window.localStorage.getItem("portal.accessGroups");
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            if (Array.isArray(parsed)) {
-              const map = new Map<string, AccessGroup>((list || []).map((g) => [g.id, g]));
-              parsed.forEach((g: AccessGroup) => { if (g?.id) map.set(g.id, g); });
-              list = Array.from(map.values());
-            }
-          }
-        } catch {}
-      }
-      if (!list.length) list = DEFAULT_GROUPS;
-      setGroups(list);
+      const normalized = (list || [])
+        .map((g: any) => ({
+          id: String(g?.id ?? ""),
+          name: String(g?.name ?? ""),
+          scope: g?.scope ?? null,
+          isSystem: Boolean(g?.isSystem),
+          isDefault: Boolean(g?.isDefault),
+          membersCount: Number(g?.membersCount ?? g?.memberCount ?? 0) || 0,
+          memberCount: Number(g?.memberCount ?? g?.membersCount ?? 0) || 0,
+        }))
+        .filter((item) => item.id && item.name);
+      setGroups(normalized);
     } finally {
       setGroupsLoading(false);
     }

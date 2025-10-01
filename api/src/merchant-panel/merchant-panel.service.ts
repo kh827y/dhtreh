@@ -677,7 +677,7 @@ export class MerchantPanelService {
   }
 
   async createStaff(merchantId: string, payload: UpsertStaffPayload) {
-    return this.prisma.$transaction(async (tx) => {
+    const staffId = await this.prisma.$transaction(async (tx) => {
       const pinCode = await this.generateUniquePersonalPin(tx, merchantId);
       const trimmedPassword = payload.password?.toString().trim() ?? '';
       if (trimmedPassword && trimmedPassword.length < 6) {
@@ -722,8 +722,9 @@ export class MerchantPanelService {
         );
         this.metrics.inc('portal_staff_changed_total', { action: 'create' });
       } catch {}
-      return this.getStaff(merchantId, staff.id);
+      return staff.id;
     });
+    return this.getStaff(merchantId, staffId);
   }
 
   async updateStaff(merchantId: string, staffId: string, payload: UpsertStaffPayload) {
@@ -737,7 +738,7 @@ export class MerchantPanelService {
         throw new ForbiddenException('Нельзя изменить статус владельца');
       }
     }
-    return this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx) => {
       const trimmedPassword = payload.password?.toString().trim() ?? undefined;
       if (trimmedPassword && trimmedPassword.length < 6) {
         throw new BadRequestException('Пароль должен содержать минимум 6 символов');
@@ -809,8 +810,8 @@ export class MerchantPanelService {
         );
         this.metrics.inc('portal_staff_changed_total', { action: 'update' });
       } catch {}
-      return this.getStaff(merchantId, staffId);
     });
+    return this.getStaff(merchantId, staffId);
   }
 
   async changeStaffStatus(merchantId: string, staffId: string, status: StaffStatus) {
