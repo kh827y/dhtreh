@@ -78,7 +78,15 @@ describe('Loyalty (e2e)', () => {
     receipts: [] as Receipt[],
     transactions: [] as any[],
     eventOutbox: [] as any[],
-    staff: [] as { id: string; merchantId: string; apiKeyHash?: string; status: string; allowedOutletId?: string|null }[],
+    staff: [] as {
+      id: string;
+      merchantId: string;
+      apiKeyHash?: string;
+      status: string;
+      role?: string;
+      allowedOutletId?: string | null;
+      accesses?: Array<{ outletId: string; status?: string }>;
+    }[],
     outlets: [] as Array<{
       id: string;
       merchantId: string;
@@ -291,9 +299,22 @@ describe('Loyalty (e2e)', () => {
 
     staff: {
       findFirst: async (args: any) => {
-        const h = args.where.apiKeyHash;
-        const m = args.where.merchantId;
-        return state.staff.find(s => s.merchantId === m && s.apiKeyHash === h && s.status === 'ACTIVE') || null;
+        const where = args?.where || {};
+        const include = args?.include || {};
+        const h = where.apiKeyHash;
+        const m = where.merchantId;
+        const staff = state.staff.find(s => s.merchantId === m && s.apiKeyHash === h && s.status === 'ACTIVE');
+        if (!staff) return null;
+        const result: any = { ...staff };
+        if (include?.accesses) {
+          const accessWhere = include.accesses.where || {};
+          const filtered = (staff.accesses || []).filter((acc) => {
+            if (accessWhere.status && accessWhere.status !== acc.status) return false;
+            return true;
+          });
+          result.accesses = filtered.map((acc) => ({ outletId: acc.outletId }));
+        }
+        return result;
       },
     },
 
@@ -504,7 +525,14 @@ describe('Loyalty (e2e)', () => {
     // jwt-only quotes merchant
     state.merchantSettings.set('M-jwt', { merchantId: 'M-jwt', earnBps: 1000, redeemLimitBps: 5000, qrTtlSec: 120, requireStaffKey: false, requireJwtForQuote: true, updatedAt: new Date() });
     // staff for guard
-    state.staff.push({ id: 'S1', merchantId: 'M-guard', apiKeyHash: createHash('sha256').update('staff-secret','utf8').digest('hex'), status: 'ACTIVE' });
+    state.staff.push({
+      id: 'S1',
+      merchantId: 'M-guard',
+      apiKeyHash: createHash('sha256').update('staff-secret','utf8').digest('hex'),
+      status: 'ACTIVE',
+      role: 'ADMIN',
+      accesses: [],
+    });
 
     // Seed base promo codes for idempotency tests
     const now = new Date();

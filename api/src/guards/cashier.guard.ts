@@ -41,9 +41,25 @@ export class CashierGuard implements CanActivate {
     if (!key) return !requireStaffKey; // если требуется — блокируем, иначе пропускаем
     const hash = crypto.createHash('sha256').update(key, 'utf8').digest('hex');
     const merchantIdForStaff = body?.merchantId || req?.params?.merchantId || req?.query?.merchantId;
-    const staff = await this.prisma.staff.findFirst({ where: { merchantId: merchantIdForStaff, apiKeyHash: hash, status: 'ACTIVE' } });
+    const staff = await this.prisma.staff.findFirst({
+      where: { merchantId: merchantIdForStaff, apiKeyHash: hash, status: 'ACTIVE' },
+      include: { accesses: { where: { status: 'ACTIVE' }, select: { outletId: true } } },
+    });
     if (!staff) return false;
-    if (staff.allowedOutletId && body.outletId && staff.allowedOutletId !== body.outletId) return false;
+    const requestedOutletId = body?.outletId || req?.params?.outletId || req?.query?.outletId || undefined;
+    if (String(staff.role || '').toUpperCase() === 'CASHIER') {
+      const allowedOutletId: string | undefined = staff.allowedOutletId || undefined;
+      const outletAccesses: string[] = Array.isArray(staff.accesses)
+        ? staff.accesses.map((acc: any) => acc?.outletId).filter(Boolean)
+        : [];
+      if (allowedOutletId) {
+        if (!requestedOutletId) return false;
+        if (allowedOutletId !== requestedOutletId) return false;
+      } else if (outletAccesses.length > 0) {
+        if (!requestedOutletId) return false;
+        if (!outletAccesses.includes(requestedOutletId)) return false;
+      }
+    }
     return true;
   }
 }

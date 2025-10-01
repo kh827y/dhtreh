@@ -125,7 +125,7 @@ describe('AntiFraud Guard (e2e)', () => {
       rulesJson: {
         af: {
           merchant: { limit: 999, windowSec: 60, dailyCap: 0, weeklyCap: 0 },
-          device:   { limit: 999, windowSec: 60, dailyCap: 0, weeklyCap: 0 },
+          outlet:   { limit: 999, windowSec: 60, dailyCap: 0, weeklyCap: 0 },
           staff:    { limit: 999, windowSec: 60, dailyCap: 0, weeklyCap: 0 },
           customer: { limit: 1,   windowSec: 3600, dailyCap: 0, weeklyCap: 0 },
           blockFactors: [],
@@ -177,7 +177,7 @@ describe('AntiFraud Guard (e2e)', () => {
       rulesJson: {
         af: {
           merchant: { limit: 999, windowSec: 60, dailyCap: 0, weeklyCap: 0 },
-          device:   { limit: 999, windowSec: 60, dailyCap: 0, weeklyCap: 0 },
+          outlet:   { limit: 999, windowSec: 60, dailyCap: 0, weeklyCap: 0 },
           staff:    { limit: 999, windowSec: 60, dailyCap: 0, weeklyCap: 0 },
           customer: { limit: 5,   windowSec: 60,  dailyCap: 0, weeklyCap: 0 },
           blockFactors: ['no_outlet_id']
@@ -204,7 +204,7 @@ describe('AntiFraud Guard (e2e)', () => {
       rulesJson: {
         af: {
           merchant: { limit: 999, windowSec: 60, dailyCap: 0, weeklyCap: 0 },
-          device:   { limit: 999, windowSec: 60, dailyCap: 0, weeklyCap: 0 },
+          outlet:   { limit: 999, windowSec: 60, dailyCap: 0, weeklyCap: 0 },
           staff:    { limit: 999, windowSec: 60, dailyCap: 0, weeklyCap: 0 },
           customer: { limit: 99,  windowSec: 60, dailyCap: 0, weeklyCap: 0 }
         }
@@ -238,7 +238,7 @@ describe('AntiFraud Guard (e2e)', () => {
       rulesJson: {
         af: {
           merchant: { limit: 999, windowSec: 60, dailyCap: 0, weeklyCap: 0 },
-          device:   { limit: 999, windowSec: 60, dailyCap: 0, weeklyCap: 0 },
+          outlet:   { limit: 999, windowSec: 60, dailyCap: 0, weeklyCap: 0 },
           staff:    { limit: 999, windowSec: 60, dailyCap: 0, weeklyCap: 0 },
           customer: { limit: 99,  windowSec: 60, dailyCap: 1, weeklyCap: 0 }
         }
@@ -260,21 +260,21 @@ describe('AntiFraud Guard (e2e)', () => {
     expect(String(r.body.message || '')).toMatch(/превышен лимит/);
   });
 
-  it('Device velocity: блокировка при превышении лимита по device в окне', async () => {
-    // Настраиваем лимит по device = 1 за 1 час
+  it('Outlet velocity: блокировка при превышении лимита по торговой точке в окне', async () => {
+    // Настраиваем лимит по outlet = 1 за 1 час
     state.merchantSettings.set('M-af', {
       ...(state.merchantSettings.get('M-af')!),
       rulesJson: {
         af: {
           merchant: { limit: 999, windowSec: 3600, dailyCap: 0, weeklyCap: 0 },
-          device:   { limit: 1,   windowSec: 3600, dailyCap: 0, weeklyCap: 0 },
+          outlet:   { limit: 1,   windowSec: 3600, dailyCap: 0, weeklyCap: 0 },
           staff:    { limit: 999, windowSec: 3600, dailyCap: 0, weeklyCap: 0 },
           customer: { limit: 999, windowSec: 3600, dailyCap: 0, weeklyCap: 0 }
         }
       }
     });
 
-    // Уже есть 1 транзакция от устройства D-vel
+    // Уже есть 1 транзакция по точке O-vel
     state.transactions.push({ id: uuid(), merchantId: 'M-af', customerId: 'C-dev0', outletId: 'O-vel', staffId: null, createdAt: new Date() });
 
     const q = await request(app.getHttpServer())
@@ -284,7 +284,7 @@ describe('AntiFraud Guard (e2e)', () => {
     const holdId = q.body.holdId as string;
     const r = await request(app.getHttpServer())
       .post('/loyalty/commit')
-      .send({ holdId, orderId: 'O-dev-2' })
+      .send({ holdId, orderId: 'O-outlet-2' })
       .expect(429);
     expect(String(r.body.message || '')).toMatch(/превышен лимит/);
   });
@@ -295,7 +295,7 @@ describe('AntiFraud Guard (e2e)', () => {
       rulesJson: {
         af: {
           merchant: { limit: 999, windowSec: 3600, dailyCap: 0, weeklyCap: 0 },
-          device:   { limit: 999, windowSec: 3600, dailyCap: 0, weeklyCap: 0 },
+          outlet:   { limit: 999, windowSec: 3600, dailyCap: 0, weeklyCap: 0 },
           staff:    { limit: 1,   windowSec: 3600, dailyCap: 0, weeklyCap: 0 },
           customer: { limit: 999, windowSec: 3600, dailyCap: 0, weeklyCap: 0 }
         }
@@ -321,7 +321,7 @@ describe('AntiFraud Guard (e2e)', () => {
     // Отдельный мерчант
     state.merchantSettings.set('M-cap', {
       merchantId: 'M-cap', earnBps: 1000, redeemLimitBps: 5000, qrTtlSec: 120, requireStaffKey: false,
-      rulesJson: { af: { merchant: { limit: 1, windowSec: 3600, dailyCap: 0, weeklyCap: 0 }, device: { limit: 999, windowSec: 3600 }, staff: { limit: 999, windowSec: 3600 }, customer: { limit: 999, windowSec: 3600 } } },
+      rulesJson: { af: { merchant: { limit: 1, windowSec: 3600, dailyCap: 0, weeklyCap: 0 }, outlet: { limit: 999, windowSec: 3600 }, staff: { limit: 999, windowSec: 3600 }, customer: { limit: 999, windowSec: 3600 } } },
       updatedAt: new Date()
     });
     state.transactions.push({ id: uuid(), merchantId: 'M-cap', customerId: 'C-x', outletId: null, staffId: null, createdAt: new Date() });
@@ -338,7 +338,7 @@ describe('AntiFraud Guard (e2e)', () => {
     expect(String(r.body.message || '')).toMatch(/превышен лимит/);
   });
 
-  it('Refund device limit: блокировка рефанда по лимиту устройства', async () => {
+  it('Refund outlet limit: блокировка рефанда по лимиту торговой точки', async () => {
     // Создаём квоту и коммит без ограничений, чтобы появился чек (мерчант M-ref)
     state.merchantSettings.set('M-ref', { merchantId: 'M-ref', earnBps: 1000, redeemLimitBps: 5000, qrTtlSec: 120, requireStaffKey: false, updatedAt: new Date() });
     const q1 = await request(app.getHttpServer())
@@ -351,10 +351,10 @@ describe('AntiFraud Guard (e2e)', () => {
       .send({ holdId: holdId1, orderId: 'O-ref-1' })
       .expect(201);
 
-    // Включаем device.limit=0 (запрещено всё)
+    // Включаем outlet.limit=0 (запрещено всё)
     state.merchantSettings.set('M-ref', {
       ...(state.merchantSettings.get('M-ref')!),
-      rulesJson: { af: { merchant: { limit: 999, windowSec: 3600 }, device: { limit: 0, windowSec: 3600 }, staff: { limit: 999, windowSec: 3600 }, customer: { limit: 999, windowSec: 3600 } } }
+      rulesJson: { af: { merchant: { limit: 999, windowSec: 3600 }, outlet: { limit: 0, windowSec: 3600 }, staff: { limit: 999, windowSec: 3600 }, customer: { limit: 999, windowSec: 3600 } } }
     });
 
     // Рефанд с outletId -> должен заблокироваться антифродом
@@ -371,7 +371,7 @@ describe('AntiFraud Guard (e2e)', () => {
       rulesJson: {
         af: {
           merchant: { limit: 999, windowSec: 60, dailyCap: 0, weeklyCap: 0 },
-          device:   { limit: 999, windowSec: 60, dailyCap: 0, weeklyCap: 0 },
+          outlet:   { limit: 999, windowSec: 60, dailyCap: 0, weeklyCap: 0 },
           staff:    { limit: 999, windowSec: 60, dailyCap: 0, weeklyCap: 0 },
           customer: { limit: 99,  windowSec: 60, dailyCap: 0, weeklyCap: 1 }
         }
