@@ -146,6 +146,7 @@ export class MerchantsService {
     });
     if (!merchant) throw new NotFoundException('Merchant not found');
     const s = merchant.settings ?? { earnBps: 500, redeemLimitBps: 5000, qrTtlSec: 120 } as any;
+    const normalizedRules = this.normalizeRulesJson(s.rulesJson ?? null);
     return {
       merchantId,
       earnBps: s.earnBps,
@@ -165,7 +166,7 @@ export class MerchantsService {
       redeemDailyCap: s.redeemDailyCap ?? null,
       earnDailyCap: s.earnDailyCap ?? null,
       requireJwtForQuote: s.requireJwtForQuote ?? false,
-      rulesJson: s.rulesJson ?? null,
+      rulesJson: normalizedRules ?? null,
       requireStaffKey: s.requireStaffKey ?? false,
       pointsTtlDays: (s as any).pointsTtlDays ?? null,
       earnDelayDays: (s as any).earnDelayDays ?? null,
@@ -181,31 +182,32 @@ export class MerchantsService {
   }
 
   validateRules(rulesJson: any) {
-    if (rulesJson === undefined || rulesJson === null) return { ok: true };
+    const normalized = this.normalizeRulesJson(rulesJson);
+    if (normalized === undefined || normalized === null) return { ok: true };
     // Backward-compatible: поддерживаем оба формата
     // 1) Массив правил (старый формат)
     // 2) Объект { rules?: Rule[], af?: {...} }
     try {
-      if (Array.isArray(rulesJson)) {
-        const valid = this.ajv.validate(this.rulesSchema as any, rulesJson);
+      if (Array.isArray(normalized)) {
+        const valid = this.ajv.validate(this.rulesSchema as any, normalized);
         if (!valid) throw new Error(this.ajv.errorsText(this.ajv.errors, { separator: '; ' }));
         return { ok: true };
       }
-      if (rulesJson && typeof rulesJson === 'object') {
-        const hasRulesArr = Array.isArray((rulesJson as any).rules);
+      if (normalized && typeof normalized === 'object') {
+        const hasRulesArr = Array.isArray((normalized as any).rules);
         if (hasRulesArr) {
-          const valid = this.ajv.validate(this.rulesSchema as any, (rulesJson as any).rules);
+          const valid = this.ajv.validate(this.rulesSchema as any, (normalized as any).rules);
           if (!valid) throw new Error(this.ajv.errorsText(this.ajv.errors, { separator: '; ' }));
         }
         // Лёгкая валидация antifraud секции (если есть)
-        const af = (rulesJson as any).af;
+        const af = (normalized as any).af;
         if (af && typeof af === 'object') {
           const check = (v: any) => v == null || (Number.isFinite(Number(v)) && Number(v) >= 0);
           if (af.customer) {
             if (!check(af.customer.limit) || !check(af.customer.windowSec) || !check(af.customer.dailyCap) || !check(af.customer.weeklyCap)) throw new Error('af.customer invalid');
           }
-          if (af.device) {
-            if (!check(af.device.limit) || !check(af.device.windowSec) || !check(af.device.dailyCap) || !check(af.device.weeklyCap)) throw new Error('af.device invalid');
+          if (af.outlet) {
+            if (!check(af.outlet.limit) || !check(af.outlet.windowSec) || !check(af.outlet.dailyCap) || !check(af.outlet.weeklyCap)) throw new Error('af.outlet invalid');
           }
           if (af.staff) {
             if (!check(af.staff.limit) || !check(af.staff.windowSec) || !check(af.staff.dailyCap) || !check(af.staff.weeklyCap)) throw new Error('af.staff invalid');
@@ -225,8 +227,9 @@ export class MerchantsService {
   }
 
   async updateSettings(merchantId: string, earnBps: number, redeemLimitBps: number, qrTtlSec?: number, webhookUrl?: string, webhookSecret?: string, webhookKeyId?: string, redeemCooldownSec?: number, earnCooldownSec?: number, redeemDailyCap?: number, earnDailyCap?: number, requireJwtForQuote?: boolean, rulesJson?: any, requireBridgeSig?: boolean, bridgeSecret?: string, requireStaffKey?: boolean, extras?: Partial<UpdateMerchantSettingsDto>) {
+    const normalizedRulesJson = this.normalizeRulesJson(rulesJson);
     // JSON Schema валидация правил (если переданы) — выполняем до любых DB операций
-    this.validateRules(rulesJson);
+    this.validateRules(normalizedRulesJson);
 
     // убедимся, что мерчант есть
     await this.prisma.merchant.upsert({
@@ -255,7 +258,7 @@ export class MerchantsService {
         redeemDailyCap: redeemDailyCap ?? undefined,
         earnDailyCap: earnDailyCap ?? undefined,
         requireJwtForQuote: requireJwtForQuote ?? undefined,
-        rulesJson: rulesJson ?? undefined,
+        rulesJson: normalizedRulesJson ?? undefined,
         requireStaffKey: requireStaffKey ?? undefined,
         updatedAt: new Date(),
         pointsTtlDays: extras?.pointsTtlDays ?? undefined,
@@ -287,7 +290,7 @@ export class MerchantsService {
         redeemDailyCap: redeemDailyCap ?? null,
         earnDailyCap: earnDailyCap ?? null,
         requireJwtForQuote: requireJwtForQuote ?? false,
-        rulesJson: rulesJson ?? null,
+        rulesJson: normalizedRulesJson ?? null,
         requireStaffKey: requireStaffKey ?? false,
         pointsTtlDays: extras?.pointsTtlDays ?? null,
         earnDelayDays: extras?.earnDelayDays ?? null,
@@ -408,6 +411,29 @@ export class MerchantsService {
       ...this.mapOutletMeta(entity.outlet ?? null),
       staffId: entity.staffId ?? null,
     } as const;
+  }
+
+  private normalizeRulesJson(rulesJson: any) {
+    if (rulesJson == null) return rulesJson;
+    if (Array.isArray(rulesJson)) return rulesJson;
+    if (typeof rulesJson !== 'object') return rulesJson;
+
+    const clone: any = { ...rulesJson };
+    if (clone.af && typeof clone.af === 'object' && !Array.isArray(clone.af)) {
+      const af: any = { ...clone.af };
+      const outletCfg = af.outlet ?? af.device;
+      if (outletCfg !== undefined) {
+        af.outlet = typeof outletCfg === 'object' && outletCfg !== null && !Array.isArray(outletCfg)
+          ? { ...outletCfg }
+          : outletCfg;
+      }
+      if (Array.isArray(af.blockFactors)) {
+        af.blockFactors = af.blockFactors.map((factor: any) => (factor === 'no_device_id' ? 'no_outlet_id' : factor));
+      }
+      delete af.device;
+      clone.af = af;
+    }
+    return clone;
   }
 
   private async loadOutletMeta(merchantId: string, outletIds: (string | null | undefined)[]) {

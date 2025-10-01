@@ -69,7 +69,7 @@ export class AntiFraudGuard implements CanActivate {
       const s = merchantId ? await this.prisma.merchantSettings.findUnique({ where: { merchantId } }) : null;
       const af = s && s.rulesJson && (s.rulesJson as any).af ? (s.rulesJson as any).af : null;
       if (af) {
-        const outletCfg = af.outlet ?? af.device ?? {};
+        const outletCfg = af.outlet ?? {};
         limits = {
           customer: { limit: Number(af.customer?.limit ?? limits.customer.limit), windowSec: Number(af.customer?.windowSec ?? limits.customer.windowSec), dailyCap: Number(af.customer?.dailyCap ?? limits.customer.dailyCap), weeklyCap: Number(af.customer?.weeklyCap ?? limits.customer.weeklyCap) },
           outlet:   { limit: Number(outletCfg?.limit ?? limits.outlet.limit),     windowSec: Number(outletCfg?.windowSec ?? limits.outlet.windowSec),       dailyCap: Number(outletCfg?.dailyCap ?? limits.outlet.dailyCap),     weeklyCap: Number(outletCfg?.weeklyCap ?? limits.outlet.weeklyCap) },
@@ -182,9 +182,9 @@ export class AntiFraudGuard implements CanActivate {
               const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId: hold.merchantId } });
               const af = s && s.rulesJson && (s.rulesJson as any).af ? (s.rulesJson as any).af : null;
               const blockFactors: string[] = Array.isArray(af?.blockFactors)
-                ? (af.blockFactors as string[]).map((f) => (f === 'no_device_id' ? 'no_outlet_id' : f))
+                ? (af.blockFactors as any[]).map((f) => String(f ?? ''))
                 : [];
-              const hasOutletRule = blockFactors.includes('no_outlet_id') || blockFactors.includes('no_device_id');
+              const hasOutletRule = blockFactors.includes('no_outlet_id');
               const shouldApplyNoOutlet = hasOutletRule && !hold.outletId;
               if (shouldApplyNoOutlet) {
                 const factor = 'no_outlet_id';
@@ -217,13 +217,13 @@ export class AntiFraudGuard implements CanActivate {
               const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId: hold.merchantId } });
               const af = s && s.rulesJson && (s.rulesJson as any).af ? (s.rulesJson as any).af : null;
               blockFactors = Array.isArray(af?.blockFactors)
-                ? (af.blockFactors as string[]).map((f) => (f === 'no_device_id' ? 'no_outlet_id' : f))
+                ? (af.blockFactors as any[]).map((f) => String(f ?? ''))
                 : [];
             } catch {}
             if (blockFactors.length && Array.isArray(score.factors)) {
               const factorKeys = score.factors.map((f: string) => {
                 const key = String(f || '').split(':')[0];
-                return key === 'no_device_id' ? 'no_outlet_id' : key;
+                return key;
               });
               const matched = factorKeys.find((f: string) => blockFactors.includes(f));
               if (matched) {
