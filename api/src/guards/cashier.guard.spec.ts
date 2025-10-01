@@ -15,6 +15,7 @@ describe('CashierGuard', () => {
     prisma = {
       merchantSettings: { findUnique: jest.fn().mockResolvedValue({ requireStaffKey: true }) },
       staff: { findFirst: jest.fn() },
+      hold: { findUnique: jest.fn().mockResolvedValue(null) },
     };
     guard = new CashierGuard(prisma);
   });
@@ -101,5 +102,46 @@ describe('CashierGuard', () => {
     });
 
     await expect(guard.canActivate(ctx)).resolves.toBe(false);
+  });
+
+  it('пропускает commit без staff key при переданной подписи Bridge', async () => {
+    const ctx = makeCtx({
+      method: 'POST',
+      route: { path: '/loyalty/commit' },
+      headers: { 'x-bridge-signature': 'sig' },
+      body: { merchantId: 'M1' },
+      query: {},
+      params: {},
+    });
+
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    expect(prisma.merchantSettings.findUnique).toHaveBeenCalledWith({ where: { merchantId: 'M1' } });
+    expect(prisma.staff.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('использует merchantId и outletId из hold для проверки staff key', async () => {
+    const key = 'hold-key';
+    prisma.hold.findUnique.mockResolvedValue({ merchantId: 'M-hold', outletId: 'O-hold' });
+    prisma.staff.findFirst.mockImplementation(async (args: any) => {
+      if (args.where.apiKeyHash === hashKey(key) && args.where.merchantId === 'M-hold') {
+        return { id: 'S-admin', role: 'ADMIN', accesses: [] };
+      }
+      return null;
+    });
+
+    const ctx = makeCtx({
+      method: 'POST',
+      route: { path: '/loyalty/commit' },
+      headers: { 'x-staff-key': key },
+      body: { holdId: 'H-1' },
+      query: {},
+      params: {},
+    });
+
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    expect(prisma.hold.findUnique).toHaveBeenCalledWith({
+      where: { id: 'H-1' },
+      select: { merchantId: true, outletId: true },
+    });
   });
 });
