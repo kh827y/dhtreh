@@ -38,15 +38,14 @@ type AccessRow = {
 
 type Outlet = { id: string; name: string };
 
-type AccessGroup = {
-  id: string;
-  name: string;
-  membersCount?: number;
-  memberCount?: number;
-  scope?: string | null;
-  isSystem?: boolean;
-  isDefault?: boolean;
-};
+type AccessGroup = { id: string; name: string; membersCount?: number };
+
+const DEFAULT_GROUPS: AccessGroup[] = [
+  { id: "MERCHANT", name: "Владелец" },
+  { id: "MANAGER", name: "Менеджер" },
+  { id: "ANALYST", name: "Аналитик" },
+  { id: "CASHIER", name: "Кассир" },
+];
 
 function formatActivityDate(value?: string | null) {
   if (!value) return "—";
@@ -98,6 +97,17 @@ function getRoleLabel(role?: string | null): string {
   return upper;
 }
 
+function mergeGroups(options: AccessGroup[], currentRole?: string | null) {
+  const map = new Map<string, AccessGroup>();
+  [...DEFAULT_GROUPS, ...options].forEach((group) => {
+    if (group.id) map.set(group.id, group);
+  });
+  if (currentRole && !map.has(currentRole)) {
+    map.set(currentRole, { id: currentRole, name: getRoleLabel(currentRole) });
+  }
+  return Array.from(map.values());
+}
+
 export default function StaffCardPage({ params }: { params: Promise<{ staffId: string }> }) {
   const { staffId: promisedStaffId } = use(params);
   const staffId = (typeof promisedStaffId === "string" ? promisedStaffId : "").toString();
@@ -119,13 +129,14 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
   const [passwordSaving, setPasswordSaving] = React.useState(false);
   const [passwordError, setPasswordError] = React.useState("");
 
-  const [accessForm, setAccessForm] = React.useState({ email: "", groupId: "", canAccessPortal: false, password: "" });
-  const [passwordEditing, setPasswordEditing] = React.useState(false);
+  const [accessForm, setAccessForm] = React.useState({ email: "", role: "CASHIER", canAccessPortal: false });
+  const [accessSaving, setAccessSaving] = React.useState(false);
   const [accessSubmitLoading, setAccessSubmitLoading] = React.useState(false);
+  const [pinBusy, setPinBusy] = React.useState(false);
 
   const [accessActionOutlet, setAccessActionOutlet] = React.useState<string | null>(null);
   const [addAccessLoading, setAddAccessLoading] = React.useState(false);
-  const [statusUpdating, setStatusUpdating] = React.useState(false);
+  const [firing, setFiring] = React.useState(false);
 
   const [banner, setBanner] = React.useState<{ type: "success" | "error"; text: string } | null>(null);
   const [error, setError] = React.useState("");
@@ -143,28 +154,30 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
     if (groupsLoading) return;
     setGroupsLoading(true);
     try {
-      const res = await fetch("/api/portal/access-groups");
-      if (!res.ok) throw new Error(await res.text());
-      const payload = await res.json().catch(() => ({}));
-      const source: any[] = Array.isArray(payload?.items)
-        ? payload.items
-        : Array.isArray(payload)
-          ? payload
-          : [];
-      const normalized: AccessGroup[] = source
-        .map((item: any) => ({
-          id: String(item?.id ?? ""),
-          name: String(item?.name ?? item?.code ?? ""),
-          membersCount: item?.membersCount ?? item?.memberCount ?? 0,
-          memberCount: item?.memberCount ?? item?.membersCount ?? 0,
-          scope: item?.scope ?? null,
-          isSystem: Boolean(item?.isSystem),
-          isDefault: Boolean(item?.isDefault),
-        }))
-        .filter((group) => group.id || group.name);
-      setGroups(normalized);
-    } catch {
-      setGroups([]);
+      let list: AccessGroup[] = [];
+      try {
+        const res = await fetch("/api/portal/access-groups");
+        if (res.ok) {
+          const payload = await res.json();
+          if (Array.isArray(payload)) list = payload;
+          else if (payload?.items && Array.isArray(payload.items)) list = payload.items;
+        }
+      } catch {}
+      if (typeof window !== "undefined") {
+        try {
+          const stored = window.localStorage.getItem("portal.accessGroups");
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            if (Array.isArray(parsed)) {
+              const map = new Map<string, AccessGroup>((list || []).map((g) => [g.id, g]));
+              parsed.forEach((g: AccessGroup) => { if (g?.id) map.set(g.id, g); });
+              list = Array.from(map.values());
+            }
+          }
+        } catch {}
+      }
+      if (!list.length) list = DEFAULT_GROUPS;
+      setGroups(list);
     } finally {
       setGroupsLoading(false);
     }
@@ -195,16 +208,11 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
         setItem(null);
       } else {
         setItem(detail);
-        const primaryGroupId = Array.isArray(detail.groups) && detail.groups.length
-          ? String(detail.groups[0]?.id ?? "")
-          : "";
         setAccessForm({
           email: detail.email || "",
-          groupId: primaryGroupId,
+          role: (detail.role || "CASHIER").toUpperCase(),
           canAccessPortal: !!(detail.isOwner || detail.portalAccessEnabled || detail.canAccessPortal),
-          password: "",
         });
-        setPasswordEditing(false);
       }
       const accessItems: any[] = Array.isArray(accessData?.items)
         ? accessData.items
@@ -255,44 +263,7 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
     }
   }, [item]);
 
-  const existingPortalAccess = React.useMemo(
-    () => Boolean(item?.isOwner || item?.portalAccessEnabled || item?.canAccessPortal),
-    [item],
-  );
-  const currentGroupId = React.useMemo(
-    () => (Array.isArray(item?.groups) && item!.groups.length ? String(item!.groups[0]?.id ?? "") : ""),
-    [item?.groups],
-  );
-  const groupOptions = React.useMemo(() => {
-    const map = new Map<string, AccessGroup>();
-    for (const group of groups) {
-      if (!group) continue;
-      const id = String(group.id ?? "").trim();
-      const name = String(group.name ?? "").trim() || id;
-      const key = id || name;
-      if (!key) continue;
-      if (group.isSystem) continue;
-      if (!map.has(key)) {
-        map.set(key, { ...group, id: key, name });
-      }
-    }
-    if (Array.isArray(item?.groups)) {
-      item.groups.forEach((group) => {
-        const id = String(group?.id ?? "").trim();
-        if (!id) return;
-        if (!map.has(id)) {
-          map.set(id, { id, name: String(group?.name ?? id), scope: group?.scope ?? null });
-        }
-      });
-    }
-    return Array.from(map.values());
-  }, [groups, item?.groups]);
-  React.useEffect(() => {
-    if (!accessForm.canAccessPortal) return;
-    if (accessForm.groupId) return;
-    if (!groupOptions.length) return;
-    setAccessForm((prev) => (prev.canAccessPortal && !prev.groupId ? { ...prev, groupId: groupOptions[0].id } : prev));
-  }, [accessForm.canAccessPortal, accessForm.groupId, groupOptions]);
+  const groupOptions = React.useMemo(() => mergeGroups(groups, item?.role), [groups, item?.role]);
   const canChangePassword = sessionStaffId === staffId;
   const canTogglePortal = !item?.isOwner;
   const hasTransactions = React.useMemo(() => {
@@ -304,43 +275,57 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
   const accessChanged = React.useMemo(() => {
     if (!item) return false;
     const emailChanged = (accessForm.email || "").trim() !== (item.email || "");
-    const portalChanged = !!accessForm.canAccessPortal !== existingPortalAccess;
-    const groupChanged = accessForm.canAccessPortal
-      ? (accessForm.groupId || "").trim() !== (currentGroupId || "")
-      : false;
-    const passwordChanged = (accessForm.password || "").trim().length > 0;
-    return emailChanged || portalChanged || groupChanged || passwordChanged;
-  }, [accessForm, existingPortalAccess, currentGroupId, item]);
+    const roleChanged = (accessForm.role || "CASHIER").toUpperCase() !== (item.role || "CASHIER").toUpperCase();
+    return emailChanged || roleChanged;
+  }, [accessForm, item]);
+
+  async function handlePortalToggle(value: boolean) {
+    if (!item || accessSaving) return;
+    setAccessSaving(true);
+    setBanner(null);
+    try {
+      const res = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ canAccessPortal: value }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const updated = await res.json();
+      setItem(updated);
+      setAccessForm((prev) => ({ ...prev, canAccessPortal: !!value }));
+      setBanner({ type: "success", text: value ? "Доступ в панель включён" : "Доступ в панель отключён" });
+    } catch (e: any) {
+      setBanner({ type: "error", text: String(e?.message || e || "Не удалось обновить доступ") });
+    } finally {
+      setAccessSaving(false);
+    }
+  }
+  async function handlePersonalPinRegenerate() {
+    if (!item || pinBusy) return;
+    setPinBusy(true);
+    setBanner(null);
+    try {
+      const res = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}/pin`, { method: 'POST' });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setItem(prev => prev ? { ...prev, pinCode: data?.pinCode || prev.pinCode } : prev);
+      setBanner({ type: 'success', text: 'Персональный PIN обновлён' });
+    } catch (e: any) {
+      setBanner({ type: 'error', text: String(e?.message || e || 'Не удалось обновить PIN') });
+    } finally {
+      setPinBusy(false);
+    }
+  }
 
   async function handleAccessSave() {
     if (!item || !accessChanged) return;
     setAccessSubmitLoading(true);
     setBanner(null);
     try {
-      const trimmedEmail = (accessForm.email || "").trim();
-      const trimmedPassword = (accessForm.password || "").trim();
-      if (accessForm.canAccessPortal && !existingPortalAccess && trimmedPassword.length < 6) {
-        throw new Error("Пароль должен содержать минимум 6 символов");
-      }
-      if (trimmedPassword && trimmedPassword.length < 6) {
-        throw new Error("Пароль должен содержать минимум 6 символов");
-      }
       const payload: Record<string, any> = {
-        email: trimmedEmail,
-        canAccessPortal: accessForm.canAccessPortal,
-        portalAccessEnabled: accessForm.canAccessPortal,
+        email: accessForm.email.trim(),
+        role: accessForm.role,
       };
-      if (accessForm.canAccessPortal) {
-        const normalizedGroupId = (accessForm.groupId || "").trim();
-        if (normalizedGroupId) {
-          payload.accessGroupIds = [normalizedGroupId];
-        }
-      } else {
-        payload.accessGroupIds = [];
-      }
-      if (trimmedPassword) {
-        payload.password = trimmedPassword;
-      }
       if (item.firstName || item.lastName) {
         payload.login = [item.firstName, item.lastName].filter(Boolean).join(" ");
       }
@@ -352,16 +337,6 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
       if (!res.ok) throw new Error(await res.text());
       const updated = await res.json();
       setItem(updated);
-      const nextGroupId = Array.isArray(updated?.groups) && updated.groups.length
-        ? String(updated.groups[0]?.id ?? "")
-        : "";
-      setAccessForm({
-        email: updated?.email || "",
-        groupId: nextGroupId,
-        canAccessPortal: !!(updated?.isOwner || updated?.portalAccessEnabled || updated?.canAccessPortal),
-        password: "",
-      });
-      setPasswordEditing(false);
       setBanner({ type: "success", text: "Данные доступа сохранены" });
     } catch (e: any) {
       setBanner({ type: "error", text: String(e?.message || e || "Не удалось сохранить изменения") });
@@ -503,60 +478,31 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
   }
 
   async function handleFire() {
-    if (!item || statusUpdating || item.isOwner) return;
+    if (!item || firing || item.isOwner) return;
     if (!window.confirm("Уволить сотрудника? Он потеряет доступ к панели")) return;
-    setStatusUpdating(true);
+    setFiring(true);
     setBanner(null);
     try {
       const res = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "FIRED", canAccessPortal: false, portalAccessEnabled: false }),
+        body: JSON.stringify({ status: "FIRED", canAccessPortal: false }),
       });
       if (!res.ok) throw new Error(await res.text());
       const updated = await res.json();
       setItem(updated);
-      setAccessForm((prev) => ({ ...prev, canAccessPortal: false, password: "" }));
+      setAccessForm((prev) => ({ ...prev, canAccessPortal: false }));
       setBanner({ type: "success", text: "Сотрудник помечен как уволенный" });
     } catch (e: any) {
       setBanner({ type: "error", text: String(e?.message || e || "Не удалось обновить статус") });
     } finally {
-      setStatusUpdating(false);
-    }
-  }
-
-  async function handleRestore() {
-    if (!item || statusUpdating) return;
-    setStatusUpdating(true);
-    setBanner(null);
-    try {
-      const res = await fetch(`/api/portal/staff/${encodeURIComponent(staffId)}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "ACTIVE" }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const updated = await res.json();
-      setItem(updated);
-      setBanner({ type: "success", text: "Сотрудник восстановлен" });
-    } catch (e: any) {
-      setBanner({ type: "error", text: String(e?.message || e || "Не удалось обновить статус") });
-    } finally {
-      setStatusUpdating(false);
+      setFiring(false);
     }
   }
 
   const displayName = getDisplayName(item);
   const secondaryLine = item?.position || item?.phone || item?.email || "—";
-  const statusValue = (item?.status || "").toUpperCase();
-  const statusBadge = statusValue === "ACTIVE" ? "Работает" : statusValue === "FIRED" ? "Уволен" : statusValue === "ARCHIVED" ? "Архивирован" : item?.status || "";
-  const isFired = statusValue === "FIRED" || statusValue === "ARCHIVED";
-  const assignedGroupsLabel = React.useMemo(() => {
-    if (!Array.isArray(item?.groups) || item.groups.length === 0) return "—";
-    const list = item.groups.map((group) => group?.name || group?.id || "").filter(Boolean);
-    return list.length ? list.join(", ") : "—";
-  }, [item?.groups]);
-  const showPasswordField = accessForm.canAccessPortal && (passwordEditing || !existingPortalAccess);
+  const statusBadge = item?.status === "ACTIVE" ? "Работает" : item?.status === "FIRED" ? "Уволен" : item?.status || "";
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
@@ -676,7 +622,7 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
                 </span>
               )}
             </div>
-            <div style={{ fontSize: 14, opacity: 0.75 }}>Группы доступа: {assignedGroupsLabel}</div>
+            <div style={{ fontSize: 14, opacity: 0.75 }}>Группа доступа: {getRoleLabel(item?.role)}</div>
             <div style={{ fontSize: 13, opacity: 0.75 }}>Email: {item?.email || "—"}</div>
             <div style={{ fontSize: 13, opacity: 0.65 }}>Телефон: {item?.phone || "—"}</div>
           </div>
@@ -705,39 +651,57 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
           >
             Посмотреть транзакции
           </button>
-          <Button
-            variant={isFired ? "primary" : "danger"}
-            onClick={isFired ? handleRestore : handleFire}
-            disabled={!item || item.isOwner || statusUpdating}
-          >
-            {statusUpdating ? (isFired ? "Восстанавливаем…" : "Увольняем…") : isFired ? "Восстановить" : "Уволить"}
+          <Button variant="danger" onClick={handleFire} disabled={!item || item.isOwner || firing}>
+            {firing ? "Увольняем…" : "Уволить"}
           </Button>
         </div>
       </div>
 
       <Card>
-        <CardHeader title="Доступ в админ-панель" />
+        <CardHeader title="Доступы" subtitle="Доступ в панель мерчанта и права" />
         <CardBody>
           {loading && !item ? (
             <Skeleton height={160} />
           ) : (
               <div style={{ display: "grid", gap: 18 }}>
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                flexWrap: "wrap",
+                background: "rgba(255,255,255,.03)",
+                borderRadius: 12,
+                padding: "12px 14px",
+              }}>
+                <div style={{ fontSize: 13, opacity: 0.75 }}>Персональный PIN</div>
+                <code style={{ fontVariantNumeric: "tabular-nums", padding: "4px 10px", borderRadius: 8, background: "rgba(255,255,255,.06)", fontSize: 16 }}>
+                  {item?.pinCode || "—"}
+                </code>
+                <button
+                  className="btn"
+                  onClick={() => {
+                    if (!item?.pinCode) return;
+                    navigator.clipboard?.writeText(item.pinCode).then(() => setBanner({ type: "success", text: "PIN скопирован" })).catch(() => {});
+                  }}
+                  disabled={!item?.pinCode}
+                >
+                  Копировать
+                </button>
+                <button
+                  className="btn"
+                  onClick={handlePersonalPinRegenerate}
+                  disabled={pinBusy}
+                  title="Сгенерировать новый персональный PIN"
+                >
+                  ⟳ Обновить PIN
+                </button>
+              </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "center", justifyContent: "space-between" }}>
                 <Toggle
                   checked={accessForm.canAccessPortal}
-                  onChange={(value) => {
-                    if (!canTogglePortal && !value) return;
-                    if (value) {
-                      if (!groups.length) ensureGroupsLoaded();
-                      setPasswordEditing(!existingPortalAccess);
-                      setAccessForm((prev) => ({ ...prev, canAccessPortal: true }));
-                    } else {
-                      setPasswordEditing(false);
-                      setAccessForm((prev) => ({ ...prev, canAccessPortal: false, password: "" }));
-                    }
-                  }}
+                  onChange={(value) => handlePortalToggle(value)}
                   label="Доступ в админ-панель"
-                  disabled={!canTogglePortal}
+                  disabled={!canTogglePortal || accessSaving}
                   title={canTogglePortal ? undefined : "Для владельца доступ всегда включён"}
                 />
                 <div style={{ fontSize: 12, opacity: 0.7 }}>Последняя активность: {formatActivityDate(item?.lastActivityAt)}</div>
@@ -747,9 +711,9 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
                   <label style={{ fontSize: 13, opacity: 0.75 }}>Группа доступа</label>
                   <div style={{ display: "flex", gap: 8 }}>
                     <select
-                      value={accessForm.groupId}
-                      disabled={!accessForm.canAccessPortal || item?.isOwner}
-                      onChange={(e) => setAccessForm((prev) => ({ ...prev, groupId: e.target.value }))}
+                      value={accessForm.role}
+                      disabled={item?.isOwner}
+                      onChange={(e) => setAccessForm((prev) => ({ ...prev, role: e.target.value }))}
                       style={{ padding: "10px 12px", borderRadius: 8, flex: 1 }}
                     >
                       {groupOptions.map((group) => (
@@ -777,55 +741,18 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
                 </div>
                 <div style={{ display: "grid", gap: 6 }}>
                   <label style={{ fontSize: 13, opacity: 0.75 }}>E-mail</label>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <input
-                      value={accessForm.email}
-                      onChange={(e) => setAccessForm((prev) => ({ ...prev, email: e.target.value }))}
-                      placeholder="E-mail для входа"
-                      style={{ padding: "10px 12px", borderRadius: 8, flex: 1 }}
-                    />
-                    {accessForm.canAccessPortal && existingPortalAccess && !passwordEditing ? (
-                      <button
-                        type="button"
-                        className="btn btn-ghost"
-                        onClick={() => {
-                          setPasswordEditing(true);
-                          setAccessForm((prev) => ({ ...prev, password: "" }));
-                        }}
-                      >
-                        Новый пароль
-                      </button>
-                    ) : null}
-                  </div>
+                  <input
+                    value={accessForm.email}
+                    onChange={(e) => setAccessForm((prev) => ({ ...prev, email: e.target.value }))}
+                    placeholder="E-mail для входа"
+                    style={{ padding: "10px 12px", borderRadius: 8 }}
+                  />
                 </div>
-                {showPasswordField ? (
-                  <div style={{ display: "grid", gap: 6 }}>
-                    <label style={{ fontSize: 13, opacity: 0.75 }}>Пароль</label>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <input
-                        type="password"
-                        value={accessForm.password}
-                        onChange={(e) => setAccessForm((prev) => ({ ...prev, password: e.target.value }))}
-                        placeholder={existingPortalAccess ? "Введите новый пароль" : "Придумайте пароль"}
-                        style={{ padding: "10px 12px", borderRadius: 8, flex: 1 }}
-                      />
-                      {existingPortalAccess ? (
-                        <button
-                          type="button"
-                          className="btn btn-ghost"
-                          onClick={() => {
-                            setPasswordEditing(false);
-                            setAccessForm((prev) => ({ ...prev, password: "" }));
-                          }}
-                        >
-                          Отменить
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : null}
               </div>
               <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
+                <button className="btn" onClick={() => load()} disabled={accessSubmitLoading}>
+                  Сбросить
+                </button>
                 <Button variant="primary" onClick={handleAccessSave} disabled={!accessChanged || accessSubmitLoading}>
                   {accessSubmitLoading ? "Сохраняем…" : "Сохранить"}
                 </Button>

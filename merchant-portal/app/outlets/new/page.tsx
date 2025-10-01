@@ -38,12 +38,12 @@ export default function CreateOutletPage() {
 
   const [works, setWorks] = React.useState(true);
   const [hidden, setHidden] = React.useState(false);
-  const [name, setName] = React.useState("");
-  const [description, setDescription] = React.useState("");
-  const [phone, setPhone] = React.useState("");
-  const [address, setAddress] = React.useState("");
+  const [name, setName] = React.useState("Тили-Тесто, Московской 56");
+  const [description, setDescription] = React.useState("Вход со стороны двора, рядом парковка");
+  const [phone, setPhone] = React.useState("+7 (913) 000-00-00");
+  const [address, setAddress] = React.useState("Новосибирск, ул. Московская, 56");
   const [manualMarker, setManualMarker] = React.useState(false);
-  const [adminEmails, setAdminEmails] = React.useState("");
+  const [adminEmails, setAdminEmails] = React.useState("manager@example.com");
   const [basicError, setBasicError] = React.useState("");
 
   const [timezone, setTimezone] = React.useState(TIMEZONES[3]);
@@ -52,7 +52,7 @@ export default function CreateOutletPage() {
   const [schedule, setSchedule] = React.useState<DaySchedule[]>(createDefaultSchedule);
   const [scheduleMessage, setScheduleMessage] = React.useState("");
 
-  const [externalId, setExternalId] = React.useState("");
+  const [externalId, setExternalId] = React.useState("BR-0001");
   const [integrationsMessage, setIntegrationsMessage] = React.useState("");
 
   React.useEffect(() => {
