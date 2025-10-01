@@ -38,14 +38,14 @@ type AccessRow = {
 
 type Outlet = { id: string; name: string };
 
-type AccessGroup = { id: string; name: string; membersCount?: number };
-
-const DEFAULT_GROUPS: AccessGroup[] = [
-  { id: "MERCHANT", name: "Владелец" },
-  { id: "MANAGER", name: "Менеджер" },
-  { id: "ANALYST", name: "Аналитик" },
-  { id: "CASHIER", name: "Кассир" },
-];
+type AccessGroup = {
+  id: string;
+  name: string;
+  scope?: string | null;
+  membersCount?: number;
+  isSystem?: boolean;
+  isDefault?: boolean;
+};
 
 function formatActivityDate(value?: string | null) {
   if (!value) return "—";
@@ -97,15 +97,41 @@ function getRoleLabel(role?: string | null): string {
   return upper;
 }
 
-function mergeGroups(options: AccessGroup[], currentRole?: string | null) {
+function mergeGroups(options: AccessGroup[], currentRole?: string | null, currentGroups?: StaffGroup[] | null) {
   const map = new Map<string, AccessGroup>();
-  [...DEFAULT_GROUPS, ...options].forEach((group) => {
-    if (group.id) map.set(group.id, group);
-  });
+  for (const group of options) {
+    if (!group) continue;
+    const id = String(group.id ?? "").trim();
+    const name = String(group.name ?? "").trim();
+    const scope = String(group.scope ?? "").toUpperCase();
+    const isSystem = Boolean(group.isSystem);
+    if (!id || !name) continue;
+    if (isSystem) continue;
+    if (scope && scope !== "PORTAL") continue;
+    if (!map.has(id)) {
+      map.set(id, {
+        id,
+        name,
+        scope: group.scope ?? null,
+        isSystem,
+        isDefault: Boolean(group.isDefault),
+        membersCount: Number(group.membersCount ?? 0) || 0,
+      });
+    }
+  }
+  if (Array.isArray(currentGroups)) {
+    for (const group of currentGroups) {
+      if (!group) continue;
+      const id = String(group.id ?? "").trim();
+      if (!id || map.has(id)) continue;
+      const name = String(group.name ?? "").trim() || (currentRole ? getRoleLabel(currentRole) : id);
+      map.set(id, { id, name: name || id });
+    }
+  }
   if (currentRole && !map.has(currentRole)) {
     map.set(currentRole, { id: currentRole, name: getRoleLabel(currentRole) });
   }
-  return Array.from(map.values());
+  return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, "ru"));
 }
 
 export default function StaffCardPage({ params }: { params: Promise<{ staffId: string }> }) {
@@ -129,7 +155,7 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
   const [passwordSaving, setPasswordSaving] = React.useState(false);
   const [passwordError, setPasswordError] = React.useState("");
 
-  const [accessForm, setAccessForm] = React.useState({ email: "", role: "CASHIER", canAccessPortal: false });
+  const [accessForm, setAccessForm] = React.useState({ email: "", groupId: "", canAccessPortal: false });
   const [accessSaving, setAccessSaving] = React.useState(false);
   const [accessSubmitLoading, setAccessSubmitLoading] = React.useState(false);
   const [pinBusy, setPinBusy] = React.useState(false);
@@ -163,21 +189,17 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
           else if (payload?.items && Array.isArray(payload.items)) list = payload.items;
         }
       } catch {}
-      if (typeof window !== "undefined") {
-        try {
-          const stored = window.localStorage.getItem("portal.accessGroups");
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            if (Array.isArray(parsed)) {
-              const map = new Map<string, AccessGroup>((list || []).map((g) => [g.id, g]));
-              parsed.forEach((g: AccessGroup) => { if (g?.id) map.set(g.id, g); });
-              list = Array.from(map.values());
-            }
-          }
-        } catch {}
-      }
-      if (!list.length) list = DEFAULT_GROUPS;
-      setGroups(list);
+      const normalized = (list || [])
+        .map((g: any) => ({
+          id: String(g?.id ?? ""),
+          name: String(g?.name ?? ""),
+          scope: g?.scope ?? null,
+          isSystem: Boolean(g?.isSystem),
+          isDefault: Boolean(g?.isDefault),
+          membersCount: Number(g?.membersCount ?? g?.memberCount ?? 0) || 0,
+        }))
+        .filter((item) => item.id && item.name);
+      setGroups(normalized);
     } finally {
       setGroupsLoading(false);
     }
@@ -208,9 +230,14 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
         setItem(null);
       } else {
         setItem(detail);
+        const assignedGroups = Array.isArray(detail.groups) ? detail.groups : [];
+        const preferredGroup = assignedGroups.find((group) => {
+          const scope = String(group?.scope ?? "").toUpperCase();
+          return scope === "PORTAL" || scope === "";
+        }) || assignedGroups[0];
         setAccessForm({
           email: detail.email || "",
-          role: (detail.role || "CASHIER").toUpperCase(),
+          groupId: preferredGroup?.id ? String(preferredGroup.id) : "",
           canAccessPortal: !!(detail.isOwner || detail.portalAccessEnabled || detail.canAccessPortal),
         });
       }
@@ -263,7 +290,10 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
     }
   }, [item]);
 
-  const groupOptions = React.useMemo(() => mergeGroups(groups, item?.role), [groups, item?.role]);
+  const groupOptions = React.useMemo(
+    () => mergeGroups(groups, item?.role, item?.groups ?? null),
+    [groups, item?.groups, item?.role],
+  );
   const canChangePassword = sessionStaffId === staffId;
   const canTogglePortal = !item?.isOwner;
   const hasTransactions = React.useMemo(() => {
@@ -275,9 +305,16 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
   const accessChanged = React.useMemo(() => {
     if (!item) return false;
     const emailChanged = (accessForm.email || "").trim() !== (item.email || "");
-    const roleChanged = (accessForm.role || "CASHIER").toUpperCase() !== (item.role || "CASHIER").toUpperCase();
-    return emailChanged || roleChanged;
-  }, [accessForm, item]);
+    const assignedGroups = Array.isArray(item.groups) ? item.groups : [];
+    const preferredGroup = assignedGroups.find((group) => {
+      const scope = String(group?.scope ?? "").toUpperCase();
+      return scope === "PORTAL" || scope === "";
+    }) || assignedGroups[0];
+    const originalGroupId = preferredGroup?.id ? String(preferredGroup.id) : "";
+    const selectedGroupId = (accessForm.groupId || "").trim();
+    const groupChanged = selectedGroupId !== (originalGroupId || "");
+    return emailChanged || groupChanged;
+  }, [accessForm.email, accessForm.groupId, item]);
 
   async function handlePortalToggle(value: boolean) {
     if (!item || accessSaving) return;
@@ -292,7 +329,13 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
       if (!res.ok) throw new Error(await res.text());
       const updated = await res.json();
       setItem(updated);
-      setAccessForm((prev) => ({ ...prev, canAccessPortal: !!value }));
+      if (value) ensureGroupsLoaded();
+      const fallbackGroupId = value ? (groupOptions[0]?.id ?? "") : "";
+      setAccessForm((prev) => ({
+        ...prev,
+        canAccessPortal: !!value,
+        groupId: value ? (prev.groupId || fallbackGroupId) : prev.groupId,
+      }));
       setBanner({ type: "success", text: value ? "Доступ в панель включён" : "Доступ в панель отключён" });
     } catch (e: any) {
       setBanner({ type: "error", text: String(e?.message || e || "Не удалось обновить доступ") });
@@ -322,10 +365,17 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
     setAccessSubmitLoading(true);
     setBanner(null);
     try {
-      const payload: Record<string, any> = {
-        email: accessForm.email.trim(),
-        role: accessForm.role,
-      };
+      const normalizedEmail = accessForm.email.trim();
+      const selectedGroupId = (accessForm.groupId || "").trim();
+      const payload: Record<string, any> = {};
+      if (normalizedEmail) {
+        payload.email = normalizedEmail;
+      } else if (item.email) {
+        payload.email = null;
+      }
+      if (selectedGroupId) {
+        payload.accessGroupIds = [selectedGroupId];
+      }
       if (item.firstName || item.lastName) {
         payload.login = [item.firstName, item.lastName].filter(Boolean).join(" ");
       }
@@ -337,6 +387,11 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
       if (!res.ok) throw new Error(await res.text());
       const updated = await res.json();
       setItem(updated);
+      setAccessForm((prev) => ({
+        ...prev,
+        email: normalizedEmail,
+        groupId: selectedGroupId || prev.groupId,
+      }));
       setBanner({ type: "success", text: "Данные доступа сохранены" });
     } catch (e: any) {
       setBanner({ type: "error", text: String(e?.message || e || "Не удалось сохранить изменения") });
@@ -711,9 +766,9 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
                   <label style={{ fontSize: 13, opacity: 0.75 }}>Группа доступа</label>
                   <div style={{ display: "flex", gap: 8 }}>
                     <select
-                      value={accessForm.role}
+                      value={accessForm.groupId}
                       disabled={item?.isOwner}
-                      onChange={(e) => setAccessForm((prev) => ({ ...prev, role: e.target.value }))}
+                      onChange={(e) => setAccessForm((prev) => ({ ...prev, groupId: e.target.value }))}
                       style={{ padding: "10px 12px", borderRadius: 8, flex: 1 }}
                     >
                       {groupOptions.map((group) => (
