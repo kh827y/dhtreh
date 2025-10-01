@@ -23,6 +23,23 @@ export type MechanicsLevelsResp = {
   }>;
 };
 
+export type ReferralLinkResp = {
+  code: string;
+  link: string;
+  qrCode: string;
+  program: {
+    id: string;
+    name: string;
+    description?: string | null;
+    rewardType: 'FIXED' | 'PERCENT';
+    referrerReward: number;
+    refereeReward: number;
+    merchantName: string;
+    messageTemplate: string;
+    placeholders: string[];
+  };
+};
+
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/$/, '');
 
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
@@ -70,4 +87,14 @@ export async function consentGet(merchantId: string, customerId: string): Promis
 
 export async function consentSet(merchantId: string, customerId: string, granted: boolean): Promise<{ ok: boolean }> {
   return http('/loyalty/consent', { method: 'POST', body: JSON.stringify({ merchantId, customerId, granted }) });
+}
+
+export async function referralLink(customerId: string, merchantId: string): Promise<ReferralLinkResp> {
+  return http(
+    `/referral/link/${encodeURIComponent(customerId)}?merchantId=${encodeURIComponent(merchantId)}`,
+  );
+}
+
+export async function referralActivate(code: string, customerId: string): Promise<{ success: boolean; message?: string; referralId?: string }> {
+  return http('/referral/activate', { method: 'POST', body: JSON.stringify({ code, refereeId: customerId }) });
 }

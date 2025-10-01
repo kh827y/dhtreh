@@ -11,6 +11,8 @@ import {
   mechanicsLevels,
   mintQr,
   transactions,
+  referralLink,
+  referralActivate,
 } from "../lib/api";
 import Spinner from "../components/Spinner";
 import Toast from "../components/Toast";
@@ -132,6 +134,35 @@ function getProgressPercent(levelInfo: LevelInfo | null): number {
   return Math.max(0, Math.min(100, Math.round((progress / distance) * 100)));
 }
 
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function buildReferralMessage(
+  template: string,
+  context: {
+    merchantName: string;
+    friendReward: number;
+    code: string;
+    link: string;
+  },
+): string {
+  const baseTemplate = template?.trim() ||
+    "Расскажите друзьям о нашей программе и получите бонус. Делитесь ссылкой {link} или промокодом {code}.";
+  const replacements: Record<string, string> = {
+    "{businessname}": context.merchantName || "",
+    "{bonusamount}": context.friendReward > 0 ? String(Math.round(context.friendReward)) : "",
+    "{code}": context.code,
+    "{link}": context.link,
+  };
+  let message = baseTemplate;
+  for (const [placeholder, value] of Object.entries(replacements)) {
+    const regex = new RegExp(escapeRegExp(placeholder), "gi");
+    message = message.replace(regex, value);
+  }
+  return message.trim();
+}
+
 export default function Page() {
   const auth = useMiniappAuth(process.env.NEXT_PUBLIC_MERCHANT_ID || "M-1");
   const merchantId = auth.merchantId;
@@ -164,6 +195,18 @@ export default function Page() {
   });
   const [profileCompleted, setProfileCompleted] = useState<boolean>(true);
   const [profileTouched, setProfileTouched] = useState<boolean>(false);
+  const [referralInfo, setReferralInfo] = useState<{
+    code: string;
+    link: string;
+    messageTemplate: string;
+    placeholders: string[];
+    merchantName: string;
+    friendReward: number;
+  } | null>(null);
+  const [referralEnabled, setReferralEnabled] = useState<boolean>(false);
+  const [referralLoading, setReferralLoading] = useState<boolean>(false);
+  const [inviteCode, setInviteCode] = useState<string>("");
+  const [inviteApplied, setInviteApplied] = useState<boolean>(false);
 
   useEffect(() => {
     const tgUser = getTelegramUser();
@@ -351,6 +394,45 @@ export default function Page() {
   }, [customerId, syncConsent, loadBalance, loadTx, loadLevels]);
 
   useEffect(() => {
+    if (!customerId) {
+      setReferralEnabled(false);
+      setReferralInfo(null);
+      return;
+    }
+    let cancelled = false;
+    setReferralLoading(true);
+    setReferralEnabled(false);
+    setReferralInfo(null);
+    setInviteApplied(false);
+    setInviteCode("");
+    referralLink(customerId, merchantId)
+      .then((data) => {
+        if (cancelled) return;
+        setReferralInfo({
+          code: data.code,
+          link: data.link,
+          messageTemplate: data.program?.messageTemplate ?? "",
+          placeholders: Array.isArray(data.program?.placeholders) ? data.program.placeholders : [],
+          merchantName: data.program?.merchantName ?? "",
+          friendReward: typeof data.program?.refereeReward === "number" ? data.program.refereeReward : 0,
+        });
+        setReferralEnabled(true);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setReferralInfo(null);
+          setReferralEnabled(false);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setReferralLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [customerId, merchantId]);
+
+  useEffect(() => {
     if (customerId && !qrToken) {
       doMint().catch(() => undefined);
     }
@@ -369,7 +451,7 @@ export default function Page() {
   }, [merchantId, customerId, consent]);
 
   const handleProfileSubmit = useCallback(
-    (event: FormEvent<HTMLFormElement>) => {
+    async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
       setProfileTouched(true);
       if (!profileForm.name || !profileForm.gender || !profileForm.birthDate) {
@@ -384,9 +466,65 @@ export default function Page() {
         const message = resolveErrorMessage(error);
         setToast({ msg: `Не удалось сохранить: ${message}`, type: "error" });
       }
+      if (referralEnabled && inviteCode.trim() && customerId) {
+        try {
+          await referralActivate(inviteCode.trim(), customerId);
+          setInviteApplied(true);
+          setInviteCode("");
+          setToast({ msg: "Пригласительный код активирован", type: "success" });
+        } catch (error) {
+          const message = resolveErrorMessage(error);
+          setToast({ msg: `Не удалось активировать код: ${message}`, type: "error" });
+        }
+      }
     },
-    [profileForm]
+    [profileForm, referralEnabled, inviteCode, customerId]
   );
+
+  const handleInviteFriend = useCallback(async () => {
+    if (!referralInfo) {
+      setToast({ msg: "Реферальная программа недоступна", type: "error" });
+      return;
+    }
+    const message = buildReferralMessage(referralInfo.messageTemplate, {
+      merchantName: referralInfo.merchantName,
+      friendReward: referralInfo.friendReward,
+      code: referralInfo.code,
+      link: referralInfo.link,
+    });
+    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(referralInfo.link)}&text=${encodeURIComponent(message)}`;
+    try {
+      const tg = getTelegramWebApp();
+      if (tg && typeof (tg as any).openTelegramLink === "function") {
+        (tg as any).openTelegramLink(shareUrl);
+        setToast({ msg: "Откройте Telegram, чтобы отправить приглашение", type: "success" });
+        return;
+      }
+    } catch {
+      // ignore telegram errors
+    }
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share({ text: message, url: referralInfo.link });
+        setToast({ msg: "Сообщение готово к отправке", type: "success" });
+        return;
+      } catch (error) {
+        if ((error as DOMException)?.name === "AbortError") {
+          return;
+        }
+      }
+    }
+    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(message);
+        setToast({ msg: "Текст приглашения скопирован", type: "success" });
+        return;
+      } catch {
+        // ignore clipboard errors
+      }
+    }
+    setToast({ msg: message || "Скопируйте приглашение и отправьте другу", type: "info" });
+  }, [referralInfo]);
 
   const progressPercent = useMemo(() => getProgressPercent(levelInfo), [levelInfo]);
   const nextLevelLabel = levelInfo?.next?.name || "";
@@ -430,7 +568,7 @@ export default function Page() {
         <div className={styles.profileContainer}>
           <form className={styles.profileCard} onSubmit={handleProfileSubmit}>
             <div className={`${styles.appear} ${styles.delay0}`}>
-              <div className={styles.profileTitle}>Давайте познакомимся</div>
+              <div className={styles.profileTitle}>Расскажите о себе</div>
               <div className={styles.profileSubtitle}>
                 Заполните данные, чтобы мы начисляли бонусы лично вам
               </div>
@@ -476,7 +614,27 @@ export default function Page() {
                 className={profileTouched && !profileForm.birthDate ? styles.inputError : undefined}
               />
             </div>
-            <button type="submit" className={`${styles.profileSubmit} ${styles.appear} ${styles.delay4}`}>
+            {referralEnabled && (
+              <div className={`${styles.profileField} ${styles.appear} ${styles.delay4}`}>
+                <label htmlFor="invite">Ввести пригласительный код</label>
+                <input
+                  id="invite"
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
+                  placeholder="Например, FRIEND123"
+                  disabled={inviteApplied}
+                />
+                <span className={styles.profileHint}>
+                  {inviteApplied
+                    ? "Код успешно активирован."
+                    : "Если у вас есть код друга, введите его и получите приветственный бонус."}
+                </span>
+              </div>
+            )}
+            <button
+              type="submit"
+              className={`${styles.profileSubmit} ${styles.appear} ${referralEnabled ? styles.delay5 : styles.delay4}`}
+            >
               Сохранить
             </button>
           </form>
@@ -547,6 +705,20 @@ export default function Page() {
               </svg>
             </button>
           </header>
+
+          {referralEnabled && referralInfo && (
+            <div className={`${styles.inviteBar} ${styles.appear} ${styles.delay0}`}>
+              <button
+                type="button"
+                className={styles.inviteFriendButton}
+                onClick={handleInviteFriend}
+                disabled={referralLoading}
+              >
+                🤝 Пригласить друга
+              </button>
+              <span className={styles.inviteCodeBadge}>Ваш код: {referralInfo.code}</span>
+            </div>
+          )}
 
           <section className={`${styles.card} ${styles.appear} ${styles.delay1}`}>
             <button className={styles.qrMini} onClick={() => setShowQrModal(true)} aria-label="Открыть QR">
