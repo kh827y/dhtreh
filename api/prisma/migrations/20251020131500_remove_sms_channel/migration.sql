@@ -1,7 +1,7 @@
 -- Remove legacy SMS channel data before narrowing CommunicationChannel enum
-DELETE FROM "public"."CommunicationTaskRecipient" WHERE "channel" = 'SMS';
-DELETE FROM "public"."CommunicationTask" WHERE "channel" = 'SMS';
-DELETE FROM "public"."CommunicationTemplate" WHERE "channel" = 'SMS';
+DELETE FROM "public"."CommunicationTaskRecipient" WHERE "channel"::text = 'SMS';
+DELETE FROM "public"."CommunicationTask" WHERE "channel"::text = 'SMS';
+DELETE FROM "public"."CommunicationTemplate" WHERE "channel"::text = 'SMS';
 
 -- Recreate enum without SMS value
 ALTER TYPE "public"."CommunicationChannel" RENAME TO "CommunicationChannel_old";
