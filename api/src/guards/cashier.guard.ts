@@ -12,6 +12,7 @@ export class CashierGuard implements CanActivate {
     const method: string = (req.method || 'GET').toUpperCase();
     const path: string = req?.route?.path || req?.path || req?.originalUrl || '';
     const key = (req.headers['x-staff-key'] as string | undefined) || '';
+    const bridgeSig = (req.headers['x-bridge-signature'] as string | undefined) || '';
     // whitelist публичных GET маршрутов (всегда разрешены): balance, settings, transactions, публичные списки
     const isPublicGet = method === 'GET' && (
       path.startsWith('/loyalty/balance/') ||
@@ -31,24 +32,39 @@ export class CashierGuard implements CanActivate {
     );
     if (isPublicGet || isAlwaysPublic) return true;
 
+    const holdId = typeof body?.holdId === 'string' ? body.holdId : undefined;
+    let holdCtx: { merchantId?: string | null; outletId?: string | null } | null = null;
+    if (holdId && this.prisma?.hold?.findUnique) {
+      try {
+        holdCtx = await this.prisma.hold.findUnique({
+          where: { id: holdId },
+          select: { merchantId: true, outletId: true },
+        });
+      } catch {}
+    }
+
     // Проверяем требование ключа на уровне мерчанта
     let requireStaffKey = false;
+    let merchantIdForCtx: string | undefined =
+      body?.merchantId || req?.params?.merchantId || req?.query?.merchantId || holdCtx?.merchantId || undefined;
     try {
-      const merchantId = body?.merchantId || req?.params?.merchantId || req?.query?.merchantId;
-      if (merchantId) {
-        const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId } });
+      if (merchantIdForCtx) {
+        const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId: merchantIdForCtx } });
         requireStaffKey = Boolean(s?.requireStaffKey);
       }
     } catch {}
-    if (!key) return !requireStaffKey; // если требуется — блокируем, иначе пропускаем
+    if (!key) return !requireStaffKey || !!bridgeSig; // bridge подпись допустима как альтернатива
     const hash = crypto.createHash('sha256').update(key, 'utf8').digest('hex');
-    const merchantIdForStaff = body?.merchantId || req?.params?.merchantId || req?.query?.merchantId;
+    const merchantIdForStaff = merchantIdForCtx;
+    if (!merchantIdForStaff) return true;
+
     const staff = await this.prisma.staff.findFirst({
       where: { merchantId: merchantIdForStaff, apiKeyHash: hash, status: 'ACTIVE' },
       include: { accesses: { where: { status: 'ACTIVE' }, select: { outletId: true } } },
     });
     if (!staff) return false;
-    const requestedOutletId = body?.outletId || req?.params?.outletId || req?.query?.outletId || undefined;
+    const requestedOutletId =
+      body?.outletId || req?.params?.outletId || req?.query?.outletId || holdCtx?.outletId || undefined;
     if (String(staff.role || '').toUpperCase() === 'CASHIER') {
       const allowedOutletId: string | undefined = staff.allowedOutletId || undefined;
       const outletAccesses: string[] = Array.isArray(staff.accesses)
