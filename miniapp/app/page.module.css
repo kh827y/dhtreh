@@ -370,6 +370,11 @@
   font-size: 15px;
 }
 
+.promoInput:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .promoInput:focus {
   outline: none;
   box-shadow: inset 0 0 0 2px rgba(122, 90, 248, 0.2);
@@ -383,6 +388,12 @@
   padding: 12px 18px;
   font-weight: 600;
   cursor: pointer;
+}
+
+.promoButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .promotionsButton {
