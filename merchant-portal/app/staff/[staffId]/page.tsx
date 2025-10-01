@@ -368,13 +368,32 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
       const normalizedEmail = accessForm.email.trim();
       const selectedGroupId = (accessForm.groupId || "").trim();
       const payload: Record<string, any> = {};
+      const assignedGroups = Array.isArray(item.groups) ? item.groups : [];
+      const preferredGroup =
+        assignedGroups.find((group) => {
+          const scope = String(group?.scope ?? "").toUpperCase();
+          return scope === "PORTAL" || scope === "";
+        }) || assignedGroups[0];
+      const originalGroupId = preferredGroup?.id ? String(preferredGroup.id) : "";
+      const groupChanged = selectedGroupId !== (originalGroupId || "");
       if (normalizedEmail) {
         payload.email = normalizedEmail;
       } else if (item.email) {
         payload.email = null;
       }
-      if (selectedGroupId) {
-        payload.accessGroupIds = [selectedGroupId];
+      if (groupChanged) {
+        const preservedGroupIds = new Set<string>();
+        for (const group of assignedGroups) {
+          const id = String(group?.id ?? "").trim();
+          if (!id) continue;
+          const scope = String(group?.scope ?? "").toUpperCase();
+          if (scope === "PORTAL" || scope === "") continue;
+          preservedGroupIds.add(id);
+        }
+        if (selectedGroupId) {
+          preservedGroupIds.add(selectedGroupId);
+        }
+        payload.accessGroupIds = Array.from(preservedGroupIds);
       }
       if (item.firstName || item.lastName) {
         payload.login = [item.firstName, item.lastName].filter(Boolean).join(" ");
