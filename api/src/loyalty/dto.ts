@@ -145,13 +145,6 @@ export class PublicOutletDto {
   @ApiPropertyOptional() address?: string;
 }
 
-export class PublicDeviceDto {
-  @ApiProperty() id!: string;
-  @ApiProperty() type!: string;
-  @ApiPropertyOptional() label?: string;
-  @ApiPropertyOptional() outletId?: string;
-}
-
 export class PublicStaffDto {
   @ApiProperty() id!: string;
   @ApiPropertyOptional() login?: string;
