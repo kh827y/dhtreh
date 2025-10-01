@@ -19,7 +19,7 @@
 
 1. В админке откройте нужную торговую точку и задайте POS-тип (`PUT /merchants/{id}/outlets/{outletId}/pos`, поле `posType` = `PC_POS` или `SMART`).
 2. Выдайте `bridgeSecret` для точки: `POST /merchants/{id}/outlets/{outletId}/bridge-secret` (для ротации используйте `/bridge-secret/next`).
-3. При вызове `/loyalty/quote` и `/loyalty/commit` указывайте `merchantId`, `outletId`, `orderId` (поле `deviceId` остаётся для обратной совместимости, но новые клиенты должны переходить на `outletId`).
+3. При вызове `/loyalty/quote` и `/loyalty/commit` передавайте `merchantId`, `outletId`, `orderId` — `deviceId` более не поддерживается.
 3. Если включена опция `requireBridgeSig`, формируйте заголовок `X-Bridge-Signature`:
    - Сигнатура = `base64( HMAC-SHA256( secret, ts + '.' + body ) )`
    - Где `ts` — UNIX-время в секундах, `body` — JSON тела запроса без пробелов.

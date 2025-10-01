@@ -34,7 +34,7 @@ describe('LoyaltyService.commit idempotency', () => {
     prisma.wallet.findFirst.mockResolvedValue({ id: 'W1', balance: 0, type: 'POINTS' });
     // emulate tx
     prisma.$transaction = jest.fn(async (fn: any) => {
-      const tx = mkPrisma({ receipt: { findUnique: jest.fn(), create: jest.fn(() => { const e: any = new Error('unique constraint'); throw e; }) }, wallet: { findUnique: jest.fn(() => ({ id: 'W1', balance: 0 })), update: jest.fn() }, transaction: { create: jest.fn() }, eventOutbox: { create: jest.fn() }, hold: { update: jest.fn() }, device: { update: jest.fn() } });
+      const tx = mkPrisma({ receipt: { findUnique: jest.fn(), create: jest.fn(() => { const e: any = new Error('unique constraint'); throw e; }) }, wallet: { findUnique: jest.fn(() => ({ id: 'W1', balance: 0 })), update: jest.fn() }, transaction: { create: jest.fn() }, eventOutbox: { create: jest.fn() }, hold: { update: jest.fn() } });
       // when create fails, service should try findUnique again
       tx.receipt.findUnique.mockResolvedValue({ id: 'R_EXIST', redeemApplied: 0, earnApplied: 10 });
       return fn(tx);

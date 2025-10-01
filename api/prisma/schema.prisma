@@ -213,7 +213,6 @@ model Merchant {
   createdAt                   DateTime                     @default(now())
   Receipt                     Receipt[]
   outlets                     Outlet[]
-  devices                     Device[]
   staff                       Staff[]
   consents                    Consent[]
   telegramBot                 TelegramBot?
@@ -406,18 +405,15 @@ model Hold {
   qrJti         String?    @unique // <— НОВОЕ: один hold на один QR
   expiresAt     DateTime?
   outletId      String?
-  deviceId      String?
   staffId       String?
   createdAt     DateTime   @default(now())
 
   outlet Outlet? @relation(fields: [outletId], references: [id], onDelete: SetNull)
-  device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
   staff  Staff?  @relation(fields: [staffId], references: [id], onDelete: SetNull)
 
   @@index([customerId, status])
   @@index([merchantId, status])
   @@index([merchantId, outletId])
-  @@index([merchantId, deviceId])
   @@index([merchantId, staffId])
 }
 
@@ -436,17 +432,14 @@ model Receipt {
   earnApplied   Int      @default(0) // сколько начислили
   createdAt     DateTime @default(now())
   outletId      String?
-  deviceId      String?
   staffId       String?
 
   outlet Outlet? @relation(fields: [outletId], references: [id], onDelete: SetNull)
-  device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
   staff  Staff?  @relation(fields: [staffId], references: [id], onDelete: SetNull)
 
   @@unique([merchantId, orderId])
   @@index([merchantId, createdAt])
   @@index([merchantId, outletId])
-  @@index([merchantId, deviceId])
   @@index([merchantId, staffId])
 }
 
@@ -461,17 +454,14 @@ model Transaction {
   orderId    String?
   createdAt  DateTime @default(now())
   outletId   String?
-  deviceId   String?
   staffId    String?
 
   outlet Outlet? @relation(fields: [outletId], references: [id], onDelete: SetNull)
-  device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
   staff  Staff?  @relation(fields: [staffId], references: [id], onDelete: SetNull)
 
   @@index([customerId, createdAt])
   @@index([merchantId, createdAt])
   @@index([merchantId, outletId])
-  @@index([merchantId, deviceId])
   @@index([merchantId, staffId])
   @@index([merchantId, customerId, type, createdAt])
 }
@@ -537,10 +527,10 @@ model Outlet {
   updatedAt               DateTime @updatedAt
 
   // обратные связи
-  devices               Device[]
   holds                 Hold[]
   receipts              Receipt[]
   txns                  Transaction[]
+  pushDevices          PushDevice[]
   staffAccesses         StaffOutletAccess[]
   stocks                ProductStock[]
   schedules             OutletSchedule[]
@@ -574,28 +564,6 @@ model OutletSchedule {
   @@index([outletId])
 }
 
-model Device {
-  id           String     @id @default(cuid())
-  merchantId   String
-  merchant     Merchant   @relation(fields: [merchantId], references: [id])
-  outletId     String?
-  outlet       Outlet?    @relation(fields: [outletId], references: [id], onDelete: SetNull)
-  type         DeviceType
-  label        String?
-  lastSeenAt   DateTime?
-  bridgeSecret String?
-  createdAt    DateTime   @default(now())
-
-  // обратные связи
-  holds           Hold[]
-  receipts        Receipt[]
-  txns            Transaction[]
-  cashierSessions CashierSession[]
-
-  @@index([merchantId])
-  @@index([merchantId, outletId])
-}
-
 model Staff {
   id                         String            @id @default(cuid())
   merchantId                 String
@@ -608,7 +576,6 @@ model Staff {
   hash                       String?
   apiKeyHash                 String?
   allowedOutletId            String?
-  allowedDeviceId            String?
   createdAt                  DateTime          @default(now())
   updatedAt                  DateTime          @updatedAt
   // Profile & access
@@ -816,7 +783,6 @@ model CashierSession {
   merchantId  String
   staffId     String
   outletId    String?
-  deviceId    String?
   pinAccessId String?
   startedAt   DateTime  @default(now())
   endedAt     DateTime?
@@ -829,7 +795,6 @@ model CashierSession {
   merchant  Merchant           @relation(fields: [merchantId], references: [id])
   staff     Staff              @relation(fields: [staffId], references: [id])
   outlet    Outlet?            @relation(fields: [outletId], references: [id])
-  device    Device?            @relation(fields: [deviceId], references: [id])
   pinAccess StaffOutletAccess? @relation(fields: [pinAccessId], references: [id])
 
   @@index([merchantId, startedAt])
@@ -1029,7 +994,6 @@ model LedgerEntry {
   orderId    String?
   receiptId  String?
   outletId   String?
-  deviceId   String?
   staffId    String?
   meta       Json?
   createdAt  DateTime      @default(now())
@@ -1050,7 +1014,6 @@ model EarnLot {
   orderId        String?
   receiptId      String?
   outletId       String?
-  deviceId       String?
   staffId        String?
   status         String    @default("ACTIVE") // ACTIVE | PENDING
   createdAt      DateTime  @default(now())
@@ -1181,6 +1144,7 @@ model PushDevice {
   createdAt    DateTime  @default(now())
 
   customer Customer @relation(fields: [customerId], references: [id])
+  outlet   Outlet?  @relation(fields: [outletId], references: [id], onDelete: SetNull)
 
   @@unique([customerId, outletId])
   @@index([customerId])

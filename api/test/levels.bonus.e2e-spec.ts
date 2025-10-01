@@ -28,7 +28,6 @@ describe('Levels bonuses applied in quote (e2e)', () => {
       findMany: async (args: any) => state.txns.filter(t => t.merchantId === args.where.merchantId && t.customerId === args.where.customerId && (!args.where.type || t.type === args.where.type) && (!args.where.createdAt?.gte || t.createdAt >= args.where.createdAt.gte)),
       count: async (args: any) => state.txns.filter(t => t.merchantId === args.where.merchantId && t.customerId === args.where.customerId && (!args.where.createdAt?.gte || t.createdAt >= args.where.createdAt.gte)).length,
     },
-    device: { findUnique: async () => null },
     hold: { create: async (args: any) => ({ id: 'H1', ...args.data }) },
     wallet: {
       findFirst: async (_args: any) => ({ id: 'W1', balance: 2000, type: 'POINTS' }),

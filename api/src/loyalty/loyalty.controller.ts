@@ -248,9 +248,7 @@ export class LoyaltyController {
           secret = s?.bridgeSecret || null;
           alt = (s as any)?.bridgeSecretNext || null;
         }
-        const dtoForSig = { ...(dto as any) };
-        delete dtoForSig.deviceId;
-        const bodyForSig = JSON.stringify(dtoForSig);
+        const bodyForSig = JSON.stringify(dto);
         let ok = false;
         if (secret && verifyBridgeSigUtil(sig, bodyForSig, secret)) ok = true;
         else if (alt && verifyBridgeSigUtil(sig, bodyForSig, alt)) ok = true;

@@ -37,7 +37,6 @@ describe('Combo: Promo+Rules+Levels with Commit then repeat Quote (per-order cap
       findMany: async (_args: any) => [{ id: 'T1', merchantId: state.settings.merchantId, customerId: 'C-Combo', type: 'EARN', amount: 120, createdAt: new Date() }],
       create: async (_args: any) => ({ id: 'T-REDEEM' })
     },
-    device: { findUnique: async ()=>null, update: async ()=>({}) },
     wallet: {
       findFirst: async (_args: any) => ({ id: 'W1', balance: state.walletBal }),
       findUnique: async (_args: any) => ({ id: 'W1', balance: state.walletBal }),
@@ -73,7 +72,6 @@ describe('Combo: Promo+Rules+Levels with Commit then repeat Quote (per-order cap
       },
       eventOutbox: { create: async (_args: any) => ({}) },
       transaction: { create: async (_args: any) => ({ id: 'T-REDEEM' }) },
-      device: { update: async ()=>({}) },
     }),
   };
 

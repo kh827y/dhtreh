@@ -81,41 +81,7 @@ async function createOutlets(prisma, merchantId) {
     },
   });
 
-  const mainDevice = await prisma.device.upsert({
-    where: { id: 'device-main-pos' },
-    update: {
-      merchantId,
-      outletId: main.id,
-      type: 'SMART',
-      label: 'POS «Главный»',
-    },
-    create: {
-      id: 'device-main-pos',
-      merchantId,
-      outletId: main.id,
-      type: 'SMART',
-      label: 'POS «Главный»',
-    },
-  });
-
-  const kioskDevice = await prisma.device.upsert({
-    where: { id: 'device-kiosk-pos' },
-    update: {
-      merchantId,
-      outletId: kiosk.id,
-      type: 'PC_POS',
-      label: 'POS «Киоск»',
-    },
-    create: {
-      id: 'device-kiosk-pos',
-      merchantId,
-      outletId: kiosk.id,
-      type: 'PC_POS',
-      label: 'POS «Киоск»',
-    },
-  });
-
-  return { main, kiosk, devices: { main: mainDevice, kiosk: kioskDevice } };
+  return { main, kiosk };
 }
 
 async function createAccessGroups(prisma, merchantId, ownerId) {
@@ -1625,7 +1591,6 @@ async function createAnalytics(prisma, merchantId, staff, outlets, customers, se
         merchantId,
         staffId: staff.manager.id,
         outletId: outlets.main.id,
-        deviceId: outlets.devices?.main?.id || null,
         pinAccessId: 'soa-manager-main',
         startedAt: nowMinus({ hours: 5 }),
         endedAt: nowMinus({ hours: 4 }),
@@ -1638,7 +1603,6 @@ async function createAnalytics(prisma, merchantId, staff, outlets, customers, se
         merchantId,
         staffId: staff.cashier.id,
         outletId: outlets.main.id,
-        deviceId: outlets.devices?.main?.id || null,
         pinAccessId: 'soa-cashier-main',
         startedAt: nowMinus({ hours: 2 }),
         result: 'ACTIVE',

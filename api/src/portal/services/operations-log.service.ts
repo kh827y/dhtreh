@@ -94,7 +94,6 @@ export class OperationsLogService {
           customer: true,
           staff: true,
           outlet: true,
-          device: true,
         },
       }),
     ]);
@@ -114,7 +113,6 @@ export class OperationsLogService {
         customer: true,
         staff: true,
         outlet: true,
-        device: true,
       },
     });
 
@@ -172,7 +170,7 @@ export class OperationsLogService {
     return map;
   }
 
-  private mapReceipt(receipt: Prisma.ReceiptGetPayload<{ include: { customer: true; staff: true; outlet: true; device: true } }>, rating: number | null): OperationsLogItemDto {
+  private mapReceipt(receipt: Prisma.ReceiptGetPayload<{ include: { customer: true; staff: true; outlet: true } }>, rating: number | null): OperationsLogItemDto {
     const staffName = receipt.staff
       ? [receipt.staff.firstName, receipt.staff.lastName].filter(Boolean).join(' ').trim() || receipt.staff.id
       : null;
@@ -205,12 +203,13 @@ export class OperationsLogService {
     };
   }
 
-  private buildCarrier(receipt: Prisma.ReceiptGetPayload<{ include: { customer: true; device: true } }>): OperationsLogItemDto['carrier'] {
-    if (receipt.device) {
+  private buildCarrier(receipt: Prisma.ReceiptGetPayload<{ include: { customer: true; outlet: true } }>): OperationsLogItemDto['carrier'] {
+    if (receipt.outlet) {
+      const posType = (receipt.outlet.posType as string | null) ?? null;
       return {
-        type: receipt.device.type,
-        code: receipt.device.id,
-        label: receipt.device.label,
+        type: posType ?? 'OUTLET',
+        code: receipt.outlet.code ?? receipt.outlet.externalId ?? receipt.outlet.id,
+        label: receipt.outlet.name ?? null,
       };
     }
     if (receipt.customer.phone) {
