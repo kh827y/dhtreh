@@ -76,7 +76,7 @@ export class LoyaltyApi {
 
   // Referrals API (beta)
   referrals = {
-    program: (args: { merchantId: string; name: string; description?: string; referrerReward: number; refereeReward: number; minPurchaseAmount?: number; maxReferrals?: number; expiryDays?: number; status?: 'ACTIVE'|'PAUSED'|'COMPLETED' }, opts?: { apiKey?: string }) => {
+    program: (args: { merchantId: string; name: string; description?: string; referrerReward: number; refereeReward: number; minPurchaseAmount?: number; maxReferrals?: number; expiryDays?: number; status?: 'ACTIVE'|'PAUSED'|'COMPLETED'; rewardTrigger?: 'first'|'all'; rewardType?: 'FIXED'|'PERCENT'; multiLevel?: boolean; levelRewards?: Array<{ level: number; enabled?: boolean; reward?: number }>; stackWithRegistration?: boolean; messageTemplate?: string; placeholders?: string[] }, opts?: { apiKey?: string }) => {
       const headers: any = {};
       if (opts?.apiKey) headers['X-API-Key'] = opts.apiKey;
       return this.http('/referral/program', { method: 'POST', headers, body: JSON.stringify(args) });
