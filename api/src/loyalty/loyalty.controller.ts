@@ -430,12 +430,38 @@ export class LoyaltyController {
   @ApiOkResponse({ type: PublicSettingsDto })
   async publicSettings(@Param('merchantId') merchantId: string) {
     const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId } });
+    const rules = s?.rulesJson && typeof s.rulesJson === 'object' ? (s.rulesJson as Record<string, any>) : null;
+    const shareRaw = rules?.reviewsShare && typeof rules.reviewsShare === 'object' ? rules.reviewsShare as Record<string, any> : null;
+    const platformsRaw = shareRaw?.platforms && typeof shareRaw.platforms === 'object'
+      ? (shareRaw.platforms as Record<string, any>)
+      : null;
+    const platforms = platformsRaw
+      ? Object.entries(platformsRaw)
+          .map(([id, cfg]) => {
+            if (!cfg || typeof cfg !== 'object') return null;
+            const enabled = Boolean((cfg as any).enabled);
+            const url = typeof (cfg as any).url === 'string' ? (cfg as any).url : null;
+            return { id, enabled, url };
+          })
+          .filter(Boolean)
+      : [];
+    const thresholdRaw = Number(shareRaw?.threshold);
+    const threshold = Number.isFinite(thresholdRaw) && thresholdRaw >= 1 && thresholdRaw <= 5
+      ? Math.round(thresholdRaw)
+      : 5;
     return {
       merchantId,
       qrTtlSec: s?.qrTtlSec ?? 120,
       miniappThemePrimary: (s as any)?.miniappThemePrimary ?? null,
       miniappThemeBg: (s as any)?.miniappThemeBg ?? null,
       miniappLogoUrl: (s as any)?.miniappLogoUrl ?? null,
+      reviewsShare: shareRaw
+        ? {
+            enabled: Boolean(shareRaw.enabled),
+            threshold,
+            platforms,
+          }
+        : null,
     } as any;
   }
 

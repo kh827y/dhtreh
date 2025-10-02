@@ -22,6 +22,8 @@ type Txn = { id: string; type: 'EARN'|'REDEEM'|'REFUND'|'ADJUST'; amount: number
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
 const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
+const LOYALTY_EVENT_CHANNEL = 'loyalty:events';
+const LOYALTY_EVENT_STORAGE_KEY = 'loyalty:lastEvent';
 
 export default function Page() {
   const [merchantId, setMerchantId] = useState<string>(MERCHANT);
@@ -224,6 +226,16 @@ export default function Page() {
       });
       const data = await r.json();
       if (data?.ok) {
+        emitLoyaltyEvent({
+          type: 'loyalty.commit',
+          merchantId,
+          customerId: resolveCustomerIdFromToken(userToken),
+          orderId,
+          redeemApplied: typeof data?.redeemApplied === 'number' ? data.redeemApplied : undefined,
+          earnApplied: typeof data?.earnApplied === 'number' ? data.earnApplied : undefined,
+          alreadyCommitted: Boolean(data?.alreadyCommitted),
+          mode,
+        });
         alert(data?.alreadyCommitted ? 'Операция уже была зафиксирована ранее (идемпотентно).' : 'Операция зафиксирована.');
         setHoldId(null);
         setResult(null);
@@ -278,6 +290,58 @@ export default function Page() {
       try { const payload = JSON.parse(base64UrlDecode(parts[1]) || '{}'); if (payload?.jti) return `jti:${payload.jti}`; } catch {}
     }
     return `raw:${t}`;
+  };
+
+  const resolveCustomerIdFromToken = (token: string): string | null => {
+    const trimmed = (token || '').trim();
+    if (!trimmed) return null;
+    const parts = trimmed.split('.');
+    if (parts.length !== 3) return trimmed;
+    try {
+      const payload = JSON.parse(base64UrlDecode(parts[1]) || '{}');
+      const candidate =
+        payload?.cid ??
+        payload?.customerId ??
+        payload?.sub ??
+        payload?.userId ??
+        payload?.id ??
+        null;
+      return candidate ? String(candidate) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const emitLoyaltyEvent = (payload: {
+    type: string;
+    merchantId: string;
+    customerId?: string | null;
+    orderId?: string;
+    redeemApplied?: number;
+    earnApplied?: number;
+    alreadyCommitted?: boolean;
+    mode?: 'redeem' | 'earn';
+  }) => {
+    if (typeof window === 'undefined') return;
+    if (!payload.type || !payload.merchantId) return;
+    const enriched = {
+      ...payload,
+      ts: Date.now(),
+    };
+    try {
+      if (typeof window.BroadcastChannel !== 'undefined') {
+        const channel = new BroadcastChannel(LOYALTY_EVENT_CHANNEL);
+        channel.postMessage(enriched);
+        channel.close();
+      }
+    } catch {
+      // ignore broadcast errors
+    }
+    try {
+      localStorage.setItem(LOYALTY_EVENT_STORAGE_KEY, JSON.stringify(enriched));
+    } catch {
+      // ignore storage errors
+    }
   };
 
   function onScan(text: string) {

@@ -1,7 +1,15 @@
 "use client";
 
 import Image from "next/image";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ChangeEvent,
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import QrCanvas from "../components/QrCanvas";
 import {
   balance,
@@ -19,6 +27,12 @@ import Spinner from "../components/Spinner";
 import Toast from "../components/Toast";
 import { useMiniappAuth } from "../lib/useMiniapp";
 import styles from "./page.module.css";
+
+const REVIEW_PLATFORM_LABELS: Record<string, string> = {
+  yandex: "Яндекс.Карты",
+  twogis: "2ГИС",
+  google: "Google",
+};
 
 const DEV_UI =
   (process.env.NEXT_PUBLIC_MINIAPP_DEV_UI || "").toLowerCase() === "true" ||
@@ -73,6 +87,7 @@ type TransactionItem = {
   type: string;
   amount: number;
   createdAt: string;
+  orderId: string | null;
 };
 
 const genderOptions: Array<{ value: "male" | "female"; label: string }> = [
@@ -122,10 +137,48 @@ function formatTxType(type: string): { title: string; tone: "earn" | "redeem" | 
   return { title: type, tone: "other" };
 }
 
+function isPurchaseTransaction(type: string, orderId?: string | null): boolean {
+  const lower = type.toLowerCase();
+  if (lower.includes("promo")) return false;
+  if (lower.includes("campaign")) return false;
+  if (lower.includes("referral")) return false;
+  if (lower.includes("registration")) return false;
+  if (lower.includes("birthday")) return false;
+  if (lower.includes("gift")) return false;
+  if (lower.includes("adjust")) return false;
+  if (lower.includes("ttl")) return false;
+  if (lower.includes("expire")) return false;
+  if (orderId) {
+    const normalizedOrder = orderId.toLowerCase();
+    if (normalizedOrder.startsWith("gift")) return false;
+    if (normalizedOrder.includes("promo")) return false;
+  }
+  if (lower === "earn" || lower === "redeem" || lower === "refund") return true;
+  return lower.includes("purchase") || lower.includes("order") || lower.includes("sale");
+}
+
 function formatAmount(amount: number): string {
   const sign = amount > 0 ? "+" : amount < 0 ? "" : "";
   return `${sign}${amount.toLocaleString("ru-RU", { maximumFractionDigits: 2 })}`;
 }
+
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function parseDateMs(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const ts = Date.parse(value);
+  return Number.isFinite(ts) ? ts : null;
+}
+
+const LOYALTY_EVENT_CHANNEL = "loyalty:events";
+const LOYALTY_EVENT_STORAGE_KEY = "loyalty:lastEvent";
 
 function getProgressPercent(levelInfo: LevelInfo | null): number {
   if (!levelInfo) return 0;
@@ -211,6 +264,71 @@ export default function Page() {
   const [inviteApplied, setInviteApplied] = useState<boolean>(false);
   const [promoCode, setPromoCode] = useState<string>("");
   const [promoLoading, setPromoLoading] = useState<boolean>(false);
+  const [feedbackOpen, setFeedbackOpen] = useState<boolean>(false);
+  const [feedbackRating, setFeedbackRating] = useState<number>(0);
+  const [feedbackComment, setFeedbackComment] = useState<string>("");
+  const [feedbackTxId, setFeedbackTxId] = useState<string | null>(null);
+  const [pendingFeedbackEvent, setPendingFeedbackEvent] = useState<
+    | {
+        ts: number;
+        mode?: "redeem" | "earn";
+        redeemApplied?: number;
+        earnApplied?: number;
+        knownTxIds?: string[];
+        candidateIds?: string[];
+        source?: "event" | "observer";
+      }
+    | null
+  >(null);
+  const [ratedTransactions, setRatedTransactions] = useState<string[]>([]);
+  const [ratedReady, setRatedReady] = useState<boolean>(false);
+  const [dismissedTransactions, setDismissedTransactions] = useState<string[]>([]);
+  const [dismissedReady, setDismissedReady] = useState<boolean>(false);
+  const lastEventTsRef = useRef<number>(0);
+  const txIdsRef = useRef<string[]>([]);
+  const seenTxIdsRef = useRef<Set<string>>(new Set());
+  const [txSnapshotReady, setTxSnapshotReady] = useState<boolean>(false);
+  const [initialHydrationDone, setInitialHydrationDone] = useState<boolean>(false);
+  const shareOptions = useMemo(() => {
+    const share = auth.shareSettings;
+    if (!share || !share.enabled) return [] as Array<{ id: string; url: string }>;
+    if (!feedbackRating || feedbackRating < share.threshold) return [] as Array<{ id: string; url: string }>;
+    const result: Array<{ id: string; url: string }> = [];
+    for (const platform of share.platforms) {
+      if (!platform.enabled) continue;
+      if (typeof platform.url !== "string") continue;
+      const trimmed = platform.url.trim();
+      if (!trimmed) continue;
+      result.push({ id: platform.id, url: trimmed });
+    }
+    return result;
+  }, [auth.shareSettings, feedbackRating]);
+
+  const handleShareClick = useCallback((url: string) => {
+    if (!url) return;
+    const tg = getTelegramWebApp();
+    try {
+      if (tg?.openTelegramLink) {
+        tg.openTelegramLink(url);
+        return;
+      }
+    } catch {}
+    try {
+      if (typeof window !== "undefined") {
+        window.open(url, "_blank", "noopener,noreferrer");
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    txIdsRef.current = tx.map((item) => item.id);
+  }, [tx]);
+
+  useEffect(() => {
+    seenTxIdsRef.current = new Set();
+    setTxSnapshotReady(false);
+    setInitialHydrationDone(false);
+  }, [customerId, merchantId]);
 
   useEffect(() => {
     const tgUser = getTelegramUser();
@@ -292,24 +410,35 @@ export default function Page() {
     }
   }, [customerId, merchantId, ttl, auth.initData]);
 
-  const loadBalance = useCallback(async () => {
+  const loadBalance = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
     if (!customerId) {
-      setStatus("Нет customerId");
+      if (!silent) setStatus("Нет customerId");
       return;
     }
     try {
       const r = await retry(() => balance(merchantId, customerId));
       setBal(r.balance);
-      setStatus("Баланс обновлён");
+      if (!silent) setStatus("Баланс обновлён");
     } catch (error) {
       const message = resolveErrorMessage(error);
-      setStatus(`Ошибка баланса: ${message}`);
-      setToast({ msg: "Не удалось обновить баланс", type: "error" });
+      if (!silent) {
+        setStatus(`Ошибка баланса: ${message}`);
+        setToast({ msg: "Не удалось обновить баланс", type: "error" });
+      }
     }
   }, [customerId, merchantId, retry]);
 
   const mapTransactions = useCallback(
-    (items: Array<{ id: string; type: string; amount: number; createdAt: string }>) => {
+    (
+      items: Array<{
+        id: string;
+        type: string;
+        amount: number;
+        createdAt: string;
+        orderId?: string | null;
+      }>,
+    ) => {
       return items
         .filter((i) => i && typeof i === "object")
         .map((i) => ({
@@ -317,25 +446,31 @@ export default function Page() {
           type: i.type,
           amount: i.amount,
           createdAt: i.createdAt,
+          orderId: i.orderId ?? null,
         }));
     },
     []
   );
 
-  const loadTx = useCallback(async () => {
+  const loadTx = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
     if (!customerId) {
-      setStatus("Нет customerId");
+      if (!silent) setStatus("Нет customerId");
       return;
     }
     try {
       const r = await retry(() => transactions(merchantId, customerId, 20));
       setTx(mapTransactions(r.items));
       setNextBefore(r.nextBefore || null);
-      setStatus("История обновлена");
+      setTxSnapshotReady(true);
+      if (!silent) setStatus("История обновлена");
     } catch (error) {
       const message = resolveErrorMessage(error);
-      setStatus(`Ошибка истории: ${message}`);
-      setToast({ msg: "Не удалось обновить историю", type: "error" });
+      if (!silent) {
+        setStatus(`Ошибка истории: ${message}`);
+        setToast({ msg: "Не удалось обновить историю", type: "error" });
+      }
+      setTxSnapshotReady(true);
     }
   }, [customerId, merchantId, retry, mapTransactions]);
 
@@ -374,6 +509,315 @@ export default function Page() {
       setLevelCatalog([]);
     }
   }, [merchantId, retry]);
+
+  const ratedTxSet = useMemo(() => new Set(ratedTransactions), [ratedTransactions]);
+  const dismissedTxSet = useMemo(() => new Set(dismissedTransactions), [dismissedTransactions]);
+
+  useEffect(() => {
+    lastEventTsRef.current = 0;
+  }, [merchantId, customerId]);
+
+  useEffect(() => {
+    const seen = seenTxIdsRef.current;
+    const fresh: TransactionItem[] = [];
+    for (const item of tx) {
+      if (!seen.has(item.id)) {
+        fresh.push(item);
+        if (txSnapshotReady) {
+          seen.add(item.id);
+        }
+      }
+    }
+    if (!txSnapshotReady) {
+      fresh.forEach((item) => seen.add(item.id));
+      return;
+    }
+    if (!initialHydrationDone) {
+      fresh.forEach((item) => seen.add(item.id));
+      setInitialHydrationDone(true);
+      return;
+    }
+    if (!fresh.length) return;
+    if (pendingFeedbackEvent) return;
+    const candidate = fresh.find((item) => {
+      const meta = formatTxType(item.type);
+      if (meta.tone !== "earn" && meta.tone !== "redeem") return false;
+      if (!isPurchaseTransaction(item.type, item.orderId)) return false;
+      if (ratedTxSet.has(item.id) || dismissedTxSet.has(item.id)) return false;
+      return true;
+    });
+    if (!candidate) return;
+    setPendingFeedbackEvent({ ts: Date.now(), candidateIds: [candidate.id], source: "observer" });
+  }, [
+    tx,
+    txSnapshotReady,
+    initialHydrationDone,
+    pendingFeedbackEvent,
+    ratedTxSet,
+    dismissedTxSet,
+  ]);
+
+  const refreshHistory = useCallback(() => {
+    if (!customerId) return;
+    const tasks: Array<Promise<unknown>> = [
+      loadBalance({ silent: true }),
+      loadTx({ silent: true }),
+      loadLevels(),
+    ];
+    void Promise.allSettled(tasks);
+  }, [customerId, loadBalance, loadTx, loadLevels]);
+
+  const handleExternalEvent = useCallback(
+    (payload: unknown) => {
+      if (!payload || typeof payload !== "object") return;
+      const data = payload as Record<string, unknown>;
+      const eventMerchant = data.merchantId ? String(data.merchantId) : "";
+      if (eventMerchant && eventMerchant !== merchantId) return;
+      const eventCustomer = data.customerId ? String(data.customerId) : "";
+      if (eventCustomer && customerId && eventCustomer !== customerId) return;
+      const typeRaw = data.type ?? data.eventType;
+      let eventType = "";
+      if (typeRaw) {
+        eventType = String(typeRaw).toLowerCase();
+        if (
+          !eventType.includes("commit") &&
+          !eventType.includes("redeem") &&
+          !eventType.includes("earn")
+        ) {
+          return;
+        }
+      }
+      const tsRaw =
+        typeof data.ts === "number"
+          ? data.ts
+          : typeof data.timestamp === "number"
+            ? data.timestamp
+            : typeof (data as Record<string, unknown>)._ts === "number"
+              ? (data as Record<string, unknown>)._ts
+              : Number(data.ts ?? data.timestamp ?? (data as Record<string, unknown>)._ts ?? 0);
+      if (Number.isFinite(tsRaw) && tsRaw > 0) {
+        if (tsRaw <= lastEventTsRef.current) return;
+        lastEventTsRef.current = tsRaw;
+      } else {
+        lastEventTsRef.current = Date.now();
+      }
+      const redeemApplied = toFiniteNumber(data.redeemApplied);
+      const earnApplied = toFiniteNumber(data.earnApplied);
+      const modeRaw = typeof data.mode === "string" ? data.mode.toLowerCase() : undefined;
+      const normalizedMode =
+        modeRaw === "redeem" || modeRaw === "earn" ? (modeRaw as "redeem" | "earn") : undefined;
+      const isCommitEvent = eventType.includes("commit");
+      const hasPurchaseImpact =
+        (redeemApplied ?? 0) > 0 || (earnApplied ?? 0) > 0 || normalizedMode === "redeem" || normalizedMode === "earn";
+      if (isCommitEvent && hasPurchaseImpact) {
+        setPendingFeedbackEvent({
+          ts: lastEventTsRef.current,
+          mode: normalizedMode,
+          redeemApplied: redeemApplied ?? undefined,
+          earnApplied: earnApplied ?? undefined,
+          knownTxIds: txIdsRef.current.slice(0, 50),
+          source: "event",
+        });
+      }
+      refreshHistory();
+    },
+    [merchantId, customerId, refreshHistory],
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!merchantId || !customerId) return;
+    let channel: BroadcastChannel | null = null;
+    if ("BroadcastChannel" in window) {
+      try {
+        channel = new BroadcastChannel(LOYALTY_EVENT_CHANNEL);
+        channel.onmessage = (event) => handleExternalEvent(event.data);
+      } catch {
+        channel = null;
+      }
+    }
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== LOYALTY_EVENT_STORAGE_KEY || !event.newValue) return;
+      try {
+        handleExternalEvent(JSON.parse(event.newValue));
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+    try {
+      const cached = localStorage.getItem(LOYALTY_EVENT_STORAGE_KEY);
+      if (cached) handleExternalEvent(JSON.parse(cached));
+    } catch {
+      // ignore
+    }
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      if (channel) {
+        try {
+          channel.close();
+        } catch {
+          // ignore
+        }
+      }
+    };
+  }, [merchantId, customerId, handleExternalEvent]);
+
+  useEffect(() => {
+    try {
+      if (typeof window === "undefined") return;
+      const saved = localStorage.getItem("miniapp.ratedTransactions");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          setRatedTransactions(parsed.filter((id) => typeof id === "string"));
+        }
+      }
+    } catch {
+      setRatedTransactions([]);
+    } finally {
+      setRatedReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!ratedReady) return;
+    try {
+      if (typeof window === "undefined") return;
+      localStorage.setItem("miniapp.ratedTransactions", JSON.stringify(ratedTransactions));
+    } catch {
+      // ignore
+    }
+  }, [ratedTransactions, ratedReady]);
+
+  useEffect(() => {
+    try {
+      if (typeof window === "undefined") return;
+      const saved = localStorage.getItem("miniapp.dismissedTransactions");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          setDismissedTransactions(parsed.filter((id) => typeof id === "string"));
+        }
+      }
+    } catch {
+      setDismissedTransactions([]);
+    } finally {
+      setDismissedReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!dismissedReady) return;
+    try {
+      if (typeof window === "undefined") return;
+      localStorage.setItem(
+        "miniapp.dismissedTransactions",
+        JSON.stringify(dismissedTransactions),
+      );
+    } catch {
+      // ignore
+    }
+  }, [dismissedTransactions, dismissedReady]);
+
+  useEffect(() => {
+    if (!ratedReady || !dismissedReady || feedbackOpen) return;
+    if (!tx.length) return;
+    const eventTs = pendingFeedbackEvent?.ts ?? null;
+    const earliestAllowed =
+      eventTs && Number.isFinite(eventTs) ? eventTs - 30 * 60 * 1000 : null;
+    const latestAllowed =
+      eventTs && Number.isFinite(eventTs) ? eventTs + 30 * 60 * 1000 : null;
+    const candidateIdsSet =
+      pendingFeedbackEvent?.candidateIds && pendingFeedbackEvent.candidateIds.length
+        ? new Set(pendingFeedbackEvent.candidateIds)
+        : null;
+    const knownSet =
+      pendingFeedbackEvent?.knownTxIds && pendingFeedbackEvent.knownTxIds.length
+        ? new Set(pendingFeedbackEvent.knownTxIds)
+        : null;
+    const basePool = candidateIdsSet
+      ? tx.filter((item) => candidateIdsSet.has(item.id))
+      : pendingFeedbackEvent && knownSet
+        ? tx.filter((item) => !knownSet.has(item.id))
+        : tx;
+    const candidateSource =
+      pendingFeedbackEvent && !candidateIdsSet && basePool.length === 0 ? tx : basePool;
+    const candidate = candidateSource.find((item) => {
+      const meta = formatTxType(item.type);
+      if (meta.tone !== "earn" && meta.tone !== "redeem") return false;
+      if (!isPurchaseTransaction(item.type, item.orderId)) return false;
+      if (ratedTxSet.has(item.id) || dismissedTxSet.has(item.id)) return false;
+      if (!pendingFeedbackEvent || pendingFeedbackEvent.source === "observer") return true;
+      const createdAtMs = parseDateMs(item.createdAt);
+      if (!createdAtMs) return false;
+      if (earliestAllowed && createdAtMs < earliestAllowed) return false;
+      if (latestAllowed && createdAtMs > latestAllowed) return false;
+      return true;
+    });
+    if (!candidate) {
+      if (pendingFeedbackEvent?.source === "observer") {
+        setPendingFeedbackEvent(null);
+      }
+      return;
+    }
+    setPendingFeedbackEvent(null);
+    setFeedbackRating(0);
+    setFeedbackComment("");
+    setFeedbackTxId(candidate.id);
+    setDismissedTransactions((prev) =>
+      prev.includes(candidate.id) ? prev : [...prev, candidate.id],
+    );
+    setFeedbackOpen(true);
+  }, [
+    tx,
+    ratedTxSet,
+    dismissedTxSet,
+    ratedReady,
+    dismissedReady,
+    feedbackOpen,
+    pendingFeedbackEvent,
+  ]);
+
+  const handleFeedbackClose = useCallback(() => {
+    if (feedbackTxId) {
+      setDismissedTransactions((prev) =>
+        prev.includes(feedbackTxId) ? prev : [...prev, feedbackTxId]
+      );
+    }
+    setFeedbackOpen(false);
+    setFeedbackTxId(null);
+    setFeedbackRating(0);
+    setFeedbackComment("");
+  }, [feedbackTxId]);
+
+  const handleFeedbackSubmit = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (!feedbackRating) {
+        setToast({ msg: "Поставьте оценку", type: "error" });
+        return;
+      }
+      if (feedbackTxId) {
+        setRatedTransactions((prev) =>
+          prev.includes(feedbackTxId) ? prev : [...prev, feedbackTxId]
+        );
+      }
+      setToast({ msg: "Спасибо за отзыв!", type: "success" });
+      setFeedbackOpen(false);
+      setFeedbackTxId(null);
+      setFeedbackComment("");
+      setFeedbackRating(0);
+    },
+    [feedbackRating, feedbackTxId]
+  );
+
+  const handleFeedbackCommentChange = useCallback(
+    (event: ChangeEvent<HTMLTextAreaElement>) => {
+      setFeedbackComment(event.currentTarget.value);
+    },
+    []
+  );
 
   useEffect(() => {
     if (!qrToken || !autoRefresh) return;
@@ -928,6 +1372,84 @@ export default function Page() {
 
       {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
 
+      {feedbackOpen && (
+        <div className={styles.modalBackdrop} onClick={handleFeedbackClose}>
+          <form
+            className={`${styles.sheet} ${styles.feedbackSheet}`}
+            onClick={(event) => event.stopPropagation()}
+            onSubmit={handleFeedbackSubmit}
+          >
+            <button
+              type="button"
+              className={styles.feedbackClose}
+              onClick={handleFeedbackClose}
+              aria-label="Закрыть окно оценки"
+            >
+              ✕
+            </button>
+            <div className={styles.feedbackHeader}>
+              <div className={styles.feedbackTitle}>Оцените визит.</div>
+              <div className={styles.feedbackSubtitle}>
+                Ваш отзыв поможет нам улучшить сервис.
+              </div>
+            </div>
+            <div className={styles.feedbackStars} role="radiogroup" aria-label="Оценка визита">
+              {[1, 2, 3, 4, 5].map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={`${styles.starButton} ${
+                    feedbackRating >= value ? styles.starButtonActive : ""
+                  }`}
+                  onClick={() => setFeedbackRating(value)}
+                  role="radio"
+                  aria-checked={feedbackRating >= value}
+                  aria-label={`Оценка ${value}`}
+                >
+                  ★
+                </button>
+              ))}
+            </div>
+            <label className={styles.feedbackCommentLabel}>
+              Комментарий
+              <textarea
+                className={styles.feedbackComment}
+                value={feedbackComment}
+                onChange={handleFeedbackCommentChange}
+                placeholder="Расскажите, что понравилось"
+                rows={3}
+              />
+            </label>
+            {shareOptions.length > 0 && (
+              <div className={styles.feedbackShareBlock}>
+                <div className={styles.feedbackShareTitle}>
+                  Мы рады, что вам понравилось! Пожалуйста, поделитесь своим отзывом
+                </div>
+                <div className={styles.feedbackShareButtons}>
+                  {shareOptions.map((platform) => (
+                    <button
+                      key={platform.id}
+                      type="button"
+                      className={styles.feedbackShareButton}
+                      onClick={() => handleShareClick(platform.url)}
+                    >
+                      {REVIEW_PLATFORM_LABELS[platform.id] || platform.id}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <button
+              type="submit"
+              className={styles.feedbackSubmit}
+              disabled={!feedbackRating}
+            >
+              Отправить
+            </button>
+          </form>
+        </div>
+      )}
+
       {showQrModal && (
         <div className={styles.modalBackdrop} onClick={() => setShowQrModal(false)}>
           <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
@@ -957,10 +1479,10 @@ export default function Page() {
               <input type="checkbox" checked={consent} onChange={toggleConsent} />
               <span>Согласие на рассылку</span>
             </label>
-            <button className={styles.sheetButton} onClick={loadBalance}>
+            <button className={styles.sheetButton} onClick={() => loadBalance()}>
               Обновить баланс
             </button>
-            <button className={styles.sheetButton} onClick={loadTx}>
+            <button className={styles.sheetButton} onClick={() => loadTx()}>
               Обновить историю
             </button>
             <button className={styles.sheetButton} onClick={doMint}>

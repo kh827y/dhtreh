@@ -58,8 +58,30 @@ export async function teleauth(merchantId: string, initData: string): Promise<{ 
   return http('/loyalty/teleauth', { method: 'POST', body: JSON.stringify({ merchantId, initData }) });
 }
 
-export async function publicSettings(merchantId: string): Promise<{ merchantId: string; qrTtlSec: number; miniappThemePrimary?: string|null; miniappThemeBg?: string|null; miniappLogoUrl?: string|null }>
-{ return http(`/loyalty/settings/${encodeURIComponent(merchantId)}`); }
+export type ReviewsSharePlatform = {
+  id: string;
+  enabled: boolean;
+  url: string | null;
+};
+
+export type ReviewsShareSettings = {
+  enabled: boolean;
+  threshold: number;
+  platforms: ReviewsSharePlatform[];
+} | null;
+
+export type PublicSettingsResp = {
+  merchantId: string;
+  qrTtlSec: number;
+  miniappThemePrimary?: string | null;
+  miniappThemeBg?: string | null;
+  miniappLogoUrl?: string | null;
+  reviewsShare?: ReviewsShareSettings;
+};
+
+export async function publicSettings(merchantId: string): Promise<PublicSettingsResp> {
+  return http(`/loyalty/settings/${encodeURIComponent(merchantId)}`);
+}
 
 export async function mintQr(
   customerId: string,

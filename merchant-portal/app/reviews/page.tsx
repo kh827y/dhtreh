@@ -99,6 +99,9 @@ export default function ReviewsPage() {
   const [selectedOutlet, setSelectedOutlet] = React.useState("all");
   const [selectedStaff, setSelectedStaff] = React.useState("all");
   const [settingsOpen, setSettingsOpen] = React.useState(false);
+  const [settingsSnapshot, setSettingsSnapshot] = React.useState<any | null>(null);
+  const [settingsError, setSettingsError] = React.useState<string | null>(null);
+  const [settingsSaving, setSettingsSaving] = React.useState(false);
 
   const [notifyEnabled, setNotifyEnabled] = React.useState(true);
   const [notifyThreshold, setNotifyThreshold] = React.useState("3");
@@ -108,6 +111,124 @@ export default function ReviewsPage() {
   const [shareEnabled, setShareEnabled] = React.useState(false);
   const [shareThreshold, setShareThreshold] = React.useState("5");
   const [sharePlatforms, setSharePlatforms] = React.useState<{ yandex: boolean; twogis: boolean; google: boolean }>({ yandex: true, twogis: false, google: false });
+
+  const applyShareSettings = React.useCallback((data: any) => {
+    const share = data?.rulesJson?.reviewsShare;
+    setShareEnabled(Boolean(share?.enabled));
+    const th = Number(share?.threshold);
+    const normalized = Number.isFinite(th) ? Math.min(5, Math.max(1, Math.round(th))) : 5;
+    setShareThreshold(String(normalized));
+    const platforms = share?.platforms && typeof share.platforms === "object" ? share.platforms : {};
+    setSharePlatforms({
+      yandex: Boolean(platforms?.yandex?.enabled),
+      twogis: Boolean(platforms?.twogis?.enabled),
+      google: Boolean(platforms?.google?.enabled),
+    });
+  }, []);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setSettingsError(null);
+        const res = await fetch("/api/portal/settings", { cache: "no-store" });
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          throw new Error(text || `Ошибка ${res.status}`);
+        }
+        const data = await res.json();
+        if (cancelled) return;
+        setSettingsSnapshot(data);
+        applyShareSettings(data);
+      } catch (error) {
+        if (cancelled) return;
+        console.error(error);
+        setSettingsError(error instanceof Error ? error.message : String(error));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [applyShareSettings]);
+
+  const handleSaveSettings = React.useCallback(async () => {
+    if (!settingsSnapshot) {
+      alert("Настройки ещё загружаются, повторите попытку позже");
+      return;
+    }
+    const base = settingsSnapshot;
+    const rulesBase = base?.rulesJson && typeof base.rulesJson === "object"
+      ? { ...base.rulesJson }
+      : Array.isArray(base?.rulesJson)
+        ? { rules: base.rulesJson }
+        : {};
+    const prevShare = rulesBase?.reviewsShare && typeof rulesBase.reviewsShare === "object" ? rulesBase.reviewsShare : {};
+    const prevPlatforms = prevShare?.platforms && typeof prevShare.platforms === "object" ? prevShare.platforms : {};
+    const thresholdValue = Math.min(5, Math.max(1, parseInt(shareThreshold, 10) || 5));
+    rulesBase.reviewsShare = {
+      enabled: shareEnabled,
+      threshold: thresholdValue,
+      platforms: {
+        yandex: { ...(prevPlatforms?.yandex ?? {}), enabled: sharePlatforms.yandex },
+        twogis: { ...(prevPlatforms?.twogis ?? {}), enabled: sharePlatforms.twogis },
+        google: { ...(prevPlatforms?.google ?? {}), enabled: sharePlatforms.google },
+      },
+    };
+
+    const payload: Record<string, unknown> = {
+      earnBps: base.earnBps,
+      redeemLimitBps: base.redeemLimitBps,
+      qrTtlSec: base.qrTtlSec,
+      webhookUrl: base.webhookUrl ?? undefined,
+      webhookSecret: base.webhookSecret ?? undefined,
+      webhookKeyId: base.webhookKeyId ?? undefined,
+      webhookSecretNext: base.webhookSecretNext ?? undefined,
+      webhookKeyIdNext: base.webhookKeyIdNext ?? undefined,
+      useWebhookNext: base.useWebhookNext ?? undefined,
+      redeemCooldownSec: base.redeemCooldownSec ?? undefined,
+      earnCooldownSec: base.earnCooldownSec ?? undefined,
+      redeemDailyCap: base.redeemDailyCap ?? undefined,
+      earnDailyCap: base.earnDailyCap ?? undefined,
+      requireJwtForQuote: base.requireJwtForQuote ?? undefined,
+      rulesJson: rulesBase,
+      requireBridgeSig: base.requireBridgeSig ?? undefined,
+      bridgeSecret: base.bridgeSecret ?? undefined,
+      bridgeSecretNext: base.bridgeSecretNext ?? undefined,
+      requireStaffKey: base.requireStaffKey ?? undefined,
+      pointsTtlDays: base.pointsTtlDays ?? undefined,
+      earnDelayDays: base.earnDelayDays ?? undefined,
+      telegramBotToken: base.telegramBotToken ?? undefined,
+      telegramBotUsername: base.telegramBotUsername ?? undefined,
+      telegramStartParamRequired: base.telegramStartParamRequired ?? undefined,
+      miniappBaseUrl: base.miniappBaseUrl ?? undefined,
+      miniappThemePrimary: base.miniappThemePrimary ?? undefined,
+      miniappThemeBg: base.miniappThemeBg ?? undefined,
+      miniappLogoUrl: base.miniappLogoUrl ?? undefined,
+    };
+
+    setSettingsSaving(true);
+    try {
+      const res = await fetch("/api/portal/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `Ошибка ${res.status}`);
+      }
+      const updated = await res.json();
+      setSettingsSnapshot(updated);
+      applyShareSettings(updated);
+      setSettingsOpen(false);
+      alert("Настройки сохранены");
+    } catch (error) {
+      console.error(error);
+      alert(`Не удалось сохранить настройки: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setSettingsSaving(false);
+    }
+  }, [applyShareSettings, settingsSnapshot, shareEnabled, shareThreshold, sharePlatforms]);
 
   const filteredReviews = React.useMemo(() => {
     return sampleReviews.filter((review) => {
@@ -244,6 +365,11 @@ export default function ReviewsPage() {
                 <div style={{ fontSize: 12, opacity: 0.7 }}>
                   Если клиент поставит хорошую оценку, ему будет предложено перейти в другие сервисы и поделиться там своим отзывом.
                 </div>
+                {settingsError && (
+                  <div style={{ background: 'rgba(248,113,113,0.12)', color: '#f87171', padding: '10px 12px', borderRadius: 12, fontSize: 13 }}>
+                    Не удалось загрузить актуальные настройки: {settingsError}
+                  </div>
+                )}
                 {shareEnabled && (
                   <div style={{ display: 'grid', gap: 14 }}>
                     <div style={{ display: 'grid', gap: 8 }}>
@@ -268,8 +394,10 @@ export default function ReviewsPage() {
             </div>
 
             <div style={{ padding: '16px 24px', borderTop: '1px solid rgba(148,163,184,0.18)', display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-              <button className="btn" onClick={() => setSettingsOpen(false)}>Отмена</button>
-              <Button variant="primary" onClick={() => { setSettingsOpen(false); alert('Настройки сохранены'); }}>Сохранить</Button>
+              <button className="btn" onClick={() => setSettingsOpen(false)} disabled={settingsSaving}>Отмена</button>
+              <Button variant="primary" onClick={handleSaveSettings} disabled={settingsSaving}>
+                {settingsSaving ? 'Сохранение…' : 'Сохранить'}
+              </Button>
             </div>
           </div>
         </div>
