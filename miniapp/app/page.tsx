@@ -145,6 +145,21 @@ function formatAmount(amount: number): string {
   return `${sign}${amount.toLocaleString("ru-RU", { maximumFractionDigits: 2 })}`;
 }
 
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function parseDateMs(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const ts = Date.parse(value);
+  return Number.isFinite(ts) ? ts : null;
+}
+
 const LOYALTY_EVENT_CHANNEL = "loyalty:events";
 const LOYALTY_EVENT_STORAGE_KEY = "loyalty:lastEvent";
 
@@ -236,6 +251,15 @@ export default function Page() {
   const [feedbackRating, setFeedbackRating] = useState<number>(0);
   const [feedbackComment, setFeedbackComment] = useState<string>("");
   const [feedbackTxId, setFeedbackTxId] = useState<string | null>(null);
+  const [pendingFeedbackEvent, setPendingFeedbackEvent] = useState<
+    | {
+        ts: number;
+        mode?: "redeem" | "earn";
+        redeemApplied?: number;
+        earnApplied?: number;
+      }
+    | null
+  >(null);
   const [ratedTransactions, setRatedTransactions] = useState<string[]>([]);
   const [ratedReady, setRatedReady] = useState<boolean>(false);
   const [dismissedTransactions, setDismissedTransactions] = useState<string[]>([]);
@@ -437,12 +461,13 @@ export default function Page() {
       const eventCustomer = data.customerId ? String(data.customerId) : "";
       if (eventCustomer && customerId && eventCustomer !== customerId) return;
       const typeRaw = data.type ?? data.eventType;
+      let eventType = "";
       if (typeRaw) {
-        const type = String(typeRaw).toLowerCase();
+        eventType = String(typeRaw).toLowerCase();
         if (
-          !type.includes("commit") &&
-          !type.includes("redeem") &&
-          !type.includes("earn")
+          !eventType.includes("commit") &&
+          !eventType.includes("redeem") &&
+          !eventType.includes("earn")
         ) {
           return;
         }
@@ -460,6 +485,22 @@ export default function Page() {
         lastEventTsRef.current = tsRaw;
       } else {
         lastEventTsRef.current = Date.now();
+      }
+      const redeemApplied = toFiniteNumber(data.redeemApplied);
+      const earnApplied = toFiniteNumber(data.earnApplied);
+      const modeRaw = typeof data.mode === "string" ? data.mode.toLowerCase() : undefined;
+      const normalizedMode =
+        modeRaw === "redeem" || modeRaw === "earn" ? (modeRaw as "redeem" | "earn") : undefined;
+      const isCommitEvent = eventType.includes("commit");
+      const hasPurchaseImpact =
+        (redeemApplied ?? 0) > 0 || (earnApplied ?? 0) > 0 || normalizedMode === "redeem" || normalizedMode === "earn";
+      if (isCommitEvent && hasPurchaseImpact) {
+        setPendingFeedbackEvent({
+          ts: lastEventTsRef.current,
+          mode: normalizedMode,
+          redeemApplied: redeemApplied ?? undefined,
+          earnApplied: earnApplied ?? undefined,
+        });
       }
       refreshHistory();
     },
@@ -578,19 +619,39 @@ export default function Page() {
   useEffect(() => {
     if (!ratedReady || !dismissedReady || feedbackOpen) return;
     if (!tx.length) return;
-    const latest = tx[0];
-    const meta = formatTxType(latest.type);
-    if (meta.tone !== "earn" && meta.tone !== "redeem") return;
-    if (!isPurchaseTransaction(latest.type)) return;
-    if (ratedTxSet.has(latest.id) || dismissedTxSet.has(latest.id)) return;
+    const eventTs = pendingFeedbackEvent?.ts ?? null;
+    const eventThreshold =
+      eventTs && Number.isFinite(eventTs) ? eventTs - 2 * 60 * 1000 : null;
+    const candidate = tx.find((item) => {
+      const meta = formatTxType(item.type);
+      if (meta.tone !== "earn" && meta.tone !== "redeem") return false;
+      if (!isPurchaseTransaction(item.type)) return false;
+      if (ratedTxSet.has(item.id) || dismissedTxSet.has(item.id)) return false;
+      if (!pendingFeedbackEvent) return true;
+      const createdAtMs = parseDateMs(item.createdAt);
+      if (!createdAtMs) return false;
+      if (eventThreshold && createdAtMs < eventThreshold) return false;
+      if (eventTs == null) return true;
+      return createdAtMs <= eventTs + 10 * 60 * 1000;
+    });
+    if (!candidate) return;
+    setPendingFeedbackEvent(null);
     setFeedbackRating(0);
     setFeedbackComment("");
-    setFeedbackTxId(latest.id);
+    setFeedbackTxId(candidate.id);
     setDismissedTransactions((prev) =>
-      prev.includes(latest.id) ? prev : [...prev, latest.id],
+      prev.includes(candidate.id) ? prev : [...prev, candidate.id],
     );
     setFeedbackOpen(true);
-  }, [tx, ratedTxSet, dismissedTxSet, ratedReady, dismissedReady, feedbackOpen]);
+  }, [
+    tx,
+    ratedTxSet,
+    dismissedTxSet,
+    ratedReady,
+    dismissedReady,
+    feedbackOpen,
+    pendingFeedbackEvent,
+  ]);
 
   const handleFeedbackClose = useCallback(() => {
     if (feedbackTxId) {
