@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 
@@ -41,6 +41,7 @@ export interface ReviewStats {
 export class ReviewService {
   constructor(
     private prisma: PrismaService,
+    @Inject(forwardRef(() => LoyaltyService))
     private loyaltyService: LoyaltyService,
   ) {}
 
