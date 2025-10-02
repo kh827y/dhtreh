@@ -664,6 +664,31 @@ export default function Page() {
   }, [merchantId, customerId, handleExternalEvent]);
 
   useEffect(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    if (!customerId) return;
+    const interval = window.setInterval(() => {
+      if (document.visibilityState && document.visibilityState !== "visible") return;
+      refreshHistory();
+    }, 20000);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [customerId, refreshHistory]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        refreshHistory();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [refreshHistory]);
+
+  useEffect(() => {
     try {
       if (typeof window === "undefined") return;
       const saved = localStorage.getItem("miniapp.ratedTransactions");
