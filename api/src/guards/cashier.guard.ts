@@ -21,6 +21,7 @@ export class CashierGuard implements CanActivate {
     let merchantId: string | undefined = merchantIdHint || undefined;
     let outletId: string | null = null;
     let payload: string | null = null;
+    let outletLocked = false;
 
     if (normalizedPath === '/loyalty/quote') {
       merchantId = merchantId || body?.merchantId;
@@ -44,6 +45,7 @@ export class CashierGuard implements CanActivate {
       const holdId: string | undefined = body?.holdId;
       if (!holdId) {
         merchantId = merchantId || body?.merchantId;
+        outletId = body?.outletId ?? null;
       } else {
         let hold: { merchantId: string; outletId: string | null } | null = null;
         try {
@@ -52,8 +54,9 @@ export class CashierGuard implements CanActivate {
             select: { merchantId: true, outletId: true },
           });
         } catch {}
+        outletLocked = true;
         merchantId = merchantId || hold?.merchantId || body?.merchantId;
-        outletId = body?.outletId ?? hold?.outletId ?? null;
+        outletId = hold?.outletId ?? null;
         if (merchantId && body?.orderId) {
           payload = JSON.stringify({
             merchantId,
@@ -92,8 +95,9 @@ export class CashierGuard implements CanActivate {
             select: { merchantId: true, outletId: true },
           });
         } catch {}
+        outletLocked = true;
         merchantId = merchantId || hold?.merchantId || body?.merchantId;
-        outletId = body?.outletId ?? hold?.outletId ?? null;
+        outletId = hold?.outletId ?? null;
         if (merchantId) {
           payload = JSON.stringify({ merchantId, holdId });
         }
@@ -110,7 +114,8 @@ export class CashierGuard implements CanActivate {
       }
     }
 
-    if (outletId === null && body?.outletId !== undefined) outletId = body.outletId ?? null;
+    if (!outletLocked && outletId === null && body?.outletId !== undefined)
+      outletId = body.outletId ?? null;
 
     return { merchantId, outletId, payload };
   }

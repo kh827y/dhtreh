@@ -120,13 +120,36 @@ describe('CashierGuard', () => {
       method: 'POST',
       route: { path: '/loyalty/commit' },
       headers: { 'x-staff-key': key },
-      body: { merchantId: 'M1', holdId: 'H-7', orderId: 'ORD-1' },
+      body: { merchantId: 'M1', holdId: 'H-7', orderId: 'ORD-1', outletId: 'O-foreign' },
       query: {},
       params: {},
     });
 
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
   });
+
+  it('игнорирует outlet из тела при наличии hold и использует outlet из hold', async () => {
+    const key = 'cashier-hold-pref';
+    prisma.staff.findFirst.mockImplementation(async (args: any) => {
+      if (args.where.apiKeyHash === hashKey(key)) {
+        return { id: 'S-cashier', role: 'CASHIER', allowedOutletId: 'O-7', accesses: [] };
+      }
+      return null;
+    });
+    prisma.hold.findUnique.mockResolvedValue({ merchantId: 'M1', outletId: 'O-7' });
+
+    const ctx = makeCtx({
+      method: 'POST',
+      route: { path: '/loyalty/commit' },
+      headers: { 'x-staff-key': key },
+      body: { merchantId: 'M1', holdId: 'H-8', orderId: 'ORD-2', outletId: 'O-evil' },
+      query: {},
+      params: {},
+    });
+
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
+  });
+  
   it('при requireStaffKey принимает валидную bridge-подпись даже с дополнительными полями', async () => {
     const secret = 'bridge_secret';
     const body = {
@@ -159,6 +182,47 @@ describe('CashierGuard', () => {
     });
 
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
+  });
+
+  it('для bridge-подписи commit использует секрет точки из hold, игнорируя outlet из тела', async () => {
+    const secret = 'hold_bridge_secret';
+    const body = {
+      merchantId: 'M-77',
+      holdId: 'H-2',
+      orderId: 'O-700',
+      outletId: 'O-fake',
+    };
+    const payload = JSON.stringify({
+      merchantId: 'M-77',
+      holdId: 'H-2',
+      orderId: 'O-700',
+    });
+    const ts = Math.floor(Date.now() / 1000).toString();
+    const sig = crypto.createHmac('sha256', secret).update(ts + '.' + payload).digest('base64');
+    const header = `v1,ts=${ts},sig=${sig}`;
+
+    prisma.merchantSettings.findUnique.mockResolvedValue({ requireStaffKey: true, requireBridgeSig: true });
+    prisma.hold.findUnique.mockResolvedValue({ merchantId: 'M-77', outletId: 'O-hold' });
+    const outletSpy = jest
+      .fn()
+      .mockImplementation(async (args: any) => {
+        expect(args.where).toEqual({ id: 'O-hold', merchantId: 'M-77' });
+        return { bridgeSecret: secret, bridgeSecretNext: null };
+      });
+    prisma.outlet.findFirst = outletSpy;
+
+    const ctx = makeCtx({
+      method: 'POST',
+      route: { path: '/loyalty/commit' },
+      headers: { 'x-bridge-signature': header },
+      body,
+      query: {},
+      params: {},
+    });
+
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    expect(outletSpy).toHaveBeenCalledTimes(1);
+    prisma.outlet.findFirst = jest.fn();
   });
 
   it('при requireStaffKey пропускает QR с валидной bridge-подписью', async () => {
