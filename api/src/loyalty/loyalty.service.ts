@@ -1045,7 +1045,16 @@ export class LoyaltyService {
       where,
       orderBy: { createdAt: 'desc' },
       take: Math.min(Math.max(limit, 1), 100),
-      include: { outlet: { select: { posType: true, posLastSeenAt: true } } },
+      include: {
+        outlet: { select: { posType: true, posLastSeenAt: true } },
+        reviews: {
+          select: {
+            id: true,
+            rating: true,
+            createdAt: true,
+          },
+        },
+      },
     });
     const nextBefore = items.length > 0 ? items[items.length - 1].createdAt.toISOString() : null;
     const normalized = items.map((entity) => ({
@@ -1059,6 +1068,9 @@ export class LoyaltyService {
       outletPosType: entity.outlet?.posType ?? null,
       outletLastSeenAt: entity.outlet?.posLastSeenAt ? entity.outlet.posLastSeenAt.toISOString() : null,
       staffId: entity.staffId ?? null,
+      reviewId: entity.reviews?.[0]?.id ?? null,
+      reviewRating: entity.reviews?.[0]?.rating ?? null,
+      reviewCreatedAt: entity.reviews?.[0]?.createdAt ? entity.reviews[0].createdAt.toISOString() : null,
     }));
     return { items: normalized, nextBefore };
   }

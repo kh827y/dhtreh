@@ -91,6 +91,9 @@ type TransactionItem = {
   orderId: string | null;
   outletId: string | null;
   staffId: string | null;
+  reviewId: string | null;
+  reviewRating: number | null;
+  reviewCreatedAt: string | null;
 };
 
 const genderOptions: Array<{ value: "male" | "female"; label: string }> = [
@@ -272,6 +275,7 @@ export default function Page() {
   const [feedbackComment, setFeedbackComment] = useState<string>("");
   const [feedbackTxId, setFeedbackTxId] = useState<string | null>(null);
   const [feedbackSubmitting, setFeedbackSubmitting] = useState<boolean>(false);
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState<boolean>(false);
   const [pendingFeedbackEvent, setPendingFeedbackEvent] = useState<
     | {
         ts: number;
@@ -285,9 +289,13 @@ export default function Page() {
     | null
   >(null);
   const [ratedTransactions, setRatedTransactions] = useState<string[]>([]);
+  const [ratedOrderIds, setRatedOrderIds] = useState<string[]>([]);
   const [ratedReady, setRatedReady] = useState<boolean>(false);
   const [dismissedTransactions, setDismissedTransactions] = useState<string[]>([]);
+  const [dismissedOrderIds, setDismissedOrderIds] = useState<string[]>([]);
   const [dismissedReady, setDismissedReady] = useState<boolean>(false);
+  const [ratedOrdersReady, setRatedOrdersReady] = useState<boolean>(false);
+  const [dismissedOrdersReady, setDismissedOrdersReady] = useState<boolean>(false);
   const lastEventTsRef = useRef<number>(0);
   const txIdsRef = useRef<string[]>([]);
   const seenTxIdsRef = useRef<Set<string>>(new Set());
@@ -341,6 +349,35 @@ export default function Page() {
       }
     } catch {}
   }, []);
+
+  const resetFeedbackState = useCallback(() => {
+    setFeedbackOpen(false);
+    setFeedbackTxId(null);
+    setFeedbackComment("");
+    setFeedbackRating(0);
+    setFeedbackSubmitted(false);
+  }, []);
+
+  const openFeedbackForCandidate = useCallback(
+    (candidate: TransactionItem) => {
+      setPendingFeedbackEvent(null);
+      setFeedbackRating(0);
+      setFeedbackComment("");
+      setFeedbackTxId(candidate.id);
+      setFeedbackSubmitted(false);
+      setDismissedTransactions((prev) =>
+        prev.includes(candidate.id) ? prev : [...prev, candidate.id]
+      );
+      const candidateOrderId = candidate.orderId ? candidate.orderId.trim() : "";
+      if (candidateOrderId) {
+        setDismissedOrderIds((prev) =>
+          prev.includes(candidateOrderId) ? prev : [...prev, candidateOrderId]
+        );
+      }
+      setFeedbackOpen(true);
+    },
+    [],
+  );
 
   useEffect(() => {
     txIdsRef.current = tx.map((item) => item.id);
@@ -461,6 +498,9 @@ export default function Page() {
         orderId?: string | null;
         outletId?: string | null;
         staffId?: string | null;
+        reviewId?: string | null;
+        reviewRating?: number | null;
+        reviewCreatedAt?: string | null;
       }>,
     ) => {
       return items
@@ -473,6 +513,9 @@ export default function Page() {
           orderId: i.orderId ?? null,
           outletId: i.outletId ?? null,
           staffId: i.staffId ?? null,
+          reviewId: i.reviewId ?? null,
+          reviewRating: typeof i.reviewRating === "number" ? i.reviewRating : null,
+          reviewCreatedAt: i.reviewCreatedAt ?? null,
         }));
     },
     []
@@ -538,6 +581,8 @@ export default function Page() {
 
   const ratedTxSet = useMemo(() => new Set(ratedTransactions), [ratedTransactions]);
   const dismissedTxSet = useMemo(() => new Set(dismissedTransactions), [dismissedTransactions]);
+  const ratedOrderSet = useMemo(() => new Set(ratedOrderIds), [ratedOrderIds]);
+  const dismissedOrderSet = useMemo(() => new Set(dismissedOrderIds), [dismissedOrderIds]);
 
   useEffect(() => {
     lastEventTsRef.current = 0;
@@ -570,6 +615,7 @@ export default function Page() {
       if (meta.tone !== "earn" && meta.tone !== "redeem") return false;
       if (!isPurchaseTransaction(item.type, item.orderId)) return false;
       if (ratedTxSet.has(item.id) || dismissedTxSet.has(item.id)) return false;
+      if (item.reviewId) return false;
       return true;
     });
     if (!candidate) return;
@@ -744,6 +790,33 @@ export default function Page() {
   useEffect(() => {
     try {
       if (typeof window === "undefined") return;
+      const saved = localStorage.getItem("miniapp.ratedOrders");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          setRatedOrderIds(parsed.filter((id) => typeof id === "string"));
+        }
+      }
+    } catch {
+      setRatedOrderIds([]);
+    } finally {
+      setRatedOrdersReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!ratedOrdersReady) return;
+    try {
+      if (typeof window === "undefined") return;
+      localStorage.setItem("miniapp.ratedOrders", JSON.stringify(ratedOrderIds));
+    } catch {
+      // ignore
+    }
+  }, [ratedOrderIds, ratedOrdersReady]);
+
+  useEffect(() => {
+    try {
+      if (typeof window === "undefined") return;
       const saved = localStorage.getItem("miniapp.dismissedTransactions");
       if (saved) {
         const parsed = JSON.parse(saved);
@@ -772,7 +845,70 @@ export default function Page() {
   }, [dismissedTransactions, dismissedReady]);
 
   useEffect(() => {
-    if (!ratedReady || !dismissedReady || feedbackOpen) return;
+    try {
+      if (typeof window === "undefined") return;
+      const saved = localStorage.getItem("miniapp.dismissedOrders");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          setDismissedOrderIds(parsed.filter((id) => typeof id === "string"));
+        }
+      }
+    } catch {
+      setDismissedOrderIds([]);
+    } finally {
+      setDismissedOrdersReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!dismissedOrdersReady) return;
+    try {
+      if (typeof window === "undefined") return;
+      localStorage.setItem("miniapp.dismissedOrders", JSON.stringify(dismissedOrderIds));
+    } catch {
+      // ignore
+    }
+  }, [dismissedOrderIds, dismissedOrdersReady]);
+
+  useEffect(() => {
+    if (!txSnapshotReady) return;
+    if (!tx.length) return;
+    const ratedIds = tx.filter((item) => item.reviewId).map((item) => item.id);
+    if (ratedIds.length) {
+      setRatedTransactions((prev) => {
+        let changed = false;
+        const next = new Set(prev);
+        for (const id of ratedIds) {
+          if (!next.has(id)) {
+            next.add(id);
+            changed = true;
+          }
+        }
+        return changed ? Array.from(next) : prev;
+      });
+    }
+    const ratedOrders = tx
+      .filter((item) => item.reviewId && item.orderId)
+      .map((item) => (item.orderId as string).trim())
+      .filter((orderId) => orderId.length > 0);
+    if (ratedOrders.length) {
+      setRatedOrderIds((prev) => {
+        let changed = false;
+        const next = new Set(prev);
+        for (const orderId of ratedOrders) {
+          if (!next.has(orderId)) {
+            next.add(orderId);
+            changed = true;
+          }
+        }
+        return changed ? Array.from(next) : prev;
+      });
+    }
+  }, [tx, txSnapshotReady]);
+
+  useEffect(() => {
+    if (!ratedReady || !dismissedReady || !ratedOrdersReady || !dismissedOrdersReady || feedbackOpen) return;
     if (!tx.length) return;
     const eventTs = pendingFeedbackEvent?.ts ?? null;
     const earliestAllowed =
@@ -799,6 +935,10 @@ export default function Page() {
       if (meta.tone !== "earn" && meta.tone !== "redeem") return false;
       if (!isPurchaseTransaction(item.type, item.orderId)) return false;
       if (ratedTxSet.has(item.id) || dismissedTxSet.has(item.id)) return false;
+      const normalizedOrder = item.orderId ? item.orderId.trim() : "";
+      if (normalizedOrder) {
+        if (ratedOrderSet.has(normalizedOrder) || dismissedOrderSet.has(normalizedOrder)) return false;
+      }
       if (!pendingFeedbackEvent || pendingFeedbackEvent.source === "observer") return true;
       const createdAtMs = parseDateMs(item.createdAt);
       if (!createdAtMs) return false;
@@ -812,22 +952,58 @@ export default function Page() {
       }
       return;
     }
-    setPendingFeedbackEvent(null);
-    setFeedbackRating(0);
-    setFeedbackComment("");
-    setFeedbackTxId(candidate.id);
-    setDismissedTransactions((prev) =>
-      prev.includes(candidate.id) ? prev : [...prev, candidate.id],
-    );
-    setFeedbackOpen(true);
+    openFeedbackForCandidate(candidate);
   }, [
     tx,
     ratedTxSet,
     dismissedTxSet,
     ratedReady,
     dismissedReady,
+    ratedOrderSet,
+    dismissedOrderSet,
+    ratedOrdersReady,
+    dismissedOrdersReady,
     feedbackOpen,
     pendingFeedbackEvent,
+    openFeedbackForCandidate,
+  ]);
+
+  useEffect(() => {
+    if (!txSnapshotReady) return;
+    if (feedbackOpen || pendingFeedbackEvent) return;
+    if (!ratedReady || !dismissedReady || !ratedOrdersReady || !dismissedOrdersReady) return;
+    const now = Date.now();
+    const thresholdMs = 72 * 60 * 60 * 1000;
+    const candidate = tx.find((item) => {
+      const meta = formatTxType(item.type);
+      if (meta.tone !== "earn" && meta.tone !== "redeem") return false;
+      if (!isPurchaseTransaction(item.type, item.orderId)) return false;
+      if (item.reviewId) return false;
+      if (ratedTxSet.has(item.id) || dismissedTxSet.has(item.id)) return false;
+      const normalizedOrder = item.orderId ? item.orderId.trim() : "";
+      if (normalizedOrder && (ratedOrderSet.has(normalizedOrder) || dismissedOrderSet.has(normalizedOrder))) return false;
+      const createdAtMs = parseDateMs(item.createdAt);
+      if (!createdAtMs) return false;
+      if (now - createdAtMs > thresholdMs) return false;
+      return true;
+    });
+    if (candidate) {
+      openFeedbackForCandidate(candidate);
+    }
+  }, [
+    tx,
+    txSnapshotReady,
+    feedbackOpen,
+    pendingFeedbackEvent,
+    ratedReady,
+    dismissedReady,
+    ratedOrdersReady,
+    dismissedOrdersReady,
+    ratedTxSet,
+    dismissedTxSet,
+    ratedOrderSet,
+    dismissedOrderSet,
+    openFeedbackForCandidate,
   ]);
 
   const handleFeedbackClose = useCallback(() => {
@@ -835,16 +1011,24 @@ export default function Page() {
       setDismissedTransactions((prev) =>
         prev.includes(feedbackTxId) ? prev : [...prev, feedbackTxId]
       );
+      const activeTx = tx.find((item) => item.id === feedbackTxId) ?? null;
+      const orderId = activeTx?.orderId ? activeTx.orderId.trim() : "";
+      if (orderId) {
+        setDismissedOrderIds((prev) =>
+          prev.includes(orderId) ? prev : [...prev, orderId]
+        );
+      }
     }
-    setFeedbackOpen(false);
-    setFeedbackTxId(null);
-    setFeedbackRating(0);
-    setFeedbackComment("");
-  }, [feedbackTxId]);
+    resetFeedbackState();
+  }, [feedbackTxId, tx, resetFeedbackState]);
 
   const handleFeedbackSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
+      if (feedbackSubmitted) {
+        handleFeedbackClose();
+        return;
+      }
       if (!feedbackRating) {
         setToast({ msg: "Поставьте оценку", type: "error" });
         return;
@@ -873,11 +1057,18 @@ export default function Page() {
             prev.includes(feedbackTxId) ? prev : [...prev, feedbackTxId]
           );
         }
+        const orderId = activeTx?.orderId ? activeTx.orderId.trim() : "";
+        if (orderId) {
+          setRatedOrderIds((prev) =>
+            prev.includes(orderId) ? prev : [...prev, orderId]
+          );
+        }
         setToast({ msg: "Спасибо за отзыв!", type: "success" });
-        setFeedbackOpen(false);
-        setFeedbackTxId(null);
-        setFeedbackComment("");
-        setFeedbackRating(0);
+        if (shareOptions.length > 0) {
+          setFeedbackSubmitted(true);
+        } else {
+          resetFeedbackState();
+        }
       } catch (error) {
         setToast({ msg: resolveErrorMessage(error), type: "error" });
       } finally {
@@ -891,6 +1082,11 @@ export default function Page() {
       feedbackTxId,
       tx,
       feedbackComment,
+      feedbackSubmitted,
+      shareOptions,
+      handleFeedbackClose,
+      setToast,
+      resetFeedbackState,
     ]
   );
 
@@ -1470,39 +1666,49 @@ export default function Page() {
               ✕
             </button>
             <div className={styles.feedbackHeader}>
-              <div className={styles.feedbackTitle}>Оцените визит.</div>
+              <div className={styles.feedbackTitle}>
+                {feedbackSubmitted ? "Отзыв отправлен!" : "Оцените визит."}
+              </div>
               <div className={styles.feedbackSubtitle}>
-                Ваш отзыв поможет нам улучшить сервис.
+                {feedbackSubmitted
+                  ? shareOptions.length > 0
+                    ? "Поделитесь впечатлением на площадке"
+                    : "Спасибо за обратную связь"
+                  : "Ваш отзыв поможет нам улучшить сервис."}
               </div>
             </div>
-            <div className={styles.feedbackStars} role="radiogroup" aria-label="Оценка визита">
-              {[1, 2, 3, 4, 5].map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={`${styles.starButton} ${
-                    feedbackRating >= value ? styles.starButtonActive : ""
-                  }`}
-                  onClick={() => setFeedbackRating(value)}
-                  role="radio"
-                  aria-checked={feedbackRating >= value}
-                  aria-label={`Оценка ${value}`}
-                >
-                  ★
-                </button>
-              ))}
-            </div>
-            <label className={styles.feedbackCommentLabel}>
-              Комментарий
-              <textarea
-                className={styles.feedbackComment}
-                value={feedbackComment}
-                onChange={handleFeedbackCommentChange}
-                placeholder="Расскажите, что понравилось"
-                rows={3}
-              />
-            </label>
-            {shareOptions.length > 0 && (
+            {!feedbackSubmitted && (
+              <>
+                <div className={styles.feedbackStars} role="radiogroup" aria-label="Оценка визита">
+                  {[1, 2, 3, 4, 5].map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className={`${styles.starButton} ${
+                        feedbackRating >= value ? styles.starButtonActive : ""
+                      }`}
+                      onClick={() => setFeedbackRating(value)}
+                      role="radio"
+                      aria-checked={feedbackRating >= value}
+                      aria-label={`Оценка ${value}`}
+                    >
+                      ★
+                    </button>
+                  ))}
+                </div>
+                <label className={styles.feedbackCommentLabel}>
+                  Комментарий
+                  <textarea
+                    className={styles.feedbackComment}
+                    value={feedbackComment}
+                    onChange={handleFeedbackCommentChange}
+                    placeholder="Расскажите, что понравилось"
+                    rows={3}
+                  />
+                </label>
+              </>
+            )}
+            {feedbackSubmitted && shareOptions.length > 0 && (
               <div className={styles.feedbackShareBlock}>
                 <div className={styles.feedbackShareTitle}>
                   Мы рады, что вам понравилось! Пожалуйста, поделитесь своим отзывом
@@ -1522,12 +1728,13 @@ export default function Page() {
               </div>
             )}
             <button
-              type="submit"
+              type={feedbackSubmitted ? "button" : "submit"}
               className={styles.feedbackSubmit}
-              disabled={!feedbackRating || feedbackSubmitting}
+              disabled={(feedbackSubmitted && feedbackSubmitting) || (!feedbackSubmitted && (!feedbackRating || feedbackSubmitting))}
+              onClick={feedbackSubmitted ? handleFeedbackClose : undefined}
               aria-busy={feedbackSubmitting || undefined}
             >
-              {feedbackSubmitting ? "Отправляем…" : "Отправить"}
+              {feedbackSubmitted ? "Готово" : feedbackSubmitting ? "Отправляем…" : "Отправить"}
             </button>
           </form>
         </div>

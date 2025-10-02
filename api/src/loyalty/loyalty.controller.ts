@@ -97,6 +97,12 @@ export class LoyaltyController {
     const comment = typeof body?.comment === 'string' ? body.comment.trim() : '';
     const orderIdRaw = typeof body?.orderId === 'string' ? body.orderId.trim() : '';
     const orderId = orderIdRaw.length > 0 ? orderIdRaw : undefined;
+    const transactionIdRaw =
+      typeof body?.transactionId === 'string' ? body.transactionId.trim() : '';
+    const transactionId = transactionIdRaw.length > 0 ? transactionIdRaw : undefined;
+    if (!orderId && !transactionId) {
+      throw new BadRequestException('transactionId или orderId обязательны для отзыва');
+    }
     const titleRaw = typeof body?.title === 'string' ? body.title.trim() : '';
     const title = titleRaw.length > 0 ? titleRaw : undefined;
     const tags = Array.isArray(body?.tags)
@@ -111,8 +117,8 @@ export class LoyaltyController {
       : [];
 
     const metadata: Record<string, any> = { source: 'loyalty-miniapp' };
-    if (typeof body?.transactionId === 'string' && body.transactionId.trim()) {
-      metadata.transactionId = body.transactionId.trim();
+    if (transactionId) {
+      metadata.transactionId = transactionId;
     }
     if (typeof body?.outletId === 'string' && body.outletId.trim()) {
       metadata.outletId = body.outletId.trim();
@@ -126,6 +132,7 @@ export class LoyaltyController {
         merchantId,
         customerId,
         orderId,
+        transactionId,
         rating,
         comment,
         title,
@@ -565,20 +572,92 @@ export class LoyaltyController {
       }
       return Array.from(map.entries()).map(([outletId, url]) => ({ outletId, url }));
     };
-    const platforms = platformsRaw
-      ? Object.entries(platformsRaw)
-          .map(([id, cfg]) => {
-            if (!cfg || typeof cfg !== 'object') return null;
-            const normalizedId = String(id || '').trim();
-            if (!normalizedId) return null;
-            const enabled = Boolean((cfg as any).enabled);
-            const urlRaw = typeof (cfg as any).url === 'string' ? (cfg as any).url.trim() : '';
-            const url = urlRaw ? urlRaw : null;
-            const outlets = normalizePlatformOutlets(cfg);
-            return { id: normalizedId, enabled, url, outlets };
-          })
-          .filter(Boolean)
-      : [];
+    const platformConfigMap = new Map<string, Record<string, any>>();
+    if (platformsRaw) {
+      for (const [id, cfg] of Object.entries(platformsRaw)) {
+        if (!cfg || typeof cfg !== 'object') continue;
+        const normalizedId = String(id || '').trim();
+        if (!normalizedId) continue;
+        platformConfigMap.set(normalizedId, cfg as Record<string, any>);
+      }
+    }
+
+    const outletLinkMap = new Map<string, Array<{ outletId: string; url: string }>>();
+    const pushOutletLink = (platformId: string, outletId: string, url: string) => {
+      if (!platformId || !outletId || !url) return;
+      const list = outletLinkMap.get(platformId) ?? [];
+      const existingIndex = list.findIndex((entry) => entry.outletId === outletId);
+      if (existingIndex >= 0) {
+        list[existingIndex] = { outletId, url };
+      } else {
+        list.push({ outletId, url });
+      }
+      outletLinkMap.set(platformId, list);
+    };
+
+    for (const [id, cfg] of platformConfigMap.entries()) {
+      const baseOutlets = normalizePlatformOutlets(cfg) ?? [];
+      for (const entry of baseOutlets) {
+        pushOutletLink(id, entry.outletId, entry.url);
+      }
+    }
+
+    const outlets = await this.prisma.outlet.findMany({
+      where: { merchantId },
+      select: { id: true, integrationPayload: true },
+    });
+
+    const extractReviewLinks = (payload: any) => {
+      if (!payload || typeof payload !== 'object') return {} as Record<string, string>;
+      const container = payload.reviewsShare && typeof payload.reviewsShare === 'object' && !Array.isArray(payload.reviewsShare)
+        ? payload.reviewsShare
+        : payload;
+      if (!container || typeof container !== 'object') return {} as Record<string, string>;
+      const result: Record<string, string> = {};
+      for (const [platform, value] of Object.entries(container as Record<string, any>)) {
+        if (typeof value === 'string') {
+          const trimmed = value.trim();
+          if (trimmed) result[platform] = trimmed;
+        } else if (value && typeof value === 'object') {
+          const candidate = typeof value.url === 'string' ? value.url : typeof value.link === 'string' ? value.link : undefined;
+          if (candidate) {
+            const trimmed = String(candidate).trim();
+            if (trimmed) result[platform] = trimmed;
+          }
+        }
+      }
+      return result;
+    };
+
+    for (const outlet of outlets) {
+      const payload = outlet.integrationPayload && typeof outlet.integrationPayload === 'object' ? outlet.integrationPayload : null;
+      const links = extractReviewLinks(payload);
+      for (const [platformIdRaw, url] of Object.entries(links)) {
+        const platformId = platformIdRaw.trim();
+        if (!platformId) continue;
+        pushOutletLink(platformId, outlet.id, url);
+      }
+    }
+
+    const orderedIds: string[] = [];
+    const pushOrdered = (id: string) => {
+      if (!id) return;
+      if (!orderedIds.includes(id)) orderedIds.push(id);
+    };
+    const KNOWN_PLATFORMS = ['yandex', 'twogis', 'google'];
+    KNOWN_PLATFORMS.forEach(pushOrdered);
+    Array.from(platformConfigMap.keys()).forEach(pushOrdered);
+    Array.from(outletLinkMap.keys()).forEach(pushOrdered);
+
+    const platforms = orderedIds.map((id) => {
+      const cfg = platformConfigMap.get(id);
+      const enabled = cfg !== undefined ? Boolean((cfg as any).enabled) : Boolean(shareRaw?.enabled);
+      const urlRaw = cfg && typeof (cfg as any).url === 'string' ? (cfg as any).url.trim() : '';
+      const url = urlRaw || null;
+      const outletsList = outletLinkMap.get(id) ?? [];
+      return { id, enabled, url, outlets: outletsList };
+    });
+
     const thresholdRaw = Number(shareRaw?.threshold);
     const threshold = Number.isFinite(thresholdRaw) && thresholdRaw >= 1 && thresholdRaw <= 5
       ? Math.round(thresholdRaw)

@@ -154,6 +154,9 @@ export class TransactionItemDto {
   @ApiPropertyOptional({ enum: DeviceType, nullable: true }) outletPosType?: keyof typeof DeviceType | string | null;
   @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true }) outletLastSeenAt?: string|null;
   @ApiPropertyOptional() staffId?: string|null;
+  @ApiPropertyOptional({ nullable: true, description: 'Идентификатор созданного отзыва' }) reviewId?: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Рейтинг из созданного отзыва' }) reviewRating?: number | null;
+  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true, description: 'Дата и время создания отзыва' }) reviewCreatedAt?: string | null;
 }
 
 export class TransactionsRespDto {

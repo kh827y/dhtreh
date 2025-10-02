@@ -10,6 +10,9 @@ export type TransactionsResp = {
     createdAt: string;
     outletId?: string | null;
     staffId?: string | null;
+    reviewId?: string | null;
+    reviewRating?: number | null;
+    reviewCreatedAt?: string | null;
   }>;
   nextBefore?: string | null;
 };

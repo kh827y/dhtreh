@@ -6,6 +6,7 @@ export interface CreateReviewDto {
   merchantId: string;
   customerId: string;
   orderId?: string;
+  transactionId?: string;
   rating: number; // 1-5
   title?: string;
   comment: string;
@@ -49,95 +50,144 @@ export class ReviewService {
    * Создать отзыв
    */
   async createReview(dto: CreateReviewDto, options?: CreateReviewOptions) {
-    // Проверяем, что клиент делал покупку у мерчанта
-    const hasPurchase = await this.prisma.transaction.findFirst({
-      where: {
-        customerId: dto.customerId,
-        merchantId: dto.merchantId,
-        type: 'EARN',
-      },
-    });
-
-    if (!hasPurchase && !dto.orderId) {
-      throw new BadRequestException('Вы можете оставить отзыв только после покупки');
-    }
-
-    // Проверяем, не оставлял ли уже отзыв на этот заказ
-    if (dto.orderId) {
-      const existingReview = await this.prisma.review.findFirst({
-        where: {
-          customerId: dto.customerId,
-          orderId: dto.orderId,
-        },
-      });
-
-      if (existingReview) {
-        throw new BadRequestException('Вы уже оставили отзыв на этот заказ');
-      }
-    }
-
-    // Валидация рейтинга
-    if (dto.rating < 1 || dto.rating > 5) {
+    const rating = Number(dto.rating);
+    if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
       throw new BadRequestException('Рейтинг должен быть от 1 до 5');
     }
 
-    // Создаем отзыв
+    const transactionIdRaw = typeof dto.transactionId === 'string' ? dto.transactionId.trim() : '';
+    const orderIdRaw = typeof dto.orderId === 'string' ? dto.orderId.trim() : '';
+    const transactionId = transactionIdRaw || undefined;
+    const orderId = orderIdRaw || undefined;
+
+    if (!transactionId && !orderId) {
+      throw new BadRequestException('Укажите транзакцию или заказ, к которому относится отзыв');
+    }
+
+    let anchorTransaction = null as Awaited<ReturnType<typeof this.prisma.transaction.findUnique>> | null;
+
+    if (transactionId) {
+      anchorTransaction = await this.prisma.transaction.findUnique({ where: { id: transactionId } });
+      if (
+        !anchorTransaction ||
+        anchorTransaction.merchantId !== dto.merchantId ||
+        anchorTransaction.customerId !== dto.customerId
+      ) {
+        throw new BadRequestException('Транзакция не найдена или не принадлежит клиенту');
+      }
+    }
+
+    if (!anchorTransaction && orderId) {
+      anchorTransaction = await this.prisma.transaction.findFirst({
+        where: {
+          merchantId: dto.merchantId,
+          customerId: dto.customerId,
+          orderId,
+          type: { in: ['EARN', 'REDEEM'] },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (!anchorTransaction) {
+        throw new BadRequestException('По указанному заказу не найдено покупок');
+      }
+    }
+
+    if (!anchorTransaction) {
+      throw new BadRequestException('Не удалось сопоставить отзыв с покупкой');
+    }
+
+    if (anchorTransaction.type !== 'EARN' && anchorTransaction.type !== 'REDEEM') {
+      throw new BadRequestException('Отзыв можно оставить только по совершённой покупке');
+    }
+
+    const finalOrderId = orderId ?? anchorTransaction.orderId ?? undefined;
+
+    const existingByTransaction = await this.prisma.review.findFirst({
+      where: { transactionId: anchorTransaction.id },
+    });
+    if (existingByTransaction) {
+      throw new BadRequestException('Вы уже оставили отзыв по этой покупке');
+    }
+
+    if (finalOrderId) {
+      const existingByOrder = await this.prisma.review.findFirst({
+        where: {
+          merchantId: dto.merchantId,
+          customerId: dto.customerId,
+          orderId: finalOrderId,
+        },
+      });
+
+      if (existingByOrder) {
+        throw new BadRequestException('Вы уже оставили отзыв по этой покупке');
+      }
+    }
+
     const autoApprove = Boolean(options?.autoApprove);
+    const rewardPoints = this.calculateReviewReward(rating, dto.comment.length, dto.photos?.length || 0);
     const metadata: Record<string, any> = {
       userAgent: 'api',
       timestamp: new Date(),
       ...(options?.metadata ?? {}),
+      transactionId: anchorTransaction.id,
+      ...(finalOrderId ? { orderId: finalOrderId } : {}),
     };
 
-    const review = await this.prisma.review.create({
-      data: {
-        merchantId: dto.merchantId,
-        customerId: dto.customerId,
-        orderId: dto.orderId,
-        rating: dto.rating,
-        title: dto.title,
-        comment: dto.comment,
-        photos: dto.photos || [],
-        tags: dto.tags || [],
-        isAnonymous: dto.isAnonymous || false,
-        status: autoApprove ? 'APPROVED' : 'PENDING',
-        moderatedAt: autoApprove ? new Date() : undefined,
-        metadata,
-      },
-      include: {
-        customer: {
-          select: {
-            id: true,
-            name: true,
+    try {
+      const review = await this.prisma.review.create({
+        data: {
+          merchantId: dto.merchantId,
+          customerId: dto.customerId,
+          orderId: finalOrderId,
+          transactionId: anchorTransaction.id,
+          rating,
+          title: dto.title,
+          comment: dto.comment,
+          photos: dto.photos || [],
+          tags: dto.tags || [],
+          isAnonymous: dto.isAnonymous || false,
+          status: autoApprove ? 'APPROVED' : 'PENDING',
+          moderatedAt: autoApprove ? new Date() : undefined,
+          metadata,
+          rewardPoints,
+        },
+        include: {
+          customer: {
+            select: {
+              id: true,
+              name: true,
+            },
           },
         },
-      },
-    });
-
-    // Начисляем баллы за отзыв
-    const rewardPoints = this.calculateReviewReward(dto.rating, dto.comment.length, dto.photos?.length || 0);
-    
-    if (rewardPoints > 0) {
-      await this.loyaltyService.earn({
-        customerId: dto.customerId,
-        merchantId: dto.merchantId,
-        amount: rewardPoints,
-        orderId: `review_${review.id}`,
       });
+
+      if (rewardPoints > 0) {
+        await this.loyaltyService.earn({
+          customerId: dto.customerId,
+          merchantId: dto.merchantId,
+          amount: rewardPoints,
+          orderId: `review_${review.id}`,
+        });
+      }
+
+      await this.updateMerchantRating(dto.merchantId);
+
+      return {
+        id: review.id,
+        rating: review.rating,
+        rewardPoints,
+        status: review.status,
+        message: autoApprove
+          ? 'Спасибо за ваш отзыв! Он опубликован.'
+          : 'Спасибо за ваш отзыв! Он появится после модерации.',
+      };
+    } catch (error: any) {
+      if (error?.code === 'P2002') {
+        throw new BadRequestException('Вы уже оставили отзыв по этой покупке');
+      }
+      throw error;
     }
-
-    // Обновляем статистику мерчанта
-    await this.updateMerchantRating(dto.merchantId);
-
-    return {
-      id: review.id,
-      rating: review.rating,
-      rewardPoints,
-      status: review.status,
-      message: autoApprove
-        ? 'Спасибо за ваш отзыв! Он опубликован.'
-        : 'Спасибо за ваш отзыв! Он появится после модерации.',
-    };
   }
 
   /**

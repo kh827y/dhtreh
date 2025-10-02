@@ -58,6 +58,11 @@ export default function EditOutletPage() {
 
   const [externalId, setExternalId] = React.useState("");
   const [integrationsMessage, setIntegrationsMessage] = React.useState("");
+  const [reviewLinks, setReviewLinks] = React.useState<{ yandex: string; twogis: string; google: string }>({
+    yandex: "",
+    twogis: "",
+    google: "",
+  });
 
   React.useEffect(() => {
     if (!toast) return;
@@ -82,6 +87,10 @@ export default function EditOutletPage() {
     setSchedule((prev) => prev.map((day) => (day.id === id ? { ...day, enabled } : day)));
   };
 
+  const updateReviewLink = React.useCallback((key: 'yandex' | 'twogis' | 'google', value: string) => {
+    setReviewLinks((prev) => ({ ...prev, [key]: value }));
+  }, []);
+
   const load = React.useCallback(async () => {
     setLoading(true);
     try {
@@ -98,6 +107,14 @@ export default function EditOutletPage() {
       setTimezone(String(data?.timezone || TIMEZONES[3]));
       setManualMarker(Boolean(data?.manualLocation));
       setExternalId(String(data?.externalId || ''));
+      const reviewsShareLinks = data?.reviewsShareLinks && typeof data.reviewsShareLinks === 'object'
+        ? data.reviewsShareLinks as Record<string, unknown>
+        : {};
+      setReviewLinks({
+        yandex: typeof reviewsShareLinks.yandex === 'string' ? reviewsShareLinks.yandex : '',
+        twogis: typeof reviewsShareLinks.twogis === 'string' ? reviewsShareLinks.twogis : '',
+        google: typeof reviewsShareLinks.google === 'string' ? reviewsShareLinks.google : '',
+      });
       const scheduleEnabled = Boolean(data?.scheduleEnabled);
       setShowSchedule(scheduleEnabled);
       const modeStr = String(data?.scheduleMode || 'CUSTOM');
@@ -190,6 +207,12 @@ export default function EditOutletPage() {
         })),
       };
     }
+
+    payload.reviewsShareLinks = {
+      yandex: reviewLinks.yandex.trim() || null,
+      twogis: reviewLinks.twogis.trim() || null,
+      google: reviewLinks.google.trim() || null,
+    };
 
     try {
       const res = await fetch(`/api/portal/outlets/${encodeURIComponent(id)}`, {
@@ -427,6 +450,40 @@ export default function EditOutletPage() {
                     style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
                   />
                 </label>
+
+                <div className="glass" style={{ padding: 16, borderRadius: 12, display: "grid", gap: 12 }}>
+                  <div style={{ fontWeight: 600 }}>Ссылки на карточки отзывов</div>
+                  <div style={{ fontSize: 12, opacity: 0.75 }}>
+                    Эти ссылки используются в мини-аппе, чтобы предлагать гостям поделиться отзывом после высокой оценки.
+                  </div>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 12, opacity: 0.7 }}>Яндекс.Карты</span>
+                    <input
+                      value={reviewLinks.yandex}
+                      onChange={(event) => updateReviewLink('yandex', event.target.value)}
+                      placeholder="https://yandex.ru/maps/..."
+                      style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
+                    />
+                  </label>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 12, opacity: 0.7 }}>2ГИС</span>
+                    <input
+                      value={reviewLinks.twogis}
+                      onChange={(event) => updateReviewLink('twogis', event.target.value)}
+                      placeholder="https://2gis.ru/..."
+                      style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
+                    />
+                  </label>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 12, opacity: 0.7 }}>Google</span>
+                    <input
+                      value={reviewLinks.google}
+                      onChange={(event) => updateReviewLink('google', event.target.value)}
+                      placeholder="https://maps.google.com/..."
+                      style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
+                    />
+                  </label>
+                </div>
 
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                   <Button variant="ghost" onClick={() => router.push("/outlets")}>Отменить</Button>

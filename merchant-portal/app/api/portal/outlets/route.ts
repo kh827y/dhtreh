@@ -1,6 +1,24 @@
 import { NextRequest } from 'next/server';
 import { portalFetch } from '../_lib';
 
+export function normalizeReviewsShareLinks(input: unknown) {
+  if (!input || typeof input !== 'object') return undefined;
+  const result: Record<string, string | null> = {};
+  for (const [rawKey, rawValue] of Object.entries(input as Record<string, unknown>)) {
+    const key = String(rawKey || '').toLowerCase().trim();
+    if (!key) continue;
+    if (rawValue == null) {
+      result[key] = null;
+      continue;
+    }
+    if (typeof rawValue === 'string') {
+      const trimmed = rawValue.trim();
+      result[key] = trimmed.length ? trimmed : null;
+    }
+  }
+  return Object.keys(result).length ? result : {};
+}
+
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const qs = new URLSearchParams();
@@ -53,6 +71,8 @@ export async function POST(req: NextRequest) {
   if (body?.longitude !== undefined) payload.longitude = body.longitude == null ? null : Number(body.longitude);
   if (body?.externalId !== undefined) payload.externalId = body.externalId == null ? null : String(body.externalId);
   if (body?.schedule !== undefined) payload.schedule = body.schedule;
+  const reviewsShareLinks = normalizeReviewsShareLinks(body?.reviewsShareLinks);
+  if (reviewsShareLinks !== undefined) payload.reviewsShareLinks = reviewsShareLinks;
   return portalFetch(req, '/portal/outlets', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

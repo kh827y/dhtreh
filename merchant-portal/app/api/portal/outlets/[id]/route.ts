@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { portalFetch } from '../../_lib';
+import { normalizeReviewsShareLinks } from '../route';
 
 export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
@@ -38,6 +39,8 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ id: str
   if (body?.longitude !== undefined) payload.longitude = body.longitude == null ? null : Number(body.longitude);
   if (body?.externalId !== undefined) payload.externalId = body.externalId == null ? null : String(body.externalId);
   if (body?.schedule !== undefined) payload.schedule = body.schedule;
+  const reviewsShareLinks = normalizeReviewsShareLinks(body?.reviewsShareLinks);
+  if (reviewsShareLinks !== undefined) payload.reviewsShareLinks = reviewsShareLinks;
   return portalFetch(req, `/portal/outlets/${encodeURIComponent(id)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },

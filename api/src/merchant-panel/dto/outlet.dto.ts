@@ -63,6 +63,21 @@ export class OutletScheduleItemDto {
 }
 
 @ObjectType()
+export class OutletReviewsShareLinksDto {
+  @Field(() => String, { nullable: true })
+  @ApiPropertyOptional({ description: 'Ссылка на карточку заведения на Яндекс.Картах' })
+  yandex?: string | null;
+
+  @Field(() => String, { nullable: true })
+  @ApiPropertyOptional({ description: 'Ссылка на карточку заведения в 2ГИС' })
+  twogis?: string | null;
+
+  @Field(() => String, { nullable: true })
+  @ApiPropertyOptional({ description: 'Ссылка на карточку заведения в Google' })
+  google?: string | null;
+}
+
+@ObjectType()
 export class OutletDto {
   @Field(() => ID)
   @ApiProperty({ description: 'Идентификатор торговой точки' })
@@ -135,6 +150,10 @@ export class OutletDto {
   @Field(() => Float, { nullable: true })
   @ApiPropertyOptional({ description: 'Долгота' })
   longitude?: number | null;
+
+  @Field(() => OutletReviewsShareLinksDto, { nullable: true })
+  @ApiPropertyOptional({ type: () => OutletReviewsShareLinksDto, description: 'Ссылки на внешние площадки для отзывов' })
+  reviewsShareLinks?: OutletReviewsShareLinksDto | null;
 }
 
 @ObjectType()
@@ -180,6 +199,27 @@ export class OutletScheduleInput {
   @ValidateNested({ each: true })
   @Type(() => OutletScheduleItemInput)
   days!: OutletScheduleItemInput[];
+}
+
+@InputType()
+export class OutletReviewsShareLinksInput {
+  @Field(() => String, { nullable: true })
+  @ApiPropertyOptional({ description: 'Ссылка на Яндекс.Карты' })
+  @IsOptional()
+  @IsString()
+  yandex?: string | null;
+
+  @Field(() => String, { nullable: true })
+  @ApiPropertyOptional({ description: 'Ссылка на 2ГИС' })
+  @IsOptional()
+  @IsString()
+  twogis?: string | null;
+
+  @Field(() => String, { nullable: true })
+  @ApiPropertyOptional({ description: 'Ссылка на Google' })
+  @IsOptional()
+  @IsString()
+  google?: string | null;
 }
 
 @InputType()
@@ -284,6 +324,13 @@ export class UpsertOutletInput {
   @IsOptional()
   @IsNumber()
   longitude?: number | null;
+
+  @Field(() => OutletReviewsShareLinksInput, { nullable: true })
+  @ApiPropertyOptional({ type: () => OutletReviewsShareLinksInput, description: 'Ссылки на внешние площадки для отзывов' })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => OutletReviewsShareLinksInput)
+  reviewsShareLinks?: OutletReviewsShareLinksInput | null;
 }
 
 export class UpsertOutletDto extends UpsertOutletInput {}
