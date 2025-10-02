@@ -7,6 +7,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import QrCanvas from "../components/QrCanvas";
@@ -144,6 +145,9 @@ function formatAmount(amount: number): string {
   return `${sign}${amount.toLocaleString("ru-RU", { maximumFractionDigits: 2 })}`;
 }
 
+const LOYALTY_EVENT_CHANNEL = "loyalty:events";
+const LOYALTY_EVENT_STORAGE_KEY = "loyalty:lastEvent";
+
 function getProgressPercent(levelInfo: LevelInfo | null): number {
   if (!levelInfo) return 0;
   if (!levelInfo.next) return 100;
@@ -236,6 +240,7 @@ export default function Page() {
   const [ratedReady, setRatedReady] = useState<boolean>(false);
   const [dismissedTransactions, setDismissedTransactions] = useState<string[]>([]);
   const [dismissedReady, setDismissedReady] = useState<boolean>(false);
+  const lastEventTsRef = useRef<number>(0);
 
   useEffect(() => {
     const tgUser = getTelegramUser();
@@ -317,19 +322,22 @@ export default function Page() {
     }
   }, [customerId, merchantId, ttl, auth.initData]);
 
-  const loadBalance = useCallback(async () => {
+  const loadBalance = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
     if (!customerId) {
-      setStatus("Нет customerId");
+      if (!silent) setStatus("Нет customerId");
       return;
     }
     try {
       const r = await retry(() => balance(merchantId, customerId));
       setBal(r.balance);
-      setStatus("Баланс обновлён");
+      if (!silent) setStatus("Баланс обновлён");
     } catch (error) {
       const message = resolveErrorMessage(error);
-      setStatus(`Ошибка баланса: ${message}`);
-      setToast({ msg: "Не удалось обновить баланс", type: "error" });
+      if (!silent) {
+        setStatus(`Ошибка баланса: ${message}`);
+        setToast({ msg: "Не удалось обновить баланс", type: "error" });
+      }
     }
   }, [customerId, merchantId, retry]);
 
@@ -347,20 +355,23 @@ export default function Page() {
     []
   );
 
-  const loadTx = useCallback(async () => {
+  const loadTx = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
     if (!customerId) {
-      setStatus("Нет customerId");
+      if (!silent) setStatus("Нет customerId");
       return;
     }
     try {
       const r = await retry(() => transactions(merchantId, customerId, 20));
       setTx(mapTransactions(r.items));
       setNextBefore(r.nextBefore || null);
-      setStatus("История обновлена");
+      if (!silent) setStatus("История обновлена");
     } catch (error) {
       const message = resolveErrorMessage(error);
-      setStatus(`Ошибка истории: ${message}`);
-      setToast({ msg: "Не удалось обновить историю", type: "error" });
+      if (!silent) {
+        setStatus(`Ошибка истории: ${message}`);
+        setToast({ msg: "Не удалось обновить историю", type: "error" });
+      }
     }
   }, [customerId, merchantId, retry, mapTransactions]);
 
@@ -402,6 +413,110 @@ export default function Page() {
 
   const ratedTxSet = useMemo(() => new Set(ratedTransactions), [ratedTransactions]);
   const dismissedTxSet = useMemo(() => new Set(dismissedTransactions), [dismissedTransactions]);
+
+  useEffect(() => {
+    lastEventTsRef.current = 0;
+  }, [merchantId, customerId]);
+
+  const refreshHistory = useCallback(() => {
+    if (!customerId) return;
+    const tasks: Array<Promise<unknown>> = [
+      loadBalance({ silent: true }),
+      loadTx({ silent: true }),
+      loadLevels(),
+    ];
+    void Promise.allSettled(tasks);
+  }, [customerId, loadBalance, loadTx, loadLevels]);
+
+  const handleExternalEvent = useCallback(
+    (payload: unknown) => {
+      if (!payload || typeof payload !== "object") return;
+      const data = payload as Record<string, unknown>;
+      const eventMerchant = data.merchantId ? String(data.merchantId) : "";
+      if (eventMerchant && eventMerchant !== merchantId) return;
+      const eventCustomer = data.customerId ? String(data.customerId) : "";
+      if (eventCustomer && customerId && eventCustomer !== customerId) return;
+      const typeRaw = data.type ?? data.eventType;
+      if (typeRaw) {
+        const type = String(typeRaw).toLowerCase();
+        if (
+          !type.includes("commit") &&
+          !type.includes("redeem") &&
+          !type.includes("earn")
+        ) {
+          return;
+        }
+      }
+      const tsRaw =
+        typeof data.ts === "number"
+          ? data.ts
+          : typeof data.timestamp === "number"
+            ? data.timestamp
+            : typeof (data as Record<string, unknown>)._ts === "number"
+              ? (data as Record<string, unknown>)._ts
+              : Number(data.ts ?? data.timestamp ?? (data as Record<string, unknown>)._ts ?? 0);
+      if (Number.isFinite(tsRaw) && tsRaw > 0) {
+        if (tsRaw <= lastEventTsRef.current) return;
+        lastEventTsRef.current = tsRaw;
+      } else {
+        lastEventTsRef.current = Date.now();
+      }
+      refreshHistory();
+    },
+    [merchantId, customerId, refreshHistory],
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!merchantId || !customerId) return;
+    let channel: BroadcastChannel | null = null;
+    if ("BroadcastChannel" in window) {
+      try {
+        channel = new BroadcastChannel(LOYALTY_EVENT_CHANNEL);
+        channel.onmessage = (event) => handleExternalEvent(event.data);
+      } catch {
+        channel = null;
+      }
+    }
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== LOYALTY_EVENT_STORAGE_KEY || !event.newValue) return;
+      try {
+        handleExternalEvent(JSON.parse(event.newValue));
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+    try {
+      const cached = localStorage.getItem(LOYALTY_EVENT_STORAGE_KEY);
+      if (cached) handleExternalEvent(JSON.parse(cached));
+    } catch {
+      // ignore
+    }
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      if (channel) {
+        try {
+          channel.close();
+        } catch {
+          // ignore
+        }
+      }
+    };
+  }, [merchantId, customerId, handleExternalEvent]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        refreshHistory();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [refreshHistory]);
 
   useEffect(() => {
     try {
@@ -1158,10 +1273,10 @@ export default function Page() {
               <input type="checkbox" checked={consent} onChange={toggleConsent} />
               <span>Согласие на рассылку</span>
             </label>
-            <button className={styles.sheetButton} onClick={loadBalance}>
+            <button className={styles.sheetButton} onClick={() => loadBalance()}>
               Обновить баланс
             </button>
-            <button className={styles.sheetButton} onClick={loadTx}>
+            <button className={styles.sheetButton} onClick={() => loadTx()}>
               Обновить историю
             </button>
             <button className={styles.sheetButton} onClick={doMint}>
