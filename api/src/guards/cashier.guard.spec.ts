@@ -106,6 +106,27 @@ describe('CashierGuard', () => {
     await expect(guard.canActivate(ctx)).resolves.toBe(false);
   });
 
+  it('разрешает commit со staff-key, если outlet подтягивается из hold', async () => {
+    const key = 'cashier-hold';
+    prisma.staff.findFirst.mockImplementation(async (args: any) => {
+      if (args.where.apiKeyHash === hashKey(key)) {
+        return { id: 'S-cashier', role: 'CASHIER', allowedOutletId: 'O-5', accesses: [] };
+      }
+      return null;
+    });
+    prisma.hold.findUnique.mockResolvedValue({ merchantId: 'M1', outletId: 'O-5' });
+
+    const ctx = makeCtx({
+      method: 'POST',
+      route: { path: '/loyalty/commit' },
+      headers: { 'x-staff-key': key },
+      body: { merchantId: 'M1', holdId: 'H-7', orderId: 'ORD-1' },
+      query: {},
+      params: {},
+    });
+
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
+  });
   it('при requireStaffKey принимает валидную bridge-подпись даже с дополнительными полями', async () => {
     const secret = 'bridge_secret';
     const body = {
@@ -133,6 +154,27 @@ describe('CashierGuard', () => {
       route: { path: '/loyalty/commit' },
       headers: { 'x-bridge-signature': header },
       body,
+      query: {},
+      params: {},
+    });
+
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
+  });
+
+  it('при requireStaffKey пропускает QR с валидной bridge-подписью', async () => {
+    const secret = 'qr_secret';
+    const payload = JSON.stringify({ merchantId: 'M-QR', customerId: 'C-1' });
+    const ts = Math.floor(Date.now() / 1000).toString();
+    const sig = crypto.createHmac('sha256', secret).update(ts + '.' + payload).digest('base64');
+    const header = `v1,ts=${ts},sig=${sig}`;
+
+    prisma.merchantSettings.findUnique.mockResolvedValue({ requireStaffKey: true, bridgeSecret: secret });
+
+    const ctx = makeCtx({
+      method: 'POST',
+      route: { path: '/loyalty/qr' },
+      headers: { 'x-bridge-signature': header },
+      body: { merchantId: 'M-QR', customerId: 'C-1' },
       query: {},
       params: {},
     });

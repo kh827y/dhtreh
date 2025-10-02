@@ -6,10 +6,35 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
   return await res.json() as T;
 }
 
-export type MerchantRow = { id: string; name: string; createdAt: string; portalLoginEnabled?: boolean; portalTotpEnabled?: boolean; portalEmail?: string };
+export type MerchantRow = {
+  id: string;
+  name: string;
+  createdAt: string;
+  portalLoginEnabled?: boolean;
+  portalTotpEnabled?: boolean;
+  portalEmail?: string | null;
+  earnBps?: number;
+  redeemLimitBps?: number;
+  qrTtlSec?: number | null;
+  requireBridgeSig?: boolean;
+  requireStaffKey?: boolean;
+};
 
 export async function listMerchants(): Promise<MerchantRow[]> {
-  return http(`/merchants`);
+  const rows = await http<Array<MerchantRow & { settings?: { earnBps: number; redeemLimitBps: number; qrTtlSec: number | null; requireBridgeSig: boolean; requireStaffKey: boolean } }>>(`/merchants`);
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    createdAt: row.createdAt,
+    portalLoginEnabled: row.portalLoginEnabled,
+    portalTotpEnabled: row.portalTotpEnabled,
+    portalEmail: row.portalEmail ?? null,
+    earnBps: row.settings?.earnBps ?? row.earnBps ?? 500,
+    redeemLimitBps: row.settings?.redeemLimitBps ?? row.redeemLimitBps ?? 5000,
+    qrTtlSec: row.settings?.qrTtlSec ?? row.qrTtlSec ?? null,
+    requireBridgeSig: row.settings?.requireBridgeSig ?? row.requireBridgeSig ?? false,
+    requireStaffKey: row.settings?.requireStaffKey ?? row.requireStaffKey ?? false,
+  }));
 }
 export async function createMerchant(name: string, email: string, password: string, ownerName?: string): Promise<{ id: string; name: string; email: string }> {
   return http(`/merchants`, { method: 'POST', body: JSON.stringify({ name, email, password, ownerName }) });
@@ -42,4 +67,14 @@ export async function getCashier(merchantId: string): Promise<{ login: string|nu
 }
 export async function rotateCashier(merchantId: string, regenerateLogin?: boolean): Promise<{ login: string; password: string }> {
   return http(`/merchants/${encodeURIComponent(merchantId)}/cashier/rotate`, { method: 'POST', body: JSON.stringify({ regenerateLogin: !!regenerateLogin }) });
+}
+
+export async function updateMerchantSettings(
+  merchantId: string,
+  dto: { earnBps: number; redeemLimitBps: number; qrTtlSec?: number; requireBridgeSig?: boolean; requireStaffKey?: boolean },
+): Promise<any> {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/settings`, {
+    method: 'PUT',
+    body: JSON.stringify(dto),
+  });
 }

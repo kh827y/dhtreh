@@ -1078,7 +1078,23 @@ export class MerchantsService {
   async listMerchants() {
     return (this.prisma.merchant as any).findMany({
       orderBy: { createdAt: 'desc' },
-      select: { id: true, name: true, createdAt: true, portalLoginEnabled: true, portalTotpEnabled: true, portalEmail: true },
+      select: {
+        id: true,
+        name: true,
+        createdAt: true,
+        portalLoginEnabled: true,
+        portalTotpEnabled: true,
+        portalEmail: true,
+        settings: {
+          select: {
+            earnBps: true,
+            redeemLimitBps: true,
+            qrTtlSec: true,
+            requireBridgeSig: true,
+            requireStaffKey: true,
+          },
+        },
+      },
     });
   }
   async createMerchant(name: string, email: string, password: string, ownerName?: string) {

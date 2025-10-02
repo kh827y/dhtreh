@@ -1,95 +1,40 @@
 "use client";
-import React from 'react';
-import { Card, CardHeader, CardBody, Button, Skeleton } from '@loyalty/ui';
-
-type Settings = {
-  earnBps: number; redeemLimitBps: number; qrTtlSec: number;
-  requireBridgeSig: boolean; requireStaffKey: boolean;
-};
+import Link from 'next/link';
+import { Card, CardHeader, CardBody } from '@loyalty/ui';
 
 export default function SettingsPage() {
-  const [loading, setLoading] = React.useState(true);
-  const [saving, setSaving] = React.useState(false);
-  const [msg, setMsg] = React.useState('');
-  const [s, setS] = React.useState<Settings>({ earnBps: 500, redeemLimitBps: 5000, qrTtlSec: 120, requireBridgeSig: false, requireStaffKey: false });
-
-  async function load() {
-    setLoading(true); setMsg('');
-    try {
-      const res = await fetch('/api/portal/settings');
-      const data = await res.json();
-      setS({
-        earnBps: Number(data?.earnBps ?? 500),
-        redeemLimitBps: Number(data?.redeemLimitBps ?? 5000),
-        qrTtlSec: Number(data?.qrTtlSec ?? 120),
-        requireBridgeSig: !!data?.requireBridgeSig,
-        requireStaffKey: !!data?.requireStaffKey,
-      });
-    } catch (e: any) { setMsg(String(e?.message || e)); }
-    finally { setLoading(false); }
-  }
-  React.useEffect(()=>{ load(); },[]);
-
-  async function save() {
-    setSaving(true); setMsg('');
-    try {
-      const res = await fetch('/api/portal/settings', { method: 'PUT', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(s) });
-      if (!res.ok) throw new Error(await res.text());
-      setMsg('Сохранено');
-    } catch (e: any) { setMsg(String(e?.message || e)); }
-    finally { setSaving(false); }
-  }
-
   return (
-    <div style={{ display:'grid', gap: 16 }}>
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+    <div style={{ display: 'grid', gap: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
-          <div style={{ fontSize: 18, fontWeight: 700 }}>Настройки мерчанта</div>
-          <div style={{ opacity:.8, fontSize: 13 }}>Ставки, лимиты, TTL, задержки, вебхуки/Bridge</div>
+          <div style={{ fontSize: 18, fontWeight: 700 }}>Системные настройки</div>
+          <div style={{ opacity: 0.8, fontSize: 13 }}>Управление кассовыми требованиями и TTL перенесено в админ‑панель</div>
         </div>
-        <Button variant="primary" onClick={save} disabled={saving || loading}>{saving ? 'Сохранение...' : 'Сохранить'}</Button>
       </div>
 
       <Card>
-        <CardHeader title="Основные параметры" subtitle="earnBps, redeemLimitBps, QR TTL" />
+        <CardHeader
+          title="Кассовые ограничения теперь в админке"
+          subtitle="Переключатели «Требовать подпись Bridge», «Требовать Staff‑ключ» и базовый QR TTL настраиваются через раздел «Мерчанты» админ‑панели"
+        />
         <CardBody>
-          {loading ? (
-            <Skeleton height={120} />
-          ) : (
-            <div style={{ display:'grid', gap: 10, gridTemplateColumns:'1fr 1fr 1fr' }}>
-              <label style={{ display:'grid', gap: 4 }}>
-                <span style={{ opacity:.8, fontSize:12 }}>Earn Bps</span>
-                <input type="number" value={s.earnBps} onChange={e=>setS({ ...s, earnBps: Math.max(0, Math.min(10000, Number(e.target.value)||0)) })} style={{ padding:10, borderRadius:8, background:'rgba(255,255,255,.04)', border:'1px solid rgba(255,255,255,.1)' }} />
-              </label>
-              <label style={{ display:'grid', gap: 4 }}>
-                <span style={{ opacity:.8, fontSize:12 }}>Redeem Limit Bps</span>
-                <input type="number" value={s.redeemLimitBps} onChange={e=>setS({ ...s, redeemLimitBps: Math.max(0, Math.min(10000, Number(e.target.value)||0)) })} style={{ padding:10, borderRadius:8, background:'rgba(255,255,255,.04)', border:'1px solid rgba(255,255,255,.1)' }} />
-              </label>
-              <label style={{ display:'grid', gap: 4 }}>
-                <span style={{ opacity:.8, fontSize:12 }}>QR TTL (сек)</span>
-                <input type="number" value={s.qrTtlSec} onChange={e=>setS({ ...s, qrTtlSec: Math.max(15, Math.min(600, Number(e.target.value)||0)) })} style={{ padding:10, borderRadius:8, background:'rgba(255,255,255,.04)', border:'1px solid rgba(255,255,255,.1)' }} />
-              </label>
-            </div>
-          )}
+          <p style={{ margin: 0, lineHeight: 1.6 }}>
+            Чтобы изменить требования к подписи Bridge или Staff‑ключу, а также таймаут QR‑кодов, откройте админку владельца и перейдите по адресу{' '}
+            <Link href="http://localhost:3001/merchants" style={{ color: '#60a5fa' }}>http://localhost:3001/merchants</Link>. Там рядом с мерчантом есть блок «Настройки кассовых операций».
+          </p>
         </CardBody>
       </Card>
 
       <Card>
-        <CardHeader title="Интеграции и доступ" subtitle="Bridge, Staff Key" />
+        <CardHeader
+          title="Лимиты начисления/списания управляются уровнями"
+          subtitle="Поля Earn Bps и Redeem Limit Bps удалены из этого раздела"
+        />
         <CardBody>
-          {loading ? (
-            <Skeleton height={80} />
-          ) : (
-            <div style={{ display:'grid', gap: 12 }}>
-              <label style={{ display:'flex', gap: 8, alignItems:'center' }}>
-                <input type="checkbox" checked={s.requireBridgeSig} onChange={e=>setS({ ...s, requireBridgeSig: e.target.checked })} /> Требовать подпись Bridge
-              </label>
-              <label style={{ display:'flex', gap: 8, alignItems:'center' }}>
-                <input type="checkbox" checked={s.requireStaffKey} onChange={e=>setS({ ...s, requireStaffKey: e.target.checked })} /> Требовать Staff‑ключ для операций
-              </label>
-              {msg && <div style={{ color: msg==='Сохранено' ? '#4ade80':'#f87171' }}>{msg}</div>}
-            </div>
-          )}
+          <p style={{ margin: 0, lineHeight: 1.6 }}>
+            Базовые ставки начисления и списания теперь рассчитываются по уровням программы лояльности. Настройте уровни и бонусы на странице{' '}
+            <Link href="/loyalty/mechanics/levels" style={{ color: '#60a5fa' }}>«Уровни»</Link>, чтобы задать разные лимиты для клиентов.
+          </p>
         </CardBody>
       </Card>
     </div>
