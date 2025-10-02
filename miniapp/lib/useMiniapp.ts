@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from 'react';
-import { teleauth, publicSettings } from './api';
+import { teleauth, publicSettings, ReviewsShareSettings } from './api';
 
 export function getInitData(): string | null {
   try {
@@ -33,6 +33,7 @@ export function useMiniappAuth(defaultMerchant: string) {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
   const [theme, setTheme] = useState<{ primary?: string|null; bg?: string|null; logo?: string|null; ttl?: number }>({});
+  const [shareSettings, setShareSettings] = useState<ReviewsShareSettings>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('miniapp.customerId');
@@ -57,6 +58,7 @@ export function useMiniappAuth(defaultMerchant: string) {
       try {
         const s = await publicSettings(mId);
         setTheme({ primary: s.miniappThemePrimary, bg: s.miniappThemeBg, logo: s.miniappLogoUrl, ttl: s.qrTtlSec });
+        setShareSettings(s.reviewsShare ?? null);
       } catch {}
       try {
         if (id && mId) {
@@ -74,6 +76,6 @@ export function useMiniappAuth(defaultMerchant: string) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaultMerchant]);
 
-  return { merchantId, setMerchantId, customerId, setCustomerId, loading, error, theme, initData } as const;
+  return { merchantId, setMerchantId, customerId, setCustomerId, loading, error, theme, shareSettings, initData } as const;
 }
 

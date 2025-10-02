@@ -28,6 +28,12 @@ import Toast from "../components/Toast";
 import { useMiniappAuth } from "../lib/useMiniapp";
 import styles from "./page.module.css";
 
+const REVIEW_PLATFORM_LABELS: Record<string, string> = {
+  yandex: "Яндекс.Карты",
+  twogis: "2ГИС",
+  google: "Google",
+};
+
 const DEV_UI =
   (process.env.NEXT_PUBLIC_MINIAPP_DEV_UI || "").toLowerCase() === "true" ||
   process.env.NEXT_PUBLIC_MINIAPP_DEV_UI === "1";
@@ -283,6 +289,36 @@ export default function Page() {
   const seenTxIdsRef = useRef<Set<string>>(new Set());
   const [txSnapshotReady, setTxSnapshotReady] = useState<boolean>(false);
   const [initialHydrationDone, setInitialHydrationDone] = useState<boolean>(false);
+  const shareOptions = useMemo(() => {
+    const share = auth.shareSettings;
+    if (!share || !share.enabled) return [] as Array<{ id: string; url: string }>;
+    if (!feedbackRating || feedbackRating < share.threshold) return [] as Array<{ id: string; url: string }>;
+    const result: Array<{ id: string; url: string }> = [];
+    for (const platform of share.platforms) {
+      if (!platform.enabled) continue;
+      if (typeof platform.url !== "string") continue;
+      const trimmed = platform.url.trim();
+      if (!trimmed) continue;
+      result.push({ id: platform.id, url: trimmed });
+    }
+    return result;
+  }, [auth.shareSettings, feedbackRating]);
+
+  const handleShareClick = useCallback((url: string) => {
+    if (!url) return;
+    const tg = getTelegramWebApp();
+    try {
+      if (tg?.openTelegramLink) {
+        tg.openTelegramLink(url);
+        return;
+      }
+    } catch {}
+    try {
+      if (typeof window !== "undefined") {
+        window.open(url, "_blank", "noopener,noreferrer");
+      }
+    } catch {}
+  }, []);
 
   useEffect(() => {
     txIdsRef.current = tx.map((item) => item.id);
@@ -1409,6 +1445,25 @@ export default function Page() {
                 rows={3}
               />
             </label>
+            {shareOptions.length > 0 && (
+              <div className={styles.feedbackShareBlock}>
+                <div className={styles.feedbackShareTitle}>
+                  Мы рады, что вам понравилось! Пожалуйста, поделитесь своим отзывом
+                </div>
+                <div className={styles.feedbackShareButtons}>
+                  {shareOptions.map((platform) => (
+                    <button
+                      key={platform.id}
+                      type="button"
+                      className={styles.feedbackShareButton}
+                      onClick={() => handleShareClick(platform.url)}
+                    >
+                      {REVIEW_PLATFORM_LABELS[platform.id] || platform.id}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <button
               type="submit"
               className={styles.feedbackSubmit}
