@@ -257,6 +257,7 @@ export default function Page() {
         mode?: "redeem" | "earn";
         redeemApplied?: number;
         earnApplied?: number;
+        knownTxIds?: string[];
       }
     | null
   >(null);
@@ -265,6 +266,11 @@ export default function Page() {
   const [dismissedTransactions, setDismissedTransactions] = useState<string[]>([]);
   const [dismissedReady, setDismissedReady] = useState<boolean>(false);
   const lastEventTsRef = useRef<number>(0);
+  const txIdsRef = useRef<string[]>([]);
+
+  useEffect(() => {
+    txIdsRef.current = tx.map((item) => item.id);
+  }, [tx]);
 
   useEffect(() => {
     const tgUser = getTelegramUser();
@@ -500,6 +506,7 @@ export default function Page() {
           mode: normalizedMode,
           redeemApplied: redeemApplied ?? undefined,
           earnApplied: earnApplied ?? undefined,
+          knownTxIds: txIdsRef.current.slice(0, 50),
         });
       }
       refreshHistory();
@@ -620,9 +627,21 @@ export default function Page() {
     if (!ratedReady || !dismissedReady || feedbackOpen) return;
     if (!tx.length) return;
     const eventTs = pendingFeedbackEvent?.ts ?? null;
-    const eventThreshold =
-      eventTs && Number.isFinite(eventTs) ? eventTs - 2 * 60 * 1000 : null;
-    const candidate = tx.find((item) => {
+    const earliestAllowed =
+      eventTs && Number.isFinite(eventTs) ? eventTs - 30 * 60 * 1000 : null;
+    const latestAllowed =
+      eventTs && Number.isFinite(eventTs) ? eventTs + 30 * 60 * 1000 : null;
+    const knownSet =
+      pendingFeedbackEvent?.knownTxIds && pendingFeedbackEvent.knownTxIds.length
+        ? new Set(pendingFeedbackEvent.knownTxIds)
+        : null;
+    const searchPool =
+      pendingFeedbackEvent && knownSet
+        ? tx.filter((item) => !knownSet.has(item.id))
+        : tx;
+    const candidateSource =
+      pendingFeedbackEvent && searchPool.length === 0 ? tx : searchPool;
+    const candidate = candidateSource.find((item) => {
       const meta = formatTxType(item.type);
       if (meta.tone !== "earn" && meta.tone !== "redeem") return false;
       if (!isPurchaseTransaction(item.type)) return false;
@@ -630,9 +649,9 @@ export default function Page() {
       if (!pendingFeedbackEvent) return true;
       const createdAtMs = parseDateMs(item.createdAt);
       if (!createdAtMs) return false;
-      if (eventThreshold && createdAtMs < eventThreshold) return false;
-      if (eventTs == null) return true;
-      return createdAtMs <= eventTs + 10 * 60 * 1000;
+      if (earliestAllowed && createdAtMs < earliestAllowed) return false;
+      if (latestAllowed && createdAtMs > latestAllowed) return false;
+      return true;
     });
     if (!candidate) return;
     setPendingFeedbackEvent(null);
