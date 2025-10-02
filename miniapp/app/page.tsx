@@ -88,6 +88,8 @@ type TransactionItem = {
   amount: number;
   createdAt: string;
   orderId: string | null;
+  outletId: string | null;
+  staffId: string | null;
 };
 
 const genderOptions: Array<{ value: "male" | "female"; label: string }> = [
@@ -293,16 +295,34 @@ export default function Page() {
     const share = auth.shareSettings;
     if (!share || !share.enabled) return [] as Array<{ id: string; url: string }>;
     if (!feedbackRating || feedbackRating < share.threshold) return [] as Array<{ id: string; url: string }>;
+    const activeTx = feedbackTxId ? tx.find((item) => item.id === feedbackTxId) ?? null : null;
+    const activeOutletId = activeTx?.outletId ?? null;
     const result: Array<{ id: string; url: string }> = [];
-    for (const platform of share.platforms) {
+    for (const platform of share.platforms || []) {
+      if (!platform || typeof platform !== "object") continue;
       if (!platform.enabled) continue;
-      if (typeof platform.url !== "string") continue;
-      const trimmed = platform.url.trim();
-      if (!trimmed) continue;
-      result.push({ id: platform.id, url: trimmed });
+      const outlets = Array.isArray(platform.outlets) ? platform.outlets : [];
+      let url: string | null = null;
+      if (activeOutletId) {
+        const outletMatch = outlets.find((item) => item && item.outletId === activeOutletId);
+        if (outletMatch && typeof outletMatch.url === "string" && outletMatch.url.trim()) {
+          url = outletMatch.url.trim();
+        }
+      }
+      if (!url && outlets.length > 0) {
+        const fallbackOutlet = outlets.find((item) => item && typeof item.url === "string" && item.url.trim());
+        if (fallbackOutlet) {
+          url = fallbackOutlet.url.trim();
+        }
+      }
+      if (!url && typeof platform.url === "string" && platform.url.trim()) {
+        url = platform.url.trim();
+      }
+      if (!url) continue;
+      result.push({ id: platform.id, url });
     }
     return result;
-  }, [auth.shareSettings, feedbackRating]);
+  }, [auth.shareSettings, feedbackRating, feedbackTxId, tx]);
 
   const handleShareClick = useCallback((url: string) => {
     if (!url) return;
@@ -437,6 +457,8 @@ export default function Page() {
         amount: number;
         createdAt: string;
         orderId?: string | null;
+        outletId?: string | null;
+        staffId?: string | null;
       }>,
     ) => {
       return items
@@ -447,6 +469,8 @@ export default function Page() {
           amount: i.amount,
           createdAt: i.createdAt,
           orderId: i.orderId ?? null,
+          outletId: i.outletId ?? null,
+          staffId: i.staffId ?? null,
         }));
     },
     []

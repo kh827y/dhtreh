@@ -33,6 +33,7 @@ import { ActionsService, type ActionsTab, type CreateProductBonusActionPayload, 
 import { OperationsLogService, type OperationsLogFilters } from './services/operations-log.service';
 import { PortalTelegramIntegrationService } from './services/telegram-integration.service';
 import { ReferralService, type ReferralProgramSettingsDto } from '../referral/referral.service';
+import { PortalReviewsService } from './services/reviews.service';
 
 @ApiTags('portal')
 @Controller('portal')
@@ -53,6 +54,7 @@ export class PortalController {
     private readonly customersService: PortalCustomersService,
     private readonly telegramIntegration: PortalTelegramIntegrationService,
     private readonly referrals: ReferralService,
+    private readonly reviews: PortalReviewsService,
   ) {}
 
   private getMerchantId(req: any) { return String((req as any).portalMerchantId || ''); }
@@ -162,6 +164,25 @@ export class PortalController {
     if (payload.metadata !== undefined) return payload.metadata;
     if (stats.metadata !== undefined) return stats.metadata;
     return null;
+  }
+
+  @Get('reviews')
+  async listReviews(
+    @Req() req: any,
+    @Query('withCommentOnly') withCommentOnly?: string,
+    @Query('outletId') outletId?: string,
+    @Query('staffId') staffId?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    const merchantId = this.getMerchantId(req);
+    return this.reviews.list(merchantId, {
+      withCommentOnly: withCommentOnly === '1' || withCommentOnly === 'true',
+      outletId: outletId || undefined,
+      staffId: staffId || undefined,
+      limit: limit ? Number(limit) : undefined,
+      offset: offset ? Number(offset) : undefined,
+    });
   }
 
   private mapPushTask(task: any) {

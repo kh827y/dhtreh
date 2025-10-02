@@ -435,13 +435,65 @@ export class LoyaltyController {
     const platformsRaw = shareRaw?.platforms && typeof shareRaw.platforms === 'object'
       ? (shareRaw.platforms as Record<string, any>)
       : null;
+    const normalizePlatformOutlets = (cfg: any) => {
+      const map = new Map<string, string>();
+      const push = (outletIdRaw: unknown, value: unknown) => {
+        const outletId = typeof outletIdRaw === 'string' ? outletIdRaw.trim() : '';
+        const urlCandidate = typeof value === 'string'
+          ? value
+          : value && typeof value === 'object'
+            ? ((value as any).url ?? (value as any).link ?? (value as any).href ?? '')
+            : '';
+        const url = typeof urlCandidate === 'string' ? urlCandidate.trim() : '';
+        if (!outletId || !url) return;
+        if (!map.has(outletId)) {
+          map.set(outletId, url);
+        }
+      };
+      const collect = (source: any) => {
+        if (!source || typeof source !== 'object') return;
+        if (Array.isArray(source)) {
+          for (const entry of source) {
+            if (!entry || typeof entry !== 'object') continue;
+            push((entry as any).outletId ?? (entry as any).id, (entry as any).url ?? (entry as any).link ?? entry);
+          }
+          return;
+        }
+        for (const [key, value] of Object.entries(source)) {
+          if (typeof value === 'string') {
+            push(key, value);
+          } else if (value && typeof value === 'object') {
+            push((value as any).outletId ?? key, (value as any).url ?? (value as any).link ?? null);
+          }
+        }
+      };
+      collect(cfg?.outlets);
+      collect(cfg?.links);
+      collect(cfg?.byOutlet);
+      collect(cfg?.urls);
+      if (!map.size && cfg && typeof cfg === 'object' && !Array.isArray(cfg)) {
+        for (const [key, value] of Object.entries(cfg)) {
+          if (['enabled', 'url', 'threshold', 'platforms'].includes(key)) continue;
+          if (typeof value === 'string') {
+            push(key, value);
+          } else if (value && typeof value === 'object') {
+            push(key, (value as any).url ?? (value as any).link ?? null);
+          }
+        }
+      }
+      return Array.from(map.entries()).map(([outletId, url]) => ({ outletId, url }));
+    };
     const platforms = platformsRaw
       ? Object.entries(platformsRaw)
           .map(([id, cfg]) => {
             if (!cfg || typeof cfg !== 'object') return null;
+            const normalizedId = String(id || '').trim();
+            if (!normalizedId) return null;
             const enabled = Boolean((cfg as any).enabled);
-            const url = typeof (cfg as any).url === 'string' ? (cfg as any).url : null;
-            return { id, enabled, url };
+            const urlRaw = typeof (cfg as any).url === 'string' ? (cfg as any).url.trim() : '';
+            const url = urlRaw ? urlRaw : null;
+            const outlets = normalizePlatformOutlets(cfg);
+            return { id: normalizedId, enabled, url, outlets };
           })
           .filter(Boolean)
       : [];

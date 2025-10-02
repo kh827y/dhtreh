@@ -103,9 +103,31 @@ export class RefundRespDto {
   @ApiProperty() pointsRevoked!: number;
 }
 
+export class ReviewsSharePlatformOutletDto {
+  @ApiProperty() outletId!: string;
+  @ApiProperty() url!: string;
+}
+
+export class ReviewsSharePlatformDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() enabled!: boolean;
+  @ApiPropertyOptional({ nullable: true }) url?: string | null;
+  @ApiProperty({ type: [ReviewsSharePlatformOutletDto] }) outlets!: ReviewsSharePlatformOutletDto[];
+}
+
+export class ReviewsShareSettingsDto {
+  @ApiProperty() enabled!: boolean;
+  @ApiProperty() threshold!: number;
+  @ApiProperty({ type: [ReviewsSharePlatformDto] }) platforms!: ReviewsSharePlatformDto[];
+}
+
 export class PublicSettingsDto {
   @ApiProperty() merchantId!: string;
   @ApiProperty() qrTtlSec!: number;
+  @ApiPropertyOptional({ nullable: true }) miniappThemePrimary?: string | null;
+  @ApiPropertyOptional({ nullable: true }) miniappThemeBg?: string | null;
+  @ApiPropertyOptional({ nullable: true }) miniappLogoUrl?: string | null;
+  @ApiPropertyOptional({ type: ReviewsShareSettingsDto, nullable: true }) reviewsShare?: ReviewsShareSettingsDto | null;
 }
 
 export class BalanceDto {

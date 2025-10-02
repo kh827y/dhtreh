@@ -1,6 +1,18 @@
 export type QrMintResp = { token: string; ttl: number };
 export type BalanceResp = { merchantId: string; customerId: string; balance: number };
-export type TransactionsResp = { items: Array<{ id: string; type: string; amount: number; orderId?: string|null; customerId: string; createdAt: string }>; nextBefore?: string|null };
+export type TransactionsResp = {
+  items: Array<{
+    id: string;
+    type: string;
+    amount: number;
+    orderId?: string | null;
+    customerId: string;
+    createdAt: string;
+    outletId?: string | null;
+    staffId?: string | null;
+  }>;
+  nextBefore?: string | null;
+};
 export type LevelsResp = {
   merchantId: string;
   customerId: string;
@@ -58,10 +70,16 @@ export async function teleauth(merchantId: string, initData: string): Promise<{ 
   return http('/loyalty/teleauth', { method: 'POST', body: JSON.stringify({ merchantId, initData }) });
 }
 
+export type ReviewsSharePlatformOutlet = {
+  outletId: string;
+  url: string;
+};
+
 export type ReviewsSharePlatform = {
   id: string;
   enabled: boolean;
   url: string | null;
+  outlets: ReviewsSharePlatformOutlet[];
 };
 
 export type ReviewsShareSettings = {
