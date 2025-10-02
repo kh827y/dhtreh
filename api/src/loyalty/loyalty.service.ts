@@ -53,6 +53,126 @@ export class LoyaltyService {
       return { ok: true, transactionId: txn.id };
     });
   }
+
+  async applyPromoCode(params: { merchantId?: string; customerId?: string; code?: string }) {
+    const merchantId = String(params?.merchantId || '').trim();
+    const customerId = String(params?.customerId || '').trim();
+    const code = String(params?.code || '').trim();
+    if (!merchantId) throw new BadRequestException('merchantId required');
+    if (!customerId) throw new BadRequestException('customerId required');
+    if (!code) throw new BadRequestException('code required');
+
+    await this.ensureCustomerId(customerId);
+    const merchant = await this.prisma.merchant.findUnique({ where: { id: merchantId } });
+    if (!merchant) throw new BadRequestException('merchant not found');
+
+    return this.prisma.$transaction(async (tx) => {
+      let wallet = await tx.wallet.findFirst({ where: { customerId, merchantId, type: WalletType.POINTS } });
+      if (!wallet) {
+        wallet = await tx.wallet.create({ data: { customerId, merchantId, type: WalletType.POINTS, balance: 0 } });
+      }
+
+      const promo = await this.promoCodes.findActiveByCode(merchantId, code);
+      if (!promo) {
+        throw new BadRequestException('Промокод недоступен');
+      }
+
+      const result = await this.promoCodes.apply(tx, {
+        promoCodeId: promo.id,
+        merchantId,
+        customerId,
+        staffId: null,
+        outletId: null,
+        orderId: null,
+      });
+      if (!result) {
+        throw new BadRequestException('Промокод недоступен');
+      }
+
+      const points = Math.max(0, Math.floor(Number(result.pointsIssued || 0)));
+      const promoExpireDays = result.pointsExpireInDays ?? null;
+      const expiresAt = promoExpireDays ? new Date(Date.now() + promoExpireDays * 24 * 60 * 60 * 1000) : null;
+
+      const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
+      const currentBalance = fresh?.balance ?? 0;
+      let balance = currentBalance;
+      if (points > 0) {
+        balance = currentBalance + points;
+        await tx.wallet.update({ where: { id: wallet.id }, data: { balance } });
+      }
+
+      await tx.transaction.create({
+        data: {
+          customerId,
+          merchantId,
+          type: TxnType.EARN,
+          amount: points,
+          orderId: null,
+          outletId: null,
+          staffId: null,
+        },
+      });
+
+      if (process.env.LEDGER_FEATURE === '1' && points > 0) {
+        await tx.ledgerEntry.create({
+          data: {
+            merchantId,
+            customerId,
+            debit: LedgerAccount.MERCHANT_LIABILITY,
+            credit: LedgerAccount.CUSTOMER_BALANCE,
+            amount: points,
+            orderId: null,
+            receiptId: null,
+            outletId: null,
+            staffId: null,
+            meta: { mode: 'PROMOCODE', promoCodeId: result.promoCode.id },
+          },
+        });
+        this.metrics.inc('loyalty_ledger_entries_total', { type: 'earn' });
+        this.metrics.inc('loyalty_ledger_amount_total', { type: 'earn' }, points);
+      }
+
+      if (process.env.EARN_LOTS_FEATURE === '1' && points > 0) {
+        const earnLot = (tx as any)?.earnLot ?? (this.prisma as any)?.earnLot;
+        if (earnLot?.create) {
+          await earnLot.create({
+            data: {
+              merchantId,
+              customerId,
+              points,
+              consumedPoints: 0,
+              earnedAt: new Date(),
+              maturesAt: null,
+              expiresAt,
+              orderId: null,
+              receiptId: null,
+              outletId: null,
+              staffId: null,
+              status: 'ACTIVE',
+            },
+          });
+        }
+      }
+
+      const messageParts: string[] = [];
+      if (points > 0) messageParts.push(`Начислено ${points} баллов`);
+      if (promoExpireDays) messageParts.push(`Бонус активен ${promoExpireDays} дн.`);
+      if (result.promoCode.assignTierId) messageParts.push('Уровень обновлён');
+      const message = messageParts.join('. ');
+
+      return {
+        ok: true,
+        promoCodeId: result.promoCode.id,
+        code: result.promoCode.code,
+        pointsIssued: points,
+        pointsExpireInDays: promoExpireDays,
+        pointsExpireAt: expiresAt ? expiresAt.toISOString() : null,
+        balance,
+        tierAssigned: result.promoCode.assignTierId ?? null,
+        message: message || 'Промокод активирован',
+      };
+    });
+  }
   constructor(
     private prisma: PrismaService,
     private metrics: MetricsService,

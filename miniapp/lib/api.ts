@@ -106,3 +106,24 @@ export async function referralLink(customerId: string, merchantId: string): Prom
 export async function referralActivate(code: string, customerId: string): Promise<{ success: boolean; message?: string; referralId?: string }> {
   return http('/referral/activate', { method: 'POST', body: JSON.stringify({ code, refereeId: customerId }) });
 }
+
+export async function promoCodeApply(
+  merchantId: string,
+  customerId: string,
+  code: string,
+): Promise<{
+  ok: boolean;
+  promoCodeId: string;
+  code: string;
+  pointsIssued: number;
+  pointsExpireInDays?: number | null;
+  pointsExpireAt?: string | null;
+  balance: number;
+  tierAssigned?: string | null;
+  message?: string;
+}> {
+  return http('/loyalty/promocodes/apply', {
+    method: 'POST',
+    body: JSON.stringify({ merchantId, customerId, code }),
+  });
+}
