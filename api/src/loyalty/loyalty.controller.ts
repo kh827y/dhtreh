@@ -439,6 +439,33 @@ export class LoyaltyController {
     } as any;
   }
 
+  @Post('promocodes/apply')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        ok: { type: 'boolean' },
+        promoCodeId: { type: 'string' },
+        code: { type: 'string' },
+        pointsIssued: { type: 'number' },
+        pointsExpireInDays: { type: 'number', nullable: true },
+        pointsExpireAt: { type: 'string', format: 'date-time', nullable: true },
+        balance: { type: 'number' },
+        tierAssigned: { type: 'string', nullable: true },
+        message: { type: 'string', nullable: true },
+      },
+    },
+  })
+  @ApiBadRequestResponse({ type: ErrorDto })
+  async applyPromoCode(@Body() body: { merchantId?: string; customerId?: string; code?: string }) {
+    return this.service.applyPromoCode({
+      merchantId: body?.merchantId,
+      customerId: body?.customerId,
+      code: body?.code,
+    });
+  }
+
   @Post('refund')
   @UseGuards(SubscriptionGuard, AntiFraudGuard)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
