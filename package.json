@@ -23,7 +23,8 @@
     "lint:fix": "pnpm -C api lint --fix && pnpm -C admin lint --fix && pnpm -C cashier lint --fix && pnpm -C miniapp lint --fix && pnpm -C merchant-portal lint --fix",
     "format": "prettier -w .",
     "format:check": "prettier -c .",
-    "test": "pnpm -C api test && pnpm -C api test:e2e"
+    "test": "pnpm -C api test && pnpm -C api test:e2e",
+    "dev:all": "pnpm -r --parallel --filter admin --filter merchant-portal --filter cashier --filter miniapp dev"
   },
   "devDependencies": {
     "eslint": "^9.18.0",
