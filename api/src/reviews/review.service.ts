@@ -125,7 +125,7 @@ export class ReviewService {
     }
 
     const autoApprove = Boolean(options?.autoApprove);
-    const rewardPoints = this.calculateReviewReward(rating, dto.comment.length, dto.photos?.length || 0);
+    const rewardPoints = 0;
     const metadata: Record<string, any> = {
       userAgent: 'api',
       timestamp: new Date(),
@@ -161,15 +161,6 @@ export class ReviewService {
           },
         },
       });
-
-      if (rewardPoints > 0) {
-        await this.loyaltyService.earn({
-          customerId: dto.customerId,
-          merchantId: dto.merchantId,
-          amount: rewardPoints,
-          orderId: `review_${review.id}`,
-        });
-      }
 
       await this.updateMerchantRating(dto.merchantId);
 
