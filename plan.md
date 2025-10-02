@@ -54,6 +54,7 @@
 - [x] CashierGuard: нормализуем payload подписи Bridge под контроллеры (quote/commit/refund/cancel) и берём `outletId` из hold/receipt, чтобы корректные подписи пропускались без Staff-Key.
 - [x] CashierGuard: при staff-key подхватываем outletId из hold/receipt и разрешаем mint QR с валидной bridge-подписью без staff-key.
 - [x] CashierGuard: для commit/cancel при валидации подписи используем только `outletId` из hold, игнорируя значение из тела, чтобы исключить обход изоляции точек.
+- [x] Earn lots: удалил передачу `metadata` при создании записи, чтобы `POST /loyalty/promocodes/apply` не падал на Prisma-валидации при включённом флаге `EARN_LOTS_FEATURE`.
 
 1) Бэкенд — мерчанты/владелец/CRUD (минимальная версия, обратная совместимость)
 - Добавить в админ‑API: PUT/DELETE мерчанта; POST /merchants принимать ownerName и авто‑создавать сотрудника‑владельца (роль MERCHANT). До миграции — без новых полей, только `login`.

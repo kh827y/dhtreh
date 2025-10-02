@@ -149,7 +149,6 @@ export class LoyaltyService {
               outletId: null,
               staffId: null,
               status: 'ACTIVE',
-              metadata: { promoCodeId: result.promoCode.id },
             },
           });
         }
