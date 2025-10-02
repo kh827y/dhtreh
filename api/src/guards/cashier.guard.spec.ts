@@ -246,6 +246,21 @@ describe('CashierGuard', () => {
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
   });
 
+  it('при requireStaffKey пропускает QR с initData без подписи', async () => {
+    prisma.merchantSettings.findUnique.mockResolvedValue({ requireStaffKey: true });
+
+    const ctx = makeCtx({
+      method: 'POST',
+      route: { path: '/loyalty/qr' },
+      headers: {},
+      body: { merchantId: 'M-QR', customerId: 'C-1', initData: 'query_id=1' },
+      query: {},
+      params: {},
+    });
+
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
+  });
+  
   it('при requireStaffKey принимает валидную bridge-подпись на refund, игнорируя необязательные поля', async () => {
     const secret = 'refund_secret';
     const body = {

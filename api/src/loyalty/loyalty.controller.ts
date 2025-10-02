@@ -146,7 +146,9 @@ export class LoyaltyController {
   @ApiBadRequestResponse({ type: ErrorDto })
   async mintQr(@Body() dto: QrMintDto, @Req() req: Request) {
     // Optional authentication signals: teleauth or staff key or bridge signature; enforce only if merchant requires
-    const hasAuth = !!(req as any).teleauth?.customerId;
+    const hasTeleauth = !!(req as any).teleauth?.customerId;
+    const hasInitData = typeof dto.initData === 'string' && dto.initData.trim().length > 0;
+    const hasAuth = hasTeleauth || hasInitData;
     const staffKey = req.headers['x-staff-key'] as string | undefined;
     const bridgeSig = req.headers['x-bridge-signature'] as string | undefined;
 

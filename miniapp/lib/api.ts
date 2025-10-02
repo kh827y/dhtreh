@@ -61,8 +61,16 @@ export async function teleauth(merchantId: string, initData: string): Promise<{ 
 export async function publicSettings(merchantId: string): Promise<{ merchantId: string; qrTtlSec: number; miniappThemePrimary?: string|null; miniappThemeBg?: string|null; miniappLogoUrl?: string|null }>
 { return http(`/loyalty/settings/${encodeURIComponent(merchantId)}`); }
 
-export async function mintQr(customerId: string, merchantId?: string, ttlSec?: number): Promise<QrMintResp> {
-  return http('/loyalty/qr', { method: 'POST', body: JSON.stringify({ customerId, merchantId, ttlSec }) });
+export async function mintQr(
+  customerId: string,
+  merchantId?: string,
+  ttlSec?: number,
+  initData?: string | null,
+): Promise<QrMintResp> {
+  return http('/loyalty/qr', {
+    method: 'POST',
+    body: JSON.stringify({ customerId, merchantId, ttlSec, initData: initData || undefined }),
+  });
 }
 
 export async function balance(merchantId: string, customerId: string): Promise<BalanceResp> {

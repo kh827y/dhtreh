@@ -321,6 +321,7 @@
   - Promocodes (points): расширить обработку в `LoyaltyService.commit()` для начислений по промокоду (POINTS) — idempotent по `orderId`, структурные логи/метрики; e2e.
     - [x] Централизовать бизнес-логику промокодов в `PromoCodesService`, перевести портал/loyalty-контроллеры и метрики на единый слой.
     - [x] CashierGuard учитывает bridge signature и teleauth при `requireStaffKey`, чтобы `quote/commit/refund/cancel` не падали с 403.
+    - [x] QR miniapp: допускаем генерацию по Telegram initData при включённых `requireStaffKey`/`requireBridgeSig`, устранив 403 на `/loyalty/qr`.
   - E2E: добавить кейс earn по промокоду POINTS (issue → quote/commit с promoCode → проверка баланса/транзакций).
 
 ## Волна 3 — Завершена (2025-09-15)

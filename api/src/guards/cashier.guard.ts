@@ -161,7 +161,7 @@ export class CashierGuard implements CanActivate {
     if (secondary && verifyBridgeSignature(sig, payload, secondary)) return true;
     return false;
   }
-  
+
   private async validateBridgeSignature(
     normalizedPath: string,
     req: any,
@@ -226,6 +226,14 @@ export class CashierGuard implements CanActivate {
     if (!key) {
       if (!requireStaffKey) return true;
       if (req?.teleauth?.customerId) return true;
+      if (
+        normalizedPath === '/loyalty/qr' &&
+        typeof body?.merchantId === 'string' &&
+        typeof body?.initData === 'string' &&
+        body.initData.trim()
+      ) {
+        return true;
+      }
       const { ok } = await this.validateBridgeSignature(
         normalizedPath,
         req,
