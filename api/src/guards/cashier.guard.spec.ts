@@ -15,6 +15,9 @@ describe('CashierGuard', () => {
     prisma = {
       merchantSettings: { findUnique: jest.fn().mockResolvedValue({ requireStaffKey: true }) },
       staff: { findFirst: jest.fn() },
+      hold: { findUnique: jest.fn() },
+      outlet: { findFirst: jest.fn() },
+      receipt: { findUnique: jest.fn() },
     };
     guard = new CashierGuard(prisma);
   });
@@ -101,5 +104,28 @@ describe('CashierGuard', () => {
     });
 
     await expect(guard.canActivate(ctx)).resolves.toBe(false);
+  });
+
+  it('при requireStaffKey принимает валидную bridge-подпись даже с дополнительными полями', async () => {
+    const secret = 'bridge_secret';
+    const body = { merchantId: 'M-123', holdId: 'H-1', orderId: 'O-1', extra: 'ignore-me' };
+    const payload = JSON.stringify(body);
+    const ts = Math.floor(Date.now() / 1000).toString();
+    const sig = crypto.createHmac('sha256', secret).update(ts + '.' + payload).digest('base64');
+    const header = `v1,ts=${ts},sig=${sig}`;
+
+    prisma.merchantSettings.findUnique.mockResolvedValue({ requireStaffKey: true, bridgeSecret: secret });
+    prisma.hold.findUnique.mockResolvedValue({ merchantId: 'M-123', outletId: null });
+
+    const ctx = makeCtx({
+      method: 'POST',
+      route: { path: '/loyalty/commit' },
+      headers: { 'x-bridge-signature': header },
+      body,
+      query: {},
+      params: {},
+    });
+
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
   });
 });

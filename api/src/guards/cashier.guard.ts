@@ -59,6 +59,7 @@ export class CashierGuard implements CanActivate {
     if (!sig) return false;
 
     const body = req?.body || {};
+    const payloadFromBody = JSON.stringify(body);
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
 
     let merchantId: string | undefined = merchantIdHint || undefined;
@@ -68,7 +69,7 @@ export class CashierGuard implements CanActivate {
     if (normalizedPath === '/loyalty/quote') {
       if (!merchantId) return false;
       outletId = body?.outletId ?? null;
-      payload = JSON.stringify(body);
+      payload = payloadFromBody;
     } else if (normalizedPath === '/loyalty/commit') {
       const holdId: string | undefined = body?.holdId;
       if (!holdId) return false;
@@ -81,13 +82,8 @@ export class CashierGuard implements CanActivate {
       } catch {}
       merchantId = merchantId || hold?.merchantId || undefined;
       if (!merchantId) return false;
-      outletId = hold?.outletId ?? null;
-      payload = JSON.stringify({
-        merchantId,
-        holdId,
-        orderId: body?.orderId,
-        receiptNumber: body?.receiptNumber ?? undefined,
-      });
+      outletId = body?.outletId ?? hold?.outletId ?? null;
+      payload = payloadFromBody;
     } else if (normalizedPath === '/loyalty/refund') {
       if (!merchantId) return false;
       try {
@@ -97,12 +93,7 @@ export class CashierGuard implements CanActivate {
         });
         outletId = receipt?.outletId ?? null;
       } catch {}
-      payload = JSON.stringify({
-        merchantId,
-        orderId: body?.orderId,
-        refundTotal: body?.refundTotal,
-        refundEligibleTotal: body?.refundEligibleTotal ?? undefined,
-      });
+      payload = payloadFromBody;
     } else if (normalizedPath === '/loyalty/cancel') {
       const holdId: string | undefined = body?.holdId;
       if (!holdId) return false;
@@ -115,8 +106,8 @@ export class CashierGuard implements CanActivate {
       } catch {}
       merchantId = merchantId || hold?.merchantId || undefined;
       if (!merchantId) return false;
-      outletId = hold?.outletId ?? null;
-      payload = JSON.stringify({ merchantId, holdId });
+      outletId = body?.outletId ?? hold?.outletId ?? null;
+      payload = payloadFromBody;
     } else {
       return false;
     }
