@@ -156,7 +156,7 @@ export class CashierGuard implements CanActivate {
     if (secondary && verifyBridgeSignature(sig, payload, secondary)) return true;
     return false;
   }
-
+  
   private async validateBridgeSignature(
     normalizedPath: string,
     req: any,
