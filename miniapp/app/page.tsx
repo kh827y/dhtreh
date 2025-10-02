@@ -22,6 +22,7 @@ import {
   referralLink,
   referralActivate,
   promoCodeApply,
+  submitReview,
 } from "../lib/api";
 import Spinner from "../components/Spinner";
 import Toast from "../components/Toast";
@@ -270,6 +271,7 @@ export default function Page() {
   const [feedbackRating, setFeedbackRating] = useState<number>(0);
   const [feedbackComment, setFeedbackComment] = useState<string>("");
   const [feedbackTxId, setFeedbackTxId] = useState<string | null>(null);
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState<boolean>(false);
   const [pendingFeedbackEvent, setPendingFeedbackEvent] = useState<
     | {
         ts: number;
@@ -841,24 +843,55 @@ export default function Page() {
   }, [feedbackTxId]);
 
   const handleFeedbackSubmit = useCallback(
-    (event: FormEvent<HTMLFormElement>) => {
+    async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
       if (!feedbackRating) {
         setToast({ msg: "Поставьте оценку", type: "error" });
         return;
       }
-      if (feedbackTxId) {
-        setRatedTransactions((prev) =>
-          prev.includes(feedbackTxId) ? prev : [...prev, feedbackTxId]
-        );
+      if (!merchantId || !customerId) {
+        setToast({ msg: "Не удалось определить клиента", type: "error" });
+        return;
       }
-      setToast({ msg: "Спасибо за отзыв!", type: "success" });
-      setFeedbackOpen(false);
-      setFeedbackTxId(null);
-      setFeedbackComment("");
-      setFeedbackRating(0);
+      const activeTx = feedbackTxId
+        ? tx.find((item) => item.id === feedbackTxId) ?? null
+        : null;
+      try {
+        setFeedbackSubmitting(true);
+        await submitReview({
+          merchantId,
+          customerId,
+          rating: feedbackRating,
+          comment: feedbackComment,
+          orderId: activeTx?.orderId ?? null,
+          transactionId: feedbackTxId,
+          outletId: activeTx?.outletId ?? null,
+          staffId: activeTx?.staffId ?? null,
+        });
+        if (feedbackTxId) {
+          setRatedTransactions((prev) =>
+            prev.includes(feedbackTxId) ? prev : [...prev, feedbackTxId]
+          );
+        }
+        setToast({ msg: "Спасибо за отзыв!", type: "success" });
+        setFeedbackOpen(false);
+        setFeedbackTxId(null);
+        setFeedbackComment("");
+        setFeedbackRating(0);
+      } catch (error) {
+        setToast({ msg: resolveErrorMessage(error), type: "error" });
+      } finally {
+        setFeedbackSubmitting(false);
+      }
     },
-    [feedbackRating, feedbackTxId]
+    [
+      feedbackRating,
+      merchantId,
+      customerId,
+      feedbackTxId,
+      tx,
+      feedbackComment,
+    ]
   );
 
   const handleFeedbackCommentChange = useCallback(
@@ -1491,9 +1524,10 @@ export default function Page() {
             <button
               type="submit"
               className={styles.feedbackSubmit}
-              disabled={!feedbackRating}
+              disabled={!feedbackRating || feedbackSubmitting}
+              aria-busy={feedbackSubmitting || undefined}
             >
-              Отправить
+              {feedbackSubmitting ? "Отправляем…" : "Отправить"}
             </button>
           </form>
         </div>

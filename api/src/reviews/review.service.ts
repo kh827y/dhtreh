@@ -21,6 +21,11 @@ export interface CreateReviewResponseDto {
   message: string;
 }
 
+export interface CreateReviewOptions {
+  autoApprove?: boolean;
+  metadata?: Record<string, any> | null;
+}
+
 export interface ReviewStats {
   totalReviews: number;
   averageRating: number;
@@ -42,7 +47,7 @@ export class ReviewService {
   /**
    * Создать отзыв
    */
-  async createReview(dto: CreateReviewDto) {
+  async createReview(dto: CreateReviewDto, options?: CreateReviewOptions) {
     // Проверяем, что клиент делал покупку у мерчанта
     const hasPurchase = await this.prisma.transaction.findFirst({
       where: {
@@ -76,6 +81,13 @@ export class ReviewService {
     }
 
     // Создаем отзыв
+    const autoApprove = Boolean(options?.autoApprove);
+    const metadata: Record<string, any> = {
+      userAgent: 'api',
+      timestamp: new Date(),
+      ...(options?.metadata ?? {}),
+    };
+
     const review = await this.prisma.review.create({
       data: {
         merchantId: dto.merchantId,
@@ -87,11 +99,9 @@ export class ReviewService {
         photos: dto.photos || [],
         tags: dto.tags || [],
         isAnonymous: dto.isAnonymous || false,
-        status: 'PENDING', // Требует модерации
-        metadata: {
-          userAgent: 'api',
-          timestamp: new Date(),
-        },
+        status: autoApprove ? 'APPROVED' : 'PENDING',
+        moderatedAt: autoApprove ? new Date() : undefined,
+        metadata,
       },
       include: {
         customer: {
@@ -123,7 +133,9 @@ export class ReviewService {
       rating: review.rating,
       rewardPoints,
       status: review.status,
-      message: 'Спасибо за ваш отзыв! Он появится после модерации.',
+      message: autoApprove
+        ? 'Спасибо за ваш отзыв! Он опубликован.'
+        : 'Спасибо за ваш отзыв! Он появится после модерации.',
     };
   }
 

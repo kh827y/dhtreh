@@ -70,6 +70,35 @@ export async function teleauth(merchantId: string, initData: string): Promise<{ 
   return http('/loyalty/teleauth', { method: 'POST', body: JSON.stringify({ merchantId, initData }) });
 }
 
+export async function submitReview(payload: {
+  merchantId: string;
+  customerId: string;
+  rating: number;
+  comment?: string;
+  orderId?: string | null;
+  transactionId?: string | null;
+  outletId?: string | null;
+  staffId?: string | null;
+  title?: string;
+  tags?: string[];
+  photos?: string[];
+}): Promise<{ ok: boolean; reviewId: string; status: string; rewardPoints: number; message: string }> {
+  const body: Record<string, unknown> = {
+    merchantId: payload.merchantId,
+    customerId: payload.customerId,
+    rating: payload.rating,
+    comment: payload.comment ?? '',
+  };
+  if (payload.orderId) body.orderId = payload.orderId;
+  if (payload.transactionId) body.transactionId = payload.transactionId;
+  if (payload.outletId) body.outletId = payload.outletId;
+  if (payload.staffId) body.staffId = payload.staffId;
+  if (payload.title) body.title = payload.title;
+  if (payload.tags && payload.tags.length) body.tags = payload.tags;
+  if (payload.photos && payload.photos.length) body.photos = payload.photos;
+  return http('/loyalty/reviews', { method: 'POST', body: JSON.stringify(body) });
+}
+
 export type ReviewsSharePlatformOutlet = {
   outletId: string;
   url: string;

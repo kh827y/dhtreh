@@ -86,7 +86,7 @@ export class PortalReviewsService {
     const orderRefs = await this.prisma.review.findMany({
       where: {
         merchantId,
-        status: 'APPROVED',
+        status: { notIn: ['REJECTED'] },
         deletedAt: null,
         orderId: { not: null },
       },
@@ -188,7 +188,7 @@ export class PortalReviewsService {
 
     const where: Prisma.ReviewWhereInput = {
       merchantId,
-      status: 'APPROVED',
+      status: { notIn: ['REJECTED'] },
       deletedAt: null,
     };
 

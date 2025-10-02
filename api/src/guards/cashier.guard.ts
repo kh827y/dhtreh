@@ -210,7 +210,8 @@ export class CashierGuard implements CanActivate {
       path === '/loyalty/cashier/login' ||
       path === '/loyalty/cashier/staff-token' ||
       path === '/loyalty/cashier/staff-access' ||
-      path === '/loyalty/promocodes/apply'
+      path === '/loyalty/promocodes/apply' ||
+      path === '/loyalty/reviews'
     );
     if (isPublicGet || isAlwaysPublic) return true;
 
