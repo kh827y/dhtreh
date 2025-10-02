@@ -58,7 +58,26 @@ export function useMiniappAuth(defaultMerchant: string) {
       try {
         const s = await publicSettings(mId);
         setTheme({ primary: s.miniappThemePrimary, bg: s.miniappThemeBg, logo: s.miniappLogoUrl, ttl: s.qrTtlSec });
-        setShareSettings(s.reviewsShare ?? null);
+        const normalizedShare = s.reviewsShare
+          ? {
+              ...s.reviewsShare,
+              platforms: Array.isArray(s.reviewsShare.platforms)
+                ? s.reviewsShare.platforms
+                    .filter((platform): platform is typeof s.reviewsShare.platforms[number] => !!platform && typeof platform === 'object')
+                    .map((platform) => ({
+                      ...platform,
+                      outlets: Array.isArray(platform.outlets)
+                        ? platform.outlets
+                            .filter((outlet): outlet is { outletId: string; url: string } => {
+                              return !!outlet && typeof outlet === 'object' && typeof outlet.outletId === 'string' && typeof outlet.url === 'string';
+                            })
+                            .map((outlet) => ({ outletId: outlet.outletId, url: outlet.url }))
+                        : [],
+                    }))
+                : [],
+            }
+          : null;
+        setShareSettings(normalizedShare);
       } catch {}
       try {
         if (id && mId) {

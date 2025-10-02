@@ -5,77 +5,34 @@ import { Card, CardHeader, CardBody, Button, Skeleton } from "@loyalty/ui";
 import Toggle from "../../components/Toggle";
 import StarRating from "../../components/StarRating";
 
-const outlets = [
-  { value: "all", label: "Все торговые точки" },
-  { value: "outlet-1", label: "Точка на Тверской" },
-  { value: "outlet-2", label: "ТРЦ Авиапарк" },
-  { value: "outlet-3", label: "Онлайн" },
-];
+type SelectOption = { value: string; label: string };
 
-const staff = [
-  { value: "all", label: "Все сотрудники" },
-  { value: "staff-1", label: "Анна Петрова" },
-  { value: "staff-2", label: "Иван Крылов" },
-  { value: "staff-3", label: "Мария Смирнова" },
-];
+type ApiReviewItem = {
+  id: string;
+  rating: number;
+  comment?: string | null;
+  createdAt: string;
+  customer?: { id: string; name?: string | null; phone?: string | null; email?: string | null } | null;
+  staff?: { id: string; name?: string | null } | null;
+  outlet?: { id: string; name?: string | null } | null;
+};
+
+type ReviewsApiResponse = {
+  items?: ApiReviewItem[];
+  total?: number;
+  outlets?: Array<{ id: string; name?: string | null }>;
+  staff?: Array<{ id: string; name?: string | null }>;
+};
 
 type ReviewRow = {
   id: string;
   customer: { id: string; name: string };
   rating: number;
-  comment?: string;
+  comment: string | null;
   staff: string;
   outlet: string;
   createdAt: string;
 };
-
-const sampleReviews: ReviewRow[] = [
-  {
-    id: "rev-1",
-    customer: { id: "cust-101", name: "+7 (900) 123-45-67" },
-    rating: 5,
-    comment: "Отличный сервис, спасибо Анне за внимание!",
-    staff: "Анна Петрова",
-    outlet: "ТРЦ Авиапарк",
-    createdAt: new Date(Date.now() - 1000 * 60 * 25).toISOString(),
-  },
-  {
-    id: "rev-2",
-    customer: { id: "cust-202", name: "Алексей" },
-    rating: 3,
-    comment: "Долго ждал заказ, но в целом неплохо",
-    staff: "Иван Крылов",
-    outlet: "Точка на Тверской",
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(),
-  },
-  {
-    id: "rev-3",
-    customer: { id: "cust-303", name: "+7 (908) 555-66-11" },
-    rating: 4,
-    comment: "Вкусно, но хотелось бы быстрее",
-    staff: "Анна Петрова",
-    outlet: "Онлайн",
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
-  },
-  {
-    id: "rev-4",
-    customer: { id: "cust-404", name: "Марина" },
-    rating: 2,
-    comment: "Кофе был холодный",
-    staff: "Мария Смирнова",
-    outlet: "ТРЦ Авиапарк",
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 48).toISOString(),
-  },
-  {
-    id: "rev-5",
-    customer: { id: "cust-505", name: "+7 (901) 777-88-99" },
-    rating: 5,
-    comment: undefined,
-    staff: "—",
-    outlet: "Точка на Тверской",
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 36).toISOString(),
-  },
-];
 
 const ratingFilters = [
   { value: "5", label: "⭐⭐⭐⭐⭐ 5 звезд и ниже" },
@@ -98,6 +55,15 @@ export default function ReviewsPage() {
   const [withCommentOnly, setWithCommentOnly] = React.useState(false);
   const [selectedOutlet, setSelectedOutlet] = React.useState("all");
   const [selectedStaff, setSelectedStaff] = React.useState("all");
+  const [reviews, setReviews] = React.useState<ReviewRow[]>([]);
+  const [totalCount, setTotalCount] = React.useState(0);
+  const [outletOptions, setOutletOptions] = React.useState<SelectOption[]>([
+    { value: "all", label: "Все торговые точки" },
+  ]);
+  const [staffOptions, setStaffOptions] = React.useState<SelectOption[]>([
+    { value: "all", label: "Все сотрудники" },
+  ]);
+  const fetchIdRef = React.useRef(0);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [settingsSnapshot, setSettingsSnapshot] = React.useState<any | null>(null);
   const [settingsError, setSettingsError] = React.useState<string | null>(null);
@@ -125,6 +91,100 @@ export default function ReviewsPage() {
       google: Boolean(platforms?.google?.enabled),
     });
   }, []);
+
+  React.useEffect(() => {
+    const fetchId = ++fetchIdRef.current;
+    setLoading(true);
+    let cancelled = false;
+    const params = new URLSearchParams();
+    if (withCommentOnly) params.set("withCommentOnly", "1");
+    if (selectedOutlet !== "all") params.set("outletId", selectedOutlet);
+    if (selectedStaff !== "all") params.set("staffId", selectedStaff);
+    const search = params.toString();
+    (async () => {
+      try {
+        const res = await fetch(`/api/portal/reviews${search ? `?${search}` : ""}`, { cache: "no-store" });
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          throw new Error(text || `Ошибка ${res.status}`);
+        }
+        const data = (await res.json()) as ReviewsApiResponse;
+        if (cancelled || fetchIdRef.current !== fetchId) return;
+
+        const normalizedReviews: ReviewRow[] = Array.isArray(data?.items)
+          ? data.items
+              .filter((item): item is ApiReviewItem => !!item && typeof item === "object")
+              .map((item) => {
+                const customerId = typeof item.customer?.id === "string" ? item.customer.id.trim() : "";
+                const customerName =
+                  (item.customer?.name && item.customer.name.trim()) ||
+                  (item.customer?.phone && item.customer.phone.trim()) ||
+                  (item.customer?.email && item.customer.email.trim()) ||
+                  "—";
+                const staffName = (item.staff?.name || "").trim() || "—";
+                const outletName = (item.outlet?.name || "").trim() || "—";
+                const comment = typeof item.comment === "string" ? item.comment.trim() : "";
+                return {
+                  id: item.id,
+                  rating: item.rating,
+                  comment: comment.length > 0 ? comment : null,
+                  createdAt: item.createdAt,
+                  customer: { id: customerId, name: customerName },
+                  staff: staffName,
+                  outlet: outletName,
+                };
+              })
+          : [];
+
+        setReviews(normalizedReviews);
+        setTotalCount(typeof data?.total === "number" ? data.total : normalizedReviews.length);
+
+        const nextOutletOptions: SelectOption[] = [
+          { value: "all", label: "Все торговые точки" },
+          ...(Array.isArray(data?.outlets)
+            ? data.outlets
+                .filter((item): item is { id: string; name?: string | null } => !!item && typeof item === "object")
+                .map((item) => ({
+                  value: item.id,
+                  label: (item.name || "").trim() || "Без названия",
+                }))
+            : []),
+        ];
+        setOutletOptions(nextOutletOptions);
+        if (selectedOutlet !== "all" && !nextOutletOptions.some((opt) => opt.value === selectedOutlet)) {
+          setSelectedOutlet("all");
+        }
+
+        const nextStaffOptions: SelectOption[] = [
+          { value: "all", label: "Все сотрудники" },
+          ...(Array.isArray(data?.staff)
+            ? data.staff
+                .filter((item): item is { id: string; name?: string | null } => !!item && typeof item === "object")
+                .map((item) => ({
+                  value: item.id,
+                  label: (item.name || "").trim() || item.id,
+                }))
+            : []),
+        ];
+        setStaffOptions(nextStaffOptions);
+        if (selectedStaff !== "all" && !nextStaffOptions.some((opt) => opt.value === selectedStaff)) {
+          setSelectedStaff("all");
+        }
+      } catch (error) {
+        console.error(error);
+        if (cancelled || fetchIdRef.current !== fetchId) return;
+        setReviews([]);
+        setTotalCount(0);
+      } finally {
+        if (cancelled || fetchIdRef.current !== fetchId) return;
+        setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [withCommentOnly, selectedOutlet, selectedStaff]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -230,15 +290,6 @@ export default function ReviewsPage() {
     }
   }, [applyShareSettings, settingsSnapshot, shareEnabled, shareThreshold, sharePlatforms]);
 
-  const filteredReviews = React.useMemo(() => {
-    return sampleReviews.filter((review) => {
-      if (withCommentOnly && !review.comment) return false;
-      if (selectedOutlet !== 'all' && review.outlet !== outlets.find((o) => o.value === selectedOutlet)?.label) return false;
-      if (selectedStaff !== 'all' && review.staff !== staff.find((s) => s.value === selectedStaff)?.label) return false;
-      return true;
-    });
-  }, [withCommentOnly, selectedOutlet, selectedStaff]);
-
   return (
     <div style={{ display: 'grid', gap: 20 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
@@ -263,12 +314,12 @@ export default function ReviewsPage() {
               Показывать только с комментариями
             </label>
             <select value={selectedOutlet} onChange={(e) => setSelectedOutlet(e.target.value)} style={{ padding: 8, borderRadius: 8 }}>
-              {outlets.map((opt) => (
+              {outletOptions.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
             <select value={selectedStaff} onChange={(e) => setSelectedStaff(e.target.value)} style={{ padding: 8, borderRadius: 8 }}>
-              {staff.map((opt) => (
+              {staffOptions.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
@@ -277,11 +328,11 @@ export default function ReviewsPage() {
       </Card>
 
       <Card>
-        <CardHeader title="Отзывы" subtitle={`${filteredReviews.length} записей`} />
+        <CardHeader title="Отзывы" subtitle={`${totalCount} записей`} />
         <CardBody>
           {loading ? (
             <Skeleton height={220} />
-          ) : filteredReviews.length ? (
+          ) : reviews.length ? (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
                 <thead>
@@ -295,15 +346,19 @@ export default function ReviewsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredReviews.map((row) => (
+                  {reviews.map((row) => (
                     <tr key={row.id} style={{ borderBottom: '1px solid rgba(148,163,184,0.14)' }}>
                       <td style={tdStyle}>
-                        <a href={`/customers/${row.customer.id}`} style={{ color: '#818cf8', textDecoration: 'none' }}>{row.customer.name}</a>
+                        {row.customer.id ? (
+                          <a href={`/customers/${row.customer.id}`} style={{ color: '#818cf8', textDecoration: 'none' }}>{row.customer.name}</a>
+                        ) : (
+                          <span>{row.customer.name}</span>
+                        )}
                       </td>
                       <td style={tdStyle}>
                         <StarRating rating={row.rating} size={18} />
                       </td>
-                      <td style={tdStyle}>{row.comment || <span style={{ opacity: 0.6 }}>Без комментария</span>}</td>
+                      <td style={tdStyle}>{row.comment ? row.comment : <span style={{ opacity: 0.6 }}>Без комментария</span>}</td>
                       <td style={tdStyle}>{row.staff}</td>
                       <td style={tdStyle}>{row.outlet}</td>
                       <td style={tdStyle}>{new Date(row.createdAt).toLocaleString('ru-RU')}</td>

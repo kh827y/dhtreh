@@ -16,6 +16,7 @@ import { verifyBridgeSignature as verifyBridgeSigUtil } from './bridge.util';
 import { validateTelegramInitData } from './telegram.util';
 import { PromosService } from '../promos/promos.service';
 import { PromoCodesService } from '../promocodes/promocodes.service';
+import { ReviewService } from '../reviews/review.service';
 
 @Controller('loyalty')
 @UseGuards(CashierGuard)
@@ -29,6 +30,7 @@ export class LoyaltyController {
     private readonly promos: PromosService,
     private readonly promoCodes: PromoCodesService,
     private readonly merchants: MerchantsService,
+    private readonly reviews: ReviewService,
   ) {}
 
   private async resolveOutlet(merchantId?: string, outletId?: string | null) {
@@ -61,6 +63,86 @@ export class LoyaltyController {
     }
     const now = Math.floor(Date.now() / 1000);
     return { customerId: userToken, merchantAud: undefined, jti: `plain:${userToken}:${now}`, iat: now, exp: now + 3600 };
+  }
+
+  @Post('reviews')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async submitReview(
+    @Body()
+    body: {
+      merchantId?: string;
+      customerId?: string;
+      orderId?: string | null;
+      rating?: number | string;
+      comment?: string;
+      title?: string;
+      tags?: unknown;
+      photos?: unknown;
+      transactionId?: string;
+      outletId?: string | null;
+      staffId?: string | null;
+    },
+  ) {
+    const merchantId = typeof body?.merchantId === 'string' ? body.merchantId.trim() : '';
+    if (!merchantId) throw new BadRequestException('merchantId is required');
+
+    const customerId = typeof body?.customerId === 'string' ? body.customerId.trim() : '';
+    if (!customerId) throw new BadRequestException('customerId is required');
+
+    const ratingRaw = typeof body?.rating === 'string' ? Number(body.rating) : body?.rating;
+    if (!Number.isFinite(ratingRaw)) throw new BadRequestException('rating is required');
+    const rating = Math.round(Number(ratingRaw));
+    if (rating < 1 || rating > 5) throw new BadRequestException('rating must be between 1 and 5');
+
+    const comment = typeof body?.comment === 'string' ? body.comment.trim() : '';
+    const orderIdRaw = typeof body?.orderId === 'string' ? body.orderId.trim() : '';
+    const orderId = orderIdRaw.length > 0 ? orderIdRaw : undefined;
+    const titleRaw = typeof body?.title === 'string' ? body.title.trim() : '';
+    const title = titleRaw.length > 0 ? titleRaw : undefined;
+    const tags = Array.isArray(body?.tags)
+      ? body.tags
+          .map((tag) => (typeof tag === 'string' ? tag.trim() : ''))
+          .filter((tag) => tag.length > 0)
+      : [];
+    const photos = Array.isArray(body?.photos)
+      ? body.photos
+          .map((photo) => (typeof photo === 'string' ? photo.trim() : ''))
+          .filter((photo) => photo.length > 0)
+      : [];
+
+    const metadata: Record<string, any> = { source: 'loyalty-miniapp' };
+    if (typeof body?.transactionId === 'string' && body.transactionId.trim()) {
+      metadata.transactionId = body.transactionId.trim();
+    }
+    if (typeof body?.outletId === 'string' && body.outletId.trim()) {
+      metadata.outletId = body.outletId.trim();
+    }
+    if (typeof body?.staffId === 'string' && body.staffId.trim()) {
+      metadata.staffId = body.staffId.trim();
+    }
+
+    const result = await this.reviews.createReview(
+      {
+        merchantId,
+        customerId,
+        orderId,
+        rating,
+        comment,
+        title,
+        tags,
+        photos,
+        isAnonymous: false,
+      },
+      { autoApprove: true, metadata },
+    );
+
+    return {
+      ok: true,
+      reviewId: result.id,
+      status: result.status,
+      rewardPoints: result.rewardPoints,
+      message: result.message,
+    } as const;
   }
 
   // ===== Cashier Auth (public) =====
@@ -435,13 +517,65 @@ export class LoyaltyController {
     const platformsRaw = shareRaw?.platforms && typeof shareRaw.platforms === 'object'
       ? (shareRaw.platforms as Record<string, any>)
       : null;
+    const normalizePlatformOutlets = (cfg: any) => {
+      const map = new Map<string, string>();
+      const push = (outletIdRaw: unknown, value: unknown) => {
+        const outletId = typeof outletIdRaw === 'string' ? outletIdRaw.trim() : '';
+        const urlCandidate = typeof value === 'string'
+          ? value
+          : value && typeof value === 'object'
+            ? ((value as any).url ?? (value as any).link ?? (value as any).href ?? '')
+            : '';
+        const url = typeof urlCandidate === 'string' ? urlCandidate.trim() : '';
+        if (!outletId || !url) return;
+        if (!map.has(outletId)) {
+          map.set(outletId, url);
+        }
+      };
+      const collect = (source: any) => {
+        if (!source || typeof source !== 'object') return;
+        if (Array.isArray(source)) {
+          for (const entry of source) {
+            if (!entry || typeof entry !== 'object') continue;
+            push((entry as any).outletId ?? (entry as any).id, (entry as any).url ?? (entry as any).link ?? entry);
+          }
+          return;
+        }
+        for (const [key, value] of Object.entries(source)) {
+          if (typeof value === 'string') {
+            push(key, value);
+          } else if (value && typeof value === 'object') {
+            push((value as any).outletId ?? key, (value as any).url ?? (value as any).link ?? null);
+          }
+        }
+      };
+      collect(cfg?.outlets);
+      collect(cfg?.links);
+      collect(cfg?.byOutlet);
+      collect(cfg?.urls);
+      if (!map.size && cfg && typeof cfg === 'object' && !Array.isArray(cfg)) {
+        for (const [key, value] of Object.entries(cfg)) {
+          if (['enabled', 'url', 'threshold', 'platforms'].includes(key)) continue;
+          if (typeof value === 'string') {
+            push(key, value);
+          } else if (value && typeof value === 'object') {
+            push(key, (value as any).url ?? (value as any).link ?? null);
+          }
+        }
+      }
+      return Array.from(map.entries()).map(([outletId, url]) => ({ outletId, url }));
+    };
     const platforms = platformsRaw
       ? Object.entries(platformsRaw)
           .map(([id, cfg]) => {
             if (!cfg || typeof cfg !== 'object') return null;
+            const normalizedId = String(id || '').trim();
+            if (!normalizedId) return null;
             const enabled = Boolean((cfg as any).enabled);
-            const url = typeof (cfg as any).url === 'string' ? (cfg as any).url : null;
-            return { id, enabled, url };
+            const urlRaw = typeof (cfg as any).url === 'string' ? (cfg as any).url.trim() : '';
+            const url = urlRaw ? urlRaw : null;
+            const outlets = normalizePlatformOutlets(cfg);
+            return { id: normalizedId, enabled, url, outlets };
           })
           .filter(Boolean)
       : [];

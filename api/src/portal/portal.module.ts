@@ -16,6 +16,7 @@ import { TelegramModule } from '../telegram/telegram.module';
 import { PortalTelegramIntegrationService } from './services/telegram-integration.service';
 import { CommunicationsModule } from '../communications/communications.module';
 import { ReferralModule } from '../referral/referral.module';
+import { PortalReviewsService } from './services/reviews.service';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { ReferralModule } from '../referral/referral.module';
     OperationsLogService,
     PortalCustomersService,
     PortalTelegramIntegrationService,
+    PortalReviewsService,
   ],
 })
 export class PortalModule {}
