@@ -81,6 +81,7 @@ type TransactionItem = {
   type: string;
   amount: number;
   createdAt: string;
+  orderId: string | null;
 };
 
 const genderOptions: Array<{ value: "male" | "female"; label: string }> = [
@@ -130,13 +131,23 @@ function formatTxType(type: string): { title: string; tone: "earn" | "redeem" | 
   return { title: type, tone: "other" };
 }
 
-function isPurchaseTransaction(type: string): boolean {
+function isPurchaseTransaction(type: string, orderId?: string | null): boolean {
   const lower = type.toLowerCase();
   if (lower.includes("promo")) return false;
   if (lower.includes("campaign")) return false;
   if (lower.includes("referral")) return false;
   if (lower.includes("registration")) return false;
   if (lower.includes("birthday")) return false;
+  if (lower.includes("gift")) return false;
+  if (lower.includes("adjust")) return false;
+  if (lower.includes("ttl")) return false;
+  if (lower.includes("expire")) return false;
+  if (orderId) {
+    const normalizedOrder = orderId.toLowerCase();
+    if (normalizedOrder.startsWith("gift")) return false;
+    if (normalizedOrder.includes("promo")) return false;
+  }
+  if (lower === "earn" || lower === "redeem" || lower === "refund") return true;
   return lower.includes("purchase") || lower.includes("order") || lower.includes("sale");
 }
 
@@ -258,6 +269,8 @@ export default function Page() {
         redeemApplied?: number;
         earnApplied?: number;
         knownTxIds?: string[];
+        candidateIds?: string[];
+        source?: "event" | "observer";
       }
     | null
   >(null);
@@ -267,10 +280,19 @@ export default function Page() {
   const [dismissedReady, setDismissedReady] = useState<boolean>(false);
   const lastEventTsRef = useRef<number>(0);
   const txIdsRef = useRef<string[]>([]);
+  const seenTxIdsRef = useRef<Set<string>>(new Set());
+  const [txSnapshotReady, setTxSnapshotReady] = useState<boolean>(false);
+  const [initialHydrationDone, setInitialHydrationDone] = useState<boolean>(false);
 
   useEffect(() => {
     txIdsRef.current = tx.map((item) => item.id);
   }, [tx]);
+
+  useEffect(() => {
+    seenTxIdsRef.current = new Set();
+    setTxSnapshotReady(false);
+    setInitialHydrationDone(false);
+  }, [customerId, merchantId]);
 
   useEffect(() => {
     const tgUser = getTelegramUser();
@@ -372,7 +394,15 @@ export default function Page() {
   }, [customerId, merchantId, retry]);
 
   const mapTransactions = useCallback(
-    (items: Array<{ id: string; type: string; amount: number; createdAt: string }>) => {
+    (
+      items: Array<{
+        id: string;
+        type: string;
+        amount: number;
+        createdAt: string;
+        orderId?: string | null;
+      }>,
+    ) => {
       return items
         .filter((i) => i && typeof i === "object")
         .map((i) => ({
@@ -380,6 +410,7 @@ export default function Page() {
           type: i.type,
           amount: i.amount,
           createdAt: i.createdAt,
+          orderId: i.orderId ?? null,
         }));
     },
     []
@@ -395,6 +426,7 @@ export default function Page() {
       const r = await retry(() => transactions(merchantId, customerId, 20));
       setTx(mapTransactions(r.items));
       setNextBefore(r.nextBefore || null);
+      setTxSnapshotReady(true);
       if (!silent) setStatus("История обновлена");
     } catch (error) {
       const message = resolveErrorMessage(error);
@@ -402,6 +434,7 @@ export default function Page() {
         setStatus(`Ошибка истории: ${message}`);
         setToast({ msg: "Не удалось обновить историю", type: "error" });
       }
+      setTxSnapshotReady(true);
     }
   }, [customerId, merchantId, retry, mapTransactions]);
 
@@ -447,6 +480,46 @@ export default function Page() {
   useEffect(() => {
     lastEventTsRef.current = 0;
   }, [merchantId, customerId]);
+
+  useEffect(() => {
+    const seen = seenTxIdsRef.current;
+    const fresh: TransactionItem[] = [];
+    for (const item of tx) {
+      if (!seen.has(item.id)) {
+        fresh.push(item);
+        if (txSnapshotReady) {
+          seen.add(item.id);
+        }
+      }
+    }
+    if (!txSnapshotReady) {
+      fresh.forEach((item) => seen.add(item.id));
+      return;
+    }
+    if (!initialHydrationDone) {
+      fresh.forEach((item) => seen.add(item.id));
+      setInitialHydrationDone(true);
+      return;
+    }
+    if (!fresh.length) return;
+    if (pendingFeedbackEvent) return;
+    const candidate = fresh.find((item) => {
+      const meta = formatTxType(item.type);
+      if (meta.tone !== "earn" && meta.tone !== "redeem") return false;
+      if (!isPurchaseTransaction(item.type, item.orderId)) return false;
+      if (ratedTxSet.has(item.id) || dismissedTxSet.has(item.id)) return false;
+      return true;
+    });
+    if (!candidate) return;
+    setPendingFeedbackEvent({ ts: Date.now(), candidateIds: [candidate.id], source: "observer" });
+  }, [
+    tx,
+    txSnapshotReady,
+    initialHydrationDone,
+    pendingFeedbackEvent,
+    ratedTxSet,
+    dismissedTxSet,
+  ]);
 
   const refreshHistory = useCallback(() => {
     if (!customerId) return;
@@ -507,6 +580,7 @@ export default function Page() {
           redeemApplied: redeemApplied ?? undefined,
           earnApplied: earnApplied ?? undefined,
           knownTxIds: txIdsRef.current.slice(0, 50),
+          source: "event",
         });
       }
       refreshHistory();
@@ -552,6 +626,18 @@ export default function Page() {
       }
     };
   }, [merchantId, customerId, handleExternalEvent]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    if (!customerId) return;
+    const interval = window.setInterval(() => {
+      if (document.visibilityState && document.visibilityState !== "visible") return;
+      refreshHistory();
+    }, 20000);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [customerId, refreshHistory]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -631,29 +717,39 @@ export default function Page() {
       eventTs && Number.isFinite(eventTs) ? eventTs - 30 * 60 * 1000 : null;
     const latestAllowed =
       eventTs && Number.isFinite(eventTs) ? eventTs + 30 * 60 * 1000 : null;
+    const candidateIdsSet =
+      pendingFeedbackEvent?.candidateIds && pendingFeedbackEvent.candidateIds.length
+        ? new Set(pendingFeedbackEvent.candidateIds)
+        : null;
     const knownSet =
       pendingFeedbackEvent?.knownTxIds && pendingFeedbackEvent.knownTxIds.length
         ? new Set(pendingFeedbackEvent.knownTxIds)
         : null;
-    const searchPool =
-      pendingFeedbackEvent && knownSet
+    const basePool = candidateIdsSet
+      ? tx.filter((item) => candidateIdsSet.has(item.id))
+      : pendingFeedbackEvent && knownSet
         ? tx.filter((item) => !knownSet.has(item.id))
         : tx;
     const candidateSource =
-      pendingFeedbackEvent && searchPool.length === 0 ? tx : searchPool;
+      pendingFeedbackEvent && !candidateIdsSet && basePool.length === 0 ? tx : basePool;
     const candidate = candidateSource.find((item) => {
       const meta = formatTxType(item.type);
       if (meta.tone !== "earn" && meta.tone !== "redeem") return false;
-      if (!isPurchaseTransaction(item.type)) return false;
+      if (!isPurchaseTransaction(item.type, item.orderId)) return false;
       if (ratedTxSet.has(item.id) || dismissedTxSet.has(item.id)) return false;
-      if (!pendingFeedbackEvent) return true;
+      if (!pendingFeedbackEvent || pendingFeedbackEvent.source === "observer") return true;
       const createdAtMs = parseDateMs(item.createdAt);
       if (!createdAtMs) return false;
       if (earliestAllowed && createdAtMs < earliestAllowed) return false;
       if (latestAllowed && createdAtMs > latestAllowed) return false;
       return true;
     });
-    if (!candidate) return;
+    if (!candidate) {
+      if (pendingFeedbackEvent?.source === "observer") {
+        setPendingFeedbackEvent(null);
+      }
+      return;
+    }
     setPendingFeedbackEvent(null);
     setFeedbackRating(0);
     setFeedbackComment("");
