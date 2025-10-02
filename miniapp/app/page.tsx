@@ -13,6 +13,7 @@ import {
   transactions,
   referralLink,
   referralActivate,
+  promoCodeApply,
 } from "../lib/api";
 import Spinner from "../components/Spinner";
 import Toast from "../components/Toast";
@@ -555,31 +556,39 @@ export default function Page() {
         setToast({ msg: "Введите промокод", type: "error" });
         return;
       }
-      if (!customerId) {
-        setToast({ msg: "Не удалось определить клиента", type: "error" });
-        return;
-      }
-      setPromoLoading(true);
-      try {
-        const result = await referralActivate(code, customerId);
-        if (result.success) {
-          setToast({ msg: "Промокод активирован", type: "success" });
-          setPromoCode("");
-          await Promise.allSettled([loadBalance(), loadTx()]);
-        } else {
-          setToast({
-            msg: result.message ? `Не удалось активировать: ${result.message}` : "Промокод не подошёл",
-            type: "error",
-          });
+    if (!customerId) {
+      setToast({ msg: "Не удалось определить клиента", type: "error" });
+      return;
+    }
+    if (!merchantId) {
+      setToast({ msg: "Не удалось определить мерчанта", type: "error" });
+      return;
+    }
+    setPromoLoading(true);
+    try {
+      const result = await promoCodeApply(merchantId, customerId, code);
+      if (result.ok) {
+        const successMessage = result.message ||
+          (result.pointsIssued > 0
+            ? `Начислено ${result.pointsIssued} баллов`
+            : "Промокод активирован");
+        setToast({ msg: successMessage, type: "success" });
+        setPromoCode("");
+        if (typeof result.balance === "number" && !Number.isNaN(result.balance)) {
+          setBal(result.balance);
         }
-      } catch (error) {
-        const message = resolveErrorMessage(error);
-        setToast({ msg: `Не удалось активировать: ${message}`, type: "error" });
-      } finally {
-        setPromoLoading(false);
+        await Promise.allSettled([loadBalance(), loadTx()]);
+      } else {
+        setToast({ msg: "Промокод не подошёл", type: "error" });
       }
-    },
-    [promoCode, customerId, loadBalance, loadTx]
+    } catch (error) {
+      const message = resolveErrorMessage(error);
+      setToast({ msg: `Не удалось активировать: ${message}`, type: "error" });
+    } finally {
+      setPromoLoading(false);
+    }
+  },
+    [promoCode, customerId, merchantId, loadBalance, loadTx]
   );
 
   const cashbackPercent = useMemo(() => {

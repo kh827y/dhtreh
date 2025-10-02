@@ -103,7 +103,7 @@ export default function PromocodesPage() {
     setError('');
     try {
       const qs = new URLSearchParams();
-      qs.set('status', tab === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE');
+      qs.set('status', tab === 'ACTIVE' ? 'ACTIVE' : 'ARCHIVE');
       qs.set('limit', '200');
       const res = await fetch(`/api/portal/promocodes?${qs.toString()}`);
       const data = await res.json();

@@ -478,6 +478,7 @@ Response 200:
 - `GET /portal/loyalty/promocodes?status=ACTIVE|ARCHIVE|ALL` — доступ к «сырым» полям `PromoCode` (включая метрики) для страницы лояльности.
 - `POST /portal/loyalty/promocodes` — создание через `LoyaltyPromoCodePayload` (код, сегмент, уровни, лимиты, autoArchive).
 - `PUT /portal/loyalty/promocodes/:id` / `POST /portal/loyalty/promocodes/:id/status` / `POST /portal/loyalty/promocodes/bulk/status` — управление состояниями и массовое архивирование.
+- `POST /loyalty/promocodes/apply` — активация промокода клиентом (мини-аппа) с начислением баллов и TTL.`
 
 В API лояльности промокод передаётся полем `promoCode` в `POST /loyalty/quote` и `POST /loyalty/commit`. При применении начисляются дополнительные баллы, TTL и уровень согласно настройкам.
 
