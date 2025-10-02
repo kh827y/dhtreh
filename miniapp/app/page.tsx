@@ -22,6 +22,7 @@ import {
   referralLink,
   referralActivate,
   promoCodeApply,
+  submitReview,
 } from "../lib/api";
 import Spinner from "../components/Spinner";
 import Toast from "../components/Toast";
@@ -88,6 +89,8 @@ type TransactionItem = {
   amount: number;
   createdAt: string;
   orderId: string | null;
+  outletId: string | null;
+  staffId: string | null;
 };
 
 const genderOptions: Array<{ value: "male" | "female"; label: string }> = [
@@ -268,6 +271,7 @@ export default function Page() {
   const [feedbackRating, setFeedbackRating] = useState<number>(0);
   const [feedbackComment, setFeedbackComment] = useState<string>("");
   const [feedbackTxId, setFeedbackTxId] = useState<string | null>(null);
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState<boolean>(false);
   const [pendingFeedbackEvent, setPendingFeedbackEvent] = useState<
     | {
         ts: number;
@@ -293,16 +297,34 @@ export default function Page() {
     const share = auth.shareSettings;
     if (!share || !share.enabled) return [] as Array<{ id: string; url: string }>;
     if (!feedbackRating || feedbackRating < share.threshold) return [] as Array<{ id: string; url: string }>;
+    const activeTx = feedbackTxId ? tx.find((item) => item.id === feedbackTxId) ?? null : null;
+    const activeOutletId = activeTx?.outletId ?? null;
     const result: Array<{ id: string; url: string }> = [];
-    for (const platform of share.platforms) {
+    for (const platform of share.platforms || []) {
+      if (!platform || typeof platform !== "object") continue;
       if (!platform.enabled) continue;
-      if (typeof platform.url !== "string") continue;
-      const trimmed = platform.url.trim();
-      if (!trimmed) continue;
-      result.push({ id: platform.id, url: trimmed });
+      const outlets = Array.isArray(platform.outlets) ? platform.outlets : [];
+      let url: string | null = null;
+      if (activeOutletId) {
+        const outletMatch = outlets.find((item) => item && item.outletId === activeOutletId);
+        if (outletMatch && typeof outletMatch.url === "string" && outletMatch.url.trim()) {
+          url = outletMatch.url.trim();
+        }
+      }
+      if (!url && outlets.length > 0) {
+        const fallbackOutlet = outlets.find((item) => item && typeof item.url === "string" && item.url.trim());
+        if (fallbackOutlet) {
+          url = fallbackOutlet.url.trim();
+        }
+      }
+      if (!url && typeof platform.url === "string" && platform.url.trim()) {
+        url = platform.url.trim();
+      }
+      if (!url) continue;
+      result.push({ id: platform.id, url });
     }
     return result;
-  }, [auth.shareSettings, feedbackRating]);
+  }, [auth.shareSettings, feedbackRating, feedbackTxId, tx]);
 
   const handleShareClick = useCallback((url: string) => {
     if (!url) return;
@@ -437,6 +459,8 @@ export default function Page() {
         amount: number;
         createdAt: string;
         orderId?: string | null;
+        outletId?: string | null;
+        staffId?: string | null;
       }>,
     ) => {
       return items
@@ -447,6 +471,8 @@ export default function Page() {
           amount: i.amount,
           createdAt: i.createdAt,
           orderId: i.orderId ?? null,
+          outletId: i.outletId ?? null,
+          staffId: i.staffId ?? null,
         }));
     },
     []
@@ -817,24 +843,55 @@ export default function Page() {
   }, [feedbackTxId]);
 
   const handleFeedbackSubmit = useCallback(
-    (event: FormEvent<HTMLFormElement>) => {
+    async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
       if (!feedbackRating) {
         setToast({ msg: "Поставьте оценку", type: "error" });
         return;
       }
-      if (feedbackTxId) {
-        setRatedTransactions((prev) =>
-          prev.includes(feedbackTxId) ? prev : [...prev, feedbackTxId]
-        );
+      if (!merchantId || !customerId) {
+        setToast({ msg: "Не удалось определить клиента", type: "error" });
+        return;
       }
-      setToast({ msg: "Спасибо за отзыв!", type: "success" });
-      setFeedbackOpen(false);
-      setFeedbackTxId(null);
-      setFeedbackComment("");
-      setFeedbackRating(0);
+      const activeTx = feedbackTxId
+        ? tx.find((item) => item.id === feedbackTxId) ?? null
+        : null;
+      try {
+        setFeedbackSubmitting(true);
+        await submitReview({
+          merchantId,
+          customerId,
+          rating: feedbackRating,
+          comment: feedbackComment,
+          orderId: activeTx?.orderId ?? null,
+          transactionId: feedbackTxId,
+          outletId: activeTx?.outletId ?? null,
+          staffId: activeTx?.staffId ?? null,
+        });
+        if (feedbackTxId) {
+          setRatedTransactions((prev) =>
+            prev.includes(feedbackTxId) ? prev : [...prev, feedbackTxId]
+          );
+        }
+        setToast({ msg: "Спасибо за отзыв!", type: "success" });
+        setFeedbackOpen(false);
+        setFeedbackTxId(null);
+        setFeedbackComment("");
+        setFeedbackRating(0);
+      } catch (error) {
+        setToast({ msg: resolveErrorMessage(error), type: "error" });
+      } finally {
+        setFeedbackSubmitting(false);
+      }
     },
-    [feedbackRating, feedbackTxId]
+    [
+      feedbackRating,
+      merchantId,
+      customerId,
+      feedbackTxId,
+      tx,
+      feedbackComment,
+    ]
   );
 
   const handleFeedbackCommentChange = useCallback(
@@ -1467,9 +1524,10 @@ export default function Page() {
             <button
               type="submit"
               className={styles.feedbackSubmit}
-              disabled={!feedbackRating}
+              disabled={!feedbackRating || feedbackSubmitting}
+              aria-busy={feedbackSubmitting || undefined}
             >
-              Отправить
+              {feedbackSubmitting ? "Отправляем…" : "Отправить"}
             </button>
           </form>
         </div>
