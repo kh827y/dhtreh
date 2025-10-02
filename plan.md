@@ -50,6 +50,9 @@
 - [x] Проверил миграции `backfill_device_outlet`, `push_outlet_id`, `remove_device_table`, `referral_program_enhancements`: добавил проверки схемы и гарантировал совместимость со старыми/новыми базами.
 - [x] Починил сборку после апдейта Prisma/Nest: удалил лишний декоратор, привёл типы JSON и переписал подсчёт уникальных участников акций через groupBy.
 
+## Хотфикс 2025-10-02 — Подписи Bridge для лояльности
+- [x] CashierGuard: сравниваем bridge-подпись с реальным телом запроса и учитываем `outletId` из тела при commit/cancel, чтобы `/loyalty/quote|commit|refund|cancel` снова проходили без Staff-Key при корректной подписи.
+
 1) Бэкенд — мерчанты/владелец/CRUD (минимальная версия, обратная совместимость)
 - Добавить в админ‑API: PUT/DELETE мерчанта; POST /merchants принимать ownerName и авто‑создавать сотрудника‑владельца (роль MERCHANT). До миграции — без новых полей, только `login`.
 - Перенос настроек в админку: использовать существующие поля `MerchantSettings` (qrTtlSec, requireBridgeSig, requireStaffKey); портальную страницу настроек позже очистить.
@@ -314,6 +317,7 @@
   - Cashier UI: реализовать экран кассира (login 9‑значный пароль мерчанта → ввод PIN сотрудника по точке) и привязку к `X-Staff-Key`.
   - Promocodes (points): расширить обработку в `LoyaltyService.commit()` для начислений по промокоду (POINTS) — idempotent по `orderId`, структурные логи/метрики; e2e.
     - [x] Централизовать бизнес-логику промокодов в `PromoCodesService`, перевести портал/loyalty-контроллеры и метрики на единый слой.
+    - [x] CashierGuard учитывает bridge signature и teleauth при `requireStaffKey`, чтобы `quote/commit/refund/cancel` не падали с 403.
   - E2E: добавить кейс earn по промокоду POINTS (issue → quote/commit с promoCode → проверка баланса/транзакций).
 
 ## Волна 3 — Завершена (2025-09-15)
