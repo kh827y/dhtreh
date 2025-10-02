@@ -129,6 +129,16 @@ function formatTxType(type: string): { title: string; tone: "earn" | "redeem" | 
   return { title: type, tone: "other" };
 }
 
+function isPurchaseTransaction(type: string): boolean {
+  const lower = type.toLowerCase();
+  if (lower.includes("promo")) return false;
+  if (lower.includes("campaign")) return false;
+  if (lower.includes("referral")) return false;
+  if (lower.includes("registration")) return false;
+  if (lower.includes("birthday")) return false;
+  return lower.includes("purchase") || lower.includes("order") || lower.includes("sale");
+}
+
 function formatAmount(amount: number): string {
   const sign = amount > 0 ? "+" : amount < 0 ? "" : "";
   return `${sign}${amount.toLocaleString("ru-RU", { maximumFractionDigits: 2 })}`;
@@ -225,6 +235,7 @@ export default function Page() {
   const [ratedTransactions, setRatedTransactions] = useState<string[]>([]);
   const [ratedReady, setRatedReady] = useState<boolean>(false);
   const [dismissedTransactions, setDismissedTransactions] = useState<string[]>([]);
+  const [dismissedReady, setDismissedReady] = useState<boolean>(false);
 
   useEffect(() => {
     const tgUser = getTelegramUser();
@@ -420,17 +431,51 @@ export default function Page() {
   }, [ratedTransactions, ratedReady]);
 
   useEffect(() => {
-    if (!ratedReady || feedbackOpen) return;
+    try {
+      if (typeof window === "undefined") return;
+      const saved = localStorage.getItem("miniapp.dismissedTransactions");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          setDismissedTransactions(parsed.filter((id) => typeof id === "string"));
+        }
+      }
+    } catch {
+      setDismissedTransactions([]);
+    } finally {
+      setDismissedReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!dismissedReady) return;
+    try {
+      if (typeof window === "undefined") return;
+      localStorage.setItem(
+        "miniapp.dismissedTransactions",
+        JSON.stringify(dismissedTransactions),
+      );
+    } catch {
+      // ignore
+    }
+  }, [dismissedTransactions, dismissedReady]);
+
+  useEffect(() => {
+    if (!ratedReady || !dismissedReady || feedbackOpen) return;
     if (!tx.length) return;
     const latest = tx[0];
     const meta = formatTxType(latest.type);
     if (meta.tone !== "earn" && meta.tone !== "redeem") return;
+    if (!isPurchaseTransaction(latest.type)) return;
     if (ratedTxSet.has(latest.id) || dismissedTxSet.has(latest.id)) return;
     setFeedbackRating(0);
     setFeedbackComment("");
     setFeedbackTxId(latest.id);
+    setDismissedTransactions((prev) =>
+      prev.includes(latest.id) ? prev : [...prev, latest.id],
+    );
     setFeedbackOpen(true);
-  }, [tx, ratedTxSet, dismissedTxSet, ratedReady, feedbackOpen]);
+  }, [tx, ratedTxSet, dismissedTxSet, ratedReady, dismissedReady, feedbackOpen]);
 
   const handleFeedbackClose = useCallback(() => {
     if (feedbackTxId) {
