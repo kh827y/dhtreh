@@ -29,6 +29,7 @@ export function getMerchantFromContext(initData: string | null): string | undefi
 export function useMiniappAuth(defaultMerchant: string) {
   const [merchantId, setMerchantId] = useState<string>(defaultMerchant);
   const [customerId, setCustomerId] = useState<string | null>(null);
+  const [initData, setInitData] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
   const [theme, setTheme] = useState<{ primary?: string|null; bg?: string|null; logo?: string|null; ttl?: number }>({});
@@ -37,6 +38,7 @@ export function useMiniappAuth(defaultMerchant: string) {
     const saved = localStorage.getItem('miniapp.customerId');
     if (saved) setCustomerId(saved);
     const id = getInitData();
+    setInitData(id);
     const ctxMerchant = getMerchantFromContext(id);
     if (ctxMerchant) setMerchantId(ctxMerchant);
     const mId = ctxMerchant || merchantId;
@@ -72,6 +74,6 @@ export function useMiniappAuth(defaultMerchant: string) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaultMerchant]);
 
-  return { merchantId, setMerchantId, customerId, setCustomerId, loading, error, theme } as const;
+  return { merchantId, setMerchantId, customerId, setCustomerId, loading, error, theme, initData } as const;
 }
 

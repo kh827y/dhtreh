@@ -280,7 +280,7 @@ export default function Page() {
       return;
     }
     try {
-      const r = await mintQr(customerId, merchantId, ttl);
+      const r = await mintQr(customerId, merchantId, ttl, auth.initData);
       setQrToken(r.token);
       setStatus(`QR обновлён (TTL ${r.ttl}с)`);
       setToast({ msg: "QR сгенерирован", type: "success" });
@@ -289,7 +289,7 @@ export default function Page() {
       setStatus(`Ошибка генерации QR: ${message}`);
       setToast({ msg: "Не удалось обновить QR", type: "error" });
     }
-  }, [customerId, merchantId, ttl]);
+  }, [customerId, merchantId, ttl, auth.initData]);
 
   const loadBalance = useCallback(async () => {
     if (!customerId) {
