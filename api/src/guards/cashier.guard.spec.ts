@@ -149,7 +149,7 @@ describe('CashierGuard', () => {
 
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
   });
-
+  
   it('при requireStaffKey принимает валидную bridge-подпись даже с дополнительными полями', async () => {
     const secret = 'bridge_secret';
     const body = {
