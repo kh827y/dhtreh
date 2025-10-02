@@ -108,8 +108,19 @@ describe('CashierGuard', () => {
 
   it('при requireStaffKey принимает валидную bridge-подпись даже с дополнительными полями', async () => {
     const secret = 'bridge_secret';
-    const body = { merchantId: 'M-123', holdId: 'H-1', orderId: 'O-1', extra: 'ignore-me' };
-    const payload = JSON.stringify(body);
+    const body = {
+      merchantId: 'M-123',
+      holdId: 'H-1',
+      orderId: 'O-1',
+      receiptNumber: 'R-777',
+      extra: 'ignore-me',
+    };
+    const payload = JSON.stringify({
+      merchantId: 'M-123',
+      holdId: 'H-1',
+      orderId: 'O-1',
+      receiptNumber: 'R-777',
+    });
     const ts = Math.floor(Date.now() / 1000).toString();
     const sig = crypto.createHmac('sha256', secret).update(ts + '.' + payload).digest('base64');
     const header = `v1,ts=${ts},sig=${sig}`;
@@ -120,6 +131,41 @@ describe('CashierGuard', () => {
     const ctx = makeCtx({
       method: 'POST',
       route: { path: '/loyalty/commit' },
+      headers: { 'x-bridge-signature': header },
+      body,
+      query: {},
+      params: {},
+    });
+
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
+  });
+
+  it('при requireStaffKey принимает валидную bridge-подпись на refund, игнорируя необязательные поля', async () => {
+    const secret = 'refund_secret';
+    const body = {
+      merchantId: 'M-55',
+      orderId: 'O-99',
+      refundTotal: 1500,
+      refundEligibleTotal: 1200,
+      reason: 'double-charge',
+    };
+    const payload = JSON.stringify({
+      merchantId: 'M-55',
+      orderId: 'O-99',
+      refundTotal: 1500,
+      refundEligibleTotal: 1200,
+    });
+    const ts = Math.floor(Date.now() / 1000).toString();
+    const sig = crypto.createHmac('sha256', secret).update(ts + '.' + payload).digest('base64');
+    const header = `v1,ts=${ts},sig=${sig}`;
+
+    prisma.merchantSettings.findUnique.mockResolvedValue({ requireStaffKey: true, bridgeSecret: secret });
+    prisma.receipt.findUnique.mockResolvedValue({ outletId: 'OUT-77' });
+    prisma.outlet.findFirst.mockResolvedValue({ bridgeSecret: secret, bridgeSecretNext: null });
+
+    const ctx = makeCtx({
+      method: 'POST',
+      route: { path: '/loyalty/refund' },
       headers: { 'x-bridge-signature': header },
       body,
       query: {},

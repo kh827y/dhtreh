@@ -59,7 +59,6 @@ export class CashierGuard implements CanActivate {
     if (!sig) return false;
 
     const body = req?.body || {};
-    const payloadFromBody = JSON.stringify(body);
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
 
     let merchantId: string | undefined = merchantIdHint || undefined;
@@ -69,7 +68,7 @@ export class CashierGuard implements CanActivate {
     if (normalizedPath === '/loyalty/quote') {
       if (!merchantId) return false;
       outletId = body?.outletId ?? null;
-      payload = payloadFromBody;
+      payload = JSON.stringify(body);
     } else if (normalizedPath === '/loyalty/commit') {
       const holdId: string | undefined = body?.holdId;
       if (!holdId) return false;
@@ -83,9 +82,17 @@ export class CashierGuard implements CanActivate {
       merchantId = merchantId || hold?.merchantId || undefined;
       if (!merchantId) return false;
       outletId = body?.outletId ?? hold?.outletId ?? null;
-      payload = payloadFromBody;
+      if (!body?.orderId) return false;
+      payload = JSON.stringify({
+        merchantId,
+        holdId,
+        orderId: body.orderId,
+        receiptNumber: body?.receiptNumber ?? undefined,
+      });
     } else if (normalizedPath === '/loyalty/refund') {
       if (!merchantId) return false;
+      if (!body?.orderId) return false;
+      if (body?.refundTotal === undefined || body?.refundTotal === null) return false;
       try {
         const receipt = await this.prisma.receipt.findUnique({
           where: { merchantId_orderId: { merchantId, orderId: body?.orderId } },
@@ -93,7 +100,12 @@ export class CashierGuard implements CanActivate {
         });
         outletId = receipt?.outletId ?? null;
       } catch {}
-      payload = payloadFromBody;
+      payload = JSON.stringify({
+        merchantId,
+        orderId: body.orderId,
+        refundTotal: body.refundTotal,
+        refundEligibleTotal: body?.refundEligibleTotal ?? undefined,
+      });
     } else if (normalizedPath === '/loyalty/cancel') {
       const holdId: string | undefined = body?.holdId;
       if (!holdId) return false;
@@ -107,7 +119,7 @@ export class CashierGuard implements CanActivate {
       merchantId = merchantId || hold?.merchantId || undefined;
       if (!merchantId) return false;
       outletId = body?.outletId ?? hold?.outletId ?? null;
-      payload = payloadFromBody;
+      payload = JSON.stringify({ merchantId, holdId });
     } else {
       return false;
     }
