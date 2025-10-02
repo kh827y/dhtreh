@@ -1,7 +1,14 @@
 "use client";
 
 import Image from "next/image";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ChangeEvent,
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import QrCanvas from "../components/QrCanvas";
 import {
   balance,
@@ -211,6 +218,13 @@ export default function Page() {
   const [inviteApplied, setInviteApplied] = useState<boolean>(false);
   const [promoCode, setPromoCode] = useState<string>("");
   const [promoLoading, setPromoLoading] = useState<boolean>(false);
+  const [feedbackOpen, setFeedbackOpen] = useState<boolean>(false);
+  const [feedbackRating, setFeedbackRating] = useState<number>(0);
+  const [feedbackComment, setFeedbackComment] = useState<string>("");
+  const [feedbackTxId, setFeedbackTxId] = useState<string | null>(null);
+  const [ratedTransactions, setRatedTransactions] = useState<string[]>([]);
+  const [ratedReady, setRatedReady] = useState<boolean>(false);
+  const [dismissedTransactions, setDismissedTransactions] = useState<string[]>([]);
 
   useEffect(() => {
     const tgUser = getTelegramUser();
@@ -374,6 +388,89 @@ export default function Page() {
       setLevelCatalog([]);
     }
   }, [merchantId, retry]);
+
+  const ratedTxSet = useMemo(() => new Set(ratedTransactions), [ratedTransactions]);
+  const dismissedTxSet = useMemo(() => new Set(dismissedTransactions), [dismissedTransactions]);
+
+  useEffect(() => {
+    try {
+      if (typeof window === "undefined") return;
+      const saved = localStorage.getItem("miniapp.ratedTransactions");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          setRatedTransactions(parsed.filter((id) => typeof id === "string"));
+        }
+      }
+    } catch {
+      setRatedTransactions([]);
+    } finally {
+      setRatedReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!ratedReady) return;
+    try {
+      if (typeof window === "undefined") return;
+      localStorage.setItem("miniapp.ratedTransactions", JSON.stringify(ratedTransactions));
+    } catch {
+      // ignore
+    }
+  }, [ratedTransactions, ratedReady]);
+
+  useEffect(() => {
+    if (!ratedReady || feedbackOpen) return;
+    if (!tx.length) return;
+    const latest = tx[0];
+    const meta = formatTxType(latest.type);
+    if (meta.tone !== "earn" && meta.tone !== "redeem") return;
+    if (ratedTxSet.has(latest.id) || dismissedTxSet.has(latest.id)) return;
+    setFeedbackRating(0);
+    setFeedbackComment("");
+    setFeedbackTxId(latest.id);
+    setFeedbackOpen(true);
+  }, [tx, ratedTxSet, dismissedTxSet, ratedReady, feedbackOpen]);
+
+  const handleFeedbackClose = useCallback(() => {
+    if (feedbackTxId) {
+      setDismissedTransactions((prev) =>
+        prev.includes(feedbackTxId) ? prev : [...prev, feedbackTxId]
+      );
+    }
+    setFeedbackOpen(false);
+    setFeedbackTxId(null);
+    setFeedbackRating(0);
+    setFeedbackComment("");
+  }, [feedbackTxId]);
+
+  const handleFeedbackSubmit = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (!feedbackRating) {
+        setToast({ msg: "Поставьте оценку", type: "error" });
+        return;
+      }
+      if (feedbackTxId) {
+        setRatedTransactions((prev) =>
+          prev.includes(feedbackTxId) ? prev : [...prev, feedbackTxId]
+        );
+      }
+      setToast({ msg: "Спасибо за отзыв!", type: "success" });
+      setFeedbackOpen(false);
+      setFeedbackTxId(null);
+      setFeedbackComment("");
+      setFeedbackRating(0);
+    },
+    [feedbackRating, feedbackTxId]
+  );
+
+  const handleFeedbackCommentChange = useCallback(
+    (event: ChangeEvent<HTMLTextAreaElement>) => {
+      setFeedbackComment(event.currentTarget.value);
+    },
+    []
+  );
 
   useEffect(() => {
     if (!qrToken || !autoRefresh) return;
@@ -927,6 +1024,65 @@ export default function Page() {
       {error && !loading && <div className={styles.error}>{error}</div>}
 
       {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
+
+      {feedbackOpen && (
+        <div className={styles.modalBackdrop} onClick={handleFeedbackClose}>
+          <form
+            className={`${styles.sheet} ${styles.feedbackSheet}`}
+            onClick={(event) => event.stopPropagation()}
+            onSubmit={handleFeedbackSubmit}
+          >
+            <button
+              type="button"
+              className={styles.feedbackClose}
+              onClick={handleFeedbackClose}
+              aria-label="Закрыть окно оценки"
+            >
+              ✕
+            </button>
+            <div className={styles.feedbackHeader}>
+              <div className={styles.feedbackTitle}>Оцените визит.</div>
+              <div className={styles.feedbackSubtitle}>
+                Ваш отзыв поможет нам улучшить сервис.
+              </div>
+            </div>
+            <div className={styles.feedbackStars} role="radiogroup" aria-label="Оценка визита">
+              {[1, 2, 3, 4, 5].map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={`${styles.starButton} ${
+                    feedbackRating >= value ? styles.starButtonActive : ""
+                  }`}
+                  onClick={() => setFeedbackRating(value)}
+                  role="radio"
+                  aria-checked={feedbackRating >= value}
+                  aria-label={`Оценка ${value}`}
+                >
+                  ★
+                </button>
+              ))}
+            </div>
+            <label className={styles.feedbackCommentLabel}>
+              Комментарий
+              <textarea
+                className={styles.feedbackComment}
+                value={feedbackComment}
+                onChange={handleFeedbackCommentChange}
+                placeholder="Расскажите, что понравилось"
+                rows={3}
+              />
+            </label>
+            <button
+              type="submit"
+              className={styles.feedbackSubmit}
+              disabled={!feedbackRating}
+            >
+              Отправить
+            </button>
+          </form>
+        </div>
+      )}
 
       {showQrModal && (
         <div className={styles.modalBackdrop} onClick={() => setShowQrModal(false)}>
