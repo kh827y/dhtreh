@@ -43,11 +43,10 @@ export function useMiniappAuth(defaultMerchant: string) {
     const ctxMerchant = getMerchantFromContext(id);
     if (ctxMerchant) setMerchantId(ctxMerchant);
     const mId = ctxMerchant || merchantId;
-    // Dev fallback: if no Telegram initData and no saved customerId, auto-generate one for localhost/dev
+    // Dev fallback: if no Telegram initData and no saved customerId, optional auto-generate controlled by env flag only
     try {
       const devAuto = (process.env.NEXT_PUBLIC_MINIAPP_DEV_AUTO_CUSTOMER === '1') ||
-        ((process.env.NEXT_PUBLIC_MINIAPP_DEV_AUTO_CUSTOMER || '').toLowerCase() === 'true') ||
-        (typeof window !== 'undefined' && window.location && window.location.hostname === 'localhost');
+        ((process.env.NEXT_PUBLIC_MINIAPP_DEV_AUTO_CUSTOMER || '').toLowerCase() === 'true');
       if (!saved && !id && devAuto) {
         const gen = 'user-' + Math.random().toString(36).slice(2, 10);
         setCustomerId(gen);

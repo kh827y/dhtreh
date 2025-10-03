@@ -375,6 +375,21 @@ export class LoyaltyController {
       }
     } catch {}
 
+    // Наблюдаемость: метрика решения по второму шагу (share)
+    try {
+      const hasOutlet = !!outletId;
+      const enabled = !!(sharePayload?.enabled);
+      const threshold = sharePayload?.threshold ?? 5;
+      const hasOptions = (sharePayload?.options?.length ?? 0) > 0;
+      const outcomeShown = hasOutlet && enabled && rating >= threshold && hasOptions;
+      let reason = 'ok';
+      if (!hasOutlet) reason = 'no_outlet';
+      else if (!enabled) reason = 'disabled';
+      else if (rating < threshold) reason = 'low_rating';
+      else if (!hasOptions) reason = 'no_options';
+      this.metrics.inc('reviews_share_stage_total', { outcome: outcomeShown ? 'shown' : 'hidden', reason });
+    } catch {}
+
     return {
       ok: true,
       reviewId: result.id,

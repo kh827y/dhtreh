@@ -161,6 +161,40 @@ export class MerchantsService {
     },
   } as const;
 
+  // Схема валидации секции reviewsShare (упрощённо; допускаем расширяемость платформ)
+  private reviewsShareSchema = {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      enabled: { type: 'boolean' },
+      threshold: { type: 'integer', minimum: 1, maximum: 5 },
+      platforms: {
+        type: 'object',
+        additionalProperties: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            enabled: { type: 'boolean' },
+            url: { type: 'string' },
+            outlets: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  outletId: { type: 'string' },
+                  url: { type: 'string' },
+                },
+                required: ['outletId', 'url'],
+              },
+            },
+          },
+        },
+      },
+    },
+    required: ['enabled', 'threshold'],
+  } as const;
+
   async getSettings(merchantId: string) {
     const merchant = await this.prisma.merchant.findUnique({
       where: { id: merchantId },
@@ -220,6 +254,12 @@ export class MerchantsService {
         if (hasRulesArr) {
           const valid = this.ajv.validate(this.rulesSchema as any, (normalized as any).rules);
           if (!valid) throw new Error(this.ajv.errorsText(this.ajv.errors, { separator: '; ' }));
+        }
+        // Валидация секции reviewsShare (если присутствует)
+        const rs = (normalized as any).reviewsShare;
+        if (rs && typeof rs === 'object' && !Array.isArray(rs)) {
+          const validShare = this.ajv.validate(this.reviewsShareSchema as any, rs);
+          if (!validShare) throw new Error('reviewsShare invalid: ' + this.ajv.errorsText(this.ajv.errors, { separator: '; ' }));
         }
         // Лёгкая валидация antifraud секции (если есть)
         const af = (normalized as any).af;

@@ -34,6 +34,15 @@
 - [x] Обновить README/доки по изменениям
 - [x] Miniapp: второй этап окна отзыва берёт площадки из ответа `POST /loyalty/reviews`, fallback убирает пустые просьбы без ссылок, документировано API
 
+## Хотфикс 2025-10-03 — Отзывы (production hardening)
+- [x] Убраны локальные значения в прод‑коде портала: `merchant-portal/app/api/portal/_lib.ts` больше не имеет дефолта `http://localhost:3000`, требуется `NEXT_PUBLIC_API_BASE`.
+- [x] Miniapp: dev‑автогенерация `customerId` теперь только по флагу `NEXT_PUBLIC_MINIAPP_DEV_AUTO_CUSTOMER` (проверка `localhost` удалена) — прод по умолчанию `0`.
+- [x] MerchantsService: Ajv‑валидация `rulesJson.reviewsShare` (enabled/threshold/platforms/outlets) в `validateRules()`.
+- [x] Portal Catalog: валидация URL для `reviewsShareLinks` (http/https, без `javascript:`), патч‑обновление ссылок точек (строка = upsert, null = удалить), кейсы мержатся без потерь.
+- [x] LoyaltyController: метрика `reviews_share_stage_total{outcome,reason}` для наблюдаемости решений по показу второго шага.
+- [x] Miniapp/Backend: строгая привязка «поделиться отзывом» только к текущей точке (`outletId`) — фоллбеки на другие точки/`platform.url` удалены.
+- [x] .env: обновлён `.env.production.example` — добавлены `NEXT_PUBLIC_API_BASE`, `NEXT_PUBLIC_MINIAPP_DEV_AUTO_CUSTOMER`.
+
 ## Хотфикс 2025-09-15 — Группы доступа (в работе)
 - [x] Диагностировать `/portal/access-groups`: выяснил отсутствие дефолтных групп и отсутствие UX-обработки ошибок в портале.
 - [x] Исправить сервис `MerchantPanelService`: автосоздание дефолтных групп, структурные логи/метрики, проверка сохранения участников.

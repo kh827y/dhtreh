@@ -173,18 +173,34 @@ export class PortalCatalogService {
     };
   }
 
-  private sanitizeReviewLinksInput(input?: unknown) {
-    if (!input || typeof input !== 'object') return undefined as undefined | Record<string, string>;
-    const result: Record<string, string> = {};
+  private isValidHttpUrl(url: string): boolean {
+    if (!url || typeof url !== 'string') return false;
+    const trimmed = url.trim();
+    if (!trimmed || trimmed.length > 2048) return false;
+    try {
+      const u = new URL(trimmed);
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+      // базовая защита: без javascript:, data:, file:
+      return true;
+    } catch { return false; }
+  }
+
+  // Подготовка патча ссылок: сохраняем строки (валидные URL) и null, приводим ключи к lower-case
+  private prepareReviewLinksPatch(input?: unknown): Record<string, string | null> | undefined {
+    if (!input || typeof input !== 'object') return undefined;
+    const patch: Record<string, string | null> = {};
     for (const [rawKey, rawValue] of Object.entries(input as Record<string, unknown>)) {
       const key = String(rawKey || '').toLowerCase().trim();
       if (!key) continue;
+      if (rawValue == null) { patch[key] = null; continue; }
       if (typeof rawValue === 'string') {
         const trimmed = rawValue.trim();
-        if (trimmed.length) result[key] = trimmed;
+        if (!trimmed) { patch[key] = null; continue; }
+        if (!this.isValidHttpUrl(trimmed)) continue; // пропускаем невалидные
+        patch[key] = trimmed;
       }
     }
-    return Object.keys(result).length ? result : {};
+    return patch;
   }
 
   private extractReviewLinks(payload: Prisma.JsonValue | null | undefined) {
@@ -198,6 +214,19 @@ export class PortalCatalogService {
       }
     }
     return result;
+  }
+
+  // Применение патча: строки = upsert, null = удалить ключ
+  private applyReviewLinksPatch(existing: Prisma.JsonValue | null | undefined, patch: Record<string, string | null>) {
+    const base = this.extractReviewLinks(existing);
+    for (const [key, val] of Object.entries(patch)) {
+      if (val == null) {
+        delete base[key];
+      } else {
+        base[key] = val;
+      }
+    }
+    return base;
   }
 
   private mapOutlet(entity: Outlet): PortalOutletDto {
@@ -724,9 +753,11 @@ export class PortalCatalogService {
           latitude: this.toDecimal(dto.latitude),
           longitude: this.toDecimal(dto.longitude),
           reviewLinks: (() => {
-            const input = this.sanitizeReviewLinksInput(dto.reviewsShareLinks);
-            return input && Object.keys(input).length
-              ? (input as Prisma.InputJsonValue)
+            const patch = this.prepareReviewLinksPatch(dto.reviewsShareLinks);
+            if (!patch) return Prisma.JsonNull as Prisma.NullableJsonNullValueInput;
+            const merged = this.applyReviewLinksPatch(null, patch);
+            return Object.keys(merged).length
+              ? (merged as unknown as Prisma.InputJsonValue)
               : (Prisma.JsonNull as Prisma.NullableJsonNullValueInput);
           })(),
         },
@@ -767,9 +798,10 @@ export class PortalCatalogService {
     if (dto.longitude !== undefined) data.longitude = this.toDecimal(dto.longitude);
     if (dto.externalId !== undefined) data.externalId = dto.externalId?.trim() || null;
     if (dto.reviewsShareLinks !== undefined) {
-      const input = this.sanitizeReviewLinksInput(dto.reviewsShareLinks);
-      data.reviewLinks = input && Object.keys(input).length
-        ? (input as Prisma.InputJsonValue)
+      const patch = this.prepareReviewLinksPatch(dto.reviewsShareLinks) || {};
+      const merged = this.applyReviewLinksPatch(outlet.reviewLinks as any, patch);
+      data.reviewLinks = Object.keys(merged).length
+        ? (merged as unknown as Prisma.InputJsonValue)
         : (Prisma.JsonNull as Prisma.NullableJsonNullValueInput);
     }
     const showSchedule = dto.showSchedule !== undefined ? dto.showSchedule : outlet.scheduleEnabled;
