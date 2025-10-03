@@ -8,9 +8,10 @@ import { PromoCodesController } from './controllers/promocodes.controller';
 import { OperationsLogController } from './controllers/operations-log.controller';
 import { TiersController } from './controllers/tiers.controller';
 import { PromoCodesModule } from '../promocodes/promocodes.module';
+import { CommunicationsModule } from '../communications/communications.module';
 
 @Module({
-  imports: [PrismaModule, MetricsModule, PromoCodesModule],
+  imports: [PrismaModule, MetricsModule, PromoCodesModule, CommunicationsModule],
   providers: [LoyaltyProgramService],
   controllers: [MechanicsController, PromotionsController, PromoCodesController, OperationsLogController, TiersController],
   exports: [LoyaltyProgramService],

@@ -61,10 +61,19 @@ export const TagSelect: React.FC<TagSelectProps> = ({
 
   return (
     <div ref={containerRef} style={{ position: 'relative' }}>
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={disabled ? -1 : 0}
+        aria-disabled={disabled || undefined}
         className="btn"
         onClick={() => !disabled && setOpen((prev) => !prev)}
+        onKeyDown={(e) => {
+          if (disabled) return;
+          if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+            e.preventDefault();
+            setOpen((prev) => !prev);
+          }
+        }}
         style={{
           width: '100%',
           justifyContent: 'space-between',
@@ -74,7 +83,6 @@ export const TagSelect: React.FC<TagSelectProps> = ({
           borderRadius: 10,
           cursor: disabled ? 'not-allowed' : 'pointer',
         }}
-        disabled={disabled}
       >
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           {selectedOptions.length === 0 && <span style={{ opacity: 0.6 }}>{placeholder}</span>}
@@ -114,7 +122,7 @@ export const TagSelect: React.FC<TagSelectProps> = ({
           )}
           {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
         </div>
-      </button>
+      </div>
 
       {open && (
         <div

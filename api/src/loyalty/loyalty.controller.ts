@@ -18,6 +18,7 @@ import { PromosService } from '../promos/promos.service';
 import { PromoCodesService } from '../promocodes/promocodes.service';
 import { ReviewService } from '../reviews/review.service';
 import type { MerchantSettings } from '@prisma/client';
+import { LedgerAccount, TxnType, WalletType, PromotionStatus, PromotionRewardType } from '@prisma/client';
 
 @Controller('loyalty')
 @UseGuards(CashierGuard)
@@ -43,6 +44,202 @@ export class LoyaltyController {
       } catch {}
     }
     return null;
+  }
+
+  // ===== Promotions (miniapp public) =====
+  @Get('promotions')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  async listPromotions(
+    @Query('merchantId') merchantId?: string,
+    @Query('customerId') customerId?: string,
+  ) {
+    const mid = typeof merchantId === 'string' ? merchantId.trim() : '';
+    const cid = typeof customerId === 'string' ? customerId.trim() : '';
+    if (!mid) throw new BadRequestException('merchantId required');
+    if (!cid) throw new BadRequestException('customerId required');
+    const now = new Date();
+    const promos = await this.prisma.loyaltyPromotion.findMany({
+      where: {
+        merchantId: mid,
+        status: { in: ['ACTIVE', 'SCHEDULED'] as any },
+        AND: [
+          { OR: [{ startAt: null }, { startAt: { lte: now } }, { status: 'SCHEDULED' as any }] },
+          { OR: [{ endAt: null }, { endAt: { gte: now } }] },
+          { OR: [{ segmentId: null }, { audience: { customers: { some: { customerId: cid } } } }] },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+      include: { metrics: true },
+    });
+    const existing = await this.prisma.promotionParticipant.findMany({
+      where: { merchantId: mid, customerId: cid, promotionId: { in: promos.map((p) => p.id) } },
+      select: { promotionId: true },
+    });
+    const claimedSet = new Set(existing.map((e) => e.promotionId));
+    return promos.map((p) => ({
+      id: p.id,
+      name: p.name,
+      description: p.description ?? null,
+      rewardType: p.rewardType,
+      rewardValue: p.rewardValue ?? null,
+      startAt: p.startAt ? p.startAt.toISOString() : null,
+      endAt: p.endAt ? p.endAt.toISOString() : null,
+      pointsExpireInDays: p.pointsExpireInDays ?? null,
+      canClaim: p.status === PromotionStatus.ACTIVE && p.rewardType === PromotionRewardType.POINTS && (p.rewardValue ?? 0) > 0 && !claimedSet.has(p.id),
+      claimed: claimedSet.has(p.id),
+    }));
+  }
+
+  @Post('promotions/claim')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async claimPromotion(
+    @Body()
+    body: {
+      merchantId?: string;
+      customerId?: string;
+      promotionId?: string;
+      outletId?: string | null;
+      staffId?: string | null;
+    },
+  ) {
+    const merchantId = typeof body?.merchantId === 'string' ? body.merchantId.trim() : '';
+    const customerId = typeof body?.customerId === 'string' ? body.customerId.trim() : '';
+    const promotionId = typeof body?.promotionId === 'string' ? body.promotionId.trim() : '';
+    const outletId = typeof body?.outletId === 'string' && body.outletId.trim() ? body.outletId.trim() : null;
+    const staffId = typeof body?.staffId === 'string' && body.staffId.trim() ? body.staffId.trim() : null;
+    if (!merchantId) throw new BadRequestException('merchantId required');
+    if (!customerId) throw new BadRequestException('customerId required');
+    if (!promotionId) throw new BadRequestException('promotionId required');
+
+    const now = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      const promo = await tx.loyaltyPromotion.findFirst({ where: { id: promotionId, merchantId } });
+      if (!promo) throw new BadRequestException('promotion not found');
+      if (promo.status !== PromotionStatus.ACTIVE) throw new BadRequestException('promotion is not active');
+      if (promo.startAt && promo.startAt > now) throw new BadRequestException('promotion not started yet');
+      if (promo.endAt && promo.endAt < now) throw new BadRequestException('promotion ended');
+      if (promo.rewardType !== PromotionRewardType.POINTS) throw new BadRequestException('promotion is not points type');
+      const points = Math.max(0, Math.floor(Number(promo.rewardValue ?? 0)));
+      if (!Number.isFinite(points) || points <= 0) throw new BadRequestException('invalid reward value');
+
+      // audience check
+      if (promo.segmentId) {
+        const inSeg = await tx.segmentCustomer.findFirst({ where: { segmentId: promo.segmentId, customerId } });
+        if (!inSeg) throw new BadRequestException('not eligible for promotion');
+      }
+
+      // idempotency: if already participated — return alreadyClaimed
+      const existing = await tx.promotionParticipant.findFirst({ where: { merchantId, promotionId, customerId } });
+      if (existing) {
+        const walletEx = await tx.wallet.findFirst({ where: { merchantId, customerId, type: WalletType.POINTS } });
+        return {
+          ok: true,
+          alreadyClaimed: true,
+          promotionId,
+          pointsIssued: 0,
+          balance: walletEx?.balance ?? 0,
+        } as const;
+      }
+
+      // Ensure wallet
+      let wallet = await tx.wallet.findFirst({ where: { merchantId, customerId, type: WalletType.POINTS } });
+      if (!wallet) {
+        wallet = await tx.wallet.create({ data: { merchantId, customerId, type: WalletType.POINTS, balance: 0 } });
+      }
+
+      // Update balance
+      const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
+      const currentBalance = fresh?.balance ?? 0;
+      const balance = currentBalance + points;
+      await tx.wallet.update({ where: { id: wallet.id }, data: { balance } });
+
+      // Transaction record
+      await tx.transaction.create({
+        data: {
+          merchantId,
+          customerId,
+          type: TxnType.CAMPAIGN,
+          amount: points,
+          orderId: null,
+          outletId,
+          staffId,
+        },
+      });
+
+      // Ledger (optional)
+      if (process.env.LEDGER_FEATURE === '1') {
+        await tx.ledgerEntry.create({
+          data: {
+            merchantId,
+            customerId,
+            debit: LedgerAccount.MERCHANT_LIABILITY,
+            credit: LedgerAccount.CUSTOMER_BALANCE,
+            amount: points,
+            orderId: null,
+            receiptId: null,
+            outletId,
+            staffId,
+            meta: { mode: 'PROMOTION', promotionId },
+          },
+        });
+        this.metrics.inc('loyalty_ledger_entries_total', { type: 'earn' });
+        this.metrics.inc('loyalty_ledger_amount_total', { type: 'earn' }, points);
+      }
+
+      // Earn lot (optional)
+      const expireDays = promo.pointsExpireInDays ?? null;
+      if (process.env.EARN_LOTS_FEATURE === '1') {
+        const earnLot = (tx as any)?.earnLot ?? (this.prisma as any)?.earnLot;
+        if (earnLot?.create) {
+          await earnLot.create({
+            data: {
+              merchantId,
+              customerId,
+              points,
+              consumedPoints: 0,
+              earnedAt: new Date(),
+              maturesAt: null,
+              expiresAt: expireDays ? new Date(Date.now() + expireDays * 24 * 60 * 60 * 1000) : null,
+              orderId: null,
+              receiptId: null,
+              outletId,
+              staffId,
+              status: 'ACTIVE',
+            },
+          });
+        }
+      }
+
+      // Participant
+      await tx.promotionParticipant.create({
+        data: {
+          promotionId,
+          merchantId,
+          customerId,
+          outletId,
+          pointsIssued: points,
+        },
+      });
+
+      // Metrics
+      try {
+        await tx.loyaltyPromotionMetric.upsert({
+          where: { promotionId },
+          create: { promotionId, merchantId, participantsCount: 1, pointsIssued: points },
+          update: { participantsCount: { increment: 1 }, pointsIssued: { increment: points } },
+        });
+      } catch {}
+
+      this.metrics.inc('loyalty_promotions_claim_total', { result: 'ok' });
+      return {
+        ok: true,
+        promotionId,
+        pointsIssued: points,
+        pointsExpireInDays: expireDays,
+        pointsExpireAt: expireDays ? new Date(Date.now() + expireDays * 24 * 60 * 60 * 1000).toISOString() : null,
+        balance,
+      } as const;
+    });
   }
 
   private async buildReviewsShareSettings(

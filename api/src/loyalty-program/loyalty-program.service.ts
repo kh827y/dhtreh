@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  CommunicationChannel,
   LoyaltyMechanicType,
   MechanicStatus,
   Prisma,
@@ -13,6 +14,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
+import { CommunicationsService } from '../communications/communications.service';
 
 export interface TierPayload {
   name: string;
@@ -90,6 +92,7 @@ export class LoyaltyProgramService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly metrics: MetricsService,
+    private readonly comms: CommunicationsService,
   ) {}
 
   // ===== Loyalty tiers =====
@@ -99,6 +102,163 @@ export class LoyaltyProgramService {
     const parsed = Number(value);
     if (!Number.isFinite(parsed) || parsed < 0) return fallbackBps;
     return Math.round(parsed * 100);
+  }
+
+  // ===== Notifications scheduling =====
+  private normalizeFuture(date: Date | null | undefined): Date | null {
+    if (!date) return null;
+    const d = new Date(date);
+    if (Number.isNaN(d.getTime())) return null;
+    const now = Date.now();
+    // createPushTask/createTelegramTask требуют дату не в прошлом
+    if (d.getTime() < now + 60_000) return new Date(now + 60_000);
+    return d;
+  }
+
+  private async isTelegramEnabled(merchantId: string): Promise<boolean> {
+    try {
+      const m = await this.prisma.merchant.findUnique({ where: { id: merchantId }, select: { telegramBotEnabled: true } });
+      return !!m?.telegramBotEnabled;
+    } catch {}
+    return false;
+  }
+
+  private async taskExists(params: {
+    merchantId: string;
+    promotionId: string;
+    channel: CommunicationChannel;
+    scheduledAt: Date | null;
+  }): Promise<boolean> {
+    const { merchantId, promotionId, channel, scheduledAt } = params;
+    const where: Prisma.CommunicationTaskWhereInput = {
+      merchantId,
+      promotionId,
+      channel,
+      status: { in: ['SCHEDULED', 'RUNNING', 'PAUSED'] },
+    };
+    if (scheduledAt) (where as any).scheduledAt = scheduledAt;
+    const existing = await this.prisma.communicationTask.findFirst({ where });
+    return !!existing;
+  }
+
+  private buildStartText(p: any): string {
+    const parts: string[] = [];
+    parts.push(`Акция стартовала: ${p?.name || 'Новая акция'}`);
+    if (p?.rewardType === 'POINTS' && Number.isFinite(Number(p?.rewardValue))) {
+      parts.push(`Бонус: +${Math.max(0, Math.round(Number(p.rewardValue)))} баллов`);
+    }
+    if (p?.endAt) {
+      try {
+        const dd = new Date(p.endAt);
+        parts.push(`До ${dd.toLocaleDateString('ru-RU')}`);
+      } catch {}
+    }
+    return parts.join(' · ');
+  }
+
+  private buildReminderText(p: any, hours: number): string {
+    const parts: string[] = [];
+    parts.push(`Скоро завершится акция: ${p?.name || ''}`.trim());
+    if (p?.rewardType === 'POINTS' && Number.isFinite(Number(p?.rewardValue))) {
+      parts.push(`Успейте получить +${Math.max(0, Math.round(Number(p.rewardValue)))} баллов`);
+    }
+    parts.push(`Осталось ~${Math.max(1, Math.round(hours))} ч.`);
+    return parts.join(' · ');
+  }
+
+  private async schedulePromotionNotifications(merchantId: string, promotion: any): Promise<void> {
+    const now = Date.now();
+    const hasSegment = !!promotion.segmentId;
+    const audienceCode = hasSegment ? `segment:${promotion.segmentId}` : 'all';
+    const audienceId = promotion.segmentId ?? null;
+    const actorId = promotion.updatedById ?? promotion.createdById ?? null;
+
+    // START notifications
+    if (promotion.pushOnStart) {
+      let when: Date | null = null;
+      if (promotion.status === 'SCHEDULED' && promotion.startAt) {
+        when = this.normalizeFuture(promotion.startAt);
+      } else if (promotion.status === 'ACTIVE') {
+        // немедленная отправка → +60 секунд
+        when = new Date(now + 60_000);
+      }
+      if (when) {
+        const text = this.buildStartText(promotion);
+        // PUSH — если выбран шаблон
+        if (promotion.pushTemplateStartId) {
+          if (!(await this.taskExists({ merchantId, promotionId: promotion.id, channel: CommunicationChannel.PUSH, scheduledAt: when }))) {
+            await this.comms.createTask(merchantId, {
+              channel: CommunicationChannel.PUSH,
+              templateId: promotion.pushTemplateStartId,
+              audienceId,
+              audienceCode,
+              promotionId: promotion.id,
+              scheduledAt: when,
+              payload: { text, event: 'promotion.start', promotionId: promotion.id },
+              actorId: actorId ?? undefined,
+            });
+          }
+        }
+        // TELEGRAM — если включён бот
+        if (await this.isTelegramEnabled(merchantId)) {
+          if (!(await this.taskExists({ merchantId, promotionId: promotion.id, channel: CommunicationChannel.TELEGRAM, scheduledAt: when }))) {
+            await this.comms.createTask(merchantId, {
+              channel: CommunicationChannel.TELEGRAM,
+              promotionId: promotion.id,
+              audienceId,
+              audienceName: null,
+              audienceSnapshot: { code: audienceCode },
+              scheduledAt: when,
+              payload: { text, event: 'promotion.start', promotionId: promotion.id },
+              actorId: actorId ?? undefined,
+            });
+          }
+        }
+      }
+    }
+
+    // REMINDER notifications (default 48h before end)
+    if (promotion.pushReminderEnabled && promotion.endAt) {
+      const offsetH = Number.isFinite(Number(promotion.reminderOffsetHours)) && Number(promotion.reminderOffsetHours) > 0
+        ? Math.round(Number(promotion.reminderOffsetHours))
+        : 48;
+      const end = new Date(promotion.endAt).getTime();
+      const ts = end - offsetH * 3600_000;
+      if (ts > now) {
+        const when = this.normalizeFuture(new Date(ts));
+        if (when) {
+          const text = this.buildReminderText(promotion, offsetH);
+          if (promotion.pushTemplateReminderId) {
+            if (!(await this.taskExists({ merchantId, promotionId: promotion.id, channel: CommunicationChannel.PUSH, scheduledAt: when }))) {
+              await this.comms.createTask(merchantId, {
+                channel: CommunicationChannel.PUSH,
+                templateId: promotion.pushTemplateReminderId,
+                audienceId,
+                audienceCode,
+                promotionId: promotion.id,
+                scheduledAt: when,
+                payload: { text, event: 'promotion.reminder', promotionId: promotion.id },
+                actorId: actorId ?? undefined,
+              });
+            }
+          }
+          if (await this.isTelegramEnabled(merchantId)) {
+            if (!(await this.taskExists({ merchantId, promotionId: promotion.id, channel: CommunicationChannel.TELEGRAM, scheduledAt: when }))) {
+              await this.comms.createTask(merchantId, {
+                channel: CommunicationChannel.TELEGRAM,
+                promotionId: promotion.id,
+                audienceId,
+                audienceName: null,
+                audienceSnapshot: { code: audienceCode },
+                scheduledAt: when,
+                payload: { text, event: 'promotion.reminder', promotionId: promotion.id },
+                actorId: actorId ?? undefined,
+              });
+            }
+          }
+        }
+      }
+    }
   }
 
   private sanitizeAmount(value: number | null | undefined, fallback = 0) {
@@ -621,6 +781,12 @@ export class LoyaltyProgramService {
         action: 'create',
       });
     } catch {}
+    try {
+      await this.schedulePromotionNotifications(merchantId, promotion);
+    } catch (e) {
+      // не валим создание акции из-за ошибок планирования уведомлений
+      this.logger.warn(`schedulePromotionNotifications failed: ${String((e as any)?.message || e)}`);
+    }
     return promotion;
   }
 

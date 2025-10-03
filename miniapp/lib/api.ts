@@ -163,6 +163,45 @@ export async function mintQr(
   });
 }
 
+export type PromotionItem = {
+  id: string;
+  name: string;
+  description: string | null;
+  rewardType: 'POINTS' | 'DISCOUNT' | 'CASHBACK' | 'LEVEL_UP' | 'CUSTOM';
+  rewardValue: number | null;
+  startAt: string | null;
+  endAt: string | null;
+  pointsExpireInDays: number | null;
+  canClaim: boolean;
+  claimed: boolean;
+};
+
+export async function promotionsList(merchantId: string, customerId: string): Promise<PromotionItem[]> {
+  const qs = new URLSearchParams({ merchantId, customerId });
+  return http(`/loyalty/promotions?${qs.toString()}`);
+}
+
+export type PromotionClaimResp = {
+  ok: boolean;
+  promotionId: string;
+  pointsIssued: number;
+  pointsExpireInDays?: number | null;
+  pointsExpireAt?: string | null;
+  balance: number;
+  alreadyClaimed?: boolean;
+};
+
+export async function promotionClaim(
+  merchantId: string,
+  customerId: string,
+  promotionId: string,
+  outletId?: string | null,
+): Promise<PromotionClaimResp> {
+  const body: Record<string, unknown> = { merchantId, customerId, promotionId };
+  if (typeof outletId === 'string' && outletId.trim()) body.outletId = outletId.trim();
+  return http('/loyalty/promotions/claim', { method: 'POST', body: JSON.stringify(body) });
+}
+
 export async function balance(merchantId: string, customerId: string): Promise<BalanceResp> {
   return http(`/loyalty/balance/${encodeURIComponent(merchantId)}/${encodeURIComponent(customerId)}`);
 }

@@ -22,14 +22,18 @@ import {
   referralActivate,
   promoCodeApply,
   submitReview,
+  promotionsList,
+  promotionClaim,
   type ReviewsShareSettings,
   type SubmitReviewShareOption,
+  type PromotionItem,
 } from "../lib/api";
 import Spinner from "../components/Spinner";
 import Toast from "../components/Toast";
 import { useMiniappAuth } from "../lib/useMiniapp";
 import styles from "./page.module.css";
 
+//
 const REVIEW_PLATFORM_LABELS: Record<string, string> = {
   yandex: "Яндекс.Карты",
   twogis: "2ГИС",
@@ -278,6 +282,9 @@ export default function Page() {
     threshold: number;
     options: Array<{ id: string; url: string }>;
   } | null>(null);
+  const [promotionsOpen, setPromotionsOpen] = useState<boolean>(false);
+  const [promotions, setPromotions] = useState<PromotionItem[]>([]);
+  const [promotionsLoading, setPromotionsLoading] = useState<boolean>(false);
 
   const computeShareOptions = useCallback(
     (share: ReviewsShareSettings, activeOutletId: string | null) => {
@@ -525,6 +532,23 @@ export default function Page() {
       setLevelCatalog([]);
     }
   }, [merchantId, retry]);
+
+  const loadPromotions = useCallback(async () => {
+    if (!merchantId || !customerId) {
+      setPromotions([]);
+      return;
+    }
+    try {
+      setPromotionsLoading(true);
+      const list = await promotionsList(merchantId, customerId);
+      setPromotions(Array.isArray(list) ? list : []);
+    } catch (error) {
+      setPromotions([]);
+      setToast({ msg: `Не удалось загрузить акции: ${resolveErrorMessage(error)}`, type: "error" });
+    } finally {
+      setPromotionsLoading(false);
+    }
+  }, [merchantId, customerId]);
 
   const dismissedTxSet = useMemo(() => new Set(dismissedTransactions), [dismissedTransactions]);
 
@@ -896,8 +920,34 @@ export default function Page() {
       loadBalance();
       loadTx();
       loadLevels();
+      loadPromotions();
     }
-  }, [customerId, syncConsent, loadBalance, loadTx, loadLevels]);
+  }, [customerId, syncConsent, loadBalance, loadTx, loadLevels, loadPromotions]);
+
+  const handlePromotionClaim = useCallback(
+    async (promotionId: string) => {
+      if (!merchantId || !customerId) {
+        setToast({ msg: "Не удалось определить клиента", type: "error" });
+        return;
+      }
+      try {
+        setPromotionsLoading(true);
+        const resp = await promotionClaim(merchantId, customerId, promotionId, activeOutletId ?? null);
+        const message = resp.alreadyClaimed
+          ? "Уже получено"
+          : resp.pointsIssued > 0
+            ? `Начислено ${resp.pointsIssued} баллов`
+            : "Получено";
+        setToast({ msg: message, type: "success" });
+        await Promise.allSettled([loadBalance(), loadTx(), loadPromotions()]);
+      } catch (error) {
+        setToast({ msg: resolveErrorMessage(error), type: "error" });
+      } finally {
+        setPromotionsLoading(false);
+      }
+    },
+    [merchantId, customerId, activeOutletId, loadBalance, loadTx, loadPromotions]
+  );
 
   useEffect(() => {
     if (!customerId) {
@@ -1037,8 +1087,8 @@ export default function Page() {
   const purchasesToNext = levelInfo?.progressToNext ?? 0;
 
   const availablePromotions = useMemo(
-    () => tx.filter((item) => /promo|campaign/i.test(item.type)).length,
-    [tx]
+    () => promotions.filter((p) => p && p.canClaim && !p.claimed).length,
+    [promotions]
   );
 
   const handlePromoActivate = useCallback(
@@ -1180,6 +1230,8 @@ export default function Page() {
                 </span>
               </div>
             )}
+
+      
             <button
               type="submit"
               className={`${styles.profileSubmit} ${styles.appear} ${referralEnabled ? styles.delay5 : styles.delay4}`}
@@ -1329,7 +1381,7 @@ export default function Page() {
                 {promoLoading ? "Подождите" : "Активировать"}
               </button>
             </form>
-            <button className={styles.promotionsButton}>
+            <button type="button" className={styles.promotionsButton} onClick={() => { setPromotionsOpen(true); if (!promotions.length) void loadPromotions(); }}>
               <span>Акции</span>
               <span className={styles.promotionsBadge}>{availablePromotions}</span>
             </button>
@@ -1485,7 +1537,7 @@ export default function Page() {
             Мы рады, что вам понравилось! Пожалуйста, поделитесь своим отзывом
           </div>
           <div className={styles.feedbackShareButtons}>
-            {shareOptions.map((platform) => (
+            {shareOptions.map((platform: { id: string; url: string }) => (
               <button
                 key={platform.id}
                 type="button"
@@ -1524,6 +1576,42 @@ export default function Page() {
             <button className={styles.modalRefresh} onClick={doMint}>
               Обновить QR
             </button>
+          </div>
+        </div>
+      )}
+
+      {promotionsOpen && (
+        <div className={styles.modalBackdrop} onClick={() => setPromotionsOpen(false)}>
+          <div className={styles.sheet} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.sheetHeader}>Акции</div>
+            {promotionsLoading ? (
+              <div className={styles.emptyState}>Загрузка…</div>
+            ) : promotions.length === 0 ? (
+              <div className={styles.emptyState}>Доступных акций нет</div>
+            ) : (
+              <ul className={styles.historyList}>
+                {promotions.map((p) => (
+                  <li key={p.id} className={styles.historyItem}>
+                    <div className={styles.historyBody}>
+                      <div className={styles.historyTitle}>{p.name}</div>
+                      <div className={styles.historyDate}>
+                        {typeof p.rewardValue === 'number' && p.rewardType === 'POINTS' ? `+${p.rewardValue} баллов` : ''}
+                      </div>
+                    </div>
+                    <div>
+                      <button
+                        className={styles.promoButton}
+                        disabled={!p.canClaim || p.claimed || promotionsLoading}
+                        onClick={() => handlePromotionClaim(p.id)}
+                      >
+                        {p.claimed ? 'Получено' : p.canClaim ? 'Получить' : 'Недоступно'}
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <button type="button" className={styles.sheetButton} onClick={() => setPromotionsOpen(false)}>Закрыть</button>
           </div>
         </div>
       )}

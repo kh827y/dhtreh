@@ -71,6 +71,55 @@ function verifyBridgeSignature(sigHeader: string, rawBody: string, secret: strin
 }
 ```
 
+#### 7. Акции (мини‑аппа)
+
+```http
+GET /loyalty/promotions?merchantId={merchantId}&customerId={customerId}
+
+Response 200:
+[
+  {
+    "id": "prom_1",
+    "name": "Бонус +50",
+    "description": "Получите +50 баллов",
+    "rewardType": "POINTS",
+    "rewardValue": 50,
+    "startAt": "2025-10-01T00:00:00Z",
+    "endAt": "2025-10-31T23:59:59Z",
+    "pointsExpireInDays": 30,
+    "canClaim": true,
+    "claimed": false
+  }
+]
+```
+
+```http
+POST /loyalty/promotions/claim
+Content-Type: application/json
+
+{
+  "merchantId": "M-1",
+  "customerId": "C-1",
+  "promotionId": "prom_1",
+  "outletId": "OUT-1" // optional
+}
+
+Response 200:
+{
+  "ok": true,
+  "promotionId": "prom_1",
+  "pointsIssued": 50,
+  "pointsExpireInDays": 30,
+  "pointsExpireAt": "2025-11-30T00:00:00Z",
+  "balance": 1150,
+  "alreadyClaimed": false // true при повторном вызове
+}
+```
+
+Примечания:
+- Клиент видит только акции со статусами `ACTIVE`/`SCHEDULED`, соответствующие его аудитории (`segmentId`), и неистёкшим периодам (`startAt`/`endAt`).
+- Claim доступен только для акций с типом награды `POINTS` и положительным значением `rewardValue`; повторный claim не допускается (идемпотентность по `promotionId+customerId`).
+
 ## Основные эндпоинты
 
 ### Программа лояльности

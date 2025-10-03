@@ -202,7 +202,8 @@ export class CashierGuard implements CanActivate {
       path.startsWith('/loyalty/settings/') ||
       path === '/loyalty/transactions' ||
       path.startsWith('/loyalty/outlets/') ||
-      path.startsWith('/loyalty/staff/')
+      path.startsWith('/loyalty/staff/') ||
+      path.startsWith('/loyalty/promotions')
     );
     const isAlwaysPublic = (
       path === '/loyalty/teleauth' ||
@@ -211,7 +212,8 @@ export class CashierGuard implements CanActivate {
       path === '/loyalty/cashier/staff-token' ||
       path === '/loyalty/cashier/staff-access' ||
       path === '/loyalty/promocodes/apply' ||
-      path === '/loyalty/reviews'
+      path === '/loyalty/reviews' ||
+      path === '/loyalty/promotions/claim'
     );
     if (isPublicGet || isAlwaysPublic) return true;
 

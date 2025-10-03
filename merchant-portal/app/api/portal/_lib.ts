@@ -14,8 +14,12 @@ export async function portalFetch(req: NextRequest, path: string, init?: Request
   };
   const res = await fetch(API_BASE + path, { ...init, headers });
   const text = await res.text();
-  return new Response(text, {
-    status: res.status,
-    headers: { 'Content-Type': res.headers.get('content-type') || 'application/json' },
-  });
+  const outHeaders: Record<string, string> = {
+    'Content-Type': res.headers.get('content-type') || 'application/json',
+  };
+  const hTotal = res.headers.get('x-total-count');
+  if (hTotal) outHeaders['X-Total-Count'] = hTotal;
+  const contentRange = res.headers.get('content-range');
+  if (contentRange) outHeaders['Content-Range'] = contentRange;
+  return new Response(text, { status: res.status, headers: outHeaders });
 }

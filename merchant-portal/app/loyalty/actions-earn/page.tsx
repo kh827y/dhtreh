@@ -7,6 +7,8 @@ import Sparkline from "../../../components/Sparkline";
 import TagSelect from "../../../components/TagSelect";
 import { Calendar, Users2, TrendingUp, PlusCircle, X, RefreshCw, Bell, Flame } from "lucide-react";
 
+const ALL_AUDIENCE_VALUE = "__ALL__";
+
 const tabs = [
   { id: "UPCOMING" as const, label: "Предстоящие" },
   { id: "ACTIVE" as const, label: "Активные" },
@@ -33,8 +35,10 @@ type Campaign = {
   description: string;
   startDate: string | null;
   endDate: string | null;
+  segmentId: string | null;
   segmentName: string;
-  participants: number;
+  totalAudience: number; // всего в аудитории
+  usedCount: number; // активировали/получили бонус
   revenueSeries: number[];
   launched: boolean;
   createdAt: string;
@@ -42,7 +46,7 @@ type Campaign = {
   notifications: CampaignNotification;
 };
 
-type AudienceOption = { value: string; label: string; description?: string };
+type AudienceOption = { value: string; label: string; description?: string; size?: number };
 
 type ActionFormState = {
   name: string;
@@ -76,60 +80,7 @@ const defaultForm: ActionFormState = {
   launched: true,
 };
 
-const sampleAudiences: AudienceOption[] = [
-  { value: "seg-loyal", label: "Лояльные клиенты", description: "Более 5 покупок за 90 дней" },
-  { value: "seg-new", label: "Новые клиенты", description: "Первый визит за последние 30 дней" },
-  { value: "seg-birthday", label: "Дни рождения", description: "ДР в течение месяца" },
-  { value: "seg-sleep", label: "Заснувшие", description: "Нет покупок 60 дней" },
-];
-
-function generateFallbackActions(): Campaign[] {
-  const base = new Date();
-  return [
-    {
-      id: "act-summer",
-      name: "Лето с бонусами",
-      description: "x2 баллов на все покупки в июне",
-      startDate: new Date(base.getFullYear(), 5, 1).toISOString(),
-      endDate: new Date(base.getFullYear(), 5, 30).toISOString(),
-      segmentName: "Лояльные клиенты",
-      participants: 328,
-      revenueSeries: [54000, 62000, 61000, 68000, 72000, 75000, 81000],
-      launched: true,
-      createdAt: new Date(base.getFullYear(), 4, 15).toISOString(),
-      reward: { awardPoints: true, points: 200, pointsExpire: true, pointsExpireDays: 14 },
-      notifications: { pushOnStart: true, pushMessage: "Удваиваем баллы в июне!", pushReminder: true, pushReminderMessage: "До конца акции 2 дня!" },
-    },
-    {
-      id: "act-birthday",
-      name: "Именинникам – 500 бонусов",
-      description: "Дарим 500 баллов за покупку в течение недели до и после ДР",
-      startDate: null,
-      endDate: null,
-      segmentName: "Дни рождения",
-      participants: 142,
-      revenueSeries: [12000, 17500, 21000, 24000, 23000, 19000, 26000],
-      launched: true,
-      createdAt: new Date(base.getFullYear(), 0, 10).toISOString(),
-      reward: { awardPoints: true, points: 500, pointsExpire: true, pointsExpireDays: 30 },
-      notifications: { pushOnStart: true, pushMessage: "С Днём рождения! Вам подарок – 500 бонусов", pushReminder: false },
-    },
-    {
-      id: "act-autumn",
-      name: "Осенний прогрев",
-      description: "Вернём клиентов с паузой 60+ дней",
-      startDate: new Date(base.getFullYear(), 8, 1).toISOString(),
-      endDate: new Date(base.getFullYear(), 9, 15).toISOString(),
-      segmentName: "Заснувшие",
-      participants: 0,
-      revenueSeries: [0, 0, 0, 0, 0, 0, 0],
-      launched: false,
-      createdAt: new Date(base.getFullYear(), 7, 12).toISOString(),
-      reward: { awardPoints: true, points: 150, pointsExpire: false },
-      notifications: { pushOnStart: false, pushReminder: false },
-    },
-  ];
-}
+// удалены мок-данные: работаем только с реальным API
 
 function computeTab(action: Campaign, now = new Date()): "UPCOMING" | "ACTIVE" | "PAST" {
   const start = action.startDate ? new Date(action.startDate) : null;
@@ -179,78 +130,155 @@ export default function ActionsEarnPage() {
   const [showCreate, setShowCreate] = React.useState(false);
   const [form, setForm] = React.useState<ActionFormState>(defaultForm);
   const [saving, setSaving] = React.useState(false);
+  const [audiences, setAudiences] = React.useState<AudienceOption[]>([]);
+  const [audLoading, setAudLoading] = React.useState(false);
+  const [editingId, setEditingId] = React.useState<string | null>(null);
+  const [allCustomersTotal, setAllCustomersTotal] = React.useState<number | null>(null);
   const now = React.useMemo(() => new Date(), []);
+
+  const loadCampaigns = React.useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch('/api/portal/loyalty/promotions');
+      if (!res.ok) throw new Error(await res.text());
+      const json = await res.json();
+      const mapped: Campaign[] = Array.isArray(json)
+        ? json.map((item: any) => {
+          const reward: CampaignReward = {
+            awardPoints: (item.reward?.type || '').toUpperCase() === 'POINTS',
+            points: Number(item.reward?.value ?? 0) || 0,
+            pointsExpire: Boolean(item.reward?.metadata?.pointsExpire ?? item.metadata?.pointsExpire),
+            pointsExpireDays: item.reward?.metadata?.pointsExpireDays ?? item.metadata?.pointsExpireDays ?? null,
+          };
+          const notifications: CampaignNotification = {
+            pushOnStart: Boolean(item.metadata?.pushOnStart),
+            pushMessage: item.metadata?.pushMessage || '',
+            pushReminder: Boolean(item.metadata?.pushReminder),
+            pushReminderMessage: item.metadata?.pushReminderMessage || '',
+          };
+          const revenueSeries: number[] = Array.isArray(item.analytics?.revenueSeries)
+            ? item.analytics.revenueSeries
+            : [];
+          const totalAudience =
+            item.segment?._count?.customers ??
+            item.segment?.customersCount ??
+            item.analytics?.metrics?.audienceTotal ??
+            item.analytics?.audienceTotal ??
+            0;
+          const usedCount = item.analytics?.metrics?.participantsCount ?? item.analytics?.participantsCount ?? 0;
+          const segmentIdVal = (Object.prototype.hasOwnProperty.call(item, 'targetSegmentId'))
+            ? item.targetSegmentId
+            : (item.segment?.id ?? null);
+          const segmentNameVal = segmentIdVal ? (item.segment?.name || 'Сегмент') : 'Все клиенты';
+          return {
+            id: item.id,
+            name: item.name || 'Без названия',
+            description: item.description || '',
+            startDate: item.startDate || null,
+            endDate: item.endDate || null,
+            segmentId: segmentIdVal || null,
+            segmentName: segmentNameVal,
+            totalAudience,
+            usedCount,
+            revenueSeries,
+            launched: item.status === 'ACTIVE' || item.status === 'PAUSED',
+            createdAt: item.createdAt || new Date().toISOString(),
+            reward,
+            notifications,
+          } as Campaign;
+        })
+        : [];
+      setCampaigns(mapped);
+    } catch (e: any) {
+      try {
+        setError(String(e?.message || e));
+      } catch (err) {
+        setError('Ошибка загрузки акций');
+      }
+      setCampaigns([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const loadAudiences = React.useCallback(async () => {
+    setAudLoading(true);
+    try {
+      const res = await fetch('/api/portal/audiences');
+      if (!res.ok) throw new Error(await res.text());
+      const json = await res.json();
+      const base: AudienceOption[] = Array.isArray(json)
+        ? json.map((a: any) => ({
+            value: a.id,
+            label: a.name || 'Без названия',
+            description: a.description || '',
+            size: a._count?.customers ?? a.customersCount ?? undefined,
+          }))
+        : [];
+      const allOption: AudienceOption = {
+        value: ALL_AUDIENCE_VALUE,
+        label: 'Все клиенты',
+        description: 'Без ограничений по сегменту',
+      };
+      setAudiences([allOption, ...base]);
+    } catch {
+      setAudiences([]);
+    } finally {
+      setAudLoading(false);
+    }
+  }, []);
+
+  const loadAllCustomersTotal = React.useCallback(async () => {
+    // Плейсхолдер до загрузки
+    setAllCustomersTotal(null);
+    try {
+      const res = await fetch('/api/portal/analytics/customers');
+      if (!res.ok) return;
+      const json: any = await res.json();
+      const v = Number(json?.totalCustomers);
+      if (Number.isFinite(v)) setAllCustomersTotal(v);
+    } catch {}
+  }, []);
 
   React.useEffect(() => {
     let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setError('');
-      try {
-        const res = await fetch('/api/portal/loyalty/promotions');
-        if (!res.ok) throw new Error(await res.text());
-        const json = await res.json();
-        if (cancelled) return;
-        if (Array.isArray(json) && json.length) {
-          const mapped: Campaign[] = json.map((item: any, index: number) => {
-            const reward: CampaignReward = {
-              awardPoints: (item.reward?.type || '').toUpperCase() === 'POINTS',
-              points: Number(item.reward?.value ?? 0) || 0,
-              pointsExpire: Boolean(item.reward?.metadata?.pointsExpire ?? item.metadata?.pointsExpire),
-              pointsExpireDays: item.reward?.metadata?.pointsExpireDays ?? item.metadata?.pointsExpireDays ?? null,
-            };
-            const notifications: CampaignNotification = {
-              pushOnStart: Boolean(item.metadata?.pushOnStart),
-              pushMessage: item.metadata?.pushMessage || '',
-              pushReminder: Boolean(item.metadata?.pushReminder),
-              pushReminderMessage: item.metadata?.pushReminderMessage || '',
-            };
-            const revenueSeries: number[] = Array.isArray(item.analytics?.revenueSeries)
-              ? item.analytics.revenueSeries
-              : Array.from({ length: 7 }, (_, idx) => {
-                  const base = item._count?.usages ?? 10;
-                  const seed = (index + 1) * (idx + 2);
-                  return base * 500 + (seed % 5) * 2000;
-                });
-            const participants = item.segment?._count?.customers ?? item._count?.usages ?? 0;
-            return {
-              id: item.id,
-              name: item.name || 'Без названия',
-              description: item.description || '',
-              startDate: item.startDate || null,
-              endDate: item.endDate || null,
-              segmentName: item.segment?.name || 'Все клиенты',
-              participants,
-              revenueSeries,
-              launched: item.status === 'ACTIVE' || item.status === 'PAUSED',
-              createdAt: item.createdAt || new Date().toISOString(),
-              reward,
-              notifications,
-            } as Campaign;
-          });
-          setCampaigns(mapped);
-        } else {
-          setCampaigns(generateFallbackActions());
-        }
-      } catch (e: any) {
-        setError(String(e?.message || e));
-        setCampaigns(generateFallbackActions());
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    load();
+    (async () => {
+      await Promise.all([loadCampaigns(), loadAudiences(), loadAllCustomersTotal()]);
+      if (cancelled) return;
+    })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadCampaigns, loadAudiences, loadAllCustomersTotal]);
 
   const filtered = React.useMemo(() =>
     campaigns.filter((item) => computeTab(item, now) === tab),
   [campaigns, tab, now]);
 
   const handleCreate = () => {
+    setEditingId(null);
     setForm(defaultForm);
+    setShowCreate(true);
+  };
+
+  const handleOpenEdit = (c: Campaign) => {
+    setEditingId(c.id);
+    setForm({
+      name: c.name || '',
+      description: c.description || '',
+      startDate: c.startDate ? c.startDate.slice(0, 10) : '',
+      endDate: c.endDate ? c.endDate.slice(0, 10) : '',
+      audience: c.segmentId || '',
+      awardPoints: !!c.reward.awardPoints,
+      points: String(c.reward.points || 0),
+      pointsExpire: !!c.reward.pointsExpire,
+      pushOnStart: !!c.notifications.pushOnStart,
+      pushMessage: c.notifications.pushMessage || '',
+      pushReminder: !!c.notifications.pushReminder,
+      pushReminderMessage: c.notifications.pushReminderMessage || '',
+      launched: c.launched,
+    });
     setShowCreate(true);
   };
 
@@ -259,10 +287,7 @@ export default function ActionsEarnPage() {
       alert('Укажите название акции');
       return;
     }
-    if (!form.audience) {
-      alert('Выберите аудиторию');
-      return;
-    }
+    // Аудитория может быть пустой ("Все клиенты")
     if (form.awardPoints && Number(form.points || 0) <= 0) {
       alert('Укажите количество баллов');
       return;
@@ -275,7 +300,7 @@ export default function ActionsEarnPage() {
         status: form.launched ? 'ACTIVE' : 'DRAFT',
         startDate: form.startDate ? new Date(form.startDate).toISOString() : null,
         endDate: form.endDate ? new Date(form.endDate).toISOString() : null,
-        targetSegmentId: form.audience,
+        targetSegmentId: form.audience || null,
         type: 'BONUS',
         reward: {
           type: 'POINTS',
@@ -290,39 +315,25 @@ export default function ActionsEarnPage() {
           pushMessage: form.pushMessage,
           pushReminder: form.pushReminder,
           pushReminderMessage: form.pushReminderMessage,
+          // напоминание за 2 дня до конца
+          reminderOffsetHours: form.pushReminder ? 48 : null,
         },
         rules: {},
       };
-      await fetch('/api/portal/loyalty/promotions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      }).catch(() => {});
-      const newCampaign: Campaign = {
-        id: `local-${Date.now()}`,
-        name: payload.name,
-        description: payload.description || '',
-        startDate: payload.startDate,
-        endDate: payload.endDate,
-        segmentName: sampleAudiences.find((a) => a.value === form.audience)?.label || 'Аудитория',
-        participants: 0,
-        revenueSeries: [0, 0, 0, 0, 0, 0, 0],
-        launched: form.launched,
-        createdAt: new Date().toISOString(),
-        reward: {
-          awardPoints: form.awardPoints,
-          points: Number(form.points || 0),
-          pointsExpire: form.pointsExpire,
-          pointsExpireDays: form.pointsExpire ? 30 : undefined,
-        },
-        notifications: {
-          pushOnStart: form.pushOnStart,
-          pushMessage: form.pushMessage,
-          pushReminder: form.pushReminder,
-          pushReminderMessage: form.pushReminderMessage,
-        },
-      };
-      setCampaigns((prev) => [newCampaign, ...prev]);
+      if (editingId) {
+        await fetch(`/api/portal/loyalty/promotions/${encodeURIComponent(editingId)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      } else {
+        await fetch('/api/portal/loyalty/promotions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      }
+      await loadCampaigns();
       setShowCreate(false);
     } finally {
       setSaving(false);
@@ -330,65 +341,115 @@ export default function ActionsEarnPage() {
   };
 
   const renderCard = (campaign: Campaign) => {
-    const tabKey = computeTab(campaign, now);
     const isInactive = !campaign.launched;
+    const baseTotal = Math.max(0, Number(campaign.totalAudience || 0));
+    const isAllCustomers = !campaign.segmentId || /^(все\s+клиенты|all\s+customers)$/i.test(campaign.segmentName || '');
+    const total = isAllCustomers ? (allCustomersTotal ?? 0) : baseTotal;
+    const used = Math.min(total, Math.max(0, Number(campaign.usedCount || 0)));
+    const ignored = Math.max(0, total - used);
+    const usedShare = total ? Math.round((used / total) * 100) : 0;
+    const ignoredShare = total ? Math.round((ignored / total) * 100) : 0;
+    const revLast = Number(
+      campaign.revenueSeries && campaign.revenueSeries.length > 0
+        ? campaign.revenueSeries[campaign.revenueSeries.length - 1]
+        : 0
+    ) || 0;
+    const sumRev = campaign.revenueSeries?.reduce((a, b) => a + b, 0) || 0;
+    const showRevStats = revLast > 0 || sumRev > 0;
     return (
-      <Card key={campaign.id} style={{ position: 'relative', overflow: 'hidden' }}>
-        {isInactive && (
+      <div
+        key={campaign.id}
+        role="button"
+        tabIndex={0}
+        onClickCapture={() => handleOpenEdit(campaign)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleOpenEdit(campaign); } }}
+        style={{ cursor: 'pointer' }}
+      >
+      <Card
+        style={{ position: 'relative', overflow: 'hidden' }}
+      >
+        {/* Убрана визуальная метка 'Акция не запущена' по требованию */}
+        <CardHeader title={campaign.name} />
+        <CardBody>
           <div
             style={{
-              position: 'absolute',
-              inset: '12px',
-              border: '1px dashed rgba(248,113,113,0.6)',
-              borderRadius: 14,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#f87171',
-              fontWeight: 700,
-              fontSize: 16,
-              backdropFilter: 'blur(4px)',
-              pointerEvents: 'none',
+              display: 'grid',
+              gridTemplateColumns: '1.1fr 1fr 1.2fr',
+              gap: 20,
+              alignItems: 'stretch',
             }}
           >
-            Акция не запущена
-          </div>
-        )}
-        <CardHeader
-          title={campaign.name}
-          subtitle={`${campaign.segmentName}${isInactive ? ' • черновик' : ''}`}
-        />
-        <CardBody style={{ display: 'grid', gap: 12, opacity: isInactive ? 0.6 : 1 }}>
-          {campaign.description && <div style={{ fontSize: 13.5, lineHeight: 1.6 }}>{campaign.description}</div>}
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
-              <Calendar size={16} />
-              <span>{formatRange(campaign.startDate, campaign.endDate)}</span>
-            </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
-              <Users2 size={16} />
-              <span>{campaign.participants} участников</span>
-            </div>
-            {campaign.reward.awardPoints && (
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
-                <Flame size={16} />
-                <span>{campaign.reward.points} баллов</span>
-                {campaign.reward.pointsExpire && <span style={{ opacity: 0.6 }}>сгорают после окончания</span>}
+            {/* Left: Info */}
+            <div style={{ display: 'grid', gap: 10 }}>
+              {campaign.description && (
+                <div style={{ fontSize: 13.5, lineHeight: 1.6 }}>{campaign.description}</div>
+              )}
+              <div style={{ display: 'grid', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
+                  <Calendar size={16} />
+                  <span>{formatRange(campaign.startDate, campaign.endDate)}</span>
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
+                  <Users2 size={16} />
+                  <span>Аудитория: {campaign.segmentName || '—'}</span>
+                </div>
+                {campaign.reward.awardPoints ? (
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
+                    <Flame size={16} />
+                    <span>{campaign.reward.points} баллов</span>
+                    {campaign.reward.pointsExpire && (
+                      <span style={{ opacity: 0.6 }}>сгорают после окончания</span>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 13, opacity: 0.7 }}>Без начисления баллов</div>
+                )}
               </div>
-            )}
-          </div>
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-            <Sparkline data={campaign.revenueSeries} />
-            <span style={{ fontSize: 12, opacity: 0.7 }}>Выручка оплаченная акционными баллами</span>
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <a className="btn" href={`/loyalty/actions/${campaign.id}`}>Открыть</a>
-            {tabKey === 'ACTIVE' && (
-              <Button size="sm" variant="secondary">Статистика</Button>
-            )}
+            </div>
+
+            {/* Middle: Audience shares */}
+            <div
+              style={{
+                display: 'grid',
+                gap: 10,
+                padding: 12,
+                border: '1px solid rgba(148,163,184,0.18)',
+                borderRadius: 12,
+                background: 'rgba(148,163,184,0.08)'
+              }}
+            >
+              <div style={{ display: 'grid', gridTemplateColumns: 'auto auto', gap: 12, alignItems: 'baseline' }}>
+                <span style={{ fontSize: 13 }}>Вся аудитория</span>
+                <strong style={{ fontSize: 13 }}>
+                  {isAllCustomers
+                    ? (allCustomersTotal === null ? '—' : allCustomersTotal.toLocaleString('ru-RU'))
+                    : total.toLocaleString('ru-RU')}
+                </strong>
+                <span style={{ fontSize: 13 }}>Воспользовались</span>
+                <strong style={{ fontSize: 13 }}>{used.toLocaleString('ru-RU')} {total ? `(${usedShare}%)` : ''}</strong>
+                <span style={{ fontSize: 13 }}>Проигнорировали</span>
+                <strong style={{ fontSize: 13 }}>{ignored.toLocaleString('ru-RU')} {total ? `(${ignoredShare}%)` : ''}</strong>
+              </div>
+              <div style={{ height: 8, borderRadius: 6, background: 'rgba(148,163,184,0.25)', overflow: 'hidden' }}>
+                <div style={{ width: `${usedShare}%`, height: '100%', background: 'linear-gradient(90deg, rgba(99,102,241,0.95), rgba(129,140,248,0.9))' }} />
+              </div>
+            </div>
+
+            {/* Right: Revenue sparkline */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, justifyContent: 'flex-end' }}>
+              <Sparkline data={campaign.revenueSeries} width={360} height={96} />
+              {showRevStats && (
+                <div style={{ display: 'grid', gap: 2, fontSize: 12, textAlign: 'right' }}>
+                  <div style={{ opacity: 0.7 }}>Последний период</div>
+                  <div style={{ fontWeight: 600 }}>{revLast.toLocaleString('ru-RU')} ₽</div>
+                  <div style={{ opacity: 0.7 }}>Σ {sumRev.toLocaleString('ru-RU')} ₽</div>
+                </div>
+              )}
+            </div>
           </div>
         </CardBody>
       </Card>
+      </div>
     );
   };
 
@@ -428,7 +489,7 @@ export default function ActionsEarnPage() {
           {loading ? (
             <Skeleton height={240} />
           ) : filtered.length ? (
-            <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))' }}>
+            <div style={{ display: 'grid', gap: 16, gridTemplateColumns: '1fr' }}>
               {filtered.map(renderCard)}
             </div>
           ) : (
@@ -442,7 +503,7 @@ export default function ActionsEarnPage() {
           <div style={{ width: 'min(900px, 96vw)', maxHeight: '92vh', overflow: 'auto', background: 'rgba(12,16,26,0.96)', borderRadius: 18, border: '1px solid rgba(148,163,184,0.14)', boxShadow: '0 30px 80px rgba(2,6,23,0.5)', display: 'grid', gridTemplateRows: 'auto 1fr auto' }}>
             <div style={{ padding: '18px 24px', borderBottom: '1px solid rgba(148,163,184,0.14)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <div style={{ fontSize: 18, fontWeight: 700 }}>Создать акцию</div>
+                <div style={{ fontSize: 18, fontWeight: 700 }}>{editingId ? 'Редактировать акцию' : 'Создать акцию'}</div>
                 <div style={{ fontSize: 13, opacity: 0.7 }}>Заполните параметры для начисления баллов</div>
               </div>
               <button className="btn btn-ghost" onClick={() => setShowCreate(false)}><X size={18} /></button>
@@ -473,18 +534,35 @@ export default function ActionsEarnPage() {
               <div style={{ display: 'grid', gap: 10 }}>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                   <label style={{ fontSize: 13, opacity: 0.8 }}>Аудитория, кому доступна акция</label>
-                  <button className="btn btn-ghost" title="Обновить" onClick={() => { /* placeholder */ }}><RefreshCw size={16} /></button>
+                  <button
+                    className="btn btn-ghost"
+                    title="Обновить размер аудитории"
+                    onClick={async () => {
+                      if (!form.audience) return;
+                      await fetch(`/api/portal/audiences/${encodeURIComponent(form.audience)}/refresh`, { method: 'POST' });
+                      await loadAudiences();
+                    }}
+                  >
+                    <RefreshCw size={16} />
+                  </button>
                 </div>
                 <TagSelect
-                  options={sampleAudiences}
-                  value={form.audience ? [form.audience] : []}
-                  onChange={(values) => setForm((prev) => ({ ...prev, audience: values[0] || '' }))}
+                  options={audiences}
+                  value={form.audience ? [form.audience] : [ALL_AUDIENCE_VALUE]}
+                  onChange={(values) => {
+                    const v = values[0];
+                    const next = !v || v === ALL_AUDIENCE_VALUE ? '' : v;
+                    setForm((prev) => ({ ...prev, audience: next }));
+                  }}
                   allowMultiple={false}
                   placeholder="Выберите аудиторию"
                 />
-                <div style={{ fontSize: 12, opacity: 0.7 }}>
-                  Если вы не нашли подходящей аудитории, то можно <a href="/audiences" style={{ color: '#818cf8', textDecoration: 'underline' }}>создать новую</a>
-                </div>
+                {form.audience && (
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>
+                    Размер аудитории: {audiences.find(a => a.value === form.audience)?.size?.toLocaleString('ru-RU') ?? '—'}
+                  </div>
+                )}
+                <div style={{ fontSize: 12, opacity: 0.7 }}>Если вы не нашли подходящей аудитории, <a href="/audiences" style={{ color: '#818cf8', textDecoration: 'underline' }}>создайте новую</a></div>
               </div>
 
               <div style={{ display: 'grid', gap: 14 }}>
@@ -529,7 +607,7 @@ export default function ActionsEarnPage() {
             <div style={{ padding: '18px 24px', borderTop: '1px solid rgba(148,163,184,0.14)', display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
               <button className="btn" onClick={() => setShowCreate(false)} disabled={saving}>Отмена</button>
               <Button variant="primary" onClick={handleSubmit} disabled={saving} startIcon={<PlusCircle size={16} />}>
-                {saving ? 'Сохраняем…' : 'Создать акцию'}
+                {saving ? 'Сохраняем…' : (editingId ? 'Сохранить' : 'Создать акцию')}
               </Button>
             </div>
           </div>

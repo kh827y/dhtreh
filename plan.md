@@ -238,6 +238,24 @@
 - Интеграции с внешними API → мок/фичефлаги, dry‑run.
 
 ## Выполнено недавно
+- ✅ Merchant Portal — Акции с начислением:
+  - Страница `merchant-portal/app/loyalty/actions-earn/page.tsx` переведена на реальные данные без моков (загрузка из `/api/portal/loyalty/promotions`).
+  - Добавлена опция аудитории «Все клиенты» (без сегмента): специальное значение `__ALL__`, маппинг на `targetSegmentId: null` при сохранении.
+  - Исправлена ошибка вложенных `<button>` в `components/TagSelect.tsx` (наружный контейнер заменён на `div[role="button"]`), устранены ошибки гидрации.
+  - Miniapp: кнопка «Акции» внутри формы промокода получила `type="button"`; модалка акций открывается стабильно, при ошибке загрузки показывается toast.
+  - Карточки акций: увеличен спарклайн (`components/Sparkline.tsx` параметры ширины/высоты), добавлены значения «Последний период» и суммарная выручка (скрываются при нулевых значениях).
+  - Удалены лишние кнопки «Статистика»/«Открыть»; карточка целиком кликабельна и открывает окно редактирования.
+  - Добавлены счётчики «Использовали» и «Проигнорировали» с долями от аудитории (берутся из `segment._count.customers` и `analytics.metrics.participantsCount`).
+  - Для акций «Все клиенты» число «Вся аудитория» берётся из `/api/portal/analytics/customers` с фоллбеком `/api/customers?limit=1` (парсинг `X-Total-Count`/`Content-Range`/`total`), всегда показывается число.
+  - В модалке редактирования заголовок: «Редактировать акцию» при открытии существующей акции.
+  - Убрана визуальная метка «Акция не запущена» на карточке.
+  - Форма создания/редактирования: интегрированы реальные аудитории (`/api/portal/audiences`), кнопка «Обновить размер аудитории» вызывает `/portal/audiences/:id/refresh` через прокси `app/api/portal/audiences/[id]/refresh/route.ts`.
+  - Поддержаны опции уведомлений: PUSH при старте (`pushOnStart`) и напоминание за 2 дня до конца (`pushReminder` → `reminderOffsetHours=48`).
+  - Созданы Next‑прокси:
+    - `app/api/portal/loyalty/promotions/route.ts` (GET/POST)
+    - `app/api/portal/loyalty/promotions/[id]/route.ts` (GET/PUT/POST → `/status`)
+    - `app/api/portal/audiences/[id]/refresh/route.ts` (POST)
+
 - ✅ Prisma миграции: починен скрипт `20251216150000_portal_review_links` — процитировано `ms."rulesJson"` в JSON-выражениях, устранена ошибка Postgres `E42703`; выполнен `pnpm -C api prisma migrate reset --force`, все миграции применены, сиды отработали.
 - ✅ Торговые точки: вынесли POS-поля (`posType`, `posLastSeenAt`, `bridgeSecret*`) в `Outlet`, миграцией подтянули данные из `Device` и зафиксировали правила агрегации в README.
 - ✅ Admin/Portal API: управление `bridgeSecret`/`bridgeSecretNext` и POS-статусами перенесено на `/merchants/:id/outlets/:outletId/*`, CLI Bridge и фронтовые клиенты используют `outletId`.
