@@ -138,7 +138,7 @@ function formatTxType(type: string): { title: string; tone: "earn" | "redeem" | 
   const lower = type.toLowerCase();
   if (lower.includes("earn")) return { title: "Начисление", tone: "earn" };
   if (lower.includes("redeem") || lower.includes("spend")) return { title: "Списание", tone: "redeem" };
-  if (lower.includes("refund")) return { title: "Возврат", tone: "earn" };
+  if (lower.includes("refund")) return { title: "Возврат", tone: "other" };
   if (lower.includes("promo")) return { title: "Промокод", tone: "other" };
   if (lower.includes("campaign")) return { title: "Акция", tone: "other" };
   return { title: type, tone: "other" };
@@ -160,7 +160,10 @@ function isPurchaseTransaction(type: string, orderId?: string | null): boolean {
     if (normalizedOrder.startsWith("gift")) return false;
     if (normalizedOrder.includes("promo")) return false;
   }
-  if (lower === "earn" || lower === "redeem" || lower === "refund") return true;
+  if (lower === "earn" || lower === "redeem") {
+    // Покупкой считаем только операции с реальным заказом
+    return typeof orderId === "string" && orderId.trim().length > 0;
+  }
   return lower.includes("purchase") || lower.includes("order") || lower.includes("sale");
 }
 
@@ -548,10 +551,31 @@ export default function Page() {
       });
   }, [tx, dismissedTxSet, dismissedReady, REVIEW_LOOKBACK_MS]);
 
+  const isEligiblePurchaseTx = useCallback(
+    (item: TransactionItem): boolean => {
+      const meta = formatTxType(item.type);
+      if (meta.tone !== "earn" && meta.tone !== "redeem") return false;
+      if (!isPurchaseTransaction(item.type, item.orderId)) return false;
+      // Требуем привязку к кассовому контексту (точка/сотрудник), иначе не считаем покупкой
+      if (!item.outletId && !item.staffId) return false;
+      if (item.reviewId) return false;
+      if (dismissedTxSet.has(item.id)) return false;
+      const createdAtMs = parseDateMs(item.createdAt);
+      if (!createdAtMs) return false;
+      return Date.now() - createdAtMs <= REVIEW_LOOKBACK_MS;
+    },
+    [dismissedTxSet, REVIEW_LOOKBACK_MS]
+  );
+
   useEffect(() => {
     if (!dismissedReady) return;
     if (feedbackOpen) return;
-    const candidate = eligibleTransactions[0] ?? null;
+    // Окно отзыва открываем ТОЛЬКО если последняя (самая свежая) транзакция — покупка (earn/redeem с orderId)
+    const latest = tx.reduce<{ item: TransactionItem | null; ts: number }>((acc, item) => {
+      const ts = parseDateMs(item.createdAt) ?? 0;
+      return ts > acc.ts ? { item, ts } : acc;
+    }, { item: null, ts: 0 }).item;
+    const candidate = latest && isEligiblePurchaseTx(latest) ? latest : null;
     if (candidate) {
       setFeedbackTxId(candidate.id);
       setFeedbackRating(0);
@@ -559,10 +583,10 @@ export default function Page() {
       setFeedbackStage('form');
       setSharePrompt(null);
       setFeedbackOpen(true);
-    } else if (!feedbackOpen) {
+    } else {
       setFeedbackTxId(null);
     }
-  }, [eligibleTransactions, dismissedReady, feedbackOpen]);
+  }, [tx, dismissedReady, feedbackOpen, isEligiblePurchaseTx]);
 
   const refreshHistory = useCallback(() => {
     if (!customerId) return;

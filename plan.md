@@ -43,6 +43,14 @@
 - [x] Miniapp/Backend: строгая привязка «поделиться отзывом» только к текущей точке (`outletId`) — фоллбеки на другие точки/`platform.url` удалены.
 - [x] .env: обновлён `.env.production.example` — добавлены `NEXT_PUBLIC_API_BASE`, `NEXT_PUBLIC_MINIAPP_DEV_AUTO_CUSTOMER`.
 
+- [x] Miniapp: окно отзыва открывается только для покупок — учитываются только операции `EARN/REDEEM`; возвраты/акции/промокоды/прочие начисления/списания исключены (`miniapp/app/page.tsx`: `formatTxType()`/`isPurchaseTransaction()` и фильтр `eligibleTransactions`).
+
+## Декомпозиция 2025-10-03 — Отзывы: только для портала (без публичных функций)
+- [x] Публичные эндпоинты `reviews/*` упразднены (возвращают 404): «Статистика», «Модерация», «Популярные отзывы», «Детали отзыва», «Реакции», «Шаблоны ответов», «Удаление».
+- [x] Физическая чистка `api/src/reviews/review.service.ts`: удалены неиспользуемые типы/методы (`CreateReviewResponseDto`, `ReviewStats`, `createReviewResponse`, `moderateReview`, `getMerchantReviews`, `getReviewStats`, `reactToReview`, `getReview`, `deleteReview`, `getPopularReviews`, `updateReviewCounters`).
+- [x] Поток создания отзыва оставлен только через `POST /loyalty/reviews` (миниаппа). Просмотр отзывов — только через `GET /portal/reviews` (PortalController → PortalReviewsService) с полями: Клиент, Оценка, Комментарий, Сотрудник, Торговая точка, Дата/время визита.
+- [ ] (Опционально) Полностью удалить `reviews`-контроллер, оставив лишь `loyalty/reviews` и `portal/reviews` — после проверки отсутствия внешних интеграций.
+
 ## Хотфикс 2025-09-15 — Группы доступа (в работе)
 - [x] Диагностировать `/portal/access-groups`: выяснил отсутствие дефолтных групп и отсутствие UX-обработки ошибок в портале.
 - [x] Исправить сервис `MerchantPanelService`: автосоздание дефолтных групп, структурные логи/метрики, проверка сохранения участников.
