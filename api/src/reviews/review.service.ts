@@ -1,6 +1,5 @@
-import { Injectable, BadRequestException, NotFoundException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { LoyaltyService } from '../loyalty/loyalty.service';
 
 export interface CreateReviewDto {
   merchantId: string;
@@ -40,11 +39,7 @@ export interface ReviewStats {
 
 @Injectable()
 export class ReviewService {
-  constructor(
-    private prisma: PrismaService,
-    @Inject(forwardRef(() => LoyaltyService))
-    private loyaltyService: LoyaltyService,
-  ) {}
+  constructor(private prisma: PrismaService) {}
 
   /**
    * Создать отзыв
@@ -125,7 +120,6 @@ export class ReviewService {
     }
 
     const autoApprove = Boolean(options?.autoApprove);
-    const rewardPoints = 0;
     const metadata: Record<string, any> = {
       userAgent: 'api',
       timestamp: new Date(),
@@ -150,7 +144,6 @@ export class ReviewService {
           status: autoApprove ? 'APPROVED' : 'PENDING',
           moderatedAt: autoApprove ? new Date() : undefined,
           metadata,
-          rewardPoints,
         },
         include: {
           customer: {
@@ -167,7 +160,7 @@ export class ReviewService {
       return {
         id: review.id,
         rating: review.rating,
-        rewardPoints,
+        rewardPoints: 0,
         status: review.status,
         message: autoApprove
           ? 'Спасибо за ваш отзыв! Он опубликован.'
@@ -580,32 +573,6 @@ export class ReviewService {
   }
 
   // Вспомогательные методы
-
-  private calculateReviewReward(rating: number, commentLength: number, photoCount: number): number {
-    let points = 0;
-
-    // Баллы за рейтинг
-    if (rating >= 4) {
-      points += 50;
-    } else if (rating === 3) {
-      points += 30;
-    } else {
-      points += 20; // Даже за негативный отзыв даем баллы за обратную связь
-    }
-
-    // Баллы за подробный комментарий
-    if (commentLength >= 100) {
-      points += 30;
-    } else if (commentLength >= 50) {
-      points += 15;
-    }
-
-    // Баллы за фото
-    points += photoCount * 20;
-
-    return Math.min(points, 200); // Максимум 200 баллов за отзыв
-  }
-
   private async updateMerchantRating(merchantId: string) {
     const reviews = await this.prisma.review.findMany({
       where: {

@@ -436,7 +436,7 @@ export default function ReviewsPage() {
                       </select>
                     </div>
                     <div style={{ fontSize: 12, opacity: 0.75 }}>
-                      Сервисы в которых можно будет поделиться отзывом. Для каждой торговой точки необходимо задать ссылку на карточку объекта из сервиса отзывов, это можно сделать в настройке торговой точки в <a href="/settings/outlets" style={{ color: '#818cf8', textDecoration: 'underline' }}>разделе «Торговые точки»</a>.
+                      Сервисы в которых можно будет поделиться отзывом. Для каждой торговой точки необходимо задать ссылку на карточку объекта из сервиса отзывов, это можно сделать в настройке торговой точки в <a href="/outlets" style={{ color: '#818cf8', textDecoration: 'underline' }}>разделе «Торговые точки»</a>.
                     </div>
                     <div style={{ display: 'grid', gap: 8 }}>
                       <Toggle checked={sharePlatforms.yandex} onChange={(value) => setSharePlatforms((prev) => ({ ...prev, yandex: value }))} label="Яндекс" />

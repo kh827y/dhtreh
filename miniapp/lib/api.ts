@@ -85,7 +85,7 @@ export async function submitReview(payload: {
   title?: string;
   tags?: string[];
   photos?: string[];
-}): Promise<{ ok: boolean; reviewId: string; status: string; rewardPoints: number; message: string }> {
+}): Promise<SubmitReviewResponse> {
   const body: Record<string, unknown> = {
     merchantId: payload.merchantId,
     customerId: payload.customerId,
@@ -119,6 +119,24 @@ export type ReviewsShareSettings = {
   threshold: number;
   platforms: ReviewsSharePlatform[];
 } | null;
+
+export type SubmitReviewShareOption = {
+  id: string;
+  url: string;
+};
+
+export type SubmitReviewResponse = {
+  ok: boolean;
+  reviewId: string;
+  status: string;
+  rewardPoints: number;
+  message: string;
+  share?: {
+    enabled: boolean;
+    threshold: number;
+    options: SubmitReviewShareOption[];
+  } | null;
+};
 
 export type PublicSettingsResp = {
   merchantId: string;

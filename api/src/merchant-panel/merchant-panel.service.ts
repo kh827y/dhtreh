@@ -92,7 +92,6 @@ export interface UpsertOutletPayload {
   externalId?: string | null;
   integrationProvider?: string | null;
   integrationLocationCode?: string | null;
-  integrationPayload?: any;
   reviewsShareLinks?: unknown;
   manualLocation?: boolean;
   latitude?: number | null;
@@ -386,95 +385,33 @@ export class MerchantPanelService {
     };
   }
 
-  private asJsonObject(value: Prisma.JsonValue | null | undefined): Record<string, any> {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      return {};
-    }
-    return { ...(value as Record<string, any>) };
-  }
-
   private sanitizeReviewLinksInput(input?: unknown) {
     if (!input || typeof input !== 'object') return undefined;
-    const result: Record<string, string | null> = {};
+    const result: Record<string, string> = {};
     for (const [rawKey, rawValue] of Object.entries(input as Record<string, unknown>)) {
       const key = String(rawKey || '').toLowerCase().trim();
       if (!key) continue;
-      if (rawValue === null) {
-        result[key] = null;
-        continue;
-      }
       if (typeof rawValue === 'string') {
         const trimmed = rawValue.trim();
-        result[key] = trimmed.length ? trimmed : null;
+        if (trimmed.length) {
+          result[key] = trimmed;
+        }
       }
     }
     return Object.keys(result).length ? result : {};
   }
 
-  private normalizeIntegrationPayloadInput(value: any): Prisma.JsonValue | null {
-    if (value == null) return null;
-    if (typeof value === 'string') {
-      try {
-        return JSON.parse(value) as Prisma.JsonValue;
-      } catch {
-        return value as unknown as Prisma.JsonValue;
-      }
-    }
-    if (typeof value === 'object') {
-      return value as Prisma.JsonValue;
-    }
-    return null;
-  }
-
   private extractReviewLinks(payload: Prisma.JsonValue | null | undefined) {
-    const container = this.asJsonObject(payload);
-    const raw = container.reviewsShare;
-    const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, any>) : {};
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return {} as Record<string, string>;
     const result: Record<string, string> = {};
-    for (const [platform, value] of Object.entries(source)) {
+    for (const [platform, value] of Object.entries(payload as Record<string, unknown>)) {
       if (!platform) continue;
       if (typeof value === 'string') {
         const trimmed = value.trim();
         if (trimmed) result[platform] = trimmed;
-        continue;
-      }
-      if (value && typeof value === 'object') {
-        const urlCandidate =
-          typeof (value as any).url === 'string'
-            ? (value as any).url
-            : typeof (value as any).link === 'string'
-              ? (value as any).link
-              : undefined;
-        const trimmed = urlCandidate ? urlCandidate.trim() : '';
-        if (trimmed) result[platform] = trimmed;
       }
     }
     return result;
-  }
-
-  private mergeReviewLinks(
-    basePayload: Prisma.JsonValue | null | undefined,
-    updates?: Record<string, string | null>,
-  ): Prisma.JsonValue | null {
-    if (!updates || !Object.keys(updates).length) {
-      return basePayload ?? null;
-    }
-    const container = this.asJsonObject(basePayload);
-    const current = this.extractReviewLinks(container);
-    for (const [platform, value] of Object.entries(updates)) {
-      if (!platform) continue;
-      if (value && value.trim().length) {
-        current[platform] = value.trim();
-      } else {
-        delete current[platform];
-      }
-    }
-    if (Object.keys(current).length) {
-      container.reviewsShare = current;
-    } else {
-      delete container.reviewsShare;
-    }
-    return Object.keys(container).length ? container : null;
   }
 
   private mapOutlet(outlet: Prisma.OutletGetPayload<undefined>) {
@@ -499,7 +436,7 @@ export class MerchantPanelService {
       latitude: outlet.latitude ? Number(outlet.latitude) : null,
       longitude: outlet.longitude ? Number(outlet.longitude) : null,
       reviewsShareLinks: (() => {
-        const links = this.extractReviewLinks(outlet.integrationPayload ?? null);
+        const links = this.extractReviewLinks(outlet.reviewLinks ?? null);
         if (!Object.keys(links).length) return null;
         return {
           yandex: links.yandex ?? null,
@@ -1297,12 +1234,10 @@ export class MerchantPanelService {
   async createOutlet(merchantId: string, payload: UpsertOutletPayload) {
     if (!payload.name?.trim()) throw new BadRequestException('Название обязательно');
     const reviewLinksInput = this.sanitizeReviewLinksInput(payload.reviewsShareLinks);
-    const baseIntegrationPayload = this.normalizeIntegrationPayloadInput(payload.integrationPayload);
-    const integrationPayload = reviewLinksInput !== undefined
-      ? this.mergeReviewLinks(baseIntegrationPayload, reviewLinksInput)
-      : baseIntegrationPayload;
-    const normalizedIntegrationPayload =
-      integrationPayload === null ? Prisma.JsonNull : integrationPayload;
+    const reviewLinksValue =
+      reviewLinksInput && Object.keys(reviewLinksInput).length
+        ? (reviewLinksInput as Prisma.InputJsonValue)
+        : Prisma.JsonNull;
     const outlet = await this.prisma.outlet.create({
       data: {
         merchantId,
@@ -1322,7 +1257,7 @@ export class MerchantPanelService {
         externalId: payload.externalId ?? null,
         integrationProvider: payload.integrationProvider ?? null,
         integrationLocationCode: payload.integrationLocationCode ?? null,
-        integrationPayload: normalizedIntegrationPayload ?? undefined,
+        reviewLinks: reviewLinksValue,
         manualLocation: payload.manualLocation ?? false,
         latitude: payload.latitude != null ? new Prisma.Decimal(payload.latitude) : null,
         longitude: payload.longitude != null ? new Prisma.Decimal(payload.longitude) : null,
@@ -1335,15 +1270,10 @@ export class MerchantPanelService {
     const outlet = await this.prisma.outlet.findFirst({ where: { merchantId, id: outletId } });
     if (!outlet) throw new NotFoundException('Точка не найдена');
     const reviewLinksInput = this.sanitizeReviewLinksInput(payload.reviewsShareLinks);
-    const baseIntegrationPayload =
-      payload.integrationPayload !== undefined
-        ? this.normalizeIntegrationPayloadInput(payload.integrationPayload)
-        : (outlet.integrationPayload ?? null);
-    const integrationPayload = reviewLinksInput !== undefined
-      ? this.mergeReviewLinks(baseIntegrationPayload, reviewLinksInput)
-      : baseIntegrationPayload;
-    const normalizedIntegrationPayload =
-      integrationPayload === null ? Prisma.JsonNull : integrationPayload;
+    const reviewLinksValue =
+      reviewLinksInput !== undefined
+        ? (Object.keys(reviewLinksInput).length ? (reviewLinksInput as Prisma.InputJsonValue) : Prisma.JsonNull)
+        : undefined;
     const updated = await this.prisma.outlet.update({
       where: { id: outletId },
       data: {
@@ -1363,10 +1293,7 @@ export class MerchantPanelService {
         externalId: payload.externalId ?? outlet.externalId,
         integrationProvider: payload.integrationProvider ?? outlet.integrationProvider,
         integrationLocationCode: payload.integrationLocationCode ?? outlet.integrationLocationCode,
-        integrationPayload:
-          payload.integrationPayload !== undefined || reviewLinksInput !== undefined
-            ? normalizedIntegrationPayload ?? undefined
-            : undefined,
+        reviewLinks: reviewLinksValue,
         manualLocation: payload.manualLocation ?? outlet.manualLocation,
         latitude: payload.latitude != null ? new Prisma.Decimal(payload.latitude) : outlet.latitude,
         longitude: payload.longitude != null ? new Prisma.Decimal(payload.longitude) : outlet.longitude,

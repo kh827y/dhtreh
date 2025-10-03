@@ -173,6 +173,33 @@ export class PortalCatalogService {
     };
   }
 
+  private sanitizeReviewLinksInput(input?: unknown) {
+    if (!input || typeof input !== 'object') return undefined as undefined | Record<string, string>;
+    const result: Record<string, string> = {};
+    for (const [rawKey, rawValue] of Object.entries(input as Record<string, unknown>)) {
+      const key = String(rawKey || '').toLowerCase().trim();
+      if (!key) continue;
+      if (typeof rawValue === 'string') {
+        const trimmed = rawValue.trim();
+        if (trimmed.length) result[key] = trimmed;
+      }
+    }
+    return Object.keys(result).length ? result : {};
+  }
+
+  private extractReviewLinks(payload: Prisma.JsonValue | null | undefined) {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return {} as Record<string, string>;
+    const result: Record<string, string> = {};
+    for (const [platform, value] of Object.entries(payload as Record<string, unknown>)) {
+      if (!platform) continue;
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (trimmed) result[platform] = trimmed;
+      }
+    }
+    return result;
+  }
+
   private mapOutlet(entity: Outlet): PortalOutletDto {
     return {
       id: entity.id,
@@ -196,6 +223,15 @@ export class PortalCatalogService {
       longitude: this.decimalToNumber(entity.longitude),
       manualLocation: entity.manualLocation,
       externalId: entity.externalId ?? null,
+      reviewsShareLinks: (() => {
+        const links = this.extractReviewLinks(entity.reviewLinks as any);
+        if (!Object.keys(links).length) return null;
+        return {
+          yandex: links['yandex'] ?? null,
+          twogis: links['twogis'] ?? null,
+          google: links['google'] ?? null,
+        };
+      })(),
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };
@@ -687,6 +723,12 @@ export class PortalCatalogService {
           manualLocation: dto.manualLocation ?? false,
           latitude: this.toDecimal(dto.latitude),
           longitude: this.toDecimal(dto.longitude),
+          reviewLinks: (() => {
+            const input = this.sanitizeReviewLinksInput(dto.reviewsShareLinks);
+            return input && Object.keys(input).length
+              ? (input as Prisma.InputJsonValue)
+              : (Prisma.JsonNull as Prisma.NullableJsonNullValueInput);
+          })(),
         },
       });
       this.logger.log(JSON.stringify({ event: 'portal.outlet.create', merchantId, outletId: created.id }));
@@ -724,6 +766,12 @@ export class PortalCatalogService {
     if (dto.latitude !== undefined) data.latitude = this.toDecimal(dto.latitude);
     if (dto.longitude !== undefined) data.longitude = this.toDecimal(dto.longitude);
     if (dto.externalId !== undefined) data.externalId = dto.externalId?.trim() || null;
+    if (dto.reviewsShareLinks !== undefined) {
+      const input = this.sanitizeReviewLinksInput(dto.reviewsShareLinks);
+      data.reviewLinks = input && Object.keys(input).length
+        ? (input as Prisma.InputJsonValue)
+        : (Prisma.JsonNull as Prisma.NullableJsonNullValueInput);
+    }
     const showSchedule = dto.showSchedule !== undefined ? dto.showSchedule : outlet.scheduleEnabled;
     if (dto.showSchedule !== undefined) data.scheduleEnabled = showSchedule;
     if (dto.schedule !== undefined) {

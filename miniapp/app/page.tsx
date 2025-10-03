@@ -7,7 +7,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import QrCanvas from "../components/QrCanvas";
@@ -23,6 +22,8 @@ import {
   referralActivate,
   promoCodeApply,
   submitReview,
+  type ReviewsShareSettings,
+  type SubmitReviewShareOption,
 } from "../lib/api";
 import Spinner from "../components/Spinner";
 import Toast from "../components/Toast";
@@ -168,15 +169,6 @@ function formatAmount(amount: number): string {
   return `${sign}${amount.toLocaleString("ru-RU", { maximumFractionDigits: 2 })}`;
 }
 
-function toFiniteNumber(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim()) {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return null;
-}
-
 function parseDateMs(value: string | null | undefined): number | null {
   if (!value) return null;
   const ts = Date.parse(value);
@@ -275,64 +267,48 @@ export default function Page() {
   const [feedbackComment, setFeedbackComment] = useState<string>("");
   const [feedbackTxId, setFeedbackTxId] = useState<string | null>(null);
   const [feedbackSubmitting, setFeedbackSubmitting] = useState<boolean>(false);
-  const [feedbackSubmitted, setFeedbackSubmitted] = useState<boolean>(false);
-  const [pendingFeedbackEvent, setPendingFeedbackEvent] = useState<
-    | {
-        ts: number;
-        mode?: "redeem" | "earn";
-        redeemApplied?: number;
-        earnApplied?: number;
-        knownTxIds?: string[];
-        candidateIds?: string[];
-        source?: "event" | "observer";
-      }
-    | null
-  >(null);
-  const [ratedTransactions, setRatedTransactions] = useState<string[]>([]);
-  const [ratedOrderIds, setRatedOrderIds] = useState<string[]>([]);
-  const [ratedReady, setRatedReady] = useState<boolean>(false);
+  const [feedbackStage, setFeedbackStage] = useState<'form' | 'share'>('form');
   const [dismissedTransactions, setDismissedTransactions] = useState<string[]>([]);
-  const [dismissedOrderIds, setDismissedOrderIds] = useState<string[]>([]);
   const [dismissedReady, setDismissedReady] = useState<boolean>(false);
-  const [ratedOrdersReady, setRatedOrdersReady] = useState<boolean>(false);
-  const [dismissedOrdersReady, setDismissedOrdersReady] = useState<boolean>(false);
-  const lastEventTsRef = useRef<number>(0);
-  const txIdsRef = useRef<string[]>([]);
-  const seenTxIdsRef = useRef<Set<string>>(new Set());
-  const [txSnapshotReady, setTxSnapshotReady] = useState<boolean>(false);
-  const [initialHydrationDone, setInitialHydrationDone] = useState<boolean>(false);
+  const [sharePrompt, setSharePrompt] = useState<{
+    enabled: boolean;
+    threshold: number;
+    options: Array<{ id: string; url: string }>;
+  } | null>(null);
+
+  const computeShareOptions = useCallback(
+    (share: ReviewsShareSettings, activeOutletId: string | null) => {
+      if (!share || !share.enabled) return [] as Array<{ id: string; url: string }>;
+      if (!activeOutletId) return [] as Array<{ id: string; url: string }>;
+      const result: Array<{ id: string; url: string }> = [];
+      for (const platform of share.platforms || []) {
+        if (!platform || typeof platform !== "object") continue;
+        if (!platform.enabled) continue;
+        const outlets = Array.isArray(platform.outlets) ? platform.outlets : [];
+        const outletMatch = outlets.find(
+          (item) => item && item.outletId === activeOutletId && typeof item.url === "string" && item.url.trim(),
+        );
+        if (!outletMatch) continue;
+        result.push({ id: platform.id, url: outletMatch.url.trim() });
+      }
+      return result;
+    },
+    [],
+  );
+
+  const activeTransaction = useMemo(() => {
+    if (!feedbackTxId) return null;
+    return tx.find((item) => item.id === feedbackTxId) ?? null;
+  }, [feedbackTxId, tx]);
+
+  const activeOutletId = activeTransaction?.outletId ?? null;
+
   const shareOptions = useMemo(() => {
-    const share = auth.shareSettings;
-    if (!share || !share.enabled) return [] as Array<{ id: string; url: string }>;
-    if (!feedbackRating || feedbackRating < share.threshold) return [] as Array<{ id: string; url: string }>;
-    const activeTx = feedbackTxId ? tx.find((item) => item.id === feedbackTxId) ?? null : null;
-    const activeOutletId = activeTx?.outletId ?? null;
-    const result: Array<{ id: string; url: string }> = [];
-    for (const platform of share.platforms || []) {
-      if (!platform || typeof platform !== "object") continue;
-      if (!platform.enabled) continue;
-      const outlets = Array.isArray(platform.outlets) ? platform.outlets : [];
-      let url: string | null = null;
-      if (activeOutletId) {
-        const outletMatch = outlets.find((item) => item && item.outletId === activeOutletId);
-        if (outletMatch && typeof outletMatch.url === "string" && outletMatch.url.trim()) {
-          url = outletMatch.url.trim();
-        }
-      }
-      if (!url && outlets.length > 0) {
-        const fallbackOutlet = outlets.find((item) => item && typeof item.url === "string" && item.url.trim());
-        if (fallbackOutlet) {
-          url = fallbackOutlet.url.trim();
-        }
-      }
-      if (!url && typeof platform.url === "string" && platform.url.trim()) {
-        url = platform.url.trim();
-      }
-      if (!url) continue;
-      result.push({ id: platform.id, url });
+    if (sharePrompt?.options?.length) {
+      return sharePrompt.options;
     }
-    return result;
-  }, [auth.shareSettings, feedbackRating, feedbackTxId, tx]);
+    return computeShareOptions(auth.shareSettings, activeOutletId);
+  }, [sharePrompt, computeShareOptions, auth.shareSettings, activeOutletId]);
 
   const handleShareClick = useCallback((url: string) => {
     if (!url) return;
@@ -355,39 +331,9 @@ export default function Page() {
     setFeedbackTxId(null);
     setFeedbackComment("");
     setFeedbackRating(0);
-    setFeedbackSubmitted(false);
+    setFeedbackStage('form');
+    setSharePrompt(null);
   }, []);
-
-  const openFeedbackForCandidate = useCallback(
-    (candidate: TransactionItem) => {
-      setPendingFeedbackEvent(null);
-      setFeedbackRating(0);
-      setFeedbackComment("");
-      setFeedbackTxId(candidate.id);
-      setFeedbackSubmitted(false);
-      setDismissedTransactions((prev) =>
-        prev.includes(candidate.id) ? prev : [...prev, candidate.id]
-      );
-      const candidateOrderId = candidate.orderId ? candidate.orderId.trim() : "";
-      if (candidateOrderId) {
-        setDismissedOrderIds((prev) =>
-          prev.includes(candidateOrderId) ? prev : [...prev, candidateOrderId]
-        );
-      }
-      setFeedbackOpen(true);
-    },
-    [],
-  );
-
-  useEffect(() => {
-    txIdsRef.current = tx.map((item) => item.id);
-  }, [tx]);
-
-  useEffect(() => {
-    seenTxIdsRef.current = new Set();
-    setTxSnapshotReady(false);
-    setInitialHydrationDone(false);
-  }, [customerId, merchantId]);
 
   useEffect(() => {
     const tgUser = getTelegramUser();
@@ -531,7 +477,6 @@ export default function Page() {
       const r = await retry(() => transactions(merchantId, customerId, 20));
       setTx(mapTransactions(r.items));
       setNextBefore(r.nextBefore || null);
-      setTxSnapshotReady(true);
       if (!silent) setStatus("История обновлена");
     } catch (error) {
       const message = resolveErrorMessage(error);
@@ -539,7 +484,6 @@ export default function Page() {
         setStatus(`Ошибка истории: ${message}`);
         setToast({ msg: "Не удалось обновить историю", type: "error" });
       }
-      setTxSnapshotReady(true);
     }
   }, [customerId, merchantId, retry, mapTransactions]);
 
@@ -579,55 +523,46 @@ export default function Page() {
     }
   }, [merchantId, retry]);
 
-  const ratedTxSet = useMemo(() => new Set(ratedTransactions), [ratedTransactions]);
   const dismissedTxSet = useMemo(() => new Set(dismissedTransactions), [dismissedTransactions]);
-  const ratedOrderSet = useMemo(() => new Set(ratedOrderIds), [ratedOrderIds]);
-  const dismissedOrderSet = useMemo(() => new Set(dismissedOrderIds), [dismissedOrderIds]);
+
+  const REVIEW_LOOKBACK_MS = 72 * 60 * 60 * 1000;
+
+  const eligibleTransactions = useMemo(() => {
+    if (!dismissedReady) return [] as TransactionItem[];
+    const now = Date.now();
+    return tx
+      .filter((item) => {
+        const meta = formatTxType(item.type);
+        if (meta.tone !== "earn" && meta.tone !== "redeem") return false;
+        if (!isPurchaseTransaction(item.type, item.orderId)) return false;
+        if (item.reviewId) return false;
+        if (dismissedTxSet.has(item.id)) return false;
+        const createdAtMs = parseDateMs(item.createdAt);
+        if (!createdAtMs) return false;
+        return now - createdAtMs <= REVIEW_LOOKBACK_MS;
+      })
+      .sort((a, b) => {
+        const aMs = parseDateMs(a.createdAt) ?? 0;
+        const bMs = parseDateMs(b.createdAt) ?? 0;
+        return aMs - bMs;
+      });
+  }, [tx, dismissedTxSet, dismissedReady, REVIEW_LOOKBACK_MS]);
 
   useEffect(() => {
-    lastEventTsRef.current = 0;
-  }, [merchantId, customerId]);
-
-  useEffect(() => {
-    const seen = seenTxIdsRef.current;
-    const fresh: TransactionItem[] = [];
-    for (const item of tx) {
-      if (!seen.has(item.id)) {
-        fresh.push(item);
-        if (txSnapshotReady) {
-          seen.add(item.id);
-        }
-      }
+    if (!dismissedReady) return;
+    if (feedbackOpen) return;
+    const candidate = eligibleTransactions[0] ?? null;
+    if (candidate) {
+      setFeedbackTxId(candidate.id);
+      setFeedbackRating(0);
+      setFeedbackComment("");
+      setFeedbackStage('form');
+      setSharePrompt(null);
+      setFeedbackOpen(true);
+    } else if (!feedbackOpen) {
+      setFeedbackTxId(null);
     }
-    if (!txSnapshotReady) {
-      fresh.forEach((item) => seen.add(item.id));
-      return;
-    }
-    if (!initialHydrationDone) {
-      fresh.forEach((item) => seen.add(item.id));
-      setInitialHydrationDone(true);
-      return;
-    }
-    if (!fresh.length) return;
-    if (pendingFeedbackEvent) return;
-    const candidate = fresh.find((item) => {
-      const meta = formatTxType(item.type);
-      if (meta.tone !== "earn" && meta.tone !== "redeem") return false;
-      if (!isPurchaseTransaction(item.type, item.orderId)) return false;
-      if (ratedTxSet.has(item.id) || dismissedTxSet.has(item.id)) return false;
-      if (item.reviewId) return false;
-      return true;
-    });
-    if (!candidate) return;
-    setPendingFeedbackEvent({ ts: Date.now(), candidateIds: [candidate.id], source: "observer" });
-  }, [
-    tx,
-    txSnapshotReady,
-    initialHydrationDone,
-    pendingFeedbackEvent,
-    ratedTxSet,
-    dismissedTxSet,
-  ]);
+  }, [eligibleTransactions, dismissedReady, feedbackOpen]);
 
   const refreshHistory = useCallback(() => {
     if (!customerId) return;
@@ -648,9 +583,8 @@ export default function Page() {
       const eventCustomer = data.customerId ? String(data.customerId) : "";
       if (eventCustomer && customerId && eventCustomer !== customerId) return;
       const typeRaw = data.type ?? data.eventType;
-      let eventType = "";
       if (typeRaw) {
-        eventType = String(typeRaw).toLowerCase();
+        const eventType = String(typeRaw).toLowerCase();
         if (
           !eventType.includes("commit") &&
           !eventType.includes("redeem") &&
@@ -658,38 +592,6 @@ export default function Page() {
         ) {
           return;
         }
-      }
-      const tsRaw =
-        typeof data.ts === "number"
-          ? data.ts
-          : typeof data.timestamp === "number"
-            ? data.timestamp
-            : typeof (data as Record<string, unknown>)._ts === "number"
-              ? (data as Record<string, unknown>)._ts
-              : Number(data.ts ?? data.timestamp ?? (data as Record<string, unknown>)._ts ?? 0);
-      if (Number.isFinite(tsRaw) && tsRaw > 0) {
-        if (tsRaw <= lastEventTsRef.current) return;
-        lastEventTsRef.current = tsRaw;
-      } else {
-        lastEventTsRef.current = Date.now();
-      }
-      const redeemApplied = toFiniteNumber(data.redeemApplied);
-      const earnApplied = toFiniteNumber(data.earnApplied);
-      const modeRaw = typeof data.mode === "string" ? data.mode.toLowerCase() : undefined;
-      const normalizedMode =
-        modeRaw === "redeem" || modeRaw === "earn" ? (modeRaw as "redeem" | "earn") : undefined;
-      const isCommitEvent = eventType.includes("commit");
-      const hasPurchaseImpact =
-        (redeemApplied ?? 0) > 0 || (earnApplied ?? 0) > 0 || normalizedMode === "redeem" || normalizedMode === "earn";
-      if (isCommitEvent && hasPurchaseImpact) {
-        setPendingFeedbackEvent({
-          ts: lastEventTsRef.current,
-          mode: normalizedMode,
-          redeemApplied: redeemApplied ?? undefined,
-          earnApplied: earnApplied ?? undefined,
-          knownTxIds: txIdsRef.current.slice(0, 50),
-          source: "event",
-        });
       }
       refreshHistory();
     },
@@ -763,60 +665,6 @@ export default function Page() {
   useEffect(() => {
     try {
       if (typeof window === "undefined") return;
-      const saved = localStorage.getItem("miniapp.ratedTransactions");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          setRatedTransactions(parsed.filter((id) => typeof id === "string"));
-        }
-      }
-    } catch {
-      setRatedTransactions([]);
-    } finally {
-      setRatedReady(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!ratedReady) return;
-    try {
-      if (typeof window === "undefined") return;
-      localStorage.setItem("miniapp.ratedTransactions", JSON.stringify(ratedTransactions));
-    } catch {
-      // ignore
-    }
-  }, [ratedTransactions, ratedReady]);
-
-  useEffect(() => {
-    try {
-      if (typeof window === "undefined") return;
-      const saved = localStorage.getItem("miniapp.ratedOrders");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          setRatedOrderIds(parsed.filter((id) => typeof id === "string"));
-        }
-      }
-    } catch {
-      setRatedOrderIds([]);
-    } finally {
-      setRatedOrdersReady(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!ratedOrdersReady) return;
-    try {
-      if (typeof window === "undefined") return;
-      localStorage.setItem("miniapp.ratedOrders", JSON.stringify(ratedOrderIds));
-    } catch {
-      // ignore
-    }
-  }, [ratedOrderIds, ratedOrdersReady]);
-
-  useEffect(() => {
-    try {
-      if (typeof window === "undefined") return;
       const saved = localStorage.getItem("miniapp.dismissedTransactions");
       if (saved) {
         const parsed = JSON.parse(saved);
@@ -845,38 +693,11 @@ export default function Page() {
   }, [dismissedTransactions, dismissedReady]);
 
   useEffect(() => {
-    try {
-      if (typeof window === "undefined") return;
-      const saved = localStorage.getItem("miniapp.dismissedOrders");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          setDismissedOrderIds(parsed.filter((id) => typeof id === "string"));
-        }
-      }
-    } catch {
-      setDismissedOrderIds([]);
-    } finally {
-      setDismissedOrdersReady(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!dismissedOrdersReady) return;
-    try {
-      if (typeof window === "undefined") return;
-      localStorage.setItem("miniapp.dismissedOrders", JSON.stringify(dismissedOrderIds));
-    } catch {
-      // ignore
-    }
-  }, [dismissedOrderIds, dismissedOrdersReady]);
-
-  useEffect(() => {
-    if (!txSnapshotReady) return;
+    if (!dismissedReady) return;
     if (!tx.length) return;
     const ratedIds = tx.filter((item) => item.reviewId).map((item) => item.id);
     if (ratedIds.length) {
-      setRatedTransactions((prev) => {
+      setDismissedTransactions((prev) => {
         let changed = false;
         const next = new Set(prev);
         for (const id of ratedIds) {
@@ -888,144 +709,21 @@ export default function Page() {
         return changed ? Array.from(next) : prev;
       });
     }
-    const ratedOrders = tx
-      .filter((item) => item.reviewId && item.orderId)
-      .map((item) => (item.orderId as string).trim())
-      .filter((orderId) => orderId.length > 0);
-    if (ratedOrders.length) {
-      setRatedOrderIds((prev) => {
-        let changed = false;
-        const next = new Set(prev);
-        for (const orderId of ratedOrders) {
-          if (!next.has(orderId)) {
-            next.add(orderId);
-            changed = true;
-          }
-        }
-        return changed ? Array.from(next) : prev;
-      });
-    }
-  }, [tx, txSnapshotReady]);
-
-  useEffect(() => {
-    if (!ratedReady || !dismissedReady || !ratedOrdersReady || !dismissedOrdersReady || feedbackOpen) return;
-    if (!tx.length) return;
-    const eventTs = pendingFeedbackEvent?.ts ?? null;
-    const earliestAllowed =
-      eventTs && Number.isFinite(eventTs) ? eventTs - 30 * 60 * 1000 : null;
-    const latestAllowed =
-      eventTs && Number.isFinite(eventTs) ? eventTs + 30 * 60 * 1000 : null;
-    const candidateIdsSet =
-      pendingFeedbackEvent?.candidateIds && pendingFeedbackEvent.candidateIds.length
-        ? new Set(pendingFeedbackEvent.candidateIds)
-        : null;
-    const knownSet =
-      pendingFeedbackEvent?.knownTxIds && pendingFeedbackEvent.knownTxIds.length
-        ? new Set(pendingFeedbackEvent.knownTxIds)
-        : null;
-    const basePool = candidateIdsSet
-      ? tx.filter((item) => candidateIdsSet.has(item.id))
-      : pendingFeedbackEvent && knownSet
-        ? tx.filter((item) => !knownSet.has(item.id))
-        : tx;
-    const candidateSource =
-      pendingFeedbackEvent && !candidateIdsSet && basePool.length === 0 ? tx : basePool;
-    const candidate = candidateSource.find((item) => {
-      const meta = formatTxType(item.type);
-      if (meta.tone !== "earn" && meta.tone !== "redeem") return false;
-      if (!isPurchaseTransaction(item.type, item.orderId)) return false;
-      if (ratedTxSet.has(item.id) || dismissedTxSet.has(item.id)) return false;
-      const normalizedOrder = item.orderId ? item.orderId.trim() : "";
-      if (normalizedOrder) {
-        if (ratedOrderSet.has(normalizedOrder) || dismissedOrderSet.has(normalizedOrder)) return false;
-      }
-      if (!pendingFeedbackEvent || pendingFeedbackEvent.source === "observer") return true;
-      const createdAtMs = parseDateMs(item.createdAt);
-      if (!createdAtMs) return false;
-      if (earliestAllowed && createdAtMs < earliestAllowed) return false;
-      if (latestAllowed && createdAtMs > latestAllowed) return false;
-      return true;
-    });
-    if (!candidate) {
-      if (pendingFeedbackEvent?.source === "observer") {
-        setPendingFeedbackEvent(null);
-      }
-      return;
-    }
-    openFeedbackForCandidate(candidate);
-  }, [
-    tx,
-    ratedTxSet,
-    dismissedTxSet,
-    ratedReady,
-    dismissedReady,
-    ratedOrderSet,
-    dismissedOrderSet,
-    ratedOrdersReady,
-    dismissedOrdersReady,
-    feedbackOpen,
-    pendingFeedbackEvent,
-    openFeedbackForCandidate,
-  ]);
-
-  useEffect(() => {
-    if (!txSnapshotReady) return;
-    if (feedbackOpen || pendingFeedbackEvent) return;
-    if (!ratedReady || !dismissedReady || !ratedOrdersReady || !dismissedOrdersReady) return;
-    const now = Date.now();
-    const thresholdMs = 72 * 60 * 60 * 1000;
-    const candidate = tx.find((item) => {
-      const meta = formatTxType(item.type);
-      if (meta.tone !== "earn" && meta.tone !== "redeem") return false;
-      if (!isPurchaseTransaction(item.type, item.orderId)) return false;
-      if (item.reviewId) return false;
-      if (ratedTxSet.has(item.id) || dismissedTxSet.has(item.id)) return false;
-      const normalizedOrder = item.orderId ? item.orderId.trim() : "";
-      if (normalizedOrder && (ratedOrderSet.has(normalizedOrder) || dismissedOrderSet.has(normalizedOrder))) return false;
-      const createdAtMs = parseDateMs(item.createdAt);
-      if (!createdAtMs) return false;
-      if (now - createdAtMs > thresholdMs) return false;
-      return true;
-    });
-    if (candidate) {
-      openFeedbackForCandidate(candidate);
-    }
-  }, [
-    tx,
-    txSnapshotReady,
-    feedbackOpen,
-    pendingFeedbackEvent,
-    ratedReady,
-    dismissedReady,
-    ratedOrdersReady,
-    dismissedOrdersReady,
-    ratedTxSet,
-    dismissedTxSet,
-    ratedOrderSet,
-    dismissedOrderSet,
-    openFeedbackForCandidate,
-  ]);
+  }, [tx, dismissedReady]);
 
   const handleFeedbackClose = useCallback(() => {
     if (feedbackTxId) {
       setDismissedTransactions((prev) =>
         prev.includes(feedbackTxId) ? prev : [...prev, feedbackTxId]
       );
-      const activeTx = tx.find((item) => item.id === feedbackTxId) ?? null;
-      const orderId = activeTx?.orderId ? activeTx.orderId.trim() : "";
-      if (orderId) {
-        setDismissedOrderIds((prev) =>
-          prev.includes(orderId) ? prev : [...prev, orderId]
-        );
-      }
     }
     resetFeedbackState();
-  }, [feedbackTxId, tx, resetFeedbackState]);
+  }, [feedbackTxId, resetFeedbackState]);
 
   const handleFeedbackSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      if (feedbackSubmitted) {
+      if (feedbackStage === 'share') {
         handleFeedbackClose();
         return;
       }
@@ -1042,7 +740,7 @@ export default function Page() {
         : null;
       try {
         setFeedbackSubmitting(true);
-        await submitReview({
+        const response = await submitReview({
           merchantId,
           customerId,
           rating: feedbackRating,
@@ -1053,19 +751,65 @@ export default function Page() {
           staffId: activeTx?.staffId ?? null,
         });
         if (feedbackTxId) {
-          setRatedTransactions((prev) =>
+          setDismissedTransactions((prev) =>
             prev.includes(feedbackTxId) ? prev : [...prev, feedbackTxId]
           );
-        }
-        const orderId = activeTx?.orderId ? activeTx.orderId.trim() : "";
-        if (orderId) {
-          setRatedOrderIds((prev) =>
-            prev.includes(orderId) ? prev : [...prev, orderId]
+          setTx((prev) =>
+            prev.map((item) =>
+              item.id === feedbackTxId
+                ? {
+                    ...item,
+                    reviewId: response.reviewId,
+                    reviewRating: feedbackRating,
+                    reviewCreatedAt: new Date().toISOString(),
+                  }
+                : item,
+            ),
           );
         }
-        setToast({ msg: "Спасибо за отзыв!", type: "success" });
-        if (shareOptions.length > 0) {
-          setFeedbackSubmitted(true);
+        setToast({ msg: response.message || "Спасибо за отзыв!", type: "success" });
+        void refreshHistory();
+        let resolvedShare: {
+          enabled: boolean;
+          threshold: number;
+          options: Array<{ id: string; url: string }>;
+        } | null = null;
+        const rawShare = response.share;
+        if (rawShare !== undefined) {
+          if (rawShare && typeof rawShare === "object") {
+            const threshold =
+              typeof rawShare.threshold === "number" && rawShare.threshold >= 1 && rawShare.threshold <= 5
+                ? Math.round(rawShare.threshold)
+                : auth.shareSettings?.threshold ?? 5;
+            const options = Array.isArray(rawShare.options)
+              ? rawShare.options
+                  .filter((opt): opt is SubmitReviewShareOption => {
+                    if (!opt) return false;
+                    if (typeof opt.id !== "string" || typeof opt.url !== "string") return false;
+                    return opt.id.trim().length > 0 && opt.url.trim().length > 0;
+                  })
+                  .map((opt) => ({ id: opt.id.trim(), url: opt.url.trim() }))
+              : [];
+            resolvedShare = {
+              enabled: Boolean(rawShare.enabled),
+              threshold,
+              options,
+            };
+          } else if (rawShare === null) {
+            resolvedShare = {
+              enabled: false,
+              threshold: auth.shareSettings?.threshold ?? 5,
+              options: [],
+            };
+          }
+        }
+        setSharePrompt(resolvedShare);
+        const fallbackOptions = computeShareOptions(auth.shareSettings, activeOutletId);
+        const effectiveThreshold = resolvedShare?.threshold ?? auth.shareSettings?.threshold ?? 5;
+        const effectiveEnabled = resolvedShare ? resolvedShare.enabled : Boolean(auth.shareSettings?.enabled);
+        const hasOptions = resolvedShare ? resolvedShare.options.length > 0 : fallbackOptions.length > 0;
+        if (effectiveEnabled && feedbackRating >= effectiveThreshold && hasOptions) {
+          setFeedbackStage('share');
         } else {
           resetFeedbackState();
         }
@@ -1082,11 +826,14 @@ export default function Page() {
       feedbackTxId,
       tx,
       feedbackComment,
-      feedbackSubmitted,
-      shareOptions,
+      feedbackStage,
       handleFeedbackClose,
       setToast,
       resetFeedbackState,
+      auth.shareSettings,
+      refreshHistory,
+      computeShareOptions,
+      activeOutletId,
     ]
   );
 
@@ -1667,17 +1414,17 @@ export default function Page() {
             </button>
             <div className={styles.feedbackHeader}>
               <div className={styles.feedbackTitle}>
-                {feedbackSubmitted ? "Отзыв отправлен!" : "Оцените визит."}
+                {feedbackStage === 'share' ? "Отзыв отправлен!" : "Оцените визит."}
               </div>
               <div className={styles.feedbackSubtitle}>
-                {feedbackSubmitted
+                {feedbackStage === 'share'
                   ? shareOptions.length > 0
                     ? "Поделитесь впечатлением на площадке"
                     : "Спасибо за обратную связь"
                   : "Ваш отзыв поможет нам улучшить сервис."}
               </div>
             </div>
-            {!feedbackSubmitted && (
+            {feedbackStage === 'form' && (
               <>
                 <div className={styles.feedbackStars} role="radiogroup" aria-label="Оценка визита">
                   {[1, 2, 3, 4, 5].map((value) => (
@@ -1708,34 +1455,34 @@ export default function Page() {
                 </label>
               </>
             )}
-            {feedbackSubmitted && shareOptions.length > 0 && (
-              <div className={styles.feedbackShareBlock}>
-                <div className={styles.feedbackShareTitle}>
-                  Мы рады, что вам понравилось! Пожалуйста, поделитесь своим отзывом
-                </div>
-                <div className={styles.feedbackShareButtons}>
-                  {shareOptions.map((platform) => (
-                    <button
-                      key={platform.id}
-                      type="button"
-                      className={styles.feedbackShareButton}
-                      onClick={() => handleShareClick(platform.url)}
-                    >
-                      {REVIEW_PLATFORM_LABELS[platform.id] || platform.id}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            <button
-              type={feedbackSubmitted ? "button" : "submit"}
-              className={styles.feedbackSubmit}
-              disabled={(feedbackSubmitted && feedbackSubmitting) || (!feedbackSubmitted && (!feedbackRating || feedbackSubmitting))}
-              onClick={feedbackSubmitted ? handleFeedbackClose : undefined}
-              aria-busy={feedbackSubmitting || undefined}
-            >
-              {feedbackSubmitted ? "Готово" : feedbackSubmitting ? "Отправляем…" : "Отправить"}
-            </button>
+      {feedbackStage === 'share' && shareOptions.length > 0 && (
+        <div className={styles.feedbackShareBlock}>
+          <div className={styles.feedbackShareTitle}>
+            Мы рады, что вам понравилось! Пожалуйста, поделитесь своим отзывом
+          </div>
+          <div className={styles.feedbackShareButtons}>
+            {shareOptions.map((platform) => (
+              <button
+                key={platform.id}
+                type="button"
+                className={styles.feedbackShareButton}
+                onClick={() => handleShareClick(platform.url)}
+              >
+                {REVIEW_PLATFORM_LABELS[platform.id] || platform.id}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <button
+        type={feedbackStage === 'share' ? "button" : "submit"}
+        className={styles.feedbackSubmit}
+        disabled={(feedbackStage === 'share' && feedbackSubmitting) || (feedbackStage === 'form' && (!feedbackRating || feedbackSubmitting))}
+        onClick={feedbackStage === 'share' ? handleFeedbackClose : undefined}
+        aria-busy={feedbackSubmitting || undefined}
+      >
+        {feedbackStage === 'share' ? "Готово" : feedbackSubmitting ? "Отправляем…" : "Отправить"}
+      </button>
           </form>
         </div>
       )}

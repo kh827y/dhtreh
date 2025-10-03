@@ -17,6 +17,7 @@ import { validateTelegramInitData } from './telegram.util';
 import { PromosService } from '../promos/promos.service';
 import { PromoCodesService } from '../promocodes/promocodes.service';
 import { ReviewService } from '../reviews/review.service';
+import type { MerchantSettings } from '@prisma/client';
 
 @Controller('loyalty')
 @UseGuards(CashierGuard)
@@ -42,6 +43,218 @@ export class LoyaltyController {
       } catch {}
     }
     return null;
+  }
+
+  private async buildReviewsShareSettings(
+    merchantId: string,
+    settingsHint?: MerchantSettings | null,
+  ): Promise<{
+    settings: MerchantSettings | null;
+    share: {
+      enabled: boolean;
+      threshold: number;
+      platforms: Array<{
+        id: string;
+        enabled: boolean;
+        url: string | null;
+        outlets: Array<{ outletId: string; url: string }>;
+      }>;
+    } | null;
+  }> {
+    const settings = settingsHint ?? (await this.prisma.merchantSettings.findUnique({ where: { merchantId } }));
+    const rules =
+      settings?.rulesJson && typeof settings.rulesJson === 'object'
+        ? (settings.rulesJson as Record<string, any>)
+        : null;
+    const shareRaw =
+      rules?.reviewsShare && typeof rules.reviewsShare === 'object'
+        ? (rules.reviewsShare as Record<string, any>)
+        : null;
+
+    if (!shareRaw) {
+      return { settings: settings ?? null, share: null };
+    }
+
+    const platformsRaw =
+      shareRaw?.platforms && typeof shareRaw.platforms === 'object'
+        ? (shareRaw.platforms as Record<string, any>)
+        : null;
+
+    const normalizePlatformOutlets = (cfg: any) => {
+      const map = new Map<string, string>();
+      const push = (outletIdRaw: unknown, value: unknown) => {
+        const outletId = typeof outletIdRaw === 'string' ? outletIdRaw.trim() : '';
+        const urlCandidate =
+          typeof value === 'string'
+            ? value
+            : value && typeof value === 'object'
+              ? ((value as any).url ?? (value as any).link ?? (value as any).href ?? '')
+              : '';
+        const url = typeof urlCandidate === 'string' ? urlCandidate.trim() : '';
+        if (!outletId || !url) return;
+        if (!map.has(outletId)) {
+          map.set(outletId, url);
+        }
+      };
+      const collect = (source: any) => {
+        if (!source || typeof source !== 'object') return;
+        if (Array.isArray(source)) {
+          for (const entry of source) {
+            if (!entry || typeof entry !== 'object') continue;
+            push((entry as any).outletId ?? (entry as any).id, (entry as any).url ?? (entry as any).link ?? entry);
+          }
+          return;
+        }
+        for (const [key, value] of Object.entries(source)) {
+          if (typeof value === 'string') {
+            push(key, value);
+          } else if (value && typeof value === 'object') {
+            push((value as any).outletId ?? key, (value as any).url ?? (value as any).link ?? null);
+          }
+        }
+      };
+      collect(cfg?.outlets);
+      collect(cfg?.links);
+      collect(cfg?.byOutlet);
+      collect(cfg?.urls);
+      if (!map.size && cfg && typeof cfg === 'object' && !Array.isArray(cfg)) {
+        for (const [key, value] of Object.entries(cfg)) {
+          if (['enabled', 'url', 'threshold', 'platforms'].includes(key)) continue;
+          if (typeof value === 'string') {
+            push(key, value);
+          } else if (value && typeof value === 'object') {
+            push(key, (value as any).url ?? (value as any).link ?? null);
+          }
+        }
+      }
+      return Array.from(map.entries()).map(([outletId, url]) => ({ outletId, url }));
+    };
+
+    const platformConfigMap = new Map<string, Record<string, any>>();
+    if (platformsRaw) {
+      for (const [id, cfg] of Object.entries(platformsRaw)) {
+        if (!cfg || typeof cfg !== 'object') continue;
+        const normalizedId = String(id || '').trim();
+        if (!normalizedId) continue;
+        platformConfigMap.set(normalizedId, cfg as Record<string, any>);
+      }
+    }
+
+    const outletLinkMap = new Map<string, Array<{ outletId: string; url: string }>>();
+    const pushOutletLink = (platformId: string, outletId: string, url: string) => {
+      if (!platformId || !outletId || !url) return;
+      const list = outletLinkMap.get(platformId) ?? [];
+      const existingIndex = list.findIndex((entry) => entry.outletId === outletId);
+      if (existingIndex >= 0) {
+        list[existingIndex] = { outletId, url };
+      } else {
+        list.push({ outletId, url });
+      }
+      outletLinkMap.set(platformId, list);
+    };
+
+    for (const [id, cfg] of platformConfigMap.entries()) {
+      const baseOutlets = normalizePlatformOutlets(cfg) ?? [];
+      for (const entry of baseOutlets) {
+        pushOutletLink(id, entry.outletId, entry.url);
+      }
+    }
+
+    const outlets = await this.prisma.outlet.findMany({
+      where: { merchantId },
+      select: { id: true, reviewLinks: true },
+    });
+
+    for (const outlet of outlets) {
+      const source =
+        outlet.reviewLinks && typeof outlet.reviewLinks === 'object'
+          ? (outlet.reviewLinks as Record<string, unknown>)
+          : {};
+      const links: Record<string, string> = {};
+      for (const [platformIdRaw, value] of Object.entries(source)) {
+        const platformId = typeof platformIdRaw === 'string' ? platformIdRaw.trim() : '';
+        if (!platformId) continue;
+        if (typeof value === 'string') {
+          const trimmed = value.trim();
+          if (trimmed) links[platformId] = trimmed;
+        }
+      }
+      for (const [platformIdRaw, url] of Object.entries(links)) {
+        const platformId = platformIdRaw.trim();
+        if (!platformId) continue;
+        pushOutletLink(platformId, outlet.id, url);
+      }
+    }
+
+    const orderedIds: string[] = [];
+    const pushOrdered = (id: string) => {
+      if (!id) return;
+      if (!orderedIds.includes(id)) orderedIds.push(id);
+    };
+    const KNOWN_PLATFORMS = ['yandex', 'twogis', 'google'];
+    KNOWN_PLATFORMS.forEach(pushOrdered);
+    Array.from(platformConfigMap.keys()).forEach(pushOrdered);
+    Array.from(outletLinkMap.keys()).forEach(pushOrdered);
+
+    const shareEnabled = Boolean(shareRaw?.enabled);
+    const thresholdRaw = Number(shareRaw?.threshold);
+    const threshold =
+      Number.isFinite(thresholdRaw) && thresholdRaw >= 1 && thresholdRaw <= 5
+        ? Math.round(thresholdRaw)
+        : 5;
+
+    const platforms = orderedIds.map((id) => {
+      const cfg = platformConfigMap.get(id);
+      const urlRaw = cfg && typeof (cfg as any).url === 'string' ? (cfg as any).url.trim() : '';
+      const url = urlRaw || null;
+      const outletsList = outletLinkMap.get(id) ?? [];
+      const hasExplicitPlatformEnabled = cfg != null && Object.prototype.hasOwnProperty.call(cfg, 'enabled');
+      const platformEnabled = hasExplicitPlatformEnabled ? Boolean((cfg as any).enabled) : true;
+      const enabled = shareEnabled && platformEnabled;
+      return { id, enabled, url, outlets: outletsList };
+    });
+
+    return {
+      settings: settings ?? null,
+      share: {
+        enabled: shareEnabled,
+        threshold,
+        platforms,
+      },
+    };
+  }
+
+  private buildShareOptions(
+    share:
+      | null
+      | {
+          enabled: boolean;
+          threshold: number;
+          platforms: Array<{
+            id: string;
+            enabled: boolean;
+            url: string | null;
+            outlets: Array<{ outletId: string; url: string }>;
+          }>;
+        },
+    outletId?: string | null,
+  ): Array<{ id: string; url: string }> {
+    // Показывать ссылки только для конкретной торговой точки.
+    // Без фоллбеков на другие точки или platform.url — строго соответствуем требованиям задачи.
+    if (!share || !share.enabled) return [];
+    const normalizedOutletId = typeof outletId === 'string' && outletId.trim() ? outletId.trim() : null;
+    if (!normalizedOutletId) return [];
+    const result: Array<{ id: string; url: string }> = [];
+    for (const platform of share.platforms) {
+      if (!platform || !platform.enabled) continue;
+      const outlets = Array.isArray(platform.outlets) ? platform.outlets : [];
+      const outletMatch = outlets.find(
+        (item) => item && item.outletId === normalizedOutletId && typeof item.url === 'string' && item.url.trim(),
+      );
+      if (!outletMatch) continue;
+      result.push({ id: platform.id, url: outletMatch.url.trim() });
+    }
+    return result;
   }
 
   // Plain ID или JWT
@@ -100,6 +313,10 @@ export class LoyaltyController {
     const transactionIdRaw =
       typeof body?.transactionId === 'string' ? body.transactionId.trim() : '';
     const transactionId = transactionIdRaw.length > 0 ? transactionIdRaw : undefined;
+    const outletIdRaw = typeof body?.outletId === 'string' ? body.outletId.trim() : '';
+    const outletId = outletIdRaw.length > 0 ? outletIdRaw : undefined;
+    const staffIdRaw = typeof body?.staffId === 'string' ? body.staffId.trim() : '';
+    const staffId = staffIdRaw.length > 0 ? staffIdRaw : undefined;
     if (!orderId && !transactionId) {
       throw new BadRequestException('transactionId или orderId обязательны для отзыва');
     }
@@ -120,11 +337,11 @@ export class LoyaltyController {
     if (transactionId) {
       metadata.transactionId = transactionId;
     }
-    if (typeof body?.outletId === 'string' && body.outletId.trim()) {
-      metadata.outletId = body.outletId.trim();
+    if (outletId) {
+      metadata.outletId = outletId;
     }
-    if (typeof body?.staffId === 'string' && body.staffId.trim()) {
-      metadata.staffId = body.staffId.trim();
+    if (staffId) {
+      metadata.staffId = staffId;
     }
 
     const result = await this.reviews.createReview(
@@ -142,6 +359,21 @@ export class LoyaltyController {
       },
       { autoApprove: true, metadata },
     );
+    let sharePayload: {
+      enabled: boolean;
+      threshold: number;
+      options: Array<{ id: string; url: string }>;
+    } | null = null;
+    try {
+      const { share } = await this.buildReviewsShareSettings(merchantId);
+      if (share) {
+        sharePayload = {
+          enabled: share.enabled,
+          threshold: share.threshold,
+          options: this.buildShareOptions(share, outletId ?? null),
+        };
+      }
+    } catch {}
 
     return {
       ok: true,
@@ -149,6 +381,7 @@ export class LoyaltyController {
       status: result.status,
       rewardPoints: result.rewardPoints,
       message: result.message,
+      share: sharePayload,
     } as const;
   }
 
@@ -518,163 +751,14 @@ export class LoyaltyController {
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @ApiOkResponse({ type: PublicSettingsDto })
   async publicSettings(@Param('merchantId') merchantId: string) {
-    const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId } });
-    const rules = s?.rulesJson && typeof s.rulesJson === 'object' ? (s.rulesJson as Record<string, any>) : null;
-    const shareRaw = rules?.reviewsShare && typeof rules.reviewsShare === 'object' ? rules.reviewsShare as Record<string, any> : null;
-    const platformsRaw = shareRaw?.platforms && typeof shareRaw.platforms === 'object'
-      ? (shareRaw.platforms as Record<string, any>)
-      : null;
-    const normalizePlatformOutlets = (cfg: any) => {
-      const map = new Map<string, string>();
-      const push = (outletIdRaw: unknown, value: unknown) => {
-        const outletId = typeof outletIdRaw === 'string' ? outletIdRaw.trim() : '';
-        const urlCandidate = typeof value === 'string'
-          ? value
-          : value && typeof value === 'object'
-            ? ((value as any).url ?? (value as any).link ?? (value as any).href ?? '')
-            : '';
-        const url = typeof urlCandidate === 'string' ? urlCandidate.trim() : '';
-        if (!outletId || !url) return;
-        if (!map.has(outletId)) {
-          map.set(outletId, url);
-        }
-      };
-      const collect = (source: any) => {
-        if (!source || typeof source !== 'object') return;
-        if (Array.isArray(source)) {
-          for (const entry of source) {
-            if (!entry || typeof entry !== 'object') continue;
-            push((entry as any).outletId ?? (entry as any).id, (entry as any).url ?? (entry as any).link ?? entry);
-          }
-          return;
-        }
-        for (const [key, value] of Object.entries(source)) {
-          if (typeof value === 'string') {
-            push(key, value);
-          } else if (value && typeof value === 'object') {
-            push((value as any).outletId ?? key, (value as any).url ?? (value as any).link ?? null);
-          }
-        }
-      };
-      collect(cfg?.outlets);
-      collect(cfg?.links);
-      collect(cfg?.byOutlet);
-      collect(cfg?.urls);
-      if (!map.size && cfg && typeof cfg === 'object' && !Array.isArray(cfg)) {
-        for (const [key, value] of Object.entries(cfg)) {
-          if (['enabled', 'url', 'threshold', 'platforms'].includes(key)) continue;
-          if (typeof value === 'string') {
-            push(key, value);
-          } else if (value && typeof value === 'object') {
-            push(key, (value as any).url ?? (value as any).link ?? null);
-          }
-        }
-      }
-      return Array.from(map.entries()).map(([outletId, url]) => ({ outletId, url }));
-    };
-    const platformConfigMap = new Map<string, Record<string, any>>();
-    if (platformsRaw) {
-      for (const [id, cfg] of Object.entries(platformsRaw)) {
-        if (!cfg || typeof cfg !== 'object') continue;
-        const normalizedId = String(id || '').trim();
-        if (!normalizedId) continue;
-        platformConfigMap.set(normalizedId, cfg as Record<string, any>);
-      }
-    }
-
-    const outletLinkMap = new Map<string, Array<{ outletId: string; url: string }>>();
-    const pushOutletLink = (platformId: string, outletId: string, url: string) => {
-      if (!platformId || !outletId || !url) return;
-      const list = outletLinkMap.get(platformId) ?? [];
-      const existingIndex = list.findIndex((entry) => entry.outletId === outletId);
-      if (existingIndex >= 0) {
-        list[existingIndex] = { outletId, url };
-      } else {
-        list.push({ outletId, url });
-      }
-      outletLinkMap.set(platformId, list);
-    };
-
-    for (const [id, cfg] of platformConfigMap.entries()) {
-      const baseOutlets = normalizePlatformOutlets(cfg) ?? [];
-      for (const entry of baseOutlets) {
-        pushOutletLink(id, entry.outletId, entry.url);
-      }
-    }
-
-    const outlets = await this.prisma.outlet.findMany({
-      where: { merchantId },
-      select: { id: true, integrationPayload: true },
-    });
-
-    const extractReviewLinks = (payload: any) => {
-      if (!payload || typeof payload !== 'object') return {} as Record<string, string>;
-      const container = payload.reviewsShare && typeof payload.reviewsShare === 'object' && !Array.isArray(payload.reviewsShare)
-        ? payload.reviewsShare
-        : payload;
-      if (!container || typeof container !== 'object') return {} as Record<string, string>;
-      const result: Record<string, string> = {};
-      for (const [platform, value] of Object.entries(container as Record<string, any>)) {
-        if (typeof value === 'string') {
-          const trimmed = value.trim();
-          if (trimmed) result[platform] = trimmed;
-        } else if (value && typeof value === 'object') {
-          const candidate = typeof value.url === 'string' ? value.url : typeof value.link === 'string' ? value.link : undefined;
-          if (candidate) {
-            const trimmed = String(candidate).trim();
-            if (trimmed) result[platform] = trimmed;
-          }
-        }
-      }
-      return result;
-    };
-
-    for (const outlet of outlets) {
-      const payload = outlet.integrationPayload && typeof outlet.integrationPayload === 'object' ? outlet.integrationPayload : null;
-      const links = extractReviewLinks(payload);
-      for (const [platformIdRaw, url] of Object.entries(links)) {
-        const platformId = platformIdRaw.trim();
-        if (!platformId) continue;
-        pushOutletLink(platformId, outlet.id, url);
-      }
-    }
-
-    const orderedIds: string[] = [];
-    const pushOrdered = (id: string) => {
-      if (!id) return;
-      if (!orderedIds.includes(id)) orderedIds.push(id);
-    };
-    const KNOWN_PLATFORMS = ['yandex', 'twogis', 'google'];
-    KNOWN_PLATFORMS.forEach(pushOrdered);
-    Array.from(platformConfigMap.keys()).forEach(pushOrdered);
-    Array.from(outletLinkMap.keys()).forEach(pushOrdered);
-
-    const platforms = orderedIds.map((id) => {
-      const cfg = platformConfigMap.get(id);
-      const enabled = cfg !== undefined ? Boolean((cfg as any).enabled) : Boolean(shareRaw?.enabled);
-      const urlRaw = cfg && typeof (cfg as any).url === 'string' ? (cfg as any).url.trim() : '';
-      const url = urlRaw || null;
-      const outletsList = outletLinkMap.get(id) ?? [];
-      return { id, enabled, url, outlets: outletsList };
-    });
-
-    const thresholdRaw = Number(shareRaw?.threshold);
-    const threshold = Number.isFinite(thresholdRaw) && thresholdRaw >= 1 && thresholdRaw <= 5
-      ? Math.round(thresholdRaw)
-      : 5;
+    const { settings: s, share } = await this.buildReviewsShareSettings(merchantId);
     return {
       merchantId,
       qrTtlSec: s?.qrTtlSec ?? 120,
       miniappThemePrimary: (s as any)?.miniappThemePrimary ?? null,
       miniappThemeBg: (s as any)?.miniappThemeBg ?? null,
       miniappLogoUrl: (s as any)?.miniappLogoUrl ?? null,
-      reviewsShare: shareRaw
-        ? {
-            enabled: Boolean(shareRaw.enabled),
-            threshold,
-            platforms,
-          }
-        : null,
+      reviewsShare: share,
     } as any;
   }
 

@@ -275,6 +275,9 @@ export class CreatePortalOutletDto {
   @Type(() => OutletScheduleDto)
   schedule?: OutletScheduleDto;
   @ApiProperty() @IsString() externalId!: string;
+  @ApiPropertyOptional({ description: 'Ссылки на карточки отзывов по площадкам', type: 'object', additionalProperties: { type: 'string', nullable: true } })
+  @IsOptional()
+  reviewsShareLinks?: Record<string, string | null>;
 }
 
 export class UpdatePortalOutletDto extends PartialType(CreatePortalOutletDto) {}
@@ -302,6 +305,8 @@ export class PortalOutletDto {
   @ApiPropertyOptional() longitude?: number | null;
   @ApiProperty() manualLocation!: boolean;
   @ApiProperty() externalId!: string | null;
+  @ApiPropertyOptional({ description: 'Ссылки на карточки отзывов по площадкам', type: 'object', additionalProperties: { type: 'string', nullable: true }, nullable: true })
+  reviewsShareLinks?: { yandex?: string | null; twogis?: string | null; google?: string | null } | null;
   @ApiProperty() createdAt!: Date;
   @ApiProperty() updatedAt!: Date;
 }

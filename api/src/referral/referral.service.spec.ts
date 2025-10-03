@@ -25,7 +25,12 @@ describe('ReferralService (unit)', () => {
     customer: { findUnique: jest.fn(async () => ({ id: 'C1', name: 'John', phone: '+7123', email: 'john@example.com' })) },
   }, overrides);
 
-  const mkSvc = (prisma: any) => new ReferralService(prisma as any, { earn: jest.fn(async ()=>({ ok: true })) } as any, { sendNotification: jest.fn(async ()=>({})) } as any, { sendEmail: jest.fn(async ()=>({})) } as any);
+  const mkSvc = (prisma: any) =>
+    new ReferralService(
+      prisma as any,
+      { earn: jest.fn(async () => ({ ok: true })) } as any,
+      { sendEmail: jest.fn(async () => ({})) } as any,
+    );
 
   it('createReferralProgram throws when active exists', async () => {
     const prisma = mkPrisma({ referralProgram: { findFirst: jest.fn(async () => ({ id: 'P-active' })) } });

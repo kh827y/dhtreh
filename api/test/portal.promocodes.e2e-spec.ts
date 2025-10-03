@@ -39,10 +39,10 @@ describe('Portal promocodes (e2e)', () => {
     promoCodes: [] as PromoCodeRow[],
   };
 
-  const metricsMock = {
+  const metricsMock: any = {
     inc: jest.fn(),
     observe: jest.fn(),
-  } as unknown as MetricsService;
+  };
 
   const prismaMock: any = {
     $connect: jest.fn(async () => {}),
