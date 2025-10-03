@@ -154,9 +154,6 @@ export class ReviewService {
           },
         },
       });
-
-      await this.updateMerchantRating(dto.merchantId);
-
       return {
         id: review.id,
         rating: review.rating,
@@ -230,11 +227,6 @@ export class ReviewService {
       },
     });
 
-    // Если отзыв одобрен, обновляем рейтинг
-    if (status === 'APPROVED') {
-      await this.updateMerchantRating(review.merchantId);
-    }
-
     // Уведомляем клиента о результате модерации
     // TODO: Implement notification
 
@@ -272,6 +264,12 @@ export class ReviewService {
 
     if (filters?.customerId) {
       where.customerId = filters.customerId;
+    }
+
+    if (filters?.hasResponse === true) {
+      where.response = { isNot: null };
+    } else if (filters?.hasResponse === false) {
+      where.response = { is: null };
     }
 
     const orderBy: any = {};
@@ -541,9 +539,6 @@ export class ReviewService {
       },
     });
 
-    // Обновляем рейтинг мерчанта
-    await this.updateMerchantRating(review.merchantId);
-
     return { success: true };
   }
 
@@ -573,32 +568,6 @@ export class ReviewService {
   }
 
   // Вспомогательные методы
-  private async updateMerchantRating(merchantId: string) {
-    const reviews = await this.prisma.review.findMany({
-      where: {
-        merchantId,
-        status: 'APPROVED',
-      },
-      select: {
-        rating: true,
-      },
-    });
-
-    if (reviews.length === 0) {
-      return;
-    }
-
-    const totalRating = reviews.reduce((sum, r) => sum + r.rating, 0);
-    const averageRating = totalRating / reviews.length;
-
-    await this.prisma.merchant.update({
-      where: { id: merchantId },
-      data: {
-        rating: Math.round(averageRating * 10) / 10,
-        reviewCount: reviews.length,
-      },
-    });
-  }
 
   private async updateReviewCounters(reviewId: string, type: 'HELPFUL' | 'NOT_HELPFUL', delta: number) {
     const field = type === 'HELPFUL' ? 'helpfulCount' : 'notHelpfulCount';
