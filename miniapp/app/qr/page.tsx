@@ -2,14 +2,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import QrCanvas from "../../components/QrCanvas";
 import Spinner from "../../components/Spinner";
+import { balance, levels, mechanicsLevels, mintQr } from "../../lib/api";
 import {
-  balance,
-  levels,
-  mechanicsLevels,
-  mintQr,
-  type MechanicsLevelsResp,
-} from "../../lib/api";
-import { getProgressPercent, type LevelInfo } from "../../lib/levels";
+  findTierDefinition,
+  getProgressPercent,
+  getTierEarnPercent,
+  getTierMinPayment,
+  getTierRedeemPercent,
+  type LevelInfo,
+  type TierDefinition,
+} from "../../lib/levels";
 import { useMiniappAuthContext } from "../../lib/MiniappAuthContext";
 import { subscribeToLoyaltyEvents } from "../../lib/loyaltyEvents";
 import styles from "./page.module.css";
@@ -24,12 +26,19 @@ function resolveErrorMessage(error: unknown): string {
   }
 }
 
-type MechanicsLevel = NonNullable<NonNullable<MechanicsLevelsResp["levels"]>[number]>;
+function formatPercentValue(value: number | null): string {
+  if (value == null) return "—";
+  const fractionDigits = Number.isInteger(value) ? 0 : 1;
+  return `${value.toLocaleString("ru-RU", {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  })}%`;
+}
 
-const PROGRESS_STUB = {
-  current: 18500,
-  threshold: 50000,
-};
+function formatMoneyValue(value: number | null): string {
+  if (value == null) return "—";
+  return value.toLocaleString("ru-RU");
+}
 
 export default function QrPage() {
   const auth = useMiniappAuthContext();
@@ -42,7 +51,7 @@ export default function QrPage() {
   const [error, setError] = useState<string>("");
   const [currentBalance, setCurrentBalance] = useState<number | null>(null);
   const [levelInfo, setLevelInfo] = useState<LevelInfo | null>(null);
-  const [levelCatalog, setLevelCatalog] = useState<MechanicsLevel[]>([]);
+  const [levelCatalog, setLevelCatalog] = useState<TierDefinition[]>([]);
   const [qrSize, setQrSize] = useState<number>(240);
 
   const effectiveTtl = useMemo(() => {
@@ -94,7 +103,7 @@ export default function QrPage() {
       const catalog = await mechanicsLevels(merchantId);
       if (Array.isArray(catalog?.levels)) {
         setLevelCatalog(
-          catalog.levels.filter((lvl): lvl is MechanicsLevel => !!lvl && typeof lvl === "object")
+          catalog.levels.filter((lvl): lvl is TierDefinition => !!lvl && typeof lvl === "object"),
         );
       } else {
         setLevelCatalog([]);
@@ -218,65 +227,28 @@ export default function QrPage() {
     return () => window.removeEventListener("resize", updateQrSize);
   }, [updateQrSize]);
 
-  const cashbackPercent = useMemo(() => {
-    const currentName = levelInfo?.current?.name;
-    if (!currentName) return null;
-    const entry = levelCatalog.find((lvl) => (lvl?.name || "").toLowerCase() === currentName.toLowerCase());
-    if (!entry) return null;
-    if (typeof entry.cashbackPercent === "number") return entry.cashbackPercent;
-    if (entry.benefits && typeof entry.benefits.cashbackPercent === "number") {
-      return entry.benefits.cashbackPercent;
-    }
-    if (typeof entry.rewardPercent === "number") return entry.rewardPercent;
-    return null;
-  }, [levelInfo, levelCatalog]);
+  const currentTier = useMemo(
+    () => findTierDefinition(levelInfo, levelCatalog),
+    [levelInfo, levelCatalog],
+  );
+
+  const earnPercent = useMemo(() => getTierEarnPercent(currentTier), [currentTier]);
+  const redeemPercent = useMemo(() => getTierRedeemPercent(currentTier), [currentTier]);
+  const minPaymentAmount = useMemo(() => getTierMinPayment(currentTier), [currentTier]);
 
   const progressData = useMemo(() => {
-    const fallbackPercent = PROGRESS_STUB.threshold
-      ? Math.min(100, Math.max(0, Math.round((PROGRESS_STUB.current / PROGRESS_STUB.threshold) * 100)))
+    if (!levelInfo?.next) return null;
+    const thresholdRaw = Number(levelInfo.next.threshold ?? 0);
+    if (!Number.isFinite(thresholdRaw) || thresholdRaw <= 0) return null;
+    const currentRaw = Number(levelInfo.value ?? 0);
+    const percent = getProgressPercent(levelInfo);
+    const normalizedPercent = Number.isFinite(percent)
+      ? Math.min(100, Math.max(0, Math.round(percent)))
       : 0;
-
-    const fallback = {
-      percent: fallbackPercent,
-      current: PROGRESS_STUB.current,
-      threshold: PROGRESS_STUB.threshold,
-    };
-
-    if (!levelInfo?.next) {
-      return fallback;
-    }
-
-    const thresholdRaw = levelInfo.next.threshold;
-    if (typeof thresholdRaw !== "number" || !Number.isFinite(thresholdRaw) || thresholdRaw <= 0) {
-      return fallback;
-    }
-
-    const currentRaw = typeof levelInfo.value === "number" && Number.isFinite(levelInfo.value)
-      ? levelInfo.value
-      : 0;
-
-    const threshold = Math.max(0, Math.round(thresholdRaw));
-    const current = Math.max(0, Math.round(currentRaw));
-    const progressPercent = getProgressPercent(levelInfo);
-    const normalizedPercent = Number.isFinite(progressPercent)
-      ? Math.min(100, Math.max(0, Math.round(progressPercent)))
-      : 0;
-
-    if (normalizedPercent <= 0) {
-      const recalculated = threshold
-        ? Math.min(100, Math.max(0, Math.round((Math.min(current, threshold) / threshold) * 100)))
-        : 0;
-      return {
-        percent: recalculated,
-        current,
-        threshold,
-      };
-    }
-
     return {
       percent: normalizedPercent,
-      current,
-      threshold,
+      current: Math.max(0, Math.round(Math.min(currentRaw, thresholdRaw))),
+      threshold: Math.max(0, Math.round(thresholdRaw)),
     };
   }, [levelInfo]);
 
@@ -324,22 +296,26 @@ export default function QrPage() {
         <div className={styles.infoCard}>
           <div className={styles.infoLabel}>Уровень</div>
           <div className={styles.infoValue}>{levelInfo?.current?.name || "—"}</div>
+          <div className={styles.infoCaption}>Начисление {formatPercentValue(earnPercent)}</div>
+          <div className={styles.infoCaption}>Списание {formatPercentValue(redeemPercent)}</div>
           <div className={styles.infoCaption}>
-            Кэшбэк {typeof cashbackPercent === "number" ? `${cashbackPercent}%` : "—%"}
+            Мин. к оплате {minPaymentAmount != null ? `${formatMoneyValue(minPaymentAmount)} ₽` : "—"}
           </div>
         </div>
       </section>
 
-      <section className={styles.progressSection}>
-        <div className={styles.progressTitle}>Сумма покупок до следующего уровня &gt;</div>
-        <div className={styles.progressBar}>
-          <div className={styles.progressFill} style={{ width: `${progressData.percent}%` }} />
-        </div>
-        <div className={styles.progressScale}>
-          <span>{progressData.current.toLocaleString("ru-RU")}</span>
-          <span>{progressData.threshold.toLocaleString("ru-RU")}</span>
-        </div>
-      </section>
+      {progressData && (
+        <section className={styles.progressSection}>
+          <div className={styles.progressTitle}>Сумма покупок до следующего уровня &gt;</div>
+          <div className={styles.progressBar}>
+            <div className={styles.progressFill} style={{ width: `${progressData.percent}%` }} />
+          </div>
+          <div className={styles.progressScale}>
+            <span>{progressData.current.toLocaleString("ru-RU")}</span>
+            <span>{progressData.threshold.toLocaleString("ru-RU")}</span>
+          </div>
+        </section>
+      )}
 
       {error && <div className={styles.error}>{error}</div>}
     </div>

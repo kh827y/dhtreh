@@ -22,7 +22,15 @@ import {
 import Spinner from "../components/Spinner";
 import Toast from "../components/Toast";
 import { useMiniappAuthContext } from "../lib/MiniappAuthContext";
-import { getProgressPercent, type LevelInfo } from "../lib/levels";
+import {
+  findTierDefinition,
+  getProgressPercent,
+  getTierEarnPercent,
+  getTierMinPayment,
+  getTierRedeemPercent,
+  type LevelInfo,
+  type TierDefinition,
+} from "../lib/levels";
 import { getTransactionMeta, type TransactionKind } from "../lib/transactionMeta";
 import { subscribeToLoyaltyEvents } from "../lib/loyaltyEvents";
 import { type TransactionItem } from "../lib/reviewUtils";
@@ -38,15 +46,6 @@ type TelegramUser = {
   lastName?: string;
   username?: string;
   photoUrl?: string;
-};
-
-type MechanicsLevel = {
-  id?: string;
-  name?: string;
-  threshold?: number;
-  cashbackPercent?: number | null;
-  benefits?: { cashbackPercent?: number | null; [key: string]: unknown } | null;
-  rewardPercent?: number | null;
 };
 
 const genderOptions: Array<{ value: "male" | "female"; label: string }> = [
@@ -187,6 +186,20 @@ function formatAmount(amount: number): string {
   return `${sign}${amount.toLocaleString("ru-RU", { maximumFractionDigits: 2 })}`;
 }
 
+function formatPercentValue(value: number | null): string {
+  if (value == null) return "—";
+  const fractionDigits = Number.isInteger(value) ? 0 : 1;
+  return `${value.toLocaleString("ru-RU", {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  })}%`;
+}
+
+function formatMoneyValue(value: number | null): string {
+  if (value == null) return "—";
+  return value.toLocaleString("ru-RU");
+}
+
 function escapeRegExp(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -231,7 +244,7 @@ export default function Page() {
   const [error, setError] = useState<string>("");
   const [toast, setToast] = useState<{ msg: string; type?: "info" | "error" | "success" } | null>(null);
   const [levelInfo, setLevelInfo] = useState<LevelInfo | null>(null);
-  const [levelCatalog, setLevelCatalog] = useState<MechanicsLevel[]>([]);
+  const [levelCatalog, setLevelCatalog] = useState<TierDefinition[]>([]);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
   const [telegramUser, setTelegramUser] = useState<TelegramUser | null>(null);
   const [profileForm, setProfileForm] = useState<{
@@ -424,9 +437,10 @@ export default function Page() {
     try {
       const cfg = await retry(() => mechanicsLevels(merchantId));
       if (Array.isArray(cfg?.levels)) {
-        setLevelCatalog(
-          cfg.levels.filter((lvl: MechanicsLevel) => lvl && typeof lvl === "object") as MechanicsLevel[]
+        const normalized = cfg.levels.filter(
+          (lvl): lvl is TierDefinition => !!lvl && typeof lvl === "object",
         );
+        setLevelCatalog(normalized);
       }
     } catch {
       setLevelCatalog([]);
@@ -695,7 +709,11 @@ export default function Page() {
 
   const progressPercent = useMemo(() => getProgressPercent(levelInfo), [levelInfo]);
   const nextLevelLabel = levelInfo?.next?.name || "";
-  const purchasesToNext = levelInfo?.progressToNext ?? 0;
+  const purchasesToNext = useMemo(() => {
+    const raw = Number(levelInfo?.progressToNext ?? 0);
+    if (!Number.isFinite(raw)) return 0;
+    return Math.max(0, Math.round(raw));
+  }, [levelInfo]);
 
   const availablePromotions = useMemo(
     () => promotions.filter((p) => p && p.canClaim && !p.claimed).length,
@@ -745,18 +763,14 @@ export default function Page() {
     [promoCode, customerId, merchantId, loadBalance, loadTx]
   );
 
-  const cashbackPercent = useMemo(() => {
-    const currentName = levelInfo?.current?.name;
-    if (!currentName) return null;
-    const entry = levelCatalog.find((lvl) => (lvl?.name || "").toLowerCase() === currentName.toLowerCase());
-    if (!entry) return null;
-    if (typeof entry.cashbackPercent === "number") return entry.cashbackPercent;
-    if (entry.benefits && typeof entry.benefits.cashbackPercent === "number") {
-      return entry.benefits.cashbackPercent;
-    }
-    if (typeof entry.rewardPercent === "number") return entry.rewardPercent;
-    return null;
-  }, [levelInfo, levelCatalog]);
+  const currentTier = useMemo(
+    () => findTierDefinition(levelInfo, levelCatalog),
+    [levelInfo, levelCatalog],
+  );
+
+  const earnPercent = useMemo(() => getTierEarnPercent(currentTier), [currentTier]);
+  const redeemPercent = useMemo(() => getTierRedeemPercent(currentTier), [currentTier]);
+  const minPaymentAmount = useMemo(() => getTierMinPayment(currentTier), [currentTier]);
 
   const displayName = useMemo(() => {
     if (profileForm.name) return profileForm.name;
@@ -932,9 +946,17 @@ export default function Page() {
                 <span className={styles.cardValue}>{levelInfo?.current?.name || "—"}</span>
               </div>
               <div className={styles.cardRow}>
-                <span className={styles.cardLabel}>Кэшбэк</span>
+                <span className={styles.cardLabel}>Начисление</span>
+                <span className={styles.cardValue}>{formatPercentValue(earnPercent)}</span>
+              </div>
+              <div className={styles.cardRow}>
+                <span className={styles.cardLabel}>Списание</span>
+                <span className={styles.cardValue}>{formatPercentValue(redeemPercent)}</span>
+              </div>
+              <div className={styles.cardRow}>
+                <span className={styles.cardLabel}>Мин. к оплате</span>
                 <span className={styles.cardValue}>
-                  {typeof cashbackPercent === "number" ? `${cashbackPercent}%` : "—"}
+                  {minPaymentAmount != null ? `${formatMoneyValue(minPaymentAmount)} ₽` : "—"}
                 </span>
               </div>
             </div>

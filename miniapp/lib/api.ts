@@ -19,7 +19,7 @@ export type TransactionsResp = {
 export type LevelsResp = {
   merchantId: string;
   customerId: string;
-  metric: 'earn'|'redeem'|'transactions';
+  metric: 'earn' | 'redeem' | 'transactions';
   periodDays: number;
   value: number;
   current: { name: string; threshold: number };
@@ -32,9 +32,17 @@ export type MechanicsLevelsResp = {
     id?: string;
     name?: string;
     threshold?: number;
+    thresholdAmount?: number;
+    minPaymentAmount?: number | null;
+    earnRateBps?: number | null;
+    earnRatePercent?: number | null;
+    redeemRateBps?: number | null;
+    redeemRatePercent?: number | null;
     cashbackPercent?: number | null;
-    benefits?: { cashbackPercent?: number | null } | null;
     rewardPercent?: number | null;
+    benefits?: Record<string, unknown> | null;
+    metadata?: Record<string, unknown> | null;
+    [key: string]: unknown;
   }>;
 };
 
