@@ -32,6 +32,74 @@ function mkPrisma(overrides: any = {}) {
       findFirst: jest.fn(async () => null),
       create: jest.fn(async () => ({ id: 'W1', balance: 0 })),
     },
+    loyaltyTierAssignment: {
+      findUnique: jest.fn(async (args: any) => {
+        const customerId = args?.where?.merchantId_customerId?.customerId;
+        if (!customerId) return null;
+        return {
+          id: `assign-${customerId}`,
+          merchantId: args.where.merchantId_customerId.merchantId,
+          customerId,
+          tierId: 'tier-base',
+          expiresAt: null,
+          source: 'auto',
+          tier: {
+            id: 'tier-base',
+            name: 'Base',
+            earnRateBps: 500,
+            redeemRateBps: 5000,
+            metadata: null,
+          },
+        };
+      }),
+      create: jest.fn(async (args: any) => ({
+        id: 'assign-created',
+        merchantId: args.data.merchantId,
+        customerId: args.data.customerId,
+        tierId: args.data.tierId,
+        expiresAt: null,
+        source: args.data.source,
+        tier: {
+          id: args.data.tierId,
+          name: 'Base',
+          earnRateBps: 500,
+          redeemRateBps: 5000,
+          metadata: null,
+        },
+      })),
+      update: jest.fn(async () => ({
+        id: 'assign-updated',
+        merchantId: 'M1',
+        customerId: 'C1',
+        tierId: 'tier-base',
+        expiresAt: null,
+        source: 'auto',
+        tier: {
+          id: 'tier-base',
+          name: 'Base',
+          earnRateBps: 500,
+          redeemRateBps: 5000,
+          metadata: null,
+        },
+      })),
+    },
+    loyaltyTier: {
+      count: jest.fn(async () => 1),
+      findFirst: jest.fn(async () => ({
+        id: 'tier-base',
+        merchantId: 'M1',
+        name: 'Base',
+        earnRateBps: 500,
+        redeemRateBps: 5000,
+        metadata: null,
+        thresholdAmount: 0,
+        isInitial: true,
+        isHidden: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })),
+      create: jest.fn(async (args: any) => ({ id: 'tier-created', ...args.data })),
+    },
     $transaction: jest.fn(async (fn: any) => fn(base)),
   };
   return Object.assign(base, overrides);

@@ -5,9 +5,18 @@ import { PromoCodesService, type PromoCodeApplyResult } from '../promocodes/prom
 import { Mode, QuoteDto } from './dto';
 import { computeLevelState, parseLevelsConfig, resolveLevelBenefits } from './levels.util';
 import { HoldStatus, TxnType, WalletType, LedgerAccount, HoldMode, DeviceType } from '@prisma/client';
+import { ensureDefaultTiers, extractTierMinPayment } from '../loyalty-program/tiers.util';
 import { randomUUID } from 'crypto';
 
 type QrMeta = { jti: string; iat: number; exp: number } | undefined;
+
+type TierContext = {
+  id: string;
+  name: string;
+  earnRateBps: number | null;
+  redeemRateBps: number | null;
+  minPaymentAmount: number | null;
+};
 
 @Injectable()
 export class LoyaltyService {
@@ -16,7 +25,7 @@ export class LoyaltyService {
     const { customerId, merchantId, amount, orderId } = params;
     if (amount <= 0) throw new BadRequestException('Amount must be > 0');
     // Ensure entities exist
-    await this.ensureCustomerId(customerId);
+    await this.ensureCustomer(merchantId, customerId);
     try { await this.prisma.merchant.upsert({ where: { id: merchantId }, update: {}, create: { id: merchantId, name: merchantId } }); } catch {}
 
     return this.prisma.$transaction(async (tx) => {
@@ -36,7 +45,7 @@ export class LoyaltyService {
   async redeem(params: { customerId: string; merchantId: string; amount: number; orderId?: string }) {
     const { customerId, merchantId, amount, orderId } = params;
     if (amount <= 0) throw new BadRequestException('Amount must be > 0');
-    await this.ensureCustomerId(customerId);
+    await this.ensureCustomer(merchantId, customerId);
     try { await this.prisma.merchant.upsert({ where: { id: merchantId }, update: {}, create: { id: merchantId, name: merchantId } }); } catch {}
 
     return this.prisma.$transaction(async (tx) => {
@@ -62,7 +71,7 @@ export class LoyaltyService {
     if (!customerId) throw new BadRequestException('customerId required');
     if (!code) throw new BadRequestException('code required');
 
-    await this.ensureCustomerId(customerId);
+    await this.ensureCustomer(merchantId, customerId);
     const merchant = await this.prisma.merchant.findUnique({ where: { id: merchantId } });
     if (!merchant) throw new BadRequestException('merchant not found');
 
@@ -255,10 +264,76 @@ export class LoyaltyService {
     return fn;
   }
 
-  private async ensureCustomerId(customerId: string) {
-    const found = await this.prisma.customer.findUnique({ where: { id: customerId } });
-    if (found) return found;
-    return this.prisma.customer.create({ data: { id: customerId } });
+  private async ensureCustomer(
+    merchantId: string,
+    customerId: string,
+  ): Promise<{ customer: { id: string }; tier: TierContext | null }> {
+    let customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
+    if (!customer) {
+      customer = await this.prisma.customer.create({ data: { id: customerId } });
+    }
+    if (!merchantId) return { customer, tier: null };
+
+    await ensureDefaultTiers(this.prisma, merchantId);
+
+    const now = Date.now();
+    let assignment = await this.prisma.loyaltyTierAssignment.findUnique({
+      where: { merchantId_customerId: { merchantId, customerId } },
+      include: { tier: true },
+    });
+
+    const expired = assignment?.expiresAt
+      ? assignment.expiresAt.getTime() < now
+      : false;
+
+    if (!assignment || expired) {
+      const baseTier = await this.prisma.loyaltyTier.findFirst({
+        where: { merchantId },
+        orderBy: [
+          { isInitial: 'desc' },
+          { thresholdAmount: 'asc' },
+          { createdAt: 'asc' },
+        ],
+      });
+
+      if (baseTier) {
+        if (assignment) {
+          assignment = await this.prisma.loyaltyTierAssignment.update({
+            where: { id: assignment.id },
+            data: {
+              tierId: baseTier.id,
+              assignedAt: new Date(),
+              expiresAt: null,
+              source: assignment.source ?? 'auto',
+            },
+            include: { tier: true },
+          });
+        } else {
+          assignment = await this.prisma.loyaltyTierAssignment.create({
+            data: {
+              merchantId,
+              customerId,
+              tierId: baseTier.id,
+              source: 'auto',
+              assignedAt: new Date(),
+            },
+            include: { tier: true },
+          });
+        }
+      }
+    }
+
+    const tier = assignment?.tier
+      ? {
+          id: assignment.tier.id,
+          name: assignment.tier.name,
+          earnRateBps: assignment.tier.earnRateBps ?? null,
+          redeemRateBps: assignment.tier.redeemRateBps ?? null,
+          minPaymentAmount: extractTierMinPayment(assignment.tier.metadata),
+        }
+      : null;
+
+    return { customer, tier };
   }
 
   private async getSettings(merchantId: string) {
@@ -324,7 +399,7 @@ export class LoyaltyService {
 
   // ————— основной расчёт — анти-replay вне транзакции + идемпотентность —————
   async quote(dto: QuoteDto & { userToken: string }, qr?: QrMeta) {
-    const customer = await this.ensureCustomerId(dto.userToken);
+    const { customer, tier } = await this.ensureCustomer(dto.merchantId, dto.userToken);
     // Ensure the merchant exists to satisfy FK constraints for wallet/holds
     try {
       await this.prisma.merchant.upsert({ where: { id: dto.merchantId }, update: {}, create: { id: dto.merchantId, name: dto.merchantId } });
@@ -358,6 +433,13 @@ export class LoyaltyService {
       earnBps = Math.max(0, earnBps + bonus.earnBpsBonus);
       redeemLimitBps = Math.max(0, redeemLimitBps + bonus.redeemLimitBpsBonus);
     } catch {}
+
+    if (tier?.earnRateBps != null) {
+      earnBps = Math.max(0, tier.earnRateBps);
+    }
+    if (tier?.redeemRateBps != null) {
+      redeemLimitBps = Math.max(0, tier.redeemRateBps);
+    }
 
     // 0) если есть qr — сначала смотрим, не существует ли hold с таким qrJti
     if (qr) {
@@ -497,8 +579,24 @@ export class LoyaltyService {
           } as any;
         }
         const capLeft = dailyRedeemLeft != null ? dailyRedeemLeft : Number.MAX_SAFE_INTEGER;
-        const discountToApply = Math.min(wallet.balance, remainingByOrder || limit, capLeft);
+        const maxByMinPayment = tier?.minPaymentAmount != null
+          ? Math.max(0, sanitizedTotal - tier.minPaymentAmount)
+          : null;
+        let discountToApply = Math.min(wallet.balance, remainingByOrder || limit, capLeft);
+        if (maxByMinPayment != null) {
+          discountToApply = Math.min(discountToApply, maxByMinPayment);
+        }
         const finalPayable = Math.max(0, sanitizedTotal - discountToApply);
+        const minPaymentBlocksRedeem =
+          maxByMinPayment != null && maxByMinPayment <= 0 && sanitizedTotal > 0;
+        let message: string;
+        if (discountToApply > 0) {
+          message = `Списываем ${discountToApply} ₽, к оплате ${finalPayable} ₽`;
+        } else if (minPaymentBlocksRedeem) {
+          message = `Минимальная сумма к оплате ${tier!.minPaymentAmount} ₽.`;
+        } else {
+          message = 'Недостаточно баллов для списания.';
+        }
 
         const hold = await tx.hold.create({
           data: {
@@ -524,9 +622,7 @@ export class LoyaltyService {
           pointsToBurn: discountToApply,
           finalPayable,
           holdId: hold.id,
-          message: discountToApply > 0
-            ? `Списываем ${discountToApply} ₽, к оплате ${finalPayable} ₽`
-            : 'Недостаточно баллов для списания.',
+          message,
         };
       });
     }

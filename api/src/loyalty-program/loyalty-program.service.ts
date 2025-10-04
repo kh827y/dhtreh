@@ -15,6 +15,7 @@ import {
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
 import { CommunicationsService } from '../communications/communications.service';
+import { ensureDefaultTiers, extractTierMinPayment } from './tiers.util';
 
 export interface TierPayload {
   name: string;
@@ -268,17 +269,6 @@ export class LoyaltyProgramService {
     return Math.round(parsed);
   }
 
-  private extractMinPayment(
-    metadata: Prisma.JsonValue | null | undefined,
-  ): number | null {
-    if (!metadata || typeof metadata !== 'object') return null;
-    const meta = metadata as Record<string, unknown>;
-    const raw = meta?.minPaymentAmount ?? meta?.minPayment;
-    if (raw == null) return null;
-    const num = Number(raw);
-    return Number.isFinite(num) && num >= 0 ? Math.round(num) : null;
-  }
-
   private mapTier(
     tier: Prisma.LoyaltyTierGetPayload<{ include?: any }>,
     customersCount = 0,
@@ -291,7 +281,7 @@ export class LoyaltyProgramService {
       thresholdAmount: Number(tier.thresholdAmount ?? 0),
       earnRateBps: tier.earnRateBps ?? 0,
       redeemRateBps: tier.redeemRateBps ?? null,
-      minPaymentAmount: this.extractMinPayment(tier.metadata),
+      minPaymentAmount: extractTierMinPayment(tier.metadata),
       isInitial: tier.isInitial,
       isHidden: tier.isHidden,
       isDefault: tier.isDefault,
@@ -303,6 +293,7 @@ export class LoyaltyProgramService {
   }
 
   async listTiers(merchantId: string): Promise<TierDto[]> {
+    await ensureDefaultTiers(this.prisma, merchantId);
     const tiers = await this.prisma.loyaltyTier.findMany({
       where: { merchantId },
       orderBy: [{ thresholdAmount: 'asc' }, { createdAt: 'asc' }],
