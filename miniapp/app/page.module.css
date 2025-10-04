@@ -245,6 +245,7 @@
   gap: 6px;
   color: #ffffff;
   cursor: pointer;
+  text-decoration: none;
 }
 
 .qrWrapper {
@@ -273,6 +274,7 @@
   font-size: 12px;
   letter-spacing: 0.04em;
   opacity: 0.8;
+  text-decoration: none;
 }
 
 .cardContent {
@@ -290,13 +292,14 @@
 .cardLabel {
   font-size: 14px;
   font-weight: 600;
-  color: #473c84;
+  color: #ffffff;
   letter-spacing: 0.02em;
 }
 
 .cardValue {
   font-size: 18px;
   font-weight: 700;
+  color: #ffffff;
 }
 
 .levelSection {
