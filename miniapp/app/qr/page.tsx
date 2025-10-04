@@ -25,6 +25,11 @@ function resolveErrorMessage(error: unknown): string {
 
 type MechanicsLevel = NonNullable<NonNullable<MechanicsLevelsResp["levels"]>[number]>;
 
+const PROGRESS_STUB = {
+  current: 18500,
+  threshold: 50000,
+};
+
 export default function QrPage() {
   const auth = useMiniappAuth(process.env.NEXT_PUBLIC_MERCHANT_ID || "M-1");
   const { merchantId, customerId, initData } = auth;
@@ -140,8 +145,13 @@ export default function QrPage() {
   const updateQrSize = useCallback(() => {
     if (typeof window === "undefined") return;
     const viewportWidth = window.innerWidth;
-    const calculated = Math.round(Math.min(320, Math.max(160, viewportWidth * 0.56)));
-    setQrSize(calculated);
+    const viewportHeight = window.innerHeight;
+    const fallback = 240;
+    const widthBased = Number.isFinite(viewportWidth) && viewportWidth > 0 ? viewportWidth * 0.56 : fallback;
+    const heightBased = Number.isFinite(viewportHeight) && viewportHeight > 0 ? viewportHeight * 0.42 : fallback;
+    const base = Math.min(fallback, widthBased, heightBased);
+    const calculated = Math.round(Math.min(320, Math.max(150, base)));
+    setQrSize(Number.isFinite(calculated) && calculated > 0 ? calculated : fallback);
   }, []);
 
   useEffect(() => {
@@ -163,18 +173,55 @@ export default function QrPage() {
     return null;
   }, [levelInfo, levelCatalog]);
 
-  const progressPercent = useMemo(() => getProgressPercent(levelInfo), [levelInfo]);
-  const nextLevelName = levelInfo?.next?.name || "следующий уровень";
-  const currentProgressValue = useMemo(() => {
-    if (!levelInfo) return 0;
-    return Math.max(0, Math.round(levelInfo.value || 0));
-  }, [levelInfo]);
-  const nextLevelThreshold = useMemo(() => {
-    if (!levelInfo?.next) return 0;
-    return Math.max(0, Math.round(levelInfo.next.threshold || 0));
+  const progressData = useMemo(() => {
+    const fallbackPercent = PROGRESS_STUB.threshold
+      ? Math.min(100, Math.max(0, Math.round((PROGRESS_STUB.current / PROGRESS_STUB.threshold) * 100)))
+      : 0;
+
+    const fallback = {
+      percent: fallbackPercent,
+      current: PROGRESS_STUB.current,
+      threshold: PROGRESS_STUB.threshold,
+    };
+
+    if (!levelInfo?.next) {
+      return fallback;
+    }
+
+    const thresholdRaw = levelInfo.next.threshold;
+    if (typeof thresholdRaw !== "number" || !Number.isFinite(thresholdRaw) || thresholdRaw <= 0) {
+      return fallback;
+    }
+
+    const currentRaw = typeof levelInfo.value === "number" && Number.isFinite(levelInfo.value)
+      ? levelInfo.value
+      : 0;
+
+    const threshold = Math.max(0, Math.round(thresholdRaw));
+    const current = Math.max(0, Math.round(currentRaw));
+    const progressPercent = getProgressPercent(levelInfo);
+    const normalizedPercent = Number.isFinite(progressPercent)
+      ? Math.min(100, Math.max(0, Math.round(progressPercent)))
+      : 0;
+
+    if (normalizedPercent <= 0) {
+      const recalculated = threshold
+        ? Math.min(100, Math.max(0, Math.round((Math.min(current, threshold) / threshold) * 100)))
+        : 0;
+      return {
+        percent: recalculated,
+        current,
+        threshold,
+      };
+    }
+
+    return {
+      percent: normalizedPercent,
+      current,
+      threshold,
+    };
   }, [levelInfo]);
 
-  const canShowProgress = levelCatalog.length > 1 && !!levelInfo?.next;
   const qrWrapperSize = useMemo(() => Math.round(qrSize + 20), [qrSize]);
 
   return (
@@ -225,20 +272,16 @@ export default function QrPage() {
         </div>
       </section>
 
-      {canShowProgress && (
-        <section className={styles.progressSection}>
-          <div className={styles.progressTitle}>
-            Сумма покупок для перехода на {nextLevelName} &gt;
-          </div>
-          <div className={styles.progressBar}>
-            <div className={styles.progressFill} style={{ width: `${progressPercent}%` }} />
-          </div>
-          <div className={styles.progressScale}>
-            <span>{currentProgressValue.toLocaleString("ru-RU")}</span>
-            <span>{nextLevelThreshold.toLocaleString("ru-RU")}</span>
-          </div>
-        </section>
-      )}
+      <section className={styles.progressSection}>
+        <div className={styles.progressTitle}>Сумма покупок до следующего уровня &gt;</div>
+        <div className={styles.progressBar}>
+          <div className={styles.progressFill} style={{ width: `${progressData.percent}%` }} />
+        </div>
+        <div className={styles.progressScale}>
+          <span>{progressData.current.toLocaleString("ru-RU")}</span>
+          <span>{progressData.threshold.toLocaleString("ru-RU")}</span>
+        </div>
+      </section>
 
       {error && <div className={styles.error}>{error}</div>}
     </div>
