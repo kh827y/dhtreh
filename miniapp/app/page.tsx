@@ -18,7 +18,6 @@ import {
   consentSet,
   levels,
   mechanicsLevels,
-  mintQr,
   transactions,
   referralLink,
   referralActivate,
@@ -306,12 +305,9 @@ export default function Page() {
   const setMerchantId = auth.setMerchantId;
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("");
-  const [qrToken, setQrToken] = useState<string>("");
-  const [ttl, setTtl] = useState<number>(Number(process.env.NEXT_PUBLIC_QR_TTL || "60"));
   const [bal, setBal] = useState<number | null>(null);
   const [tx, setTx] = useState<TransactionItem[]>([]);
   const [nextBefore, setNextBefore] = useState<string | null>(null);
-  const [autoRefresh, setAutoRefresh] = useState<boolean>(false);
   const [consent, setConsent] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>("");
@@ -467,9 +463,8 @@ export default function Page() {
     setError(auth.error);
     if (!auth.loading) {
       setCustomerId(auth.customerId);
-      if (auth.theme.ttl) setTtl(auth.theme.ttl);
     }
-  }, [auth.loading, auth.error, auth.customerId, auth.theme]);
+  }, [auth.loading, auth.error, auth.customerId]);
 
   const retry = useCallback(
     async <T,>(fn: () => Promise<T>, tries = 2, delayMs = 500): Promise<T> => {
@@ -483,23 +478,6 @@ export default function Page() {
     },
     []
   );
-
-  const doMint = useCallback(async () => {
-    if (!customerId) {
-      setStatus("Сначала авторизуйтесь");
-      return;
-    }
-    try {
-      const r = await mintQr(customerId, merchantId, ttl, auth.initData);
-      setQrToken(r.token);
-      setStatus(`QR обновлён (TTL ${r.ttl}с)`);
-      setToast({ msg: "QR сгенерирован", type: "success" });
-    } catch (error) {
-      const message = resolveErrorMessage(error);
-      setStatus(`Ошибка генерации QR: ${message}`);
-      setToast({ msg: "Не удалось обновить QR", type: "error" });
-    }
-  }, [customerId, merchantId, ttl, auth.initData]);
 
   const loadBalance = useCallback(async (opts?: { silent?: boolean }) => {
     const silent = opts?.silent ?? false;
@@ -947,14 +925,6 @@ export default function Page() {
     []
   );
 
-  useEffect(() => {
-    if (!qrToken || !autoRefresh) return;
-    const id = setTimeout(() => {
-      doMint().catch(() => undefined);
-    }, Math.max(5, ttl - 5) * 1000);
-    return () => clearTimeout(id);
-  }, [qrToken, autoRefresh, ttl, doMint]);
-
   const syncConsent = useCallback(async () => {
     if (!customerId) return;
     try {
@@ -1042,12 +1012,6 @@ export default function Page() {
       cancelled = true;
     };
   }, [customerId, merchantId]);
-
-  useEffect(() => {
-    if (customerId && !qrToken) {
-      doMint().catch(() => undefined);
-    }
-  }, [customerId, qrToken, doMint]);
 
   const toggleConsent = useCallback(async () => {
     if (!customerId) return;
@@ -1298,23 +1262,6 @@ export default function Page() {
       ) : (
         <>
           <header className={`${styles.header} ${styles.appear} ${styles.delay0}`}>
-            <button className={styles.headerIconButton} aria-label="Назад">
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 20 20"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M11.5 5L7 9.5L11.5 14"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
             <div className={styles.userBlock}>
               <div className={styles.avatarWrap}>
                 {telegramUser?.photoUrl ? (
@@ -1491,16 +1438,6 @@ export default function Page() {
                   Мерчант
                   <input value={merchantId} onChange={(e) => setMerchantId(e.target.value)} />
                 </label>
-                <label>
-                  TTL QR
-                  <input
-                    type="number"
-                    min={10}
-                    max={600}
-                    value={ttl}
-                    onChange={(e) => setTtl(parseInt(e.target.value || "60", 10))}
-                  />
-                </label>
               </div>
               <label>
                 CustomerId
@@ -1658,10 +1595,6 @@ export default function Page() {
         <div className={styles.modalBackdrop} onClick={() => setSettingsOpen(false)}>
           <div className={styles.sheet} onClick={(e) => e.stopPropagation()}>
             <div className={styles.sheetHeader}>Настройки</div>
-            <label className={styles.switchRow}>
-              <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
-              <span>Автообновление QR</span>
-            </label>
             <label className={styles.switchRow}>
               <input type="checkbox" checked={consent} onChange={toggleConsent} />
               <span>Согласие на рассылку</span>

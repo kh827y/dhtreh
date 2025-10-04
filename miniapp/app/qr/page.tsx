@@ -1,6 +1,4 @@
 "use client";
-
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import QrCanvas from "../../components/QrCanvas";
 import Spinner from "../../components/Spinner";
@@ -177,16 +175,10 @@ export default function QrPage() {
   }, [levelInfo]);
 
   const canShowProgress = levelCatalog.length > 1 && !!levelInfo?.next;
-  const qrWrapperSize = useMemo(() => Math.round(qrSize + 32), [qrSize]);
+  const qrWrapperSize = useMemo(() => Math.round(qrSize + 20), [qrSize]);
 
   return (
     <div className={styles.page}>
-      <div className={styles.topBar}>
-        <Link href="/" className={styles.backLink} prefetch={false}>
-          Вернуться в профиль
-        </Link>
-      </div>
-
       <section className={styles.qrSection}>
         <div className={styles.qrHeader}>Покажите QR-код на кассе</div>
         <div className={styles.qrWrapper} style={{ width: qrWrapperSize, height: qrWrapperSize }}>

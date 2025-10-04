@@ -5,23 +5,6 @@
   padding: 20px 20px 40px;
 }
 
-.topBar {
-  display: flex;
-  justify-content: flex-start;
-}
-
-.backLink {
-  color: #635bff;
-  font-weight: 600;
-  text-decoration: none;
-  font-size: 14px;
-  letter-spacing: 0.01em;
-}
-
-.backLink:hover {
-  text-decoration: underline;
-}
-
 .qrSection {
   background: linear-gradient(135deg, #7a5af8, #9c88ff);
   border-radius: 28px;
@@ -44,7 +27,7 @@
   position: relative;
   width: 240px;
   height: 240px;
-  padding: clamp(12px, 3vw, 16px);
+  padding: clamp(8px, 2.6vw, 12px);
   border-radius: 22px;
   background: rgba(255, 255, 255, 0.94);
   display: flex;
