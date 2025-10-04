@@ -16,6 +16,35 @@ import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
 import { CommunicationsService } from '../communications/communications.service';
 
+const DEFAULT_TIER_BLUEPRINTS: Array<{
+  name: string;
+  thresholdAmount: number;
+  earnRateBps: number;
+  redeemRateBps: number | null;
+  minPaymentAmount: number | null;
+  isInitial: boolean;
+  isHidden: boolean;
+}> = [
+  {
+    name: 'Базовый',
+    thresholdAmount: 0,
+    earnRateBps: 300,
+    redeemRateBps: 5000,
+    minPaymentAmount: 0,
+    isInitial: true,
+    isHidden: false,
+  },
+  {
+    name: 'VIP',
+    thresholdAmount: 5000,
+    earnRateBps: 600,
+    redeemRateBps: 7000,
+    minPaymentAmount: 0,
+    isInitial: false,
+    isHidden: false,
+  },
+];
+
 export interface TierPayload {
   name: string;
   description?: string | null;
@@ -102,6 +131,42 @@ export class LoyaltyProgramService {
     const parsed = Number(value);
     if (!Number.isFinite(parsed) || parsed < 0) return fallbackBps;
     return Math.round(parsed * 100);
+  }
+
+  private async ensureDefaultTiers(merchantId: string): Promise<void> {
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.loyaltyTier.count({ where: { merchantId } });
+        if (existing > 0) return;
+        const payload = DEFAULT_TIER_BLUEPRINTS.map((tier, index) => {
+          const metadata =
+            tier.minPaymentAmount != null
+              ? ({ minPaymentAmount: tier.minPaymentAmount } as Prisma.InputJsonValue)
+              : undefined;
+          const input: Prisma.LoyaltyTierCreateManyInput = {
+            merchantId,
+            name: tier.name,
+            description: null,
+            thresholdAmount: tier.thresholdAmount,
+            earnRateBps: tier.earnRateBps,
+            redeemRateBps: tier.redeemRateBps,
+            isInitial: tier.isInitial,
+            isDefault: tier.isInitial,
+            isHidden: tier.isHidden,
+            order: index + 1,
+          };
+          if (metadata) input.metadata = metadata;
+          return input;
+        });
+        if (payload.length) {
+          await tx.loyaltyTier.createMany({ data: payload, skipDuplicates: true });
+        }
+      });
+    } catch (error) {
+      this.logger.warn?.(
+        `Failed to ensure default tiers for merchant ${merchantId}: ${(error as Error).message}`,
+      );
+    }
   }
 
   // ===== Notifications scheduling =====
@@ -303,6 +368,7 @@ export class LoyaltyProgramService {
   }
 
   async listTiers(merchantId: string): Promise<TierDto[]> {
+    await this.ensureDefaultTiers(merchantId);
     const tiers = await this.prisma.loyaltyTier.findMany({
       where: { merchantId },
       orderBy: [{ thresholdAmount: 'asc' }, { createdAt: 'asc' }],
@@ -334,6 +400,7 @@ export class LoyaltyProgramService {
   }
 
   async getTier(merchantId: string, tierId: string): Promise<TierDto> {
+    await this.ensureDefaultTiers(merchantId);
     const tier = await this.prisma.loyaltyTier.findFirst({
       where: { merchantId, id: tierId },
     });

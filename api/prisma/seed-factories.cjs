@@ -598,73 +598,67 @@ async function createSegments(prisma, merchantId, staff, customers) {
 }
 
 async function createLoyaltyTiers(prisma, merchantId, customers, staff) {
-  const welcome = await prisma.loyaltyTier.upsert({
-    where: { id: 'tier-welcome' },
+  const basic = await prisma.loyaltyTier.upsert({
+    where: { id: 'tier-basic' },
     update: {
       description: 'Стартовый уровень для новых клиентов',
-      earnRateBps: 500,
-      redeemRateBps: 1000,
+      earnRateBps: 300,
+      redeemRateBps: 5000,
+      metadata: { minPaymentAmount: 0 },
+      isInitial: true,
+      isDefault: true,
+      order: 1,
     },
     create: {
-      id: 'tier-welcome',
+      id: 'tier-basic',
       merchantId,
-      name: 'Welcome',
+      name: 'Базовый',
       description: 'Стартовый уровень для новых клиентов',
       thresholdAmount: 0,
-      earnRateBps: 500,
-      redeemRateBps: 1000,
+      earnRateBps: 300,
+      redeemRateBps: 5000,
       isDefault: true,
       isInitial: true,
-      color: '#A0D911',
+      isHidden: false,
+      order: 1,
+      color: '#4ADE80',
+      metadata: { minPaymentAmount: 0 },
     },
   });
 
-  const silver = await prisma.loyaltyTier.upsert({
-    where: { id: 'tier-silver' },
+  const vip = await prisma.loyaltyTier.upsert({
+    where: { id: 'tier-vip' },
     update: {
-      description: 'Любители кофе',
-      earnRateBps: 700,
-      redeemRateBps: 1500,
+      description: 'Привилегии для постоянных гостей',
+      earnRateBps: 600,
+      redeemRateBps: 7000,
+      metadata: { minPaymentAmount: 0 },
+      order: 2,
     },
     create: {
-      id: 'tier-silver',
+      id: 'tier-vip',
       merchantId,
-      name: 'Silver',
-      description: 'Любители кофе',
-      thresholdAmount: 150000,
-      earnRateBps: 700,
-      redeemRateBps: 1500,
-      color: '#D9D9D9',
+      name: 'VIP',
+      description: 'Привилегии для постоянных гостей',
+      thresholdAmount: 5000,
+      earnRateBps: 600,
+      redeemRateBps: 7000,
+      isDefault: false,
+      isInitial: false,
+      isHidden: false,
+      order: 2,
+      color: '#FACC15',
+      metadata: { minPaymentAmount: 0 },
     },
   });
 
-  const gold = await prisma.loyaltyTier.upsert({
-    where: { id: 'tier-gold' },
-    update: {
-      description: 'Самые лояльные гости',
-      earnRateBps: 900,
-      redeemRateBps: 2000,
-    },
-    create: {
-      id: 'tier-gold',
-      merchantId,
-      name: 'Gold',
-      description: 'Самые лояльные гости',
-      thresholdAmount: 300000,
-      earnRateBps: 900,
-      redeemRateBps: 2000,
-      color: '#FADB14',
-    },
-  });
-
-  await prisma.loyaltyTierBenefit.deleteMany({ where: { tierId: { in: [welcome.id, silver.id, gold.id] } } });
+  await prisma.loyaltyTierBenefit.deleteMany({ where: { tierId: { in: [basic.id, vip.id] } } });
   await prisma.loyaltyTierBenefit.createMany({
     data: [
-      { id: 'benefit-welcome', tierId: welcome.id, title: '5% бонусами', value: { rate: 5 }, order: 1 },
-      { id: 'benefit-silver', tierId: silver.id, title: '7% бонусами', value: { rate: 7 }, order: 1 },
-      { id: 'benefit-silver-birthday', tierId: silver.id, title: 'Подарок ко дню рождения', value: { coupon: 'BIRTHDAY50' }, order: 2 },
-      { id: 'benefit-gold', tierId: gold.id, title: '10% бонусами', value: { rate: 10 }, order: 1 },
-      { id: 'benefit-gold-priority', tierId: gold.id, title: 'Приоритетная поддержка', value: { hotline: true }, order: 2 },
+      { id: 'benefit-basic-rate', tierId: basic.id, title: '3% бонусами', value: { rate: 3 }, order: 1 },
+      { id: 'benefit-basic-welcome', tierId: basic.id, title: 'Приветственный подарок', value: { coupon: 'WELCOME3' }, order: 2 },
+      { id: 'benefit-vip-rate', tierId: vip.id, title: '6% бонусами', value: { rate: 6 }, order: 1 },
+      { id: 'benefit-vip-priority', tierId: vip.id, title: 'Приоритетное обслуживание', value: { priority: true }, order: 2 },
     ],
     skipDuplicates: true,
   });
@@ -672,7 +666,7 @@ async function createLoyaltyTiers(prisma, merchantId, customers, staff) {
   await prisma.loyaltyTierAssignment.upsert({
     where: { id: 'assign-alex' },
     update: {
-      tierId: silver.id,
+      tierId: vip.id,
       assignedById: staff.manager.id,
       assignedAt: nowMinus({ days: 45 }),
     },
@@ -680,7 +674,7 @@ async function createLoyaltyTiers(prisma, merchantId, customers, staff) {
       id: 'assign-alex',
       merchantId,
       customerId: customers['customer-alex'].id,
-      tierId: silver.id,
+      tierId: vip.id,
       assignedById: staff.manager.id,
       assignedAt: nowMinus({ days: 45 }),
     },
@@ -689,7 +683,7 @@ async function createLoyaltyTiers(prisma, merchantId, customers, staff) {
   await prisma.loyaltyTierAssignment.upsert({
     where: { id: 'assign-maria' },
     update: {
-      tierId: gold.id,
+      tierId: vip.id,
       assignedById: staff.owner.id,
       assignedAt: nowMinus({ days: 120 }),
     },
@@ -697,7 +691,7 @@ async function createLoyaltyTiers(prisma, merchantId, customers, staff) {
       id: 'assign-maria',
       merchantId,
       customerId: customers['customer-maria'].id,
-      tierId: gold.id,
+      tierId: vip.id,
       assignedById: staff.owner.id,
       assignedAt: nowMinus({ days: 120 }),
     },
@@ -706,7 +700,7 @@ async function createLoyaltyTiers(prisma, merchantId, customers, staff) {
   await prisma.loyaltyTierAssignment.upsert({
     where: { id: 'assign-ivan' },
     update: {
-      tierId: welcome.id,
+      tierId: basic.id,
       assignedById: staff.manager.id,
       assignedAt: nowMinus({ days: 200 }),
       expiresAt: nowMinus({ days: 30 }),
@@ -715,7 +709,7 @@ async function createLoyaltyTiers(prisma, merchantId, customers, staff) {
       id: 'assign-ivan',
       merchantId,
       customerId: customers['customer-ivan'].id,
-      tierId: welcome.id,
+      tierId: basic.id,
       assignedById: staff.manager.id,
       assignedAt: nowMinus({ days: 200 }),
       expiresAt: nowMinus({ days: 30 }),
@@ -723,7 +717,7 @@ async function createLoyaltyTiers(prisma, merchantId, customers, staff) {
     },
   });
 
-  return { welcome, silver, gold };
+  return { basic, vip };
 }
 async function createCommunicationAssets(prisma, merchantId, staff) {
   const startTemplate = await prisma.communicationTemplate.upsert({
@@ -786,7 +780,7 @@ async function createPromotions(prisma, merchantId, segments, tiers, staff, temp
       id: 'promo-spring',
       merchantId,
       segmentId: segments.activeSegment.id,
-      targetTierId: tiers.silver.id,
+      targetTierId: tiers.vip.id,
       name: 'Весенний кэшбек',
       description: 'Дополнительные 10% баллами',
       status: 'ACTIVE',
@@ -818,13 +812,13 @@ async function createPromotions(prisma, merchantId, segments, tiers, staff, temp
       id: 'promo-holiday',
       merchantId,
       segmentId: segments.sleepers.id,
-      targetTierId: tiers.welcome.id,
+      targetTierId: tiers.basic.id,
       name: 'Праздничный возврат',
       description: 'Вернём спящих клиентов подарком',
       status: 'SCHEDULED',
       rewardType: 'LEVEL_UP',
       rewardValue: 0,
-      rewardMetadata: { upgradeTo: 'Silver' },
+      rewardMetadata: { upgradeTo: 'VIP' },
       pushTemplateStartId: templates.startTemplate.id,
       pushTemplateReminderId: templates.reminderTemplate.id,
       pushOnStart: true,

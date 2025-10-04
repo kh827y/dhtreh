@@ -32,6 +32,12 @@ function mkPrisma(overrides: any = {}) {
       findFirst: jest.fn(async () => null),
       create: jest.fn(async () => ({ id: 'W1', balance: 0 })),
     },
+    loyaltyTierAssignment: {
+      findFirst: jest.fn(async () => null),
+    },
+    loyaltyTier: {
+      findFirst: jest.fn(async () => null),
+    },
     $transaction: jest.fn(async (fn: any) => fn(base)),
   };
   return Object.assign(base, overrides);
@@ -44,10 +50,16 @@ beforeEach(() => {
   jest.clearAllMocks();
 });
 
-describe('LoyaltyService.quote with level benefits (Wave 2)', () => {
+describe('LoyaltyService.quote with loyalty tiers', () => {
 
-  it('applies earnBps bonus by current level', async () => {
-    const prisma = mkPrisma();
+  it('applies tier earnRateBps override', async () => {
+    const prisma = mkPrisma({
+      loyaltyTierAssignment: {
+        findFirst: jest.fn(async () => ({
+          tier: { id: 'tier-vip', earnRateBps: 600, redeemRateBps: 7000, metadata: { minPaymentAmount: 0 } },
+        })),
+      },
+    });
     const svc = new LoyaltyService(prisma as any, metrics, promoCodes);
 
     const res = await (svc as any).quote({
@@ -59,12 +71,11 @@ describe('LoyaltyService.quote with level benefits (Wave 2)', () => {
       eligibleTotal: 1000,
     }, undefined);
 
-    // Base earnBps=500 (default) + Silver bonus 200 = 700 bps -> 7% of 1000 = 70 points
-    expect(res.pointsToEarn).toBe(70);
+    expect(res.pointsToEarn).toBe(60);
     expect(res.canEarn).toBe(true);
   });
 
-  it('increases redeem cap with redeemLimitBps bonus by current level', async () => {
+  it('enforces tier redeem rate and minimum payable amount', async () => {
     const prisma = mkPrisma({
       merchantSettings: {
         findUnique: jest.fn(async () => ({
@@ -74,7 +85,7 @@ describe('LoyaltyService.quote with level benefits (Wave 2)', () => {
             levelsCfg: { periodDays: 365, metric: 'earn', levels: [ { name: 'Base', threshold: 0 }, { name: 'Silver', threshold: 500 }, { name: 'Gold', threshold: 1000 } ] },
             levelBenefits: {
               earnBpsBonusByLevel: { Base: 0, Silver: 0, Gold: 0 },
-              redeemLimitBpsBonusByLevel: { Base: 0, Silver: 1000, Gold: 2000 },
+              redeemLimitBpsBonusByLevel: { Base: 0, Silver: 0, Gold: 0 },
             },
           },
         }))
@@ -85,7 +96,12 @@ describe('LoyaltyService.quote with level benefits (Wave 2)', () => {
         findMany: jest.fn(async () => ([ { amount: 300 }, { amount: 300 } ])),
       },
       wallet: {
-        findFirst: jest.fn(async () => ({ id: 'W1', balance: 1000, type: 'POINTS' })),
+        findFirst: jest.fn(async () => ({ id: 'W1', balance: 500, type: 'POINTS' })),
+      },
+      loyaltyTierAssignment: {
+        findFirst: jest.fn(async () => ({
+          tier: { id: 'tier-vip', earnRateBps: 600, redeemRateBps: 7000, metadata: { minPaymentAmount: 300 } },
+        })),
       },
     });
     const svc = new LoyaltyService(prisma as any, metrics, promoCodes);
@@ -95,13 +111,13 @@ describe('LoyaltyService.quote with level benefits (Wave 2)', () => {
       merchantId: 'M1',
       userToken: 'C1',
       orderId: 'O-2',
-      total: 1000,
-      eligibleTotal: 1000,
+      total: 500,
+      eligibleTotal: 500,
     }, undefined);
 
-    // Base redeemLimitBps default 5000 + Silver bonus 1000 = 6000 => cap = 600
-    expect(res.discountToApply).toBe(600);
-    expect(res.pointsToBurn).toBe(600);
+    expect(res.discountToApply).toBe(200);
+    expect(res.pointsToBurn).toBe(200);
+    expect(res.finalPayable).toBe(300);
   });
 });
 

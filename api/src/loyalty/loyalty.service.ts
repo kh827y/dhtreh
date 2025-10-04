@@ -4,7 +4,7 @@ import { MetricsService } from '../metrics.service';
 import { PromoCodesService, type PromoCodeApplyResult } from '../promocodes/promocodes.service';
 import { Mode, QuoteDto } from './dto';
 import { computeLevelState, parseLevelsConfig, resolveLevelBenefits } from './levels.util';
-import { HoldStatus, TxnType, WalletType, LedgerAccount, HoldMode, DeviceType } from '@prisma/client';
+import { Prisma, HoldStatus, TxnType, WalletType, LedgerAccount, HoldMode, DeviceType } from '@prisma/client';
 import { randomUUID } from 'crypto';
 
 type QrMeta = { jti: string; iat: number; exp: number } | undefined;
@@ -294,6 +294,47 @@ export class LoyaltyService {
     return { outletId: outlet?.id ?? null, channel };
   }
 
+  private extractTierMinPayment(metadata: Prisma.JsonValue | null | undefined): number | null {
+    if (!metadata || typeof metadata !== 'object') return null;
+    const raw = (metadata as Record<string, unknown>).minPaymentAmount ?? (metadata as Record<string, unknown>).minPayment;
+    if (raw == null) return null;
+    const num = Number(raw);
+    if (!Number.isFinite(num) || num < 0) return null;
+    return Math.round(num);
+  }
+
+  private async resolveCustomerTier(
+    merchantId: string,
+    customerId: string,
+  ): Promise<{ id: string; earnRateBps: number | null; redeemRateBps: number | null; metadata: Prisma.JsonValue | null } | null> {
+    const now = new Date();
+    try {
+      const assignment = await this.prisma.loyaltyTierAssignment.findFirst({
+        where: {
+          merchantId,
+          customerId,
+          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+        },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          tier: {
+            select: { id: true, earnRateBps: true, redeemRateBps: true, metadata: true },
+          },
+        },
+      });
+      if (assignment?.tier) return assignment.tier;
+    } catch {}
+    try {
+      const initial = await this.prisma.loyaltyTier.findFirst({
+        where: { merchantId, isInitial: true },
+        orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+        select: { id: true, earnRateBps: true, redeemRateBps: true, metadata: true },
+      });
+      if (initial) return initial;
+    } catch {}
+    return null;
+  }
+
   // ===== Levels integration (Wave 2) =====
   // ————— вспомогалки для идемпотентности по существующему hold —————
   private quoteFromExistingHold(mode: Mode, hold: any) {
@@ -357,6 +398,26 @@ export class LoyaltyService {
       const bonus = resolveLevelBenefits(rulesJson, state.current.name);
       earnBps = Math.max(0, earnBps + bonus.earnBpsBonus);
       redeemLimitBps = Math.max(0, redeemLimitBps + bonus.redeemLimitBpsBonus);
+    } catch {}
+
+    let tierMinPayment: number | null = null;
+    try {
+      const tier = await this.resolveCustomerTier(dto.merchantId, customer.id);
+      if (tier) {
+        if (tier.earnRateBps != null) {
+          const overrideEarn = Number(tier.earnRateBps ?? 0);
+          if (Number.isFinite(overrideEarn) && overrideEarn >= 0) {
+            earnBps = Math.max(0, overrideEarn);
+          }
+        }
+        if (tier.redeemRateBps != null) {
+          const overrideRedeem = Number(tier.redeemRateBps ?? 0);
+          if (Number.isFinite(overrideRedeem) && overrideRedeem >= 0) {
+            redeemLimitBps = Math.max(0, overrideRedeem);
+          }
+        }
+        tierMinPayment = this.extractTierMinPayment(tier.metadata);
+      }
     } catch {}
 
     // 0) если есть qr — сначала смотрим, не существует ли hold с таким qrJti
@@ -497,7 +558,11 @@ export class LoyaltyService {
           } as any;
         }
         const capLeft = dailyRedeemLeft != null ? dailyRedeemLeft : Number.MAX_SAFE_INTEGER;
-        const discountToApply = Math.min(wallet.balance, remainingByOrder || limit, capLeft);
+        let discountToApply = Math.min(wallet.balance, remainingByOrder || limit, capLeft);
+        if (tierMinPayment != null) {
+          const maxByMinPayment = Math.max(0, sanitizedTotal - tierMinPayment);
+          discountToApply = Math.min(discountToApply, maxByMinPayment);
+        }
         const finalPayable = Math.max(0, sanitizedTotal - discountToApply);
 
         const hold = await tx.hold.create({
