@@ -289,7 +289,9 @@
 
 .cardLabel {
   font-size: 14px;
-  opacity: 0.8;
+  font-weight: 600;
+  color: #473c84;
+  letter-spacing: 0.02em;
 }
 
 .cardValue {
@@ -456,32 +458,99 @@
   gap: 12px;
   align-items: center;
   background: #f8f8ff;
-  border-radius: 16px;
-  padding: 12px 14px;
+  border-radius: 18px;
+  padding: 14px 16px;
   animation: itemAppear 0.45s ease forwards;
   opacity: 0;
+  border-left: 4px solid transparent;
 }
 
 .historyTone_earn {
-  border-left: 4px solid #4bbf81;
+  background: linear-gradient(135deg, rgba(52, 211, 153, 0.18), rgba(16, 185, 129, 0.05));
+  border-left-color: #22c55e;
 }
 
 .historyTone_redeem {
-  border-left: 4px solid #ff6b81;
+  background: linear-gradient(135deg, rgba(248, 113, 113, 0.18), rgba(244, 63, 94, 0.05));
+  border-left-color: #ef4444;
+}
+
+.historyTone_campaign {
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.2), rgba(249, 115, 22, 0.05));
+  border-left-color: #f59e0b;
+}
+
+.historyTone_promo {
+  background: linear-gradient(135deg, rgba(129, 140, 248, 0.22), rgba(99, 102, 241, 0.08));
+  border-left-color: #6366f1;
+}
+
+.historyTone_refund {
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.2), rgba(14, 165, 233, 0.05));
+  border-left-color: #0ea5e9;
+}
+
+.historyTone_adjust {
+  background: linear-gradient(135deg, rgba(148, 163, 184, 0.2), rgba(100, 116, 139, 0.06));
+  border-left-color: #94a3b8;
 }
 
 .historyTone_other {
-  border-left: 4px solid #8a8ad6;
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.18), rgba(129, 140, 248, 0.05));
+  border-left-color: #a855f7;
 }
 
 .historyIcon {
-  width: 32px;
-  height: 32px;
-  border-radius: 12px;
-  background: #ffffff;
+  width: 36px;
+  height: 36px;
+  border-radius: 14px;
   display: grid;
   place-items: center;
-  font-size: 14px;
+  color: #4b4b7a;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(23, 24, 43, 0.08);
+}
+
+.historyIcon_earn {
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  color: #ffffff;
+  box-shadow: 0 12px 26px rgba(34, 197, 94, 0.32);
+}
+
+.historyIcon_redeem {
+  background: linear-gradient(135deg, #f97316, #ef4444);
+  color: #ffffff;
+  box-shadow: 0 12px 26px rgba(239, 68, 68, 0.28);
+}
+
+.historyIcon_campaign {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  color: #ffffff;
+  box-shadow: 0 12px 26px rgba(245, 158, 11, 0.32);
+}
+
+.historyIcon_promo {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #ffffff;
+  box-shadow: 0 12px 26px rgba(99, 102, 241, 0.32);
+}
+
+.historyIcon_refund {
+  background: linear-gradient(135deg, #0ea5e9, #38bdf8);
+  color: #ffffff;
+  box-shadow: 0 12px 26px rgba(14, 165, 233, 0.28);
+}
+
+.historyIcon_adjust {
+  background: linear-gradient(135deg, #94a3b8, #64748b);
+  color: #ffffff;
+  box-shadow: 0 12px 24px rgba(100, 116, 139, 0.28);
+}
+
+.historyIcon_other {
+  background: linear-gradient(135deg, #a855f7, #6366f1);
+  color: #ffffff;
+  box-shadow: 0 12px 26px rgba(129, 140, 248, 0.32);
 }
 
 .historyBody {

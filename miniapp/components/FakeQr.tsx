@@ -4,7 +4,7 @@ import QrCanvas from "./QrCanvas";
 
 /**
  * Декоративный превью-QR (кодирует строку "fake_qr") для кнопки.
- * Реальный QR остаётся в модалке (QrCanvas) и кодирует настоящий токен.
+ * Реальный QR теперь доступен на отдельной странице /qr.
  */
 export default function FakeQr({ size = 240 }: { size?: number }) {
   const inner = Math.max(120, Math.min(size, 300));

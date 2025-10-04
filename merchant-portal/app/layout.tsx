@@ -91,7 +91,7 @@ const sections: SidebarSection[] = [
   {
     id: "tools",
     title: "Инструменты",
-    items: [{ href: "/tools/import", label: "Импорт данных" }],
+    items: [{ href: "/customers/import", label: "Импорт данных" }],
   },
 ];
 

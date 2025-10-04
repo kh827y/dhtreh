@@ -1,6 +1,8 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ChangeEvent,
   FormEvent,
@@ -9,7 +11,6 @@ import {
   useMemo,
   useState,
 } from "react";
-import QrCanvas from "../components/QrCanvas";
 import FakeQr from "../components/FakeQr";
 import {
   balance,
@@ -32,6 +33,8 @@ import {
 import Spinner from "../components/Spinner";
 import Toast from "../components/Toast";
 import { useMiniappAuth } from "../lib/useMiniapp";
+import { getProgressPercent, type LevelInfo } from "../lib/levels";
+import { getTransactionMeta, type TransactionKind } from "../lib/transactionMeta";
 import styles from "./page.module.css";
 
 //
@@ -50,17 +53,6 @@ type TelegramUser = {
   lastName?: string;
   username?: string;
   photoUrl?: string;
-};
-
-type LevelInfo = {
-  merchantId: string;
-  customerId: string;
-  metric: "earn" | "redeem" | "transactions";
-  periodDays: number;
-  value: number;
-  current: { name: string; threshold: number };
-  next: { name: string; threshold: number } | null;
-  progressToNext: number;
 };
 
 type MechanicsLevel = {
@@ -107,6 +99,108 @@ const genderOptions: Array<{ value: "male" | "female"; label: string }> = [
   { value: "female", label: "Женский" },
 ];
 
+const HISTORY_ICONS: Record<TransactionKind, JSX.Element> = {
+  earn: (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path
+        d="M10 15V5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M6 9L10 5L14 9"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  ),
+  redeem: (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path
+        d="M10 5V15"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M14 11L10 15L6 11"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  ),
+  campaign: (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path
+        d="M10 2.5L11.9021 7.17297L16.9021 7.52786L12.9511 10.827L14.1803 15.7221L10 13.0153L5.81966 15.7221L7.04894 10.827L3.09789 7.52786L8.09789 7.17297L10 2.5Z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+    </svg>
+  ),
+  promo: (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path
+        d="M6 4H14C15.1046 4 16 4.89543 16 6V8.5C16 9.32843 15.3284 10 14.5 10C15.3284 10 16 10.6716 16 11.5V14C16 15.1046 15.1046 16 14 16H6C4.89543 16 4 15.1046 4 14V11.5C4 10.6716 4.67157 10 5.5 10C4.67157 10 4 9.32843 4 8.5V6C4 4.89543 4.89543 4 6 4Z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+      <path d="M8 7H12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M8 13H12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M8 10H12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  ),
+  refund: (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path
+        d="M5 11C5 14.3137 7.68629 17 11 17C13.4853 17 15.6406 15.4926 16.5565 13.2792"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+      <path
+        d="M15 9C15 5.68629 12.3137 3 9 3C6.51472 3 4.35939 4.50736 3.44354 6.72081"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+      <path d="M4 4V7H7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M16 16V13H13" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  adjust: (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="M6 10H14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M10 6L10 14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  ),
+  other: (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path
+        d="M5.5 10C5.5 9.17157 6.17157 8.5 7 8.5C7.82843 8.5 8.5 9.17157 8.5 10C8.5 10.8284 7.82843 11.5 7 11.5C6.17157 11.5 5.5 10.8284 5.5 10Z"
+        fill="currentColor"
+      />
+      <path
+        d="M8.5 10C8.5 9.17157 9.17157 8.5 10 8.5C10.8284 8.5 11.5 9.17157 11.5 10C11.5 10.8284 10.8284 11.5 10 11.5C9.17157 11.5 8.5 10.8284 8.5 10Z"
+        fill="currentColor"
+      />
+      <path
+        d="M11.5 10C11.5 9.17157 12.1716 8.5 13 8.5C13.8284 8.5 14.5 9.17157 14.5 10C14.5 10.8284 13.8284 11.5 13 11.5C12.1716 11.5 11.5 10.8284 11.5 10Z"
+        fill="currentColor"
+      />
+    </svg>
+  ),
+};
+
 function getTelegramWebApp(): TelegramWebApp | null {
   if (typeof window === "undefined") return null;
   const tgWindow = window as TelegramWindow;
@@ -137,16 +231,6 @@ function resolveErrorMessage(error: unknown): string {
   } catch {
     return String(error);
   }
-}
-
-function formatTxType(type: string): { title: string; tone: "earn" | "redeem" | "other" } {
-  const lower = type.toLowerCase();
-  if (lower.includes("earn")) return { title: "Начисление", tone: "earn" };
-  if (lower.includes("redeem") || lower.includes("spend")) return { title: "Списание", tone: "redeem" };
-  if (lower.includes("refund")) return { title: "Возврат", tone: "other" };
-  if (lower.includes("promo")) return { title: "Промокод", tone: "other" };
-  if (lower.includes("campaign")) return { title: "Акция", tone: "other" };
-  return { title: type, tone: "other" };
 }
 
 function isPurchaseTransaction(type: string, orderId?: string | null): boolean {
@@ -186,15 +270,6 @@ function parseDateMs(value: string | null | undefined): number | null {
 const LOYALTY_EVENT_CHANNEL = "loyalty:events";
 const LOYALTY_EVENT_STORAGE_KEY = "loyalty:lastEvent";
 
-function getProgressPercent(levelInfo: LevelInfo | null): number {
-  if (!levelInfo) return 0;
-  if (!levelInfo.next) return 100;
-  const currentThreshold = levelInfo.current?.threshold || 0;
-  const distance = Math.max(1, levelInfo.next.threshold - currentThreshold);
-  const progress = Math.max(0, levelInfo.value - currentThreshold);
-  return Math.max(0, Math.min(100, Math.round((progress / distance) * 100)));
-}
-
 function escapeRegExp(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -225,6 +300,7 @@ function buildReferralMessage(
 }
 
 export default function Page() {
+  const router = useRouter();
   const auth = useMiniappAuth(process.env.NEXT_PUBLIC_MERCHANT_ID || "M-1");
   const merchantId = auth.merchantId;
   const setMerchantId = auth.setMerchantId;
@@ -242,7 +318,6 @@ export default function Page() {
   const [toast, setToast] = useState<{ msg: string; type?: "info" | "error" | "success" } | null>(null);
   const [levelInfo, setLevelInfo] = useState<LevelInfo | null>(null);
   const [levelCatalog, setLevelCatalog] = useState<MechanicsLevel[]>([]);
-  const [showQrModal, setShowQrModal] = useState<boolean>(false);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
   const [telegramUser, setTelegramUser] = useState<TelegramUser | null>(null);
   const [profileForm, setProfileForm] = useState<{
@@ -555,31 +630,10 @@ export default function Page() {
 
   const REVIEW_LOOKBACK_MS = 72 * 60 * 60 * 1000;
 
-  const eligibleTransactions = useMemo(() => {
-    if (!dismissedReady) return [] as TransactionItem[];
-    const now = Date.now();
-    return tx
-      .filter((item) => {
-        const meta = formatTxType(item.type);
-        if (meta.tone !== "earn" && meta.tone !== "redeem") return false;
-        if (!isPurchaseTransaction(item.type, item.orderId)) return false;
-        if (item.reviewId) return false;
-        if (dismissedTxSet.has(item.id)) return false;
-        const createdAtMs = parseDateMs(item.createdAt);
-        if (!createdAtMs) return false;
-        return now - createdAtMs <= REVIEW_LOOKBACK_MS;
-      })
-      .sort((a, b) => {
-        const aMs = parseDateMs(a.createdAt) ?? 0;
-        const bMs = parseDateMs(b.createdAt) ?? 0;
-        return aMs - bMs;
-      });
-  }, [tx, dismissedTxSet, dismissedReady, REVIEW_LOOKBACK_MS]);
-
   const isEligiblePurchaseTx = useCallback(
     (item: TransactionItem): boolean => {
-      const meta = formatTxType(item.type);
-      if (meta.tone !== "earn" && meta.tone !== "redeem") return false;
+      const meta = getTransactionMeta(item.type);
+      if (meta.kind !== "earn" && meta.kind !== "redeem") return false;
       if (!isPurchaseTransaction(item.type, item.orderId)) return false;
       // Требуем привязку к кассовому контексту (точка/сотрудник), иначе не считаем покупкой
       if (!item.outletId && !item.staffId) return false;
@@ -1323,12 +1377,12 @@ export default function Page() {
           )}
 
           <section className={`${styles.card} ${styles.appear} ${styles.delay1}`}>
-            <button className={styles.qrMini} onClick={() => setShowQrModal(true)} aria-label="Открыть QR">
+            <Link href="/qr" className={styles.qrMini} aria-label="Открыть QR" prefetch={false}>
               <div className={styles.qrWrapper}>
                 <FakeQr />
               </div>
               <span className={styles.qrHint}>Нажмите</span>
-            </button>
+            </Link>
             <div className={styles.cardContent}>
               <div className={styles.cardRow}>
                 <span className={styles.cardLabel}>Баланс</span>
@@ -1395,15 +1449,15 @@ export default function Page() {
             ) : (
               <ul className={styles.historyList}>
                 {tx.map((item, idx) => {
-                  const meta = formatTxType(item.type);
+                  const meta = getTransactionMeta(item.type);
                   return (
                     <li
                       key={item.id}
-                      className={`${styles.historyItem} ${styles[`historyTone_${meta.tone}`]}`}
+                      className={`${styles.historyItem} ${styles[`historyTone_${meta.kind}`]}`}
                       style={{ animationDelay: `${0.05 * idx}s` }}
                     >
-                      <div className={styles.historyIcon}>
-                        {meta.tone === "earn" ? "⬆" : meta.tone === "redeem" ? "⬇" : "★"}
+                      <div className={`${styles.historyIcon} ${styles[`historyIcon_${meta.kind}`]}`}>
+                        {HISTORY_ICONS[meta.kind]}
                       </div>
                       <div className={styles.historyBody}>
                         <div className={styles.historyTitle}>{meta.title}</div>
@@ -1564,23 +1618,6 @@ export default function Page() {
         </div>
       )}
 
-      {showQrModal && (
-        <div className={styles.modalBackdrop} onClick={() => setShowQrModal(false)}>
-          <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
-            <div className={styles.modalHeader}>
-              <span>Покажите этот QR на кассе</span>
-              <button className={styles.modalClose} onClick={() => setShowQrModal(false)} aria-label="Закрыть">
-                ✕
-              </button>
-            </div>
-            {qrToken ? <QrCanvas value={qrToken} /> : <div className={styles.qrPlaceholder} />}
-            <button className={styles.modalRefresh} onClick={doMint}>
-              Обновить QR
-            </button>
-          </div>
-        </div>
-      )}
-
       {promotionsOpen && (
         <div className={styles.modalBackdrop} onClick={() => setPromotionsOpen(false)}>
           <div className={styles.sheet} onClick={(e) => e.stopPropagation()}>
@@ -1635,8 +1672,14 @@ export default function Page() {
             <button className={styles.sheetButton} onClick={() => loadTx()}>
               Обновить историю
             </button>
-            <button className={styles.sheetButton} onClick={doMint}>
-              Пересоздать QR
+            <button
+              className={styles.sheetButton}
+              onClick={() => {
+                setSettingsOpen(false);
+                router.push("/qr");
+              }}
+            >
+              Открыть страницу QR
             </button>
           </div>
         </div>
