@@ -39,6 +39,7 @@ export default function QrPage() {
   const [currentBalance, setCurrentBalance] = useState<number | null>(null);
   const [levelInfo, setLevelInfo] = useState<LevelInfo | null>(null);
   const [levelCatalog, setLevelCatalog] = useState<MechanicsLevel[]>([]);
+  const [qrSize, setQrSize] = useState<number>(240);
 
   const effectiveTtl = useMemo(() => {
     if (typeof auth.theme?.ttl === "number" && !Number.isNaN(auth.theme.ttl)) {
@@ -138,6 +139,19 @@ export default function QrPage() {
     return () => window.clearTimeout(id);
   }, [expiresAt, refreshQr]);
 
+  const updateQrSize = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const viewportWidth = window.innerWidth;
+    const calculated = Math.round(Math.min(320, Math.max(160, viewportWidth * 0.56)));
+    setQrSize(calculated);
+  }, []);
+
+  useEffect(() => {
+    updateQrSize();
+    window.addEventListener("resize", updateQrSize);
+    return () => window.removeEventListener("resize", updateQrSize);
+  }, [updateQrSize]);
+
   const cashbackPercent = useMemo(() => {
     const currentName = levelInfo?.current?.name;
     if (!currentName) return null;
@@ -163,6 +177,7 @@ export default function QrPage() {
   }, [levelInfo]);
 
   const canShowProgress = levelCatalog.length > 1 && !!levelInfo?.next;
+  const qrWrapperSize = useMemo(() => Math.round(qrSize + 32), [qrSize]);
 
   return (
     <div className={styles.page}>
@@ -174,8 +189,12 @@ export default function QrPage() {
 
       <section className={styles.qrSection}>
         <div className={styles.qrHeader}>Покажите QR-код на кассе</div>
-        <div className={styles.qrWrapper}>
-          {qrToken ? <QrCanvas value={qrToken} size={240} /> : <div className={styles.qrPlaceholder} />}
+        <div className={styles.qrWrapper} style={{ width: qrWrapperSize, height: qrWrapperSize }}>
+          {qrToken ? (
+            <QrCanvas value={qrToken} size={qrSize} />
+          ) : (
+            <div className={styles.qrPlaceholder} style={{ width: qrSize, height: qrSize }} />
+          )}
           {(loading || refreshing) && (
             <div className={styles.qrOverlay}>
               <Spinner />
@@ -194,30 +213,23 @@ export default function QrPage() {
             {refreshing ? "Обновляем…" : "Обновить QR"}
           </button>
           {typeof timeLeft === "number" && qrToken && (
-            <span className={styles.ttlHint}>Действителен ещё ~{timeLeft} с</span>
+            <span className={styles.ttlHint}>{timeLeft} сек.</span>
           )}
         </div>
       </section>
 
       <section className={styles.infoGrid}>
         <div className={styles.infoCard}>
-          <div className={styles.infoLabel}>Можно списать</div>
+          <div className={styles.infoLabel}>Баланс</div>
           <div className={styles.infoValue}>{currentBalance != null ? currentBalance.toLocaleString("ru-RU") : "—"}</div>
           <div className={styles.infoCaption}>бонусов</div>
         </div>
         <div className={styles.infoCard}>
           <div className={styles.infoLabel}>Уровень</div>
           <div className={styles.infoValue}>{levelInfo?.current?.name || "—"}</div>
-          {levelInfo?.current?.name && (
-            <div className={styles.infoCaption}>Программа лояльности</div>
-          )}
-        </div>
-        <div className={styles.infoCard}>
-          <div className={styles.infoLabel}>Кэшбэк</div>
-          <div className={styles.infoValue}>
-            {typeof cashbackPercent === "number" ? `${cashbackPercent}%` : "—"}
+          <div className={styles.infoCaption}>
+            Кэшбэк {typeof cashbackPercent === "number" ? `${cashbackPercent}%` : "—%"}
           </div>
-          <div className={styles.infoCaption}>от суммы покупки</div>
         </div>
       </section>
 
