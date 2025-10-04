@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import QrCanvas from "../components/QrCanvas";
+import FakeQr from "../components/FakeQr";
 import {
   balance,
   consentGet,
@@ -1324,7 +1325,7 @@ export default function Page() {
           <section className={`${styles.card} ${styles.appear} ${styles.delay1}`}>
             <button className={styles.qrMini} onClick={() => setShowQrModal(true)} aria-label="Открыть QR">
               <div className={styles.qrWrapper}>
-                {qrToken ? <QrCanvas value={qrToken} /> : <div className={styles.qrPlaceholder} />}
+                <FakeQr />
               </div>
               <span className={styles.qrHint}>Нажмите</span>
             </button>
