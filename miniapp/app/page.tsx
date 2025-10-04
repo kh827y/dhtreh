@@ -3,14 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  ChangeEvent,
-  FormEvent,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import FakeQr from "../components/FakeQr";
 import {
   balance,
@@ -22,26 +15,19 @@ import {
   referralLink,
   referralActivate,
   promoCodeApply,
-  submitReview,
   promotionsList,
   promotionClaim,
-  type ReviewsShareSettings,
-  type SubmitReviewShareOption,
   type PromotionItem,
 } from "../lib/api";
 import Spinner from "../components/Spinner";
 import Toast from "../components/Toast";
-import { useMiniappAuth } from "../lib/useMiniapp";
+import { useMiniappAuthContext } from "../lib/MiniappAuthContext";
 import { getProgressPercent, type LevelInfo } from "../lib/levels";
 import { getTransactionMeta, type TransactionKind } from "../lib/transactionMeta";
+import { subscribeToLoyaltyEvents } from "../lib/loyaltyEvents";
+import { type TransactionItem } from "../lib/reviewUtils";
+import { getTelegramWebApp } from "../lib/telegram";
 import styles from "./page.module.css";
-
-//
-const REVIEW_PLATFORM_LABELS: Record<string, string> = {
-  yandex: "Яндекс.Карты",
-  twogis: "2ГИС",
-  google: "Google",
-};
 
 const DEV_UI =
   (process.env.NEXT_PUBLIC_MINIAPP_DEV_UI || "").toLowerCase() === "true" ||
@@ -61,36 +47,6 @@ type MechanicsLevel = {
   cashbackPercent?: number | null;
   benefits?: { cashbackPercent?: number | null; [key: string]: unknown } | null;
   rewardPercent?: number | null;
-};
-
-type TelegramInitUser = {
-  first_name?: string;
-  last_name?: string;
-  username?: string;
-  photo_url?: string;
-};
-
-type TelegramWebApp = {
-  initDataUnsafe?: { user?: TelegramInitUser };
-  ready?: () => void;
-  expand?: () => void;
-  requestPhoneNumber?: () => Promise<unknown>;
-  openTelegramLink?: (url: string) => void;
-};
-
-type TelegramWindow = Window & { Telegram?: { WebApp?: TelegramWebApp } };
-
-type TransactionItem = {
-  id: string;
-  type: string;
-  amount: number;
-  createdAt: string;
-  orderId: string | null;
-  outletId: string | null;
-  staffId: string | null;
-  reviewId: string | null;
-  reviewRating: number | null;
-  reviewCreatedAt: string | null;
 };
 
 const genderOptions: Array<{ value: "male" | "female"; label: string }> = [
@@ -200,12 +156,6 @@ const HISTORY_ICONS: Record<TransactionKind, JSX.Element> = {
   ),
 };
 
-function getTelegramWebApp(): TelegramWebApp | null {
-  if (typeof window === "undefined") return null;
-  const tgWindow = window as TelegramWindow;
-  return tgWindow.Telegram?.WebApp || null;
-}
-
 function getTelegramUser(): TelegramUser | null {
   try {
     const tg = getTelegramWebApp();
@@ -232,42 +182,10 @@ function resolveErrorMessage(error: unknown): string {
   }
 }
 
-function isPurchaseTransaction(type: string, orderId?: string | null): boolean {
-  const lower = type.toLowerCase();
-  if (lower.includes("promo")) return false;
-  if (lower.includes("campaign")) return false;
-  if (lower.includes("referral")) return false;
-  if (lower.includes("registration")) return false;
-  if (lower.includes("birthday")) return false;
-  if (lower.includes("gift")) return false;
-  if (lower.includes("adjust")) return false;
-  if (lower.includes("ttl")) return false;
-  if (lower.includes("expire")) return false;
-  if (orderId) {
-    const normalizedOrder = orderId.toLowerCase();
-    if (normalizedOrder.startsWith("gift")) return false;
-    if (normalizedOrder.includes("promo")) return false;
-  }
-  if (lower === "earn" || lower === "redeem") {
-    // Покупкой считаем только операции с реальным заказом
-    return typeof orderId === "string" && orderId.trim().length > 0;
-  }
-  return lower.includes("purchase") || lower.includes("order") || lower.includes("sale");
-}
-
 function formatAmount(amount: number): string {
   const sign = amount > 0 ? "+" : amount < 0 ? "" : "";
   return `${sign}${amount.toLocaleString("ru-RU", { maximumFractionDigits: 2 })}`;
 }
-
-function parseDateMs(value: string | null | undefined): number | null {
-  if (!value) return null;
-  const ts = Date.parse(value);
-  return Number.isFinite(ts) ? ts : null;
-}
-
-const LOYALTY_EVENT_CHANNEL = "loyalty:events";
-const LOYALTY_EVENT_STORAGE_KEY = "loyalty:lastEvent";
 
 function escapeRegExp(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -300,7 +218,7 @@ function buildReferralMessage(
 
 export default function Page() {
   const router = useRouter();
-  const auth = useMiniappAuth(process.env.NEXT_PUBLIC_MERCHANT_ID || "M-1");
+  const auth = useMiniappAuthContext();
   const merchantId = auth.merchantId;
   const setMerchantId = auth.setMerchantId;
   const [customerId, setCustomerId] = useState<string | null>(null);
@@ -341,81 +259,9 @@ export default function Page() {
   const [inviteApplied, setInviteApplied] = useState<boolean>(false);
   const [promoCode, setPromoCode] = useState<string>("");
   const [promoLoading, setPromoLoading] = useState<boolean>(false);
-  const [feedbackOpen, setFeedbackOpen] = useState<boolean>(false);
-  const [feedbackRating, setFeedbackRating] = useState<number>(0);
-  const [feedbackComment, setFeedbackComment] = useState<string>("");
-  const [feedbackTxId, setFeedbackTxId] = useState<string | null>(null);
-  const [feedbackSubmitting, setFeedbackSubmitting] = useState<boolean>(false);
-  const [feedbackStage, setFeedbackStage] = useState<'form' | 'share'>('form');
-  const [dismissedTransactions, setDismissedTransactions] = useState<string[]>([]);
-  const [dismissedReady, setDismissedReady] = useState<boolean>(false);
-  const [sharePrompt, setSharePrompt] = useState<{
-    enabled: boolean;
-    threshold: number;
-    options: Array<{ id: string; url: string }>;
-  } | null>(null);
   const [promotionsOpen, setPromotionsOpen] = useState<boolean>(false);
   const [promotions, setPromotions] = useState<PromotionItem[]>([]);
   const [promotionsLoading, setPromotionsLoading] = useState<boolean>(false);
-
-  const computeShareOptions = useCallback(
-    (share: ReviewsShareSettings, activeOutletId: string | null) => {
-      if (!share || !share.enabled) return [] as Array<{ id: string; url: string }>;
-      if (!activeOutletId) return [] as Array<{ id: string; url: string }>;
-      const result: Array<{ id: string; url: string }> = [];
-      for (const platform of share.platforms || []) {
-        if (!platform || typeof platform !== "object") continue;
-        if (!platform.enabled) continue;
-        const outlets = Array.isArray(platform.outlets) ? platform.outlets : [];
-        const outletMatch = outlets.find(
-          (item) => item && item.outletId === activeOutletId && typeof item.url === "string" && item.url.trim(),
-        );
-        if (!outletMatch) continue;
-        result.push({ id: platform.id, url: outletMatch.url.trim() });
-      }
-      return result;
-    },
-    [],
-  );
-
-  const activeTransaction = useMemo(() => {
-    if (!feedbackTxId) return null;
-    return tx.find((item) => item.id === feedbackTxId) ?? null;
-  }, [feedbackTxId, tx]);
-
-  const activeOutletId = activeTransaction?.outletId ?? null;
-
-  const shareOptions = useMemo(() => {
-    if (sharePrompt?.options?.length) {
-      return sharePrompt.options;
-    }
-    return computeShareOptions(auth.shareSettings, activeOutletId);
-  }, [sharePrompt, computeShareOptions, auth.shareSettings, activeOutletId]);
-
-  const handleShareClick = useCallback((url: string) => {
-    if (!url) return;
-    const tg = getTelegramWebApp();
-    try {
-      if (tg?.openTelegramLink) {
-        tg.openTelegramLink(url);
-        return;
-      }
-    } catch {}
-    try {
-      if (typeof window !== "undefined") {
-        window.open(url, "_blank", "noopener,noreferrer");
-      }
-    } catch {}
-  }, []);
-
-  const resetFeedbackState = useCallback(() => {
-    setFeedbackOpen(false);
-    setFeedbackTxId(null);
-    setFeedbackComment("");
-    setFeedbackRating(0);
-    setFeedbackStage('form');
-    setSharePrompt(null);
-  }, []);
 
   useEffect(() => {
     const tgUser = getTelegramUser();
@@ -604,47 +450,6 @@ export default function Page() {
     }
   }, [merchantId, customerId]);
 
-  const dismissedTxSet = useMemo(() => new Set(dismissedTransactions), [dismissedTransactions]);
-
-  const REVIEW_LOOKBACK_MS = 72 * 60 * 60 * 1000;
-
-  const isEligiblePurchaseTx = useCallback(
-    (item: TransactionItem): boolean => {
-      const meta = getTransactionMeta(item.type);
-      if (meta.kind !== "earn" && meta.kind !== "redeem") return false;
-      if (!isPurchaseTransaction(item.type, item.orderId)) return false;
-      // Требуем привязку к кассовому контексту (точка/сотрудник), иначе не считаем покупкой
-      if (!item.outletId && !item.staffId) return false;
-      if (item.reviewId) return false;
-      if (dismissedTxSet.has(item.id)) return false;
-      const createdAtMs = parseDateMs(item.createdAt);
-      if (!createdAtMs) return false;
-      return Date.now() - createdAtMs <= REVIEW_LOOKBACK_MS;
-    },
-    [dismissedTxSet, REVIEW_LOOKBACK_MS]
-  );
-
-  useEffect(() => {
-    if (!dismissedReady) return;
-    if (feedbackOpen) return;
-    // Окно отзыва открываем ТОЛЬКО если последняя (самая свежая) транзакция — покупка (earn/redeem с orderId)
-    const latest = tx.reduce<{ item: TransactionItem | null; ts: number }>((acc, item) => {
-      const ts = parseDateMs(item.createdAt) ?? 0;
-      return ts > acc.ts ? { item, ts } : acc;
-    }, { item: null, ts: 0 }).item;
-    const candidate = latest && isEligiblePurchaseTx(latest) ? latest : null;
-    if (candidate) {
-      setFeedbackTxId(candidate.id);
-      setFeedbackRating(0);
-      setFeedbackComment("");
-      setFeedbackStage('form');
-      setSharePrompt(null);
-      setFeedbackOpen(true);
-    } else {
-      setFeedbackTxId(null);
-    }
-  }, [tx, dismissedReady, feedbackOpen, isEligiblePurchaseTx]);
-
   const refreshHistory = useCallback(() => {
     if (!customerId) return;
     const tasks: Array<Promise<unknown>> = [
@@ -680,41 +485,10 @@ export default function Page() {
   );
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
     if (!merchantId || !customerId) return;
-    let channel: BroadcastChannel | null = null;
-    if ("BroadcastChannel" in window) {
-      try {
-        channel = new BroadcastChannel(LOYALTY_EVENT_CHANNEL);
-        channel.onmessage = (event) => handleExternalEvent(event.data);
-      } catch {
-        channel = null;
-      }
-    }
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key !== LOYALTY_EVENT_STORAGE_KEY || !event.newValue) return;
-      try {
-        handleExternalEvent(JSON.parse(event.newValue));
-      } catch {
-        // ignore
-      }
-    };
-    window.addEventListener("storage", handleStorage);
-    try {
-      const cached = localStorage.getItem(LOYALTY_EVENT_STORAGE_KEY);
-      if (cached) handleExternalEvent(JSON.parse(cached));
-    } catch {
-      // ignore
-    }
+    const unsubscribe = subscribeToLoyaltyEvents(handleExternalEvent);
     return () => {
-      window.removeEventListener("storage", handleStorage);
-      if (channel) {
-        try {
-          channel.close();
-        } catch {
-          // ignore
-        }
-      }
+      unsubscribe();
     };
   }, [merchantId, customerId, handleExternalEvent]);
 
@@ -742,188 +516,6 @@ export default function Page() {
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [refreshHistory]);
-
-  useEffect(() => {
-    try {
-      if (typeof window === "undefined") return;
-      const saved = localStorage.getItem("miniapp.dismissedTransactions");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          setDismissedTransactions(parsed.filter((id) => typeof id === "string"));
-        }
-      }
-    } catch {
-      setDismissedTransactions([]);
-    } finally {
-      setDismissedReady(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!dismissedReady) return;
-    try {
-      if (typeof window === "undefined") return;
-      localStorage.setItem(
-        "miniapp.dismissedTransactions",
-        JSON.stringify(dismissedTransactions),
-      );
-    } catch {
-      // ignore
-    }
-  }, [dismissedTransactions, dismissedReady]);
-
-  useEffect(() => {
-    if (!dismissedReady) return;
-    if (!tx.length) return;
-    const ratedIds = tx.filter((item) => item.reviewId).map((item) => item.id);
-    if (ratedIds.length) {
-      setDismissedTransactions((prev) => {
-        let changed = false;
-        const next = new Set(prev);
-        for (const id of ratedIds) {
-          if (!next.has(id)) {
-            next.add(id);
-            changed = true;
-          }
-        }
-        return changed ? Array.from(next) : prev;
-      });
-    }
-  }, [tx, dismissedReady]);
-
-  const handleFeedbackClose = useCallback(() => {
-    if (feedbackTxId) {
-      setDismissedTransactions((prev) =>
-        prev.includes(feedbackTxId) ? prev : [...prev, feedbackTxId]
-      );
-    }
-    resetFeedbackState();
-  }, [feedbackTxId, resetFeedbackState]);
-
-  const handleFeedbackSubmit = useCallback(
-    async (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      if (feedbackStage === 'share') {
-        handleFeedbackClose();
-        return;
-      }
-      if (!feedbackRating) {
-        setToast({ msg: "Поставьте оценку", type: "error" });
-        return;
-      }
-      if (!merchantId || !customerId) {
-        setToast({ msg: "Не удалось определить клиента", type: "error" });
-        return;
-      }
-      const activeTx = feedbackTxId
-        ? tx.find((item) => item.id === feedbackTxId) ?? null
-        : null;
-      try {
-        setFeedbackSubmitting(true);
-        const response = await submitReview({
-          merchantId,
-          customerId,
-          rating: feedbackRating,
-          comment: feedbackComment,
-          orderId: activeTx?.orderId ?? null,
-          transactionId: feedbackTxId,
-          outletId: activeTx?.outletId ?? null,
-          staffId: activeTx?.staffId ?? null,
-        });
-        if (feedbackTxId) {
-          setDismissedTransactions((prev) =>
-            prev.includes(feedbackTxId) ? prev : [...prev, feedbackTxId]
-          );
-          setTx((prev) =>
-            prev.map((item) =>
-              item.id === feedbackTxId
-                ? {
-                    ...item,
-                    reviewId: response.reviewId,
-                    reviewRating: feedbackRating,
-                    reviewCreatedAt: new Date().toISOString(),
-                  }
-                : item,
-            ),
-          );
-        }
-        setToast({ msg: response.message || "Спасибо за отзыв!", type: "success" });
-        void refreshHistory();
-        let resolvedShare: {
-          enabled: boolean;
-          threshold: number;
-          options: Array<{ id: string; url: string }>;
-        } | null = null;
-        const rawShare = response.share;
-        if (rawShare !== undefined) {
-          if (rawShare && typeof rawShare === "object") {
-            const threshold =
-              typeof rawShare.threshold === "number" && rawShare.threshold >= 1 && rawShare.threshold <= 5
-                ? Math.round(rawShare.threshold)
-                : auth.shareSettings?.threshold ?? 5;
-            const options = Array.isArray(rawShare.options)
-              ? rawShare.options
-                  .filter((opt): opt is SubmitReviewShareOption => {
-                    if (!opt) return false;
-                    if (typeof opt.id !== "string" || typeof opt.url !== "string") return false;
-                    return opt.id.trim().length > 0 && opt.url.trim().length > 0;
-                  })
-                  .map((opt) => ({ id: opt.id.trim(), url: opt.url.trim() }))
-              : [];
-            resolvedShare = {
-              enabled: Boolean(rawShare.enabled),
-              threshold,
-              options,
-            };
-          } else if (rawShare === null) {
-            resolvedShare = {
-              enabled: false,
-              threshold: auth.shareSettings?.threshold ?? 5,
-              options: [],
-            };
-          }
-        }
-        setSharePrompt(resolvedShare);
-        const fallbackOptions = computeShareOptions(auth.shareSettings, activeOutletId);
-        const effectiveThreshold = resolvedShare?.threshold ?? auth.shareSettings?.threshold ?? 5;
-        const effectiveEnabled = resolvedShare ? resolvedShare.enabled : Boolean(auth.shareSettings?.enabled);
-        const hasOptions = resolvedShare ? resolvedShare.options.length > 0 : fallbackOptions.length > 0;
-        if (effectiveEnabled && feedbackRating >= effectiveThreshold && hasOptions) {
-          setFeedbackStage('share');
-        } else {
-          resetFeedbackState();
-        }
-      } catch (error) {
-        setToast({ msg: resolveErrorMessage(error), type: "error" });
-      } finally {
-        setFeedbackSubmitting(false);
-      }
-    },
-    [
-      feedbackRating,
-      merchantId,
-      customerId,
-      feedbackTxId,
-      tx,
-      feedbackComment,
-      feedbackStage,
-      handleFeedbackClose,
-      setToast,
-      resetFeedbackState,
-      auth.shareSettings,
-      refreshHistory,
-      computeShareOptions,
-      activeOutletId,
-    ]
-  );
-
-  const handleFeedbackCommentChange = useCallback(
-    (event: ChangeEvent<HTMLTextAreaElement>) => {
-      setFeedbackComment(event.currentTarget.value);
-    },
-    []
-  );
 
   const syncConsent = useCallback(async () => {
     if (!customerId) return;
@@ -957,7 +549,7 @@ export default function Page() {
       }
       try {
         setPromotionsLoading(true);
-        const resp = await promotionClaim(merchantId, customerId, promotionId, activeOutletId ?? null);
+        const resp = await promotionClaim(merchantId, customerId, promotionId, null);
         const message = resp.alreadyClaimed
           ? "Уже получено"
           : resp.pointsIssued > 0
@@ -971,7 +563,7 @@ export default function Page() {
         setPromotionsLoading(false);
       }
     },
-    [merchantId, customerId, activeOutletId, loadBalance, loadTx, loadPromotions]
+    [merchantId, customerId, loadBalance, loadTx, loadPromotions]
   );
 
   useEffect(() => {
@@ -1464,96 +1056,6 @@ export default function Page() {
       {error && !loading && <div className={styles.error}>{error}</div>}
 
       {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
-
-      {feedbackOpen && (
-        <div className={styles.modalBackdrop} onClick={handleFeedbackClose}>
-          <form
-            className={`${styles.sheet} ${styles.feedbackSheet}`}
-            onClick={(event) => event.stopPropagation()}
-            onSubmit={handleFeedbackSubmit}
-          >
-            <button
-              type="button"
-              className={styles.feedbackClose}
-              onClick={handleFeedbackClose}
-              aria-label="Закрыть окно оценки"
-            >
-              ✕
-            </button>
-            <div className={styles.feedbackHeader}>
-              <div className={styles.feedbackTitle}>
-                {feedbackStage === 'share' ? "Отзыв отправлен!" : "Оцените визит."}
-              </div>
-              <div className={styles.feedbackSubtitle}>
-                {feedbackStage === 'share'
-                  ? shareOptions.length > 0
-                    ? "Поделитесь впечатлением на площадке"
-                    : "Спасибо за обратную связь"
-                  : "Ваш отзыв поможет нам улучшить сервис."}
-              </div>
-            </div>
-            {feedbackStage === 'form' && (
-              <>
-                <div className={styles.feedbackStars} role="radiogroup" aria-label="Оценка визита">
-                  {[1, 2, 3, 4, 5].map((value) => (
-                    <button
-                      key={value}
-                      type="button"
-                      className={`${styles.starButton} ${
-                        feedbackRating >= value ? styles.starButtonActive : ""
-                      }`}
-                      onClick={() => setFeedbackRating(value)}
-                      role="radio"
-                      aria-checked={feedbackRating >= value}
-                      aria-label={`Оценка ${value}`}
-                    >
-                      ★
-                    </button>
-                  ))}
-                </div>
-                <label className={styles.feedbackCommentLabel}>
-                  Комментарий
-                  <textarea
-                    className={styles.feedbackComment}
-                    value={feedbackComment}
-                    onChange={handleFeedbackCommentChange}
-                    placeholder="Расскажите, что понравилось"
-                    rows={3}
-                  />
-                </label>
-              </>
-            )}
-      {feedbackStage === 'share' && shareOptions.length > 0 && (
-        <div className={styles.feedbackShareBlock}>
-          <div className={styles.feedbackShareTitle}>
-            Мы рады, что вам понравилось! Пожалуйста, поделитесь своим отзывом
-          </div>
-          <div className={styles.feedbackShareButtons}>
-            {shareOptions.map((platform: { id: string; url: string }) => (
-              <button
-                key={platform.id}
-                type="button"
-                className={styles.feedbackShareButton}
-                onClick={() => handleShareClick(platform.url)}
-              >
-                {REVIEW_PLATFORM_LABELS[platform.id] || platform.id}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      <button
-        type={feedbackStage === 'share' ? "button" : "submit"}
-        className={styles.feedbackSubmit}
-        disabled={(feedbackStage === 'share' && feedbackSubmitting) || (feedbackStage === 'form' && (!feedbackRating || feedbackSubmitting))}
-        onClick={feedbackStage === 'share' ? handleFeedbackClose : undefined}
-        aria-busy={feedbackSubmitting || undefined}
-      >
-        {feedbackStage === 'share' ? "Готово" : feedbackSubmitting ? "Отправляем…" : "Отправить"}
-      </button>
-          </form>
-        </div>
-      )}
 
       {promotionsOpen && (
         <div className={styles.modalBackdrop} onClick={() => setPromotionsOpen(false)}>

@@ -10,7 +10,8 @@ import {
   type MechanicsLevelsResp,
 } from "../../lib/api";
 import { getProgressPercent, type LevelInfo } from "../../lib/levels";
-import { useMiniappAuth } from "../../lib/useMiniapp";
+import { useMiniappAuthContext } from "../../lib/MiniappAuthContext";
+import { subscribeToLoyaltyEvents } from "../../lib/loyaltyEvents";
 import styles from "./page.module.css";
 
 function resolveErrorMessage(error: unknown): string {
@@ -31,7 +32,7 @@ const PROGRESS_STUB = {
 };
 
 export default function QrPage() {
-  const auth = useMiniappAuth(process.env.NEXT_PUBLIC_MERCHANT_ID || "M-1");
+  const auth = useMiniappAuthContext();
   const { merchantId, customerId, initData } = auth;
   const [qrToken, setQrToken] = useState<string>("");
   const [expiresAt, setExpiresAt] = useState<number | null>(null);
@@ -104,6 +105,11 @@ export default function QrPage() {
     }
   }, [merchantId]);
 
+  const refreshCustomerInfo = useCallback(() => {
+    if (!customerId) return;
+    void Promise.allSettled([loadBalance(), loadLevelInfo()]);
+  }, [customerId, loadBalance, loadLevelInfo]);
+
   useEffect(() => {
     if (auth.loading) return;
     if (!customerId) {
@@ -141,6 +147,58 @@ export default function QrPage() {
     }, msLeft - 3000);
     return () => window.clearTimeout(id);
   }, [expiresAt, refreshQr]);
+
+  useEffect(() => {
+    if (!merchantId || !customerId) return;
+    const unsubscribe = subscribeToLoyaltyEvents((payload) => {
+      if (!payload || typeof payload !== "object") return;
+      const data = payload as Record<string, unknown>;
+      const eventMerchant = data.merchantId ? String(data.merchantId) : "";
+      if (eventMerchant && eventMerchant !== merchantId) return;
+      const eventCustomer = data.customerId ? String(data.customerId) : "";
+      if (eventCustomer && eventCustomer !== customerId) return;
+      const typeRaw = data.type ?? data.eventType;
+      if (typeRaw) {
+        const eventType = String(typeRaw).toLowerCase();
+        if (
+          !eventType.includes("commit") &&
+          !eventType.includes("redeem") &&
+          !eventType.includes("earn")
+        ) {
+          return;
+        }
+      }
+      refreshCustomerInfo();
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, [merchantId, customerId, refreshCustomerInfo]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    if (!customerId) return;
+    const interval = window.setInterval(() => {
+      if (document.visibilityState && document.visibilityState !== "visible") return;
+      refreshCustomerInfo();
+    }, 20000);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [customerId, refreshCustomerInfo]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        refreshCustomerInfo();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [refreshCustomerInfo]);
 
   const updateQrSize = useCallback(() => {
     if (typeof window === "undefined") return;

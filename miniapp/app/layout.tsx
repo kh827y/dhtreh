@@ -1,3 +1,5 @@
+import { Providers } from "./providers";
+
 export const metadata = { title: "Loyalty Miniapp", description: "Клиентская мини‑аппа" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -12,7 +14,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           margin: 0,
         }}
       >
-        <div style={{ maxWidth: 520, margin: '0 auto', minHeight: '100vh' }}>{children}</div>
+        <div style={{ maxWidth: 520, margin: '0 auto', minHeight: '100vh' }}>
+          <Providers>{children}</Providers>
+        </div>
       </body>
     </html>
   );
