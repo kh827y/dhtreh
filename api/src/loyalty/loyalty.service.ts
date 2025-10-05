@@ -4,6 +4,7 @@ import { MetricsService } from '../metrics.service';
 import { PromoCodesService, type PromoCodeApplyResult } from '../promocodes/promocodes.service';
 import { Mode, QuoteDto } from './dto';
 import { computeLevelState, parseLevelsConfig, resolveLevelBenefits, type LevelRule } from './levels.util';
+import { LevelsService } from '../levels/levels.service';
 import { HoldStatus, TxnType, WalletType, LedgerAccount, HoldMode, DeviceType } from '@prisma/client';
 import { randomUUID } from 'crypto';
 
@@ -209,6 +210,7 @@ export class LoyaltyService {
     private prisma: PrismaService,
     private metrics: MetricsService,
     private promoCodes: PromoCodesService,
+    private levels: LevelsService,
   ) {}
 
   // ===== Earn Lots helpers (optional feature) =====
@@ -355,19 +357,31 @@ export class LoyaltyService {
     let levelState: TransactionPreviewResult['level'] = null;
     let levelBonus: TransactionPreviewResult['levelBonus'] = null;
     try {
-      const cfg = parseLevelsConfig(settings.rulesJson);
-      levelState = await computeLevelState({
-        prisma: this.prisma,
-        metrics: this.metrics,
-        merchantId: args.merchantId,
-        customerId: customer.id,
-        config: cfg,
-        now: nowTs,
-      });
+      const level = await this.levels.getLevel(args.merchantId, customer.id);
+      levelState = {
+        value: level.value,
+        current: level.current,
+        next: level.next,
+        progressToNext: level.progressToNext,
+      };
+    } catch (err) {
+      try {
+        const cfg = parseLevelsConfig(settings.rulesJson);
+        levelState = await computeLevelState({
+          prisma: this.prisma,
+          metrics: this.metrics,
+          merchantId: args.merchantId,
+          customerId: customer.id,
+          config: cfg,
+          now: nowTs,
+        });
+      } catch {}
+    }
+    if (levelState) {
       levelBonus = resolveLevelBenefits(settings.rulesJson, levelState.current.name);
       earnBps = Math.max(0, earnBps + levelBonus.earnBpsBonus);
       redeemLimitBps = Math.max(0, redeemLimitBps + levelBonus.redeemLimitBpsBonus);
-    } catch {}
+    }
 
     let tierMinPayment: number | null = null;
     let tier: TransactionPreviewResult['tier'] = null;

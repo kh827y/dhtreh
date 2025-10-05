@@ -12,6 +12,7 @@ import { PromosModule } from '../promos/promos.module';
 import { PromoCodesModule } from '../promocodes/promocodes.module';
 import { MerchantsModule } from '../merchants/merchants.module';
 import { ReviewModule } from '../reviews/review.module';
+import { LevelsModule } from '../levels/levels.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { ReviewModule } from '../reviews/review.module';
     PromosModule,
     PromoCodesModule,
     MerchantsModule,
+    LevelsModule,
     forwardRef(() => ReviewModule),
   ],
   providers: [LoyaltyService, CashierGuard, SubscriptionGuard, AntiFraudGuard],

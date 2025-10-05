@@ -15,13 +15,21 @@ describe('LoyaltyService.commit idempotency', () => {
   }
 
   const metrics = { inc: jest.fn(), observe: jest.fn(), setGauge: jest.fn() } as any;
+  const mkLevels = () => ({
+    getLevel: jest.fn(async () => ({
+      value: 0,
+      current: { name: 'Base', threshold: 0 },
+      next: null,
+      progressToNext: 0,
+    })),
+  });
 
   it('returns alreadyCommitted when receipt exists and hold not pending', async () => {
     const prisma = mkPrisma();
     prisma.hold.findUnique.mockResolvedValue({ id: 'H1', merchantId: 'M-1', customerId: 'C-1', status: 'COMMITTED' });
     prisma.receipt.findUnique.mockResolvedValue({ id: 'R1', redeemApplied: 10, earnApplied: 5 });
 
-    const svc = new LoyaltyService(prisma as any, metrics as any, undefined as any);
+    const svc = new LoyaltyService(prisma as any, metrics as any, undefined as any, mkLevels() as any);
     const r = await svc.commit('H1', 'O-1');
     expect(r.alreadyCommitted).toBe(true);
     expect(r.receiptId).toBe('R1');
@@ -40,7 +48,7 @@ describe('LoyaltyService.commit idempotency', () => {
       return fn(tx);
     });
 
-    const svc = new LoyaltyService(prisma as any, metrics as any, undefined as any);
+    const svc = new LoyaltyService(prisma as any, metrics as any, undefined as any, mkLevels() as any);
     const r = await svc.commit('H1', 'O-1');
     expect(r.alreadyCommitted).toBe(true);
     expect(r.receiptId).toBe('R_EXIST');
@@ -56,7 +64,7 @@ describe('LoyaltyService.commit idempotency', () => {
       txUsed = mkPrisma({ receipt: { findUnique: jest.fn(() => null), create: jest.fn(() => ({ id: 'R2', redeemApplied: 0, earnApplied: 5 })) }, wallet: { findUnique: jest.fn(() => ({ id: 'W2', balance: 0 })), update: jest.fn() }, transaction: { create: jest.fn() }, eventOutbox: { create: jest.fn() }, hold: { update: jest.fn() } });
       return fn(txUsed);
     });
-    const svc = new LoyaltyService(prisma as any, metrics as any, undefined as any);
+    const svc = new LoyaltyService(prisma as any, metrics as any, undefined as any, mkLevels() as any);
     const r = await svc.commit('H2', 'O-2');
     expect(r.ok).toBe(true);
     expect(r.receiptId).toBe('R2');
@@ -80,13 +88,13 @@ describe('LoyaltyService.commit idempotency', () => {
       });
       return fn(txUsed);
     });
-    const svc = new LoyaltyService(prisma as any, metrics as any, undefined as any);
+    const svc = new LoyaltyService(prisma as any, metrics as any, undefined as any, mkLevels() as any);
     await svc.commit('H3', 'ORDER-3');
     expect(txUsed.outlet.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'OUT-1' } }));
   });
 
   it('caches rules per outlet', () => {
-    const svc = new LoyaltyService({} as any, metrics as any, undefined as any);
+    const svc = new LoyaltyService({} as any, metrics as any, undefined as any, mkLevels() as any);
     const base = { earnBps: 100, redeemLimitBps: 200 };
     const fn1 = (svc as any).compileRules('M-1', 'OUT-1', base, null, null);
     const fn2 = (svc as any).compileRules('M-1', 'OUT-1', base, null, null);

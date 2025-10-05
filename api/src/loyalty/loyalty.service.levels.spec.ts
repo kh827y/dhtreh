@@ -56,7 +56,8 @@ describe('LoyaltyService.quote with level benefits (Wave 2)', () => {
 
   it('applies earnBps bonus by current level', async () => {
     const prisma = mkPrisma();
-    const svc = new LoyaltyService(prisma as any, metrics, promoCodes);
+    const levelsSvc = new LevelsService(prisma as any, metrics as any);
+    const svc = new LoyaltyService(prisma as any, metrics, promoCodes, levelsSvc as any);
 
     const res = await (svc as any).quote({
       mode: 'earn',
@@ -98,7 +99,8 @@ describe('LoyaltyService.quote with level benefits (Wave 2)', () => {
         findFirst: jest.fn(async () => ({ id: 'W1', balance: 1000, type: 'POINTS' })),
       },
     });
-    const svc = new LoyaltyService(prisma as any, metrics, promoCodes);
+    const levelsSvc = new LevelsService(prisma as any, metrics as any);
+    const svc = new LoyaltyService(prisma as any, metrics, promoCodes, levelsSvc as any);
 
     const res = await (svc as any).quote({
       mode: 'redeem',
@@ -116,7 +118,8 @@ describe('LoyaltyService.quote with level benefits (Wave 2)', () => {
 
   it('calculateTransactionPreview returns level-adjusted earn points', async () => {
     const prisma = mkPrisma();
-    const svc = new LoyaltyService(prisma as any, metrics, promoCodes);
+    const levelsSvc = new LevelsService(prisma as any, metrics as any);
+    const svc = new LoyaltyService(prisma as any, metrics, promoCodes, levelsSvc as any);
 
     const preview = await svc.calculateTransactionPreview({
       merchantId: 'M1',
