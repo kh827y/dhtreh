@@ -9,7 +9,22 @@ export class LevelsService {
 
   async getLevel(merchantId: string, customerId: string): Promise<{ merchantId: string; customerId: string; metric: 'earn'|'redeem'|'transactions'; periodDays: number; value: number; current: LevelRule; next: LevelRule|null; progressToNext: number }> {
     const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId } });
-    const cfg = parseLevelsConfig(s);
+    const base = parseLevelsConfig(s);
+    // Заменяем список уровней на портал-управляемые LoyaltyTier, если они существуют
+    let levels = base.levels;
+    try {
+      const tiers = await (this.prisma as any).loyaltyTier.findMany({
+        where: { merchantId },
+        orderBy: [{ thresholdAmount: 'asc' }, { createdAt: 'asc' }],
+      });
+      if (Array.isArray(tiers) && tiers.length) {
+        levels = tiers.map((t: any) => ({
+          name: String(t?.name || ''),
+          threshold: Math.max(0, Number(t?.thresholdAmount ?? 0) || 0),
+        }));
+      }
+    } catch {}
+    const cfg = { periodDays: base.periodDays, metric: base.metric, levels };
     const { value, current, next, progressToNext } = await computeLevelState({
       prisma: this.prisma,
       metrics: this.metrics,

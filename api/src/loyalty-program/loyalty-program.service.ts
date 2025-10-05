@@ -369,10 +369,10 @@ export class LoyaltyProgramService {
 
     const created = await this.prisma.$transaction(async (tx) => {
       if (isInitial) {
-        await tx.loyaltyTier.updateMany({
-          where: { merchantId },
-          data: { isInitial: false, isDefault: false },
-        });
+        const exists = await tx.loyaltyTier.findFirst({ where: { merchantId, isInitial: true } });
+        if (exists) {
+          throw new BadRequestException('Стартовая группа уже существует');
+        }
       }
       const orderAggregate = await tx.loyaltyTier.aggregate({
         where: { merchantId },
@@ -463,11 +463,11 @@ export class LoyaltyProgramService {
       payload.isHidden != null ? !!payload.isHidden : tier.isHidden;
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      if (isInitial) {
-        await tx.loyaltyTier.updateMany({
-          where: { merchantId, NOT: { id: tierId } },
-          data: { isInitial: false, isDefault: false },
-        });
+      if (isInitial && !tier.isInitial) {
+        const exists = await tx.loyaltyTier.findFirst({ where: { merchantId, isInitial: true, NOT: { id: tierId } } });
+        if (exists) {
+          throw new BadRequestException('Стартовая группа уже существует');
+        }
       }
       const next = await tx.loyaltyTier.update({
         where: { id: tierId },

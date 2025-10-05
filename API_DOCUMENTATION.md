@@ -1315,3 +1315,14 @@ const result = await client.commit({
 - Telegram: @loyalty_support
 - Документация: https://docs.loyalty.com
 - Status Page: https://status.loyalty.com
+
+### Портал-управляемые уровни (LoyaltyTier)
+
+Если у клиента назначен уровень (`LoyaltyTierAssignment`) или действует стартовый уровень (`LoyaltyTier.isInitial`), в расчёте /loyalty/quote используются ставки уровня:
+- earnRateBps — ставка начисления (bps)
+- redeemRateBps — лимит списания от чека (bps)
+
+Также учитывается минимальная сумма к оплате из `tier.metadata.minPaymentAmount` (или `minPayment`): списание ограничено так, чтобы итог к оплате не опускался ниже этой суммы, включая уже списанное по заказу.
+
+Формула ограничения:
+discountToApply <= total - minPayment - alreadyRedeemedForOrder

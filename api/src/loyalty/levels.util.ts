@@ -5,7 +5,18 @@ export type LevelRule = { name: string; threshold: number };
 export type LevelsConfig = { periodDays: number; metric: 'earn'|'redeem'|'transactions'; levels: LevelRule[] };
 
 export type LevelsMetrics = Pick<MetricsService, 'inc'> | { inc?: (metric: string, labels?: Record<string, string>) => unknown };
-export type LevelsPrisma = Pick<PrismaService, 'transaction'> | { transaction: { count: (args: any) => Promise<number>; findMany: (args: any) => Promise<Array<{ amount?: number }>> } };
+export type LevelsPrisma =
+  | Pick<PrismaService, 'transaction' | 'receipt'>
+  | {
+      transaction: {
+        count: (args: any) => Promise<number>;
+        findMany: (args: any) => Promise<Array<{ amount?: number }>>;
+      };
+      receipt: {
+        count: (args: any) => Promise<number>;
+        findMany: (args: any) => Promise<Array<{ total?: number; eligibleTotal?: number }>>;
+      };
+    };
 
 const DEFAULT_CONFIG: LevelsConfig = {
   periodDays: 365,
@@ -48,14 +59,34 @@ export async function computeLevelState(args: {
   const nowTs = args.now instanceof Date ? args.now.getTime() : typeof args.now === 'number' ? args.now : Date.now();
   const since = new Date(nowTs - config.periodDays * 24 * 60 * 60 * 1000);
 
+  // Значение для прогресса считаем по чекам (покупкам), а не по баллам.
+  // - Для metric === 'transactions' считаем количество чеков за период.
+  // - Для остальных метрик считаем сумму покупок: используем сумму total (или eligibleTotal при необходимости).
   let value = 0;
-  if (config.metric === 'transactions') {
-    value = await prisma.transaction.count({ where: { merchantId, customerId, createdAt: { gte: since } } });
+  if ((prisma as any)?.receipt) {
+    if (config.metric === 'transactions') {
+      value = await (prisma as any).receipt.count({ where: { merchantId, customerId, createdAt: { gte: since } } });
+    } else {
+      const receipts = await (prisma as any).receipt.findMany({
+        where: { merchantId, customerId, createdAt: { gte: since } },
+        select: { total: true, eligibleTotal: true },
+      });
+      for (const r of receipts) {
+        // Используем общий чек (total) как сумму покупок; при желании можно переключиться на eligibleTotal
+        const sum = Number(r?.total ?? 0);
+        if (Number.isFinite(sum) && sum > 0) value += Math.round(sum);
+      }
+    }
   } else {
-    const type = config.metric === 'redeem' ? 'REDEEM' : 'EARN';
-    const items = await prisma.transaction.findMany({ where: { merchantId, customerId, type, createdAt: { gte: since } } });
-    for (const item of items) {
-      value += Math.abs(Number(item?.amount ?? 0) || 0);
+    // Фоллбек для тестов/моков без receipt-модели: прежняя логика по транзакциям
+    if (config.metric === 'transactions') {
+      value = await prisma.transaction.count({ where: { merchantId, customerId, createdAt: { gte: since } } });
+    } else {
+      const type = config.metric === 'redeem' ? 'REDEEM' : 'EARN';
+      const items = await prisma.transaction.findMany({ where: { merchantId, customerId, type, createdAt: { gte: since } } });
+      for (const item of items) {
+        value += Math.abs(Number(item?.amount ?? 0) || 0);
+      }
     }
   }
 

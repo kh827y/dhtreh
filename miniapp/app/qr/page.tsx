@@ -280,6 +280,11 @@ export default function QrPage() {
     };
   }, [levelInfo]);
 
+  const showProgress = useMemo(() => {
+    // Прогресс показываем только когда у мерчанта больше одного уровня и для клиента есть следующий уровень
+    return Array.isArray(levelCatalog) && levelCatalog.length > 1 && !!levelInfo?.next;
+  }, [levelCatalog, levelInfo]);
+
   const qrWrapperSize = useMemo(() => Math.round(qrSize + 20), [qrSize]);
 
   return (
@@ -330,16 +335,18 @@ export default function QrPage() {
         </div>
       </section>
 
-      <section className={styles.progressSection}>
-        <div className={styles.progressTitle}>Сумма покупок до следующего уровня &gt;</div>
-        <div className={styles.progressBar}>
-          <div className={styles.progressFill} style={{ width: `${progressData.percent}%` }} />
-        </div>
-        <div className={styles.progressScale}>
-          <span>{progressData.current.toLocaleString("ru-RU")}</span>
-          <span>{progressData.threshold.toLocaleString("ru-RU")}</span>
-        </div>
-      </section>
+      {showProgress && (
+        <section className={styles.progressSection}>
+          <div className={styles.progressTitle}>Сумма покупок до следующего уровня &gt;</div>
+          <div className={styles.progressBar}>
+            <div className={styles.progressFill} style={{ width: `${progressData.percent}%` }} />
+          </div>
+          <div className={styles.progressScale}>
+            <span>{progressData.current.toLocaleString("ru-RU")}</span>
+            <span>{progressData.threshold.toLocaleString("ru-RU")}</span>
+          </div>
+        </section>
+      )}
 
       {error && <div className={styles.error}>{error}</div>}
     </div>

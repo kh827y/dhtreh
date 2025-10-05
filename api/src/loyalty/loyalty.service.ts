@@ -359,6 +359,39 @@ export class LoyaltyService {
       redeemLimitBps = Math.max(0, redeemLimitBps + bonus.redeemLimitBpsBonus);
     } catch {}
 
+    // Override by portal-managed LoyaltyTier (per-customer assignment)
+    let tierMinPayment: number | null = null;
+    try {
+      const assignment = await this.prisma.loyaltyTierAssignment.findFirst({
+        where: { merchantId: dto.merchantId, customerId: customer.id, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+        orderBy: { assignedAt: "desc" },
+      });
+      let tier: any = null;
+      if (assignment) {
+        tier = await this.prisma.loyaltyTier.findUnique({ where: { id: assignment.tierId } });
+      }
+      if (!tier) {
+        tier = await this.prisma.loyaltyTier.findFirst({ where: { merchantId: dto.merchantId, isInitial: true }, orderBy: { thresholdAmount: "asc" } });
+      }
+      if (tier) {
+        if (typeof tier.earnRateBps === 'number') {
+          earnBps = Math.max(0, Math.floor(Number(tier.earnRateBps)));
+        }
+        if (typeof tier.redeemRateBps === 'number') {
+          redeemLimitBps = Math.max(0, Math.floor(Number(tier.redeemRateBps)));
+        }
+        const meta: any = tier.metadata ?? null;
+        if (meta && typeof meta === 'object') {
+          const raw = (meta as any).minPaymentAmount ?? (meta as any).minPayment;
+          if (raw != null) {
+            const mp = Number(raw);
+            if (Number.isFinite(mp) && mp >= 0) tierMinPayment = Math.round(mp);
+          }
+        }
+      }
+    } catch {}
+
+
     // 0) если есть qr — сначала смотрим, не существует ли hold с таким qrJti
     if (qr) {
       const existing = await this.prisma.hold.findUnique({ where: { qrJti: qr.jti } });
@@ -497,7 +530,8 @@ export class LoyaltyService {
           } as any;
         }
         const capLeft = dailyRedeemLeft != null ? dailyRedeemLeft : Number.MAX_SAFE_INTEGER;
-        const discountToApply = Math.min(wallet.balance, remainingByOrder || limit, capLeft);
+        const allowedByMinPayment = tierMinPayment != null ? Math.max(0, sanitizedTotal - tierMinPayment - Math.max(0, priorRedeemApplied)) : Number.MAX_SAFE_INTEGER;
+        const discountToApply = Math.min(wallet.balance, remainingByOrder || limit, capLeft, allowedByMinPayment);
         const finalPayable = Math.max(0, sanitizedTotal - discountToApply);
 
         const hold = await tx.hold.create({

@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import FakeQr from "../components/FakeQr";
 import {
   balance,
@@ -22,7 +22,7 @@ import {
 import Spinner from "../components/Spinner";
 import Toast from "../components/Toast";
 import { useMiniappAuthContext } from "../lib/MiniappAuthContext";
-import { getProgressPercent, type LevelInfo } from "../lib/levels";
+import { type LevelInfo } from "../lib/levels";
 import { getTransactionMeta, type TransactionKind } from "../lib/transactionMeta";
 import { subscribeToLoyaltyEvents } from "../lib/loyaltyEvents";
 import { type TransactionItem } from "../lib/reviewUtils";
@@ -54,7 +54,7 @@ const genderOptions: Array<{ value: "male" | "female"; label: string }> = [
   { value: "female", label: "Женский" },
 ];
 
-const HISTORY_ICONS: Record<TransactionKind, JSX.Element> = {
+const HISTORY_ICONS: Record<TransactionKind, ReactNode> = {
   earn: (
     <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <path
@@ -693,9 +693,7 @@ export default function Page() {
     setToast({ msg: message || "Скопируйте приглашение и отправьте другу", type: "info" });
   }, [referralInfo]);
 
-  const progressPercent = useMemo(() => getProgressPercent(levelInfo), [levelInfo]);
-  const nextLevelLabel = levelInfo?.next?.name || "";
-  const purchasesToNext = levelInfo?.progressToNext ?? 0;
+  // Прогресс-бар показываем только на странице /qr, не здесь
 
   const availablePromotions = useMemo(
     () => promotions.filter((p) => p && p.canClaim && !p.claimed).length,
@@ -940,22 +938,7 @@ export default function Page() {
             </div>
           </section>
 
-          {levelInfo?.next && (
-            <section className={`${styles.levelSection} ${styles.appear} ${styles.delay2}`}>
-              <div className={styles.levelHeader}>
-                Сумма покупок для перехода на {nextLevelLabel}
-              </div>
-              <div className={styles.levelInfoRow}>
-                <span className={styles.levelAmount}>{purchasesToNext.toLocaleString("ru-RU")}</span>
-                <span className={styles.levelUnit}>
-                  {levelInfo.metric === "transactions" ? "покупок" : "₽"}
-                </span>
-              </div>
-              <div className={styles.progressBar}>
-                <div className={styles.progressFill} style={{ width: `${progressPercent}%` }} />
-              </div>
-            </section>
-          )}
+          
 
           <section className={`${styles.actionsRow} ${styles.appear} ${styles.delay3}`}>
             <form className={styles.promoInputBlock} onSubmit={handlePromoActivate}>
