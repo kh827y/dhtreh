@@ -985,14 +985,17 @@ export default function Page() {
               <ul className={styles.historyList}>
                 {tx.map((item, idx) => {
                   const meta = getTransactionMeta(item.type);
-                  const isPending = Boolean(item.pending) && String(item.type).toUpperCase() === 'EARN';
-                  const title = isPending ? 'Начисление на удержании' : meta.title;
+                  const typeUpper = String(item.type).toUpperCase();
+                  const isPending = Boolean(item.pending) && (typeUpper === 'EARN' || typeUpper === 'REGISTRATION');
+                  const title = isPending
+                    ? (typeUpper === 'REGISTRATION' ? 'Бонус за регистрацию - на удержании' : 'Начисление на удержании')
+                    : meta.title;
                   const note = isPending
                     ? (() => {
                         const days = typeof item.daysUntilMature === 'number' ? item.daysUntilMature : (item.maturesAt ? Math.max(0, Math.ceil((Date.parse(item.maturesAt) - Date.now()) / (24*60*60*1000))) : null);
-                        if (days === 0) return 'Баллы будут зачислены сегодня';
-                        if (days === 1) return 'Баллы будут зачислены завтра';
-                        return days != null ? `Баллы будут зачислены через ${days} дней` : 'Баллы будут зачислены позже';
+                        if (days === 0) return 'Баллы будут начислены сегодня';
+                        if (days === 1) return 'Баллы будут начислены завтра';
+                        return days != null ? `Баллы будут начислены через ${days} дней` : 'Баллы будут начислены позже';
                       })()
                     : null;
                   return (

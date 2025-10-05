@@ -222,6 +222,25 @@ export async function transactions(merchantId: string, customerId: string, limit
   return http(`/loyalty/transactions?${qs.toString()}`);
 }
 
+export async function grantRegistrationBonus(
+  merchantId: string,
+  customerId: string,
+  outletId?: string | null,
+): Promise<{
+  ok: boolean;
+  alreadyGranted?: boolean;
+  pointsIssued: number;
+  pending: boolean;
+  maturesAt?: string | null;
+  pointsExpireInDays?: number | null;
+  pointsExpireAt?: string | null;
+  balance: number;
+}> {
+  const body: Record<string, unknown> = { merchantId, customerId };
+  if (typeof outletId === 'string' && outletId.trim()) body.outletId = outletId.trim();
+  return http('/loyalty/mechanics/registration-bonus', { method: 'POST', body: JSON.stringify(body) });
+}
+
 export async function consentGet(merchantId: string, customerId: string): Promise<{ granted: boolean; consentAt?: string }>
 { return http(`/loyalty/consent?merchantId=${encodeURIComponent(merchantId)}&customerId=${encodeURIComponent(customerId)}`); }
 

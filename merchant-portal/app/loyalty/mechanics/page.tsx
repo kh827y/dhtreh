@@ -70,16 +70,121 @@ const cards: MechanicCard[] = [
 ];
 
 export default function MechanicsPage() {
-  const [enabled, setEnabled] = React.useState<Record<string, boolean>>({
-    "auto-return": true,
-    birthday: true,
-    "registration-bonus": false,
-    ttl: true,
-  });
+  const [enabled, setEnabled] = React.useState<Record<string, boolean>>({});
+  const [settings, setSettings] = React.useState<Record<string, any>>({});
+  const [saving, setSaving] = React.useState<Record<string, boolean>>({});
+  const [error, setError] = React.useState<string>("");
 
-  const handleToggle = React.useCallback((id: string, value: boolean) => {
-    setEnabled((prev) => ({ ...prev, [id]: value }));
+  const loadAll = React.useCallback(async () => {
+    setError("");
+    try {
+      const endpoints: Record<string, string> = {
+        "auto-return": "/api/portal/loyalty/auto-return",
+        birthday: "/api/portal/loyalty/birthday",
+        "registration-bonus": "/api/portal/loyalty/registration-bonus",
+        ttl: "/api/portal/loyalty/ttl",
+      };
+      const ids = Object.keys(endpoints);
+      const responses = await Promise.all(
+        ids.map(async (id) => {
+          const res = await fetch(endpoints[id]);
+          const json = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(json?.message || `Не удалось загрузить ${id}`);
+          return { id, json } as const;
+        })
+      );
+      const nextEnabled: Record<string, boolean> = {};
+      const nextSettings: Record<string, any> = {};
+      for (const { id, json } of responses) {
+        nextEnabled[id] = Boolean(json?.enabled);
+        nextSettings[id] = json;
+      }
+      setEnabled(nextEnabled);
+      setSettings(nextSettings);
+    } catch (e: any) {
+      setError(String(e?.message || e || "Ошибка загрузки механик"));
+    }
   }, []);
+
+  React.useEffect(() => {
+    void loadAll();
+  }, [loadAll]);
+
+  const handleToggle = React.useCallback(async (id: string, value: boolean) => {
+    setError("");
+    setSaving((prev) => ({ ...prev, [id]: true }));
+    try {
+      const endpointMap: Record<string, string> = {
+        "auto-return": "/api/portal/loyalty/auto-return",
+        birthday: "/api/portal/loyalty/birthday",
+        "registration-bonus": "/api/portal/loyalty/registration-bonus",
+        ttl: "/api/portal/loyalty/ttl",
+      };
+      const current = settings[id] || {};
+      let payload: Record<string, any> = {};
+      if (id === "auto-return") {
+        payload = {
+          enabled: value,
+          days: Number(current.days || 45),
+          text: String(current.text || "Мы скучаем! Возвращайтесь и получите бонусные баллы."),
+          giftEnabled: Boolean(current.giftEnabled),
+          giftPoints: Number(current.giftPoints || 0),
+          giftBurnEnabled: Boolean(current.giftBurnEnabled),
+          giftTtlDays: Number(current.giftTtlDays || 0),
+          repeatEnabled: Boolean(current.repeatEnabled),
+          repeatDays: Number(current.repeatDays || 0),
+        };
+      } else if (id === "birthday") {
+        payload = {
+          enabled: value,
+          daysBefore: Number(current.daysBefore || 5),
+          onlyBuyers: Boolean(current.onlyBuyers),
+          text: String(current.text || "С днём рождения! Мы подготовили для вас подарок в любимой кофейне."),
+          giftEnabled: Boolean(current.giftEnabled),
+          giftPoints: Number(current.giftPoints || 0),
+          giftBurnEnabled: Boolean(current.giftBurnEnabled),
+          giftTtlDays: Number(current.giftTtlDays || 0),
+        };
+      } else if (id === "registration-bonus") {
+        const points = Number(current.points || 0);
+        if (value && (!Number.isFinite(points) || points <= 0)) {
+          throw new Error("Укажите положительное число баллов на странице механики регистрации");
+        }
+        payload = {
+          enabled: value,
+          points,
+          burnEnabled: Boolean(current.burnEnabled),
+          burnTtlDays: Number(current.burnTtlDays || 0),
+          delayEnabled: Boolean(current.delayEnabled),
+          delayDays: Number(current.delayDays || 0),
+        };
+      } else if (id === "ttl") {
+        payload = {
+          enabled: value,
+          daysBefore: Number(current.daysBefore || 5),
+          text: String(
+            current.text || "Баллы в размере %amount% сгорят %burn_date%. Успейте воспользоваться!"
+          ),
+        };
+      }
+
+      const res = await fetch(endpointMap[id], {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        throw new Error(txt || "Не удалось сохранить настройку");
+      }
+      setEnabled((prev) => ({ ...prev, [id]: value }));
+      setSettings((prev) => ({ ...prev, [id]: { ...current, enabled: value } }));
+    } catch (e: any) {
+      setError(String(e?.message || e || "Ошибка сохранения"));
+    } finally {
+      setSaving((prev) => ({ ...prev, [id]: false }));
+    }
+  }, [settings]);
 
   return (
     <div style={{ display: "grid", gap: 24 }}>
@@ -141,6 +246,7 @@ export default function MechanicsPage() {
                     checked={!!isOn}
                     onChange={(value) => handleToggle(card.id, value)}
                     label={isOn ? "Включено" : "Отключено"}
+                    disabled={!!saving[card.id]}
                   />
                 )}
               </div>
@@ -148,6 +254,9 @@ export default function MechanicsPage() {
           );
         })}
       </div>
+      {error && (
+        <div style={{ color: '#f87171', fontSize: 13 }}>{error}</div>
+      )}
     </div>
   );
 }

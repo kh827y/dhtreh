@@ -33,6 +33,170 @@ export class LoyaltyService {
     });
   }
 
+  async grantRegistrationBonus(params: { merchantId?: string; customerId?: string; outletId?: string | null; staffId?: string | null }) {
+    const merchantId = String(params?.merchantId || '').trim();
+    const customerId = String(params?.customerId || '').trim();
+    const outletId = typeof params?.outletId === 'string' && params.outletId.trim() ? params.outletId.trim() : null;
+    const staffId = typeof params?.staffId === 'string' && params.staffId.trim() ? params.staffId.trim() : null;
+    if (!merchantId) throw new BadRequestException('merchantId required');
+    if (!customerId) throw new BadRequestException('customerId required');
+
+    // Read registration mechanic from settings
+    const settings = await this.prisma.merchantSettings.findUnique({ where: { merchantId } });
+    const rules = settings?.rulesJson && typeof settings.rulesJson === 'object' ? (settings.rulesJson as any) : null;
+    const reg = rules && typeof rules.registration === 'object' ? (rules.registration as any) : null;
+    const enabled = reg && Object.prototype.hasOwnProperty.call(reg, 'enabled') ? Boolean(reg.enabled) : true;
+    const pointsRaw = reg && reg.points != null ? Number(reg.points) : 0;
+    const points = Number.isFinite(pointsRaw) ? Math.max(0, Math.floor(pointsRaw)) : 0;
+    const ttlDaysRaw = reg && reg.ttlDays != null ? Number(reg.ttlDays) : (settings?.pointsTtlDays ?? null);
+    const ttlDays = Number.isFinite(ttlDaysRaw as any) && (ttlDaysRaw as any) != null && (ttlDaysRaw as any) > 0 ? Math.floor(Number(ttlDaysRaw)) : null;
+    const delayDaysRaw = reg && reg.delayDays != null ? Number(reg.delayDays) : (settings?.earnDelayDays ?? 0);
+    const delayDays = Number.isFinite(delayDaysRaw) && delayDaysRaw != null && delayDaysRaw > 0 ? Math.floor(Number(delayDaysRaw)) : 0;
+
+    if (!enabled || points <= 0) {
+      throw new BadRequestException('registration bonus disabled or zero points');
+    }
+
+    // Idempotency: if already issued, return existing state
+    const existingTxn = await this.prisma.transaction.findFirst({ where: { merchantId, customerId, orderId: 'registration_bonus' } });
+    const existingLot = await this.prisma.earnLot.findFirst({ where: { merchantId, customerId, orderId: 'registration_bonus' } });
+    if (existingTxn || existingLot) {
+      const walletEx = await this.prisma.wallet.findFirst({ where: { merchantId, customerId, type: WalletType.POINTS } });
+      return {
+        ok: true,
+        alreadyGranted: true,
+        pointsIssued: 0,
+        pending: !!(existingLot && existingLot.status === 'PENDING'),
+        maturesAt: existingLot?.maturesAt ? existingLot.maturesAt.toISOString() : null,
+        pointsExpireInDays: ttlDays,
+        pointsExpireAt: existingLot?.expiresAt ? existingLot.expiresAt.toISOString() : null,
+        balance: walletEx?.balance ?? 0,
+      } as const;
+    }
+
+    await this.ensureCustomerId(customerId);
+
+    return this.prisma.$transaction(async (tx) => {
+      // Ensure wallet
+      let wallet = await tx.wallet.findFirst({ where: { merchantId, customerId, type: WalletType.POINTS } });
+      if (!wallet) wallet = await tx.wallet.create({ data: { merchantId, customerId, type: WalletType.POINTS, balance: 0 } });
+
+      const now = new Date();
+      const lotsEnabled = process.env.EARN_LOTS_FEATURE === '1';
+
+      if (delayDays > 0 && lotsEnabled) {
+        // Create pending lot
+        const maturesAt = new Date(now.getTime() + delayDays * 24 * 60 * 60 * 1000);
+        const expiresAt = ttlDays ? new Date(maturesAt.getTime() + ttlDays * 24 * 60 * 60 * 1000) : null;
+        const earnLot = (tx as any)?.earnLot ?? (this.prisma as any)?.earnLot;
+        if (!earnLot?.create) throw new BadRequestException('earn lots not available');
+        await earnLot.create({
+          data: {
+            merchantId,
+            customerId,
+            points,
+            consumedPoints: 0,
+            earnedAt: maturesAt,
+            maturesAt,
+            expiresAt,
+            orderId: 'registration_bonus',
+            receiptId: null,
+            outletId,
+            staffId,
+            status: 'PENDING',
+          },
+        });
+
+        await tx.eventOutbox.create({ data: {
+          merchantId,
+          eventType: 'loyalty.registration.scheduled',
+          payload: { merchantId, customerId, points, maturesAt: maturesAt.toISOString(), outletId: outletId ?? null, staffId: staffId ?? null },
+        }});
+
+        return {
+          ok: true,
+          pointsIssued: points,
+          pending: true,
+          maturesAt: maturesAt.toISOString(),
+          pointsExpireInDays: ttlDays,
+          pointsExpireAt: expiresAt ? expiresAt.toISOString() : null,
+          balance: (await tx.wallet.findUnique({ where: { id: wallet.id } }))!.balance,
+        } as const;
+      } else {
+        // Immediate award
+        const freshW = await tx.wallet.findUnique({ where: { id: wallet.id } });
+        const balance = (freshW?.balance ?? 0) + points;
+        await tx.wallet.update({ where: { id: wallet.id }, data: { balance } });
+
+        await tx.transaction.create({
+          data: {
+            merchantId,
+            customerId,
+            type: TxnType.EARN,
+            amount: points,
+            orderId: 'registration_bonus',
+            outletId,
+            staffId,
+          },
+        });
+
+        if (process.env.LEDGER_FEATURE === '1' && points > 0) {
+          await tx.ledgerEntry.create({ data: {
+            merchantId,
+            customerId,
+            debit: LedgerAccount.MERCHANT_LIABILITY,
+            credit: LedgerAccount.CUSTOMER_BALANCE,
+            amount: points,
+            orderId: 'registration_bonus',
+            outletId,
+            staffId,
+            meta: { mode: 'REGISTRATION' },
+          }});
+          this.metrics.inc('loyalty_ledger_entries_total', { type: 'earn' });
+          this.metrics.inc('loyalty_ledger_amount_total', { type: 'earn' }, points);
+        }
+
+        if (process.env.EARN_LOTS_FEATURE === '1' && points > 0) {
+          const earnLot = (tx as any)?.earnLot ?? (this.prisma as any)?.earnLot;
+          if (earnLot?.create) {
+            await earnLot.create({
+              data: {
+                merchantId,
+                customerId,
+                points,
+                consumedPoints: 0,
+                earnedAt: now,
+                maturesAt: null,
+                expiresAt: ttlDays ? new Date(now.getTime() + ttlDays * 24 * 60 * 60 * 1000) : null,
+                orderId: 'registration_bonus',
+                receiptId: null,
+                outletId,
+                staffId,
+                status: 'ACTIVE',
+              },
+            });
+          }
+        }
+
+        await tx.eventOutbox.create({ data: {
+          merchantId,
+          eventType: 'loyalty.registration.awarded',
+          payload: { merchantId, customerId, points, outletId: outletId ?? null, staffId: staffId ?? null },
+        }});
+
+        return {
+          ok: true,
+          pointsIssued: points,
+          pending: false,
+          maturesAt: null,
+          pointsExpireInDays: ttlDays,
+          pointsExpireAt: ttlDays ? new Date(now.getTime() + ttlDays * 24 * 60 * 60 * 1000).toISOString() : null,
+          balance,
+        } as const;
+      }
+    });
+  }
+
   async redeem(params: { customerId: string; merchantId: string; amount: number; orderId?: string }) {
     const { customerId, merchantId, amount, orderId } = params;
     if (amount <= 0) throw new BadRequestException('Amount must be > 0');
@@ -1270,7 +1434,7 @@ export class LoyaltyService {
     // 3) Нормализация
     const normalizedTxs = txItems.map((entity) => ({
       id: entity.id,
-      type: entity.type,
+      type: entity.orderId === 'registration_bonus' ? ('REGISTRATION' as any) : entity.type,
       amount: entity.amount,
       orderId: entity.orderId ?? null,
       customerId: entity.customerId,
@@ -1293,7 +1457,7 @@ export class LoyaltyService {
       const daysUntil = mat ? Math.max(0, Math.ceil((mat.getTime() - now.getTime()) / (24 * 60 * 60 * 1000))) : null;
       return {
         id: `lot:${lot.id}`,
-        type: 'EARN' as const,
+        type: lot.orderId === 'registration_bonus' ? 'REGISTRATION' : 'EARN',
         amount: lot.points,
         orderId: lot.orderId ?? null,
         customerId: lot.customerId,

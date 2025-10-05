@@ -574,7 +574,32 @@ Response 200:
   - Поля `pending=true`, `maturesAt`, `daysUntilMature` сообщают о будущей активации баллов.
   - После наступления `maturesAt` воркер активации создаёт обычную транзакцию `EARN`, а «ожидающая» запись пропадает из ответа.
   - У создаваемой транзакции `EARN` поле `createdAt` равно исходному `EarnLot.createdAt` (сохранение порядка в истории).
-  - Для «ожидающих» элементов поле `type` = `EARN`, а `id` имеет вид `lot:<earnLotId>`.
+  - Для «ожидающих» элементов поле `type` = `EARN` или `REGISTRATION` (для бонуса за регистрацию), а `id` имеет вид `lot:<earnLotId>`.
+  - Тип `REGISTRATION` используется только для фронтенда (отображение «Бонус за регистрацию»); по сути это начисление баллов.
+
+### Публичные механики — Бонус за регистрацию
+
+- `POST /loyalty/mechanics/registration-bonus` — начислить приветственный бонус за регистрацию.
+  - Тело: `{ merchantId: string, customerId: string, outletId?: string|null }`
+  - Ответ 200:
+    ```json
+    {
+      "ok": true,
+      "alreadyGranted": false,
+      "pointsIssued": 150,
+      "pending": true,
+      "maturesAt": "2025-10-10T10:00:00.000Z",
+      "pointsExpireInDays": 90,
+      "pointsExpireAt": "2026-01-08T10:00:00.000Z",
+      "balance": 1234
+    }
+    ```
+  - Идемпотентность: повторный вызов вернёт `alreadyGranted: true` без дублей в истории.
+  - Правила берутся из `MerchantSettings.rulesJson.registration`:
+    - `enabled: boolean` — включена/выключена механика.
+    - `points: number` — размер бонуса.
+    - `ttlDays?: number` — срок жизни начисленных баллов (сгорание).
+    - `delayDays?: number` — задержка начисления (удержание). При удержании создаётся `EarnLot(status=PENDING)`, а после активации — `Transaction EARN` с `createdAt` от исходного лота.
 
 ### Промокоды
 

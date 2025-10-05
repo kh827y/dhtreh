@@ -1,12 +1,13 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, BadRequestException } from '@nestjs/common';
 import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { PrismaService } from '../prisma.service';
+import { LoyaltyService } from './loyalty.service';
 
 @ApiTags('loyalty-public')
 @Controller('loyalty')
 export class LoyaltyPublicController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly loyalty: LoyaltyService) {}
 
   // Публичный каталог уровней для миниаппы
   @Get('mechanics/levels/:merchantId')
@@ -37,5 +38,20 @@ export class LoyaltyPublicController {
       };
     });
     return { merchantId, levels };
+  }
+
+  // Публичный эндпоинт: бонус за регистрацию
+  @Post('mechanics/registration-bonus')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async grantRegistrationBonus(
+    @Body() body: { merchantId?: string; customerId?: string; outletId?: string | null; staffId?: string | null },
+  ) {
+    const merchantId = typeof body?.merchantId === 'string' ? body.merchantId.trim() : '';
+    const customerId = typeof body?.customerId === 'string' ? body.customerId.trim() : '';
+    const outletId = typeof body?.outletId === 'string' && body.outletId.trim() ? body.outletId.trim() : null;
+    const staffId = typeof body?.staffId === 'string' && body.staffId.trim() ? body.staffId.trim() : null;
+    if (!merchantId) throw new BadRequestException('merchantId required');
+    if (!customerId) throw new BadRequestException('customerId required');
+    return this.loyalty.grantRegistrationBonus({ merchantId, customerId, outletId, staffId });
   }
 }

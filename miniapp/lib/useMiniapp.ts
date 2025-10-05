@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from 'react';
-import { teleauth, publicSettings, ReviewsShareSettings } from './api';
+import { teleauth, publicSettings, ReviewsShareSettings, grantRegistrationBonus } from './api';
 
 export function getInitData(): string | null {
   try {
@@ -93,6 +93,22 @@ export function useMiniappAuth(defaultMerchant: string) {
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaultMerchant]);
+
+  // Автоначисление бонуса за регистрацию: один раз на пару merchantId+customerId (идемпотентный бэкенд)
+  useEffect(() => {
+    (async () => {
+      try {
+        if (!merchantId || !customerId) return;
+        const key = `regBonus:${merchantId}:${customerId}`;
+        const attempted = localStorage.getItem(key);
+        if (attempted) return;
+        await grantRegistrationBonus(merchantId, customerId).catch(() => void 0);
+        localStorage.setItem(key, '1');
+      } catch {
+        // глушим, чтобы не ломать UX миниаппы — сервер идемпотентен и может быть временно недоступен
+      }
+    })();
+  }, [merchantId, customerId]);
 
   return { merchantId, setMerchantId, customerId, setCustomerId, loading, error, theme, shareSettings, initData } as const;
 }
