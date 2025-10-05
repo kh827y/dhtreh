@@ -46,33 +46,7 @@ export class LoyaltyController {
     return null;
   }
 
-  // ===== Levels catalog for miniapp (public) =====
-  @Get('mechanics/levels/:merchantId')
-  @Throttle({ default: { limit: 60, ttl: 60_000 } })
-  @ApiOkResponse({ schema: { type: 'object', properties: {
-    merchantId: { type: 'string' },
-    levels: { type: 'array', items: { type: 'object', additionalProperties: true } }
-  } } })
-  async mechanicsLevels(@Param('merchantId') merchantId: string) {
-    const tiers = await this.prisma.loyaltyTier.findMany({
-      where: { merchantId },
-      orderBy: [{ thresholdAmount: 'asc' }, { createdAt: 'asc' }],
-    });
-    const levels = tiers.map((t) => {
-      const bps = typeof (t as any).earnRateBps === 'number' ? Math.round((t as any).earnRateBps) : null;
-      const percent = bps != null ? bps / 100 : null;
-      const threshold = Number((t as any).thresholdAmount ?? 0) || 0;
-      return {
-        id: t.id,
-        name: t.name,
-        threshold,
-        cashbackPercent: percent,
-        benefits: { cashbackPercent: percent },
-        rewardPercent: percent,
-      };
-    });
-    return { merchantId, levels };
-  }
+  
 
   // ===== Promotions (miniapp public) =====
   @Get('promotions')

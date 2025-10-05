@@ -1,6 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { LoyaltyService } from './loyalty.service';
 import { LoyaltyController } from './loyalty.controller';
+import { LoyaltyPublicController } from './loyalty.public.controller';
 import { PrismaModule } from '../prisma.module';
 import { MetricsModule } from '../metrics.module';
 import { CashierGuard } from '../guards/cashier.guard';
@@ -25,7 +26,7 @@ import { ReviewModule } from '../reviews/review.module';
     forwardRef(() => ReviewModule),
   ],
   providers: [LoyaltyService, CashierGuard, SubscriptionGuard, AntiFraudGuard],
-  controllers: [LoyaltyController],
+  controllers: [LoyaltyController, LoyaltyPublicController],
   exports: [LoyaltyService],
 })
 export class LoyaltyModule {}

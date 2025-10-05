@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
 import { PromoCodesService, type PromoCodeApplyResult } from '../promocodes/promocodes.service';
 import { Mode, QuoteDto } from './dto';
-import { computeLevelState, parseLevelsConfig, resolveLevelBenefits } from './levels.util';
+import { parseLevelsConfig } from './levels.util';
 import { HoldStatus, TxnType, WalletType, LedgerAccount, HoldMode, DeviceType } from '@prisma/client';
 import { randomUUID } from 'crypto';
 
@@ -344,20 +344,7 @@ export class LoyaltyService {
     const wd = new Date().getDay();
     const rulesFn = this.compileRules(dto.merchantId, effectiveOutletId, { earnBps: baseEarnBps, redeemLimitBps: baseRedeemLimitBps }, rulesJson, updatedAt);
     let { earnBps, redeemLimitBps } = rulesFn({ channel, weekday: wd, eligibleTotal: sanitizedEligibleTotal, category: dto.category });
-    // Apply level-based bonuses (if configured)
-    try {
-      const cfg = parseLevelsConfig(rulesJson);
-      const state = await computeLevelState({
-        prisma: this.prisma,
-        metrics: this.metrics,
-        merchantId: dto.merchantId,
-        customerId: customer.id,
-        config: cfg,
-      });
-      const bonus = resolveLevelBenefits(rulesJson, state.current.name);
-      earnBps = Math.max(0, earnBps + bonus.earnBpsBonus);
-      redeemLimitBps = Math.max(0, redeemLimitBps + bonus.redeemLimitBpsBonus);
-    } catch {}
+    // Уровни управляются через LoyaltyTier, бонусы из локальных настроек не применяем
 
     // Override by portal-managed LoyaltyTier (per-customer assignment)
     let tierMinPayment: number | null = null;
@@ -627,6 +614,9 @@ export class LoyaltyService {
       }
 
       let points = Math.floor(sanitizedEligibleTotal * earnBps / 10000);
+      if (tierMinPayment != null && sanitizedTotal < tierMinPayment) {
+        points = 0;
+      }
       if (dailyEarnLeft != null) points = Math.min(points, dailyEarnLeft);
       if (points < 0) points = 0;
 
@@ -949,6 +939,67 @@ export class LoyaltyService {
             } as any,
           },
         });
+        // ===== Автоповышение уровня по порогу (portal-managed tiers) =====
+        try {
+          // период для расчёта прогресса
+          let periodDays = 365;
+          try {
+            const ms = await tx.merchantSettings.findUnique({ where: { merchantId: hold.merchantId } });
+            periodDays = parseLevelsConfig(ms).periodDays || 365;
+          } catch {}
+          const since = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000);
+          // считаем прогресс по покупкам/чекам (как в levels.util):
+          // если метрика в настройках = transactions — считаем количество чеков; иначе — сумму total
+          let metric: 'earn'|'redeem'|'transactions' = 'earn';
+          try {
+            const ms2 = await tx.merchantSettings.findUnique({ where: { merchantId: hold.merchantId } });
+            metric = parseLevelsConfig(ms2).metric;
+          } catch {}
+          let progress = 0;
+          if (metric === 'transactions') {
+            progress = await tx.receipt.count({ where: { merchantId: hold.merchantId, customerId: hold.customerId, createdAt: { gte: since } } });
+          } else {
+            const agg: any = await (tx as any).receipt.aggregate({
+              _sum: { total: true },
+              where: { merchantId: hold.merchantId, customerId: hold.customerId, createdAt: { gte: since } },
+            });
+            progress = Math.max(0, Math.round(Number(agg?._sum?.total ?? 0)) || 0);
+          }
+          // список уровней и текущая привязка
+          const tiers = await tx.loyaltyTier.findMany({ where: { merchantId: hold.merchantId }, orderBy: [{ thresholdAmount: 'asc' }, { createdAt: 'asc' }] });
+          if (tiers.length) {
+            const target = tiers.filter((t: any) => Number(t.thresholdAmount ?? 0) <= progress).pop() || null;
+            if (target) {
+              const currentAssign = await tx.loyaltyTierAssignment.findFirst({
+                where: { merchantId: hold.merchantId, customerId: hold.customerId, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+                orderBy: { assignedAt: 'desc' },
+              });
+              let currentTier: any = null;
+              if (currentAssign) currentTier = tiers.find((t: any) => t.id === currentAssign.tierId) || null;
+              const curTh = currentTier ? Number(currentTier.thresholdAmount ?? 0) : -1;
+              const tgtTh = Number(target.thresholdAmount ?? 0);
+              // повышаем только вверх (без понижения)
+              if (tgtTh > curTh) {
+                if (currentAssign) {
+                  try { await tx.loyaltyTierAssignment.update({ where: { id: currentAssign.id }, data: { expiresAt: new Date() } }); } catch {}
+                }
+                await tx.loyaltyTierAssignment.create({
+                  data: {
+                    merchantId: hold.merchantId,
+                    customerId: hold.customerId,
+                    tierId: target.id,
+                    assignedAt: new Date(),
+                    expiresAt: null,
+                  },
+                });
+                // событие о повышении уровня
+                try {
+                  await tx.eventOutbox.create({ data: { merchantId: hold.merchantId, eventType: 'loyalty.tier.promoted', payload: { merchantId: hold.merchantId, customerId: hold.customerId, tierId: target.id, at: new Date().toISOString() } } });
+                } catch {}
+              }
+            }
+          }
+        } catch {}
         return { ok: true, receiptId: created.id, redeemApplied: appliedRedeem, earnApplied: appliedEarn };
       });
     } catch (e: any) {
