@@ -13,6 +13,9 @@ export type TransactionsResp = {
     reviewId?: string | null;
     reviewRating?: number | null;
     reviewCreatedAt?: string | null;
+    pending?: boolean;
+    maturesAt?: string | null;
+    daysUntilMature?: number | null;
   }>;
   nextBefore?: string | null;
 };

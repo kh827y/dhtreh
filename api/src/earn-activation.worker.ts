@@ -62,6 +62,8 @@ export class EarnActivationWorker implements OnModuleInit, OnModuleDestroy {
               orderId: fresh.orderId ?? undefined,
               outletId: fresh.outletId ?? undefined,
               staffId: fresh.staffId ?? undefined,
+              // ВАЖНО: сохраняем порядок в истории — используем исходную дату лота
+              createdAt: fresh.createdAt,
             },
           });
 

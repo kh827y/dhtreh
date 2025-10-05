@@ -20,7 +20,7 @@ export default function RedeemLimitsPage() {
 
   const [ttlEnabled, setTtlEnabled] = React.useState(false);
   const [ttlDays, setTtlDays] = React.useState("365");
-  const [forbidSameReceipt, setForbidSameReceipt] = React.useState(false);
+  const [allowSameReceipt, setAllowSameReceipt] = React.useState(false);
   const [delayEnabled, setDelayEnabled] = React.useState(false);
   const [delayDays, setDelayDays] = React.useState("7");
 
@@ -34,7 +34,8 @@ export default function RedeemLimitsPage() {
       const data = await res.json();
       setTtlEnabled(Boolean(data?.ttlEnabled));
       setTtlDays(String(Number(data?.ttlDays ?? 0) || 0));
-      setForbidSameReceipt(Boolean(data?.forbidSameReceipt));
+      // API возвращает forbidSameReceipt; в UI показываем allowSameReceipt
+      setAllowSameReceipt(!Boolean(data?.forbidSameReceipt));
       setDelayEnabled(Boolean(data?.delayEnabled));
       setDelayDays(String(Number(data?.delayDays ?? 0) || 0));
     } catch (e: any) {
@@ -74,7 +75,8 @@ export default function RedeemLimitsPage() {
         body: JSON.stringify({
           ttlEnabled,
           ttlDays: ttlValue,
-          forbidSameReceipt,
+          // API ожидает forbidSameReceipt — инвертируем локальную настройку allowSameReceipt
+          forbidSameReceipt: !allowSameReceipt,
           delayEnabled,
           delayDays: delayValue,
         }),
@@ -162,12 +164,12 @@ export default function RedeemLimitsPage() {
 
               <section style={{ display: 'grid', gap: 12 }}>
                 <Toggle
-                  checked={forbidSameReceipt}
-                  onChange={setForbidSameReceipt}
-                  label="Запретить списывать и начислять баллы одновременно в чеке"
+                  checked={allowSameReceipt}
+                  onChange={setAllowSameReceipt}
+                  label="Разрешить списывать и начислять баллы одновременно в чеке"
                   disabled={saving}
                 />
-                <span style={{ fontSize: 12, opacity: 0.7 }}>При включении начисление и списание по одному заказу должны выполняться отдельными операциями.</span>
+                <span style={{ fontSize: 12, opacity: 0.7 }}>При включении после списания баллов клиенту начисляются баллы на оплаченную сумму по этому же заказу.</span>
               </section>
 
               <section style={{ display: 'grid', gap: 12 }}>

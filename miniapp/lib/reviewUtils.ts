@@ -9,6 +9,9 @@ export type TransactionItem = {
   reviewId: string | null;
   reviewRating: number | null;
   reviewCreatedAt: string | null;
+  pending?: boolean;
+  maturesAt?: string | null;
+  daysUntilMature?: number | null;
 };
 
 export const REVIEW_LOOKBACK_MS = 72 * 60 * 60 * 1000;

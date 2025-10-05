@@ -157,6 +157,9 @@ export class TransactionItemDto {
   @ApiPropertyOptional({ nullable: true, description: 'Идентификатор созданного отзыва' }) reviewId?: string | null;
   @ApiPropertyOptional({ nullable: true, description: 'Рейтинг из созданного отзыва' }) reviewRating?: number | null;
   @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true, description: 'Дата и время создания отзыва' }) reviewCreatedAt?: string | null;
+  @ApiPropertyOptional({ description: 'Флаг отложенного начисления (на удержании)' }) pending?: boolean;
+  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true, description: 'Когда баллы будут зачислены' }) maturesAt?: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Сколько дней осталось до зачисления (округлено вверх)' }) daysUntilMature?: number | null;
 }
 
 export class TransactionsRespDto {

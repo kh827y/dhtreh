@@ -63,12 +63,17 @@ export class TtlBurnWorker implements OnModuleInit, OnModuleDestroy {
       this.isRunning = false;
     }
   }
-
   private async burnExpiredPoints(merchantId: string, ttlDays: number) {
     const cutoff = new Date(Date.now() - ttlDays * 24 * 60 * 60 * 1000);
-    
-    // Find expired lots
-    const expiredLots = await this.prisma.earnLot.findMany({ where: { merchantId, earnedAt: { lt: cutoff } } });
+    // Find expired lots (purchase-only)
+    const expiredLots = await this.prisma.earnLot.findMany({
+      where: {
+        merchantId,
+        earnedAt: { lt: cutoff },
+        // Покупочные начисления определяем по наличию orderId
+        orderId: { not: null } as any,
+      },
+    });
 
     // Group by customer
     const burnByCustomer = new Map<string, number>();
@@ -84,32 +89,19 @@ export class TtlBurnWorker implements OnModuleInit, OnModuleDestroy {
     for (const [customerId, burnAmount] of burnByCustomer) {
       await this.prisma.$transaction(async (tx) => {
         // Update wallet balance
-        const wallet = await tx.wallet.findFirst({
-          where: { merchantId, customerId, type: 'POINTS' },
-        });
-
+        const wallet = await tx.wallet.findFirst({ where: { merchantId, customerId, type: 'POINTS' } });
         if (!wallet || (wallet.balance ?? 0) < burnAmount) {
-          this.logger.warn(
-            `Skipping burn for ${customerId}: wallet balance ${wallet?.balance} < burn amount ${burnAmount}`,
-          );
+          this.logger.warn(`Skipping burn for ${customerId}: wallet balance ${wallet?.balance} < burn amount ${burnAmount}`);
           return;
         }
 
         // Update wallet
-        await tx.wallet.update({
-          where: { id: wallet.id },
-          data: { 
-            balance: { decrement: burnAmount },
-          },
-        });
+        await tx.wallet.update({ where: { id: wallet.id }, data: { balance: { decrement: burnAmount } } });
 
         // Mark lots as fully consumed
         const lotsToUpdate = expiredLots.filter(l => l.customerId === customerId);
         for (const lot of lotsToUpdate) {
-          await tx.earnLot.update({
-            where: { id: lot.id },
-            data: { consumedPoints: lot.points },
-          });
+          await tx.earnLot.update({ where: { id: lot.id }, data: { consumedPoints: lot.points } });
         }
 
         // Create outbox event
@@ -128,16 +120,12 @@ export class TtlBurnWorker implements OnModuleInit, OnModuleDestroy {
           },
         });
 
-        this.logger.log(
-          `Burned ${burnAmount} points for customer ${customerId} (merchant: ${merchantId})`,
-        );
+        this.logger.log(`Burned ${burnAmount} points for customer ${customerId} (merchant: ${merchantId})`);
         this.metrics.inc('loyalty_ttl_points_burned_total', {}, burnAmount);
       });
     }
 
-    this.logger.log(
-      `Processed TTL burn for merchant ${merchantId}: ${burnByCustomer.size} customers affected`,
-    );
+    this.logger.log(`Processed TTL burn for merchant ${merchantId}: ${burnByCustomer.size} customers affected`);
   }
 
   // Manual trigger for testing

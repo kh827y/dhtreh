@@ -331,7 +331,9 @@ export class LoyaltyService {
     } catch {}
     const { redeemCooldownSec, earnCooldownSec, redeemDailyCap, earnDailyCap, rulesJson, earnBps: baseEarnBps, redeemLimitBps: baseRedeemLimitBps, updatedAt } = await this.getSettings(dto.merchantId);
     const rulesConfig = rulesJson && typeof rulesJson === 'object' ? (rulesJson as Record<string, any>) : {};
-    const disallowSameReceipt = Boolean(rulesConfig.disallowEarnRedeemSameReceipt);
+    const allowSameReceipt = Object.prototype.hasOwnProperty.call(rulesConfig, 'allowEarnRedeemSameReceipt')
+      ? Boolean((rulesConfig as any).allowEarnRedeemSameReceipt)
+      : !Boolean((rulesConfig as any).disallowEarnRedeemSameReceipt);
 
     const outletCtx = await this.resolveOutletContext(dto.merchantId, { outletId: dto.outletId ?? null });
     const channel = outletCtx.channel;
@@ -431,7 +433,7 @@ export class LoyaltyService {
 
     const modeUpper = String(dto.mode).toUpperCase();
     if (modeUpper === 'REDEEM') {
-      if (disallowSameReceipt && dto.orderId) {
+      if (!allowSameReceipt && dto.orderId) {
         const [existingEarnHold, existingReceipt] = await Promise.all([
           this.prisma.hold.findFirst({
             where: {
@@ -520,6 +522,17 @@ export class LoyaltyService {
         const allowedByMinPayment = tierMinPayment != null ? Math.max(0, sanitizedTotal - tierMinPayment - Math.max(0, priorRedeemApplied)) : Number.MAX_SAFE_INTEGER;
         const discountToApply = Math.min(wallet.balance, remainingByOrder || limit, capLeft, allowedByMinPayment);
         const finalPayable = Math.max(0, sanitizedTotal - discountToApply);
+        // Расчёт будущего начисления на оплачиваемую рублями сумму, если разрешено совместное начисление/списание
+        let postEarnPoints = 0;
+        let postEarnOnAmount = 0;
+        if (allowSameReceipt) {
+          const earnBaseOnCash = Math.min(finalPayable, sanitizedEligibleTotal);
+          const eligibleByMin = !(tierMinPayment != null && finalPayable < tierMinPayment);
+          if (eligibleByMin && earnBaseOnCash > 0) {
+            postEarnOnAmount = earnBaseOnCash;
+            postEarnPoints = Math.floor(earnBaseOnCash * earnBps / 10000);
+          }
+        }
 
         const hold = await tx.hold.create({
           data: {
@@ -548,12 +561,15 @@ export class LoyaltyService {
           message: discountToApply > 0
             ? `Списываем ${discountToApply} ₽, к оплате ${finalPayable} ₽`
             : 'Недостаточно баллов для списания.',
+          // Доп. поля для фронта: начисление на оплачиваемую сумму
+          postEarnPoints: postEarnPoints,
+          postEarnOnAmount: postEarnOnAmount,
         };
       });
     }
 
     // ===== EARN =====
-    if (disallowSameReceipt && dto.orderId) {
+    if (!allowSameReceipt && dto.orderId) {
       const [existingRedeemHold, existingReceipt] = await Promise.all([
         this.prisma.hold.findFirst({
           where: {
@@ -580,7 +596,7 @@ export class LoyaltyService {
     // антифрод: кулдаун и дневной лимит начислений
     if (earnCooldownSec && earnCooldownSec > 0) {
       const last = await this.prisma.transaction.findFirst({
-        where: { merchantId: dto.merchantId, customerId: customer.id, type: 'EARN' },
+        where: { merchantId: dto.merchantId, customerId: customer.id, type: 'EARN', orderId: { not: null } as any },
         orderBy: { createdAt: 'desc' },
       });
       if (last) {
@@ -594,7 +610,7 @@ export class LoyaltyService {
     let dailyEarnLeft: number | null = null;
     if (earnDailyCap && earnDailyCap > 0) {
       const since = new Date(Date.now() - 24*60*60*1000);
-      const txns = await this.prisma.transaction.findMany({ where: { merchantId: dto.merchantId, customerId: customer.id, type: 'EARN', createdAt: { gte: since } } });
+      const txns = await this.prisma.transaction.findMany({ where: { merchantId: dto.merchantId, customerId: customer.id, type: 'EARN', orderId: { not: null } as any, createdAt: { gte: since } } });
       const used = txns.reduce((sum, t) => sum + Math.max(0, t.amount), 0);
       dailyEarnLeft = Math.max(0, earnDailyCap - used);
       if (dailyEarnLeft <= 0) {
@@ -730,7 +746,52 @@ export class LoyaltyService {
         }
       const baseEarnFromHold = hold.mode === 'EARN' ? Math.max(0, Math.floor(Number(hold.earnPoints || 0))) : 0;
       const promoBonus = promoResult ? Math.max(0, Math.floor(Number(promoResult.pointsIssued || 0))) : 0;
-      const appliedEarnTotal = baseEarnFromHold + promoBonus;
+      // Доп. начисление при списании, если включено allowEarnRedeemSameReceipt
+      let extraEarn = 0;
+      try {
+        const msRules = await tx.merchantSettings.findUnique({ where: { merchantId: hold.merchantId } });
+        const rules = msRules?.rulesJson && typeof msRules.rulesJson === 'object' ? (msRules.rulesJson as any) : {};
+        const allowSame = Object.prototype.hasOwnProperty.call(rules, 'allowEarnRedeemSameReceipt') ? Boolean(rules.allowEarnRedeemSameReceipt) : !Boolean(rules.disallowEarnRedeemSameReceipt);
+        if (hold.mode === 'REDEEM' && allowSame) {
+          const { earnBps: baseEarnBps, earnDailyCap } = await this.getSettings(hold.merchantId);
+          let earnBpsEff = baseEarnBps;
+          let tierMinPaymentLocal: number | null = null;
+          try {
+            const assignment = await tx.loyaltyTierAssignment.findFirst({ where: { merchantId: hold.merchantId, customerId: hold.customerId, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] }, orderBy: { assignedAt: 'desc' } });
+            let tier: any = null;
+            if (assignment) tier = await tx.loyaltyTier.findUnique({ where: { id: assignment.tierId } });
+            if (!tier) tier = await tx.loyaltyTier.findFirst({ where: { merchantId: hold.merchantId, isInitial: true }, orderBy: { thresholdAmount: 'asc' } });
+            if (tier) {
+              if (typeof tier.earnRateBps === 'number') earnBpsEff = Math.max(0, Math.floor(Number(tier.earnRateBps)));
+              const meta: any = tier.metadata ?? null;
+              if (meta && typeof meta === 'object') {
+                const raw = (meta as any).minPaymentAmount ?? (meta as any).minPayment;
+                if (raw != null) {
+                  const mp = Number(raw);
+                  if (Number.isFinite(mp) && mp >= 0) tierMinPaymentLocal = Math.round(mp);
+                }
+              }
+            }
+          } catch {}
+          const appliedRedeemAmt = Math.max(0, appliedRedeem);
+          const total = Math.max(0, Number(hold.total ?? 0));
+          const eligible = Math.max(0, Number(hold.eligibleTotal ?? total));
+          const finalPayable = Math.max(0, total - appliedRedeemAmt);
+          const earnBaseOnCash = Math.min(finalPayable, eligible);
+          if (!(tierMinPaymentLocal != null && finalPayable < tierMinPaymentLocal) && earnBaseOnCash > 0) {
+            let pts = Math.floor(earnBaseOnCash * earnBpsEff / 10000);
+            if (pts > 0 && earnDailyCap && earnDailyCap > 0) {
+              const since = new Date(Date.now() - 24*60*60*1000);
+              const txns = await tx.transaction.findMany({ where: { merchantId: hold.merchantId, customerId: hold.customerId, type: 'EARN', orderId: { not: null } as any, createdAt: { gte: since } } });
+              const used = txns.reduce((sum, t) => sum + Math.max(0, t.amount), 0);
+              const left = Math.max(0, earnDailyCap - used);
+              pts = Math.min(pts, left);
+            }
+            extraEarn = Math.max(0, pts);
+          }
+        }
+      } catch {}
+      const appliedEarnTotal = baseEarnFromHold + promoBonus + extraEarn;
 
       if (appliedEarnTotal > 0) {
         // Проверяем, требуется ли задержка начисления. В юнит-тестах tx может не иметь merchantSettings — делаем fallback на this.prisma.
@@ -784,12 +845,30 @@ export class LoyaltyService {
                     earnedAt: maturesAt,
                     maturesAt,
                     expiresAt: promoExpiresAt,
+                    orderId: null,
+                    receiptId: null,
+                    outletId: hold.outletId ?? null,
+                    staffId: hold.staffId ?? null,
+                    status: 'PENDING',
+                  },
+                });
+              }
+              if (extraEarn > 0) {
+                const expiresAtStd = ttlDays > 0 ? new Date(maturesAt.getTime() + ttlDays * 24 * 60 * 60 * 1000) : null;
+                await earnLot.create({
+                  data: {
+                    merchantId: hold.merchantId,
+                    customerId: hold.customerId,
+                    points: extraEarn,
+                    consumedPoints: 0,
+                    earnedAt: maturesAt,
+                    maturesAt,
+                    expiresAt: expiresAtStd,
                     orderId,
                     receiptId: null,
                     outletId: hold.outletId ?? null,
                     staffId: hold.staffId ?? null,
                     status: 'PENDING',
-                    metadata: opts?.promoCode ? { promoCodeId: opts.promoCode.promoCodeId } : undefined,
                   },
                 });
               }
@@ -880,12 +959,31 @@ export class LoyaltyService {
                     earnedAt: new Date(),
                     maturesAt: null,
                     expiresAt: expiresPromo,
+                    orderId: null,
+                    receiptId: null,
+                    outletId: hold.outletId ?? null,
+                    staffId: hold.staffId ?? null,
+                    status: 'ACTIVE',
+                  },
+                });
+              }
+              if (extraEarn > 0) {
+                let expires: Date | null = null;
+                if (ttlDays > 0) expires = new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000);
+                await earnLot.create({
+                  data: {
+                    merchantId: hold.merchantId,
+                    customerId: hold.customerId,
+                    points: extraEarn,
+                    consumedPoints: 0,
+                    earnedAt: new Date(),
+                    maturesAt: null,
+                    expiresAt: expires,
                     orderId,
                     receiptId: null,
                     outletId: hold.outletId ?? null,
                     staffId: hold.staffId ?? null,
                     status: 'ACTIVE',
-                    metadata: opts?.promoCode ? { promoCodeId: opts.promoCode.promoCodeId } : undefined,
                   },
                 });
               }
@@ -1122,27 +1220,55 @@ export class LoyaltyService {
   }
 
   async transactions(merchantId: string, customerId: string, limit = 20, before?: Date, filters?: { outletId?: string|null; staffId?: string|null }) {
-    const where: any = { merchantId, customerId };
-    if (before) where.createdAt = { lt: before };
-    if (filters?.outletId) where.outletId = filters.outletId;
-    if (filters?.staffId) where.staffId = filters.staffId;
-    const items = await this.prisma.transaction.findMany({
-      where,
+    const hardLimit = Math.min(Math.max(limit, 1), 100);
+    const now = new Date();
+
+    // 1) Обычные транзакции
+    const whereTx: any = { merchantId, customerId };
+    if (before) whereTx.createdAt = { lt: before };
+    if (filters?.outletId) whereTx.outletId = filters.outletId;
+    if (filters?.staffId) whereTx.staffId = filters.staffId;
+    const txItems = await this.prisma.transaction.findMany({
+      where: whereTx,
       orderBy: { createdAt: 'desc' },
-      take: Math.min(Math.max(limit, 1), 100),
+      take: hardLimit,
       include: {
         outlet: { select: { posType: true, posLastSeenAt: true } },
-        reviews: {
-          select: {
-            id: true,
-            rating: true,
-            createdAt: true,
-          },
-        },
+        reviews: { select: { id: true, rating: true, createdAt: true } },
       },
     });
-    const nextBefore = items.length > 0 ? items[items.length - 1].createdAt.toISOString() : null;
-    const normalized = items.map((entity) => ({
+
+    // 2) «Отложенные начисления» (EarnLot.status = PENDING)
+    const whereLots: any = { merchantId, customerId, status: 'PENDING' };
+    if (before) whereLots.createdAt = { lt: before };
+    if (filters?.outletId) whereLots.outletId = filters.outletId;
+    if (filters?.staffId) whereLots.staffId = filters.staffId;
+    const pendingLots = await this.prisma.earnLot.findMany({
+      where: whereLots,
+      orderBy: { createdAt: 'desc' },
+      take: hardLimit,
+      select: {
+        id: true,
+        merchantId: true,
+        customerId: true,
+        points: true,
+        orderId: true,
+        outletId: true,
+        staffId: true,
+        createdAt: true,
+        maturesAt: true,
+      },
+    });
+    // Подтянем outlet данные одним запросом
+    const outletIds = Array.from(new Set(pendingLots.map(l => l.outletId).filter(Boolean))) as string[];
+    const outletsMap = new Map<string, { posType: any; posLastSeenAt: Date | null }>();
+    if (outletIds.length > 0) {
+      const outlets = await this.prisma.outlet.findMany({ where: { id: { in: outletIds } }, select: { id: true, posType: true, posLastSeenAt: true } });
+      for (const o of outlets) outletsMap.set(o.id, { posType: o.posType, posLastSeenAt: o.posLastSeenAt ?? null });
+    }
+
+    // 3) Нормализация
+    const normalizedTxs = txItems.map((entity) => ({
       id: entity.id,
       type: entity.type,
       amount: entity.amount,
@@ -1156,7 +1282,39 @@ export class LoyaltyService {
       reviewId: entity.reviews?.[0]?.id ?? null,
       reviewRating: entity.reviews?.[0]?.rating ?? null,
       reviewCreatedAt: entity.reviews?.[0]?.createdAt ? entity.reviews[0].createdAt.toISOString() : null,
+      pending: undefined,
+      maturesAt: undefined,
+      daysUntilMature: undefined,
     }));
-    return { items: normalized, nextBefore };
+
+    const normalizedPending = pendingLots.map((lot) => {
+      const outlet = lot.outletId ? outletsMap.get(lot.outletId) : null;
+      const mat = lot.maturesAt ?? null;
+      const daysUntil = mat ? Math.max(0, Math.ceil((mat.getTime() - now.getTime()) / (24 * 60 * 60 * 1000))) : null;
+      return {
+        id: `lot:${lot.id}`,
+        type: 'EARN' as const,
+        amount: lot.points,
+        orderId: lot.orderId ?? null,
+        customerId: lot.customerId,
+        createdAt: lot.createdAt.toISOString(),
+        outletId: lot.outletId ?? null,
+        outletPosType: outlet?.posType ?? null,
+        outletLastSeenAt: outlet?.posLastSeenAt ? outlet.posLastSeenAt.toISOString() : null,
+        staffId: lot.staffId ?? null,
+        reviewId: null,
+        reviewRating: null,
+        reviewCreatedAt: null,
+        pending: true,
+        maturesAt: mat ? mat.toISOString() : null,
+        daysUntilMature: daysUntil,
+      };
+    });
+
+    // 4) Слияние, сортировка, пагинация
+    const merged = [...normalizedTxs, ...normalizedPending].sort((a, b) => (a.createdAt < b.createdAt ? 1 : (a.createdAt > b.createdAt ? -1 : 0)));
+    const sliced = merged.slice(0, hardLimit);
+    const nextBefore = sliced.length > 0 ? sliced[sliced.length - 1].createdAt : null;
+    return { items: sliced, nextBefore };
   }
 }

@@ -503,6 +503,11 @@
   border-left-color: #a855f7;
 }
 
+.historyTone_pending {
+  background: linear-gradient(135deg, rgba(122, 90, 248, 0.14), rgba(180, 145, 255, 0.06));
+  border-left-color: #7a5af8;
+}
+
 .historyIcon {
   width: 36px;
   height: 36px;
@@ -556,6 +561,12 @@
   box-shadow: 0 12px 26px rgba(129, 140, 248, 0.32);
 }
 
+.historyIcon_pending {
+  background: #ffffff;
+  color: #7a5af8;
+  box-shadow: 0 10px 22px rgba(122, 90, 248, 0.25);
+}
+
 .historyBody {
   display: flex;
   flex-direction: column;
@@ -570,6 +581,11 @@
 .historyDate {
   font-size: 12px;
   color: #8888b0;
+}
+
+.historyNote {
+  font-size: 12px;
+  color: #6b5bd3;
 }
 
 .historyAmount {

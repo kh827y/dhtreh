@@ -40,6 +40,13 @@ type TelegramUser = {
   photoUrl?: string;
 };
 
+const TIME_ICON = (
+  <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+    <circle cx="10" cy="10" r="7.5" stroke="currentColor" strokeWidth="1.6" />
+    <path d="M10 5.8V10l3 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
 type MechanicsLevel = {
   id?: string;
   name?: string;
@@ -357,6 +364,9 @@ export default function Page() {
         reviewId?: string | null;
         reviewRating?: number | null;
         reviewCreatedAt?: string | null;
+        pending?: boolean;
+        maturesAt?: string | null;
+        daysUntilMature?: number | null;
       }>,
     ) => {
       return items
@@ -372,6 +382,9 @@ export default function Page() {
           reviewId: i.reviewId ?? null,
           reviewRating: typeof i.reviewRating === "number" ? i.reviewRating : null,
           reviewCreatedAt: i.reviewCreatedAt ?? null,
+          pending: Boolean(i.pending),
+          maturesAt: i.maturesAt ?? null,
+          daysUntilMature: typeof i.daysUntilMature === 'number' ? i.daysUntilMature : null,
         }));
     },
     []
@@ -972,19 +985,30 @@ export default function Page() {
               <ul className={styles.historyList}>
                 {tx.map((item, idx) => {
                   const meta = getTransactionMeta(item.type);
+                  const isPending = Boolean(item.pending) && String(item.type).toUpperCase() === 'EARN';
+                  const title = isPending ? 'Начисление на удержании' : meta.title;
+                  const note = isPending
+                    ? (() => {
+                        const days = typeof item.daysUntilMature === 'number' ? item.daysUntilMature : (item.maturesAt ? Math.max(0, Math.ceil((Date.parse(item.maturesAt) - Date.now()) / (24*60*60*1000))) : null);
+                        if (days === 0) return 'Баллы будут зачислены сегодня';
+                        if (days === 1) return 'Баллы будут зачислены завтра';
+                        return days != null ? `Баллы будут зачислены через ${days} дней` : 'Баллы будут зачислены позже';
+                      })()
+                    : null;
                   return (
                     <li
                       key={item.id}
-                      className={`${styles.historyItem} ${styles[`historyTone_${meta.kind}`]}`}
+                      className={`${styles.historyItem} ${isPending ? styles.historyTone_pending : styles[`historyTone_${meta.kind}`]}`}
                       style={{ animationDelay: `${0.05 * idx}s` }}
                     >
-                      <div className={`${styles.historyIcon} ${styles[`historyIcon_${meta.kind}`]}`}>
-                        {HISTORY_ICONS[meta.kind]}
+                      <div className={`${styles.historyIcon} ${isPending ? styles.historyIcon_pending : styles[`historyIcon_${meta.kind}`]}`}>
+                        {isPending ? TIME_ICON : HISTORY_ICONS[meta.kind]}
                       </div>
                       <div className={styles.historyBody}>
-                        <div className={styles.historyTitle}>{meta.title}</div>
+                        <div className={styles.historyTitle}>{title}</div>
+                        {note && <div className={styles.historyNote}>{note}</div>}
                         <div className={styles.historyDate}>
-                          {new Date(item.createdAt).toLocaleString("ru-RU")}
+                          {new Date(item.createdAt).toLocaleString('ru-RU')}
                         </div>
                       </div>
                       <div className={styles.historyAmount}>{formatAmount(item.amount)}</div>
