@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma.service';
+import { LoyaltyService } from '../../loyalty/loyalty.service';
 import * as crypto from 'crypto';
 import { validateIntegrationConfig } from '../config.schema';
 
@@ -58,6 +59,7 @@ export class EvotorService {
   constructor(
     private configService: ConfigService,
     private prisma: PrismaService,
+    private loyalty: LoyaltyService,
   ) {}
 
   private async resolveOutletId(merchantId: string, receipt: EvotorReceipt): Promise<string | null> {
@@ -320,7 +322,8 @@ export class EvotorService {
       const loyaltyData = await this.calculateLoyaltyForReceipt(
         merchantId,
         customer.id,
-        receipt
+        receipt,
+        outletId ?? null
       );
 
       if (loyaltyData.hasLoyalty) {
@@ -400,7 +403,8 @@ export class EvotorService {
   private async calculateLoyaltyForReceipt(
     merchantId: string,
     customerId: string,
-    receipt: EvotorReceipt
+    receipt: EvotorReceipt,
+    outletId: string | null = null,
   ) {
     // Проверяем, есть ли в чеке информация о программе лояльности
     const loyaltyPosition = receipt.positions.find(p => 
@@ -421,17 +425,27 @@ export class EvotorService {
       .filter(p => !p.name.includes('Скидка'))
       .reduce((sum, p) => sum + p.sum, 0);
 
-    const settings = await this.prisma.merchantSettings.findUnique({
-      where: { merchantId },
+    const preview = await this.loyalty.calculateTransactionPreview({
+      merchantId,
+      customerId,
+      customerRecord: { id: customerId },
+      total: Math.abs(receipt.total || 0),
+      eligibleTotal: Math.max(0, eligibleTotal),
+      outletId,
     });
-
-    const earnBps = settings?.earnBps || 500; // 5% по умолчанию
-    const earnedPoints = Math.floor(eligibleTotal * earnBps / 10000);
 
     return {
       hasLoyalty: false,
       discountApplied: 0,
-      earnedPoints,
+      earnedPoints: preview.earnPoints,
+      total: preview.total,
+      eligibleTotal: preview.eligibleTotal,
+      meta: {
+        earnBps: preview.earnBps,
+        redeemLimitBps: preview.redeemLimitBps,
+        level: preview.level,
+        tier: preview.tier,
+      },
     };
   }
 

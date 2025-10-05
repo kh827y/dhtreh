@@ -10,9 +10,10 @@ import { ModulKassaController } from './modulkassa/modulkassa.controller';
 import { PosterService } from './poster/poster.service';
 import { PosterController } from './poster/poster.controller';
 import { OAuthGuard } from '../guards/oauth.guard';
+import { LoyaltyModule } from '../loyalty/loyalty.module';
 
 @Module({
-  imports: [PrismaModule, ConfigModule],
+  imports: [PrismaModule, ConfigModule, LoyaltyModule],
   controllers: [AtolController, EvotorController, ModulKassaController, PosterController],
   providers: [AtolService, EvotorService, ModulKassaService, PosterService, OAuthGuard],
   exports: [AtolService, EvotorService, ModulKassaService, PosterService],

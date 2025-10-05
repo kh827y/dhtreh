@@ -12,6 +12,8 @@ function mkPrisma(overrides: any = {}) {
       findUnique: jest.fn(async () => ({
         merchantId: 'M1',
         updatedAt: new Date(),
+        earnBps: 500,
+        redeemLimitBps: 5000,
         // Levels config: Silver at 500, Gold at 1000; metric by EARN sum
         rulesJson: {
           levelsCfg: { periodDays: 365, metric: 'earn', levels: [ { name: 'Base', threshold: 0 }, { name: 'Silver', threshold: 500 }, { name: 'Gold', threshold: 1000 } ] },
@@ -31,6 +33,12 @@ function mkPrisma(overrides: any = {}) {
     wallet: {
       findFirst: jest.fn(async () => null),
       create: jest.fn(async () => ({ id: 'W1', balance: 0 })),
+    },
+    outlet: { findFirst: jest.fn(async () => null) },
+    loyaltyTierAssignment: { findFirst: jest.fn(async () => null) },
+    loyaltyTier: {
+      findUnique: jest.fn(async () => null),
+      findFirst: jest.fn(async () => null),
     },
     $transaction: jest.fn(async (fn: any) => fn(base)),
   };
@@ -70,6 +78,8 @@ describe('LoyaltyService.quote with level benefits (Wave 2)', () => {
         findUnique: jest.fn(async () => ({
           merchantId: 'M1',
           updatedAt: new Date(),
+          earnBps: 500,
+          redeemLimitBps: 5000,
           rulesJson: {
             levelsCfg: { periodDays: 365, metric: 'earn', levels: [ { name: 'Base', threshold: 0 }, { name: 'Silver', threshold: 500 }, { name: 'Gold', threshold: 1000 } ] },
             levelBenefits: {
@@ -103,6 +113,22 @@ describe('LoyaltyService.quote with level benefits (Wave 2)', () => {
     expect(res.discountToApply).toBe(600);
     expect(res.pointsToBurn).toBe(600);
   });
+
+  it('calculateTransactionPreview returns level-adjusted earn points', async () => {
+    const prisma = mkPrisma();
+    const svc = new LoyaltyService(prisma as any, metrics, promoCodes);
+
+    const preview = await svc.calculateTransactionPreview({
+      merchantId: 'M1',
+      customerId: 'C1',
+      total: 1000,
+      eligibleTotal: 1000,
+    });
+
+    expect(preview.earnPoints).toBe(70);
+    expect(preview.earnBps).toBe(700);
+    expect(preview.level?.current.name).toBe('Silver');
+  });
 });
 
 describe('LevelsService.getLevel', () => {
@@ -111,6 +137,9 @@ describe('LevelsService.getLevel', () => {
       merchantSettings: {
         findUnique: jest.fn(async () => ({
           merchantId: 'M1',
+          updatedAt: new Date(),
+          earnBps: 500,
+          redeemLimitBps: 5000,
           rulesJson: {
             levelsCfg: {
               metric: 'transactions',

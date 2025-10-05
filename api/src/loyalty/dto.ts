@@ -79,6 +79,7 @@ export class QuoteRedeemRespDto {
   @ApiProperty() finalPayable!: number;
   @ApiPropertyOptional() holdId?: string;
   @ApiPropertyOptional() message?: string;
+  @ApiPropertyOptional({ type: 'object', additionalProperties: true }) meta?: Record<string, any>;
 }
 
 export class QuoteEarnRespDto {
@@ -86,6 +87,7 @@ export class QuoteEarnRespDto {
   @ApiProperty() pointsToEarn!: number;
   @ApiPropertyOptional() holdId?: string;
   @ApiPropertyOptional() message?: string;
+  @ApiPropertyOptional({ type: 'object', additionalProperties: true }) meta?: Record<string, any>;
 }
 
 export class CommitRespDto {

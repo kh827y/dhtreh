@@ -3,11 +3,43 @@ import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
 import { PromoCodesService, type PromoCodeApplyResult } from '../promocodes/promocodes.service';
 import { Mode, QuoteDto } from './dto';
-import { computeLevelState, parseLevelsConfig, resolveLevelBenefits } from './levels.util';
+import { computeLevelState, parseLevelsConfig, resolveLevelBenefits, type LevelRule } from './levels.util';
 import { HoldStatus, TxnType, WalletType, LedgerAccount, HoldMode, DeviceType } from '@prisma/client';
 import { randomUUID } from 'crypto';
 
 type QrMeta = { jti: string; iat: number; exp: number } | undefined;
+
+type TransactionPreviewArgs = {
+  merchantId: string;
+  customerId: string;
+  customerRecord?: { id: string } | null;
+  total: number;
+  eligibleTotal?: number;
+  outletId?: string | null;
+  category?: string | null;
+  settings?: {
+    earnBps: number;
+    redeemLimitBps: number;
+    rulesJson: any;
+    updatedAt: Date | null | undefined;
+  };
+  now?: number | Date;
+};
+
+type TransactionPreviewResult = {
+  total: number;
+  eligibleTotal: number;
+  earnBps: number;
+  redeemLimitBps: number;
+  tierMinPayment: number | null;
+  outletId: string | null;
+  channel: 'VIRTUAL' | 'PC_POS' | 'SMART';
+  earnPoints: number;
+  redeemLimitAmount: number;
+  level: { value: number; current: LevelRule; next: LevelRule | null; progressToNext: number } | null;
+  levelBonus: { earnBpsBonus: number; redeemLimitBpsBonus: number } | null;
+  tier: { id: string | null; name: string | null; source: 'assignment' | 'initial' | null } | null;
+};
 
 @Injectable()
 export class LoyaltyService {
@@ -294,6 +326,111 @@ export class LoyaltyService {
     return { outletId: outlet?.id ?? null, channel };
   }
 
+  async calculateTransactionPreview(args: TransactionPreviewArgs): Promise<TransactionPreviewResult> {
+    const nowTs = args.now instanceof Date ? args.now.getTime() : typeof args.now === 'number' ? args.now : Date.now();
+    const nowDate = new Date(nowTs);
+    const sanitizedTotal = Math.max(0, Math.floor(Number(args.total ?? 0)));
+    const eligibleRaw = args.eligibleTotal ?? args.total ?? 0;
+    const sanitizedEligibleTotal = Math.max(0, Math.floor(Number(eligibleRaw ?? 0)));
+
+    const settings = args.settings ?? (await this.getSettings(args.merchantId));
+    const outletCtx = await this.resolveOutletContext(args.merchantId, { outletId: args.outletId ?? null });
+
+    const rulesFn = this.compileRules(
+      args.merchantId,
+      outletCtx.outletId,
+      { earnBps: settings.earnBps, redeemLimitBps: settings.redeemLimitBps },
+      settings.rulesJson,
+      settings.updatedAt,
+    );
+    let { earnBps, redeemLimitBps } = rulesFn({
+      channel: outletCtx.channel,
+      weekday: nowDate.getDay(),
+      eligibleTotal: sanitizedEligibleTotal,
+      category: args.category ?? undefined,
+    });
+
+    const customer = args.customerRecord ?? (await this.ensureCustomerId(args.customerId));
+
+    let levelState: TransactionPreviewResult['level'] = null;
+    let levelBonus: TransactionPreviewResult['levelBonus'] = null;
+    try {
+      const cfg = parseLevelsConfig(settings.rulesJson);
+      levelState = await computeLevelState({
+        prisma: this.prisma,
+        metrics: this.metrics,
+        merchantId: args.merchantId,
+        customerId: customer.id,
+        config: cfg,
+        now: nowTs,
+      });
+      levelBonus = resolveLevelBenefits(settings.rulesJson, levelState.current.name);
+      earnBps = Math.max(0, earnBps + levelBonus.earnBpsBonus);
+      redeemLimitBps = Math.max(0, redeemLimitBps + levelBonus.redeemLimitBpsBonus);
+    } catch {}
+
+    let tierMinPayment: number | null = null;
+    let tier: TransactionPreviewResult['tier'] = null;
+    try {
+      const assignment = await this.prisma.loyaltyTierAssignment.findFirst({
+        where: {
+          merchantId: args.merchantId,
+          customerId: customer.id,
+          OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+        },
+        orderBy: { assignedAt: 'desc' },
+      });
+      let tierRecord: any = null;
+      let tierSource: 'assignment' | 'initial' | null = null;
+      if (assignment) {
+        tierRecord = await this.prisma.loyaltyTier.findUnique({ where: { id: assignment.tierId } });
+        tierSource = tierRecord ? 'assignment' : null;
+      }
+      if (!tierRecord) {
+        tierRecord = await this.prisma.loyaltyTier.findFirst({
+          where: { merchantId: args.merchantId, isInitial: true },
+          orderBy: { thresholdAmount: 'asc' },
+        });
+        tierSource = tierRecord ? 'initial' : tierSource;
+      }
+      if (tierRecord) {
+        tier = { id: tierRecord.id ?? null, name: tierRecord.name ?? null, source: tierSource };
+        if (typeof tierRecord.earnRateBps === 'number') {
+          earnBps = Math.max(0, Math.floor(Number(tierRecord.earnRateBps)));
+        }
+        if (typeof tierRecord.redeemRateBps === 'number') {
+          redeemLimitBps = Math.max(0, Math.floor(Number(tierRecord.redeemRateBps)));
+        }
+        const meta: any = tierRecord.metadata ?? null;
+        if (meta && typeof meta === 'object') {
+          const raw = meta?.minPaymentAmount ?? meta?.minPayment;
+          if (raw != null) {
+            const mp = Number(raw);
+            if (Number.isFinite(mp) && mp >= 0) tierMinPayment = Math.round(mp);
+          }
+        }
+      }
+    } catch {}
+
+    const earnPoints = Math.max(0, Math.floor(sanitizedEligibleTotal * earnBps / 10000));
+    const redeemLimitAmount = Math.max(0, Math.floor(sanitizedEligibleTotal * redeemLimitBps / 10000));
+
+    return {
+      total: sanitizedTotal,
+      eligibleTotal: sanitizedEligibleTotal,
+      earnBps,
+      redeemLimitBps,
+      tierMinPayment,
+      outletId: outletCtx.outletId,
+      channel: outletCtx.channel,
+      earnPoints,
+      redeemLimitAmount,
+      level: levelState,
+      levelBonus,
+      tier,
+    };
+  }
+
   // ===== Levels integration (Wave 2) =====
   // ————— вспомогалки для идемпотентности по существующему hold —————
   private quoteFromExistingHold(mode: Mode, hold: any) {
@@ -333,63 +470,34 @@ export class LoyaltyService {
     const rulesConfig = rulesJson && typeof rulesJson === 'object' ? (rulesJson as Record<string, any>) : {};
     const disallowSameReceipt = Boolean(rulesConfig.disallowEarnRedeemSameReceipt);
 
-    const outletCtx = await this.resolveOutletContext(dto.merchantId, { outletId: dto.outletId ?? null });
-    const channel = outletCtx.channel;
-    const effectiveOutletId = outletCtx.outletId ?? null;
-
-    // Нормализуем суммы (защита от отрицательных/NaN)
-    const sanitizedTotal = Math.max(0, Math.floor(Number((dto as any).total ?? 0)));
-    const sanitizedEligibleTotal = Math.max(0, Math.floor(Number((dto as any).eligibleTotal ?? 0)));
-    // применяем правила для earnBps/redeemLimitBps (с кешом)
-    const wd = new Date().getDay();
-    const rulesFn = this.compileRules(dto.merchantId, effectiveOutletId, { earnBps: baseEarnBps, redeemLimitBps: baseRedeemLimitBps }, rulesJson, updatedAt);
-    let { earnBps, redeemLimitBps } = rulesFn({ channel, weekday: wd, eligibleTotal: sanitizedEligibleTotal, category: dto.category });
-    // Apply level-based bonuses (if configured)
-    try {
-      const cfg = parseLevelsConfig(rulesJson);
-      const state = await computeLevelState({
-        prisma: this.prisma,
-        metrics: this.metrics,
-        merchantId: dto.merchantId,
-        customerId: customer.id,
-        config: cfg,
-      });
-      const bonus = resolveLevelBenefits(rulesJson, state.current.name);
-      earnBps = Math.max(0, earnBps + bonus.earnBpsBonus);
-      redeemLimitBps = Math.max(0, redeemLimitBps + bonus.redeemLimitBpsBonus);
-    } catch {}
-
-    // Override by portal-managed LoyaltyTier (per-customer assignment)
-    let tierMinPayment: number | null = null;
-    try {
-      const assignment = await this.prisma.loyaltyTierAssignment.findFirst({
-        where: { merchantId: dto.merchantId, customerId: customer.id, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
-        orderBy: { assignedAt: "desc" },
-      });
-      let tier: any = null;
-      if (assignment) {
-        tier = await this.prisma.loyaltyTier.findUnique({ where: { id: assignment.tierId } });
-      }
-      if (!tier) {
-        tier = await this.prisma.loyaltyTier.findFirst({ where: { merchantId: dto.merchantId, isInitial: true }, orderBy: { thresholdAmount: "asc" } });
-      }
-      if (tier) {
-        if (typeof tier.earnRateBps === 'number') {
-          earnBps = Math.max(0, Math.floor(Number(tier.earnRateBps)));
-        }
-        if (typeof tier.redeemRateBps === 'number') {
-          redeemLimitBps = Math.max(0, Math.floor(Number(tier.redeemRateBps)));
-        }
-        const meta: any = tier.metadata ?? null;
-        if (meta && typeof meta === 'object') {
-          const raw = (meta as any).minPaymentAmount ?? (meta as any).minPayment;
-          if (raw != null) {
-            const mp = Number(raw);
-            if (Number.isFinite(mp) && mp >= 0) tierMinPayment = Math.round(mp);
-          }
-        }
-      }
-    } catch {}
+    const preview = await this.calculateTransactionPreview({
+      merchantId: dto.merchantId,
+      customerId: customer.id,
+      customerRecord: customer,
+      total: (dto as any).total ?? 0,
+      eligibleTotal: (dto as any).eligibleTotal ?? 0,
+      outletId: dto.outletId ?? null,
+      category: dto.category ?? null,
+      settings: { earnBps: baseEarnBps, redeemLimitBps: baseRedeemLimitBps, rulesJson, updatedAt },
+      now: Date.now(),
+    });
+    const sanitizedTotal = preview.total;
+    const sanitizedEligibleTotal = preview.eligibleTotal;
+    const channel = preview.channel;
+    const effectiveOutletId = preview.outletId;
+    let earnBps = preview.earnBps;
+    let redeemLimitBps = preview.redeemLimitBps;
+    const tierMinPayment = preview.tierMinPayment;
+    const previewMeta = {
+      earnBps,
+      redeemLimitBps,
+      tierMinPayment,
+      level: preview.level,
+      levelBonus: preview.levelBonus,
+      tier: preview.tier,
+      earnPoints: preview.earnPoints,
+      redeemLimitAmount: preview.redeemLimitAmount,
+    } as const;
 
 
     // 0) если есть qr — сначала смотрим, не существует ли hold с таким qrJti
@@ -467,6 +575,7 @@ export class LoyaltyService {
             finalPayable: sanitizedTotal,
             holdId: undefined,
             message: 'Нельзя одновременно начислять и списывать баллы в одном чеке.',
+            meta: previewMeta,
           };
         }
       }
@@ -480,7 +589,7 @@ export class LoyaltyService {
           const diffSec = Math.floor((Date.now() - last.createdAt.getTime()) / 1000);
           if (diffSec < redeemCooldownSec) {
             const wait = redeemCooldownSec - diffSec;
-            return { canRedeem: false, discountToApply: 0, pointsToBurn: 0, finalPayable: sanitizedTotal, holdId: undefined, message: `Кулдаун на списание: подождите ${wait} сек.` };
+            return { canRedeem: false, discountToApply: 0, pointsToBurn: 0, finalPayable: sanitizedTotal, holdId: undefined, message: `Кулдаун на списание: подождите ${wait} сек.`, meta: previewMeta };
           }
         }
       }
@@ -491,7 +600,7 @@ export class LoyaltyService {
         const used = txns.reduce((sum, t) => sum + Math.max(0, -t.amount), 0);
         dailyRedeemLeft = Math.max(0, redeemDailyCap - used);
         if (dailyRedeemLeft <= 0) {
-          return { canRedeem: false, discountToApply: 0, pointsToBurn: 0, finalPayable: sanitizedTotal, holdId: undefined, message: 'Дневной лимит списаний исчерпан.' };
+          return { canRedeem: false, discountToApply: 0, pointsToBurn: 0, finalPayable: sanitizedTotal, holdId: undefined, message: 'Дневной лимит списаний исчерпан.', meta: previewMeta };
         }
       }
       // Проверка: если указан orderId, учитываем уже применённое списание по этому заказу
@@ -526,7 +635,8 @@ export class LoyaltyService {
             pointsToBurn: 0,
             finalPayable: sanitizedTotal,
             holdId: undefined,
-            message: 'По этому заказу уже списаны максимальные баллы.'
+            message: 'По этому заказу уже списаны максимальные баллы.',
+            meta: previewMeta,
           } as any;
         }
         const capLeft = dailyRedeemLeft != null ? dailyRedeemLeft : Number.MAX_SAFE_INTEGER;
@@ -561,6 +671,7 @@ export class LoyaltyService {
           message: discountToApply > 0
             ? `Списываем ${discountToApply} ₽, к оплате ${finalPayable} ₽`
             : 'Недостаточно баллов для списания.',
+          meta: previewMeta,
         };
       });
     }
@@ -587,6 +698,7 @@ export class LoyaltyService {
           pointsToEarn: 0,
           holdId: undefined,
           message: 'Нельзя одновременно начислять и списывать баллы в одном чеке.',
+          meta: previewMeta,
         };
       }
     }
@@ -596,24 +708,24 @@ export class LoyaltyService {
         where: { merchantId: dto.merchantId, customerId: customer.id, type: 'EARN' },
         orderBy: { createdAt: 'desc' },
       });
-      if (last) {
-        const diffSec = Math.floor((Date.now() - last.createdAt.getTime()) / 1000);
-        if (diffSec < earnCooldownSec) {
-          const wait = earnCooldownSec - diffSec;
-          return { canEarn: false, pointsToEarn: 0, holdId: undefined, message: `Кулдаун на начисление: подождите ${wait} сек.` };
+        if (last) {
+          const diffSec = Math.floor((Date.now() - last.createdAt.getTime()) / 1000);
+          if (diffSec < earnCooldownSec) {
+            const wait = earnCooldownSec - diffSec;
+            return { canEarn: false, pointsToEarn: 0, holdId: undefined, message: `Кулдаун на начисление: подождите ${wait} сек.`, meta: previewMeta };
+          }
         }
       }
-    }
-    let dailyEarnLeft: number | null = null;
-    if (earnDailyCap && earnDailyCap > 0) {
+      let dailyEarnLeft: number | null = null;
+      if (earnDailyCap && earnDailyCap > 0) {
       const since = new Date(Date.now() - 24*60*60*1000);
       const txns = await this.prisma.transaction.findMany({ where: { merchantId: dto.merchantId, customerId: customer.id, type: 'EARN', createdAt: { gte: since } } });
       const used = txns.reduce((sum, t) => sum + Math.max(0, t.amount), 0);
-      dailyEarnLeft = Math.max(0, earnDailyCap - used);
-      if (dailyEarnLeft <= 0) {
-        return { canEarn: false, pointsToEarn: 0, holdId: undefined, message: 'Дневной лимит начислений исчерпан.' };
+        dailyEarnLeft = Math.max(0, earnDailyCap - used);
+        if (dailyEarnLeft <= 0) {
+          return { canEarn: false, pointsToEarn: 0, holdId: undefined, message: 'Дневной лимит начислений исчерпан.', meta: previewMeta };
+        }
       }
-    }
     return this.prisma.$transaction(async (tx) => {
       // Ensure merchant exists within the same transaction/connection (FK safety)
       try { await tx.merchant.upsert({ where: { id: dto.merchantId }, update: {}, create: { id: dto.merchantId, name: dto.merchantId } }); } catch {}
@@ -653,6 +765,7 @@ export class LoyaltyService {
         pointsToEarn: points,
         holdId: hold.id,
         message: points > 0 ? `Начислим ${points} баллов после оплаты.` : 'Сумма слишком мала для начисления.',
+        meta: previewMeta,
       };
     });
   }

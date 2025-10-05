@@ -11,12 +11,14 @@ type QuoteRedeemResp = {
   finalPayable?: number;
   holdId?: string;
   message?: string;
+  meta?: Record<string, any>;
 };
 type QuoteEarnResp = {
   canEarn?: boolean;
   pointsToEarn?: number;
   holdId?: string;
   message?: string;
+  meta?: Record<string, any>;
 };
 type Txn = { id: string; type: 'EARN'|'REDEEM'|'REFUND'|'ADJUST'; amount: number; orderId?: string|null; createdAt: string; outletId?: string|null; outletPosType?: string|null; outletLastSeenAt?: string|null };
 
