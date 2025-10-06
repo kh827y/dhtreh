@@ -14,6 +14,7 @@ import { ActionsService } from './services/actions.service';
 import { OperationsLogService } from './services/operations-log.service';
 import { TelegramModule } from '../telegram/telegram.module';
 import { PortalTelegramIntegrationService } from './services/telegram-integration.service';
+import { PortalTelegramNotifyService } from './services/telegram-notify.service';
 import { CommunicationsModule } from '../communications/communications.module';
 import { ReferralModule } from '../referral/referral.module';
 import { PortalReviewsService } from './services/reviews.service';
@@ -39,6 +40,7 @@ import { PortalReviewsService } from './services/reviews.service';
     OperationsLogService,
     PortalCustomersService,
     PortalTelegramIntegrationService,
+    PortalTelegramNotifyService,
     PortalReviewsService,
   ],
 })

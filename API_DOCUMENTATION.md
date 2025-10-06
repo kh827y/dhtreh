@@ -1345,6 +1345,35 @@ const result = await client.commit({
 
 Экспорт кампаний через `GET /reports/export/{merchantId}?type=campaigns&format=excel` отключён. Для выгрузки воспользуйтесь API аудитории/промо (`/portal/loyalty/promotions`) или подключите BI-инструмент к базе данных.
 
+## Telegram уведомления сотрудников (единый бот)
+
+Единый Telegram-бот для уведомлений сотрудникам мерчанта. Отличается от бота Mini App и настраивается через переменные окружения.
+
+- ENV:
+  - TELEGRAM_NOTIFY_BOT_TOKEN — токен бота из BotFather.
+  - TELEGRAM_NOTIFY_WEBHOOK_SECRET — секрет для проверки заголовка X-Telegram-Bot-Api-Secret-Token.
+
+- Вебхук Telegram → API:
+  - POST `/telegram/notify/webhook`
+    - Headers: `X-Telegram-Bot-Api-Secret-Token: <TELEGRAM_NOTIFY_WEBHOOK_SECRET>`
+    - Body: стандартный объект Telegram Update.
+    - Response: `{ ok: true }`.
+
+- Admin API (через прокси админки `/api/admin/...`):
+  - GET `/notifications/telegram-notify/state` → `{ ok: true, configured: boolean, botUsername: string|null, botLink: string|null, webhook?: { url?: string|null, hasError?: boolean, lastErrorDate?: number, lastErrorMessage?: string } }`
+  - POST `/notifications/telegram-notify/set-webhook` → `{ ok: true, url: string }`
+  - POST `/notifications/telegram-notify/delete-webhook` → `{ ok: true }`
+
+- Portal API (Merchant Portal):
+  - GET `/portal/settings/telegram-notify/state` → `{ configured, botUsername, botLink }`
+  - POST `/portal/settings/telegram-notify/invite` → `{ ok: true, startUrl, startGroupUrl, token }`
+  - GET `/portal/settings/telegram-notify/subscribers` → `Array<{ id, chatId, chatType, username?, title?, addedAt?, lastSeenAt? }>`
+  - POST `/portal/settings/telegram-notify/subscribers/{id}/deactivate` → `{ ok: true }`
+
+Замечания:
+- Подписка сотрудников/групп осуществляется по deep-link `t.me/<bot>?start=<token>` или `?startgroup=<token>`. Токены выпускаются на стороне портала и привязаны к мерчанту.
+- База хранит инвайты и подписчиков в моделях `TelegramStaffInvite` и `TelegramStaffSubscriber`.
+
 ## Поддержка
 
 - Email: support@loyalty.com

@@ -252,6 +252,9 @@ model Merchant {
   // gifts
   gifts                       Gift[]
   giftRedemptions             GiftRedemption[]
+  // telegram staff notifications
+  telegramStaffInvites        TelegramStaffInvite[]
+  telegramStaffSubscribers    TelegramStaffSubscriber[]
   // staff access per outlet
   staffAccesses               StaffOutletAccess[]
   // catalog
@@ -456,8 +459,8 @@ model Transaction {
   outletId   String?
   staffId    String?
 
-  outlet Outlet? @relation(fields: [outletId], references: [id], onDelete: SetNull)
-  staff  Staff?  @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  outlet  Outlet?  @relation(fields: [outletId], references: [id], onDelete: SetNull)
+  staff   Staff?   @relation(fields: [staffId], references: [id], onDelete: SetNull)
   reviews Review[]
 
   @@index([customerId, createdAt])
@@ -496,43 +499,43 @@ model EventOutbox {
 }
 
 model Outlet {
-  id                      String   @id @default(cuid())
+  id                      String      @id @default(cuid())
   merchantId              String
-  merchant                Merchant @relation(fields: [merchantId], references: [id])
+  merchant                Merchant    @relation(fields: [merchantId], references: [id])
   name                    String
   address                 String?
-  status                  String   @default("ACTIVE") // ACTIVE | INACTIVE
-  hidden                  Boolean  @default(false)
+  status                  String      @default("ACTIVE") // ACTIVE | INACTIVE
+  hidden                  Boolean     @default(false)
   description             String?
   phone                   String?
-  adminEmails             String[] @default([])
+  adminEmails             String[]    @default([])
   timezone                String?
   code                    String?
-  tags                    String[] @default([])
-  scheduleEnabled         Boolean  @default(false)
-  scheduleMode            String   @default("CUSTOM")
+  tags                    String[]    @default([])
+  scheduleEnabled         Boolean     @default(false)
+  scheduleMode            String      @default("CUSTOM")
   scheduleJson            Json?
   externalId              String?
   integrationProvider     String?
   integrationLocationCode String?
   integrationPayload      Json?
   reviewLinks             Json?
-  manualLocation          Boolean  @default(false)
-  latitude                Decimal? @db.Decimal(10, 7)
-  longitude               Decimal? @db.Decimal(10, 7)
+  manualLocation          Boolean     @default(false)
+  latitude                Decimal?    @db.Decimal(10, 7)
+  longitude               Decimal?    @db.Decimal(10, 7)
   posType                 DeviceType?
   posLastSeenAt           DateTime?
   bridgeSecret            String?
   bridgeSecretNext        String?
   bridgeSecretUpdatedAt   DateTime?
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  createdAt               DateTime    @default(now())
+  updatedAt               DateTime    @updatedAt
 
   // обратные связи
   holds                 Hold[]
   receipts              Receipt[]
   txns                  Transaction[]
-  pushDevices          PushDevice[]
+  pushDevices           PushDevice[]
   staffAccesses         StaffOutletAccess[]
   stocks                ProductStock[]
   schedules             OutletSchedule[]
@@ -637,6 +640,8 @@ model Staff {
   promoCodeUsages               PromoCodeUsage[]
   cashierSessions               CashierSession[]
   staffMetricsDaily             StaffKpiDaily[]
+  // telegram staff notifications (invites created by this staff)
+  createdTelegramInvites        TelegramStaffInvite[]   @relation("StaffCreatedTelegramInvites")
 
   @@unique([merchantId, login])
   @@index([merchantId])
@@ -1054,6 +1059,39 @@ model TelegramBot {
   merchant Merchant @relation(fields: [merchantId], references: [id])
 }
 
+// Telegram staff notifications (global bot) — invites and subscribers
+model TelegramStaffInvite {
+  id          String    @id @default(cuid())
+  merchantId  String
+  token       String    @unique
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime?
+  createdById String?
+
+  merchant  Merchant @relation(fields: [merchantId], references: [id])
+  createdBy Staff?   @relation("StaffCreatedTelegramInvites", fields: [createdById], references: [id])
+
+  @@index([merchantId, createdAt])
+  @@index([expiresAt])
+}
+
+model TelegramStaffSubscriber {
+  id         String    @id @default(cuid())
+  merchantId String
+  chatId     String
+  chatType   String // user | group | supergroup | channel
+  username   String?
+  title      String?
+  addedAt    DateTime  @default(now())
+  lastSeenAt DateTime?
+  isActive   Boolean   @default(true)
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+
+  @@unique([merchantId, chatId])
+  @@index([merchantId, isActive])
+}
+
 model Plan {
   id              String   @id @default(cuid())
   name            String
@@ -1111,7 +1149,6 @@ model SegmentCustomer {
 
   @@unique([segmentId, customerId])
 }
-
 
 // Email notifications
 model EmailNotification {
@@ -1197,31 +1234,31 @@ model CommunicationTemplate {
 }
 
 model CommunicationTask {
-  id          String               @id @default(cuid())
-  merchantId  String
-  channel     CommunicationChannel
-  templateId  String?
-  audienceId  String?
-  audienceName String?
+  id               String               @id @default(cuid())
+  merchantId       String
+  channel          CommunicationChannel
+  templateId       String?
+  audienceId       String?
+  audienceName     String?
   audienceSnapshot Json?
-  promotionId String?
-  createdById String?
-  status      String               @default("SCHEDULED")
-  scheduledAt DateTime?
-  startedAt   DateTime?
-  completedAt DateTime?
-  failedAt    DateTime?
-  payload     Json?
-  filters     Json?
-  stats       Json?
-  media       Json?
-  timezone    String?
-  archivedAt  DateTime?
-  totalRecipients Int               @default(0)
-  sentCount   Int                   @default(0)
-  failedCount Int                   @default(0)
-  createdAt   DateTime             @default(now())
-  updatedAt   DateTime             @updatedAt
+  promotionId      String?
+  createdById      String?
+  status           String               @default("SCHEDULED")
+  scheduledAt      DateTime?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  failedAt         DateTime?
+  payload          Json?
+  filters          Json?
+  stats            Json?
+  media            Json?
+  timezone         String?
+  archivedAt       DateTime?
+  totalRecipients  Int                  @default(0)
+  sentCount        Int                  @default(0)
+  failedCount      Int                  @default(0)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
 
   merchant   Merchant                     @relation(fields: [merchantId], references: [id])
   template   CommunicationTemplate?       @relation(fields: [templateId], references: [id])
@@ -1781,11 +1818,11 @@ model Review {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  merchant  Merchant         @relation(fields: [merchantId], references: [id])
-  customer  Customer         @relation(fields: [customerId], references: [id])
-  transaction Transaction?   @relation(fields: [transactionId], references: [id])
-  response  ReviewResponse?
-  reactions ReviewReaction[]
+  merchant    Merchant         @relation(fields: [merchantId], references: [id])
+  customer    Customer         @relation(fields: [customerId], references: [id])
+  transaction Transaction?     @relation(fields: [transactionId], references: [id])
+  response    ReviewResponse?
+  reactions   ReviewReaction[]
 }
 
 model ReviewResponse {

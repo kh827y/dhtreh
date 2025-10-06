@@ -94,6 +94,16 @@
 - [x] Проверил миграции `backfill_device_outlet`, `push_outlet_id`, `remove_device_table`, `referral_program_enhancements`: добавил проверки схемы и гарантировал совместимость со старыми/новыми базами.
 - [x] Починил сборку после апдейта Prisma/Nest: удалил лишний декоратор, привёл типы JSON и переписал подсчёт уникальных участников акций через groupBy.
 
+## Хотфикс 2025-10-06 — Telegram уведомления сотрудников (единый бот)
+- [x] Prisma: добавлены модели `TelegramStaffInvite` и `TelegramStaffSubscriber` для токенов инвайтов и реестра подписчиков (пользователи/группы), `@@unique([merchantId, chatId])`.
+- [x] API: сервис и контроллер единого бота уведомлений сотрудников — вебхук `POST /telegram/notify/webhook` (проверка `X-Telegram-Bot-Api-Secret-Token`), диагностика `GET /telegram/notify/webhook-info`.
+- [x] Admin API: `GET /notifications/telegram-notify/state`, `POST /notifications/telegram-notify/set-webhook`, `POST /notifications/telegram-notify/delete-webhook`.
+- [x] Admin UI: вынесен раздел в отдельную страницу `/telegram_notifications`; пункт добавлен в боковую панель. Страница показывает статус, username, URL webhook, ошибки; кнопки управления webhook.
+- [x] Portal API: `GET /portal/settings/telegram-notify/state`, `POST /portal/settings/telegram-notify/invite`, `GET /portal/settings/telegram-notify/subscribers`, `POST /portal/settings/telegram-notify/subscribers/:id/deactivate`.
+- [x] Merchant Portal UI: страница `settings/telegram` перешла на реальные данные — генерирует deep‑link `start`/`startgroup`, показывает список подписчиков и позволяет отвязать.
+- [x] ENV: обновлён `.env.production.example` — добавлены `TELEGRAM_NOTIFY_BOT_TOKEN`, `TELEGRAM_NOTIFY_WEBHOOK_SECRET`.
+- [x] Docs: в `API_DOCUMENTATION.md` добавлен раздел «Telegram уведомления сотрудников (единый бот)» с описанием ENV, вебхука и эндпоинтов Admin/Portal.
+
 ## Хотфикс 2025-10-02 — Подписи Bridge для лояльности
 - [x] CashierGuard: нормализуем payload подписи Bridge под контроллеры (quote/commit/refund/cancel) и берём `outletId` из hold/receipt, чтобы корректные подписи пропускались без Staff-Key.
 - [x] CashierGuard: при staff-key подхватываем outletId из hold/receipt и разрешаем mint QR с валидной bridge-подписью без staff-key.

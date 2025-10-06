@@ -32,6 +32,7 @@ import { StaffMotivationService, type UpdateStaffMotivationPayload } from './ser
 import { ActionsService, type ActionsTab, type CreateProductBonusActionPayload, type UpdateActionStatusPayload } from './services/actions.service';
 import { OperationsLogService, type OperationsLogFilters } from './services/operations-log.service';
 import { PortalTelegramIntegrationService } from './services/telegram-integration.service';
+import { PortalTelegramNotifyService } from './services/telegram-notify.service';
 import { ReferralService, type ReferralProgramSettingsDto } from '../referral/referral.service';
 import { PortalReviewsService } from './services/reviews.service';
 
@@ -53,6 +54,7 @@ export class PortalController {
     private readonly operations: OperationsLogService,
     private readonly customersService: PortalCustomersService,
     private readonly telegramIntegration: PortalTelegramIntegrationService,
+    private readonly telegramNotify: PortalTelegramNotifyService,
     private readonly referrals: ReferralService,
     private readonly reviews: PortalReviewsService,
   ) {}
@@ -755,6 +757,31 @@ export class PortalController {
   @ApiBadRequestResponse({ type: ErrorDto })
   telegramMiniAppConnect(@Req() req: any, @Body() body: { token?: string }) {
     return this.telegramIntegration.connect(this.getMerchantId(req), body?.token || '');
+  }
+
+  // ===== Telegram staff notifications (global bot) =====
+  @Get('settings/telegram-notify/state')
+  @ApiOkResponse({ schema: { type: 'object', properties: { configured: { type: 'boolean' }, botUsername: { type: 'string', nullable: true }, botLink: { type: 'string', nullable: true } } } })
+  telegramNotifyState(@Req() req: any) {
+    return this.telegramNotify.getState(this.getMerchantId(req));
+  }
+
+  @Post('settings/telegram-notify/invite')
+  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' }, startUrl: { type: 'string' }, startGroupUrl: { type: 'string' }, token: { type: 'string' } } } })
+  telegramNotifyInvite(@Req() req: any, @Body() body: { forceNew?: boolean }) {
+    return this.telegramNotify.issueInvite(this.getMerchantId(req), !!body?.forceNew);
+  }
+
+  @Get('settings/telegram-notify/subscribers')
+  @ApiOkResponse({ schema: { type: 'array', items: { type: 'object', additionalProperties: true } } })
+  telegramNotifySubscribers(@Req() req: any) {
+    return this.telegramNotify.listSubscribers(this.getMerchantId(req));
+  }
+
+  @Post('settings/telegram-notify/subscribers/:id/deactivate')
+  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
+  telegramNotifyDeactivate(@Req() req: any, @Param('id') id: string) {
+    return this.telegramNotify.deactivateSubscriber(this.getMerchantId(req), String(id||''));
   }
 
   @Post('integrations/telegram-mini-app/check')
