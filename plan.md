@@ -104,6 +104,19 @@
 - [x] ENV: обновлён `.env.production.example` — добавлены `TELEGRAM_NOTIFY_BOT_TOKEN`, `TELEGRAM_NOTIFY_WEBHOOK_SECRET`.
 - [x] Docs: в `API_DOCUMENTATION.md` добавлен раздел «Telegram уведомления сотрудников (единый бот)» с описанием ENV, вебхука и эндпоинтов Admin/Portal.
 
+## Фича 2025-10-06 — Telegram Mini App (персональный бот на мерчанта)
+- [x] Portal API: эндпоинты интеграции —
+  - `GET /portal/integrations/telegram-mini-app` (state),
+  - `POST /portal/integrations/telegram-mini-app/connect` (подключение бота),
+  - `POST /portal/integrations/telegram-mini-app/check` (проверка webhook),
+  - `POST /portal/integrations/telegram-mini-app/link` (генерация deep link с `startapp`),
+  - `POST /portal/integrations/telegram-mini-app/setup-menu` (установка Chat Menu Button),
+  - `DELETE /portal/integrations/telegram-mini-app` (отключение).
+- [x] Portal UI: страница `integrations/telegram-mini-app` — кнопки «Сгенерировать ссылку», «Установить кнопку меню», показ deep link и копирование; обновление сообщения о состоянии.
+- [x] Mini App backend: `POST /loyalty/teleauth` — валидация `initData` токеном бота мерчанта и проверка подписанного `start_param` (HS256, `TMA_LINK_SECRET`) на соответствие `merchantId`.
+- [x] ENV: добавлены `MINIAPP_BASE_URL`, `TMA_LINK_SECRET` в `api/.env.production.example`; `API_BASE_URL` — для установки webhook.
+- [x] Docs: раздел «Telegram Mini App (персональный бот на мерчанта)» в `API_DOCUMENTATION.md`.
+
 ## Хотфикс 2025-10-02 — Подписи Bridge для лояльности
 - [x] CashierGuard: нормализуем payload подписи Bridge под контроллеры (quote/commit/refund/cancel) и берём `outletId` из hold/receipt, чтобы корректные подписи пропускались без Staff-Key.
 - [x] CashierGuard: при staff-key подхватываем outletId из hold/receipt и разрешаем mint QR с валидной bridge-подписью без staff-key.

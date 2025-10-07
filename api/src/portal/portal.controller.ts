@@ -791,6 +791,20 @@ export class PortalController {
     return this.telegramIntegration.check(this.getMerchantId(req));
   }
 
+  @Post('integrations/telegram-mini-app/link')
+  @ApiOkResponse({ schema: { type: 'object', properties: { deepLink: { type: 'string' }, startParam: { type: 'string' } } } })
+  @ApiBadRequestResponse({ type: ErrorDto })
+  telegramMiniAppLink(@Req() req: any, @Body() body: { outletId?: string }) {
+    return this.telegramIntegration.generateLink(this.getMerchantId(req), body?.outletId);
+  }
+
+  @Post('integrations/telegram-mini-app/setup-menu')
+  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
+  @ApiBadRequestResponse({ type: ErrorDto })
+  telegramMiniAppSetupMenu(@Req() req: any) {
+    return this.telegramIntegration.setupMenu(this.getMerchantId(req));
+  }
+
   @Delete('integrations/telegram-mini-app')
   @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
   telegramMiniAppDisconnect(@Req() req: any) {

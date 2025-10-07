@@ -334,13 +334,9 @@ export class TelegramBotService {
   }
 
   private async handleStart(bot: BotConfig, chatId: number, userId: number, merchantId: string) {
-    // Создаем или находим клиента
+    // Пер-мерчантная учётка на основе tgId
     const tgId = String(userId);
-    let customer = await this.prisma.customer.findUnique({ where: { tgId } });
-    
-    if (!customer) {
-      customer = await this.prisma.customer.create({ data: { tgId } });
-    }
+    const customerId = await this.resolveCustomerIdForMerchant(tgId, merchantId);
 
     // Получаем настройки мерчанта
     const settings = await this.prisma.merchantSettings.findUnique({
@@ -348,8 +344,8 @@ export class TelegramBotService {
     });
 
     const message = settings?.miniappThemePrimary 
-      ? `🎉 Добро пожаловать в программу лояльности!\n\nВаш ID: ${customer.id}\n\nИспользуйте кнопки ниже для работы с программой.`
-      : `🎉 Добро пожаловать в программу лояльности!\n\nВаш ID: ${customer.id}`;
+      ? `🎉 Добро пожаловать в программу лояльности!\n\nВаш ID: ${customerId}\n\nИспользуйте кнопки ниже для работы с программой.`
+      : `🎉 Добро пожаловать в программу лояльности!\n\nВаш ID: ${customerId}`;
 
     const keyboard = {
       inline_keyboard: [
@@ -371,16 +367,11 @@ export class TelegramBotService {
 
   private async handleBalance(bot: BotConfig, chatId: number, userId: number, merchantId: string) {
     const tgId = String(userId);
-    const customer = await this.prisma.customer.findUnique({ where: { tgId } });
-    
-    if (!customer) {
-      await this.sendMessage(bot.token, chatId, 'Вы еще не зарегистрированы. Используйте /start');
-      return;
-    }
+    const customerId = await this.resolveCustomerIdForMerchant(tgId, merchantId);
 
     const wallet = await this.prisma.wallet.findFirst({
       where: {
-        customerId: customer.id,
+        customerId,
         merchantId,
         type: 'POINTS',
       },
@@ -463,16 +454,11 @@ export class TelegramBotService {
 
   private async handleTransactionHistory(bot: BotConfig, chatId: number, userId: number, merchantId: string) {
     const tgId = String(userId);
-    const customer = await this.prisma.customer.findUnique({ where: { tgId } });
-    
-    if (!customer) {
-      await this.sendMessage(bot.token, chatId, 'Вы еще не зарегистрированы. Используйте /start');
-      return;
-    }
+    const customerId = await this.resolveCustomerIdForMerchant(tgId, merchantId);
 
     const transactions = await this.prisma.transaction.findMany({
       where: {
-        customerId: customer.id,
+        customerId,
         merchantId,
       },
       orderBy: { createdAt: 'desc' },
@@ -537,18 +523,55 @@ export class TelegramBotService {
   // Отправка уведомлений клиентам
   async sendNotification(customerId: string, merchantId: string, message: string) {
     const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
-    if (!customer?.tgId) return;
+    let tgId = customer?.tgId ?? null;
+    if (!tgId) {
+      try {
+        const mapping = await (this.prisma as any).customerTelegram?.findUnique?.({ where: { customerId } });
+        tgId = mapping?.tgId ?? null;
+      } catch {}
+    }
+    if (!tgId) return;
 
     const bot = this.bots.get(merchantId);
     if (!bot) return;
 
     try {
-      await this.sendMessage(bot.token, Number(customer.tgId), message);
+      await this.sendMessage(bot.token, Number(tgId), message);
       return { success: true };
     } catch (error) {
       this.logger.error(`Ошибка отправки уведомления: ${error}`);
       return { success: false, error };
     }
+  }
+
+  // Resolve or create per-merchant mapping from tgId to customerId
+  private async resolveCustomerIdForMerchant(tgId: string, merchantId: string): Promise<string> {
+    const ct = (this.prisma as any).customerTelegram;
+    try {
+      const bound = await ct?.findUnique?.({ where: { merchantId_tgId: { merchantId, tgId } } });
+      if (bound?.customerId) return String(bound.customerId);
+    } catch {}
+
+    // Check if this tgId has any binding; if none, reuse or create global customer with tgId
+    let hasAnyBinding = false;
+    try {
+      const anyBind = await ct?.findFirst?.({ where: { tgId } });
+      hasAnyBinding = !!anyBind;
+    } catch {}
+
+    if (!hasAnyBinding) {
+      let customer = await this.prisma.customer.findUnique({ where: { tgId } }).catch(() => null);
+      if (!customer) {
+        customer = await this.prisma.customer.create({ data: { tgId } });
+      }
+      try { await ct?.create?.({ data: { merchantId, tgId, customerId: customer.id } }); } catch {}
+      return customer.id;
+    }
+
+    // Otherwise create a new merchant-scoped customer without tgId
+    const created = await this.prisma.customer.create({ data: {} });
+    try { await ct?.create?.({ data: { merchantId, tgId, customerId: created.id } }); } catch {}
+    return created.id;
   }
 
   // Админ: ротация секрета webhook бота

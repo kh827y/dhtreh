@@ -290,26 +290,23 @@ export default function Page() {
       // ignore telegram errors
     }
     try {
-      const savedProfile = localStorage.getItem("miniapp.profile");
+      const key = `miniapp.profile.v2:${merchantId}`;
+      const savedProfile = merchantId ? localStorage.getItem(key) : null;
       if (savedProfile) {
-        const parsed = JSON.parse(savedProfile) as {
-          name?: string;
-          gender?: "male" | "female";
-          birthDate?: string;
-        };
-        setProfileForm({
-          name: parsed.name || "",
-          gender: parsed.gender || "",
-          birthDate: parsed.birthDate || "",
-        });
-        setProfileCompleted(true);
+        const parsed = JSON.parse(savedProfile) as { name?: string; gender?: "male" | "female"; birthDate?: string };
+        const name = parsed.name || "";
+        const gender = parsed.gender || "";
+        const birthDate = parsed.birthDate || "";
+        setProfileForm({ name, gender, birthDate });
+        const valid = Boolean(name && (gender === "male" || gender === "female") && birthDate);
+        setProfileCompleted(valid);
       } else {
         setProfileCompleted(false);
       }
     } catch {
       setProfileCompleted(false);
     }
-  }, []);
+  }, [merchantId]);
 
   useEffect(() => {
     setLoading(auth.loading);
@@ -639,7 +636,8 @@ export default function Page() {
         return;
       }
       try {
-        localStorage.setItem("miniapp.profile", JSON.stringify(profileForm));
+        const key = `miniapp.profile.v2:${merchantId}`;
+        localStorage.setItem(key, JSON.stringify(profileForm));
         setProfileCompleted(true);
         setToast({ msg: "Профиль сохранён", type: "success" });
       } catch (error) {

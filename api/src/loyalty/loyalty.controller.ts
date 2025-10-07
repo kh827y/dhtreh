@@ -1089,12 +1089,14 @@ export class LoyaltyController {
     if (!initData) throw new BadRequestException('initData is required');
     // определяем токен бота: из настроек мерчанта или глобальный (dev)
     let token = process.env.TELEGRAM_BOT_TOKEN || '';
+    let startParamRequired = false;
     if (merchantId) {
       try {
         const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId } });
         if (s && (s as any).telegramBotToken) token = (s as any).telegramBotToken as string;
         // если включено требование start_param — сверим merchantId с deep-link параметром
-        if ((s as any)?.telegramStartParamRequired) {
+        startParamRequired = Boolean((s as any)?.telegramStartParamRequired);
+        if (startParamRequired) {
           try {
             const p = new URLSearchParams(initData);
             const sp = p.get('start_param') || p.get('startapp') || '';
@@ -1106,8 +1108,79 @@ export class LoyaltyController {
     if (!token) throw new BadRequestException('Bot token not configured');
     const r = validateTelegramInitData(token, initData || '');
     if (!r.ok || !r.userId) throw new BadRequestException('Invalid initData');
-    // По tgId ищем/создаём клиента. Пытаемся подтянуть legacy id 'tg:<id>'
+    // Validate optional signed start_param (JWT-like HS256) when present
+    try {
+      const p = new URLSearchParams(initData);
+      const sp = p.get('start_param') || p.get('startapp') || '';
+      if (sp) {
+        const parts = sp.split('.');
+        const looksLikeJwt = parts.length === 3 && parts.every((x) => x && /^[A-Za-z0-9_-]+$/.test(x));
+        if (looksLikeJwt) {
+          const secret = process.env.TMA_LINK_SECRET || '';
+          if (!secret) throw new BadRequestException('Server misconfigured: TMA_LINK_SECRET not set');
+          const [h, pld, sig] = parts;
+          const data = `${h}.${pld}`;
+          const expected = createHmac('sha256', secret)
+            .update(data)
+            .digest('base64')
+            .replace(/=/g, '')
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_');
+          if (expected !== sig) throw new BadRequestException('Invalid start_param signature');
+          const json = JSON.parse(Buffer.from(pld.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+          const claimedMerchant = typeof json?.merchantId === 'string' ? json.merchantId : '';
+          if (merchantId && claimedMerchant && claimedMerchant !== merchantId) {
+            throw new BadRequestException('merchantId mismatch with start_param');
+          }
+        } else if (startParamRequired) {
+          // legacy strict mode: require exact merchantId in start_param
+          if (merchantId && sp !== merchantId) throw new BadRequestException('merchantId mismatch with start_param');
+        }
+      }
+    } catch (e) {
+      if (e instanceof BadRequestException) throw e;
+      // ignore start_param if malformed unless strict legacy mode triggers above
+    }
+    // По tgId формируем учётку клиента. Разграничение по мерчанту через CustomerTelegram.
     const tgId = String(r.userId);
+    if (merchantId) {
+      // 1) Ищем привязку tgId к customerId для текущего мерчанта
+      const bound = await (this.prisma as any).customerTelegram?.findUnique?.({ where: { merchantId_tgId: { merchantId, tgId } } }).catch(() => null);
+      if (bound?.customerId) {
+        return { ok: true, customerId: bound.customerId };
+      }
+
+      // 2) Переиспользуем глобальную запись с tgId ТОЛЬКО если это первая привязка (нет CustomerTelegram для данного tgId ни у одного мерчанта)
+      const anyBinding = await (this.prisma as any).customerTelegram?.findFirst?.({ where: { tgId } }).catch(() => null);
+      let customerId: string | null = null;
+      if (!anyBinding) {
+        const existingGlobal = await this.prisma.customer.findUnique({ where: { tgId } }).catch(() => null);
+        if (existingGlobal) {
+          customerId = existingGlobal.id;
+        }
+      }
+      if (!customerId) {
+        // Создаём НОВУЮ учётку под мерчанта (tgId не заполняем, чтобы не нарушить уникальность глобального поля)
+        // Опционально подтянем имя из initData
+        let name: string | undefined;
+        try {
+          const url = new URLSearchParams(initData);
+          const userJson = url.get('user');
+          if (userJson) {
+            const u = JSON.parse(userJson);
+            const parts = [u.first_name, u.last_name].filter((x: any) => typeof x === 'string' && x.trim());
+            if (parts.length) name = parts.join(' ');
+          }
+        } catch {}
+        const created = await this.prisma.customer.create({ data: { name: name ?? undefined } });
+        customerId = created.id;
+      }
+      // 3) Создаём привязку для текущего мерчанта
+      await (this.prisma as any).customerTelegram?.create?.({ data: { merchantId, tgId, customerId } }).catch(() => null);
+      return { ok: true, customerId };
+    }
+
+    // Back-compat: если merchantId не указан — ведём себя как раньше (глобальная учётка по tgId)
     const legacyId = 'tg:' + tgId;
     const existingByTg = await this.prisma.customer.findUnique({ where: { tgId } }).catch(() => null);
     if (existingByTg) return { ok: true, customerId: existingByTg.id };

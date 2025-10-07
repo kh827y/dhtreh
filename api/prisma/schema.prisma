@@ -255,6 +255,8 @@ model Merchant {
   // telegram staff notifications
   telegramStaffInvites        TelegramStaffInvite[]
   telegramStaffSubscribers    TelegramStaffSubscriber[]
+  // telegram miniapp: per-merchant mapping of tg users
+  customerTelegrams           CustomerTelegram[]
   // staff access per outlet
   staffAccesses               StaffOutletAccess[]
   // catalog
@@ -376,6 +378,24 @@ model Customer {
   promotionParticipants       PromotionParticipant[]
   tierAssignments             LoyaltyTierAssignment[]
   communicationTaskRecipients CommunicationTaskRecipient[]
+  // telegram miniapp: per-merchant bindings
+  telegramLinks               CustomerTelegram[]
+}
+
+/// Mapping of Telegram user to per-merchant Customer account
+model CustomerTelegram {
+  id         String   @id @default(cuid())
+  merchantId String
+  tgId       String
+  customerId String   @unique
+  createdAt  DateTime @default(now())
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+  customer Customer @relation(fields: [customerId], references: [id])
+
+  @@unique([merchantId, tgId])
+  @@index([merchantId])
+  @@index([tgId])
 }
 
 model Wallet {

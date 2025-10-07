@@ -50,6 +50,7 @@ export default function TelegramMiniAppPage() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState("");
   const [message, setMessage] = React.useState("");
+  const [deepLink, setDeepLink] = React.useState<string>('');
   const [token, setToken] = React.useState("");
   const [actionPending, setActionPending] = React.useState(false);
   const [tokenSaving, setTokenSaving] = React.useState(false);
@@ -136,6 +137,29 @@ export default function TelegramMiniAppPage() {
     } finally {
       setPending(false);
     }
+  };
+
+  const generateDeepLink = async () => {
+    setError('');
+    setMessage('');
+    try {
+      const res = await fetch('/api/portal/integrations/telegram-mini-app/link', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+      const data = await res.json().catch(()=>null);
+      if (!res.ok || !data?.deepLink) throw new Error(data?.message || 'Не удалось сгенерировать ссылку');
+      setDeepLink(data.deepLink);
+      setMessage('Ссылка сгенерирована');
+    } catch (e:any) { setError(String(e?.message || e)); }
+  };
+
+  const setupMenu = async () => {
+    setError('');
+    setMessage('');
+    try {
+      const res = await fetch('/api/portal/integrations/telegram-mini-app/setup-menu', { method: 'POST' });
+      const data = await res.json().catch(()=>null);
+      if (!res.ok) throw new Error(data?.message || 'Не удалось установить кнопку меню');
+      setMessage('Кнопка меню установлена');
+    } catch (e:any) { setError(String(e?.message || e)); }
   };
 
   const disconnect = async () => {
@@ -258,7 +282,18 @@ export default function TelegramMiniAppPage() {
                     Подключен бот: <strong>{state.botUsername}</strong>
                   </div>
                 )}
-                <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>{actionButton}</div>
+                <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>{actionButton}
+                  {isEnabled && (
+                    <>
+                      <Button variant="secondary" onClick={generateDeepLink} disabled={actionPending || loading}>
+                        Сгенерировать ссылку
+                      </Button>
+                      <Button variant="secondary" onClick={setupMenu} disabled={actionPending || loading}>
+                        Установить кнопку меню
+                      </Button>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           </CardBody>
@@ -289,6 +324,21 @@ export default function TelegramMiniAppPage() {
           <CardHeader title="Настройки подключения" />
           <CardBody>
             <div style={{ display: "grid", gap: 20 }}>
+              {deepLink && (
+                <div style={{ display:'grid', gap:8 }}>
+                  <label style={{ fontSize: 14, fontWeight: 600 }}>Deep link</label>
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                    <input
+                      value={deepLink}
+                      readOnly
+                      style={{ flex:1, padding:'10px 14px', borderRadius:12, border:'1px solid rgba(148,163,184,0.25)', background:'rgba(15,23,42,0.45)', fontSize:14, color:'#e2e8f0' }}
+                    />
+                    <Button variant="secondary" onClick={async ()=>{ try{ await navigator.clipboard.writeText(deepLink); setMessage('Ссылка скопирована'); } catch{ setError('Не удалось скопировать ссылку'); } }}>
+                      Скопировать
+                    </Button>
+                  </div>
+                </div>
+              )}
               <div style={{ display: "grid", gap: 8 }}>
                 <label style={{ fontSize: 14, fontWeight: 600 }}>Токен Telegram-бота</label>
                 <input

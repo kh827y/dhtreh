@@ -36,23 +36,36 @@ export function useMiniappAuth(defaultMerchant: string) {
   const [shareSettings, setShareSettings] = useState<ReviewsShareSettings>(null);
 
   useEffect(() => {
-    const saved = localStorage.getItem('miniapp.customerId');
-    if (saved) setCustomerId(saved);
     const id = getInitData();
     setInitData(id);
     const ctxMerchant = getMerchantFromContext(id);
     if (ctxMerchant) setMerchantId(ctxMerchant);
     const mId = ctxMerchant || merchantId;
-    // Dev fallback: if no Telegram initData and no saved customerId, optional auto-generate controlled by env flag only
+
+    const customerKey = (m: string) => `miniapp.customerId.v2:${m}`;
+    const profileKey = (m: string) => `miniapp.profile.v2:${m}`;
+
+    // Migrate legacy global customerId to per-merchant key only when no initData (non-Telegram context)
+    const legacy = localStorage.getItem('miniapp.customerId');
+    const savedScoped = mId ? localStorage.getItem(customerKey(mId)) : null;
+    if (!id) {
+      if (savedScoped) setCustomerId(savedScoped);
+      else if (legacy) {
+        setCustomerId(legacy);
+        if (mId) localStorage.setItem(customerKey(mId), legacy);
+      }
+    }
+    // Dev fallback only when no initData and nothing saved
     try {
       const devAuto = (process.env.NEXT_PUBLIC_MINIAPP_DEV_AUTO_CUSTOMER === '1') ||
         ((process.env.NEXT_PUBLIC_MINIAPP_DEV_AUTO_CUSTOMER || '').toLowerCase() === 'true');
-      if (!saved && !id && devAuto) {
+      if (!id && !savedScoped && !legacy && devAuto) {
         const gen = 'user-' + Math.random().toString(36).slice(2, 10);
         setCustomerId(gen);
-        localStorage.setItem('miniapp.customerId', gen);
+        if (mId) localStorage.setItem(customerKey(mId), gen);
       }
     } catch {}
+
     (async () => {
       try {
         const s = await publicSettings(mId);
@@ -79,12 +92,21 @@ export function useMiniappAuth(defaultMerchant: string) {
         setShareSettings(normalizedShare);
       } catch {}
       try {
+        // Prefer server teleauth when running inside Telegram (initData present)
         if (id && mId) {
+          const prev = savedScoped || legacy || null;
           const r = await teleauth(mId, id);
           setCustomerId(r.customerId);
-          localStorage.setItem('miniapp.customerId', r.customerId);
+          localStorage.setItem(customerKey(mId), r.customerId);
+          // Clear legacy global key to avoid cross-merchant leakage
+          try { localStorage.removeItem('miniapp.customerId'); } catch {}
+          // If customer switched, clear per-merchant profile and regBonus flags
+          if (prev && prev !== r.customerId) {
+            try { localStorage.removeItem(profileKey(mId)); } catch {}
+            try { localStorage.removeItem(`regBonus:${mId}:${prev}`); } catch {}
+          }
+          setError('');
         }
-        setError('');
       } catch (error) {
         setError(error instanceof Error ? error.message : String(error));
       } finally {

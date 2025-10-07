@@ -1374,6 +1374,38 @@ const result = await client.commit({
 - Подписка сотрудников/групп осуществляется по deep-link `t.me/<bot>?start=<token>` или `?startgroup=<token>`. Токены выпускаются на стороне портала и привязаны к мерчанту.
 - База хранит инвайты и подписчиков в моделях `TelegramStaffInvite` и `TelegramStaffSubscriber`.
 
+## Telegram Mini App (персональный бот на мерчанта)
+
+Поддерживается подключение собственного бота Telegram для каждого мерчанта. Мини-приложение работает на общем домене, контекст мерчанта задаётся URL/токеном.
+
+- ENV:
+  - MINIAPP_BASE_URL — базовый URL Mini App (общий для всех мерчантов), например `https://miniapp.example.com`.
+  - TMA_LINK_SECRET — секрет подписи startapp-токенов (HS256 для диплинков). Должен быть длинной случайной строкой.
+  - API_BASE_URL — публичный URL API (для установки webhook бота).
+
+- Portal API:
+  - GET `/portal/integrations/telegram-mini-app` → состояние интеграции: `{ enabled, botUsername, botLink, miniappUrl, connectionHealthy, lastSyncAt, integrationId, tokenMask }`.
+  - POST `/portal/integrations/telegram-mini-app/connect` body: `{ token }` → подключение бота мерчанта (проверка getMe, установка webhook, сохранение токена/username).
+  - POST `/portal/integrations/telegram-mini-app/check` → проверка `getWebhookInfo` и состояния бота.
+  - POST `/portal/integrations/telegram-mini-app/link` → генерация диплинка Mini App: `{ deepLink, startParam }`.
+  - POST `/portal/integrations/telegram-mini-app/setup-menu` → установка Chat Menu Button с web_app URL мини-приложения для мерчанта: `{ ok: true }`.
+  - DELETE `/portal/integrations/telegram-mini-app` → отключение интеграции.
+
+- Публичный API Mini App:
+  - POST `/loyalty/teleauth` body: `{ merchantId, initData }`
+    - Сервер валидирует `initData` по токену бота данного мерчанта (`MerchantSettings.telegramBotToken`).
+    - При наличии `start_param`/`startapp` валидирует подпись по `TMA_LINK_SECRET` и сверяет `merchantId` (при расхождении — 400).
+    - В ответе возвращается `{ ok: true, customerId }`.
+
+- Генерация ссылок:
+  - Диплинк: `https://t.me/<botUsername>?startapp=<SIGNED_TOKEN>`.
+  - `<SIGNED_TOKEN>` — HS256 над полезной нагрузкой `{ merchantId, outletId?, scope:'miniapp', iat, exp, jti }`.
+  - Кнопка меню (web_app) — URL: `MINIAPP_BASE_URL` или сохранённый `MerchantSettings.miniappBaseUrl`.
+
+Замечания:
+- Верификация `initData` и подписи диплинка выполняется строго на сервере; фронтенд не должен доверять содержимому `initDataUnsafe`.
+- Для запуска через меню Telegram `startapp` может отсутствовать, поэтому Mini App также использует путь/контекст мерчанта в URL, а сервер определяет токен бота по `merchantId`.
+
 ## Поддержка
 
 - Email: support@loyalty.com
