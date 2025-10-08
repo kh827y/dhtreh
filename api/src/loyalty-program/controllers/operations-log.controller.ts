@@ -12,7 +12,10 @@ export class OperationsLogController {
   }
 
   @Get()
-  list(@Req() req: any, @Query() query: { type?: string; from?: string; to?: string }) {
+  list(
+    @Req() req: any,
+    @Query() query: { type?: string; from?: string; to?: string },
+  ) {
     return this.service.operationsLog(this.merchantId(req), {
       type: query.type as any,
       from: query.from,

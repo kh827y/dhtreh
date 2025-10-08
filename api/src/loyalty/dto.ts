@@ -2,72 +2,122 @@ import { IsEnum, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { DeviceType } from '@prisma/client';
 
-export enum Mode { REDEEM = 'redeem', EARN = 'earn' }
+export enum Mode {
+  REDEEM = 'redeem',
+  EARN = 'earn',
+}
 
 export class QuoteDto {
   @ApiProperty({ enum: Mode })
-  @IsEnum(Mode) mode: Mode;
+  @IsEnum(Mode)
+  mode: Mode;
   @ApiProperty()
-  @IsString() merchantId: string;
+  @IsString()
+  merchantId: string;
   @ApiProperty({ description: 'customerId или JWT' })
-  @IsString() userToken: string; // customerId или JWT
+  @IsString()
+  userToken: string; // customerId или JWT
   @ApiProperty()
-  @IsString() orderId: string;
+  @IsString()
+  orderId: string;
   @ApiProperty({ minimum: 0 })
-  @IsNumber() @Min(0) total: number;
+  @IsNumber()
+  @Min(0)
+  total: number;
   @ApiProperty({ minimum: 0 })
-  @IsNumber() @Min(0) eligibleTotal: number;
+  @IsNumber()
+  @Min(0)
+  eligibleTotal: number;
   @ApiPropertyOptional()
-  @IsOptional() @IsString() outletId?: string;
+  @IsOptional()
+  @IsString()
+  outletId?: string;
   @ApiPropertyOptional()
-  @IsOptional() @IsString() staffId?: string;
+  @IsOptional()
+  @IsString()
+  staffId?: string;
   @ApiPropertyOptional()
-  @IsOptional() @IsString() requestId?: string;
+  @IsOptional()
+  @IsString()
+  requestId?: string;
   @ApiPropertyOptional({ description: 'Категория товара/чека для правил' })
-  @IsOptional() @IsString() category?: string;
+  @IsOptional()
+  @IsString()
+  category?: string;
   @ApiPropertyOptional({ description: 'Опциональный промокод' })
-  @IsOptional() @IsString() promoCode?: string;
+  @IsOptional()
+  @IsString()
+  promoCode?: string;
 }
 
 export class CommitDto {
   @ApiProperty()
-  @IsString() merchantId: string;
+  @IsString()
+  merchantId: string;
   @ApiProperty()
-  @IsString() holdId: string;
+  @IsString()
+  holdId: string;
   @ApiProperty()
-  @IsString() orderId: string;
+  @IsString()
+  orderId: string;
   @ApiPropertyOptional()
-  @IsOptional() @IsString() receiptNumber?: string;
+  @IsOptional()
+  @IsString()
+  receiptNumber?: string;
   @ApiPropertyOptional()
-  @IsOptional() @IsString() provider?: string;
+  @IsOptional()
+  @IsString()
+  provider?: string;
   @ApiPropertyOptional()
-  @IsOptional() @IsString() requestId?: string;
-  @ApiPropertyOptional({ description: 'Опциональный промокод для фиксации использования' })
-  @IsOptional() @IsString() promoCode?: string;
+  @IsOptional()
+  @IsString()
+  requestId?: string;
+  @ApiPropertyOptional({
+    description: 'Опциональный промокод для фиксации использования',
+  })
+  @IsOptional()
+  @IsString()
+  promoCode?: string;
 }
 
 export class QrMintDto {
   @ApiProperty()
-  @IsString() customerId: string;
+  @IsString()
+  customerId: string;
   @ApiPropertyOptional({ minimum: 10 })
-  @IsOptional() @Min(10) ttlSec?: number;
+  @IsOptional()
+  @Min(10)
+  ttlSec?: number;
   @ApiPropertyOptional()
-  @IsOptional() @IsString() merchantId?: string; // <— добавили
-  @ApiPropertyOptional({ description: 'Telegram initData для серверной проверки подписи' })
-  @IsOptional() @IsString() initData?: string;
+  @IsOptional()
+  @IsString()
+  merchantId?: string; // <— добавили
+  @ApiPropertyOptional({
+    description: 'Telegram initData для серверной проверки подписи',
+  })
+  @IsOptional()
+  @IsString()
+  initData?: string;
 }
 
 export class RefundDto {
   @ApiProperty()
-  @IsString() merchantId: string;
+  @IsString()
+  merchantId: string;
   @ApiProperty()
-  @IsString() orderId: string;
+  @IsString()
+  orderId: string;
   // сумма возврата по чеку; для частичного возврата укажи часть
   @ApiProperty({ minimum: 0 })
-  @IsNumber() @Min(0) refundTotal: number;
+  @IsNumber()
+  @Min(0)
+  refundTotal: number;
   // база возврата (если в исходном чеке были исключения); можно не указывать — возьмём пропорцию по total
   @ApiPropertyOptional({ minimum: 0 })
-  @IsOptional() @IsNumber() @Min(0) refundEligibleTotal?: number;
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  refundEligibleTotal?: number;
 }
 
 // ====== Swagger DTOs for responses ======
@@ -112,13 +162,15 @@ export class ReviewsSharePlatformDto {
   @ApiProperty() id!: string;
   @ApiProperty() enabled!: boolean;
   @ApiPropertyOptional({ nullable: true }) url?: string | null;
-  @ApiProperty({ type: [ReviewsSharePlatformOutletDto] }) outlets!: ReviewsSharePlatformOutletDto[];
+  @ApiProperty({ type: [ReviewsSharePlatformOutletDto] })
+  outlets!: ReviewsSharePlatformOutletDto[];
 }
 
 export class ReviewsShareSettingsDto {
   @ApiProperty() enabled!: boolean;
   @ApiProperty() threshold!: number;
-  @ApiProperty({ type: [ReviewsSharePlatformDto] }) platforms!: ReviewsSharePlatformDto[];
+  @ApiProperty({ type: [ReviewsSharePlatformDto] })
+  platforms!: ReviewsSharePlatformDto[];
 }
 
 export class PublicSettingsDto {
@@ -127,7 +179,8 @@ export class PublicSettingsDto {
   @ApiPropertyOptional({ nullable: true }) miniappThemePrimary?: string | null;
   @ApiPropertyOptional({ nullable: true }) miniappThemeBg?: string | null;
   @ApiPropertyOptional({ nullable: true }) miniappLogoUrl?: string | null;
-  @ApiPropertyOptional({ type: ReviewsShareSettingsDto, nullable: true }) reviewsShare?: ReviewsShareSettingsDto | null;
+  @ApiPropertyOptional({ type: ReviewsShareSettingsDto, nullable: true })
+  reviewsShare?: ReviewsShareSettingsDto | null;
 }
 
 export class BalanceDto {
@@ -136,7 +189,9 @@ export class BalanceDto {
   @ApiProperty() balance!: number;
 }
 
-export class OkDto { @ApiProperty() ok!: boolean; }
+export class OkDto {
+  @ApiProperty() ok!: boolean;
+}
 
 export class QrMintRespDto {
   @ApiProperty() token!: string;
@@ -145,26 +200,61 @@ export class QrMintRespDto {
 
 export class TransactionItemDto {
   @ApiProperty() id!: string;
-  @ApiProperty({ enum: ['EARN','REDEEM','REFUND','ADJUST'] }) type!: 'EARN'|'REDEEM'|'REFUND'|'ADJUST';
+  @ApiProperty({ enum: ['EARN', 'REDEEM', 'REFUND', 'ADJUST'] }) type!:
+    | 'EARN'
+    | 'REDEEM'
+    | 'REFUND'
+    | 'ADJUST';
   @ApiProperty() amount!: number;
-  @ApiPropertyOptional() orderId?: string|null;
+  @ApiPropertyOptional() orderId?: string | null;
   @ApiProperty() customerId!: string;
   @ApiProperty() createdAt!: string;
-  @ApiPropertyOptional() outletId?: string|null;
-  @ApiPropertyOptional({ enum: DeviceType, nullable: true }) outletPosType?: keyof typeof DeviceType | string | null;
-  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true }) outletLastSeenAt?: string|null;
-  @ApiPropertyOptional() staffId?: string|null;
-  @ApiPropertyOptional({ nullable: true, description: 'Идентификатор созданного отзыва' }) reviewId?: string | null;
-  @ApiPropertyOptional({ nullable: true, description: 'Рейтинг из созданного отзыва' }) reviewRating?: number | null;
-  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true, description: 'Дата и время создания отзыва' }) reviewCreatedAt?: string | null;
-  @ApiPropertyOptional({ description: 'Флаг отложенного начисления (на удержании)' }) pending?: boolean;
-  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true, description: 'Когда баллы будут зачислены' }) maturesAt?: string | null;
-  @ApiPropertyOptional({ nullable: true, description: 'Сколько дней осталось до зачисления (округлено вверх)' }) daysUntilMature?: number | null;
+  @ApiPropertyOptional() outletId?: string | null;
+  @ApiPropertyOptional({ enum: DeviceType, nullable: true }) outletPosType?:
+    | keyof typeof DeviceType
+    | string
+    | null;
+  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
+  outletLastSeenAt?: string | null;
+  @ApiPropertyOptional() staffId?: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Идентификатор созданного отзыва',
+  })
+  reviewId?: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Рейтинг из созданного отзыва',
+  })
+  reviewRating?: number | null;
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description: 'Дата и время создания отзыва',
+  })
+  reviewCreatedAt?: string | null;
+  @ApiPropertyOptional({
+    description: 'Флаг отложенного начисления (на удержании)',
+  })
+  pending?: boolean;
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description: 'Когда баллы будут зачислены',
+  })
+  maturesAt?: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Сколько дней осталось до зачисления (округлено вверх)',
+  })
+  daysUntilMature?: number | null;
 }
 
 export class TransactionsRespDto {
   @ApiProperty({ type: [TransactionItemDto] }) items!: TransactionItemDto[];
-  @ApiPropertyOptional({ nullable: true }) nextBefore?: string|null;
+  @ApiPropertyOptional({ nullable: true }) nextBefore?: string | null;
 }
 
 export class PublicOutletDto {
@@ -195,14 +285,22 @@ export class ErrorDto {
 
 export class CustomerProfileDto {
   @ApiPropertyOptional({ nullable: true }) name?: string | null;
-  @ApiPropertyOptional({ enum: ['male', 'female'], nullable: true }) gender?: 'male' | 'female' | null;
-  @ApiPropertyOptional({ type: String, format: 'date', nullable: true }) birthDate?: string | null; // YYYY-MM-DD
+  @ApiPropertyOptional({ enum: ['male', 'female'], nullable: true }) gender?:
+    | 'male'
+    | 'female'
+    | null;
+  @ApiPropertyOptional({ type: String, format: 'date', nullable: true })
+  birthDate?: string | null; // YYYY-MM-DD
 }
 
 export class CustomerProfileSaveDto {
   @ApiProperty() @IsString() merchantId!: string;
   @ApiProperty() @IsString() customerId!: string;
   @ApiProperty() @IsString() name!: string;
-  @ApiProperty({ enum: ['male', 'female'] }) @IsString() gender!: 'male' | 'female';
-  @ApiProperty({ type: String, description: 'YYYY-MM-DD' }) @IsString() birthDate!: string;
+  @ApiProperty({ enum: ['male', 'female'] }) @IsString() gender!:
+    | 'male'
+    | 'female';
+  @ApiProperty({ type: String, description: 'YYYY-MM-DD' })
+  @IsString()
+  birthDate!: string;
 }

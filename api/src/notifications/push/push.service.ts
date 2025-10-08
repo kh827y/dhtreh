@@ -40,7 +40,7 @@ export class PushService {
   ) {
     // Выбираем провайдера (можно расширить для других провайдеров)
     const providerName = this.configService.get('PUSH_PROVIDER') || 'fcm';
-    
+
     switch (providerName) {
       case 'fcm':
         this.provider = new FcmProvider(configService);
@@ -65,7 +65,9 @@ export class PushService {
 
     const outletKey = dto.outletId || dto.token;
     if (!outletKey) {
-      throw new BadRequestException('Не удалось определить идентификатор устройства');
+      throw new BadRequestException(
+        'Не удалось определить идентификатор устройства',
+      );
     }
 
     const deviceInfo = {
@@ -120,7 +122,9 @@ export class PushService {
     if (dto.type === 'MARKETING') {
       const hasFeature = await this.checkPushFeature(dto.merchantId);
       if (!hasFeature) {
-        throw new BadRequestException('Push-уведомления не доступны в вашем тарифном плане');
+        throw new BadRequestException(
+          'Push-уведомления не доступны в вашем тарифном плане',
+        );
       }
     }
 
@@ -187,13 +191,17 @@ export class PushService {
         }
 
         return result;
-      })
+      }),
     );
 
-    const successCount = results.filter(r => r.success).length;
+    const successCount = results.filter((r) => r.success).length;
 
     // Обновляем статистику
-    await this.updateStats(dto.merchantId, successCount, tokens.length - successCount);
+    await this.updateStats(
+      dto.merchantId,
+      successCount,
+      tokens.length - successCount,
+    );
 
     return {
       success: successCount > 0,
@@ -211,7 +219,7 @@ export class PushService {
     customerId: string,
     type: 'EARN' | 'REDEEM' | 'REFUND',
     amount: number,
-    balance: number
+    balance: number,
   ) {
     const merchant = await this.prisma.merchant.findUnique({
       where: { id: merchantId },
@@ -262,7 +270,7 @@ export class PushService {
     customerIds: string[],
     title: string,
     body: string,
-    image?: string
+    image?: string,
   ) {
     const promotion = await this.prisma.loyaltyPromotion.findUnique({
       where: { id: campaignId },
@@ -273,7 +281,8 @@ export class PushService {
       throw new BadRequestException('Кампания не найдена');
     }
 
-    const legacy = ((promotion.metadata as any)?.legacyCampaign ?? {}) as Record<string, any>;
+    const legacy = ((promotion.metadata as any)?.legacyCampaign ??
+      {}) as Record<string, any>;
 
     return this.sendPush({
       merchantId: promotion.merchantId,
@@ -293,9 +302,14 @@ export class PushService {
   /**
    * Отправка по топику
    */
-  async sendToTopic(merchantId: string, title: string, body: string, data?: Record<string, string>) {
+  async sendToTopic(
+    merchantId: string,
+    title: string,
+    body: string,
+    data?: Record<string, string>,
+  ) {
     const topic = `merchant_${merchantId}`;
-    
+
     const result = await this.provider.sendToTopic!(topic, {
       title,
       body,
@@ -345,7 +359,7 @@ export class PushService {
       },
     });
 
-    return devices.map(d => ({
+    return devices.map((d) => ({
       token: d.token,
       customerId: d.customerId,
       outletId: d.outletId,
@@ -425,11 +439,11 @@ export class PushService {
 
     const [total, sent, failed, byType, activeDevices] = await Promise.all([
       this.prisma.pushNotification.count({ where }),
-      this.prisma.pushNotification.count({ 
-        where: { ...where, status: 'sent' } 
+      this.prisma.pushNotification.count({
+        where: { ...where, status: 'sent' },
       }),
-      this.prisma.pushNotification.count({ 
-        where: { ...where, status: 'failed' } 
+      this.prisma.pushNotification.count({
+        where: { ...where, status: 'failed' },
       }),
       this.prisma.pushNotification.groupBy({
         by: ['type'],
@@ -449,12 +463,18 @@ export class PushService {
       sent,
       failed,
       deliveryRate: total > 0 ? Math.round((sent / total) * 100) : 0,
-      byType: byType.reduce((acc, item: any) => {
-        const key = (item?.type ?? 'UNKNOWN') as string;
-        const count = typeof item?._count === 'number' ? item._count : (item?._count?._all ?? 0);
-        acc[key] = Number(count) || 0;
-        return acc;
-      }, {} as Record<string, number>),
+      byType: byType.reduce(
+        (acc, item: any) => {
+          const key = (item?.type ?? 'UNKNOWN') as string;
+          const count =
+            typeof item?._count === 'number'
+              ? item._count
+              : (item?._count?._all ?? 0);
+          acc[key] = Number(count) || 0;
+          return acc;
+        },
+        {} as Record<string, number>,
+      ),
       activeDevices,
     };
   }
@@ -522,7 +542,9 @@ export class PushService {
   /**
    * Получить клиента с устройством
    */
-  async getCustomerWithDevice(customerId: string): Promise<{ customerId: string; merchantId: string } | null> {
+  async getCustomerWithDevice(
+    customerId: string,
+  ): Promise<{ customerId: string; merchantId: string } | null> {
     const prismaAny = this.prisma as any;
     const device = await prismaAny.pushDevice.findFirst({
       where: {
@@ -542,8 +564,9 @@ export class PushService {
       return null;
     }
 
-    const derivedMerchantId: string | null = device.merchantId || device.customer.wallets?.[0]?.merchantId || null;
+    const derivedMerchantId: string | null =
+      device.merchantId || device.customer.wallets?.[0]?.merchantId || null;
     if (!derivedMerchantId) return null;
-    return { customerId, merchantId: derivedMerchantId as string };
+    return { customerId, merchantId: derivedMerchantId };
   }
 }

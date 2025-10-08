@@ -38,9 +38,10 @@ describe('AntiFraudGuard', () => {
     else process.env.NODE_ENV = originalNodeEnv;
   });
 
-  const makeContext = (req: any): ExecutionContext => ({
-    switchToHttp: () => ({ getRequest: () => req }),
-  } as any);
+  const makeContext = (req: any): ExecutionContext =>
+    ({
+      switchToHttp: () => ({ getRequest: () => req }),
+    }) as any;
 
   it('блокирует коммит без outletId при включённом факторе', async () => {
     prisma.hold.findUnique.mockResolvedValue({
@@ -107,10 +108,12 @@ describe('AntiFraudGuard', () => {
 
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
     const countCalls = prisma.transaction.count.mock.calls;
-    expect(countCalls.some((args: any[]) => {
-      const where = args[0]?.where || {};
-      return where.outletId === 'O-1';
-    })).toBe(true);
+    expect(
+      countCalls.some((args: any[]) => {
+        const where = args[0]?.where || {};
+        return where.outletId === 'O-1';
+      }),
+    ).toBe(true);
     expect(alerts.antifraudBlocked).not.toHaveBeenCalled();
     expect(antifraud.checkTransaction).toHaveBeenCalledWith(
       expect.objectContaining({ outletId: 'O-1' }),

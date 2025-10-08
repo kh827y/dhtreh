@@ -12,8 +12,19 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
-import { ImportExportService, ImportCustomersDto, ExportCustomersDto } from './import-export.service';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiConsumes,
+  ApiBody,
+} from '@nestjs/swagger';
+import {
+  ImportExportService,
+  ImportCustomersDto,
+  ExportCustomersDto,
+} from './import-export.service';
 import { ApiKeyGuard } from '../guards/api-key.guard';
 
 @ApiTags('Import/Export')
@@ -95,7 +106,9 @@ export class ImportExportController {
       filters: {
         minBalance: minBalance ? parseInt(minBalance) : undefined,
         maxBalance: maxBalance ? parseInt(maxBalance) : undefined,
-        hasTransactions: hasTransactions ? hasTransactions === 'true' : undefined,
+        hasTransactions: hasTransactions
+          ? hasTransactions === 'true'
+          : undefined,
         createdFrom: createdFrom ? new Date(createdFrom) : undefined,
         createdTo: createdTo ? new Date(createdTo) : undefined,
       },
@@ -104,16 +117,23 @@ export class ImportExportController {
     const filename = `customers_${merchantId}_${Date.now()}.${format === 'csv' ? 'csv' : 'xlsx'}`;
 
     if (format === 'csv') {
-      const batch = Math.min(Math.max(parseInt(batchStr, 10) || 1000, 100), 5000);
+      const batch = Math.min(
+        Math.max(parseInt(batchStr, 10) || 1000, 100),
+        5000,
+      );
       res!.setHeader('Content-Type', 'text/csv; charset=utf-8');
-      res!.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res!.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${filename}"`,
+      );
       await this.importExportService.streamCustomersCsv(dto, res!, batch);
       return res!.end();
     }
 
     const buffer = await this.importExportService.exportCustomers(dto);
     res!.set({
-      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': `attachment; filename="${filename}"`,
       'Content-Length': buffer.length.toString(),
     });
@@ -142,7 +162,11 @@ export class ImportExportController {
     const filename = `transactions_${merchantId}_${Date.now()}.csv`;
     res!.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res!.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    await this.importExportService.streamTransactionsCsv({ merchantId, from, to, type, customerId, outletId, staffId }, res!, batch);
+    await this.importExportService.streamTransactionsCsv(
+      { merchantId, from, to, type, customerId, outletId, staffId },
+      res!,
+      batch,
+    );
     res!.end();
   }
 
@@ -197,12 +221,16 @@ export class ImportExportController {
     @Query('format') format: 'csv' | 'excel' = 'excel',
     @Res() res?: Response,
   ) {
-    const buffer = await this.importExportService.getImportTemplate(type, format);
+    const buffer = await this.importExportService.getImportTemplate(
+      type,
+      format,
+    );
 
     const filename = `template_${type}.${format === 'csv' ? 'csv' : 'xlsx'}`;
-    const contentType = format === 'csv' 
-      ? 'text/csv; charset=utf-8'
-      : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    const contentType =
+      format === 'csv'
+        ? 'text/csv; charset=utf-8'
+        : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
     res!.set({
       'Content-Type': contentType,
@@ -224,7 +252,8 @@ export class ImportExportController {
     @UploadedFile() file: any,
     @Body('merchantId') merchantId: string,
     @Body('format') format: 'csv' | 'excel',
-    @Body('operation') operation: 'add_points' | 'set_balance' | 'add_tags' | 'update_fields',
+    @Body('operation')
+    operation: 'add_points' | 'set_balance' | 'add_tags' | 'update_fields',
     @Body('value') value?: string,
   ) {
     if (!file) {

@@ -27,7 +27,11 @@ export interface OperationsLogItemDto {
   totalAmount: number;
   receiptNumber?: string | null;
   orderId: string;
-  carrier?: { type: string; code?: string | null; label?: string | null } | null;
+  carrier?: {
+    type: string;
+    code?: string | null;
+    label?: string | null;
+  } | null;
 }
 
 export interface OperationsLogListDto {
@@ -50,7 +54,10 @@ export interface OperationDetailsDto {
 export class OperationsLogService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(merchantId: string, filters: OperationsLogFilters): Promise<OperationsLogListDto> {
+  async list(
+    merchantId: string,
+    filters: OperationsLogFilters,
+  ): Promise<OperationsLogListDto> {
     const where: Prisma.ReceiptWhereInput = { merchantId };
 
     if (filters.from || filters.to) {
@@ -70,7 +77,10 @@ export class OperationsLogService {
     }
 
     if (filters.receiptNumber) {
-      where.receiptNumber = { contains: filters.receiptNumber, mode: 'insensitive' };
+      where.receiptNumber = {
+        contains: filters.receiptNumber,
+        mode: 'insensitive',
+      };
     }
 
     if (filters.direction === 'EARN') {
@@ -98,15 +108,23 @@ export class OperationsLogService {
       }),
     ]);
 
-    const ratings = await this.fetchRatings(merchantId, receipts.map(r => r.orderId).filter(Boolean) as string[]);
+    const ratings = await this.fetchRatings(
+      merchantId,
+      receipts.map((r) => r.orderId).filter(Boolean),
+    );
 
     return {
       total,
-      items: receipts.map(receipt => this.mapReceipt(receipt, ratings.get(receipt.orderId ?? '') ?? null)),
+      items: receipts.map((receipt) =>
+        this.mapReceipt(receipt, ratings.get(receipt.orderId ?? '') ?? null),
+      ),
     };
   }
 
-  async getDetails(merchantId: string, receiptId: string): Promise<OperationDetailsDto> {
+  async getDetails(
+    merchantId: string,
+    receiptId: string,
+  ): Promise<OperationDetailsDto> {
     const receipt = await this.prisma.receipt.findUnique({
       where: { id: receiptId },
       include: {
@@ -120,7 +138,10 @@ export class OperationsLogService {
       throw new NotFoundException('Операция не найдена');
     }
 
-    const ratings = await this.fetchRatings(merchantId, receipt.orderId ? [receipt.orderId] : []);
+    const ratings = await this.fetchRatings(
+      merchantId,
+      receipt.orderId ? [receipt.orderId] : [],
+    );
 
     const transactions = await this.prisma.transaction.findMany({
       where: { merchantId, orderId: receipt.orderId ?? undefined },
@@ -128,11 +149,14 @@ export class OperationsLogService {
       select: { id: true, type: true, amount: true, createdAt: true },
     });
 
-    const receiptDto = this.mapReceipt(receipt, ratings.get(receipt.orderId ?? '') ?? null);
+    const receiptDto = this.mapReceipt(
+      receipt,
+      ratings.get(receipt.orderId ?? '') ?? null,
+    );
 
     return {
       receipt: receiptDto,
-      transactions: transactions.map(tx => ({
+      transactions: transactions.map((tx) => ({
         id: tx.id,
         type: tx.type,
         amount: tx.amount,
@@ -150,7 +174,10 @@ export class OperationsLogService {
     return date;
   }
 
-  private async fetchRatings(merchantId: string, orderIds: string[]): Promise<Map<string, number>> {
+  private async fetchRatings(
+    merchantId: string,
+    orderIds: string[],
+  ): Promise<Map<string, number>> {
     if (!orderIds.length) {
       return new Map();
     }
@@ -170,22 +197,36 @@ export class OperationsLogService {
     return map;
   }
 
-  private mapReceipt(receipt: Prisma.ReceiptGetPayload<{ include: { customer: true; staff: true; outlet: true } }>, rating: number | null): OperationsLogItemDto {
+  private mapReceipt(
+    receipt: Prisma.ReceiptGetPayload<{
+      include: { customer: true; staff: true; outlet: true };
+    }>,
+    rating: number | null,
+  ): OperationsLogItemDto {
     const staffName = receipt.staff
-      ? [receipt.staff.firstName, receipt.staff.lastName].filter(Boolean).join(' ').trim() || receipt.staff.id
+      ? [receipt.staff.firstName, receipt.staff.lastName]
+          .filter(Boolean)
+          .join(' ')
+          .trim() || receipt.staff.id
       : null;
 
     return {
       id: receipt.id,
       occurredAt: receipt.createdAt.toISOString(),
-      outlet: receipt.outlet ? { id: receipt.outlet.id, name: receipt.outlet.name } : null,
+      outlet: receipt.outlet
+        ? { id: receipt.outlet.id, name: receipt.outlet.name }
+        : null,
       customer: {
         id: receipt.customer.id,
         name: receipt.customer.name ?? null,
         phone: receipt.customer.phone ?? null,
       },
       staff: receipt.staff
-        ? { id: receipt.staff.id, name: staffName, status: receipt.staff.status }
+        ? {
+            id: receipt.staff.id,
+            name: staffName,
+            status: receipt.staff.status,
+          }
         : null,
       rating,
       redeem: {
@@ -203,12 +244,17 @@ export class OperationsLogService {
     };
   }
 
-  private buildCarrier(receipt: Prisma.ReceiptGetPayload<{ include: { customer: true; outlet: true } }>): OperationsLogItemDto['carrier'] {
+  private buildCarrier(
+    receipt: Prisma.ReceiptGetPayload<{
+      include: { customer: true; outlet: true };
+    }>,
+  ): OperationsLogItemDto['carrier'] {
     if (receipt.outlet) {
       const posType = (receipt.outlet.posType as string | null) ?? null;
       return {
         type: posType ?? 'OUTLET',
-        code: receipt.outlet.code ?? receipt.outlet.externalId ?? receipt.outlet.id,
+        code:
+          receipt.outlet.code ?? receipt.outlet.externalId ?? receipt.outlet.id,
         label: receipt.outlet.name ?? null,
       };
     }

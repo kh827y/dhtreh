@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 import { MetricsService } from './metrics.service';
 
@@ -14,14 +19,27 @@ export class TtlBurnWorker implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
-    if (process.env.WORKERS_ENABLED === '0') { this.logger.log('Workers disabled (WORKERS_ENABLED=0)'); return; }
-    const intervalMs = Number(process.env.TTL_BURN_INTERVAL_MS || String(24 * 60 * 60 * 1000)); // default daily
-    this.timer = setInterval(() => this.processTtlBurn().catch(() => {}), intervalMs);
-    try { if (this.timer && typeof this.timer.unref === 'function') this.timer.unref(); } catch {}
+    if (process.env.WORKERS_ENABLED === '0') {
+      this.logger.log('Workers disabled (WORKERS_ENABLED=0)');
+      return;
+    }
+    const intervalMs = Number(
+      process.env.TTL_BURN_INTERVAL_MS || String(24 * 60 * 60 * 1000),
+    ); // default daily
+    this.timer = setInterval(
+      () => this.processTtlBurn().catch(() => {}),
+      intervalMs,
+    );
+    try {
+      if (this.timer && typeof this.timer.unref === 'function')
+        this.timer.unref();
+    } catch {}
     this.logger.log(`TtlBurnWorker started, interval=${intervalMs}ms`);
   }
 
-  onModuleDestroy() { if (this.timer) clearInterval(this.timer); }
+  onModuleDestroy() {
+    if (this.timer) clearInterval(this.timer);
+  }
 
   async processTtlBurn() {
     if (process.env.TTL_BURN_ENABLED !== '1') return;
@@ -32,12 +50,14 @@ export class TtlBurnWorker implements OnModuleInit, OnModuleDestroy {
 
     this.isRunning = true;
     const startTime = Date.now();
-    
+
     try {
       this.logger.log('Starting TTL burn process');
-      
+
       // Get all merchants with TTL configured
-      const merchants = await this.prisma.merchantSettings.findMany({ where: { pointsTtlDays: { gt: 0 as any } } as any });
+      const merchants = await this.prisma.merchantSettings.findMany({
+        where: { pointsTtlDays: { gt: 0 as any } } as any,
+      });
 
       for (const merchant of merchants) {
         try {
@@ -89,19 +109,31 @@ export class TtlBurnWorker implements OnModuleInit, OnModuleDestroy {
     for (const [customerId, burnAmount] of burnByCustomer) {
       await this.prisma.$transaction(async (tx) => {
         // Update wallet balance
-        const wallet = await tx.wallet.findFirst({ where: { merchantId, customerId, type: 'POINTS' } });
+        const wallet = await tx.wallet.findFirst({
+          where: { merchantId, customerId, type: 'POINTS' },
+        });
         if (!wallet || (wallet.balance ?? 0) < burnAmount) {
-          this.logger.warn(`Skipping burn for ${customerId}: wallet balance ${wallet?.balance} < burn amount ${burnAmount}`);
+          this.logger.warn(
+            `Skipping burn for ${customerId}: wallet balance ${wallet?.balance} < burn amount ${burnAmount}`,
+          );
           return;
         }
 
         // Update wallet
-        await tx.wallet.update({ where: { id: wallet.id }, data: { balance: { decrement: burnAmount } } });
+        await tx.wallet.update({
+          where: { id: wallet.id },
+          data: { balance: { decrement: burnAmount } },
+        });
 
         // Mark lots as fully consumed
-        const lotsToUpdate = expiredLots.filter(l => l.customerId === customerId);
+        const lotsToUpdate = expiredLots.filter(
+          (l) => l.customerId === customerId,
+        );
         for (const lot of lotsToUpdate) {
-          await tx.earnLot.update({ where: { id: lot.id }, data: { consumedPoints: lot.points } });
+          await tx.earnLot.update({
+            where: { id: lot.id },
+            data: { consumedPoints: lot.points },
+          });
         }
 
         // Create outbox event
@@ -120,12 +152,16 @@ export class TtlBurnWorker implements OnModuleInit, OnModuleDestroy {
           },
         });
 
-        this.logger.log(`Burned ${burnAmount} points for customer ${customerId} (merchant: ${merchantId})`);
+        this.logger.log(
+          `Burned ${burnAmount} points for customer ${customerId} (merchant: ${merchantId})`,
+        );
         this.metrics.inc('loyalty_ttl_points_burned_total', {}, burnAmount);
       });
     }
 
-    this.logger.log(`Processed TTL burn for merchant ${merchantId}: ${burnByCustomer.size} customers affected`);
+    this.logger.log(
+      `Processed TTL burn for merchant ${merchantId}: ${burnByCustomer.size} customers affected`,
+    );
   }
 
   // Manual trigger for testing

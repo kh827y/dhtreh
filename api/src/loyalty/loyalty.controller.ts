@@ -1,9 +1,49 @@
-import { Body, Controller, Post, Get, Param, Query, BadRequestException, Res, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
-import { ApiBadRequestResponse, ApiExtraModels, ApiHeader, ApiOkResponse, ApiTags, ApiUnauthorizedResponse, getSchemaPath } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Post,
+  Get,
+  Param,
+  Query,
+  BadRequestException,
+  Res,
+  Req,
+  UnauthorizedException,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiBadRequestResponse,
+  ApiExtraModels,
+  ApiHeader,
+  ApiOkResponse,
+  ApiTags,
+  ApiUnauthorizedResponse,
+  getSchemaPath,
+} from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { LoyaltyService } from './loyalty.service';
 import { MerchantsService } from '../merchants/merchants.service';
-import { CommitDto, QrMintDto, QuoteDto, RefundDto, QuoteRedeemRespDto, QuoteEarnRespDto, CommitRespDto, RefundRespDto, QrMintRespDto, OkDto, BalanceDto, PublicSettingsDto, TransactionsRespDto, PublicOutletDto, PublicStaffDto, ConsentGetRespDto, ErrorDto, CustomerProfileDto, CustomerProfileSaveDto } from './dto';
+import {
+  CommitDto,
+  QrMintDto,
+  QuoteDto,
+  RefundDto,
+  QuoteRedeemRespDto,
+  QuoteEarnRespDto,
+  CommitRespDto,
+  RefundRespDto,
+  QrMintRespDto,
+  OkDto,
+  BalanceDto,
+  PublicSettingsDto,
+  TransactionsRespDto,
+  PublicOutletDto,
+  PublicStaffDto,
+  ConsentGetRespDto,
+  ErrorDto,
+  CustomerProfileDto,
+  CustomerProfileSaveDto,
+} from './dto';
 import { looksLikeJwt, signQrToken, verifyQrToken } from './token.util';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
@@ -18,7 +58,13 @@ import { PromosService } from '../promos/promos.service';
 import { PromoCodesService } from '../promocodes/promocodes.service';
 import { ReviewService } from '../reviews/review.service';
 import type { MerchantSettings } from '@prisma/client';
-import { LedgerAccount, TxnType, WalletType, PromotionStatus, PromotionRewardType } from '@prisma/client';
+import {
+  LedgerAccount,
+  TxnType,
+  WalletType,
+  PromotionStatus,
+  PromotionRewardType,
+} from '@prisma/client';
 
 @Controller('loyalty')
 @UseGuards(CashierGuard)
@@ -39,7 +85,9 @@ export class LoyaltyController {
     if (!merchantId) return null;
     if (outletId) {
       try {
-        const found = await this.prisma.outlet.findFirst({ where: { id: outletId, merchantId } });
+        const found = await this.prisma.outlet.findFirst({
+          where: { id: outletId, merchantId },
+        });
         if (found) return found;
       } catch {}
     }
@@ -47,19 +95,27 @@ export class LoyaltyController {
   }
 
   // Проверка, что customer принадлежит merchant (через CustomerTelegram или любые артефакты)
-  private async ensureCustomerForMerchant(merchantId: string, customerId: string) {
+  private async ensureCustomerForMerchant(
+    merchantId: string,
+    customerId: string,
+  ) {
     const mid = typeof merchantId === 'string' ? merchantId.trim() : '';
     const cid = typeof customerId === 'string' ? customerId.trim() : '';
     if (!mid) throw new BadRequestException('merchantId required');
     if (!cid) throw new BadRequestException('customerId required');
-    const customer = await this.prisma.customer.findUnique({ where: { id: cid } });
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: cid },
+    });
     if (!customer) throw new BadRequestException('customer not found');
 
     // 1) Прямая привязка через CustomerTelegram
     try {
-      const telegramLink = await (this.prisma as any).customerTelegram?.findUnique?.({ where: { customerId: cid } }).catch(() => null);
+      const telegramLink = await (this.prisma as any).customerTelegram
+        ?.findUnique?.({ where: { customerId: cid } })
+        .catch(() => null);
       if (telegramLink) {
-        if (telegramLink.merchantId !== mid) throw new BadRequestException('customer belongs to another merchant');
+        if (telegramLink.merchantId !== mid)
+          throw new BadRequestException('customer belongs to another merchant');
         return customer;
       }
     } catch (error) {
@@ -68,16 +124,23 @@ export class LoyaltyController {
 
     // 2) Косвенная принадлежность (кошельки/холды/транзакции/consent)
     const [wallet, hold, txn, consent] = await Promise.all([
-      this.prisma.wallet.findFirst({ where: { merchantId: mid, customerId: cid } }),
-      this.prisma.hold.findFirst({ where: { merchantId: mid, customerId: cid } }),
-      this.prisma.transaction.findFirst({ where: { merchantId: mid, customerId: cid } }),
-      this.prisma.consent.findFirst({ where: { merchantId: mid, customerId: cid } }),
+      this.prisma.wallet.findFirst({
+        where: { merchantId: mid, customerId: cid },
+      }),
+      this.prisma.hold.findFirst({
+        where: { merchantId: mid, customerId: cid },
+      }),
+      this.prisma.transaction.findFirst({
+        where: { merchantId: mid, customerId: cid },
+      }),
+      this.prisma.consent.findFirst({
+        where: { merchantId: mid, customerId: cid },
+      }),
     ]);
-    if (!(wallet || hold || txn || consent)) throw new BadRequestException('customer does not belong to merchant');
+    if (!(wallet || hold || txn || consent))
+      throw new BadRequestException('customer does not belong to merchant');
     return customer;
   }
-
-  
 
   // ===== Promotions (miniapp public) =====
   @Get('promotions')
@@ -96,16 +159,31 @@ export class LoyaltyController {
         merchantId: mid,
         status: { in: ['ACTIVE', 'SCHEDULED'] as any },
         AND: [
-          { OR: [{ startAt: null }, { startAt: { lte: now } }, { status: 'SCHEDULED' as any }] },
+          {
+            OR: [
+              { startAt: null },
+              { startAt: { lte: now } },
+              { status: 'SCHEDULED' as any },
+            ],
+          },
           { OR: [{ endAt: null }, { endAt: { gte: now } }] },
-          { OR: [{ segmentId: null }, { audience: { customers: { some: { customerId: cid } } } }] },
+          {
+            OR: [
+              { segmentId: null },
+              { audience: { customers: { some: { customerId: cid } } } },
+            ],
+          },
         ],
       },
       orderBy: { createdAt: 'desc' },
       include: { metrics: true },
     });
     const existing = await this.prisma.promotionParticipant.findMany({
-      where: { merchantId: mid, customerId: cid, promotionId: { in: promos.map((p) => p.id) } },
+      where: {
+        merchantId: mid,
+        customerId: cid,
+        promotionId: { in: promos.map((p) => p.id) },
+      },
       select: { promotionId: true },
     });
     const claimedSet = new Set(existing.map((e) => e.promotionId));
@@ -118,7 +196,11 @@ export class LoyaltyController {
       startAt: p.startAt ? p.startAt.toISOString() : null,
       endAt: p.endAt ? p.endAt.toISOString() : null,
       pointsExpireInDays: p.pointsExpireInDays ?? null,
-      canClaim: p.status === PromotionStatus.ACTIVE && p.rewardType === PromotionRewardType.POINTS && (p.rewardValue ?? 0) > 0 && !claimedSet.has(p.id),
+      canClaim:
+        p.status === PromotionStatus.ACTIVE &&
+        p.rewardType === PromotionRewardType.POINTS &&
+        (p.rewardValue ?? 0) > 0 &&
+        !claimedSet.has(p.id),
       claimed: claimedSet.has(p.id),
     }));
   }
@@ -135,36 +217,58 @@ export class LoyaltyController {
       staffId?: string | null;
     },
   ) {
-    const merchantId = typeof body?.merchantId === 'string' ? body.merchantId.trim() : '';
-    const customerId = typeof body?.customerId === 'string' ? body.customerId.trim() : '';
-    const promotionId = typeof body?.promotionId === 'string' ? body.promotionId.trim() : '';
-    const outletId = typeof body?.outletId === 'string' && body.outletId.trim() ? body.outletId.trim() : null;
-    const staffId = typeof body?.staffId === 'string' && body.staffId.trim() ? body.staffId.trim() : null;
+    const merchantId =
+      typeof body?.merchantId === 'string' ? body.merchantId.trim() : '';
+    const customerId =
+      typeof body?.customerId === 'string' ? body.customerId.trim() : '';
+    const promotionId =
+      typeof body?.promotionId === 'string' ? body.promotionId.trim() : '';
+    const outletId =
+      typeof body?.outletId === 'string' && body.outletId.trim()
+        ? body.outletId.trim()
+        : null;
+    const staffId =
+      typeof body?.staffId === 'string' && body.staffId.trim()
+        ? body.staffId.trim()
+        : null;
     if (!merchantId) throw new BadRequestException('merchantId required');
     if (!customerId) throw new BadRequestException('customerId required');
     if (!promotionId) throw new BadRequestException('promotionId required');
 
     const now = new Date();
     return this.prisma.$transaction(async (tx) => {
-      const promo = await tx.loyaltyPromotion.findFirst({ where: { id: promotionId, merchantId } });
+      const promo = await tx.loyaltyPromotion.findFirst({
+        where: { id: promotionId, merchantId },
+      });
       if (!promo) throw new BadRequestException('promotion not found');
-      if (promo.status !== PromotionStatus.ACTIVE) throw new BadRequestException('promotion is not active');
-      if (promo.startAt && promo.startAt > now) throw new BadRequestException('promotion not started yet');
-      if (promo.endAt && promo.endAt < now) throw new BadRequestException('promotion ended');
-      if (promo.rewardType !== PromotionRewardType.POINTS) throw new BadRequestException('promotion is not points type');
+      if (promo.status !== PromotionStatus.ACTIVE)
+        throw new BadRequestException('promotion is not active');
+      if (promo.startAt && promo.startAt > now)
+        throw new BadRequestException('promotion not started yet');
+      if (promo.endAt && promo.endAt < now)
+        throw new BadRequestException('promotion ended');
+      if (promo.rewardType !== PromotionRewardType.POINTS)
+        throw new BadRequestException('promotion is not points type');
       const points = Math.max(0, Math.floor(Number(promo.rewardValue ?? 0)));
-      if (!Number.isFinite(points) || points <= 0) throw new BadRequestException('invalid reward value');
+      if (!Number.isFinite(points) || points <= 0)
+        throw new BadRequestException('invalid reward value');
 
       // audience check
       if (promo.segmentId) {
-        const inSeg = await tx.segmentCustomer.findFirst({ where: { segmentId: promo.segmentId, customerId } });
+        const inSeg = await tx.segmentCustomer.findFirst({
+          where: { segmentId: promo.segmentId, customerId },
+        });
         if (!inSeg) throw new BadRequestException('not eligible for promotion');
       }
 
       // idempotency: if already participated — return alreadyClaimed
-      const existing = await tx.promotionParticipant.findFirst({ where: { merchantId, promotionId, customerId } });
+      const existing = await tx.promotionParticipant.findFirst({
+        where: { merchantId, promotionId, customerId },
+      });
       if (existing) {
-        const walletEx = await tx.wallet.findFirst({ where: { merchantId, customerId, type: WalletType.POINTS } });
+        const walletEx = await tx.wallet.findFirst({
+          where: { merchantId, customerId, type: WalletType.POINTS },
+        });
         return {
           ok: true,
           alreadyClaimed: true,
@@ -175,9 +279,13 @@ export class LoyaltyController {
       }
 
       // Ensure wallet
-      let wallet = await tx.wallet.findFirst({ where: { merchantId, customerId, type: WalletType.POINTS } });
+      let wallet = await tx.wallet.findFirst({
+        where: { merchantId, customerId, type: WalletType.POINTS },
+      });
       if (!wallet) {
-        wallet = await tx.wallet.create({ data: { merchantId, customerId, type: WalletType.POINTS, balance: 0 } });
+        wallet = await tx.wallet.create({
+          data: { merchantId, customerId, type: WalletType.POINTS, balance: 0 },
+        });
       }
 
       // Update balance
@@ -216,7 +324,11 @@ export class LoyaltyController {
           },
         });
         this.metrics.inc('loyalty_ledger_entries_total', { type: 'earn' });
-        this.metrics.inc('loyalty_ledger_amount_total', { type: 'earn' }, points);
+        this.metrics.inc(
+          'loyalty_ledger_amount_total',
+          { type: 'earn' },
+          points,
+        );
       }
 
       // Earn lot (optional)
@@ -232,7 +344,9 @@ export class LoyaltyController {
               consumedPoints: 0,
               earnedAt: new Date(),
               maturesAt: null,
-              expiresAt: expireDays ? new Date(Date.now() + expireDays * 24 * 60 * 60 * 1000) : null,
+              expiresAt: expireDays
+                ? new Date(Date.now() + expireDays * 24 * 60 * 60 * 1000)
+                : null,
               orderId: null,
               receiptId: null,
               outletId,
@@ -258,8 +372,16 @@ export class LoyaltyController {
       try {
         await tx.loyaltyPromotionMetric.upsert({
           where: { promotionId },
-          create: { promotionId, merchantId, participantsCount: 1, pointsIssued: points },
-          update: { participantsCount: { increment: 1 }, pointsIssued: { increment: points } },
+          create: {
+            promotionId,
+            merchantId,
+            participantsCount: 1,
+            pointsIssued: points,
+          },
+          update: {
+            participantsCount: { increment: 1 },
+            pointsIssued: { increment: points },
+          },
         });
       } catch {}
 
@@ -269,7 +391,11 @@ export class LoyaltyController {
         promotionId,
         pointsIssued: points,
         pointsExpireInDays: expireDays,
-        pointsExpireAt: expireDays ? new Date(Date.now() + expireDays * 24 * 60 * 60 * 1000).toISOString() : null,
+        pointsExpireAt: expireDays
+          ? new Date(
+              Date.now() + expireDays * 24 * 60 * 60 * 1000,
+            ).toISOString()
+          : null,
         balance,
       } as const;
     });
@@ -291,7 +417,11 @@ export class LoyaltyController {
       }>;
     } | null;
   }> {
-    const settings = settingsHint ?? (await this.prisma.merchantSettings.findUnique({ where: { merchantId } }));
+    const settings =
+      settingsHint ??
+      (await this.prisma.merchantSettings.findUnique({
+        where: { merchantId },
+      }));
     const rules =
       settings?.rulesJson && typeof settings.rulesJson === 'object'
         ? (settings.rulesJson as Record<string, any>)
@@ -313,12 +443,16 @@ export class LoyaltyController {
     const normalizePlatformOutlets = (cfg: any) => {
       const map = new Map<string, string>();
       const push = (outletIdRaw: unknown, value: unknown) => {
-        const outletId = typeof outletIdRaw === 'string' ? outletIdRaw.trim() : '';
+        const outletId =
+          typeof outletIdRaw === 'string' ? outletIdRaw.trim() : '';
         const urlCandidate =
           typeof value === 'string'
             ? value
             : value && typeof value === 'object'
-              ? ((value as any).url ?? (value as any).link ?? (value as any).href ?? '')
+              ? ((value as any).url ??
+                (value as any).link ??
+                (value as any).href ??
+                '')
               : '';
         const url = typeof urlCandidate === 'string' ? urlCandidate.trim() : '';
         if (!outletId || !url) return;
@@ -331,7 +465,7 @@ export class LoyaltyController {
         if (Array.isArray(source)) {
           for (const entry of source) {
             if (!entry || typeof entry !== 'object') continue;
-            push((entry as any).outletId ?? (entry as any).id, (entry as any).url ?? (entry as any).link ?? entry);
+            push(entry.outletId ?? entry.id, entry.url ?? entry.link ?? entry);
           }
           return;
         }
@@ -339,7 +473,10 @@ export class LoyaltyController {
           if (typeof value === 'string') {
             push(key, value);
           } else if (value && typeof value === 'object') {
-            push((value as any).outletId ?? key, (value as any).url ?? (value as any).link ?? null);
+            push(
+              (value as any).outletId ?? key,
+              (value as any).url ?? (value as any).link ?? null,
+            );
           }
         }
       };
@@ -349,7 +486,8 @@ export class LoyaltyController {
       collect(cfg?.urls);
       if (!map.size && cfg && typeof cfg === 'object' && !Array.isArray(cfg)) {
         for (const [key, value] of Object.entries(cfg)) {
-          if (['enabled', 'url', 'threshold', 'platforms'].includes(key)) continue;
+          if (['enabled', 'url', 'threshold', 'platforms'].includes(key))
+            continue;
           if (typeof value === 'string') {
             push(key, value);
           } else if (value && typeof value === 'object') {
@@ -357,7 +495,10 @@ export class LoyaltyController {
           }
         }
       }
-      return Array.from(map.entries()).map(([outletId, url]) => ({ outletId, url }));
+      return Array.from(map.entries()).map(([outletId, url]) => ({
+        outletId,
+        url,
+      }));
     };
 
     const platformConfigMap = new Map<string, Record<string, any>>();
@@ -370,11 +511,20 @@ export class LoyaltyController {
       }
     }
 
-    const outletLinkMap = new Map<string, Array<{ outletId: string; url: string }>>();
-    const pushOutletLink = (platformId: string, outletId: string, url: string) => {
+    const outletLinkMap = new Map<
+      string,
+      Array<{ outletId: string; url: string }>
+    >();
+    const pushOutletLink = (
+      platformId: string,
+      outletId: string,
+      url: string,
+    ) => {
       if (!platformId || !outletId || !url) return;
       const list = outletLinkMap.get(platformId) ?? [];
-      const existingIndex = list.findIndex((entry) => entry.outletId === outletId);
+      const existingIndex = list.findIndex(
+        (entry) => entry.outletId === outletId,
+      );
       if (existingIndex >= 0) {
         list[existingIndex] = { outletId, url };
       } else {
@@ -402,7 +552,8 @@ export class LoyaltyController {
           : {};
       const links: Record<string, string> = {};
       for (const [platformIdRaw, value] of Object.entries(source)) {
-        const platformId = typeof platformIdRaw === 'string' ? platformIdRaw.trim() : '';
+        const platformId =
+          typeof platformIdRaw === 'string' ? platformIdRaw.trim() : '';
         if (!platformId) continue;
         if (typeof value === 'string') {
           const trimmed = value.trim();
@@ -435,11 +586,17 @@ export class LoyaltyController {
 
     const platforms = orderedIds.map((id) => {
       const cfg = platformConfigMap.get(id);
-      const urlRaw = cfg && typeof (cfg as any).url === 'string' ? (cfg as any).url.trim() : '';
+      const urlRaw =
+        cfg && typeof (cfg as any).url === 'string'
+          ? (cfg as any).url.trim()
+          : '';
       const url = urlRaw || null;
       const outletsList = outletLinkMap.get(id) ?? [];
-      const hasExplicitPlatformEnabled = cfg != null && Object.prototype.hasOwnProperty.call(cfg, 'enabled');
-      const platformEnabled = hasExplicitPlatformEnabled ? Boolean((cfg as any).enabled) : true;
+      const hasExplicitPlatformEnabled =
+        cfg != null && Object.prototype.hasOwnProperty.call(cfg, 'enabled');
+      const platformEnabled = hasExplicitPlatformEnabled
+        ? Boolean((cfg as any).enabled)
+        : true;
       const enabled = shareEnabled && platformEnabled;
       return { id, enabled, url, outlets: outletsList };
     });
@@ -455,31 +612,34 @@ export class LoyaltyController {
   }
 
   private buildShareOptions(
-    share:
-      | null
-      | {
-          enabled: boolean;
-          threshold: number;
-          platforms: Array<{
-            id: string;
-            enabled: boolean;
-            url: string | null;
-            outlets: Array<{ outletId: string; url: string }>;
-          }>;
-        },
+    share: null | {
+      enabled: boolean;
+      threshold: number;
+      platforms: Array<{
+        id: string;
+        enabled: boolean;
+        url: string | null;
+        outlets: Array<{ outletId: string; url: string }>;
+      }>;
+    },
     outletId?: string | null,
   ): Array<{ id: string; url: string }> {
     // Показывать ссылки только для конкретной торговой точки.
     // Без фоллбеков на другие точки или platform.url — строго соответствуем требованиям задачи.
     if (!share || !share.enabled) return [];
-    const normalizedOutletId = typeof outletId === 'string' && outletId.trim() ? outletId.trim() : null;
+    const normalizedOutletId =
+      typeof outletId === 'string' && outletId.trim() ? outletId.trim() : null;
     if (!normalizedOutletId) return [];
     const result: Array<{ id: string; url: string }> = [];
     for (const platform of share.platforms) {
       if (!platform || !platform.enabled) continue;
       const outlets = Array.isArray(platform.outlets) ? platform.outlets : [];
       const outletMatch = outlets.find(
-        (item) => item && item.outletId === normalizedOutletId && typeof item.url === 'string' && item.url.trim(),
+        (item) =>
+          item &&
+          item.outletId === normalizedOutletId &&
+          typeof item.url === 'string' &&
+          item.url.trim(),
       );
       if (!outletMatch) continue;
       result.push({ id: platform.id, url: outletMatch.url.trim() });
@@ -496,16 +656,28 @@ export class LoyaltyController {
         return v; // { customerId, merchantAud, jti, iat, exp }
       } catch (e: any) {
         const code = e?.code || e?.name || '';
-        const msg  = String(e?.message || e || '');
-        if (code === 'ERR_JWT_EXPIRED' || /JWTExpired/i.test(code) || /"exp"/i.test(msg)) {
+        const msg = String(e?.message || e || '');
+        if (
+          code === 'ERR_JWT_EXPIRED' ||
+          /JWTExpired/i.test(code) ||
+          /"exp"/i.test(msg)
+        ) {
           // отдадим 400 с предсказуемым текстом, чтобы фронт показал «QR истёк»
-          throw new BadRequestException('JWTExpired: "exp" claim timestamp check failed');
+          throw new BadRequestException(
+            'JWTExpired: "exp" claim timestamp check failed',
+          );
         }
         throw new BadRequestException('Bad QR token');
       }
     }
     const now = Math.floor(Date.now() / 1000);
-    return { customerId: userToken, merchantAud: undefined, jti: `plain:${userToken}:${now}`, iat: now, exp: now + 3600 };
+    return {
+      customerId: userToken,
+      merchantAud: undefined,
+      jti: `plain:${userToken}:${now}`,
+      iat: now,
+      exp: now + 3600,
+    };
   }
 
   @Post('reviews')
@@ -526,29 +698,41 @@ export class LoyaltyController {
       staffId?: string | null;
     },
   ) {
-    const merchantId = typeof body?.merchantId === 'string' ? body.merchantId.trim() : '';
+    const merchantId =
+      typeof body?.merchantId === 'string' ? body.merchantId.trim() : '';
     if (!merchantId) throw new BadRequestException('merchantId is required');
 
-    const customerId = typeof body?.customerId === 'string' ? body.customerId.trim() : '';
+    const customerId =
+      typeof body?.customerId === 'string' ? body.customerId.trim() : '';
     if (!customerId) throw new BadRequestException('customerId is required');
 
-    const ratingRaw = typeof body?.rating === 'string' ? Number(body.rating) : body?.rating;
-    if (!Number.isFinite(ratingRaw)) throw new BadRequestException('rating is required');
+    const ratingRaw =
+      typeof body?.rating === 'string' ? Number(body.rating) : body?.rating;
+    if (!Number.isFinite(ratingRaw))
+      throw new BadRequestException('rating is required');
     const rating = Math.round(Number(ratingRaw));
-    if (rating < 1 || rating > 5) throw new BadRequestException('rating must be between 1 and 5');
+    if (rating < 1 || rating > 5)
+      throw new BadRequestException('rating must be between 1 and 5');
 
-    const comment = typeof body?.comment === 'string' ? body.comment.trim() : '';
-    const orderIdRaw = typeof body?.orderId === 'string' ? body.orderId.trim() : '';
+    const comment =
+      typeof body?.comment === 'string' ? body.comment.trim() : '';
+    const orderIdRaw =
+      typeof body?.orderId === 'string' ? body.orderId.trim() : '';
     const orderId = orderIdRaw.length > 0 ? orderIdRaw : undefined;
     const transactionIdRaw =
       typeof body?.transactionId === 'string' ? body.transactionId.trim() : '';
-    const transactionId = transactionIdRaw.length > 0 ? transactionIdRaw : undefined;
-    const outletIdRaw = typeof body?.outletId === 'string' ? body.outletId.trim() : '';
+    const transactionId =
+      transactionIdRaw.length > 0 ? transactionIdRaw : undefined;
+    const outletIdRaw =
+      typeof body?.outletId === 'string' ? body.outletId.trim() : '';
     const outletId = outletIdRaw.length > 0 ? outletIdRaw : undefined;
-    const staffIdRaw = typeof body?.staffId === 'string' ? body.staffId.trim() : '';
+    const staffIdRaw =
+      typeof body?.staffId === 'string' ? body.staffId.trim() : '';
     const staffId = staffIdRaw.length > 0 ? staffIdRaw : undefined;
     if (!orderId && !transactionId) {
-      throw new BadRequestException('transactionId или orderId обязательны для отзыва');
+      throw new BadRequestException(
+        'transactionId или orderId обязательны для отзыва',
+      );
     }
     const titleRaw = typeof body?.title === 'string' ? body.title.trim() : '';
     const title = titleRaw.length > 0 ? titleRaw : undefined;
@@ -608,16 +792,20 @@ export class LoyaltyController {
     // Наблюдаемость: метрика решения по второму шагу (share)
     try {
       const hasOutlet = !!outletId;
-      const enabled = !!(sharePayload?.enabled);
+      const enabled = !!sharePayload?.enabled;
       const threshold = sharePayload?.threshold ?? 5;
       const hasOptions = (sharePayload?.options?.length ?? 0) > 0;
-      const outcomeShown = hasOutlet && enabled && rating >= threshold && hasOptions;
+      const outcomeShown =
+        hasOutlet && enabled && rating >= threshold && hasOptions;
       let reason = 'ok';
       if (!hasOutlet) reason = 'no_outlet';
       else if (!enabled) reason = 'disabled';
       else if (rating < threshold) reason = 'low_rating';
       else if (!hasOptions) reason = 'no_options';
-      this.metrics.inc('reviews_share_stage_total', { outcome: outcomeShown ? 'shown' : 'hidden', reason });
+      this.metrics.inc('reviews_share_stage_total', {
+        outcome: outcomeShown ? 'shown' : 'hidden',
+        reason,
+      });
     } catch {}
 
     return {
@@ -633,52 +821,117 @@ export class LoyaltyController {
   // ===== Cashier Auth (public) =====
   @Post('cashier/login')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
-  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' }, merchantId: { type: 'string' } } } })
-  async cashierLogin(@Body() body: { merchantLogin?: string; password9?: string }) {
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: { ok: { type: 'boolean' }, merchantId: { type: 'string' } },
+    },
+  })
+  async cashierLogin(
+    @Body() body: { merchantLogin?: string; password9?: string },
+  ) {
     const merchantLogin = String(body?.merchantLogin || '');
     const password9 = String(body?.password9 || '');
-    if (!merchantLogin || !password9 || password9.length !== 9) throw new BadRequestException('merchantLogin and 9-digit password required');
-    const r = await this.merchants.authenticateCashier(merchantLogin, password9);
+    if (!merchantLogin || !password9 || password9.length !== 9)
+      throw new BadRequestException(
+        'merchantLogin and 9-digit password required',
+      );
+    const r = await this.merchants.authenticateCashier(
+      merchantLogin,
+      password9,
+    );
     return { ok: true, merchantId: r.merchantId } as any;
   }
   @Post('cashier/staff-token')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
-  @ApiOkResponse({ schema: { type: 'object', properties: { token: { type: 'string' } } } })
-  async cashierStaffToken(@Body() body: { merchantLogin?: string; password9?: string; staffIdOrLogin?: string; outletId?: string; pinCode?: string }) {
+  @ApiOkResponse({
+    schema: { type: 'object', properties: { token: { type: 'string' } } },
+  })
+  async cashierStaffToken(
+    @Body()
+    body: {
+      merchantLogin?: string;
+      password9?: string;
+      staffIdOrLogin?: string;
+      outletId?: string;
+      pinCode?: string;
+    },
+  ) {
     const merchantLogin = String(body?.merchantLogin || '');
     const password9 = String(body?.password9 || '');
-    const staffIdOrLogin = body?.staffIdOrLogin != null ? String(body.staffIdOrLogin) : '';
+    const staffIdOrLogin =
+      body?.staffIdOrLogin != null ? String(body.staffIdOrLogin) : '';
     const outletId = String(body?.outletId || '');
     const pinCode = String(body?.pinCode || '');
-    if (!merchantLogin || !password9 || password9.length !== 9) throw new BadRequestException('merchantLogin and 9-digit password required');
+    if (!merchantLogin || !password9 || password9.length !== 9)
+      throw new BadRequestException(
+        'merchantLogin and 9-digit password required',
+      );
     if (!outletId) throw new BadRequestException('outletId required');
     if (!pinCode) throw new BadRequestException('pinCode required');
-    return this.merchants.issueStaffTokenByPin(merchantLogin, password9, staffIdOrLogin, outletId, pinCode);
+    return this.merchants.issueStaffTokenByPin(
+      merchantLogin,
+      password9,
+      staffIdOrLogin,
+      outletId,
+      pinCode,
+    );
   }
   @Post('cashier/staff-access')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
-  @ApiOkResponse({ schema: { type: 'object', properties: { staff: { type: 'object', additionalProperties: true }, accesses: { type: 'array', items: { type: 'object', additionalProperties: true } } } } })
-  async cashierStaffAccess(@Body() body: { merchantLogin?: string; password9?: string; pinCode?: string }) {
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        staff: { type: 'object', additionalProperties: true },
+        accesses: {
+          type: 'array',
+          items: { type: 'object', additionalProperties: true },
+        },
+      },
+    },
+  })
+  async cashierStaffAccess(
+    @Body()
+    body: {
+      merchantLogin?: string;
+      password9?: string;
+      pinCode?: string;
+    },
+  ) {
     const merchantLogin = String(body?.merchantLogin || '');
     const password9 = String(body?.password9 || '');
     const pinCode = String(body?.pinCode || '');
-    if (!merchantLogin || !password9 || password9.length !== 9) throw new BadRequestException('merchantLogin and 9-digit password required');
-    if (!pinCode || pinCode.length !== 4) throw new BadRequestException('pinCode (4 digits) required');
-    const auth = await this.merchants.authenticateCashier(merchantLogin, password9);
+    if (!merchantLogin || !password9 || password9.length !== 9)
+      throw new BadRequestException(
+        'merchantLogin and 9-digit password required',
+      );
+    if (!pinCode || pinCode.length !== 4)
+      throw new BadRequestException('pinCode (4 digits) required');
+    const auth = await this.merchants.authenticateCashier(
+      merchantLogin,
+      password9,
+    );
     return this.merchants.getStaffAccessByPin(auth.merchantId, pinCode);
   }
 
-  private async verifyStaffKey(merchantId: string, key: string): Promise<boolean> {
+  private async verifyStaffKey(
+    merchantId: string,
+    key: string,
+  ): Promise<boolean> {
     if (!key) return false;
     try {
       const crypto = require('crypto');
-      const hash = crypto.createHash('sha256').update(key, 'utf8').digest('hex');
+      const hash = crypto
+        .createHash('sha256')
+        .update(key, 'utf8')
+        .digest('hex');
       const staff = await this.prisma.staff.findFirst({
-        where: { 
-          merchantId, 
+        where: {
+          merchantId,
           apiKeyHash: hash,
-          status: 'ACTIVE'
-        }
+          status: 'ACTIVE',
+        },
       });
       return !!staff;
     } catch {
@@ -686,18 +939,25 @@ export class LoyaltyController {
     }
   }
 
-  private async enforceRequireStaffKey(merchantId: string, req: Request): Promise<void> {
-    const settings = await this.prisma.merchantSettings.findUnique({ where: { merchantId } });
+  private async enforceRequireStaffKey(
+    merchantId: string,
+    req: Request,
+  ): Promise<void> {
+    const settings = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+    });
     if (!settings?.requireStaffKey) return;
-    
+
     const staffKey = req.headers['x-staff-key'] as string | undefined;
     const bridgeSig = req.headers['x-bridge-signature'] as string | undefined;
-    
+
     // If requireStaffKey is enabled, must have either staff key or bridge signature
     if (!staffKey && !bridgeSig) {
-      throw new UnauthorizedException('X-Staff-Key or X-Bridge-Signature required');
+      throw new UnauthorizedException(
+        'X-Staff-Key or X-Bridge-Signature required',
+      );
     }
-    
+
     if (staffKey) {
       const valid = await this.verifyStaffKey(merchantId, staffKey);
       if (!valid) throw new UnauthorizedException('Invalid staff key');
@@ -706,15 +966,24 @@ export class LoyaltyController {
 
   @Post('qr')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  @ApiHeader({ name: 'X-Bridge-Signature', required: false, description: 'Bridge signature (if requireBridgeSig enabled)' })
-  @ApiHeader({ name: 'X-Staff-Key', required: false, description: 'Staff API key' })
+  @ApiHeader({
+    name: 'X-Bridge-Signature',
+    required: false,
+    description: 'Bridge signature (if requireBridgeSig enabled)',
+  })
+  @ApiHeader({
+    name: 'X-Staff-Key',
+    required: false,
+    description: 'Staff API key',
+  })
   @ApiOkResponse({ type: QrMintRespDto })
   @ApiUnauthorizedResponse({ type: ErrorDto })
   @ApiBadRequestResponse({ type: ErrorDto })
   async mintQr(@Body() dto: QrMintDto, @Req() req: Request) {
     // Optional authentication signals: teleauth or staff key or bridge signature; enforce only if merchant requires
     const hasTeleauth = !!(req as any).teleauth?.customerId;
-    const hasInitData = typeof dto.initData === 'string' && dto.initData.trim().length > 0;
+    const hasInitData =
+      typeof dto.initData === 'string' && dto.initData.trim().length > 0;
     const hasAuth = hasTeleauth || hasInitData;
     const staffKey = req.headers['x-staff-key'] as string | undefined;
     const bridgeSig = req.headers['x-bridge-signature'] as string | undefined;
@@ -728,22 +997,44 @@ export class LoyaltyController {
 
     // If merchant requires Bridge signature for QR minting, enforce it
     if (!hasAuth && !staffKey && dto.merchantId) {
-      const settings = await this.prisma.merchantSettings.findUnique({ where: { merchantId: dto.merchantId } });
+      const settings = await this.prisma.merchantSettings.findUnique({
+        where: { merchantId: dto.merchantId },
+      });
       if (settings?.requireBridgeSig) {
-        if (!bridgeSig) throw new UnauthorizedException('X-Bridge-Signature required');
-        const bodyForSig = JSON.stringify({ merchantId: dto.merchantId, customerId: dto.customerId });
+        if (!bridgeSig)
+          throw new UnauthorizedException('X-Bridge-Signature required');
+        const bodyForSig = JSON.stringify({
+          merchantId: dto.merchantId,
+          customerId: dto.customerId,
+        });
         let verified = false;
-        if (settings.bridgeSecret && verifyBridgeSigUtil(bridgeSig, bodyForSig, settings.bridgeSecret)) verified = true;
-        else if ((settings as any)?.bridgeSecretNext && verifyBridgeSigUtil(bridgeSig, bodyForSig, (settings as any).bridgeSecretNext)) verified = true;
-        if (!verified) throw new UnauthorizedException('Invalid bridge signature');
+        if (
+          settings.bridgeSecret &&
+          verifyBridgeSigUtil(bridgeSig, bodyForSig, settings.bridgeSecret)
+        )
+          verified = true;
+        else if (
+          (settings as any)?.bridgeSecretNext &&
+          verifyBridgeSigUtil(
+            bridgeSig,
+            bodyForSig,
+            (settings as any).bridgeSecretNext,
+          )
+        )
+          verified = true;
+        if (!verified)
+          throw new UnauthorizedException('Invalid bridge signature');
       }
     }
 
     // Если указаны merchantId и initData — валидируем Telegram initData токеном мерчанта
     const secret = process.env.QR_JWT_SECRET || 'dev_change_me';
     if (dto.initData && dto.merchantId) {
-      const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId: dto.merchantId } });
-      const botToken = (s as any)?.telegramBotToken || process.env.TELEGRAM_BOT_TOKEN || '';
+      const s = await this.prisma.merchantSettings.findUnique({
+        where: { merchantId: dto.merchantId },
+      });
+      const botToken =
+        (s as any)?.telegramBotToken || process.env.TELEGRAM_BOT_TOKEN || '';
       if (!botToken) throw new BadRequestException('Bot token not configured');
       const r = validateTelegramInitData(botToken, dto.initData);
       if (!r.ok) throw new BadRequestException('Invalid initData');
@@ -752,13 +1043,18 @@ export class LoyaltyController {
         try {
           const p = new URLSearchParams(dto.initData);
           const sp = p.get('start_param') || p.get('startapp') || '';
-          if (sp && sp !== dto.merchantId) throw new BadRequestException('merchantId mismatch with start_param');
+          if (sp && sp !== dto.merchantId)
+            throw new BadRequestException(
+              'merchantId mismatch with start_param',
+            );
         } catch {}
       }
     } else {
       // Нет initData: допускаем только если у мерчанта явно НЕ требуется staff key
       if (!dto.merchantId) throw new BadRequestException('merchantId required');
-      const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId: dto.merchantId } });
+      const s = await this.prisma.merchantSettings.findUnique({
+        where: { merchantId: dto.merchantId },
+      });
       const requireStaffKey = Boolean(s?.requireStaffKey);
       if (requireStaffKey) {
         // Guard заблокирует без X-Staff-Key; здесь оставим явную проверку для ясности ответов
@@ -768,49 +1064,102 @@ export class LoyaltyController {
 
     let ttl = dto.ttlSec ?? 60;
     if (!dto.ttlSec && dto.merchantId) {
-      const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId: dto.merchantId } });
+      const s = await this.prisma.merchantSettings.findUnique({
+        where: { merchantId: dto.merchantId },
+      });
       if (s?.qrTtlSec) ttl = s.qrTtlSec;
     }
-    const token = await signQrToken(secret, dto.customerId, dto.merchantId, ttl);
+    const token = await signQrToken(
+      secret,
+      dto.customerId,
+      dto.merchantId,
+      ttl,
+    );
     return { token, ttl };
   }
 
   @Post('quote')
   @Throttle({ default: { limit: 120, ttl: 60_000 } })
-  @ApiHeader({ name: 'X-Staff-Key', required: false, description: 'Ключ кассира (если включено requireStaffKey)' })
-  @ApiHeader({ name: 'X-Bridge-Signature', required: false, description: 'Подпись Bridge (если включено requireBridgeSig)' })
-  @ApiOkResponse({ schema: { oneOf: [ { $ref: getSchemaPath(QuoteRedeemRespDto) }, { $ref: getSchemaPath(QuoteEarnRespDto) } ] } })
+  @ApiHeader({
+    name: 'X-Staff-Key',
+    required: false,
+    description: 'Ключ кассира (если включено requireStaffKey)',
+  })
+  @ApiHeader({
+    name: 'X-Bridge-Signature',
+    required: false,
+    description: 'Подпись Bridge (если включено requireBridgeSig)',
+  })
+  @ApiOkResponse({
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(QuoteRedeemRespDto) },
+        { $ref: getSchemaPath(QuoteEarnRespDto) },
+      ],
+    },
+  })
   @ApiBadRequestResponse({ type: ErrorDto })
-  async quote(@Body() dto: QuoteDto, @Req() req: Request & { requestId?: string }) {
+  async quote(
+    @Body() dto: QuoteDto,
+    @Req() req: Request & { requestId?: string },
+  ) {
     const t0 = Date.now();
     try {
       const v = await this.resolveFromToken(dto.userToken);
-      const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId: dto.merchantId } });
+      const s = await this.prisma.merchantSettings.findUnique({
+        where: { merchantId: dto.merchantId },
+      });
       if (s?.requireJwtForQuote && !looksLikeJwt(dto.userToken)) {
-        this.metrics.inc('loyalty_quote_requests_total', { result: 'error', reason: 'jwt_required' });
+        this.metrics.inc('loyalty_quote_requests_total', {
+          result: 'error',
+          reason: 'jwt_required',
+        });
         throw new BadRequestException('JWT required for quote');
       }
-      if (v.merchantAud && v.merchantAud !== 'any' && v.merchantAud !== dto.merchantId) {
-        this.metrics.inc('loyalty_quote_requests_total', { result: 'error', reason: 'merchant_mismatch' });
+      if (
+        v.merchantAud &&
+        v.merchantAud !== 'any' &&
+        v.merchantAud !== dto.merchantId
+      ) {
+        this.metrics.inc('loyalty_quote_requests_total', {
+          result: 'error',
+          reason: 'merchant_mismatch',
+        });
         throw new BadRequestException('QR выписан для другого мерчанта');
       }
       // атрибуция staffId по x-staff-key, если не передан явно
       let staffId = dto.staffId;
       if (!staffId) {
-        const key = (req.headers['x-staff-key'] as string | undefined) || undefined;
+        const key =
+          (req.headers['x-staff-key'] as string | undefined) || undefined;
         if (key) {
           try {
-            const hash = require('crypto').createHash('sha256').update(key, 'utf8').digest('hex');
-            const staff = await this.prisma.staff.findFirst({ where: { merchantId: dto.merchantId, apiKeyHash: hash, status: 'ACTIVE' } });
+            const hash = require('crypto')
+              .createHash('sha256')
+              .update(key, 'utf8')
+              .digest('hex');
+            const staff = await this.prisma.staff.findFirst({
+              where: {
+                merchantId: dto.merchantId,
+                apiKeyHash: hash,
+                status: 'ACTIVE',
+              },
+            });
             if (staff) staffId = staff.id;
           } catch {}
         }
       }
-      const outlet = await this.resolveOutlet(dto.merchantId, dto.outletId ?? null);
-      const qrMeta = looksLikeJwt(dto.userToken) ? { jti: v.jti, iat: v.iat, exp: v.exp } : undefined;
+      const outlet = await this.resolveOutlet(
+        dto.merchantId,
+        dto.outletId ?? null,
+      );
+      const qrMeta = looksLikeJwt(dto.userToken)
+        ? { jti: v.jti, iat: v.iat, exp: v.exp }
+        : undefined;
       // проверка подписи Bridge при необходимости
       if (s?.requireBridgeSig) {
-        const sig = (req.headers['x-bridge-signature'] as string | undefined) || '';
+        const sig =
+          (req.headers['x-bridge-signature'] as string | undefined) || '';
         let secret: string | null = outlet?.bridgeSecret ?? null;
         let alt: string | null = outlet?.bridgeSecretNext ?? null;
         if (!secret && !alt) {
@@ -828,7 +1177,12 @@ export class LoyaltyController {
       let adjEligible = Math.max(0, Math.floor(dto.eligibleTotal));
       try {
         // Промо
-        const pr = await this.promos.preview(dto.merchantId, v.customerId, adjEligible, dto.category);
+        const pr = await this.promos.preview(
+          dto.merchantId,
+          v.customerId,
+          adjEligible,
+          dto.category,
+        );
         if (pr?.canApply && pr.discount > 0) {
           const d = Math.min(adjEligible, Math.max(0, Math.floor(pr.discount)));
           adjEligible = Math.max(0, adjEligible - d);
@@ -836,12 +1190,23 @@ export class LoyaltyController {
         }
       } catch {}
       const normalizedOutletId = dto.outletId ?? outlet?.id ?? undefined;
-      const data = await this.service.quote({ ...dto, outletId: normalizedOutletId, total: adjTotal, eligibleTotal: adjEligible, staffId, userToken: v.customerId }, qrMeta);
+      const data = await this.service.quote(
+        {
+          ...dto,
+          outletId: normalizedOutletId,
+          total: adjTotal,
+          eligibleTotal: adjEligible,
+          staffId,
+          userToken: v.customerId,
+        },
+        qrMeta,
+      );
       this.metrics.inc('loyalty_quote_requests_total', { result: 'ok' });
       return data;
     } catch (e: any) {
       const msg = String(e?.message || e || '');
-      if (/JWTExpired|"exp"/.test(msg)) this.metrics.inc('loyalty_jwt_expired_total');
+      if (/JWTExpired|"exp"/.test(msg))
+        this.metrics.inc('loyalty_jwt_expired_total');
       this.metrics.inc('loyalty_quote_requests_total', { result: 'error' });
       throw e;
     } finally {
@@ -852,17 +1217,33 @@ export class LoyaltyController {
   @Post('commit')
   @UseGuards(SubscriptionGuard, AntiFraudGuard)
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
-  @ApiHeader({ name: 'Idempotency-Key', required: false, description: 'Идемпотентность COMMIT' })
-  @ApiHeader({ name: 'X-Bridge-Signature', required: false, description: 'Подпись Bridge (если включено requireBridgeSig)' })
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: false,
+    description: 'Идемпотентность COMMIT',
+  })
+  @ApiHeader({
+    name: 'X-Bridge-Signature',
+    required: false,
+    description: 'Подпись Bridge (если включено requireBridgeSig)',
+  })
   @ApiOkResponse({ type: CommitRespDto })
   @ApiUnauthorizedResponse({ type: ErrorDto })
   @ApiBadRequestResponse({ type: ErrorDto })
-  async commit(@Body() dto: CommitDto, @Res({ passthrough: true }) res: Response, @Req() req: Request & { requestId?: string }) {
+  async commit(
+    @Body() dto: CommitDto,
+    @Res({ passthrough: true }) res: Response,
+    @Req() req: Request & { requestId?: string },
+  ) {
     const t0 = Date.now();
     let data: any;
     // кешируем hold для извлечения контекста (merchantId, outletId, staffId)
     let holdCached: any = null;
-    try { holdCached = await this.prisma.hold.findUnique({ where: { id: dto.holdId } }); } catch {}
+    try {
+      holdCached = await this.prisma.hold.findUnique({
+        where: { id: dto.holdId },
+      });
+    } catch {}
     const merchantIdEff = dto.merchantId || holdCached?.merchantId;
     if (merchantIdEff) {
       await this.enforceRequireStaffKey(merchantIdEff, req);
@@ -870,23 +1251,39 @@ export class LoyaltyController {
     let promoCandidate: { id: string } | null = null;
     if (dto.promoCode && holdCached?.customerId && merchantIdEff) {
       try {
-        const promo = await this.promoCodes.findActiveByCode(merchantIdEff, dto.promoCode);
+        const promo = await this.promoCodes.findActiveByCode(
+          merchantIdEff,
+          dto.promoCode,
+        );
         if (promo) promoCandidate = { id: promo.id };
       } catch {}
     }
     // проверка подписи Bridge до выполнения, с учётом outlet из hold
     try {
-      const s = merchantIdEff ? await this.prisma.merchantSettings.findUnique({ where: { merchantId: merchantIdEff } }) : null;
+      const s = merchantIdEff
+        ? await this.prisma.merchantSettings.findUnique({
+            where: { merchantId: merchantIdEff },
+          })
+        : null;
       if (s?.requireBridgeSig) {
-        const sig = (req.headers['x-bridge-signature'] as string | undefined) || '';
-        const outlet = await this.resolveOutlet(merchantIdEff, holdCached?.outletId ?? null);
+        const sig =
+          (req.headers['x-bridge-signature'] as string | undefined) || '';
+        const outlet = await this.resolveOutlet(
+          merchantIdEff,
+          holdCached?.outletId ?? null,
+        );
         let secret: string | null = outlet?.bridgeSecret ?? null;
         let alt: string | null = outlet?.bridgeSecretNext ?? null;
         if (!secret && !alt) {
           secret = s?.bridgeSecret || null;
           alt = (s as any)?.bridgeSecretNext || null;
         }
-        const bodyForSig = JSON.stringify({ merchantId: merchantIdEff, holdId: dto.holdId, orderId: dto.orderId, receiptNumber: dto.receiptNumber ?? undefined });
+        const bodyForSig = JSON.stringify({
+          merchantId: merchantIdEff,
+          holdId: dto.holdId,
+          orderId: dto.orderId,
+          receiptNumber: dto.receiptNumber ?? undefined,
+        });
         let ok = false;
         if (secret && verifyBridgeSigUtil(sig, bodyForSig, secret)) ok = true;
         else if (alt && verifyBridgeSigUtil(sig, bodyForSig, alt)) ok = true;
@@ -894,7 +1291,8 @@ export class LoyaltyController {
       }
     } catch {}
     try {
-      const idemKey = (req.headers['idempotency-key'] as string | undefined) || undefined;
+      const idemKey =
+        (req.headers['idempotency-key'] as string | undefined) || undefined;
       const commitOpts = promoCandidate
         ? { promoCode: { promoCodeId: promoCandidate.id, code: dto.promoCode } }
         : undefined;
@@ -902,7 +1300,9 @@ export class LoyaltyController {
         const merchantForIdem = merchantIdEff || undefined;
         if (merchantForIdem) {
           const saved = await this.prisma.idempotencyKey.findUnique({
-            where: { merchantId_key: { merchantId: merchantForIdem, key: idemKey } },
+            where: {
+              merchantId_key: { merchantId: merchantForIdem, key: idemKey },
+            },
           });
           if (saved) {
             data = saved.response as any;
@@ -914,15 +1314,24 @@ export class LoyaltyController {
               req.requestId ?? dto.requestId,
               commitOpts,
             );
-            if (data && typeof data === 'object' && (data as any).alreadyCommitted === true) {
-              const { alreadyCommitted, ...rest } = data as any;
+            if (
+              data &&
+              typeof data === 'object' &&
+              data.alreadyCommitted === true
+            ) {
+              const { alreadyCommitted, ...rest } = data;
               data = rest;
             }
             try {
               const ttlH = Number(process.env.IDEMPOTENCY_TTL_HOURS || '72');
               const exp = new Date(Date.now() + ttlH * 3600 * 1000);
               await this.prisma.idempotencyKey.create({
-                data: { merchantId: merchantForIdem, key: idemKey, response: data, expiresAt: exp },
+                data: {
+                  merchantId: merchantForIdem,
+                  key: idemKey,
+                  response: data,
+                  expiresAt: exp,
+                },
               });
             } catch {}
           }
@@ -944,7 +1353,9 @@ export class LoyaltyController {
           commitOpts,
         );
       }
-      this.metrics.inc('loyalty_commit_requests_total', { result: data?.alreadyCommitted ? 'already_committed' : 'ok' });
+      this.metrics.inc('loyalty_commit_requests_total', {
+        result: data?.alreadyCommitted ? 'already_committed' : 'ok',
+      });
     } catch (e) {
       this.metrics.inc('loyalty_commit_requests_total', { result: 'error' });
       throw e;
@@ -952,13 +1363,22 @@ export class LoyaltyController {
       this.metrics.observe('loyalty_commit_latency_ms', Date.now() - t0);
     }
     try {
-      const s = merchantIdEff ? await this.prisma.merchantSettings.findUnique({ where: { merchantId: merchantIdEff } }) : null;
-      const useNext = Boolean((s as any)?.useWebhookNext) && !!(s as any)?.webhookSecretNext;
-      const secret = (useNext ? (s as any)?.webhookSecretNext : s?.webhookSecret) as string | undefined;
+      const s = merchantIdEff
+        ? await this.prisma.merchantSettings.findUnique({
+            where: { merchantId: merchantIdEff },
+          })
+        : null;
+      const useNext =
+        Boolean((s as any)?.useWebhookNext) && !!(s as any)?.webhookSecretNext;
+      const secret = (
+        useNext ? (s as any)?.webhookSecretNext : s?.webhookSecret
+      ) as string | undefined;
       if (secret) {
         const ts = Math.floor(Date.now() / 1000).toString();
         const body = JSON.stringify(data);
-        const sig = createHmac('sha256', secret).update(`${ts}.${body}`).digest('base64');
+        const sig = createHmac('sha256', secret)
+          .update(`${ts}.${body}`)
+          .digest('base64');
         res.setHeader('X-Loyalty-Signature', `v1,ts=${ts},sig=${sig}`);
         if (merchantIdEff) res.setHeader('X-Merchant-Id', merchantIdEff);
         res.setHeader('X-Signature-Timestamp', ts);
@@ -987,7 +1407,10 @@ export class LoyaltyController {
   @Get('balance/:merchantId/:customerId')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @ApiOkResponse({ type: BalanceDto })
-  balance2(@Param('merchantId') merchantId: string, @Param('customerId') customerId: string) {
+  balance2(
+    @Param('merchantId') merchantId: string,
+    @Param('customerId') customerId: string,
+  ) {
     return this.service.balance(merchantId, customerId);
   }
 
@@ -996,7 +1419,8 @@ export class LoyaltyController {
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @ApiOkResponse({ type: PublicSettingsDto })
   async publicSettings(@Param('merchantId') merchantId: string) {
-    const { settings: s, share } = await this.buildReviewsShareSettings(merchantId);
+    const { settings: s, share } =
+      await this.buildReviewsShareSettings(merchantId);
     return {
       merchantId,
       qrTtlSec: s?.qrTtlSec ?? 120,
@@ -1026,7 +1450,9 @@ export class LoyaltyController {
     },
   })
   @ApiBadRequestResponse({ type: ErrorDto })
-  async applyPromoCode(@Body() body: { merchantId?: string; customerId?: string; code?: string }) {
+  async applyPromoCode(
+    @Body() body: { merchantId?: string; customerId?: string; code?: string },
+  ) {
     return this.service.applyPromoCode({
       merchantId: body?.merchantId,
       customerId: body?.customerId,
@@ -1037,35 +1463,63 @@ export class LoyaltyController {
   @Post('refund')
   @UseGuards(SubscriptionGuard, AntiFraudGuard)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  @ApiHeader({ name: 'Idempotency-Key', required: false, description: 'Идемпотентность REFUND' })
-  @ApiHeader({ name: 'X-Bridge-Signature', required: false, description: 'Подпись Bridge (если включено requireBridgeSig)' })
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: false,
+    description: 'Идемпотентность REFUND',
+  })
+  @ApiHeader({
+    name: 'X-Bridge-Signature',
+    required: false,
+    description: 'Подпись Bridge (если включено requireBridgeSig)',
+  })
   @ApiOkResponse({ type: RefundRespDto })
   @ApiUnauthorizedResponse({ type: ErrorDto })
   @ApiBadRequestResponse({ type: ErrorDto })
-  async refund(@Body() dto: RefundDto, @Res({ passthrough: true }) res: Response, @Req() req: Request & { requestId?: string }) {
+  async refund(
+    @Body() dto: RefundDto,
+    @Res({ passthrough: true }) res: Response,
+    @Req() req: Request & { requestId?: string },
+  ) {
     await this.enforceRequireStaffKey(dto.merchantId, req);
     let data: any;
     // проверка подписи Bridge до выполнения
     try {
-      const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId: dto.merchantId } });
+      const s = await this.prisma.merchantSettings.findUnique({
+        where: { merchantId: dto.merchantId },
+      });
       if (s?.requireBridgeSig) {
-        const sig = (req.headers['x-bridge-signature'] as string | undefined) || '';
+        const sig =
+          (req.headers['x-bridge-signature'] as string | undefined) || '';
         let receiptOutletId: string | null = null;
         try {
           const rcp = await this.prisma.receipt.findUnique({
-            where: { merchantId_orderId: { merchantId: dto.merchantId, orderId: dto.orderId } },
+            where: {
+              merchantId_orderId: {
+                merchantId: dto.merchantId,
+                orderId: dto.orderId,
+              },
+            },
             select: { outletId: true },
           });
           receiptOutletId = rcp?.outletId ?? null;
         } catch {}
-        const outlet = await this.resolveOutlet(dto.merchantId, receiptOutletId);
+        const outlet = await this.resolveOutlet(
+          dto.merchantId,
+          receiptOutletId,
+        );
         let secret: string | null = outlet?.bridgeSecret ?? null;
         let alt: string | null = outlet?.bridgeSecretNext ?? null;
         if (!secret && !alt) {
           secret = s?.bridgeSecret || null;
           alt = (s as any)?.bridgeSecretNext || null;
         }
-        const bodyForSig = JSON.stringify({ merchantId: dto.merchantId, orderId: dto.orderId, refundTotal: dto.refundTotal, refundEligibleTotal: dto.refundEligibleTotal ?? undefined });
+        const bodyForSig = JSON.stringify({
+          merchantId: dto.merchantId,
+          orderId: dto.orderId,
+          refundTotal: dto.refundTotal,
+          refundEligibleTotal: dto.refundEligibleTotal ?? undefined,
+        });
         let ok = false;
         if (secret && verifyBridgeSigUtil(sig, bodyForSig, secret)) ok = true;
         else if (alt && verifyBridgeSigUtil(sig, bodyForSig, alt)) ok = true;
@@ -1073,21 +1527,45 @@ export class LoyaltyController {
       }
     } catch {}
     try {
-      const idemKey = (req.headers['idempotency-key'] as string | undefined) || undefined;
+      const idemKey =
+        (req.headers['idempotency-key'] as string | undefined) || undefined;
       if (idemKey) {
-        const saved = await this.prisma.idempotencyKey.findUnique({ where: { merchantId_key: { merchantId: dto.merchantId, key: idemKey } } });
+        const saved = await this.prisma.idempotencyKey.findUnique({
+          where: {
+            merchantId_key: { merchantId: dto.merchantId, key: idemKey },
+          },
+        });
         if (saved) {
           data = saved.response as any;
         } else {
-          data = await this.service.refund(dto.merchantId, dto.orderId, dto.refundTotal, dto.refundEligibleTotal, req.requestId);
+          data = await this.service.refund(
+            dto.merchantId,
+            dto.orderId,
+            dto.refundTotal,
+            dto.refundEligibleTotal,
+            req.requestId,
+          );
           try {
             const ttlH = Number(process.env.IDEMPOTENCY_TTL_HOURS || '72');
             const exp = new Date(Date.now() + ttlH * 3600 * 1000);
-            await this.prisma.idempotencyKey.create({ data: { merchantId: dto.merchantId, key: idemKey, response: data, expiresAt: exp } });
+            await this.prisma.idempotencyKey.create({
+              data: {
+                merchantId: dto.merchantId,
+                key: idemKey,
+                response: data,
+                expiresAt: exp,
+              },
+            });
           } catch {}
         }
       } else {
-        data = await this.service.refund(dto.merchantId, dto.orderId, dto.refundTotal, dto.refundEligibleTotal, req.requestId);
+        data = await this.service.refund(
+          dto.merchantId,
+          dto.orderId,
+          dto.refundTotal,
+          dto.refundEligibleTotal,
+          req.requestId,
+        );
       }
       this.metrics.inc('loyalty_refund_requests_total', { result: 'ok' });
     } catch (e) {
@@ -1095,16 +1573,21 @@ export class LoyaltyController {
       throw e;
     }
     try {
-      const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId: dto.merchantId } });
+      const s = await this.prisma.merchantSettings.findUnique({
+        where: { merchantId: dto.merchantId },
+      });
       const secret = s?.webhookSecret;
       if (secret) {
         const ts = Math.floor(Date.now() / 1000).toString();
         const body = JSON.stringify(data);
-        const sig = createHmac('sha256', secret).update(`${ts}.${body}`).digest('base64');
+        const sig = createHmac('sha256', secret)
+          .update(`${ts}.${body}`)
+          .digest('base64');
         res.setHeader('X-Loyalty-Signature', `v1,ts=${ts},sig=${sig}`);
         res.setHeader('X-Merchant-Id', dto.merchantId);
         res.setHeader('X-Signature-Timestamp', ts);
-        if (s?.webhookKeyId) res.setHeader('X-Signature-Key-Id', s.webhookKeyId);
+        if (s?.webhookKeyId)
+          res.setHeader('X-Signature-Key-Id', s.webhookKeyId);
         if (req.requestId) res.setHeader('X-Request-Id', req.requestId);
       }
     } catch {}
@@ -1123,15 +1606,21 @@ export class LoyaltyController {
     let startParamRequired = false;
     if (merchantId) {
       try {
-        const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId } });
-        if (s && (s as any).telegramBotToken) token = (s as any).telegramBotToken as string;
+        const s = await this.prisma.merchantSettings.findUnique({
+          where: { merchantId },
+        });
+        if (s && (s as any).telegramBotToken)
+          token = (s as any).telegramBotToken as string;
         // если включено требование start_param — сверим merchantId с deep-link параметром
         startParamRequired = Boolean((s as any)?.telegramStartParamRequired);
         if (startParamRequired) {
           try {
             const p = new URLSearchParams(initData);
             const sp = p.get('start_param') || p.get('startapp') || '';
-            if (sp && sp !== merchantId) throw new BadRequestException('merchantId mismatch with start_param');
+            if (sp && sp !== merchantId)
+              throw new BadRequestException(
+                'merchantId mismatch with start_param',
+              );
           } catch {}
         }
       } catch {}
@@ -1145,10 +1634,15 @@ export class LoyaltyController {
       const sp = p.get('start_param') || p.get('startapp') || '';
       if (sp) {
         const parts = sp.split('.');
-        const looksLikeJwt = parts.length === 3 && parts.every((x) => x && /^[A-Za-z0-9_-]+$/.test(x));
+        const looksLikeJwt =
+          parts.length === 3 &&
+          parts.every((x) => x && /^[A-Za-z0-9_-]+$/.test(x));
         if (looksLikeJwt) {
           const secret = process.env.TMA_LINK_SECRET || '';
-          if (!secret) throw new BadRequestException('Server misconfigured: TMA_LINK_SECRET not set');
+          if (!secret)
+            throw new BadRequestException(
+              'Server misconfigured: TMA_LINK_SECRET not set',
+            );
           const [h, pld, sig] = parts;
           const data = `${h}.${pld}`;
           const expected = createHmac('sha256', secret)
@@ -1157,15 +1651,27 @@ export class LoyaltyController {
             .replace(/=/g, '')
             .replace(/\+/g, '-')
             .replace(/\//g, '_');
-          if (expected !== sig) throw new BadRequestException('Invalid start_param signature');
-          const json = JSON.parse(Buffer.from(pld.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
-          const claimedMerchant = typeof json?.merchantId === 'string' ? json.merchantId : '';
+          if (expected !== sig)
+            throw new BadRequestException('Invalid start_param signature');
+          const json = JSON.parse(
+            Buffer.from(
+              pld.replace(/-/g, '+').replace(/_/g, '/'),
+              'base64',
+            ).toString('utf8'),
+          );
+          const claimedMerchant =
+            typeof json?.merchantId === 'string' ? json.merchantId : '';
           if (merchantId && claimedMerchant && claimedMerchant !== merchantId) {
-            throw new BadRequestException('merchantId mismatch with start_param');
+            throw new BadRequestException(
+              'merchantId mismatch with start_param',
+            );
           }
         } else if (startParamRequired) {
           // legacy strict mode: require exact merchantId in start_param
-          if (merchantId && sp !== merchantId) throw new BadRequestException('merchantId mismatch with start_param');
+          if (merchantId && sp !== merchantId)
+            throw new BadRequestException(
+              'merchantId mismatch with start_param',
+            );
         }
       }
     } catch (e) {
@@ -1176,24 +1682,40 @@ export class LoyaltyController {
     const tgId = String(r.userId);
     if (merchantId) {
       // 1) Ищем привязку tgId к customerId для текущего мерчанта
-      const bound = await (this.prisma as any).customerTelegram?.findUnique?.({ where: { merchantId_tgId: { merchantId, tgId } } }).catch(() => null);
+      const bound = await (this.prisma as any).customerTelegram
+        ?.findUnique?.({ where: { merchantId_tgId: { merchantId, tgId } } })
+        .catch(() => null);
       if (bound?.customerId) {
         // гарантируем наличие кошелька POINTS для дальнейших операций
         try {
           await this.prisma.wallet.upsert({
-            where: { customerId_merchantId_type: { customerId: bound.customerId, merchantId, type: WalletType.POINTS } as any },
+            where: {
+              customerId_merchantId_type: {
+                customerId: bound.customerId,
+                merchantId,
+                type: WalletType.POINTS,
+              } as any,
+            },
             update: {},
-            create: { customerId: bound.customerId, merchantId, type: WalletType.POINTS },
+            create: {
+              customerId: bound.customerId,
+              merchantId,
+              type: WalletType.POINTS,
+            },
           } as any);
         } catch {}
         return { ok: true, customerId: bound.customerId };
       }
 
       // 2) Переиспользуем глобальную запись с tgId ТОЛЬКО если это первая привязка (нет CustomerTelegram для данного tgId ни у одного мерчанта)
-      const anyBinding = await (this.prisma as any).customerTelegram?.findFirst?.({ where: { tgId } }).catch(() => null);
+      const anyBinding = await (this.prisma as any).customerTelegram
+        ?.findFirst?.({ where: { tgId } })
+        .catch(() => null);
       let customerId: string | null = null;
       if (!anyBinding) {
-        const existingGlobal = await this.prisma.customer.findUnique({ where: { tgId } }).catch(() => null);
+        const existingGlobal = await this.prisma.customer
+          .findUnique({ where: { tgId } })
+          .catch(() => null);
         if (existingGlobal) {
           customerId = existingGlobal.id;
         }
@@ -1207,11 +1729,15 @@ export class LoyaltyController {
           const userJson = url.get('user');
           if (userJson) {
             const u = JSON.parse(userJson);
-            const parts = [u.first_name, u.last_name].filter((x: any) => typeof x === 'string' && x.trim());
+            const parts = [u.first_name, u.last_name].filter(
+              (x: any) => typeof x === 'string' && x.trim(),
+            );
             if (parts.length) name = parts.join(' ');
           }
         } catch {}
-        const created = await this.prisma.customer.create({ data: { name: name ?? undefined } });
+        const created = await this.prisma.customer.create({
+          data: { name: name ?? undefined },
+        });
         customerId = created.id;
       }
       // 3) Создаём/подтверждаем привязку для текущего мерчанта (устраняем гонки)
@@ -1227,12 +1753,20 @@ export class LoyaltyController {
           // игнорируем, проверим фактическую привязку ниже
         }
         // читаем фактический customerId из привязки (если другая конкурентная транзакция успела первой)
-        const mapping = await (tx as any).customerTelegram?.findUnique?.({ where: { merchantId_tgId: { merchantId, tgId } } });
+        const mapping = await (tx as any).customerTelegram?.findUnique?.({
+          where: { merchantId_tgId: { merchantId, tgId } },
+        });
         const cid = mapping?.customerId || customerId;
         // гарантируем наличие кошелька POINTS для принадлежности клиента мерчанту
         try {
           await tx.wallet.upsert({
-            where: { customerId_merchantId_type: { customerId: cid, merchantId, type: WalletType.POINTS } as any },
+            where: {
+              customerId_merchantId_type: {
+                customerId: cid,
+                merchantId,
+                type: WalletType.POINTS,
+              } as any,
+            },
             update: {},
             create: { customerId: cid, merchantId, type: WalletType.POINTS },
           } as any);
@@ -1244,11 +1778,20 @@ export class LoyaltyController {
 
     // Back-compat: если merchantId не указан — ведём себя как раньше (глобальная учётка по tgId)
     const legacyId = 'tg:' + tgId;
-    const existingByTg = await this.prisma.customer.findUnique({ where: { tgId } }).catch(() => null);
+    const existingByTg = await this.prisma.customer
+      .findUnique({ where: { tgId } })
+      .catch(() => null);
     if (existingByTg) return { ok: true, customerId: existingByTg.id };
-    const legacy = await this.prisma.customer.findUnique({ where: { id: legacyId } }).catch(() => null);
+    const legacy = await this.prisma.customer
+      .findUnique({ where: { id: legacyId } })
+      .catch(() => null);
     if (legacy) {
-      try { await this.prisma.customer.update({ where: { id: legacy.id }, data: { tgId } }); } catch {}
+      try {
+        await this.prisma.customer.update({
+          where: { id: legacy.id },
+          data: { tgId },
+        });
+      } catch {}
       return { ok: true, customerId: legacy.id };
     }
     const created = await this.prisma.customer.create({ data: { tgId } });
@@ -1258,19 +1801,36 @@ export class LoyaltyController {
   @Get('profile')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @ApiOkResponse({ type: CustomerProfileDto })
-  async getProfile(@Query('merchantId') merchantId: string, @Query('customerId') customerId: string) {
-    const customer = await this.ensureCustomerForMerchant(merchantId, customerId);
-    const gender = customer.gender === 'male' || customer.gender === 'female' ? (customer.gender as 'male' | 'female') : null;
-    const birthDate = customer.birthday ? customer.birthday.toISOString().slice(0, 10) : null;
-    return { name: customer.name ?? null, gender, birthDate } satisfies CustomerProfileDto;
+  async getProfile(
+    @Query('merchantId') merchantId: string,
+    @Query('customerId') customerId: string,
+  ) {
+    const customer = await this.ensureCustomerForMerchant(
+      merchantId,
+      customerId,
+    );
+    const gender =
+      customer.gender === 'male' || customer.gender === 'female'
+        ? customer.gender
+        : null;
+    const birthDate = customer.birthday
+      ? customer.birthday.toISOString().slice(0, 10)
+      : null;
+    return {
+      name: customer.name ?? null,
+      gender,
+      birthDate,
+    } satisfies CustomerProfileDto;
   }
 
   @Post('profile')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiOkResponse({ type: CustomerProfileDto })
   async saveProfile(@Body() body: CustomerProfileSaveDto) {
-    const merchantId = typeof body?.merchantId === 'string' ? body.merchantId.trim() : '';
-    const customerId = typeof body?.customerId === 'string' ? body.customerId.trim() : '';
+    const merchantId =
+      typeof body?.merchantId === 'string' ? body.merchantId.trim() : '';
+    const customerId =
+      typeof body?.customerId === 'string' ? body.customerId.trim() : '';
     if (!merchantId) throw new BadRequestException('merchantId required');
     if (!customerId) throw new BadRequestException('customerId required');
     let current;
@@ -1280,7 +1840,10 @@ export class LoyaltyController {
       // Первый вход вне Telegram или новый мерчант для существующего клиента:
       // создаём (если нужно) запись Customer и всегда привязываем к мерчанту через нулевой кошелёк.
       const msg = typeof e?.message === 'string' ? e.message : '';
-      if (msg === 'customer not found' || msg === 'customer does not belong to merchant') {
+      if (
+        msg === 'customer not found' ||
+        msg === 'customer does not belong to merchant'
+      ) {
         try {
           // Создаём запись клиента с указанным id (если нет)
           current = await this.prisma.customer.upsert({
@@ -1292,13 +1855,25 @@ export class LoyaltyController {
         try {
           // Линкуем к мерчанту через нулевой кошелёк POINTS, чтобы пройти изоляцию
           await this.prisma.wallet.upsert({
-            where: { customerId_merchantId_type: { customerId, merchantId, type: WalletType.POINTS } as any },
+            where: {
+              customerId_merchantId_type: {
+                customerId,
+                merchantId,
+                type: WalletType.POINTS,
+              } as any,
+            },
             update: {},
             create: { customerId, merchantId, type: WalletType.POINTS },
           } as any);
         } catch {}
         // Повторно считаем current (на случай, если только что создавали)
-        try { current = current || (await this.prisma.customer.findUnique({ where: { id: customerId } })); } catch {}
+        try {
+          current =
+            current ||
+            (await this.prisma.customer.findUnique({
+              where: { id: customerId },
+            }));
+        } catch {}
       } else {
         throw e;
       }
@@ -1315,7 +1890,10 @@ export class LoyaltyController {
     }
     const gender: 'male' | 'female' = body.gender;
 
-    if (typeof body?.birthDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.birthDate)) {
+    if (
+      typeof body?.birthDate !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(body.birthDate)
+    ) {
       throw new BadRequestException('birthDate must be in format YYYY-MM-DD');
     }
     const birthDate = body.birthDate;
@@ -1324,11 +1902,19 @@ export class LoyaltyController {
       throw new BadRequestException('birthDate is invalid');
     }
 
-    const updated = await this.prisma.customer.update({ where: { id: customerId }, data: { name, gender, birthday: parsed } });
+    const updated = await this.prisma.customer.update({
+      where: { id: customerId },
+      data: { name, gender, birthday: parsed },
+    });
     return {
       name: updated.name ?? current.name ?? null,
-      gender: updated.gender === 'male' || updated.gender === 'female' ? (updated.gender as 'male' | 'female') : null,
-      birthDate: updated.birthday ? updated.birthday.toISOString().slice(0, 10) : null,
+      gender:
+        updated.gender === 'male' || updated.gender === 'female'
+          ? updated.gender
+          : null,
+      birthDate: updated.birthday
+        ? updated.birthday.toISOString().slice(0, 10)
+        : null,
     } satisfies CustomerProfileDto;
   }
 
@@ -1343,26 +1929,49 @@ export class LoyaltyController {
     @Query('outletId') outletId?: string,
     @Query('staffId') staffId?: string,
   ) {
-    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 20, 1), 100) : 20;
+    const limit = limitStr
+      ? Math.min(Math.max(parseInt(limitStr, 10) || 20, 1), 100)
+      : 20;
     const before = beforeStr ? new Date(beforeStr) : undefined;
-    return this.service.transactions(merchantId, customerId, limit, before, { outletId, staffId });
+    return this.service.transactions(merchantId, customerId, limit, before, {
+      outletId,
+      staffId,
+    });
   }
 
   // Публичные списки для фронтов (без AdminGuard)
   @Get('outlets/:merchantId')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
-  @ApiOkResponse({ schema: { type: 'array', items: { $ref: getSchemaPath(PublicOutletDto) } } })
+  @ApiOkResponse({
+    schema: { type: 'array', items: { $ref: getSchemaPath(PublicOutletDto) } },
+  })
   async publicOutlets(@Param('merchantId') merchantId: string) {
-    const items = await this.prisma.outlet.findMany({ where: { merchantId }, orderBy: { name: 'asc' } });
-    return items.map(o => ({ id: o.id, name: o.name, address: o.address ?? undefined }));
+    const items = await this.prisma.outlet.findMany({
+      where: { merchantId },
+      orderBy: { name: 'asc' },
+    });
+    return items.map((o) => ({
+      id: o.id,
+      name: o.name,
+      address: o.address ?? undefined,
+    }));
   }
 
   @Get('staff/:merchantId')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
-  @ApiOkResponse({ schema: { type: 'array', items: { $ref: getSchemaPath(PublicStaffDto) } } })
+  @ApiOkResponse({
+    schema: { type: 'array', items: { $ref: getSchemaPath(PublicStaffDto) } },
+  })
   async publicStaff(@Param('merchantId') merchantId: string) {
-    const items = await this.prisma.staff.findMany({ where: { merchantId, status: 'ACTIVE' }, orderBy: { createdAt: 'asc' } });
-    return items.map(s => ({ id: s.id, login: s.login ?? undefined, role: s.role }));
+    const items = await this.prisma.staff.findMany({
+      where: { merchantId, status: 'ACTIVE' },
+      orderBy: { createdAt: 'asc' },
+    });
+    return items.map((s) => ({
+      id: s.id,
+      login: s.login ?? undefined,
+      role: s.role,
+    }));
   }
 
   // verifyBridgeSignature: вынесен в ./bridge.util.ts
@@ -1371,20 +1980,50 @@ export class LoyaltyController {
   @Get('consent')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @ApiOkResponse({ schema: { $ref: getSchemaPath(ConsentGetRespDto) } })
-  async getConsent(@Query('merchantId') merchantId: string, @Query('customerId') customerId: string) {
-    const c = await this.prisma.consent.findUnique({ where: { merchantId_customerId: { merchantId, customerId } } });
+  async getConsent(
+    @Query('merchantId') merchantId: string,
+    @Query('customerId') customerId: string,
+  ) {
+    const c = await this.prisma.consent.findUnique({
+      where: { merchantId_customerId: { merchantId, customerId } },
+    });
     return { granted: !!c, consentAt: c?.consentAt?.toISOString() };
   }
 
   @Post('consent')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @ApiOkResponse({ schema: { $ref: getSchemaPath(OkDto) } })
-  async setConsent(@Body() body: { merchantId: string; customerId: string; granted: boolean }) {
-    if (!body?.merchantId || !body?.customerId) throw new BadRequestException('merchantId and customerId required');
+  async setConsent(
+    @Body() body: { merchantId: string; customerId: string; granted: boolean },
+  ) {
+    if (!body?.merchantId || !body?.customerId)
+      throw new BadRequestException('merchantId and customerId required');
     if (body.granted) {
-      await this.prisma.consent.upsert({ where: { merchantId_customerId: { merchantId: body.merchantId, customerId: body.customerId } }, update: { consentAt: new Date() }, create: { merchantId: body.merchantId, customerId: body.customerId, consentAt: new Date() } });
+      await this.prisma.consent.upsert({
+        where: {
+          merchantId_customerId: {
+            merchantId: body.merchantId,
+            customerId: body.customerId,
+          },
+        },
+        update: { consentAt: new Date() },
+        create: {
+          merchantId: body.merchantId,
+          customerId: body.customerId,
+          consentAt: new Date(),
+        },
+      });
     } else {
-      try { await this.prisma.consent.delete({ where: { merchantId_customerId: { merchantId: body.merchantId, customerId: body.customerId } } }); } catch {}
+      try {
+        await this.prisma.consent.delete({
+          where: {
+            merchantId_customerId: {
+              merchantId: body.merchantId,
+              customerId: body.customerId,
+            },
+          },
+        });
+      } catch {}
     }
     return { ok: true };
   }

@@ -7,10 +7,10 @@ import { PrismaService } from '../src/prisma.service';
 describe('Subscription Controller (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
-  
+
   const TEST_MERCHANT_ID = 'TEST_SUB_MERCHANT_' + Date.now();
   const TEST_PLAN_ID = 'TEST_PLAN_' + Date.now();
-  
+
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -18,7 +18,7 @@ describe('Subscription Controller (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
     prisma = app.get<PrismaService>(PrismaService);
-    
+
     await app.init();
 
     // Создаем тестовый план
@@ -67,10 +67,10 @@ describe('Subscription Controller (e2e)', () => {
       where: { merchantId: TEST_MERCHANT_ID },
     });
     await prisma.payment.deleteMany({
-      where: { 
+      where: {
         subscription: {
-          merchantId: TEST_MERCHANT_ID
-        }
+          merchantId: TEST_MERCHANT_ID,
+        },
       },
     });
     await prisma.merchantSettings.delete({
@@ -195,7 +195,10 @@ describe('Subscription Controller (e2e)', () => {
         .expect(200);
 
       expect(response.body).toHaveProperty('metadata');
-      expect(response.body.metadata).toHaveProperty('notes', 'Updated metadata');
+      expect(response.body.metadata).toHaveProperty(
+        'notes',
+        'Updated metadata',
+      );
     });
   });
 

@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import FakeQr from "../components/FakeQr";
 import {
   balance,
@@ -19,11 +19,13 @@ import {
   promotionClaim,
   profileGet,
   profileSave,
+  teleauth,
   type PromotionItem,
 } from "../lib/api";
 import Spinner from "../components/Spinner";
 import Toast from "../components/Toast";
 import { useMiniappAuthContext } from "../lib/MiniappAuthContext";
+import { isValidInitData, waitForInitData } from "../lib/useMiniapp";
 import { type LevelInfo } from "../lib/levels";
 import { getTransactionMeta, type TransactionKind } from "../lib/transactionMeta";
 import { subscribeToLoyaltyEvents } from "../lib/loyaltyEvents";
@@ -62,6 +64,9 @@ const genderOptions: Array<{ value: "male" | "female"; label: string }> = [
   { value: "male", label: "Мужской" },
   { value: "female", label: "Женский" },
 ];
+
+const profileStorageKey = (merchantId: string) => `miniapp.profile.v2:${merchantId}`;
+const profilePendingKey = (merchantId: string) => `miniapp.profile.pending.v1:${merchantId}`;
 
 const HISTORY_ICONS: Record<TransactionKind, ReactNode> = {
   earn: (
@@ -230,6 +235,8 @@ export default function Page() {
   const auth = useMiniappAuthContext();
   const merchantId = auth.merchantId;
   const setMerchantId = auth.setMerchantId;
+  const setAuthCustomerId = auth.setCustomerId;
+  const initData = auth.initData;
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("");
   const [bal, setBal] = useState<number | null>(null);
@@ -254,6 +261,8 @@ export default function Page() {
   });
   const [profileCompleted, setProfileCompleted] = useState<boolean>(true);
   const [profileTouched, setProfileTouched] = useState<boolean>(false);
+  const [profileSaving, setProfileSaving] = useState<boolean>(false);
+  const pendingProfileSync = useRef<boolean>(false);
   const [referralInfo, setReferralInfo] = useState<{
     code: string;
     link: string;
@@ -292,8 +301,8 @@ export default function Page() {
       // ignore telegram errors
     }
     try {
-      const key = `miniapp.profile.v2:${merchantId}`;
-      const savedProfile = merchantId ? localStorage.getItem(key) : null;
+      const key = merchantId ? profileStorageKey(merchantId) : null;
+      const savedProfile = key ? localStorage.getItem(key) : null;
       if (savedProfile) {
         const parsed = JSON.parse(savedProfile) as { name?: string; gender?: "male" | "female"; birthDate?: string };
         const name = parsed.name || "";
@@ -314,7 +323,8 @@ export default function Page() {
   useEffect(() => {
     if (!merchantId || !customerId) return;
     let cancelled = false;
-    const key = `miniapp.profile.v2:${merchantId}`;
+    const key = profileStorageKey(merchantId);
+    const pendingKey = profilePendingKey(merchantId);
     (async () => {
       try {
         const p = await profileGet(merchantId, customerId);
@@ -325,13 +335,59 @@ export default function Page() {
         const valid = Boolean(name && (gender === "male" || gender === "female") && birthDate);
         setProfileForm({ name, gender, birthDate });
         setProfileCompleted(valid);
-        try { localStorage.setItem(key, JSON.stringify({ name, gender, birthDate })); } catch {}
+        try {
+          localStorage.setItem(key, JSON.stringify({ name, gender, birthDate }));
+          localStorage.removeItem(pendingKey);
+        } catch {}
       } catch {
         // сервер мог не иметь профиля — оставим локальные данные/валидацию
       }
     })();
     return () => { cancelled = true; };
   }, [merchantId, customerId]);
+
+  useEffect(() => {
+    if (!merchantId || !customerId) return;
+    if (pendingProfileSync.current) return;
+    const key = profileStorageKey(merchantId);
+    const pendingKey = profilePendingKey(merchantId);
+    let rawPending: string | null = null;
+    try {
+      rawPending = localStorage.getItem(pendingKey);
+    } catch {
+      rawPending = null;
+    }
+    if (!rawPending) return;
+    let parsed: { name?: string; gender?: string; birthDate?: string } | null = null;
+    try {
+      parsed = JSON.parse(rawPending);
+    } catch {
+      parsed = null;
+    }
+    const name = parsed?.name ? String(parsed.name).trim() : "";
+    const gender = parsed?.gender === "male" || parsed?.gender === "female" ? parsed.gender : "";
+    const birthDate = typeof parsed?.birthDate === "string" ? parsed.birthDate : "";
+    if (!name || !gender || !birthDate) {
+      try { localStorage.removeItem(pendingKey); } catch {}
+      return;
+    }
+    pendingProfileSync.current = true;
+    (async () => {
+      try {
+        await profileSave(merchantId, customerId, { name, gender, birthDate });
+        try {
+          localStorage.setItem(key, JSON.stringify({ name, gender, birthDate }));
+          localStorage.removeItem(pendingKey);
+        } catch {}
+        setProfileForm({ name, gender, birthDate });
+        setProfileCompleted(true);
+      } catch (error) {
+        setToast({ msg: `Не удалось синхронизировать профиль: ${resolveErrorMessage(error)}`, type: "error" });
+      } finally {
+        pendingProfileSync.current = false;
+      }
+    })();
+  }, [merchantId, customerId, setToast]);
 
   useEffect(() => {
     setLoading(auth.loading);
@@ -660,26 +716,72 @@ export default function Page() {
         setToast({ msg: "Заполните все поля", type: "error" });
         return;
       }
-      try {
-        // Сохраняем на сервер (кросс-девайс) и локально — пер-мерчантный ключ
-        if (merchantId && customerId) {
-          await profileSave(merchantId, customerId, {
-            name: profileForm.name.trim(),
-            gender: profileForm.gender as 'male' | 'female',
-            birthDate: profileForm.birthDate,
-          });
+      setProfileSaving(true);
+      const key = merchantId ? profileStorageKey(merchantId) : null;
+      const pendingKey = merchantId ? profilePendingKey(merchantId) : null;
+      if (key) {
+        try { localStorage.setItem(key, JSON.stringify(profileForm)); } catch {}
+      }
+
+      let effectiveCustomerId = customerId;
+      if ((!effectiveCustomerId || !merchantId)) {
+        let initForAuth = initData;
+        if (!isValidInitData(initForAuth)) {
+          initForAuth = await waitForInitData(10, 200);
         }
-        const key = `miniapp.profile.v2:${merchantId}`;
-        localStorage.setItem(key, JSON.stringify(profileForm));
+        if (merchantId && isValidInitData(initForAuth)) {
+          try {
+            const result = await teleauth(merchantId, initForAuth);
+            effectiveCustomerId = result.customerId;
+            setAuthCustomerId(result.customerId);
+            setCustomerId(result.customerId);
+          } catch (teleauthError) {
+            const message = resolveErrorMessage(teleauthError);
+            setToast({ msg: `Не удалось авторизоваться в Telegram: ${message}`, type: "error" });
+            setProfileSaving(false);
+            return;
+          }
+        } else {
+          if (pendingKey) {
+            try { localStorage.setItem(pendingKey, JSON.stringify(profileForm)); } catch {}
+          }
+          pendingProfileSync.current = false;
+          setToast({ msg: "Профиль сохранён, синхронизируем после завершения авторизации Telegram", type: "info" });
+          setProfileSaving(false);
+          return;
+        }
+      }
+
+      if (!merchantId || !effectiveCustomerId) {
+        if (pendingKey) {
+          try { localStorage.setItem(pendingKey, JSON.stringify(profileForm)); } catch {}
+        }
+        pendingProfileSync.current = false;
+        setToast({ msg: "Профиль сохранён, синхронизируем после завершения авторизации Telegram", type: "info" });
+        setProfileSaving(false);
+        return;
+      }
+
+      try {
+        await profileSave(merchantId, effectiveCustomerId, {
+          name: profileForm.name.trim(),
+          gender: profileForm.gender as 'male' | 'female',
+          birthDate: profileForm.birthDate,
+        });
+        if (pendingKey) {
+          try { localStorage.removeItem(pendingKey); } catch {}
+        }
         setProfileCompleted(true);
         setToast({ msg: "Профиль сохранён", type: "success" });
       } catch (error) {
         const message = resolveErrorMessage(error);
         setToast({ msg: `Не удалось сохранить: ${message}`, type: "error" });
+      } finally {
+        setProfileSaving(false);
       }
-      if (referralEnabled && inviteCode.trim() && customerId) {
+      if (referralEnabled && inviteCode.trim() && effectiveCustomerId) {
         try {
-          await referralActivate(inviteCode.trim(), customerId);
+          await referralActivate(inviteCode.trim(), effectiveCustomerId);
           setInviteApplied(true);
           setInviteCode("");
           setToast({ msg: "Пригласительный код активирован", type: "success" });
@@ -689,7 +791,7 @@ export default function Page() {
         }
       }
     },
-    [profileForm, referralEnabled, inviteCode, customerId]
+    [profileForm, referralEnabled, inviteCode, customerId, merchantId, initData, setAuthCustomerId]
   );
 
   const handleInviteFriend = useCallback(async () => {
@@ -888,6 +990,7 @@ export default function Page() {
             <button
               type="submit"
               className={`${styles.profileSubmit} ${styles.appear} ${referralEnabled ? styles.delay5 : styles.delay4}`}
+              disabled={profileSaving}
             >
               Сохранить
             </button>

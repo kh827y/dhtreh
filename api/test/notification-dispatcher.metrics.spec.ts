@@ -18,7 +18,10 @@ function makePrismaMock() {
 }
 
 describe('NotificationDispatcherWorker - metrics', () => {
-  const push = { sendPush: jest.fn(async () => ({ total: 2, sent: 2, failed: 0 })), sendToTopic: jest.fn(async () => ({ success: true })) } as any;
+  const push = {
+    sendPush: jest.fn(async () => ({ total: 2, sent: 2, failed: 0 })),
+    sendToTopic: jest.fn(async () => ({ success: true })),
+  } as any;
   const email = { sendEmail: jest.fn(async () => true) } as any;
 
   beforeEach(() => {
@@ -32,28 +35,61 @@ describe('NotificationDispatcherWorker - metrics', () => {
     const incSpy = jest.spyOn(metrics, 'inc');
 
     const prisma = makePrismaMock();
-    (prisma.$queryRaw as any).mockResolvedValue([{ ok: true }]);
+    prisma.$queryRaw.mockResolvedValue([{ ok: true }]);
 
     const now = new Date();
     prisma.eventOutbox.findMany.mockResolvedValue([
-      { id: 'E100', merchantId: 'M-1', eventType: 'notify.broadcast', payload: { merchantId: 'M-1', channel: 'ALL', segmentId: 'S1', template: { subject: 'Hi', text: 'T' }, variables: {} }, status: 'PENDING', retries: 0, nextRetryAt: null, lastError: null, createdAt: now },
+      {
+        id: 'E100',
+        merchantId: 'M-1',
+        eventType: 'notify.broadcast',
+        payload: {
+          merchantId: 'M-1',
+          channel: 'ALL',
+          segmentId: 'S1',
+          template: { subject: 'Hi', text: 'T' },
+          variables: {},
+        },
+        status: 'PENDING',
+        retries: 0,
+        nextRetryAt: null,
+        lastError: null,
+        createdAt: now,
+      },
     ]);
     prisma.eventOutbox.updateMany.mockResolvedValue({ count: 1 });
-    prisma.segmentCustomer.findMany.mockResolvedValue([{ customerId: 'C1' }, { customerId: 'C2' }]);
-    prisma.customer.findMany.mockResolvedValue([{ id: 'C1', email: 'a@a', name: 'A' }, { id: 'C2', email: 'b@b', name: 'B' }]);
+    prisma.segmentCustomer.findMany.mockResolvedValue([
+      { customerId: 'C1' },
+      { customerId: 'C2' },
+    ]);
+    prisma.customer.findMany.mockResolvedValue([
+      { id: 'C1', email: 'a@a', name: 'A' },
+      { id: 'C2', email: 'b@b', name: 'B' },
+    ]);
     prisma.merchant.findUnique.mockResolvedValue({ name: 'Shop' });
     prisma.eventOutbox.update.mockResolvedValue({});
 
-    const w = new Worker(prisma as any, metrics, push, email);
+    const w = new Worker(prisma, metrics, push, email);
     // ensure no throttle
     // @ts-ignore
     await (w as any).loadRpsConfig?.();
     await (w as any).tick();
 
     // Expect metrics for channels with merchantId labels
-    expect(incSpy).toHaveBeenCalledWith('notifications_channel_attempts_total', { channel: 'PUSH', merchantId: 'M-1' }, expect.any(Number));
-    expect(incSpy).toHaveBeenCalledWith('notifications_channel_attempts_total', { channel: 'EMAIL', merchantId: 'M-1' }, expect.any(Number));
-    expect(incSpy).toHaveBeenCalledWith('notifications_processed_total', { type: 'broadcast', result: 'sent' });
+    expect(incSpy).toHaveBeenCalledWith(
+      'notifications_channel_attempts_total',
+      { channel: 'PUSH', merchantId: 'M-1' },
+      expect.any(Number),
+    );
+    expect(incSpy).toHaveBeenCalledWith(
+      'notifications_channel_attempts_total',
+      { channel: 'EMAIL', merchantId: 'M-1' },
+      expect.any(Number),
+    );
+    expect(incSpy).toHaveBeenCalledWith('notifications_processed_total', {
+      type: 'broadcast',
+      result: 'sent',
+    });
   });
 
   it('increments throttled processed metric when hit RPS limit', async () => {
@@ -61,22 +97,53 @@ describe('NotificationDispatcherWorker - metrics', () => {
     const incSpy = jest.spyOn(metrics, 'inc');
 
     const prisma = makePrismaMock();
-    (prisma.$queryRaw as any).mockResolvedValue([{ ok: true }]);
+    prisma.$queryRaw.mockResolvedValue([{ ok: true }]);
 
     const now = new Date();
     prisma.eventOutbox.findMany.mockResolvedValue([
-      { id: 'E1', merchantId: 'M-TH', eventType: 'notify.broadcast', payload: { merchantId: 'M-TH', channel: 'PUSH', template: { text: 'Hi' } }, status: 'PENDING', retries: 0, nextRetryAt: null, lastError: null, createdAt: now },
-      { id: 'E2', merchantId: 'M-TH', eventType: 'notify.broadcast', payload: { merchantId: 'M-TH', channel: 'PUSH', template: { text: 'Hi' } }, status: 'PENDING', retries: 0, nextRetryAt: null, lastError: null, createdAt: now },
+      {
+        id: 'E1',
+        merchantId: 'M-TH',
+        eventType: 'notify.broadcast',
+        payload: {
+          merchantId: 'M-TH',
+          channel: 'PUSH',
+          template: { text: 'Hi' },
+        },
+        status: 'PENDING',
+        retries: 0,
+        nextRetryAt: null,
+        lastError: null,
+        createdAt: now,
+      },
+      {
+        id: 'E2',
+        merchantId: 'M-TH',
+        eventType: 'notify.broadcast',
+        payload: {
+          merchantId: 'M-TH',
+          channel: 'PUSH',
+          template: { text: 'Hi' },
+        },
+        status: 'PENDING',
+        retries: 0,
+        nextRetryAt: null,
+        lastError: null,
+        createdAt: now,
+      },
     ]);
     prisma.eventOutbox.updateMany.mockResolvedValue({ count: 1 });
     prisma.eventOutbox.update.mockResolvedValue({});
 
-    const w = new Worker(prisma as any, metrics, push, email);
+    const w = new Worker(prisma, metrics, push, email);
     (w as any).loadRpsConfig?.();
     // Manually set RPS=1 for merchant to trigger throttle
     (w as any).rpsByMerchant?.set('M-TH', 1);
     await (w as any).tick();
 
-    expect(incSpy).toHaveBeenCalledWith('notifications_processed_total', { type: 'broadcast', result: 'throttled' });
+    expect(incSpy).toHaveBeenCalledWith('notifications_processed_total', {
+      type: 'broadcast',
+      result: 'throttled',
+    });
   });
 });

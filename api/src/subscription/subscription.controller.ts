@@ -12,7 +12,12 @@ import {
   HttpStatus,
   NotFoundException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { SubscriptionService } from './subscription.service';
 import { ApiKeyGuard } from '../guards/api-key.guard';
 
@@ -41,12 +46,13 @@ export class SubscriptionController {
   @ApiResponse({ status: 201, description: 'Подписка создана' })
   @ApiResponse({ status: 400, description: 'Неверные данные' })
   async createSubscription(
-    @Body() dto: {
+    @Body()
+    dto: {
       merchantId: string;
       planId: string;
       trialDays?: number;
       metadata?: any;
-    }
+    },
   ) {
     return this.subscriptionService.createSubscription(dto);
   }
@@ -59,7 +65,8 @@ export class SubscriptionController {
   @ApiResponse({ status: 200, description: 'Информация о подписке' })
   @ApiResponse({ status: 404, description: 'Подписка не найдена' })
   async getSubscription(@Param('merchantId') merchantId: string) {
-    const subscription = await this.subscriptionService.getSubscription(merchantId);
+    const subscription =
+      await this.subscriptionService.getSubscription(merchantId);
     if (!subscription) {
       throw new NotFoundException('Подписка не найдена');
     }
@@ -75,11 +82,12 @@ export class SubscriptionController {
   @ApiResponse({ status: 404, description: 'Подписка не найдена' })
   async updateSubscription(
     @Param('merchantId') merchantId: string,
-    @Body() dto: {
+    @Body()
+    dto: {
       planId?: string;
       cancelAtPeriodEnd?: boolean;
       metadata?: any;
-    }
+    },
   ) {
     return this.subscriptionService.updateSubscription(merchantId, dto);
   }
@@ -93,7 +101,7 @@ export class SubscriptionController {
   @ApiResponse({ status: 404, description: 'Подписка не найдена' })
   async cancelSubscription(
     @Param('merchantId') merchantId: string,
-    @Query('immediately') immediately?: boolean
+    @Query('immediately') immediately?: boolean,
   ) {
     return this.subscriptionService.cancelSubscription(merchantId, immediately);
   }
@@ -106,9 +114,12 @@ export class SubscriptionController {
   @ApiResponse({ status: 200, description: 'Статус доступности' })
   async checkFeature(
     @Param('merchantId') merchantId: string,
-    @Param('feature') feature: string
+    @Param('feature') feature: string,
   ) {
-    const hasAccess = await this.subscriptionService.checkFeatureAccess(merchantId, feature);
+    const hasAccess = await this.subscriptionService.checkFeatureAccess(
+      merchantId,
+      feature,
+    );
     return { feature, hasAccess };
   }
 
@@ -131,18 +142,19 @@ export class SubscriptionController {
   @ApiOperation({ summary: 'Webhook для обработки платежей' })
   @ApiResponse({ status: 200, description: 'Платеж обработан' })
   async handlePaymentWebhook(
-    @Body() paymentData: {
+    @Body()
+    paymentData: {
       subscriptionId: string;
       status: string;
       method?: string;
       invoiceId?: string;
       receiptUrl?: string;
       failureReason?: string;
-    }
+    },
   ) {
     return this.subscriptionService.processPayment(
       paymentData.subscriptionId,
-      paymentData
+      paymentData,
     );
   }
 
@@ -154,7 +166,7 @@ export class SubscriptionController {
   @ApiResponse({ status: 200, description: 'История платежей' })
   async getPaymentHistory(
     @Param('merchantId') merchantId: string,
-    @Query('limit') limit?: number
+    @Query('limit') limit?: number,
   ) {
     return this.subscriptionService.getPaymentHistory(merchantId, limit || 20);
   }
@@ -164,25 +176,33 @@ export class SubscriptionController {
    */
   @Post(':merchantId/validate-limits')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Проверить соответствие текущего использования лимитам плана' })
+  @ApiOperation({
+    summary: 'Проверить соответствие текущего использования лимитам плана',
+  })
   @ApiResponse({ status: 200, description: 'Лимиты соблюдены' })
   @ApiResponse({ status: 400, description: 'Превышены лимиты плана' })
   async validatePlanLimits(
     @Param('merchantId') merchantId: string,
-    @Body() plan?: any
+    @Body() plan?: any,
   ) {
-    const subscription = await this.subscriptionService.getSubscription(merchantId);
+    const subscription =
+      await this.subscriptionService.getSubscription(merchantId);
     if (!subscription) {
       throw new NotFoundException('Подписка не найдена');
     }
-    
-    // Если план не передан или не содержит id, используем текущий план подписки
-    const targetPlan = (plan && typeof plan.id === 'string' && plan.id) ? plan : subscription.plan;
-    const isValid = await this.subscriptionService.validatePlanLimits(merchantId, targetPlan);
 
-    const planId = (plan && typeof plan.id === 'string' && plan.id)
-      ? plan.id
-      : (subscription.plan?.id || (subscription as any).planId);
+    // Если план не передан или не содержит id, используем текущий план подписки
+    const targetPlan =
+      plan && typeof plan.id === 'string' && plan.id ? plan : subscription.plan;
+    const isValid = await this.subscriptionService.validatePlanLimits(
+      merchantId,
+      targetPlan,
+    );
+
+    const planId =
+      plan && typeof plan.id === 'string' && plan.id
+        ? plan.id
+        : subscription.plan?.id || subscription.planId;
 
     return {
       valid: isValid,

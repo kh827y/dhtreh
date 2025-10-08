@@ -10,12 +10,16 @@ describe('Poster register (e2e, negative)', () => {
 
   beforeAll(async () => {
     process.env.WORKERS_ENABLED = '0';
-    const moduleFixture = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const moduleFixture = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
     app = moduleFixture.createNestApplication();
     await app.init();
   });
 
-  afterAll(async () => { await app.close(); });
+  afterAll(async () => {
+    await app.close();
+  });
 
   it('returns 400 on invalid config and exports error metric', async () => {
     // Missing required appSecret
@@ -25,7 +29,9 @@ describe('Poster register (e2e, negative)', () => {
       .send({ merchantId: 'M-P', appId: 'poster-app' })
       .expect(400);
 
-    const metrics = await request(app.getHttpServer()).get('/metrics').expect(200);
+    const metrics = await request(app.getHttpServer())
+      .get('/metrics')
+      .expect(200);
     expect(metrics.text).toContain('pos_requests_total{');
     expect(metrics.text).toContain('provider="POSTER"');
     expect(metrics.text).toContain('endpoint="register"');

@@ -1,4 +1,14 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { PortalGuard } from '../../portal-auth/portal.guard';
 import { LoyaltyProgramService } from '../loyalty-program.service';
 import type { TierDto, TierPayload } from '../loyalty-program.service';
@@ -28,7 +38,11 @@ export class TiersController {
   }
 
   @Put(':tierId')
-  update(@Req() req: any, @Param('tierId') tierId: string, @Body() body: TierPayload): Promise<TierDto> {
+  update(
+    @Req() req: any,
+    @Param('tierId') tierId: string,
+    @Body() body: TierPayload,
+  ): Promise<TierDto> {
     return this.service.updateTier(this.merchantId(req), tierId, body);
   }
 

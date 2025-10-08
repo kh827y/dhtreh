@@ -1,5 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import { PaymentProvider, CreatePaymentParams, PaymentResult, PaymentStatus, RefundResult, CreateSubscriptionParams, SubscriptionResult, WebhookResult } from '../payment-provider.interface';
+import {
+  PaymentProvider,
+  CreatePaymentParams,
+  PaymentResult,
+  PaymentStatus,
+  RefundResult,
+  CreateSubscriptionParams,
+  SubscriptionResult,
+  WebhookResult,
+} from '../payment-provider.interface';
 
 /**
  * Mock-провайдер оплат для DEV/пилотов. Не делает внешних запросов.
@@ -33,7 +42,10 @@ export class MockPaymentProvider implements PaymentProvider {
     } as any;
   }
 
-  async refundPayment(paymentId: string, amount?: number): Promise<RefundResult> {
+  async refundPayment(
+    paymentId: string,
+    amount?: number,
+  ): Promise<RefundResult> {
     return {
       id: 'refund_' + paymentId,
       status: 'succeeded',
@@ -53,7 +65,9 @@ export class MockPaymentProvider implements PaymentProvider {
     };
   }
 
-  async createSubscription(params: CreateSubscriptionParams): Promise<SubscriptionResult> {
+  async createSubscription(
+    params: CreateSubscriptionParams,
+  ): Promise<SubscriptionResult> {
     return {
       id: 'sub_' + Math.random().toString(36).slice(2, 12),
       status: 'active',

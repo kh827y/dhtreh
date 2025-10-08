@@ -4,7 +4,7 @@ import { MetricsService } from '../metrics.service';
 
 export type BroadcastArgs = {
   merchantId: string;
-  channel: 'EMAIL'|'PUSH'|'ALL';
+  channel: 'EMAIL' | 'PUSH' | 'ALL';
   segmentId?: string;
   template?: { subject?: string; text?: string; html?: string };
   variables?: any;
@@ -13,7 +13,10 @@ export type BroadcastArgs = {
 
 @Injectable()
 export class NotificationsService {
-  constructor(private prisma: PrismaService, private metrics: MetricsService) {}
+  constructor(
+    private prisma: PrismaService,
+    private metrics: MetricsService,
+  ) {}
 
   async broadcast(args: BroadcastArgs) {
     const { merchantId, channel } = args;
@@ -21,7 +24,11 @@ export class NotificationsService {
     if (!channel) throw new BadRequestException('channel required');
     if (args.dryRun) {
       // Estimate recipients
-      const estimated = await this.estimateRecipients(merchantId, channel, args.segmentId);
+      const estimated = await this.estimateRecipients(
+        merchantId,
+        channel,
+        args.segmentId,
+      );
       return { ok: true, dryRun: true, estimated };
     }
     const payload = {
@@ -34,28 +41,54 @@ export class NotificationsService {
       at: new Date().toISOString(),
     } as any;
     try {
-      await this.prisma.eventOutbox.create({ data: { merchantId, eventType: 'notify.broadcast', payload } });
-      try { this.metrics.inc('notifications_enqueued_total', { type: channel }); } catch {}
+      await this.prisma.eventOutbox.create({
+        data: { merchantId, eventType: 'notify.broadcast', payload },
+      });
+      try {
+        this.metrics.inc('notifications_enqueued_total', { type: channel });
+      } catch {}
     } catch {}
     return { ok: true };
   }
 
-  async test(merchantId: string, channel: 'EMAIL'|'PUSH', to: string, template?: { subject?: string; text?: string; html?: string }) {
+  async test(
+    merchantId: string,
+    channel: 'EMAIL' | 'PUSH',
+    to: string,
+    template?: { subject?: string; text?: string; html?: string },
+  ) {
     if (!merchantId) throw new BadRequestException('merchantId required');
     if (!channel) throw new BadRequestException('channel required');
     if (!to) throw new BadRequestException('to required');
-    const payload = { type: 'test', channel, merchantId, to, template: template ?? null, at: new Date().toISOString() } as any;
+    const payload = {
+      type: 'test',
+      channel,
+      merchantId,
+      to,
+      template: template ?? null,
+      at: new Date().toISOString(),
+    } as any;
     try {
-      await this.prisma.eventOutbox.create({ data: { merchantId, eventType: 'notify.test', payload } });
-      try { this.metrics.inc('notifications_enqueued_total', { type: channel }); } catch {}
+      await this.prisma.eventOutbox.create({
+        data: { merchantId, eventType: 'notify.test', payload },
+      });
+      try {
+        this.metrics.inc('notifications_enqueued_total', { type: channel });
+      } catch {}
     } catch {}
     return { ok: true };
   }
 
-  private async estimateRecipients(merchantId: string, channel: 'EMAIL'|'PUSH'|'ALL', segmentId?: string): Promise<number> {
+  private async estimateRecipients(
+    merchantId: string,
+    channel: 'EMAIL' | 'PUSH' | 'ALL',
+    segmentId?: string,
+  ): Promise<number> {
     try {
       if (segmentId) {
-        const size = await this.prisma.segmentCustomer.count({ where: { segmentId } });
+        const size = await this.prisma.segmentCustomer.count({
+          where: { segmentId },
+        });
         return size;
       }
       // Per-channel estimations
@@ -63,16 +96,27 @@ export class NotificationsService {
       let pushCount = 0;
       if (channel === 'EMAIL' || channel === 'ALL') {
         // Customers of merchant with non-null email (via CustomerStats relation)
-        emailCount = await (this.prisma as any).customerStats.count({ where: { merchantId, customer: { email: { not: null } } } });
+        emailCount = await (this.prisma as any).customerStats.count({
+          where: { merchantId, customer: { email: { not: null } } },
+        });
         // If consents are used, take the minimum of granted consents and emails
         try {
-          const granted = await this.prisma.customerConsent.count({ where: { merchantId, channel: 'EMAIL', status: 'GRANTED' } });
-          emailCount = Math.min(emailCount || granted, Math.max(emailCount, granted));
+          const granted = await this.prisma.customerConsent.count({
+            where: { merchantId, channel: 'EMAIL', status: 'GRANTED' },
+          });
+          emailCount = Math.min(
+            emailCount || granted,
+            Math.max(emailCount, granted),
+          );
         } catch {}
       }
       if (channel === 'PUSH' || channel === 'ALL') {
         // Distinct customers with active devices
-        const groups = await (this.prisma as any).pushDevice.groupBy({ by: ['customerId'], where: { merchantId, isActive: true }, _count: true });
+        const groups = await (this.prisma as any).pushDevice.groupBy({
+          by: ['customerId'],
+          where: { merchantId, isActive: true },
+          _count: true,
+        });
         pushCount = Array.isArray(groups) ? groups.length : 0;
       }
       if (channel === 'ALL') return Math.max(emailCount, pushCount);

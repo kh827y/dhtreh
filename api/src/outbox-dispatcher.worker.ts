@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 import { MetricsService } from './metrics.service';
 import { pgTryAdvisoryLock, pgAdvisoryUnlock } from './pg-lock.util';
@@ -22,23 +27,38 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
   private running = false;
   public startedAt: Date | null = null;
   public lastTickAt: Date | null = null;
-  private cb: Map<string, { fails: number; windowStart: number; openUntil: number }> = new Map();
+  private cb: Map<
+    string,
+    { fails: number; windowStart: number; openUntil: number }
+  > = new Map();
   private parsedTypeConcurrency: Map<string, number> | null = null;
   private rpsByMerchantCache: Map<string, number> | null = null;
-  private rateWin: Map<string, { windowStart: number; count: number }> = new Map();
+  private rateWin: Map<string, { windowStart: number; count: number }> =
+    new Map();
 
-  constructor(private prisma: PrismaService, private metrics: MetricsService) {}
+  constructor(
+    private prisma: PrismaService,
+    private metrics: MetricsService,
+  ) {}
 
   onModuleInit() {
-    if (process.env.WORKERS_ENABLED === '0') { this.logger.log('Workers disabled (WORKERS_ENABLED=0)'); return; }
+    if (process.env.WORKERS_ENABLED === '0') {
+      this.logger.log('Workers disabled (WORKERS_ENABLED=0)');
+      return;
+    }
     const intervalMs = Number(process.env.OUTBOX_WORKER_INTERVAL_MS || '15000');
     this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
-    try { if (this.timer && typeof this.timer.unref === 'function') this.timer.unref(); } catch {}
+    try {
+      if (this.timer && typeof this.timer.unref === 'function')
+        this.timer.unref();
+    } catch {}
     this.logger.log(`OutboxDispatcherWorker started, interval=${intervalMs}ms`);
     this.startedAt = new Date();
   }
 
-  onModuleDestroy() { if (this.timer) clearInterval(this.timer); }
+  onModuleDestroy() {
+    if (this.timer) clearInterval(this.timer);
+  }
 
   private backoffMs(retries: number): number {
     const base = Number(process.env.OUTBOX_BACKOFF_BASE_MS || '60000'); // 60s
@@ -55,21 +75,49 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
   }
 
   private noteFailure(merchantId: string) {
-    const threshold = Math.max(1, Number(process.env.OUTBOX_CB_THRESHOLD || '5'));
-    const windowMs = Math.max(1000, Number(process.env.OUTBOX_CB_WINDOW_MS || '60000'));
-    const cooldownMs = Math.max(1000, Number(process.env.OUTBOX_CB_COOLDOWN_MS || '120000'));
+    const threshold = Math.max(
+      1,
+      Number(process.env.OUTBOX_CB_THRESHOLD || '5'),
+    );
+    const windowMs = Math.max(
+      1000,
+      Number(process.env.OUTBOX_CB_WINDOW_MS || '60000'),
+    );
+    const cooldownMs = Math.max(
+      1000,
+      Number(process.env.OUTBOX_CB_COOLDOWN_MS || '120000'),
+    );
     const now = Date.now();
-    const s = this.cb.get(merchantId) || { fails: 0, windowStart: now, openUntil: 0 };
-    if (now - s.windowStart > windowMs) { s.fails = 0; s.windowStart = now; }
+    const s = this.cb.get(merchantId) || {
+      fails: 0,
+      windowStart: now,
+      openUntil: 0,
+    };
+    if (now - s.windowStart > windowMs) {
+      s.fails = 0;
+      s.windowStart = now;
+    }
     s.fails++;
     const wasClosed = !(s.openUntil > now);
-    if (s.fails >= threshold) { s.openUntil = now + cooldownMs; s.fails = 0; s.windowStart = now; if (wasClosed) { this.onBreakerOpen(merchantId).catch(()=>{}); } }
+    if (s.fails >= threshold) {
+      s.openUntil = now + cooldownMs;
+      s.fails = 0;
+      s.windowStart = now;
+      if (wasClosed) {
+        this.onBreakerOpen(merchantId).catch(() => {});
+      }
+    }
     this.cb.set(merchantId, s);
   }
 
   private noteSuccess(merchantId: string) {
     const s = this.cb.get(merchantId);
-    if (s) { s.fails = 0; s.windowStart = Date.now(); s.openUntil = 0; this.cb.set(merchantId, s); }
+    if (s) {
+      s.fails = 0;
+      s.windowStart = Date.now();
+      s.openUntil = 0;
+      this.cb.set(merchantId, s);
+    }
   }
 
   private nextRetryFromHeaders(res: Response, current: number): number {
@@ -88,11 +136,14 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     if (this.parsedTypeConcurrency) return this.parsedTypeConcurrency;
     const m = new Map<string, number>();
     const raw = process.env.OUTBOX_EVENT_CONCURRENCY || '';
-    for (const part of raw.split(',').map(s=>s.trim()).filter(Boolean)) {
+    for (const part of raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)) {
       const i = part.indexOf('=');
       if (i <= 0) continue;
       const key = part.slice(0, i);
-      const val = Math.max(1, parseInt(part.slice(i+1), 10) || 1);
+      const val = Math.max(1, parseInt(part.slice(i + 1), 10) || 1);
       m.set(key, val);
     }
     this.parsedTypeConcurrency = m;
@@ -111,8 +162,13 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       const mins = Number(process.env.OUTBOX_AUTO_PAUSE_MINS || '0');
       if (!mins || mins <= 0) return;
       const until = new Date(Date.now() + mins * 60 * 1000);
-      await this.prisma.merchantSettings.update({ where: { merchantId }, data: { outboxPausedUntil: until } });
-      this.logger.warn(`Outbox circuit opened for merchant=${merchantId}, auto-paused until ${until.toISOString()}`);
+      await this.prisma.merchantSettings.update({
+        where: { merchantId },
+        data: { outboxPausedUntil: until },
+      });
+      this.logger.warn(
+        `Outbox circuit opened for merchant=${merchantId}, auto-paused until ${until.toISOString()}`,
+      );
     } catch {}
   }
 
@@ -123,36 +179,71 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         data: { status: 'SENDING', updatedAt: new Date() },
       });
       return r.count === 1;
-    } catch { return false; }
+    } catch {
+      return false;
+    }
   }
 
   private async send(row: OutboxRow) {
-    const settings = await this.prisma.merchantSettings.findUnique({ where: { merchantId: row.merchantId } });
+    const settings = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId: row.merchantId },
+    });
     const url = settings?.webhookUrl || '';
-    const useNext = Boolean((settings as any)?.useWebhookNext) && !!(settings as any)?.webhookSecretNext;
-    const secret = (useNext ? (settings as any)?.webhookSecretNext : settings?.webhookSecret) || '';
+    const useNext =
+      Boolean((settings as any)?.useWebhookNext) &&
+      !!(settings as any)?.webhookSecretNext;
+    const secret =
+      (useNext
+        ? (settings as any)?.webhookSecretNext
+        : settings?.webhookSecret) || '';
     const maxRetries = Number(process.env.OUTBOX_MAX_RETRIES || '10');
     const pausedUntil = (settings as any)?.outboxPausedUntil as Date | null;
     if (pausedUntil && pausedUntil > new Date()) {
       const next = pausedUntil;
-      await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'PENDING', nextRetryAt: next, lastError: 'Paused by merchant until ' + next.toISOString() } });
+      await this.prisma.eventOutbox.update({
+        where: { id: row.id },
+        data: {
+          status: 'PENDING',
+          nextRetryAt: next,
+          lastError: 'Paused by merchant until ' + next.toISOString(),
+        },
+      });
       return;
     }
     if (!url || !secret) {
       // ничего не отправляем — парковка и лёгкий бэк‑офф
       const retries = row.retries + 1;
       if (retries >= maxRetries) {
-        await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'DEAD', retries, nextRetryAt: null, lastError: 'Webhook not configured' } });
+        await this.prisma.eventOutbox.update({
+          where: { id: row.id },
+          data: {
+            status: 'DEAD',
+            retries,
+            nextRetryAt: null,
+            lastError: 'Webhook not configured',
+          },
+        });
         this.metrics.inc('loyalty_outbox_dead_total');
       } else {
         const next = new Date(Date.now() + this.backoffMs(row.retries));
-        await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'PENDING', retries, nextRetryAt: next, lastError: 'Webhook not configured' } });
+        await this.prisma.eventOutbox.update({
+          where: { id: row.id },
+          data: {
+            status: 'PENDING',
+            retries,
+            nextRetryAt: next,
+            lastError: 'Webhook not configured',
+          },
+        });
       }
       return;
     }
     const body = JSON.stringify(row.payload ?? {});
     const ts = Math.floor(Date.now() / 1000).toString();
-    const sig = require('crypto').createHmac('sha256', secret).update(`${ts}.${body}`).digest('base64');
+    const sig = require('crypto')
+      .createHmac('sha256', secret)
+      .update(`${ts}.${body}`)
+      .digest('base64');
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'X-Loyalty-Signature': `v1,ts=${ts},sig=${sig}`,
@@ -160,7 +251,9 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       'X-Signature-Timestamp': ts,
       'X-Event-Id': row.id,
     };
-    const kid = useNext ? (settings as any)?.webhookKeyIdNext : settings?.webhookKeyId;
+    const kid = useNext
+      ? (settings as any)?.webhookKeyIdNext
+      : settings?.webhookKeyId;
     if (kid) headers['X-Signature-Key-Id'] = kid as string;
 
     let to: any = null;
@@ -168,113 +261,237 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     try {
       const timeoutMs = Number(process.env.OUTBOX_HTTP_TIMEOUT_MS || '10000');
       to = setTimeout(() => ac.abort(), Math.max(1000, timeoutMs));
-      try { if (to && typeof to.unref === 'function') to.unref(); } catch {}
-      const res = await fetch(url, { method: 'POST', headers, body, redirect: 'manual', signal: ac.signal as any });
+      try {
+        if (to && typeof to.unref === 'function') to.unref();
+      } catch {}
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body,
+        redirect: 'manual',
+        signal: ac.signal as any,
+      });
       if (res.ok) {
-        await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'SENT', updatedAt: new Date(), lastError: null } });
+        await this.prisma.eventOutbox.update({
+          where: { id: row.id },
+          data: { status: 'SENT', updatedAt: new Date(), lastError: null },
+        });
         this.metrics.inc('loyalty_outbox_sent_total');
-        try { this.metrics.inc('loyalty_outbox_events_total', { type: row.eventType, result: 'sent' }); } catch {}
+        try {
+          this.metrics.inc('loyalty_outbox_events_total', {
+            type: row.eventType,
+            result: 'sent',
+          });
+        } catch {}
         this.noteSuccess(row.merchantId);
       } else {
         const text = await res.text().catch(() => '');
         const retries = row.retries + 1;
         if (retries >= maxRetries) {
-          await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'DEAD', retries, nextRetryAt: null, lastError: `${res.status} ${res.statusText} ${text}` } });
+          await this.prisma.eventOutbox.update({
+            where: { id: row.id },
+            data: {
+              status: 'DEAD',
+              retries,
+              nextRetryAt: null,
+              lastError: `${res.status} ${res.statusText} ${text}`,
+            },
+          });
           this.metrics.inc('loyalty_outbox_dead_total');
-          try { this.metrics.inc('loyalty_outbox_events_total', { type: row.eventType, result: 'dead' }); } catch {}
+          try {
+            this.metrics.inc('loyalty_outbox_events_total', {
+              type: row.eventType,
+              result: 'dead',
+            });
+          } catch {}
         } else {
           let nextTime = Date.now() + this.backoffMs(row.retries);
           if (res.status === 429 || res.status === 503) {
             nextTime = this.nextRetryFromHeaders(res, nextTime);
           }
           const next = new Date(nextTime);
-          await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'FAILED', retries, nextRetryAt: next, lastError: `${res.status} ${res.statusText} ${text}` } });
-          if (res.status >= 500 || res.status === 429) this.noteFailure(row.merchantId);
+          await this.prisma.eventOutbox.update({
+            where: { id: row.id },
+            data: {
+              status: 'FAILED',
+              retries,
+              nextRetryAt: next,
+              lastError: `${res.status} ${res.statusText} ${text}`,
+            },
+          });
+          if (res.status >= 500 || res.status === 429)
+            this.noteFailure(row.merchantId);
         }
         this.metrics.inc('loyalty_outbox_failed_total');
-        try { this.metrics.inc('loyalty_outbox_events_total', { type: row.eventType, result: 'failed' }); } catch {}
+        try {
+          this.metrics.inc('loyalty_outbox_events_total', {
+            type: row.eventType,
+            result: 'failed',
+          });
+        } catch {}
       }
     } catch (e: any) {
       const retries = row.retries + 1;
       if (retries >= maxRetries) {
-        await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'DEAD', retries, nextRetryAt: null, lastError: String(e?.message || e) } });
+        await this.prisma.eventOutbox.update({
+          where: { id: row.id },
+          data: {
+            status: 'DEAD',
+            retries,
+            nextRetryAt: null,
+            lastError: String(e?.message || e),
+          },
+        });
         this.metrics.inc('loyalty_outbox_dead_total');
-        try { this.metrics.inc('loyalty_outbox_events_total', { type: row.eventType, result: 'dead' }); } catch {}
+        try {
+          this.metrics.inc('loyalty_outbox_events_total', {
+            type: row.eventType,
+            result: 'dead',
+          });
+        } catch {}
       } else {
         const next = new Date(Date.now() + this.backoffMs(row.retries));
-        await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'FAILED', retries, nextRetryAt: next, lastError: String(e?.message || e) } });
+        await this.prisma.eventOutbox.update({
+          where: { id: row.id },
+          data: {
+            status: 'FAILED',
+            retries,
+            nextRetryAt: next,
+            lastError: String(e?.message || e),
+          },
+        });
         this.noteFailure(row.merchantId);
       }
       this.metrics.inc('loyalty_outbox_failed_total');
-      try { this.metrics.inc('loyalty_outbox_events_total', { type: row.eventType, result: 'failed' }); } catch {}
-    } finally { try { if (to) clearTimeout(to); } catch {} }
+      try {
+        this.metrics.inc('loyalty_outbox_events_total', {
+          type: row.eventType,
+          result: 'failed',
+        });
+      } catch {}
+    } finally {
+      try {
+        if (to) clearTimeout(to);
+      } catch {}
+    }
   }
 
   private async tick() {
-    if (this.running) return; this.running = true;
+    if (this.running) return;
+    this.running = true;
     // лидер-лок между инстансами
-    const lock = await pgTryAdvisoryLock(this.prisma, 'worker:outbox_dispatcher');
-    if (!lock.ok) { this.running = false; return; }
+    const lock = await pgTryAdvisoryLock(
+      this.prisma,
+      'worker:outbox_dispatcher',
+    );
+    if (!lock.ok) {
+      this.running = false;
+      return;
+    }
     try {
       this.lastTickAt = new Date();
-      try { this.metrics.setGauge('loyalty_worker_last_tick_seconds', Math.floor(Date.now()/1000), { worker: 'outbox' }); } catch {}
+      try {
+        this.metrics.setGauge(
+          'loyalty_worker_last_tick_seconds',
+          Math.floor(Date.now() / 1000),
+          { worker: 'outbox' },
+        );
+      } catch {}
       const now = new Date();
       // обновим gauge pending
       try {
-        const pending = await this.prisma.eventOutbox.count({ where: { status: 'PENDING' } });
+        const pending = await this.prisma.eventOutbox.count({
+          where: { status: 'PENDING' },
+        });
         this.metrics.setGauge('loyalty_outbox_pending', pending);
       } catch {}
 
       const batch = Number(process.env.OUTBOX_WORKER_BATCH || '10');
-      const items = await this.prisma.eventOutbox.findMany({
-        where: { status: 'PENDING', OR: [ { nextRetryAt: null }, { nextRetryAt: { lte: now } } ], eventType: { not: { startsWith: 'notify.' } } },
+      const items = (await this.prisma.eventOutbox.findMany({
+        where: {
+          status: 'PENDING',
+          OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: now } }],
+          eventType: { not: { startsWith: 'notify.' } },
+        },
         orderBy: { createdAt: 'asc' },
         take: batch,
-      }) as unknown as OutboxRow[];
+      })) as unknown as OutboxRow[];
 
-      const ready = items.filter(it => !this.isCircuitOpen(it.merchantId));
-      const skipped = items.filter(it => this.isCircuitOpen(it.merchantId));
+      const ready = items.filter((it) => !this.isCircuitOpen(it.merchantId));
+      const skipped = items.filter((it) => this.isCircuitOpen(it.merchantId));
       for (const row of skipped) {
         try {
-          const openUntil = this.cb.get(row.merchantId)?.openUntil || (Date.now() + 60000);
-          await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'PENDING', nextRetryAt: new Date(openUntil), lastError: 'circuit open' } });
-          try { this.metrics.inc('loyalty_outbox_events_total', { type: row.eventType, result: 'circuit_open' }); } catch {}
+          const openUntil =
+            this.cb.get(row.merchantId)?.openUntil || Date.now() + 60000;
+          await this.prisma.eventOutbox.update({
+            where: { id: row.id },
+            data: {
+              status: 'PENDING',
+              nextRetryAt: new Date(openUntil),
+              lastError: 'circuit open',
+            },
+          });
+          try {
+            this.metrics.inc('loyalty_outbox_events_total', {
+              type: row.eventType,
+              result: 'circuit_open',
+            });
+          } catch {}
         } catch {}
       }
       // Group by eventType and apply per-type concurrency
       const byType = new Map<string, OutboxRow[]>();
       for (const r of ready) {
         const arr = byType.get(r.eventType) || [];
-        arr.push(r); byType.set(r.eventType, arr);
+        arr.push(r);
+        byType.set(r.eventType, arr);
       }
       for (const [type, arr] of byType.entries()) {
         const conc = this.concurrencyForType(type);
         for (let i = 0; i < arr.length; i += conc) {
           const slice = arr.slice(i, i + conc);
-          await Promise.all(slice.map(async (row) => {
-            // rate-limit per merchant
-            if (this.rateLimited(row.merchantId)) {
-              try {
-                const ns = this.nextRateWindow(row.merchantId);
-                await this.prisma.eventOutbox.update({ where: { id: row.id }, data: { status: 'PENDING', nextRetryAt: new Date(ns), lastError: 'rate limited' } });
-                this.metrics.inc('loyalty_outbox_rate_limited_total');
-                try { this.metrics.inc('loyalty_outbox_events_total', { type: row.eventType, result: 'rate_limited' }); } catch {}
-              } catch {}
-              return;
-            }
-            const claimed = await this.claim(row);
-            if (!claimed) return;
-            await this.send(row);
-            this.noteRate(row.merchantId);
-          }));
+          await Promise.all(
+            slice.map(async (row) => {
+              // rate-limit per merchant
+              if (this.rateLimited(row.merchantId)) {
+                try {
+                  const ns = this.nextRateWindow(row.merchantId);
+                  await this.prisma.eventOutbox.update({
+                    where: { id: row.id },
+                    data: {
+                      status: 'PENDING',
+                      nextRetryAt: new Date(ns),
+                      lastError: 'rate limited',
+                    },
+                  });
+                  this.metrics.inc('loyalty_outbox_rate_limited_total');
+                  try {
+                    this.metrics.inc('loyalty_outbox_events_total', {
+                      type: row.eventType,
+                      result: 'rate_limited',
+                    });
+                  } catch {}
+                } catch {}
+                return;
+              }
+              const claimed = await this.claim(row);
+              if (!claimed) return;
+              await this.send(row);
+              this.noteRate(row.merchantId);
+            }),
+          );
         }
       }
       // export breaker open count as gauge
       try {
-        const openCount = Array.from(this.cb.values()).filter(s => s.openUntil > Date.now()).length;
+        const openCount = Array.from(this.cb.values()).filter(
+          (s) => s.openUntil > Date.now(),
+        ).length;
         this.metrics.setGauge('loyalty_outbox_circuit_open', openCount);
       } catch {}
-    } finally { this.running = false; }
+    } finally {
+      this.running = false;
+    }
     await pgAdvisoryUnlock(this.prisma, lock.key);
   }
 
@@ -282,11 +499,14 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     if (this.rpsByMerchantCache) return this.rpsByMerchantCache;
     const m = new Map<string, number>();
     const raw = process.env.OUTBOX_RPS_BY_MERCHANT || '';
-    for (const part of raw.split(',').map(s=>s.trim()).filter(Boolean)) {
+    for (const part of raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)) {
       const i = part.indexOf('=');
       if (i <= 0) continue;
       const key = part.slice(0, i);
-      const val = Math.max(1, parseInt(part.slice(i+1), 10) || 1);
+      const val = Math.max(1, parseInt(part.slice(i + 1), 10) || 1);
       m.set(key, val);
     }
     this.rpsByMerchantCache = m;
@@ -316,7 +536,7 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     const now = Date.now();
     if (!s) return now;
     const base = s.windowStart + 1000;
-    const jitter = Math.floor(Math.random()*200);
+    const jitter = Math.floor(Math.random() * 200);
     return Math.max(base, now + jitter);
   }
 
@@ -325,7 +545,10 @@ export class OutboxDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     if (!limit) return;
     const now = Date.now();
     const s = this.rateWin.get(merchantId) || { windowStart: now, count: 0 };
-    if (now - s.windowStart >= 1000) { s.windowStart = now; s.count = 0; }
+    if (now - s.windowStart >= 1000) {
+      s.windowStart = now;
+      s.count = 0;
+    }
     s.count++;
     this.rateWin.set(merchantId, s);
   }

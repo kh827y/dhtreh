@@ -5,18 +5,22 @@ import { Resource } from '@opentelemetry/resources';
 import { SemanticResourceAttributes } from '@opentelemetry/semantic-conventions';
 import { PrismaInstrumentation } from '@prisma/instrumentation';
 
-const enabled = process.env.OTEL_ENABLED === '1' || !!process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+const enabled =
+  process.env.OTEL_ENABLED === '1' || !!process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
 if (enabled) {
   const serviceName = process.env.OTEL_SERVICE_NAME || 'loyalty-api';
   const serviceVersion = process.env.APP_VERSION || 'dev';
-  const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'http://localhost:4318/v1/traces';
+  const endpoint =
+    process.env.OTEL_EXPORTER_OTLP_ENDPOINT ||
+    'http://localhost:4318/v1/traces';
 
   const sdk = new NodeSDK({
     traceExporter: new OTLPTraceExporter({ url: endpoint }),
     resource: new Resource({
       [SemanticResourceAttributes.SERVICE_NAME]: serviceName,
       [SemanticResourceAttributes.SERVICE_VERSION]: serviceVersion,
-      [SemanticResourceAttributes.DEPLOYMENT_ENVIRONMENT]: process.env.NODE_ENV || 'development',
+      [SemanticResourceAttributes.DEPLOYMENT_ENVIRONMENT]:
+        process.env.NODE_ENV || 'development',
     }),
     instrumentations: [
       getNodeAutoInstrumentations({
@@ -28,10 +32,9 @@ if (enabled) {
 
   try {
     sdk.start();
-    // eslint-disable-next-line no-console
+
     console.log('[OTel] Tracing initialized');
   } catch (err) {
-    // eslint-disable-next-line no-console
     console.error('[OTel] init error', err);
   }
 

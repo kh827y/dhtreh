@@ -7,7 +7,6 @@ import { CustomerAudiencesService } from './customer-audiences.service';
 import { CustomerAudiencesController } from './customer-audiences.controller';
 
 @Module({
-
   imports: [PrismaModule, MetricsModule],
   providers: [CustomerAudiencesService],
   controllers: [CustomerAudiencesController],

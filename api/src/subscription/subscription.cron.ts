@@ -25,7 +25,7 @@ export class SubscriptionCronService {
   @Cron('0 3 * * *')
   async processSubscriptionRenewals() {
     console.log('[CRON] Starting subscription renewal process...');
-    
+
     const startTime = Date.now();
     let processed = 0;
     let renewed = 0;
@@ -53,16 +53,18 @@ export class SubscriptionCronService {
         },
       });
 
-      console.log(`[CRON] Found ${expiringSubscriptions.length} subscriptions to renew`);
+      console.log(
+        `[CRON] Found ${expiringSubscriptions.length} subscriptions to renew`,
+      );
 
       for (const subscription of expiringSubscriptions) {
         processed++;
-        
+
         try {
           // Пытаемся создать платеж для продления
           const payment = await this.paymentService.createSubscriptionPayment(
             subscription.merchantId,
-            subscription.id
+            subscription.id,
           );
 
           if (payment.status === 'succeeded' || payment.status === 'pending') {
@@ -80,7 +82,9 @@ export class SubscriptionCronService {
             });
 
             renewed++;
-            console.log(`[CRON] Renewed subscription ${subscription.id} for merchant ${subscription.merchantId}`);
+            console.log(
+              `[CRON] Renewed subscription ${subscription.id} for merchant ${subscription.merchantId}`,
+            );
 
             // Отправляем уведомление
             await this.sendRenewalNotification(subscription.merchantId, true);
@@ -89,7 +93,10 @@ export class SubscriptionCronService {
           }
         } catch (error) {
           failed++;
-          console.error(`[CRON] Failed to renew subscription ${subscription.id}:`, error);
+          console.error(
+            `[CRON] Failed to renew subscription ${subscription.id}:`,
+            error,
+          );
 
           // Переводим подписку в статус expired
           await this.prisma.subscription.update({
@@ -111,7 +118,9 @@ export class SubscriptionCronService {
       this.metrics.increment('subscription_renewals_failed', failed);
 
       const duration = Date.now() - startTime;
-      console.log(`[CRON] Subscription renewal completed in ${duration}ms. Processed: ${processed}, Renewed: ${renewed}, Failed: ${failed}`);
+      console.log(
+        `[CRON] Subscription renewal completed in ${duration}ms. Processed: ${processed}, Renewed: ${renewed}, Failed: ${failed}`,
+      );
     } catch (error) {
       console.error('[CRON] Error in subscription renewal process:', error);
       this.metrics.increment('subscription_cron_errors');
@@ -151,7 +160,7 @@ export class SubscriptionCronService {
 
       for (const subscription of expiringSoon) {
         await this.sendExpirationReminder(subscription, 7);
-        
+
         await this.prisma.subscription.update({
           where: { id: subscription.id },
           data: { reminderSent7Days: true },
@@ -182,14 +191,16 @@ export class SubscriptionCronService {
 
       for (const subscription of expiringTomorrow) {
         await this.sendExpirationReminder(subscription, 1);
-        
+
         await this.prisma.subscription.update({
           where: { id: subscription.id },
           data: { reminderSent1Day: true },
         });
       }
 
-      console.log(`[CRON] Sent ${expiringSoon.length + expiringTomorrow.length} expiration reminders`);
+      console.log(
+        `[CRON] Sent ${expiringSoon.length + expiringTomorrow.length} expiration reminders`,
+      );
     } catch (error) {
       console.error('[CRON] Error sending expiration reminders:', error);
       this.metrics.increment('subscription_reminder_errors');
@@ -222,7 +233,9 @@ export class SubscriptionCronService {
       });
 
       if (expired.count > 0) {
-        console.log(`[CRON] Deactivated ${expired.count} expired subscriptions`);
+        console.log(
+          `[CRON] Deactivated ${expired.count} expired subscriptions`,
+        );
         this.metrics.increment('subscriptions_expired', expired.count);
       }
 
@@ -244,8 +257,13 @@ export class SubscriptionCronService {
       });
 
       if (canceled.count > 0) {
-        console.log(`[CRON] Canceled ${canceled.count} subscriptions after grace period`);
-        this.metrics.increment('subscriptions_canceled_after_grace', canceled.count);
+        console.log(
+          `[CRON] Canceled ${canceled.count} subscriptions after grace period`,
+        );
+        this.metrics.increment(
+          'subscriptions_canceled_after_grace',
+          canceled.count,
+        );
       }
     } catch (error) {
       console.error('[CRON] Error deactivating expired subscriptions:', error);
@@ -281,7 +299,9 @@ export class SubscriptionCronService {
         },
       });
 
-      console.log(`[CRON] Generating reports for ${merchants.length} merchants`);
+      console.log(
+        `[CRON] Generating reports for ${merchants.length} merchants`,
+      );
 
       for (const merchant of merchants) {
         try {
@@ -307,9 +327,14 @@ export class SubscriptionCronService {
           // Отправляем отчет на email
           // await this.emailService.sendMonthlyReport(merchant.email, report);
 
-          console.log(`[CRON] Generated monthly report for merchant ${merchant.id}`);
+          console.log(
+            `[CRON] Generated monthly report for merchant ${merchant.id}`,
+          );
         } catch (error) {
-          console.error(`[CRON] Failed to generate report for merchant ${merchant.id}:`, error);
+          console.error(
+            `[CRON] Failed to generate report for merchant ${merchant.id}:`,
+            error,
+          );
         }
       }
     } catch (error) {
@@ -341,7 +366,9 @@ export class SubscriptionCronService {
       });
 
       if (deletedTrials.count > 0) {
-        console.log(`[CRON] Deleted ${deletedTrials.count} old trial subscriptions`);
+        console.log(
+          `[CRON] Deleted ${deletedTrials.count} old trial subscriptions`,
+        );
       }
 
       // Очищаем старые платежи со статусом failed
@@ -355,7 +382,9 @@ export class SubscriptionCronService {
       });
 
       if (deletedPayments.count > 0) {
-        console.log(`[CRON] Deleted ${deletedPayments.count} old failed payments`);
+        console.log(
+          `[CRON] Deleted ${deletedPayments.count} old failed payments`,
+        );
       }
 
       // Сброс флагов напоминаний для новых периодов
@@ -372,7 +401,6 @@ export class SubscriptionCronService {
           reminderSent1Day: false,
         },
       });
-
     } catch (error) {
       console.error('[CRON] Error during cleanup:', error);
       this.metrics.increment('cleanup_errors');
@@ -400,7 +428,7 @@ export class SubscriptionCronService {
 
       for (const subscription of subscriptions) {
         const plan = subscription.plan as any;
-        
+
         // Проверяем лимит транзакций за месяц
         if (plan.maxTransactions) {
           const startOfMonth = new Date();
@@ -422,7 +450,7 @@ export class SubscriptionCronService {
               subscription.merchantId,
               'transactions',
               transactionCount,
-              plan.maxTransactions
+              plan.maxTransactions,
             );
           }
         }
@@ -440,7 +468,7 @@ export class SubscriptionCronService {
               subscription.merchantId,
               'customers',
               customerCount,
-              plan.maxCustomers
+              plan.maxCustomers,
             );
           }
         }
@@ -462,17 +490,18 @@ export class SubscriptionCronService {
 
       if (!merchant) return;
 
-      const title = success 
+      const title = success
         ? 'Подписка продлена'
         : 'Не удалось продлить подписку';
-      
+
       const message = success
         ? 'Ваша подписка успешно продлена на следующий месяц'
         : 'Не удалось автоматически продлить подписку. Пожалуйста, обновите платежные данные';
 
       // Push уведомление
-      await this.pushService.sendToTopic(merchantId, title, message).catch(console.error);
-
+      await this.pushService
+        .sendToTopic(merchantId, title, message)
+        .catch(console.error);
     } catch (error) {
       console.error('Error sending renewal notification:', error);
     }
@@ -480,18 +509,16 @@ export class SubscriptionCronService {
 
   private async sendExpirationReminder(subscription: any, daysLeft: number) {
     try {
-      const message = daysLeft === 7
-        ? `Ваша подписка "${subscription.plan.name}" истекает через 7 дней`
-        : `Ваша подписка истекает завтра! Продлите для сохранения доступа`;
+      const message =
+        daysLeft === 7
+          ? `Ваша подписка "${subscription.plan.name}" истекает через 7 дней`
+          : `Ваша подписка истекает завтра! Продлите для сохранения доступа`;
 
       const merchant = subscription.merchant;
-      
-      await this.pushService.sendToTopic(
-        subscription.merchantId,
-        'Напоминание о подписке',
-        message
-      ).catch(console.error);
 
+      await this.pushService
+        .sendToTopic(subscription.merchantId, 'Напоминание о подписке', message)
+        .catch(console.error);
     } catch (error) {
       console.error('Error sending expiration reminder:', error);
     }
@@ -501,7 +528,7 @@ export class SubscriptionCronService {
     merchantId: string,
     limitType: string,
     current: number,
-    max: number
+    max: number,
   ) {
     try {
       const percentage = Math.round((current / max) * 100);
@@ -509,12 +536,9 @@ export class SubscriptionCronService {
         limitType === 'transactions' ? 'транзакций' : 'клиентов'
       } (${current} из ${max})`;
 
-      await this.pushService.sendToTopic(
-        merchantId,
-        'Предупреждение о лимите',
-        message
-      ).catch(console.error);
-
+      await this.pushService
+        .sendToTopic(merchantId, 'Предупреждение о лимите', message)
+        .catch(console.error);
     } catch (error) {
       console.error('Error sending limit warning:', error);
     }

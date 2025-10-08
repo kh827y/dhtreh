@@ -8,7 +8,10 @@ beforeAll(() => {
   // Spy and filter only the specific line coming from FcmProvider
   jest.spyOn(console, 'warn').mockImplementation((...args: any[]) => {
     const first = args[0];
-    if (typeof first === 'string' && first.includes('Firebase service account not configured')) {
+    if (
+      typeof first === 'string' &&
+      first.includes('Firebase service account not configured')
+    ) {
       return; // swallow this one warning
     }
     return ORIGINAL_WARN.apply(console, args as any);

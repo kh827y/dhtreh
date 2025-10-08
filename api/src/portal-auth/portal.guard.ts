@@ -17,7 +17,10 @@ export class PortalGuard implements CanActivate {
       const { jwtVerify } = await getJose();
       const secret = process.env.PORTAL_JWT_SECRET || '';
       if (!secret) return false;
-      const { payload } = await jwtVerify(m[1], new TextEncoder().encode(secret));
+      const { payload } = await jwtVerify(
+        m[1],
+        new TextEncoder().encode(secret),
+      );
       const sub = String(payload?.sub || '');
       if (!sub) return false;
       req.portalMerchantId = sub;

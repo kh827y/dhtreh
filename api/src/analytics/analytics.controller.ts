@@ -1,11 +1,11 @@
+import { Controller, Get, Query, Param, UseGuards } from '@nestjs/common';
 import {
-  Controller,
-  Get,
-  Query,
-  Param,
-  UseGuards,
-} from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { AnalyticsService, DashboardPeriod } from './analytics.service';
 import { ApiKeyGuard } from '../guards/api-key.guard';
 
@@ -21,9 +21,23 @@ export class AnalyticsController {
    */
   @Get('dashboard/:merchantId')
   @ApiOperation({ summary: 'Получить полную аналитику для владельца бизнеса' })
-  @ApiQuery({ name: 'period', enum: ['day', 'week', 'month', 'quarter', 'year'], required: false })
-  @ApiQuery({ name: 'from', type: String, required: false, description: 'ISO date string' })
-  @ApiQuery({ name: 'to', type: String, required: false, description: 'ISO date string' })
+  @ApiQuery({
+    name: 'period',
+    enum: ['day', 'week', 'month', 'quarter', 'year'],
+    required: false,
+  })
+  @ApiQuery({
+    name: 'from',
+    type: String,
+    required: false,
+    description: 'ISO date string',
+  })
+  @ApiQuery({
+    name: 'to',
+    type: String,
+    required: false,
+    description: 'ISO date string',
+  })
   @ApiResponse({ status: 200, description: 'Дашборд с метриками' })
   async getDashboard(
     @Param('merchantId') merchantId: string,
@@ -40,7 +54,11 @@ export class AnalyticsController {
    */
   @Get('portrait/:merchantId')
   @ApiOperation({ summary: 'Портрет клиента: пол, возраст, пол×возраст' })
-  @ApiQuery({ name: 'period', enum: ['day', 'week', 'month', 'quarter', 'year'], required: false })
+  @ApiQuery({
+    name: 'period',
+    enum: ['day', 'week', 'month', 'quarter', 'year'],
+    required: false,
+  })
   @ApiQuery({ name: 'from', type: String, required: false })
   @ApiQuery({ name: 'to', type: String, required: false })
   async getCustomerPortrait(
@@ -58,7 +76,11 @@ export class AnalyticsController {
    */
   @Get('repeat/:merchantId')
   @ApiOperation({ summary: 'Повторные покупки и распределение покупок' })
-  @ApiQuery({ name: 'period', enum: ['day', 'week', 'month', 'quarter', 'year'], required: false })
+  @ApiQuery({
+    name: 'period',
+    enum: ['day', 'week', 'month', 'quarter', 'year'],
+    required: false,
+  })
   @ApiQuery({ name: 'from', type: String, required: false })
   @ApiQuery({ name: 'to', type: String, required: false })
   @ApiQuery({ name: 'outletId', type: String, required: false })
@@ -70,7 +92,11 @@ export class AnalyticsController {
     @Query('outletId') outletId?: string,
   ) {
     const period = this.getPeriod(periodType, from, to);
-    return this.analyticsService.getRepeatPurchases(merchantId, period, outletId);
+    return this.analyticsService.getRepeatPurchases(
+      merchantId,
+      period,
+      outletId,
+    );
   }
 
   /**
@@ -85,7 +111,10 @@ export class AnalyticsController {
     @Query('withinDays') withinDays?: string,
     @Query('limit') limit?: string,
   ) {
-    const d = Math.max(1, Math.min(parseInt(withinDays || '30', 10) || 30, 365));
+    const d = Math.max(
+      1,
+      Math.min(parseInt(withinDays || '30', 10) || 30, 365),
+    );
     const l = Math.max(1, Math.min(parseInt(limit || '100', 10) || 100, 1000));
     return this.analyticsService.getBirthdays(merchantId, d, l);
   }
@@ -95,7 +124,11 @@ export class AnalyticsController {
    */
   @Get('referral/:merchantId')
   @ApiOperation({ summary: 'Сводка реферальной программы за период' })
-  @ApiQuery({ name: 'period', enum: ['day', 'week', 'month', 'quarter', 'year'], required: false })
+  @ApiQuery({
+    name: 'period',
+    enum: ['day', 'week', 'month', 'quarter', 'year'],
+    required: false,
+  })
   @ApiQuery({ name: 'from', type: String, required: false })
   @ApiQuery({ name: 'to', type: String, required: false })
   async getReferralSummary(
@@ -112,8 +145,14 @@ export class AnalyticsController {
    * Бизнес‑метрики (средний чек у клиентов с >= N покупок)
    */
   @Get('business/:merchantId')
-  @ApiOperation({ summary: 'Бизнес‑метрики: средний чек покупателей с N+ покупок' })
-  @ApiQuery({ name: 'period', enum: ['day', 'week', 'month', 'quarter', 'year'], required: false })
+  @ApiOperation({
+    summary: 'Бизнес‑метрики: средний чек покупателей с N+ покупок',
+  })
+  @ApiQuery({
+    name: 'period',
+    enum: ['day', 'week', 'month', 'quarter', 'year'],
+    required: false,
+  })
   @ApiQuery({ name: 'from', type: String, required: false })
   @ApiQuery({ name: 'to', type: String, required: false })
   @ApiQuery({ name: 'minPurchases', type: Number, required: false })
@@ -125,7 +164,10 @@ export class AnalyticsController {
     @Query('minPurchases') minPurchases?: string,
   ) {
     const period = this.getPeriod(periodType, from, to);
-    const n = Math.max(1, Math.min(parseInt(minPurchases || '3', 10) || 3, 100));
+    const n = Math.max(
+      1,
+      Math.min(parseInt(minPurchases || '3', 10) || 3, 100),
+    );
     return this.analyticsService.getBusinessMetrics(merchantId, period, n);
   }
 
@@ -134,7 +176,11 @@ export class AnalyticsController {
    */
   @Get('revenue/:merchantId')
   @ApiOperation({ summary: 'Получить метрики выручки' })
-  @ApiQuery({ name: 'period', enum: ['day', 'week', 'month', 'quarter', 'year'], required: false })
+  @ApiQuery({
+    name: 'period',
+    enum: ['day', 'week', 'month', 'quarter', 'year'],
+    required: false,
+  })
   async getRevenueMetrics(
     @Param('merchantId') merchantId: string,
     @Query('period') periodType?: string,
@@ -150,7 +196,11 @@ export class AnalyticsController {
    */
   @Get('customers/:merchantId')
   @ApiOperation({ summary: 'Получить метрики клиентов' })
-  @ApiQuery({ name: 'period', enum: ['day', 'week', 'month', 'quarter', 'year'], required: false })
+  @ApiQuery({
+    name: 'period',
+    enum: ['day', 'week', 'month', 'quarter', 'year'],
+    required: false,
+  })
   async getCustomerMetrics(
     @Param('merchantId') merchantId: string,
     @Query('period') periodType?: string,
@@ -166,7 +216,11 @@ export class AnalyticsController {
    */
   @Get('loyalty/:merchantId')
   @ApiOperation({ summary: 'Получить метрики программы лояльности' })
-  @ApiQuery({ name: 'period', enum: ['day', 'week', 'month', 'quarter', 'year'], required: false })
+  @ApiQuery({
+    name: 'period',
+    enum: ['day', 'week', 'month', 'quarter', 'year'],
+    required: false,
+  })
   async getLoyaltyMetrics(
     @Param('merchantId') merchantId: string,
     @Query('period') periodType?: string,
@@ -182,7 +236,11 @@ export class AnalyticsController {
    */
   @Get('auto-return/:merchantId')
   @ApiOperation({ summary: 'Статистика механики автовозврата клиентов' })
-  @ApiQuery({ name: 'period', enum: ['day', 'week', 'month', 'quarter', 'year'], required: false })
+  @ApiQuery({
+    name: 'period',
+    enum: ['day', 'week', 'month', 'quarter', 'year'],
+    required: false,
+  })
   @ApiQuery({ name: 'from', type: String, required: false })
   @ApiQuery({ name: 'to', type: String, required: false })
   @ApiQuery({ name: 'outletId', type: String, required: false })
@@ -194,7 +252,11 @@ export class AnalyticsController {
     @Query('outletId') outletId?: string,
   ) {
     const period = this.getPeriod(periodType, from, to);
-    return this.analyticsService.getAutoReturnMetrics(merchantId, period, outletId);
+    return this.analyticsService.getAutoReturnMetrics(
+      merchantId,
+      period,
+      outletId,
+    );
   }
 
   /**
@@ -202,7 +264,11 @@ export class AnalyticsController {
    */
   @Get('birthday-mechanic/:merchantId')
   @ApiOperation({ summary: 'Статистика механики поздравлений с днём рождения' })
-  @ApiQuery({ name: 'period', enum: ['day', 'week', 'month', 'quarter', 'year'], required: false })
+  @ApiQuery({
+    name: 'period',
+    enum: ['day', 'week', 'month', 'quarter', 'year'],
+    required: false,
+  })
   @ApiQuery({ name: 'from', type: String, required: false })
   @ApiQuery({ name: 'to', type: String, required: false })
   @ApiQuery({ name: 'outletId', type: String, required: false })
@@ -214,7 +280,11 @@ export class AnalyticsController {
     @Query('outletId') outletId?: string,
   ) {
     const period = this.getPeriod(periodType, from, to);
-    return this.analyticsService.getBirthdayMechanicMetrics(merchantId, period, outletId);
+    return this.analyticsService.getBirthdayMechanicMetrics(
+      merchantId,
+      period,
+      outletId,
+    );
   }
 
   /**
@@ -222,7 +292,11 @@ export class AnalyticsController {
    */
   @Get('campaigns/:merchantId')
   @ApiOperation({ summary: 'Получить метрики маркетинговых кампаний' })
-  @ApiQuery({ name: 'period', enum: ['day', 'week', 'month', 'quarter', 'year'], required: false })
+  @ApiQuery({
+    name: 'period',
+    enum: ['day', 'week', 'month', 'quarter', 'year'],
+    required: false,
+  })
   async getCampaignMetrics(
     @Param('merchantId') merchantId: string,
     @Query('period') periodType?: string,
@@ -237,16 +311,31 @@ export class AnalyticsController {
    * Когорты удержания (Retention cohorts)
    */
   @Get('cohorts/:merchantId')
-  @ApiOperation({ summary: 'Когорты удержания по месяцам/неделям (как в GetMeBack)' })
-  @ApiQuery({ name: 'by', required: false, enum: ['month', 'week'], description: 'Группировка когорт: month|week (по умолчанию month)' })
-  @ApiQuery({ name: 'limit', required: false, description: 'Количество когорт, по умолчанию 6' })
+  @ApiOperation({
+    summary: 'Когорты удержания по месяцам/неделям (как в GetMeBack)',
+  })
+  @ApiQuery({
+    name: 'by',
+    required: false,
+    enum: ['month', 'week'],
+    description: 'Группировка когорт: month|week (по умолчанию month)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    description: 'Количество когорт, по умолчанию 6',
+  })
   async getRetentionCohorts(
     @Param('merchantId') merchantId: string,
     @Query('by') by?: 'month' | 'week',
     @Query('limit') limitStr?: string,
   ) {
     const limit = Math.min(Math.max(parseInt(limitStr || '6', 10) || 6, 1), 24);
-    return this.analyticsService.getRetentionCohorts(merchantId, by === 'week' ? 'week' : 'month', limit);
+    return this.analyticsService.getRetentionCohorts(
+      merchantId,
+      by === 'week' ? 'week' : 'month',
+      limit,
+    );
   }
 
   /**
@@ -254,9 +343,7 @@ export class AnalyticsController {
    */
   @Get('rfm/:merchantId/heatmap')
   @ApiOperation({ summary: 'RFM heatmap 5x5 (как в GetMeBack)' })
-  async getRfmHeatmap(
-    @Param('merchantId') merchantId: string,
-  ) {
+  async getRfmHeatmap(@Param('merchantId') merchantId: string) {
     return this.analyticsService.getRfmHeatmap(merchantId);
   }
 
@@ -264,8 +351,14 @@ export class AnalyticsController {
    * Операционные метрики
    */
   @Get('operations/:merchantId')
-  @ApiOperation({ summary: 'Получить операционные метрики (точки, персонал, устройства)' })
-  @ApiQuery({ name: 'period', enum: ['day', 'week', 'month', 'quarter', 'year'], required: false })
+  @ApiOperation({
+    summary: 'Получить операционные метрики (точки, персонал, устройства)',
+  })
+  @ApiQuery({
+    name: 'period',
+    enum: ['day', 'week', 'month', 'quarter', 'year'],
+    required: false,
+  })
   async getOperationalMetrics(
     @Param('merchantId') merchantId: string,
     @Query('period') periodType?: string,
@@ -384,7 +477,7 @@ export class AnalyticsController {
         from.setHours(0, 0, 0, 0);
         to.setHours(23, 59, 59, 999);
         break;
-      
+
       case 'week':
         const dayOfWeek = from.getDay();
         const diff = from.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
@@ -394,7 +487,7 @@ export class AnalyticsController {
         to.setDate(to.getDate() + 6);
         to.setHours(23, 59, 59, 999);
         break;
-      
+
       case 'month':
         from.setDate(1);
         from.setHours(0, 0, 0, 0);
@@ -403,7 +496,7 @@ export class AnalyticsController {
         to.setDate(0); // Последний день месяца
         to.setHours(23, 59, 59, 999);
         break;
-      
+
       case 'quarter':
         const quarter = Math.floor(from.getMonth() / 3);
         from.setMonth(quarter * 3);
@@ -414,7 +507,7 @@ export class AnalyticsController {
         to.setDate(0);
         to.setHours(23, 59, 59, 999);
         break;
-      
+
       case 'year':
         from.setMonth(0);
         from.setDate(1);
@@ -423,7 +516,7 @@ export class AnalyticsController {
         to.setDate(31);
         to.setHours(23, 59, 59, 999);
         break;
-      
+
       default:
         // По умолчанию - текущий месяц
         from.setDate(1);

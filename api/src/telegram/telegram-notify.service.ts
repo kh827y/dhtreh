@@ -13,21 +13,31 @@ interface TgChat {
 export class TelegramNotifyService {
   private readonly logger = new Logger(TelegramNotifyService.name);
 
-  constructor(private prisma: PrismaService, private config: ConfigService) {}
+  constructor(
+    private prisma: PrismaService,
+    private config: ConfigService,
+  ) {}
 
   private get token(): string | undefined {
     const v = this.config.get<string>('TELEGRAM_NOTIFY_BOT_TOKEN');
     return v && v.trim() ? v.trim() : undefined;
   }
 
-  async getWebhookInfo(): Promise<{ url?: string | null; hasError?: boolean; lastErrorDate?: number; lastErrorMessage?: string } | null> {
+  async getWebhookInfo(): Promise<{
+    url?: string | null;
+    hasError?: boolean;
+    lastErrorDate?: number;
+    lastErrorMessage?: string;
+  } | null> {
     try {
       if (!this.token) return null;
-      const res = await fetch(`https://api.telegram.org/bot${this.token}/getWebhookInfo`);
+      const res = await fetch(
+        `https://api.telegram.org/bot${this.token}/getWebhookInfo`,
+      );
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       if (!data?.ok) return null;
-      const info = data.result as any;
+      const info = data.result;
       return {
         url: info?.url ?? null,
         hasError: Boolean(info?.last_error_date),
@@ -44,7 +54,9 @@ export class TelegramNotifyService {
     return v && v.trim() ? v.trim() : undefined;
   }
 
-  isConfigured(): boolean { return !!this.token; }
+  isConfigured(): boolean {
+    return !!this.token;
+  }
 
   private async api(method: string, body: Record<string, any>) {
     if (!this.token) throw new Error('Notify bot token not configured');
@@ -56,18 +68,29 @@ export class TelegramNotifyService {
     });
     if (!res.ok) throw new Error(await res.text());
     const data = await res.json();
-    if (!data?.ok) throw new Error(String(data?.description || 'Telegram API error'));
+    if (!data?.ok)
+      throw new Error(String(data?.description || 'Telegram API error'));
     return data.result;
   }
 
-  async getBotInfo(): Promise<{ id: number; username: string; firstName?: string } | null> {
+  async getBotInfo(): Promise<{
+    id: number;
+    username: string;
+    firstName?: string;
+  } | null> {
     try {
       if (!this.token) return null;
-      const res = await fetch(`https://api.telegram.org/bot${this.token}/getMe`);
+      const res = await fetch(
+        `https://api.telegram.org/bot${this.token}/getMe`,
+      );
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       if (!data?.ok) return null;
-      return { id: data.result.id, username: data.result.username, firstName: data.result.first_name };
+      return {
+        id: data.result.id,
+        username: data.result.username,
+        firstName: data.result.first_name,
+      };
     } catch (e) {
       this.logger.warn(`getBotInfo failed: ${e}`);
       return null;
@@ -116,14 +139,20 @@ export class TelegramNotifyService {
     // handle /start@botname token
     if (parts.length >= 1) {
       const cmd = parts[0];
-      if (botUsername && cmd.toLowerCase().startsWith('/start@') && parts[1]) return parts[1];
+      if (botUsername && cmd.toLowerCase().startsWith('/start@') && parts[1])
+        return parts[1];
     }
     return null;
   }
 
   private normalizeChat(c: any): TgChat | null {
     if (!c || typeof c !== 'object') return null;
-    return { id: Number(c.id), type: String(c.type || ''), username: (c as any).username || undefined, title: (c as any).title || undefined };
+    return {
+      id: Number(c.id),
+      type: String(c.type || ''),
+      username: c.username || undefined,
+      title: c.title || undefined,
+    };
   }
 
   async processUpdate(update: any) {
@@ -134,7 +163,10 @@ export class TelegramNotifyService {
       if (!chat) return;
 
       const botInfo = await this.getBotInfo();
-      const token = typeof msg.text === 'string' ? this.parseStartToken(msg.text, botInfo?.username) : null;
+      const token =
+        typeof msg.text === 'string'
+          ? this.parseStartToken(msg.text, botInfo?.username)
+          : null;
       if (token) {
         await this.handleStartToken(chat, token);
         return;
@@ -150,19 +182,32 @@ export class TelegramNotifyService {
     const now = new Date();
     const prismaAny = this.prisma as any;
     // Find invite
-    const invite = await prismaAny.telegramStaffInvite.findFirst({ where: { token } }).catch(() => null);
+    const invite = await prismaAny.telegramStaffInvite
+      .findFirst({ where: { token } })
+      .catch(() => null);
     if (!invite) {
-      await this.sendMessage(chat.id, 'Неверный или просроченный токен. Обновите ссылку в портале.');
+      await this.sendMessage(
+        chat.id,
+        'Неверный или просроченный токен. Обновите ссылку в портале.',
+      );
       return;
     }
     if (invite.expiresAt && invite.expiresAt < now) {
-      await this.sendMessage(chat.id, 'Срок действия ссылки истёк. Сгенерируйте новую в портале.');
+      await this.sendMessage(
+        chat.id,
+        'Срок действия ссылки истёк. Сгенерируйте новую в портале.',
+      );
       return;
     }
 
     // Upsert subscriber
     await prismaAny.telegramStaffSubscriber.upsert({
-      where: { merchantId_chatId: { merchantId: invite.merchantId, chatId: String(chat.id) } },
+      where: {
+        merchantId_chatId: {
+          merchantId: invite.merchantId,
+          chatId: String(chat.id),
+        },
+      },
       update: {
         chatType: chat.type,
         username: chat.username || null,
@@ -183,8 +228,13 @@ export class TelegramNotifyService {
     });
 
     try {
-      const merchant = await this.prisma.merchant.findUnique({ where: { id: invite.merchantId } });
-      await this.sendMessage(chat.id, `Подписка на уведомления для мерчанта «${merchant?.name ?? invite.merchantId}» активирована.`);
+      const merchant = await this.prisma.merchant.findUnique({
+        where: { id: invite.merchantId },
+      });
+      await this.sendMessage(
+        chat.id,
+        `Подписка на уведомления для мерчанта «${merchant?.name ?? invite.merchantId}» активирована.`,
+      );
     } catch {
       await this.sendMessage(chat.id, `Подписка на уведомления активирована.`);
     }

@@ -22,17 +22,18 @@ export class FcmProvider implements PushProvider {
   constructor(private configService: ConfigService) {
     // Инициализация Firebase Admin SDK
     const serviceAccount = this.configService.get('FIREBASE_SERVICE_ACCOUNT');
-    
+
     if (serviceAccount) {
       try {
-        const account = typeof serviceAccount === 'string' 
-          ? JSON.parse(serviceAccount) 
-          : serviceAccount;
+        const account =
+          typeof serviceAccount === 'string'
+            ? JSON.parse(serviceAccount)
+            : serviceAccount;
 
         this.app = admin.initializeApp({
           credential: admin.credential.cert(account),
         });
-        
+
         this.messaging = admin.messaging(this.app);
       } catch (error) {
         console.error('Failed to initialize Firebase:', error);
@@ -93,7 +94,9 @@ export class FcmProvider implements PushProvider {
           },
           headers: {
             'apns-priority': params.priority === 'high' ? '10' : '5',
-            'apns-expiration': params.ttl ? String(Math.floor(Date.now() / 1000 + params.ttl)) : '',
+            'apns-expiration': params.ttl
+              ? String(Math.floor(Date.now() / 1000 + params.ttl))
+              : '',
           },
         },
         webpush: {
@@ -150,7 +153,7 @@ export class FcmProvider implements PushProvider {
       return {
         successCount: 0,
         failureCount: params.tokens.length,
-        results: params.tokens.map(token => ({
+        results: params.tokens.map((token) => ({
           token,
           success: false,
           error: 'Firebase not configured',
@@ -159,35 +162,37 @@ export class FcmProvider implements PushProvider {
     }
 
     try {
-      const messages: admin.messaging.Message[] = params.tokens.map(token => ({
-        token,
-        notification: {
-          title: params.title,
-          body: params.body,
-          imageUrl: params.image,
-        },
-        data: params.data,
-        android: {
-          priority: params.priority === 'high' ? 'high' : 'normal',
+      const messages: admin.messaging.Message[] = params.tokens.map(
+        (token) => ({
+          token,
           notification: {
-            channelId: 'loyalty_notifications',
+            title: params.title,
+            body: params.body,
+            imageUrl: params.image,
           },
-        },
-        apns: {
-          payload: {
-            aps: {
-              alert: {
-                title: params.title,
-                body: params.body,
-              },
-              contentAvailable: true,
+          data: params.data,
+          android: {
+            priority: params.priority === 'high' ? 'high' : 'normal',
+            notification: {
+              channelId: 'loyalty_notifications',
             },
           },
-          headers: {
-            'apns-priority': params.priority === 'high' ? '10' : '5',
+          apns: {
+            payload: {
+              aps: {
+                alert: {
+                  title: params.title,
+                  body: params.body,
+                },
+                contentAvailable: true,
+              },
+            },
+            headers: {
+              'apns-priority': params.priority === 'high' ? '10' : '5',
+            },
           },
-        },
-      }));
+        }),
+      );
 
       const response = await (this.messaging as any).sendAll(messages);
 
@@ -207,7 +212,7 @@ export class FcmProvider implements PushProvider {
       return {
         successCount: 0,
         failureCount: params.tokens.length,
-        results: params.tokens.map(token => ({
+        results: params.tokens.map((token) => ({
           token,
           success: false,
           error: error.message || 'Unknown error',
@@ -249,7 +254,10 @@ export class FcmProvider implements PushProvider {
   /**
    * Отправить уведомление на топик
    */
-  async sendToTopic(topic: string, params: TopicPushParams): Promise<PushResult> {
+  async sendToTopic(
+    topic: string,
+    params: TopicPushParams,
+  ): Promise<PushResult> {
     if (!this.messaging) {
       return {
         success: false,

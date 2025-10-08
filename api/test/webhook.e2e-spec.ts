@@ -93,7 +93,8 @@ describe('Webhooks (e2e)', () => {
         .update(`${kv.ts}.${JSON.stringify(commitRes.body)}`)
         .digest('base64');
 
-      const padB64 = (s: string) => s && s.length % 4 ? s + '='.repeat((4 - (s.length % 4)) % 4) : s;
+      const padB64 = (s: string) =>
+        s && s.length % 4 ? s + '='.repeat((4 - (s.length % 4)) % 4) : s;
       expect(padB64(kv.sig)).toBe(padB64(expectedSig));
     });
 
@@ -195,7 +196,8 @@ describe('Webhooks (e2e)', () => {
         .update(`${kv.ts}.${JSON.stringify(commit2.body)}`)
         .digest('base64');
 
-      const padB64 = (s: string) => s && s.length % 4 ? s + '='.repeat((4 - (s.length % 4)) % 4) : s;
+      const padB64 = (s: string) =>
+        s && s.length % 4 ? s + '='.repeat((4 - (s.length % 4)) % 4) : s;
       expect(padB64(kv.sig)).toBe(padB64(expectedSig));
     });
   });
@@ -203,7 +205,7 @@ describe('Webhooks (e2e)', () => {
   describe('X-Event-Id deduplication', () => {
     it('should generate unique X-Event-Id for outbox events', async () => {
       const merchantId = 'M-event-id';
-      
+
       await request(app.getHttpServer())
         .put(`/merchants/${merchantId}/settings`)
         .set('x-admin-key', ADMIN_KEY)
@@ -245,7 +247,7 @@ describe('Webhooks (e2e)', () => {
       });
 
       expect(events.length).toBeGreaterThan(0);
-      const eventIds = events.map(e => e.id);
+      const eventIds = events.map((e) => e.id);
       const uniqueIds = new Set(eventIds);
       expect(uniqueIds.size).toBe(eventIds.length);
     });
@@ -354,7 +356,11 @@ describe('Webhooks (e2e)', () => {
 
       await request(app.getHttpServer())
         .post('/loyalty/commit')
-        .send({ merchantId, holdId: quote.body.holdId, orderId: 'idem-refund-1' })
+        .send({
+          merchantId,
+          holdId: quote.body.holdId,
+          orderId: 'idem-refund-1',
+        })
         .expect(201);
 
       // First refund with Idempotency-Key

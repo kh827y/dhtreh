@@ -16,7 +16,11 @@ export class CashierGuard implements CanActivate {
     normalizedPath: string,
     req: any,
     merchantIdHint?: string,
-  ): Promise<{ merchantId?: string; outletId?: string | null; payload?: string | null }> {
+  ): Promise<{
+    merchantId?: string;
+    outletId?: string | null;
+    payload?: string | null;
+  }> {
     const body = req?.body || {};
     let merchantId: string | undefined = merchantIdHint || undefined;
     let outletId: string | null = null;
@@ -72,7 +76,9 @@ export class CashierGuard implements CanActivate {
         if (body?.refundTotal !== undefined && body?.refundTotal !== null) {
           try {
             const receipt = await this.prisma.receipt.findUnique({
-              where: { merchantId_orderId: { merchantId, orderId: body?.orderId } },
+              where: {
+                merchantId_orderId: { merchantId, orderId: body?.orderId },
+              },
               select: { outletId: true },
             });
             outletId = receipt?.outletId ?? null;
@@ -144,21 +150,29 @@ export class CashierGuard implements CanActivate {
     let settings = settingsHint;
     if (!settings) {
       try {
-        settings = await this.prisma.merchantSettings.findUnique({ where: { merchantId } });
+        settings = await this.prisma.merchantSettings.findUnique({
+          where: { merchantId },
+        });
       } catch {}
     }
 
     if (!primary && settings?.bridgeSecret) primary = settings.bridgeSecret;
-    if (!secondary && (settings as any)?.bridgeSecretNext)
-      secondary = (settings as any).bridgeSecretNext;
+    if (!secondary && settings?.bridgeSecretNext)
+      secondary = settings.bridgeSecretNext;
 
     return { primary, secondary };
   }
 
-  private verifyWithSecrets(sig: string, payload: string, primary: string | null, secondary: string | null): boolean {
+  private verifyWithSecrets(
+    sig: string,
+    payload: string,
+    primary: string | null,
+    secondary: string | null,
+  ): boolean {
     if (!sig || !payload) return false;
     if (primary && verifyBridgeSignature(sig, payload, primary)) return true;
-    if (secondary && verifyBridgeSignature(sig, payload, secondary)) return true;
+    if (secondary && verifyBridgeSignature(sig, payload, secondary))
+      return true;
     return false;
   }
 
@@ -167,11 +181,19 @@ export class CashierGuard implements CanActivate {
     req: any,
     merchantIdHint?: string,
     settingsHint?: any,
-  ): Promise<{ ok: boolean; context?: { merchantId?: string; outletId?: string | null } }> {
-    const sig = (req?.headers?.['x-bridge-signature'] as string | undefined) || '';
+  ): Promise<{
+    ok: boolean;
+    context?: { merchantId?: string; outletId?: string | null };
+  }> {
+    const sig =
+      (req?.headers?.['x-bridge-signature'] as string | undefined) || '';
     if (!sig) return { ok: false };
 
-    const context = await this.resolveOperationContext(normalizedPath, req, merchantIdHint);
+    const context = await this.resolveOperationContext(
+      normalizedPath,
+      req,
+      merchantIdHint,
+    );
     const merchantId = context.merchantId;
     const outletId = context.outletId ?? null;
     const payload = context.payload;
@@ -181,31 +203,37 @@ export class CashierGuard implements CanActivate {
     const { primary, secondary } = await this.getBridgeSecrets(
       merchantId,
       outletId,
-      merchantIdHint && merchantIdHint === merchantId ? settingsHint : undefined,
+      merchantIdHint && merchantIdHint === merchantId
+        ? settingsHint
+        : undefined,
     );
 
     if (!primary && !secondary) return { ok: false, context };
 
-    return { ok: this.verifyWithSecrets(sig, payload, primary, secondary), context };
+    return {
+      ok: this.verifyWithSecrets(sig, payload, primary, secondary),
+      context,
+    };
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const req = context.switchToHttp().getRequest() as any;
+    const req = context.switchToHttp().getRequest();
     const body = req.body || {};
     const method: string = (req.method || 'GET').toUpperCase();
-    const path: string = req?.route?.path || req?.path || req?.originalUrl || '';
+    const path: string =
+      req?.route?.path || req?.path || req?.originalUrl || '';
     const normalizedPath = this.normalizePath(path || '');
     const key = (req.headers['x-staff-key'] as string | undefined) || '';
     // whitelist публичных GET маршрутов (всегда разрешены): balance, settings, transactions, публичные списки
-    const isPublicGet = method === 'GET' && (
-      path.startsWith('/loyalty/balance/') ||
-      path.startsWith('/loyalty/settings/') ||
-      path === '/loyalty/transactions' ||
-      path.startsWith('/loyalty/outlets/') ||
-      path.startsWith('/loyalty/staff/') ||
-      path.startsWith('/loyalty/promotions')
-    );
-    const isAlwaysPublic = (
+    const isPublicGet =
+      method === 'GET' &&
+      (path.startsWith('/loyalty/balance/') ||
+        path.startsWith('/loyalty/settings/') ||
+        path === '/loyalty/transactions' ||
+        path.startsWith('/loyalty/outlets/') ||
+        path.startsWith('/loyalty/staff/') ||
+        path.startsWith('/loyalty/promotions'));
+    const isAlwaysPublic =
       path === '/loyalty/teleauth' ||
       path === '/loyalty/profile' ||
       path === '/loyalty/consent' ||
@@ -214,17 +242,19 @@ export class CashierGuard implements CanActivate {
       path === '/loyalty/cashier/staff-access' ||
       path === '/loyalty/promocodes/apply' ||
       path === '/loyalty/reviews' ||
-      path === '/loyalty/promotions/claim'
-    );
+      path === '/loyalty/promotions/claim';
     if (isPublicGet || isAlwaysPublic) return true;
 
     // Проверяем требование ключа на уровне мерчанта
     let requireStaffKey = false;
     let merchantSettings: any = null;
     try {
-      const merchantId = body?.merchantId || req?.params?.merchantId || req?.query?.merchantId;
+      const merchantId =
+        body?.merchantId || req?.params?.merchantId || req?.query?.merchantId;
       if (merchantId) {
-        merchantSettings = await this.prisma.merchantSettings.findUnique({ where: { merchantId } });
+        merchantSettings = await this.prisma.merchantSettings.findUnique({
+          where: { merchantId },
+        });
         requireStaffKey = Boolean(merchantSettings?.requireStaffKey);
       }
     } catch {}
@@ -251,30 +281,51 @@ export class CashierGuard implements CanActivate {
       return false;
     }
     const hash = crypto.createHash('sha256').update(key, 'utf8').digest('hex');
-    let merchantIdForStaff = body?.merchantId || req?.params?.merchantId || req?.query?.merchantId;
-    let contextForStaff: { merchantId?: string; outletId?: string | null } | undefined;
+    let merchantIdForStaff =
+      body?.merchantId || req?.params?.merchantId || req?.query?.merchantId;
+    let contextForStaff:
+      | { merchantId?: string; outletId?: string | null }
+      | undefined;
     if (!merchantIdForStaff) {
-      const resolved = await this.resolveOperationContext(normalizedPath, req, undefined);
+      const resolved = await this.resolveOperationContext(
+        normalizedPath,
+        req,
+        undefined,
+      );
       contextForStaff = resolved;
       if (resolved.merchantId) merchantIdForStaff = resolved.merchantId;
     }
     const staff = await this.prisma.staff.findFirst({
-      where: { merchantId: merchantIdForStaff, apiKeyHash: hash, status: 'ACTIVE' },
-      include: { accesses: { where: { status: 'ACTIVE' }, select: { outletId: true } } },
+      where: {
+        merchantId: merchantIdForStaff,
+        apiKeyHash: hash,
+        status: 'ACTIVE',
+      },
+      include: {
+        accesses: { where: { status: 'ACTIVE' }, select: { outletId: true } },
+      },
     });
     if (!staff) return false;
     let requestedOutletId =
-      body?.outletId || req?.params?.outletId || req?.query?.outletId || undefined;
+      body?.outletId ||
+      req?.params?.outletId ||
+      req?.query?.outletId ||
+      undefined;
     if (!requestedOutletId) {
       if (!contextForStaff) {
-        contextForStaff = await this.resolveOperationContext(normalizedPath, req, merchantIdForStaff);
+        contextForStaff = await this.resolveOperationContext(
+          normalizedPath,
+          req,
+          merchantIdForStaff,
+        );
       }
       if (contextForStaff?.outletId) {
         requestedOutletId = contextForStaff.outletId || undefined;
       }
     }
     if (String(staff.role || '').toUpperCase() === 'CASHIER') {
-      const allowedOutletId: string | undefined = staff.allowedOutletId || undefined;
+      const allowedOutletId: string | undefined =
+        staff.allowedOutletId || undefined;
       const outletAccesses: string[] = Array.isArray(staff.accesses)
         ? staff.accesses.map((acc: any) => acc?.outletId).filter(Boolean)
         : [];

@@ -58,14 +58,17 @@ export class AtolService {
     }
 
     const config = this.getConfig();
-    const response = await fetch('https://online.atol.ru/possystem/v4/getToken', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        login: config.login,
-        pass: config.password,
-      }),
-    });
+    const response = await fetch(
+      'https://online.atol.ru/possystem/v4/getToken',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          login: config.login,
+          pass: config.password,
+        }),
+      },
+    );
 
     if (!response.ok) {
       throw new Error(`АТОЛ auth failed: ${await response.text()}`);
@@ -75,7 +78,7 @@ export class AtolService {
     this.accessToken = data.token;
     // Токен АТОЛ действует 24 часа, обновляем за час до истечения
     this.tokenExpiry = new Date(Date.now() + 23 * 60 * 60 * 1000);
-    
+
     return this.accessToken || '';
   }
 
@@ -91,7 +94,7 @@ export class AtolService {
       qrToken?: string;
       discountAmount?: number;
       earnedPoints?: number;
-    }
+    },
   ) {
     try {
       // 1. Если есть данные лояльности, добавляем их в чек
@@ -145,10 +148,10 @@ export class AtolService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Token': token,
+          Token: token,
         },
         body: JSON.stringify(receiptData),
-      }
+      },
     );
 
     if (!response.ok) {
@@ -169,7 +172,7 @@ export class AtolService {
       if (status === 'done') {
         // Чек успешно фискализирован
         const orderId = receiptPayload.external_id;
-        
+
         // Подтверждаем операцию лояльности
         await this.confirmLoyaltyOperation(orderId, {
           fiscalId: uuid,
@@ -195,7 +198,7 @@ export class AtolService {
     const secret = this.configService.get('LOYALTY_WEBHOOK_SECRET');
     const timestamp = Math.floor(Date.now() / 1000);
     const payload = JSON.stringify(data);
-    
+
     const signature = crypto
       .createHmac('sha256', secret)
       .update(`${timestamp}.${payload}`)
@@ -210,7 +213,7 @@ export class AtolService {
   private async sendLoyaltyCallback(
     merchantId: string,
     orderId: string,
-    data: any
+    data: any,
   ) {
     const apiUrl = this.configService.get('API_BASE_URL');
     const signature = this.createCallbackSignature(data);
@@ -238,7 +241,7 @@ export class AtolService {
    */
   private async confirmLoyaltyOperation(orderId: string, fiscalData: any) {
     const apiUrl = this.configService.get('API_BASE_URL');
-    
+
     // Вызываем commit в нашем API
     const response = await fetch(`${apiUrl}/loyalty/fiscal-confirm`, {
       method: 'POST',
@@ -265,7 +268,7 @@ export class AtolService {
    */
   private async rollbackLoyaltyOperation(orderId: string) {
     const apiUrl = this.configService.get('API_BASE_URL');
-    
+
     const response = await fetch(`${apiUrl}/loyalty/fiscal-rollback`, {
       method: 'POST',
       headers: {

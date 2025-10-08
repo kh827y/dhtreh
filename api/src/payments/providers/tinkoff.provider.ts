@@ -23,7 +23,9 @@ export class TinkoffProvider implements PaymentProvider {
   private readonly secretKey: string;
 
   constructor(private configService: ConfigService) {
-    this.apiUrl = this.configService.get('TINKOFF_API_URL') || 'https://securepay.tinkoff.ru/v2';
+    this.apiUrl =
+      this.configService.get('TINKOFF_API_URL') ||
+      'https://securepay.tinkoff.ru/v2';
     this.terminalKey = this.configService.get('TINKOFF_TERMINAL_KEY') || '';
     this.secretKey = this.configService.get('TINKOFF_SECRET_KEY') || '';
   }
@@ -44,7 +46,7 @@ export class TinkoffProvider implements PaymentProvider {
 
     // Сортируем ключи и конкатенируем значения
     const sortedKeys = Object.keys(values).sort();
-    const concatenated = sortedKeys.map(key => values[key]).join('');
+    const concatenated = sortedKeys.map((key) => values[key]).join('');
 
     // Генерируем SHA-256 хеш
     return crypto.createHash('sha256').update(concatenated).digest('hex');
@@ -52,14 +54,15 @@ export class TinkoffProvider implements PaymentProvider {
 
   async createPayment(params: CreatePaymentParams): Promise<PaymentResult> {
     const orderId = `${params.orderId}_${Date.now()}`;
-    
+
     const requestData = {
       TerminalKey: this.terminalKey,
       Amount: params.amount, // в копейках
       OrderId: orderId,
       Description: params.description,
       CustomerKey: params.customerId,
-      SuccessURL: params.returnUrl || this.configService.get('PAYMENT_RETURN_URL'),
+      SuccessURL:
+        params.returnUrl || this.configService.get('PAYMENT_RETURN_URL'),
       FailURL: params.returnUrl || this.configService.get('PAYMENT_RETURN_URL'),
       NotificationURL: this.configService.get('TINKOFF_NOTIFICATION_URL'),
       DATA: {
@@ -88,9 +91,11 @@ export class TinkoffProvider implements PaymentProvider {
     }
 
     const data = await response.json();
-    
+
     if (!data.Success) {
-      throw new Error(`Tinkoff error: ${data.ErrorCode} - ${data.Message || 'Payment creation failed'}`);
+      throw new Error(
+        `Tinkoff error: ${data.ErrorCode} - ${data.Message || 'Payment creation failed'}`,
+      );
     }
 
     return {
@@ -126,9 +131,11 @@ export class TinkoffProvider implements PaymentProvider {
     }
 
     const data = await response.json();
-    
+
     if (!data.Success) {
-      throw new Error(`Tinkoff error: ${data.ErrorCode} - ${data.Message || 'Status check failed'}`);
+      throw new Error(
+        `Tinkoff error: ${data.ErrorCode} - ${data.Message || 'Status check failed'}`,
+      );
     }
 
     return {
@@ -137,24 +144,29 @@ export class TinkoffProvider implements PaymentProvider {
       paid: data.Status === 'CONFIRMED',
       amount: data.Amount,
       currency: 'RUB',
-      paymentMethod: data.CardId ? {
-        type: 'card',
-        id: data.CardId,
-        card: {
-          last4: data.Pan ? data.Pan.slice(-4) : undefined,
-        },
-      } : undefined,
+      paymentMethod: data.CardId
+        ? {
+            type: 'card',
+            id: data.CardId,
+            card: {
+              last4: data.Pan ? data.Pan.slice(-4) : undefined,
+            },
+          }
+        : undefined,
       createdAt: new Date(),
       metadata: data.DATA,
     };
   }
 
-  async refundPayment(paymentId: string, amount?: number): Promise<RefundResult> {
+  async refundPayment(
+    paymentId: string,
+    amount?: number,
+  ): Promise<RefundResult> {
     const requestData: any = {
       TerminalKey: this.terminalKey,
       PaymentId: paymentId,
     };
-    
+
     if (amount !== undefined) {
       requestData.Amount = amount; // уже в копейках
     }
@@ -175,26 +187,35 @@ export class TinkoffProvider implements PaymentProvider {
     }
 
     const data = await response.json();
-    
+
     if (!data.Success) {
-      throw new Error(`Refund failed: ${data.ErrorCode} - ${data.Message || 'Refund error'}`);
+      throw new Error(
+        `Refund failed: ${data.ErrorCode} - ${data.Message || 'Refund error'}`,
+      );
     }
 
     return {
       id: data.PaymentId,
-      status: data.Status === 'REFUNDED' || data.Status === 'PARTIAL_REFUNDED' ? 'succeeded' : 'failed',
+      status:
+        data.Status === 'REFUNDED' || data.Status === 'PARTIAL_REFUNDED'
+          ? 'succeeded'
+          : 'failed',
       amount: data.Amount || amount || 0,
       currency: 'RUB',
       createdAt: new Date(),
     };
   }
 
-  async createSubscription(params: CreateSubscriptionParams): Promise<SubscriptionResult> {
+  async createSubscription(
+    params: CreateSubscriptionParams,
+  ): Promise<SubscriptionResult> {
     // Тинькофф поддерживает рекуррентные платежи через сохраненные карты
     // Сначала нужно провести первый платеж с Recurrent: 'Y', затем использовать RebillId
-    
+
     if (!params.paymentMethodId) {
-      throw new Error('Payment method ID (RebillId) is required for Tinkoff subscriptions');
+      throw new Error(
+        'Payment method ID (RebillId) is required for Tinkoff subscriptions',
+      );
     }
 
     // Создаем рекуррентный платеж
@@ -228,9 +249,11 @@ export class TinkoffProvider implements PaymentProvider {
     }
 
     const data = await response.json();
-    
+
     if (!data.Success) {
-      throw new Error(`Subscription creation failed: ${data.ErrorCode} - ${data.Message}`);
+      throw new Error(
+        `Subscription creation failed: ${data.ErrorCode} - ${data.Message}`,
+      );
     }
 
     // Автоматически подтверждаем платеж
@@ -240,7 +263,7 @@ export class TinkoffProvider implements PaymentProvider {
       id: data.PaymentId,
       status: 'active',
       currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // +30 дней
-      trialEnd: params.trialDays 
+      trialEnd: params.trialDays
         ? new Date(Date.now() + params.trialDays * 24 * 60 * 60 * 1000)
         : undefined,
       planId: params.planId,
@@ -270,7 +293,7 @@ export class TinkoffProvider implements PaymentProvider {
     }
 
     const data = await response.json();
-    
+
     if (!data.Success) {
       throw new Error(`Charge failed: ${data.ErrorCode} - ${data.Message}`);
     }
@@ -286,14 +309,14 @@ export class TinkoffProvider implements PaymentProvider {
     // Проверяем токен
     const providedToken = body.Token;
     delete body.Token;
-    
+
     const expectedToken = this.generateToken(body);
     if (providedToken !== expectedToken) {
       throw new Error('Invalid webhook signature');
     }
 
     let type: WebhookResult['type'];
-    
+
     switch (body.Status) {
       case 'CONFIRMED':
         type = 'payment.succeeded';
@@ -305,7 +328,9 @@ export class TinkoffProvider implements PaymentProvider {
       case 'CANCELED':
       case 'REFUNDED':
       case 'PARTIAL_REFUNDED':
-        type = body.Status.includes('REFUND') ? 'refund.succeeded' : 'payment.canceled';
+        type = body.Status.includes('REFUND')
+          ? 'refund.succeeded'
+          : 'payment.canceled';
         break;
       default:
         // Игнорируем промежуточные статусы

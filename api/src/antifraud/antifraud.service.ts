@@ -34,15 +34,15 @@ export interface TransactionContext {
 @Injectable()
 export class AntiFraudService {
   private readonly logger = new Logger(AntiFraudService.name);
-  
+
   // Пороги для различных проверок
   private readonly THRESHOLDS = {
-    velocityPerHour: 5,        // Макс операций в час
-    velocityPerDay: 20,         // Макс операций в день
+    velocityPerHour: 5, // Макс операций в час
+    velocityPerDay: 20, // Макс операций в день
     largeTransactionAmount: 10000, // Крупная транзакция
-    unusualHourStart: 2,        // Необычное время (2:00 - 5:00)
+    unusualHourStart: 2, // Необычное время (2:00 - 5:00)
     unusualHourEnd: 5,
-    maxDistanceKm: 50,         // Макс расстояние между транзакциями
+    maxDistanceKm: 50, // Макс расстояние между транзакциями
     suspiciousPatternScore: 70, // Порог подозрительности
   };
 
@@ -109,7 +109,12 @@ export class AntiFraudService {
 
       // Логирование подозрительных транзакций
       if (normalizedScore > 50) {
-        await this.logSuspiciousActivity(context, normalizedScore, factors, riskLevel);
+        await this.logSuspiciousActivity(
+          context,
+          normalizedScore,
+          factors,
+          riskLevel,
+        );
       }
 
       return {
@@ -205,7 +210,13 @@ export class AntiFraudService {
       factors.push('technical_user_agent');
     }
 
-    if (ip && (/^127\./.test(ip) || ip === '::1' || /^(::ffff:)?127\./.test(ip) || /localhost/i.test(ip))) {
+    if (
+      ip &&
+      (/^127\./.test(ip) ||
+        ip === '::1' ||
+        /^(::ffff:)?127\./.test(ip) ||
+        /localhost/i.test(ip))
+    ) {
       score += 5;
       factors.push('local_ip');
     }
@@ -248,10 +259,12 @@ export class AntiFraudService {
     let score = 0;
 
     const currentHour = new Date().getHours();
-    
+
     // Проверка на необычное время
-    if (currentHour >= this.THRESHOLDS.unusualHourStart && 
-        currentHour <= this.THRESHOLDS.unusualHourEnd) {
+    if (
+      currentHour >= this.THRESHOLDS.unusualHourStart &&
+      currentHour <= this.THRESHOLDS.unusualHourEnd
+    ) {
       score += 15;
       factors.push(`unusual_hour:${currentHour}`);
     }
@@ -285,21 +298,26 @@ export class AntiFraudService {
 
     // Проверка на резкое изменение поведения
     if (history.length > 10) {
-      const avgAmount = history.reduce((sum, t) => sum + Math.abs(t.amount), 0) / history.length;
-      
+      const avgAmount =
+        history.reduce((sum, t) => sum + Math.abs(t.amount), 0) /
+        history.length;
+
       if (context.amount > avgAmount * 3) {
         score += 20;
-        factors.push(`amount_spike:${(context.amount / avgAmount).toFixed(1)}x`);
+        factors.push(
+          `amount_spike:${(context.amount / avgAmount).toFixed(1)}x`,
+        );
       }
     }
 
     // Проверка на последовательные списания
     if (context.type === 'REDEEM') {
-      const recentRedeems = history.filter(t => 
-        t.type === 'REDEEM' && 
-        new Date(t.createdAt) > new Date(Date.now() - 24 * 60 * 60 * 1000)
+      const recentRedeems = history.filter(
+        (t) =>
+          t.type === 'REDEEM' &&
+          new Date(t.createdAt) > new Date(Date.now() - 24 * 60 * 60 * 1000),
       );
-      
+
       if (recentRedeems.length > 3) {
         score += 15;
         factors.push(`multiple_redeems:${recentRedeems.length}_per_day`);
@@ -307,9 +325,15 @@ export class AntiFraudService {
     }
 
     // Проверка на подозрительный баланс манипуляций
-    const earnSum = history.filter(t => t.type === 'EARN').reduce((sum, t) => sum + t.amount, 0);
-    const redeemSum = Math.abs(history.filter(t => t.type === 'REDEEM').reduce((sum, t) => sum + t.amount, 0));
-    
+    const earnSum = history
+      .filter((t) => t.type === 'EARN')
+      .reduce((sum, t) => sum + t.amount, 0);
+    const redeemSum = Math.abs(
+      history
+        .filter((t) => t.type === 'REDEEM')
+        .reduce((sum, t) => sum + t.amount, 0),
+    );
+
     if (redeemSum > earnSum * 1.5 && earnSum > 0) {
       score += 25;
       factors.push('balance_manipulation');
@@ -340,7 +364,7 @@ export class AntiFraudService {
     // Здесь должна быть логика проверки расстояния между транзакциями
     // Для примера используем заглушку
     const distance = 0; // calculateDistance(lastLocation, context.location);
-    
+
     if (distance > this.THRESHOLDS.maxDistanceKm) {
       score += 30;
       factors.push(`location_jump:${distance}km`);
@@ -390,7 +414,9 @@ export class AntiFraudService {
       distinct: ['outletId'],
     });
 
-    const uniqueCount = uniqueOutlets.filter((item: any) => !!item?.outletId).length;
+    const uniqueCount = uniqueOutlets.filter(
+      (item: any) => !!item?.outletId,
+    ).length;
 
     if (uniqueCount > 3) {
       score += 20;
@@ -408,7 +434,10 @@ export class AntiFraudService {
     let score = 0;
 
     // Проверка на тестовые данные
-    if (context.customerId.includes('test') || context.customerId.includes('demo')) {
+    if (
+      context.customerId.includes('test') ||
+      context.customerId.includes('demo')
+    ) {
       score += 5;
       factors.push('test_account');
     }
@@ -492,10 +521,12 @@ export class AntiFraudService {
   private async sendAdminAlert(
     context: TransactionContext,
     score: number,
-    factors: string[]
+    factors: string[],
   ) {
     // Здесь должна быть интеграция с системой нотификаций
-    this.logger.warn(`FRAUD ALERT: Customer ${context.customerId}, Score: ${score}, Factors: ${factors.join(', ')}`);
+    this.logger.warn(
+      `FRAUD ALERT: Customer ${context.customerId}, Score: ${score}, Factors: ${factors.join(', ')}`,
+    );
   }
 
   /**
@@ -520,14 +551,19 @@ export class AntiFraudService {
   /**
    * Ручная отметка результата проверки (review)
    */
-  async reviewCheck(checkId: string, dto: { approved: boolean; notes?: string; reviewedBy: string; }) {
+  async reviewCheck(
+    checkId: string,
+    dto: { approved: boolean; notes?: string; reviewedBy: string },
+  ) {
     try {
       await this.prisma.adminAudit.create({
         data: {
           actor: dto.reviewedBy || 'admin',
           method: 'FRAUD_REVIEW',
           path: '/antifraud/:checkId/review',
-          action: dto.approved ? 'fraud_review_approved' : 'fraud_review_rejected',
+          action: dto.approved
+            ? 'fraud_review_approved'
+            : 'fraud_review_rejected',
           payload: {
             checkId,
             approved: dto.approved,
@@ -536,7 +572,9 @@ export class AntiFraudService {
           } as any,
         },
       });
-      try { this.metrics.inc('antifraud_reviewed_total'); } catch {}
+      try {
+        this.metrics.inc('antifraud_reviewed_total');
+      } catch {}
     } catch {}
     return { ok: true };
   }
@@ -547,7 +585,7 @@ export class AntiFraudService {
   async provideFeedback(
     transactionId: string,
     isFraud: boolean,
-    notes?: string
+    notes?: string,
   ) {
     try {
       await this.prisma.adminAudit.create({
@@ -566,7 +604,9 @@ export class AntiFraudService {
       });
 
       // Здесь можно добавить логику обновления ML модели
-      this.logger.log(`Fraud feedback recorded: ${transactionId} is ${isFraud ? 'fraud' : 'legitimate'}`);
+      this.logger.log(
+        `Fraud feedback recorded: ${transactionId} is ${isFraud ? 'fraud' : 'legitimate'}`,
+      );
     } catch (error) {
       this.logger.error('Ошибка записи feedback:', error);
     }
@@ -577,7 +617,7 @@ export class AntiFraudService {
    */
   async getStatistics(merchantId: string, days = 30) {
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-    
+
     const audits = await this.prisma.adminAudit.findMany({
       where: {
         merchantId,
@@ -586,14 +626,20 @@ export class AntiFraudService {
       },
     });
 
-    const blocked = audits.filter(a => (a.payload as any)?.riskLevel === RiskLevel.CRITICAL).length;
-    const reviewed = audits.filter(a => (a.payload as any)?.riskLevel === RiskLevel.HIGH).length;
+    const blocked = audits.filter(
+      (a) => (a.payload as any)?.riskLevel === RiskLevel.CRITICAL,
+    ).length;
+    const reviewed = audits.filter(
+      (a) => (a.payload as any)?.riskLevel === RiskLevel.HIGH,
+    ).length;
     const total = audits.length;
 
     const factorCounts = new Map<string, number>();
     for (const audit of audits) {
       const payload: any = audit.payload ?? {};
-      const arr: string[] = Array.isArray(payload?.factors) ? payload.factors : [];
+      const arr: string[] = Array.isArray(payload?.factors)
+        ? payload.factors
+        : [];
       for (const factor of arr) {
         const key = String(factor || '').split(':')[0];
         factorCounts.set(key, (factorCounts.get(key) ?? 0) + 1);
@@ -610,8 +656,9 @@ export class AntiFraudService {
       totalChecks: total,
       blockedTransactions: blocked,
       reviewedTransactions: reviewed,
-      blockRate: total > 0 ? (blocked / total * 100).toFixed(2) + '%' : '0%',
-      reviewRate: total > 0 ? (reviewed / total * 100).toFixed(2) + '%' : '0%',
+      blockRate: total > 0 ? ((blocked / total) * 100).toFixed(2) + '%' : '0%',
+      reviewRate:
+        total > 0 ? ((reviewed / total) * 100).toFixed(2) + '%' : '0%',
       topFactors,
     };
   }

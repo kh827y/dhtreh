@@ -1,7 +1,16 @@
-import { Injectable, BadRequestException, Inject, forwardRef } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma.service';
-import { PaymentProvider, CreatePaymentParams, WebhookResult } from './payment-provider.interface';
+import {
+  PaymentProvider,
+  CreatePaymentParams,
+  WebhookResult,
+} from './payment-provider.interface';
 import { YooKassaProvider } from './providers/yookassa.provider';
 import { MockPaymentProvider } from './providers/mock.provider';
 import { CloudPaymentsProvider } from './providers/cloudpayments.provider';
@@ -16,12 +25,14 @@ export class PaymentService {
   constructor(
     private configService: ConfigService,
     private prisma: PrismaService,
-    @Inject(forwardRef(() => SubscriptionService)) private subscriptionService: SubscriptionService,
+    @Inject(forwardRef(() => SubscriptionService))
+    private subscriptionService: SubscriptionService,
   ) {
     // Выбираем провайдера на основе конфигурации
-    const providerName = this.configService.get('PAYMENT_PROVIDER') || 'yookassa';
+    const providerName =
+      this.configService.get('PAYMENT_PROVIDER') || 'yookassa';
     this.providerName = providerName;
-    
+
     switch (providerName) {
       case 'yookassa':
         this.provider = new YooKassaProvider(configService);
@@ -58,7 +69,7 @@ export class PaymentService {
     }
 
     const plan = subscription.plan as any;
-    
+
     // Создаем платеж через провайдера
     const paymentResult = await this.provider.createPayment({
       amount: plan.price, // план хранится в минорных единицах (копейки)
@@ -105,7 +116,7 @@ export class PaymentService {
    */
   async handleWebhook(body: any, headers: any) {
     const result = await this.provider.processWebhook(body, headers);
-    
+
     switch (result.type) {
       case 'payment.succeeded':
         await this.handlePaymentSuccess(result);
@@ -147,7 +158,7 @@ export class PaymentService {
         const plan = subscription.plan as any;
         const newPeriodEnd = this.calculateNextPeriod(
           subscription.currentPeriodEnd,
-          plan.interval
+          plan.interval,
         );
 
         await this.prisma.subscription.update({
@@ -180,7 +191,9 @@ export class PaymentService {
     if (!result.paymentId) return;
 
     // Обновляем статус платежа
-    const existing = await this.prisma.payment.findUnique({ where: { id: result.paymentId } });
+    const existing = await this.prisma.payment.findUnique({
+      where: { id: result.paymentId },
+    });
     const payment = await this.prisma.payment.update({
       where: { id: result.paymentId },
       data: {
@@ -262,7 +275,7 @@ export class PaymentService {
    */
   async checkPaymentStatus(paymentId: string) {
     const status = await this.provider.checkPaymentStatus(paymentId);
-    
+
     // Обновляем статус в БД
     if (status.paid && status.status === 'succeeded') {
       await this.handlePaymentSuccess({
@@ -310,7 +323,7 @@ export class PaymentService {
 
   private calculateNextPeriod(currentEnd: Date, interval: string): Date {
     const next = new Date(currentEnd);
-    
+
     switch (interval) {
       case 'month':
         next.setMonth(next.getMonth() + 1);
@@ -324,7 +337,7 @@ export class PaymentService {
       default:
         next.setMonth(next.getMonth() + 1);
     }
-    
+
     return next;
   }
 

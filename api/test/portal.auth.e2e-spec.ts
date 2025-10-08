@@ -40,7 +40,11 @@ describe('PortalAuth (e2e)', () => {
         // disabled or not found
         if (String(email) === 'disabled@mail.test') {
           return {
-            id: 'M-3', portalEmail: 'disabled@mail.test', portalLoginEnabled: false, portalPasswordHash: hashPassword('x'), portalTotpEnabled: false,
+            id: 'M-3',
+            portalEmail: 'disabled@mail.test',
+            portalLoginEnabled: false,
+            portalPasswordHash: hashPassword('x'),
+            portalTotpEnabled: false,
           } as any;
         }
         return null;

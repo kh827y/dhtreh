@@ -1,4 +1,9 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 
 function normalizeIp(ip?: string): string {
   if (!ip) return '';
@@ -18,7 +23,12 @@ function normalizeIp(ip?: string): string {
 function getClientIp(req: any): string {
   const xff = (req.headers['x-forwarded-for'] as string | undefined) || '';
   const first = xff.split(',')[0]?.trim();
-  const cand = first || req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || '';
+  const cand =
+    first ||
+    req.ip ||
+    req.connection?.remoteAddress ||
+    req.socket?.remoteAddress ||
+    '';
   return normalizeIp(cand);
 }
 
@@ -45,13 +55,21 @@ export class AdminIpGuard implements CanActivate {
   canActivate(ctx: ExecutionContext): boolean {
     const req = ctx.switchToHttp().getRequest();
     // In tests, do not enforce IP whitelist
-    if (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID) return true;
-    const wl = (process.env.ADMIN_IP_WHITELIST || process.env.ADMIN_ALLOWED_IPS || '').trim();
+    if (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID)
+      return true;
+    const wl = (
+      process.env.ADMIN_IP_WHITELIST ||
+      process.env.ADMIN_ALLOWED_IPS ||
+      ''
+    ).trim();
     if (!wl) return true; // no whitelist -> allow
 
     const ip = getClientIp(req);
-    const rules = wl.split(',').map(s => s.trim()).filter(Boolean);
-    const ok = rules.some(r => ipMatches(ip, r));
+    const rules = wl
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const ok = rules.some((r) => ipMatches(ip, r));
     if (ok) return true;
 
     throw new UnauthorizedException('Admin IP not allowed');

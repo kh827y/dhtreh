@@ -1,4 +1,10 @@
-import { Controller, Get, Header, Req, UnauthorizedException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Header,
+  Req,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { MetricsService } from './metrics.service';
 import type { Request } from 'express';
 
@@ -12,8 +18,10 @@ export class MetricsController {
     const token = process.env.METRICS_TOKEN || '';
     if (token) {
       const got = (req.headers['x-metrics-token'] as string | undefined) || '';
-      const auth = (req.headers['authorization'] as string | undefined) || '';
-      const bearer = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : '';
+      const auth = req.headers['authorization'] || '';
+      const bearer = auth.startsWith('Bearer ')
+        ? auth.slice('Bearer '.length)
+        : '';
       if (got !== token && bearer !== token) {
         throw new UnauthorizedException('Metrics token required');
       }

@@ -49,7 +49,7 @@ export class ImportExportService {
    */
   async importCustomers(dto: ImportCustomersDto) {
     let rows: CustomerImportRow[];
-    
+
     try {
       if (dto.format === 'csv') {
         rows = this.parseCsv(dto.data);
@@ -74,11 +74,18 @@ export class ImportExportService {
     // Обрабатываем каждую строку
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
-      
+
       try {
-        await this.processCustomerRow(row, dto.merchantId, dto.updateExisting || false);
-        
-        if (dto.updateExisting && await this.customerExists(row, dto.merchantId)) {
+        await this.processCustomerRow(
+          row,
+          dto.merchantId,
+          dto.updateExisting || false,
+        );
+
+        if (
+          dto.updateExisting &&
+          (await this.customerExists(row, dto.merchantId))
+        ) {
           results.updated++;
         } else {
           results.imported++;
@@ -109,7 +116,7 @@ export class ImportExportService {
 
     if (dto.filters) {
       if (dto.filters.hasTransactions !== undefined) {
-        where.transactions = dto.filters.hasTransactions 
+        where.transactions = dto.filters.hasTransactions
           ? { some: { merchantId: dto.merchantId } }
           : { none: { merchantId: dto.merchantId } };
       }
@@ -146,27 +153,28 @@ export class ImportExportService {
     });
 
     // Подготавливаем данные для экспорта
-    const exportData = customers.map(customer => {
+    const exportData = customers.map((customer) => {
       const wallet = customer.wallets[0];
       const lastTransaction = customer.transactions[0];
       const segments = customer.segments
-        .map(s => s.segment.name)
+        .map((s) => s.segment.name)
         .filter(Boolean)
         .join(', ');
 
       const row: any = {
-        'ID': customer.id,
-        'Телефон': customer.phone || '',
-        'Email': customer.email || '',
-        'Имя': customer.name || '',
+        ID: customer.id,
+        Телефон: customer.phone || '',
+        Email: customer.email || '',
+        Имя: customer.name || '',
         'Дата рождения': customer.birthday?.toLocaleDateString('ru-RU') || '',
-        'Пол': customer.gender || '',
-        'Город': customer.city || '',
+        Пол: customer.gender || '',
+        Город: customer.city || '',
         'Баланс баллов': wallet?.balance || 0,
         'Дата регистрации': customer.createdAt.toLocaleDateString('ru-RU'),
-        'Последняя покупка': lastTransaction?.createdAt.toLocaleDateString('ru-RU') || '',
-        'Сегменты': segments,
-        'Тэги': customer.tags?.join(', ') || '',
+        'Последняя покупка':
+          lastTransaction?.createdAt.toLocaleDateString('ru-RU') || '',
+        Сегменты: segments,
+        Тэги: customer.tags?.join(', ') || '',
       };
 
       // Фильтруем поля если указаны
@@ -194,7 +202,11 @@ export class ImportExportService {
   /**
    * Потоковый экспорт клиентов в CSV (батчами)
    */
-  async streamCustomersCsv(dto: ExportCustomersDto, res: Response, batch = 1000) {
+  async streamCustomersCsv(
+    dto: ExportCustomersDto,
+    res: Response,
+    batch = 1000,
+  ) {
     const where: any = { wallets: { some: { merchantId: dto.merchantId } } };
     if (dto.filters) {
       if (dto.filters.hasTransactions !== undefined) {
@@ -204,22 +216,51 @@ export class ImportExportService {
       }
       if (dto.filters.createdFrom || dto.filters.createdTo) {
         where.createdAt = {};
-        if (dto.filters.createdFrom) where.createdAt.gte = dto.filters.createdFrom;
+        if (dto.filters.createdFrom)
+          where.createdAt.gte = dto.filters.createdFrom;
         if (dto.filters.createdTo) where.createdAt.lte = dto.filters.createdTo;
       }
     }
     const allFields = [
-      'ID','Телефон','Email','Имя','Дата рождения','Пол','Город','Баланс баллов','Дата регистрации','Последняя покупка','Сегменты','Тэги'
+      'ID',
+      'Телефон',
+      'Email',
+      'Имя',
+      'Дата рождения',
+      'Пол',
+      'Город',
+      'Баланс баллов',
+      'Дата регистрации',
+      'Последняя покупка',
+      'Сегменты',
+      'Тэги',
     ];
-    const fields = Array.isArray(dto.fields) && dto.fields.length ? dto.fields.filter(f => allFields.includes(f)) : allFields;
+    const fields =
+      Array.isArray(dto.fields) && dto.fields.length
+        ? dto.fields.filter((f) => allFields.includes(f))
+        : allFields;
     res.write(fields.join(';') + '\n');
     let before: Date | undefined = undefined;
     while (true) {
       const page = await this.prisma.customer.findMany({
-        where: Object.assign({}, where, before ? { createdAt: Object.assign({}, (where.createdAt||{}), { lt: before }) } : {}),
+        where: Object.assign(
+          {},
+          where,
+          before
+            ? {
+                createdAt: Object.assign({}, where.createdAt || {}, {
+                  lt: before,
+                }),
+              }
+            : {},
+        ),
         include: {
           wallets: { where: { merchantId: dto.merchantId } },
-          transactions: { where: { merchantId: dto.merchantId }, orderBy: { createdAt: 'desc' }, take: 1 },
+          transactions: {
+            where: { merchantId: dto.merchantId },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+          },
           segments: { include: { segment: true } },
         },
         orderBy: { createdAt: 'desc' },
@@ -229,22 +270,31 @@ export class ImportExportService {
       for (const customer of page) {
         const wallet = customer.wallets[0];
         const lastTransaction = customer.transactions[0];
-        const segments = customer.segments.map(s => s.segment.name).filter(Boolean).join(', ');
+        const segments = customer.segments
+          .map((s) => s.segment.name)
+          .filter(Boolean)
+          .join(', ');
         const row: Record<string, any> = {
-          'ID': customer.id,
-          'Телефон': customer.phone || '',
-          'Email': customer.email || '',
-          'Имя': customer.name || '',
-          'Дата рождения': customer.birthday ? customer.birthday.toLocaleDateString('ru-RU') : '',
-          'Пол': customer.gender || '',
-          'Город': customer.city || '',
+          ID: customer.id,
+          Телефон: customer.phone || '',
+          Email: customer.email || '',
+          Имя: customer.name || '',
+          'Дата рождения': customer.birthday
+            ? customer.birthday.toLocaleDateString('ru-RU')
+            : '',
+          Пол: customer.gender || '',
+          Город: customer.city || '',
           'Баланс баллов': wallet?.balance || 0,
           'Дата регистрации': customer.createdAt.toLocaleDateString('ru-RU'),
-          'Последняя покупка': lastTransaction?.createdAt ? lastTransaction.createdAt.toLocaleDateString('ru-RU') : '',
-          'Сегменты': segments,
-          'Тэги': customer.tags?.join(', ') || '',
+          'Последняя покупка': lastTransaction?.createdAt
+            ? lastTransaction.createdAt.toLocaleDateString('ru-RU')
+            : '',
+          Сегменты: segments,
+          Тэги: customer.tags?.join(', ') || '',
         };
-        const line = fields.map(f => this.csvCell(String(row[f] ?? ''))).join(';');
+        const line = fields
+          .map((f) => this.csvCell(String(row[f] ?? '')))
+          .join(';');
         res.write(line + '\n');
       }
       before = page[page.length - 1].createdAt;
@@ -255,25 +305,73 @@ export class ImportExportService {
   /**
    * Потоковый экспорт транзакций в CSV (батчами)
    */
-  async streamTransactionsCsv(params: { merchantId: string; from?: Date; to?: Date; type?: string; customerId?: string; outletId?: string; staffId?: string; }, res: Response, batch = 1000) {
+  async streamTransactionsCsv(
+    params: {
+      merchantId: string;
+      from?: Date;
+      to?: Date;
+      type?: string;
+      customerId?: string;
+      outletId?: string;
+      staffId?: string;
+    },
+    res: Response,
+    batch = 1000,
+  ) {
     const where: any = { merchantId: params.merchantId };
     if (params.type) where.type = params.type as any;
     if (params.customerId) where.customerId = params.customerId;
     if (params.outletId) where.outletId = params.outletId;
     if (params.staffId) where.staffId = params.staffId;
-    if (params.from || params.to) where.createdAt = Object.assign({}, params.from ? { gte: params.from } : {}, params.to ? { lte: params.to } : {});
-    res.write(['id','type','amount','orderId','customerId','createdAt','outletId','staffId'].join(';') + '\n');
+    if (params.from || params.to)
+      where.createdAt = Object.assign(
+        {},
+        params.from ? { gte: params.from } : {},
+        params.to ? { lte: params.to } : {},
+      );
+    res.write(
+      [
+        'id',
+        'type',
+        'amount',
+        'orderId',
+        'customerId',
+        'createdAt',
+        'outletId',
+        'staffId',
+      ].join(';') + '\n',
+    );
     let before: Date | undefined = undefined;
     while (true) {
       const page = await this.prisma.transaction.findMany({
-        where: Object.assign({}, where, before ? { createdAt: Object.assign({}, (where.createdAt||{}), { lt: before }) } : {}),
+        where: Object.assign(
+          {},
+          where,
+          before
+            ? {
+                createdAt: Object.assign({}, where.createdAt || {}, {
+                  lt: before,
+                }),
+              }
+            : {},
+        ),
         orderBy: { createdAt: 'desc' },
         take: batch,
       });
       if (!page.length) break;
       for (const t of page) {
-        const row = [ t.id, t.type, t.amount, t.orderId||'', t.customerId||'', t.createdAt.toISOString(), t.outletId||'', t.staffId||'' ]
-          .map(v => this.csvCell(String(v ?? ''))).join(';');
+        const row = [
+          t.id,
+          t.type,
+          t.amount,
+          t.orderId || '',
+          t.customerId || '',
+          t.createdAt.toISOString(),
+          t.outletId || '',
+          t.staffId || '',
+        ]
+          .map((v) => this.csvCell(String(v ?? '')))
+          .join(';');
         res.write(row + '\n');
       }
       before = page[page.length - 1].createdAt;
@@ -287,10 +385,10 @@ export class ImportExportService {
   async importTransactions(
     merchantId: string,
     format: 'csv' | 'excel',
-    data: Buffer
+    data: Buffer,
   ) {
     let rows: any[];
-    
+
     try {
       if (format === 'csv') {
         rows = this.parseCsv(data);
@@ -309,11 +407,11 @@ export class ImportExportService {
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
-      
+
       try {
         // Находим клиента по телефону или email
         const customer = await this.findCustomerByRow(row, merchantId);
-        
+
         if (!customer) {
           throw new Error('Клиент не найден');
         }
@@ -344,50 +442,53 @@ export class ImportExportService {
   /**
    * Получить шаблон для импорта
    */
-  async getImportTemplate(type: 'customers' | 'transactions', format: 'csv' | 'excel'): Promise<Buffer> {
+  async getImportTemplate(
+    type: 'customers' | 'transactions',
+    format: 'csv' | 'excel',
+  ): Promise<Buffer> {
     const templates = {
       customers: [
         {
           'Телефон*': '+7 900 123-45-67',
-          'Email': 'customer@example.com',
-          'Имя': 'Иван Иванов',
+          Email: 'customer@example.com',
+          Имя: 'Иван Иванов',
           'Дата рождения': '01.01.1990',
-          'Пол': 'M',
-          'Город': 'Москва',
+          Пол: 'M',
+          Город: 'Москва',
           'Баланс баллов': '500',
-          'Тэги': 'VIP, Постоянный',
+          Тэги: 'VIP, Постоянный',
         },
         {
           'Телефон*': '+7 900 123-45-68',
-          'Email': 'customer2@example.com',
-          'Имя': 'Мария Петрова',
+          Email: 'customer2@example.com',
+          Имя: 'Мария Петрова',
           'Дата рождения': '15.05.1985',
-          'Пол': 'F',
-          'Город': 'Санкт-Петербург',
+          Пол: 'F',
+          Город: 'Санкт-Петербург',
           'Баланс баллов': '1000',
-          'Тэги': 'Новый',
+          Тэги: 'Новый',
         },
       ],
       transactions: [
         {
           'Телефон клиента*': '+7 900 123-45-67',
-          'Тип': 'EARN',
-          'Баллы': '100',
+          Тип: 'EARN',
+          Баллы: '100',
           'ID заказа': 'ORDER-001',
-          'Описание': 'Покупка на 1000 руб',
+          Описание: 'Покупка на 1000 руб',
         },
         {
           'Телефон клиента*': '+7 900 123-45-68',
-          'Тип': 'REDEEM',
-          'Баллы': '-50',
+          Тип: 'REDEEM',
+          Баллы: '-50',
           'ID заказа': 'ORDER-002',
-          'Описание': 'Списание баллов',
+          Описание: 'Списание баллов',
         },
       ],
     };
 
     const data = templates[type];
-    
+
     if (format === 'csv') {
       return this.generateCsv(data);
     } else {
@@ -399,11 +500,10 @@ export class ImportExportService {
 
   private parseCsv(buffer: Buffer): any[] {
     const content = buffer.toString('utf-8');
-    
+
     // Проверяем BOM и удаляем если есть
-    const cleanContent = content.charAt(0) === '\ufeff' 
-      ? content.substring(1) 
-      : content;
+    const cleanContent =
+      content.charAt(0) === '\ufeff' ? content.substring(1) : content;
 
     return csv.parse(cleanContent, {
       columns: true,
@@ -418,7 +518,7 @@ export class ImportExportService {
     const workbook = XLSX.read(buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
-    
+
     return XLSX.utils.sheet_to_json(worksheet, {
       defval: '',
       raw: false, // Преобразовывать даты в строки
@@ -449,19 +549,21 @@ export class ImportExportService {
     const worksheet = XLSX.utils.json_to_sheet(data);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
-    
+
     // Устанавливаем ширину колонок
     const maxWidth = 30;
     const cols = Object.keys(data[0] || {}).map(() => ({ wch: maxWidth }));
     worksheet['!cols'] = cols;
 
-    return Buffer.from(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }));
+    return Buffer.from(
+      XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }),
+    );
   }
 
   private async processCustomerRow(
     row: CustomerImportRow,
     merchantId: string,
-    updateExisting: boolean
+    updateExisting: boolean,
   ) {
     // Валидация обязательных полей
     if (!row.phone && !row.email) {
@@ -474,10 +576,7 @@ export class ImportExportService {
     // Проверяем существование клиента
     let customer = await this.prisma.customer.findFirst({
       where: {
-        OR: [
-          { phone: phone || undefined },
-          { email: row.email || undefined },
-        ],
+        OR: [{ phone: phone || undefined }, { email: row.email || undefined }],
       },
     });
 
@@ -487,7 +586,9 @@ export class ImportExportService {
 
     // Парсим дополнительные поля
     const birthday = row.birthday ? this.parseDate(row.birthday) : undefined;
-    const tags = row.tags ? row.tags.split(',').map(t => t.trim()) : undefined;
+    const tags = row.tags
+      ? row.tags.split(',').map((t) => t.trim())
+      : undefined;
     const metadata = row.metadata ? JSON.parse(row.metadata) : undefined;
 
     if (customer) {
@@ -552,15 +653,15 @@ export class ImportExportService {
     }
   }
 
-  private async customerExists(row: CustomerImportRow, merchantId: string): Promise<boolean> {
+  private async customerExists(
+    row: CustomerImportRow,
+    merchantId: string,
+  ): Promise<boolean> {
     const phone = this.normalizePhone(row.phone);
-    
+
     const customer = await this.prisma.customer.findFirst({
       where: {
-        OR: [
-          { phone: phone || undefined },
-          { email: row.email || undefined },
-        ],
+        OR: [{ phone: phone || undefined }, { email: row.email || undefined }],
         wallets: {
           some: { merchantId },
         },
@@ -576,10 +677,7 @@ export class ImportExportService {
 
     return this.prisma.customer.findFirst({
       where: {
-        OR: [
-          { phone: phone || undefined },
-          { email: email || undefined },
-        ],
+        OR: [{ phone: phone || undefined }, { email: email || undefined }],
         wallets: {
           some: { merchantId },
         },
@@ -597,12 +695,12 @@ export class ImportExportService {
 
     // Удаляем все нецифровые символы
     let cleaned = phone.replace(/\D/g, '');
-    
+
     // Если начинается с 8, заменяем на 7
     if (cleaned.startsWith('8')) {
       cleaned = '7' + cleaned.substring(1);
     }
-    
+
     // Если не начинается с 7, добавляем
     if (cleaned.length === 10 && !cleaned.startsWith('7')) {
       cleaned = '7' + cleaned;
@@ -623,14 +721,14 @@ export class ImportExportService {
     const formats = [
       /^(\d{2})\.(\d{2})\.(\d{4})$/, // DD.MM.YYYY
       /^(\d{2})\/(\d{2})\/(\d{4})$/, // DD/MM/YYYY
-      /^(\d{4})-(\d{2})-(\d{2})$/,   // YYYY-MM-DD
+      /^(\d{4})-(\d{2})-(\d{2})$/, // YYYY-MM-DD
     ];
 
     for (const format of formats) {
       const match = dateStr.match(format);
       if (match) {
         let day, month, year;
-        
+
         if (format === formats[2]) {
           // ISO формат
           [, year, month, day] = match;
@@ -639,8 +737,12 @@ export class ImportExportService {
           [, day, month, year] = match;
         }
 
-        const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-        
+        const date = new Date(
+          parseInt(year),
+          parseInt(month) - 1,
+          parseInt(day),
+        );
+
         if (!isNaN(date.getTime())) {
           return date;
         }

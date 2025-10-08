@@ -5,10 +5,12 @@ export async function upsertIntegration(
   merchantId: string,
   provider: string,
   config: Record<string, unknown>,
-  credentials?: Record<string, unknown>
+  credentials?: Record<string, unknown>,
 ): Promise<string> {
   const p: any = prisma as any;
-  const found = await p.integration.findFirst({ where: { merchantId, provider } });
+  const found = await p.integration.findFirst({
+    where: { merchantId, provider },
+  });
   if (found) {
     await p.integration.update({
       where: { id: found.id },

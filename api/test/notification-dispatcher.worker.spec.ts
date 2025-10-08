@@ -17,11 +17,14 @@ function makePrismaMock() {
     merchant: { findUnique: jest.fn() },
     adminAudit: { create: jest.fn() },
   };
-  return prisma as any;
+  return prisma;
 }
 
 describe('NotificationDispatcherWorker - RPS throttle', () => {
-  const push = { sendPush: jest.fn(async () => ({ total: 2, sent: 2, failed: 0 })), sendToTopic: jest.fn(async () => ({ success: true })) } as any;
+  const push = {
+    sendPush: jest.fn(async () => ({ total: 2, sent: 2, failed: 0 })),
+    sendToTopic: jest.fn(async () => ({ success: true })),
+  } as any;
   const email = { sendEmail: jest.fn(async () => true) } as any;
   const metrics = new MetricsService();
 
@@ -42,28 +45,53 @@ describe('NotificationDispatcherWorker - RPS throttle', () => {
 
     const prisma = makePrismaMock();
     // Advisory lock ok
-    (prisma.$queryRaw as any).mockResolvedValue([{ ok: true }]);
+    prisma.$queryRaw.mockResolvedValue([{ ok: true }]);
     // Two events for same merchant
     const now = new Date();
     prisma.eventOutbox.findMany.mockResolvedValue([
-      { id: 'E1', merchantId: 'M-1', eventType: 'notify.broadcast', payload: { channel: 'PUSH', template: { text: 'Hi' } }, status: 'PENDING', retries: 0, nextRetryAt: null, lastError: null, createdAt: now },
-      { id: 'E2', merchantId: 'M-1', eventType: 'notify.broadcast', payload: { channel: 'PUSH', template: { text: 'Hi' } }, status: 'PENDING', retries: 0, nextRetryAt: null, lastError: null, createdAt: now },
+      {
+        id: 'E1',
+        merchantId: 'M-1',
+        eventType: 'notify.broadcast',
+        payload: { channel: 'PUSH', template: { text: 'Hi' } },
+        status: 'PENDING',
+        retries: 0,
+        nextRetryAt: null,
+        lastError: null,
+        createdAt: now,
+      },
+      {
+        id: 'E2',
+        merchantId: 'M-1',
+        eventType: 'notify.broadcast',
+        payload: { channel: 'PUSH', template: { text: 'Hi' } },
+        status: 'PENDING',
+        retries: 0,
+        nextRetryAt: null,
+        lastError: null,
+        createdAt: now,
+      },
     ]);
     prisma.eventOutbox.updateMany.mockResolvedValue({ count: 1 });
     prisma.eventOutbox.update.mockResolvedValue({});
 
-    const w = new Worker(prisma as any, metrics, push, email);
+    const w = new Worker(prisma, metrics, push, email);
     // Load RPS config without starting interval
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     (w as any).loadRpsConfig();
     // call private tick()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     await (w as any).tick();
 
     // Should claim/update both at different paths: first -> SENT, second -> throttled back to PENDING with nextRetryAt ~ +1s
-    const updates = prisma.eventOutbox.update.mock.calls.map((c: any[]) => c[0]);
+    const updates = prisma.eventOutbox.update.mock.calls.map(
+      (c: any[]) => c[0],
+    );
     const anySent = updates.some((u: any) => u?.data?.status === 'SENT');
-    const anyThrottled = updates.find((u: any) => u?.data?.status === 'PENDING' && u?.data?.lastError === 'throttled');
+    const anyThrottled = updates.find(
+      (u: any) =>
+        u?.data?.status === 'PENDING' && u?.data?.lastError === 'throttled',
+    );
 
     expect(anySent).toBe(true);
     expect(anyThrottled).toBeTruthy();

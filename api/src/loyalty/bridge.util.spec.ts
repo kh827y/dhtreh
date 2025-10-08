@@ -3,7 +3,9 @@ import { createHmac } from 'crypto';
 
 function makeHeader(secret: string, body: string, ts?: number) {
   const t = Math.floor((ts ?? Date.now()) / 1000).toString();
-  const sig = createHmac('sha256', secret).update(t + '.' + body).digest('base64');
+  const sig = createHmac('sha256', secret)
+    .update(t + '.' + body)
+    .digest('base64');
   return `v1,ts=${t},sig=${sig}`;
 }
 
@@ -29,4 +31,3 @@ describe('verifyBridgeSignature', () => {
     expect(verifyBridgeSignature(header, body, secret)).toBe(false);
   });
 });
-

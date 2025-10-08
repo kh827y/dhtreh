@@ -43,7 +43,9 @@ describe('StaffMotivationService', () => {
         leaderboardPeriod: 'custom',
         customDays: 0,
       }),
-    ).rejects.toThrow('Для собственного периода укажите количество дней от 1 до 365');
+    ).rejects.toThrow(
+      'Для собственного периода укажите количество дней от 1 до 365',
+    );
   });
 
   it('updates settings with normalization', async () => {
@@ -60,6 +62,10 @@ describe('StaffMotivationService', () => {
       create: expect.any(Object),
       update: expect.any(Object),
     });
-    expect(result).toMatchObject({ enabled: true, pointsForNewCustomer: 5, customDays: 10 });
+    expect(result).toMatchObject({
+      enabled: true,
+      pointsForNewCustomer: 5,
+      customDays: 10,
+    });
   });
 });

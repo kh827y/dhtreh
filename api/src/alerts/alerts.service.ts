@@ -18,12 +18,16 @@ export class AlertsService {
     try {
       if (!this.tgToken || !this.tgChatId) return; // no-op if not configured
       const url = `https://api.telegram.org/bot${this.tgToken}/sendMessage`;
-      await axios.post(url, {
-        chat_id: this.tgChatId,
-        text,
-        disable_web_page_preview: true,
-        parse_mode: 'Markdown',
-      }, { timeout: 5000 });
+      await axios.post(
+        url,
+        {
+          chat_id: this.tgChatId,
+          text,
+          disable_web_page_preview: true,
+          parse_mode: 'Markdown',
+        },
+        { timeout: 5000 },
+      );
     } catch (e) {
       this.logger.warn(`Failed to send alert: ${e}`);
     }

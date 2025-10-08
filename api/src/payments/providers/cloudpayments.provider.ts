@@ -28,7 +28,10 @@ export class CloudPaymentsProvider implements PaymentProvider {
   }
 
   private getAuthHeader(): string {
-    return 'Basic ' + Buffer.from(`${this.publicId}:${this.apiSecret}`).toString('base64');
+    return (
+      'Basic ' +
+      Buffer.from(`${this.publicId}:${this.apiSecret}`).toString('base64')
+    );
   }
 
   async createPayment(params: CreatePaymentParams): Promise<PaymentResult> {
@@ -37,7 +40,7 @@ export class CloudPaymentsProvider implements PaymentProvider {
     const response = await fetch(`${this.apiUrl}/orders/create`, {
       method: 'POST',
       headers: {
-        'Authorization': this.getAuthHeader(),
+        Authorization: this.getAuthHeader(),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -59,13 +62,17 @@ export class CloudPaymentsProvider implements PaymentProvider {
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(`CloudPayments error: ${error.Message || 'Unknown error'}`);
+      throw new Error(
+        `CloudPayments error: ${error.Message || 'Unknown error'}`,
+      );
     }
 
     const data = await response.json();
-    
+
     if (!data.Success) {
-      throw new Error(`CloudPayments error: ${data.Message || 'Payment creation failed'}`);
+      throw new Error(
+        `CloudPayments error: ${data.Message || 'Payment creation failed'}`,
+      );
     }
 
     return {
@@ -83,7 +90,7 @@ export class CloudPaymentsProvider implements PaymentProvider {
     const response = await fetch(`${this.apiUrl}/payments/get`, {
       method: 'POST',
       headers: {
-        'Authorization': this.getAuthHeader(),
+        Authorization: this.getAuthHeader(),
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: `TransactionId=${paymentId}`,
@@ -94,36 +101,43 @@ export class CloudPaymentsProvider implements PaymentProvider {
     }
 
     const data = await response.json();
-    
+
     if (!data.Success) {
-      throw new Error(`CloudPayments error: ${data.Message || 'Status check failed'}`);
+      throw new Error(
+        `CloudPayments error: ${data.Message || 'Status check failed'}`,
+      );
     }
 
     const payment = data.Model;
-    
+
     return {
       id: payment.TransactionId.toString(),
       status: this.mapStatus(payment.Status),
       paid: payment.Status === 'Completed',
       amount: Math.round(payment.Amount * 100), // конвертируем в копейки
       currency: payment.Currency,
-      paymentMethod: payment.CardLastFour ? {
-        type: 'card',
-        card: {
-          last4: payment.CardLastFour,
-          cardType: payment.CardType,
-        },
-      } : undefined,
+      paymentMethod: payment.CardLastFour
+        ? {
+            type: 'card',
+            card: {
+              last4: payment.CardLastFour,
+              cardType: payment.CardType,
+            },
+          }
+        : undefined,
       createdAt: new Date(payment.CreatedDate),
       metadata: payment.JsonData,
     };
   }
 
-  async refundPayment(paymentId: string, amount?: number): Promise<RefundResult> {
+  async refundPayment(
+    paymentId: string,
+    amount?: number,
+  ): Promise<RefundResult> {
     const body: any = {
       TransactionId: paymentId,
     };
-    
+
     if (amount !== undefined) {
       body.Amount = amount / 100; // конвертируем в рубли
     }
@@ -131,7 +145,7 @@ export class CloudPaymentsProvider implements PaymentProvider {
     const response = await fetch(`${this.apiUrl}/payments/refund`, {
       method: 'POST',
       headers: {
-        'Authorization': this.getAuthHeader(),
+        Authorization: this.getAuthHeader(),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
@@ -143,7 +157,7 @@ export class CloudPaymentsProvider implements PaymentProvider {
     }
 
     const data = await response.json();
-    
+
     if (!data.Success) {
       throw new Error(`Refund failed: ${data.Message || 'Refund error'}`);
     }
@@ -157,12 +171,14 @@ export class CloudPaymentsProvider implements PaymentProvider {
     };
   }
 
-  async createSubscription(params: CreateSubscriptionParams): Promise<SubscriptionResult> {
+  async createSubscription(
+    params: CreateSubscriptionParams,
+  ): Promise<SubscriptionResult> {
     // CloudPayments поддерживает рекуррентные платежи
     const response = await fetch(`${this.apiUrl}/subscriptions/create`, {
       method: 'POST',
       headers: {
-        'Authorization': this.getAuthHeader(),
+        Authorization: this.getAuthHeader(),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -181,20 +197,24 @@ export class CloudPaymentsProvider implements PaymentProvider {
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(`Subscription creation failed: ${error.Message || 'Unknown error'}`);
+      throw new Error(
+        `Subscription creation failed: ${error.Message || 'Unknown error'}`,
+      );
     }
 
     const data = await response.json();
-    
+
     if (!data.Success) {
-      throw new Error(`Subscription creation failed: ${data.Message || 'Error'}`);
+      throw new Error(
+        `Subscription creation failed: ${data.Message || 'Error'}`,
+      );
     }
 
     return {
       id: data.Model.Id,
       status: 'active',
       currentPeriodEnd: new Date(data.Model.NextTransactionDate),
-      trialEnd: params.trialDays 
+      trialEnd: params.trialDays
         ? new Date(Date.now() + params.trialDays * 24 * 60 * 60 * 1000)
         : undefined,
       planId: params.planId,
@@ -206,7 +226,7 @@ export class CloudPaymentsProvider implements PaymentProvider {
     const response = await fetch(`${this.apiUrl}/subscriptions/cancel`, {
       method: 'POST',
       headers: {
-        'Authorization': this.getAuthHeader(),
+        Authorization: this.getAuthHeader(),
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: `Id=${subscriptionId}`,
@@ -214,13 +234,17 @@ export class CloudPaymentsProvider implements PaymentProvider {
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(`Subscription cancellation failed: ${error.Message || 'Unknown error'}`);
+      throw new Error(
+        `Subscription cancellation failed: ${error.Message || 'Unknown error'}`,
+      );
     }
 
     const data = await response.json();
-    
+
     if (!data.Success) {
-      throw new Error(`Subscription cancellation failed: ${data.Message || 'Error'}`);
+      throw new Error(
+        `Subscription cancellation failed: ${data.Message || 'Error'}`,
+      );
     }
   }
 
@@ -231,7 +255,7 @@ export class CloudPaymentsProvider implements PaymentProvider {
     }
 
     let type: WebhookResult['type'];
-    
+
     switch (body.Type) {
       case 'Pay':
         type = 'payment.succeeded';

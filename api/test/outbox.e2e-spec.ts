@@ -4,7 +4,18 @@ import request from 'supertest';
 import { AppModule } from './../src/app.module';
 import { PrismaService } from './../src/prisma.service';
 
-type Outbox = { id: string; merchantId: string; eventType: string; payload: any; status: string; retries: number; nextRetryAt: Date | null; lastError: string | null; createdAt: Date; updatedAt: Date };
+type Outbox = {
+  id: string;
+  merchantId: string;
+  eventType: string;
+  payload: any;
+  status: string;
+  retries: number;
+  nextRetryAt: Date | null;
+  lastError: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
 describe('Merchants Outbox (e2e)', () => {
   let app: INestApplication;
@@ -13,7 +24,10 @@ describe('Merchants Outbox (e2e)', () => {
     outbox: [] as Outbox[],
     settings: new Map<string, any>(),
   };
-  const uuid = (() => { let i = 1; return () => `id-${i++}`; })();
+  const uuid = (() => {
+    let i = 1;
+    return () => `id-${i++}`;
+  })();
 
   const prismaMock: any = {
     $connect: jest.fn(async () => {}),
@@ -24,49 +38,87 @@ describe('Merchants Outbox (e2e)', () => {
         const id = args.where.merchantId;
         const ex = state.settings.get(id) || { merchantId: id };
         const u = { ...ex, ...args.data };
-        state.settings.set(id, u); return u;
+        state.settings.set(id, u);
+        return u;
       },
     },
 
     eventOutbox: {
       findMany: async (args: any) => {
-        let arr = state.outbox.filter(x => !args?.where?.merchantId || x.merchantId === args.where.merchantId);
-        if (args?.where?.status) arr = arr.filter(x => x.status === args.where.status);
-        if (args?.where?.createdAt?.gte) arr = arr.filter(x => x.createdAt >= args.where.createdAt.gte);
-        if (args?.orderBy?.createdAt === 'desc') arr = arr.slice().sort((a,b)=>b.createdAt.getTime()-a.createdAt.getTime());
-        if (args?.orderBy?.createdAt === 'asc') arr = arr.slice().sort((a,b)=>a.createdAt.getTime()-b.createdAt.getTime());
+        let arr = state.outbox.filter(
+          (x) =>
+            !args?.where?.merchantId || x.merchantId === args.where.merchantId,
+        );
+        if (args?.where?.status)
+          arr = arr.filter((x) => x.status === args.where.status);
+        if (args?.where?.createdAt?.gte)
+          arr = arr.filter((x) => x.createdAt >= args.where.createdAt.gte);
+        if (args?.orderBy?.createdAt === 'desc')
+          arr = arr
+            .slice()
+            .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        if (args?.orderBy?.createdAt === 'asc')
+          arr = arr
+            .slice()
+            .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
         if (args?.take) arr = arr.slice(0, args.take);
         return arr;
       },
       findFirst: async (args: any) => {
-        const list = await prismaMock.eventOutbox.findMany({ where: args?.where, orderBy: args?.orderBy, take: 1 });
+        const list = await prismaMock.eventOutbox.findMany({
+          where: args?.where,
+          orderBy: args?.orderBy,
+          take: 1,
+        });
         return list[0] || null;
       },
-      findUnique: async (args: any) => state.outbox.find(x => x.id === args.where.id) || null,
+      findUnique: async (args: any) =>
+        state.outbox.find((x) => x.id === args.where.id) || null,
       update: async (args: any) => {
-        const i = state.outbox.findIndex(x => x.id === args.where.id);
+        const i = state.outbox.findIndex((x) => x.id === args.where.id);
         if (i < 0) return null;
-        state.outbox[i] = { ...state.outbox[i], ...args.data, updatedAt: new Date() };
+        state.outbox[i] = {
+          ...state.outbox[i],
+          ...args.data,
+          updatedAt: new Date(),
+        };
         return state.outbox[i];
       },
       updateMany: async (args: any) => {
         let count = 0;
         for (const it of state.outbox) {
-          if (args?.where?.merchantId && it.merchantId !== args.where.merchantId) continue;
+          if (
+            args?.where?.merchantId &&
+            it.merchantId !== args.where.merchantId
+          )
+            continue;
           if (args?.where?.status && it.status !== args.where.status) continue;
-          if (args?.where?.createdAt?.gte && it.createdAt < args.where.createdAt.gte) continue;
+          if (
+            args?.where?.createdAt?.gte &&
+            it.createdAt < args.where.createdAt.gte
+          )
+            continue;
           Object.assign(it, args.data, { updatedAt: new Date() });
           count++;
         }
         return { count };
       },
-      delete: async (args: any) => { const idx = state.outbox.findIndex(x => x.id === args.where.id); if (idx >= 0) state.outbox.splice(idx, 1); return { ok: true }; },
-      count: async (args: any) => (await prismaMock.eventOutbox.findMany(args)).length,
+      delete: async (args: any) => {
+        const idx = state.outbox.findIndex((x) => x.id === args.where.id);
+        if (idx >= 0) state.outbox.splice(idx, 1);
+        return { ok: true };
+      },
+      count: async (args: any) =>
+        (await prismaMock.eventOutbox.findMany(args)).length,
       groupBy: async (args: any) => {
         const arr = await prismaMock.eventOutbox.findMany(args);
         const map = new Map<string, number>();
-        for (const it of arr) map.set(it.eventType, (map.get(it.eventType) || 0) + 1);
-        return Array.from(map.entries()).map(([eventType, n]) => ({ eventType, _count: { eventType: n } }));
+        for (const it of arr)
+          map.set(it.eventType, (map.get(it.eventType) || 0) + 1);
+        return Array.from(map.entries()).map(([eventType, n]) => ({
+          eventType,
+          _count: { eventType: n },
+        }));
       },
     },
   };
@@ -75,10 +127,34 @@ describe('Merchants Outbox (e2e)', () => {
     process.env.ADMIN_KEY = 'test-admin-key';
     state.settings.set('M1', { merchantId: 'M1' });
     const now = new Date();
-    state.outbox.push({ id: uuid(), merchantId: 'M1', eventType: 'loyalty.commit', payload: { orderId: 'order1' }, status: 'PENDING', retries: 0, nextRetryAt: null, lastError: null, createdAt: now, updatedAt: now });
-    state.outbox.push({ id: uuid(), merchantId: 'M1', eventType: 'loyalty.refund', payload: { orderId: 'order2' }, status: 'FAILED', retries: 1, nextRetryAt: null, lastError: 'oops', createdAt: new Date(now.getTime()-3600_000), updatedAt: now });
+    state.outbox.push({
+      id: uuid(),
+      merchantId: 'M1',
+      eventType: 'loyalty.commit',
+      payload: { orderId: 'order1' },
+      status: 'PENDING',
+      retries: 0,
+      nextRetryAt: null,
+      lastError: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    state.outbox.push({
+      id: uuid(),
+      merchantId: 'M1',
+      eventType: 'loyalty.refund',
+      payload: { orderId: 'order2' },
+      status: 'FAILED',
+      retries: 1,
+      nextRetryAt: null,
+      lastError: 'oops',
+      createdAt: new Date(now.getTime() - 3600_000),
+      updatedAt: now,
+    });
 
-    const moduleFixture: TestingModule = await Test.createTestingModule({ imports: [AppModule] })
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    })
       .overrideProvider(PrismaService)
       .useValue(prismaMock)
       .compile();
@@ -87,7 +163,9 @@ describe('Merchants Outbox (e2e)', () => {
     await app.init();
   });
 
-  afterAll(async () => { await app.close(); });
+  afterAll(async () => {
+    await app.close();
+  });
 
   it('requires admin key', async () => {
     await request(app.getHttpServer()).get('/merchants/M1/outbox').expect(401);
@@ -128,7 +206,7 @@ describe('Merchants Outbox (e2e)', () => {
   });
 
   it('retrySince (body)', async () => {
-    const since = new Date(Date.now()-2*3600_000).toISOString();
+    const since = new Date(Date.now() - 2 * 3600_000).toISOString();
     const res = await request(app.getHttpServer())
       .post('/merchants/M1/outbox/retrySince')
       .set('X-Admin-Key', 'test-admin-key')
@@ -174,7 +252,9 @@ describe('Merchants Outbox (e2e)', () => {
       .set('X-Admin-Key', 'test-admin-key')
       .expect(200);
     expect(Array.isArray(res.body)).toBe(true);
-    expect(res.body.every((e: any) => e.payload?.orderId === 'order2')).toBe(true);
+    expect(res.body.every((e: any) => e.payload?.orderId === 'order2')).toBe(
+      true,
+    );
   });
 
   it('csv export returns text/csv', async () => {

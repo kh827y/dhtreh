@@ -12,7 +12,10 @@ describe('Merchants (e2e)', () => {
     $connect: jest.fn(async () => {}),
     $disconnect: jest.fn(async () => {}),
     merchant: {
-      upsert: jest.fn(async (args: any) => ({ id: args.create.id ?? args.where.id, name: args.create?.name || args.where?.id || 'M' })),
+      upsert: jest.fn(async (args: any) => ({
+        id: args.create.id ?? args.where.id,
+        name: args.create?.name || args.where?.id || 'M',
+      })),
       findUnique: jest.fn(async (args: any) => {
         const id = args.where.id;
         const s = state[id]?.settings ?? null;
@@ -26,21 +29,22 @@ describe('Merchants (e2e)', () => {
         const c = args.create || {};
         const res = {
           merchantId: mId,
-          earnBps: (u.earnBps ?? c.earnBps) ?? 500,
-          redeemLimitBps: (u.redeemLimitBps ?? c.redeemLimitBps) ?? 5000,
-          qrTtlSec: (u.qrTtlSec ?? c.qrTtlSec) ?? 120,
-          webhookUrl: (u.webhookUrl ?? c.webhookUrl) ?? null,
-          webhookSecret: (u.webhookSecret ?? c.webhookSecret) ?? null,
-          webhookKeyId: (u.webhookKeyId ?? c.webhookKeyId) ?? null,
-          requireBridgeSig: (u.requireBridgeSig ?? c.requireBridgeSig) ?? false,
-          bridgeSecret: (u.bridgeSecret ?? c.bridgeSecret) ?? null,
-          redeemCooldownSec: (u.redeemCooldownSec ?? c.redeemCooldownSec) ?? 0,
-          earnCooldownSec: (u.earnCooldownSec ?? c.earnCooldownSec) ?? 0,
-          redeemDailyCap: (u.redeemDailyCap ?? c.redeemDailyCap) ?? null,
-          earnDailyCap: (u.earnDailyCap ?? c.earnDailyCap) ?? null,
-          requireJwtForQuote: (u.requireJwtForQuote ?? c.requireJwtForQuote) ?? false,
-          rulesJson: (u.rulesJson ?? c.rulesJson) ?? null,
-          requireStaffKey: (u.requireStaffKey ?? c.requireStaffKey) ?? false,
+          earnBps: u.earnBps ?? c.earnBps ?? 500,
+          redeemLimitBps: u.redeemLimitBps ?? c.redeemLimitBps ?? 5000,
+          qrTtlSec: u.qrTtlSec ?? c.qrTtlSec ?? 120,
+          webhookUrl: u.webhookUrl ?? c.webhookUrl ?? null,
+          webhookSecret: u.webhookSecret ?? c.webhookSecret ?? null,
+          webhookKeyId: u.webhookKeyId ?? c.webhookKeyId ?? null,
+          requireBridgeSig: u.requireBridgeSig ?? c.requireBridgeSig ?? false,
+          bridgeSecret: u.bridgeSecret ?? c.bridgeSecret ?? null,
+          redeemCooldownSec: u.redeemCooldownSec ?? c.redeemCooldownSec ?? 0,
+          earnCooldownSec: u.earnCooldownSec ?? c.earnCooldownSec ?? 0,
+          redeemDailyCap: u.redeemDailyCap ?? c.redeemDailyCap ?? null,
+          earnDailyCap: u.earnDailyCap ?? c.earnDailyCap ?? null,
+          requireJwtForQuote:
+            u.requireJwtForQuote ?? c.requireJwtForQuote ?? false,
+          rulesJson: u.rulesJson ?? c.rulesJson ?? null,
+          requireStaffKey: u.requireStaffKey ?? c.requireStaffKey ?? false,
         } as any;
         state[mId] = { settings: res };
         return res;
@@ -76,7 +80,9 @@ describe('Merchants (e2e)', () => {
   });
 
   it('PUT /merchants/:id/settings rejects invalid rules with 400', async () => {
-    const badRules = [{ if: { weekdayIn: 'not-array' as any }, then: { earnBps: 700 } }];
+    const badRules = [
+      { if: { weekdayIn: 'not-array' as any }, then: { earnBps: 700 } },
+    ];
     await request(app.getHttpServer())
       .put('/merchants/M-1/settings')
       .set('X-Admin-Key', 'test-admin-key')
@@ -101,7 +107,14 @@ describe('Merchants (e2e)', () => {
       { if: { minEligible: 2000 }, then: { redeemLimitBps: 4000 } },
     ];
     // seed in mocked state
-    state['M-2'] = { settings: { earnBps: 500, redeemLimitBps: 5000, qrTtlSec: 120, rulesJson: rules } };
+    state['M-2'] = {
+      settings: {
+        earnBps: 500,
+        redeemLimitBps: 5000,
+        qrTtlSec: 120,
+        rulesJson: rules,
+      },
+    };
 
     const res = await request(app.getHttpServer())
       .get('/merchants/M-2/rules/preview')

@@ -3,7 +3,12 @@ import { PortalCatalogService } from './catalog.service';
 import { ProductBulkAction } from './catalog.dto';
 
 describe('PortalCatalogService', () => {
-  const metrics = { inc: jest.fn(), observe: jest.fn(), setGauge: jest.fn(), recordHttp: jest.fn() } as any;
+  const metrics = {
+    inc: jest.fn(),
+    observe: jest.fn(),
+    setGauge: jest.fn(),
+    recordHttp: jest.fn(),
+  } as any;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -42,7 +47,13 @@ describe('PortalCatalogService', () => {
       $transaction: jest.fn(async (fn: any) => fn(tx)),
       productCategory: { findMany: jest.fn(), updateMany: jest.fn() },
       product: { findMany: jest.fn(), count: jest.fn(), updateMany: jest.fn() },
-      outlet: { findMany: jest.fn(), count: jest.fn(), create: jest.fn(), update: jest.fn(), findFirst: jest.fn() },
+      outlet: {
+        findMany: jest.fn(),
+        count: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+        findFirst: jest.fn(),
+      },
       productImage: { deleteMany: jest.fn(), createMany: jest.fn() },
       productVariant: { deleteMany: jest.fn(), createMany: jest.fn() },
       productStock: { deleteMany: jest.fn(), create: jest.fn() },
@@ -56,7 +67,10 @@ describe('PortalCatalogService', () => {
     expect(payload.slug).toBe('supy');
     expect(payload.order).toBe(1010);
     expect(result.slug).toBe('supy');
-    expect(metrics.inc).toHaveBeenCalledWith('portal_catalog_categories_changed_total', { action: 'create' });
+    expect(metrics.inc).toHaveBeenCalledWith(
+      'portal_catalog_categories_changed_total',
+      { action: 'create' },
+    );
   });
 
   it('applies bulk product action', async () => {
@@ -66,14 +80,20 @@ describe('PortalCatalogService', () => {
       },
     };
     const service = new PortalCatalogService(prisma, metrics);
-    const response = await service.bulkProductAction('m-42', { action: ProductBulkAction.SHOW, ids: ['p1', 'p2'] });
+    const response = await service.bulkProductAction('m-42', {
+      action: ProductBulkAction.SHOW,
+      ids: ['p1', 'p2'],
+    });
 
     expect(prisma.product.updateMany).toHaveBeenCalledWith({
       where: { id: { in: ['p1', 'p2'] }, merchantId: 'm-42', deletedAt: null },
       data: { visible: true },
     });
     expect(response).toEqual({ ok: true, updated: 2 });
-    expect(metrics.inc).toHaveBeenCalledWith('portal_catalog_products_changed_total', { action: ProductBulkAction.SHOW });
+    expect(metrics.inc).toHaveBeenCalledWith(
+      'portal_catalog_products_changed_total',
+      { action: ProductBulkAction.SHOW },
+    );
   });
 
   it('creates outlet with trimmed data and schedule flags', async () => {
@@ -122,7 +142,10 @@ describe('PortalCatalogService', () => {
       adminEmails: [' manager@example.com ', 'second@example.com'],
       timezone: 'UTC+03',
       showSchedule: true,
-      schedule: { mode: 'CUSTOM', days: [{ day: 'mon', enabled: true, from: '10:00', to: '22:00' }] },
+      schedule: {
+        mode: 'CUSTOM',
+        days: [{ day: 'mon', enabled: true, from: '10:00', to: '22:00' }],
+      },
       externalId: '  BR-1  ',
     } as any);
 
@@ -130,13 +153,21 @@ describe('PortalCatalogService', () => {
     const payload = createMock.mock.calls[0][0].data;
     expect(payload.name).toBe('Точка');
     expect(payload.address).toBe('Город, улица');
-    expect(payload.adminEmails).toEqual(['manager@example.com', 'second@example.com']);
+    expect(payload.adminEmails).toEqual([
+      'manager@example.com',
+      'second@example.com',
+    ]);
     expect(payload.scheduleEnabled).toBe(true);
-    expect(payload.scheduleJson).toEqual({ mode: 'CUSTOM', days: [{ day: 'mon', enabled: true, from: '10:00', to: '22:00' }] });
+    expect(payload.scheduleJson).toEqual({
+      mode: 'CUSTOM',
+      days: [{ day: 'mon', enabled: true, from: '10:00', to: '22:00' }],
+    });
     expect(payload.latitude).toBeInstanceOf(Prisma.Decimal);
     expect(payload.latitude?.toString()).toBe('55.7558');
     expect(result.manualLocation).toBe(true);
     expect(result.showSchedule).toBe(true);
-    expect(metrics.inc).toHaveBeenCalledWith('portal_outlets_changed_total', { action: 'create' });
+    expect(metrics.inc).toHaveBeenCalledWith('portal_outlets_changed_total', {
+      action: 'create',
+    });
   });
 });

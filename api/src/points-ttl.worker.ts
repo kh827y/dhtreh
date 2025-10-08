@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 import { MetricsService } from './metrics.service';
 import { pgTryAdvisoryLock, pgAdvisoryUnlock } from './pg-lock.util';
@@ -11,31 +16,59 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
   public startedAt: Date | null = null;
   public lastTickAt: Date | null = null;
 
-  constructor(private prisma: PrismaService, private metrics: MetricsService) {}
+  constructor(
+    private prisma: PrismaService,
+    private metrics: MetricsService,
+  ) {}
 
   onModuleInit() {
-    if (process.env.WORKERS_ENABLED === '0') { this.logger.log('Workers disabled (WORKERS_ENABLED=0)'); return; }
+    if (process.env.WORKERS_ENABLED === '0') {
+      this.logger.log('Workers disabled (WORKERS_ENABLED=0)');
+      return;
+    }
     if (process.env.POINTS_TTL_FEATURE !== '1') {
       this.logger.log('POINTS_TTL_FEATURE disabled');
       return;
     }
-    const intervalMs = Number(process.env.POINTS_TTL_INTERVAL_MS || (6 * 60 * 60 * 1000)); // каждые 6 часов
+    const intervalMs = Number(
+      process.env.POINTS_TTL_INTERVAL_MS || 6 * 60 * 60 * 1000,
+    ); // каждые 6 часов
     this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
-    try { if (this.timer && typeof this.timer.unref === 'function') this.timer.unref(); } catch {}
+    try {
+      if (this.timer && typeof this.timer.unref === 'function')
+        this.timer.unref();
+    } catch {}
     this.logger.log(`PointsTtlWorker started, interval=${intervalMs}ms`);
     this.startedAt = new Date();
   }
 
-  onModuleDestroy() { if (this.timer) clearInterval(this.timer); }
+  onModuleDestroy() {
+    if (this.timer) clearInterval(this.timer);
+  }
 
   private async tick() {
-    if (this.running) return; this.running = true;
-    const lock = await pgTryAdvisoryLock(this.prisma, 'worker:points_ttl_preview');
-    if (!lock.ok) { this.running = false; return; }
+    if (this.running) return;
+    this.running = true;
+    const lock = await pgTryAdvisoryLock(
+      this.prisma,
+      'worker:points_ttl_preview',
+    );
+    if (!lock.ok) {
+      this.running = false;
+      return;
+    }
     try {
       this.lastTickAt = new Date();
-      try { this.metrics.setGauge('loyalty_worker_last_tick_seconds', Math.floor(Date.now()/1000), { worker: 'points_ttl' }); } catch {}
-      const merchants = await this.prisma.merchantSettings.findMany({ where: { pointsTtlDays: { not: null } } });
+      try {
+        this.metrics.setGauge(
+          'loyalty_worker_last_tick_seconds',
+          Math.floor(Date.now() / 1000),
+          { worker: 'points_ttl' },
+        );
+      } catch {}
+      const merchants = await this.prisma.merchantSettings.findMany({
+        where: { pointsTtlDays: { not: null } },
+      });
       const now = Date.now();
       for (const s of merchants) {
         const ttlDays = (s as any).pointsTtlDays as number | null;
@@ -44,35 +77,80 @@ export class PointsTtlWorker implements OnModuleInit, OnModuleDestroy {
         const useLots = process.env.EARN_LOTS_FEATURE === '1';
         if (useLots) {
           // Точный превью: неиспользованные lot'ы, «заработанные» ранее cutoff
-          const lots = await this.prisma.earnLot.findMany({ where: { merchantId: s.merchantId, status: 'ACTIVE', earnedAt: { lt: cutoff } } });
+          const lots = await this.prisma.earnLot.findMany({
+            where: {
+              merchantId: s.merchantId,
+              status: 'ACTIVE',
+              earnedAt: { lt: cutoff },
+            },
+          });
           const byCustomer = new Map<string, number>();
           for (const lot of lots) {
             const remain = Math.max(0, lot.points - lot.consumedPoints);
             if (remain <= 0) continue;
-            byCustomer.set(lot.customerId, (byCustomer.get(lot.customerId) || 0) + remain);
+            byCustomer.set(
+              lot.customerId,
+              (byCustomer.get(lot.customerId) || 0) + remain,
+            );
           }
           for (const [customerId, expiringPoints] of byCustomer.entries()) {
-            await this.prisma.eventOutbox.create({ data: {
-              merchantId: s.merchantId,
-              eventType: 'loyalty.points_ttl.preview',
-              payload: { merchantId: s.merchantId, customerId, ttlDays, expiringPoints, computedAt: new Date().toISOString(), mode: 'lots' } as any,
-            }});
+            await this.prisma.eventOutbox.create({
+              data: {
+                merchantId: s.merchantId,
+                eventType: 'loyalty.points_ttl.preview',
+                payload: {
+                  merchantId: s.merchantId,
+                  customerId,
+                  ttlDays,
+                  expiringPoints,
+                  computedAt: new Date().toISOString(),
+                  mode: 'lots',
+                } as any,
+              },
+            });
           }
         } else {
           // Приблизённый превью от баланса/начислений за период
-          const wallets = await this.prisma.wallet.findMany({ where: { merchantId: s.merchantId, type: 'POINTS' as any } });
+          const wallets = await this.prisma.wallet.findMany({
+            where: { merchantId: s.merchantId, type: 'POINTS' as any },
+          });
           for (const w of wallets) {
             try {
-              const recentEarn = await this.prisma.transaction.aggregate({ _sum: { amount: true }, where: { merchantId: s.merchantId, customerId: w.customerId, type: 'EARN' as any, createdAt: { gte: cutoff } } });
+              const recentEarn = await this.prisma.transaction.aggregate({
+                _sum: { amount: true },
+                where: {
+                  merchantId: s.merchantId,
+                  customerId: w.customerId,
+                  type: 'EARN' as any,
+                  createdAt: { gte: cutoff },
+                },
+              });
               const recent = recentEarn._sum.amount || 0;
               const tentativeExpire = Math.max(0, (w.balance || 0) - recent);
               if (tentativeExpire > 0) {
-                await this.prisma.eventOutbox.create({ data: { merchantId: s.merchantId, eventType: 'loyalty.points_ttl.preview', payload: { merchantId: s.merchantId, customerId: w.customerId, walletId: w.id, ttlDays, tentativeExpire, computedAt: new Date().toISOString(), mode: 'approx' } as any } });
+                await this.prisma.eventOutbox.create({
+                  data: {
+                    merchantId: s.merchantId,
+                    eventType: 'loyalty.points_ttl.preview',
+                    payload: {
+                      merchantId: s.merchantId,
+                      customerId: w.customerId,
+                      walletId: w.id,
+                      ttlDays,
+                      tentativeExpire,
+                      computedAt: new Date().toISOString(),
+                      mode: 'approx',
+                    } as any,
+                  },
+                });
               }
             } catch {}
           }
         }
       }
-    } finally { this.running = false; await pgAdvisoryUnlock(this.prisma, lock.key); }
+    } finally {
+      this.running = false;
+      await pgAdvisoryUnlock(this.prisma, lock.key);
+    }
   }
 }

@@ -14,12 +14,18 @@ export class AdminAuditController {
     @Query('limit') limitStr?: string,
     @Query('before') beforeStr?: string,
   ) {
-    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200) : 50;
+    const limit = limitStr
+      ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200)
+      : 50;
     const where: any = {};
     if (merchantId) where.merchantId = merchantId;
     if (beforeStr) where.createdAt = { lt: new Date(beforeStr) };
-    const items = await this.prisma.adminAudit.findMany({ where, orderBy: { createdAt: 'desc' }, take: limit });
-    return items.map(i => ({
+    const items = await this.prisma.adminAudit.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+    return items.map((i) => ({
       id: i.id,
       createdAt: i.createdAt,
       actor: i.actor,
@@ -33,7 +39,9 @@ export class AdminAuditController {
   @Get(':id')
   async getOne(@Param('id') id: string) {
     if (!id) return null as any;
-    const row = await this.prisma.adminAudit.findUnique({ where: { id } as any }).catch(()=>null);
+    const row = await this.prisma.adminAudit
+      .findUnique({ where: { id } as any })
+      .catch(() => null);
     if (!row) return null as any;
     return {
       id: row.id,
@@ -52,15 +60,29 @@ export class AdminAuditController {
     @Query('limit') limitStr?: string,
     @Query('before') beforeStr?: string,
   ) {
-    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 1000, 1), 5000) : 1000;
+    const limit = limitStr
+      ? Math.min(Math.max(parseInt(limitStr, 10) || 1000, 1), 5000)
+      : 1000;
     const where: any = {};
     if (merchantId) where.merchantId = merchantId;
     if (beforeStr) where.createdAt = { lt: new Date(beforeStr) };
-    const items = await this.prisma.adminAudit.findMany({ where, orderBy: { createdAt: 'desc' }, take: limit });
-    const lines = [ 'createdAt,actor,method,path,merchantId,action' ];
+    const items = await this.prisma.adminAudit.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+    const lines = ['createdAt,actor,method,path,merchantId,action'];
     for (const i of items) {
-      const row = [i.createdAt.toISOString(), i.actor, i.method, i.path, i.merchantId || '', i.action || '']
-        .map(v => `"${String(v).replaceAll('"','""')}"`).join(',');
+      const row = [
+        i.createdAt.toISOString(),
+        i.actor,
+        i.method,
+        i.path,
+        i.merchantId || '',
+        i.action || '',
+      ]
+        .map((v) => `"${String(v).replaceAll('"', '""')}"`)
+        .join(',');
       lines.push(row);
     }
     return lines.join('\n') + '\n';

@@ -20,7 +20,11 @@ export function verifyPassword(password: string, stored: string): boolean {
     const p = parseInt(parts[3], 10) || DEFAULTS.p;
     const salt = Buffer.from(parts[4], 'base64');
     const expected = Buffer.from(parts[5], 'base64');
-    const hash = crypto.scryptSync(password, salt, expected.length, { N, r, p });
+    const hash = crypto.scryptSync(password, salt, expected.length, {
+      N,
+      r,
+      p,
+    });
     return crypto.timingSafeEqual(expected, Buffer.from(hash));
   } catch {
     return false;

@@ -7,7 +7,12 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import type { TransactionContext } from './antifraud.service';
 import { AntiFraudService } from './antifraud.service';
 import { ApiKeyGuard } from '../guards/api-key.guard';
@@ -26,13 +31,14 @@ export class AntifraudController {
   @ApiOperation({ summary: 'Check fraud risk for a transaction' })
   @ApiResponse({ status: 200, description: 'Fraud check result' })
   async checkFraud(
-    @Body() dto: {
+    @Body()
+    dto: {
       merchantId: string;
       customerId: string;
       amount: number;
       transactionId?: string;
       type?: 'EARN' | 'REDEEM';
-    }
+    },
   ) {
     const ctx: TransactionContext = {
       merchantId: dto.merchantId,
@@ -64,11 +70,12 @@ export class AntifraudController {
   @ApiResponse({ status: 200, description: 'Review recorded' })
   async reviewFraudCheck(
     @Param('checkId') checkId: string,
-    @Body() dto: {
+    @Body()
+    dto: {
       approved: boolean;
       notes?: string;
       reviewedBy: string;
-    }
+    },
   ) {
     return this.antifraudService.reviewCheck(checkId, dto);
   }

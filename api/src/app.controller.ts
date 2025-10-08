@@ -6,7 +6,10 @@ import { PrismaService } from './prisma.service';
 @Controller()
 @ApiTags('health')
 export class AppController {
-  constructor(private readonly appService: AppService, private prisma: PrismaService) {}
+  constructor(
+    private readonly appService: AppService,
+    private prisma: PrismaService,
+  ) {}
 
   @Get()
   getHello(): string {
@@ -25,20 +28,20 @@ export class AppController {
     try {
       // Check database connectivity
       await this.prisma.$queryRaw`SELECT 1`;
-      return { 
-        status: 'ready', 
+      return {
+        status: 'ready',
         timestamp: new Date().toISOString(),
         checks: {
-          database: 'ok'
-        }
+          database: 'ok',
+        },
       };
     } catch (error) {
-      return { 
-        status: 'not_ready', 
+      return {
+        status: 'not_ready',
         timestamp: new Date().toISOString(),
         checks: {
-          database: 'failed'
-        }
+          database: 'failed',
+        },
       };
     }
   }

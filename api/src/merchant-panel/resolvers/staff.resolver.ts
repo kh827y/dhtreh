@@ -21,7 +21,10 @@ export class StaffResolver {
   }
 
   @Query(() => StaffListResponseDto, { name: 'portalStaffList' })
-  async list(@Context() ctx: any, @Args() args: StaffListQueryDto): Promise<StaffListResponseDto> {
+  async list(
+    @Context() ctx: any,
+    @Args() args: StaffListQueryDto,
+  ): Promise<StaffListResponseDto> {
     const { page, pageSize, ...rest } = args;
     const filters: StaffFilters = {
       search: rest.search,
@@ -30,20 +33,35 @@ export class StaffResolver {
       groupId: rest.groupId,
       portalOnly: rest.portalOnly,
     };
-    const result = await this.service.listStaff(this.merchantId(ctx), filters, { page, pageSize });
-    return plainToInstance(StaffListResponseDto, result, { enableImplicitConversion: true });
+    const result = await this.service.listStaff(this.merchantId(ctx), filters, {
+      page,
+      pageSize,
+    });
+    return plainToInstance(StaffListResponseDto, result, {
+      enableImplicitConversion: true,
+    });
   }
 
   @Query(() => StaffDetailDto, { name: 'portalStaff' })
-  async get(@Context() ctx: any, @Args('id', { type: () => ID }) id: string): Promise<StaffDetailDto> {
+  async get(
+    @Context() ctx: any,
+    @Args('id', { type: () => ID }) id: string,
+  ): Promise<StaffDetailDto> {
     const staff = await this.service.getStaff(this.merchantId(ctx), id);
-    return plainToInstance(StaffDetailDto, staff, { enableImplicitConversion: true });
+    return plainToInstance(StaffDetailDto, staff, {
+      enableImplicitConversion: true,
+    });
   }
 
   @Mutation(() => StaffDetailDto, { name: 'portalStaffCreate' })
-  async create(@Context() ctx: any, @Args('input') input: UpsertStaffInput): Promise<StaffDetailDto> {
+  async create(
+    @Context() ctx: any,
+    @Args('input') input: UpsertStaffInput,
+  ): Promise<StaffDetailDto> {
     const staff = await this.service.createStaff(this.merchantId(ctx), input);
-    return plainToInstance(StaffDetailDto, staff, { enableImplicitConversion: true });
+    return plainToInstance(StaffDetailDto, staff, {
+      enableImplicitConversion: true,
+    });
   }
 
   @Mutation(() => StaffDetailDto, { name: 'portalStaffUpdate' })
@@ -52,8 +70,14 @@ export class StaffResolver {
     @Args('id', { type: () => ID }) id: string,
     @Args('input') input: UpsertStaffInput,
   ): Promise<StaffDetailDto> {
-    const staff = await this.service.updateStaff(this.merchantId(ctx), id, input);
-    return plainToInstance(StaffDetailDto, staff, { enableImplicitConversion: true });
+    const staff = await this.service.updateStaff(
+      this.merchantId(ctx),
+      id,
+      input,
+    );
+    return plainToInstance(StaffDetailDto, staff, {
+      enableImplicitConversion: true,
+    });
   }
 
   @Mutation(() => StaffDetailDto, { name: 'portalStaffChangeStatus' })
@@ -62,7 +86,13 @@ export class StaffResolver {
     @Args('id', { type: () => ID }) id: string,
     @Args('input') input: ChangeStaffStatusInput,
   ): Promise<StaffDetailDto> {
-    const staff = await this.service.changeStaffStatus(this.merchantId(ctx), id, input.status);
-    return plainToInstance(StaffDetailDto, staff, { enableImplicitConversion: true });
+    const staff = await this.service.changeStaffStatus(
+      this.merchantId(ctx),
+      id,
+      input.status,
+    );
+    return plainToInstance(StaffDetailDto, staff, {
+      enableImplicitConversion: true,
+    });
   }
 }

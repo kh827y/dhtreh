@@ -1,55 +1,107 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsDateString, IsInt, IsNotEmpty, IsOptional, IsString, Min, IsUrl } from 'class-validator';
+import {
+  IsBoolean,
+  IsDateString,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Min,
+  IsUrl,
+} from 'class-validator';
 
 export class CreateGiftDto {
-  @ApiProperty() @IsString() @IsNotEmpty()
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
   merchantId!: string;
 
-  @ApiProperty() @IsString() @IsNotEmpty()
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
   title!: string;
 
-  @ApiPropertyOptional() @IsOptional() @IsString()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   description?: string;
 
-  @ApiPropertyOptional() @IsOptional() @IsUrl()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUrl()
   imageUrl?: string;
 
-  @ApiProperty({ minimum: 1 }) @IsInt() @Min(1)
+  @ApiProperty({ minimum: 1 })
+  @IsInt()
+  @Min(1)
   costPoints!: number;
 
-  @ApiPropertyOptional() @IsOptional() @IsBoolean()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
   active?: boolean;
 
-  @ApiPropertyOptional() @IsOptional() @IsDateString()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
   periodFrom?: string;
 
-  @ApiPropertyOptional() @IsOptional() @IsDateString()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
   periodTo?: string;
 
-  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(1)
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(1)
   perCustomerLimit?: number;
 
-  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0)
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(0)
   inventory?: number; // null = бесконечный
 }
 
 export class UpdateGiftDto {
-  @ApiPropertyOptional() @IsOptional() @IsString()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   title?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   description?: string;
-  @ApiPropertyOptional() @IsOptional() @IsUrl()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUrl()
   imageUrl?: string;
-  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(1)
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(1)
   costPoints?: number;
-  @ApiPropertyOptional() @IsOptional() @IsBoolean()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
   active?: boolean;
-  @ApiPropertyOptional() @IsOptional() @IsDateString()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
   periodFrom?: string;
-  @ApiPropertyOptional() @IsOptional() @IsDateString()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
   periodTo?: string;
-  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(1)
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(1)
   perCustomerLimit?: number;
-  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0)
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(0)
   inventory?: number;
 }

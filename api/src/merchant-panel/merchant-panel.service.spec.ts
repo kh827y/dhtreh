@@ -1,5 +1,10 @@
 import { MerchantPanelService } from './merchant-panel.service';
-import { StaffStatus, StaffRole, AccessScope, StaffOutletAccessStatus } from '@prisma/client';
+import {
+  StaffStatus,
+  StaffRole,
+  AccessScope,
+  StaffOutletAccessStatus,
+} from '@prisma/client';
 
 describe('MerchantPanelService', () => {
   it('listStaff returns mapped payload and records metrics', async () => {
@@ -54,18 +59,36 @@ describe('MerchantPanelService', () => {
         count: countMock,
       },
       staffOutletAccess: {
-        groupBy: jest.fn().mockResolvedValue([{ staffId: 'stf_1', _count: { _all: 1 } }]),
+        groupBy: jest
+          .fn()
+          .mockResolvedValue([{ staffId: 'stf_1', _count: { _all: 1 } }]),
       },
       transaction: {
-        groupBy: jest.fn().mockResolvedValue([{ staffId: 'stf_1', _max: { createdAt: new Date('2024-01-03T12:00:00Z') }, _count: { _all: 2 } }]),
+        groupBy: jest.fn().mockResolvedValue([
+          {
+            staffId: 'stf_1',
+            _max: { createdAt: new Date('2024-01-03T12:00:00Z') },
+            _count: { _all: 2 },
+          },
+        ]),
       },
-      $transaction: jest.fn((operations: Promise<any>[]) => Promise.all(operations)),
+      $transaction: jest.fn((operations: Promise<any>[]) =>
+        Promise.all(operations),
+      ),
     };
     const merchants: any = {};
-    const metrics = { inc: jest.fn(), observe: jest.fn(), setGauge: jest.fn() } as any;
+    const metrics = {
+      inc: jest.fn(),
+      observe: jest.fn(),
+      setGauge: jest.fn(),
+    } as any;
 
     const service = new MerchantPanelService(prisma, merchants, metrics);
-    const result = await service.listStaff('mrc_1', {}, { page: 1, pageSize: 20 });
+    const result = await service.listStaff(
+      'mrc_1',
+      {},
+      { page: 1, pageSize: 20 },
+    );
 
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(result.meta.total).toBe(1);
@@ -78,7 +101,9 @@ describe('MerchantPanelService', () => {
     expect(item.role).toBe(StaffRole.MERCHANT);
     expect(item.pinCode).toBeNull();
     expect(item.outletsCount).toBe(1);
-    expect(item.lastActivityAt).toBe(new Date('2024-01-03T12:00:00.000Z').toISOString());
+    expect(item.lastActivityAt).toBe(
+      new Date('2024-01-03T12:00:00.000Z').toISOString(),
+    );
     expect(Array.isArray(item.accesses)).toBe(true);
     expect(item.accesses[0]).toEqual(
       expect.objectContaining({
@@ -92,19 +117,17 @@ describe('MerchantPanelService', () => {
   });
 
   it('listAccessGroups bootstraps defaults and maps response', async () => {
-    const createMock = jest
-      .fn()
-      .mockImplementation(({ data }) =>
-        Promise.resolve({
-          id: `grp_${data.name}`,
-          name: data.name,
-          description: data.description,
-          scope: data.scope,
-          isSystem: data.isSystem,
-          isDefault: data.isDefault,
-          permissions: [],
-        }),
-      );
+    const createMock = jest.fn().mockImplementation(({ data }) =>
+      Promise.resolve({
+        id: `grp_${data.name}`,
+        name: data.name,
+        description: data.description,
+        scope: data.scope,
+        isSystem: data.isSystem,
+        isDefault: data.isDefault,
+        permissions: [],
+      }),
+    );
     const createManyMock = jest.fn().mockResolvedValue(undefined);
     const countMock = jest.fn().mockResolvedValue(1);
     const findManyMock = jest
@@ -120,8 +143,18 @@ describe('MerchantPanelService', () => {
           isSystem: true,
           isDefault: true,
           permissions: [
-            { id: 'per_1', resource: 'staff', action: 'read', conditions: null },
-            { id: 'per_2', resource: 'staff', action: 'update', conditions: null },
+            {
+              id: 'per_1',
+              resource: 'staff',
+              action: 'read',
+              conditions: null,
+            },
+            {
+              id: 'per_2',
+              resource: 'staff',
+              action: 'update',
+              conditions: null,
+            },
           ],
           members: [{ id: 'm_1' }],
         },
@@ -154,12 +187,21 @@ describe('MerchantPanelService', () => {
     };
 
     const merchants: any = {};
-    const metrics = { inc: jest.fn(), observe: jest.fn(), setGauge: jest.fn() } as any;
+    const metrics = {
+      inc: jest.fn(),
+      observe: jest.fn(),
+      setGauge: jest.fn(),
+    } as any;
 
     const service = new MerchantPanelService(prisma, merchants, metrics);
     (service as any).logger = { log: jest.fn() };
-    const expectedCreated = ((service as any).defaultAccessGroupPresets || []).length || 0;
-    const result = await service.listAccessGroups('mrc_1', {}, { page: 1, pageSize: 20 });
+    const expectedCreated =
+      ((service as any).defaultAccessGroupPresets || []).length || 0;
+    const result = await service.listAccessGroups(
+      'mrc_1',
+      {},
+      { page: 1, pageSize: 20 },
+    );
 
     expect(prisma.accessGroup.count).toHaveBeenCalledTimes(1);
     expect(prisma.$transaction).toHaveBeenCalledTimes(2);
@@ -167,9 +209,17 @@ describe('MerchantPanelService', () => {
     expect(createManyMock).toHaveBeenCalled();
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toEqual(
-      expect.objectContaining({ id: 'grp_Владелец', name: 'Владелец', memberCount: 1 }),
+      expect.objectContaining({
+        id: 'grp_Владелец',
+        name: 'Владелец',
+        memberCount: 1,
+      }),
     );
-    expect(metrics.inc).toHaveBeenCalledWith('portal_access_group_bootstrap_total', {}, expectedCreated);
+    expect(metrics.inc).toHaveBeenCalledWith(
+      'portal_access_group_bootstrap_total',
+      {},
+      expectedCreated,
+    );
     expect(metrics.inc).toHaveBeenCalledWith('portal_access_group_list_total');
   });
 });

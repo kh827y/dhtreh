@@ -31,15 +31,28 @@ export class HealthController {
           POINTS_TTL_BURN: process.env.POINTS_TTL_BURN === '1',
         },
         workers: {
-          outbox: { alive: !!this.outbox?.startedAt, lastTickAt: this.outbox?.lastTickAt?.toISOString?.() },
+          outbox: {
+            alive: !!this.outbox?.startedAt,
+            lastTickAt: this.outbox?.lastTickAt?.toISOString?.(),
+          },
           holdGc: { alive: true },
           idemGc: { alive: true },
-          ttlPreview: { alive: !!this.ttlPreview?.startedAt, lastTickAt: this.ttlPreview?.lastTickAt?.toISOString?.() },
-          ttlBurn: { alive: !!this.ttlBurn?.startedAt, lastTickAt: this.ttlBurn?.lastTickAt?.toISOString?.() },
+          ttlPreview: {
+            alive: !!this.ttlPreview?.startedAt,
+            lastTickAt: this.ttlPreview?.lastTickAt?.toISOString?.(),
+          },
+          ttlBurn: {
+            alive: !!this.ttlBurn?.startedAt,
+            lastTickAt: this.ttlBurn?.lastTickAt?.toISOString?.(),
+          },
         },
       };
     } catch (e: any) {
-      return { ok: false, error: String(e?.message || e), version: process.env.APP_VERSION || 'dev' };
+      return {
+        ok: false,
+        error: String(e?.message || e),
+        version: process.env.APP_VERSION || 'dev',
+      };
     }
   }
 
@@ -51,7 +64,9 @@ export class HealthController {
       const outboxAlive = !!this.outbox?.startedAt;
       let migrations = null as null | { applied: number };
       try {
-        const rows = await this.prisma.$queryRawUnsafe<any[]>("SELECT COUNT(*)::int as c FROM _prisma_migrations WHERE applied_steps_count > 0");
+        const rows = await this.prisma.$queryRawUnsafe<any[]>(
+          'SELECT COUNT(*)::int as c FROM _prisma_migrations WHERE applied_steps_count > 0',
+        );
         migrations = { applied: Number(rows?.[0]?.c || 0) };
       } catch {}
       return {
@@ -65,15 +80,28 @@ export class HealthController {
           POINTS_TTL_BURN: process.env.POINTS_TTL_BURN === '1',
         },
         workers: {
-          outbox: { alive: outboxAlive, lastTickAt: this.outbox?.lastTickAt?.toISOString?.() },
+          outbox: {
+            alive: outboxAlive,
+            lastTickAt: this.outbox?.lastTickAt?.toISOString?.(),
+          },
           holdGc: { alive: true },
           idemGc: { alive: true },
-          ttlPreview: { alive: !!this.ttlPreview?.startedAt, lastTickAt: this.ttlPreview?.lastTickAt?.toISOString?.() },
-          ttlBurn: { alive: !!this.ttlBurn?.startedAt, lastTickAt: this.ttlBurn?.lastTickAt?.toISOString?.() },
+          ttlPreview: {
+            alive: !!this.ttlPreview?.startedAt,
+            lastTickAt: this.ttlPreview?.lastTickAt?.toISOString?.(),
+          },
+          ttlBurn: {
+            alive: !!this.ttlBurn?.startedAt,
+            lastTickAt: this.ttlBurn?.lastTickAt?.toISOString?.(),
+          },
         },
       };
     } catch (e: any) {
-      return { ready: false, error: String(e?.message || e), version: process.env.APP_VERSION || 'dev' };
+      return {
+        ready: false,
+        error: String(e?.message || e),
+        version: process.env.APP_VERSION || 'dev',
+      };
     }
   }
 }

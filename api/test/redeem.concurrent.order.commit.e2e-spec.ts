@@ -19,70 +19,171 @@ describe('REDEEM concurrent commit per-order idempotency (e2e)', () => {
   };
 
   const prismaMock: any = {
-    $connect: jest.fn(async ()=>{}),
-    $disconnect: jest.fn(async ()=>{}),
-    $transaction: async (fn: (tx: any)=>any) => fn({
-      wallet: {
-        findFirst: async (_args: any) => ({ id: 'W1', balance: state.walletBal }),
-        create: async (_args: any) => ({ id: 'W1', balance: state.walletBal }),
-        findUnique: async (_args: any) => ({ id: 'W1', balance: state.walletBal }),
-        update: async (args: any) => { if (typeof args.data?.balance === 'number') state.walletBal = args.data.balance; return { id: 'W1', balance: state.walletBal }; },
-      },
-      transaction: { create: async (_args: any) => ({ id: 'T1' }) },
-      merchant: { upsert: async ()=>({}) },
-      hold: {
-        create: async (args: any) => { const h = { id: args.data.id || 'H'+(state.holds.length+1), ...args.data }; state.holds.push(h); return h; },
-        findUnique: async (args: any) => state.holds.find(h=>h.id===args.where.id) || null,
-        update: async (args: any) => { const i = state.holds.findIndex(h=>h.id===args.where.id); if (i>=0) { state.holds[i] = { ...state.holds[i], ...args.data }; return state.holds[i]; } return null; },
-      },
-      receipt: {
-        findUnique: async (args: any) => state.receipts.find(r=>r.merchantId===args.where.merchantId_orderId.merchantId && r.orderId===args.where.merchantId_orderId.orderId) || null,
-        create: async (args: any) => { const r = { id: 'R1', ...args.data }; state.receipts.push(r); return r; },
-      },
-      eventOutbox: { create: async ()=>({}) },
-    }),
-    merchant: { upsert: async ()=>({}) },
-    merchantSettings: { findUnique: async (args: any) => ({ merchantId: args.where.merchantId, earnBps: 500, redeemLimitBps: 5000, updatedAt: new Date(), rulesJson: null }) },
-    customer: { findUnique: async (args: any) => ({ id: args.where.id }), create: async (args: any)=>({ id: args.data.id }) },
+    $connect: jest.fn(async () => {}),
+    $disconnect: jest.fn(async () => {}),
+    $transaction: async (fn: (tx: any) => any) =>
+      fn({
+        wallet: {
+          findFirst: async (_args: any) => ({
+            id: 'W1',
+            balance: state.walletBal,
+          }),
+          create: async (_args: any) => ({
+            id: 'W1',
+            balance: state.walletBal,
+          }),
+          findUnique: async (_args: any) => ({
+            id: 'W1',
+            balance: state.walletBal,
+          }),
+          update: async (args: any) => {
+            if (typeof args.data?.balance === 'number')
+              state.walletBal = args.data.balance;
+            return { id: 'W1', balance: state.walletBal };
+          },
+        },
+        transaction: { create: async (_args: any) => ({ id: 'T1' }) },
+        merchant: { upsert: async () => ({}) },
+        hold: {
+          create: async (args: any) => {
+            const h = {
+              id: args.data.id || 'H' + (state.holds.length + 1),
+              ...args.data,
+            };
+            state.holds.push(h);
+            return h;
+          },
+          findUnique: async (args: any) =>
+            state.holds.find((h) => h.id === args.where.id) || null,
+          update: async (args: any) => {
+            const i = state.holds.findIndex((h) => h.id === args.where.id);
+            if (i >= 0) {
+              state.holds[i] = { ...state.holds[i], ...args.data };
+              return state.holds[i];
+            }
+            return null;
+          },
+        },
+        receipt: {
+          findUnique: async (args: any) =>
+            state.receipts.find(
+              (r) =>
+                r.merchantId === args.where.merchantId_orderId.merchantId &&
+                r.orderId === args.where.merchantId_orderId.orderId,
+            ) || null,
+          create: async (args: any) => {
+            const r = { id: 'R1', ...args.data };
+            state.receipts.push(r);
+            return r;
+          },
+        },
+        eventOutbox: { create: async () => ({}) },
+      }),
+    merchant: { upsert: async () => ({}) },
+    merchantSettings: {
+      findUnique: async (args: any) => ({
+        merchantId: args.where.merchantId,
+        earnBps: 500,
+        redeemLimitBps: 5000,
+        updatedAt: new Date(),
+        rulesJson: null,
+      }),
+    },
+    customer: {
+      findUnique: async (args: any) => ({ id: args.where.id }),
+      create: async (args: any) => ({ id: args.data.id }),
+    },
     wallet: {
       findFirst: async (_args: any) => ({ id: 'W1', balance: state.walletBal }),
       create: async (_args: any) => ({ id: 'W1', balance: state.walletBal }),
-      findUnique: async (_args: any) => ({ id: 'W1', balance: state.walletBal }),
-      update: async (args: any) => { if (typeof args.data?.balance === 'number') state.walletBal = args.data.balance; return { id: 'W1', balance: state.walletBal }; },
+      findUnique: async (_args: any) => ({
+        id: 'W1',
+        balance: state.walletBal,
+      }),
+      update: async (args: any) => {
+        if (typeof args.data?.balance === 'number')
+          state.walletBal = args.data.balance;
+        return { id: 'W1', balance: state.walletBal };
+      },
     },
     transaction: { create: async (_args: any) => ({ id: 'T1' }) },
     hold: {
-      create: async (args: any) => { const h = { id: args.data.id || 'H'+(state.holds.length+1), ...args.data }; state.holds.push(h); return h; },
-      findUnique: async (args: any) => state.holds.find(h=>h.id===args.where.id) || null,
-      update: async (args: any) => { const i = state.holds.findIndex(h=>h.id===args.where.id); if (i>=0) { state.holds[i] = { ...state.holds[i], ...args.data }; return state.holds[i]; } return null; },
+      create: async (args: any) => {
+        const h = {
+          id: args.data.id || 'H' + (state.holds.length + 1),
+          ...args.data,
+        };
+        state.holds.push(h);
+        return h;
+      },
+      findUnique: async (args: any) =>
+        state.holds.find((h) => h.id === args.where.id) || null,
+      update: async (args: any) => {
+        const i = state.holds.findIndex((h) => h.id === args.where.id);
+        if (i >= 0) {
+          state.holds[i] = { ...state.holds[i], ...args.data };
+          return state.holds[i];
+        }
+        return null;
+      },
     },
     receipt: {
-      findUnique: async (args: any) => state.receipts.find(r=>r.merchantId===args.where.merchantId_orderId.merchantId && r.orderId===args.where.merchantId_orderId.orderId) || null,
-      create: async (args: any) => { const r = { id: 'R1', ...args.data }; state.receipts.push(r); return r; },
+      findUnique: async (args: any) =>
+        state.receipts.find(
+          (r) =>
+            r.merchantId === args.where.merchantId_orderId.merchantId &&
+            r.orderId === args.where.merchantId_orderId.orderId,
+        ) || null,
+      create: async (args: any) => {
+        const r = { id: 'R1', ...args.data };
+        state.receipts.push(r);
+        return r;
+      },
     },
-    eventOutbox: { create: async ()=>({}) },
+    eventOutbox: { create: async () => ({}) },
   };
 
   beforeAll(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(PrismaService).useValue(prismaMock)
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    })
+      .overrideProvider(PrismaService)
+      .useValue(prismaMock)
       .compile();
     app = moduleFixture.createNestApplication();
     await app.init();
   });
 
-  afterAll(async () => { await app.close(); });
+  afterAll(async () => {
+    await app.close();
+  });
 
   it('Second commit is idempotent and does not double-spend', async () => {
-    state.walletBal = 1000; state.holds = []; state.receipts = [];
+    state.walletBal = 1000;
+    state.holds = [];
+    state.receipts = [];
 
     const q1 = await request(app.getHttpServer())
       .post('/loyalty/quote')
-      .send({ merchantId: 'M-CC', userToken: 'C1', mode: 'REDEEM', orderId: 'ORD-X', total: 1000, eligibleTotal: 1000 })
+      .send({
+        merchantId: 'M-CC',
+        userToken: 'C1',
+        mode: 'REDEEM',
+        orderId: 'ORD-X',
+        total: 1000,
+        eligibleTotal: 1000,
+      })
       .expect(201);
     const q2 = await request(app.getHttpServer())
       .post('/loyalty/quote')
-      .send({ merchantId: 'M-CC', userToken: 'C1', mode: 'REDEEM', orderId: 'ORD-X', total: 1000, eligibleTotal: 1000 })
+      .send({
+        merchantId: 'M-CC',
+        userToken: 'C1',
+        mode: 'REDEEM',
+        orderId: 'ORD-X',
+        total: 1000,
+        eligibleTotal: 1000,
+      })
       .expect(201);
 
     // оба hold рассчитаны по 500

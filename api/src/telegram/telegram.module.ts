@@ -14,4 +14,3 @@ import { TelegramNotifyController } from './telegram-notify.controller';
   exports: [TelegramBotService, TelegramNotifyService],
 })
 export class TelegramModule {}
-

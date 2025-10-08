@@ -1,4 +1,9 @@
-export type Lot = { id: string; points: number; consumedPoints: number; earnedAt: Date };
+export type Lot = {
+  id: string;
+  points: number;
+  consumedPoints: number;
+  earnedAt: Date;
+};
 
 export type LotUpdate = { id: string; deltaConsumed: number };
 
@@ -6,7 +11,9 @@ export type LotUpdate = { id: string; deltaConsumed: number };
 export function planConsume(lots: Lot[], amount: number): LotUpdate[] {
   let left = Math.max(0, Math.floor(amount || 0));
   const updates: LotUpdate[] = [];
-  const ordered = [...lots].sort((a, b) => a.earnedAt.getTime() - b.earnedAt.getTime());
+  const ordered = [...lots].sort(
+    (a, b) => a.earnedAt.getTime() - b.earnedAt.getTime(),
+  );
   for (const lot of ordered) {
     if (left <= 0) break;
     const consumed = Math.max(0, lot.consumedPoints || 0);
@@ -25,7 +32,9 @@ export function planConsume(lots: Lot[], amount: number): LotUpdate[] {
 export function planUnconsume(lots: Lot[], amount: number): LotUpdate[] {
   let left = Math.max(0, Math.floor(amount || 0));
   const updates: LotUpdate[] = [];
-  const ordered = [...lots].sort((a, b) => b.earnedAt.getTime() - a.earnedAt.getTime());
+  const ordered = [...lots].sort(
+    (a, b) => b.earnedAt.getTime() - a.earnedAt.getTime(),
+  );
   for (const lot of ordered) {
     if (left <= 0) break;
     const consumed = Math.max(0, lot.consumedPoints || 0);
@@ -43,7 +52,9 @@ export function planUnconsume(lots: Lot[], amount: number): LotUpdate[] {
 export function planRevoke(lots: Lot[], amount: number): LotUpdate[] {
   let left = Math.max(0, Math.floor(amount || 0));
   const updates: LotUpdate[] = [];
-  const ordered = [...lots].sort((a, b) => b.earnedAt.getTime() - a.earnedAt.getTime());
+  const ordered = [...lots].sort(
+    (a, b) => b.earnedAt.getTime() - a.earnedAt.getTime(),
+  );
   for (const lot of ordered) {
     if (left <= 0) break;
     const consumed = Math.max(0, lot.consumedPoints || 0);
@@ -57,4 +68,3 @@ export function planRevoke(lots: Lot[], amount: number): LotUpdate[] {
   }
   return updates;
 }
-

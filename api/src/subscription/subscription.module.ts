@@ -9,7 +9,13 @@ import { PaymentModule } from '../payments/payment.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [PrismaModule, ConfigModule, MetricsModule, forwardRef(() => PaymentModule), NotificationsModule],
+  imports: [
+    PrismaModule,
+    ConfigModule,
+    MetricsModule,
+    forwardRef(() => PaymentModule),
+    NotificationsModule,
+  ],
   controllers: [SubscriptionController],
   providers: [SubscriptionService, SubscriptionCronService],
   exports: [SubscriptionService],

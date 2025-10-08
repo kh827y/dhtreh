@@ -8,12 +8,16 @@ describe('Telegram (e2e)', () => {
 
   beforeAll(async () => {
     process.env.ADMIN_KEY = process.env.ADMIN_KEY || 'test-admin-key';
-    const moduleFixture = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const moduleFixture = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
     app = moduleFixture.createNestApplication();
     await app.init();
   });
 
-  afterAll(async () => { await app.close(); });
+  afterAll(async () => {
+    await app.close();
+  });
 
   it('teleauth: returns 400 on missing initData', async () => {
     await request(app.getHttpServer())
@@ -22,4 +26,3 @@ describe('Telegram (e2e)', () => {
       .expect(400);
   });
 });
-

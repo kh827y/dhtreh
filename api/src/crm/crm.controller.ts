@@ -12,7 +12,9 @@ export class CrmController {
   constructor(private readonly service: CrmService) {}
 
   @Get(':merchantId/customer/:customerId/card')
-  @ApiOkResponse({ description: 'Карточка клиента с балансом, RFM и последними операциями' })
+  @ApiOkResponse({
+    description: 'Карточка клиента с балансом, RFM и последними операциями',
+  })
   async getCustomerCard(
     @Param('merchantId') merchantId: string,
     @Param('customerId') customerId: string,
@@ -21,7 +23,9 @@ export class CrmController {
   }
 
   @Get(':merchantId/customer/search')
-  @ApiOkResponse({ description: 'Поиск клиента по id/телефону/email с краткой сводкой' })
+  @ApiOkResponse({
+    description: 'Поиск клиента по id/телефону/email с краткой сводкой',
+  })
   async searchCustomer(
     @Param('merchantId') merchantId: string,
     @Query('phone') phone?: string,
@@ -33,22 +37,30 @@ export class CrmController {
 
   @Get(':merchantId/rfm/distribution')
   @ApiOkResponse({ description: 'Распределение клиентов по классам RFM' })
-  async rfmDistribution(
-    @Param('merchantId') merchantId: string,
-  ) {
+  async rfmDistribution(@Param('merchantId') merchantId: string) {
     return this.service.getRfmDistribution(merchantId);
   }
 
   @Get(':merchantId/segments/:segmentId/customers')
-  @ApiOkResponse({ description: 'Список клиентов сегмента (пагинация по cursor)' })
+  @ApiOkResponse({
+    description: 'Список клиентов сегмента (пагинация по cursor)',
+  })
   async listSegmentCustomers(
     @Param('merchantId') merchantId: string,
     @Param('segmentId') segmentId: string,
     @Query('limit') limitStr?: string,
     @Query('cursor') cursor?: string,
   ) {
-    const limit = Math.min(Math.max(parseInt(limitStr || '50', 10) || 50, 1), 200);
-    return this.service.listSegmentCustomers(merchantId, segmentId, limit, cursor || undefined);
+    const limit = Math.min(
+      Math.max(parseInt(limitStr || '50', 10) || 50, 1),
+      200,
+    );
+    return this.service.listSegmentCustomers(
+      merchantId,
+      segmentId,
+      limit,
+      cursor || undefined,
+    );
   }
 
   @Get(':merchantId/segments/:segmentId/customers.csv')
@@ -61,8 +73,16 @@ export class CrmController {
   ) {
     const batch = Math.min(Math.max(parseInt(batchStr, 10) || 1000, 100), 5000);
     res!.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res!.setHeader('Content-Disposition', `attachment; filename="segment_${segmentId}_customers.csv"`);
-    await this.service.exportSegmentCustomersCsv(merchantId, segmentId, res!, batch);
+    res!.setHeader(
+      'Content-Disposition',
+      `attachment; filename="segment_${segmentId}_customers.csv"`,
+    );
+    await this.service.exportSegmentCustomersCsv(
+      merchantId,
+      segmentId,
+      res,
+      batch,
+    );
     res!.end();
   }
 
@@ -73,7 +93,10 @@ export class CrmController {
     @Param('customerId') customerId: string,
     @Query('limit') limitStr?: string,
   ) {
-    const limit = Math.min(Math.max(parseInt(limitStr || '50', 10) || 50, 10), 200);
+    const limit = Math.min(
+      Math.max(parseInt(limitStr || '50', 10) || 50, 10),
+      200,
+    );
     return this.service.getCustomerTimeline(merchantId, customerId, limit);
   }
 }

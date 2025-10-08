@@ -3,7 +3,9 @@ import { PortalGuard } from '../../portal-auth/portal.guard';
 import { PrismaService } from '../../prisma.service';
 
 function ensureObject(input: any): Record<string, any> {
-  return input && typeof input === 'object' && !Array.isArray(input) ? { ...input } : {};
+  return input && typeof input === 'object' && !Array.isArray(input)
+    ? { ...input }
+    : {};
 }
 
 @UseGuards(PortalGuard)
@@ -18,14 +20,23 @@ export class RedeemLimitsController {
   @Get()
   async getSettings(@Req() req: any) {
     const merchantId = this.merchantId(req);
-    const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId } });
+    const s = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+    });
     const rules = ensureObject(s?.rulesJson ?? null);
     // Новая семантика: allowEarnRedeemSameReceipt; поддержим обратную совместимость с legacy disallow
     let allowSame = false;
-    if (Object.prototype.hasOwnProperty.call(rules, 'allowEarnRedeemSameReceipt')) {
+    if (
+      Object.prototype.hasOwnProperty.call(rules, 'allowEarnRedeemSameReceipt')
+    ) {
       allowSame = Boolean(rules.allowEarnRedeemSameReceipt);
-    } else if (Object.prototype.hasOwnProperty.call(rules, 'disallowEarnRedeemSameReceipt')) {
-      allowSame = !Boolean(rules.disallowEarnRedeemSameReceipt);
+    } else if (
+      Object.prototype.hasOwnProperty.call(
+        rules,
+        'disallowEarnRedeemSameReceipt',
+      )
+    ) {
+      allowSame = !rules.disallowEarnRedeemSameReceipt;
     }
     const ttlDays = Number(s?.pointsTtlDays ?? 0) || 0;
     const delayDays = Number(s?.earnDelayDays ?? 0) || 0;
@@ -54,7 +65,9 @@ export class RedeemLimitsController {
     },
   ) {
     const merchantId = this.merchantId(req);
-    const s = await this.prisma.merchantSettings.findUnique({ where: { merchantId } });
+    const s = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+    });
     const rules = ensureObject(s?.rulesJson ?? null);
 
     const ttlEnabled = Boolean(body?.ttlEnabled);
@@ -63,20 +76,38 @@ export class RedeemLimitsController {
 
     const delayEnabled = Boolean(body?.delayEnabled);
     const delayDaysRaw = Number(body?.delayDays ?? 0) || 0;
-    const earnDelayDays = delayEnabled ? Math.max(1, Math.floor(delayDaysRaw)) : 0;
+    const earnDelayDays = delayEnabled
+      ? Math.max(1, Math.floor(delayDaysRaw))
+      : 0;
 
     // Определяем allowSameReceipt из тела (приоритет у allowSameReceipt); поддержим forbidSameReceipt для обратной совместимости
     let allowSame = false;
-    if (body && Object.prototype.hasOwnProperty.call(body, 'allowSameReceipt')) {
+    if (
+      body &&
+      Object.prototype.hasOwnProperty.call(body, 'allowSameReceipt')
+    ) {
       allowSame = Boolean(body.allowSameReceipt);
-    } else if (body && Object.prototype.hasOwnProperty.call(body, 'forbidSameReceipt')) {
-      allowSame = !Boolean(body.forbidSameReceipt);
+    } else if (
+      body &&
+      Object.prototype.hasOwnProperty.call(body, 'forbidSameReceipt')
+    ) {
+      allowSame = !body.forbidSameReceipt;
     } else {
       // если ничего не передано — оставляем как было
-      if (Object.prototype.hasOwnProperty.call(rules, 'allowEarnRedeemSameReceipt')) {
+      if (
+        Object.prototype.hasOwnProperty.call(
+          rules,
+          'allowEarnRedeemSameReceipt',
+        )
+      ) {
         allowSame = Boolean(rules.allowEarnRedeemSameReceipt);
-      } else if (Object.prototype.hasOwnProperty.call(rules, 'disallowEarnRedeemSameReceipt')) {
-        allowSame = !Boolean(rules.disallowEarnRedeemSameReceipt);
+      } else if (
+        Object.prototype.hasOwnProperty.call(
+          rules,
+          'disallowEarnRedeemSameReceipt',
+        )
+      ) {
+        allowSame = !rules.disallowEarnRedeemSameReceipt;
       }
     }
 

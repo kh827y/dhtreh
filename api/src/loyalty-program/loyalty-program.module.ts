@@ -12,9 +12,21 @@ import { PromoCodesModule } from '../promocodes/promocodes.module';
 import { CommunicationsModule } from '../communications/communications.module';
 
 @Module({
-  imports: [PrismaModule, MetricsModule, PromoCodesModule, CommunicationsModule],
+  imports: [
+    PrismaModule,
+    MetricsModule,
+    PromoCodesModule,
+    CommunicationsModule,
+  ],
   providers: [LoyaltyProgramService],
-  controllers: [MechanicsController, PromotionsController, PromoCodesController, OperationsLogController, TiersController, RedeemLimitsController],
+  controllers: [
+    MechanicsController,
+    PromotionsController,
+    PromoCodesController,
+    OperationsLogController,
+    TiersController,
+    RedeemLimitsController,
+  ],
   exports: [LoyaltyProgramService],
 })
 export class LoyaltyProgramModule {}

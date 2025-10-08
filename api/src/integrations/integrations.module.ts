@@ -13,8 +13,19 @@ import { OAuthGuard } from '../guards/oauth.guard';
 
 @Module({
   imports: [PrismaModule, ConfigModule],
-  controllers: [AtolController, EvotorController, ModulKassaController, PosterController],
-  providers: [AtolService, EvotorService, ModulKassaService, PosterService, OAuthGuard],
+  controllers: [
+    AtolController,
+    EvotorController,
+    ModulKassaController,
+    PosterController,
+  ],
+  providers: [
+    AtolService,
+    EvotorService,
+    ModulKassaService,
+    PosterService,
+    OAuthGuard,
+  ],
   exports: [AtolService, EvotorService, ModulKassaService, PosterService],
 })
 export class IntegrationsModule {}

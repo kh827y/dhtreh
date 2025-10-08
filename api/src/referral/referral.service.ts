@@ -10,7 +10,7 @@ export interface CreateReferralProgramDto {
   name: string;
   description?: string;
   referrerReward: number; // Баллы для приглашающего или процент при rewardType === 'PERCENT'
-  refereeReward: number;  // Баллы для приглашенного
+  refereeReward: number; // Баллы для приглашенного
   minPurchaseAmount?: number; // Минимальная сумма первой покупки
   maxReferrals?: number; // Максимум рефералов на человека
   expiryDays?: number; // Срок действия реферальной ссылки
@@ -48,7 +48,12 @@ export interface ReferralProgramSettingsDto {
   placeholders?: string[];
 }
 
-const REFERRAL_PLACEHOLDERS = ['{businessname}', '{bonusamount}', '{code}', '{link}'] as const;
+const REFERRAL_PLACEHOLDERS = [
+  '{businessname}',
+  '{bonusamount}',
+  '{code}',
+  '{link}',
+] as const;
 
 export interface ReferralStats {
   totalReferrals: number;
@@ -85,17 +90,26 @@ export class ReferralService {
     });
 
     if (existing) {
-      throw new BadRequestException('У мерчанта уже есть активная реферальная программа');
+      throw new BadRequestException(
+        'У мерчанта уже есть активная реферальная программа',
+      );
     }
 
-    const rewardType: RewardMode = dto.rewardType === 'PERCENT' ? 'PERCENT' : 'FIXED';
-    const rewardTrigger: RewardTrigger = dto.rewardTrigger === 'all' ? 'all' : 'first';
+    const rewardType: RewardMode =
+      dto.rewardType === 'PERCENT' ? 'PERCENT' : 'FIXED';
+    const rewardTrigger: RewardTrigger =
+      dto.rewardTrigger === 'all' ? 'all' : 'first';
     const multiLevel = Boolean(dto.multiLevel);
     const baseReward = this.roundTwo(dto.referrerReward ?? 0);
-    const levels = this.normalizeLevels(dto.levelRewards, multiLevel, rewardType, baseReward);
+    const levels = this.normalizeLevels(
+      dto.levelRewards,
+      multiLevel,
+      rewardType,
+      baseReward,
+    );
     const levelRewardsJson = multiLevel ? levels : Prisma.JsonNull;
     const referrerReward = multiLevel
-      ? levels.find((level) => level.level === 1)?.reward ?? 0
+      ? (levels.find((level) => level.level === 1)?.reward ?? 0)
       : baseReward;
 
     return this.prisma.referralProgram.create({
@@ -145,13 +159,18 @@ export class ReferralService {
       },
     });
 
-    if (program.maxReferrals != null && existingReferrals >= program.maxReferrals) {
-      throw new BadRequestException(`Достигнут лимит рефералов (${program.maxReferrals})`);
+    if (
+      program.maxReferrals != null &&
+      existingReferrals >= program.maxReferrals
+    ) {
+      throw new BadRequestException(
+        `Достигнут лимит рефералов (${program.maxReferrals})`,
+      );
     }
 
     // Генерируем уникальный код
     const referralCode = await this.generateReferralCode(dto.merchantId);
-    
+
     // Вычисляем срок действия
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + program.expiryDays);
@@ -208,12 +227,16 @@ export class ReferralService {
     });
 
     if (!referral) {
-      throw new BadRequestException('Недействительный или истекший реферальный код');
+      throw new BadRequestException(
+        'Недействительный или истекший реферальный код',
+      );
     }
 
     // Проверяем, что это не самореферал
     if (referral.referrerId === refereeId) {
-      throw new BadRequestException('Нельзя использовать свой собственный реферальный код');
+      throw new BadRequestException(
+        'Нельзя использовать свой собственный реферальный код',
+      );
     }
 
     // Проверяем, не был ли уже этот клиент приглашен
@@ -225,7 +248,9 @@ export class ReferralService {
     });
 
     if (existingReferee) {
-      throw new BadRequestException('Вы уже участвуете в реферальной программе');
+      throw new BadRequestException(
+        'Вы уже участвуете в реферальной программе',
+      );
     }
 
     // Обновляем реферал
@@ -258,7 +283,11 @@ export class ReferralService {
   /**
    * Завершить реферал после первой покупки
    */
-  async completeReferral(refereeId: string, merchantId: string, purchaseAmount: number) {
+  async completeReferral(
+    refereeId: string,
+    merchantId: string,
+    purchaseAmount: number,
+  ) {
     // Находим активированный реферал
     const referral = await this.prisma.referral.findFirst({
       where: {
@@ -285,7 +314,10 @@ export class ReferralService {
     }
 
     // Обновляем статус реферала
-    const rewardAmount = this.computeReferrerReward(referral.program as ReferralProgram, purchaseAmount);
+    const rewardAmount = this.computeReferrerReward(
+      referral.program,
+      purchaseAmount,
+    );
 
     await this.prisma.referral.update({
       where: { id: referral.id },
@@ -319,9 +351,12 @@ export class ReferralService {
   /**
    * Получить статистику реферальной программы
    */
-  async getReferralStats(merchantId: string, programId?: string): Promise<ReferralStats> {
+  async getReferralStats(
+    merchantId: string,
+    programId?: string,
+  ): Promise<ReferralStats> {
     const where: any = {};
-    
+
     if (programId) {
       where.id = programId;
     } else {
@@ -345,8 +380,12 @@ export class ReferralService {
     }
 
     const totalReferrals = program.referrals.length;
-    const successfulReferrals = program.referrals.filter(r => r.status === 'COMPLETED').length;
-    const pendingReferrals = program.referrals.filter(r => r.status === 'PENDING').length;
+    const successfulReferrals = program.referrals.filter(
+      (r) => r.status === 'COMPLETED',
+    ).length;
+    const pendingReferrals = program.referrals.filter(
+      (r) => r.status === 'PENDING',
+    ).length;
     const friendReward = this.roundTwo(program.refereeReward ?? 0);
     const baseProgram = program as unknown as ReferralProgram;
 
@@ -354,27 +393,32 @@ export class ReferralService {
     for (const referral of program.referrals) {
       if (referral.status === 'COMPLETED') {
         totalRewardsIssued += friendReward;
-        totalRewardsIssued += this.computeReferrerReward(baseProgram, referral.purchaseAmount ?? undefined);
+        totalRewardsIssued += this.computeReferrerReward(
+          baseProgram,
+          referral.purchaseAmount ?? undefined,
+        );
       } else if (referral.status === 'ACTIVATED') {
         totalRewardsIssued += friendReward;
       }
     }
 
-    const conversionRate = totalReferrals > 0
-      ? (successfulReferrals / totalReferrals) * 100
-      : 0;
+    const conversionRate =
+      totalReferrals > 0 ? (successfulReferrals / totalReferrals) * 100 : 0;
 
     // Группируем по приглашающим
-    const referrerMap = new Map<string, {
-      customerId: string;
-      name: string;
-      referralsCount: number;
-      rewardsEarned: number;
-    }>();
+    const referrerMap = new Map<
+      string,
+      {
+        customerId: string;
+        name: string;
+        referralsCount: number;
+        rewardsEarned: number;
+      }
+    >();
 
     for (const referral of program.referrals) {
       const referrerId = referral.referrerId;
-      
+
       if (!referrerMap.has(referrerId)) {
         referrerMap.set(referrerId, {
           customerId: referrerId,
@@ -386,9 +430,12 @@ export class ReferralService {
 
       const referrer = referrerMap.get(referrerId)!;
       referrer.referralsCount++;
-      
+
       if (referral.status === 'COMPLETED') {
-        referrer.rewardsEarned += this.computeReferrerReward(baseProgram, referral.purchaseAmount ?? undefined);
+        referrer.rewardsEarned += this.computeReferrerReward(
+          baseProgram,
+          referral.purchaseAmount ?? undefined,
+        );
       }
     }
 
@@ -428,9 +475,9 @@ export class ReferralService {
 
     const stats = {
       total: referrals.length,
-      pending: referrals.filter(r => r.status === 'PENDING').length,
-      activated: referrals.filter(r => r.status === 'ACTIVATED').length,
-      completed: referrals.filter(r => r.status === 'COMPLETED').length,
+      pending: referrals.filter((r) => r.status === 'PENDING').length,
+      activated: referrals.filter((r) => r.status === 'ACTIVATED').length,
+      completed: referrals.filter((r) => r.status === 'COMPLETED').length,
       totalEarned: 0,
       referrals: [] as any[],
     };
@@ -439,7 +486,10 @@ export class ReferralService {
       const programData = referral.program as unknown as ReferralProgram;
       let reward = 0;
       if (referral.status === 'COMPLETED') {
-        reward = this.computeReferrerReward(programData, referral.purchaseAmount ?? undefined);
+        reward = this.computeReferrerReward(
+          programData,
+          referral.purchaseAmount ?? undefined,
+        );
         stats.totalEarned += reward;
       }
 
@@ -480,11 +530,14 @@ export class ReferralService {
     }
 
     // Получаем или создаем персональный код
-    let referralCode = await this.getPersonalReferralCode(customerId, program.id);
-    
+    let referralCode = await this.getPersonalReferralCode(
+      customerId,
+      program.id,
+    );
+
     if (!referralCode) {
       referralCode = await this.generateReferralCode(merchantId);
-      
+
       // Сохраняем персональный код
       await this.prisma.personalReferralCode.create({
         data: {
@@ -528,15 +581,17 @@ export class ReferralService {
     while (!isUnique) {
       const random = crypto.randomBytes(3).toString('hex').toUpperCase();
       code = `${prefix}${random}`;
-      
+
       const existing = await this.prisma.referral.findFirst({
         where: { code },
       });
-      
-      const existingPersonal = await this.prisma.personalReferralCode.findFirst({
-        where: { code },
-      });
-      
+
+      const existingPersonal = await this.prisma.personalReferralCode.findFirst(
+        {
+          where: { code },
+        },
+      );
+
       isUnique = !existing && !existingPersonal;
     }
 
@@ -544,7 +599,8 @@ export class ReferralService {
   }
 
   private generateReferralLink(merchantId: string, code: string): string {
-    const baseUrl = this.configService.get('WEBSITE_URL') || 'https://loyalty.com';
+    const baseUrl =
+      this.configService.get('WEBSITE_URL') || 'https://loyalty.com';
     return `${baseUrl}/referral/${merchantId}/${code}`;
   }
 
@@ -553,7 +609,10 @@ export class ReferralService {
     return `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(link)}`;
   }
 
-  private async getPersonalReferralCode(customerId: string, programId: string): Promise<string | null> {
+  private async getPersonalReferralCode(
+    customerId: string,
+    programId: string,
+  ): Promise<string | null> {
     const personal = await this.prisma.personalReferralCode.findFirst({
       where: {
         customerId,
@@ -565,19 +624,24 @@ export class ReferralService {
   }
 
   private async sendReferralEmail(referral: any) {
-    await this.emailService.sendEmail({
-      to: referral.refereeEmail,
-      subject: `Приглашение в программу лояльности ${referral.program.merchant.name}`,
-      template: 'referral_invitation',
-      data: {
-        referrerName: referral.referrer.name || 'Ваш друг',
-        merchantName: referral.program.merchant.name,
-        refereeReward: referral.program.refereeReward,
-        referralCode: referral.code,
-        referralLink: this.generateReferralLink(referral.program.merchantId, referral.code),
-      },
-      merchantId: referral.program.merchantId,
-    }).catch(console.error);
+    await this.emailService
+      .sendEmail({
+        to: referral.refereeEmail,
+        subject: `Приглашение в программу лояльности ${referral.program.merchant.name}`,
+        template: 'referral_invitation',
+        data: {
+          referrerName: referral.referrer.name || 'Ваш друг',
+          merchantName: referral.program.merchant.name,
+          refereeReward: referral.program.refereeReward,
+          referralCode: referral.code,
+          referralLink: this.generateReferralLink(
+            referral.program.merchantId,
+            referral.code,
+          ),
+        },
+        merchantId: referral.program.merchantId,
+      })
+      .catch(console.error);
   }
 
   private async notifyReferrerAboutCompletion(referral: any, reward: number) {
@@ -588,17 +652,19 @@ export class ReferralService {
     if (!referrer) return;
 
     if (referrer.email) {
-      await this.emailService.sendEmail({
-        to: referrer.email,
-        subject: 'Бонус за приглашение друга начислен!',
-        template: 'referral_completed',
-        data: {
-          customerName: referrer.name || 'Уважаемый клиент',
-          reward,
-        },
-        merchantId: referral.program.merchantId,
-        customerId: referrer.id,
-      }).catch(console.error);
+      await this.emailService
+        .sendEmail({
+          to: referrer.email,
+          subject: 'Бонус за приглашение друга начислен!',
+          template: 'referral_completed',
+          data: {
+            customerName: referrer.name || 'Уважаемый клиент',
+            reward,
+          },
+          merchantId: referral.program.merchantId,
+          customerId: referrer.id,
+        })
+        .catch(console.error);
     }
   }
 
@@ -628,7 +694,8 @@ export class ReferralService {
   }
 
   private normalizeMessageTemplate(message?: string | null) {
-    const fallback = 'Расскажите друзьям о нашей программе и получите бонус. Делитесь ссылкой {link} или промокодом {code}.';
+    const fallback =
+      'Расскажите друзьям о нашей программе и получите бонус. Делитесь ссылкой {link} или промокодом {code}.';
     if (typeof message !== 'string') return fallback;
     const trimmed = message.trim();
     if (!trimmed) return fallback;
@@ -642,12 +709,23 @@ export class ReferralService {
     baseReward: number,
   ): Array<{ level: number; enabled: boolean; reward: number }> {
     const source = Array.isArray(levels) ? levels : [];
-    const normalized: Array<{ level: number; enabled: boolean; reward: number }> = [];
+    const normalized: Array<{
+      level: number;
+      enabled: boolean;
+      reward: number;
+    }> = [];
     for (let level = 1; level <= 5; level += 1) {
-      const found = source.find((item: any) => Number(item?.level) === level) || {};
+      const found =
+        source.find((item: any) => Number(item?.level) === level) || {};
       const mandatory = level <= 2;
-      const enabled = multiLevel ? (mandatory ? true : Boolean(found.enabled)) : false;
-      const raw = multiLevel ? Number(found.reward ?? (level === 1 ? baseReward : 0)) : 0;
+      const enabled = multiLevel
+        ? mandatory
+          ? true
+          : Boolean(found.enabled)
+        : false;
+      const raw = multiLevel
+        ? Number(found.reward ?? (level === 1 ? baseReward : 0))
+        : 0;
       let reward = Number.isFinite(raw) ? raw : 0;
       if (reward < 0) reward = 0;
       if (rewardType === 'PERCENT' && reward > 100) reward = 100;
@@ -656,10 +734,16 @@ export class ReferralService {
     return normalized;
   }
 
-  private computeReferrerReward(program: ReferralProgram, purchaseAmount?: number) {
+  private computeReferrerReward(
+    program: ReferralProgram,
+    purchaseAmount?: number,
+  ) {
     const base = this.roundTwo(program.referrerReward ?? 0);
     if (program.rewardType === 'PERCENT') {
-      const amount = typeof purchaseAmount === 'number' && Number.isFinite(purchaseAmount) ? purchaseAmount : 0;
+      const amount =
+        typeof purchaseAmount === 'number' && Number.isFinite(purchaseAmount)
+          ? purchaseAmount
+          : 0;
       if (amount <= 0 || base <= 0) return 0;
       return this.roundTwo((amount * base) / 100);
     }
@@ -669,10 +753,17 @@ export class ReferralService {
   private mapProgramToSettings(
     program: ReferralProgram & { merchant?: { name: string } | null },
   ) {
-    const rewardMode: RewardMode = program.rewardType === 'PERCENT' ? 'PERCENT' : 'FIXED';
-    const rewardTrigger: RewardTrigger = program.rewardTrigger === 'all' ? 'all' : 'first';
+    const rewardMode: RewardMode =
+      program.rewardType === 'PERCENT' ? 'PERCENT' : 'FIXED';
+    const rewardTrigger: RewardTrigger =
+      program.rewardTrigger === 'all' ? 'all' : 'first';
     const baseReward = this.roundTwo(program.referrerReward ?? 0);
-    const levels = this.normalizeLevels(program.levelRewards, program.multiLevel ?? false, rewardMode, baseReward);
+    const levels = this.normalizeLevels(
+      program.levelRewards,
+      program.multiLevel ?? false,
+      rewardMode,
+      baseReward,
+    );
     return {
       programId: program.id,
       enabled: program.status === 'ACTIVE' && program.isActive !== false,
@@ -728,18 +819,28 @@ export class ReferralService {
     return this.mapProgramToSettings(program);
   }
 
-  async updateProgramSettingsFromPortal(merchantId: string, payload: ReferralProgramSettingsDto) {
+  async updateProgramSettingsFromPortal(
+    merchantId: string,
+    payload: ReferralProgramSettingsDto,
+  ) {
     const existing = await this.prisma.referralProgram.findFirst({
       where: { merchantId },
       orderBy: { createdAt: 'desc' },
     });
 
-    const rewardType: RewardMode = payload.rewardType === 'percent' ? 'PERCENT' : 'FIXED';
-    const rewardTrigger: RewardTrigger = payload.rewardTrigger === 'all' ? 'all' : 'first';
+    const rewardType: RewardMode =
+      payload.rewardType === 'percent' ? 'PERCENT' : 'FIXED';
+    const rewardTrigger: RewardTrigger =
+      payload.rewardTrigger === 'all' ? 'all' : 'first';
     const multiLevel = Boolean(payload.multiLevel);
-    const normalizedLevels = this.normalizeLevels(payload.levels, multiLevel, rewardType, payload.rewardValue);
+    const normalizedLevels = this.normalizeLevels(
+      payload.levels,
+      multiLevel,
+      rewardType,
+      payload.rewardValue,
+    );
     const baseReward = multiLevel
-      ? normalizedLevels.find((level) => level.level === 1)?.reward ?? 0
+      ? (normalizedLevels.find((level) => level.level === 1)?.reward ?? 0)
       : payload.rewardValue;
     const friendReward = this.roundTwo(payload.friendReward);
     const status = payload.enabled ? 'ACTIVE' : 'PAUSED';
@@ -787,22 +888,36 @@ export class ReferralService {
   /**
    * Обновить программу
    */
-  async updateProgram(programId: string, dto: Partial<CreateReferralProgramDto>) {
-    const existing = await this.prisma.referralProgram.findUnique({ where: { id: programId } });
+  async updateProgram(
+    programId: string,
+    dto: Partial<CreateReferralProgramDto>,
+  ) {
+    const existing = await this.prisma.referralProgram.findUnique({
+      where: { id: programId },
+    });
     if (!existing) {
       throw new BadRequestException('Реферальная программа не найдена');
     }
 
     const rewardType: RewardMode = dto.rewardType
-      ? dto.rewardType === 'PERCENT' ? 'PERCENT' : 'FIXED'
-      : (existing.rewardType === 'PERCENT' ? 'PERCENT' : 'FIXED');
-    const rewardTrigger: RewardTrigger = dto.rewardTrigger === 'all'
-      ? 'all'
-      : existing.rewardTrigger === 'all'
+      ? dto.rewardType === 'PERCENT'
+        ? 'PERCENT'
+        : 'FIXED'
+      : existing.rewardType === 'PERCENT'
+        ? 'PERCENT'
+        : 'FIXED';
+    const rewardTrigger: RewardTrigger =
+      dto.rewardTrigger === 'all'
         ? 'all'
-        : 'first';
-    const multiLevel = dto.multiLevel !== undefined ? dto.multiLevel : existing.multiLevel;
-    const baseRewardInput = dto.referrerReward !== undefined ? dto.referrerReward : existing.referrerReward;
+        : existing.rewardTrigger === 'all'
+          ? 'all'
+          : 'first';
+    const multiLevel =
+      dto.multiLevel !== undefined ? dto.multiLevel : existing.multiLevel;
+    const baseRewardInput =
+      dto.referrerReward !== undefined
+        ? dto.referrerReward
+        : existing.referrerReward;
     const normalizedLevels = this.normalizeLevels(
       dto.levelRewards !== undefined ? dto.levelRewards : existing.levelRewards,
       multiLevel,
@@ -810,9 +925,12 @@ export class ReferralService {
       baseRewardInput ?? 0,
     );
     const referrerReward = multiLevel
-      ? normalizedLevels.find((level) => level.level === 1)?.reward ?? 0
+      ? (normalizedLevels.find((level) => level.level === 1)?.reward ?? 0)
       : this.roundTwo(baseRewardInput ?? 0);
-    const refereeReward = dto.refereeReward !== undefined ? dto.refereeReward : existing.refereeReward;
+    const refereeReward =
+      dto.refereeReward !== undefined
+        ? dto.refereeReward
+        : existing.refereeReward;
     const status = dto.status ?? existing.status;
     const messageTemplate = dto.messageTemplate ?? existing.messageTemplate;
     const placeholders = dto.placeholders ?? existing.placeholders;
@@ -833,7 +951,8 @@ export class ReferralService {
         rewardType,
         multiLevel,
         levelRewards: multiLevel ? normalizedLevels : Prisma.JsonNull,
-        stackWithRegistration: dto.stackWithRegistration ?? existing.stackWithRegistration,
+        stackWithRegistration:
+          dto.stackWithRegistration ?? existing.stackWithRegistration,
         messageTemplate: this.normalizeMessageTemplate(messageTemplate),
         placeholders: this.normalizePlaceholders(placeholders),
       },
@@ -872,7 +991,11 @@ export class ReferralService {
         },
       });
 
-      if (!personal || !personal.program || personal.program.status !== 'ACTIVE') {
+      if (
+        !personal ||
+        !personal.program ||
+        personal.program.status !== 'ACTIVE'
+      ) {
         return {
           valid: false,
           message: 'Недействительный или истекший код',

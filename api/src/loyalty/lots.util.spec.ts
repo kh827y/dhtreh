@@ -1,7 +1,12 @@
 import { planConsume, planUnconsume, planRevoke, Lot } from './lots.util';
 
 function lot(id: string, pts: number, consumed: number, at: number): Lot {
-  return { id, points: pts, consumedPoints: consumed, earnedAt: new Date(at) } as any;
+  return {
+    id,
+    points: pts,
+    consumedPoints: consumed,
+    earnedAt: new Date(at),
+  } as any;
 }
 
 describe('lots.util', () => {
@@ -21,7 +26,11 @@ describe('lots.util', () => {
   });
 
   it('planUnconsume LIFO reduce from latest', () => {
-    const lots = [lot('A', 100, 50, 1), lot('B', 50, 30, 2), lot('C', 30, 10, 3)];
+    const lots = [
+      lot('A', 100, 50, 1),
+      lot('B', 50, 30, 2),
+      lot('C', 30, 10, 3),
+    ];
     const up = planUnconsume(lots, 35);
     // Start from C: give back 10, then B: give back 25
     expect(up).toEqual([
@@ -39,4 +48,3 @@ describe('lots.util', () => {
     ]);
   });
 });
-

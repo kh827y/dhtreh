@@ -5,18 +5,37 @@ import { OAuthGuard } from '../../guards/oauth.guard';
 
 @Controller('integrations/poster')
 export class PosterController {
-  constructor(private svc: PosterService, private metrics: MetricsService) {}
+  constructor(
+    private svc: PosterService,
+    private metrics: MetricsService,
+  ) {}
 
   @Post('register')
   @UseGuards(OAuthGuard)
-  async register(@Body() body: { merchantId: string; appId: string; appSecret: string }) {
+  async register(
+    @Body() body: { merchantId: string; appId: string; appSecret: string },
+  ) {
     try {
-      const res = await this.svc.registerIntegration(body.merchantId, { appId: body.appId, appSecret: body.appSecret });
-      this.metrics.inc('pos_requests_total', { provider: 'POSTER', endpoint: 'register', result: 'ok' });
+      const res = await this.svc.registerIntegration(body.merchantId, {
+        appId: body.appId,
+        appSecret: body.appSecret,
+      });
+      this.metrics.inc('pos_requests_total', {
+        provider: 'POSTER',
+        endpoint: 'register',
+        result: 'ok',
+      });
       return res;
     } catch (e) {
-      this.metrics.inc('pos_requests_total', { provider: 'POSTER', endpoint: 'register', result: 'error' });
-      this.metrics.inc('pos_errors_total', { provider: 'POSTER', endpoint: 'register' });
+      this.metrics.inc('pos_requests_total', {
+        provider: 'POSTER',
+        endpoint: 'register',
+        result: 'error',
+      });
+      this.metrics.inc('pos_errors_total', {
+        provider: 'POSTER',
+        endpoint: 'register',
+      });
       throw e;
     }
   }
@@ -25,7 +44,11 @@ export class PosterController {
   @UseGuards(OAuthGuard)
   async quote(@Body() body: any) {
     const res = await this.svc.quoteLoyalty(body);
-    this.metrics.inc('pos_requests_total', { provider: 'POSTER', endpoint: 'quote', result: 'ok' });
+    this.metrics.inc('pos_requests_total', {
+      provider: 'POSTER',
+      endpoint: 'quote',
+      result: 'ok',
+    });
     return res;
   }
 
@@ -33,7 +56,11 @@ export class PosterController {
   @UseGuards(OAuthGuard)
   async commit(@Body() body: any) {
     const res = await this.svc.commitLoyalty(body);
-    this.metrics.inc('pos_requests_total', { provider: 'POSTER', endpoint: 'commit', result: 'ok' });
+    this.metrics.inc('pos_requests_total', {
+      provider: 'POSTER',
+      endpoint: 'commit',
+      result: 'ok',
+    });
     return res;
   }
 
@@ -43,5 +70,7 @@ export class PosterController {
   }
 
   @Get('health')
-  async health() { return { ok: await this.svc.healthCheck() }; }
+  async health() {
+    return { ok: await this.svc.healthCheck() };
+  }
 }

@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { WalletType } from '@prisma/client';
 
@@ -13,7 +17,11 @@ export type PortalCustomerDto = {
   balance?: number;
 };
 
-export type ListCustomersQuery = { search?: string; limit?: number; offset?: number };
+export type ListCustomersQuery = {
+  search?: string;
+  limit?: number;
+  offset?: number;
+};
 
 @Injectable()
 export class PortalCustomersService {
@@ -28,7 +36,10 @@ export class PortalCustomersService {
       birthday: c.birthday ? new Date(c.birthday).toISOString() : null,
       gender: c.gender ?? null,
       tags: Array.isArray(c.tags) ? c.tags : [],
-      balance: typeof balance === 'number' ? balance : (Array.isArray(c.wallets) && c.wallets[0]?.balance) ?? 0,
+      balance:
+        typeof balance === 'number'
+          ? balance
+          : ((Array.isArray(c.wallets) && c.wallets[0]?.balance) ?? 0),
     };
   }
 
@@ -38,9 +49,24 @@ export class PortalCustomersService {
     const whereSearch = query.search?.trim()
       ? {
           OR: [
-            { phone: { contains: query.search.trim(), mode: 'insensitive' as const } },
-            { email: { contains: query.search.trim(), mode: 'insensitive' as const } },
-            { name: { contains: query.search.trim(), mode: 'insensitive' as const } },
+            {
+              phone: {
+                contains: query.search.trim(),
+                mode: 'insensitive' as const,
+              },
+            },
+            {
+              email: {
+                contains: query.search.trim(),
+                mode: 'insensitive' as const,
+              },
+            },
+            {
+              name: {
+                contains: query.search.trim(),
+                mode: 'insensitive' as const,
+              },
+            },
           ],
         }
       : {};
@@ -54,7 +80,12 @@ export class PortalCustomersService {
           { Receipt: { some: { merchantId } } },
         ],
       },
-      include: { wallets: { where: { merchantId, type: WalletType.POINTS }, select: { balance: true } } },
+      include: {
+        wallets: {
+          where: { merchantId, type: WalletType.POINTS },
+          select: { balance: true },
+        },
+      },
       orderBy: { createdAt: 'desc' },
       take: limit,
       skip: offset,
@@ -65,7 +96,9 @@ export class PortalCustomersService {
 
   private async canAccess(merchantId: string, customerId: string) {
     const [wallet, txn, receipt] = await Promise.all([
-      this.prisma.wallet.findFirst({ where: { merchantId, customerId, type: WalletType.POINTS } }),
+      this.prisma.wallet.findFirst({
+        where: { merchantId, customerId, type: WalletType.POINTS },
+      }),
       this.prisma.transaction.findFirst({ where: { merchantId, customerId } }),
       this.prisma.receipt.findFirst({ where: { merchantId, customerId } }),
     ]);
@@ -75,7 +108,12 @@ export class PortalCustomersService {
   async get(merchantId: string, customerId: string) {
     const c = await this.prisma.customer.findUnique({
       where: { id: customerId },
-      include: { wallets: { where: { merchantId, type: WalletType.POINTS }, select: { balance: true } } },
+      include: {
+        wallets: {
+          where: { merchantId, type: WalletType.POINTS },
+          select: { balance: true },
+        },
+      },
     });
     if (!c) throw new NotFoundException('Customer not found');
     // Разрешаем просмотр, если связан с мерчантом
@@ -83,23 +121,52 @@ export class PortalCustomersService {
     if (!allowed) {
       // Ленивая привязка: создадим пустой кошелёк, чтобы связать клиента с мерчантом
       await this.prisma.wallet.upsert({
-        where: { customerId_merchantId_type: { customerId: c.id, merchantId, type: WalletType.POINTS } },
+        where: {
+          customerId_merchantId_type: {
+            customerId: c.id,
+            merchantId,
+            type: WalletType.POINTS,
+          },
+        },
         update: {},
-        create: { customerId: c.id, merchantId, type: WalletType.POINTS, balance: 0 },
+        create: {
+          customerId: c.id,
+          merchantId,
+          type: WalletType.POINTS,
+          balance: 0,
+        },
       });
     }
-    const balanceRow = await this.prisma.wallet.findUnique({ where: { customerId_merchantId_type: { customerId: c.id, merchantId, type: WalletType.POINTS } } });
+    const balanceRow = await this.prisma.wallet.findUnique({
+      where: {
+        customerId_merchantId_type: {
+          customerId: c.id,
+          merchantId,
+          type: WalletType.POINTS,
+        },
+      },
+    });
     return this.toDto(c, balanceRow?.balance ?? 0);
   }
 
-  async create(merchantId: string, dto: Partial<PortalCustomerDto> & { firstName?: string; lastName?: string }) {
+  async create(
+    merchantId: string,
+    dto: Partial<PortalCustomerDto> & { firstName?: string; lastName?: string },
+  ) {
     const phone = dto.phone?.trim() || undefined;
     const email = dto.email?.trim()?.toLowerCase() || undefined;
-    const name = dto.name?.trim() || [dto.firstName, dto.lastName].filter(Boolean).join(' ').trim() || undefined;
+    const name =
+      dto.name?.trim() ||
+      [dto.firstName, dto.lastName].filter(Boolean).join(' ').trim() ||
+      undefined;
 
-    const existsPhone = phone ? await this.prisma.customer.findFirst({ where: { phone } }) : null;
+    const existsPhone = phone
+      ? await this.prisma.customer.findFirst({ where: { phone } })
+      : null;
     if (existsPhone) throw new BadRequestException('Phone already used');
-    const existsEmail = email ? await this.prisma.customer.findFirst({ where: { email } }) : null;
+    const existsEmail = email
+      ? await this.prisma.customer.findFirst({ where: { email } })
+      : null;
     if (existsEmail) throw new BadRequestException('Email already used');
 
     const customer = await this.prisma.customer.create({
@@ -114,23 +181,42 @@ export class PortalCustomersService {
     });
 
     await this.prisma.wallet.upsert({
-      where: { customerId_merchantId_type: { customerId: customer.id, merchantId, type: WalletType.POINTS } },
+      where: {
+        customerId_merchantId_type: {
+          customerId: customer.id,
+          merchantId,
+          type: WalletType.POINTS,
+        },
+      },
       update: {},
-      create: { customerId: customer.id, merchantId, type: WalletType.POINTS, balance: 0 },
+      create: {
+        customerId: customer.id,
+        merchantId,
+        type: WalletType.POINTS,
+        balance: 0,
+      },
     });
 
     return this.get(merchantId, customer.id);
   }
 
-  async update(merchantId: string, customerId: string, dto: Partial<PortalCustomerDto> & { firstName?: string; lastName?: string }) {
-    const c = await this.prisma.customer.findUnique({ where: { id: customerId } });
+  async update(
+    merchantId: string,
+    customerId: string,
+    dto: Partial<PortalCustomerDto> & { firstName?: string; lastName?: string },
+  ) {
+    const c = await this.prisma.customer.findUnique({
+      where: { id: customerId },
+    });
     if (!c) throw new NotFoundException('Customer not found');
 
     const data: any = {};
     if (dto.phone !== undefined) {
       const phone = dto.phone?.trim() || null;
       if (phone) {
-        const clash = await this.prisma.customer.findFirst({ where: { phone, id: { not: customerId } } });
+        const clash = await this.prisma.customer.findFirst({
+          where: { phone, id: { not: customerId } },
+        });
         if (clash) throw new BadRequestException('Phone already used');
       }
       data.phone = phone;
@@ -138,23 +224,40 @@ export class PortalCustomersService {
     if (dto.email !== undefined) {
       const email = dto.email?.trim()?.toLowerCase() || null;
       if (email) {
-        const clash = await this.prisma.customer.findFirst({ where: { email, id: { not: customerId } } });
+        const clash = await this.prisma.customer.findFirst({
+          where: { email, id: { not: customerId } },
+        });
         if (clash) throw new BadRequestException('Email already used');
       }
       data.email = email;
     }
-    if (dto.name !== undefined || dto.firstName !== undefined || dto.lastName !== undefined) {
-      const name = (dto.name?.trim() || [dto.firstName, dto.lastName].filter(Boolean).join(' ').trim()) || null;
+    if (
+      dto.name !== undefined ||
+      dto.firstName !== undefined ||
+      dto.lastName !== undefined
+    ) {
+      const name =
+        dto.name?.trim() ||
+        [dto.firstName, dto.lastName].filter(Boolean).join(' ').trim() ||
+        null;
       data.name = name;
     }
-    if (dto.birthday !== undefined) data.birthday = dto.birthday ? new Date(dto.birthday) : null;
+    if (dto.birthday !== undefined)
+      data.birthday = dto.birthday ? new Date(dto.birthday) : null;
     if (dto.gender !== undefined) data.gender = dto.gender ?? null;
-    if (dto.tags !== undefined) data.tags = Array.isArray(dto.tags) ? dto.tags : [];
+    if (dto.tags !== undefined)
+      data.tags = Array.isArray(dto.tags) ? dto.tags : [];
 
     await this.prisma.customer.update({ where: { id: customerId }, data });
 
     await this.prisma.wallet.upsert({
-      where: { customerId_merchantId_type: { customerId, merchantId, type: WalletType.POINTS } },
+      where: {
+        customerId_merchantId_type: {
+          customerId,
+          merchantId,
+          type: WalletType.POINTS,
+        },
+      },
       update: {},
       create: { customerId, merchantId, type: WalletType.POINTS, balance: 0 },
     });
@@ -164,12 +267,25 @@ export class PortalCustomersService {
 
   async remove(merchantId: string, customerId: string) {
     // Удаляем привязку к мерчанту (кошелёк), но не удаляем глобальную запись Customer
-    const txns = await this.prisma.transaction.count({ where: { merchantId, customerId } });
-    const receipts = await this.prisma.receipt.count({ where: { merchantId, customerId } });
-    if (txns > 0 || receipts > 0) throw new BadRequestException('Cannot delete customer with history');
+    const txns = await this.prisma.transaction.count({
+      where: { merchantId, customerId },
+    });
+    const receipts = await this.prisma.receipt.count({
+      where: { merchantId, customerId },
+    });
+    if (txns > 0 || receipts > 0)
+      throw new BadRequestException('Cannot delete customer with history');
 
     try {
-      await this.prisma.wallet.delete({ where: { customerId_merchantId_type: { customerId, merchantId, type: WalletType.POINTS } } });
+      await this.prisma.wallet.delete({
+        where: {
+          customerId_merchantId_type: {
+            customerId,
+            merchantId,
+            type: WalletType.POINTS,
+          },
+        },
+      });
     } catch {}
     return { ok: true } as const;
   }

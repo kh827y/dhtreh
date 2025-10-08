@@ -24,8 +24,18 @@ describe('OperationsLogService', () => {
           id: 'r1',
           merchantId: 'm1',
           customer: { id: 'c1', name: 'Иван', phone: '+79990001122' },
-          staff: { id: 's1', firstName: 'Анна', lastName: 'Смирнова', status: 'ACTIVE' },
-          outlet: { id: 'o1', name: 'Главный зал', posType: 'SMART', code: 'POS-1' },
+          staff: {
+            id: 's1',
+            firstName: 'Анна',
+            lastName: 'Смирнова',
+            status: 'ACTIVE',
+          },
+          outlet: {
+            id: 'o1',
+            name: 'Главный зал',
+            posType: 'SMART',
+            code: 'POS-1',
+          },
           redeemApplied: 100,
           earnApplied: 50,
           total: 1200,
@@ -35,7 +45,9 @@ describe('OperationsLogService', () => {
         },
       ],
     ]);
-    prisma.review.findMany.mockResolvedValue([{ orderId: 'order-1', rating: 4 }]);
+    prisma.review.findMany.mockResolvedValue([
+      { orderId: 'order-1', rating: 4 },
+    ]);
 
     const result = await service.list('m1', { direction: 'ALL' });
 

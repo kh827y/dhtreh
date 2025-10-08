@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
@@ -47,20 +51,25 @@ export class PortalTelegramIntegrationService {
 
     let settings = merchant.settings;
     if (!settings) {
-      settings = await this.prisma.merchantSettings.create({ data: { merchantId } });
+      settings = await this.prisma.merchantSettings.create({
+        data: { merchantId },
+      });
     }
 
     const integration = await this.prisma.integration.findFirst({
       where: { merchantId, provider: this.provider },
     });
 
-    const username = settings.telegramBotUsername || merchant.telegramBot?.botUsername || null;
+    const username =
+      settings.telegramBotUsername || merchant.telegramBot?.botUsername || null;
     const normalizedUsername = username
       ? username.startsWith('@')
         ? username
         : `@${username}`
       : null;
-    const botLink = normalizedUsername ? `https://t.me/${normalizedUsername.replace(/^@/, '')}` : null;
+    const botLink = normalizedUsername
+      ? `https://t.me/${normalizedUsername.replace(/^@/, '')}`
+      : null;
     const tokenMask = this.extractTokenMask(integration?.credentials);
 
     return {
@@ -68,14 +77,21 @@ export class PortalTelegramIntegrationService {
       botUsername: normalizedUsername,
       botLink,
       miniappUrl: settings.miniappBaseUrl ?? null,
-      connectionHealthy: Boolean(merchant.telegramBotEnabled && merchant.telegramBot?.isActive),
-      lastSyncAt: integration?.lastSync ? integration.lastSync.toISOString() : null,
+      connectionHealthy: Boolean(
+        merchant.telegramBotEnabled && merchant.telegramBot?.isActive,
+      ),
+      lastSyncAt: integration?.lastSync
+        ? integration.lastSync.toISOString()
+        : null,
       integrationId: integration?.id ?? null,
       tokenMask,
     };
   }
 
-  async connect(merchantId: string, botTokenRaw: string): Promise<TelegramIntegrationResponse> {
+  async connect(
+    merchantId: string,
+    botTokenRaw: string,
+  ): Promise<TelegramIntegrationResponse> {
     const botToken = String(botTokenRaw || '').trim();
     if (!botToken) {
       throw new BadRequestException('Укажите токен бота из BotFather');
@@ -88,12 +104,23 @@ export class PortalTelegramIntegrationService {
         where: { id: merchantId },
         data: { telegramBotEnabled: true, telegramBotToken: botToken },
       });
-      await this.prisma.merchantSettings.update({
-        where: { merchantId },
-        data: { telegramBotToken: botToken, telegramBotUsername: result.username },
-      }).catch(() => this.prisma.merchantSettings.create({
-        data: { merchantId, telegramBotToken: botToken, telegramBotUsername: result.username },
-      }));
+      await this.prisma.merchantSettings
+        .update({
+          where: { merchantId },
+          data: {
+            telegramBotToken: botToken,
+            telegramBotUsername: result.username,
+          },
+        })
+        .catch(() =>
+          this.prisma.merchantSettings.create({
+            data: {
+              merchantId,
+              telegramBotToken: botToken,
+              telegramBotUsername: result.username,
+            },
+          }),
+        );
       await this.touchIntegration(merchantId, {
         isActive: true,
         username: result.username,
@@ -108,25 +135,31 @@ export class PortalTelegramIntegrationService {
         : '';
       return { ...state, message: `${baseMessage}${webhookMessage}` };
     } catch (error: any) {
-      const description = error?.message ? String(error.message) : 'Не удалось подключить бота';
+      const description = error?.message
+        ? String(error.message)
+        : 'Не удалось подключить бота';
       throw new BadRequestException(description);
     }
   }
 
   async disconnect(merchantId: string): Promise<TelegramIntegrationResponse> {
     await this.telegramBots.deactivateBot(merchantId);
-    await this.prisma.merchant.update({
-      where: { id: merchantId },
-      data: { telegramBotEnabled: false, telegramBotToken: null },
-    }).catch(() => null);
-    await this.prisma.merchantSettings.update({
-      where: { merchantId },
-      data: {
-        telegramBotToken: null,
-        telegramBotUsername: null,
-        miniappBaseUrl: null,
-      },
-    }).catch(() => null);
+    await this.prisma.merchant
+      .update({
+        where: { id: merchantId },
+        data: { telegramBotEnabled: false, telegramBotToken: null },
+      })
+      .catch(() => null);
+    await this.prisma.merchantSettings
+      .update({
+        where: { merchantId },
+        data: {
+          telegramBotToken: null,
+          telegramBotUsername: null,
+          miniappBaseUrl: null,
+        },
+      })
+      .catch(() => null);
     await this.touchIntegration(merchantId, {
       isActive: false,
       tokenMask: null,
@@ -144,13 +177,18 @@ export class PortalTelegramIntegrationService {
     });
     if (!merchant) throw new NotFoundException('Merchant not found');
 
-    const settings = merchant.settings ?? (await this.prisma.merchantSettings.create({ data: { merchantId } }));
+    const settings =
+      merchant.settings ??
+      (await this.prisma.merchantSettings.create({ data: { merchantId } }));
     const token = settings.telegramBotToken;
     if (!token) {
-      throw new BadRequestException('Токен бота не задан. Подключите Telegram Mini App.');
+      throw new BadRequestException(
+        'Токен бота не задан. Подключите Telegram Mini App.',
+      );
     }
 
-    let username = settings.telegramBotUsername || merchant.telegramBot?.botUsername || null;
+    let username =
+      settings.telegramBotUsername || merchant.telegramBot?.botUsername || null;
     let healthy = false;
     let message = 'Подключение к боту не удалось';
     let errorText: string | null = null;
@@ -159,34 +197,52 @@ export class PortalTelegramIntegrationService {
       const botInfo = await this.telegramBots.fetchBotInfo(token);
       username = botInfo.username || username;
       const webhookInfo = await this.telegramBots.fetchWebhookInfo(token);
-      const botRow = merchant.telegramBot || (await this.prisma.telegramBot.findUnique({ where: { merchantId } }).catch(() => null));
-      const expectedUrl = botRow?.webhookUrl || this.buildWebhookUrl(merchantId);
-      healthy = Boolean(webhookInfo?.url && expectedUrl && webhookInfo.url === expectedUrl && !webhookInfo.last_error_date);
-      message = healthy ? 'Подключение к боту работает' : 'Подключение к боту не удалось';
-      await this.prisma.merchantSettings.update({
-        where: { merchantId },
-        data: { telegramBotUsername: username ?? null },
-      }).catch(() => null);
-      if (botRow) {
-        await this.prisma.telegramBot.update({
+      const botRow =
+        merchant.telegramBot ||
+        (await this.prisma.telegramBot
+          .findUnique({ where: { merchantId } })
+          .catch(() => null));
+      const expectedUrl =
+        botRow?.webhookUrl || this.buildWebhookUrl(merchantId);
+      healthy = Boolean(
+        webhookInfo?.url &&
+          expectedUrl &&
+          webhookInfo.url === expectedUrl &&
+          !webhookInfo.last_error_date,
+      );
+      message = healthy
+        ? 'Подключение к боту работает'
+        : 'Подключение к боту не удалось';
+      await this.prisma.merchantSettings
+        .update({
           where: { merchantId },
-          data: {
-            isActive: healthy,
-            botUsername: username ?? botRow.botUsername,
-            webhookUrl: botRow.webhookUrl ?? expectedUrl ?? undefined,
-          },
-        }).catch(() => null);
+          data: { telegramBotUsername: username ?? null },
+        })
+        .catch(() => null);
+      if (botRow) {
+        await this.prisma.telegramBot
+          .update({
+            where: { merchantId },
+            data: {
+              isActive: healthy,
+              botUsername: username ?? botRow.botUsername,
+              webhookUrl: botRow.webhookUrl ?? expectedUrl ?? undefined,
+            },
+          })
+          .catch(() => null);
       }
     } catch (error: any) {
       healthy = false;
-      errorText = error?.message ? String(error.message) : 'Ошибка проверки подключения';
+      errorText = error?.message
+        ? String(error.message)
+        : 'Ошибка проверки подключения';
       message = `Подключение к боту не удалось${errorText ? `: ${errorText}` : ''}`;
     }
 
     await this.touchIntegration(merchantId, {
       isActive: healthy && Boolean(merchant.telegramBotEnabled),
       username: username ?? null,
-      error: healthy ? null : errorText ?? message,
+      error: healthy ? null : (errorText ?? message),
       lastSyncAt: new Date(),
     });
 
@@ -195,28 +251,53 @@ export class PortalTelegramIntegrationService {
   }
 
   // Generate deep link for Mini App using startapp signed token
-  async generateLink(merchantId: string, outletId?: string): Promise<{ deepLink: string; startParam: string }> {
-    const settings = await this.prisma.merchantSettings.findUnique({ where: { merchantId } });
+  async generateLink(
+    merchantId: string,
+    outletId?: string,
+  ): Promise<{ deepLink: string; startParam: string }> {
+    const settings = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+    });
     const username = settings?.telegramBotUsername;
-    if (!username) throw new BadRequestException('Бот не подключён для данного мерчанта');
+    if (!username)
+      throw new BadRequestException('Бот не подключён для данного мерчанта');
 
     const secret = this.config.get<string>('TMA_LINK_SECRET');
-    if (!secret) throw new BadRequestException('Сервер не настроен: отсутствует TMA_LINK_SECRET');
+    if (!secret)
+      throw new BadRequestException(
+        'Сервер не настроен: отсутствует TMA_LINK_SECRET',
+      );
 
     // Build HS256 token (JWT-like) with base64url parts
     const header = { alg: 'HS256', typ: 'JWT' };
     const iat = Math.floor(Date.now() / 1000);
     const exp = iat + 7 * 24 * 60 * 60; // 7 days TTL
     const jti = crypto.randomBytes(12).toString('hex');
-    const payload: Record<string, any> = { merchantId, scope: 'miniapp', iat, exp, jti };
+    const payload: Record<string, any> = {
+      merchantId,
+      scope: 'miniapp',
+      iat,
+      exp,
+      jti,
+    };
     if (outletId) payload.outletId = String(outletId);
 
     const b64u = (input: string | Buffer) =>
-      Buffer.from(input).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+      Buffer.from(input)
+        .toString('base64')
+        .replace(/=/g, '')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_');
     const encHeader = b64u(JSON.stringify(header));
     const encPayload = b64u(JSON.stringify(payload));
     const data = `${encHeader}.${encPayload}`;
-    const sig = crypto.createHmac('sha256', secret).update(data).digest('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+    const sig = crypto
+      .createHmac('sha256', secret)
+      .update(data)
+      .digest('base64')
+      .replace(/=/g, '')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_');
     const token = `${data}.${sig}`;
 
     const uname = username.startsWith('@') ? username.slice(1) : username;
@@ -225,28 +306,38 @@ export class PortalTelegramIntegrationService {
   }
 
   async setupMenu(merchantId: string): Promise<{ ok: true }> {
-    const settings = await this.prisma.merchantSettings.findUnique({ where: { merchantId } });
-    if (!settings?.telegramBotToken) throw new BadRequestException('Токен бота не задан');
-    const url = settings?.miniappBaseUrl || `${this.config.get('MINIAPP_BASE_URL')}`;
+    const settings = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+    });
+    if (!settings?.telegramBotToken)
+      throw new BadRequestException('Токен бота не задан');
+    const url =
+      settings?.miniappBaseUrl || `${this.config.get('MINIAPP_BASE_URL')}`;
     if (!url) throw new BadRequestException('MINIAPP_BASE_URL не задан');
     const token = settings.telegramBotToken;
-    const res = await fetch(`https://api.telegram.org/bot${token}/setChatMenuButton`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        menu_button: {
-          type: 'web_app',
-          text: 'Открыть приложение',
-          web_app: { url },
-        },
-      }),
-    });
+    const res = await fetch(
+      `https://api.telegram.org/bot${token}/setChatMenuButton`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          menu_button: {
+            type: 'web_app',
+            text: 'Открыть приложение',
+            web_app: { url },
+          },
+        }),
+      },
+    );
     if (!res.ok) {
       const txt = await res.text().catch(() => 'Telegram API error');
-      throw new BadRequestException(`Не удалось установить кнопку меню: ${txt}`);
+      throw new BadRequestException(
+        `Не удалось установить кнопку меню: ${txt}`,
+      );
     }
     const data = await res.json().catch(() => null);
-    if (!data?.ok) throw new BadRequestException('Telegram API: setChatMenuButton failed');
+    if (!data?.ok)
+      throw new BadRequestException('Telegram API: setChatMenuButton failed');
     return { ok: true as const };
   }
 
@@ -274,19 +365,26 @@ export class PortalTelegramIntegrationService {
     }
   }
 
-  private async touchIntegration(merchantId: string, payload: IntegrationTouchPayload): Promise<string> {
+  private async touchIntegration(
+    merchantId: string,
+    payload: IntegrationTouchPayload,
+  ): Promise<string> {
     const existing = await this.prisma.integration.findFirst({
       where: { merchantId, provider: this.provider },
     });
 
-    const nextConfig: Record<string, any> = existing?.config ? { ...(existing.config as Record<string, any>) } : { kind: 'telegram-mini-app' };
+    const nextConfig: Record<string, any> = existing?.config
+      ? { ...(existing.config as Record<string, any>) }
+      : { kind: 'telegram-mini-app' };
     if (payload.username !== undefined) {
       nextConfig.username = payload.username ?? null;
     }
 
     let nextCredentials: Prisma.InputJsonValue | null | undefined;
     if (payload.tokenMask === undefined) {
-      nextCredentials = (existing?.credentials as Prisma.InputJsonValue | null | undefined) ?? undefined;
+      nextCredentials =
+        (existing?.credentials as Prisma.InputJsonValue | null | undefined) ??
+        undefined;
     } else if (payload.tokenMask === null) {
       nextCredentials = null;
     } else {
@@ -301,7 +399,8 @@ export class PortalTelegramIntegrationService {
       lastError: payload.error ?? null,
     };
 
-    const normalizedCredentials = nextCredentials === undefined ? undefined : nextCredentials;
+    const normalizedCredentials =
+      nextCredentials === undefined ? undefined : nextCredentials;
 
     const updateData: Prisma.IntegrationUpdateInput = {
       ...baseData,
@@ -310,11 +409,16 @@ export class PortalTelegramIntegrationService {
 
     if (normalizedCredentials !== undefined) {
       updateData.credentials =
-        normalizedCredentials === null ? Prisma.JsonNull : normalizedCredentials;
+        normalizedCredentials === null
+          ? Prisma.JsonNull
+          : normalizedCredentials;
     }
 
     if (existing) {
-      await this.prisma.integration.update({ where: { id: existing.id }, data: updateData });
+      await this.prisma.integration.update({
+        where: { id: existing.id },
+        data: updateData,
+      });
       return existing.id;
     }
 

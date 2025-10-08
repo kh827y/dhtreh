@@ -8,7 +8,12 @@ import {
   UseGuards,
   Headers,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { OneCService } from './onec.service';
 import type { OneCConfig } from './onec.service';
 import { ApiKeyGuard } from '../../guards/api-key.guard';
@@ -86,7 +91,8 @@ export class OneCController {
     }
 
     try {
-      results.transactions = await this.onecService.syncTransactions(merchantId);
+      results.transactions =
+        await this.onecService.syncTransactions(merchantId);
     } catch (error) {
       results.transactions.errors = -1;
     }
@@ -134,7 +140,9 @@ export class OneCController {
   @ApiOperation({ summary: 'Проверить подключение к 1С' })
   async testConnection(@Body() config: Partial<OneCConfig>) {
     try {
-      const result = await this.onecService.testConnection(config as OneCConfig);
+      const result = await this.onecService.testConnection(
+        config as OneCConfig,
+      );
       return {
         success: result,
         message: result ? 'Подключение успешно' : 'Не удалось подключиться',
@@ -151,7 +159,9 @@ export class OneCController {
    * Получить шаблоны настроек
    */
   @Get('templates')
-  @ApiOperation({ summary: 'Получить шаблоны конфигурации для популярных версий 1С' })
+  @ApiOperation({
+    summary: 'Получить шаблоны конфигурации для популярных версий 1С',
+  })
   async getConfigTemplates() {
     return [
       {

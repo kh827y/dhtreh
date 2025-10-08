@@ -53,7 +53,8 @@ describe('Portal promocodes (e2e)', () => {
         return (
           state.promoCodes.find((c) => {
             if (where.id && c.id !== where.id) return false;
-            if (where.merchantId && c.merchantId !== where.merchantId) return false;
+            if (where.merchantId && c.merchantId !== where.merchantId)
+              return false;
             if (where.code && c.code !== where.code) return false;
             return true;
           }) || null
@@ -62,7 +63,8 @@ describe('Portal promocodes (e2e)', () => {
       findMany: async (args: any) => {
         const where = args?.where || {};
         let arr = state.promoCodes.slice();
-        if (where.merchantId) arr = arr.filter((c) => c.merchantId === where.merchantId);
+        if (where.merchantId)
+          arr = arr.filter((c) => c.merchantId === where.merchantId);
         if (where.status) {
           if (typeof where.status === 'string') {
             arr = arr.filter((c) => c.status === where.status);
@@ -117,14 +119,22 @@ describe('Portal promocodes (e2e)', () => {
           ...args.data,
           updatedAt: new Date(),
         };
-        if ('pointsAmount' in args.data) updated.pointsAmount = args.data.pointsAmount ?? null;
-        if ('pointsExpireInDays' in args.data) updated.pointsExpireInDays = args.data.pointsExpireInDays ?? null;
-        if ('assignTierId' in args.data) updated.assignTierId = args.data.assignTierId ?? null;
-        if ('usageLimitValue' in args.data) updated.usageLimitValue = args.data.usageLimitValue ?? null;
-        if ('perCustomerLimit' in args.data) updated.perCustomerLimit = args.data.perCustomerLimit ?? null;
-        if ('cooldownDays' in args.data) updated.cooldownDays = args.data.cooldownDays ?? null;
-        if ('visitLookbackHours' in args.data) updated.visitLookbackHours = args.data.visitLookbackHours ?? null;
-        if ('metadata' in args.data) updated.metadata = args.data.metadata ?? null;
+        if ('pointsAmount' in args.data)
+          updated.pointsAmount = args.data.pointsAmount ?? null;
+        if ('pointsExpireInDays' in args.data)
+          updated.pointsExpireInDays = args.data.pointsExpireInDays ?? null;
+        if ('assignTierId' in args.data)
+          updated.assignTierId = args.data.assignTierId ?? null;
+        if ('usageLimitValue' in args.data)
+          updated.usageLimitValue = args.data.usageLimitValue ?? null;
+        if ('perCustomerLimit' in args.data)
+          updated.perCustomerLimit = args.data.perCustomerLimit ?? null;
+        if ('cooldownDays' in args.data)
+          updated.cooldownDays = args.data.cooldownDays ?? null;
+        if ('visitLookbackHours' in args.data)
+          updated.visitLookbackHours = args.data.visitLookbackHours ?? null;
+        if ('metadata' in args.data)
+          updated.metadata = args.data.metadata ?? null;
         state.promoCodes[idx] = updated;
         return { ...updated };
       },
@@ -157,7 +167,9 @@ describe('Portal promocodes (e2e)', () => {
       updatedAt: now,
     });
 
-    const moduleFixture: TestingModule = await Test.createTestingModule({ imports: [AppModule] })
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    })
       .overrideProvider(PrismaService)
       .useValue(prismaMock)
       .overrideProvider(MetricsService)
@@ -203,14 +215,28 @@ describe('Portal promocodes (e2e)', () => {
       .expect(200);
 
     expect(Array.isArray(list.body.items)).toBe(true);
-    const created = list.body.items.find((item: any) => item.code === 'HELLO50');
+    const created = list.body.items.find(
+      (item: any) => item.code === 'HELLO50',
+    );
     expect(created).toBeTruthy();
     expect(created.metadata.usageLimit).toBe('once_per_customer');
     expect(created.metadata.usagePeriod.days).toBe(7);
 
-    expect(metricsMock.inc).toHaveBeenCalledWith('portal_promocodes_changed_total', { action: 'create' }, 1);
-    expect(metricsMock.inc).toHaveBeenCalledWith('portal_loyalty_promocodes_changed_total', { action: 'create' }, 1);
-    expect(metricsMock.inc).toHaveBeenCalledWith('portal_loyalty_promocodes_list_total', undefined, undefined);
+    expect(metricsMock.inc).toHaveBeenCalledWith(
+      'portal_promocodes_changed_total',
+      { action: 'create' },
+      1,
+    );
+    expect(metricsMock.inc).toHaveBeenCalledWith(
+      'portal_loyalty_promocodes_changed_total',
+      { action: 'create' },
+      1,
+    );
+    expect(metricsMock.inc).toHaveBeenCalledWith(
+      'portal_loyalty_promocodes_list_total',
+      undefined,
+      undefined,
+    );
   });
 
   it('deactivates and reactivates promo code, filtering by status', async () => {
@@ -222,26 +248,56 @@ describe('Portal promocodes (e2e)', () => {
       .send({ promoCodeId: existing!.id })
       .expect(201);
 
-    expect(state.promoCodes.find((c) => c.id === existing!.id)?.status).toBe(PromoCodeStatus.ARCHIVED);
+    expect(state.promoCodes.find((c) => c.id === existing!.id)?.status).toBe(
+      PromoCodeStatus.ARCHIVED,
+    );
 
     const archived = await request(app.getHttpServer())
       .get('/portal/promocodes')
       .query({ status: 'ARCHIVE' })
       .expect(200);
-    expect(archived.body.items.some((item: any) => item.code === 'WELCOME10')).toBe(true);
+    expect(
+      archived.body.items.some((item: any) => item.code === 'WELCOME10'),
+    ).toBe(true);
 
     await request(app.getHttpServer())
       .post('/portal/promocodes/activate')
       .send({ promoCodeId: existing!.id })
       .expect(201);
 
-    expect(state.promoCodes.find((c) => c.id === existing!.id)?.status).toBe(PromoCodeStatus.ACTIVE);
+    expect(state.promoCodes.find((c) => c.id === existing!.id)?.status).toBe(
+      PromoCodeStatus.ACTIVE,
+    );
 
-    expect(metricsMock.inc).toHaveBeenCalledWith('portal_promocodes_changed_total', { action: 'status' }, 1);
-    expect(metricsMock.inc).toHaveBeenCalledWith('portal_loyalty_promocodes_changed_total', { action: 'status' }, 1);
-    expect(metricsMock.inc).toHaveBeenCalledWith('portal_loyalty_promocodes_list_total', undefined, undefined);
-    expect(metricsMock.inc.mock.calls.filter((call) => call[0] === 'portal_promocodes_changed_total' && call[1]?.action === 'status')).toHaveLength(2);
-    expect(metricsMock.inc.mock.calls.filter((call) => call[0] === 'portal_loyalty_promocodes_changed_total' && call[1]?.action === 'status')).toHaveLength(2);
+    expect(metricsMock.inc).toHaveBeenCalledWith(
+      'portal_promocodes_changed_total',
+      { action: 'status' },
+      1,
+    );
+    expect(metricsMock.inc).toHaveBeenCalledWith(
+      'portal_loyalty_promocodes_changed_total',
+      { action: 'status' },
+      1,
+    );
+    expect(metricsMock.inc).toHaveBeenCalledWith(
+      'portal_loyalty_promocodes_list_total',
+      undefined,
+      undefined,
+    );
+    expect(
+      metricsMock.inc.mock.calls.filter(
+        (call) =>
+          call[0] === 'portal_promocodes_changed_total' &&
+          call[1]?.action === 'status',
+      ),
+    ).toHaveLength(2);
+    expect(
+      metricsMock.inc.mock.calls.filter(
+        (call) =>
+          call[0] === 'portal_loyalty_promocodes_changed_total' &&
+          call[1]?.action === 'status',
+      ),
+    ).toHaveLength(2);
   });
 
   it('updates promo code configuration from portal', async () => {
@@ -272,7 +328,15 @@ describe('Portal promocodes (e2e)', () => {
     expect(updated.requireVisit).toBe(true);
     expect(updated.visitLookbackHours).toBe(48);
 
-    expect(metricsMock.inc).toHaveBeenCalledWith('portal_promocodes_changed_total', { action: 'update' }, 1);
-    expect(metricsMock.inc).toHaveBeenCalledWith('portal_loyalty_promocodes_changed_total', { action: 'update' }, 1);
+    expect(metricsMock.inc).toHaveBeenCalledWith(
+      'portal_promocodes_changed_total',
+      { action: 'update' },
+      1,
+    );
+    expect(metricsMock.inc).toHaveBeenCalledWith(
+      'portal_loyalty_promocodes_changed_total',
+      { action: 'update' },
+      1,
+    );
   });
 });

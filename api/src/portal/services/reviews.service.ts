@@ -60,7 +60,14 @@ export class PortalReviewsService {
     return Math.max(Math.trunc(offset ?? 0), 0);
   }
 
-  private buildCustomer(review: { customer: { id: string; name: string | null; phone: string | null; email: string | null } }): PortalReviewCustomer {
+  private buildCustomer(review: {
+    customer: {
+      id: string;
+      name: string | null;
+      phone: string | null;
+      email: string | null;
+    };
+  }): PortalReviewCustomer {
     return {
       id: review.customer.id,
       name: review.customer.name ?? null,
@@ -69,14 +76,27 @@ export class PortalReviewsService {
     };
   }
 
-  private buildStaff(receipt?: { staffId: string | null; staff: { id: string; firstName: string | null; lastName: string | null } | null }): PortalReviewStaff | null {
+  private buildStaff(receipt?: {
+    staffId: string | null;
+    staff: {
+      id: string;
+      firstName: string | null;
+      lastName: string | null;
+    } | null;
+  }): PortalReviewStaff | null {
     if (!receipt?.staffId || !receipt.staff) return null;
-    const parts = [receipt.staff.firstName, receipt.staff.lastName].filter(Boolean).map((part) => (part ?? '').trim()).filter(Boolean);
+    const parts = [receipt.staff.firstName, receipt.staff.lastName]
+      .filter(Boolean)
+      .map((part) => (part ?? '').trim())
+      .filter(Boolean);
     const name = parts.length > 0 ? parts.join(' ') : receipt.staff.id;
     return { id: receipt.staff.id, name };
   }
 
-  private buildOutlet(receipt?: { outletId: string | null; outlet: { id: string; name: string | null } | null }): PortalReviewOutlet | null {
+  private buildOutlet(receipt?: {
+    outletId: string | null;
+    outlet: { id: string; name: string | null } | null;
+  }): PortalReviewOutlet | null {
     if (!receipt?.outletId || !receipt.outlet) return null;
     const name = (receipt.outlet.name ?? '').trim() || 'Без названия';
     return { id: receipt.outlet.id, name };
@@ -95,9 +115,15 @@ export class PortalReviewsService {
     });
     const orderIds = orderRefs
       .map((ref) => ref.orderId)
-      .filter((orderId): orderId is string => typeof orderId === 'string' && orderId.length > 0);
+      .filter(
+        (orderId): orderId is string =>
+          typeof orderId === 'string' && orderId.length > 0,
+      );
     if (!orderIds.length) {
-      return { outlets: [] as PortalReviewOutlet[], staff: [] as PortalReviewStaff[] };
+      return {
+        outlets: [] as PortalReviewOutlet[],
+        staff: [] as PortalReviewStaff[],
+      };
     }
 
     const receipts = await this.prisma.receipt.findMany({
@@ -146,7 +172,10 @@ export class PortalReviewsService {
     return { outlets, staff };
   }
 
-  private async findOrderIdsByFilters(merchantId: string, filters: { outletId?: string; staffId?: string }) {
+  private async findOrderIdsByFilters(
+    merchantId: string,
+    filters: { outletId?: string; staffId?: string },
+  ) {
     const receiptWhere: Prisma.ReceiptWhereInput = { merchantId };
     if (filters.outletId) receiptWhere.outletId = filters.outletId;
     if (filters.staffId) receiptWhere.staffId = filters.staffId;
@@ -166,7 +195,20 @@ export class PortalReviewsService {
   }
 
   private async fetchReceiptsMap(merchantId: string, orderIds: string[]) {
-    if (!orderIds.length) return new Map<string, { outletId: string | null; outlet: { id: string; name: string | null } | null; staffId: string | null; staff: { id: string; firstName: string | null; lastName: string | null } | null }>();
+    if (!orderIds.length)
+      return new Map<
+        string,
+        {
+          outletId: string | null;
+          outlet: { id: string; name: string | null } | null;
+          staffId: string | null;
+          staff: {
+            id: string;
+            firstName: string | null;
+            lastName: string | null;
+          } | null;
+        }
+      >();
 
     const receipts = await this.prisma.receipt.findMany({
       where: {
@@ -182,7 +224,10 @@ export class PortalReviewsService {
     return new Map(receipts.map((receipt) => [receipt.orderId, receipt]));
   }
 
-  async list(merchantId: string, filters: PortalReviewFilters): Promise<PortalReviewListResult> {
+  async list(
+    merchantId: string,
+    filters: PortalReviewFilters,
+  ): Promise<PortalReviewListResult> {
     const limit = this.normalizeLimit(filters.limit);
     const offset = this.normalizeOffset(filters.offset);
 
@@ -214,7 +259,9 @@ export class PortalReviewsService {
       this.prisma.review.findMany({
         where,
         include: {
-          customer: { select: { id: true, name: true, phone: true, email: true } },
+          customer: {
+            select: { id: true, name: true, phone: true, email: true },
+          },
         },
         orderBy: { createdAt: 'desc' },
         take: limit,
@@ -228,15 +275,21 @@ export class PortalReviewsService {
       new Set(
         reviews
           .map((review) => review.orderId)
-          .filter((orderId): orderId is string => typeof orderId === 'string' && orderId.length > 0),
+          .filter(
+            (orderId): orderId is string =>
+              typeof orderId === 'string' && orderId.length > 0,
+          ),
       ),
     );
 
     const receiptsMap = await this.fetchReceiptsMap(merchantId, orderIds);
 
     const items: PortalReviewItem[] = reviews.map((review) => {
-      const receipt = review.orderId ? receiptsMap.get(review.orderId) : undefined;
-      const comment = typeof review.comment === 'string' ? review.comment.trim() : '';
+      const receipt = review.orderId
+        ? receiptsMap.get(review.orderId)
+        : undefined;
+      const comment =
+        typeof review.comment === 'string' ? review.comment.trim() : '';
       return {
         id: review.id,
         rating: review.rating,
@@ -258,4 +311,3 @@ export class PortalReviewsService {
     };
   }
 }
-

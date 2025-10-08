@@ -12,10 +12,13 @@ import { LoyaltyProgramModule } from './../src/loyalty-program/loyalty-program.m
 import { NotificationsModule } from './../src/notifications/notifications.module';
 jest.mock('@prisma/client', () => {
   const makeEnum = (values: string[]) =>
-    values.reduce((acc, key) => {
-      acc[key] = key;
-      return acc;
-    }, {} as Record<string, string>);
+    values.reduce(
+      (acc, key) => {
+        acc[key] = key;
+        return acc;
+      },
+      {} as Record<string, string>,
+    );
 
   return {
     PrismaClient: class {},
@@ -24,22 +27,91 @@ jest.mock('@prisma/client', () => {
     HoldStatus: makeEnum(['PENDING', 'CONFIRMED', 'CANCELED', 'EXPIRED']),
     DeviceType: makeEnum(['POS', 'KIOSK', 'CASHBOX']),
     StaffRole: makeEnum(['OWNER', 'MANAGER', 'CASHIER', 'ANALYST']),
-    StaffStatus: makeEnum(['ACTIVE', 'PENDING', 'SUSPENDED', 'FIRED', 'ARCHIVED']),
+    StaffStatus: makeEnum([
+      'ACTIVE',
+      'PENDING',
+      'SUSPENDED',
+      'FIRED',
+      'ARCHIVED',
+    ]),
     StaffOutletAccessStatus: makeEnum(['ACTIVE', 'REVOKED', 'EXPIRED']),
     AccessScope: makeEnum(['PORTAL', 'CASHIER', 'API']),
-    StaffInvitationStatus: makeEnum(['PENDING', 'ACCEPTED', 'EXPIRED', 'REVOKED']),
-    PromoCodeStatus: makeEnum(['DRAFT', 'ACTIVE', 'PAUSED', 'EXPIRED', 'ARCHIVED']),
-    PromoCodeUsageLimitType: makeEnum(['UNLIMITED', 'ONCE_TOTAL', 'ONCE_PER_CUSTOMER', 'LIMITED_PER_CUSTOMER']),
-    PromotionStatus: makeEnum(['DRAFT', 'SCHEDULED', 'ACTIVE', 'PAUSED', 'COMPLETED', 'CANCELED', 'ARCHIVED']),
-    PromotionRewardType: makeEnum(['POINTS', 'DISCOUNT', 'CASHBACK', 'LEVEL_UP', 'CUSTOM']),
-    LoyaltyMechanicType: makeEnum(['TIERS', 'PURCHASE_LIMITS', 'WINBACK', 'BIRTHDAY', 'REGISTRATION_BONUS', 'EXPIRATION_REMINDER', 'REFERRAL', 'CUSTOM']),
+    StaffInvitationStatus: makeEnum([
+      'PENDING',
+      'ACCEPTED',
+      'EXPIRED',
+      'REVOKED',
+    ]),
+    PromoCodeStatus: makeEnum([
+      'DRAFT',
+      'ACTIVE',
+      'PAUSED',
+      'EXPIRED',
+      'ARCHIVED',
+    ]),
+    PromoCodeUsageLimitType: makeEnum([
+      'UNLIMITED',
+      'ONCE_TOTAL',
+      'ONCE_PER_CUSTOMER',
+      'LIMITED_PER_CUSTOMER',
+    ]),
+    PromotionStatus: makeEnum([
+      'DRAFT',
+      'SCHEDULED',
+      'ACTIVE',
+      'PAUSED',
+      'COMPLETED',
+      'CANCELED',
+      'ARCHIVED',
+    ]),
+    PromotionRewardType: makeEnum([
+      'POINTS',
+      'DISCOUNT',
+      'CASHBACK',
+      'LEVEL_UP',
+      'CUSTOM',
+    ]),
+    LoyaltyMechanicType: makeEnum([
+      'TIERS',
+      'PURCHASE_LIMITS',
+      'WINBACK',
+      'BIRTHDAY',
+      'REGISTRATION_BONUS',
+      'EXPIRATION_REMINDER',
+      'REFERRAL',
+      'CUSTOM',
+    ]),
     MechanicStatus: makeEnum(['DISABLED', 'ENABLED', 'DRAFT']),
-    DataImportStatus: makeEnum(['UPLOADED', 'VALIDATING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELED']),
-    DataImportType: makeEnum(['CUSTOMERS', 'TRANSACTIONS', 'PRODUCTS', 'STAFF', 'PROMO_CODES']),
+    DataImportStatus: makeEnum([
+      'UPLOADED',
+      'VALIDATING',
+      'PROCESSING',
+      'COMPLETED',
+      'FAILED',
+      'CANCELED',
+    ]),
+    DataImportType: makeEnum([
+      'CUSTOMERS',
+      'TRANSACTIONS',
+      'PRODUCTS',
+      'STAFF',
+      'PROMO_CODES',
+    ]),
     CommunicationChannel: makeEnum(['PUSH', 'EMAIL', 'TELEGRAM', 'INAPP']),
     PortalAccessState: makeEnum(['ENABLED', 'DISABLED', 'INVITED', 'LOCKED']),
-    TxnType: makeEnum(['EARN', 'REDEEM', 'REFUND', 'ADJUST', 'CAMPAIGN', 'REFERRAL']),
-    LedgerAccount: makeEnum(['CUSTOMER_BALANCE', 'MERCHANT_LIABILITY', 'RESERVED']),
+    TxnType: makeEnum([
+      'EARN',
+      'REDEEM',
+      'REFUND',
+      'ADJUST',
+      'CAMPAIGN',
+      'REFERRAL',
+    ]),
+    LedgerAccount: makeEnum([
+      'CUSTOMER_BALANCE',
+      'MERCHANT_LIABILITY',
+      'RESERVED',
+    ]),
   };
 });
 
@@ -92,7 +164,14 @@ const state = {
   metrics: new Map<string, any>(),
   participants: [] as ParticipantRecord[],
   customers: new Map<string, CustomerRecord>(),
-  pushDevices: [] as Array<{ id: string; outletId: string; merchantId: string; customerId: string; token: string; isActive: boolean }>,
+  pushDevices: [] as Array<{
+    id: string;
+    outletId: string;
+    merchantId: string;
+    customerId: string;
+    token: string;
+    isActive: boolean;
+  }>,
   pushNotifications: [] as any[],
   emailNotifications: [] as any[],
 };
@@ -121,7 +200,11 @@ function materializePromotion(record: PromotionRecord, include?: any) {
   }
   if (include?.audience) {
     base.audience = record.segmentId
-      ? { id: record.segmentId, name: `Аудитория ${record.segmentId}`, _count: { customers: 42 } }
+      ? {
+          id: record.segmentId,
+          name: `Аудитория ${record.segmentId}`,
+          _count: { customers: 42 },
+        }
       : null;
   }
   if (include?.participants) {
@@ -142,7 +225,7 @@ function materializePromotion(record: PromotionRecord, include?: any) {
 }
 
 function clone<T>(value: T): T {
-  return value === undefined ? (value as T) : JSON.parse(JSON.stringify(value));
+  return value === undefined ? value : JSON.parse(JSON.stringify(value));
 }
 
 const prismaMock: any = {
@@ -193,7 +276,9 @@ const prismaMock: any = {
         list = list.filter((item) => item.merchantId === args.where.merchantId);
       }
       if (args.where?.id?.in) {
-        const ids: string[] = Array.isArray(args.where.id.in) ? args.where.id.in : [];
+        const ids: string[] = Array.isArray(args.where.id.in)
+          ? args.where.id.in
+          : [];
         list = list.filter((item) => ids.includes(item.id));
       }
       if (args.where?.status) {
@@ -244,12 +329,22 @@ const prismaMock: any = {
         segmentId: data.segmentId ?? record.segmentId,
         rewardType: data.rewardType ?? record.rewardType,
         rewardValue: data.rewardValue ?? record.rewardValue,
-        rewardMetadata: data.rewardMetadata !== undefined ? clone(data.rewardMetadata) : record.rewardMetadata,
-        metadata: data.metadata !== undefined ? clone(data.metadata) : record.metadata,
+        rewardMetadata:
+          data.rewardMetadata !== undefined
+            ? clone(data.rewardMetadata)
+            : record.rewardMetadata,
+        metadata:
+          data.metadata !== undefined ? clone(data.metadata) : record.metadata,
         startAt: data.startAt ? new Date(data.startAt) : record.startAt,
         endAt: data.endAt ? new Date(data.endAt) : record.endAt,
-        archivedAt: data.archivedAt ? new Date(data.archivedAt) : (data.archivedAt === null ? null : record.archivedAt),
-        launchedAt: data.launchedAt ? new Date(data.launchedAt) : record.launchedAt,
+        archivedAt: data.archivedAt
+          ? new Date(data.archivedAt)
+          : data.archivedAt === null
+            ? null
+            : record.archivedAt,
+        launchedAt: data.launchedAt
+          ? new Date(data.launchedAt)
+          : record.launchedAt,
         updatedAt: new Date(),
       });
       return { ...record };
@@ -257,10 +352,15 @@ const prismaMock: any = {
     updateMany: jest.fn(async ({ where, data }: any) => {
       let updated = 0;
       state.promotions.forEach((item) => {
-        if (where.id === item.id && (!where.merchantId || item.merchantId === where.merchantId)) {
+        if (
+          where.id === item.id &&
+          (!where.merchantId || item.merchantId === where.merchantId)
+        ) {
           Object.assign(item, {
             status: data.status ?? item.status,
-            archivedAt: data.archivedAt ? new Date(data.archivedAt) : item.archivedAt,
+            archivedAt: data.archivedAt
+              ? new Date(data.archivedAt)
+              : item.archivedAt,
             updatedAt: new Date(),
           });
           updated += 1;
@@ -313,12 +413,18 @@ const prismaMock: any = {
       }
       const grouped = new Map<string, ParticipantRecord[]>();
       list.forEach((item) => {
-        grouped.set(item.promotionId, [...(grouped.get(item.promotionId) ?? []), item]);
+        grouped.set(item.promotionId, [
+          ...(grouped.get(item.promotionId) ?? []),
+          item,
+        ]);
       });
       const rows: any[] = [];
       grouped.forEach((items, promotionId) => {
         const count = items.length;
-        const sum = items.reduce((acc, val) => acc + (val.pointsIssued ?? 0), 0);
+        const sum = items.reduce(
+          (acc, val) => acc + (val.pointsIssued ?? 0),
+          0,
+        );
         rows.push({
           promotionId,
           _count: { _all: count },
@@ -340,7 +446,10 @@ const prismaMock: any = {
         const to = new Date(args.where.joinedAt.lte);
         list = list.filter((item) => item.joinedAt <= to);
       }
-      if (Array.isArray(args.distinct) && args.distinct.includes('customerId')) {
+      if (
+        Array.isArray(args.distinct) &&
+        args.distinct.includes('customerId')
+      ) {
         return new Set(list.map((item) => item.customerId)).size;
       }
       return list.length;
@@ -368,7 +477,9 @@ const prismaMock: any = {
       }
       if (where?.customerId) {
         if (Array.isArray(where.customerId?.in)) {
-          list = list.filter((item) => where.customerId.in.includes(item.customerId));
+          list = list.filter((item) =>
+            where.customerId.in.includes(item.customerId),
+          );
         } else {
           list = list.filter((item) => item.customerId === where.customerId);
         }
@@ -385,7 +496,11 @@ const prismaMock: any = {
       return { ...device };
     }),
     upsert: jest.fn(async ({ where, create, update }: any) => {
-      const existing = state.pushDevices.find((item) => item.customerId === where.customerId_outletId.customerId && item.outletId === where.customerId_outletId.outletId);
+      const existing = state.pushDevices.find(
+        (item) =>
+          item.customerId === where.customerId_outletId.customerId &&
+          item.outletId === where.customerId_outletId.outletId,
+      );
       if (existing) {
         Object.assign(existing, update);
         return { ...existing };
@@ -426,11 +541,46 @@ const analyticsStub: Partial<AnalyticsService> = {
   },
   async getDashboard() {
     return {
-      revenue: { totalRevenue: 0, averageCheck: 0, transactionCount: 0, revenueGrowth: 0, hourlyDistribution: [], dailyRevenue: [] },
-      customers: { totalCustomers: 0, newCustomers: 0, activeCustomers: 0, churnRate: 0, retentionRate: 0, customerLifetimeValue: 0, averageVisitsPerCustomer: 0, topCustomers: [] },
-      loyalty: { totalPointsIssued: 0, totalPointsRedeemed: 0, pointsRedemptionRate: 0, averageBalance: 0, activeWallets: 0, programROI: 0, conversionRate: 0 },
-      campaigns: { activeCampaigns: 0, campaignROI: 0, totalRewardsIssued: 0, campaignConversion: 0, topCampaigns: [] },
-      operations: { topOutlets: [], topStaff: [], peakHours: [], outletUsage: [] },
+      revenue: {
+        totalRevenue: 0,
+        averageCheck: 0,
+        transactionCount: 0,
+        revenueGrowth: 0,
+        hourlyDistribution: [],
+        dailyRevenue: [],
+      },
+      customers: {
+        totalCustomers: 0,
+        newCustomers: 0,
+        activeCustomers: 0,
+        churnRate: 0,
+        retentionRate: 0,
+        customerLifetimeValue: 0,
+        averageVisitsPerCustomer: 0,
+        topCustomers: [],
+      },
+      loyalty: {
+        totalPointsIssued: 0,
+        totalPointsRedeemed: 0,
+        pointsRedemptionRate: 0,
+        averageBalance: 0,
+        activeWallets: 0,
+        programROI: 0,
+        conversionRate: 0,
+      },
+      campaigns: {
+        activeCampaigns: 0,
+        campaignROI: 0,
+        totalRewardsIssued: 0,
+        campaignConversion: 0,
+        topCampaigns: [],
+      },
+      operations: {
+        topOutlets: [],
+        topStaff: [],
+        peakHours: [],
+        outletUsage: [],
+      },
     };
   },
   async getRevenueMetrics() {
@@ -446,8 +596,15 @@ const pushServiceStub = {
   getPushStats: jest.fn(),
   getPushTemplates: jest.fn(),
   sendTestPush: jest.fn(),
-  async sendCampaignNotification(campaignId: string, customerIds: string[], title: string, body: string) {
-    const promotion = await prismaMock.loyaltyPromotion.findUnique({ where: { id: campaignId } });
+  async sendCampaignNotification(
+    campaignId: string,
+    customerIds: string[],
+    title: string,
+    body: string,
+  ) {
+    const promotion = await prismaMock.loyaltyPromotion.findUnique({
+      where: { id: campaignId },
+    });
     if (!promotion) {
       throw new BadRequestException('Кампания не найдена');
     }
@@ -458,18 +615,29 @@ const pushServiceStub = {
       body,
       customerIds,
       campaignName: promotion.name,
-      campaignKind: ((promotion.metadata as any)?.legacyCampaign?.kind) ?? 'LOYALTY_PROMOTION',
+      campaignKind:
+        promotion.metadata?.legacyCampaign?.kind ?? 'LOYALTY_PROMOTION',
     };
   },
 };
 
 const emailServiceStub = {
-  async sendCampaignEmail(campaignId: string, customerIds: string[], subject: string, content: string) {
-    const promotion = await prismaMock.loyaltyPromotion.findUnique({ where: { id: campaignId }, include: { merchant: true } });
+  async sendCampaignEmail(
+    campaignId: string,
+    customerIds: string[],
+    subject: string,
+    content: string,
+  ) {
+    const promotion = await prismaMock.loyaltyPromotion.findUnique({
+      where: { id: campaignId },
+      include: { merchant: true },
+    });
     if (!promotion) {
       return { sent: 0, failed: customerIds.length, total: customerIds.length };
     }
-    const recipients = await prismaMock.customer.findMany({ where: { id: { in: customerIds } } });
+    const recipients = await prismaMock.customer.findMany({
+      where: { id: { in: customerIds } },
+    });
     recipients.forEach((customer: any) => {
       state.emailNotifications.push({
         merchantId: promotion.merchantId,
@@ -480,7 +648,11 @@ const emailServiceStub = {
       });
     });
     const sent = recipients.length;
-    return { sent, failed: customerIds.length - sent, total: customerIds.length };
+    return {
+      sent,
+      failed: customerIds.length - sent,
+      total: customerIds.length,
+    };
   },
   sendEmail: jest.fn(),
   sendWelcomeEmail: jest.fn(),
@@ -500,9 +672,29 @@ describe('LoyaltyPromotion integration (e2e)', () => {
     process.env.API_KEY = 'test-key';
 
     resetState();
-    state.customers.set('C1', { id: 'C1', merchantId: 'M-1', email: 'user@example.com', phone: '+79990000000', name: 'Demo User' });
-    state.customers.set('C2', { id: 'C2', merchantId: 'M-1', email: null, phone: '+79991111111', name: 'Anon' });
-    state.pushDevices.push({ id: `device-${pushDeviceSeq}`, outletId: `outlet-${pushDeviceSeq}`, merchantId: 'M-1', customerId: 'C1', token: 'push-token', isActive: true }); pushDeviceSeq++;
+    state.customers.set('C1', {
+      id: 'C1',
+      merchantId: 'M-1',
+      email: 'user@example.com',
+      phone: '+79990000000',
+      name: 'Demo User',
+    });
+    state.customers.set('C2', {
+      id: 'C2',
+      merchantId: 'M-1',
+      email: null,
+      phone: '+79991111111',
+      name: 'Anon',
+    });
+    state.pushDevices.push({
+      id: `device-${pushDeviceSeq}`,
+      outletId: `outlet-${pushDeviceSeq}`,
+      merchantId: 'M-1',
+      customerId: 'C1',
+      token: 'push-token',
+      isActive: true,
+    });
+    pushDeviceSeq++;
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [
@@ -532,7 +724,7 @@ describe('LoyaltyPromotion integration (e2e)', () => {
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt(now)
       .setExpirationTime(now + 3600)
-      .sign(new TextEncoder().encode(process.env.PORTAL_JWT_SECRET!));
+      .sign(new TextEncoder().encode(process.env.PORTAL_JWT_SECRET));
   });
 
   afterAll(async () => {
@@ -541,9 +733,29 @@ describe('LoyaltyPromotion integration (e2e)', () => {
 
   beforeEach(() => {
     resetState();
-    state.customers.set('C1', { id: 'C1', merchantId: 'M-1', email: 'user@example.com', phone: '+79990000000', name: 'Demo User' });
-    state.customers.set('C2', { id: 'C2', merchantId: 'M-1', email: null, phone: '+79991111111', name: 'Anon' });
-    state.pushDevices.push({ id: `device-${pushDeviceSeq}`, outletId: `outlet-${pushDeviceSeq}`, merchantId: 'M-1', customerId: 'C1', token: 'push-token', isActive: true }); pushDeviceSeq++;
+    state.customers.set('C1', {
+      id: 'C1',
+      merchantId: 'M-1',
+      email: 'user@example.com',
+      phone: '+79990000000',
+      name: 'Demo User',
+    });
+    state.customers.set('C2', {
+      id: 'C2',
+      merchantId: 'M-1',
+      email: null,
+      phone: '+79991111111',
+      name: 'Anon',
+    });
+    state.pushDevices.push({
+      id: `device-${pushDeviceSeq}`,
+      outletId: `outlet-${pushDeviceSeq}`,
+      merchantId: 'M-1',
+      customerId: 'C1',
+      token: 'push-token',
+      isActive: true,
+    });
+    pushDeviceSeq++;
   });
 
   it('creates, updates and reads promotion usage stats', async () => {
@@ -620,22 +832,45 @@ describe('LoyaltyPromotion integration (e2e)', () => {
         status: PromotionStatus.ACTIVE,
         rewardType: 'CUSTOM',
         rewardMetadata: { type: 'POINTS', value: 200 },
-        metadata: { legacyCampaign: { kind: 'FLASH', startDate: '2024-01-01', endDate: '2024-01-07' } },
+        metadata: {
+          legacyCampaign: {
+            kind: 'FLASH',
+            startDate: '2024-01-01',
+            endDate: '2024-01-07',
+          },
+        },
       },
     });
 
     const emailRes = await request(app.getHttpServer())
       .post('/email/campaign')
       .set('x-api-key', 'test-key')
-      .send({ campaignId: promotion.id, customerIds: ['C1', 'C2'], subject: 'Flash', content: '200 баллов' })
+      .send({
+        campaignId: promotion.id,
+        customerIds: ['C1', 'C2'],
+        subject: 'Flash',
+        content: '200 баллов',
+      })
       .expect(201);
 
     expect(emailRes.body).toEqual({ sent: 1, failed: 1, total: 2 });
     expect(state.emailNotifications).toHaveLength(1);
-    expect(state.emailNotifications[0]).toMatchObject({ campaignId: promotion.id, merchantId: 'M-1' });
+    expect(state.emailNotifications[0]).toMatchObject({
+      campaignId: promotion.id,
+      merchantId: 'M-1',
+    });
 
-    const pushResult = await pushServiceStub.sendCampaignNotification(promotion.id, ['C1'], 'Включили акцию', 'Баллы ждут');
-    expect(pushResult).toMatchObject({ merchantId: 'M-1', campaignId: promotion.id, campaignName: 'Flash Sale' });
+    const pushResult = await pushServiceStub.sendCampaignNotification(
+      promotion.id,
+      ['C1'],
+      'Включили акцию',
+      'Баллы ждут',
+    );
+    expect(pushResult).toMatchObject({
+      merchantId: 'M-1',
+      campaignId: promotion.id,
+      campaignName: 'Flash Sale',
+    });
     expect(pushResult.campaignKind).toBe('FLASH');
   });
 });

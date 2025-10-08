@@ -81,7 +81,9 @@ type PromotionWithRelations = Prisma.LoyaltyPromotionGetPayload<{
   };
 }>;
 
-function asCampaignNotificationChannels(value: any): CampaignNotificationChannel[] {
+function asCampaignNotificationChannels(
+  value: any,
+): CampaignNotificationChannel[] {
   if (!Array.isArray(value)) return [];
   return value
     .map((item) => {
@@ -117,18 +119,23 @@ function normalizeCampaignRules(raw: any): CampaignRules {
   if (Array.isArray(rules.dayOfWeek)) {
     result.dayOfWeek = rules.dayOfWeek
       .map((value) => Number(value))
-      .filter((value) => Number.isInteger(value)) as number[];
+      .filter((value) => Number.isInteger(value));
   }
   if (typeof rules.timeFrom === 'string') result.timeFrom = rules.timeFrom;
   if (typeof rules.timeTo === 'string') result.timeTo = rules.timeTo;
   if (Array.isArray(rules.outlets)) result.outlets = rules.outlets.map(String);
   if (Array.isArray(rules.customerStatus)) {
     result.customerStatus = rules.customerStatus
-      .map((value) => (value === 'NEW' || value === 'REGULAR' || value === 'VIP' ? value : null))
+      .map((value) =>
+        value === 'NEW' || value === 'REGULAR' || value === 'VIP'
+          ? value
+          : null,
+      )
       .filter((value): value is 'NEW' | 'REGULAR' | 'VIP' => value !== null);
   }
   const minTransactionCount = toNumber(rules.minTransactionCount);
-  if (minTransactionCount != null) result.minTransactionCount = minTransactionCount;
+  if (minTransactionCount != null)
+    result.minTransactionCount = minTransactionCount;
   const birthdayRange = toNumber(rules.birthdayRange);
   if (birthdayRange != null) result.birthdayRange = birthdayRange;
   return result;
@@ -139,7 +146,10 @@ function normalizeCampaignReward(raw: any): CampaignReward {
     const reward = raw as Record<string, any>;
     const type = reward.type;
     const normalizedType: CampaignReward['type'] =
-      type === 'POINTS' || type === 'PERCENT' || type === 'FIXED' || type === 'PRODUCT'
+      type === 'POINTS' ||
+      type === 'PERCENT' ||
+      type === 'FIXED' ||
+      type === 'PRODUCT'
         ? type
         : 'POINTS';
     return {
@@ -148,7 +158,8 @@ function normalizeCampaignReward(raw: any): CampaignReward {
       maxValue: toNumberOrNull(reward.maxValue) ?? undefined,
       multiplier: toNumberOrNull(reward.multiplier) ?? undefined,
       productId: reward.productId ? String(reward.productId) : undefined,
-      description: typeof reward.description === 'string' ? reward.description : undefined,
+      description:
+        typeof reward.description === 'string' ? reward.description : undefined,
     };
   }
   return {
@@ -157,7 +168,9 @@ function normalizeCampaignReward(raw: any): CampaignReward {
   };
 }
 
-function promotionStatusToCampaignStatus(status: PromotionStatus | null | undefined): CampaignStatus {
+function promotionStatusToCampaignStatus(
+  status: PromotionStatus | null | undefined,
+): CampaignStatus {
   switch (status) {
     case 'ACTIVE':
       return 'ACTIVE';
@@ -172,17 +185,27 @@ function promotionStatusToCampaignStatus(status: PromotionStatus | null | undefi
 
 function extractLegacyMetadata(source: LoyaltyPromotion): Record<string, any> {
   const raw: any = (source as any).metadata ?? {};
-  if (raw && typeof raw === 'object' && raw.legacyCampaign && typeof raw.legacyCampaign === 'object') {
+  if (
+    raw &&
+    typeof raw === 'object' &&
+    raw.legacyCampaign &&
+    typeof raw.legacyCampaign === 'object'
+  ) {
     return raw.legacyCampaign as Record<string, any>;
   }
   return raw && typeof raw === 'object' ? (raw as Record<string, any>) : {};
 }
 
-export function transformPromotionEntity(entity: PromotionWithRelations): LegacyCampaignDto {
+export function transformPromotionEntity(
+  entity: PromotionWithRelations,
+): LegacyCampaignDto {
   const legacy = extractLegacyMetadata(entity);
   const rules = normalizeCampaignRules(legacy.rules ?? {});
-  const rewardSource = legacy.reward ?? (entity.rewardMetadata ?? {});
-  const reward = normalizeCampaignReward({ ...rewardSource, type: rewardSource?.type ?? legacy.type ?? entity.rewardType });
+  const rewardSource = legacy.reward ?? entity.rewardMetadata ?? {};
+  const reward = normalizeCampaignReward({
+    ...rewardSource,
+    type: rewardSource?.type ?? legacy.type ?? entity.rewardType,
+  });
   const notificationChannels = asCampaignNotificationChannels(
     legacy.notificationChannels ?? legacy.channels ?? [],
   );
@@ -193,7 +216,8 @@ export function transformPromotionEntity(entity: PromotionWithRelations): Legacy
     description: entity.description ?? undefined,
     type: (legacy.type as CampaignType) ?? 'BONUS',
     status: promotionStatusToCampaignStatus(entity.status),
-    startDate: (legacy.startDate ? new Date(legacy.startDate) : entity.startAt) ?? null,
+    startDate:
+      (legacy.startDate ? new Date(legacy.startDate) : entity.startAt) ?? null,
     endDate: (legacy.endDate ? new Date(legacy.endDate) : entity.endAt) ?? null,
     targetSegmentId: legacy.targetSegmentId ?? entity.segmentId ?? null,
     segmentId: entity.segmentId ?? null,
@@ -210,6 +234,8 @@ export function transformPromotionEntity(entity: PromotionWithRelations): Legacy
   };
 }
 
-export function toLegacyCampaignDto(source: PromotionWithRelations | LoyaltyPromotion): LegacyCampaignDto {
-  return transformPromotionEntity(source as PromotionWithRelations);
+export function toLegacyCampaignDto(
+  source: PromotionWithRelations,
+): LegacyCampaignDto {
+  return transformPromotionEntity(source);
 }

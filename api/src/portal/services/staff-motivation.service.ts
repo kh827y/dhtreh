@@ -20,24 +20,35 @@ export interface UpdateStaffMotivationPayload {
 
 @Injectable()
 export class StaffMotivationService {
-  private readonly allowedPeriods = new Set(['week', 'month', 'quarter', 'custom']);
+  private readonly allowedPeriods = new Set([
+    'week',
+    'month',
+    'quarter',
+    'custom',
+  ]);
 
   constructor(private readonly prisma: PrismaService) {}
 
   async getSettings(merchantId: string): Promise<StaffMotivationSettingsDto> {
-    const settings = await this.prisma.merchantSettings.findUnique({ where: { merchantId } });
+    const settings = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+    });
 
     return {
       enabled: settings?.staffMotivationEnabled ?? false,
       pointsForNewCustomer: settings?.staffMotivationNewCustomerPoints ?? 0,
-      pointsForExistingCustomer: settings?.staffMotivationExistingCustomerPoints ?? 0,
+      pointsForExistingCustomer:
+        settings?.staffMotivationExistingCustomerPoints ?? 0,
       leaderboardPeriod: settings?.staffMotivationLeaderboardPeriod ?? 'week',
       customDays: settings?.staffMotivationCustomDays ?? null,
       updatedAt: settings?.updatedAt ?? new Date(0),
     };
   }
 
-  async updateSettings(merchantId: string, payload: UpdateStaffMotivationPayload): Promise<StaffMotivationSettingsDto> {
+  async updateSettings(
+    merchantId: string,
+    payload: UpdateStaffMotivationPayload,
+  ): Promise<StaffMotivationSettingsDto> {
     this.validatePayload(payload);
 
     const updated = await this.prisma.merchantSettings.upsert({
@@ -45,17 +56,31 @@ export class StaffMotivationService {
       create: {
         merchantId,
         staffMotivationEnabled: payload.enabled,
-        staffMotivationNewCustomerPoints: Math.round(payload.pointsForNewCustomer),
-        staffMotivationExistingCustomerPoints: Math.round(payload.pointsForExistingCustomer),
+        staffMotivationNewCustomerPoints: Math.round(
+          payload.pointsForNewCustomer,
+        ),
+        staffMotivationExistingCustomerPoints: Math.round(
+          payload.pointsForExistingCustomer,
+        ),
         staffMotivationLeaderboardPeriod: payload.leaderboardPeriod,
-        staffMotivationCustomDays: payload.leaderboardPeriod === 'custom' ? payload.customDays ?? null : null,
+        staffMotivationCustomDays:
+          payload.leaderboardPeriod === 'custom'
+            ? (payload.customDays ?? null)
+            : null,
       },
       update: {
         staffMotivationEnabled: payload.enabled,
-        staffMotivationNewCustomerPoints: Math.round(payload.pointsForNewCustomer),
-        staffMotivationExistingCustomerPoints: Math.round(payload.pointsForExistingCustomer),
+        staffMotivationNewCustomerPoints: Math.round(
+          payload.pointsForNewCustomer,
+        ),
+        staffMotivationExistingCustomerPoints: Math.round(
+          payload.pointsForExistingCustomer,
+        ),
         staffMotivationLeaderboardPeriod: payload.leaderboardPeriod,
-        staffMotivationCustomDays: payload.leaderboardPeriod === 'custom' ? payload.customDays ?? null : null,
+        staffMotivationCustomDays:
+          payload.leaderboardPeriod === 'custom'
+            ? (payload.customDays ?? null)
+            : null,
       },
     });
 
@@ -74,14 +99,19 @@ export class StaffMotivationService {
       throw new BadRequestException('Недопустимый период рейтинга');
     }
 
-    if (payload.pointsForNewCustomer < 0 || payload.pointsForExistingCustomer < 0) {
+    if (
+      payload.pointsForNewCustomer < 0 ||
+      payload.pointsForExistingCustomer < 0
+    ) {
       throw new BadRequestException('Баллы не могут быть отрицательными');
     }
 
     if (payload.leaderboardPeriod === 'custom') {
       const days = payload.customDays ?? 0;
       if (!Number.isInteger(days) || days <= 0 || days > 365) {
-        throw new BadRequestException('Для собственного периода укажите количество дней от 1 до 365');
+        throw new BadRequestException(
+          'Для собственного периода укажите количество дней от 1 до 365',
+        );
       }
     }
   }

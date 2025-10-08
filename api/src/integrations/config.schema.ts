@@ -18,7 +18,11 @@ export interface PosterConfig {
   appSecret: string;
 }
 
-export type IntegrationConfig = EvotorConfig | ModulKassaConfig | PosterConfig | Record<string, unknown>;
+export type IntegrationConfig =
+  | EvotorConfig
+  | ModulKassaConfig
+  | PosterConfig
+  | Record<string, unknown>;
 
 const ajv = new Ajv({ allErrors: true, removeAdditional: true });
 
@@ -26,8 +30,16 @@ const evotorSchema: JSONSchemaType<EvotorConfig> = {
   type: 'object',
   additionalProperties: true,
   properties: {
-    stores: { type: 'array', items: { type: 'object', additionalProperties: true }, nullable: true },
-    devices: { type: 'array', items: { type: 'object', additionalProperties: true }, nullable: true },
+    stores: {
+      type: 'array',
+      items: { type: 'object', additionalProperties: true },
+      nullable: true,
+    },
+    devices: {
+      type: 'array',
+      items: { type: 'object', additionalProperties: true },
+      nullable: true,
+    },
     webhookUrl: { type: 'string', nullable: true },
   },
   required: [],
@@ -60,11 +72,16 @@ const validators = {
   ATOL: ajv.compile({ type: 'object', additionalProperties: true }),
 } as const;
 
-export function validateIntegrationConfig(provider: Provider, config: unknown): { ok: true } | { ok: false; errors: string[] } {
+export function validateIntegrationConfig(
+  provider: Provider,
+  config: unknown,
+): { ok: true } | { ok: false; errors: string[] } {
   const v = (validators as any)[provider];
   if (!v) return { ok: false, errors: ['Unknown provider'] };
   const ok = v(config);
   if (ok) return { ok: true };
-  const errors = (v.errors || []).map((e: any) => `${e.instancePath || e.schemaPath} ${e.message}`);
+  const errors = (v.errors || []).map(
+    (e: any) => `${e.instancePath || e.schemaPath} ${e.message}`,
+  );
   return { ok: false, errors };
 }

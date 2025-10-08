@@ -105,7 +105,10 @@ export class OneCService {
       }),
     };
     if (existing) {
-      await this.prisma.integration.update({ where: { id: existing.id }, data });
+      await this.prisma.integration.update({
+        where: { id: existing.id },
+        data,
+      });
     } else {
       await this.prisma.integration.create({ data });
     }
@@ -121,7 +124,9 @@ export class OneCService {
   /**
    * Синхронизация товаров из 1С
    */
-  async syncProducts(merchantId: string): Promise<{ synced: number; errors: number }> {
+  async syncProducts(
+    merchantId: string,
+  ): Promise<{ synced: number; errors: number }> {
     const config = await this.getConfig(merchantId);
     if (!config || !config.syncProducts) {
       throw new BadRequestException('Синхронизация товаров не настроена');
@@ -171,7 +176,9 @@ export class OneCService {
         }
       }
     } catch (error) {
-      throw new BadRequestException(`Ошибка получения товаров из 1С: ${error.message}`);
+      throw new BadRequestException(
+        `Ошибка получения товаров из 1С: ${error.message}`,
+      );
     }
 
     // Сохраняем статистику синхронизации
@@ -183,7 +190,9 @@ export class OneCService {
   /**
    * Синхронизация клиентов из 1С
    */
-  async syncCustomers(merchantId: string): Promise<{ synced: number; errors: number }> {
+  async syncCustomers(
+    merchantId: string,
+  ): Promise<{ synced: number; errors: number }> {
     const config = await this.getConfig(merchantId);
     if (!config || !config.syncCustomers) {
       throw new BadRequestException('Синхронизация клиентов не настроена');
@@ -200,10 +209,7 @@ export class OneCService {
           // Создаем или обновляем клиента
           let loyaltyCustomer = await this.prisma.customer.findFirst({
             where: {
-              OR: [
-                { phone: customer.phone },
-                { email: customer.email },
-              ],
+              OR: [{ phone: customer.phone }, { email: customer.email }],
             },
           });
 
@@ -250,7 +256,9 @@ export class OneCService {
         }
       }
     } catch (error) {
-      throw new BadRequestException(`Ошибка получения клиентов из 1С: ${error.message}`);
+      throw new BadRequestException(
+        `Ошибка получения клиентов из 1С: ${error.message}`,
+      );
     }
 
     await this.logSync(merchantId, 'CUSTOMERS', result);
@@ -260,7 +268,10 @@ export class OneCService {
   /**
    * Синхронизация транзакций из 1С
    */
-  async syncTransactions(merchantId: string, fromDate?: Date): Promise<{ synced: number; errors: number }> {
+  async syncTransactions(
+    merchantId: string,
+    fromDate?: Date,
+  ): Promise<{ synced: number; errors: number }> {
     const config = await this.getConfig(merchantId);
     if (!config || !config.syncTransactions) {
       throw new BadRequestException('Синхронизация транзакций не настроена');
@@ -306,12 +317,17 @@ export class OneCService {
             }
           }
         } catch (error) {
-          console.error(`Ошибка обработки транзакции ${transaction.id}:`, error);
+          console.error(
+            `Ошибка обработки транзакции ${transaction.id}:`,
+            error,
+          );
           result.errors++;
         }
       }
     } catch (error) {
-      throw new BadRequestException(`Ошибка получения транзакций из 1С: ${error.message}`);
+      throw new BadRequestException(
+        `Ошибка получения транзакций из 1С: ${error.message}`,
+      );
     }
 
     await this.logSync(merchantId, 'TRANSACTIONS', result);
@@ -332,23 +348,23 @@ export class OneCService {
         // Новая продажа
         await this.processSaleDocument(merchantId, data);
         break;
-      
+
       case 'document.return':
         // Возврат
         await this.processReturnDocument(merchantId, data);
         break;
-      
+
       case 'customer.create':
       case 'customer.update':
         // Новый или обновленный клиент
         await this.processCustomerUpdate(merchantId, data);
         break;
-      
+
       case 'product.update':
         // Обновление товара
         await this.processProductUpdate(merchantId, data);
         break;
-      
+
       default:
         console.log(`Неизвестное событие 1С: ${event}`);
     }
@@ -389,7 +405,12 @@ export class OneCService {
 
     // Отправляем данные в 1С
     try {
-      const response = await this.makeRequest(config, 'POST', '/loyalty/import', exportData);
+      const response = await this.makeRequest(
+        config,
+        'POST',
+        '/loyalty/import',
+        exportData,
+      );
       return {
         success: true,
         exported: exportData.length,
@@ -412,14 +433,21 @@ export class OneCService {
     }
   }
 
-  private async makeRequest(config: OneCConfig, method: string, path: string, data?: any) {
-    const auth = Buffer.from(`${config.username}:${config.password}`).toString('base64');
-    
+  private async makeRequest(
+    config: OneCConfig,
+    method: string,
+    path: string,
+    data?: any,
+  ) {
+    const auth = Buffer.from(`${config.username}:${config.password}`).toString(
+      'base64',
+    );
+
     return axios({
       method,
       url: `${config.baseUrl}${path}`,
       headers: {
-        'Authorization': `Basic ${auth}`,
+        Authorization: `Basic ${auth}`,
         'Content-Type': 'application/json',
       },
       data,
@@ -437,9 +465,16 @@ export class OneCService {
     return response.data.customers || [];
   }
 
-  private async fetchTransactions(config: OneCConfig, fromDate?: Date): Promise<OneCTransaction[]> {
+  private async fetchTransactions(
+    config: OneCConfig,
+    fromDate?: Date,
+  ): Promise<OneCTransaction[]> {
     const params = fromDate ? `?from=${fromDate.toISOString()}` : '';
-    const response = await this.makeRequest(config, 'GET', `/documents/sales${params}`);
+    const response = await this.makeRequest(
+      config,
+      'GET',
+      `/documents/sales${params}`,
+    );
     return response.data.documents || [];
   }
 
@@ -479,7 +514,9 @@ export class OneCService {
       return null;
     }
 
-    const credentials = this.decryptCredentials(integration.credentials as string);
+    const credentials = this.decryptCredentials(
+      integration.credentials as string,
+    );
     const config: OneCConfig = {
       merchantId,
       baseUrl: (integration.config as any).baseUrl,
@@ -496,7 +533,10 @@ export class OneCService {
     return config;
   }
 
-  private encryptCredentials(creds: { username: string; password: string }): string {
+  private encryptCredentials(creds: {
+    username: string;
+    password: string;
+  }): string {
     const secret = process.env.ENCRYPTION_SECRET || 'default-secret';
     const key = crypto.createHash('sha256').update(secret).digest();
     const iv = Buffer.alloc(16, 0);
@@ -506,7 +546,10 @@ export class OneCService {
     return encrypted;
   }
 
-  private decryptCredentials(encrypted: string): { username: string; password: string } {
+  private decryptCredentials(encrypted: string): {
+    username: string;
+    password: string;
+  } {
     const secret = process.env.ENCRYPTION_SECRET || 'default-secret';
     const key = crypto.createHash('sha256').update(secret).digest();
     const iv = Buffer.alloc(16, 0);
@@ -516,7 +559,11 @@ export class OneCService {
     return JSON.parse(decrypted);
   }
 
-  private async logSync(merchantId: string, type: string, result: { synced: number; errors: number }) {
+  private async logSync(
+    merchantId: string,
+    type: string,
+    result: { synced: number; errors: number },
+  ) {
     const logModel = (this.prisma as any).syncLog;
     if (logModel && logModel.create) {
       await logModel.create({
@@ -542,7 +589,7 @@ export class OneCService {
   private async processReturnDocument(merchantId: string, data: any) {
     // Обработка возврата
     const returnDoc = data;
-    
+
     if (returnDoc.customerId) {
       // В базовой версии не выполняем сопоставление клиента
       // Можно реализовать сопоставление через внешнюю таблицу.
@@ -557,7 +604,7 @@ export class OneCService {
   private async processProductUpdate(merchantId: string, data: any) {
     // Обновление товара
     const product: OneCProduct = data;
-    
+
     await (this.prisma as any).product?.upsert?.({
       where: {
         merchantId_externalId: {

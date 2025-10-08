@@ -1,9 +1,49 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, UseGuards, Query, UseInterceptors, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  UseGuards,
+  Query,
+  UseInterceptors,
+  Res,
+} from '@nestjs/common';
 import { MerchantsService } from './merchants.service';
-import { CreateOutletDto, CreateStaffDto, UpdateMerchantSettingsDto, UpdateOutletDto, UpdateStaffDto, MerchantSettingsRespDto, OutletDto, StaffDto, SecretRespDto, TokenRespDto, OkDto, OutboxEventDto, BulkUpdateRespDto, ReceiptDto, CustomerSearchRespDto, LedgerEntryDto, UpdateOutletPosDto, UpdateOutletStatusDto } from './dto';
+import {
+  CreateOutletDto,
+  CreateStaffDto,
+  UpdateMerchantSettingsDto,
+  UpdateOutletDto,
+  UpdateStaffDto,
+  MerchantSettingsRespDto,
+  OutletDto,
+  StaffDto,
+  SecretRespDto,
+  TokenRespDto,
+  OkDto,
+  OutboxEventDto,
+  BulkUpdateRespDto,
+  ReceiptDto,
+  CustomerSearchRespDto,
+  LedgerEntryDto,
+  UpdateOutletPosDto,
+  UpdateOutletStatusDto,
+} from './dto';
 import { AdminGuard } from '../admin.guard';
 import { AdminIpGuard } from '../admin-ip.guard';
-import { ApiBadRequestResponse, ApiExtraModels, ApiHeader, ApiNotFoundResponse, ApiOkResponse, ApiTags, ApiUnauthorizedResponse, getSchemaPath } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiExtraModels,
+  ApiHeader,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiTags,
+  ApiUnauthorizedResponse,
+  getSchemaPath,
+} from '@nestjs/swagger';
 import { AdminAuditInterceptor } from '../admin-audit.interceptor';
 import { ErrorDto } from '../loyalty/dto';
 import { TransactionItemDto } from '../loyalty/dto';
@@ -12,36 +52,87 @@ import { TransactionItemDto } from '../loyalty/dto';
 @UseGuards(AdminGuard, AdminIpGuard)
 @UseInterceptors(AdminAuditInterceptor)
 @ApiTags('merchants')
-@ApiHeader({ name: 'X-Admin-Key', required: true, description: 'Админ-ключ (в проде проксируется сервером админки)' })
+@ApiHeader({
+  name: 'X-Admin-Key',
+  required: true,
+  description: 'Админ-ключ (в проде проксируется сервером админки)',
+})
 @ApiExtraModels(TransactionItemDto)
 export class MerchantsController {
   constructor(private readonly service: MerchantsService) {}
 
   // Admin: list / create merchants
   @Get()
-  @ApiOkResponse({ schema: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' }, createdAt: { type: 'string' }, portalEmail: { type: 'string', nullable: true }, portalLoginEnabled: { type: 'boolean' }, portalTotpEnabled: { type: 'boolean' } } } } })
+  @ApiOkResponse({
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          name: { type: 'string' },
+          createdAt: { type: 'string' },
+          portalEmail: { type: 'string', nullable: true },
+          portalLoginEnabled: { type: 'boolean' },
+          portalTotpEnabled: { type: 'boolean' },
+        },
+      },
+    },
+  })
   listMerchants() {
     return this.service.listMerchants();
   }
   @Post()
-  @ApiOkResponse({ schema: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' }, email: { type: 'string' } } } })
-  createMerchant(@Body() body: { name: string; email: string; password: string; ownerName?: string }) {
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        name: { type: 'string' },
+        email: { type: 'string' },
+      },
+    },
+  })
+  createMerchant(
+    @Body()
+    body: {
+      name: string;
+      email: string;
+      password: string;
+      ownerName?: string;
+    },
+  ) {
     return this.service.createMerchant(
       (body?.name || '').trim(),
-      String(body?.email||'').trim().toLowerCase(),
-      String(body?.password||''),
+      String(body?.email || '')
+        .trim()
+        .toLowerCase(),
+      String(body?.password || ''),
       body?.ownerName ? String(body.ownerName).trim() : undefined,
     );
   }
 
   // Admin: update/delete merchant
   @Put(':id')
-  @ApiOkResponse({ schema: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' }, email: { type: 'string', nullable: true } } } })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        name: { type: 'string' },
+        email: { type: 'string', nullable: true },
+      },
+    },
+  })
   updateMerchant(
     @Param('id') id: string,
-    @Body() body: { name?: string; email?: string; password?: string }
+    @Body() body: { name?: string; email?: string; password?: string },
   ) {
-    return this.service.updateMerchant(id, { name: body?.name, email: body?.email, password: body?.password });
+    return this.service.updateMerchant(id, {
+      name: body?.name,
+      email: body?.email,
+      password: body?.password,
+    });
   }
 
   @Delete(':id')
@@ -58,26 +149,48 @@ export class MerchantsController {
   }
 
   @Get(':id/rules/preview')
-  @ApiOkResponse({ schema: { type: 'object', properties: { earnBps: { type: 'number' }, redeemLimitBps: { type: 'number' } } } })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        earnBps: { type: 'number' },
+        redeemLimitBps: { type: 'number' },
+      },
+    },
+  })
   @ApiUnauthorizedResponse({ type: ErrorDto })
   previewRules(
     @Param('id') id: string,
-    @Query('channel') channel: 'VIRTUAL'|'PC_POS'|'SMART',
+    @Query('channel') channel: 'VIRTUAL' | 'PC_POS' | 'SMART',
     @Query('weekday') weekdayStr?: string,
     @Query('eligibleTotal') eligibleStr?: string,
     @Query('category') category?: string,
   ) {
-    const weekday = Math.max(0, Math.min(6, parseInt(weekdayStr || '0', 10) || 0));
+    const weekday = Math.max(
+      0,
+      Math.min(6, parseInt(weekdayStr || '0', 10) || 0),
+    );
     const eligibleTotal = Math.max(0, parseInt(eligibleStr || '0', 10) || 0);
-    const ch = (channel === 'SMART' || channel === 'PC_POS' || channel === 'VIRTUAL') ? channel : 'VIRTUAL';
-    return this.service.previewRules(id, { channel: ch, weekday, eligibleTotal, category });
+    const ch =
+      channel === 'SMART' || channel === 'PC_POS' || channel === 'VIRTUAL'
+        ? channel
+        : 'VIRTUAL';
+    return this.service.previewRules(id, {
+      channel: ch,
+      weekday,
+      eligibleTotal,
+      category,
+    });
   }
 
   @Put(':id/settings')
   @ApiOkResponse({ type: MerchantSettingsRespDto })
   @ApiUnauthorizedResponse({ type: ErrorDto })
   @ApiBadRequestResponse({ type: ErrorDto })
-  updateSettings(@Param('id') id: string, @Body() dto: UpdateMerchantSettingsDto) {
+  updateSettings(
+    @Param('id') id: string,
+    @Body() dto: UpdateMerchantSettingsDto,
+  ) {
     return this.service.updateSettings(
       id,
       dto.earnBps,
@@ -117,7 +230,11 @@ export class MerchantsController {
   @ApiOkResponse({ type: OutletDto })
   @ApiUnauthorizedResponse({ type: ErrorDto })
   @ApiNotFoundResponse({ type: ErrorDto })
-  updateOutlet(@Param('id') id: string, @Param('outletId') outletId: string, @Body() dto: UpdateOutletDto) {
+  updateOutlet(
+    @Param('id') id: string,
+    @Param('outletId') outletId: string,
+    @Body() dto: UpdateOutletDto,
+  ) {
     return this.service.updateOutlet(id, outletId, dto);
   }
   @Delete(':id/outlets/:outletId')
@@ -131,42 +248,62 @@ export class MerchantsController {
   @ApiOkResponse({ type: SecretRespDto })
   @ApiUnauthorizedResponse({ type: ErrorDto })
   @ApiNotFoundResponse({ type: ErrorDto })
-  issueOutletBridgeSecret(@Param('id') id: string, @Param('outletId') outletId: string) {
+  issueOutletBridgeSecret(
+    @Param('id') id: string,
+    @Param('outletId') outletId: string,
+  ) {
     return this.service.issueOutletBridgeSecret(id, outletId);
   }
   @Delete(':id/outlets/:outletId/bridge-secret')
   @ApiOkResponse({ type: OkDto })
   @ApiUnauthorizedResponse({ type: ErrorDto })
   @ApiNotFoundResponse({ type: ErrorDto })
-  revokeOutletBridgeSecret(@Param('id') id: string, @Param('outletId') outletId: string) {
+  revokeOutletBridgeSecret(
+    @Param('id') id: string,
+    @Param('outletId') outletId: string,
+  ) {
     return this.service.revokeOutletBridgeSecret(id, outletId);
   }
   @Post(':id/outlets/:outletId/bridge-secret/next')
   @ApiOkResponse({ type: SecretRespDto })
   @ApiUnauthorizedResponse({ type: ErrorDto })
   @ApiNotFoundResponse({ type: ErrorDto })
-  issueOutletBridgeSecretNext(@Param('id') id: string, @Param('outletId') outletId: string) {
+  issueOutletBridgeSecretNext(
+    @Param('id') id: string,
+    @Param('outletId') outletId: string,
+  ) {
     return this.service.issueOutletBridgeSecretNext(id, outletId);
   }
   @Delete(':id/outlets/:outletId/bridge-secret/next')
   @ApiOkResponse({ type: OkDto })
   @ApiUnauthorizedResponse({ type: ErrorDto })
   @ApiNotFoundResponse({ type: ErrorDto })
-  revokeOutletBridgeSecretNext(@Param('id') id: string, @Param('outletId') outletId: string) {
+  revokeOutletBridgeSecretNext(
+    @Param('id') id: string,
+    @Param('outletId') outletId: string,
+  ) {
     return this.service.revokeOutletBridgeSecretNext(id, outletId);
   }
   @Put(':id/outlets/:outletId/pos')
   @ApiOkResponse({ type: OutletDto })
   @ApiUnauthorizedResponse({ type: ErrorDto })
   @ApiNotFoundResponse({ type: ErrorDto })
-  updateOutletPos(@Param('id') id: string, @Param('outletId') outletId: string, @Body() dto: UpdateOutletPosDto) {
+  updateOutletPos(
+    @Param('id') id: string,
+    @Param('outletId') outletId: string,
+    @Body() dto: UpdateOutletPosDto,
+  ) {
     return this.service.updateOutletPos(id, outletId, dto);
   }
   @Put(':id/outlets/:outletId/status')
   @ApiOkResponse({ type: OutletDto })
   @ApiUnauthorizedResponse({ type: ErrorDto })
   @ApiNotFoundResponse({ type: ErrorDto })
-  updateOutletStatus(@Param('id') id: string, @Param('outletId') outletId: string, @Body() dto: UpdateOutletStatusDto) {
+  updateOutletStatus(
+    @Param('id') id: string,
+    @Param('outletId') outletId: string,
+    @Body() dto: UpdateOutletStatusDto,
+  ) {
     return this.service.updateOutletStatus(id, outletId, dto.status);
   }
 
@@ -182,13 +319,21 @@ export class MerchantsController {
   @ApiUnauthorizedResponse({ type: ErrorDto })
   @ApiBadRequestResponse({ type: ErrorDto })
   createStaff(@Param('id') id: string, @Body() dto: CreateStaffDto) {
-    return this.service.createStaff(id, { login: dto.login, email: dto.email, role: dto.role ? String(dto.role) : undefined });
+    return this.service.createStaff(id, {
+      login: dto.login,
+      email: dto.email,
+      role: dto.role ? String(dto.role) : undefined,
+    });
   }
   @Put(':id/staff/:staffId')
   @ApiOkResponse({ type: StaffDto })
   @ApiUnauthorizedResponse({ type: ErrorDto })
   @ApiNotFoundResponse({ type: ErrorDto })
-  updateStaff(@Param('id') id: string, @Param('staffId') staffId: string, @Body() dto: UpdateStaffDto) {
+  updateStaff(
+    @Param('id') id: string,
+    @Param('staffId') staffId: string,
+    @Body() dto: UpdateStaffDto,
+  ) {
     return this.service.updateStaff(id, staffId, dto);
   }
   @Delete(':id/staff/:staffId')
@@ -219,8 +364,16 @@ export class MerchantsController {
   @Get(':id/outbox')
   @ApiOkResponse({ type: OutboxEventDto, isArray: true })
   @ApiUnauthorizedResponse({ type: ErrorDto })
-  listOutbox(@Param('id') id: string, @Query('status') status?: string, @Query('limit') limitStr?: string, @Query('type') type?: string, @Query('since') since?: string) {
-    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200) : undefined;
+  listOutbox(
+    @Param('id') id: string,
+    @Query('status') status?: string,
+    @Query('limit') limitStr?: string,
+    @Query('type') type?: string,
+    @Query('since') since?: string,
+  ) {
+    const limit = limitStr
+      ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200)
+      : undefined;
     return this.service.listOutbox(id, status, limit, type, since);
   }
   @Post(':id/outbox/:eventId/retry')
@@ -255,14 +408,23 @@ export class MerchantsController {
   @Post(':id/outbox/retrySince')
   @ApiOkResponse({ type: BulkUpdateRespDto })
   @ApiUnauthorizedResponse({ type: ErrorDto })
-  retrySince(@Param('id') id: string, @Body() body: { status?: string; since?: string }) {
-    return this.service.retrySince(id, { status: body?.status, since: body?.since });
+  retrySince(
+    @Param('id') id: string,
+    @Body() body: { status?: string; since?: string },
+  ) {
+    return this.service.retrySince(id, {
+      status: body?.status,
+      since: body?.since,
+    });
   }
 
   @Post(':id/outbox/pause')
   @ApiOkResponse({ type: OkDto })
   @ApiUnauthorizedResponse({ type: ErrorDto })
-  async pauseOutbox(@Param('id') id: string, @Body() body: { minutes?: number; until?: string }) {
+  async pauseOutbox(
+    @Param('id') id: string,
+    @Body() body: { minutes?: number; until?: string },
+  ) {
     return this.service.pauseOutbox(id, body?.minutes, body?.until);
   }
   @Post(':id/outbox/resume')
@@ -273,7 +435,17 @@ export class MerchantsController {
   }
 
   @Get(':id/outbox/stats')
-  @ApiOkResponse({ schema: { type: 'object', properties: { merchantId: { type: 'string' }, since: { type: 'string', nullable: true }, counts: { type: 'object', additionalProperties: { type: 'number' } }, lastDeadAt: { type: 'string', nullable: true } } } })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        merchantId: { type: 'string' },
+        since: { type: 'string', nullable: true },
+        counts: { type: 'object', additionalProperties: { type: 'number' } },
+        lastDeadAt: { type: 'string', nullable: true },
+      },
+    },
+  })
   outboxStats(@Param('id') id: string, @Query('since') sinceStr?: string) {
     const since = sinceStr ? new Date(sinceStr) : undefined;
     return this.service.outboxStats(id, since);
@@ -291,16 +463,34 @@ export class MerchantsController {
   ) {
     const batch = Math.min(Math.max(parseInt(batchStr, 10) || 1000, 100), 5000);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="outbox_${id}_${Date.now()}.csv"`);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="outbox_${id}_${Date.now()}.csv"`,
+    );
     res.write('id,eventType,status,retries,nextRetryAt,lastError,createdAt\n');
     // Пагинация по createdAt
     let cursorSince = since;
     while (true) {
-      const page = await this.service.listOutbox(id, status, batch, type, cursorSince);
+      const page = await this.service.listOutbox(
+        id,
+        status,
+        batch,
+        type,
+        cursorSince,
+      );
       if (!page.length) break;
       for (const ev of page) {
-        const row = [ ev.id, ev.eventType, ev.status, ev.retries, ev.nextRetryAt?ev.nextRetryAt.toISOString():'', ev.lastError||'', ev.createdAt.toISOString() ]
-          .map(x => `"${String(x).replaceAll('"','""')}"`).join(',');
+        const row = [
+          ev.id,
+          ev.eventType,
+          ev.status,
+          ev.retries,
+          ev.nextRetryAt ? ev.nextRetryAt.toISOString() : '',
+          ev.lastError || '',
+          ev.createdAt.toISOString(),
+        ]
+          .map((x) => `"${String(x).replaceAll('"', '""')}"`)
+          .join(',');
         res.write(row + '\n');
       }
       cursorSince = page[page.length - 1].createdAt.toISOString();
@@ -311,17 +501,27 @@ export class MerchantsController {
 
   // ===== Portal auth management (admin only) =====
   @Post(':id/portal/rotate-key')
-  @ApiOkResponse({ schema: { type: 'object', properties: { key: { type: 'string' } } } })
+  @ApiOkResponse({
+    schema: { type: 'object', properties: { key: { type: 'string' } } },
+  })
   rotatePortalKey(@Param('id') id: string) {
     return this.service.rotatePortalKey(id);
   }
   @Post(':id/portal/login-enabled')
   @ApiOkResponse({ type: OkDto })
-  setPortalLoginEnabled(@Param('id') id: string, @Body() body: { enabled: boolean }) {
+  setPortalLoginEnabled(
+    @Param('id') id: string,
+    @Body() body: { enabled: boolean },
+  ) {
     return this.service.setPortalLoginEnabled(id, !!body?.enabled);
   }
   @Post(':id/portal/totp/init')
-  @ApiOkResponse({ schema: { type: 'object', properties: { secret: { type: 'string' }, otpauth: { type: 'string' } } } })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: { secret: { type: 'string' }, otpauth: { type: 'string' } },
+    },
+  })
   initTotp(@Param('id') id: string) {
     return this.service.initTotp(id);
   }
@@ -343,27 +543,54 @@ export class MerchantsController {
 
   // Cashier credentials (admin only)
   @Get(':id/cashier')
-  @ApiOkResponse({ schema: { type: 'object', properties: { login: { type: 'string', nullable: true }, hasPassword: { type: 'boolean' } } } })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        login: { type: 'string', nullable: true },
+        hasPassword: { type: 'boolean' },
+      },
+    },
+  })
   getCashier(@Param('id') id: string) {
     return this.service.getCashierCredentials(id);
   }
   @Post(':id/cashier/rotate')
-  @ApiOkResponse({ schema: { type: 'object', properties: { login: { type: 'string' }, password: { type: 'string' } } } })
-  rotateCashier(@Param('id') id: string, @Body() body: { regenerateLogin?: boolean }) {
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: { login: { type: 'string' }, password: { type: 'string' } },
+    },
+  })
+  rotateCashier(
+    @Param('id') id: string,
+    @Body() body: { regenerateLogin?: boolean },
+  ) {
     return this.service.rotateCashierCredentials(id, !!body?.regenerateLogin);
   }
 
   @Get(':id/outbox/by-order')
   @ApiOkResponse({ type: OutboxEventDto, isArray: true })
   @ApiUnauthorizedResponse({ type: ErrorDto })
-  async outboxByOrder(@Param('id') id: string, @Query('orderId') orderId: string, @Query('limit') limitStr?: string) {
-    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 500) : 100;
+  async outboxByOrder(
+    @Param('id') id: string,
+    @Query('orderId') orderId: string,
+    @Query('limit') limitStr?: string,
+  ) {
+    const limit = limitStr
+      ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 500)
+      : 100;
     return this.service.listOutboxByOrder(id, orderId, limit);
   }
 
   // Transactions overview
   @Get(':id/transactions')
-  @ApiOkResponse({ schema: { type: 'array', items: { $ref: getSchemaPath(TransactionItemDto) } } })
+  @ApiOkResponse({
+    schema: {
+      type: 'array',
+      items: { $ref: getSchemaPath(TransactionItemDto) },
+    },
+  })
   @ApiUnauthorizedResponse({ type: ErrorDto })
   listTransactions(
     @Param('id') id: string,
@@ -376,11 +603,22 @@ export class MerchantsController {
     @Query('outletId') outletId?: string,
     @Query('staffId') staffId?: string,
   ) {
-    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200) : 50;
+    const limit = limitStr
+      ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200)
+      : 50;
     const before = beforeStr ? new Date(beforeStr) : undefined;
     const from = fromStr ? new Date(fromStr) : undefined;
     const to = toStr ? new Date(toStr) : undefined;
-    return this.service.listTransactions(id, { limit, before, from, to, type, customerId, outletId, staffId });
+    return this.service.listTransactions(id, {
+      limit,
+      before,
+      from,
+      to,
+      type,
+      customerId,
+      outletId,
+      staffId,
+    });
   }
   @Get(':id/receipts')
   @ApiOkResponse({ type: ReceiptDto, isArray: true })
@@ -392,12 +630,30 @@ export class MerchantsController {
     @Query('orderId') orderId?: string,
     @Query('customerId') customerId?: string,
   ) {
-    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200) : 50;
+    const limit = limitStr
+      ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200)
+      : 50;
     const before = beforeStr ? new Date(beforeStr) : undefined;
-    return this.service.listReceipts(id, { limit, before, orderId, customerId });
+    return this.service.listReceipts(id, {
+      limit,
+      before,
+      orderId,
+      customerId,
+    });
   }
   @Get(':id/receipts/:receiptId')
-  @ApiOkResponse({ schema: { type: 'object', properties: { receipt: { $ref: getSchemaPath(ReceiptDto) }, transactions: { type: 'array', items: { $ref: getSchemaPath(TransactionItemDto) } } } } })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        receipt: { $ref: getSchemaPath(ReceiptDto) },
+        transactions: {
+          type: 'array',
+          items: { $ref: getSchemaPath(TransactionItemDto) },
+        },
+      },
+    },
+  })
   @ApiUnauthorizedResponse({ type: ErrorDto })
   @ApiNotFoundResponse({ type: ErrorDto })
   getReceipt(@Param('id') id: string, @Param('receiptId') receiptId: string) {
@@ -416,15 +672,39 @@ export class MerchantsController {
   ) {
     const batch = Math.min(Math.max(parseInt(batchStr, 10) || 1000, 100), 5000);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="receipts_${id}_${Date.now()}.csv"`);
-    res.write('id,orderId,customerId,total,eligibleTotal,redeemApplied,earnApplied,createdAt,outletId,outletPosType,outletLastSeenAt,staffId\n');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="receipts_${id}_${Date.now()}.csv"`,
+    );
+    res.write(
+      'id,orderId,customerId,total,eligibleTotal,redeemApplied,earnApplied,createdAt,outletId,outletPosType,outletLastSeenAt,staffId\n',
+    );
     let before = beforeStr ? new Date(beforeStr) : undefined;
     while (true) {
-      const page = await this.service.listReceipts(id, { limit: batch, before, orderId, customerId });
+      const page = await this.service.listReceipts(id, {
+        limit: batch,
+        before,
+        orderId,
+        customerId,
+      });
       if (!page.length) break;
       for (const r of page) {
-        const row = [r.id,r.orderId,r.customerId,r.total,r.eligibleTotal,r.redeemApplied,r.earnApplied,r.createdAt.toISOString(),(r.outletId||''),(r.outletPosType||''),(r.outletLastSeenAt?new Date(r.outletLastSeenAt).toISOString():''),(r.staffId||'')]
-          .map(x=>`"${String(x).replaceAll('"','""')}"`).join(',');
+        const row = [
+          r.id,
+          r.orderId,
+          r.customerId,
+          r.total,
+          r.eligibleTotal,
+          r.redeemApplied,
+          r.earnApplied,
+          r.createdAt.toISOString(),
+          r.outletId || '',
+          r.outletPosType || '',
+          r.outletLastSeenAt ? new Date(r.outletLastSeenAt).toISOString() : '',
+          r.staffId || '',
+        ]
+          .map((x) => `"${String(x).replaceAll('"', '""')}"`)
+          .join(',');
         res.write(row + '\n');
       }
       before = page[page.length - 1].createdAt;
@@ -446,11 +726,20 @@ export class MerchantsController {
     @Query('customerId') customerId?: string,
     @Query('type') type?: string,
   ) {
-    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 500) : 50;
+    const limit = limitStr
+      ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 500)
+      : 50;
     const before = beforeStr ? new Date(beforeStr) : undefined;
     const from = fromStr ? new Date(fromStr) : undefined;
     const to = toStr ? new Date(toStr) : undefined;
-    return this.service.listLedger(id, { limit, before, customerId, from, to, type });
+    return this.service.listLedger(id, {
+      limit,
+      before,
+      customerId,
+      from,
+      to,
+      type,
+    });
   }
 
   @Get(':id/ledger.csv')
@@ -468,17 +757,43 @@ export class MerchantsController {
   ) {
     const batch = Math.min(Math.max(parseInt(batchStr, 10) || 1000, 100), 5000);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="ledger_${id}_${Date.now()}.csv"`);
-    res.write('id,customerId,debit,credit,amount,orderId,receiptId,createdAt,outletId,outletPosType,outletLastSeenAt,staffId\n');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="ledger_${id}_${Date.now()}.csv"`,
+    );
+    res.write(
+      'id,customerId,debit,credit,amount,orderId,receiptId,createdAt,outletId,outletPosType,outletLastSeenAt,staffId\n',
+    );
     let before = beforeStr ? new Date(beforeStr) : undefined;
     const from = fromStr ? new Date(fromStr) : undefined;
     const to = toStr ? new Date(toStr) : undefined;
     while (true) {
-      const page = await this.service.listLedger(id, { limit: batch, before, customerId, from, to, type });
+      const page = await this.service.listLedger(id, {
+        limit: batch,
+        before,
+        customerId,
+        from,
+        to,
+        type,
+      });
       if (!page.length) break;
       for (const e of page) {
-        const row = [ e.id, e.customerId||'', e.debit, e.credit, e.amount, e.orderId||'', e.receiptId||'', e.createdAt.toISOString(), e.outletId||'', e.outletPosType||'', e.outletLastSeenAt ? new Date(e.outletLastSeenAt).toISOString() : '', e.staffId||'' ]
-          .map(x=>`"${String(x).replaceAll('"','""')}"`).join(',');
+        const row = [
+          e.id,
+          e.customerId || '',
+          e.debit,
+          e.credit,
+          e.amount,
+          e.orderId || '',
+          e.receiptId || '',
+          e.createdAt.toISOString(),
+          e.outletId || '',
+          e.outletPosType || '',
+          e.outletLastSeenAt ? new Date(e.outletLastSeenAt).toISOString() : '',
+          e.staffId || '',
+        ]
+          .map((x) => `"${String(x).replaceAll('"', '""')}"`)
+          .join(',');
         res.write(row + '\n');
       }
       before = page[page.length - 1].createdAt;
@@ -489,11 +804,36 @@ export class MerchantsController {
 
   // TTL reconciliation (preview vs burned)
   @Get(':id/ttl/reconciliation')
-  @ApiOkResponse({ schema: { type: 'object', properties: { merchantId: { type: 'string' }, cutoff: { type: 'string' }, items: { type: 'array', items: { type: 'object', properties: { customerId: { type: 'string' }, expiredRemain: { type: 'number' }, burned: { type: 'number' }, diff: { type: 'number' } } } }, totals: { type: 'object', properties: { expiredRemain: { type: 'number' }, burned: { type: 'number' }, diff: { type: 'number' } } } } } })
-  ttlReconciliation(
-    @Param('id') id: string,
-    @Query('cutoff') cutoff: string,
-  ) {
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        merchantId: { type: 'string' },
+        cutoff: { type: 'string' },
+        items: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              customerId: { type: 'string' },
+              expiredRemain: { type: 'number' },
+              burned: { type: 'number' },
+              diff: { type: 'number' },
+            },
+          },
+        },
+        totals: {
+          type: 'object',
+          properties: {
+            expiredRemain: { type: 'number' },
+            burned: { type: 'number' },
+            diff: { type: 'number' },
+          },
+        },
+      },
+    },
+  })
+  ttlReconciliation(@Param('id') id: string, @Query('cutoff') cutoff: string) {
     return this.service.ttlReconciliation(id, cutoff);
   }
 
@@ -504,12 +844,31 @@ export class MerchantsController {
     @Query('cutoff') cutoff: string,
     @Query('onlyDiff') onlyDiff?: string,
   ) {
-    return this.service.exportTtlReconciliationCsv(id, cutoff, (onlyDiff === '1' || /true/i.test(onlyDiff||'')));
+    return this.service.exportTtlReconciliationCsv(
+      id,
+      cutoff,
+      onlyDiff === '1' || /true/i.test(onlyDiff || ''),
+    );
   }
 
   // CRM helpers
   @Get(':id/customer/summary')
-  @ApiOkResponse({ schema: { type: 'object', properties: { balance: { type: 'number' }, recentTx: { type: 'array', items: { $ref: getSchemaPath(TransactionItemDto) } }, recentReceipts: { type: 'array', items: { $ref: getSchemaPath(ReceiptDto) } } } } })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        balance: { type: 'number' },
+        recentTx: {
+          type: 'array',
+          items: { $ref: getSchemaPath(TransactionItemDto) },
+        },
+        recentReceipts: {
+          type: 'array',
+          items: { $ref: getSchemaPath(ReceiptDto) },
+        },
+      },
+    },
+  })
   @ApiUnauthorizedResponse({ type: ErrorDto })
   async customerSummary(
     @Param('id') id: string,
@@ -521,12 +880,13 @@ export class MerchantsController {
     return { balance: bal, recentTx: tx, recentReceipts: rc };
   }
   @Get(':id/customer/search')
-  @ApiOkResponse({ schema: { oneOf: [ { $ref: getSchemaPath(CustomerSearchRespDto) }, { type: 'null' } ] } })
+  @ApiOkResponse({
+    schema: {
+      oneOf: [{ $ref: getSchemaPath(CustomerSearchRespDto) }, { type: 'null' }],
+    },
+  })
   @ApiUnauthorizedResponse({ type: ErrorDto })
-  async customerSearch(
-    @Param('id') id: string,
-    @Query('phone') phone: string,
-  ) {
+  async customerSearch(@Param('id') id: string, @Query('phone') phone: string) {
     return this.service.findCustomerByPhone(id, phone);
   }
 
@@ -547,17 +907,43 @@ export class MerchantsController {
   ) {
     const batch = Math.min(Math.max(parseInt(batchStr, 10) || 1000, 100), 5000);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="transactions_${id}_${Date.now()}.csv"`);
-    res.write('id,type,amount,orderId,customerId,createdAt,outletId,outletPosType,outletLastSeenAt,staffId\n');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="transactions_${id}_${Date.now()}.csv"`,
+    );
+    res.write(
+      'id,type,amount,orderId,customerId,createdAt,outletId,outletPosType,outletLastSeenAt,staffId\n',
+    );
     let before = beforeStr ? new Date(beforeStr) : undefined;
     const from = fromStr ? new Date(fromStr) : undefined;
     const to = toStr ? new Date(toStr) : undefined;
     while (true) {
-      const page = await this.service.listTransactions(id, { limit: batch, before, from, to, type, customerId, outletId, staffId });
+      const page = await this.service.listTransactions(id, {
+        limit: batch,
+        before,
+        from,
+        to,
+        type,
+        customerId,
+        outletId,
+        staffId,
+      });
       if (!page.length) break;
       for (const t of page) {
-        const row = [t.id,t.type,t.amount,(t.orderId||''),t.customerId,t.createdAt.toISOString(),(t.outletId||''),(t.outletPosType||''),(t.outletLastSeenAt ? new Date(t.outletLastSeenAt).toISOString() : ''),(t.staffId||'')]
-          .map(x=>`"${String(x).replaceAll('"','""')}"`).join(',');
+        const row = [
+          t.id,
+          t.type,
+          t.amount,
+          t.orderId || '',
+          t.customerId,
+          t.createdAt.toISOString(),
+          t.outletId || '',
+          t.outletPosType || '',
+          t.outletLastSeenAt ? new Date(t.outletLastSeenAt).toISOString() : '',
+          t.staffId || '',
+        ]
+          .map((x) => `"${String(x).replaceAll('"', '""')}"`)
+          .join(',');
         res.write(row + '\n');
       }
       before = page[page.length - 1].createdAt;

@@ -41,7 +41,7 @@ describe('Health (e2e)', () => {
         EARN_LOTS_FEATURE: true,
         POINTS_TTL_FEATURE: true,
         POINTS_TTL_BURN: false,
-      })
+      }),
     );
     expect(res.body).toHaveProperty('workers');
   });

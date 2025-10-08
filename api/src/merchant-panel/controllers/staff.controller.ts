@@ -28,8 +28,13 @@ import { ApiTags } from '@nestjs/swagger';
 @ApiTags('portal-staff')
 @Controller('portal/staff')
 @UseGuards(PortalGuard)
-@UsePipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }))
-
+@UsePipes(
+  new ValidationPipe({
+    transform: true,
+    whitelist: true,
+    forbidNonWhitelisted: true,
+  }),
+)
 export class StaffController {
   constructor(private readonly service: MerchantPanelService) {}
 
@@ -38,7 +43,10 @@ export class StaffController {
   }
 
   @Get()
-  async list(@Req() req: any, @Query() query: StaffListQueryDto): Promise<StaffListResponseDto> {
+  async list(
+    @Req() req: any,
+    @Query() query: StaffListQueryDto,
+  ): Promise<StaffListResponseDto> {
     const { page, pageSize, ...rest } = query;
     const filters: StaffFilters = {
       search: rest.search,
@@ -47,7 +55,11 @@ export class StaffController {
       groupId: rest.groupId,
       portalOnly: rest.portalOnly,
     };
-    const result = await this.service.listStaff(this.getMerchantId(req), filters, { page, pageSize });
+    const result = await this.service.listStaff(
+      this.getMerchantId(req),
+      filters,
+      { page, pageSize },
+    );
     return result as StaffListResponseDto;
   }
 
@@ -64,14 +76,30 @@ export class StaffController {
   }
 
   @Put(':id')
-  async update(@Req() req: any, @Param('id') id: string, @Body() body: UpsertStaffDto) {
-    const staff = await this.service.updateStaff(this.getMerchantId(req), id, body);
+  async update(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: UpsertStaffDto,
+  ) {
+    const staff = await this.service.updateStaff(
+      this.getMerchantId(req),
+      id,
+      body,
+    );
     return staff as StaffDetailDto;
   }
 
   @Post(':id/status')
-  changeStatus(@Req() req: any, @Param('id') id: string, @Body() body: ChangeStaffStatusDto) {
-    return this.service.changeStaffStatus(this.getMerchantId(req), id, body.status);
+  changeStatus(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: ChangeStaffStatusDto,
+  ) {
+    return this.service.changeStaffStatus(
+      this.getMerchantId(req),
+      id,
+      body.status,
+    );
   }
 
   @Post('access/:accessId/rotate')
@@ -84,28 +112,53 @@ export class StaffController {
     return this.service.revokeStaffPin(this.getMerchantId(req), accessId);
   }
 
-
   @Get(':id/access')
   async listAccess(@Req() req: any, @Param('id') id: string) {
-    const items = await this.service.listStaffAccesses(this.getMerchantId(req), id);
+    const items = await this.service.listStaffAccesses(
+      this.getMerchantId(req),
+      id,
+    );
     return items as StaffOutletAccessDto[];
   }
 
   @Post(':id/access')
-  async assignAccess(@Req() req: any, @Param('id') id: string, @Body() body: AssignStaffAccessDto) {
-    const access = await this.service.addStaffAccess(this.getMerchantId(req), id, body.outletId);
+  async assignAccess(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: AssignStaffAccessDto,
+  ) {
+    const access = await this.service.addStaffAccess(
+      this.getMerchantId(req),
+      id,
+      body.outletId,
+    );
     return access as StaffOutletAccessDto;
   }
 
   @Delete(':id/access/:outletId')
-  revokeAccess(@Req() req: any, @Param('id') id: string, @Param('outletId') outletId: string) {
-    return this.service.removeStaffAccess(this.getMerchantId(req), id, outletId);
+  revokeAccess(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Param('outletId') outletId: string,
+  ) {
+    return this.service.removeStaffAccess(
+      this.getMerchantId(req),
+      id,
+      outletId,
+    );
   }
 
   @Post(':id/access/:outletId/regenerate-pin')
-  async regenerateOutletPin(@Req() req: any, @Param('id') id: string, @Param('outletId') outletId: string) {
-    const access = await this.service.regenerateStaffOutletPin(this.getMerchantId(req), id, outletId);
+  async regenerateOutletPin(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Param('outletId') outletId: string,
+  ) {
+    const access = await this.service.regenerateStaffOutletPin(
+      this.getMerchantId(req),
+      id,
+      outletId,
+    );
     return access as StaffOutletAccessDto;
   }
-
 }

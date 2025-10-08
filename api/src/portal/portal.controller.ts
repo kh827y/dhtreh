@@ -1,12 +1,44 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Query, UseGuards, Req, NotFoundException } from '@nestjs/common';
-import { ApiBadRequestResponse, ApiExtraModels, ApiOkResponse, ApiTags, ApiUnauthorizedResponse, getSchemaPath } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+  UseGuards,
+  Req,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  ApiBadRequestResponse,
+  ApiExtraModels,
+  ApiOkResponse,
+  ApiTags,
+  ApiUnauthorizedResponse,
+  getSchemaPath,
+} from '@nestjs/swagger';
 import { PortalGuard } from '../portal-auth/portal.guard';
 import { MerchantsService } from '../merchants/merchants.service';
-import { LedgerEntryDto, MerchantSettingsRespDto, ReceiptDto, UpdateMerchantSettingsDto, UpdateOutletPosDto, UpdateOutletStatusDto } from '../merchants/dto';
+import {
+  LedgerEntryDto,
+  MerchantSettingsRespDto,
+  ReceiptDto,
+  UpdateMerchantSettingsDto,
+  UpdateOutletPosDto,
+  UpdateOutletStatusDto,
+} from '../merchants/dto';
 import { ErrorDto, TransactionItemDto } from '../loyalty/dto';
-import { PromoCodesService, type PortalPromoCodePayload } from '../promocodes/promocodes.service';
+import {
+  PromoCodesService,
+  type PortalPromoCodePayload,
+} from '../promocodes/promocodes.service';
 import { CommunicationChannel, PromoCodeStatus } from '@prisma/client';
-import { NotificationsService, type BroadcastArgs } from '../notifications/notifications.service';
+import {
+  NotificationsService,
+  type BroadcastArgs,
+} from '../notifications/notifications.service';
 import { PortalCustomersService } from './customers.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { GiftsService } from '../gifts/gifts.service';
@@ -28,12 +60,26 @@ import {
   UpdatePortalOutletDto,
 } from './catalog.dto';
 import { CommunicationsService } from '../communications/communications.service';
-import { StaffMotivationService, type UpdateStaffMotivationPayload } from './services/staff-motivation.service';
-import { ActionsService, type ActionsTab, type CreateProductBonusActionPayload, type UpdateActionStatusPayload } from './services/actions.service';
-import { OperationsLogService, type OperationsLogFilters } from './services/operations-log.service';
+import {
+  StaffMotivationService,
+  type UpdateStaffMotivationPayload,
+} from './services/staff-motivation.service';
+import {
+  ActionsService,
+  type ActionsTab,
+  type CreateProductBonusActionPayload,
+  type UpdateActionStatusPayload,
+} from './services/actions.service';
+import {
+  OperationsLogService,
+  type OperationsLogFilters,
+} from './services/operations-log.service';
 import { PortalTelegramIntegrationService } from './services/telegram-integration.service';
 import { PortalTelegramNotifyService } from './services/telegram-notify.service';
-import { ReferralService, type ReferralProgramSettingsDto } from '../referral/referral.service';
+import {
+  ReferralService,
+  type ReferralProgramSettingsDto,
+} from '../referral/referral.service';
 import { PortalReviewsService } from './services/reviews.service';
 
 @ApiTags('portal')
@@ -59,7 +105,9 @@ export class PortalController {
     private readonly reviews: PortalReviewsService,
   ) {}
 
-  private getMerchantId(req: any) { return String((req as any).portalMerchantId || ''); }
+  private getMerchantId(req: any) {
+    return String(req.portalMerchantId || '');
+  }
   private computePeriod(periodType?: string, fromStr?: string, toStr?: string) {
     let from = new Date();
     let to = new Date();
@@ -70,31 +118,53 @@ export class PortalController {
     }
     switch (periodType) {
       case 'day':
-        from.setHours(0,0,0,0); to.setHours(23,59,59,999); break;
+        from.setHours(0, 0, 0, 0);
+        to.setHours(23, 59, 59, 999);
+        break;
       case 'week': {
         const dayOfWeek = from.getDay();
         const diff = from.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
-        from.setDate(diff); from.setHours(0,0,0,0);
-        to = new Date(from); to.setDate(to.getDate()+6); to.setHours(23,59,59,999);
+        from.setDate(diff);
+        from.setHours(0, 0, 0, 0);
+        to = new Date(from);
+        to.setDate(to.getDate() + 6);
+        to.setHours(23, 59, 59, 999);
         break;
       }
       case 'month':
-        from.setDate(1); from.setHours(0,0,0,0);
-        to = new Date(from); to.setMonth(to.getMonth()+1); to.setDate(0); to.setHours(23,59,59,999);
+        from.setDate(1);
+        from.setHours(0, 0, 0, 0);
+        to = new Date(from);
+        to.setMonth(to.getMonth() + 1);
+        to.setDate(0);
+        to.setHours(23, 59, 59, 999);
         break;
       case 'quarter': {
-        const quarter = Math.floor(from.getMonth()/3);
-        from.setMonth(quarter*3); from.setDate(1); from.setHours(0,0,0,0);
-        to = new Date(from); to.setMonth(to.getMonth()+3); to.setDate(0); to.setHours(23,59,59,999);
+        const quarter = Math.floor(from.getMonth() / 3);
+        from.setMonth(quarter * 3);
+        from.setDate(1);
+        from.setHours(0, 0, 0, 0);
+        to = new Date(from);
+        to.setMonth(to.getMonth() + 3);
+        to.setDate(0);
+        to.setHours(23, 59, 59, 999);
         break;
       }
       case 'year':
-        from.setMonth(0); from.setDate(1); from.setHours(0,0,0,0);
-        to.setMonth(11); to.setDate(31); to.setHours(23,59,59,999);
+        from.setMonth(0);
+        from.setDate(1);
+        from.setHours(0, 0, 0, 0);
+        to.setMonth(11);
+        to.setDate(31);
+        to.setHours(23, 59, 59, 999);
         break;
       default:
-        from.setDate(1); from.setHours(0,0,0,0);
-        to = new Date(from); to.setMonth(to.getMonth()+1); to.setDate(0); to.setHours(23,59,59,999);
+        from.setDate(1);
+        from.setHours(0, 0, 0, 0);
+        to = new Date(from);
+        to.setMonth(to.getMonth() + 1);
+        to.setDate(0);
+        to.setHours(23, 59, 59, 999);
     }
     return { from, to, type: (periodType as any) || 'month' };
   }
@@ -112,7 +182,9 @@ export class PortalController {
     return upper === 'UPCOMING' || upper === 'PAST' ? upper : 'CURRENT';
   }
 
-  private normalizeDirection(direction?: string): OperationsLogFilters['direction'] {
+  private normalizeDirection(
+    direction?: string,
+  ): OperationsLogFilters['direction'] {
     const upper = String(direction || '').toUpperCase();
     if (upper === 'EARN' || upper === 'REDEEM') return upper;
     return 'ALL';
@@ -129,10 +201,15 @@ export class PortalController {
     return Math.max(0, Math.round(num));
   }
 
-  private normalizeReferralProgramPayload(body: any): ReferralProgramSettingsDto {
-    const rewardTrigger: ReferralProgramSettingsDto['rewardTrigger'] = body?.rewardTrigger === 'all' ? 'all' : 'first';
+  private normalizeReferralProgramPayload(
+    body: any,
+  ): ReferralProgramSettingsDto {
+    const rewardTrigger: ReferralProgramSettingsDto['rewardTrigger'] =
+      body?.rewardTrigger === 'all' ? 'all' : 'first';
     const rewardType: ReferralProgramSettingsDto['rewardType'] =
-      body?.rewardType === 'PERCENT' || body?.rewardType === 'percent' ? 'percent' : 'fixed';
+      body?.rewardType === 'PERCENT' || body?.rewardType === 'percent'
+        ? 'percent'
+        : 'fixed';
     const rewardValueRaw = Number(body?.rewardValue ?? 0);
     const friendRewardRaw = Number(body?.friendReward ?? 0);
     const placeholders = Array.isArray(body?.placeholders)
@@ -162,7 +239,10 @@ export class PortalController {
     };
   }
 
-  private extractMetadata(payload: Record<string, any>, stats: Record<string, any>) {
+  private extractMetadata(
+    payload: Record<string, any>,
+    stats: Record<string, any>,
+  ) {
     if (payload.metadata !== undefined) return payload.metadata;
     if (stats.metadata !== undefined) return stats.metadata;
     return null;
@@ -192,15 +272,23 @@ export class PortalController {
     const stats = this.asRecord(task?.stats);
     const snapshot = this.asRecord(task?.audienceSnapshot);
     const audienceRaw =
-      task?.audienceName ?? snapshot.code ?? snapshot.legacyAudience ?? snapshot.audienceName ?? 'ALL';
+      task?.audienceName ??
+      snapshot.code ??
+      snapshot.legacyAudience ??
+      snapshot.audienceName ??
+      'ALL';
     const totalRecipients =
       typeof task?.totalRecipients === 'number'
         ? task.totalRecipients
         : this.coerceCount(stats.totalRecipients ?? stats.total);
     const sent =
-      typeof task?.sentCount === 'number' ? task.sentCount : this.coerceCount(stats.sent ?? stats.delivered);
+      typeof task?.sentCount === 'number'
+        ? task.sentCount
+        : this.coerceCount(stats.sent ?? stats.delivered);
     const failed =
-      typeof task?.failedCount === 'number' ? task.failedCount : this.coerceCount(stats.failed ?? stats.errors);
+      typeof task?.failedCount === 'number'
+        ? task.failedCount
+        : this.coerceCount(stats.failed ?? stats.errors);
     const metadata = this.extractMetadata(payload, stats);
 
     return {
@@ -231,9 +319,13 @@ export class PortalController {
         ? task.totalRecipients
         : this.coerceCount(stats.totalRecipients ?? stats.total);
     const sent =
-      typeof task?.sentCount === 'number' ? task.sentCount : this.coerceCount(stats.sent ?? stats.delivered);
+      typeof task?.sentCount === 'number'
+        ? task.sentCount
+        : this.coerceCount(stats.sent ?? stats.delivered);
     const failed =
-      typeof task?.failedCount === 'number' ? task.failedCount : this.coerceCount(stats.failed ?? stats.errors);
+      typeof task?.failedCount === 'number'
+        ? task.failedCount
+        : this.coerceCount(stats.failed ?? stats.errors);
     const metadata = this.extractMetadata(payload, stats);
     const imageCandidate = media.imageUrl ?? payload.imageUrl;
 
@@ -258,42 +350,93 @@ export class PortalController {
   }
 
   @Get('me')
-  @ApiOkResponse({ schema: { type: 'object', properties: { merchantId: { type: 'string' }, role: { type: 'string' } } } })
-  me(@Req() req: any) { return { merchantId: this.getMerchantId(req), role: (req as any).portalRole || 'MERCHANT' }; }
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: { merchantId: { type: 'string' }, role: { type: 'string' } },
+    },
+  })
+  me(@Req() req: any) {
+    return {
+      merchantId: this.getMerchantId(req),
+      role: req.portalRole || 'MERCHANT',
+    };
+  }
 
   // Customer search by phone (CRM helper)
   @Get('customer/search')
-  @ApiOkResponse({ schema: { oneOf: [ { type: 'object', properties: { customerId: { type: 'string' }, phone: { type: 'string', nullable: true }, balance: { type: 'number' } } }, { type: 'null' } ] } })
+  @ApiOkResponse({
+    schema: {
+      oneOf: [
+        {
+          type: 'object',
+          properties: {
+            customerId: { type: 'string' },
+            phone: { type: 'string', nullable: true },
+            balance: { type: 'number' },
+          },
+        },
+        { type: 'null' },
+      ],
+    },
+  })
   @ApiUnauthorizedResponse({ type: ErrorDto })
   customerSearch(@Req() req: any, @Query('phone') phone: string) {
-    return this.service.findCustomerByPhone(this.getMerchantId(req), String(phone||''));
+    return this.service.findCustomerByPhone(
+      this.getMerchantId(req),
+      String(phone || ''),
+    );
   }
 
   // ===== Customers CRUD =====
   @Get('customers')
-  @ApiOkResponse({ schema: { type: 'array', items: { type: 'object', additionalProperties: true } } })
+  @ApiOkResponse({
+    schema: {
+      type: 'array',
+      items: { type: 'object', additionalProperties: true },
+    },
+  })
   listCustomers(
     @Req() req: any,
     @Query('search') search?: string,
     @Query('limit') limitStr?: string,
     @Query('offset') offsetStr?: string,
   ) {
-    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200) : 50;
+    const limit = limitStr
+      ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200)
+      : 50;
     const offset = offsetStr ? Math.max(parseInt(offsetStr, 10) || 0, 0) : 0;
-    return this.customersService.list(this.getMerchantId(req), { search, limit, offset });
+    return this.customersService.list(this.getMerchantId(req), {
+      search,
+      limit,
+      offset,
+    });
   }
 
   @Get('customers/:customerId')
   @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
   getCustomer(@Req() req: any, @Param('customerId') customerId: string) {
-    return this.customersService.get(this.getMerchantId(req), String(customerId||''));
+    return this.customersService.get(
+      this.getMerchantId(req),
+      String(customerId || ''),
+    );
   }
 
   @Post('customers')
   @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
   createCustomer(
     @Req() req: any,
-    @Body() body: { phone?: string; email?: string; name?: string; firstName?: string; lastName?: string; birthday?: string; gender?: string; tags?: string[] },
+    @Body()
+    body: {
+      phone?: string;
+      email?: string;
+      name?: string;
+      firstName?: string;
+      lastName?: string;
+      birthday?: string;
+      gender?: string;
+      tags?: string[];
+    },
   ) {
     return this.customersService.create(this.getMerchantId(req), body || {});
   }
@@ -303,83 +446,172 @@ export class PortalController {
   updateCustomer(
     @Req() req: any,
     @Param('customerId') customerId: string,
-    @Body() body: { phone?: string; email?: string; name?: string; firstName?: string; lastName?: string; birthday?: string; gender?: string; tags?: string[] },
+    @Body()
+    body: {
+      phone?: string;
+      email?: string;
+      name?: string;
+      firstName?: string;
+      lastName?: string;
+      birthday?: string;
+      gender?: string;
+      tags?: string[];
+    },
   ) {
-    return this.customersService.update(this.getMerchantId(req), String(customerId||''), body || {});
+    return this.customersService.update(
+      this.getMerchantId(req),
+      String(customerId || ''),
+      body || {},
+    );
   }
 
   @Delete('customers/:customerId')
-  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
+  @ApiOkResponse({
+    schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
+  })
   deleteCustomer(@Req() req: any, @Param('customerId') customerId: string) {
-    return this.customersService.remove(this.getMerchantId(req), String(customerId||''));
+    return this.customersService.remove(
+      this.getMerchantId(req),
+      String(customerId || ''),
+    );
   }
 
   // Promocodes (POINTS) — list/issue/deactivate
   @Get('promocodes')
-  @ApiOkResponse({ schema: { type: 'object', properties: { items: { type: 'array', items: { type: 'object', additionalProperties: true } } } } })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        items: {
+          type: 'array',
+          items: { type: 'object', additionalProperties: true },
+        },
+      },
+    },
+  })
   promocodesList(
     @Req() req: any,
     @Query('status') status?: string,
     @Query('limit') limitStr?: string,
   ) {
-    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200) : 50;
-    return this.promoCodes.listForPortal(this.getMerchantId(req), status, limit);
+    const limit = limitStr
+      ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200)
+      : 50;
+    return this.promoCodes.listForPortal(
+      this.getMerchantId(req),
+      status,
+      limit,
+    );
   }
   @Post('promocodes/issue')
-  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' }, promoCodeId: { type: 'string' } } } })
-  promocodesIssue(
-    @Req() req: any,
-    @Body() body: PortalPromoCodePayload,
-  ) {
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: { ok: { type: 'boolean' }, promoCodeId: { type: 'string' } },
+    },
+  })
+  promocodesIssue(@Req() req: any, @Body() body: PortalPromoCodePayload) {
     return this.promoCodes
       .createFromPortal(this.getMerchantId(req), body)
       .then((created) => ({ ok: true, promoCodeId: created.id }));
   }
   @Post('promocodes/deactivate')
-  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
-  promocodesDeactivate(@Req() req: any, @Body() body: { promoCodeId?: string; code?: string }) {
+  @ApiOkResponse({
+    schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
+  })
+  promocodesDeactivate(
+    @Req() req: any,
+    @Body() body: { promoCodeId?: string; code?: string },
+  ) {
     if (!body?.promoCodeId) throw new NotFoundException('Промокод не найден');
-    return this.promoCodes.changeStatus(this.getMerchantId(req), body.promoCodeId, PromoCodeStatus.ARCHIVED);
+    return this.promoCodes.changeStatus(
+      this.getMerchantId(req),
+      body.promoCodeId,
+      PromoCodeStatus.ARCHIVED,
+    );
   }
   @Post('promocodes/activate')
-  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
-  promocodesActivate(@Req() req: any, @Body() body: { promoCodeId?: string; code?: string }) {
+  @ApiOkResponse({
+    schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
+  })
+  promocodesActivate(
+    @Req() req: any,
+    @Body() body: { promoCodeId?: string; code?: string },
+  ) {
     if (!body?.promoCodeId) throw new NotFoundException('Промокод не найден');
-    return this.promoCodes.changeStatus(this.getMerchantId(req), body.promoCodeId, PromoCodeStatus.ACTIVE);
+    return this.promoCodes.changeStatus(
+      this.getMerchantId(req),
+      body.promoCodeId,
+      PromoCodeStatus.ACTIVE,
+    );
   }
   @Put('promocodes/:promoCodeId')
-  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
+  @ApiOkResponse({
+    schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
+  })
   promocodesUpdate(
     @Req() req: any,
     @Param('promoCodeId') promoCodeId: string,
     @Body() body: PortalPromoCodePayload,
   ) {
-    return this.promoCodes.updateFromPortal(this.getMerchantId(req), promoCodeId, body);
+    return this.promoCodes.updateFromPortal(
+      this.getMerchantId(req),
+      promoCodeId,
+      body,
+    );
   }
 
   // Notifications broadcast (enqueue or dry-run)
   @Post('notifications/broadcast')
-  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' }, dryRun: { type: 'boolean', nullable: true }, estimated: { type: 'number', nullable: true } } } })
-  notificationsBroadcast(@Req() req: any, @Body() body: Omit<BroadcastArgs, 'merchantId'>) {
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        ok: { type: 'boolean' },
+        dryRun: { type: 'boolean', nullable: true },
+        estimated: { type: 'number', nullable: true },
+      },
+    },
+  })
+  notificationsBroadcast(
+    @Req() req: any,
+    @Body() body: Omit<BroadcastArgs, 'merchantId'>,
+  ) {
     const merchantId = this.getMerchantId(req);
     return this.notifications.broadcast({ merchantId, ...body });
   }
 
   // ===== Push campaigns =====
   @Get('push-campaigns')
-  @ApiOkResponse({ schema: { type: 'array', items: { type: 'object', additionalProperties: true } } })
+  @ApiOkResponse({
+    schema: {
+      type: 'array',
+      items: { type: 'object', additionalProperties: true },
+    },
+  })
   listPushCampaigns(@Req() req: any, @Query('scope') scope?: string) {
     const merchantId = this.getMerchantId(req);
     return this.communications
-      .listChannelTasks(merchantId, CommunicationChannel.PUSH, this.normalizePushScope(scope))
-      .then(tasks => tasks.map(task => this.mapPushTask(task)));
+      .listChannelTasks(
+        merchantId,
+        CommunicationChannel.PUSH,
+        this.normalizePushScope(scope),
+      )
+      .then((tasks) => tasks.map((task) => this.mapPushTask(task)));
   }
 
   @Post('push-campaigns')
   @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
   createPushCampaign(
     @Req() req: any,
-    @Body() body: { text?: string; audience?: string; startAt?: string; scheduledAt?: string; timezone?: string },
+    @Body()
+    body: {
+      text?: string;
+      audience?: string;
+      startAt?: string;
+      scheduledAt?: string;
+      timezone?: string;
+    },
   ) {
     const merchantId = this.getMerchantId(req);
     return this.communications
@@ -394,7 +626,7 @@ export class PortalController {
           audience: body?.audience ?? null,
         },
       })
-      .then(task => this.mapPushTask(task));
+      .then((task) => this.mapPushTask(task));
   }
 
   @Post('push-campaigns/:campaignId/cancel')
@@ -402,15 +634,18 @@ export class PortalController {
   cancelPushCampaign(@Req() req: any, @Param('campaignId') campaignId: string) {
     return this.communications
       .updateTaskStatus(this.getMerchantId(req), campaignId, 'CANCELED')
-      .then(task => this.mapPushTask(task));
+      .then((task) => this.mapPushTask(task));
   }
 
   @Post('push-campaigns/:campaignId/archive')
   @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
-  archivePushCampaign(@Req() req: any, @Param('campaignId') campaignId: string) {
+  archivePushCampaign(
+    @Req() req: any,
+    @Param('campaignId') campaignId: string,
+  ) {
     return this.communications
       .updateTaskStatus(this.getMerchantId(req), campaignId, 'ARCHIVED')
-      .then(task => this.mapPushTask(task));
+      .then((task) => this.mapPushTask(task));
   }
 
   @Post('push-campaigns/:campaignId/duplicate')
@@ -422,18 +657,29 @@ export class PortalController {
   ) {
     const merchantId = this.getMerchantId(req);
     return this.communications
-      .duplicateTask(merchantId, campaignId, { scheduledAt: body?.scheduledAt ?? body?.startAt ?? null })
-      .then(task => this.mapPushTask(task));
+      .duplicateTask(merchantId, campaignId, {
+        scheduledAt: body?.scheduledAt ?? body?.startAt ?? null,
+      })
+      .then((task) => this.mapPushTask(task));
   }
 
   // ===== Telegram campaigns =====
   @Get('telegram-campaigns')
-  @ApiOkResponse({ schema: { type: 'array', items: { type: 'object', additionalProperties: true } } })
+  @ApiOkResponse({
+    schema: {
+      type: 'array',
+      items: { type: 'object', additionalProperties: true },
+    },
+  })
   listTelegramCampaigns(@Req() req: any, @Query('scope') scope?: string) {
     const merchantId = this.getMerchantId(req);
     return this.communications
-      .listChannelTasks(merchantId, CommunicationChannel.TELEGRAM, this.normalizeTelegramScope(scope))
-      .then(tasks => tasks.map(task => this.mapTelegramTask(task)));
+      .listChannelTasks(
+        merchantId,
+        CommunicationChannel.TELEGRAM,
+        this.normalizeTelegramScope(scope),
+      )
+      .then((tasks) => tasks.map((task) => this.mapTelegramTask(task)));
   }
 
   @Post('telegram-campaigns')
@@ -468,23 +714,29 @@ export class PortalController {
         },
         media: body?.imageUrl ? { imageUrl: body.imageUrl } : undefined,
       })
-      .then(task => this.mapTelegramTask(task));
+      .then((task) => this.mapTelegramTask(task));
   }
 
   @Post('telegram-campaigns/:campaignId/cancel')
   @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
-  cancelTelegramCampaign(@Req() req: any, @Param('campaignId') campaignId: string) {
+  cancelTelegramCampaign(
+    @Req() req: any,
+    @Param('campaignId') campaignId: string,
+  ) {
     return this.communications
       .updateTaskStatus(this.getMerchantId(req), campaignId, 'CANCELED')
-      .then(task => this.mapTelegramTask(task));
+      .then((task) => this.mapTelegramTask(task));
   }
 
   @Post('telegram-campaigns/:campaignId/archive')
   @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
-  archiveTelegramCampaign(@Req() req: any, @Param('campaignId') campaignId: string) {
+  archiveTelegramCampaign(
+    @Req() req: any,
+    @Param('campaignId') campaignId: string,
+  ) {
     return this.communications
       .updateTaskStatus(this.getMerchantId(req), campaignId, 'ARCHIVED')
-      .then(task => this.mapTelegramTask(task));
+      .then((task) => this.mapTelegramTask(task));
   }
 
   @Post('telegram-campaigns/:campaignId/duplicate')
@@ -496,8 +748,10 @@ export class PortalController {
   ) {
     const merchantId = this.getMerchantId(req);
     return this.communications
-      .duplicateTask(merchantId, campaignId, { scheduledAt: body?.scheduledAt ?? body?.startAt ?? null })
-      .then(task => this.mapTelegramTask(task));
+      .duplicateTask(merchantId, campaignId, {
+        scheduledAt: body?.scheduledAt ?? body?.startAt ?? null,
+      })
+      .then((task) => this.mapTelegramTask(task));
   }
 
   // ===== Staff motivation =====
@@ -521,7 +775,10 @@ export class PortalController {
 
   @Put('staff-motivation')
   @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
-  updateStaffMotivation(@Req() req: any, @Body() body: UpdateStaffMotivationPayload) {
+  updateStaffMotivation(
+    @Req() req: any,
+    @Body() body: UpdateStaffMotivationPayload,
+  ) {
     return this.staffMotivation.updateSettings(this.getMerchantId(req), {
       enabled: !!body?.enabled,
       pointsForNewCustomer: Number(body?.pointsForNewCustomer ?? 0),
@@ -536,9 +793,28 @@ export class PortalController {
 
   // ===== Loyalty actions =====
   @Get('actions')
-  @ApiOkResponse({ schema: { type: 'object', properties: { total: { type: 'number' }, items: { type: 'array', items: { type: 'object', additionalProperties: true } } } } })
-  listActions(@Req() req: any, @Query('tab') tab?: string, @Query('search') search?: string) {
-    return this.actions.list(this.getMerchantId(req), this.normalizeActionsTab(tab), search || undefined);
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        total: { type: 'number' },
+        items: {
+          type: 'array',
+          items: { type: 'object', additionalProperties: true },
+        },
+      },
+    },
+  })
+  listActions(
+    @Req() req: any,
+    @Query('tab') tab?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.actions.list(
+      this.getMerchantId(req),
+      this.normalizeActionsTab(tab),
+      search || undefined,
+    );
   }
 
   @Get('actions/:campaignId')
@@ -552,16 +828,21 @@ export class PortalController {
   createProductBonusAction(@Req() req: any, @Body() body: any) {
     const payload: CreateProductBonusActionPayload = {
       name: String(body?.name ?? ''),
-      productIds: Array.isArray(body?.productIds) ? body.productIds.map((id: any) => String(id)) : [],
+      productIds: Array.isArray(body?.productIds)
+        ? body.productIds.map((id: any) => String(id))
+        : [],
       rule: {
         mode: body?.rule?.mode ?? 'FIXED',
         value: Number(body?.rule?.value ?? 0),
       },
       audienceId: body?.audienceId ?? undefined,
       audienceName: body?.audienceName ?? undefined,
-      usageLimit: (body?.usageLimit ?? 'UNLIMITED') as CreateProductBonusActionPayload['usageLimit'],
+      usageLimit: (body?.usageLimit ??
+        'UNLIMITED') as CreateProductBonusActionPayload['usageLimit'],
       usageLimitValue:
-        body?.usageLimitValue === undefined ? undefined : Number(body.usageLimitValue),
+        body?.usageLimitValue === undefined
+          ? undefined
+          : Number(body.usageLimitValue),
       schedule: {
         startEnabled: !!body?.schedule?.startEnabled,
         startDate: body?.schedule?.startDate ?? body?.startDate,
@@ -582,7 +863,9 @@ export class PortalController {
     @Body() body: UpdateActionStatusPayload,
   ) {
     const action = body?.action === 'PAUSE' ? 'PAUSE' : 'RESUME';
-    return this.actions.updateStatus(this.getMerchantId(req), campaignId, { action });
+    return this.actions.updateStatus(this.getMerchantId(req), campaignId, {
+      action,
+    });
   }
 
   @Post('actions/:campaignId/archive')
@@ -599,18 +882,34 @@ export class PortalController {
 
   @Get('referrals/program')
   referralProgramSettings(@Req() req: any) {
-    return this.referrals.getProgramSettingsForMerchant(this.getMerchantId(req));
+    return this.referrals.getProgramSettingsForMerchant(
+      this.getMerchantId(req),
+    );
   }
 
   @Put('referrals/program')
   updateReferralProgramSettings(@Req() req: any, @Body() body: any) {
     const payload = this.normalizeReferralProgramPayload(body);
-    return this.referrals.updateProgramSettingsFromPortal(this.getMerchantId(req), payload);
+    return this.referrals.updateProgramSettingsFromPortal(
+      this.getMerchantId(req),
+      payload,
+    );
   }
 
   // ===== Operations journal =====
   @Get('operations/log')
-  @ApiOkResponse({ schema: { type: 'object', properties: { total: { type: 'number' }, items: { type: 'array', items: { type: 'object', additionalProperties: true } } } } })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        total: { type: 'number' },
+        items: {
+          type: 'array',
+          items: { type: 'object', additionalProperties: true },
+        },
+      },
+    },
+  })
   getOperationsLog(
     @Req() req: any,
     @Query('from') from?: string,
@@ -643,46 +942,111 @@ export class PortalController {
 
   // ===== Analytics wrappers (portal-friendly) =====
   @Get('analytics/dashboard')
-  dashboard(@Req() req: any, @Query('period') period?: string, @Query('from') from?: string, @Query('to') to?: string) {
+  dashboard(
+    @Req() req: any,
+    @Query('period') period?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
     const merchantId = this.getMerchantId(req);
-    return this.analytics.getDashboard(merchantId, this.computePeriod(period, from, to));
+    return this.analytics.getDashboard(
+      merchantId,
+      this.computePeriod(period, from, to),
+    );
   }
   @Get('analytics/portrait')
-  portrait(@Req() req: any, @Query('period') period?: string, @Query('from') from?: string, @Query('to') to?: string) {
+  portrait(
+    @Req() req: any,
+    @Query('period') period?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
     const merchantId = this.getMerchantId(req);
-    return this.analytics.getCustomerPortrait(merchantId, this.computePeriod(period, from, to));
+    return this.analytics.getCustomerPortrait(
+      merchantId,
+      this.computePeriod(period, from, to),
+    );
   }
   @Get('analytics/repeat')
-  repeat(@Req() req: any, @Query('period') period?: string, @Query('from') from?: string, @Query('to') to?: string, @Query('outletId') outletId?: string) {
+  repeat(
+    @Req() req: any,
+    @Query('period') period?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('outletId') outletId?: string,
+  ) {
     const merchantId = this.getMerchantId(req);
-    return this.analytics.getRepeatPurchases(merchantId, this.computePeriod(period, from, to), outletId);
+    return this.analytics.getRepeatPurchases(
+      merchantId,
+      this.computePeriod(period, from, to),
+      outletId,
+    );
   }
   @Get('analytics/birthdays')
-  birthdays(@Req() req: any, @Query('withinDays') withinDays?: string, @Query('limit') limit?: string) {
+  birthdays(
+    @Req() req: any,
+    @Query('withinDays') withinDays?: string,
+    @Query('limit') limit?: string,
+  ) {
     const merchantId = this.getMerchantId(req);
-    const d = Math.max(1, Math.min(parseInt(withinDays || '30', 10) || 30, 365));
+    const d = Math.max(
+      1,
+      Math.min(parseInt(withinDays || '30', 10) || 30, 365),
+    );
     const l = Math.max(1, Math.min(parseInt(limit || '100', 10) || 100, 1000));
     return this.analytics.getBirthdays(merchantId, d, l);
   }
   @Get('analytics/referral')
-  referral(@Req() req: any, @Query('period') period?: string, @Query('from') from?: string, @Query('to') to?: string) {
+  referral(
+    @Req() req: any,
+    @Query('period') period?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
     const merchantId = this.getMerchantId(req);
-    return this.analytics.getReferralSummary(merchantId, this.computePeriod(period, from, to));
+    return this.analytics.getReferralSummary(
+      merchantId,
+      this.computePeriod(period, from, to),
+    );
   }
   @Get('analytics/operations')
-  analyticsOperations(@Req() req: any, @Query('period') period?: string, @Query('from') from?: string, @Query('to') to?: string) {
+  analyticsOperations(
+    @Req() req: any,
+    @Query('period') period?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
     const merchantId = this.getMerchantId(req);
-    return this.analytics.getOperationalMetrics(merchantId, this.computePeriod(period, from, to));
+    return this.analytics.getOperationalMetrics(
+      merchantId,
+      this.computePeriod(period, from, to),
+    );
   }
   @Get('analytics/revenue')
-  revenue(@Req() req: any, @Query('period') period?: string, @Query('from') from?: string, @Query('to') to?: string) {
+  revenue(
+    @Req() req: any,
+    @Query('period') period?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
     const merchantId = this.getMerchantId(req);
-    return this.analytics.getRevenueMetrics(merchantId, this.computePeriod(period, from, to));
+    return this.analytics.getRevenueMetrics(
+      merchantId,
+      this.computePeriod(period, from, to),
+    );
   }
   @Get('analytics/customers')
-  customers(@Req() req: any, @Query('period') period?: string, @Query('from') from?: string, @Query('to') to?: string) {
+  customers(
+    @Req() req: any,
+    @Query('period') period?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
     const merchantId = this.getMerchantId(req);
-    return this.analytics.getCustomerMetrics(merchantId, this.computePeriod(period, from, to));
+    return this.analytics.getCustomerMetrics(
+      merchantId,
+      this.computePeriod(period, from, to),
+    );
   }
   @Get('analytics/auto-return')
   analyticsAutoReturn(
@@ -693,7 +1057,11 @@ export class PortalController {
     @Query('outletId') outletId?: string,
   ) {
     const merchantId = this.getMerchantId(req);
-    return this.analytics.getAutoReturnMetrics(merchantId, this.computePeriod(period, from, to), outletId);
+    return this.analytics.getAutoReturnMetrics(
+      merchantId,
+      this.computePeriod(period, from, to),
+      outletId,
+    );
   }
   @Get('analytics/birthday-mechanic')
   analyticsBirthdayMechanic(
@@ -704,19 +1072,39 @@ export class PortalController {
     @Query('outletId') outletId?: string,
   ) {
     const merchantId = this.getMerchantId(req);
-    return this.analytics.getBirthdayMechanicMetrics(merchantId, this.computePeriod(period, from, to), outletId);
+    return this.analytics.getBirthdayMechanicMetrics(
+      merchantId,
+      this.computePeriod(period, from, to),
+      outletId,
+    );
   }
 
   @Get('analytics/loyalty')
-  loyalty(@Req() req: any, @Query('period') period?: string, @Query('from') from?: string, @Query('to') to?: string) {
+  loyalty(
+    @Req() req: any,
+    @Query('period') period?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
     const merchantId = this.getMerchantId(req);
-    return this.analytics.getLoyaltyMetrics(merchantId, this.computePeriod(period, from, to));
+    return this.analytics.getLoyaltyMetrics(
+      merchantId,
+      this.computePeriod(period, from, to),
+    );
   }
   @Get('analytics/cohorts')
-  cohorts(@Req() req: any, @Query('by') by?: 'month'|'week', @Query('limit') limitStr?: string) {
+  cohorts(
+    @Req() req: any,
+    @Query('by') by?: 'month' | 'week',
+    @Query('limit') limitStr?: string,
+  ) {
     const merchantId = this.getMerchantId(req);
     const limit = Math.min(Math.max(parseInt(limitStr || '6', 10) || 6, 1), 24);
-    return this.analytics.getRetentionCohorts(merchantId, by === 'week' ? 'week' : 'month', limit);
+    return this.analytics.getRetentionCohorts(
+      merchantId,
+      by === 'week' ? 'week' : 'month',
+      limit,
+    );
   }
   @Get('analytics/rfm-heatmap')
   rfmHeatmap(@Req() req: any) {
@@ -726,7 +1114,22 @@ export class PortalController {
 
   // Integrations
   @Get('integrations')
-  @ApiOkResponse({ schema: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, type: { type: 'string' }, provider: { type: 'string' }, isActive: { type: 'boolean' }, lastSync: { type: 'string', nullable: true }, errorCount: { type: 'number' } } } } })
+  @ApiOkResponse({
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          type: { type: 'string' },
+          provider: { type: 'string' },
+          isActive: { type: 'boolean' },
+          lastSync: { type: 'string', nullable: true },
+          errorCount: { type: 'number' },
+        },
+      },
+    },
+  })
   integrations(@Req() req: any) {
     return this.service.listIntegrations(this.getMerchantId(req));
   }
@@ -756,32 +1159,67 @@ export class PortalController {
   @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
   @ApiBadRequestResponse({ type: ErrorDto })
   telegramMiniAppConnect(@Req() req: any, @Body() body: { token?: string }) {
-    return this.telegramIntegration.connect(this.getMerchantId(req), body?.token || '');
+    return this.telegramIntegration.connect(
+      this.getMerchantId(req),
+      body?.token || '',
+    );
   }
 
   // ===== Telegram staff notifications (global bot) =====
   @Get('settings/telegram-notify/state')
-  @ApiOkResponse({ schema: { type: 'object', properties: { configured: { type: 'boolean' }, botUsername: { type: 'string', nullable: true }, botLink: { type: 'string', nullable: true } } } })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        configured: { type: 'boolean' },
+        botUsername: { type: 'string', nullable: true },
+        botLink: { type: 'string', nullable: true },
+      },
+    },
+  })
   telegramNotifyState(@Req() req: any) {
     return this.telegramNotify.getState(this.getMerchantId(req));
   }
 
   @Post('settings/telegram-notify/invite')
-  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' }, startUrl: { type: 'string' }, startGroupUrl: { type: 'string' }, token: { type: 'string' } } } })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        ok: { type: 'boolean' },
+        startUrl: { type: 'string' },
+        startGroupUrl: { type: 'string' },
+        token: { type: 'string' },
+      },
+    },
+  })
   telegramNotifyInvite(@Req() req: any, @Body() body: { forceNew?: boolean }) {
-    return this.telegramNotify.issueInvite(this.getMerchantId(req), !!body?.forceNew);
+    return this.telegramNotify.issueInvite(
+      this.getMerchantId(req),
+      !!body?.forceNew,
+    );
   }
 
   @Get('settings/telegram-notify/subscribers')
-  @ApiOkResponse({ schema: { type: 'array', items: { type: 'object', additionalProperties: true } } })
+  @ApiOkResponse({
+    schema: {
+      type: 'array',
+      items: { type: 'object', additionalProperties: true },
+    },
+  })
   telegramNotifySubscribers(@Req() req: any) {
     return this.telegramNotify.listSubscribers(this.getMerchantId(req));
   }
 
   @Post('settings/telegram-notify/subscribers/:id/deactivate')
-  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
+  @ApiOkResponse({
+    schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
+  })
   telegramNotifyDeactivate(@Req() req: any, @Param('id') id: string) {
-    return this.telegramNotify.deactivateSubscriber(this.getMerchantId(req), String(id||''));
+    return this.telegramNotify.deactivateSubscriber(
+      this.getMerchantId(req),
+      String(id || ''),
+    );
   }
 
   @Post('integrations/telegram-mini-app/check')
@@ -792,14 +1230,27 @@ export class PortalController {
   }
 
   @Post('integrations/telegram-mini-app/link')
-  @ApiOkResponse({ schema: { type: 'object', properties: { deepLink: { type: 'string' }, startParam: { type: 'string' } } } })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        deepLink: { type: 'string' },
+        startParam: { type: 'string' },
+      },
+    },
+  })
   @ApiBadRequestResponse({ type: ErrorDto })
   telegramMiniAppLink(@Req() req: any, @Body() body: { outletId?: string }) {
-    return this.telegramIntegration.generateLink(this.getMerchantId(req), body?.outletId);
+    return this.telegramIntegration.generateLink(
+      this.getMerchantId(req),
+      body?.outletId,
+    );
   }
 
   @Post('integrations/telegram-mini-app/setup-menu')
-  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
+  @ApiOkResponse({
+    schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
+  })
   @ApiBadRequestResponse({ type: ErrorDto })
   telegramMiniAppSetupMenu(@Req() req: any) {
     return this.telegramIntegration.setupMenu(this.getMerchantId(req));
@@ -813,7 +1264,12 @@ export class PortalController {
 
   // Gifts (portal list)
   @Get('gifts')
-  @ApiOkResponse({ schema: { type: 'array', items: { type: 'object', additionalProperties: true } } })
+  @ApiOkResponse({
+    schema: {
+      type: 'array',
+      items: { type: 'object', additionalProperties: true },
+    },
+  })
   giftsList(@Req() req: any) {
     return this.gifts.listGifts(this.getMerchantId(req));
   }
@@ -822,7 +1278,9 @@ export class PortalController {
   @Get('settings')
   @ApiOkResponse({ type: MerchantSettingsRespDto })
   @ApiUnauthorizedResponse({ type: ErrorDto })
-  getSettings(@Req() req: any) { return this.service.getSettings(this.getMerchantId(req)); }
+  getSettings(@Req() req: any) {
+    return this.service.getSettings(this.getMerchantId(req));
+  }
 
   @Put('settings')
   @ApiOkResponse({ type: MerchantSettingsRespDto })
@@ -863,17 +1321,35 @@ export class PortalController {
   }
   @Put('catalog/categories/:categoryId')
   @ApiOkResponse({ type: CategoryDto })
-  updateCatalogCategory(@Req() req: any, @Param('categoryId') categoryId: string, @Body() dto: UpdateCategoryDto) {
-    return this.catalog.updateCategory(this.getMerchantId(req), categoryId, dto);
+  updateCatalogCategory(
+    @Req() req: any,
+    @Param('categoryId') categoryId: string,
+    @Body() dto: UpdateCategoryDto,
+  ) {
+    return this.catalog.updateCategory(
+      this.getMerchantId(req),
+      categoryId,
+      dto,
+    );
   }
   @Post('catalog/categories/reorder')
-  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' }, updated: { type: 'number' } } } })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: { ok: { type: 'boolean' }, updated: { type: 'number' } },
+    },
+  })
   reorderCatalogCategories(@Req() req: any, @Body() dto: ReorderCategoriesDto) {
     return this.catalog.reorderCategories(this.getMerchantId(req), dto);
   }
   @Delete('catalog/categories/:categoryId')
-  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
-  deleteCatalogCategory(@Req() req: any, @Param('categoryId') categoryId: string) {
+  @ApiOkResponse({
+    schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
+  })
+  deleteCatalogCategory(
+    @Req() req: any,
+    @Param('categoryId') categoryId: string,
+  ) {
     return this.catalog.deleteCategory(this.getMerchantId(req), categoryId);
   }
 
@@ -895,16 +1371,27 @@ export class PortalController {
   }
   @Put('catalog/products/:productId')
   @ApiOkResponse({ type: ProductDto })
-  updateCatalogProduct(@Req() req: any, @Param('productId') productId: string, @Body() dto: UpdateProductDto) {
+  updateCatalogProduct(
+    @Req() req: any,
+    @Param('productId') productId: string,
+    @Body() dto: UpdateProductDto,
+  ) {
     return this.catalog.updateProduct(this.getMerchantId(req), productId, dto);
   }
   @Delete('catalog/products/:productId')
-  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
+  @ApiOkResponse({
+    schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
+  })
   deleteCatalogProduct(@Req() req: any, @Param('productId') productId: string) {
     return this.catalog.deleteProduct(this.getMerchantId(req), productId);
   }
   @Post('catalog/products/bulk')
-  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' }, updated: { type: 'number' } } } })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: { ok: { type: 'boolean' }, updated: { type: 'number' } },
+    },
+  })
   bulkCatalogProducts(@Req() req: any, @Body() dto: ProductBulkActionDto) {
     return this.catalog.bulkProductAction(this.getMerchantId(req), dto);
   }
@@ -917,8 +1404,17 @@ export class PortalController {
     @Query('status') status?: 'active' | 'inactive' | 'all',
     @Query('search') search?: string,
   ) {
-    const normalized: 'active' | 'inactive' | 'all' = status === 'active' ? 'active' : status === 'inactive' ? 'inactive' : 'all';
-    return this.catalog.listOutlets(this.getMerchantId(req), normalized, search);
+    const normalized: 'active' | 'inactive' | 'all' =
+      status === 'active'
+        ? 'active'
+        : status === 'inactive'
+          ? 'inactive'
+          : 'all';
+    return this.catalog.listOutlets(
+      this.getMerchantId(req),
+      normalized,
+      search,
+    );
   }
   @Get('outlets/:outletId')
   @ApiOkResponse({ type: PortalOutletDto })
@@ -932,77 +1428,183 @@ export class PortalController {
   }
   @Put('outlets/:outletId')
   @ApiOkResponse({ type: PortalOutletDto })
-  updateOutlet(@Req() req: any, @Param('outletId') outletId: string, @Body() dto: UpdatePortalOutletDto) {
+  updateOutlet(
+    @Req() req: any,
+    @Param('outletId') outletId: string,
+    @Body() dto: UpdatePortalOutletDto,
+  ) {
     return this.catalog.updateOutlet(this.getMerchantId(req), outletId, dto);
   }
   @Delete('outlets/:outletId')
-  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
+  @ApiOkResponse({
+    schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
+  })
   deleteOutlet(@Req() req: any, @Param('outletId') outletId: string) {
     return this.service.deleteOutlet(this.getMerchantId(req), outletId);
   }
 
   @Post('outlets/:outletId/bridge-secret')
-  @ApiOkResponse({ schema: { type: 'object', properties: { secret: { type: 'string' } } } })
-  issueOutletBridgeSecret(@Req() req: any, @Param('outletId') outletId: string) {
-    return this.service.issueOutletBridgeSecret(this.getMerchantId(req), outletId);
+  @ApiOkResponse({
+    schema: { type: 'object', properties: { secret: { type: 'string' } } },
+  })
+  issueOutletBridgeSecret(
+    @Req() req: any,
+    @Param('outletId') outletId: string,
+  ) {
+    return this.service.issueOutletBridgeSecret(
+      this.getMerchantId(req),
+      outletId,
+    );
   }
   @Delete('outlets/:outletId/bridge-secret')
-  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
-  revokeOutletBridgeSecret(@Req() req: any, @Param('outletId') outletId: string) {
-    return this.service.revokeOutletBridgeSecret(this.getMerchantId(req), outletId);
+  @ApiOkResponse({
+    schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
+  })
+  revokeOutletBridgeSecret(
+    @Req() req: any,
+    @Param('outletId') outletId: string,
+  ) {
+    return this.service.revokeOutletBridgeSecret(
+      this.getMerchantId(req),
+      outletId,
+    );
   }
   @Post('outlets/:outletId/bridge-secret/next')
-  @ApiOkResponse({ schema: { type: 'object', properties: { secret: { type: 'string' } } } })
-  issueOutletBridgeSecretNext(@Req() req: any, @Param('outletId') outletId: string) {
-    return this.service.issueOutletBridgeSecretNext(this.getMerchantId(req), outletId);
+  @ApiOkResponse({
+    schema: { type: 'object', properties: { secret: { type: 'string' } } },
+  })
+  issueOutletBridgeSecretNext(
+    @Req() req: any,
+    @Param('outletId') outletId: string,
+  ) {
+    return this.service.issueOutletBridgeSecretNext(
+      this.getMerchantId(req),
+      outletId,
+    );
   }
   @Delete('outlets/:outletId/bridge-secret/next')
-  @ApiOkResponse({ schema: { type: 'object', properties: { ok: { type: 'boolean' } } } })
-  revokeOutletBridgeSecretNext(@Req() req: any, @Param('outletId') outletId: string) {
-    return this.service.revokeOutletBridgeSecretNext(this.getMerchantId(req), outletId);
+  @ApiOkResponse({
+    schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
+  })
+  revokeOutletBridgeSecretNext(
+    @Req() req: any,
+    @Param('outletId') outletId: string,
+  ) {
+    return this.service.revokeOutletBridgeSecretNext(
+      this.getMerchantId(req),
+      outletId,
+    );
   }
   @Put('outlets/:outletId/pos')
   @ApiOkResponse({ type: PortalOutletDto })
-  updateOutletPos(@Req() req: any, @Param('outletId') outletId: string, @Body() dto: UpdateOutletPosDto) {
+  updateOutletPos(
+    @Req() req: any,
+    @Param('outletId') outletId: string,
+    @Body() dto: UpdateOutletPosDto,
+  ) {
     const merchantId = this.getMerchantId(req);
-    return this.service.updateOutletPos(merchantId, outletId, dto).then(() => this.catalog.getOutlet(merchantId, outletId));
+    return this.service
+      .updateOutletPos(merchantId, outletId, dto)
+      .then(() => this.catalog.getOutlet(merchantId, outletId));
   }
   @Put('outlets/:outletId/status')
   @ApiOkResponse({ type: PortalOutletDto })
-  updateOutletStatus(@Req() req: any, @Param('outletId') outletId: string, @Body() dto: UpdateOutletStatusDto) {
+  updateOutletStatus(
+    @Req() req: any,
+    @Param('outletId') outletId: string,
+    @Body() dto: UpdateOutletStatusDto,
+  ) {
     const merchantId = this.getMerchantId(req);
-    return this.service.updateOutletStatus(merchantId, outletId, dto.status).then(() => this.catalog.getOutlet(merchantId, outletId));
+    return this.service
+      .updateOutletStatus(merchantId, outletId, dto.status)
+      .then(() => this.catalog.getOutlet(merchantId, outletId));
   }
 
   // Transactions & Receipts (read-only)
   @Get('transactions')
-  @ApiOkResponse({ schema: { type: 'array', items: { $ref: getSchemaPath(TransactionItemDto) } } })
-  listTransactions(@Req() req: any, @Query('limit') limitStr?: string, @Query('before') beforeStr?: string, @Query('from') fromStr?: string, @Query('to') toStr?: string, @Query('type') type?: string, @Query('customerId') customerId?: string, @Query('outletId') outletId?: string, @Query('staffId') staffId?: string) {
+  @ApiOkResponse({
+    schema: {
+      type: 'array',
+      items: { $ref: getSchemaPath(TransactionItemDto) },
+    },
+  })
+  listTransactions(
+    @Req() req: any,
+    @Query('limit') limitStr?: string,
+    @Query('before') beforeStr?: string,
+    @Query('from') fromStr?: string,
+    @Query('to') toStr?: string,
+    @Query('type') type?: string,
+    @Query('customerId') customerId?: string,
+    @Query('outletId') outletId?: string,
+    @Query('staffId') staffId?: string,
+  ) {
     const id = this.getMerchantId(req);
-    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200) : 50;
+    const limit = limitStr
+      ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200)
+      : 50;
     const before = beforeStr ? new Date(beforeStr) : undefined;
     const from = fromStr ? new Date(fromStr) : undefined;
     const to = toStr ? new Date(toStr) : undefined;
-    return this.service.listTransactions(id, { limit, before, from, to, type, customerId, outletId, staffId });
+    return this.service.listTransactions(id, {
+      limit,
+      before,
+      from,
+      to,
+      type,
+      customerId,
+      outletId,
+      staffId,
+    });
   }
 
   @Get('receipts')
   @ApiOkResponse({ type: ReceiptDto, isArray: true })
-  listReceipts(@Req() req: any, @Query('limit') limitStr?: string, @Query('before') beforeStr?: string, @Query('orderId') orderId?: string, @Query('customerId') customerId?: string) {
+  listReceipts(
+    @Req() req: any,
+    @Query('limit') limitStr?: string,
+    @Query('before') beforeStr?: string,
+    @Query('orderId') orderId?: string,
+    @Query('customerId') customerId?: string,
+  ) {
     const id = this.getMerchantId(req);
-    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200) : 50;
+    const limit = limitStr
+      ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200)
+      : 50;
     const before = beforeStr ? new Date(beforeStr) : undefined;
-    return this.service.listReceipts(id, { limit, before, orderId, customerId });
+    return this.service.listReceipts(id, {
+      limit,
+      before,
+      orderId,
+      customerId,
+    });
   }
 
   @Get('ledger')
   @ApiOkResponse({ type: LedgerEntryDto, isArray: true })
-  listLedger(@Req() req: any, @Query('limit') limitStr?: string, @Query('before') beforeStr?: string, @Query('from') fromStr?: string, @Query('to') toStr?: string, @Query('customerId') customerId?: string, @Query('type') type?: string) {
+  listLedger(
+    @Req() req: any,
+    @Query('limit') limitStr?: string,
+    @Query('before') beforeStr?: string,
+    @Query('from') fromStr?: string,
+    @Query('to') toStr?: string,
+    @Query('customerId') customerId?: string,
+    @Query('type') type?: string,
+  ) {
     const id = this.getMerchantId(req);
-    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 500) : 50;
+    const limit = limitStr
+      ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 500)
+      : 50;
     const before = beforeStr ? new Date(beforeStr) : undefined;
     const from = fromStr ? new Date(fromStr) : undefined;
     const to = toStr ? new Date(toStr) : undefined;
-    return this.service.listLedger(id, { limit, before, customerId, from, to, type });
+    return this.service.listLedger(id, {
+      limit,
+      before,
+      customerId,
+      from,
+      to,
+      type,
+    });
   }
 }

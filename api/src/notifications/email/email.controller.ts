@@ -1,12 +1,10 @@
+import { Controller, Post, Get, Body, Param, UseGuards } from '@nestjs/common';
 import {
-  Controller,
-  Post,
-  Get,
-  Body,
-  Param,
-  UseGuards,
-} from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { EmailService } from './email.service';
 import type { SendEmailDto } from './email.service';
 import { ApiKeyGuard } from '../../guards/api-key.guard';
@@ -36,13 +34,13 @@ export class EmailController {
   @Post('welcome')
   @ApiOperation({ summary: 'Отправить приветственное письмо новому клиенту' })
   async sendWelcomeEmail(
-    @Body() dto: {
-      merchantId: string;
-      customerId: string;
-      email: string;
-    },
+    @Body() dto: { merchantId: string; customerId: string; email: string },
   ) {
-    await this.emailService.sendWelcomeEmail(dto.merchantId, dto.customerId, dto.email);
+    await this.emailService.sendWelcomeEmail(
+      dto.merchantId,
+      dto.customerId,
+      dto.email,
+    );
     return { success: true };
   }
 
@@ -65,7 +63,8 @@ export class EmailController {
   @Post('campaign')
   @ApiOperation({ summary: 'Отправить массовую рассылку по кампании' })
   async sendCampaignEmail(
-    @Body() dto: {
+    @Body()
+    dto: {
       campaignId: string;
       customerIds: string[];
       subject: string;
@@ -86,7 +85,8 @@ export class EmailController {
   @Post('report')
   @ApiOperation({ summary: 'Отправить отчет на email' })
   async sendReportEmail(
-    @Body() dto: {
+    @Body()
+    dto: {
       merchantId: string;
       email: string;
       reportType: string;
@@ -130,12 +130,7 @@ export class EmailController {
    */
   @Post('test')
   @ApiOperation({ summary: 'Отправить тестовое письмо' })
-  async sendTestEmail(
-    @Body() dto: {
-      to: string;
-      template?: string;
-    },
-  ) {
+  async sendTestEmail(@Body() dto: { to: string; template?: string }) {
     const result = await this.emailService.sendEmail({
       to: dto.to,
       subject: 'Тестовое письмо - Система лояльности',
@@ -147,16 +142,19 @@ export class EmailController {
         balance: 500,
         points: 250,
         campaignName: 'Тестовая акция',
-        content: 'Это тестовое сообщение для проверки работы email уведомлений.',
+        content:
+          'Это тестовое сообщение для проверки работы email уведомлений.',
         reportType: 'test',
         reportDate: new Date().toLocaleDateString('ru-RU'),
         format: 'PDF',
-        expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('ru-RU'),
+        expiryDate: new Date(
+          Date.now() + 30 * 24 * 60 * 60 * 1000,
+        ).toLocaleDateString('ru-RU'),
         transactionDate: new Date().toLocaleDateString('ru-RU'),
       },
     });
 
-    return { 
+    return {
       success: result,
       message: result ? 'Тестовое письмо отправлено' : 'Ошибка отправки',
     };

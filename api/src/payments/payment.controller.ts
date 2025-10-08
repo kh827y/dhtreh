@@ -9,7 +9,12 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { PaymentService } from './payment.service';
 import { ApiKeyGuard } from '../guards/api-key.guard';
 
@@ -31,7 +36,10 @@ export class PaymentController {
     @Param('merchantId') merchantId: string,
     @Param('subscriptionId') subscriptionId: string,
   ) {
-    return this.paymentService.createSubscriptionPayment(merchantId, subscriptionId);
+    return this.paymentService.createSubscriptionPayment(
+      merchantId,
+      subscriptionId,
+    );
   }
 
   /**

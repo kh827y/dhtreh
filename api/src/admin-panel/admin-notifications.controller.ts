@@ -7,7 +7,10 @@ import { TelegramNotifyService } from '../telegram/telegram-notify.service';
 @UseGuards(AdminGuard, AdminIpGuard)
 @Controller('notifications')
 export class AdminNotificationsController {
-  constructor(private readonly notify: TelegramNotifyService, private readonly config: ConfigService) {}
+  constructor(
+    private readonly notify: TelegramNotifyService,
+    private readonly config: ConfigService,
+  ) {}
 
   @Get('telegram-notify/state')
   async state() {
@@ -16,13 +19,20 @@ export class AdminNotificationsController {
     const isConfigured = this.notify.isConfigured();
     const botUsername = bot?.username || null;
     const botLink = bot?.username ? `https://t.me/${bot.username}` : null;
-    return { ok: true, configured: isConfigured, botUsername, botLink, webhook: info ?? null } as const;
+    return {
+      ok: true,
+      configured: isConfigured,
+      botUsername,
+      botLink,
+      webhook: info ?? null,
+    } as const;
   }
 
   @Post('telegram-notify/set-webhook')
   async setWebhook() {
     const base = this.config.get<string>('API_BASE_URL') || '';
-    if (!base) return { ok: false, error: 'API_BASE_URL is not configured' } as any;
+    if (!base)
+      return { ok: false, error: 'API_BASE_URL is not configured' } as any;
     const r = await this.notify.setWebhook(base);
     return { ok: true, ...r } as any;
   }

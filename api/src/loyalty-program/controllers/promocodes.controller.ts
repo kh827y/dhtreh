@@ -1,6 +1,19 @@
-import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { PortalGuard } from '../../portal-auth/portal.guard';
-import { PromoCodesService, type LoyaltyPromoCodePayload } from '../../promocodes/promocodes.service';
+import {
+  PromoCodesService,
+  type LoyaltyPromoCodePayload,
+} from '../../promocodes/promocodes.service';
 import { PromoCodeStatus } from '@prisma/client';
 
 @Controller('portal/loyalty/promocodes')
@@ -14,7 +27,8 @@ export class PromoCodesController {
 
   @Get()
   list(@Req() req: any, @Query('status') status?: string) {
-    const normalized = status && status !== 'ALL' ? (status as PromoCodeStatus) : 'ALL';
+    const normalized =
+      status && status !== 'ALL' ? (status as PromoCodeStatus) : 'ALL';
     return this.service.listPromoCodes(this.merchantId(req), normalized as any);
   }
 
@@ -24,17 +38,38 @@ export class PromoCodesController {
   }
 
   @Put(':id')
-  update(@Req() req: any, @Param('id') id: string, @Body() body: LoyaltyPromoCodePayload) {
+  update(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: LoyaltyPromoCodePayload,
+  ) {
     return this.service.updatePromoCode(this.merchantId(req), id, body);
   }
 
   @Post(':id/status')
-  changeStatus(@Req() req: any, @Param('id') id: string, @Body() body: { status: PromoCodeStatus; actorId?: string }) {
-    return this.service.changePromoCodeStatus(this.merchantId(req), id, body.status, body.actorId);
+  changeStatus(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: { status: PromoCodeStatus; actorId?: string },
+  ) {
+    return this.service.changePromoCodeStatus(
+      this.merchantId(req),
+      id,
+      body.status,
+      body.actorId,
+    );
   }
 
   @Post('bulk/status')
-  bulkStatus(@Req() req: any, @Body() body: { ids: string[]; status: PromoCodeStatus; actorId?: string }) {
-    return this.service.bulkArchivePromoCodes(this.merchantId(req), body.ids ?? [], body.status, body.actorId);
+  bulkStatus(
+    @Req() req: any,
+    @Body() body: { ids: string[]; status: PromoCodeStatus; actorId?: string },
+  ) {
+    return this.service.bulkArchivePromoCodes(
+      this.merchantId(req),
+      body.ids ?? [],
+      body.status,
+      body.actorId,
+    );
   }
 }

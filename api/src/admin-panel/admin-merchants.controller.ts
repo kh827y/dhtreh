@@ -1,8 +1,20 @@
-import { Body, Controller, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { AdminGuard } from '../admin.guard';
 import { AdminIpGuard } from '../admin-ip.guard';
-import { AdminMerchantsService, type UpdateMerchantSettingsPayload } from './admin-merchants.service';
+import {
+  AdminMerchantsService,
+  type UpdateMerchantSettingsPayload,
+} from './admin-merchants.service';
 
 interface ListQuery {
   search?: string;
@@ -26,7 +38,16 @@ export class AdminMerchantsController {
   }
 
   @Post()
-  createMerchant(@Body() body: { name: string; portalEmail?: string; portalPassword?: string; ownerName?: string; settings?: UpdateMerchantSettingsPayload }) {
+  createMerchant(
+    @Body()
+    body: {
+      name: string;
+      portalEmail?: string;
+      portalPassword?: string;
+      ownerName?: string;
+      settings?: UpdateMerchantSettingsPayload;
+    },
+  ) {
     return this.service.createMerchant({
       name: body.name,
       portalEmail: body.portalEmail,
@@ -39,7 +60,14 @@ export class AdminMerchantsController {
   @Put(':id')
   updateMerchant(
     @Param('id') id: string,
-    @Body() body: { name?: string; portalEmail?: string | null; portalPassword?: string | null; ownerName?: string | null; archived?: boolean },
+    @Body()
+    body: {
+      name?: string;
+      portalEmail?: string | null;
+      portalPassword?: string | null;
+      ownerName?: string | null;
+      archived?: boolean;
+    },
   ) {
     return this.service.updateMerchant(id, {
       name: body.name ?? undefined,
@@ -51,12 +79,18 @@ export class AdminMerchantsController {
   }
 
   @Put(':id/settings')
-  updateSettings(@Param('id') id: string, @Body() body: UpdateMerchantSettingsPayload) {
+  updateSettings(
+    @Param('id') id: string,
+    @Body() body: UpdateMerchantSettingsPayload,
+  ) {
     return this.service.updateSettings(id, body);
   }
 
   @Post(':id/cashier/rotate')
-  rotateCashier(@Param('id') id: string, @Body() body: { regenerateLogin?: boolean }) {
+  rotateCashier(
+    @Param('id') id: string,
+    @Body() body: { regenerateLogin?: boolean },
+  ) {
     return this.service.rotateCashierCredentials(id, !!body?.regenerateLogin);
   }
 }

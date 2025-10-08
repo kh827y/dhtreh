@@ -2,7 +2,12 @@ import { Args, Context, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { UseGuards } from '@nestjs/common';
 import { PortalGuard } from '../../portal-auth/portal.guard';
 import { MerchantPanelService, OutletFilters } from '../merchant-panel.service';
-import { OutletDto, OutletListQueryDto, OutletListResponseDto, UpsertOutletInput } from '../dto/outlet.dto';
+import {
+  OutletDto,
+  OutletListQueryDto,
+  OutletListResponseDto,
+  UpsertOutletInput,
+} from '../dto/outlet.dto';
 import { plainToInstance } from 'class-transformer';
 
 @Resolver(() => OutletDto)
@@ -15,27 +20,46 @@ export class OutletsResolver {
   }
 
   @Query(() => OutletListResponseDto, { name: 'portalOutlets' })
-  async list(@Context() ctx: any, @Args() args: OutletListQueryDto): Promise<OutletListResponseDto> {
+  async list(
+    @Context() ctx: any,
+    @Args() args: OutletListQueryDto,
+  ): Promise<OutletListResponseDto> {
     const { page, pageSize, ...rest } = args;
     const filters: OutletFilters = {
       status: rest.status ? (rest.status as any) : undefined,
       hidden: rest.hidden,
       search: rest.search,
     };
-    const result = await this.service.listOutlets(this.merchantId(ctx), filters, { page, pageSize });
-    return plainToInstance(OutletListResponseDto, result, { enableImplicitConversion: true });
+    const result = await this.service.listOutlets(
+      this.merchantId(ctx),
+      filters,
+      { page, pageSize },
+    );
+    return plainToInstance(OutletListResponseDto, result, {
+      enableImplicitConversion: true,
+    });
   }
 
   @Query(() => OutletDto, { name: 'portalOutlet' })
-  async get(@Context() ctx: any, @Args('id', { type: () => ID }) id: string): Promise<OutletDto> {
+  async get(
+    @Context() ctx: any,
+    @Args('id', { type: () => ID }) id: string,
+  ): Promise<OutletDto> {
     const outlet = await this.service.getOutlet(this.merchantId(ctx), id);
-    return plainToInstance(OutletDto, outlet, { enableImplicitConversion: true });
+    return plainToInstance(OutletDto, outlet, {
+      enableImplicitConversion: true,
+    });
   }
 
   @Mutation(() => OutletDto, { name: 'portalOutletCreate' })
-  async create(@Context() ctx: any, @Args('input') input: UpsertOutletInput): Promise<OutletDto> {
+  async create(
+    @Context() ctx: any,
+    @Args('input') input: UpsertOutletInput,
+  ): Promise<OutletDto> {
     const outlet = await this.service.createOutlet(this.merchantId(ctx), input);
-    return plainToInstance(OutletDto, outlet, { enableImplicitConversion: true });
+    return plainToInstance(OutletDto, outlet, {
+      enableImplicitConversion: true,
+    });
   }
 
   @Mutation(() => OutletDto, { name: 'portalOutletUpdate' })
@@ -44,7 +68,13 @@ export class OutletsResolver {
     @Args('id', { type: () => ID }) id: string,
     @Args('input') input: UpsertOutletInput,
   ): Promise<OutletDto> {
-    const outlet = await this.service.updateOutlet(this.merchantId(ctx), id, input);
-    return plainToInstance(OutletDto, outlet, { enableImplicitConversion: true });
+    const outlet = await this.service.updateOutlet(
+      this.merchantId(ctx),
+      id,
+      input,
+    );
+    return plainToInstance(OutletDto, outlet, {
+      enableImplicitConversion: true,
+    });
   }
 }

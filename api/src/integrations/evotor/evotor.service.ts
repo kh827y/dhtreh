@@ -54,13 +54,16 @@ interface EvotorWebhook {
 export class EvotorService {
   private readonly logger = new Logger(EvotorService.name);
   private readonly API_URL = 'https://api.evotor.ru/api/v1';
-  
+
   constructor(
     private configService: ConfigService,
     private prisma: PrismaService,
   ) {}
 
-  private async resolveOutletId(merchantId: string, receipt: EvotorReceipt): Promise<string | null> {
+  private async resolveOutletId(
+    merchantId: string,
+    receipt: EvotorReceipt,
+  ): Promise<string | null> {
     const prismaAny = this.prisma as any;
     if (receipt.storeUuid) {
       try {
@@ -179,7 +182,7 @@ export class EvotorService {
    */
   private async subscribeToWebhooks(token: string, integrationId: string) {
     const webhookUrl = `${this.configService.get('API_BASE_URL')}/integrations/evotor/webhook/${integrationId}`;
-    
+
     const events = [
       'receipt.sell',
       'receipt.payback',
@@ -261,7 +264,7 @@ export class EvotorService {
       return { success: true };
     } catch (error) {
       this.logger.error('Ошибка обработки вебхука Эвотор:', error);
-      
+
       // Увеличиваем счетчик ошибок
       await prismaAny.integration.update({
         where: { id: integrationId },
@@ -281,7 +284,7 @@ export class EvotorService {
             endpoint: 'webhook',
             status: 'error',
             request: webhook as any,
-            error: String((error as any)?.message || error) as any,
+            error: String(error?.message || error) as any,
           },
         });
       } catch {}
@@ -297,7 +300,7 @@ export class EvotorService {
     try {
       const outletId = await this.resolveOutletId(merchantId, receipt);
       const orderId = `evotor_${receipt.uuid}`;
-      
+
       // Извлекаем телефон клиента
       const customerPhone = receipt.clientPhone;
       if (!customerPhone) {
@@ -320,7 +323,7 @@ export class EvotorService {
       const loyaltyData = await this.calculateLoyaltyForReceipt(
         merchantId,
         customer.id,
-        receipt
+        receipt,
       );
 
       if (loyaltyData.hasLoyalty) {
@@ -329,7 +332,7 @@ export class EvotorService {
           merchantId,
           customer.id,
           orderId,
-          loyaltyData
+          loyaltyData,
         );
       } else {
         // Автоматически начисляем баллы
@@ -338,7 +341,7 @@ export class EvotorService {
           customer.id,
           orderId,
           receipt.total,
-          outletId ?? undefined
+          outletId ?? undefined,
         );
       }
 
@@ -346,7 +349,7 @@ export class EvotorService {
       await this.sendCustomerNotification(
         customer.id,
         merchantId,
-        `Спасибо за покупку! Начислено ${loyaltyData.earnedPoints} баллов.`
+        `Спасибо за покупку! Начислено ${loyaltyData.earnedPoints} баллов.`,
       );
     } catch (error) {
       this.logger.error('Ошибка обработки чека продажи:', error);
@@ -357,11 +360,16 @@ export class EvotorService {
   /**
    * Обработка чека возврата
    */
-  private async handlePaybackReceipt(merchantId: string, receipt: EvotorReceipt) {
+  private async handlePaybackReceipt(
+    merchantId: string,
+    receipt: EvotorReceipt,
+  ) {
     try {
       const originalOrderId = this.extractOriginalOrderId(receipt);
       if (!originalOrderId) {
-        this.logger.warn('Не удалось определить оригинальный заказ для возврата');
+        this.logger.warn(
+          'Не удалось определить оригинальный заказ для возврата',
+        );
         return;
       }
 
@@ -400,12 +408,13 @@ export class EvotorService {
   private async calculateLoyaltyForReceipt(
     merchantId: string,
     customerId: string,
-    receipt: EvotorReceipt
+    receipt: EvotorReceipt,
   ) {
     // Проверяем, есть ли в чеке информация о программе лояльности
-    const loyaltyPosition = receipt.positions.find(p => 
-      p.name.includes('Скидка программы лояльности') ||
-      p.name.includes('Баллы')
+    const loyaltyPosition = receipt.positions.find(
+      (p) =>
+        p.name.includes('Скидка программы лояльности') ||
+        p.name.includes('Баллы'),
     );
 
     if (loyaltyPosition) {
@@ -418,7 +427,7 @@ export class EvotorService {
 
     // Рассчитываем баллы для начисления
     const eligibleTotal = receipt.positions
-      .filter(p => !p.name.includes('Скидка'))
+      .filter((p) => !p.name.includes('Скидка'))
       .reduce((sum, p) => sum + p.sum, 0);
 
     const settings = await this.prisma.merchantSettings.findUnique({
@@ -426,7 +435,7 @@ export class EvotorService {
     });
 
     const earnBps = settings?.earnBps || 500; // 5% по умолчанию
-    const earnedPoints = Math.floor(eligibleTotal * earnBps / 10000);
+    const earnedPoints = Math.floor((eligibleTotal * earnBps) / 10000);
 
     return {
       hasLoyalty: false,
@@ -443,11 +452,11 @@ export class EvotorService {
     customerId: string,
     orderId: string,
     total: number,
-    outletId?: string
+    outletId?: string,
   ) {
     try {
       const apiUrl = this.configService.get('API_BASE_URL');
-      
+
       // 1. Генерируем виртуальный QR для клиента
       const qrResponse = await fetch(`${apiUrl}/loyalty/qr`, {
         method: 'POST',
@@ -512,7 +521,9 @@ export class EvotorService {
       }
 
       const result = await commitResponse.json();
-      this.logger.log(`Автоматически начислено ${result.earnApplied} баллов для заказа ${orderId}`);
+      this.logger.log(
+        `Автоматически начислено ${result.earnApplied} баллов для заказа ${orderId}`,
+      );
     } catch (error) {
       this.logger.error('Ошибка автоматической обработки лояльности:', error);
     }
@@ -525,7 +536,7 @@ export class EvotorService {
     merchantId: string,
     customerId: string,
     orderId: string,
-    loyaltyData: any
+    loyaltyData: any,
   ) {
     // Проверяем, не была ли транзакция уже синхронизирована
     const existing = await this.prisma.receipt.findUnique({
@@ -560,7 +571,7 @@ export class EvotorService {
       await this.updateCustomerBalance(
         merchantId,
         customerId,
-        loyaltyData.earnedPoints
+        loyaltyData.earnedPoints,
       );
     }
   }
@@ -571,7 +582,7 @@ export class EvotorService {
   private async updateCustomerBalance(
     merchantId: string,
     customerId: string,
-    points: number
+    points: number,
   ) {
     const wallet = await this.prisma.wallet.findFirst({
       where: {
@@ -628,7 +639,7 @@ export class EvotorService {
   private async sendCustomerNotification(
     customerId: string,
     merchantId: string,
-    message: string
+    message: string,
   ) {
     try {
       // Здесь должна быть интеграция с сервисом уведомлений
@@ -645,7 +656,7 @@ export class EvotorService {
   async sendDiscountToDevice(
     deviceUuid: string,
     discount: number,
-    description: string
+    description: string,
   ) {
     try {
       const prismaAny = this.prisma as any;
@@ -660,24 +671,27 @@ export class EvotorService {
         throw new Error('Эвотор интеграция не найдена');
       }
 
-      const token = (integration.credentials as any).token;
+      const token = integration.credentials.token;
 
       // Отправляем команду на устройство через Эвотор Cloud API
-      const response = await fetch(`${this.API_URL}/devices/${deviceUuid}/commands`, {
-        method: 'POST',
-        headers: {
-          'X-Authorization': token,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          type: 'ADD_DISCOUNT',
-          data: {
-            value: discount,
-            type: 'ABSOLUTE', // или 'PERCENT'
-            description,
+      const response = await fetch(
+        `${this.API_URL}/devices/${deviceUuid}/commands`,
+        {
+          method: 'POST',
+          headers: {
+            'X-Authorization': token,
+            'Content-Type': 'application/json',
           },
-        }),
-      });
+          body: JSON.stringify({
+            type: 'ADD_DISCOUNT',
+            data: {
+              value: discount,
+              type: 'ABSOLUTE', // или 'PERCENT'
+              description,
+            },
+          }),
+        },
+      );
 
       if (!response.ok) {
         throw new Error(`Failed to send discount: ${await response.text()}`);
@@ -707,7 +721,7 @@ export class EvotorService {
     }
 
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    
+
     const receipts = await this.prisma.receipt.count({
       where: {
         merchantId,

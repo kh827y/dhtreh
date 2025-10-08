@@ -24,16 +24,19 @@ export class YooKassaProvider implements PaymentProvider {
   }
 
   private getAuthHeader(): string {
-    return 'Basic ' + Buffer.from(`${this.shopId}:${this.secretKey}`).toString('base64');
+    return (
+      'Basic ' +
+      Buffer.from(`${this.shopId}:${this.secretKey}`).toString('base64')
+    );
   }
 
   async createPayment(params: CreatePaymentParams): Promise<PaymentResult> {
     const idempotenceKey = crypto.randomBytes(16).toString('hex');
-    
+
     const response = await fetch(`${this.apiUrl}/payments`, {
       method: 'POST',
       headers: {
-        'Authorization': this.getAuthHeader(),
+        Authorization: this.getAuthHeader(),
         'Idempotence-Key': idempotenceKey,
         'Content-Type': 'application/json',
       },
@@ -45,7 +48,8 @@ export class YooKassaProvider implements PaymentProvider {
         capture: true, // автоматическое подтверждение платежа
         confirmation: {
           type: 'redirect',
-          return_url: params.returnUrl || this.configService.get('PAYMENT_RETURN_URL'),
+          return_url:
+            params.returnUrl || this.configService.get('PAYMENT_RETURN_URL'),
         },
         description: params.description,
         metadata: {
@@ -59,11 +63,13 @@ export class YooKassaProvider implements PaymentProvider {
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(`YooKassa error: ${error.description || 'Unknown error'}`);
+      throw new Error(
+        `YooKassa error: ${error.description || 'Unknown error'}`,
+      );
     }
 
     const data = await response.json();
-    
+
     return {
       id: data.id,
       status: this.mapStatus(data.status),
@@ -79,7 +85,7 @@ export class YooKassaProvider implements PaymentProvider {
     const response = await fetch(`${this.apiUrl}/payments/${paymentId}`, {
       method: 'GET',
       headers: {
-        'Authorization': this.getAuthHeader(),
+        Authorization: this.getAuthHeader(),
       },
     });
 
@@ -88,39 +94,46 @@ export class YooKassaProvider implements PaymentProvider {
     }
 
     const data = await response.json();
-    
+
     return {
       id: data.id,
       status: this.mapStatus(data.status),
       paid: data.paid,
       amount: Math.round(parseFloat(data.amount.value) * 100),
       currency: data.amount.currency,
-      paymentMethod: data.payment_method ? {
-        type: data.payment_method.type,
-        id: data.payment_method.id,
-        saved: data.payment_method.saved,
-        title: data.payment_method.title,
-        card: data.payment_method.card ? {
-          first6: data.payment_method.card.first6,
-          last4: data.payment_method.card.last4,
-          expiryMonth: data.payment_method.card.expiry_month,
-          expiryYear: data.payment_method.card.expiry_year,
-          cardType: data.payment_method.card.card_type,
-        } : undefined,
-      } : undefined,
+      paymentMethod: data.payment_method
+        ? {
+            type: data.payment_method.type,
+            id: data.payment_method.id,
+            saved: data.payment_method.saved,
+            title: data.payment_method.title,
+            card: data.payment_method.card
+              ? {
+                  first6: data.payment_method.card.first6,
+                  last4: data.payment_method.card.last4,
+                  expiryMonth: data.payment_method.card.expiry_month,
+                  expiryYear: data.payment_method.card.expiry_year,
+                  cardType: data.payment_method.card.card_type,
+                }
+              : undefined,
+          }
+        : undefined,
       capturedAt: data.captured_at ? new Date(data.captured_at) : undefined,
       createdAt: new Date(data.created_at),
       metadata: data.metadata,
     };
   }
 
-  async refundPayment(paymentId: string, amount?: number): Promise<RefundResult> {
+  async refundPayment(
+    paymentId: string,
+    amount?: number,
+  ): Promise<RefundResult> {
     const idempotenceKey = crypto.randomBytes(16).toString('hex');
-    
+
     const body: any = {
       payment_id: paymentId,
     };
-    
+
     if (amount !== undefined) {
       body.amount = {
         value: (amount / 100).toFixed(2),
@@ -131,7 +144,7 @@ export class YooKassaProvider implements PaymentProvider {
     const response = await fetch(`${this.apiUrl}/refunds`, {
       method: 'POST',
       headers: {
-        'Authorization': this.getAuthHeader(),
+        Authorization: this.getAuthHeader(),
         'Idempotence-Key': idempotenceKey,
         'Content-Type': 'application/json',
       },
@@ -144,7 +157,7 @@ export class YooKassaProvider implements PaymentProvider {
     }
 
     const data = await response.json();
-    
+
     return {
       id: data.id,
       status: data.status === 'succeeded' ? 'succeeded' : 'failed',
@@ -164,7 +177,7 @@ export class YooKassaProvider implements PaymentProvider {
     const object = body.object;
 
     let type: WebhookResult['type'];
-    
+
     switch (event) {
       case 'payment.succeeded':
         type = 'payment.succeeded';
@@ -214,14 +227,18 @@ export class YooKassaProvider implements PaymentProvider {
   }
 
   // Рекуррентные платежи в YooKassa работают через сохраненные методы оплаты
-  async createSubscription(params: CreateSubscriptionParams): Promise<SubscriptionResult> {
+  async createSubscription(
+    params: CreateSubscriptionParams,
+  ): Promise<SubscriptionResult> {
     // Для рекуррентных платежей нужно:
     // 1. Создать первый платеж с save_payment_method = true
     // 2. Сохранить payment_method_id
     // 3. Использовать его для последующих платежей
-    
+
     // Это упрощенная реализация
-    throw new Error('Subscription creation requires custom implementation with saved payment methods');
+    throw new Error(
+      'Subscription creation requires custom implementation with saved payment methods',
+    );
   }
 
   async cancelSubscription(subscriptionId: string): Promise<void> {

@@ -1,5 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ArgsType, Field, Float, ID, InputType, Int, ObjectType } from '@nestjs/graphql';
+import {
+  ArgsType,
+  Field,
+  Float,
+  ID,
+  InputType,
+  Int,
+  ObjectType,
+} from '@nestjs/graphql';
 import {
   ArrayMinSize,
   IsArray,
@@ -13,7 +21,10 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
-import { PaginationQueryDto, createPaginatedResponseDto } from '../../common/dto/pagination.dto';
+import {
+  PaginationQueryDto,
+  createPaginatedResponseDto,
+} from '../../common/dto/pagination.dto';
 
 const OUTLET_STATUS_FILTERS = ['ACTIVE', 'INACTIVE', 'ALL'] as const;
 
@@ -22,21 +33,35 @@ type OutletStatusFilter = (typeof OUTLET_STATUS_FILTERS)[number];
 @ArgsType()
 export class OutletListQueryDto extends PaginationQueryDto {
   @Field(() => String, { nullable: true })
-  @ApiPropertyOptional({ description: 'Фильтр по статусу', enum: OUTLET_STATUS_FILTERS })
+  @ApiPropertyOptional({
+    description: 'Фильтр по статусу',
+    enum: OUTLET_STATUS_FILTERS,
+  })
   @IsOptional()
-  @Transform(({ value }) => (typeof value === 'string' ? value.toUpperCase() : value))
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.toUpperCase() : value,
+  )
   @IsIn(OUTLET_STATUS_FILTERS as unknown as string[])
   status?: OutletStatusFilter;
 
   @Field(() => Boolean, { nullable: true })
   @ApiPropertyOptional({ description: 'Скрытые точки', example: false })
   @IsOptional()
-  @Transform(({ value }) => (value === 'true' || value === true ? true : value === 'false' || value === false ? false : value))
+  @Transform(({ value }) =>
+    value === 'true' || value === true
+      ? true
+      : value === 'false' || value === false
+        ? false
+        : value,
+  )
   @IsBoolean()
   hidden?: boolean;
 
   @Field(() => String, { nullable: true })
-  @ApiPropertyOptional({ description: 'Поиск по названию/адресу', maxLength: 100 })
+  @ApiPropertyOptional({
+    description: 'Поиск по названию/адресу',
+    maxLength: 100,
+  })
   @IsOptional()
   @IsString()
   @MaxLength(100)
@@ -65,7 +90,9 @@ export class OutletScheduleItemDto {
 @ObjectType()
 export class OutletReviewsShareLinksDto {
   @Field(() => String, { nullable: true })
-  @ApiPropertyOptional({ description: 'Ссылка на карточку заведения на Яндекс.Картах' })
+  @ApiPropertyOptional({
+    description: 'Ссылка на карточку заведения на Яндекс.Картах',
+  })
   yandex?: string | null;
 
   @Field(() => String, { nullable: true })
@@ -120,7 +147,10 @@ export class OutletDto {
   scheduleMode!: string;
 
   @Field(() => [OutletScheduleItemDto], { nullable: true })
-  @ApiPropertyOptional({ type: () => [OutletScheduleItemDto], description: 'Расписание' })
+  @ApiPropertyOptional({
+    type: () => [OutletScheduleItemDto],
+    description: 'Расписание',
+  })
   schedule?: OutletScheduleItemDto[] | null;
 
   @Field(() => String, { nullable: true })
@@ -152,12 +182,17 @@ export class OutletDto {
   longitude?: number | null;
 
   @Field(() => OutletReviewsShareLinksDto, { nullable: true })
-  @ApiPropertyOptional({ type: () => OutletReviewsShareLinksDto, description: 'Ссылки на внешние площадки для отзывов' })
+  @ApiPropertyOptional({
+    type: () => OutletReviewsShareLinksDto,
+    description: 'Ссылки на внешние площадки для отзывов',
+  })
   reviewsShareLinks?: OutletReviewsShareLinksDto | null;
 }
 
 @ObjectType()
-export class OutletListResponseDto extends createPaginatedResponseDto(OutletDto) {}
+export class OutletListResponseDto extends createPaginatedResponseDto(
+  OutletDto,
+) {}
 
 @InputType()
 export class OutletScheduleItemInput {
@@ -193,7 +228,10 @@ export class OutletScheduleInput {
   mode!: '24_7' | 'CUSTOM';
 
   @Field(() => [OutletScheduleItemInput])
-  @ApiProperty({ type: () => [OutletScheduleItemInput], description: 'Расписание по дням' })
+  @ApiProperty({
+    type: () => [OutletScheduleItemInput],
+    description: 'Расписание по дням',
+  })
   @IsArray()
   @ArrayMinSize(7)
   @ValidateNested({ each: true })
@@ -252,7 +290,10 @@ export class UpsertOutletInput {
   phone?: string | null;
 
   @Field(() => [String], { nullable: true })
-  @ApiPropertyOptional({ type: [String], description: 'Emails администраторов' })
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Emails администраторов',
+  })
   @IsOptional()
   @IsArray()
   @IsEmail(undefined, { each: true })
@@ -302,7 +343,9 @@ export class UpsertOutletInput {
   integrationLocationCode?: string | null;
 
   @Field(() => String, { nullable: true })
-  @ApiPropertyOptional({ description: 'Произвольные данные интеграции (JSON string)' })
+  @ApiPropertyOptional({
+    description: 'Произвольные данные интеграции (JSON string)',
+  })
   @IsOptional()
   @IsString()
   integrationPayload?: string | null;
@@ -326,7 +369,10 @@ export class UpsertOutletInput {
   longitude?: number | null;
 
   @Field(() => OutletReviewsShareLinksInput, { nullable: true })
-  @ApiPropertyOptional({ type: () => OutletReviewsShareLinksInput, description: 'Ссылки на внешние площадки для отзывов' })
+  @ApiPropertyOptional({
+    type: () => OutletReviewsShareLinksInput,
+    description: 'Ссылки на внешние площадки для отзывов',
+  })
   @IsOptional()
   @ValidateNested()
   @Type(() => OutletReviewsShareLinksInput)

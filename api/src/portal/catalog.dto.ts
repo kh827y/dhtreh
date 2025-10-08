@@ -1,7 +1,21 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { DeviceType } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { ArrayNotEmpty, IsArray, IsBoolean, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, Matches, Max, Min, ValidateNested } from 'class-validator';
+import {
+  ArrayNotEmpty,
+  IsArray,
+  IsBoolean,
+  IsEnum,
+  IsIn,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 
 export class CategoryDto {
   @ApiProperty() id!: string;
@@ -15,14 +29,23 @@ export class CategoryDto {
 
 export class CreateCategoryDto {
   @ApiProperty() @IsString() name!: string;
-  @ApiPropertyOptional({ description: 'Если не указан — будет сгенерирован из name' })
-  @IsOptional() @Matches(/^[a-z0-9\-]+$/)
+  @ApiPropertyOptional({
+    description: 'Если не указан — будет сгенерирован из name',
+  })
+  @IsOptional()
+  @Matches(/^[a-z0-9\-]+$/)
   slug?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   description?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   imageUrl?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   parentId?: string;
 }
 
@@ -43,90 +66,159 @@ export class ReorderCategoriesDto {
 
 export class ProductImageInputDto {
   @ApiProperty() @IsString() url!: string;
-  @ApiPropertyOptional() @IsOptional() @IsString()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   alt?: string;
-  @ApiPropertyOptional() @IsOptional() @IsInt()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
   position?: number;
 }
 
 export class ProductVariantInputDto {
   @ApiProperty() @IsString() name!: string;
-  @ApiPropertyOptional() @IsOptional() @IsString()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   sku?: string;
-  @ApiPropertyOptional() @IsOptional() @IsNumber()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
   price?: number;
-  @ApiPropertyOptional() @IsOptional() @IsString()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   notes?: string;
-  @ApiPropertyOptional() @IsOptional() @IsInt()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
   position?: number;
 }
 
 export class ProductStockInputDto {
   @ApiProperty() @IsString() label!: string;
-  @ApiPropertyOptional() @IsOptional() @IsString()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   outletId?: string;
-  @ApiPropertyOptional() @IsOptional() @IsNumber()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
   price?: number;
-  @ApiPropertyOptional() @IsOptional() @IsNumber()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
   balance?: number;
-  @ApiPropertyOptional() @IsOptional() @IsString()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   currency?: string;
 }
 
 export class CreateProductDto {
   @ApiProperty() @IsString() name!: string;
-  @ApiPropertyOptional() @IsOptional() @IsString()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   sku?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   categoryId?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   description?: string;
-  @ApiPropertyOptional({ description: 'Позиция в каталоге (чем меньше, тем выше)' })
-  @IsOptional() @IsInt()
+  @ApiPropertyOptional({
+    description: 'Позиция в каталоге (чем меньше, тем выше)',
+  })
+  @IsOptional()
+  @IsInt()
   order?: number;
-  @ApiPropertyOptional({ description: 'ID связанного товара в iiko (или другой системе)' })
-  @IsOptional() @IsString()
+  @ApiPropertyOptional({
+    description: 'ID связанного товара в iiko (или другой системе)',
+  })
+  @IsOptional()
+  @IsString()
   iikoProductId?: string;
-  @ApiPropertyOptional() @IsOptional() @IsBoolean()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
   hasVariants?: boolean;
-  @ApiPropertyOptional() @IsOptional() @IsBoolean()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
   priceEnabled?: boolean;
-  @ApiPropertyOptional() @IsOptional() @IsNumber()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
   price?: number;
-  @ApiPropertyOptional({ description: 'Тумблер «Запретить добавление в корзину» (false = можно добавлять)' })
-  @IsOptional() @IsBoolean()
+  @ApiPropertyOptional({
+    description:
+      'Тумблер «Запретить добавление в корзину» (false = можно добавлять)',
+  })
+  @IsOptional()
+  @IsBoolean()
   disableCart?: boolean;
-  @ApiPropertyOptional() @IsOptional() @IsBoolean()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
   visible?: boolean;
-  @ApiPropertyOptional() @IsOptional() @IsBoolean()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
   accruePoints?: boolean;
-  @ApiPropertyOptional() @IsOptional() @IsBoolean()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
   allowRedeem?: boolean;
   @ApiPropertyOptional({ description: 'Процент оплаты баллами 0..100' })
-  @IsOptional() @IsInt() @Min(0) @Max(100)
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(100)
   redeemPercent?: number;
   @ApiPropertyOptional({ description: 'Вес' })
-  @IsOptional() @IsNumber()
+  @IsOptional()
+  @IsNumber()
   weightValue?: number;
   @ApiPropertyOptional({ description: 'Единица измерения веса (г/кг)' })
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   weightUnit?: string;
-  @ApiPropertyOptional() @IsOptional() @IsNumber()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
   heightCm?: number;
-  @ApiPropertyOptional() @IsOptional() @IsNumber()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
   widthCm?: number;
-  @ApiPropertyOptional() @IsOptional() @IsNumber()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
   depthCm?: number;
-  @ApiPropertyOptional() @IsOptional() @IsNumber()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
   proteins?: number;
-  @ApiPropertyOptional() @IsOptional() @IsNumber()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
   fats?: number;
-  @ApiPropertyOptional() @IsOptional() @IsNumber()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
   carbs?: number;
-  @ApiPropertyOptional() @IsOptional() @IsNumber()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
   calories?: number;
   @ApiPropertyOptional({ type: () => [String] })
-  @IsOptional() @IsArray() @IsString({ each: true })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
   tags?: string[];
   @ApiPropertyOptional({ type: () => [ProductImageInputDto] })
   @IsOptional()
@@ -180,13 +272,17 @@ export class ProductDto extends ProductListItemDto {
   @ApiPropertyOptional() carbs?: number | null;
   @ApiPropertyOptional() calories?: number | null;
   @ApiProperty({ type: () => [String] }) tags!: string[];
-  @ApiProperty({ type: () => [ProductImageInputDto] }) images!: ProductImageInputDto[];
-  @ApiProperty({ type: () => [ProductVariantInputDto] }) variants!: ProductVariantInputDto[];
-  @ApiProperty({ type: () => [ProductStockInputDto] }) stocks!: ProductStockInputDto[];
+  @ApiProperty({ type: () => [ProductImageInputDto] })
+  images!: ProductImageInputDto[];
+  @ApiProperty({ type: () => [ProductVariantInputDto] })
+  variants!: ProductVariantInputDto[];
+  @ApiProperty({ type: () => [ProductStockInputDto] })
+  stocks!: ProductStockInputDto[];
 }
 
 export class ProductListResponseDto {
-  @ApiProperty({ type: () => [ProductListItemDto] }) items!: ProductListItemDto[];
+  @ApiProperty({ type: () => [ProductListItemDto] })
+  items!: ProductListItemDto[];
   @ApiProperty() total!: number;
 }
 
@@ -210,15 +306,21 @@ export class ProductBulkActionDto {
 }
 
 export class ListProductsQueryDto {
-  @ApiPropertyOptional() @IsOptional() @IsString()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   categoryId?: string;
   @ApiPropertyOptional({ enum: ['visible', 'hidden', 'all'] })
-  @IsOptional() @IsIn(['visible', 'hidden', 'all'])
+  @IsOptional()
+  @IsIn(['visible', 'hidden', 'all'])
   status?: 'visible' | 'hidden' | 'all';
   @ApiPropertyOptional({ enum: ['with_points', 'without_points', 'all'] })
-  @IsOptional() @IsIn(['with_points', 'without_points', 'all'])
+  @IsOptional()
+  @IsIn(['with_points', 'without_points', 'all'])
   points?: 'with_points' | 'without_points' | 'all';
-  @ApiPropertyOptional() @IsOptional() @IsString()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   search?: string;
 }
 
@@ -226,13 +328,16 @@ export class OutletScheduleDayDto {
   @ApiProperty({ description: 'mon/tue/.../sun' })
   @IsString()
   day!: string;
-  @ApiProperty() @IsBoolean()
+  @ApiProperty()
+  @IsBoolean()
   enabled!: boolean;
   @ApiPropertyOptional({ description: 'Формат HH:mm' })
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   from?: string;
   @ApiPropertyOptional({ description: 'Формат HH:mm' })
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   to?: string;
 }
 
@@ -251,23 +356,39 @@ export class CreatePortalOutletDto {
   @ApiProperty() @IsBoolean() works!: boolean;
   @ApiProperty() @IsBoolean() hidden!: boolean;
   @ApiProperty() @IsString() name!: string;
-  @ApiPropertyOptional() @IsOptional() @IsString()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   description?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   phone?: string;
   @ApiProperty() @IsString() address!: string;
-  @ApiPropertyOptional() @IsOptional() @IsBoolean()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
   manualLocation?: boolean;
-  @ApiPropertyOptional() @IsOptional() @IsNumber()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
   latitude?: number;
-  @ApiPropertyOptional() @IsOptional() @IsNumber()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
   longitude?: number;
   @ApiPropertyOptional({ type: () => [String] })
-  @IsOptional() @IsArray() @IsString({ each: true })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
   adminEmails?: string[];
-  @ApiPropertyOptional() @IsOptional() @IsString()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   timezone?: string;
-  @ApiPropertyOptional() @IsOptional() @IsBoolean()
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
   showSchedule?: boolean;
   @ApiPropertyOptional({ type: () => OutletScheduleDto })
   @IsOptional()
@@ -275,7 +396,11 @@ export class CreatePortalOutletDto {
   @Type(() => OutletScheduleDto)
   schedule?: OutletScheduleDto;
   @ApiProperty() @IsString() externalId!: string;
-  @ApiPropertyOptional({ description: 'Ссылки на карточки отзывов по площадкам', type: 'object', additionalProperties: { type: 'string', nullable: true } })
+  @ApiPropertyOptional({
+    description: 'Ссылки на карточки отзывов по площадкам',
+    type: 'object',
+    additionalProperties: { type: 'string', nullable: true },
+  })
   @IsOptional()
   reviewsShareLinks?: Record<string, string | null>;
 }
@@ -289,11 +414,14 @@ export class PortalOutletDto {
   @ApiProperty() works!: boolean;
   @ApiProperty() hidden!: boolean;
   @ApiProperty() status!: string;
-  @ApiPropertyOptional({ enum: ['VIRTUAL', 'PC_POS', 'SMART'], nullable: true }) posType?: DeviceType | string | null;
-  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true }) posLastSeenAt?: Date | null;
+  @ApiPropertyOptional({ enum: ['VIRTUAL', 'PC_POS', 'SMART'], nullable: true })
+  posType?: DeviceType | string | null;
+  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
+  posLastSeenAt?: Date | null;
   @ApiProperty() bridgeSecretIssued!: boolean;
   @ApiProperty() bridgeSecretNextIssued!: boolean;
-  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true }) bridgeSecretUpdatedAt?: Date | null;
+  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
+  bridgeSecretUpdatedAt?: Date | null;
   @ApiPropertyOptional() description?: string | null;
   @ApiPropertyOptional() phone?: string | null;
   @ApiProperty({ type: () => [String] }) adminEmails!: string[];
@@ -305,8 +433,17 @@ export class PortalOutletDto {
   @ApiPropertyOptional() longitude?: number | null;
   @ApiProperty() manualLocation!: boolean;
   @ApiProperty() externalId!: string | null;
-  @ApiPropertyOptional({ description: 'Ссылки на карточки отзывов по площадкам', type: 'object', additionalProperties: { type: 'string', nullable: true }, nullable: true })
-  reviewsShareLinks?: { yandex?: string | null; twogis?: string | null; google?: string | null } | null;
+  @ApiPropertyOptional({
+    description: 'Ссылки на карточки отзывов по площадкам',
+    type: 'object',
+    additionalProperties: { type: 'string', nullable: true },
+    nullable: true,
+  })
+  reviewsShareLinks?: {
+    yandex?: string | null;
+    twogis?: string | null;
+    google?: string | null;
+  } | null;
   @ApiProperty() createdAt!: Date;
   @ApiProperty() updatedAt!: Date;
 }

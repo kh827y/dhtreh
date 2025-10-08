@@ -1,6 +1,13 @@
 import { StaffOutletAccessStatus } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Field, GraphQLISODateTime, ID, InputType, ObjectType, registerEnumType } from '@nestjs/graphql';
+import {
+  Field,
+  GraphQLISODateTime,
+  ID,
+  InputType,
+  ObjectType,
+  registerEnumType,
+} from '@nestjs/graphql';
 import { IsBoolean, IsOptional } from 'class-validator';
 
 registerEnumType(StaffOutletAccessStatus, { name: 'StaffOutletAccessStatus' });
@@ -16,7 +23,11 @@ export class CashierCredentialsDto {
   hasPassword!: boolean;
 
   @Field(() => String, { nullable: true })
-  @ApiPropertyOptional({ description: 'Текущий 9-значный пароль', minLength: 9, maxLength: 9 })
+  @ApiPropertyOptional({
+    description: 'Текущий 9-значный пароль',
+    minLength: 9,
+    maxLength: 9,
+  })
   password?: string | null;
 }
 

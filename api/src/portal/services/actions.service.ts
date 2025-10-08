@@ -1,5 +1,14 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { LoyaltyPromotion, Prisma, PromotionRewardType, PromotionStatus } from '@prisma/client';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  LoyaltyPromotion,
+  Prisma,
+  PromotionRewardType,
+  PromotionStatus,
+} from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 
 export type ActionsTab = 'UPCOMING' | 'CURRENT' | 'PAST';
@@ -56,7 +65,11 @@ type PromotionEntity = Prisma.LoyaltyPromotionGetPayload<{
 export class ActionsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(merchantId: string, tab: ActionsTab, search?: string): Promise<{ total: number; items: ActionListItemDto[] }> {
+  async list(
+    merchantId: string,
+    tab: ActionsTab,
+    search?: string,
+  ): Promise<{ total: number; items: ActionListItemDto[] }> {
     const promotions = await this.prisma.loyaltyPromotion.findMany({
       where: {
         merchantId,
@@ -67,7 +80,9 @@ export class ActionsService {
       include: { metrics: true, audience: true },
     });
 
-    const filtered = promotions.filter((promotion) => this.classifyTab(promotion) === tab);
+    const filtered = promotions.filter(
+      (promotion) => this.classifyTab(promotion) === tab,
+    );
 
     return {
       total: filtered.length,
@@ -75,19 +90,31 @@ export class ActionsService {
     };
   }
 
-  async getById(merchantId: string, campaignId: string): Promise<ActionListItemDto> {
+  async getById(
+    merchantId: string,
+    campaignId: string,
+  ): Promise<ActionListItemDto> {
     const promotion = await this.getPromotionEntity(merchantId, campaignId);
     return this.mapPromotion(promotion);
   }
 
-  async createProductBonus(merchantId: string, payload: CreateProductBonusActionPayload): Promise<ActionListItemDto> {
+  async createProductBonus(
+    merchantId: string,
+    payload: CreateProductBonusActionPayload,
+  ): Promise<ActionListItemDto> {
     this.validateCreatePayload(payload);
 
-    const startDate = payload.schedule.startEnabled ? this.parseDate(payload.schedule.startDate, 'Дата начала акции') : null;
-    const endDate = payload.schedule.endEnabled ? this.parseDate(payload.schedule.endDate, 'Дата окончания акции') : null;
+    const startDate = payload.schedule.startEnabled
+      ? this.parseDate(payload.schedule.startDate, 'Дата начала акции')
+      : null;
+    const endDate = payload.schedule.endEnabled
+      ? this.parseDate(payload.schedule.endDate, 'Дата окончания акции')
+      : null;
 
     if (startDate && endDate && endDate <= startDate) {
-      throw new BadRequestException('Дата окончания должна быть позже даты начала');
+      throw new BadRequestException(
+        'Дата окончания должна быть позже даты начала',
+      );
     }
 
     const usageLimit = this.buildUsageLimit(payload);
@@ -141,7 +168,11 @@ export class ActionsService {
     return this.mapPromotion(full);
   }
 
-  async updateStatus(merchantId: string, campaignId: string, payload: UpdateActionStatusPayload): Promise<ActionListItemDto> {
+  async updateStatus(
+    merchantId: string,
+    campaignId: string,
+    payload: UpdateActionStatusPayload,
+  ): Promise<ActionListItemDto> {
     const promotion = await this.getPromotionEntity(merchantId, campaignId);
 
     let status = promotion.status;
@@ -165,7 +196,10 @@ export class ActionsService {
     return this.mapPromotion(updated);
   }
 
-  async archive(merchantId: string, campaignId: string): Promise<ActionListItemDto> {
+  async archive(
+    merchantId: string,
+    campaignId: string,
+  ): Promise<ActionListItemDto> {
     await this.getPromotionEntity(merchantId, campaignId);
     await this.prisma.loyaltyPromotion.update({
       where: { id: campaignId },
@@ -178,10 +212,15 @@ export class ActionsService {
     return this.mapPromotion(archived);
   }
 
-  async duplicate(merchantId: string, campaignId: string): Promise<ActionListItemDto> {
+  async duplicate(
+    merchantId: string,
+    campaignId: string,
+  ): Promise<ActionListItemDto> {
     const promotion = await this.getPromotionEntity(merchantId, campaignId);
     const legacy = this.extractLegacyCampaign(promotion);
-    const name = promotion.name.endsWith(' (копия)') ? promotion.name : `${promotion.name} (копия)`;
+    const name = promotion.name.endsWith(' (копия)')
+      ? promotion.name
+      : `${promotion.name} (копия)`;
     const duplicated = await this.prisma.loyaltyPromotion.create({
       data: {
         merchantId,
@@ -219,7 +258,9 @@ export class ActionsService {
     }
 
     if (payload.rule.mode === 'PERCENT' && (value <= 0 || value > 100)) {
-      throw new BadRequestException('Процент должен быть в диапазоне от 1 до 100');
+      throw new BadRequestException(
+        'Процент должен быть в диапазоне от 1 до 100',
+      );
     }
 
     if (payload.rule.mode === 'MULTIPLIER' && value < 1) {
@@ -233,7 +274,9 @@ export class ActionsService {
     if (payload.usageLimit === 'N_TIMES') {
       const limit = payload.usageLimitValue ?? 0;
       if (!Number.isInteger(limit) || limit <= 1) {
-        throw new BadRequestException('Укажите количество использований больше 1');
+        throw new BadRequestException(
+          'Укажите количество использований больше 1',
+        );
       }
     }
   }
@@ -249,7 +292,11 @@ export class ActionsService {
   }
 
   private classifyTab(promotion: PromotionEntity): ActionsTab {
-    if (promotion.archivedAt || promotion.status === PromotionStatus.ARCHIVED || promotion.status === PromotionStatus.COMPLETED) {
+    if (
+      promotion.archivedAt ||
+      promotion.status === PromotionStatus.ARCHIVED ||
+      promotion.status === PromotionStatus.COMPLETED
+    ) {
       return 'PAST';
     }
 
@@ -285,10 +332,16 @@ export class ActionsService {
       name: audienceMeta.name ?? promotion.audience?.name ?? null,
     };
     const metrics = promotion.metrics ?? null;
-    const expenses = Number(metrics?.pointsIssued ?? legacy.metrics?.expenses ?? 0) || 0;
-    const revenue = Number(metrics?.revenueGenerated ?? legacy.metrics?.revenue ?? 0) || 0;
-    const purchases = Number(legacy.metrics?.purchases ?? metrics?.participantsCount ?? 0) || 0;
-    const roi = expenses > 0 ? Math.round(((revenue - expenses) / expenses) * 1000) / 10 : 0;
+    const expenses =
+      Number(metrics?.pointsIssued ?? legacy.metrics?.expenses ?? 0) || 0;
+    const revenue =
+      Number(metrics?.revenueGenerated ?? legacy.metrics?.revenue ?? 0) || 0;
+    const purchases =
+      Number(legacy.metrics?.purchases ?? metrics?.participantsCount ?? 0) || 0;
+    const roi =
+      expenses > 0
+        ? Math.round(((revenue - expenses) / expenses) * 1000) / 10
+        : 0;
 
     return {
       id: promotion.id,
@@ -336,12 +389,18 @@ export class ActionsService {
     return date;
   }
 
-  private async getPromotionEntity(merchantId: string, campaignId: string): Promise<PromotionEntity> {
+  private async getPromotionEntity(
+    merchantId: string,
+    campaignId: string,
+  ): Promise<PromotionEntity> {
     const promotion = await this.prisma.loyaltyPromotion.findFirst({
       where: { id: campaignId, merchantId },
       include: { metrics: true, audience: true },
     });
-    if (!promotion || this.extractLegacyCampaign(promotion)?.kind !== 'PRODUCT_BONUS') {
+    if (
+      !promotion ||
+      this.extractLegacyCampaign(promotion)?.kind !== 'PRODUCT_BONUS'
+    ) {
       throw new NotFoundException('Акция не найдена');
     }
     return promotion;

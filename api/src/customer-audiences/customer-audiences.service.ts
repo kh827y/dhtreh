@@ -1,8 +1,12 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
-
 
 export interface CustomerFilters {
   search?: string;
@@ -29,7 +33,6 @@ export interface SegmentPayload {
 
 @Injectable()
 export class CustomerAudiencesService {
-
   private readonly logger = new Logger(CustomerAudiencesService.name);
 
   constructor(
@@ -37,7 +40,10 @@ export class CustomerAudiencesService {
     private readonly metrics: MetricsService,
   ) {}
 
-  private buildCustomerWhere(merchantId: string, filters: CustomerFilters): Prisma.CustomerWhereInput {
+  private buildCustomerWhere(
+    merchantId: string,
+    filters: CustomerFilters,
+  ): Prisma.CustomerWhereInput {
     const base: Prisma.CustomerWhereInput = {};
     if (filters.segmentId) {
       base.segments = { some: { segmentId: filters.segmentId } };
@@ -97,7 +103,10 @@ export class CustomerAudiencesService {
       items: items.map((customer) => ({
         ...customer,
         stats: customer.customerStats[0] ?? null,
-        segments: customer.segments.map((s) => ({ id: s.segmentId, name: s.segment.name })),
+        segments: customer.segments.map((s) => ({
+          id: s.segmentId,
+          name: s.segment.name,
+        })),
       })),
     };
 
@@ -138,7 +147,10 @@ export class CustomerAudiencesService {
     const result = {
       ...customer,
       stats: customer.customerStats[0] ?? null,
-      segments: customer.segments.map((s) => ({ id: s.segmentId, name: s.segment.name })),
+      segments: customer.segments.map((s) => ({
+        id: s.segmentId,
+        name: s.segment.name,
+      })),
     };
 
     try {
@@ -156,7 +168,10 @@ export class CustomerAudiencesService {
     return result;
   }
 
-  private buildSegmentWhere(merchantId: string, filters: any): Prisma.CustomerWhereInput {
+  private buildSegmentWhere(
+    merchantId: string,
+    filters: any,
+  ): Prisma.CustomerWhereInput {
     if (!filters || typeof filters !== 'object') return {};
     const where: Prisma.CustomerWhereInput = {};
     if (filters.tags?.length) {
@@ -166,7 +181,9 @@ export class CustomerAudiencesService {
       where.gender = { in: filters.gender };
     }
     if (filters.rfmClasses?.length) {
-      where.customerStats = { some: { merchantId, rfmClass: { in: filters.rfmClasses } } };
+      where.customerStats = {
+        some: { merchantId, rfmClass: { in: filters.rfmClasses } },
+      };
     }
     if (filters.minVisits != null || filters.maxVisits != null) {
       const visits: Prisma.IntFilter = {};
@@ -182,7 +199,8 @@ export class CustomerAudiencesService {
     }
     if (filters.lastVisitFrom || filters.lastVisitTo) {
       const lastOrderAt: Prisma.DateTimeFilter = {};
-      if (filters.lastVisitFrom) lastOrderAt.gte = new Date(filters.lastVisitFrom);
+      if (filters.lastVisitFrom)
+        lastOrderAt.gte = new Date(filters.lastVisitFrom);
       if (filters.lastVisitTo) lastOrderAt.lte = new Date(filters.lastVisitTo);
       where.customerStats = {
         some: {
@@ -196,7 +214,6 @@ export class CustomerAudiencesService {
   }
 
   async listSegments(merchantId: string) {
-
     const segments = await this.prisma.customerSegment.findMany({
       where: { merchantId },
       orderBy: [{ archivedAt: 'asc' }, { createdAt: 'desc' }],
@@ -215,7 +232,8 @@ export class CustomerAudiencesService {
   }
 
   async createSegment(merchantId: string, payload: SegmentPayload) {
-    if (!payload.name?.trim()) throw new BadRequestException('Название сегмента обязательно');
+    if (!payload.name?.trim())
+      throw new BadRequestException('Название сегмента обязательно');
 
     const segment = await this.prisma.customerSegment.create({
       data: {
@@ -246,8 +264,14 @@ export class CustomerAudiencesService {
     return segment;
   }
 
-  async updateSegment(merchantId: string, segmentId: string, payload: SegmentPayload) {
-    const segment = await this.prisma.customerSegment.findFirst({ where: { merchantId, id: segmentId } });
+  async updateSegment(
+    merchantId: string,
+    segmentId: string,
+    payload: SegmentPayload,
+  ) {
+    const segment = await this.prisma.customerSegment.findFirst({
+      where: { merchantId, id: segmentId },
+    });
     if (!segment) throw new NotFoundException('Сегмент не найден');
     const updated = await this.prisma.customerSegment.update({
       where: { id: segmentId },
@@ -277,8 +301,14 @@ export class CustomerAudiencesService {
     return updated;
   }
 
-  async setSegmentActive(merchantId: string, segmentId: string, isActive: boolean) {
-    const segment = await this.prisma.customerSegment.findFirst({ where: { merchantId, id: segmentId } });
+  async setSegmentActive(
+    merchantId: string,
+    segmentId: string,
+    isActive: boolean,
+  ) {
+    const segment = await this.prisma.customerSegment.findFirst({
+      where: { merchantId, id: segmentId },
+    });
     if (!segment) throw new NotFoundException('Сегмент не найден');
 
     const updated = await this.prisma.customerSegment.update({
@@ -300,7 +330,9 @@ export class CustomerAudiencesService {
   }
 
   async archiveSegment(merchantId: string, segmentId: string) {
-    const segment = await this.prisma.customerSegment.findFirst({ where: { merchantId, id: segmentId } });
+    const segment = await this.prisma.customerSegment.findFirst({
+      where: { merchantId, id: segmentId },
+    });
     if (!segment) throw new NotFoundException('Сегмент не найден');
 
     const archived = await this.prisma.customerSegment.update({
@@ -321,7 +353,9 @@ export class CustomerAudiencesService {
   }
 
   async refreshSegmentMetrics(merchantId: string, segmentId: string) {
-    const segment = await this.prisma.customerSegment.findFirst({ where: { merchantId, id: segmentId } });
+    const segment = await this.prisma.customerSegment.findFirst({
+      where: { merchantId, id: segmentId },
+    });
     if (!segment) throw new NotFoundException('Сегмент не найден');
     const where = this.buildSegmentWhere(merchantId, segment.filters ?? {});
     const count = await this.prisma.customer.count({

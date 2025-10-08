@@ -7,11 +7,11 @@ import { PrismaService } from '../../src/prisma.service';
 describe('Loyalty Flow E2E', () => {
   let app: INestApplication;
   let prisma: PrismaService;
-  
+
   const TEST_MERCHANT_ID = 'TEST_MERCHANT_' + Date.now();
   const TEST_CUSTOMER_ID = 'TEST_CUSTOMER_' + Date.now();
   const TEST_ORDER_ID = 'TEST_ORDER_' + Date.now();
-  
+
   let qrToken: string;
   let holdId: string;
 
@@ -22,7 +22,7 @@ describe('Loyalty Flow E2E', () => {
 
     app = moduleFixture.createNestApplication();
     prisma = app.get<PrismaService>(PrismaService);
-    
+
     await app.init();
 
     // Создаем тестового мерчанта
@@ -98,7 +98,7 @@ describe('Loyalty Flow E2E', () => {
       expect(response.body).toHaveProperty('token');
       expect(response.body).toHaveProperty('ttl');
       expect(response.body.ttl).toBe(60);
-      
+
       qrToken = response.body.token;
     });
 
@@ -131,7 +131,7 @@ describe('Loyalty Flow E2E', () => {
       expect(response.body).toHaveProperty('pointsToBurn', 1000);
       expect(response.body).toHaveProperty('finalPayable', 1000);
       expect(response.body).toHaveProperty('holdId');
-      
+
       holdId = response.body.holdId;
     });
 
@@ -232,7 +232,7 @@ describe('Loyalty Flow E2E', () => {
       expect(response.body).toHaveProperty('canEarn', true);
       expect(response.body).toHaveProperty('pointsToEarn', 500); // 5% от 10000
       expect(response.body).toHaveProperty('holdId');
-      
+
       earnHoldId = response.body.holdId;
     });
 
@@ -293,9 +293,9 @@ describe('Loyalty Flow E2E', () => {
       expect(response.body).toHaveProperty('items');
       expect(Array.isArray(response.body.items)).toBe(true);
       expect(response.body.items.length).toBeGreaterThan(0);
-      
+
       // Проверяем типы транзакций
-      const types = response.body.items.map(t => t.type);
+      const types = response.body.items.map((t) => t.type);
       expect(types).toContain('REDEEM');
       expect(types).toContain('EARN');
       expect(types).toContain('REFUND');
@@ -317,7 +317,7 @@ describe('Loyalty Flow E2E', () => {
     it('should block rapid transactions', async () => {
       // Создаем много быстрых транзакций для срабатывания антифрода
       const rapidCustomerId = 'RAPID_CUSTOMER_' + Date.now();
-      
+
       await prisma.customer.create({
         data: {
           id: rapidCustomerId,
@@ -360,7 +360,9 @@ describe('Loyalty Flow E2E', () => {
       }
 
       // Очистка
-      await prisma.transaction.deleteMany({ where: { customerId: rapidCustomerId } });
+      await prisma.transaction.deleteMany({
+        where: { customerId: rapidCustomerId },
+      });
       await prisma.hold.deleteMany({ where: { customerId: rapidCustomerId } });
       await prisma.wallet.deleteMany({
         where: { customerId: rapidCustomerId },
@@ -385,8 +387,9 @@ describe('Loyalty Flow E2E', () => {
 
     it('should handle expired QR token', async () => {
       // Создаем токен с истекшим сроком
-      const expiredToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjdXN0b21lcklkIjoiVEVTVCIsImV4cCI6MTAwMDAwMDAwMH0.invalid';
-      
+      const expiredToken =
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjdXN0b21lcklkIjoiVEVTVCIsImV4cCI6MTAwMDAwMDAwMH0.invalid';
+
       await request(app.getHttpServer())
         .post('/loyalty/quote')
         .send({
@@ -402,7 +405,7 @@ describe('Loyalty Flow E2E', () => {
 
     it('should handle insufficient balance', async () => {
       const poorCustomerId = 'POOR_CUSTOMER_' + Date.now();
-      
+
       await prisma.customer.create({
         data: {
           id: poorCustomerId,

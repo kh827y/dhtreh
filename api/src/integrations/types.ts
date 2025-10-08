@@ -1,9 +1,16 @@
 export interface PosReceipt {
   orderId: string;
-  total: number;      // сумма чека, копейки
+  total: number; // сумма чека, копейки
   eligibleTotal?: number; // допустимая к начислению/списанию сумма, копейки
-  items?: Array<{ sku?: string; name?: string; price: number; qty: number; sum: number; category?: string }>;
-  customerId?: string;   // внешний ID клиента (если есть привязка)
+  items?: Array<{
+    sku?: string;
+    name?: string;
+    price: number;
+    qty: number;
+    sum: number;
+    category?: string;
+  }>;
+  customerId?: string; // внешний ID клиента (если есть привязка)
 }
 
 export interface LoyaltyQuoteRequest {
@@ -41,11 +48,17 @@ export interface PosAdapter {
 export interface ERPAdapter {
   name: string;
   // Синхронизация товаров
-  syncProducts(since?: Date): Promise<{ imported: number; updated: number; errors?: number }>;
+  syncProducts(
+    since?: Date,
+  ): Promise<{ imported: number; updated: number; errors?: number }>;
   // Синхронизация остатков
-  syncInventory?(since?: Date): Promise<{ imported: number; updated: number; errors?: number }>;
+  syncInventory?(
+    since?: Date,
+  ): Promise<{ imported: number; updated: number; errors?: number }>;
   // Синхронизация клиентов
-  syncCustomers?(since?: Date): Promise<{ imported: number; updated: number; errors?: number }>;
+  syncCustomers?(
+    since?: Date,
+  ): Promise<{ imported: number; updated: number; errors?: number }>;
   // Вебхуки/уведомления от ERP
   handleWebhook?(payload: any): Promise<any>;
   healthCheck(): Promise<boolean>;
@@ -54,7 +67,10 @@ export interface ERPAdapter {
 // Контракт для служб доставки
 export interface ShipperAdapter {
   name: string;
-  createShipment(orderId: string, payload: any): Promise<{ shipmentId: string; status: string }>;
+  createShipment(
+    orderId: string,
+    payload: any,
+  ): Promise<{ shipmentId: string; status: string }>;
   cancelShipment(shipmentId: string): Promise<{ ok: boolean }>;
   trackShipment(shipmentId: string): Promise<{ status: string; eta?: string }>;
   handleWebhook?(payload: any): Promise<any>;

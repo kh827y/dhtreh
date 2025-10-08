@@ -34,25 +34,51 @@ export class AnalyticsAggregatorWorker {
     const from = startOfDay(dayStart);
     const to = endOfDay(dayStart);
 
-    const merchants = await this.prisma.merchant.findMany({ select: { id: true } });
+    const merchants = await this.prisma.merchant.findMany({
+      select: { id: true },
+    });
 
     for (const m of merchants) {
       try {
         await this.aggregateMerchantDaily(m.id, from, to);
         await this.recalculateCustomerStats(m.id);
       } catch (e) {
-        this.logger.error(`Failed to aggregate for merchant ${m.id}: ${e instanceof Error ? e.message : String(e)}`);
+        this.logger.error(
+          `Failed to aggregate for merchant ${m.id}: ${e instanceof Error ? e.message : String(e)}`,
+        );
       }
     }
   }
 
-  private async aggregateMerchantDaily(merchantId: string, from: Date, to: Date) {
+  private async aggregateMerchantDaily(
+    merchantId: string,
+    from: Date,
+    to: Date,
+  ) {
     // revenue/transactionCount/pointsIssued/pointsRedeemed
     const [earnSum, redeemSum, earnCount, earnRedeemCount] = await Promise.all([
-      this.prisma.transaction.aggregate({ where: { merchantId, type: 'EARN', createdAt: { gte: from, lte: to } }, _sum: { amount: true } }),
-      this.prisma.transaction.aggregate({ where: { merchantId, type: 'REDEEM', createdAt: { gte: from, lte: to } }, _sum: { amount: true } }),
-      this.prisma.transaction.count({ where: { merchantId, type: 'EARN', createdAt: { gte: from, lte: to } } }),
-      this.prisma.transaction.count({ where: { merchantId, type: { in: ['EARN', 'REDEEM'] }, createdAt: { gte: from, lte: to } } }),
+      this.prisma.transaction.aggregate({
+        where: { merchantId, type: 'EARN', createdAt: { gte: from, lte: to } },
+        _sum: { amount: true },
+      }),
+      this.prisma.transaction.aggregate({
+        where: {
+          merchantId,
+          type: 'REDEEM',
+          createdAt: { gte: from, lte: to },
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.transaction.count({
+        where: { merchantId, type: 'EARN', createdAt: { gte: from, lte: to } },
+      }),
+      this.prisma.transaction.count({
+        where: {
+          merchantId,
+          type: { in: ['EARN', 'REDEEM'] },
+          createdAt: { gte: from, lte: to },
+        },
+      }),
     ]);
 
     const revenue = Math.abs(earnSum._sum.amount || 0);
@@ -62,8 +88,15 @@ export class AnalyticsAggregatorWorker {
     const pointsRedeemed = Math.abs(redeemSum._sum.amount || 0);
 
     const [newCustomers, activeCustomers] = await Promise.all([
-      this.prisma.wallet.count({ where: { merchantId, createdAt: { gte: from, lte: to } } }),
-      this.prisma.transaction.groupBy({ by: ['customerId'], where: { merchantId, createdAt: { gte: from, lte: to } } }).then(x => x.length),
+      this.prisma.wallet.count({
+        where: { merchantId, createdAt: { gte: from, lte: to } },
+      }),
+      this.prisma.transaction
+        .groupBy({
+          by: ['customerId'],
+          where: { merchantId, createdAt: { gte: from, lte: to } },
+        })
+        .then((x) => x.length),
     ]);
 
     await this.prisma.merchantKpiDaily.upsert({
@@ -101,7 +134,8 @@ export class AnalyticsAggregatorWorker {
     const firstSeenMap = new Map<string, Date>();
     for (const w of wallets) {
       const prev = firstSeenMap.get(w.customerId);
-      if (!prev || prev > w.createdAt) firstSeenMap.set(w.customerId, w.createdAt);
+      if (!prev || prev > w.createdAt)
+        firstSeenMap.set(w.customerId, w.createdAt);
     }
 
     const receipts = await this.prisma.receipt.groupBy({
@@ -124,18 +158,24 @@ export class AnalyticsAggregatorWorker {
 
     for (const r of receipts) {
       stats.push({
-        customerId: r.customerId as string,
+        customerId: r.customerId,
         visits: r._count.id || 0,
         totalSpent: r._sum.total || 0,
         lastOrderAt: r._max.createdAt || undefined,
-        firstSeenAt: firstSeenMap.get(r.customerId as string),
+        firstSeenAt: firstSeenMap.get(r.customerId),
       });
     }
 
     // Добавим тех, у кого есть только кошелек, но еще нет чеков
     for (const [customerId, firstSeenAt] of firstSeenMap.entries()) {
-      if (!stats.find(s => s.customerId === customerId)) {
-        stats.push({ customerId, visits: 0, totalSpent: 0, lastOrderAt: undefined, firstSeenAt });
+      if (!stats.find((s) => s.customerId === customerId)) {
+        stats.push({
+          customerId,
+          visits: 0,
+          totalSpent: 0,
+          lastOrderAt: undefined,
+          firstSeenAt,
+        });
       }
     }
 
@@ -145,8 +185,13 @@ export class AnalyticsAggregatorWorker {
     const freqs: number[] = [];
     const mons: number[] = [];
 
-    const derived = stats.map(s => {
-      const daysSince = s.lastOrderAt ? Math.max(0, Math.floor((today.getTime() - s.lastOrderAt.getTime()) / 86400000)) : 99999;
+    const derived = stats.map((s) => {
+      const daysSince = s.lastOrderAt
+        ? Math.max(
+            0,
+            Math.floor((today.getTime() - s.lastOrderAt.getTime()) / 86400000),
+          )
+        : 99999;
       recencies.push(daysSince);
       freqs.push(s.visits);
       mons.push(s.totalSpent);
@@ -155,7 +200,10 @@ export class AnalyticsAggregatorWorker {
 
     function quantiles(values: number[]) {
       const arr = values.slice().sort((a, b) => a - b);
-      const q = (p: number) => arr.length ? arr[Math.min(arr.length - 1, Math.floor((arr.length - 1) * p))] : 0;
+      const q = (p: number) =>
+        arr.length
+          ? arr[Math.min(arr.length - 1, Math.floor((arr.length - 1) * p))]
+          : 0;
       return { q20: q(0.2), q40: q(0.4), q60: q(0.6), q80: q(0.8) };
     }
 
@@ -171,7 +219,10 @@ export class AnalyticsAggregatorWorker {
       if (v <= qR.q80) return 2;
       return 1;
     }
-    function scoreAsc(v: number, qs: { q20: number; q40: number; q60: number; q80: number }) {
+    function scoreAsc(
+      v: number,
+      qs: { q20: number; q40: number; q60: number; q80: number },
+    ) {
       if (v <= qs.q20) return 1;
       if (v <= qs.q40) return 2;
       if (v <= qs.q60) return 3;
@@ -189,7 +240,12 @@ export class AnalyticsAggregatorWorker {
       const avgCheck = s.visits > 0 ? s.totalSpent / s.visits : 0;
 
       await this.prisma.customerStats.upsert({
-        where: { merchantId_customerId: { merchantId, customerId: s.customerId } as any },
+        where: {
+          merchantId_customerId: {
+            merchantId,
+            customerId: s.customerId,
+          } as any,
+        },
         update: {
           firstSeenAt: s.firstSeenAt ?? undefined,
           lastSeenAt: new Date(),

@@ -19,36 +19,94 @@ describe('Metrics via /metrics after workers (e2e)', () => {
 
   const state = {
     lots: [
-      { id: 'L1', merchantId: 'M-MET', customerId: 'C1', points: 100, consumedPoints: 0, earnedAt: d(40), status: 'ACTIVE' },
-      { id: 'L2', merchantId: 'M-MET', customerId: 'C2', points: 50, consumedPoints: 10, earnedAt: d(50), status: 'ACTIVE' },
+      {
+        id: 'L1',
+        merchantId: 'M-MET',
+        customerId: 'C1',
+        points: 100,
+        consumedPoints: 0,
+        earnedAt: d(40),
+        status: 'ACTIVE',
+      },
+      {
+        id: 'L2',
+        merchantId: 'M-MET',
+        customerId: 'C2',
+        points: 50,
+        consumedPoints: 10,
+        earnedAt: d(50),
+        status: 'ACTIVE',
+      },
     ] as any[],
-    wallet: new Map<string, { id: string; merchantId: string; customerId: string; type: 'POINTS'; balance: number }>(),
+    wallet: new Map<
+      string,
+      {
+        id: string;
+        merchantId: string;
+        customerId: string;
+        type: 'POINTS';
+        balance: number;
+      }
+    >(),
     events: [] as any[],
   };
-  state.wallet.set('C1', { id: 'W1', merchantId: 'M-MET', customerId: 'C1', type: 'POINTS', balance: 80 });
-  state.wallet.set('C2', { id: 'W2', merchantId: 'M-MET', customerId: 'C2', type: 'POINTS', balance: 40 });
+  state.wallet.set('C1', {
+    id: 'W1',
+    merchantId: 'M-MET',
+    customerId: 'C1',
+    type: 'POINTS',
+    balance: 80,
+  });
+  state.wallet.set('C2', {
+    id: 'W2',
+    merchantId: 'M-MET',
+    customerId: 'C2',
+    type: 'POINTS',
+    balance: 40,
+  });
 
   const prismaMock: any = {
     $connect: jest.fn(async () => {}),
     $disconnect: jest.fn(async () => {}),
-    merchantSettings: { findMany: async () => [{ merchantId: 'M-MET', pointsTtlDays: 30 }] },
+    merchantSettings: {
+      findMany: async () => [{ merchantId: 'M-MET', pointsTtlDays: 30 }],
+    },
     earnLot: {
       findMany: async (args: any) => {
         const w = args?.where || {};
-        let arr = state.lots.filter(l => (!w.merchantId || l.merchantId === w.merchantId) && (!w.customerId || l.customerId === w.customerId));
-        if (w.status) arr = arr.filter(l => l.status === w.status);
-        if (w.earnedAt?.lt) arr = arr.filter(l => l.earnedAt < w.earnedAt.lt);
-        if (args?.orderBy?.earnedAt === 'asc') arr = arr.sort((a: any, b: any) => a.earnedAt.getTime() - b.earnedAt.getTime());
-        return arr.map(x => ({ ...x }));
+        let arr = state.lots.filter(
+          (l) =>
+            (!w.merchantId || l.merchantId === w.merchantId) &&
+            (!w.customerId || l.customerId === w.customerId),
+        );
+        if (w.status) arr = arr.filter((l) => l.status === w.status);
+        if (w.earnedAt?.lt) arr = arr.filter((l) => l.earnedAt < w.earnedAt.lt);
+        if (args?.orderBy?.earnedAt === 'asc')
+          arr = arr.sort(
+            (a: any, b: any) => a.earnedAt.getTime() - b.earnedAt.getTime(),
+          );
+        return arr.map((x) => ({ ...x }));
       },
     },
     wallet: {
-      findMany: async (args: any) => Array.from(state.wallet.values()).filter(w => w.merchantId === args.where.merchantId),
-      findFirst: async (args: any) => state.wallet.get(args.where.customerId) || null,
-      findUnique: async (args: any) => ({ id: args.where.id, balance: Array.from(state.wallet.values()).find(w => w.id === args.where.id)?.balance ?? 0 }),
+      findMany: async (args: any) =>
+        Array.from(state.wallet.values()).filter(
+          (w) => w.merchantId === args.where.merchantId,
+        ),
+      findFirst: async (args: any) =>
+        state.wallet.get(args.where.customerId) || null,
+      findUnique: async (args: any) => ({
+        id: args.where.id,
+        balance:
+          Array.from(state.wallet.values()).find((w) => w.id === args.where.id)
+            ?.balance ?? 0,
+      }),
       update: async (args: any) => {
-        const w = Array.from(state.wallet.values()).find(w => w.id === args.where.id);
-        if (w && typeof args.data?.balance === 'number') w.balance = args.data.balance;
+        const w = Array.from(state.wallet.values()).find(
+          (w) => w.id === args.where.id,
+        );
+        if (w && typeof args.data?.balance === 'number')
+          w.balance = args.data.balance;
         return w;
       },
     },
@@ -57,29 +115,40 @@ describe('Metrics via /metrics after workers (e2e)', () => {
       create: async (_args: any) => ({}),
     },
     ledgerEntry: { create: async (_args: any) => ({}) },
-    eventOutbox: { create: async (args: any) => { state.events.push(args.data); return args.data; } },
-    $transaction: async (fn: (tx: any) => Promise<any>) => fn({
-      ...prismaMock,
-      earnLot: {
-        ...prismaMock.earnLot,
-        update: async (args: any) => {
-          const i = state.lots.findIndex(l => l.id === args.where.id);
-          if (i >= 0) state.lots[i] = { ...state.lots[i], ...args.data };
-          return state.lots[i];
-        },
+    eventOutbox: {
+      create: async (args: any) => {
+        state.events.push(args.data);
+        return args.data;
       },
-      wallet: { ...prismaMock.wallet },
-    }),
+    },
+    $transaction: async (fn: (tx: any) => Promise<any>) =>
+      fn({
+        ...prismaMock,
+        earnLot: {
+          ...prismaMock.earnLot,
+          update: async (args: any) => {
+            const i = state.lots.findIndex((l) => l.id === args.where.id);
+            if (i >= 0) state.lots[i] = { ...state.lots[i], ...args.data };
+            return state.lots[i];
+          },
+        },
+        wallet: { ...prismaMock.wallet },
+      }),
   };
 
   beforeAll(async () => {
     jest.useFakeTimers().setSystemTime(now);
     // Ensure workers acquire locks in tests
     const lockUtil = require('../src/pg-lock.util');
-    jest.spyOn(lockUtil, 'pgTryAdvisoryLock').mockResolvedValue({ ok: true, key: [1,2] });
+    jest
+      .spyOn(lockUtil, 'pgTryAdvisoryLock')
+      .mockResolvedValue({ ok: true, key: [1, 2] });
     jest.spyOn(lockUtil, 'pgAdvisoryUnlock').mockResolvedValue(undefined);
-    const moduleFixture: TestingModule = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(PrismaService).useValue(prismaMock)
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    })
+      .overrideProvider(PrismaService)
+      .useValue(prismaMock)
       .compile();
     app = moduleFixture.createNestApplication();
     await app.init();
@@ -87,7 +156,10 @@ describe('Metrics via /metrics after workers (e2e)', () => {
     burn = app.get(PointsBurnWorker);
   });
 
-  afterAll(async () => { await app.close(); jest.useRealTimers(); });
+  afterAll(async () => {
+    await app.close();
+    jest.useRealTimers();
+  });
 
   it('updates metrics after ttl preview tick', async () => {
     process.env.WORKERS_ENABLED = '1';

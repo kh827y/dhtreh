@@ -8,7 +8,12 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { PushService } from './push.service';
 import type { RegisterDeviceDto, SendPushDto } from './push.service';
 import { ApiKeyGuard } from '../../guards/api-key.guard';
@@ -48,13 +53,19 @@ export class PushController {
   @ApiResponse({ status: 200, description: 'Уведомление отправлено' })
   async sendToTopic(
     @Param('merchantId') merchantId: string,
-    @Body() dto: {
+    @Body()
+    dto: {
       title: string;
       body: string;
       data?: Record<string, string>;
     },
   ) {
-    return this.pushService.sendToTopic(merchantId, dto.title, dto.body, dto.data);
+    return this.pushService.sendToTopic(
+      merchantId,
+      dto.title,
+      dto.body,
+      dto.data,
+    );
   }
 
   /**
@@ -79,10 +90,13 @@ export class PushController {
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    const period = from && to ? {
-      from: new Date(from),
-      to: new Date(to),
-    } : undefined;
+    const period =
+      from && to
+        ? {
+            from: new Date(from),
+            to: new Date(to),
+          }
+        : undefined;
 
     return this.pushService.getPushStats(merchantId, period);
   }
@@ -105,11 +119,11 @@ export class PushController {
   @ApiResponse({ status: 200, description: 'Тестовое уведомление отправлено' })
   async sendTestPush(@Param('customerId') customerId: string) {
     const customer = await this.pushService.getCustomerWithDevice(customerId);
-    
+
     if (!customer) {
-      return { 
-        success: false, 
-        message: 'Клиент не найден или нет зарегистрированных устройств' 
+      return {
+        success: false,
+        message: 'Клиент не найден или нет зарегистрированных устройств',
       };
     }
 

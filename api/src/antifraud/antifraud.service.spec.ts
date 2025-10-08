@@ -18,7 +18,11 @@ describe('AntiFraudService (outlet factors)', () => {
         create: jest.fn(),
       },
     };
-    service = new AntiFraudService(prisma as any, {} as any, { inc: jest.fn() } as any);
+    service = new AntiFraudService(
+      prisma,
+      {} as any,
+      { inc: jest.fn() } as any,
+    );
   });
 
   it('возвращает фактор no_outlet_id, если идентификаторы отсутствуют', async () => {
@@ -50,15 +54,22 @@ describe('AntiFraudService (outlet factors)', () => {
     });
 
     expect(prisma.transaction.count).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ outletId: 'O-1' }) }),
+      expect.objectContaining({
+        where: expect.objectContaining({ outletId: 'O-1' }),
+      }),
     );
     expect(prisma.transaction.findMany).toHaveBeenCalled();
-    expect(result.factors).toEqual(expect.arrayContaining(['new_outlet', 'multiple_outlets:4']));
+    expect(result.factors).toEqual(
+      expect.arrayContaining(['new_outlet', 'multiple_outlets:4']),
+    );
   });
 
   it('не добавляет no_outlet_id, если outletId указан и есть история', async () => {
     prisma.transaction.count.mockResolvedValueOnce(3);
-    prisma.transaction.findMany.mockResolvedValueOnce([{ outletId: 'O-1' }, { outletId: 'O-2' }]);
+    prisma.transaction.findMany.mockResolvedValueOnce([
+      { outletId: 'O-1' },
+      { outletId: 'O-2' },
+    ]);
 
     const result = await (service as any).checkOutlet({
       merchantId: 'M-1',
@@ -69,14 +80,21 @@ describe('AntiFraudService (outlet factors)', () => {
     });
 
     expect(prisma.transaction.count).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ outletId: 'O-1' }) }),
+      expect.objectContaining({
+        where: expect.objectContaining({ outletId: 'O-1' }),
+      }),
     );
     expect(result.factors).not.toContain('no_outlet_id');
   });
 
   it('сводит статистику с учётом riskLevel и факторов', async () => {
     prisma.adminAudit.findMany.mockResolvedValue([
-      { payload: { riskLevel: RiskLevel.CRITICAL, factors: ['no_outlet_id', 'multiple_outlets:5'] } },
+      {
+        payload: {
+          riskLevel: RiskLevel.CRITICAL,
+          factors: ['no_outlet_id', 'multiple_outlets:5'],
+        },
+      },
       { payload: { riskLevel: RiskLevel.HIGH, factors: ['no_outlet_id'] } },
       { payload: { riskLevel: RiskLevel.MEDIUM, factors: ['other_factor'] } },
     ]);
@@ -84,12 +102,16 @@ describe('AntiFraudService (outlet factors)', () => {
     const stats = await service.getStatistics('M-1', 7);
     expect(stats.blockedTransactions).toBe(1);
     expect(stats.reviewedTransactions).toBe(1);
-    expect(stats.topFactors).toEqual(expect.arrayContaining([{ factor: 'no_outlet_id', count: 2 }]));
+    expect(stats.topFactors).toEqual(
+      expect.arrayContaining([{ factor: 'no_outlet_id', count: 2 }]),
+    );
   });
 
   it('записывает outletId и уровень риска в журнал', async () => {
     prisma.adminAudit.create.mockResolvedValue(undefined);
-    const alertSpy = jest.spyOn(service as any, 'sendAdminAlert').mockResolvedValue(undefined);
+    const alertSpy = jest
+      .spyOn(service as any, 'sendAdminAlert')
+      .mockResolvedValue(undefined);
 
     await (service as any).logSuspiciousActivity(
       {

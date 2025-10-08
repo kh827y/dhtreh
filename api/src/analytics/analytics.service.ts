@@ -63,9 +63,28 @@ export interface OperationalMetrics {
 }
 
 export interface CustomerPortraitMetrics {
-  gender: Array<{ sex: string; customers: number; transactions: number; revenue: number; averageCheck: number }>;
-  age: Array<{ bucket: string; customers: number; transactions: number; revenue: number; averageCheck: number }>;
-  sexAge: Array<{ sex: string; bucket: string; customers: number; transactions: number; revenue: number; averageCheck: number }>;
+  gender: Array<{
+    sex: string;
+    customers: number;
+    transactions: number;
+    revenue: number;
+    averageCheck: number;
+  }>;
+  age: Array<{
+    bucket: string;
+    customers: number;
+    transactions: number;
+    revenue: number;
+    averageCheck: number;
+  }>;
+  sexAge: Array<{
+    sex: string;
+    bucket: string;
+    customers: number;
+    transactions: number;
+    revenue: number;
+    averageCheck: number;
+  }>;
 }
 
 export interface RepeatPurchasesMetrics {
@@ -87,7 +106,12 @@ export interface ReferralSummary {
   registeredViaReferral: number;
   purchasedViaReferral: number;
   referralRevenue: number;
-  topReferrers: Array<{ rank: number; name: string; customerId: string; invited: number }>;
+  topReferrers: Array<{
+    rank: number;
+    name: string;
+    customerId: string;
+    invited: number;
+  }>;
 }
 
 export interface BusinessMetrics {
@@ -164,14 +188,18 @@ export class AnalyticsService {
   /**
    * Получить полный дашборд
    */
-  async getDashboard(merchantId: string, period: DashboardPeriod): Promise<DashboardMetrics> {
-    const [revenue, customers, loyalty, campaigns, operations] = await Promise.all([
-      this.getRevenueMetrics(merchantId, period),
-      this.getCustomerMetrics(merchantId, period),
-      this.getLoyaltyMetrics(merchantId, period),
-      this.getCampaignMetrics(merchantId, period),
-      this.getOperationalMetrics(merchantId, period),
-    ]);
+  async getDashboard(
+    merchantId: string,
+    period: DashboardPeriod,
+  ): Promise<DashboardMetrics> {
+    const [revenue, customers, loyalty, campaigns, operations] =
+      await Promise.all([
+        this.getRevenueMetrics(merchantId, period),
+        this.getCustomerMetrics(merchantId, period),
+        this.getLoyaltyMetrics(merchantId, period),
+        this.getCampaignMetrics(merchantId, period),
+        this.getOperationalMetrics(merchantId, period),
+      ]);
 
     return { revenue, customers, loyalty, campaigns, operations };
   }
@@ -179,15 +207,43 @@ export class AnalyticsService {
   /**
    * Портрет клиента: пол, возраст, матрица пол×возраст за период
    */
-  async getCustomerPortrait(merchantId: string, period: DashboardPeriod): Promise<CustomerPortraitMetrics> {
+  async getCustomerPortrait(
+    merchantId: string,
+    period: DashboardPeriod,
+  ): Promise<CustomerPortraitMetrics> {
     const tx = await this.prisma.transaction.findMany({
-      where: { merchantId, createdAt: { gte: period.from, lte: period.to }, type: 'EARN' },
-      select: { amount: true, createdAt: true, customer: { select: { id: true, gender: true, birthday: true } } },
+      where: {
+        merchantId,
+        createdAt: { gte: period.from, lte: period.to },
+        type: 'EARN',
+      },
+      select: {
+        amount: true,
+        createdAt: true,
+        customer: { select: { id: true, gender: true, birthday: true } },
+      },
     });
-    const genderMap = new Map<string, { customers: Set<string>; transactions: number; revenue: number }>();
-    const ageBuckets = ['<18','18-24','25-34','35-44','45-54','55-64','65+'];
-    const ageMap = new Map<string, { customers: Set<string>; transactions: number; revenue: number }>();
-    const sexAgeMap = new Map<string, { customers: Set<string>; transactions: number; revenue: number }>();
+    const genderMap = new Map<
+      string,
+      { customers: Set<string>; transactions: number; revenue: number }
+    >();
+    const ageBuckets = [
+      '<18',
+      '18-24',
+      '25-34',
+      '35-44',
+      '45-54',
+      '55-64',
+      '65+',
+    ];
+    const ageMap = new Map<
+      string,
+      { customers: Set<string>; transactions: number; revenue: number }
+    >();
+    const sexAgeMap = new Map<
+      string,
+      { customers: Set<string>; transactions: number; revenue: number }
+    >();
 
     const bucketOf = (age: number | null): string => {
       if (age == null || isNaN(age)) return '25-34';
@@ -204,53 +260,98 @@ export class AnalyticsService {
       const sex = t.customer?.gender || 'U';
       const bday = t.customer?.birthday || null;
       const today = period.to || new Date();
-      const age = bday ? Math.floor((today.getTime() - bday.getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : null;
+      const age = bday
+        ? Math.floor(
+            (today.getTime() - bday.getTime()) / (365.25 * 24 * 60 * 60 * 1000),
+          )
+        : null;
       const bucket = bucketOf(age);
       const abs = Math.abs(t.amount || 0);
 
       // gender
-      if (!genderMap.has(sex)) genderMap.set(sex, { customers: new Set(), transactions: 0, revenue: 0 });
+      if (!genderMap.has(sex))
+        genderMap.set(sex, {
+          customers: new Set(),
+          transactions: 0,
+          revenue: 0,
+        });
       const g = genderMap.get(sex)!;
       if (t.customer?.id) g.customers.add(t.customer.id);
-      g.transactions++; g.revenue += abs;
+      g.transactions++;
+      g.revenue += abs;
 
       // age
-      if (!ageMap.has(bucket)) ageMap.set(bucket, { customers: new Set(), transactions: 0, revenue: 0 });
+      if (!ageMap.has(bucket))
+        ageMap.set(bucket, {
+          customers: new Set(),
+          transactions: 0,
+          revenue: 0,
+        });
       const a = ageMap.get(bucket)!;
       if (t.customer?.id) a.customers.add(t.customer.id);
-      a.transactions++; a.revenue += abs;
+      a.transactions++;
+      a.revenue += abs;
 
       // sex×age
       const key = `${sex}:${bucket}`;
-      if (!sexAgeMap.has(key)) sexAgeMap.set(key, { customers: new Set(), transactions: 0, revenue: 0 });
+      if (!sexAgeMap.has(key))
+        sexAgeMap.set(key, {
+          customers: new Set(),
+          transactions: 0,
+          revenue: 0,
+        });
       const sa = sexAgeMap.get(key)!;
       if (t.customer?.id) sa.customers.add(t.customer.id);
-      sa.transactions++; sa.revenue += abs;
+      sa.transactions++;
+      sa.revenue += abs;
     }
 
-    const gender = Array.from(genderMap.entries()).map(([sex, v]) => ({
-      sex,
-      customers: v.customers.size,
-      transactions: v.transactions,
-      revenue: Math.round(v.revenue),
-      averageCheck: v.transactions > 0 ? Math.round(v.revenue / v.transactions) : 0,
-    })).sort((a,b)=>b.revenue - a.revenue);
+    const gender = Array.from(genderMap.entries())
+      .map(([sex, v]) => ({
+        sex,
+        customers: v.customers.size,
+        transactions: v.transactions,
+        revenue: Math.round(v.revenue),
+        averageCheck:
+          v.transactions > 0 ? Math.round(v.revenue / v.transactions) : 0,
+      }))
+      .sort((a, b) => b.revenue - a.revenue);
 
-    const age = ageBuckets.map(bucket => {
-      const v = ageMap.get(bucket) || { customers: new Set<string>(), transactions: 0, revenue: 0 };
+    const age = ageBuckets.map((bucket) => {
+      const v = ageMap.get(bucket) || {
+        customers: new Set<string>(),
+        transactions: 0,
+        revenue: 0,
+      };
       return {
         bucket,
         customers: v.customers.size,
         transactions: v.transactions,
         revenue: Math.round(v.revenue),
-        averageCheck: v.transactions > 0 ? Math.round(v.revenue / v.transactions) : 0,
+        averageCheck:
+          v.transactions > 0 ? Math.round(v.revenue / v.transactions) : 0,
       };
     });
 
-    const sexAge: Array<{ sex: string; bucket: string; customers: number; transactions: number; revenue: number; averageCheck: number }> = [];
+    const sexAge: Array<{
+      sex: string;
+      bucket: string;
+      customers: number;
+      transactions: number;
+      revenue: number;
+      averageCheck: number;
+    }> = [];
     for (const [key, v] of sexAgeMap.entries()) {
       const [sex, bucket] = key.split(':');
-      sexAge.push({ sex, bucket, customers: v.customers.size, transactions: v.transactions, revenue: Math.round(v.revenue), averageCheck: v.transactions>0?Math.round(v.revenue/v.transactions):0 });
+      sexAge.push({
+        sex,
+        bucket,
+        customers: v.customers.size,
+        transactions: v.transactions,
+        revenue: Math.round(v.revenue),
+        averageCheck:
+          v.transactions > 0 ? Math.round(v.revenue / v.transactions) : 0,
+      });
     }
 
     return { gender, age, sexAge };
@@ -259,28 +360,48 @@ export class AnalyticsService {
   /**
    * Повторные продажи и распределение покупок на клиента за период
    */
-  async getRepeatPurchases(merchantId: string, period: DashboardPeriod, outletId?: string): Promise<RepeatPurchasesMetrics> {
+  async getRepeatPurchases(
+    merchantId: string,
+    period: DashboardPeriod,
+    outletId?: string,
+  ): Promise<RepeatPurchasesMetrics> {
     const group = await this.prisma.transaction.groupBy({
       by: ['customerId'],
-      where: { merchantId, type: 'EARN', createdAt: { gte: period.from, lte: period.to }, ...(outletId ? { outletId } : {}) },
+      where: {
+        merchantId,
+        type: 'EARN',
+        createdAt: { gte: period.from, lte: period.to },
+        ...(outletId ? { outletId } : {}),
+      },
       _count: true,
     });
     const uniqueBuyers = group.length;
-    const repeatBuyers = group.filter(g => g._count >= 2).length;
+    const repeatBuyers = group.filter((g) => g._count >= 2).length;
     const histogramMap: Record<number, number> = {};
     for (const g of group) {
       const c = g._count;
       histogramMap[c] = (histogramMap[c] || 0) + 1;
     }
-    const histogram = Object.keys(histogramMap).map(k => ({ purchases: parseInt(k, 10), customers: histogramMap[parseInt(k, 10)] })).sort((a,b)=>a.purchases-b.purchases);
-    const newBuyers = await this.prisma.wallet.count({ where: { merchantId, createdAt: { gte: period.from, lte: period.to } } });
+    const histogram = Object.keys(histogramMap)
+      .map((k) => ({
+        purchases: parseInt(k, 10),
+        customers: histogramMap[parseInt(k, 10)],
+      }))
+      .sort((a, b) => a.purchases - b.purchases);
+    const newBuyers = await this.prisma.wallet.count({
+      where: { merchantId, createdAt: { gte: period.from, lte: period.to } },
+    });
     return { uniqueBuyers, newBuyers, repeatBuyers, histogram };
   }
 
   /**
    * Ближайшие дни рождения
    */
-  async getBirthdays(merchantId: string, withinDays = 30, limit = 100): Promise<BirthdayItem[]> {
+  async getBirthdays(
+    merchantId: string,
+    withinDays = 30,
+    limit = 100,
+  ): Promise<BirthdayItem[]> {
     const customers = await this.prisma.customer.findMany({
       where: { birthday: { not: null }, wallets: { some: { merchantId } } },
       select: { id: true, name: true, phone: true, birthday: true },
@@ -302,48 +423,104 @@ export class AnalyticsService {
       const nb = nextDate(c.birthday!);
       if (nb <= end) {
         const age = nb.getFullYear() - c.birthday!.getFullYear();
-        items.push({ customerId: c.id, name: c.name || undefined, phone: c.phone || undefined, nextBirthday: nb.toISOString(), age });
+        items.push({
+          customerId: c.id,
+          name: c.name || undefined,
+          phone: c.phone || undefined,
+          nextBirthday: nb.toISOString(),
+          age,
+        });
       }
     }
-    items.sort((a,b)=> a.nextBirthday.localeCompare(b.nextBirthday));
+    items.sort((a, b) => a.nextBirthday.localeCompare(b.nextBirthday));
     return items.slice(0, limit);
   }
 
   /**
    * Реферальная сводка за период
    */
-  async getReferralSummary(merchantId: string, period: DashboardPeriod): Promise<ReferralSummary> {
+  async getReferralSummary(
+    merchantId: string,
+    period: DashboardPeriod,
+  ): Promise<ReferralSummary> {
     const [activated, completed] = await Promise.all([
-      this.prisma.referral.count({ where: { program: { merchantId }, activatedAt: { gte: period.from, lte: period.to } } }),
-      this.prisma.referral.findMany({ where: { program: { merchantId }, completedAt: { gte: period.from, lte: period.to }, status: 'COMPLETED' }, select: { referrerId: true, purchaseAmount: true, referrer: { select: { name: true } } } }),
+      this.prisma.referral.count({
+        where: {
+          program: { merchantId },
+          activatedAt: { gte: period.from, lte: period.to },
+        },
+      }),
+      this.prisma.referral.findMany({
+        where: {
+          program: { merchantId },
+          completedAt: { gte: period.from, lte: period.to },
+          status: 'COMPLETED',
+        },
+        select: {
+          referrerId: true,
+          purchaseAmount: true,
+          referrer: { select: { name: true } },
+        },
+      }),
     ]);
     const purchasedViaReferral = completed.length;
-    const referralRevenue = completed.reduce((s, r) => s + (r.purchaseAmount || 0), 0);
+    const referralRevenue = completed.reduce(
+      (s, r) => s + (r.purchaseAmount || 0),
+      0,
+    );
     const map = new Map<string, { name: string; invited: number }>();
     for (const r of completed) {
-      if (!map.has(r.referrerId)) map.set(r.referrerId, { name: r.referrer?.name || 'Без имени', invited: 0 });
+      if (!map.has(r.referrerId))
+        map.set(r.referrerId, {
+          name: r.referrer?.name || 'Без имени',
+          invited: 0,
+        });
       map.get(r.referrerId)!.invited++;
     }
-    const top = Array.from(map.entries()).map(([customerId, v]) => ({ customerId, name: v.name, invited: v.invited }))
-      .sort((a,b)=>b.invited-a.invited).slice(0, 20).map((x, i) => ({ rank: i+1, ...x }));
-    return { registeredViaReferral: activated, purchasedViaReferral, referralRevenue, topReferrers: top };
+    const top = Array.from(map.entries())
+      .map(([customerId, v]) => ({
+        customerId,
+        name: v.name,
+        invited: v.invited,
+      }))
+      .sort((a, b) => b.invited - a.invited)
+      .slice(0, 20)
+      .map((x, i) => ({ rank: i + 1, ...x }));
+    return {
+      registeredViaReferral: activated,
+      purchasedViaReferral,
+      referralRevenue,
+      topReferrers: top,
+    };
   }
 
   /**
    * Бизнес‑метрики: средний чек у клиентов, сделавших >= N покупок за период
    */
-  async getBusinessMetrics(merchantId: string, period: DashboardPeriod, minPurchases = 3): Promise<BusinessMetrics> {
+  async getBusinessMetrics(
+    merchantId: string,
+    period: DashboardPeriod,
+    minPurchases = 3,
+  ): Promise<BusinessMetrics> {
     const groups = await this.prisma.transaction.groupBy({
       by: ['customerId'],
-      where: { merchantId, type: 'EARN', createdAt: { gte: period.from, lte: period.to } },
+      where: {
+        merchantId,
+        type: 'EARN',
+        createdAt: { gte: period.from, lte: period.to },
+      },
       _count: true,
       _sum: { amount: true },
     });
-    const filtered = groups.filter(g => g._count >= minPurchases);
+    const filtered = groups.filter((g) => g._count >= minPurchases);
     const transactions = filtered.reduce((s, g) => s + g._count, 0);
-    const revenue = filtered.reduce((s, g) => s + Math.abs(g._sum.amount || 0), 0);
+    const revenue = filtered.reduce(
+      (s, g) => s + Math.abs(g._sum.amount || 0),
+      0,
+    );
     const customers = filtered.length;
-    const averageCheck = transactions > 0 ? Math.round(revenue / transactions) : 0;
+    const averageCheck =
+      transactions > 0 ? Math.round(revenue / transactions) : 0;
     return { minPurchases, averageCheck, customers, transactions, revenue };
   }
 
@@ -355,25 +532,45 @@ export class AnalyticsService {
     merchantId: string,
     by: 'month' | 'week' = 'month',
     limit = 6,
-  ): Promise<Array<{ cohort: string; from: string; to: string; size: number; retention: number[] }>> {
+  ): Promise<
+    Array<{
+      cohort: string;
+      from: string;
+      to: string;
+      size: number;
+      retention: number[];
+    }>
+  > {
     // Сформируем периоды когорт от новейших к более старым
     const now = new Date();
     const cohorts: Array<{ label: string; start: Date; end: Date }> = [];
     const makeMonth = (d: Date) => {
-      const s = new Date(d); s.setDate(1); s.setHours(0,0,0,0);
-      const e = new Date(s); e.setMonth(e.getMonth()+1); e.setMilliseconds(e.getMilliseconds()-1);
-      const label = `${s.getFullYear()}-${String(s.getMonth()+1).padStart(2,'0')}`;
+      const s = new Date(d);
+      s.setDate(1);
+      s.setHours(0, 0, 0, 0);
+      const e = new Date(s);
+      e.setMonth(e.getMonth() + 1);
+      e.setMilliseconds(e.getMilliseconds() - 1);
+      const label = `${s.getFullYear()}-${String(s.getMonth() + 1).padStart(2, '0')}`;
       return { label, start: s, end: e };
     };
     const makeWeek = (d: Date) => {
       const s = new Date(d);
       const day = s.getDay();
       const diff = s.getDate() - day + (day === 0 ? -6 : 1); // Пн=1..Вс=0
-      s.setDate(diff); s.setHours(0,0,0,0);
-      const e = new Date(s); e.setDate(e.getDate()+7); e.setMilliseconds(e.getMilliseconds()-1);
+      s.setDate(diff);
+      s.setHours(0, 0, 0, 0);
+      const e = new Date(s);
+      e.setDate(e.getDate() + 7);
+      e.setMilliseconds(e.getMilliseconds() - 1);
       const y = s.getFullYear();
-      const week = Math.floor(((((s as any) - (new Date(y,0,1) as any)) / 86400000) + new Date(y,0,1).getDay()+1)/7);
-      const label = `${y}-W${String(week).padStart(2,'0')}`;
+      const week = Math.floor(
+        (((s as any) - (new Date(y, 0, 1) as any)) / 86400000 +
+          new Date(y, 0, 1).getDay() +
+          1) /
+          7,
+      );
+      const label = `${y}-W${String(week).padStart(2, '0')}`;
       return { label, start: s, end: e };
     };
 
@@ -383,11 +580,18 @@ export class AnalyticsService {
       cohorts.push({ label: c.label, start: c.start, end: c.end });
       // Сдвиг на предыдущий период
       cursor = new Date(c.start);
-      if (by === 'week') cursor.setDate(cursor.getDate()-1); else cursor.setDate(0);
+      if (by === 'week') cursor.setDate(cursor.getDate() - 1);
+      else cursor.setDate(0);
     }
 
     // Для каждой когорты найдём клиентов по firstSeenAt в CustomerStats (fallback на wallet.createdAt уже учитывается в агрегаторе)
-    const results: Array<{ cohort: string; from: string; to: string; size: number; retention: number[] }> = [];
+    const results: Array<{
+      cohort: string;
+      from: string;
+      to: string;
+      size: number;
+      retention: number[];
+    }> = [];
 
     for (let i = cohorts.length - 1; i >= 0; i--) {
       const { label, start, end } = cohorts[i];
@@ -395,7 +599,7 @@ export class AnalyticsService {
         where: { merchantId, firstSeenAt: { gte: start, lte: end } },
         select: { customerId: true },
       });
-      const ids = cohortCustomers.map(c => c.customerId);
+      const ids = cohortCustomers.map((c) => c.customerId);
       const size = ids.length;
       const retention: number[] = [];
       // Сдвиги считаем максимум до количества когорт (чтобы красиво отображать таблицу)
@@ -404,7 +608,7 @@ export class AnalyticsService {
         const periodStart = new Date(start);
         const periodEnd = new Date(start);
         if (by === 'week') {
-          periodStart.setDate(periodStart.getDate() + 7*s);
+          periodStart.setDate(periodStart.getDate() + 7 * s);
           periodEnd.setDate(periodStart.getDate() + 7);
         } else {
           periodStart.setMonth(periodStart.getMonth() + s);
@@ -415,13 +619,25 @@ export class AnalyticsService {
         if (size > 0) {
           const visits = await this.prisma.receipt.groupBy({
             by: ['customerId'],
-            where: { merchantId, customerId: { in: ids }, createdAt: { gte: periodStart, lt: periodEnd } },
+            where: {
+              merchantId,
+              customerId: { in: ids },
+              createdAt: { gte: periodStart, lt: periodEnd },
+            },
           });
           returned = visits.length;
         }
-        retention.push(size > 0 ? Math.round((returned / size) * 1000) / 10 : 0);
+        retention.push(
+          size > 0 ? Math.round((returned / size) * 1000) / 10 : 0,
+        );
       }
-      results.push({ cohort: label, from: start.toISOString(), to: end.toISOString(), size, retention });
+      results.push({
+        cohort: label,
+        from: start.toISOString(),
+        to: end.toISOString(),
+        size,
+        retention,
+      });
     }
 
     return results;
@@ -430,15 +646,19 @@ export class AnalyticsService {
   /**
    * RFM heatmap 5x5: матрица по R и F (или можно по R и M) с количеством клиентов
    */
-  async getRfmHeatmap(merchantId: string): Promise<{ grid: number[][]; totals: { count: number } }> {
+  async getRfmHeatmap(
+    merchantId: string,
+  ): Promise<{ grid: number[][]; totals: { count: number } }> {
     const rows = await this.prisma.customerStats.findMany({
       where: { merchantId },
       select: { rfmR: true, rfmF: true },
     });
-    const grid: number[][] = Array.from({ length: 5 }, () => Array.from({ length: 5 }, () => 0));
+    const grid: number[][] = Array.from({ length: 5 }, () =>
+      Array.from({ length: 5 }, () => 0),
+    );
     for (const r of rows) {
-      const R = Math.min(Math.max((r.rfmR || 1), 1), 5);
-      const F = Math.min(Math.max((r.rfmF || 1), 1), 5);
+      const R = Math.min(Math.max(r.rfmR || 1, 1), 5);
+      const F = Math.min(Math.max(r.rfmF || 1, 1), 5);
       grid[5 - R][F - 1]++; // по вертикали R сверху=5, снизу=1; горизонталь F слева=1..5
     }
     return { grid, totals: { count: rows.length } };
@@ -447,7 +667,10 @@ export class AnalyticsService {
   /**
    * Метрики выручки
    */
-  async getRevenueMetrics(merchantId: string, period: DashboardPeriod): Promise<RevenueMetrics> {
+  async getRevenueMetrics(
+    merchantId: string,
+    period: DashboardPeriod,
+  ): Promise<RevenueMetrics> {
     const where = {
       merchantId,
       createdAt: { gte: period.from, lte: period.to },
@@ -458,11 +681,12 @@ export class AnalyticsService {
     });
 
     const totalRevenue = transactions
-      .filter(t => t.type === 'EARN')
+      .filter((t) => t.type === 'EARN')
       .reduce((sum, t) => sum + Math.abs(t.amount), 0);
 
     const transactionCount = transactions.length;
-    const averageCheck = transactionCount > 0 ? totalRevenue / transactionCount : 0;
+    const averageCheck =
+      transactionCount > 0 ? totalRevenue / transactionCount : 0;
 
     // Рост относительно предыдущего периода
     const previousPeriod = this.getPreviousPeriod(period);
@@ -476,10 +700,15 @@ export class AnalyticsService {
     });
 
     const revenueGrowth = previousRevenue._sum.amount
-      ? ((totalRevenue - Math.abs(previousRevenue._sum.amount)) / Math.abs(previousRevenue._sum.amount)) * 100
+      ? ((totalRevenue - Math.abs(previousRevenue._sum.amount)) /
+          Math.abs(previousRevenue._sum.amount)) *
+        100
       : 0;
 
-    const hourlyDistribution = await this.getHourlyDistribution(merchantId, period);
+    const hourlyDistribution = await this.getHourlyDistribution(
+      merchantId,
+      period,
+    );
     const dailyRevenue = await this.getDailyRevenue(merchantId, period);
 
     return {
@@ -495,9 +724,14 @@ export class AnalyticsService {
   /**
    * Метрики клиентов
    */
-  async getCustomerMetrics(merchantId: string, period: DashboardPeriod): Promise<CustomerMetrics> {
-    const totalCustomers = await this.prisma.wallet.count({ where: { merchantId } });
-    
+  async getCustomerMetrics(
+    merchantId: string,
+    period: DashboardPeriod,
+  ): Promise<CustomerMetrics> {
+    const totalCustomers = await this.prisma.wallet.count({
+      where: { merchantId },
+    });
+
     const newCustomers = await this.prisma.wallet.count({
       where: {
         merchantId,
@@ -516,7 +750,7 @@ export class AnalyticsService {
     // Отток клиентов
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    
+
     const inactiveCustomers = await this.prisma.wallet.count({
       where: {
         merchantId,
@@ -533,7 +767,8 @@ export class AnalyticsService {
       },
     });
 
-    const churnRate = totalCustomers > 0 ? (inactiveCustomers / totalCustomers) * 100 : 0;
+    const churnRate =
+      totalCustomers > 0 ? (inactiveCustomers / totalCustomers) * 100 : 0;
     const retentionRate = 100 - churnRate;
 
     const ltv = await this.calculateCustomerLTV(merchantId);
@@ -543,9 +778,10 @@ export class AnalyticsService {
       where: { merchantId },
       _count: true,
     });
-    const averageVisits = visits.length > 0
-      ? visits.reduce((sum, v) => sum + v._count, 0) / visits.length
-      : 0;
+    const averageVisits =
+      visits.length > 0
+        ? visits.reduce((sum, v) => sum + v._count, 0) / visits.length
+        : 0;
 
     const topCustomers = await this.getTopCustomers(merchantId, 10);
 
@@ -564,7 +800,10 @@ export class AnalyticsService {
   /**
    * Метрики программы лояльности
    */
-  async getLoyaltyMetrics(merchantId: string, period: DashboardPeriod): Promise<LoyaltyMetrics> {
+  async getLoyaltyMetrics(
+    merchantId: string,
+    period: DashboardPeriod,
+  ): Promise<LoyaltyMetrics> {
     const where = {
       merchantId,
       createdAt: { gte: period.from, lte: period.to },
@@ -590,12 +829,16 @@ export class AnalyticsService {
 
     const totalPointsIssued = Math.abs(earned._sum.amount || 0);
     const totalPointsRedeemed = Math.abs(redeemed._sum.amount || 0);
-    const redemptionRate = totalPointsIssued > 0
-      ? (totalPointsRedeemed / totalPointsIssued) * 100
-      : 0;
+    const redemptionRate =
+      totalPointsIssued > 0
+        ? (totalPointsRedeemed / totalPointsIssued) * 100
+        : 0;
 
     const roi = await this.calculateLoyaltyROI(merchantId, period);
-    const conversionRate = await this.calculateLoyaltyConversion(merchantId, period);
+    const conversionRate = await this.calculateLoyaltyConversion(
+      merchantId,
+      period,
+    );
 
     return {
       totalPointsIssued,
@@ -611,7 +854,10 @@ export class AnalyticsService {
   /**
    * Метрики кампаний
    */
-  async getCampaignMetrics(merchantId: string, period: DashboardPeriod): Promise<CampaignMetrics> {
+  async getCampaignMetrics(
+    merchantId: string,
+    period: DashboardPeriod,
+  ): Promise<CampaignMetrics> {
     const activeCampaigns = await this.prisma.loyaltyPromotion.count({
       where: { merchantId, status: PromotionStatus.ACTIVE, archivedAt: null },
     });
@@ -640,23 +886,29 @@ export class AnalyticsService {
       _sum: { amount: true },
     });
 
-    const usageCount = participantStats.reduce((sum, row) => sum + row._count._all, 0);
-    const uniqueParticipantGroups = await this.prisma.promotionParticipant.groupBy({
-      by: ['customerId'],
-      where: {
-        merchantId,
-        joinedAt: { gte: period.from, lte: period.to },
-      },
-    });
+    const usageCount = participantStats.reduce(
+      (sum, row) => sum + row._count._all,
+      0,
+    );
+    const uniqueParticipantGroups =
+      await this.prisma.promotionParticipant.groupBy({
+        by: ['customerId'],
+        where: {
+          merchantId,
+          joinedAt: { gte: period.from, lte: period.to },
+        },
+      });
     const uniqueParticipants = uniqueParticipantGroups.length;
 
-    const campaignROI = totalRewardsIssued > 0
-      ? ((Math.abs(campaignRevenue._sum.amount || 0) - totalRewardsIssued) / totalRewardsIssued) * 100
-      : 0;
+    const campaignROI =
+      totalRewardsIssued > 0
+        ? ((Math.abs(campaignRevenue._sum.amount || 0) - totalRewardsIssued) /
+            totalRewardsIssued) *
+          100
+        : 0;
 
-    const campaignConversion = uniqueParticipants > 0
-      ? (usageCount / uniqueParticipants) * 100
-      : 0;
+    const campaignConversion =
+      uniqueParticipants > 0 ? (usageCount / uniqueParticipants) * 100 : 0;
 
     const topCampaigns = await this.getTopCampaigns(merchantId, period, 5);
 
@@ -672,7 +924,10 @@ export class AnalyticsService {
   /**
    * Операционные метрики
    */
-  async getOperationalMetrics(merchantId: string, period: DashboardPeriod): Promise<OperationalMetrics> {
+  async getOperationalMetrics(
+    merchantId: string,
+    period: DashboardPeriod,
+  ): Promise<OperationalMetrics> {
     const [topOutlets, topStaff, peakHours, outletUsage] = await Promise.all([
       this.getTopOutlets(merchantId, period),
       this.getTopStaff(merchantId, period),
@@ -688,7 +943,13 @@ export class AnalyticsService {
     period: DashboardPeriod,
     outletId?: string,
   ): Promise<{
-    period: { from: string; to: string; type: DashboardPeriod['type']; thresholdDays: number; giftPoints: number };
+    period: {
+      from: string;
+      to: string;
+      type: DashboardPeriod['type'];
+      thresholdDays: number;
+      giftPoints: number;
+    };
     summary: {
       invitations: number;
       returned: number;
@@ -714,13 +975,28 @@ export class AnalyticsService {
       select: { rulesJson: true },
     });
 
-    const rules = settings?.rulesJson && typeof settings.rulesJson === 'object' ? (settings.rulesJson as any) : {};
-    const autoReturn = rules && typeof rules === 'object' && rules.autoReturn && typeof rules.autoReturn === 'object'
-      ? rules.autoReturn
-      : {};
+    const rules =
+      settings?.rulesJson && typeof settings.rulesJson === 'object'
+        ? (settings.rulesJson as any)
+        : {};
+    const autoReturn =
+      rules &&
+      typeof rules === 'object' &&
+      rules.autoReturn &&
+      typeof rules.autoReturn === 'object'
+        ? rules.autoReturn
+        : {};
 
-    const thresholdDays = Math.max(1, Math.floor(Number(autoReturn?.days ?? autoReturn?.thresholdDays ?? 60) || 60));
-    const giftPoints = Math.max(0, Math.floor(Number(autoReturn?.giftPoints ?? 0) || 0));
+    const thresholdDays = Math.max(
+      1,
+      Math.floor(
+        Number(autoReturn?.days ?? autoReturn?.thresholdDays ?? 60) || 60,
+      ),
+    );
+    const giftPoints = Math.max(
+      0,
+      Math.floor(Number(autoReturn?.giftPoints ?? 0) || 0),
+    );
 
     const from = new Date(period.from);
     const to = new Date(period.to);
@@ -763,7 +1039,7 @@ export class AnalyticsService {
 
     const cutoff = new Date(from.getTime() - thresholdMs);
     for (const item of lastReceiptBefore) {
-      const customerId = item.customerId as string;
+      const customerId = item.customerId;
       const last = item._max.createdAt;
       if (!customerId || !last) continue;
       if (last > cutoff) continue;
@@ -787,7 +1063,10 @@ export class AnalyticsService {
       { label: 'Потерянные (>368)', min: 368, max: Number.POSITIVE_INFINITY },
     ];
 
-    const segmentCounters = new Map<string, { invitations: number; returned: number }>();
+    const segmentCounters = new Map<
+      string,
+      { invitations: number; returned: number }
+    >();
     for (const seg of segments) {
       segmentCounters.set(seg.label, { invitations: 0, returned: 0 });
     }
@@ -810,10 +1089,16 @@ export class AnalyticsService {
 
       record.receipts.sort((a, b) => a.date.getTime() - b.date.getTime());
       const first = record.receipts[0];
-      const hasReturned = Boolean(first && first.date >= record.inviteDate && first.date <= to);
+      const hasReturned = Boolean(
+        first && first.date >= record.inviteDate && first.date <= to,
+      );
 
-      const inactivityDays = Math.floor((from.getTime() - record.lastBefore.getTime()) / msInDay);
-      const segment = segments.find(seg => inactivityDays >= seg.min && inactivityDays <= seg.max);
+      const inactivityDays = Math.floor(
+        (from.getTime() - record.lastBefore.getTime()) / msInDay,
+      );
+      const segment = segments.find(
+        (seg) => inactivityDays >= seg.min && inactivityDays <= seg.max,
+      );
       if (segment) {
         const bucket = segmentCounters.get(segment.label)!;
         bucket.invitations += 1;
@@ -829,7 +1114,10 @@ export class AnalyticsService {
         firstPurchaseRevenue += first.total;
         const firstKey = first.date.toISOString().slice(0, 10);
         returnsByDay.set(firstKey, (returnsByDay.get(firstKey) ?? 0) + 1);
-        firstRevenueByDay.set(firstKey, (firstRevenueByDay.get(firstKey) ?? 0) + first.total);
+        firstRevenueByDay.set(
+          firstKey,
+          (firstRevenueByDay.get(firstKey) ?? 0) + first.total,
+        );
       }
 
       let customerAmount = 0;
@@ -842,9 +1130,20 @@ export class AnalyticsService {
       totalPurchases += record.receipts.length;
     }
 
-    const daysCount = Math.max(1, Math.floor((to.getTime() - from.getTime()) / msInDay) + 1);
-    const attemptsTrend: Array<{ date: string; invitations: number; returns: number }> = [];
-    const revenueTrend: Array<{ date: string; total: number; firstPurchases: number }> = [];
+    const daysCount = Math.max(
+      1,
+      Math.floor((to.getTime() - from.getTime()) / msInDay) + 1,
+    );
+    const attemptsTrend: Array<{
+      date: string;
+      invitations: number;
+      returns: number;
+    }> = [];
+    const revenueTrend: Array<{
+      date: string;
+      total: number;
+      firstPurchases: number;
+    }> = [];
     for (let i = 0; i < daysCount; i++) {
       const current = new Date(from.getTime() + i * msInDay);
       const key = current.toISOString().slice(0, 10);
@@ -880,13 +1179,23 @@ export class AnalyticsService {
       averageCheck: Math.round(averageCheck * 10) / 10,
     };
 
-    const rfm = segments.map(seg => {
+    const rfm = segments.map((seg) => {
       const bucket = segmentCounters.get(seg.label)!;
-      return { segment: seg.label, invitations: bucket.invitations, returned: bucket.returned };
+      return {
+        segment: seg.label,
+        invitations: bucket.invitations,
+        returned: bucket.returned,
+      };
     });
 
     return {
-      period: { from: from.toISOString(), to: to.toISOString(), type: period.type, thresholdDays, giftPoints },
+      period: {
+        from: from.toISOString(),
+        to: to.toISOString(),
+        type: period.type,
+        thresholdDays,
+        giftPoints,
+      },
       summary,
       distance,
       rfm,
@@ -896,7 +1205,7 @@ export class AnalyticsService {
       },
     };
   }
-  
+
   async getBirthdayMechanicMetrics(
     merchantId: string,
     period: DashboardPeriod,
@@ -936,15 +1245,36 @@ export class AnalyticsService {
       select: { rulesJson: true },
     });
 
-    const rules = settings?.rulesJson && typeof settings.rulesJson === 'object' ? (settings.rulesJson as any) : {};
-    const birthday = rules && typeof rules === 'object' && rules.birthday && typeof rules.birthday === 'object'
-      ? rules.birthday
-      : {};
+    const rules =
+      settings?.rulesJson && typeof settings.rulesJson === 'object'
+        ? (settings.rulesJson as any)
+        : {};
+    const birthday =
+      rules &&
+      typeof rules === 'object' &&
+      rules.birthday &&
+      typeof rules.birthday === 'object'
+        ? rules.birthday
+        : {};
 
-    const daysBefore = Math.max(0, Math.floor(Number(birthday?.daysBefore ?? birthday?.days ?? 5) || 5));
-    const onlyBuyers = Boolean(birthday?.onlyBuyers ?? birthday?.buyersOnly ?? birthday?.onlyCustomers ?? false);
-    const giftPoints = Math.max(0, Math.floor(Number(birthday?.giftPoints ?? 0) || 0));
-    const giftTtlDays = Math.max(0, Math.floor(Number(birthday?.giftTtlDays ?? birthday?.giftTtl ?? 0) || 0));
+    const daysBefore = Math.max(
+      0,
+      Math.floor(Number(birthday?.daysBefore ?? birthday?.days ?? 5) || 5),
+    );
+    const onlyBuyers = Boolean(
+      birthday?.onlyBuyers ??
+        birthday?.buyersOnly ??
+        birthday?.onlyCustomers ??
+        false,
+    );
+    const giftPoints = Math.max(
+      0,
+      Math.floor(Number(birthday?.giftPoints ?? 0) || 0),
+    );
+    const giftTtlDays = Math.max(
+      0,
+      Math.floor(Number(birthday?.giftTtlDays ?? birthday?.giftTtl ?? 0) || 0),
+    );
     const purchaseWindowDays = Math.max(7, daysBefore + 7);
 
     const empty = {
@@ -987,13 +1317,19 @@ export class AnalyticsService {
       return empty;
     }
 
-    let statsMap: Map<string, { visits: number; totalSpent: number }> | null = null;
+    let statsMap: Map<string, { visits: number; totalSpent: number }> | null =
+      null;
     if (onlyBuyers) {
       const stats = await this.prisma.customerStats.findMany({
         where: { merchantId, customerId: { in: customers.map((c) => c.id) } },
         select: { customerId: true, visits: true, totalSpent: true },
       });
-      statsMap = new Map(stats.map((item) => [item.customerId, { visits: item.visits, totalSpent: item.totalSpent }]));
+      statsMap = new Map(
+        stats.map((item) => [
+          item.customerId,
+          { visits: item.visits, totalSpent: item.totalSpent },
+        ]),
+      );
     }
 
     const msInDay = 24 * 60 * 60 * 1000;
@@ -1006,7 +1342,13 @@ export class AnalyticsService {
       years.push(y);
     }
 
-    type Event = { customerId: string; sendDate: Date; birthdayDate: Date; age: number; gender: string };
+    type Event = {
+      customerId: string;
+      sendDate: Date;
+      birthdayDate: Date;
+      age: number;
+      gender: string;
+    };
     const events: Event[] = [];
 
     for (const customer of customers) {
@@ -1035,7 +1377,10 @@ export class AnalyticsService {
         }
 
         const age = actual.getFullYear() - birthYear;
-        const gender = typeof customer.gender === 'string' && customer.gender ? customer.gender.toUpperCase() : 'UNKNOWN';
+        const gender =
+          typeof customer.gender === 'string' && customer.gender
+            ? customer.gender.toUpperCase()
+            : 'UNKNOWN';
 
         events.push({
           customerId: customer.id,
@@ -1052,10 +1397,16 @@ export class AnalyticsService {
     }
 
     const customerIds = Array.from(new Set(events.map((e) => e.customerId)));
-    const earliestBirthday = new Date(Math.min(...events.map((e) => e.birthdayDate.getTime())));
-    const latestBirthday = new Date(Math.max(...events.map((e) => e.birthdayDate.getTime())));
+    const earliestBirthday = new Date(
+      Math.min(...events.map((e) => e.birthdayDate.getTime())),
+    );
+    const latestBirthday = new Date(
+      Math.max(...events.map((e) => e.birthdayDate.getTime())),
+    );
     const receiptFrom = new Date(earliestBirthday.getTime() - msInDay);
-    const receiptTo = new Date(latestBirthday.getTime() + purchaseWindowDays * msInDay);
+    const receiptTo = new Date(
+      latestBirthday.getTime() + purchaseWindowDays * msInDay,
+    );
 
     const receiptWhere: any = {
       merchantId,
@@ -1072,18 +1423,35 @@ export class AnalyticsService {
       orderBy: { createdAt: 'asc' },
     });
 
-    const receiptsByCustomer = new Map<string, Array<{ createdAt: Date; total: number }>>();
+    const receiptsByCustomer = new Map<
+      string,
+      Array<{ createdAt: Date; total: number }>
+    >();
     for (const receipt of receipts) {
       if (!receiptsByCustomer.has(receipt.customerId)) {
         receiptsByCustomer.set(receipt.customerId, []);
       }
-      receiptsByCustomer.get(receipt.customerId)!.push({ createdAt: new Date(receipt.createdAt), total: receipt.total });
+      receiptsByCustomer
+        .get(receipt.customerId)!
+        .push({ createdAt: new Date(receipt.createdAt), total: receipt.total });
     }
 
-    const attemptsMap = new Map<string, { invitations: number; purchases: number }>();
-    const revenueMap = new Map<string, { total: number; firstPurchases: number }>();
-    const genderMap = new Map<string, { invitations: number; purchases: number }>();
-    const ageMap = new Map<string, { invitations: number; purchases: number }>();
+    const attemptsMap = new Map<
+      string,
+      { invitations: number; purchases: number }
+    >();
+    const revenueMap = new Map<
+      string,
+      { total: number; firstPurchases: number }
+    >();
+    const genderMap = new Map<
+      string,
+      { invitations: number; purchases: number }
+    >();
+    const ageMap = new Map<
+      string,
+      { invitations: number; purchases: number }
+    >();
 
     const customersWithPurchases = new Set<string>();
     let purchasers = 0;
@@ -1111,11 +1479,18 @@ export class AnalyticsService {
       const attempt = attemptsMap.get(key) ?? { invitations: 0, purchases: 0 };
       attempt.invitations += 1;
 
-      const revenueEntry = revenueMap.get(key) ?? { total: 0, firstPurchases: 0 };
+      const revenueEntry = revenueMap.get(key) ?? {
+        total: 0,
+        firstPurchases: 0,
+      };
 
       const customerReceipts = receiptsByCustomer.get(event.customerId) ?? [];
-      const windowEnd = new Date(event.birthdayDate.getTime() + purchaseWindowDays * msInDay);
-      const relevant = customerReceipts.filter((r) => r.createdAt >= event.birthdayDate && r.createdAt <= windowEnd);
+      const windowEnd = new Date(
+        event.birthdayDate.getTime() + purchaseWindowDays * msInDay,
+      );
+      const relevant = customerReceipts.filter(
+        (r) => r.createdAt >= event.birthdayDate && r.createdAt <= windowEnd,
+      );
 
       const converted = relevant.length > 0;
       if (converted) {
@@ -1136,12 +1511,18 @@ export class AnalyticsService {
       attemptsMap.set(key, attempt);
       revenueMap.set(key, revenueEntry);
 
-      const gEntry = genderMap.get(genderLabel(event.gender)) ?? { invitations: 0, purchases: 0 };
+      const gEntry = genderMap.get(genderLabel(event.gender)) ?? {
+        invitations: 0,
+        purchases: 0,
+      };
       gEntry.invitations += 1;
       if (converted) gEntry.purchases += 1;
       genderMap.set(genderLabel(event.gender), gEntry);
 
-      const aEntry = ageMap.get(ageBucket(event.age)) ?? { invitations: 0, purchases: 0 };
+      const aEntry = ageMap.get(ageBucket(event.age)) ?? {
+        invitations: 0,
+        purchases: 0,
+      };
       aEntry.invitations += 1;
       if (converted) aEntry.purchases += 1;
       ageMap.set(ageBucket(event.age), aEntry);
@@ -1154,8 +1535,13 @@ export class AnalyticsService {
       .map(([date, value]) => ({ date, ...value }))
       .sort((a, b) => a.date.localeCompare(b.date));
 
-    const genderStats = Array.from(genderMap.entries()).map(([group, value]) => ({ group, ...value }));
-    const ageStats = Array.from(ageMap.entries()).map(([bucket, value]) => ({ bucket, ...value }));
+    const genderStats = Array.from(genderMap.entries()).map(
+      ([group, value]) => ({ group, ...value }),
+    );
+    const ageStats = Array.from(ageMap.entries()).map(([bucket, value]) => ({
+      bucket,
+      ...value,
+    }));
 
     return {
       period: {
@@ -1171,11 +1557,17 @@ export class AnalyticsService {
       summary: {
         invitations: events.length,
         purchasers,
-        conversion: events.length > 0 ? Math.round((purchasers / events.length) * 1000) / 10 : 0,
+        conversion:
+          events.length > 0
+            ? Math.round((purchasers / events.length) * 1000) / 10
+            : 0,
         pointsIssued: giftPoints > 0 ? giftPoints * events.length : 0,
         revenue: totalRevenue,
         firstPurchaseRevenue,
-        averageCheck: totalReceiptsCount > 0 ? Math.round(totalRevenue / totalReceiptsCount) : 0,
+        averageCheck:
+          totalReceiptsCount > 0
+            ? Math.round(totalRevenue / totalReceiptsCount)
+            : 0,
         customersWithPurchases: customersWithPurchases.size,
       },
       demographics: {
@@ -1200,7 +1592,10 @@ export class AnalyticsService {
     };
   }
 
-  private async getHourlyDistribution(merchantId: string, period: DashboardPeriod): Promise<HourlyData[]> {
+  private async getHourlyDistribution(
+    merchantId: string,
+    period: DashboardPeriod,
+  ): Promise<HourlyData[]> {
     const transactions = await this.prisma.transaction.findMany({
       where: {
         merchantId,
@@ -1209,12 +1604,15 @@ export class AnalyticsService {
       select: { createdAt: true, amount: true },
     });
 
-    const hourlyData: Record<number, { revenue: number; transactions: number }> = {};
+    const hourlyData: Record<
+      number,
+      { revenue: number; transactions: number }
+    > = {};
     for (let hour = 0; hour < 24; hour++) {
       hourlyData[hour] = { revenue: 0, transactions: 0 };
     }
 
-    transactions.forEach(t => {
+    transactions.forEach((t) => {
       const hour = t.createdAt.getHours();
       hourlyData[hour].revenue += Math.abs(t.amount);
       hourlyData[hour].transactions++;
@@ -1227,15 +1625,20 @@ export class AnalyticsService {
     }));
   }
 
-  private async getDailyRevenue(merchantId: string, period: DashboardPeriod): Promise<DailyData[]> {
-    const days = Math.ceil((period.to.getTime() - period.from.getTime()) / (1000 * 60 * 60 * 24));
+  private async getDailyRevenue(
+    merchantId: string,
+    period: DashboardPeriod,
+  ): Promise<DailyData[]> {
+    const days = Math.ceil(
+      (period.to.getTime() - period.from.getTime()) / (1000 * 60 * 60 * 24),
+    );
     const dailyData: DailyData[] = [];
 
     for (let i = 0; i < Math.min(days, 31); i++) {
       const dayStart = new Date(period.from);
       dayStart.setDate(dayStart.getDate() + i);
       dayStart.setHours(0, 0, 0, 0);
-      
+
       const dayEnd = new Date(dayStart);
       dayEnd.setHours(23, 59, 59, 999);
 
@@ -1280,7 +1683,10 @@ export class AnalyticsService {
     return Math.abs(result._sum.amount || 0) / result._count.customerId;
   }
 
-  private async getTopCustomers(merchantId: string, limit: number): Promise<TopCustomer[]> {
+  private async getTopCustomers(
+    merchantId: string,
+    limit: number,
+  ): Promise<TopCustomer[]> {
     // Группировка транзакций по клиенту (вся история для мерчанта, как и в исходном SQL)
     const grouped = await this.prisma.transaction.groupBy({
       by: ['customerId'],
@@ -1292,24 +1698,32 @@ export class AnalyticsService {
       take: limit,
     });
 
-    const ids = grouped.map(g => g.customerId).filter((v): v is string => !!v);
+    const ids = grouped
+      .map((g) => g.customerId)
+      .filter((v): v is string => !!v);
     if (ids.length === 0) return [];
 
     const [customers, wallets] = await Promise.all([
-      this.prisma.customer.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, phone: true } }),
-      this.prisma.wallet.findMany({ where: { merchantId, customerId: { in: ids }, type: 'POINTS' as any }, select: { customerId: true, balance: true } }),
+      this.prisma.customer.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, name: true, phone: true },
+      }),
+      this.prisma.wallet.findMany({
+        where: { merchantId, customerId: { in: ids }, type: 'POINTS' as any },
+        select: { customerId: true, balance: true },
+      }),
     ]);
-    const cMap = new Map(customers.map(c => [c.id, c]));
-    const wMap = new Map(wallets.map(w => [w.customerId, w.balance || 0]));
+    const cMap = new Map(customers.map((c) => [c.id, c]));
+    const wMap = new Map(wallets.map((w) => [w.customerId, w.balance || 0]));
 
-    return grouped.map(g => {
-      const c = cMap.get(g.customerId!);
+    return grouped.map((g) => {
+      const c = cMap.get(g.customerId);
       const total = Math.abs(g._sum.amount || 0);
       const visits = g._count._all || 0;
       const lastVisit = g._max.createdAt as Date;
-      const loyaltyPoints = wMap.get(g.customerId!) || 0;
+      const loyaltyPoints = wMap.get(g.customerId) || 0;
       return {
-        id: g.customerId!,
+        id: g.customerId,
         name: c?.name || undefined,
         phone: c?.phone || undefined,
         totalSpent: total,
@@ -1320,7 +1734,10 @@ export class AnalyticsService {
     });
   }
 
-  private async calculateLoyaltyROI(merchantId: string, period: DashboardPeriod): Promise<number> {
+  private async calculateLoyaltyROI(
+    merchantId: string,
+    period: DashboardPeriod,
+  ): Promise<number> {
     const [loyaltyRevenue, programCost] = await Promise.all([
       this.prisma.transaction.aggregate({
         where: {
@@ -1350,7 +1767,10 @@ export class AnalyticsService {
     return cost > 0 ? ((revenue - cost) / cost) * 100 : 0;
   }
 
-  private async calculateLoyaltyConversion(merchantId: string, period: DashboardPeriod): Promise<number> {
+  private async calculateLoyaltyConversion(
+    merchantId: string,
+    period: DashboardPeriod,
+  ): Promise<number> {
     const [withLoyalty, total] = await Promise.all([
       this.prisma.transaction.count({
         where: {
@@ -1371,7 +1791,11 @@ export class AnalyticsService {
     return total > 0 ? (withLoyalty / total) * 100 : 0;
   }
 
-  private async getTopCampaigns(merchantId: string, period: DashboardPeriod, limit: number): Promise<CampaignPerformance[]> {
+  private async getTopCampaigns(
+    merchantId: string,
+    period: DashboardPeriod,
+    limit: number,
+  ): Promise<CampaignPerformance[]> {
     const aggregates = await this.prisma.promotionParticipant.groupBy({
       by: ['promotionId'],
       where: {
@@ -1395,7 +1819,8 @@ export class AnalyticsService {
 
     return aggregates.map((row) => {
       const promotion = map.get(row.promotionId);
-      const legacy = ((promotion?.metadata as any)?.legacyCampaign ?? {}) as Record<string, any>;
+      const legacy = ((promotion?.metadata as any)?.legacyCampaign ??
+        {}) as Record<string, any>;
       return {
         id: row.promotionId,
         name: promotion?.name ?? row.promotionId,
@@ -1407,20 +1832,31 @@ export class AnalyticsService {
     });
   }
 
-  private async getTopOutlets(merchantId: string, period: DashboardPeriod): Promise<OutletPerformance[]> {
+  private async getTopOutlets(
+    merchantId: string,
+    period: DashboardPeriod,
+  ): Promise<OutletPerformance[]> {
     const grouped = await this.prisma.transaction.groupBy({
       by: ['outletId'],
-      where: { merchantId, type: 'EARN', createdAt: { gte: period.from, lte: period.to }, outletId: { not: null } },
+      where: {
+        merchantId,
+        type: 'EARN',
+        createdAt: { gte: period.from, lte: period.to },
+        outletId: { not: null },
+      },
       _sum: { amount: true },
       _count: { _all: true },
       orderBy: { _sum: { amount: 'desc' } },
       take: 5,
     });
-    const ids = grouped.map(g => g.outletId).filter((v): v is string => !!v);
+    const ids = grouped.map((g) => g.outletId).filter((v): v is string => !!v);
     if (ids.length === 0) return [];
-    const outs = await this.prisma.outlet.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } });
-    const oMap = new Map(outs.map(o => [o.id, o]));
-    return grouped.map(g => ({
+    const outs = await this.prisma.outlet.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, name: true },
+    });
+    const oMap = new Map(outs.map((o) => [o.id, o]));
+    return grouped.map((g) => ({
       id: g.outletId!,
       name: oMap.get(g.outletId!)?.name || g.outletId!,
       revenue: Math.round(Math.abs(g._sum.amount || 0)),
@@ -1429,26 +1865,37 @@ export class AnalyticsService {
     }));
   }
 
-  private async getTopStaff(merchantId: string, period: DashboardPeriod): Promise<StaffPerformance[]> {
+  private async getTopStaff(
+    merchantId: string,
+    period: DashboardPeriod,
+  ): Promise<StaffPerformance[]> {
     const grouped = await this.prisma.transaction.groupBy({
       by: ['staffId'],
-      where: { merchantId, type: 'EARN', createdAt: { gte: period.from, lte: period.to }, staffId: { not: null } },
+      where: {
+        merchantId,
+        type: 'EARN',
+        createdAt: { gte: period.from, lte: period.to },
+        staffId: { not: null },
+      },
       _sum: { amount: true },
       _count: { _all: true },
       orderBy: { _sum: { amount: 'desc' } },
       take: 5,
     });
-    const ids = grouped.map(g => g.staffId).filter((v): v is string => !!v);
+    const ids = grouped.map((g) => g.staffId).filter((v): v is string => !!v);
     if (ids.length === 0) return [];
-    const staffRows = await this.prisma.staff.findMany({ where: { id: { in: ids } }, select: { id: true, login: true, email: true } });
-    const sMap = new Map(staffRows.map(s => [s.id, s]));
-    return grouped.map(g => {
+    const staffRows = await this.prisma.staff.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, login: true, email: true },
+    });
+    const sMap = new Map(staffRows.map((s) => [s.id, s]));
+    return grouped.map((g) => {
       const s = sMap.get(g.staffId!);
       const revenue = Math.abs(g._sum.amount || 0);
       const tx = g._count._all || 0;
       return {
         id: g.staffId!,
-        name: (s?.login || s?.email || g.staffId!) as string,
+        name: s?.login || s?.email || g.staffId!,
         transactions: tx,
         revenue: Math.round(revenue),
         averageCheck: tx > 0 ? Math.round(revenue / tx) : 0,
@@ -1456,14 +1903,20 @@ export class AnalyticsService {
     });
   }
 
-  private async getPeakHours(merchantId: string, period: DashboardPeriod): Promise<string[]> {
+  private async getPeakHours(
+    merchantId: string,
+    period: DashboardPeriod,
+  ): Promise<string[]> {
     const hourlyData = await this.getHourlyDistribution(merchantId, period);
     const sorted = hourlyData.sort((a, b) => b.transactions - a.transactions);
     const top3 = sorted.slice(0, 3);
-    return top3.map(h => `${h.hour}:00-${h.hour + 1}:00`);
+    return top3.map((h) => `${h.hour}:00-${h.hour + 1}:00`);
   }
 
-  private async getOutletUsage(merchantId: string, period: DashboardPeriod): Promise<OutletUsageStats[]> {
+  private async getOutletUsage(
+    merchantId: string,
+    period: DashboardPeriod,
+  ): Promise<OutletUsageStats[]> {
     const [outlets, grouped] = await Promise.all([
       this.prisma.outlet.findMany({
         where: { merchantId },
@@ -1481,7 +1934,10 @@ export class AnalyticsService {
       }),
     ]);
 
-    const map = new Map<string, { transactions: number; lastTxnAt: Date | null }>();
+    const map = new Map<
+      string,
+      { transactions: number; lastTxnAt: Date | null }
+    >();
     for (const g of grouped) {
       if (!g.outletId) continue;
       map.set(g.outletId, {
@@ -1490,7 +1946,7 @@ export class AnalyticsService {
       });
     }
 
-    const rows: OutletUsageStats[] = outlets.map(outlet => {
+    const rows: OutletUsageStats[] = outlets.map((outlet) => {
       const aggregate = map.get(outlet.id);
       const lastActive = outlet.posLastSeenAt ?? aggregate?.lastTxnAt ?? null;
       return {

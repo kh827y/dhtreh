@@ -15,7 +15,9 @@ describe('Notifications API (e2e)', () => {
 
   beforeAll(async () => {
     process.env.ADMIN_KEY = 'test-admin-key';
-    const moduleFixture: TestingModule = await Test.createTestingModule({ imports: [AppModule] })
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    })
       .overrideProvider(PrismaService)
       .useValue(prismaMock)
       .compile();
@@ -23,7 +25,9 @@ describe('Notifications API (e2e)', () => {
     await app.init();
   });
 
-  afterAll(async () => { await app.close(); });
+  afterAll(async () => {
+    await app.close();
+  });
 
   it('rejects without admin key', async () => {
     await request(app.getHttpServer())
@@ -36,8 +40,13 @@ describe('Notifications API (e2e)', () => {
     const res = await request(app.getHttpServer())
       .post('/notifications/broadcast')
       .set('X-Admin-Key', 'test-admin-key')
-      .send({ merchantId: 'M1', channel: 'ALL', dryRun: true, template: { subject: 'Hello', text: 'World' } });
-    expect([200,201]).toContain(res.status);
+      .send({
+        merchantId: 'M1',
+        channel: 'ALL',
+        dryRun: true,
+        template: { subject: 'Hello', text: 'World' },
+      });
+    expect([200, 201]).toContain(res.status);
     expect(typeof res.body).toBe('object');
     expect(res.body.ok).toBe(true);
     expect(res.body.dryRun).toBe(true);
@@ -51,11 +60,18 @@ describe('Notifications API (e2e)', () => {
     const res = await request(app.getHttpServer())
       .post('/notifications/test')
       .set('X-Admin-Key', 'test-admin-key')
-      .send({ merchantId: 'M1', channel: 'EMAIL', to: 'user@example.com', template: { subject: 'Hi', text: 'hi' } });
-    expect([200,201]).toContain(res.status);
+      .send({
+        merchantId: 'M1',
+        channel: 'EMAIL',
+        to: 'user@example.com',
+        template: { subject: 'Hi', text: 'hi' },
+      });
+    expect([200, 201]).toContain(res.status);
     expect(res.body.ok).toBe(true);
     expect(prismaMock.adminAudit.create).toHaveBeenCalled();
-    const args = prismaMock.adminAudit.create.mock.calls.find((c:any[])=>c?.[0]?.data?.path==='/notifications/test')?.[0]?.data;
+    const args = prismaMock.adminAudit.create.mock.calls.find(
+      (c: any[]) => c?.[0]?.data?.path === '/notifications/test',
+    )?.[0]?.data;
     expect(args?.path).toBe('/notifications/test');
   });
 
@@ -65,7 +81,10 @@ describe('Notifications API (e2e)', () => {
       merchantId: 'M1',
       channel: 'EMAIL',
       segmentId: 'SEG-1',
-      template: { subject: 'Hello {{merchantName}}', text: 'Hi {{customerName}}' },
+      template: {
+        subject: 'Hello {{merchantName}}',
+        text: 'Hi {{customerName}}',
+      },
       variables: { merchantName: 'Shop' },
       dryRun: false,
     };
@@ -73,7 +92,7 @@ describe('Notifications API (e2e)', () => {
       .post('/notifications/broadcast')
       .set('X-Admin-Key', 'test-admin-key')
       .send(payload);
-    expect([200,201]).toContain(res.status);
+    expect([200, 201]).toContain(res.status);
     expect(res.body.ok).toBe(true);
     // Ensure outbox enqueue happened with expected payload bits
     expect(prismaMock.eventOutbox.create).toHaveBeenCalled();

@@ -65,7 +65,10 @@ describe('ActionsService', () => {
 
     expect(prisma.loyaltyPromotion.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ status: 'SCHEDULED', merchantId: 'm1' }),
+        data: expect.objectContaining({
+          status: 'SCHEDULED',
+          merchantId: 'm1',
+        }),
       }),
     );
     expect(result.status).toBe('SCHEDULED');

@@ -1,9 +1,28 @@
 import { AccessScope } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ArgsType, Field, ID, InputType, Int, ObjectType, registerEnumType } from '@nestjs/graphql';
-import { IsArray, IsBoolean, IsEnum, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  ArgsType,
+  Field,
+  ID,
+  InputType,
+  Int,
+  ObjectType,
+  registerEnumType,
+} from '@nestjs/graphql';
+import {
+  IsArray,
+  IsBoolean,
+  IsEnum,
+  IsIn,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 import { Transform } from 'class-transformer';
-import { PaginationQueryDto, createPaginatedResponseDto } from '../../common/dto/pagination.dto';
+import {
+  PaginationQueryDto,
+  createPaginatedResponseDto,
+} from '../../common/dto/pagination.dto';
 
 registerEnumType(AccessScope, { name: 'AccessScope' });
 
@@ -14,9 +33,14 @@ type AccessScopeFilter = (typeof ACCESS_SCOPE_FILTERS)[number];
 @ArgsType()
 export class AccessGroupListQueryDto extends PaginationQueryDto {
   @Field(() => String, { nullable: true })
-  @ApiPropertyOptional({ description: 'Фильтр по области действия', enum: ACCESS_SCOPE_FILTERS })
+  @ApiPropertyOptional({
+    description: 'Фильтр по области действия',
+    enum: ACCESS_SCOPE_FILTERS,
+  })
   @IsOptional()
-  @Transform(({ value }) => (typeof value === 'string' ? value.toUpperCase() : value))
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.toUpperCase() : value,
+  )
   @IsIn(ACCESS_SCOPE_FILTERS as unknown as string[])
   scope?: AccessScopeFilter;
 
@@ -74,12 +98,17 @@ export class AccessGroupDto {
   memberCount!: number;
 
   @Field(() => [AccessGroupPermissionDto])
-  @ApiProperty({ type: () => [AccessGroupPermissionDto], description: 'Список разрешений' })
+  @ApiProperty({
+    type: () => [AccessGroupPermissionDto],
+    description: 'Список разрешений',
+  })
   permissions!: AccessGroupPermissionDto[];
 }
 
 @ObjectType()
-export class AccessGroupListResponseDto extends createPaginatedResponseDto(AccessGroupDto) {}
+export class AccessGroupListResponseDto extends createPaginatedResponseDto(
+  AccessGroupDto,
+) {}
 
 @InputType()
 export class AccessGroupPermissionInput {

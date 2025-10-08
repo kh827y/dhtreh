@@ -1,4 +1,8 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { ConfigService } from '@nestjs/config';
 // import { Cron, CronExpression } from '@nestjs/schedule';
@@ -59,12 +63,15 @@ export class SubscriptionService {
 
     // Рассчитываем даты
     const now = new Date();
-    const trialEnd = dto.trialDays 
+    const trialEnd = dto.trialDays
       ? new Date(now.getTime() + dto.trialDays * 24 * 60 * 60 * 1000)
       : null;
-    
+
     const currentPeriodStart = now;
-    const currentPeriodEnd = this.calculatePeriodEnd(currentPeriodStart, plan.interval);
+    const currentPeriodEnd = this.calculatePeriodEnd(
+      currentPeriodStart,
+      plan.interval,
+    );
 
     // Создаем подписку
     let subscription: any;
@@ -243,7 +250,7 @@ export class SubscriptionService {
 
       if (transactionCount > plan.maxTransactions) {
         throw new BadRequestException(
-          `Превышен лимит транзакций плана (${transactionCount}/${plan.maxTransactions})`
+          `Превышен лимит транзакций плана (${transactionCount}/${plan.maxTransactions})`,
         );
       }
     }
@@ -259,7 +266,7 @@ export class SubscriptionService {
 
       if (customerCount > plan.maxCustomers) {
         throw new BadRequestException(
-          `Превышен лимит клиентов плана (${customerCount}/${plan.maxCustomers})`
+          `Превышен лимит клиентов плана (${customerCount}/${plan.maxCustomers})`,
         );
       }
     }
@@ -272,7 +279,7 @@ export class SubscriptionService {
 
       if (outletCount > plan.maxOutlets) {
         throw new BadRequestException(
-          `Превышен лимит точек продаж плана (${outletCount}/${plan.maxOutlets})`
+          `Превышен лимит точек продаж плана (${outletCount}/${plan.maxOutlets})`,
         );
       }
     }
@@ -283,29 +290,39 @@ export class SubscriptionService {
   /**
    * Проверка доступности функции для текущего плана
    */
-  async checkFeatureAccess(merchantId: string, feature: string): Promise<boolean> {
+  async checkFeatureAccess(
+    merchantId: string,
+    feature: string,
+  ): Promise<boolean> {
     const prismaAny = this.prisma as any;
     const subscription = await prismaAny.subscription.findUnique({
       where: { merchantId },
       include: { plan: true },
     });
 
-    if (!subscription || (subscription.status !== 'active' && subscription.status !== 'trialing')) {
+    if (
+      !subscription ||
+      (subscription.status !== 'active' && subscription.status !== 'trialing')
+    ) {
       return false;
     }
 
-    const plan = subscription.plan as any;
-    const features = (plan as any)?.features as any;
+    const plan = subscription.plan;
+    const features = plan?.features;
 
     switch (feature) {
       case 'webhooks':
-        return (plan.webhooksEnabled ?? (features?.webhooks === true)) === true;
+        return (plan.webhooksEnabled ?? features?.webhooks === true) === true;
       case 'custom_branding':
-        return (plan.customBranding ?? (features?.customBranding === true)) === true;
+        return (
+          (plan.customBranding ?? features?.customBranding === true) === true
+        );
       case 'priority_support':
-        return (plan.prioritySupport ?? (features?.prioritySupport === true)) === true;
+        return (
+          (plan.prioritySupport ?? features?.prioritySupport === true) === true
+        );
       case 'api_access':
-        return (plan.apiAccess ?? (features?.apiAccess === true)) === true;
+        return (plan.apiAccess ?? features?.apiAccess === true) === true;
       default:
         return features?.[feature] === true;
     }
@@ -328,8 +345,8 @@ export class SubscriptionService {
     const payment = await prismaAny.payment.create({
       data: {
         subscriptionId,
-        amount: (subscription.plan as any).price,
-        currency: (subscription.plan as any).currency,
+        amount: subscription.plan.price,
+        currency: subscription.plan.currency,
         status: paymentData.status || 'pending',
         paymentMethod: paymentData.method,
         invoiceId: paymentData.invoiceId,
@@ -343,7 +360,7 @@ export class SubscriptionService {
       const newPeriodStart = subscription.currentPeriodEnd;
       const newPeriodEnd = this.calculatePeriodEnd(
         newPeriodStart,
-        (subscription.plan as any).interval
+        subscription.plan.interval,
       );
 
       await prismaAny.subscription.update({
@@ -399,7 +416,7 @@ export class SubscriptionService {
       throw new NotFoundException('Подписка не найдена');
     }
 
-    const plan = subscription.plan as any;
+    const plan = subscription.plan;
     const period = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
     const [transactions, uniqueCustomers, outlets] = await Promise.all([
@@ -433,7 +450,7 @@ export class SubscriptionService {
         transactions: {
           used: transactions,
           limit: plan.maxTransactions || 'unlimited',
-          percentage: plan.maxTransactions 
+          percentage: plan.maxTransactions
             ? Math.round((transactions / plan.maxTransactions) * 100)
             : null,
         },
@@ -482,7 +499,7 @@ export class SubscriptionService {
         const newPeriodStart = subscription.currentPeriodEnd;
         const newPeriodEnd = this.calculatePeriodEnd(
           newPeriodStart,
-          (subscription.plan as any).interval
+          subscription.plan.interval,
         );
 
         await prismaAny.subscription.update({
@@ -541,7 +558,7 @@ export class SubscriptionService {
    */
   private calculatePeriodEnd(start: Date, interval: string): Date {
     const end = new Date(start);
-    
+
     switch (interval) {
       case 'month':
         end.setMonth(end.getMonth() + 1);

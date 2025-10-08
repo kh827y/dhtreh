@@ -117,7 +117,10 @@ export class LoyaltyProgramService {
 
   private async isTelegramEnabled(merchantId: string): Promise<boolean> {
     try {
-      const m = await this.prisma.merchant.findUnique({ where: { id: merchantId }, select: { telegramBotEnabled: true } });
+      const m = await this.prisma.merchant.findUnique({
+        where: { id: merchantId },
+        select: { telegramBotEnabled: true },
+      });
       return !!m?.telegramBotEnabled;
     } catch {}
     return false;
@@ -145,7 +148,9 @@ export class LoyaltyProgramService {
     const parts: string[] = [];
     parts.push(`Акция стартовала: ${p?.name || 'Новая акция'}`);
     if (p?.rewardType === 'POINTS' && Number.isFinite(Number(p?.rewardValue))) {
-      parts.push(`Бонус: +${Math.max(0, Math.round(Number(p.rewardValue)))} баллов`);
+      parts.push(
+        `Бонус: +${Math.max(0, Math.round(Number(p.rewardValue)))} баллов`,
+      );
     }
     if (p?.endAt) {
       try {
@@ -160,13 +165,18 @@ export class LoyaltyProgramService {
     const parts: string[] = [];
     parts.push(`Скоро завершится акция: ${p?.name || ''}`.trim());
     if (p?.rewardType === 'POINTS' && Number.isFinite(Number(p?.rewardValue))) {
-      parts.push(`Успейте получить +${Math.max(0, Math.round(Number(p.rewardValue)))} баллов`);
+      parts.push(
+        `Успейте получить +${Math.max(0, Math.round(Number(p.rewardValue)))} баллов`,
+      );
     }
     parts.push(`Осталось ~${Math.max(1, Math.round(hours))} ч.`);
     return parts.join(' · ');
   }
 
-  private async schedulePromotionNotifications(merchantId: string, promotion: any): Promise<void> {
+  private async schedulePromotionNotifications(
+    merchantId: string,
+    promotion: any,
+  ): Promise<void> {
     const now = Date.now();
     const hasSegment = !!promotion.segmentId;
     const audienceCode = hasSegment ? `segment:${promotion.segmentId}` : 'all';
@@ -186,7 +196,14 @@ export class LoyaltyProgramService {
         const text = this.buildStartText(promotion);
         // PUSH — если выбран шаблон
         if (promotion.pushTemplateStartId) {
-          if (!(await this.taskExists({ merchantId, promotionId: promotion.id, channel: CommunicationChannel.PUSH, scheduledAt: when }))) {
+          if (
+            !(await this.taskExists({
+              merchantId,
+              promotionId: promotion.id,
+              channel: CommunicationChannel.PUSH,
+              scheduledAt: when,
+            }))
+          ) {
             await this.comms.createTask(merchantId, {
               channel: CommunicationChannel.PUSH,
               templateId: promotion.pushTemplateStartId,
@@ -194,14 +211,25 @@ export class LoyaltyProgramService {
               audienceCode,
               promotionId: promotion.id,
               scheduledAt: when,
-              payload: { text, event: 'promotion.start', promotionId: promotion.id },
+              payload: {
+                text,
+                event: 'promotion.start',
+                promotionId: promotion.id,
+              },
               actorId: actorId ?? undefined,
             });
           }
         }
         // TELEGRAM — если включён бот
         if (await this.isTelegramEnabled(merchantId)) {
-          if (!(await this.taskExists({ merchantId, promotionId: promotion.id, channel: CommunicationChannel.TELEGRAM, scheduledAt: when }))) {
+          if (
+            !(await this.taskExists({
+              merchantId,
+              promotionId: promotion.id,
+              channel: CommunicationChannel.TELEGRAM,
+              scheduledAt: when,
+            }))
+          ) {
             await this.comms.createTask(merchantId, {
               channel: CommunicationChannel.TELEGRAM,
               promotionId: promotion.id,
@@ -209,7 +237,11 @@ export class LoyaltyProgramService {
               audienceName: null,
               audienceSnapshot: { code: audienceCode },
               scheduledAt: when,
-              payload: { text, event: 'promotion.start', promotionId: promotion.id },
+              payload: {
+                text,
+                event: 'promotion.start',
+                promotionId: promotion.id,
+              },
               actorId: actorId ?? undefined,
             });
           }
@@ -219,9 +251,11 @@ export class LoyaltyProgramService {
 
     // REMINDER notifications (default 48h before end)
     if (promotion.pushReminderEnabled && promotion.endAt) {
-      const offsetH = Number.isFinite(Number(promotion.reminderOffsetHours)) && Number(promotion.reminderOffsetHours) > 0
-        ? Math.round(Number(promotion.reminderOffsetHours))
-        : 48;
+      const offsetH =
+        Number.isFinite(Number(promotion.reminderOffsetHours)) &&
+        Number(promotion.reminderOffsetHours) > 0
+          ? Math.round(Number(promotion.reminderOffsetHours))
+          : 48;
       const end = new Date(promotion.endAt).getTime();
       const ts = end - offsetH * 3600_000;
       if (ts > now) {
@@ -229,7 +263,14 @@ export class LoyaltyProgramService {
         if (when) {
           const text = this.buildReminderText(promotion, offsetH);
           if (promotion.pushTemplateReminderId) {
-            if (!(await this.taskExists({ merchantId, promotionId: promotion.id, channel: CommunicationChannel.PUSH, scheduledAt: when }))) {
+            if (
+              !(await this.taskExists({
+                merchantId,
+                promotionId: promotion.id,
+                channel: CommunicationChannel.PUSH,
+                scheduledAt: when,
+              }))
+            ) {
               await this.comms.createTask(merchantId, {
                 channel: CommunicationChannel.PUSH,
                 templateId: promotion.pushTemplateReminderId,
@@ -237,13 +278,24 @@ export class LoyaltyProgramService {
                 audienceCode,
                 promotionId: promotion.id,
                 scheduledAt: when,
-                payload: { text, event: 'promotion.reminder', promotionId: promotion.id },
+                payload: {
+                  text,
+                  event: 'promotion.reminder',
+                  promotionId: promotion.id,
+                },
                 actorId: actorId ?? undefined,
               });
             }
           }
           if (await this.isTelegramEnabled(merchantId)) {
-            if (!(await this.taskExists({ merchantId, promotionId: promotion.id, channel: CommunicationChannel.TELEGRAM, scheduledAt: when }))) {
+            if (
+              !(await this.taskExists({
+                merchantId,
+                promotionId: promotion.id,
+                channel: CommunicationChannel.TELEGRAM,
+                scheduledAt: when,
+              }))
+            ) {
               await this.comms.createTask(merchantId, {
                 channel: CommunicationChannel.TELEGRAM,
                 promotionId: promotion.id,
@@ -251,7 +303,11 @@ export class LoyaltyProgramService {
                 audienceName: null,
                 audienceSnapshot: { code: audienceCode },
                 scheduledAt: when,
-                payload: { text, event: 'promotion.reminder', promotionId: promotion.id },
+                payload: {
+                  text,
+                  event: 'promotion.reminder',
+                  promotionId: promotion.id,
+                },
                 actorId: actorId ?? undefined,
               });
             }
@@ -369,7 +425,9 @@ export class LoyaltyProgramService {
 
     const created = await this.prisma.$transaction(async (tx) => {
       if (isInitial) {
-        const exists = await tx.loyaltyTier.findFirst({ where: { merchantId, isInitial: true } });
+        const exists = await tx.loyaltyTier.findFirst({
+          where: { merchantId, isInitial: true },
+        });
         if (exists) {
           throw new BadRequestException('Стартовая группа уже существует');
         }
@@ -464,7 +522,9 @@ export class LoyaltyProgramService {
 
     const updated = await this.prisma.$transaction(async (tx) => {
       if (isInitial && !tier.isInitial) {
-        const exists = await tx.loyaltyTier.findFirst({ where: { merchantId, isInitial: true, NOT: { id: tierId } } });
+        const exists = await tx.loyaltyTier.findFirst({
+          where: { merchantId, isInitial: true, NOT: { id: tierId } },
+        });
         if (exists) {
           throw new BadRequestException('Стартовая группа уже существует');
         }
@@ -785,7 +845,9 @@ export class LoyaltyProgramService {
       await this.schedulePromotionNotifications(merchantId, promotion);
     } catch (e) {
       // не валим создание акции из-за ошибок планирования уведомлений
-      this.logger.warn(`schedulePromotionNotifications failed: ${String((e as any)?.message || e)}`);
+      this.logger.warn(
+        `schedulePromotionNotifications failed: ${String(e?.message || e)}`,
+      );
     }
     return promotion;
   }

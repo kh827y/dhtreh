@@ -29,9 +29,7 @@ describe('AppController (e2e)', () => {
   });
 
   it('/healthz (GET)', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/healthz')
-      .expect(200);
+    const res = await request(app.getHttpServer()).get('/healthz').expect(200);
     expect(res.body).toHaveProperty('ok');
   });
 });

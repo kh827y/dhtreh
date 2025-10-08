@@ -71,7 +71,7 @@ export class TelegramBotService {
       for (const merchant of merchants) {
         if (merchant.telegramBotToken && merchant.telegramBotUsername) {
           const webhookUrl = `${this.configService.get('API_BASE_URL')}/telegram/webhook/${merchant.merchantId}`;
-          
+
           this.bots.set(merchant.merchantId, {
             token: merchant.telegramBotToken,
             username: merchant.telegramBotUsername,
@@ -93,7 +93,10 @@ export class TelegramBotService {
     }
   }
 
-  async registerBot(merchantId: string, botToken: string): Promise<RegisterBotResult> {
+  async registerBot(
+    merchantId: string,
+    botToken: string,
+  ): Promise<RegisterBotResult> {
     try {
       // Получаем информацию о боте
       const botInfo = await this.getBotInfo(botToken);
@@ -148,7 +151,10 @@ export class TelegramBotService {
         await this.setWebhook(botToken, webhookUrl, secret);
       } catch (error: any) {
         webhookError = this.extractTelegramError(error);
-        this.logger.error(`Не удалось установить webhook для ${merchantId}:`, error);
+        this.logger.error(
+          `Не удалось установить webhook для ${merchantId}:`,
+          error,
+        );
       }
 
       // Устанавливаем команды бота
@@ -176,7 +182,9 @@ export class TelegramBotService {
 
   private extractTelegramError(error: any): string {
     const rawMessage = error?.message ? String(error.message) : '';
-    const trimmed = rawMessage.replace(/^Ошибка установки webhook:\s*/i, '').trim();
+    const trimmed = rawMessage
+      .replace(/^Ошибка установки webhook:\s*/i, '')
+      .trim();
     const jsonStart = trimmed.indexOf('{');
     if (jsonStart !== -1) {
       const jsonPayload = trimmed.slice(jsonStart);
@@ -199,12 +207,18 @@ export class TelegramBotService {
 
     try {
       // Попробуем достать секрет из таблицы TelegramBot; если нет — создадим/обновим с новым секретом
-      let botRow = await this.prisma.telegramBot.findUnique({ where: { merchantId } }).catch(() => null);
+      let botRow = await this.prisma.telegramBot
+        .findUnique({ where: { merchantId } })
+        .catch(() => null);
       let secret = botRow?.webhookSecret || undefined;
       // Если бот деактивирован — не устанавливаем вебхук
       if (botRow && botRow.isActive === false) {
-        try { await this.deleteWebhook(bot.token); } catch {}
-        this.logger.log(`Бот ${merchantId} деактивирован — webhook удален/не устанавливается`);
+        try {
+          await this.deleteWebhook(bot.token);
+        } catch {}
+        this.logger.log(
+          `Бот ${merchantId} деактивирован — webhook удален/не устанавливается`,
+        );
         return;
       }
       if (!botRow || !secret) {
@@ -236,16 +250,19 @@ export class TelegramBotService {
   }
 
   private async setWebhook(token: string, url: string, secretToken?: string) {
-    const response = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        url,
-        secret_token: secretToken,
-        allowed_updates: ['message', 'callback_query', 'inline_query'],
-        drop_pending_updates: true,
-      }),
-    });
+    const response = await fetch(
+      `https://api.telegram.org/bot${token}/setWebhook`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url,
+          secret_token: secretToken,
+          allowed_updates: ['message', 'callback_query', 'inline_query'],
+          drop_pending_updates: true,
+        }),
+      },
+    );
 
     if (!response.ok) {
       throw new Error(`Ошибка установки webhook: ${await response.text()}`);
@@ -288,7 +305,9 @@ export class TelegramBotService {
   }
 
   async fetchWebhookInfo(token: string): Promise<TelegramWebhookInfo> {
-    const response = await fetch(`https://api.telegram.org/bot${token}/getWebhookInfo`);
+    const response = await fetch(
+      `https://api.telegram.org/bot${token}/getWebhookInfo`,
+    );
     if (!response.ok) {
       throw new Error(`Ошибка получения webhook: ${await response.text()}`);
     }
@@ -333,41 +352,58 @@ export class TelegramBotService {
     }
   }
 
-  private async handleStart(bot: BotConfig, chatId: number, userId: number, merchantId: string) {
+  private async handleStart(
+    bot: BotConfig,
+    chatId: number,
+    userId: number,
+    merchantId: string,
+  ) {
     // Пер-мерчантная учётка на основе tgId
     const tgId = String(userId);
-    const customerId = await this.resolveCustomerIdForMerchant(tgId, merchantId);
+    const customerId = await this.resolveCustomerIdForMerchant(
+      tgId,
+      merchantId,
+    );
 
     // Получаем настройки мерчанта
     const settings = await this.prisma.merchantSettings.findUnique({
       where: { merchantId },
     });
 
-    const message = settings?.miniappThemePrimary 
+    const message = settings?.miniappThemePrimary
       ? `🎉 Добро пожаловать в программу лояльности!\n\nВаш ID: ${customerId}\n\nИспользуйте кнопки ниже для работы с программой.`
       : `🎉 Добро пожаловать в программу лояльности!\n\nВаш ID: ${customerId}`;
 
     const keyboard = {
       inline_keyboard: [
         [
-          { text: '📱 Открыть приложение', web_app: { url: `${settings?.miniappBaseUrl}` } }
+          {
+            text: '📱 Открыть приложение',
+            web_app: { url: `${settings?.miniappBaseUrl}` },
+          },
         ],
         [
           { text: '💰 Баланс', callback_data: 'balance' },
-          { text: '📊 История', callback_data: 'history' }
+          { text: '📊 История', callback_data: 'history' },
         ],
-        [
-          { text: '❓ Помощь', callback_data: 'help' }
-        ]
-      ]
+        [{ text: '❓ Помощь', callback_data: 'help' }],
+      ],
     };
 
     await this.sendMessage(bot.token, chatId, message, keyboard);
   }
 
-  private async handleBalance(bot: BotConfig, chatId: number, userId: number, merchantId: string) {
+  private async handleBalance(
+    bot: BotConfig,
+    chatId: number,
+    userId: number,
+    merchantId: string,
+  ) {
     const tgId = String(userId);
-    const customerId = await this.resolveCustomerIdForMerchant(tgId, merchantId);
+    const customerId = await this.resolveCustomerIdForMerchant(
+      tgId,
+      merchantId,
+    );
 
     const wallet = await this.prisma.wallet.findFirst({
       where: {
@@ -383,25 +419,31 @@ export class TelegramBotService {
     await this.sendMessage(bot.token, chatId, message);
   }
 
-  private async handleMiniApp(bot: BotConfig, chatId: number, merchantId: string) {
+  private async handleMiniApp(
+    bot: BotConfig,
+    chatId: number,
+    merchantId: string,
+  ) {
     const settings = await this.prisma.merchantSettings.findUnique({
       where: { merchantId },
     });
 
     const keyboard = {
-      inline_keyboard: [[
-        { 
-          text: '📱 Открыть приложение лояльности', 
-          web_app: { url: settings?.miniappBaseUrl || '' } 
-        }
-      ]]
+      inline_keyboard: [
+        [
+          {
+            text: '📱 Открыть приложение лояльности',
+            web_app: { url: settings?.miniappBaseUrl || '' },
+          },
+        ],
+      ],
     };
 
     await this.sendMessage(
-      bot.token, 
-      chatId, 
-      '📱 Нажмите кнопку ниже, чтобы открыть приложение:', 
-      keyboard
+      bot.token,
+      chatId,
+      '📱 Нажмите кнопку ниже, чтобы открыть приложение:',
+      keyboard,
     );
   }
 
@@ -431,7 +473,11 @@ export class TelegramBotService {
     await this.sendMessage(bot.token, chatId, helpText, null, 'Markdown');
   }
 
-  private async handleCallbackQuery(bot: BotConfig, query: any, merchantId: string) {
+  private async handleCallbackQuery(
+    bot: BotConfig,
+    query: any,
+    merchantId: string,
+  ) {
     const chatId = query.message.chat.id;
     const userId = query.from.id;
     const data = query.data;
@@ -452,9 +498,17 @@ export class TelegramBotService {
     }
   }
 
-  private async handleTransactionHistory(bot: BotConfig, chatId: number, userId: number, merchantId: string) {
+  private async handleTransactionHistory(
+    bot: BotConfig,
+    chatId: number,
+    userId: number,
+    merchantId: string,
+  ) {
     const tgId = String(userId);
-    const customerId = await this.resolveCustomerIdForMerchant(tgId, merchantId);
+    const customerId = await this.resolveCustomerIdForMerchant(
+      tgId,
+      merchantId,
+    );
 
     const transactions = await this.prisma.transaction.findMany({
       where: {
@@ -481,11 +535,11 @@ export class TelegramBotService {
   }
 
   private async sendMessage(
-    token: string, 
-    chatId: number, 
-    text: string, 
+    token: string,
+    chatId: number,
+    text: string,
     keyboard?: any,
-    parseMode?: string
+    parseMode?: string,
   ) {
     await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
@@ -510,23 +564,34 @@ export class TelegramBotService {
   }
 
   private async deleteWebhook(token: string) {
-    const response = await fetch(`https://api.telegram.org/bot${token}/deleteWebhook`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ drop_pending_updates: true }),
-    });
+    const response = await fetch(
+      `https://api.telegram.org/bot${token}/deleteWebhook`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ drop_pending_updates: true }),
+      },
+    );
     if (!response.ok) {
       this.logger.warn(`Ошибка удаления webhook: ${await response.text()}`);
     }
   }
 
   // Отправка уведомлений клиентам
-  async sendNotification(customerId: string, merchantId: string, message: string) {
-    const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
+  async sendNotification(
+    customerId: string,
+    merchantId: string,
+    message: string,
+  ) {
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: customerId },
+    });
     let tgId = customer?.tgId ?? null;
     if (!tgId) {
       try {
-        const mapping = await (this.prisma as any).customerTelegram?.findUnique?.({ where: { customerId } });
+        const mapping = await (
+          this.prisma as any
+        ).customerTelegram?.findUnique?.({ where: { customerId } });
         tgId = mapping?.tgId ?? null;
       } catch {}
     }
@@ -545,10 +610,15 @@ export class TelegramBotService {
   }
 
   // Resolve or create per-merchant mapping from tgId to customerId
-  private async resolveCustomerIdForMerchant(tgId: string, merchantId: string): Promise<string> {
+  private async resolveCustomerIdForMerchant(
+    tgId: string,
+    merchantId: string,
+  ): Promise<string> {
     const ct = (this.prisma as any).customerTelegram;
     try {
-      const bound = await ct?.findUnique?.({ where: { merchantId_tgId: { merchantId, tgId } } });
+      const bound = await ct?.findUnique?.({
+        where: { merchantId_tgId: { merchantId, tgId } },
+      });
       if (bound?.customerId) return String(bound.customerId);
     } catch {}
 
@@ -560,17 +630,27 @@ export class TelegramBotService {
     } catch {}
 
     if (!hasAnyBinding) {
-      let customer = await this.prisma.customer.findUnique({ where: { tgId } }).catch(() => null);
+      let customer = await this.prisma.customer
+        .findUnique({ where: { tgId } })
+        .catch(() => null);
       if (!customer) {
         customer = await this.prisma.customer.create({ data: { tgId } });
       }
-      try { await ct?.create?.({ data: { merchantId, tgId, customerId: customer.id } }); } catch {}
+      try {
+        await ct?.create?.({
+          data: { merchantId, tgId, customerId: customer.id },
+        });
+      } catch {}
       return customer.id;
     }
 
     // Otherwise create a new merchant-scoped customer without tgId
     const created = await this.prisma.customer.create({ data: {} });
-    try { await ct?.create?.({ data: { merchantId, tgId, customerId: created.id } }); } catch {}
+    try {
+      await ct?.create?.({
+        data: { merchantId, tgId, customerId: created.id },
+      });
+    } catch {}
     return created.id;
   }
 
@@ -581,7 +661,9 @@ export class TelegramBotService {
       const secret = crypto.randomBytes(16).toString('hex');
 
       // Обновим запись бота, если она есть
-      const existing = await this.prisma.telegramBot.findUnique({ where: { merchantId } }).catch(() => null);
+      const existing = await this.prisma.telegramBot
+        .findUnique({ where: { merchantId } })
+        .catch(() => null);
       if (existing) {
         await this.prisma.telegramBot.update({
           where: { merchantId },
@@ -593,14 +675,19 @@ export class TelegramBotService {
         await this.setWebhook(existing.botToken, webhookUrl, secret);
       } else {
         // Если записи нет, но бот зарегистрирован через настройки мерчанта — просто установим webhook с секретом
-        const settings = await this.prisma.merchantSettings.findUnique({ where: { merchantId } });
+        const settings = await this.prisma.merchantSettings.findUnique({
+          where: { merchantId },
+        });
         if (settings?.telegramBotToken) {
           const webhookUrl = `${this.configService.get('API_BASE_URL')}/telegram/webhook/${merchantId}`;
           await this.setWebhook(settings.telegramBotToken, webhookUrl, secret);
         }
       }
     } catch (error) {
-      this.logger.error(`Ошибка ротации webhook секрета для ${merchantId}:`, error);
+      this.logger.error(
+        `Ошибка ротации webhook секрета для ${merchantId}:`,
+        error,
+      );
       throw error;
     }
   }
@@ -608,23 +695,32 @@ export class TelegramBotService {
   // Админ: деактивация бота (удаление webhook и отметка в БД)
   async deactivateBot(merchantId: string) {
     try {
-      const existing = await this.prisma.telegramBot.findUnique({ where: { merchantId } }).catch(() => null);
+      const existing = await this.prisma.telegramBot
+        .findUnique({ where: { merchantId } })
+        .catch(() => null);
       if (existing) {
         await this.deleteWebhook(existing.botToken);
-        await this.prisma.telegramBot.update({ where: { merchantId }, data: { isActive: false } });
+        await this.prisma.telegramBot.update({
+          where: { merchantId },
+          data: { isActive: false },
+        });
       } else {
         // Попробуем удалить webhook по токену из настроек мерчанта
-        const settings = await this.prisma.merchantSettings.findUnique({ where: { merchantId } });
+        const settings = await this.prisma.merchantSettings.findUnique({
+          where: { merchantId },
+        });
         if (settings?.telegramBotToken) {
           await this.deleteWebhook(settings.telegramBotToken);
         }
       }
       // Локально тоже уберем бота из карты
       this.bots.delete(merchantId);
-      await this.prisma.merchant.update({
-        where: { id: merchantId },
-        data: { telegramBotEnabled: false },
-      }).catch(() => null);
+      await this.prisma.merchant
+        .update({
+          where: { id: merchantId },
+          data: { telegramBotEnabled: false },
+        })
+        .catch(() => null);
     } catch (error) {
       this.logger.error(`Ошибка деактивации бота для ${merchantId}:`, error);
       throw error;

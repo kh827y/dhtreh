@@ -1,5 +1,18 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { Prisma, Product, ProductCategory, ProductImage, ProductStock, ProductVariant, Outlet } from '@prisma/client';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  Prisma,
+  Product,
+  ProductCategory,
+  ProductImage,
+  ProductStock,
+  ProductVariant,
+  Outlet,
+} from '@prisma/client';
 import { MetricsService } from '../metrics.service';
 import { PrismaService } from '../prisma.service';
 import {
@@ -25,7 +38,10 @@ import {
   OutletScheduleDto,
 } from './catalog.dto';
 
-const BULK_ACTION_MAP: Record<ProductBulkAction, Prisma.ProductUpdateManyMutationInput> = {
+const BULK_ACTION_MAP: Record<
+  ProductBulkAction,
+  Prisma.ProductUpdateManyMutationInput
+> = {
   [ProductBulkAction.SHOW]: { visible: true },
   [ProductBulkAction.HIDE]: { visible: false },
   [ProductBulkAction.ALLOW_REDEEM]: { allowRedeem: true },
@@ -37,14 +53,47 @@ const BULK_ACTION_MAP: Record<ProductBulkAction, Prisma.ProductUpdateManyMutatio
 export class PortalCatalogService {
   private readonly logger = new Logger(PortalCatalogService.name);
 
-  constructor(private readonly prisma: PrismaService, private readonly metrics: MetricsService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly metrics: MetricsService,
+  ) {}
 
   // ===== Helpers =====
   private slugify(input: string): string {
     const map: Record<string, string> = {
-      ё: 'e', й: 'i', ц: 'c', у: 'u', к: 'k', е: 'e', н: 'n', г: 'g', ш: 'sh', щ: 'sch', з: 'z', х: 'h', ъ: '',
-      ф: 'f', ы: 'y', в: 'v', а: 'a', п: 'p', р: 'r', о: 'o', л: 'l', д: 'd', ж: 'zh', э: 'e', я: 'ya', ч: 'ch',
-      с: 's', м: 'm', и: 'i', т: 't', ь: '', б: 'b', ю: 'yu',
+      ё: 'e',
+      й: 'i',
+      ц: 'c',
+      у: 'u',
+      к: 'k',
+      е: 'e',
+      н: 'n',
+      г: 'g',
+      ш: 'sh',
+      щ: 'sch',
+      з: 'z',
+      х: 'h',
+      ъ: '',
+      ф: 'f',
+      ы: 'y',
+      в: 'v',
+      а: 'a',
+      п: 'p',
+      р: 'r',
+      о: 'o',
+      л: 'l',
+      д: 'd',
+      ж: 'zh',
+      э: 'e',
+      я: 'ya',
+      ч: 'ch',
+      с: 's',
+      м: 'm',
+      и: 'i',
+      т: 't',
+      ь: '',
+      б: 'b',
+      ю: 'yu',
     };
     const base = (input || '').toString().trim().toLowerCase();
     const translit = base
@@ -69,7 +118,9 @@ export class PortalCatalogService {
     return new Prisma.Decimal(value);
   }
 
-  private decimalToNumber(value: Prisma.Decimal | null | undefined): number | null {
+  private decimalToNumber(
+    value: Prisma.Decimal | null | undefined,
+  ): number | null {
     if (value === undefined || value === null) return null;
     return Number(value);
   }
@@ -86,7 +137,12 @@ export class PortalCatalogService {
     };
   }
 
-  private mapProductPreview(product: Product & { category?: ProductCategory | null; images: ProductImage[] }): ProductListItemDto {
+  private mapProductPreview(
+    product: Product & {
+      category?: ProductCategory | null;
+      images: ProductImage[];
+    },
+  ): ProductListItemDto {
     return {
       id: product.id,
       name: product.name,
@@ -112,7 +168,11 @@ export class PortalCatalogService {
   ): ProductDto {
     const images = product.images
       .sort((a, b) => a.position - b.position)
-      .map<ProductImageInputDto>((img, index) => ({ url: img.url, alt: img.alt ?? undefined, position: img.position ?? index }));
+      .map<ProductImageInputDto>((img, index) => ({
+        url: img.url,
+        alt: img.alt ?? undefined,
+        position: img.position ?? index,
+      }));
     const variants = product.variants
       .sort((a, b) => a.position - b.position)
       .map<ProductVariantInputDto>((variant, index) => ({
@@ -168,7 +228,10 @@ export class PortalCatalogService {
         }))
       : [];
     return {
-      mode: (json.mode as '24_7' | 'CUSTOM') || (entity.scheduleMode as '24_7' | 'CUSTOM') || 'CUSTOM',
+      mode:
+        (json.mode as '24_7' | 'CUSTOM') ||
+        (entity.scheduleMode as '24_7' | 'CUSTOM') ||
+        'CUSTOM',
       days,
     };
   }
@@ -182,20 +245,34 @@ export class PortalCatalogService {
       if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
       // базовая защита: без javascript:, data:, file:
       return true;
-    } catch { return false; }
+    } catch {
+      return false;
+    }
   }
 
   // Подготовка патча ссылок: сохраняем строки (валидные URL) и null, приводим ключи к lower-case
-  private prepareReviewLinksPatch(input?: unknown): Record<string, string | null> | undefined {
+  private prepareReviewLinksPatch(
+    input?: unknown,
+  ): Record<string, string | null> | undefined {
     if (!input || typeof input !== 'object') return undefined;
     const patch: Record<string, string | null> = {};
-    for (const [rawKey, rawValue] of Object.entries(input as Record<string, unknown>)) {
-      const key = String(rawKey || '').toLowerCase().trim();
+    for (const [rawKey, rawValue] of Object.entries(
+      input as Record<string, unknown>,
+    )) {
+      const key = String(rawKey || '')
+        .toLowerCase()
+        .trim();
       if (!key) continue;
-      if (rawValue == null) { patch[key] = null; continue; }
+      if (rawValue == null) {
+        patch[key] = null;
+        continue;
+      }
       if (typeof rawValue === 'string') {
         const trimmed = rawValue.trim();
-        if (!trimmed) { patch[key] = null; continue; }
+        if (!trimmed) {
+          patch[key] = null;
+          continue;
+        }
         if (!this.isValidHttpUrl(trimmed)) continue; // пропускаем невалидные
         patch[key] = trimmed;
       }
@@ -204,9 +281,12 @@ export class PortalCatalogService {
   }
 
   private extractReviewLinks(payload: Prisma.JsonValue | null | undefined) {
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return {} as Record<string, string>;
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload))
+      return {} as Record<string, string>;
     const result: Record<string, string> = {};
-    for (const [platform, value] of Object.entries(payload as Record<string, unknown>)) {
+    for (const [platform, value] of Object.entries(
+      payload as Record<string, unknown>,
+    )) {
       if (!platform) continue;
       if (typeof value === 'string') {
         const trimmed = value.trim();
@@ -217,7 +297,10 @@ export class PortalCatalogService {
   }
 
   // Применение патча: строки = upsert, null = удалить ключ
-  private applyReviewLinksPatch(existing: Prisma.JsonValue | null | undefined, patch: Record<string, string | null>) {
+  private applyReviewLinksPatch(
+    existing: Prisma.JsonValue | null | undefined,
+    patch: Record<string, string | null>,
+  ) {
     const base = this.extractReviewLinks(existing);
     for (const [key, val] of Object.entries(patch)) {
       if (val == null) {
@@ -266,19 +349,34 @@ export class PortalCatalogService {
     };
   }
 
-  private async ensureCategoryOwnership(tx: Prisma.TransactionClient, merchantId: string, categoryId: string) {
-    const category = await tx.productCategory.findFirst({ where: { id: categoryId, merchantId, deletedAt: null } });
+  private async ensureCategoryOwnership(
+    tx: Prisma.TransactionClient,
+    merchantId: string,
+    categoryId: string,
+  ) {
+    const category = await tx.productCategory.findFirst({
+      where: { id: categoryId, merchantId, deletedAt: null },
+    });
     if (!category) throw new NotFoundException('Category not found');
     return category;
   }
 
-  private async ensureOutletOwnership(tx: Prisma.TransactionClient, merchantId: string, outletId: string) {
-    const outlet = await tx.outlet.findFirst({ where: { id: outletId, merchantId } });
+  private async ensureOutletOwnership(
+    tx: Prisma.TransactionClient,
+    merchantId: string,
+    outletId: string,
+  ) {
+    const outlet = await tx.outlet.findFirst({
+      where: { id: outletId, merchantId },
+    });
     if (!outlet) throw new NotFoundException('Outlet not found');
     return outlet;
   }
 
-  private async nextCategoryOrder(tx: Prisma.TransactionClient, merchantId: string) {
+  private async nextCategoryOrder(
+    tx: Prisma.TransactionClient,
+    merchantId: string,
+  ) {
     const last = await tx.productCategory.findFirst({
       where: { merchantId, deletedAt: null },
       orderBy: { order: 'desc' },
@@ -287,7 +385,10 @@ export class PortalCatalogService {
     return (last?.order ?? 1000) + 10;
   }
 
-  private async nextProductOrder(tx: Prisma.TransactionClient, merchantId: string) {
+  private async nextProductOrder(
+    tx: Prisma.TransactionClient,
+    merchantId: string,
+  ) {
     const last = await tx.product.findFirst({
       where: { merchantId, deletedAt: null },
       orderBy: { order: 'desc' },
@@ -305,12 +406,16 @@ export class PortalCatalogService {
     return categories.map((category) => this.mapCategory(category));
   }
 
-  async createCategory(merchantId: string, dto: CreateCategoryDto): Promise<CategoryDto> {
+  async createCategory(
+    merchantId: string,
+    dto: CreateCategoryDto,
+  ): Promise<CategoryDto> {
     const name = dto.name?.trim();
     if (!name) throw new BadRequestException('Category name is required');
     const slug = dto.slug ? dto.slug.toLowerCase() : this.slugify(name);
     return this.prisma.$transaction(async (tx) => {
-      if (dto.parentId) await this.ensureCategoryOwnership(tx, merchantId, dto.parentId);
+      if (dto.parentId)
+        await this.ensureCategoryOwnership(tx, merchantId, dto.parentId);
       const order = await this.nextCategoryOrder(tx, merchantId);
       try {
         const created = await tx.productCategory.create({
@@ -324,8 +429,16 @@ export class PortalCatalogService {
             order,
           },
         });
-        this.logger.log(JSON.stringify({ event: 'portal.catalog.category.create', merchantId, categoryId: created.id }));
-        this.metrics.inc('portal_catalog_categories_changed_total', { action: 'create' });
+        this.logger.log(
+          JSON.stringify({
+            event: 'portal.catalog.category.create',
+            merchantId,
+            categoryId: created.id,
+          }),
+        );
+        this.metrics.inc('portal_catalog_categories_changed_total', {
+          action: 'create',
+        });
         return this.mapCategory(created);
       } catch (error: any) {
         if (error?.code === 'P2002') {
@@ -336,25 +449,39 @@ export class PortalCatalogService {
     });
   }
 
-  async updateCategory(merchantId: string, categoryId: string, dto: UpdateCategoryDto): Promise<CategoryDto> {
+  async updateCategory(
+    merchantId: string,
+    categoryId: string,
+    dto: UpdateCategoryDto,
+  ): Promise<CategoryDto> {
     return this.prisma.$transaction(async (tx) => {
-      const category = await this.ensureCategoryOwnership(tx, merchantId, categoryId);
+      const category = await this.ensureCategoryOwnership(
+        tx,
+        merchantId,
+        categoryId,
+      );
       const data: Prisma.ProductCategoryUpdateInput = {};
       if (dto.name !== undefined) {
         const name = dto.name.trim();
-        if (!name) throw new BadRequestException('Category name cannot be empty');
+        if (!name)
+          throw new BadRequestException('Category name cannot be empty');
         data.name = name;
       }
       if (dto.slug !== undefined) {
         const slug = dto.slug.trim().toLowerCase();
-        if (!/^[a-z0-9\-]+$/.test(slug)) throw new BadRequestException('Slug should contain latin letters, numbers or dash');
+        if (!/^[a-z0-9\-]+$/.test(slug))
+          throw new BadRequestException(
+            'Slug should contain latin letters, numbers or dash',
+          );
         data.slug = slug;
       }
-      if (dto.description !== undefined) data.description = dto.description ?? null;
+      if (dto.description !== undefined)
+        data.description = dto.description ?? null;
       if (dto.imageUrl !== undefined) data.imageUrl = dto.imageUrl ?? null;
       if (dto.parentId !== undefined) {
         if (dto.parentId) {
-          if (dto.parentId === categoryId) throw new BadRequestException('Category cannot reference itself');
+          if (dto.parentId === categoryId)
+            throw new BadRequestException('Category cannot reference itself');
           await this.ensureCategoryOwnership(tx, merchantId, dto.parentId);
           data.parent = { connect: { id: dto.parentId } };
         } else {
@@ -363,12 +490,24 @@ export class PortalCatalogService {
       }
       if (Object.keys(data).length === 0) return this.mapCategory(category);
       try {
-        const updated = await tx.productCategory.update({ where: { id: categoryId }, data });
-        this.logger.log(JSON.stringify({ event: 'portal.catalog.category.update', merchantId, categoryId }));
-        this.metrics.inc('portal_catalog_categories_changed_total', { action: 'update' });
+        const updated = await tx.productCategory.update({
+          where: { id: categoryId },
+          data,
+        });
+        this.logger.log(
+          JSON.stringify({
+            event: 'portal.catalog.category.update',
+            merchantId,
+            categoryId,
+          }),
+        );
+        this.metrics.inc('portal_catalog_categories_changed_total', {
+          action: 'update',
+        });
         return this.mapCategory(updated);
       } catch (error: any) {
-        if (error?.code === 'P2002') throw new BadRequestException('Slug already exists');
+        if (error?.code === 'P2002')
+          throw new BadRequestException('Slug already exists');
         throw error;
       }
     });
@@ -378,32 +517,63 @@ export class PortalCatalogService {
     if (!dto.items?.length) return { ok: true, updated: 0 };
     const ids = dto.items.map((item) => item.id);
     await this.prisma.$transaction(async (tx) => {
-      const categories = await tx.productCategory.findMany({ where: { id: { in: ids }, merchantId, deletedAt: null } });
-      if (categories.length !== ids.length) throw new NotFoundException('One of categories not found');
+      const categories = await tx.productCategory.findMany({
+        where: { id: { in: ids }, merchantId, deletedAt: null },
+      });
+      if (categories.length !== ids.length)
+        throw new NotFoundException('One of categories not found');
       await Promise.all(
         dto.items.map((item) =>
-          tx.productCategory.update({ where: { id: item.id }, data: { order: item.order } }),
+          tx.productCategory.update({
+            where: { id: item.id },
+            data: { order: item.order },
+          }),
         ),
       );
     });
-    this.logger.log(JSON.stringify({ event: 'portal.catalog.category.reorder', merchantId, count: dto.items.length }));
-    this.metrics.inc('portal_catalog_categories_changed_total', { action: 'reorder' });
+    this.logger.log(
+      JSON.stringify({
+        event: 'portal.catalog.category.reorder',
+        merchantId,
+        count: dto.items.length,
+      }),
+    );
+    this.metrics.inc('portal_catalog_categories_changed_total', {
+      action: 'reorder',
+    });
     return { ok: true, updated: dto.items.length };
   }
 
   async deleteCategory(merchantId: string, categoryId: string) {
     await this.prisma.$transaction(async (tx) => {
       await this.ensureCategoryOwnership(tx, merchantId, categoryId);
-      await tx.productCategory.update({ where: { id: categoryId }, data: { deletedAt: new Date() } });
-      await tx.product.updateMany({ where: { merchantId, categoryId }, data: { categoryId: null } });
+      await tx.productCategory.update({
+        where: { id: categoryId },
+        data: { deletedAt: new Date() },
+      });
+      await tx.product.updateMany({
+        where: { merchantId, categoryId },
+        data: { categoryId: null },
+      });
     });
-    this.logger.log(JSON.stringify({ event: 'portal.catalog.category.delete', merchantId, categoryId }));
-    this.metrics.inc('portal_catalog_categories_changed_total', { action: 'delete' });
+    this.logger.log(
+      JSON.stringify({
+        event: 'portal.catalog.category.delete',
+        merchantId,
+        categoryId,
+      }),
+    );
+    this.metrics.inc('portal_catalog_categories_changed_total', {
+      action: 'delete',
+    });
     return { ok: true };
   }
 
   // ===== Products =====
-  async listProducts(merchantId: string, query: ListProductsQueryDto): Promise<ProductListResponseDto> {
+  async listProducts(
+    merchantId: string,
+    query: ListProductsQueryDto,
+  ): Promise<ProductListResponseDto> {
     const where: Prisma.ProductWhereInput = { merchantId, deletedAt: null };
     if (query.categoryId) where.categoryId = query.categoryId;
     if (query.status === 'visible') where.visible = true;
@@ -414,7 +584,8 @@ export class PortalCatalogService {
       const term = query.search.trim();
       if (term) {
         const and: Prisma.ProductWhereInput[] = [];
-        if (where.AND) and.push(...(Array.isArray(where.AND) ? where.AND : [where.AND]));
+        if (where.AND)
+          and.push(...(Array.isArray(where.AND) ? where.AND : [where.AND]));
         and.push({
           OR: [
             { name: { contains: term, mode: 'insensitive' } },
@@ -457,8 +628,10 @@ export class PortalCatalogService {
     dto: CreateProductDto,
     opts: { categoryId?: string | null },
   ): Prisma.ProductCreateInput {
-    const hasVariants = dto.hasVariants ?? (dto.variants?.length ? true : false);
-    const priceEnabled = dto.priceEnabled !== undefined ? dto.priceEnabled : true;
+    const hasVariants =
+      dto.hasVariants ?? (dto.variants?.length ? true : false);
+    const priceEnabled =
+      dto.priceEnabled !== undefined ? dto.priceEnabled : true;
     const allowCart = dto.disableCart ? false : true;
     return {
       merchant: { connect: { id: merchantId } },
@@ -485,7 +658,9 @@ export class PortalCatalogService {
       carbs: this.toDecimal(dto.carbs),
       calories: this.toDecimal(dto.calories),
       tags: dto.tags ?? [],
-      category: opts.categoryId ? { connect: { id: opts.categoryId } } : undefined,
+      category: opts.categoryId
+        ? { connect: { id: opts.categoryId } }
+        : undefined,
       images: dto.images?.length
         ? {
             create: dto.images.map((img, index) => ({
@@ -495,22 +670,25 @@ export class PortalCatalogService {
             })),
           }
         : undefined,
-      variants: hasVariants && dto.variants?.length
-        ? {
-            create: dto.variants.map((variant, index) => ({
-              name: variant.name,
-              sku: variant.sku ?? null,
-              price: this.toDecimal(variant.price),
-              notes: variant.notes ?? null,
-              position: variant.position ?? index,
-            })),
-          }
-        : undefined,
+      variants:
+        hasVariants && dto.variants?.length
+          ? {
+              create: dto.variants.map((variant, index) => ({
+                name: variant.name,
+                sku: variant.sku ?? null,
+                price: this.toDecimal(variant.price),
+                notes: variant.notes ?? null,
+                position: variant.position ?? index,
+              })),
+            }
+          : undefined,
       stocks: dto.stocks?.length
         ? {
             create: dto.stocks.map((stock) => ({
               label: stock.label,
-              outlet: stock.outletId ? { connect: { id: stock.outletId } } : undefined,
+              outlet: stock.outletId
+                ? { connect: { id: stock.outletId } }
+                : undefined,
               price: this.toDecimal(stock.price),
               balance: this.toDecimal(stock.balance),
               currency: stock.currency ?? 'RUB',
@@ -520,18 +698,27 @@ export class PortalCatalogService {
     };
   }
 
-  async createProduct(merchantId: string, dto: CreateProductDto): Promise<ProductDto> {
+  async createProduct(
+    merchantId: string,
+    dto: CreateProductDto,
+  ): Promise<ProductDto> {
     const name = dto.name?.trim();
     if (!name) throw new BadRequestException('Product name is required');
     return this.prisma.$transaction(async (tx) => {
-      if (dto.categoryId) await this.ensureCategoryOwnership(tx, merchantId, dto.categoryId);
+      if (dto.categoryId)
+        await this.ensureCategoryOwnership(tx, merchantId, dto.categoryId);
       if (dto.stocks) {
         for (const stock of dto.stocks) {
-          if (stock.outletId) await this.ensureOutletOwnership(tx, merchantId, stock.outletId);
+          if (stock.outletId)
+            await this.ensureOutletOwnership(tx, merchantId, stock.outletId);
         }
       }
       const order = dto.order ?? (await this.nextProductOrder(tx, merchantId));
-      const data = this.prepareProductCreateData(merchantId, { ...dto, order }, { categoryId: dto.categoryId ?? null });
+      const data = this.prepareProductCreateData(
+        merchantId,
+        { ...dto, order },
+        { categoryId: dto.categoryId ?? null },
+      );
       const created = await tx.product.create({
         data,
         include: {
@@ -541,76 +728,113 @@ export class PortalCatalogService {
           stocks: { include: { outlet: true } },
         },
       });
-      this.logger.log(JSON.stringify({ event: 'portal.catalog.product.create', merchantId, productId: created.id }));
-      this.metrics.inc('portal_catalog_products_changed_total', { action: 'create' });
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.catalog.product.create',
+          merchantId,
+          productId: created.id,
+        }),
+      );
+      this.metrics.inc('portal_catalog_products_changed_total', {
+        action: 'create',
+      });
       return this.mapProductDetailed(created);
     });
   }
 
-  async updateProduct(merchantId: string, productId: string, dto: UpdateProductDto): Promise<ProductDto> {
+  async updateProduct(
+    merchantId: string,
+    productId: string,
+    dto: UpdateProductDto,
+  ): Promise<ProductDto> {
     return this.prisma.$transaction(async (tx) => {
-      const product = await tx.product.findFirst({ where: { id: productId, merchantId, deletedAt: null } });
+      const product = await tx.product.findFirst({
+        where: { id: productId, merchantId, deletedAt: null },
+      });
       if (!product) throw new NotFoundException('Product not found');
       if (dto.categoryId !== undefined) {
-        if (dto.categoryId) await this.ensureCategoryOwnership(tx, merchantId, dto.categoryId);
+        if (dto.categoryId)
+          await this.ensureCategoryOwnership(tx, merchantId, dto.categoryId);
       }
       if (dto.stocks) {
         for (const stock of dto.stocks) {
-          if (stock.outletId) await this.ensureOutletOwnership(tx, merchantId, stock.outletId);
+          if (stock.outletId)
+            await this.ensureOutletOwnership(tx, merchantId, stock.outletId);
         }
       }
       const data: Prisma.ProductUpdateInput = {};
       if (dto.name !== undefined) {
         const name = dto.name.trim();
-        if (!name) throw new BadRequestException('Product name cannot be empty');
+        if (!name)
+          throw new BadRequestException('Product name cannot be empty');
         data.name = name;
       }
       if (dto.sku !== undefined) data.sku = dto.sku ? dto.sku.trim() : null;
-      if (dto.description !== undefined) data.description = dto.description ?? null;
+      if (dto.description !== undefined)
+        data.description = dto.description ?? null;
       if (dto.order !== undefined) data.order = dto.order;
-      if (dto.iikoProductId !== undefined) data.iikoProductId = dto.iikoProductId ?? null;
+      if (dto.iikoProductId !== undefined)
+        data.iikoProductId = dto.iikoProductId ?? null;
       if (dto.hasVariants !== undefined) data.hasVariants = dto.hasVariants;
       if (dto.priceEnabled !== undefined) data.priceEnabled = dto.priceEnabled;
-      const priceEnabled = dto.priceEnabled !== undefined ? dto.priceEnabled : product.priceEnabled;
+      const priceEnabled =
+        dto.priceEnabled !== undefined
+          ? dto.priceEnabled
+          : product.priceEnabled;
       if (dto.price !== undefined || dto.priceEnabled !== undefined) {
-        const price = dto.price !== undefined ? dto.price : this.decimalToNumber(product.price);
+        const price =
+          dto.price !== undefined
+            ? dto.price
+            : this.decimalToNumber(product.price);
         data.price = priceEnabled ? this.toDecimal(price ?? 0) : null;
       }
       if (dto.disableCart !== undefined) data.allowCart = !dto.disableCart;
       if (dto.visible !== undefined) data.visible = dto.visible;
       if (dto.accruePoints !== undefined) data.accruePoints = dto.accruePoints;
       if (dto.allowRedeem !== undefined) data.allowRedeem = dto.allowRedeem;
-      if (dto.redeemPercent !== undefined) data.redeemPercent = this.clampPercent(dto.redeemPercent, product.redeemPercent);
-      if (dto.weightValue !== undefined) data.weightValue = this.toDecimal(dto.weightValue);
-      if (dto.weightUnit !== undefined) data.weightUnit = dto.weightUnit ?? null;
-      if (dto.heightCm !== undefined) data.heightCm = this.toDecimal(dto.heightCm);
+      if (dto.redeemPercent !== undefined)
+        data.redeemPercent = this.clampPercent(
+          dto.redeemPercent,
+          product.redeemPercent,
+        );
+      if (dto.weightValue !== undefined)
+        data.weightValue = this.toDecimal(dto.weightValue);
+      if (dto.weightUnit !== undefined)
+        data.weightUnit = dto.weightUnit ?? null;
+      if (dto.heightCm !== undefined)
+        data.heightCm = this.toDecimal(dto.heightCm);
       if (dto.widthCm !== undefined) data.widthCm = this.toDecimal(dto.widthCm);
       if (dto.depthCm !== undefined) data.depthCm = this.toDecimal(dto.depthCm);
-      if (dto.proteins !== undefined) data.proteins = this.toDecimal(dto.proteins);
+      if (dto.proteins !== undefined)
+        data.proteins = this.toDecimal(dto.proteins);
       if (dto.fats !== undefined) data.fats = this.toDecimal(dto.fats);
       if (dto.carbs !== undefined) data.carbs = this.toDecimal(dto.carbs);
-      if (dto.calories !== undefined) data.calories = this.toDecimal(dto.calories);
+      if (dto.calories !== undefined)
+        data.calories = this.toDecimal(dto.calories);
       if (dto.tags !== undefined) data.tags = dto.tags;
       if (dto.categoryId !== undefined) {
-        data.category = dto.categoryId ? { connect: { id: dto.categoryId } } : { disconnect: true };
+        data.category = dto.categoryId
+          ? { connect: { id: dto.categoryId } }
+          : { disconnect: true };
       }
       if (Object.keys(data).length > 0) {
         await tx.product.update({ where: { id: productId }, data });
       }
       if (dto.images !== undefined) {
         await tx.productImage.deleteMany({ where: { productId } });
-      if (dto.images?.length) {
-        await tx.productImage.createMany({
-          data: dto.images.map((img, index) => ({
-            productId,
-            url: img.url,
-            alt: img.alt ?? null,
-            position: img.position ?? index,
-          })),
-        });
+        if (dto.images?.length) {
+          await tx.productImage.createMany({
+            data: dto.images.map((img, index) => ({
+              productId,
+              url: img.url,
+              alt: img.alt ?? null,
+              position: img.position ?? index,
+            })),
+          });
+        }
       }
-    }
-      const hasVariants = dto.hasVariants !== undefined ? dto.hasVariants : product.hasVariants;
+      const hasVariants =
+        dto.hasVariants !== undefined ? dto.hasVariants : product.hasVariants;
       if (dto.variants !== undefined || dto.hasVariants !== undefined) {
         await tx.productVariant.deleteMany({ where: { productId } });
         if (hasVariants && dto.variants?.length) {
@@ -653,8 +877,16 @@ export class PortalCatalogService {
         },
       });
       if (!updated) throw new NotFoundException('Product not found');
-      this.logger.log(JSON.stringify({ event: 'portal.catalog.product.update', merchantId, productId }));
-      this.metrics.inc('portal_catalog_products_changed_total', { action: 'update' });
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.catalog.product.update',
+          merchantId,
+          productId,
+        }),
+      );
+      this.metrics.inc('portal_catalog_products_changed_total', {
+        action: 'update',
+      });
       return this.mapProductDetailed(updated);
     });
   }
@@ -665,8 +897,16 @@ export class PortalCatalogService {
       data: { deletedAt: new Date() },
     });
     if (updated.count === 0) throw new NotFoundException('Product not found');
-    this.logger.log(JSON.stringify({ event: 'portal.catalog.product.delete', merchantId, productId }));
-    this.metrics.inc('portal_catalog_products_changed_total', { action: 'delete' });
+    this.logger.log(
+      JSON.stringify({
+        event: 'portal.catalog.product.delete',
+        merchantId,
+        productId,
+      }),
+    );
+    this.metrics.inc('portal_catalog_products_changed_total', {
+      action: 'delete',
+    });
     return { ok: true };
   }
 
@@ -678,8 +918,17 @@ export class PortalCatalogService {
         where: { id: { in: ids }, merchantId, deletedAt: null },
         data: { deletedAt: new Date() },
       });
-      this.logger.log(JSON.stringify({ event: 'portal.catalog.product.bulk', merchantId, action: dto.action, updated: result.count }));
-      this.metrics.inc('portal_catalog_products_changed_total', { action: 'bulk_delete' });
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.catalog.product.bulk',
+          merchantId,
+          action: dto.action,
+          updated: result.count,
+        }),
+      );
+      this.metrics.inc('portal_catalog_products_changed_total', {
+        action: 'bulk_delete',
+      });
       return { ok: true, updated: result.count };
     }
     const patch = BULK_ACTION_MAP[dto.action];
@@ -687,13 +936,26 @@ export class PortalCatalogService {
       where: { id: { in: ids }, merchantId, deletedAt: null },
       data: patch,
     });
-    this.logger.log(JSON.stringify({ event: 'portal.catalog.product.bulk', merchantId, action: dto.action, updated: result.count }));
-    this.metrics.inc('portal_catalog_products_changed_total', { action: dto.action });
+    this.logger.log(
+      JSON.stringify({
+        event: 'portal.catalog.product.bulk',
+        merchantId,
+        action: dto.action,
+        updated: result.count,
+      }),
+    );
+    this.metrics.inc('portal_catalog_products_changed_total', {
+      action: dto.action,
+    });
     return { ok: true, updated: result.count };
   }
 
   // ===== Outlets =====
-  async listOutlets(merchantId: string, status?: 'active' | 'inactive' | 'all', search?: string): Promise<PortalOutletListResponseDto> {
+  async listOutlets(
+    merchantId: string,
+    status?: 'active' | 'inactive' | 'all',
+    search?: string,
+  ): Promise<PortalOutletListResponseDto> {
     const where: Prisma.OutletWhereInput = { merchantId };
     if (status === 'active') where.status = 'ACTIVE';
     if (status === 'inactive') where.status = 'INACTIVE';
@@ -701,7 +963,8 @@ export class PortalCatalogService {
       const term = search.trim();
       if (term) {
         const and: Prisma.OutletWhereInput[] = [];
-        if (where.AND) and.push(...(Array.isArray(where.AND) ? where.AND : [where.AND]));
+        if (where.AND)
+          and.push(...(Array.isArray(where.AND) ? where.AND : [where.AND]));
         and.push({
           OR: [
             { name: { contains: term, mode: 'insensitive' } },
@@ -718,19 +981,30 @@ export class PortalCatalogService {
     return { items: items.map((outlet) => this.mapOutlet(outlet)), total };
   }
 
-  async getOutlet(merchantId: string, outletId: string): Promise<PortalOutletDto> {
-    const outlet = await this.prisma.outlet.findFirst({ where: { id: outletId, merchantId } });
+  async getOutlet(
+    merchantId: string,
+    outletId: string,
+  ): Promise<PortalOutletDto> {
+    const outlet = await this.prisma.outlet.findFirst({
+      where: { id: outletId, merchantId },
+    });
     if (!outlet) throw new NotFoundException('Outlet not found');
     return this.mapOutlet(outlet);
   }
 
-  async createOutlet(merchantId: string, dto: CreatePortalOutletDto): Promise<PortalOutletDto> {
+  async createOutlet(
+    merchantId: string,
+    dto: CreatePortalOutletDto,
+  ): Promise<PortalOutletDto> {
     const name = dto.name?.trim();
     const address = dto.address?.trim();
     if (!name) throw new BadRequestException('Outlet name is required');
     if (!address) throw new BadRequestException('Outlet address is required');
     const scheduleEnabled = dto.showSchedule ?? false;
-    const schedule = dto.schedule && scheduleEnabled ? dto.schedule : { mode: 'CUSTOM', days: [] };
+    const schedule =
+      dto.schedule && scheduleEnabled
+        ? dto.schedule
+        : { mode: 'CUSTOM', days: [] };
     try {
       const created = await this.prisma.outlet.create({
         data: {
@@ -741,7 +1015,8 @@ export class PortalCatalogService {
           hidden: dto.hidden ?? false,
           description: dto.description ?? null,
           phone: dto.phone ?? null,
-          adminEmails: dto.adminEmails?.map((email) => email.trim()).filter(Boolean) ?? [],
+          adminEmails:
+            dto.adminEmails?.map((email) => email.trim()).filter(Boolean) ?? [],
           timezone: dto.timezone ?? null,
           scheduleEnabled,
           scheduleMode: schedule.mode,
@@ -754,7 +1029,8 @@ export class PortalCatalogService {
           longitude: this.toDecimal(dto.longitude),
           reviewLinks: (() => {
             const patch = this.prepareReviewLinksPatch(dto.reviewsShareLinks);
-            if (!patch) return Prisma.JsonNull as Prisma.NullableJsonNullValueInput;
+            if (!patch)
+              return Prisma.JsonNull as Prisma.NullableJsonNullValueInput;
             const merged = this.applyReviewLinksPatch(null, patch);
             return Object.keys(merged).length
               ? (merged as unknown as Prisma.InputJsonValue)
@@ -762,17 +1038,32 @@ export class PortalCatalogService {
           })(),
         },
       });
-      this.logger.log(JSON.stringify({ event: 'portal.outlet.create', merchantId, outletId: created.id }));
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.outlet.create',
+          merchantId,
+          outletId: created.id,
+        }),
+      );
       this.metrics.inc('portal_outlets_changed_total', { action: 'create' });
       return this.mapOutlet(created);
     } catch (error: any) {
-      if (error?.code === 'P2002') throw new BadRequestException('Outlet with this externalId already exists');
+      if (error?.code === 'P2002')
+        throw new BadRequestException(
+          'Outlet with this externalId already exists',
+        );
       throw error;
     }
   }
 
-  async updateOutlet(merchantId: string, outletId: string, dto: UpdatePortalOutletDto): Promise<PortalOutletDto> {
-    const outlet = await this.prisma.outlet.findFirst({ where: { id: outletId, merchantId } });
+  async updateOutlet(
+    merchantId: string,
+    outletId: string,
+    dto: UpdatePortalOutletDto,
+  ): Promise<PortalOutletDto> {
+    const outlet = await this.prisma.outlet.findFirst({
+      where: { id: outletId, merchantId },
+    });
     if (!outlet) throw new NotFoundException('Outlet not found');
     const data: Prisma.OutletUpdateInput = {};
     if (dto.name !== undefined) {
@@ -782,29 +1073,43 @@ export class PortalCatalogService {
     }
     if (dto.address !== undefined) {
       const address = dto.address.trim();
-      if (!address) throw new BadRequestException('Outlet address cannot be empty');
+      if (!address)
+        throw new BadRequestException('Outlet address cannot be empty');
       data.address = address;
     }
-    if (dto.description !== undefined) data.description = dto.description ?? null;
+    if (dto.description !== undefined)
+      data.description = dto.description ?? null;
     if (dto.phone !== undefined) data.phone = dto.phone ?? null;
     if (dto.adminEmails !== undefined) {
-      data.adminEmails = dto.adminEmails?.map((email) => email.trim()).filter(Boolean) ?? [];
+      data.adminEmails =
+        dto.adminEmails?.map((email) => email.trim()).filter(Boolean) ?? [];
     }
     if (dto.timezone !== undefined) data.timezone = dto.timezone ?? null;
-    if (dto.works !== undefined) data.status = dto.works ? 'ACTIVE' : 'INACTIVE';
+    if (dto.works !== undefined)
+      data.status = dto.works ? 'ACTIVE' : 'INACTIVE';
     if (dto.hidden !== undefined) data.hidden = dto.hidden;
-    if (dto.manualLocation !== undefined) data.manualLocation = dto.manualLocation;
-    if (dto.latitude !== undefined) data.latitude = this.toDecimal(dto.latitude);
-    if (dto.longitude !== undefined) data.longitude = this.toDecimal(dto.longitude);
-    if (dto.externalId !== undefined) data.externalId = dto.externalId?.trim() || null;
+    if (dto.manualLocation !== undefined)
+      data.manualLocation = dto.manualLocation;
+    if (dto.latitude !== undefined)
+      data.latitude = this.toDecimal(dto.latitude);
+    if (dto.longitude !== undefined)
+      data.longitude = this.toDecimal(dto.longitude);
+    if (dto.externalId !== undefined)
+      data.externalId = dto.externalId?.trim() || null;
     if (dto.reviewsShareLinks !== undefined) {
       const patch = this.prepareReviewLinksPatch(dto.reviewsShareLinks) || {};
-      const merged = this.applyReviewLinksPatch(outlet.reviewLinks as any, patch);
+      const merged = this.applyReviewLinksPatch(
+        outlet.reviewLinks as any,
+        patch,
+      );
       data.reviewLinks = Object.keys(merged).length
         ? (merged as unknown as Prisma.InputJsonValue)
         : (Prisma.JsonNull as Prisma.NullableJsonNullValueInput);
     }
-    const showSchedule = dto.showSchedule !== undefined ? dto.showSchedule : outlet.scheduleEnabled;
+    const showSchedule =
+      dto.showSchedule !== undefined
+        ? dto.showSchedule
+        : outlet.scheduleEnabled;
     if (dto.showSchedule !== undefined) data.scheduleEnabled = showSchedule;
     if (dto.schedule !== undefined) {
       const schedule = dto.schedule ?? { mode: 'CUSTOM', days: [] };
@@ -816,12 +1121,20 @@ export class PortalCatalogService {
       data.scheduleJson = Prisma.DbNull as Prisma.NullableJsonNullValueInput;
     }
     try {
-      const updated = await this.prisma.outlet.update({ where: { id: outletId }, data });
-      this.logger.log(JSON.stringify({ event: 'portal.outlet.update', merchantId, outletId }));
+      const updated = await this.prisma.outlet.update({
+        where: { id: outletId },
+        data,
+      });
+      this.logger.log(
+        JSON.stringify({ event: 'portal.outlet.update', merchantId, outletId }),
+      );
       this.metrics.inc('portal_outlets_changed_total', { action: 'update' });
       return this.mapOutlet(updated);
     } catch (error: any) {
-      if (error?.code === 'P2002') throw new BadRequestException('Outlet with this externalId already exists');
+      if (error?.code === 'P2002')
+        throw new BadRequestException(
+          'Outlet with this externalId already exists',
+        );
       throw error;
     }
   }

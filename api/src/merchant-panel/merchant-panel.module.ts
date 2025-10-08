@@ -15,8 +15,20 @@ import { MetricsModule } from '../metrics.module';
 
 @Module({
   imports: [PrismaModule, MerchantsModule, MetricsModule],
-  providers: [MerchantPanelService, PortalGuard, StaffResolver, AccessGroupsResolver, OutletsResolver, CashierResolver],
-  controllers: [StaffController, AccessGroupsController, OutletsController, CashierController],
+  providers: [
+    MerchantPanelService,
+    PortalGuard,
+    StaffResolver,
+    AccessGroupsResolver,
+    OutletsResolver,
+    CashierResolver,
+  ],
+  controllers: [
+    StaffController,
+    AccessGroupsController,
+    OutletsController,
+    CashierController,
+  ],
   exports: [MerchantPanelService],
 })
 export class MerchantPanelModule {}

@@ -13,7 +13,10 @@ import {
   ValidationPipe,
 } from '@nestjs/common';
 import { PortalGuard } from '../../portal-auth/portal.guard';
-import { MerchantPanelService, AccessGroupFilters } from '../merchant-panel.service';
+import {
+  MerchantPanelService,
+  AccessGroupFilters,
+} from '../merchant-panel.service';
 import {
   AccessGroupDto,
   AccessGroupDtoInput,
@@ -27,7 +30,13 @@ import { ApiTags } from '@nestjs/swagger';
 @ApiTags('portal-access-groups')
 @Controller('portal/access-groups')
 @UseGuards(PortalGuard)
-@UsePipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }))
+@UsePipes(
+  new ValidationPipe({
+    transform: true,
+    whitelist: true,
+    forbidNonWhitelisted: true,
+  }),
+)
 export class AccessGroupsController {
   constructor(private readonly service: MerchantPanelService) {}
 
@@ -36,19 +45,33 @@ export class AccessGroupsController {
   }
 
   @Get()
-  async list(@Req() req: any, @Query() query: AccessGroupListQueryDto): Promise<AccessGroupListResponseDto> {
+  async list(
+    @Req() req: any,
+    @Query() query: AccessGroupListQueryDto,
+  ): Promise<AccessGroupListResponseDto> {
     const { page, pageSize, ...rest } = query;
     const filters: AccessGroupFilters = {
       scope: rest.scope ? (rest.scope as any) : undefined,
       search: rest.search,
     };
-    const result = await this.service.listAccessGroups(this.getMerchantId(req), filters, { page, pageSize });
+    const result = await this.service.listAccessGroups(
+      this.getMerchantId(req),
+      filters,
+      { page, pageSize },
+    );
     return result;
   }
 
   @Post()
-  async create(@Req() req: any, @Body() body: AccessGroupDtoInput & { actorId?: string }) {
-    const group = await this.service.createAccessGroup(this.getMerchantId(req), body, body.actorId);
+  async create(
+    @Req() req: any,
+    @Body() body: AccessGroupDtoInput & { actorId?: string },
+  ) {
+    const group = await this.service.createAccessGroup(
+      this.getMerchantId(req),
+      body,
+      body.actorId,
+    );
     return group;
   }
 
@@ -58,7 +81,12 @@ export class AccessGroupsController {
     @Param('id') id: string,
     @Body() body: AccessGroupDtoInput & { actorId?: string },
   ) {
-    const group = await this.service.updateAccessGroup(this.getMerchantId(req), id, body, body.actorId);
+    const group = await this.service.updateAccessGroup(
+      this.getMerchantId(req),
+      id,
+      body,
+      body.actorId,
+    );
     return group;
   }
 
@@ -68,7 +96,15 @@ export class AccessGroupsController {
   }
 
   @Post(':id/members')
-  setMembers(@Req() req: any, @Param('id') id: string, @Body() body: SetAccessGroupMembersDto) {
-    return this.service.setGroupMembers(this.getMerchantId(req), id, body.staffIds ?? []);
+  setMembers(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: SetAccessGroupMembersDto,
+  ) {
+    return this.service.setGroupMembers(
+      this.getMerchantId(req),
+      id,
+      body.staffIds ?? [],
+    );
   }
 }

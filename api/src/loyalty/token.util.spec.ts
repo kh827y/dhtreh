@@ -25,4 +25,3 @@ describe('QR token util', () => {
     await expect(verifyQrToken(primary, 'bad.token.here')).rejects.toBeTruthy();
   });
 });
-

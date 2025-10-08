@@ -1,6 +1,20 @@
-import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { PortalGuard } from '../portal-auth/portal.guard';
-import { CustomerAudiencesService, type CustomerFilters, type SegmentPayload } from './customer-audiences.service';
+import {
+  CustomerAudiencesService,
+  type CustomerFilters,
+  type SegmentPayload,
+} from './customer-audiences.service';
 
 @Controller('portal')
 @UseGuards(PortalGuard)
@@ -31,10 +45,14 @@ export class CustomerAudiencesController {
       search: query.search,
       segmentId: query.segmentId,
       tags: query.tags ? query.tags.split(',').filter(Boolean) : undefined,
-      gender: query.gender ? query.gender.split(',').filter(Boolean) : undefined,
+      gender: query.gender
+        ? query.gender.split(',').filter(Boolean)
+        : undefined,
       minVisits: query.minVisits ? Number(query.minVisits) : undefined,
       maxVisits: query.maxVisits ? Number(query.maxVisits) : undefined,
-      rfmClasses: query.rfmClasses ? query.rfmClasses.split(',').filter(Boolean) : undefined,
+      rfmClasses: query.rfmClasses
+        ? query.rfmClasses.split(',').filter(Boolean)
+        : undefined,
       limit: query.limit ? Number(query.limit) : undefined,
       offset: query.offset ? Number(query.offset) : undefined,
     };
@@ -57,13 +75,25 @@ export class CustomerAudiencesController {
   }
 
   @Put('audiences/:id')
-  updateAudience(@Req() req: any, @Param('id') id: string, @Body() body: SegmentPayload) {
+  updateAudience(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: SegmentPayload,
+  ) {
     return this.service.updateSegment(this.merchantId(req), id, body);
   }
 
   @Post('audiences/:id/activate')
-  activateAudience(@Req() req: any, @Param('id') id: string, @Body() body: { active: boolean }) {
-    return this.service.setSegmentActive(this.merchantId(req), id, body.active !== false);
+  activateAudience(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: { active: boolean },
+  ) {
+    return this.service.setSegmentActive(
+      this.merchantId(req),
+      id,
+      body.active !== false,
+    );
   }
 
   @Post('audiences/:id/archive')

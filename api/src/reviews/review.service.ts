@@ -32,25 +32,35 @@ export class ReviewService {
       throw new BadRequestException('Рейтинг должен быть от 1 до 5');
     }
 
-    const transactionIdRaw = typeof dto.transactionId === 'string' ? dto.transactionId.trim() : '';
-    const orderIdRaw = typeof dto.orderId === 'string' ? dto.orderId.trim() : '';
+    const transactionIdRaw =
+      typeof dto.transactionId === 'string' ? dto.transactionId.trim() : '';
+    const orderIdRaw =
+      typeof dto.orderId === 'string' ? dto.orderId.trim() : '';
     const transactionId = transactionIdRaw || undefined;
     const orderId = orderIdRaw || undefined;
 
     if (!transactionId && !orderId) {
-      throw new BadRequestException('Укажите транзакцию или заказ, к которому относится отзыв');
+      throw new BadRequestException(
+        'Укажите транзакцию или заказ, к которому относится отзыв',
+      );
     }
 
-    let anchorTransaction = null as Awaited<ReturnType<typeof this.prisma.transaction.findUnique>> | null;
+    let anchorTransaction = null as Awaited<
+      ReturnType<typeof this.prisma.transaction.findUnique>
+    > | null;
 
     if (transactionId) {
-      anchorTransaction = await this.prisma.transaction.findUnique({ where: { id: transactionId } });
+      anchorTransaction = await this.prisma.transaction.findUnique({
+        where: { id: transactionId },
+      });
       if (
         !anchorTransaction ||
         anchorTransaction.merchantId !== dto.merchantId ||
         anchorTransaction.customerId !== dto.customerId
       ) {
-        throw new BadRequestException('Транзакция не найдена или не принадлежит клиенту');
+        throw new BadRequestException(
+          'Транзакция не найдена или не принадлежит клиенту',
+        );
       }
     }
 
@@ -66,7 +76,9 @@ export class ReviewService {
       });
 
       if (!anchorTransaction) {
-        throw new BadRequestException('По указанному заказу не найдено покупок');
+        throw new BadRequestException(
+          'По указанному заказу не найдено покупок',
+        );
       }
     }
 
@@ -74,8 +86,13 @@ export class ReviewService {
       throw new BadRequestException('Не удалось сопоставить отзыв с покупкой');
     }
 
-    if (anchorTransaction.type !== 'EARN' && anchorTransaction.type !== 'REDEEM') {
-      throw new BadRequestException('Отзыв можно оставить только по совершённой покупке');
+    if (
+      anchorTransaction.type !== 'EARN' &&
+      anchorTransaction.type !== 'REDEEM'
+    ) {
+      throw new BadRequestException(
+        'Отзыв можно оставить только по совершённой покупке',
+      );
     }
 
     const finalOrderId = orderId ?? anchorTransaction.orderId ?? undefined;

@@ -3,22 +3,22 @@ export interface PushProvider {
    * Отправить push-уведомление
    */
   sendPush(params: SendPushParams): Promise<PushResult>;
-  
+
   /**
    * Отправить массовую рассылку
    */
   sendBulkPush(params: BulkPushParams): Promise<BulkPushResult>;
-  
+
   /**
    * Подписать устройство на топик
    */
   subscribeToTopic?(token: string, topic: string): Promise<void>;
-  
+
   /**
    * Отписать устройство от топика
    */
   unsubscribeFromTopic?(token: string, topic: string): Promise<void>;
-  
+
   /**
    * Отправить уведомление на топик
    */

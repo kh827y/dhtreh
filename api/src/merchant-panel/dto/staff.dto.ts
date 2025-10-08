@@ -1,6 +1,19 @@
-import { StaffRole, StaffStatus, StaffOutletAccessStatus, AccessScope } from '@prisma/client';
+import {
+  StaffRole,
+  StaffStatus,
+  StaffOutletAccessStatus,
+  AccessScope,
+} from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ArgsType, Field, ID, InputType, Int, ObjectType, registerEnumType } from '@nestjs/graphql';
+import {
+  ArgsType,
+  Field,
+  ID,
+  InputType,
+  Int,
+  ObjectType,
+  registerEnumType,
+} from '@nestjs/graphql';
 import {
   ArrayNotEmpty,
   IsArray,
@@ -13,7 +26,10 @@ import {
   MaxLength,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
-import { PaginationQueryDto, createPaginatedResponseDto } from '../../common/dto/pagination.dto';
+import {
+  PaginationQueryDto,
+  createPaginatedResponseDto,
+} from '../../common/dto/pagination.dto';
 
 registerEnumType(StaffStatus, { name: 'StaffStatus' });
 registerEnumType(StaffRole, { name: 'StaffRole' });
@@ -27,14 +43,20 @@ type StaffStatusFilter = (typeof STAFF_STATUS_FILTERS)[number];
 @ArgsType()
 export class StaffListQueryDto extends PaginationQueryDto {
   @Field(() => String, { nullable: true })
-  @ApiPropertyOptional({ description: 'Поиск по имени/телефону/email', maxLength: 100 })
+  @ApiPropertyOptional({
+    description: 'Поиск по имени/телефону/email',
+    maxLength: 100,
+  })
   @IsOptional()
   @IsString()
   @MaxLength(100)
   search?: string;
 
   @Field(() => String, { nullable: true })
-  @ApiPropertyOptional({ description: 'Фильтр по статусу', enum: STAFF_STATUS_FILTERS })
+  @ApiPropertyOptional({
+    description: 'Фильтр по статусу',
+    enum: STAFF_STATUS_FILTERS,
+  })
   @IsOptional()
   @IsIn(STAFF_STATUS_FILTERS as unknown as string[])
   status?: StaffStatusFilter;
@@ -54,7 +76,13 @@ export class StaffListQueryDto extends PaginationQueryDto {
   @Field(() => Boolean, { nullable: true })
   @ApiPropertyOptional({ description: 'Только сотрудники с доступом в портал' })
   @IsOptional()
-  @Transform(({ value }) => (value === 'true' || value === true ? true : value === 'false' || value === false ? false : value))
+  @Transform(({ value }) =>
+    value === 'true' || value === true
+      ? true
+      : value === 'false' || value === false
+        ? false
+        : value,
+  )
   @IsBoolean()
   portalOnly?: boolean;
 }
@@ -92,15 +120,24 @@ export class StaffOutletAccessDto {
   outletName?: string | null;
 
   @Field(() => String, { nullable: true })
-  @ApiPropertyOptional({ description: 'PIN-код кассира для точки', minLength: 4, maxLength: 4 })
+  @ApiPropertyOptional({
+    description: 'PIN-код кассира для точки',
+    minLength: 4,
+    maxLength: 4,
+  })
   pinCode?: string | null;
 
   @Field(() => StaffOutletAccessStatus)
-  @ApiProperty({ enum: StaffOutletAccessStatus, description: 'Статус доступа к точке' })
+  @ApiProperty({
+    enum: StaffOutletAccessStatus,
+    description: 'Статус доступа к точке',
+  })
   status!: StaffOutletAccessStatus;
 
   @Field(() => String, { nullable: true })
-  @ApiPropertyOptional({ description: 'Дата последней операции кассира по точке' })
+  @ApiPropertyOptional({
+    description: 'Дата последней операции кассира по точке',
+  })
   lastTxnAt?: string | null;
 
   @Field(() => Int, { nullable: true })
@@ -190,11 +227,17 @@ export class StaffSummaryDto {
   outletsCount?: number | null;
 
   @Field(() => [StaffOutletAccessDto])
-  @ApiProperty({ type: () => [StaffOutletAccessDto], description: 'Список доступов по точкам' })
+  @ApiProperty({
+    type: () => [StaffOutletAccessDto],
+    description: 'Список доступов по точкам',
+  })
   accesses!: StaffOutletAccessDto[];
 
   @Field(() => [StaffGroupDto])
-  @ApiProperty({ type: () => [StaffGroupDto], description: 'Группы доступа сотрудника' })
+  @ApiProperty({
+    type: () => [StaffGroupDto],
+    description: 'Группы доступа сотрудника',
+  })
   groups!: StaffGroupDto[];
 }
 
@@ -233,7 +276,10 @@ export class StaffCountersDto {
 }
 
 @ObjectType()
-export class StaffListResponseDto extends createPaginatedResponseDto(StaffSummaryDto, StaffCountersDto) {}
+export class StaffListResponseDto extends createPaginatedResponseDto(
+  StaffSummaryDto,
+  StaffCountersDto,
+) {}
 
 @InputType()
 export class UpsertStaffInput {
@@ -298,7 +344,9 @@ export class UpsertStaffInput {
   status?: StaffStatus;
 
   @Field(() => Boolean, { nullable: true })
-  @ApiPropertyOptional({ description: 'Может ли сотрудник использовать портал' })
+  @ApiPropertyOptional({
+    description: 'Может ли сотрудник использовать портал',
+  })
   @IsOptional()
   @IsBoolean()
   canAccessPortal?: boolean;
@@ -326,7 +374,10 @@ export class UpsertStaffInput {
   accessGroupIds?: string[];
 
   @Field(() => String, { nullable: true })
-  @ApiPropertyOptional({ description: 'Стратегия обработки PIN при обновлении', enum: ['KEEP', 'ROTATE'] })
+  @ApiPropertyOptional({
+    description: 'Стратегия обработки PIN при обновлении',
+    enum: ['KEEP', 'ROTATE'],
+  })
   @IsOptional()
   @IsIn(['KEEP', 'ROTATE'])
   pinStrategy?: 'KEEP' | 'ROTATE';
@@ -339,7 +390,9 @@ export class UpsertStaffInput {
   password?: string | null;
 
   @Field(() => String, { nullable: true })
-  @ApiPropertyOptional({ description: 'Текущий пароль сотрудника для подтверждения' })
+  @ApiPropertyOptional({
+    description: 'Текущий пароль сотрудника для подтверждения',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(128)
@@ -356,7 +409,6 @@ export class AssignStaffAccessDto {
 }
 
 @ObjectType()
-
 @InputType()
 export class ChangeStaffStatusInput {
   @Field(() => StaffStatus)

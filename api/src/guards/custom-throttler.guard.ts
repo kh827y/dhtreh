@@ -3,17 +3,21 @@ import { ThrottlerGuard, ThrottlerRequest } from '@nestjs/throttler';
 
 @Injectable()
 export class CustomThrottlerGuard extends ThrottlerGuard {
-
   protected async getTracker(req: Record<string, any>): Promise<string> {
     try {
-      const ip = (req.ip || req.ips?.[0] || req.socket?.remoteAddress || 'unknown');
-      const path = (req.route?.path || req.path || req.originalUrl || '').split('?')[0];
+      const ip =
+        req.ip || req.ips?.[0] || req.socket?.remoteAddress || 'unknown';
+      const path = (req.route?.path || req.path || req.originalUrl || '').split(
+        '?',
+      )[0];
       const body = req.body || {};
       const q = req.query || {};
       const merchantId = body.merchantId || q.merchantId || '';
       const outletId = body.outletId || q.outletId || '';
       const staffId = body.staffId || q.staffId || '';
-      return [ip, path, merchantId, outletId, staffId].filter(Boolean).join('|');
+      return [ip, path, merchantId, outletId, staffId]
+        .filter(Boolean)
+        .join('|');
     } catch {
       return await super.getTracker(req as any);
     }
@@ -22,14 +26,22 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
   // Per-endpoint overrides via ENV and per-merchant multipliers
   // RL_LIMIT_QUOTE, RL_TTL_QUOTE, RL_LIMIT_COMMIT, RL_TTL_COMMIT, RL_LIMIT_REFUND, RL_TTL_REFUND
   // RL_MERCHANT_MULTIPLIERS (JSON): { "M-1": 2, "M-2": 0.5 }
-  protected async handleRequest(requestProps: ThrottlerRequest): Promise<boolean> {
+  protected async handleRequest(
+    requestProps: ThrottlerRequest,
+  ): Promise<boolean> {
     try {
       const { context, limit, ttl } = requestProps as any;
       const req: any = context.switchToHttp().getRequest();
-      const path: string = (req?.route?.path || req?.path || req?.originalUrl || '').toLowerCase();
+      const path: string = (
+        req?.route?.path ||
+        req?.path ||
+        req?.originalUrl ||
+        ''
+      ).toLowerCase();
       const body = req?.body || {};
       const q = req?.query || {};
-      const merchantId: string | undefined = body.merchantId || q.merchantId || undefined;
+      const merchantId: string | undefined =
+        body.merchantId || q.merchantId || undefined;
 
       const envNum = (name: string, def: number) => {
         const v = (process.env[name] || '').trim();
@@ -38,8 +50,22 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
       };
 
       const pick = (p: string) => ({
-        limit: envNum(p === 'quote' ? 'RL_LIMIT_QUOTE' : p === 'commit' ? 'RL_LIMIT_COMMIT' : 'RL_LIMIT_REFUND', limit),
-        ttl: envNum(p === 'quote' ? 'RL_TTL_QUOTE' : p === 'commit' ? 'RL_TTL_COMMIT' : 'RL_TTL_REFUND', ttl),
+        limit: envNum(
+          p === 'quote'
+            ? 'RL_LIMIT_QUOTE'
+            : p === 'commit'
+              ? 'RL_LIMIT_COMMIT'
+              : 'RL_LIMIT_REFUND',
+          limit,
+        ),
+        ttl: envNum(
+          p === 'quote'
+            ? 'RL_TTL_QUOTE'
+            : p === 'commit'
+              ? 'RL_TTL_COMMIT'
+              : 'RL_TTL_REFUND',
+          ttl,
+        ),
       });
 
       let base = { limit, ttl };
@@ -62,7 +88,11 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
       const effTtl = Math.max(100, Math.floor(base.ttl));
 
       // Call parent handleRequest with effective values (merge back into request props)
-      const nextProps: ThrottlerRequest = { ...(requestProps as any), limit: effLimit, ttl: effTtl };
+      const nextProps: ThrottlerRequest = {
+        ...(requestProps as any),
+        limit: effLimit,
+        ttl: effTtl,
+      };
       return await super.handleRequest(nextProps);
     } catch {
       return await super.handleRequest(requestProps);

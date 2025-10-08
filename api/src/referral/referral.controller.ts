@@ -8,9 +8,17 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { ReferralService } from './referral.service';
-import type { CreateReferralProgramDto, CreateReferralDto } from './referral.service';
+import type {
+  CreateReferralProgramDto,
+  CreateReferralDto,
+} from './referral.service';
 import { ApiKeyGuard } from '../guards/api-key.guard';
 
 @ApiTags('Referral Program')
@@ -65,12 +73,7 @@ export class ReferralController {
    */
   @Post('activate')
   @ApiOperation({ summary: 'Активировать реферальный код при регистрации' })
-  async activateReferral(
-    @Body() dto: {
-      code: string;
-      refereeId: string;
-    },
-  ) {
+  async activateReferral(@Body() dto: { code: string; refereeId: string }) {
     return this.referralService.activateReferral(dto.code, dto.refereeId);
   }
 
@@ -80,7 +83,8 @@ export class ReferralController {
   @Post('complete')
   @ApiOperation({ summary: 'Завершить реферал после первой покупки' })
   async completeReferral(
-    @Body() dto: {
+    @Body()
+    dto: {
       refereeId: string;
       merchantId: string;
       purchaseAmount: number;

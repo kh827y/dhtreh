@@ -2,7 +2,12 @@ import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { UseGuards } from '@nestjs/common';
 import { PortalGuard } from '../../portal-auth/portal.guard';
 import { MerchantPanelService } from '../merchant-panel.service';
-import { CashierCredentialsDto, CashierPinDto, CashierRotationResultDto, RotateCashierInput } from '../dto/cashier.dto';
+import {
+  CashierCredentialsDto,
+  CashierPinDto,
+  CashierRotationResultDto,
+  RotateCashierInput,
+} from '../dto/cashier.dto';
 import { plainToInstance } from 'class-transformer';
 
 @Resolver()
@@ -17,22 +22,33 @@ export class CashierResolver {
   @Query(() => CashierCredentialsDto, { name: 'portalCashierCredentials' })
   async credentials(@Context() ctx: any): Promise<CashierCredentialsDto> {
     const data = await this.service.getCashierCredentials(this.merchantId(ctx));
-    return plainToInstance(CashierCredentialsDto, data, { enableImplicitConversion: true });
+    return plainToInstance(CashierCredentialsDto, data, {
+      enableImplicitConversion: true,
+    });
   }
 
   @Query(() => [CashierPinDto], { name: 'portalCashierPins' })
   async pins(@Context() ctx: any): Promise<CashierPinDto[]> {
     const pins = await this.service.listCashierPins(this.merchantId(ctx));
-    return pins.map((pin) => plainToInstance(CashierPinDto, pin, { enableImplicitConversion: true }));
+    return pins.map((pin) =>
+      plainToInstance(CashierPinDto, pin, { enableImplicitConversion: true }),
+    );
   }
 
-  @Mutation(() => CashierRotationResultDto, { name: 'portalCashierRotateCredentials' })
+  @Mutation(() => CashierRotationResultDto, {
+    name: 'portalCashierRotateCredentials',
+  })
   async rotate(
     @Context() ctx: any,
     @Args('input', { nullable: true }) input?: RotateCashierInput,
   ): Promise<CashierRotationResultDto> {
     const payload = input ?? {};
-    const data = await this.service.rotateCashierCredentials(this.merchantId(ctx), payload.regenerateLogin);
-    return plainToInstance(CashierRotationResultDto, data, { enableImplicitConversion: true });
+    const data = await this.service.rotateCashierCredentials(
+      this.merchantId(ctx),
+      payload.regenerateLogin,
+    );
+    return plainToInstance(CashierRotationResultDto, data, {
+      enableImplicitConversion: true,
+    });
   }
 }

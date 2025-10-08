@@ -3,27 +3,29 @@ export interface PaymentProvider {
    * Создать платеж
    */
   createPayment(params: CreatePaymentParams): Promise<PaymentResult>;
-  
+
   /**
    * Проверить статус платежа
    */
   checkPaymentStatus(paymentId: string): Promise<PaymentStatus>;
-  
+
   /**
    * Отменить/вернуть платеж
    */
   refundPayment(paymentId: string, amount?: number): Promise<RefundResult>;
-  
+
   /**
    * Создать подписку/рекуррентный платеж
    */
-  createSubscription?(params: CreateSubscriptionParams): Promise<SubscriptionResult>;
-  
+  createSubscription?(
+    params: CreateSubscriptionParams,
+  ): Promise<SubscriptionResult>;
+
   /**
    * Отменить подписку
    */
   cancelSubscription?(subscriptionId: string): Promise<void>;
-  
+
   /**
    * Обработать вебхук
    */
@@ -43,7 +45,12 @@ export interface CreatePaymentParams {
 
 export interface PaymentResult {
   id: string;
-  status: 'pending' | 'waiting_for_capture' | 'succeeded' | 'canceled' | 'failed';
+  status:
+    | 'pending'
+    | 'waiting_for_capture'
+    | 'succeeded'
+    | 'canceled'
+    | 'failed';
   confirmationUrl?: string;
   amount: number;
   currency: string;
@@ -53,7 +60,12 @@ export interface PaymentResult {
 
 export interface PaymentStatus {
   id: string;
-  status: 'pending' | 'waiting_for_capture' | 'succeeded' | 'canceled' | 'failed';
+  status:
+    | 'pending'
+    | 'waiting_for_capture'
+    | 'succeeded'
+    | 'canceled'
+    | 'failed';
   paid: boolean;
   amount: number;
   currency: string;
@@ -102,7 +114,14 @@ export interface SubscriptionResult {
 }
 
 export interface WebhookResult {
-  type: 'payment.succeeded' | 'payment.failed' | 'payment.canceled' | 'subscription.created' | 'subscription.updated' | 'subscription.canceled' | 'refund.succeeded';
+  type:
+    | 'payment.succeeded'
+    | 'payment.failed'
+    | 'payment.canceled'
+    | 'subscription.created'
+    | 'subscription.updated'
+    | 'subscription.canceled'
+    | 'refund.succeeded';
   paymentId?: string;
   subscriptionId?: string;
   status?: string;

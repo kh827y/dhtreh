@@ -52,11 +52,13 @@ export class EmailService {
     };
 
     this.transporter = nodemailer.createTransport(smtpConfig);
-    this.defaultFrom = this.configService.get('SMTP_FROM') || 'Loyalty System <noreply@loyalty.com>';
-    
+    this.defaultFrom =
+      this.configService.get('SMTP_FROM') ||
+      'Loyalty System <noreply@loyalty.com>';
+
     // Регистрация хелперов Handlebars
     this.registerHandlebarsHelpers();
-    
+
     // Загрузка шаблонов
     this.loadTemplates();
   }
@@ -75,13 +77,15 @@ export class EmailService {
       const emailData = {
         ...dto.data,
         year: new Date().getFullYear(),
-        supportEmail: this.configService.get('SUPPORT_EMAIL') || 'support@loyalty.com',
-        websiteUrl: this.configService.get('WEBSITE_URL') || 'https://loyalty.com',
+        supportEmail:
+          this.configService.get('SUPPORT_EMAIL') || 'support@loyalty.com',
+        websiteUrl:
+          this.configService.get('WEBSITE_URL') || 'https://loyalty.com',
       };
 
       // Компилируем HTML
       const html = template(emailData);
-      
+
       // Генерируем текстовую версию
       const text = this.htmlToText(html);
 
@@ -118,7 +122,7 @@ export class EmailService {
       return true;
     } catch (error) {
       console.error('Error sending email:', error);
-      
+
       // Сохраняем ошибку в БД
       if (dto.merchantId) {
         await this.prisma.emailNotification.create({
@@ -135,7 +139,7 @@ export class EmailService {
           },
         });
       }
-      
+
       return false;
     }
   }
@@ -143,7 +147,11 @@ export class EmailService {
   /**
    * Отправка приветственного письма
    */
-  async sendWelcomeEmail(merchantId: string, customerId: string, email: string) {
+  async sendWelcomeEmail(
+    merchantId: string,
+    customerId: string,
+    email: string,
+  ) {
     const [merchant, customer] = await Promise.all([
       this.prisma.merchant.findUnique({ where: { id: merchantId } }),
       this.prisma.customer.findUnique({ where: { id: customerId } }),
@@ -171,7 +179,7 @@ export class EmailService {
    */
   async sendTransactionEmail(
     transactionId: string,
-    type: 'earn' | 'redeem' | 'refund'
+    type: 'earn' | 'redeem' | 'refund',
   ) {
     const transaction = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
@@ -184,7 +192,11 @@ export class EmailService {
     if (!transaction || !transaction.customer?.email) return;
 
     const wallet = await this.prisma.wallet.findFirst({
-      where: { merchantId: transaction.merchantId, customerId: transaction.customerId, type: 'POINTS' as any },
+      where: {
+        merchantId: transaction.merchantId,
+        customerId: transaction.customerId,
+        type: 'POINTS' as any,
+      },
     });
 
     const templates = {
@@ -223,7 +235,7 @@ export class EmailService {
     campaignId: string,
     customerIds: string[],
     subject: string,
-    content: string
+    content: string,
   ) {
     const promotion = await this.prisma.loyaltyPromotion.findUnique({
       where: { id: campaignId },
@@ -232,7 +244,8 @@ export class EmailService {
 
     if (!promotion) return;
 
-    const legacy = ((promotion.metadata as any)?.legacyCampaign ?? {}) as Record<string, any>;
+    const legacy = ((promotion.metadata as any)?.legacyCampaign ??
+      {}) as Record<string, any>;
 
     const customers = await this.prisma.customer.findMany({
       where: {
@@ -253,8 +266,14 @@ export class EmailService {
           campaignName: promotion.name,
           content,
           campaignType: legacy.kind ?? 'LOYALTY_PROMOTION',
-          startDate: promotion.startAt?.toLocaleDateString('ru-RU') ?? legacy.startDate ?? null,
-          endDate: promotion.endAt?.toLocaleDateString('ru-RU') ?? legacy.endDate ?? null,
+          startDate:
+            promotion.startAt?.toLocaleDateString('ru-RU') ??
+            legacy.startDate ??
+            null,
+          endDate:
+            promotion.endAt?.toLocaleDateString('ru-RU') ??
+            legacy.endDate ??
+            null,
         },
         merchantId: promotion.merchantId,
         customerId: customer.id,
@@ -264,8 +283,8 @@ export class EmailService {
     }
 
     return {
-      sent: results.filter(r => r).length,
-      failed: results.filter(r => !r).length,
+      sent: results.filter((r) => r).length,
+      failed: results.filter((r) => !r).length,
       total: results.length,
     };
   }
@@ -278,7 +297,7 @@ export class EmailService {
     email: string,
     reportType: string,
     reportBuffer: Buffer,
-    format: 'pdf' | 'excel' | 'csv'
+    format: 'pdf' | 'excel' | 'csv',
   ) {
     const merchant = await this.prisma.merchant.findUnique({
       where: { id: merchantId },
@@ -300,7 +319,8 @@ export class EmailService {
 
     const contentTypes = {
       pdf: 'application/pdf',
-      excel: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      excel:
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       csv: 'text/csv',
     };
 
@@ -317,11 +337,13 @@ export class EmailService {
         reportDate,
         format: formatNames[format],
       },
-      attachments: [{
-        filename,
-        content: reportBuffer,
-        contentType: contentTypes[format],
-      }],
+      attachments: [
+        {
+          filename,
+          content: reportBuffer,
+          contentType: contentTypes[format],
+        },
+      ],
       merchantId,
     });
   }
@@ -351,7 +373,9 @@ export class EmailService {
           customerName: customer.name || 'Уважаемый клиент',
           merchantName: wallet.merchant.name,
           balance: wallet.balance,
-          expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('ru-RU'),
+          expiryDate: new Date(
+            Date.now() + 30 * 24 * 60 * 60 * 1000,
+          ).toLocaleDateString('ru-RU'),
         },
         merchantId: wallet.merchantId,
         customerId,
@@ -364,7 +388,7 @@ export class EmailService {
    */
   private loadTemplates() {
     const templates = this.getEmailTemplates();
-    
+
     for (const template of templates) {
       const compiled = handlebars.compile(template.html);
       this.templates.set(template.id, compiled);
@@ -394,7 +418,7 @@ export class EmailService {
     });
 
     // Условный оператор
-    handlebars.registerHelper('ifEquals', function(arg1, arg2, options) {
+    handlebars.registerHelper('ifEquals', function (arg1, arg2, options) {
       return arg1 === arg2 ? options.fn(this) : options.inverse(this);
     });
   }
@@ -464,7 +488,13 @@ export class EmailService {
         name: 'Начисление баллов',
         subject: 'Баллы начислены',
         category: 'transactional',
-        variables: ['customerName', 'merchantName', 'points', 'balance', 'transactionDate'],
+        variables: [
+          'customerName',
+          'merchantName',
+          'points',
+          'balance',
+          'transactionDate',
+        ],
         html: `
 <!DOCTYPE html>
 <html>

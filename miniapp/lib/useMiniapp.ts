@@ -4,12 +4,33 @@ import { teleauth, publicSettings, ReviewsShareSettings, grantRegistrationBonus 
 
 export function getInitData(): string | null {
   try {
+    const search = new URLSearchParams(window.location.search);
+    const fromQuery =
+      search.get('tgWebAppData') ||
+      search.get('initData') ||
+      search.get('tg_init_data') ||
+      null;
+    if (fromQuery && fromQuery.includes('hash=')) return fromQuery;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const tg = (window as any)?.Telegram?.WebApp as { initData?: string } | undefined;
-    if (tg?.initData) return tg.initData;
-    const p = new URLSearchParams(window.location.search);
-    return p.get('initData') || p.get('tgWebAppData') || p.get('tg_init_data');
+    const tg = (window as any)?.Telegram?.WebApp as { initData?: string; initDataUnsafe?: unknown } | undefined;
+    if (tg?.initData && tg.initData.includes('hash=')) return tg.initData;
+    return null;
   } catch { return null; }
+}
+
+export function isValidInitData(initData: string | null): initData is string {
+  return typeof initData === 'string' && initData.includes('hash=');
+}
+
+export async function waitForInitData(attempts = 8, delayMs = 150): Promise<string | null> {
+  let last = getInitData();
+  if (isValidInitData(last)) return last;
+  for (let i = 0; i < attempts; i += 1) {
+    await new Promise<void>((resolve) => { setTimeout(resolve, delayMs); });
+    last = getInitData();
+    if (isValidInitData(last)) return last;
+  }
+  return last;
 }
 
 export function getMerchantFromContext(initData: string | null): string | undefined {
@@ -74,37 +95,40 @@ export function useMiniappAuth(defaultMerchant: string) {
   const [shareSettings, setShareSettings] = useState<ReviewsShareSettings>(null);
 
   useEffect(() => {
-    const id = getInitData();
-    setInitData(id);
-    const ctxMerchant = getMerchantFromContext(id);
-    if (ctxMerchant) setMerchantId(ctxMerchant);
-    const mId = ctxMerchant || merchantId;
-
-    const customerKey = (m: string) => `miniapp.customerId.v2:${m}`;
-    const profileKey = (m: string) => `miniapp.profile.v2:${m}`;
-
-    // Migrate legacy global customerId to per-merchant key only when no initData (non-Telegram context)
-    const legacy = localStorage.getItem('miniapp.customerId');
-    const savedScoped = mId ? localStorage.getItem(customerKey(mId)) : null;
-    if (!id) {
-      if (savedScoped) setCustomerId(savedScoped);
-      else if (legacy) {
-        setCustomerId(legacy);
-        if (mId) localStorage.setItem(customerKey(mId), legacy);
-      }
-    }
-    // Dev fallback only when no initData and nothing saved
-    try {
-      const devAuto = (process.env.NEXT_PUBLIC_MINIAPP_DEV_AUTO_CUSTOMER === '1') ||
-        ((process.env.NEXT_PUBLIC_MINIAPP_DEV_AUTO_CUSTOMER || '').toLowerCase() === 'true');
-      if (!id && !savedScoped && !legacy && devAuto) {
-        const gen = 'user-' + Math.random().toString(36).slice(2, 10);
-        setCustomerId(gen);
-        if (mId) localStorage.setItem(customerKey(mId), gen);
-      }
-    } catch {}
-
+    let cancelled = false;
     (async () => {
+      const id = await waitForInitData();
+      if (cancelled) return;
+      setInitData(id);
+      const ctxMerchant = getMerchantFromContext(id);
+      if (ctxMerchant) setMerchantId(ctxMerchant);
+      const mId = ctxMerchant || merchantId;
+
+      const customerKey = (m: string) => `miniapp.customerId.v2:${m}`;
+      const profileKey = (m: string) => `miniapp.profile.v2:${m}`;
+
+      // Migrate legacy global customerId to per-merchant key only when нет валидной телеграм-авторизации
+      const legacy = localStorage.getItem('miniapp.customerId');
+      const savedScoped = mId ? localStorage.getItem(customerKey(mId)) : null;
+      const hasTelegramAuth = isValidInitData(id);
+      if (!hasTelegramAuth) {
+        if (savedScoped) setCustomerId(savedScoped);
+        else if (legacy) {
+          setCustomerId(legacy);
+          if (mId) localStorage.setItem(customerKey(mId), legacy);
+        }
+      }
+      // Dev fallback only when нет валидного initData и ничего не сохранено
+      try {
+        const devAuto = (process.env.NEXT_PUBLIC_MINIAPP_DEV_AUTO_CUSTOMER === '1') ||
+          ((process.env.NEXT_PUBLIC_MINIAPP_DEV_AUTO_CUSTOMER || '').toLowerCase() === 'true');
+        if (!hasTelegramAuth && !savedScoped && !legacy && devAuto) {
+          const gen = 'user-' + Math.random().toString(36).slice(2, 10);
+          setCustomerId(gen);
+          if (mId) localStorage.setItem(customerKey(mId), gen);
+        }
+      } catch {}
+
       try {
         const s = await publicSettings(mId);
         setTheme({ primary: s.miniappThemePrimary, bg: s.miniappThemeBg, logo: s.miniappLogoUrl, ttl: s.qrTtlSec });
@@ -131,7 +155,7 @@ export function useMiniappAuth(defaultMerchant: string) {
       } catch {}
       try {
         // Prefer server teleauth when running inside Telegram (initData present)
-        if (id && mId) {
+        if (hasTelegramAuth && mId) {
           const prev = savedScoped || legacy || null;
           const r = await teleauth(mId, id);
           setCustomerId(r.customerId);
@@ -151,7 +175,8 @@ export function useMiniappAuth(defaultMerchant: string) {
         setLoading(false);
       }
     })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaultMerchant]);
 
   // Автоначисление бонуса за регистрацию: один раз на пару merchantId+customerId (идемпотентный бэкенд)
@@ -172,4 +197,3 @@ export function useMiniappAuth(defaultMerchant: string) {
 
   return { merchantId, setMerchantId, customerId, setCustomerId, loading, error, theme, shareSettings, initData } as const;
 }
-

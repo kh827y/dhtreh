@@ -4,12 +4,20 @@ import { TelegramNotifyService } from './telegram-notify.service';
 
 @Controller()
 export class TelegramNotifyController {
-  constructor(private readonly notify: TelegramNotifyService, private readonly config: ConfigService) {}
+  constructor(
+    private readonly notify: TelegramNotifyService,
+    private readonly config: ConfigService,
+  ) {}
 
   // Unified staff notifications bot webhook
   @Post('telegram/notify/webhook')
-  async webhook(@Headers('x-telegram-bot-api-secret-token') secret: string | undefined, @Body() update: any) {
-    const expected = (this.config.get<string>('TELEGRAM_NOTIFY_WEBHOOK_SECRET') || '').trim();
+  async webhook(
+    @Headers('x-telegram-bot-api-secret-token') secret: string | undefined,
+    @Body() update: any,
+  ) {
+    const expected = (
+      this.config.get<string>('TELEGRAM_NOTIFY_WEBHOOK_SECRET') || ''
+    ).trim();
     if (!expected || !secret || secret.trim() !== expected) {
       // Silent ack to avoid retries
       return { ok: true };

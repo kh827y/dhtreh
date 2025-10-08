@@ -2,9 +2,15 @@ import type { MetricsService } from '../metrics.service';
 import type { PrismaService } from '../prisma.service';
 
 export type LevelRule = { name: string; threshold: number };
-export type LevelsConfig = { periodDays: number; metric: 'earn'|'redeem'|'transactions'; levels: LevelRule[] };
+export type LevelsConfig = {
+  periodDays: number;
+  metric: 'earn' | 'redeem' | 'transactions';
+  levels: LevelRule[];
+};
 
-export type LevelsMetrics = Pick<MetricsService, 'inc'> | { inc?: (metric: string, labels?: Record<string, string>) => unknown };
+export type LevelsMetrics =
+  | Pick<MetricsService, 'inc'>
+  | { inc?: (metric: string, labels?: Record<string, string>) => unknown };
 export type LevelsPrisma =
   | Pick<PrismaService, 'transaction' | 'receipt'>
   | {
@@ -14,7 +20,9 @@ export type LevelsPrisma =
       };
       receipt: {
         count: (args: any) => Promise<number>;
-        findMany: (args: any) => Promise<Array<{ total?: number; eligibleTotal?: number }>>;
+        findMany: (
+          args: any,
+        ) => Promise<Array<{ total?: number; eligibleTotal?: number }>>;
       };
     };
 
@@ -26,21 +34,32 @@ const DEFAULT_CONFIG: LevelsConfig = {
 
 export function parseLevelsConfig(source: unknown): LevelsConfig {
   try {
-    const root = (source && typeof source === 'object') ? (source as Record<string, any>) : {};
-    const cfg = (root?.levelsCfg) ?? (root?.rulesJson?.levelsCfg) ?? null;
+    const root =
+      source && typeof source === 'object'
+        ? (source as Record<string, any>)
+        : {};
+    const cfg = root?.levelsCfg ?? root?.rulesJson?.levelsCfg ?? null;
     const rawLevels = Array.isArray(cfg?.levels)
       ? cfg.levels
       : DEFAULT_CONFIG.levels;
     const normalized = rawLevels
-      .filter((item: any) => item && typeof item === 'object' && typeof item.name === 'string')
+      .filter(
+        (item: any) =>
+          item && typeof item === 'object' && typeof item.name === 'string',
+      )
       .map((item: any) => ({
         name: String(item.name),
         threshold: Math.max(0, Number(item.threshold ?? 0) || 0),
       }));
-    const levels = normalized.length ? [...normalized].sort((a, b) => a.threshold - b.threshold) : DEFAULT_CONFIG.levels;
-    const periodDays = Number(cfg?.periodDays ?? DEFAULT_CONFIG.periodDays) || DEFAULT_CONFIG.periodDays;
+    const levels = normalized.length
+      ? [...normalized].sort((a, b) => a.threshold - b.threshold)
+      : DEFAULT_CONFIG.levels;
+    const periodDays =
+      Number(cfg?.periodDays ?? DEFAULT_CONFIG.periodDays) ||
+      DEFAULT_CONFIG.periodDays;
     const metric = cfg?.metric;
-    const resolvedMetric: LevelsConfig['metric'] = metric === 'redeem' || metric === 'transactions' ? metric : 'earn';
+    const resolvedMetric: LevelsConfig['metric'] =
+      metric === 'redeem' || metric === 'transactions' ? metric : 'earn';
     return { periodDays, metric: resolvedMetric, levels };
   } catch {
     return DEFAULT_CONFIG;
@@ -54,9 +73,19 @@ export async function computeLevelState(args: {
   customerId: string;
   config: LevelsConfig;
   now?: number | Date;
-}): Promise<{ value: number; current: LevelRule; next: LevelRule | null; progressToNext: number }> {
+}): Promise<{
+  value: number;
+  current: LevelRule;
+  next: LevelRule | null;
+  progressToNext: number;
+}> {
   const { prisma, metrics, merchantId, customerId, config } = args;
-  const nowTs = args.now instanceof Date ? args.now.getTime() : typeof args.now === 'number' ? args.now : Date.now();
+  const nowTs =
+    args.now instanceof Date
+      ? args.now.getTime()
+      : typeof args.now === 'number'
+        ? args.now
+        : Date.now();
   const since = new Date(nowTs - config.periodDays * 24 * 60 * 60 * 1000);
 
   // Значение для прогресса считаем по чекам (покупкам), а не по баллам.
@@ -65,7 +94,9 @@ export async function computeLevelState(args: {
   let value = 0;
   if ((prisma as any)?.receipt) {
     if (config.metric === 'transactions') {
-      value = await (prisma as any).receipt.count({ where: { merchantId, customerId, createdAt: { gte: since } } });
+      value = await (prisma as any).receipt.count({
+        where: { merchantId, customerId, createdAt: { gte: since } },
+      });
     } else {
       const receipts = await (prisma as any).receipt.findMany({
         where: { merchantId, customerId, createdAt: { gte: since } },
@@ -80,10 +111,14 @@ export async function computeLevelState(args: {
   } else {
     // Фоллбек для тестов/моков без receipt-модели: прежняя логика по транзакциям
     if (config.metric === 'transactions') {
-      value = await prisma.transaction.count({ where: { merchantId, customerId, createdAt: { gte: since } } });
+      value = await prisma.transaction.count({
+        where: { merchantId, customerId, createdAt: { gte: since } },
+      });
     } else {
       const type = config.metric === 'redeem' ? 'REDEEM' : 'EARN';
-      const items = await prisma.transaction.findMany({ where: { merchantId, customerId, type, createdAt: { gte: since } } });
+      const items = await prisma.transaction.findMany({
+        where: { merchantId, customerId, type, createdAt: { gte: since } },
+      });
       for (const item of items) {
         value += Math.abs(Number(item?.amount ?? 0) || 0);
       }
@@ -107,12 +142,19 @@ export async function computeLevelState(args: {
   return { value, current, next, progressToNext };
 }
 
-export function resolveLevelBenefits(source: unknown, levelName: string): { earnBpsBonus: number; redeemLimitBpsBonus: number } {
-  const root = (source && typeof source === 'object') ? (source as Record<string, any>) : {};
-  const benefits = (root?.levelBenefits) ?? (root?.rulesJson?.levelBenefits) ?? {};
-  const earnMap = (benefits as any)?.earnBpsBonusByLevel ?? {};
-  const redeemMap = (benefits as any)?.redeemLimitBpsBonusByLevel ?? {};
+export function resolveLevelBenefits(
+  source: unknown,
+  levelName: string,
+): { earnBpsBonus: number; redeemLimitBpsBonus: number } {
+  const root =
+    source && typeof source === 'object' ? (source as Record<string, any>) : {};
+  const benefits = root?.levelBenefits ?? root?.rulesJson?.levelBenefits ?? {};
+  const earnMap = benefits?.earnBpsBonusByLevel ?? {};
+  const redeemMap = benefits?.redeemLimitBpsBonusByLevel ?? {};
   const earnBpsBonus = Math.max(0, Number(earnMap?.[levelName] ?? 0) || 0);
-  const redeemLimitBpsBonus = Math.max(0, Number(redeemMap?.[levelName] ?? 0) || 0);
+  const redeemLimitBpsBonus = Math.max(
+    0,
+    Number(redeemMap?.[levelName] ?? 0) || 0,
+  );
   return { earnBpsBonus, redeemLimitBpsBonus };
 }

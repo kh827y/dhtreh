@@ -11,7 +11,12 @@ import { SubscriptionModule } from '../subscription/subscription.module';
 @Module({
   imports: [PrismaModule, ConfigModule, forwardRef(() => SubscriptionModule)],
   controllers: [PaymentController],
-  providers: [PaymentService, YooKassaProvider, CloudPaymentsProvider, TinkoffProvider],
+  providers: [
+    PaymentService,
+    YooKassaProvider,
+    CloudPaymentsProvider,
+    TinkoffProvider,
+  ],
   exports: [PaymentService],
 })
 export class PaymentModule {}

@@ -1,6 +1,20 @@
-import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { PortalGuard } from '../portal-auth/portal.guard';
-import { CommunicationsService, type TaskPayload, type TemplatePayload } from './communications.service';
+import {
+  CommunicationsService,
+  type TaskPayload,
+  type TemplatePayload,
+} from './communications.service';
 import { CommunicationChannel } from '@prisma/client';
 
 @Controller('portal/communications')
@@ -13,7 +27,10 @@ export class CommunicationsController {
   }
 
   @Get('templates')
-  listTemplates(@Req() req: any, @Query('channel') channel?: CommunicationChannel | 'ALL') {
+  listTemplates(
+    @Req() req: any,
+    @Query('channel') channel?: CommunicationChannel | 'ALL',
+  ) {
     return this.service.listTemplates(this.merchantId(req), channel);
   }
 
@@ -23,7 +40,11 @@ export class CommunicationsController {
   }
 
   @Put('templates/:id')
-  updateTemplate(@Req() req: any, @Param('id') id: string, @Body() body: TemplatePayload) {
+  updateTemplate(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: TemplatePayload,
+  ) {
     return this.service.updateTemplate(this.merchantId(req), id, body);
   }
 
@@ -35,7 +56,12 @@ export class CommunicationsController {
   @Get('tasks')
   listTasks(
     @Req() req: any,
-    @Query() query: { channel?: CommunicationChannel | 'ALL'; status?: string; scope?: 'ACTIVE' | 'ARCHIVED' },
+    @Query()
+    query: {
+      channel?: CommunicationChannel | 'ALL';
+      status?: string;
+      scope?: 'ACTIVE' | 'ARCHIVED';
+    },
   ) {
     return this.service.listTasks(this.merchantId(req), {
       channel: query.channel,
@@ -50,7 +76,11 @@ export class CommunicationsController {
   }
 
   @Post('tasks/:id/status')
-  updateStatus(@Req() req: any, @Param('id') id: string, @Body() body: { status: string }) {
+  updateStatus(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: { status: string },
+  ) {
     return this.service.updateTaskStatus(this.merchantId(req), id, body.status);
   }
 
