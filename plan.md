@@ -117,6 +117,17 @@
 - [x] ENV: добавлены `MINIAPP_BASE_URL`, `TMA_LINK_SECRET` в `api/.env.production.example`; `API_BASE_URL` — для установки webhook.
 - [x] Docs: раздел «Telegram Mini App (персональный бот на мерчанта)» в `API_DOCUMENTATION.md`.
 
+## Хотфикс 2025-10-08 — Профиль Mini App (кросс‑девайс)
+- [x] API: добавлены публичные эндпоинты профиля клиента для Mini App — `GET /loyalty/profile` и `POST /loyalty/profile`.
+  - Формат профиля: `{ name: string|null, gender: 'male'|'female'|null, birthDate: 'YYYY-MM-DD'|null }`.
+  - Сохранение: `{ merchantId, customerId, name, gender, birthDate }` с валидацией формата/длины и изоляцией по `(merchantId, customerId)` через `ensureCustomerForMerchant()`.
+- [x] Guard: `CashierGuard` разрешает публичный доступ к `/loyalty/profile` (GET/POST), аналогично `teleauth/consent`.
+- [x] Mini App:
+  - Подтягиваем профиль с сервера после авторизации (`profileGet`) и сохраняем на сервер по сабмиту формы (`profileSave`).
+  - Локальный кэш синхронизируется с серверным (`miniapp.profile.v2:<merchantId>`).
+  - Клиент больше не использует `start_param/startapp` для определения `merchantId` — только URL (`?merchantId`/`?merchant`).
+- [x] Docs: `API_DOCUMENTATION.md` обновлён — описаны `GET/POST /loyalty/profile`, оговорена изоляция по мерчанту и серверная валидация.
+
 ## Хотфикс 2025-10-02 — Подписи Bridge для лояльности
 - [x] CashierGuard: нормализуем payload подписи Bridge под контроллеры (quote/commit/refund/cancel) и берём `outletId` из hold/receipt, чтобы корректные подписи пропускались без Staff-Key.
 - [x] CashierGuard: при staff-key подхватываем outletId из hold/receipt и разрешаем mint QR с валидной bridge-подписью без staff-key.

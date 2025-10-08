@@ -3,7 +3,7 @@ import { ApiBadRequestResponse, ApiExtraModels, ApiHeader, ApiOkResponse, ApiTag
 import { Throttle } from '@nestjs/throttler';
 import { LoyaltyService } from './loyalty.service';
 import { MerchantsService } from '../merchants/merchants.service';
-import { CommitDto, QrMintDto, QuoteDto, RefundDto, QuoteRedeemRespDto, QuoteEarnRespDto, CommitRespDto, RefundRespDto, QrMintRespDto, OkDto, BalanceDto, PublicSettingsDto, TransactionsRespDto, PublicOutletDto, PublicStaffDto, ConsentGetRespDto, ErrorDto } from './dto';
+import { CommitDto, QrMintDto, QuoteDto, RefundDto, QuoteRedeemRespDto, QuoteEarnRespDto, CommitRespDto, RefundRespDto, QrMintRespDto, OkDto, BalanceDto, PublicSettingsDto, TransactionsRespDto, PublicOutletDto, PublicStaffDto, ConsentGetRespDto, ErrorDto, CustomerProfileDto, CustomerProfileSaveDto } from './dto';
 import { looksLikeJwt, signQrToken, verifyQrToken } from './token.util';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
@@ -44,6 +44,37 @@ export class LoyaltyController {
       } catch {}
     }
     return null;
+  }
+
+  // Проверка, что customer принадлежит merchant (через CustomerTelegram или любые артефакты)
+  private async ensureCustomerForMerchant(merchantId: string, customerId: string) {
+    const mid = typeof merchantId === 'string' ? merchantId.trim() : '';
+    const cid = typeof customerId === 'string' ? customerId.trim() : '';
+    if (!mid) throw new BadRequestException('merchantId required');
+    if (!cid) throw new BadRequestException('customerId required');
+    const customer = await this.prisma.customer.findUnique({ where: { id: cid } });
+    if (!customer) throw new BadRequestException('customer not found');
+
+    // 1) Прямая привязка через CustomerTelegram
+    try {
+      const telegramLink = await (this.prisma as any).customerTelegram?.findUnique?.({ where: { customerId: cid } }).catch(() => null);
+      if (telegramLink) {
+        if (telegramLink.merchantId !== mid) throw new BadRequestException('customer belongs to another merchant');
+        return customer;
+      }
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+    }
+
+    // 2) Косвенная принадлежность (кошельки/холды/транзакции/consent)
+    const [wallet, hold, txn, consent] = await Promise.all([
+      this.prisma.wallet.findFirst({ where: { merchantId: mid, customerId: cid } }),
+      this.prisma.hold.findFirst({ where: { merchantId: mid, customerId: cid } }),
+      this.prisma.transaction.findFirst({ where: { merchantId: mid, customerId: cid } }),
+      this.prisma.consent.findFirst({ where: { merchantId: mid, customerId: cid } }),
+    ]);
+    if (!(wallet || hold || txn || consent)) throw new BadRequestException('customer does not belong to merchant');
+    return customer;
   }
 
   
@@ -1147,6 +1178,14 @@ export class LoyaltyController {
       // 1) Ищем привязку tgId к customerId для текущего мерчанта
       const bound = await (this.prisma as any).customerTelegram?.findUnique?.({ where: { merchantId_tgId: { merchantId, tgId } } }).catch(() => null);
       if (bound?.customerId) {
+        // гарантируем наличие кошелька POINTS для дальнейших операций
+        try {
+          await this.prisma.wallet.upsert({
+            where: { customerId_merchantId_type: { customerId: bound.customerId, merchantId, type: WalletType.POINTS } as any },
+            update: {},
+            create: { customerId: bound.customerId, merchantId, type: WalletType.POINTS },
+          } as any);
+        } catch {}
         return { ok: true, customerId: bound.customerId };
       }
 
@@ -1175,9 +1214,32 @@ export class LoyaltyController {
         const created = await this.prisma.customer.create({ data: { name: name ?? undefined } });
         customerId = created.id;
       }
-      // 3) Создаём привязку для текущего мерчанта
-      await (this.prisma as any).customerTelegram?.create?.({ data: { merchantId, tgId, customerId } }).catch(() => null);
-      return { ok: true, customerId };
+      // 3) Создаём/подтверждаем привязку для текущего мерчанта (устраняем гонки)
+      const finalId = await this.prisma.$transaction(async (tx) => {
+        // upsert привязки по композитному ключу (merchantId,tgId)
+        try {
+          await (tx as any).customerTelegram?.upsert?.({
+            where: { merchantId_tgId: { merchantId, tgId } },
+            create: { merchantId, tgId, customerId },
+            update: {},
+          });
+        } catch {
+          // игнорируем, проверим фактическую привязку ниже
+        }
+        // читаем фактический customerId из привязки (если другая конкурентная транзакция успела первой)
+        const mapping = await (tx as any).customerTelegram?.findUnique?.({ where: { merchantId_tgId: { merchantId, tgId } } });
+        const cid = mapping?.customerId || customerId;
+        // гарантируем наличие кошелька POINTS для принадлежности клиента мерчанту
+        try {
+          await tx.wallet.upsert({
+            where: { customerId_merchantId_type: { customerId: cid, merchantId, type: WalletType.POINTS } as any },
+            update: {},
+            create: { customerId: cid, merchantId, type: WalletType.POINTS },
+          } as any);
+        } catch {}
+        return cid as string;
+      });
+      return { ok: true, customerId: finalId };
     }
 
     // Back-compat: если merchantId не указан — ведём себя как раньше (глобальная учётка по tgId)
@@ -1191,6 +1253,83 @@ export class LoyaltyController {
     }
     const created = await this.prisma.customer.create({ data: { tgId } });
     return { ok: true, customerId: created.id };
+  }
+
+  @Get('profile')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @ApiOkResponse({ type: CustomerProfileDto })
+  async getProfile(@Query('merchantId') merchantId: string, @Query('customerId') customerId: string) {
+    const customer = await this.ensureCustomerForMerchant(merchantId, customerId);
+    const gender = customer.gender === 'male' || customer.gender === 'female' ? (customer.gender as 'male' | 'female') : null;
+    const birthDate = customer.birthday ? customer.birthday.toISOString().slice(0, 10) : null;
+    return { name: customer.name ?? null, gender, birthDate } satisfies CustomerProfileDto;
+  }
+
+  @Post('profile')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiOkResponse({ type: CustomerProfileDto })
+  async saveProfile(@Body() body: CustomerProfileSaveDto) {
+    const merchantId = typeof body?.merchantId === 'string' ? body.merchantId.trim() : '';
+    const customerId = typeof body?.customerId === 'string' ? body.customerId.trim() : '';
+    if (!merchantId) throw new BadRequestException('merchantId required');
+    if (!customerId) throw new BadRequestException('customerId required');
+    let current;
+    try {
+      current = await this.ensureCustomerForMerchant(merchantId, customerId);
+    } catch (e: any) {
+      // Первый вход вне Telegram или новый мерчант для существующего клиента:
+      // создаём (если нужно) запись Customer и всегда привязываем к мерчанту через нулевой кошелёк.
+      const msg = typeof e?.message === 'string' ? e.message : '';
+      if (msg === 'customer not found' || msg === 'customer does not belong to merchant') {
+        try {
+          // Создаём запись клиента с указанным id (если нет)
+          current = await this.prisma.customer.upsert({
+            where: { id: customerId },
+            update: {},
+            create: { id: customerId },
+          });
+        } catch {}
+        try {
+          // Линкуем к мерчанту через нулевой кошелёк POINTS, чтобы пройти изоляцию
+          await this.prisma.wallet.upsert({
+            where: { customerId_merchantId_type: { customerId, merchantId, type: WalletType.POINTS } as any },
+            update: {},
+            create: { customerId, merchantId, type: WalletType.POINTS },
+          } as any);
+        } catch {}
+        // Повторно считаем current (на случай, если только что создавали)
+        try { current = current || (await this.prisma.customer.findUnique({ where: { id: customerId } })); } catch {}
+      } else {
+        throw e;
+      }
+    }
+
+    if (typeof body?.name !== 'string' || !body.name.trim()) {
+      throw new BadRequestException('name must be provided');
+    }
+    const name = body.name.trim();
+    if (name.length > 120) throw new BadRequestException('name is too long');
+
+    if (body?.gender !== 'male' && body?.gender !== 'female') {
+      throw new BadRequestException('gender must be "male" or "female"');
+    }
+    const gender: 'male' | 'female' = body.gender;
+
+    if (typeof body?.birthDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.birthDate)) {
+      throw new BadRequestException('birthDate must be in format YYYY-MM-DD');
+    }
+    const birthDate = body.birthDate;
+    const parsed = new Date(`${birthDate}T00:00:00.000Z`);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new BadRequestException('birthDate is invalid');
+    }
+
+    const updated = await this.prisma.customer.update({ where: { id: customerId }, data: { name, gender, birthday: parsed } });
+    return {
+      name: updated.name ?? current.name ?? null,
+      gender: updated.gender === 'male' || updated.gender === 'female' ? (updated.gender as 'male' | 'female') : null,
+      birthDate: updated.birthday ? updated.birthday.toISOString().slice(0, 10) : null,
+    } satisfies CustomerProfileDto;
   }
 
   @Get('transactions')

@@ -278,3 +278,26 @@ export async function promoCodeApply(
     body: JSON.stringify({ merchantId, customerId, code }),
   });
 }
+
+// ===== Profile (cross-device) =====
+export type CustomerProfile = {
+  name: string | null;
+  gender: 'male' | 'female' | null;
+  birthDate: string | null; // YYYY-MM-DD
+};
+
+export async function profileGet(merchantId: string, customerId: string): Promise<CustomerProfile> {
+  const qs = new URLSearchParams({ merchantId, customerId });
+  return http(`/loyalty/profile?${qs.toString()}`);
+}
+
+export async function profileSave(
+  merchantId: string,
+  customerId: string,
+  profile: { name: string; gender: 'male' | 'female'; birthDate: string },
+): Promise<CustomerProfile> {
+  return http('/loyalty/profile', {
+    method: 'POST',
+    body: JSON.stringify({ merchantId, customerId, ...profile }),
+  });
+}

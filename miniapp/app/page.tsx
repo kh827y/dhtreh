@@ -17,6 +17,8 @@ import {
   promoCodeApply,
   promotionsList,
   promotionClaim,
+  profileGet,
+  profileSave,
   type PromotionItem,
 } from "../lib/api";
 import Spinner from "../components/Spinner";
@@ -307,6 +309,29 @@ export default function Page() {
       setProfileCompleted(false);
     }
   }, [merchantId]);
+
+  // Подтянуть профиль с сервера (кросс-девайс) при наличии авторизации
+  useEffect(() => {
+    if (!merchantId || !customerId) return;
+    let cancelled = false;
+    const key = `miniapp.profile.v2:${merchantId}`;
+    (async () => {
+      try {
+        const p = await profileGet(merchantId, customerId);
+        if (cancelled) return;
+        const name = p?.name || "";
+        const gender = (p?.gender === "male" || p?.gender === "female") ? p.gender : "";
+        const birthDate = p?.birthDate || "";
+        const valid = Boolean(name && (gender === "male" || gender === "female") && birthDate);
+        setProfileForm({ name, gender, birthDate });
+        setProfileCompleted(valid);
+        try { localStorage.setItem(key, JSON.stringify({ name, gender, birthDate })); } catch {}
+      } catch {
+        // сервер мог не иметь профиля — оставим локальные данные/валидацию
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [merchantId, customerId]);
 
   useEffect(() => {
     setLoading(auth.loading);
@@ -636,6 +661,14 @@ export default function Page() {
         return;
       }
       try {
+        // Сохраняем на сервер (кросс-девайс) и локально — пер-мерчантный ключ
+        if (merchantId && customerId) {
+          await profileSave(merchantId, customerId, {
+            name: profileForm.name.trim(),
+            gender: profileForm.gender as 'male' | 'female',
+            birthDate: profileForm.birthDate,
+          });
+        }
         const key = `miniapp.profile.v2:${merchantId}`;
         localStorage.setItem(key, JSON.stringify(profileForm));
         setProfileCompleted(true);

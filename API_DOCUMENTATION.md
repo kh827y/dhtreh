@@ -1396,6 +1396,21 @@ const result = await client.commit({
     - Сервер валидирует `initData` по токену бота данного мерчанта (`MerchantSettings.telegramBotToken`).
     - При наличии `start_param`/`startapp` валидирует подпись по `TMA_LINK_SECRET` и сверяет `merchantId` (при расхождении — 400).
     - В ответе возвращается `{ ok: true, customerId }`.
+  - GET `/loyalty/profile?merchantId={merchantId}&customerId={customerId}` → `{ name: string|null, gender: 'male'|'female'|null, birthDate: 'YYYY-MM-DD'|null }`.
+    - Профиль клиента хранится на стороне сервера и изолирован по паре `(merchantId, customerId)`.
+    - Используется для кросс-девайс синхронизации данных профиля Mini App.
+  - POST `/loyalty/profile`
+    ```json
+    {
+      "merchantId": "M-1",
+      "customerId": "cust_123",
+      "name": "Иван Иванов",
+      "gender": "male",
+      "birthDate": "1995-04-12"
+    }
+    ```
+    - Обновляет поля `Customer.name`, `gender`, `birthday` в контексте этого клиента. Ответ: сохранённые `{ name, gender, birthDate }`.
+    - Первый вход (нет принадлежности клиента к мерчанту): сервер создаёт запись `Customer` (если отсутствует) и привязывает её к мерчанту через нулевой кошелёк `Wallet(POINTS)`, после чего сохраняет профиль.
 
 - Генерация ссылок:
   - Диплинк: `https://t.me/<botUsername>?startapp=<SIGNED_TOKEN>`.
@@ -1405,6 +1420,7 @@ const result = await client.commit({
 Замечания:
 - Верификация `initData` и подписи диплинка выполняется строго на сервере; фронтенд не должен доверять содержимому `initDataUnsafe`.
 - Для запуска через меню Telegram `startapp` может отсутствовать, поэтому Mini App также использует путь/контекст мерчанта в URL, а сервер определяет токен бота по `merchantId`.
+ - Изоляция по мерчанту: один бот = один мерчант. Идентификация клиента в Mini App выполняется по `(merchantId, tgId)` с маппингом `CustomerTelegram`. Баланс, история, уровни, акции и профиль — все операции используют `(merchantId, customerId)`.
 
 ## Поддержка
 

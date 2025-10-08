@@ -192,3 +192,17 @@ export class ErrorDto {
   @ApiPropertyOptional() path?: string;
   @ApiPropertyOptional() timestamp?: string;
 }
+
+export class CustomerProfileDto {
+  @ApiPropertyOptional({ nullable: true }) name?: string | null;
+  @ApiPropertyOptional({ enum: ['male', 'female'], nullable: true }) gender?: 'male' | 'female' | null;
+  @ApiPropertyOptional({ type: String, format: 'date', nullable: true }) birthDate?: string | null; // YYYY-MM-DD
+}
+
+export class CustomerProfileSaveDto {
+  @ApiProperty() @IsString() merchantId!: string;
+  @ApiProperty() @IsString() customerId!: string;
+  @ApiProperty() @IsString() name!: string;
+  @ApiProperty({ enum: ['male', 'female'] }) @IsString() gender!: 'male' | 'female';
+  @ApiProperty({ type: String, description: 'YYYY-MM-DD' }) @IsString() birthDate!: string;
+}

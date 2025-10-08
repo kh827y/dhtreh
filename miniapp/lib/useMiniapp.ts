@@ -15,12 +15,50 @@ export function getInitData(): string | null {
 export function getMerchantFromContext(initData: string | null): string | undefined {
   try {
     const q = new URLSearchParams(window.location.search);
-    const fromQuery = q.get('merchantId') || undefined;
+    const fromQuery = q.get('merchantId') || q.get('merchant') || undefined;
     if (fromQuery) return fromQuery;
+    // Fallback: попытаться вытащить merchantId из initData → start_param/startapp
+    // Замечание: это только источник контекста для запроса к серверу; проверка/валидация выполняется на бэкенде
     if (initData) {
-      const u = new URLSearchParams(initData);
-      const sp = u.get('start_param') || u.get('startapp');
-      if (sp) return sp;
+      try {
+        const u = new URLSearchParams(initData);
+        const sp = u.get('start_param') || u.get('startapp');
+        if (sp) {
+          const parts = sp.split('.');
+          const looksLikeJwt = parts.length === 3 && parts.every((x) => x && /^[A-Za-z0-9_-]+$/.test(x));
+          if (looksLikeJwt) {
+            try {
+              const payload = parts[1];
+              const b64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+              let jsonStr = '';
+              try {
+                // Browser-safe base64 decode
+                const bin = (typeof atob === 'function') ? atob(b64) : '';
+                if (bin) {
+                  try {
+                    const bytes = new Uint8Array(bin.length);
+                    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+                    jsonStr = new TextDecoder().decode(bytes);
+                  } catch {
+                    // Fallback for older browsers
+                    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+                    // @ts-ignore
+                    jsonStr = decodeURIComponent(escape(bin));
+                  }
+                }
+              } catch {}
+              if (jsonStr) {
+                const obj = JSON.parse(jsonStr);
+                const mid = typeof obj?.merchantId === 'string' ? obj.merchantId : undefined;
+                if (mid) return mid;
+              }
+            } catch {}
+          } else {
+            // legacy strict mode: в start_param может лежать сам merchantId
+            if (sp.trim()) return sp.trim();
+          }
+        }
+      } catch {}
     }
   } catch {}
   return undefined;
