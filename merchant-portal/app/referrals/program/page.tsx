@@ -22,6 +22,7 @@ type LoadedData = {
   stackWithRegistration: boolean;
   message: string;
   placeholders?: string[];
+  shareMessageTemplate?: string;
 };
 
 type State = {
@@ -39,6 +40,7 @@ type State = {
   stackWithRegistration: boolean;
   message: string;
   placeholders: string[];
+  shareMessage: string;
 };
 
 const rewardTriggers: Array<{ value: RewardTrigger; label: string }> = [
@@ -71,8 +73,10 @@ const initialState: State = {
   friendReward: "150",
   stackWithRegistration: false,
   message:
-    "Расскажите друзьям о нашей программе и получите бонус. Делитесь ссылкой {link} или промокодом {code}.",
+    "Расскажите друзьям о нашей программе и получите бонус. Делитесь ссылкой {link} или пригласительным кодом {code}.",
   placeholders: ["{businessname}", "{bonusamount}", "{code}", "{link}"],
+  shareMessage:
+    "Переходите по ссылке {link} и получите {bonusamount} бонусов на баланс в программе лояльности {businessname}",
 };
 
 function normalizeNumber(value: string, { allowZero = true, max }: { allowZero?: boolean; max?: number } = {}) {
@@ -89,6 +93,7 @@ function normalizeNumber(value: string, { allowZero = true, max }: { allowZero?:
 export default function ReferralProgramSettingsPage() {
   const [state, setState] = React.useState<State>(initialState);
   const messageRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const shareMessageRef = React.useRef<HTMLTextAreaElement | null>(null);
 
   const load = React.useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true, error: "", banner: null }));
@@ -126,6 +131,10 @@ export default function ReferralProgramSettingsPage() {
         placeholders: Array.isArray(json?.placeholders) && json.placeholders.length > 0
           ? json.placeholders
           : initialState.placeholders,
+        shareMessage:
+          typeof json?.shareMessageTemplate === "string" && json.shareMessageTemplate.trim()
+            ? json.shareMessageTemplate.slice(0, 300)
+            : initialState.shareMessage,
       }));
     } catch (error: any) {
       setState((prev) => ({
@@ -136,11 +145,33 @@ export default function ReferralProgramSettingsPage() {
     }
   }, []);
 
+  function handleInsertSharePlaceholder(placeholder: string) {
+    const textarea = shareMessageRef.current;
+    setState((prev) => {
+      const target = textarea;
+      if (!target) {
+        return { ...prev, shareMessage: (prev.shareMessage + placeholder).slice(0, 300) };
+      }
+      const start = target.selectionStart ?? prev.shareMessage.length;
+      const end = target.selectionEnd ?? prev.shareMessage.length;
+      const nextValue = `${prev.shareMessage.slice(0, start)}${placeholder}${prev.shareMessage.slice(end)}`;
+      const nextState = { ...prev, shareMessage: nextValue.slice(0, 300) };
+      requestAnimationFrame(() => {
+        const cursor = Math.min(start + placeholder.length, nextState.shareMessage.length);
+        target.selectionStart = cursor;
+        target.selectionEnd = cursor;
+        target.focus();
+      });
+      return nextState;
+    });
+  }
+
   React.useEffect(() => {
     load();
   }, [load]);
 
   const charsLeft = Math.max(0, 300 - state.message.length);
+  const shareCharsLeft = Math.max(0, 300 - state.shareMessage.length);
 
   function updateLevel(level: number, patch: Partial<LevelState>) {
     setState((prev) => ({
@@ -262,6 +293,7 @@ export default function ReferralProgramSettingsPage() {
       friendReward,
       message: state.message.trim(),
       placeholders: state.placeholders,
+      shareMessage: state.shareMessage.trim(),
     };
 
     if (state.multiLevel) {
@@ -572,6 +604,8 @@ export default function ReferralProgramSettingsPage() {
                     </div>
                   </span>
                 </label>
+
+                {/* Блок shareMessage перенесён ниже, в раздел "Настройка сообщения по приглашению" */}
               </section>
 
               <section style={{ display: "grid", gap: 16 }}>
@@ -618,6 +652,50 @@ export default function ReferralProgramSettingsPage() {
                   </div>
                   <div style={{ fontSize: 12, opacity: 0.7 }}>
                     Осталось символов: {charsLeft}. Используйте плейсхолдеры, чтобы подставить название компании, бонус и ссылку.
+                  </div>
+                </label>
+
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span>Текст сообщения при нажатии «Отправить сообщение»</span>
+                  <textarea
+                    ref={shareMessageRef}
+                    value={state.shareMessage}
+                    maxLength={300}
+                    onChange={(event) =>
+                      setState((prev) => ({ ...prev, shareMessage: event.target.value.slice(0, 300) }))
+                    }
+                    rows={3}
+                    disabled={state.saving}
+                    style={{
+                      padding: "12px",
+                      borderRadius: 12,
+                      border: "1px solid rgba(148,163,184,0.35)",
+                      background: "rgba(15,23,42,0.6)",
+                      color: "#e2e8f0",
+                    }}
+                  />
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 12, marginTop: 6 }}>
+                    {state.placeholders.map((item) => (
+                      <button
+                        key={item}
+                        type="button"
+                        onClick={() => handleInsertSharePlaceholder(item)}
+                        disabled={state.saving}
+                        style={{
+                          padding: "6px 10px",
+                          borderRadius: 999,
+                          border: "1px solid rgba(148,163,184,0.35)",
+                          background: "rgba(15,23,42,0.45)",
+                          color: "#e2e8f0",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {item}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 12, opacity: 0.7 }}>
+                    Осталось символов: {shareCharsLeft}. Используйте плейсхолдеры, чтобы подставить название компании, бонус и ссылку.
                   </div>
                 </label>
               </section>

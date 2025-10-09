@@ -1374,6 +1374,7 @@ model ReferralProgram {
   stackWithRegistration Boolean   @default(false)
   messageTemplate       String?
   placeholders          String[]  @default([])
+  shareButtonText       String?
   createdAt             DateTime  @default(now())
 
   merchant      Merchant               @relation(fields: [merchantId], references: [id])

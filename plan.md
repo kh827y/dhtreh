@@ -1,4 +1,15 @@
 # Planning Mode — Long Run (2025-09-15)  
+## Фича 2025-10-09 — Реферальная программа в Mini App
+
+- [x] Miniapp: добавлена кнопка `Пригласить друга` рядом с `Акции` (каждая занимает 50% ширины, адаптивная вёрстка): `miniapp/app/page.tsx` + стили `page.module.css` (`.actionsPair`, `.inviteActionButton`).
+- [x] Miniapp: шторка «Пригласить друга» в стиле настроек (`.modalBackdrop`/`.sheet`) с кликабельными плейсхолдерами `{link}`/`{code}` (копирование в буфер) и кнопкой «Отправить сообщение» (вызов Telegram share). Тексты шаблона и кнопки приходят из API.
+- [x] Miniapp: на шаге «Расскажите о себе» показ опционального поля «Пригласительный код» при активной реферальной программе.
+- [x] Backend: расширена Prisma‑модель `ReferralProgram` полем `shareButtonText`.
+- [x] API: `ReferralService` — поддержка `shareButtonText` в create/update/settings/link; `PortalController.normalizeReferralProgramPayload()` — проксирование `shareButtonText`.
+- [x] Merchant Portal: страница `referrals/program` — добавлено поле «Текст сообщения при нажатии «Отправить сообщение»», отправляется в `PUT /api/portal/referrals/program`.
+- [x] Docs: дополнен `API_DOCUMENTATION.md` по рефералкам (настройки портала и ответ `GET /referral/link`).
+
+Требуется после обновления выполнить миграции Prisma и пересобрать сервисы.
 ## Новая структура панелей (договорились)
 
 - Админ‑панель (Owner Admin):

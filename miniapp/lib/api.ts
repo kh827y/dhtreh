@@ -55,6 +55,7 @@ export type ReferralLinkResp = {
     merchantName: string;
     messageTemplate: string;
     placeholders: string[];
+    shareMessageTemplate?: string;
   };
 };
 

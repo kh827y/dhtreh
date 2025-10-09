@@ -236,6 +236,8 @@ export class PortalController {
       stackWithRegistration: Boolean(body?.stackWithRegistration),
       message: typeof body?.message === 'string' ? body.message : '',
       placeholders,
+      shareMessage:
+        typeof body?.shareMessage === 'string' ? body.shareMessage : undefined,
     };
   }
 

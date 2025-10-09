@@ -22,6 +22,7 @@ export interface CreateReferralProgramDto {
   stackWithRegistration?: boolean;
   messageTemplate?: string;
   placeholders?: string[];
+  shareMessage?: string; // текст сообщения для отправки (с плейсхолдерами)
 }
 
 export interface CreateReferralDto {
@@ -46,6 +47,7 @@ export interface ReferralProgramSettingsDto {
   stackWithRegistration: boolean;
   message: string;
   placeholders?: string[];
+  shareMessage?: string;
 }
 
 const REFERRAL_PLACEHOLDERS = [
@@ -131,6 +133,8 @@ export class ReferralService {
         stackWithRegistration: Boolean(dto.stackWithRegistration),
         messageTemplate: this.normalizeMessageTemplate(dto.messageTemplate),
         placeholders: this.normalizePlaceholders(dto.placeholders),
+        // Используем колонку shareButtonText для хранения шаблона сообщения для отправки
+        shareButtonText: this.normalizeShareMessage(dto.shareMessage),
       },
     });
   }
@@ -563,6 +567,7 @@ export class ReferralService {
         merchantName: program.merchant?.name || '',
         messageTemplate: this.normalizeMessageTemplate(program.messageTemplate),
         placeholders: this.normalizePlaceholders(program.placeholders),
+        shareMessageTemplate: this.normalizeShareMessage(program.shareButtonText),
       },
     };
   }
@@ -702,6 +707,15 @@ export class ReferralService {
     return trimmed.slice(0, 300);
   }
 
+  private normalizeShareMessage(text?: string | null) {
+    const fallback =
+      'Переходите по ссылке {link} и получите {bonusamount} бонусов на баланс в программе лояльности {businessname}';
+    if (typeof text !== 'string') return fallback;
+    const trimmed = text.trim();
+    if (!trimmed) return fallback;
+    return trimmed.slice(0, 300);
+  }
+
   private normalizeLevels(
     levels: any,
     multiLevel: boolean,
@@ -777,6 +791,7 @@ export class ReferralService {
       message: this.normalizeMessageTemplate(program.messageTemplate),
       placeholders: this.normalizePlaceholders(program.placeholders),
       merchantName: program.merchant?.name || '',
+      shareMessageTemplate: this.normalizeShareMessage(program.shareButtonText),
     };
   }
 
@@ -813,6 +828,7 @@ export class ReferralService {
         message: this.normalizeMessageTemplate(null),
         placeholders: this.normalizePlaceholders(null),
         merchantName: '',
+        shareMessageTemplate: this.normalizeShareMessage(null),
       };
     }
 
@@ -859,6 +875,8 @@ export class ReferralService {
       stackWithRegistration: payload.stackWithRegistration,
       messageTemplate: this.normalizeMessageTemplate(payload.message),
       placeholders: normalizedPlaceholders,
+      // сохраняем шаблон сообщения для отправки
+      shareButtonText: this.normalizeShareMessage(payload.shareMessage),
       status,
       isActive: payload.enabled,
     } satisfies Prisma.ReferralProgramUpdateInput;
@@ -934,6 +952,11 @@ export class ReferralService {
     const status = dto.status ?? existing.status;
     const messageTemplate = dto.messageTemplate ?? existing.messageTemplate;
     const placeholders = dto.placeholders ?? existing.placeholders;
+    const shareMessage =
+      // поддержка поля в DTO, если придёт из контроллера
+      (dto as any).shareMessage !== undefined
+        ? (dto as any).shareMessage
+        : existing.shareButtonText;
 
     return this.prisma.referralProgram.update({
       where: { id: programId },
@@ -951,13 +974,15 @@ export class ReferralService {
         rewardType,
         multiLevel,
         levelRewards: multiLevel ? normalizedLevels : Prisma.JsonNull,
-        stackWithRegistration:
-          dto.stackWithRegistration ?? existing.stackWithRegistration,
-        messageTemplate: this.normalizeMessageTemplate(messageTemplate),
-        placeholders: this.normalizePlaceholders(placeholders),
-      },
-    });
-  }
+      stackWithRegistration:
+        dto.stackWithRegistration ?? existing.stackWithRegistration,
+      messageTemplate: this.normalizeMessageTemplate(messageTemplate),
+      placeholders: this.normalizePlaceholders(placeholders),
+      // сохраняем шаблон сообщения для отправки
+      shareButtonText: this.normalizeShareMessage(shareMessage),
+    },
+  });
+}
 
   /**
    * Проверить реферальный код

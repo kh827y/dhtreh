@@ -23,7 +23,6 @@ import { ApiKeyGuard } from '../guards/api-key.guard';
 
 @ApiTags('Referral Program')
 @Controller('referral')
-@UseGuards(ApiKeyGuard)
 @ApiBearerAuth()
 export class ReferralController {
   constructor(private readonly referralService: ReferralService) {}
@@ -31,6 +30,7 @@ export class ReferralController {
   /**
    * Создать реферальную программу
    */
+  @UseGuards(ApiKeyGuard)
   @Post('program')
   @ApiOperation({ summary: 'Создать новую реферальную программу' })
   @ApiResponse({ status: 201, description: 'Программа создана' })
@@ -41,6 +41,7 @@ export class ReferralController {
   /**
    * Получить активную программу
    */
+  @UseGuards(ApiKeyGuard)
   @Get('program/:merchantId')
   @ApiOperation({ summary: 'Получить активную реферальную программу мерчанта' })
   async getProgram(@Param('merchantId') merchantId: string) {
@@ -50,6 +51,7 @@ export class ReferralController {
   /**
    * Обновить программу
    */
+  @UseGuards(ApiKeyGuard)
   @Put('program/:programId')
   @ApiOperation({ summary: 'Обновить реферальную программу' })
   async updateProgram(
@@ -62,6 +64,7 @@ export class ReferralController {
   /**
    * Создать реферальный код/ссылку
    */
+  @UseGuards(ApiKeyGuard)
   @Post('create')
   @ApiOperation({ summary: 'Создать реферальную ссылку для клиента' })
   async createReferral(@Body() dto: CreateReferralDto) {
@@ -80,6 +83,7 @@ export class ReferralController {
   /**
    * Завершить реферал после покупки
    */
+  @UseGuards(ApiKeyGuard)
   @Post('complete')
   @ApiOperation({ summary: 'Завершить реферал после первой покупки' })
   async completeReferral(
@@ -100,6 +104,7 @@ export class ReferralController {
   /**
    * Получить статистику программы
    */
+  @UseGuards(ApiKeyGuard)
   @Get('stats/:merchantId')
   @ApiOperation({ summary: 'Получить статистику реферальной программы' })
   async getStats(
@@ -112,6 +117,7 @@ export class ReferralController {
   /**
    * Получить рефералы клиента
    */
+  @UseGuards(ApiKeyGuard)
   @Get('customer/:customerId')
   @ApiOperation({ summary: 'Получить список рефералов клиента' })
   async getCustomerReferrals(
@@ -145,6 +151,7 @@ export class ReferralController {
   /**
    * Топ рефереров
    */
+  @UseGuards(ApiKeyGuard)
   @Get('leaderboard/:merchantId')
   @ApiOperation({ summary: 'Получить топ приглашающих клиентов' })
   async getLeaderboard(

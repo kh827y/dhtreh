@@ -66,6 +66,7 @@ const cards: MechanicCard[] = [
     description: "Вознаграждение за приглашения друзей",
     icon: "🤝",
     href: "/referrals/program",
+    toggle: true,
   },
 ];
 
@@ -83,6 +84,7 @@ export default function MechanicsPage() {
         birthday: "/api/portal/loyalty/birthday",
         "registration-bonus": "/api/portal/loyalty/registration-bonus",
         ttl: "/api/portal/loyalty/ttl",
+        referral: "/api/portal/referrals/program",
       };
       const ids = Object.keys(endpoints);
       const responses = await Promise.all(
@@ -119,6 +121,7 @@ export default function MechanicsPage() {
         birthday: "/api/portal/loyalty/birthday",
         "registration-bonus": "/api/portal/loyalty/registration-bonus",
         ttl: "/api/portal/loyalty/ttl",
+        referral: "/api/portal/referrals/program",
       };
       const current = settings[id] || {};
       let payload: Record<string, any> = {};
@@ -166,6 +169,32 @@ export default function MechanicsPage() {
             current.text || "Баллы в размере %amount% сгорят %burn_date%. Успейте воспользоваться!"
           ),
         };
+      } else if (id === "referral") {
+        const placeholders = Array.isArray(current.placeholders) && current.placeholders.length
+          ? current.placeholders
+          : ["{businessname}", "{bonusamount}", "{code}", "{link}"];
+        const multiLevel = Boolean(current.multiLevel);
+        const base: Record<string, any> = {
+          enabled: value,
+          rewardTrigger: current.rewardTrigger === "all" ? "all" : "first",
+          rewardType: current.rewardType === "percent" ? "percent" : "fixed",
+          multiLevel,
+          stackWithRegistration: Boolean(current.stackWithRegistration),
+          friendReward: Number(current.friendReward || 0),
+          message: typeof current.message === "string" ? current.message : "",
+          placeholders,
+        };
+        if (multiLevel) {
+          const levels = Array.isArray(current.levels) ? current.levels : [];
+          base.levels = levels.map((lvl: any) => ({
+            level: Number(lvl?.level || 0),
+            enabled: Boolean(lvl?.enabled),
+            reward: Number(lvl?.reward || 0),
+          }));
+        } else {
+          base.rewardValue = Number(current.rewardValue || 0);
+        }
+        payload = base;
       }
 
       const res = await fetch(endpointMap[id], {

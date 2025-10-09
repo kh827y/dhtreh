@@ -356,6 +356,53 @@
   flex-wrap: wrap;
 }
 
+.actionsPair {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+}
+
+.actionsPair .promotionsButton,
+.actionsPair .inviteActionButton {
+  flex: 1;
+  justify-content: center;
+}
+
+.inviteActionButton {
+  position: relative;
+  border: none;
+  background: linear-gradient(135deg, #34d399, #059669);
+  color: #ffffff;
+  border-radius: 18px;
+  padding: 12px 18px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 14px 30px rgba(5, 150, 105, 0.25);
+  cursor: pointer;
+}
+
+.sheetText {
+  font-size: 15px;
+  color: #3a3a60;
+  line-height: 1.45;
+}
+
+.copyChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 2px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(122, 90, 248, 0.1);
+  color: #4b3fbf;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid rgba(122, 90, 248, 0.25);
+}
+
 .promoInputBlock {
   flex: 1;
   background: #ffffff;
@@ -969,6 +1016,13 @@
   .promotionsButton {
     width: 100%;
     justify-content: center;
+  }
+
+  /* Keep two buttons half-width inside the pair even on mobile */
+  .actionsPair .promotionsButton,
+  .actionsPair .inviteActionButton {
+    width: auto;
+    flex: 1;
   }
 
   .headerIconButton {

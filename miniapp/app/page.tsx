@@ -209,16 +209,16 @@ function buildReferralMessage(
   template: string,
   context: {
     merchantName: string;
-    friendReward: number;
+    bonusAmount: number; // семантика зависит от контекста: для share — награда другу; для шторки — награда приглашающему
     code: string;
     link: string;
   },
 ): string {
   const baseTemplate = template?.trim() ||
-    "Расскажите друзьям о нашей программе и получите бонус. Делитесь ссылкой {link} или промокодом {code}.";
+    "Расскажите друзьям о нашей программе и получите бонус. Делитесь ссылкой {link} или пригласительным кодом {code}.";
   const replacements: Record<string, string> = {
     "{businessname}": context.merchantName || "",
-    "{bonusamount}": context.friendReward > 0 ? String(Math.round(context.friendReward)) : "",
+    "{bonusamount}": context.bonusAmount > 0 ? String(Math.round(context.bonusAmount)) : "",
     "{code}": context.code,
     "{link}": context.link,
   };
@@ -270,6 +270,8 @@ export default function Page() {
     placeholders: string[];
     merchantName: string;
     friendReward: number;
+    inviterReward: number;
+    shareMessageTemplate?: string;
   } | null>(null);
   const [referralEnabled, setReferralEnabled] = useState<boolean>(false);
   const [referralLoading, setReferralLoading] = useState<boolean>(false);
@@ -280,6 +282,7 @@ export default function Page() {
   const [promotionsOpen, setPromotionsOpen] = useState<boolean>(false);
   const [promotions, setPromotions] = useState<PromotionItem[]>([]);
   const [promotionsLoading, setPromotionsLoading] = useState<boolean>(false);
+  const [inviteSheetOpen, setInviteSheetOpen] = useState<boolean>(false);
 
   useEffect(() => {
     const tgUser = getTelegramUser();
@@ -658,7 +661,7 @@ export default function Page() {
   );
 
   useEffect(() => {
-    if (!customerId) {
+    if (!customerId || !merchantId) {
       setReferralEnabled(false);
       setReferralInfo(null);
       return;
@@ -679,6 +682,9 @@ export default function Page() {
           placeholders: Array.isArray(data.program?.placeholders) ? data.program.placeholders : [],
           merchantName: data.program?.merchantName ?? "",
           friendReward: typeof data.program?.refereeReward === "number" ? data.program.refereeReward : 0,
+          inviterReward: typeof (data.program as any)?.referrerReward === "number" ? (data.program as any).referrerReward : 0,
+          shareMessageTemplate:
+            typeof data.program?.shareMessageTemplate === 'string' ? data.program.shareMessageTemplate : undefined,
         });
         setReferralEnabled(true);
       })
@@ -779,7 +785,7 @@ export default function Page() {
       } finally {
         setProfileSaving(false);
       }
-      if (referralEnabled && inviteCode.trim() && effectiveCustomerId) {
+      if (inviteCode.trim() && effectiveCustomerId) {
         try {
           await referralActivate(inviteCode.trim(), effectiveCustomerId);
           setInviteApplied(true);
@@ -799,9 +805,10 @@ export default function Page() {
       setToast({ msg: "Реферальная программа недоступна", type: "error" });
       return;
     }
-    const message = buildReferralMessage(referralInfo.messageTemplate, {
+    const templateForShare = referralInfo.shareMessageTemplate || referralInfo.messageTemplate;
+    const message = buildReferralMessage(templateForShare, {
       merchantName: referralInfo.merchantName,
-      friendReward: referralInfo.friendReward,
+      bonusAmount: referralInfo.friendReward, // {bonusamount} в тексте отправки = награда другу
       code: referralInfo.code,
       link: referralInfo.link,
     });
@@ -914,7 +921,56 @@ export default function Page() {
     return "Вы";
   }, [profileForm.name, telegramUser]);
 
-  const profilePage = !profileCompleted;
+  const profilePage = !customerId || !profileCompleted;
+
+  // Render message with clickable {link} and {code} placeholders
+  const renderReferralMessage = (
+    template: string,
+    ctx: { merchantName: string; bonusAmount: number; code: string; link: string },
+  ) => {
+    const fallback =
+      "Расскажите друзьям о нашей программе и получите бонус. Делитесь ссылкой {link} или пригласительным кодом {code}.";
+    const tpl = (template && template.trim()) ? template : fallback;
+    const regex = /\{businessname\}|\{bonusamount\}|\{code\}|\{link\}/gi;
+    const matches = tpl.match(regex) || [];
+    const parts = tpl.split(regex);
+    const nodes: ReactNode[] = [];
+    const onCopy = async (value: string) => {
+      try {
+        if (navigator?.clipboard?.writeText) await navigator.clipboard.writeText(value);
+        setToast({ msg: "Скопировано", type: "success" });
+      } catch {
+        // ignore
+      }
+    };
+    for (let i = 0; i < parts.length; i += 1) {
+      if (parts[i]) nodes.push(<span key={`t-${i}`}>{parts[i]}</span>);
+      const ph = matches[i];
+      if (!ph) continue;
+      const phLow = ph.toLowerCase();
+      if (phLow === '{businessname}') {
+        nodes.push(<strong key={`b-${i}`}>{ctx.merchantName}</strong>);
+      } else if (phLow === '{bonusamount}') {
+        const val = ctx.bonusAmount > 0 ? String(Math.round(ctx.bonusAmount)) : '';
+        nodes.push(<strong key={`ba-${i}`}>{val}</strong>);
+      } else if (phLow === '{code}') {
+        nodes.push(
+          <button key={`c-${i}`} type="button" className={styles.copyChip} onClick={() => onCopy(ctx.code)}>
+            <span>Код</span>
+            <span>{ctx.code}</span>
+          </button>,
+        );
+      } else if (phLow === '{link}') {
+        nodes.push(
+          <button key={`l-${i}`} type="button" className={styles.copyChip} onClick={() => onCopy(ctx.link)}>
+            <span>Ссылка</span>
+            <span>{ctx.link}</span>
+          </button>,
+        );
+      }
+    }
+    return nodes;
+  };
 
   return (
     <div className={styles.page}>
@@ -968,9 +1024,9 @@ export default function Page() {
                 className={profileTouched && !profileForm.birthDate ? styles.inputError : undefined}
               />
             </div>
-            {referralEnabled && (
+            {(referralEnabled || !customerId) && (
               <div className={`${styles.profileField} ${styles.appear} ${styles.delay4}`}>
-                <label htmlFor="invite">Ввести пригласительный код</label>
+                <label htmlFor="invite">Пригласительный код</label>
                 <input
                   id="invite"
                   value={inviteCode}
@@ -1046,19 +1102,7 @@ export default function Page() {
             </button>
           </header>
 
-          {referralEnabled && referralInfo && (
-            <div className={`${styles.inviteBar} ${styles.appear} ${styles.delay0}`}>
-              <button
-                type="button"
-                className={styles.inviteFriendButton}
-                onClick={handleInviteFriend}
-                disabled={referralLoading}
-              >
-                🤝 Пригласить друга
-              </button>
-              <span className={styles.inviteCodeBadge}>Ваш код: {referralInfo.code}</span>
-            </div>
-          )}
+          {/* Инфобар с кодом можно вернуть при необходимости */}
 
           <section className={`${styles.card} ${styles.appear} ${styles.delay1}`}>
             <Link href="/qr" className={styles.qrMini} aria-label="Открыть QR" prefetch={false}>
@@ -1105,10 +1149,28 @@ export default function Page() {
                 {promoLoading ? "Подождите" : "Активировать"}
               </button>
             </form>
-            <button type="button" className={styles.promotionsButton} onClick={() => { setPromotionsOpen(true); if (!promotions.length) void loadPromotions(); }}>
+          </section>
+
+          <section className={`${styles.actionsPair} ${styles.appear} ${styles.delay3}`}>
+            <button
+              type="button"
+              className={styles.promotionsButton}
+              onClick={() => { setPromotionsOpen(true); if (!promotions.length) void loadPromotions(); }}
+            >
               <span>Акции</span>
               <span className={styles.promotionsBadge}>{availablePromotions}</span>
             </button>
+            {referralEnabled && referralInfo && (
+              <button
+                type="button"
+                className={styles.inviteActionButton}
+                onClick={() => setInviteSheetOpen(true)}
+                disabled={referralLoading}
+              >
+                <span>🤝</span>
+                <span>Пригласить друга</span>
+              </button>
+            )}
           </section>
 
           <section className={`${styles.historySection} ${styles.appear} ${styles.delay4}`}>
@@ -1182,7 +1244,10 @@ export default function Page() {
                   placeholder="teleauth заполнит сам"
                   onChange={(e) => {
                     setCustomerId(e.target.value);
-                    localStorage.setItem("miniapp.customerId", e.target.value);
+                    try {
+                      const key = merchantId ? `miniapp.customerId.v2:${merchantId}` : 'miniapp.customerId';
+                      localStorage.setItem(key, e.target.value);
+                    } catch {}
                   }}
                 />
               </label>
@@ -1194,6 +1259,29 @@ export default function Page() {
       {(loading || auth.loading) && (
         <div className={styles.loaderOverlay}>
           <Spinner />
+        </div>
+      )}
+
+      {inviteSheetOpen && referralEnabled && referralInfo && (
+        <div className={styles.modalBackdrop} onClick={() => setInviteSheetOpen(false)}>
+          <div className={styles.sheet} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.sheetHeader}>Пригласить друга</div>
+            <div className={styles.sheetText}>
+              {renderReferralMessage(referralInfo.messageTemplate, {
+                merchantName: referralInfo.merchantName,
+                bonusAmount: (referralInfo as any).inviterReward || 0, // {bonusamount} в шторке = награда приглашающему
+                code: referralInfo.code,
+                link: referralInfo.link,
+              })}
+            </div>
+            <button
+              className={styles.sheetButton}
+              onClick={() => { void handleInviteFriend(); setInviteSheetOpen(false); }}
+            >
+              Отправить сообщение
+            </button>
+            <button type="button" className={styles.sheetButton} onClick={() => setInviteSheetOpen(false)}>Закрыть</button>
+          </div>
         </div>
       )}
 
