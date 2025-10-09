@@ -9,6 +9,13 @@
   font-family: "Inter", "SF Pro Display", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+/* Global interaction polish */
+:global(html), :global(body) { -webkit-tap-highlight-color: transparent; }
+:global(button), :global(a), :global(input), :global(textarea) { outline: none; -webkit-tap-highlight-color: transparent; }
+:global(button:focus), :global(a:focus), :global(input:focus), :global(textarea:focus) { outline: none; }
+:global(button), :global(a.buttonLike) { transition: transform 0.12s ease; }
+:global(button:active), :global(a.buttonLike:active) { transform: scale(0.985); }
+
 .profileContainer {
   flex: 1;
   display: flex;
@@ -381,7 +388,10 @@
   gap: 10px;
   box-shadow: 0 14px 30px rgba(5, 150, 105, 0.25);
   cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
+
+.inviteActionButton:active { transform: scale(0.985); box-shadow: 0 10px 22px rgba(5,150,105,0.25); }
 
 .sheetText {
   font-size: 15px;
@@ -392,16 +402,23 @@
 .copyChip {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
   margin: 0 2px;
-  padding: 2px 8px;
-  border-radius: 10px;
-  background: rgba(122, 90, 248, 0.1);
-  color: #4b3fbf;
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: rgba(122, 90, 248, 0.12);
+  color: #4338ca;
   font-weight: 600;
   cursor: pointer;
-  border: 1px solid rgba(122, 90, 248, 0.25);
+  border: 1px solid rgba(122, 90, 248, 0.2);
+  transition: transform 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 }
+
+.copyChip:active { transform: scale(0.98); background: rgba(122,90,248,0.16); }
 
 .promoInputBlock {
   flex: 1;
@@ -460,7 +477,10 @@
   gap: 10px;
   box-shadow: 0 14px 30px rgba(162, 162, 255, 0.18);
   cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
+
+.promotionsButton:active { transform: scale(0.985); box-shadow: 0 10px 24px rgba(162,162,255,0.18); }
 
 .promotionsBadge {
   min-width: 22px;
@@ -682,14 +702,23 @@
   border: 1px solid rgba(120, 120, 180, 0.3);
 }
 
-.loaderOverlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(248, 249, 255, 0.65);
-  display: grid;
-  place-items: center;
-  z-index: 200;
+/* Skeletons */
+.skeleton {
+  animation: skeletonPulse 1.2s ease-in-out infinite;
+  background: linear-gradient(90deg, rgba(0,0,0,0.06), rgba(0,0,0,0.12), rgba(0,0,0,0.06));
+  background-size: 200% 100%;
 }
+
+@keyframes skeletonPulse {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.skeletonBlock { border-radius: 16px; width: 100%; height: 56px; }
+.skeletonSmall { border-radius: 12px; width: 100%; height: 40px; }
+.skeletonCard { border-radius: 24px; height: 120px; }
+.skeletonActions { display: flex; gap: 12px; }
+.skeletonActions .skeletonBtn { flex: 1; height: 44px; border-radius: 18px; }
 
 .error {
   position: fixed;
@@ -786,7 +815,10 @@
   background: #f5f5ff;
   color: #4a4a73;
   cursor: pointer;
+  transition: transform 0.12s ease;
 }
+
+.sheetButton:active { transform: scale(0.985); }
 
 .feedbackSheet {
   position: fixed;

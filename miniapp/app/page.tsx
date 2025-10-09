@@ -22,7 +22,6 @@ import {
   teleauth,
   type PromotionItem,
 } from "../lib/api";
-import Spinner from "../components/Spinner";
 import Toast from "../components/Toast";
 import { useMiniappAuthContext } from "../lib/MiniappAuthContext";
 import { isValidInitData, waitForInitData } from "../lib/useMiniapp";
@@ -275,6 +274,7 @@ export default function Page() {
   } | null>(null);
   const [referralEnabled, setReferralEnabled] = useState<boolean>(false);
   const [referralLoading, setReferralLoading] = useState<boolean>(false);
+  const [referralResolved, setReferralResolved] = useState<boolean>(false);
   const [inviteCode, setInviteCode] = useState<string>("");
   const [inviteApplied, setInviteApplied] = useState<boolean>(false);
   const [promoCode, setPromoCode] = useState<string>("");
@@ -282,7 +282,12 @@ export default function Page() {
   const [promotionsOpen, setPromotionsOpen] = useState<boolean>(false);
   const [promotions, setPromotions] = useState<PromotionItem[]>([]);
   const [promotionsLoading, setPromotionsLoading] = useState<boolean>(false);
+  const [promotionsResolved, setPromotionsResolved] = useState<boolean>(false);
   const [inviteSheetOpen, setInviteSheetOpen] = useState<boolean>(false);
+  const [balanceResolved, setBalanceResolved] = useState<boolean>(false);
+  const [levelsResolved, setLevelsResolved] = useState<boolean>(false);
+  const [localProfileResolved, setLocalProfileResolved] = useState<boolean>(false);
+  const [profileResolved, setProfileResolved] = useState<boolean>(false);
 
   useEffect(() => {
     const tgUser = getTelegramUser();
@@ -320,6 +325,7 @@ export default function Page() {
     } catch {
       setProfileCompleted(false);
     }
+    setLocalProfileResolved(true);
   }, [merchantId]);
 
   // Подтянуть профиль с сервера (кросс-девайс) при наличии авторизации
@@ -328,6 +334,7 @@ export default function Page() {
     let cancelled = false;
     const key = profileStorageKey(merchantId);
     const pendingKey = profilePendingKey(merchantId);
+    setProfileResolved(false);
     (async () => {
       try {
         const p = await profileGet(merchantId, customerId);
@@ -344,6 +351,8 @@ export default function Page() {
         } catch {}
       } catch {
         // сервер мог не иметь профиля — оставим локальные данные/валидацию
+      } finally {
+        if (!cancelled) setProfileResolved(true);
       }
     })();
     return () => { cancelled = true; };
@@ -429,6 +438,8 @@ export default function Page() {
         setStatus(`Ошибка баланса: ${message}`);
         setToast({ msg: "Не удалось обновить баланс", type: "error" });
       }
+    } finally {
+      setBalanceResolved(true);
     }
   }, [customerId, merchantId, retry]);
 
@@ -511,6 +522,8 @@ export default function Page() {
     } catch (error) {
       const message = resolveErrorMessage(error);
       setStatus(`Не удалось обновить уровень: ${message}`);
+    } finally {
+      setLevelsResolved(true);
     }
   }, [customerId, merchantId, retry]);
 
@@ -541,6 +554,7 @@ export default function Page() {
       setToast({ msg: `Не удалось загрузить акции: ${resolveErrorMessage(error)}`, type: "error" });
     } finally {
       setPromotionsLoading(false);
+      setPromotionsResolved(true);
     }
   }, [merchantId, customerId]);
 
@@ -668,6 +682,7 @@ export default function Page() {
     }
     let cancelled = false;
     setReferralLoading(true);
+    setReferralResolved(false);
     setReferralEnabled(false);
     setReferralInfo(null);
     setInviteApplied(false);
@@ -695,7 +710,10 @@ export default function Page() {
         }
       })
       .finally(() => {
-        if (!cancelled) setReferralLoading(false);
+        if (!cancelled) {
+          setReferralLoading(false);
+          setReferralResolved(true);
+        }
       });
     return () => {
       cancelled = true;
@@ -921,7 +939,15 @@ export default function Page() {
     return "Вы";
   }, [profileForm.name, telegramUser]);
 
-  const profilePage = !customerId || !profileCompleted;
+  const screenLoading = useMemo(() => {
+    if (auth.loading) return true;
+    if (customerId) {
+      return !(balanceResolved && levelsResolved && promotionsResolved && referralResolved && profileResolved);
+    }
+    return !localProfileResolved;
+  }, [auth.loading, customerId, balanceResolved, levelsResolved, promotionsResolved, referralResolved, profileResolved, localProfileResolved]);
+
+  const profilePage = !screenLoading && (!customerId || !profileCompleted);
 
   // Render message with clickable {link} and {code} placeholders
   const renderReferralMessage = (
@@ -956,21 +982,37 @@ export default function Page() {
       } else if (phLow === '{code}') {
         nodes.push(
           <button key={`c-${i}`} type="button" className={styles.copyChip} onClick={() => onCopy(ctx.code)}>
-            <span>Код</span>
-            <span>{ctx.code}</span>
+            {ctx.code}
           </button>,
         );
       } else if (phLow === '{link}') {
         nodes.push(
           <button key={`l-${i}`} type="button" className={styles.copyChip} onClick={() => onCopy(ctx.link)}>
-            <span>Ссылка</span>
-            <span>{ctx.link}</span>
+            {ctx.link}
           </button>,
         );
       }
     }
     return nodes;
   };
+
+  if (screenLoading) {
+    return (
+      <div className={styles.page}>
+        <div className={`${styles.skeleton} ${styles.skeletonCard}`} />
+        <div className={`${styles.skeleton} ${styles.skeletonBlock}`} />
+        <div className={`${styles.skeletonActions}`}>
+          <div className={`${styles.skeleton} ${styles.skeletonBtn}`} />
+          <div className={`${styles.skeleton} ${styles.skeletonBtn}`} />
+        </div>
+        <div className={styles.historySection}>
+          <div className={`${styles.skeleton} ${styles.skeletonSmall}`} />
+          <div className={`${styles.skeleton} ${styles.skeletonSmall}`} />
+          <div className={`${styles.skeleton} ${styles.skeletonSmall}`} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.page}>
@@ -1256,11 +1298,7 @@ export default function Page() {
         </>
       )}
 
-      {(loading || auth.loading) && (
-        <div className={styles.loaderOverlay}>
-          <Spinner />
-        </div>
-      )}
+      {/* Skeleton вместо оверлея спиннера — см. ранний возврат выше */}
 
       {inviteSheetOpen && referralEnabled && referralInfo && (
         <div className={styles.modalBackdrop} onClick={() => setInviteSheetOpen(false)}>

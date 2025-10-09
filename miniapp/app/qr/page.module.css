@@ -10,6 +10,11 @@
   align-content: start;
 }
 
+/* Global interaction polish */
+:global(html), :global(body) { -webkit-tap-highlight-color: transparent; }
+:global(button), :global(a), :global(input), :global(textarea) { outline: none; -webkit-tap-highlight-color: transparent; }
+:global(button:focus), :global(a:focus), :global(input:focus), :global(textarea:focus) { outline: none; }
+
 .qrSection {
   background: linear-gradient(135deg, #7a5af8, #9c88ff);
   border-radius: 28px;

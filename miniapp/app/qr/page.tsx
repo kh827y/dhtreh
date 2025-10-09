@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import QrCanvas from "../../components/QrCanvas";
 import Spinner from "../../components/Spinner";
 import {
@@ -13,6 +14,7 @@ import { getProgressPercent, type LevelInfo } from "../../lib/levels";
 import { useMiniappAuthContext } from "../../lib/MiniappAuthContext";
 import { subscribeToLoyaltyEvents } from "../../lib/loyaltyEvents";
 import styles from "./page.module.css";
+import { getTelegramWebApp } from "../../lib/telegram";
 
 function resolveErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -34,6 +36,7 @@ const PROGRESS_STUB = {
 export default function QrPage() {
   const auth = useMiniappAuthContext();
   const { merchantId, customerId, initData } = auth;
+  const router = useRouter();
   const [qrToken, setQrToken] = useState<string>("");
   const [expiresAt, setExpiresAt] = useState<number | null>(null);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
@@ -109,6 +112,37 @@ export default function QrPage() {
     if (!customerId) return;
     void Promise.allSettled([loadBalance(), loadLevelInfo()]);
   }, [customerId, loadBalance, loadLevelInfo]);
+
+  useEffect(() => {
+    // Show Telegram BackButton in the native header and handle click
+    const tg = getTelegramWebApp();
+    if (!tg || !tg.BackButton) return;
+    const backHandler = () => {
+      try {
+        router.back();
+      } catch {
+        router.push("/");
+      }
+    };
+    try { tg.BackButton.show(); } catch {}
+    let usedOnEvent = false;
+    try {
+      // Prefer the new API if available
+      if (typeof tg.BackButton.onClick === "function") {
+        tg.BackButton.onClick(backHandler);
+      } else if (typeof tg.onEvent === "function") {
+        tg.onEvent("backButtonClicked", backHandler);
+        usedOnEvent = true;
+      }
+    } catch {}
+    return () => {
+      try {
+        if (typeof tg.BackButton.hide === "function") tg.BackButton.hide();
+        if (typeof tg.BackButton.offClick === "function") tg.BackButton.offClick(backHandler);
+        if (usedOnEvent && typeof (tg as any).offEvent === "function") (tg as any).offEvent("backButtonClicked", backHandler);
+      } catch {}
+    };
+  }, [router]);
 
   useEffect(() => {
     if (auth.loading) return;
