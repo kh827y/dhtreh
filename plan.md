@@ -17,6 +17,13 @@
 - [x] Кнопки: добавлены лёгкие анимации нажатия, отключён синий tap‑highlight (селекторы `:global` в `page.module.css` и `qr/page.module.css`).
 - [x] Шторка «Пригласить друга»: улучшен вывод копируемых значений — чипы с моноширинным шрифтом и переносом по многоточию; из копируемых блоков убраны подписи «Ссылка»/«Код».
 
+## Хотфикс 2025-10-10 — Рефералки: deep link и валидация кода
+
+- [x] Backend (`api/src/referral/referral.service.ts`): ссылки рефералок теперь — Telegram Mini App deep link вида `https://t.me/<bot>?startapp=<token>`, при наличии `merchant.settings.telegramBotUsername` и `TMA_LINK_SECRET`. В payload токена добавлен `referralCode` для автоподстановки.
+- [x] Backend: методы `createReferral()` и `getCustomerReferralLink()` отдают deep link; QR код строится по deep link. `sendReferralEmail()` использует сгенерированный deep link.
+- [x] Miniapp (`miniapp/app/page.tsx`): автоподстановка `inviteCode` из `initData.startapp` (payload.referralCode) на шаге онбординга.
+- [x] Miniapp: на сабмите профиля при наличии кода сначала выполняется `referralActivate`; при ошибке — НЕ сохраняем профиль, показываем ошибку «Недействительный пригласительынй код». Если код не указан — сохраняем профиль без ошибок.
+
 Требуется после обновления выполнить миграции Prisma и пересобрать сервисы.
 ## Новая структура панелей (договорились)
 

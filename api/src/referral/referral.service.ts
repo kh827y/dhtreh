@@ -209,7 +209,7 @@ export class ReferralService {
     return {
       id: referral.id,
       code: referralCode,
-      link: this.generateReferralLink(dto.merchantId, referralCode),
+      link: await this.generateReferralLink(dto.merchantId, referralCode),
       expiresAt,
     };
   }
@@ -555,8 +555,8 @@ export class ReferralService {
 
     return {
       code: referralCode,
-      link: this.generateReferralLink(merchantId, referralCode),
-      qrCode: this.generateQrCodeUrl(merchantId, referralCode),
+      link: await this.generateReferralLink(merchantId, referralCode),
+      qrCode: await this.generateQrCodeUrl(merchantId, referralCode),
       program: {
         id: program.id,
         name: program.name,
@@ -603,14 +603,22 @@ export class ReferralService {
     return code!;
   }
 
-  private generateReferralLink(merchantId: string, code: string): string {
-    const baseUrl =
-      this.configService.get('WEBSITE_URL') || 'https://loyalty.com';
-    return `${baseUrl}/referral/${merchantId}/${code}`;
+  private async generateReferralLink(merchantId: string, code: string): Promise<string> {
+    // Use Telegram Mini App deep link with plain startapp ref_ code if bot is configured
+    const settings = await this.prisma.merchantSettings.findUnique({ where: { merchantId } });
+    const username = settings?.telegramBotUsername || null;
+    if (username) {
+      const uname = username.startsWith('@') ? username.slice(1) : username;
+      const startParam = `ref_${code}`;
+      return `https://t.me/${uname}/?startapp=${encodeURIComponent(startParam)}`;
+    }
+    // Fallback to website link if Telegram Mini App is not configured
+    const baseUrl = this.configService.get('WEBSITE_URL') || 'https://loyalty.com';
+    return `${baseUrl.replace(/\/$/, '')}/referral/${merchantId}/${code}`;
   }
 
-  private generateQrCodeUrl(merchantId: string, code: string): string {
-    const link = this.generateReferralLink(merchantId, code);
+  private async generateQrCodeUrl(merchantId: string, code: string): Promise<string> {
+    const link = await this.generateReferralLink(merchantId, code);
     return `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(link)}`;
   }
 
@@ -629,6 +637,10 @@ export class ReferralService {
   }
 
   private async sendReferralEmail(referral: any) {
+    const referralLink = await this.generateReferralLink(
+      referral.program.merchantId,
+      referral.code,
+    );
     await this.emailService
       .sendEmail({
         to: referral.refereeEmail,
@@ -639,10 +651,7 @@ export class ReferralService {
           merchantName: referral.program.merchant.name,
           refereeReward: referral.program.refereeReward,
           referralCode: referral.code,
-          referralLink: this.generateReferralLink(
-            referral.program.merchantId,
-            referral.code,
-          ),
+          referralLink,
         },
         merchantId: referral.program.merchantId,
       })

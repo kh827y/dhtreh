@@ -72,11 +72,24 @@ export class PortalTelegramIntegrationService {
       : null;
     const tokenMask = this.extractTokenMask(integration?.credentials);
 
+    // Build Mini App URL to show/copy in portal (ensure ?merchant= present)
+    let miniappUrl: string | null = settings.miniappBaseUrl ?? null;
+    if (!miniappUrl) {
+      const base = this.config.get<string>('MINIAPP_BASE_URL') || '';
+      miniappUrl = base ? String(base) : null;
+    }
+    if (miniappUrl && !/[?&]merchant=/.test(miniappUrl)) {
+      miniappUrl = `${miniappUrl.replace(/\/$/, '')}/?merchant=${encodeURIComponent(merchantId)}`;
+    }
+    if (miniappUrl && miniappUrl.includes('?merchant=') && !miniappUrl.includes('/?merchant=')) {
+      miniappUrl = miniappUrl.replace('?merchant=', '/?merchant=');
+    }
+
     return {
       enabled: Boolean(merchant.telegramBotEnabled),
       botUsername: normalizedUsername,
       botLink,
-      miniappUrl: settings.miniappBaseUrl ?? null,
+      miniappUrl,
       connectionHealthy: Boolean(
         merchant.telegramBotEnabled && merchant.telegramBot?.isActive,
       ),
@@ -133,7 +146,15 @@ export class PortalTelegramIntegrationService {
       const webhookMessage = result.webhookError
         ? `. Не удалось установить webhook: ${result.webhookError}. Проверьте доступность API_BASE_URL и повторите проверку.`
         : '';
-      return { ...state, message: `${baseMessage}${webhookMessage}` };
+      let menuMessage = '';
+      try {
+        await this.setupMenu(merchantId);
+        menuMessage = ' Меню‑кнопка установлена автоматически.';
+      } catch (e: any) {
+        menuMessage = ` Меню‑кнопка не установлена: ${String(e?.message || e)}.`;
+      }
+      const mainAppMessage = ' Для корректной работы ссылок вида t.me/<бот>/?startapp=... необходимо установить Main App у бота в BotFather на тот же URL, что и у Menu Button (это действие недоступно через Bot API).';
+      return { ...state, message: `${baseMessage}${webhookMessage}${menuMessage} ${mainAppMessage}` };
     } catch (error: any) {
       const description = error?.message
         ? String(error.message)
@@ -311,9 +332,17 @@ export class PortalTelegramIntegrationService {
     });
     if (!settings?.telegramBotToken)
       throw new BadRequestException('Токен бота не задан');
-    const url =
-      settings?.miniappBaseUrl || `${this.config.get('MINIAPP_BASE_URL')}`;
-    if (!url) throw new BadRequestException('MINIAPP_BASE_URL не задан');
+    const base = settings?.miniappBaseUrl || `${this.config.get('MINIAPP_BASE_URL')}`;
+    if (!base) throw new BadRequestException('MINIAPP_BASE_URL не задан');
+    let url = String(base);
+    const hasMerchantParam = /[?&]merchant=/.test(url);
+    if (!hasMerchantParam) {
+      url = `${url.replace(/\/$/, '')}/?merchant=${encodeURIComponent(merchantId)}`;
+    }
+    // normalize to have '/?merchant=' instead of '?merchant='
+    if (url.includes('?merchant=') && !url.includes('/?merchant=')) {
+      url = url.replace('?merchant=', '/?merchant=');
+    }
     const token = settings.telegramBotToken;
     const res = await fetch(
       `https://api.telegram.org/bot${token}/setChatMenuButton`,

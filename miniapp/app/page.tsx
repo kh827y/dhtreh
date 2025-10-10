@@ -328,6 +328,56 @@ export default function Page() {
     setLocalProfileResolved(true);
   }, [merchantId]);
 
+  // Автоподстановка пригласительного кода из Telegram start_param/startapp (payload.referralCode)
+  useEffect(() => {
+    try {
+      if (!initData) return;
+      if (inviteCode) return; // не перетирать вручную введённый
+      const u = new URLSearchParams(initData);
+      const sp = u.get('start_param') || u.get('startapp');
+      if (!sp) return;
+      // direct link format: ref_<CODE>
+      const refMatch = /^ref[_-](.+)$/i.exec(sp.trim());
+      if (refMatch && refMatch[1] && !inviteApplied) {
+        setInviteCode(refMatch[1]);
+        return;
+      }
+      const parts = sp.split('.');
+      const looksLikeJwt = parts.length === 3 && parts.every((x) => x && /^[A-Za-z0-9_-]+$/.test(x));
+      if (looksLikeJwt) {
+        try {
+          const payload = parts[1];
+          const b64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+          let jsonStr = '';
+          try {
+            const bin = (typeof atob === 'function') ? atob(b64) : '';
+            if (bin) {
+              try {
+                const bytes = new Uint8Array(bin.length);
+                for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+                jsonStr = new TextDecoder().decode(bytes);
+              } catch {
+                // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+                // @ts-ignore
+                jsonStr = decodeURIComponent(escape(bin));
+              }
+            }
+          } catch {}
+          if (jsonStr) {
+            const obj = JSON.parse(jsonStr);
+            const code = typeof obj?.referralCode === 'string' ? obj.referralCode : '';
+            if (code && !inviteApplied) setInviteCode(code);
+          }
+        } catch {}
+      } else {
+        // legacy: код может быть напрямую в start_param
+        if (/^[A-Z0-9]{5,}$/i.test(sp) && !inviteApplied) setInviteCode(sp);
+      }
+    } catch {
+      // ignore
+    }
+  }, [initData, inviteCode, inviteApplied]);
+
   // Подтянуть профиль с сервера (кросс-девайс) при наличии авторизации
   useEffect(() => {
     if (!merchantId || !customerId) return;
@@ -786,6 +836,26 @@ export default function Page() {
         return;
       }
 
+      // Сначала валидация/активация пригласительного кода (если указан). При недействительном коде — НЕ сохраняем профиль и остаёмся на форме
+      if (inviteCode.trim()) {
+        try {
+          await referralActivate(inviteCode.trim(), effectiveCustomerId);
+          setInviteApplied(true);
+          setInviteCode("");
+          setToast({ msg: "Пригласительный код активирован", type: "success" });
+        } catch (err) {
+          const description = resolveErrorMessage(err);
+          const isInvalid = /400\s+Bad\s+Request/i.test(description) || /Недействитель|expired|invalid/i.test(description);
+          if (isInvalid) {
+            setToast({ msg: "Недействительный пригласительынй код", type: "error" });
+            setProfileSaving(false);
+            return;
+          }
+          // Сеть/сервер: позволяем сохранить профиль, но показываем предупреждение
+          setToast({ msg: `Не удалось проверить код: ${description}`, type: "error" });
+        }
+      }
+
       try {
         await profileSave(merchantId, effectiveCustomerId, {
           name: profileForm.name.trim(),
@@ -802,17 +872,6 @@ export default function Page() {
         setToast({ msg: `Не удалось сохранить: ${message}`, type: "error" });
       } finally {
         setProfileSaving(false);
-      }
-      if (inviteCode.trim() && effectiveCustomerId) {
-        try {
-          await referralActivate(inviteCode.trim(), effectiveCustomerId);
-          setInviteApplied(true);
-          setInviteCode("");
-          setToast({ msg: "Пригласительный код активирован", type: "success" });
-        } catch (error) {
-          const message = resolveErrorMessage(error);
-          setToast({ msg: `Не удалось активировать код: ${message}`, type: "error" });
-        }
       }
     },
     [profileForm, referralEnabled, inviteCode, customerId, merchantId, initData, setAuthCustomerId]

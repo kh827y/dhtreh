@@ -151,16 +151,7 @@ export default function TelegramMiniAppPage() {
     } catch (e:any) { setError(String(e?.message || e)); }
   };
 
-  const setupMenu = async () => {
-    setError('');
-    setMessage('');
-    try {
-      const res = await fetch('/api/portal/integrations/telegram-mini-app/setup-menu', { method: 'POST' });
-      const data = await res.json().catch(()=>null);
-      if (!res.ok) throw new Error(data?.message || 'Не удалось установить кнопку меню');
-      setMessage('Кнопка меню установлена');
-    } catch (e:any) { setError(String(e?.message || e)); }
-  };
+  // Menu Button теперь устанавливается автоматически при подключении бота
 
   const disconnect = async () => {
     setActionPending(true);
@@ -284,14 +275,9 @@ export default function TelegramMiniAppPage() {
                 )}
                 <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>{actionButton}
                   {isEnabled && (
-                    <>
-                      <Button variant="secondary" onClick={generateDeepLink} disabled={actionPending || loading}>
-                        Сгенерировать ссылку
-                      </Button>
-                      <Button variant="secondary" onClick={setupMenu} disabled={actionPending || loading}>
-                        Установить кнопку меню
-                      </Button>
-                    </>
+                    <Button variant="secondary" onClick={generateDeepLink} disabled={actionPending || loading}>
+                      Сгенерировать ссылку
+                    </Button>
                   )}
                 </div>
               </div>
@@ -368,6 +354,25 @@ export default function TelegramMiniAppPage() {
                   >
                     {tokenSaving ? "Сохранение..." : "Обновить токен"}
                   </Button>
+                </div>
+              </div>
+
+              {/* Main App URL hint under settings */}
+              <div style={{ display: 'grid', gap: 8 }}>
+                <label style={{ fontSize: 14, fontWeight: 600 }}>Main App — ссылка для BotFather</label>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                  <input
+                    readOnly
+                    value={state?.miniappUrl || ''}
+                    placeholder="Ссылка появится после подключения или настройки MINIAPP_BASE_URL"
+                    style={{ flex:1, borderRadius: 12, border: '1px solid rgba(148,163,184,0.25)', padding: '10px 14px', background: 'rgba(15,23,42,0.45)', color: '#e2e8f0', fontSize: 14 }}
+                  />
+                  <Button variant="secondary" onClick={async ()=>{ try{ await navigator.clipboard.writeText(state?.miniappUrl || ''); setMessage('Ссылка скопирована'); } catch{ setError('Не удалось скопировать ссылку'); } }}>
+                    Копировать
+                  </Button>
+                </div>
+                <div style={{ fontSize: 12, opacity: 0.75 }}>
+                  В BotFather напишите команду /mybots и выберите своего бота, затем выберите Bot Settings - Configure Mini App - Enable Mini App и вставьте вашу ссылку
                 </div>
               </div>
 
@@ -520,6 +525,24 @@ export default function TelegramMiniAppPage() {
                 Например: {TOKEN_HINT}
               </div>
               {connectError && <div style={{ fontSize: 12, color: "#f87171" }}>{connectError}</div>}
+            </div>
+            {/* Main App URL hint in modal */}
+            <div style={{ display: 'grid', gap: 8 }}>
+              <label style={{ fontSize: 13, fontWeight: 600 }}>Main App — ссылка для BotFather</label>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                <input
+                  readOnly
+                  value={state?.miniappUrl || ''}
+                  placeholder="Ссылка появится после подключения или настройки MINIAPP_BASE_URL"
+                  style={{ flex:1, borderRadius: 12, border: '1px solid rgba(148,163,184,0.35)', padding: '10px 14px', background: 'rgba(15,23,42,0.45)', color: '#e2e8f0', fontSize: 14 }}
+                />
+                <Button variant="secondary" onClick={async ()=>{ try{ await navigator.clipboard.writeText(state?.miniappUrl || ''); setMessage('Ссылка скопирована'); } catch{ setError('Не удалось скопировать ссылку'); } }}>
+                  Копировать
+                </Button>
+              </div>
+              <div style={{ fontSize: 12, opacity: 0.75 }}>
+                В BotFather напишите команду /mybots и выберите своего бота, затем выберите Bot Settings - Configure Mini App - Enable Mini App и вставьте вашу ссылку
+              </div>
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
               <Button

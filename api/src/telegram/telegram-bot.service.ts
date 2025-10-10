@@ -111,7 +111,7 @@ export class TelegramBotService {
         data: {
           telegramBotToken: botToken,
           telegramBotUsername: botInfo.username,
-          miniappBaseUrl: `${this.configService.get('MINIAPP_BASE_URL')}?merchant=${merchantId}`,
+          miniappBaseUrl: `${this.configService.get('MINIAPP_BASE_URL')}/?merchant=${merchantId}`,
         },
       });
 
