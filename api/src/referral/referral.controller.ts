@@ -15,10 +15,7 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { ReferralService } from './referral.service';
-import type {
-  CreateReferralProgramDto,
-  CreateReferralDto,
-} from './referral.service';
+import type { CreateReferralProgramDto } from './referral.service';
 import { ApiKeyGuard } from '../guards/api-key.guard';
 
 @ApiTags('Referral Program')
@@ -59,16 +56,6 @@ export class ReferralController {
     @Body() dto: Partial<CreateReferralProgramDto>,
   ) {
     return this.referralService.updateProgram(programId, dto);
-  }
-
-  /**
-   * Создать реферальный код/ссылку
-   */
-  @UseGuards(ApiKeyGuard)
-  @Post('create')
-  @ApiOperation({ summary: 'Создать реферальную ссылку для клиента' })
-  async createReferral(@Body() dto: CreateReferralDto) {
-    return this.referralService.createReferral(dto);
   }
 
   /**
@@ -139,14 +126,7 @@ export class ReferralController {
     return this.referralService.getCustomerReferralLink(customerId, merchantId);
   }
 
-  /**
-   * Проверить реферальный код
-   */
-  @Get('check/:code')
-  @ApiOperation({ summary: 'Проверить действительность реферального кода' })
-  async checkReferralCode(@Param('code') code: string) {
-    return this.referralService.checkReferralCode(code);
-  }
+  
 
   /**
    * Топ рефереров

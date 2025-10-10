@@ -1,5 +1,5 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
-import { Prisma, ReferralProgram } from '@prisma/client';
+import { Prisma, ReferralProgram, TxnType, WalletType, LedgerAccount } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { EmailService } from '../notifications/email/email.service';
@@ -23,14 +23,6 @@ export interface CreateReferralProgramDto {
   messageTemplate?: string;
   placeholders?: string[];
   shareMessage?: string; // текст сообщения для отправки (с плейсхолдерами)
-}
-
-export interface CreateReferralDto {
-  merchantId: string;
-  referrerId: string; // ID приглашающего клиента
-  refereePhone?: string;
-  refereeEmail?: string;
-  channel?: 'EMAIL' | 'LINK' | 'QR';
 }
 
 type RewardTrigger = 'first' | 'all';
@@ -140,147 +132,100 @@ export class ReferralService {
   }
 
   /**
-   * Создать реферальную ссылку/код
+   * [Удалено] Создание одноразовых инвайтов упразднено. Доступны только персональные коды.
    */
-  async createReferral(dto: CreateReferralDto) {
-    // Получаем активную программу
-    const program = await this.prisma.referralProgram.findFirst({
-      where: {
-        merchantId: dto.merchantId,
-        status: 'ACTIVE',
-      },
-    });
-
-    if (!program) {
-      throw new BadRequestException('Реферальная программа не активна');
-    }
-
-    // Проверяем лимиты
-    const existingReferrals = await this.prisma.referral.count({
-      where: {
-        referrerId: dto.referrerId,
-        programId: program.id,
-      },
-    });
-
-    if (
-      program.maxReferrals != null &&
-      existingReferrals >= program.maxReferrals
-    ) {
-      throw new BadRequestException(
-        `Достигнут лимит рефералов (${program.maxReferrals})`,
-      );
-    }
-
-    // Генерируем уникальный код
-    const referralCode = await this.generateReferralCode(dto.merchantId);
-
-    // Вычисляем срок действия
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + program.expiryDays);
-
-    // Создаем реферал
-    const referral = await this.prisma.referral.create({
-      data: {
-        programId: program.id,
-        referrerId: dto.referrerId,
-        refereePhone: dto.refereePhone,
-        refereeEmail: dto.refereeEmail,
-        code: referralCode,
-        status: 'PENDING',
-        channel: dto.channel || 'LINK',
-        expiresAt,
-      },
-      include: {
-        referrer: true,
-        program: {
-          include: {
-            merchant: true,
-          },
-        },
-      },
-    });
-
-    // Отправляем приглашение
-    if (dto.channel === 'EMAIL' && dto.refereeEmail) {
-      await this.sendReferralEmail(referral);
-    }
-
-    return {
-      id: referral.id,
-      code: referralCode,
-      link: await this.generateReferralLink(dto.merchantId, referralCode),
-      expiresAt,
-    };
-  }
 
   /**
    * Активировать реферальный код
    */
   async activateReferral(code: string, refereeId: string) {
-    // Находим реферал по коду
-    const referral = await this.prisma.referral.findFirst({
-      where: {
-        code,
-        status: 'PENDING',
-        expiresAt: { gt: new Date() },
-      },
-      include: {
-        program: true,
-      },
+    // ТОЛЬКО персональные коды
+    const personal = await this.prisma.personalReferralCode.findFirst({
+      where: { code },
     });
-
-    if (!referral) {
-      throw new BadRequestException(
-        'Недействительный или истекший реферальный код',
-      );
+    if (!personal) {
+      throw new BadRequestException('Недействительный или истекший реферальный код');
     }
-
-    // Проверяем, что это не самореферал
-    if (referral.referrerId === refereeId) {
-      throw new BadRequestException(
-        'Нельзя использовать свой собственный реферальный код',
-      );
+    if (personal.customerId === refereeId) {
+      throw new BadRequestException('Нельзя использовать свой собственный реферальный код');
     }
-
-    // Проверяем, не был ли уже этот клиент приглашен
+    const programId = personal.programId ?? null;
+    if (!programId) {
+      throw new BadRequestException('Реферальная программа не активна');
+    }
+    const program = await this.prisma.referralProgram.findFirst({
+      where: { id: programId, status: 'ACTIVE' },
+    });
+    if (!program) {
+      throw new BadRequestException('Реферальная программа не активна');
+    }
     const existingReferee = await this.prisma.referral.findFirst({
-      where: {
-        refereeId,
-        programId: referral.programId,
-      },
+      where: { refereeId, programId },
     });
-
     if (existingReferee) {
-      throw new BadRequestException(
-        'Вы уже участвуете в реферальной программе',
-      );
+      throw new BadRequestException('Вы уже участвуете в реферальной программе');
     }
-
-    // Обновляем реферал
-    const updated = await this.prisma.referral.update({
-      where: { id: referral.id },
+    const created = await this.prisma.referral.create({
       data: {
+        programId,
+        referrerId: personal.customerId,
         refereeId,
+        code,
         status: 'ACTIVATED',
+        channel: 'LINK',
         activatedAt: new Date(),
       },
     });
-
-    // Начисляем приветственный бонус приглашенному
-    if (referral.program.refereeReward > 0) {
-      await this.loyaltyService.earn({
-        customerId: refereeId,
-        merchantId: referral.program.merchantId,
-        amount: referral.program.refereeReward,
-        orderId: `referral_welcome_${referral.id}`,
+    if ((program.refereeReward ?? 0) > 0) {
+      const amount = this.roundTwo(program.refereeReward ?? 0);
+      await this.prisma.$transaction(async (tx) => {
+        let wallet = await tx.wallet.findFirst({
+          where: { customerId: refereeId, merchantId: program.merchantId, type: WalletType.POINTS },
+        });
+        if (!wallet) {
+          wallet = await tx.wallet.create({
+            data: {
+              customerId: refereeId,
+              merchantId: program.merchantId,
+              type: WalletType.POINTS,
+              balance: 0,
+            },
+          });
+        }
+        const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
+        await tx.wallet.update({ where: { id: wallet.id }, data: { balance: (fresh?.balance ?? 0) + amount } });
+        await tx.transaction.create({
+          data: {
+            customerId: refereeId,
+            merchantId: program.merchantId,
+            type: TxnType.REFERRAL,
+            amount,
+            orderId: `referral_welcome_${created.id}`,
+            outletId: null,
+            staffId: null,
+          },
+        });
+        if (process.env.LEDGER_FEATURE === '1') {
+          await tx.ledgerEntry.create({
+            data: {
+              merchantId: program.merchantId,
+              customerId: refereeId,
+              debit: LedgerAccount.MERCHANT_LIABILITY,
+              credit: LedgerAccount.CUSTOMER_BALANCE,
+              amount,
+              orderId: `referral_welcome_${created.id}`,
+              outletId: null,
+              staffId: null,
+              meta: { mode: 'REFERRAL', welcome: true },
+            },
+          });
+        }
       });
     }
-
     return {
       success: true,
-      message: `Добро пожаловать! Вам начислено ${referral.program.refereeReward} баллов`,
-      referralId: updated.id,
+      message: `Добро пожаловать! Вам начислено ${this.roundTwo(program.refereeReward ?? 0)} баллов`,
+      referralId: created.id,
     };
   }
 
@@ -332,13 +277,57 @@ export class ReferralService {
       },
     });
 
-    // Начисляем бонус приглашающему
+    // Начисляем бонус приглашающему (как REFERRAL)
     if (rewardAmount > 0) {
-      await this.loyaltyService.earn({
-        customerId: referral.referrerId,
-        merchantId,
-        amount: rewardAmount,
-        orderId: `referral_reward_${referral.id}`,
+      await this.prisma.$transaction(async (tx) => {
+        let wallet = await tx.wallet.findFirst({
+          where: {
+            customerId: referral.referrerId,
+            merchantId,
+            type: WalletType.POINTS,
+          },
+        });
+        if (!wallet) {
+          wallet = await tx.wallet.create({
+            data: {
+              customerId: referral.referrerId,
+              merchantId,
+              type: WalletType.POINTS,
+              balance: 0,
+            },
+          });
+        }
+        const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
+        await tx.wallet.update({
+          where: { id: wallet.id },
+          data: { balance: (fresh?.balance ?? 0) + rewardAmount },
+        });
+        await tx.transaction.create({
+          data: {
+            customerId: referral.referrerId,
+            merchantId,
+            type: TxnType.REFERRAL,
+            amount: rewardAmount,
+            orderId: `referral_reward_${referral.id}`,
+            outletId: null,
+            staffId: null,
+          },
+        });
+        if (process.env.LEDGER_FEATURE === '1') {
+          await tx.ledgerEntry.create({
+            data: {
+              merchantId,
+              customerId: referral.referrerId,
+              debit: LedgerAccount.MERCHANT_LIABILITY,
+              credit: LedgerAccount.CUSTOMER_BALANCE,
+              amount: rewardAmount,
+              orderId: `referral_reward_${referral.id}`,
+              outletId: null,
+              staffId: null,
+              meta: { mode: 'REFERRAL', level: 1 },
+            },
+          });
+        }
       });
 
       // Уведомляем приглашающего
@@ -636,27 +625,7 @@ export class ReferralService {
     return personal?.code || null;
   }
 
-  private async sendReferralEmail(referral: any) {
-    const referralLink = await this.generateReferralLink(
-      referral.program.merchantId,
-      referral.code,
-    );
-    await this.emailService
-      .sendEmail({
-        to: referral.refereeEmail,
-        subject: `Приглашение в программу лояльности ${referral.program.merchant.name}`,
-        template: 'referral_invitation',
-        data: {
-          referrerName: referral.referrer.name || 'Ваш друг',
-          merchantName: referral.program.merchant.name,
-          refereeReward: referral.program.refereeReward,
-          referralCode: referral.code,
-          referralLink,
-        },
-        merchantId: referral.program.merchantId,
-      })
-      .catch(console.error);
-  }
+  // sendReferralEmail() — удалено вместе с одноразовыми инвайтами
 
   private async notifyReferrerAboutCompletion(referral: any, reward: number) {
     const referrer = await this.prisma.customer.findUnique({
@@ -993,65 +962,6 @@ export class ReferralService {
   });
 }
 
-  /**
-   * Проверить реферальный код
-   */
-  async checkReferralCode(code: string) {
-    const referral = await this.prisma.referral.findFirst({
-      where: {
-        code,
-        status: 'PENDING',
-        expiresAt: { gt: new Date() },
-      },
-      include: {
-        program: {
-          include: {
-            merchant: true,
-          },
-        },
-      },
-    });
+// checkReferralCode() — удалено, используйте только персональные коды
 
-    if (!referral) {
-      // Проверяем персональный код
-      const personal = await this.prisma.personalReferralCode.findFirst({
-        where: { code },
-        include: {
-          program: {
-            include: {
-              merchant: true,
-            },
-          },
-        },
-      });
-
-      if (
-        !personal ||
-        !personal.program ||
-        personal.program.status !== 'ACTIVE'
-      ) {
-        return {
-          valid: false,
-          message: 'Недействительный или истекший код',
-        };
-      }
-
-      const prog = personal.program;
-      return {
-        valid: true,
-        merchantId: prog.merchantId,
-        merchantName: prog.merchant.name,
-        refereeReward: prog.refereeReward,
-        description: prog.description,
-      };
-    }
-
-    return {
-      valid: true,
-      merchantId: referral.program.merchantId,
-      merchantName: referral.program.merchant.name,
-      refereeReward: referral.program.refereeReward,
-      description: referral.program.description,
-    };
-  }
 }

@@ -423,7 +423,7 @@ export function FeedbackManager() {
 
   return (
     <>
-      <div className={styles.modalBackdrop} onClick={handleFeedbackClose}>
+      <div className={`${styles.modalBackdrop} ${styles.modalBackdropTop}`} onClick={handleFeedbackClose}>
         <form
           className={`${styles.sheet} ${styles.feedbackSheet}`}
           onClick={(event) => event.stopPropagation()}

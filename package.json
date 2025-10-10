@@ -7,6 +7,7 @@
   },
   "scripts": {
     "dev:api": "pnpm -C api start:dev",
+    "dev:clean": "stdbuf -oL -eL pnpm -C api start:dev 2>&1 | jq -Rr 'def c(x): \"\\u001b[\"+x+\"m\"; def reset: c(\"0\"); def c_status(s):(s|tonumber) as $n | (if $n>=500 then c(\"1;31\") elif $n>=400 then c(\"1;33\") elif $n>=300 then c(\"1;34\") else c(\"1;32\") end)+($n|tostring)+reset; . as $line | (try fromjson catch null) as $j | if $j != null and ($j.msg==\"request completed\") and ($j.req) and ($j.res) then \"\\($j.req.method) \\($j.req.url) \\(c_status($j.res.statusCode))\" else $line end'",
     "dev:admin": "pnpm -C admin dev",
     "dev:cashier": "pnpm -C cashier dev",
     "dev:miniapp": "pnpm -C miniapp dev",

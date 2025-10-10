@@ -8,6 +8,7 @@
   box-sizing: border-box;
   justify-items: stretch;
   align-content: start;
+  background: #ffffff;
 }
 
 /* Global interaction polish */

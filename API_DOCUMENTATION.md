@@ -627,9 +627,9 @@ Response 200:
   - Тело: `{ merchantId, name, referrerReward, refereeReward, expiryDays? }`
   - Ответ 201: `{ id, merchantId, status: "ACTIVE" }`
 
-- `POST /referral/create` — создать реферальную ссылку/код для реферера.
-  - Тело: `{ merchantId, referrerId, channel: "LINK"|"CODE" }`
-  - Ответ 201: `{ id, code, link }`
+  Реферальная ссылка/код теперь только персональные:
+  - `GET /referral/link/{customerId}?merchantId=<id>` — получить (или сгенерировать) персональный код и ссылку
+  - Ответ 200: `{ code, link, qrCode, program: { ... } }`
 
 - `POST /referral/activate` — активировать код реферала (реферал стал клиентом; может быть начислен приветственный бонус).
   - Тело: `{ code, refereeId }`

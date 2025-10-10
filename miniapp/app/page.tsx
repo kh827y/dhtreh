@@ -1,10 +1,11 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import FakeQr from "../components/FakeQr";
+import QrCanvas from "../components/QrCanvas";
+import Spinner from "../components/Spinner";
 import {
   balance,
   consentGet,
@@ -12,6 +13,7 @@ import {
   levels,
   mechanicsLevels,
   transactions,
+  mintQr,
   referralLink,
   referralActivate,
   promoCodeApply,
@@ -25,12 +27,13 @@ import {
 import Toast from "../components/Toast";
 import { useMiniappAuthContext } from "../lib/MiniappAuthContext";
 import { isValidInitData, waitForInitData } from "../lib/useMiniapp";
-import { type LevelInfo } from "../lib/levels";
+import { getProgressPercent, type LevelInfo } from "../lib/levels";
 import { getTransactionMeta, type TransactionKind } from "../lib/transactionMeta";
 import { subscribeToLoyaltyEvents } from "../lib/loyaltyEvents";
 import { type TransactionItem } from "../lib/reviewUtils";
 import { getTelegramWebApp } from "../lib/telegram";
 import styles from "./page.module.css";
+import qrStyles from "./qr/page.module.css";
 
 const DEV_UI =
   (process.env.NEXT_PUBLIC_MINIAPP_DEV_UI || "").toLowerCase() === "true" ||
@@ -149,6 +152,12 @@ const HISTORY_ICONS: Record<TransactionKind, ReactNode> = {
     <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <path d="M6 10H14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
       <path d="M10 6L10 14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  ),
+  referral: (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <circle cx="10" cy="7" r="3" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M4.5 16C4.8 13 7 12 10 12C13 12 15.2 13 15.5 16" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
   other: (
@@ -288,6 +297,15 @@ export default function Page() {
   const [levelsResolved, setLevelsResolved] = useState<boolean>(false);
   const [localProfileResolved, setLocalProfileResolved] = useState<boolean>(false);
   const [profileResolved, setProfileResolved] = useState<boolean>(false);
+  // QR modal state
+  const [qrOpen, setQrOpen] = useState<boolean>(false);
+  const [qrToken, setQrToken] = useState<string>("");
+  const [qrExpiresAt, setQrExpiresAt] = useState<number | null>(null);
+  const [qrTimeLeft, setQrTimeLeft] = useState<number | null>(null);
+  const [qrRefreshing, setQrRefreshing] = useState<boolean>(false);
+  const [qrLoading, setQrLoading] = useState<boolean>(false);
+  const [qrError, setQrError] = useState<string>("");
+  const [qrSize, setQrSize] = useState<number>(240);
 
   useEffect(() => {
     const tgUser = getTelegramUser();
@@ -471,6 +489,141 @@ export default function Page() {
     },
     []
   );
+
+  // ===== QR modal logic =====
+  const qrEffectiveTtl = useMemo(() => {
+    // theme.ttl может прийти из бэкенда публичных настроек; fallback — env
+    const themeTtl = (auth as any)?.theme?.ttl;
+    if (typeof themeTtl === "number" && Number.isFinite(themeTtl)) return themeTtl;
+    const fallback = Number(process.env.NEXT_PUBLIC_QR_TTL || "60");
+    return Number.isFinite(fallback) ? fallback : 60;
+  }, [(auth as any)?.theme?.ttl]);
+
+  const refreshQr = useCallback(async () => {
+    if (!customerId) return;
+    try {
+      setQrRefreshing(true);
+      const minted = await mintQr(customerId, merchantId, qrEffectiveTtl, initData);
+      setQrToken(minted.token);
+      const ttlSec = typeof minted.ttl === "number" && Number.isFinite(minted.ttl) ? minted.ttl : qrEffectiveTtl;
+      setQrExpiresAt(Date.now() + Math.max(5, ttlSec) * 1000);
+      setQrError("");
+    } catch (err) {
+      setQrError(`Не удалось обновить QR: ${resolveErrorMessage(err)}`);
+    } finally {
+      setQrRefreshing(false);
+    }
+  }, [customerId, merchantId, qrEffectiveTtl, initData]);
+
+  const updateQrSize = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const fallback = 240;
+    const widthBased = Number.isFinite(viewportWidth) && viewportWidth > 0 ? viewportWidth * 0.56 : fallback;
+    const heightBased = Number.isFinite(viewportHeight) && viewportHeight > 0 ? viewportHeight * 0.42 : fallback;
+    const base = Math.min(fallback, widthBased, heightBased);
+    const calculated = Math.round(Math.min(320, Math.max(150, base)));
+    setQrSize(Number.isFinite(calculated) && calculated > 0 ? calculated : fallback);
+  }, []);
+
+  // Обновление таймера TTL, только когда шторка открыта
+  useEffect(() => {
+    if (!qrOpen || !qrExpiresAt) {
+      setQrTimeLeft(null);
+      return;
+    }
+    const update = () => {
+      const diff = Math.round((qrExpiresAt - Date.now()) / 1000);
+      setQrTimeLeft(diff > 0 ? diff : 0);
+    };
+    update();
+    const id = window.setInterval(update, 1000);
+    return () => window.clearInterval(id);
+  }, [qrOpen, qrExpiresAt]);
+
+  // Авто-обновление QR за несколько секунд до истечения TTL
+  useEffect(() => {
+    if (!qrOpen || !qrExpiresAt) return;
+    const msLeft = qrExpiresAt - Date.now();
+    if (msLeft <= 4000) return;
+    const id = window.setTimeout(() => { void refreshQr(); }, msLeft - 3000);
+    return () => window.clearTimeout(id);
+  }, [qrOpen, qrExpiresAt, refreshQr]);
+
+  // Обработчик BackButton Telegram для закрытия шторки QR
+  useEffect(() => {
+    const tg = getTelegramWebApp();
+    if (!tg || !tg.BackButton) return;
+    const close = () => setQrOpen(false);
+    if (qrOpen) {
+      try { tg.BackButton.show?.(); } catch {}
+      let usedOnEvent = false;
+      try {
+        if (typeof tg.BackButton.onClick === "function") {
+          tg.BackButton.onClick(close);
+        } else if (typeof tg.onEvent === "function") {
+          tg.onEvent("backButtonClicked", close);
+          usedOnEvent = true;
+        }
+      } catch {}
+      return () => {
+        try {
+          tg.BackButton?.offClick?.(close);
+          if (usedOnEvent) tg.offEvent?.("backButtonClicked", close);
+          // Прятать кнопку только если нет других верхних шторок — оставим как есть (FeedbackManager может управлять сам)
+        } catch {}
+      };
+    }
+  }, [qrOpen]);
+
+  // Открытие/закрытие шторки QR: инициализация размера и первичный mint
+  useEffect(() => {
+    if (!qrOpen) return;
+    setQrLoading(true);
+    updateQrSize();
+    const onResize = () => updateQrSize();
+    window.addEventListener("resize", onResize);
+    (async () => {
+      await refreshQr();
+      setQrLoading(false);
+    })();
+    return () => {
+      window.removeEventListener("resize", onResize);
+    };
+  }, [qrOpen, refreshQr, updateQrSize]);
+
+  const qrCashbackPercent = useMemo(() => {
+    const currentName = levelInfo?.current?.name;
+    if (!currentName) return null;
+    const entry = levelCatalog.find((lvl) => (lvl?.name || "").toLowerCase() === currentName.toLowerCase());
+    if (!entry) return null;
+    if (typeof entry.cashbackPercent === "number") return entry.cashbackPercent;
+    if (entry.benefits && typeof entry.benefits.cashbackPercent === "number") return entry.benefits.cashbackPercent;
+    if (typeof entry.rewardPercent === "number") return entry.rewardPercent;
+    return null;
+  }, [levelInfo, levelCatalog]);
+
+  const qrProgressData = useMemo(() => {
+    const fallbackPercent = 0;
+    const fallback = { percent: fallbackPercent, current: 0, threshold: 0 };
+    if (!levelInfo?.next) return fallback;
+    const thresholdRaw = levelInfo.next.threshold;
+    if (typeof thresholdRaw !== "number" || !Number.isFinite(thresholdRaw) || thresholdRaw <= 0) return fallback;
+    const currentRaw = typeof levelInfo.value === "number" && Number.isFinite(levelInfo.value) ? levelInfo.value : 0;
+    const threshold = Math.max(0, Math.round(thresholdRaw));
+    const current = Math.max(0, Math.round(currentRaw));
+    const progressPercent = getProgressPercent(levelInfo);
+    const normalizedPercent = Number.isFinite(progressPercent) ? Math.min(100, Math.max(0, Math.round(progressPercent))) : 0;
+    if (normalizedPercent <= 0) {
+      const recalculated = threshold ? Math.min(100, Math.max(0, Math.round((Math.min(current, threshold) / threshold) * 100))) : 0;
+      return { percent: recalculated, current, threshold };
+    }
+    return { percent: normalizedPercent, current, threshold };
+  }, [levelInfo]);
+
+  const qrShowProgress = useMemo(() => Array.isArray(levelCatalog) && levelCatalog.length > 1 && !!levelInfo?.next, [levelCatalog, levelInfo]);
+  const qrWrapperSize = useMemo(() => Math.round(qrSize + 20), [qrSize]);
 
   const loadBalance = useCallback(async (opts?: { silent?: boolean }) => {
     const silent = opts?.silent ?? false;
@@ -1142,8 +1295,6 @@ export default function Page() {
                 </span>
               </div>
             )}
-
-      
             <button
               type="submit"
               className={`${styles.profileSubmit} ${styles.appear} ${referralEnabled ? styles.delay5 : styles.delay4}`}
@@ -1206,12 +1357,12 @@ export default function Page() {
           {/* Инфобар с кодом можно вернуть при необходимости */}
 
           <section className={`${styles.card} ${styles.appear} ${styles.delay1}`}>
-            <Link href="/qr" className={styles.qrMini} aria-label="Открыть QR" prefetch={false}>
+            <button type="button" className={styles.qrMini} aria-label="Открыть QR" onClick={() => setQrOpen(true)}>
               <div className={styles.qrWrapper}>
                 <FakeQr />
               </div>
               <span className={styles.qrHint}>Нажмите</span>
-            </Link>
+            </button>
             <div className={styles.cardContent}>
               <div className={styles.cardRow}>
                 <span className={styles.cardLabel}>Баланс</span>
@@ -1268,7 +1419,12 @@ export default function Page() {
                 onClick={() => setInviteSheetOpen(true)}
                 disabled={referralLoading}
               >
-                <span>🤝</span>
+                <span aria-hidden="true">
+                  <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <circle cx="10" cy="7" r="3" stroke="currentColor" strokeWidth="1.6" />
+                    <path d="M4.5 16C4.8 13 7 12 10 12C13 12 15.2 13 15.5 16" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </span>
                 <span>Пригласить друга</span>
               </button>
             )}
@@ -1354,10 +1510,70 @@ export default function Page() {
               </label>
             </section>
           )}
-        </>
-      )}
 
-      {/* Skeleton вместо оверлея спиннера — см. ранний возврат выше */}
+          {qrOpen && (
+            <div
+              className={qrStyles.page}
+              style={{ position: 'fixed', inset: 0, overflowY: 'auto', zIndex: 1000 }}
+            >
+                <section className={qrStyles.qrSection}>
+                  <div className={qrStyles.qrHeader}>Покажите QR-код на кассе</div>
+                  <div className={qrStyles.qrWrapper} style={{ width: qrWrapperSize, height: qrWrapperSize }}>
+                    {qrToken ? (
+                      <QrCanvas value={qrToken} size={qrSize} />
+                    ) : (
+                      <div className={qrStyles.qrPlaceholder} style={{ width: qrSize, height: qrSize }} />
+                    )}
+                    {(qrLoading || qrRefreshing) && (
+                      <div className={qrStyles.qrOverlay}>
+                        <Spinner />
+                      </div>
+                    )}
+                  </div>
+                  <div className={qrStyles.qrFooter}>
+                    <button
+                      type="button"
+                      className={qrStyles.refreshButton}
+                      onClick={() => { void refreshQr(); }}
+                      disabled={qrRefreshing}
+                    >
+                      {qrRefreshing ? "Обновляем…" : "Обновить QR"}
+                    </button>
+                    {typeof qrTimeLeft === 'number' && qrToken && (
+                      <span className={qrStyles.ttlHint}>{qrTimeLeft} сек.</span>
+                    )}
+                  </div>
+                </section>
+
+                <section className={qrStyles.infoGrid}>
+                  <div className={qrStyles.infoCard}>
+                    <div className={qrStyles.infoLabel}>Баланс</div>
+                    <div className={qrStyles.infoValue}>{bal != null ? bal.toLocaleString('ru-RU') : '—'}</div>
+                    <div className={qrStyles.infoCaption}>бонусов</div>
+                  </div>
+                  <div className={qrStyles.infoCard}>
+                    <div className={qrStyles.infoLabel}>Уровень</div>
+                    <div className={qrStyles.infoValue}>{levelInfo?.current?.name || '—'}</div>
+                    <div className={qrStyles.infoCaption}>Кэшбэк {typeof qrCashbackPercent === 'number' ? `${qrCashbackPercent}%` : '—%'}</div>
+                  </div>
+                </section>
+
+                {qrShowProgress && (
+                  <section className={qrStyles.progressSection}>
+                    <div className={qrStyles.progressTitle}>Сумма покупок до следующего уровня &gt;</div>
+                    <div className={qrStyles.progressBar}>
+                      <div className={qrStyles.progressFill} style={{ width: `${qrProgressData.percent}%` }} />
+                    </div>
+                    <div className={qrStyles.progressScale}>
+                      <span>{qrProgressData.current.toLocaleString('ru-RU')}</span>
+                      <span>{qrProgressData.threshold.toLocaleString('ru-RU')}</span>
+                    </div>
+                  </section>
+                )}
+
+                {qrError && <div className={qrStyles.error}>{qrError}</div>}
+              </div>
+            )}
 
       {inviteSheetOpen && referralEnabled && referralInfo && (
         <div className={styles.modalBackdrop} onClick={() => setInviteSheetOpen(false)}>
@@ -1366,7 +1582,7 @@ export default function Page() {
             <div className={styles.sheetText}>
               {renderReferralMessage(referralInfo.messageTemplate, {
                 merchantName: referralInfo.merchantName,
-                bonusAmount: (referralInfo as any).inviterReward || 0, // {bonusamount} в шторке = награда приглашающему
+                bonusAmount: (referralInfo as any).inviterReward || 0,
                 code: referralInfo.code,
                 link: referralInfo.link,
               })}
@@ -1440,13 +1656,15 @@ export default function Page() {
               className={styles.sheetButton}
               onClick={() => {
                 setSettingsOpen(false);
-                router.push("/qr");
+                setQrOpen(true);
               }}
             >
-              Открыть страницу QR
+              Открыть QR
             </button>
           </div>
         </div>
+      )}
+      </>
       )}
     </div>
   );

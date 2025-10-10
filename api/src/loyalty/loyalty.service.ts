@@ -65,6 +65,169 @@ export class LoyaltyService {
     });
   }
 
+  // ===== Referral rewards awarding =====
+  private async applyReferralRewards(
+    tx: any,
+    ctx: {
+      merchantId: string;
+      buyerId: string;
+      purchaseAmount: number;
+      receiptId: string;
+      orderId: string;
+      outletId: string | null;
+      staffId: string | null;
+    },
+  ) {
+    // Активная программа рефералов
+    const program = await tx.referralProgram.findFirst({
+      where: { merchantId: ctx.merchantId, status: 'ACTIVE', isActive: true },
+    });
+    if (!program) return;
+
+    const minPurchase = Number(program.minPurchaseAmount || 0) || 0;
+    if (ctx.purchaseAmount < minPurchase) return;
+
+    // Находим прямую связь реферала (уровень 1)
+    const direct = await tx.referral.findFirst({
+      where: { refereeId: ctx.buyerId, programId: program.id },
+    });
+    if (!direct) return; // покупатель не является приглашённым по активной программе
+
+    const triggerAll = String(program.rewardTrigger || 'first').toLowerCase() === 'all';
+    const canFirstPayout = direct.status === 'ACTIVATED';
+    if (!triggerAll && !canFirstPayout) {
+      // Режим только «за первую покупку» уже отработал
+      return;
+    }
+
+    // Конфигурация уровней
+    const rewardType = String(program.rewardType || 'FIXED').toUpperCase();
+    const lvCfgArr = Array.isArray((program as any).levelRewards)
+      ? ((program as any).levelRewards as Array<any>)
+      : [];
+
+    const getLevelCfg = (lvl: number) =>
+      lvCfgArr.find((x) => Number(x?.level) === lvl) || null;
+
+    const enabledForLevel = (lvl: number) => {
+      if (lvl === 1) return true; // всегда включаем L1
+      if (!program.multiLevel) return false;
+      const cfg = getLevelCfg(lvl);
+      return cfg ? Boolean(cfg.enabled) : false;
+    };
+
+    const rewardValueForLevel = (lvl: number) => {
+      const cfg = getLevelCfg(lvl);
+      if (cfg && Number.isFinite(Number(cfg.reward))) return Number(cfg.reward);
+      if (lvl === 1 && Number.isFinite(Number(program.referrerReward)))
+        return Number(program.referrerReward);
+      return 0;
+    };
+
+    // Обходим цепочку пригласителей вверх по программе
+    let current = direct;
+    let level = 1;
+    const maxLevels = program.multiLevel
+      ? Math.max(
+          1,
+          lvCfgArr.reduce(
+            (m, x) => Math.max(m, Number(x?.level || 0) || 0),
+            1,
+          ),
+        )
+      : 1;
+
+    while (level <= maxLevels && current) {
+      if (enabledForLevel(level)) {
+        const rv = rewardValueForLevel(level);
+        let points = 0;
+        if (rewardType === 'PERCENT') {
+          points = Math.floor((ctx.purchaseAmount * Math.max(0, rv)) / 100);
+        } else {
+          points = Math.max(0, Math.floor(rv));
+        }
+        if (points > 0) {
+          // Начисляем пригласителю
+          let w = await tx.wallet.findFirst({
+            where: {
+              customerId: current.referrerId,
+              merchantId: ctx.merchantId,
+              type: WalletType.POINTS,
+            },
+          });
+          if (!w)
+            w = await tx.wallet.create({
+              data: {
+                customerId: current.referrerId,
+                merchantId: ctx.merchantId,
+                type: WalletType.POINTS,
+                balance: 0,
+              },
+            });
+          const fresh = await tx.wallet.findUnique({ where: { id: w.id } });
+          await tx.wallet.update({
+            where: { id: w.id },
+            data: { balance: (fresh?.balance ?? 0) + points },
+          });
+          await tx.transaction.create({
+            data: {
+              customerId: current.referrerId,
+              merchantId: ctx.merchantId,
+              type: TxnType.REFERRAL,
+              amount: points,
+              orderId: `referral_reward_${ctx.receiptId}_L${level}`,
+              outletId: ctx.outletId,
+              staffId: ctx.staffId,
+            },
+          });
+          if (process.env.LEDGER_FEATURE === '1') {
+            await tx.ledgerEntry.create({
+              data: {
+                merchantId: ctx.merchantId,
+                customerId: current.referrerId,
+                debit: LedgerAccount.MERCHANT_LIABILITY,
+                credit: LedgerAccount.CUSTOMER_BALANCE,
+                amount: points,
+                orderId: ctx.orderId,
+                outletId: ctx.outletId ?? null,
+                staffId: ctx.staffId ?? null,
+                meta: { mode: 'REFERRAL', level },
+              },
+            });
+            this.metrics.inc('loyalty_ledger_entries_total', {
+              type: 'earn',
+            });
+            this.metrics.inc(
+              'loyalty_ledger_amount_total',
+              { type: 'earn' },
+              points,
+            );
+          }
+        }
+      }
+
+      // Следующий уровень (пригласитель текущего пригласителя)
+      if (!program.multiLevel) break;
+      const parent = await tx.referral.findFirst({
+        where: { refereeId: current.referrerId, programId: program.id },
+      });
+      current = parent;
+      level += 1;
+    }
+
+    // Для триггера «первая покупка» помечаем связь завершённой
+    if (!triggerAll && direct.status === 'ACTIVATED') {
+      await tx.referral.update({
+        where: { id: direct.id },
+        data: {
+          status: 'COMPLETED',
+          completedAt: new Date(),
+          purchaseAmount: ctx.purchaseAmount,
+        },
+      });
+    }
+  }
+
   async grantRegistrationBonus(params: {
     merchantId?: string;
     customerId?: string;
@@ -122,6 +285,22 @@ export class LoyaltyService {
       Number.isFinite(delayDaysRaw) && delayDaysRaw != null && delayDaysRaw > 0
         ? Math.floor(Number(delayDaysRaw))
         : 0;
+
+    // Если клиент приглашён по рефералу и у активной программы выключено суммирование с регистрацией — запрещаем выдачу
+    try {
+      const ref = await this.prisma.referral.findFirst({
+        where: {
+          refereeId: customerId,
+          program: { merchantId, status: 'ACTIVE', isActive: true },
+        },
+        include: { program: true },
+      });
+      if (ref?.program && ref.program.stackWithRegistration === false) {
+        throw new BadRequestException(
+          'Регистрационный бонус не суммируется с реферальным для приглашённых клиентов',
+        );
+      }
+    } catch {}
 
     if (!enabled || points <= 0) {
       throw new BadRequestException(
@@ -1858,6 +2037,26 @@ export class LoyaltyService {
             staffId: hold.staffId ?? null,
           },
         });
+
+        // Начисление реферальных бонусов пригласителям (многоуровневая схема, триггеры first/all)
+        try {
+          await this.applyReferralRewards(tx, {
+            merchantId: hold.merchantId,
+            buyerId: hold.customerId,
+            purchaseAmount: Math.max(
+              0,
+              Math.floor(
+                Number(
+                  (hold.eligibleTotal != null ? hold.eligibleTotal : hold.total) ?? 0,
+                ),
+              ),
+            ),
+            receiptId: created.id,
+            orderId,
+            outletId: hold.outletId ?? null,
+            staffId: hold.staffId ?? null,
+          });
+        } catch {}
         // обновим lastSeen у торговой точки/устройства
         const touchTs = new Date();
         if (hold.outletId) {

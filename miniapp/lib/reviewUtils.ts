@@ -24,6 +24,7 @@ const PURCHASE_EVENT_TYPES = [
 export function isPurchaseTransaction(type: string, orderId?: string | null): boolean {
   if (!type) return false;
   const normalized = type.toLowerCase();
+  if (normalized.includes('referral')) return false;
   if (orderId && orderId.trim()) return true;
   return PURCHASE_EVENT_TYPES.some((token) => normalized.includes(token));
 }
