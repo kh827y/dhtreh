@@ -18,6 +18,7 @@ import {
   type TransactionItem,
 } from "../lib/reviewUtils";
 import { subscribeToLoyaltyEvents } from "../lib/loyaltyEvents";
+import { useDelayedRender } from "../lib/useDelayedRender";
 
 const REVIEW_PLATFORM_LABELS: Record<string, string> = {
   yandex: "Яндекс.Карты",
@@ -104,6 +105,7 @@ export function FeedbackManager() {
   const [toast, setToast] = useState<ToastState>(null);
   const [dismissedTransactions, setDismissedTransactions] = useState<string[]>([]);
   const [dismissedReady, setDismissedReady] = useState(false);
+  const feedbackPresence = useDelayedRender(feedbackOpen, 320);
 
   const dismissedTxSet = useMemo(() => new Set(dismissedTransactions), [dismissedTransactions]);
 
@@ -415,17 +417,24 @@ export function FeedbackManager() {
     };
   }, [loadTransactions]);
 
-  if (!feedbackOpen) {
-    return toast ? (
-      <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />
-    ) : null;
+  const toastElement = toast ? <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} /> : null;
+
+  if (!feedbackPresence.shouldRender) {
+    return toastElement;
   }
 
   return (
     <>
-      <div className={`${styles.modalBackdrop} ${styles.modalBackdropTop}`} onClick={handleFeedbackClose}>
+      <div
+        className={`${styles.modalBackdrop} ${styles.modalBackdropTop} ${
+          feedbackPresence.status === "entered" ? styles.modalBackdropVisible : styles.modalBackdropLeaving
+        }`}
+        onClick={handleFeedbackClose}
+      >
         <form
-          className={`${styles.sheet} ${styles.feedbackSheet}`}
+          className={`${styles.sheet} ${styles.feedbackSheet} ${styles.sheetAnimated} ${
+            feedbackPresence.status === "entered" ? styles.sheetEntering : styles.sheetLeaving
+          }`}
           onClick={(event) => event.stopPropagation()}
           onSubmit={handleFeedbackSubmit}
         >
@@ -511,7 +520,7 @@ export function FeedbackManager() {
           </button>
         </form>
       </div>
-      {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
+      {toastElement}
     </>
   );
 }

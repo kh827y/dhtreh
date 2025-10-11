@@ -2,11 +2,14 @@
   min-height: 100vh;
   background: linear-gradient(180deg, #f5f5ff 0%, #ffffff 60%);
   color: #1f1f33;
-  padding: 20px 20px 32px;
+  padding: 16px 16px 24px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
   font-family: "Inter", "SF Pro Display", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 /* Global interaction polish */
@@ -21,37 +24,49 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px 0;
+  padding: clamp(10px, 5dvh, 24px) clamp(16px, 6vw, 32px) clamp(16px, 6dvh, 36px);
 }
 
 .profileCard {
-  width: 100%;
-  max-width: 420px;
+  width: min(100%, 460px);
   background: #ffffff;
   border-radius: 24px;
-  padding: 28px 24px;
-  box-shadow: 0 20px 45px rgba(111, 126, 255, 0.15);
+  padding: clamp(18px, 4dvh, 24px) clamp(18px, 5.5vw, 24px);
+  box-shadow: 0 20px 45px rgba(111, 126, 255, 0.14);
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: clamp(12px, 2.4dvh, 18px);
+  transition: max-width 0.2s ease, padding 0.2s ease;
+}
+
+.profileCardCompact {
+  max-width: 420px;
+  padding: clamp(18px, 3.6dvh, 24px) clamp(18px, 5vw, 24px);
+  gap: clamp(12px, 2.2dvh, 16px);
+}
+
+.profileCardExtended {
+  max-width: 460px;
 }
 
 .profileTitle {
-  font-size: 22px;
+  font-size: clamp(20px, 4.6vw, 22px);
   font-weight: 700;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
+  text-align: center;
 }
 
 .profileSubtitle {
   color: #5f5f7f;
-  font-size: 15px;
-  line-height: 1.4;
+  font-size: clamp(14px, 3.8vw, 15px);
+  line-height: 1.45;
+  text-align: center;
 }
 
 .profileField {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   font-size: 15px;
 }
 
@@ -68,6 +83,39 @@
   outline: none;
   border-color: #7a5af8;
   box-shadow: 0 0 0 3px rgba(122, 90, 248, 0.15);
+}
+
+.dateRow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dateSelect {
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid #d7d7f0;
+  background: #f9f9ff;
+  font-size: 14px;
+  transition: border 0.2s ease, box-shadow 0.2s ease;
+}
+
+.dateSelect:focus {
+  outline: none;
+  border-color: #7a5af8;
+  box-shadow: 0 0 0 3px rgba(122, 90, 248, 0.15);
+}
+
+.dateSelect:disabled {
+  background: #f1f1fb;
+  color: #9a9abc;
+  cursor: not-allowed;
+  opacity: 0.8;
+}
+
+/* Плейсхолдеры «Год/Месяц/День» чуть меньше */
+.dateSelect option[disabled] {
+  font-size: 12px;
 }
 
 .genderRow {
@@ -393,24 +441,19 @@
 
 .inviteActionButton:active { transform: scale(0.985); box-shadow: 0 10px 22px rgba(5,150,105,0.25); }
 
-.sheetText {
-  font-size: 15px;
-  color: #3a3a60;
-  line-height: 1.45;
-}
-
 .copyChip {
   display: inline-flex;
   align-items: center;
-  margin: 0 2px;
-  padding: 4px 10px;
-  border-radius: 12px;
-  background: rgba(122, 90, 248, 0.12);
+  margin: 4px 4px 0;
+  padding: 3px 9px;
+  border-radius: 11px;
+  background: rgba(122, 90, 248, 0.1);
   color: #4338ca;
   font-weight: 600;
   cursor: pointer;
-  border: 1px solid rgba(122, 90, 248, 0.2);
-  transition: transform 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+  border: 1px solid rgba(122, 90, 248, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  transition: transform 0.12s ease, background 0.12s ease, border-color 0.12s ease;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -418,7 +461,14 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 }
 
-.copyChip:active { transform: scale(0.98); background: rgba(122,90,248,0.16); }
+.copyChip:hover {
+  background: rgba(122, 90, 248, 0.14);
+}
+
+.copyChip:active {
+  transform: scale(0.98);
+  background: rgba(122, 90, 248, 0.18);
+}
 
 .promoInputBlock {
   flex: 1;
@@ -725,6 +775,16 @@
   100% { background-position: -200% 0; }
 }
 
+@keyframes backdropFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes backdropFadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
 .skeletonBlock { border-radius: 16px; width: 100%; height: 56px; }
 .skeletonSmall { border-radius: 12px; width: 100%; height: 40px; }
 .skeletonCard { border-radius: 24px; height: 120px; }
@@ -752,8 +812,17 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  padding: clamp(16px, 5dvh, 28px);
   z-index: 300;
+  opacity: 0;
+}
+
+.modalBackdropVisible {
+  animation: backdropFadeIn 0.24s ease forwards;
+}
+
+.modalBackdropLeaving {
+  animation: backdropFadeOut 0.24s ease forwards;
 }
 
 .modalBackdropTop {
@@ -799,21 +868,48 @@
 
 .sheet {
   position: fixed;
-  bottom: 0;
   left: 0;
   right: 0;
+  bottom: 0;
   background: #ffffff;
-  border-radius: 22px 22px 0 0;
-  padding: 24px;
-  display: grid;
+  border-radius: 26px 26px 0 0;
+  padding: clamp(20px, 5dvh, 28px) clamp(18px, 6vw, 28px) calc(24px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
   gap: 16px;
-  box-shadow: 0 -12px 35px rgba(40, 40, 120, 0.18);
+  box-shadow: 0 -16px 44px rgba(32, 32, 96, 0.2);
   z-index: 320;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+
+.sheetAnimated {
+  animation-duration: 0.32s;
+  animation-fill-mode: forwards;
+  will-change: transform, opacity;
+}
+
+.sheetEntering {
+  animation-name: sheetEnter;
+}
+
+.sheetLeaving {
+  animation-name: sheetLeave;
 }
 
 .sheetHeader {
   font-size: 18px;
   font-weight: 700;
+  text-align: center;
+}
+
+.sheetText {
+  font-size: 15px;
+  color: #3a3a60;
+  line-height: 1.5;
+  text-align: center;
+  word-break: break-word;
 }
 
 .switchRow {
@@ -825,27 +921,52 @@
 
 .sheetButton {
   border: none;
-  border-radius: 14px;
-  padding: 12px;
+  border-radius: 16px;
+  padding: 14px 18px;
   font-weight: 600;
-  background: #f5f5ff;
-  color: #4a4a73;
+  background: #f3f3ff;
+  color: #3e3a77;
   cursor: pointer;
-  transition: transform 0.12s ease;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  text-align: center;
+  box-shadow: inset 0 0 0 1px rgba(122, 90, 248, 0.08);
 }
 
-.sheetButton:active { transform: scale(0.985); }
+.sheetButton:hover {
+  background: #ece9ff;
+}
+
+.sheetButton:active {
+  transform: scale(0.985);
+}
+
+.sheetPrimaryButton {
+  background: linear-gradient(135deg, #7a5af8, #9f63ff);
+  color: #ffffff;
+  box-shadow: 0 18px 36px rgba(122, 90, 248, 0.32);
+}
+
+.sheetPrimaryButton:hover {
+  background: linear-gradient(135deg, #6c4ef6, #8b52f8);
+}
+
+.sheetPrimaryButton:active {
+  transform: scale(0.985);
+  box-shadow: 0 12px 26px rgba(115, 82, 242, 0.28);
+}
 
 .feedbackSheet {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
   background: rgba(255, 255, 255, 0.96);
   padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px));
   gap: 20px;
-  border-radius: 26px 26px 0 0;
-  box-shadow: 0 -24px 50px rgba(34, 35, 80, 0.22);
+  border-radius: 30px 30px 0 0;
+  box-shadow: 0 -24px 50px rgba(34, 35, 80, 0.24);
+  backdrop-filter: blur(14px);
   z-index: 340;
 }
 
@@ -1042,6 +1163,35 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes sheetEnter {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes sheetLeave {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(32px);
+  }
+}
+
+@media (max-height: 720px) {
+  .profileContainer {
+    align-items: flex-start;
+    padding-top: clamp(12px, 5dvh, 24px);
   }
 }
 

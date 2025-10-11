@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import FakeQr from "../components/FakeQr";
 import QrCanvas from "../components/QrCanvas";
@@ -27,6 +26,7 @@ import {
 import Toast from "../components/Toast";
 import { useMiniappAuthContext } from "../lib/MiniappAuthContext";
 import { isValidInitData, waitForInitData } from "../lib/useMiniapp";
+import { useDelayedRender } from "../lib/useDelayedRender";
 import { getProgressPercent, type LevelInfo } from "../lib/levels";
 import { getTransactionMeta, type TransactionKind } from "../lib/transactionMeta";
 import { subscribeToLoyaltyEvents } from "../lib/loyaltyEvents";
@@ -239,7 +239,6 @@ function buildReferralMessage(
 }
 
 export default function Page() {
-  const router = useRouter();
   const auth = useMiniappAuthContext();
   const merchantId = auth.merchantId;
   const setMerchantId = auth.setMerchantId;
@@ -256,8 +255,8 @@ export default function Page() {
   const [toast, setToast] = useState<{ msg: string; type?: "info" | "error" | "success" } | null>(null);
   const [levelInfo, setLevelInfo] = useState<LevelInfo | null>(null);
   const [levelCatalog, setLevelCatalog] = useState<MechanicsLevel[]>([]);
-  const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
   const [telegramUser, setTelegramUser] = useState<TelegramUser | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
   const [profileForm, setProfileForm] = useState<{
     name: string;
     gender: "male" | "female" | "";
@@ -271,6 +270,57 @@ export default function Page() {
   const [profileTouched, setProfileTouched] = useState<boolean>(false);
   const [profileSaving, setProfileSaving] = useState<boolean>(false);
   const pendingProfileSync = useRef<boolean>(false);
+  const [birthYear, setBirthYear] = useState<string>("");
+  const [birthMonth, setBirthMonth] = useState<string>("");
+  const [birthDay, setBirthDay] = useState<string>("");
+  const currentYear = useMemo(() => new Date().getFullYear(), []);
+  const years = useMemo(() => {
+    const ylist: string[] = [];
+    for (let y = currentYear; y >= 1900; y--) ylist.push(String(y));
+    return ylist;
+  }, [currentYear]);
+  const months = useMemo(
+    () => [
+      { value: "01", label: "Январь" },
+      { value: "02", label: "Февраль" },
+      { value: "03", label: "Март" },
+      { value: "04", label: "Апрель" },
+      { value: "05", label: "Май" },
+      { value: "06", label: "Июнь" },
+      { value: "07", label: "Июль" },
+      { value: "08", label: "Август" },
+      { value: "09", label: "Сентябрь" },
+      { value: "10", label: "Октябрь" },
+      { value: "11", label: "Ноябрь" },
+      { value: "12", label: "Декабрь" },
+    ],
+    [],
+  );
+  const daysInSelectedMonth = useMemo(() => {
+    if (!birthYear || !birthMonth) return 31;
+    const y = Number(birthYear);
+    const m = Number(birthMonth);
+    if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) return 31;
+    return new Date(y, m, 0).getDate();
+  }, [birthYear, birthMonth]);
+  const days = useMemo(
+    () => Array.from({ length: daysInSelectedMonth }, (_, i) => String(i + 1).padStart(2, "0")),
+    [daysInSelectedMonth],
+  );
+  const applyBirthDate = useCallback(
+    (y: string, m: string, d: string) => {
+      if (y && m && d) {
+        const maxD = new Date(Number(y), Number(m), 0).getDate();
+        const ddNum = Math.min(Number(d), maxD);
+        const dd = String(ddNum).padStart(2, "0");
+        setBirthDay(dd);
+        setProfileForm((prev) => ({ ...prev, birthDate: `${y}-${m}-${dd}` }));
+      } else {
+        setProfileForm((prev) => ({ ...prev, birthDate: "" }));
+      }
+    },
+    [setProfileForm],
+  );
   const [referralInfo, setReferralInfo] = useState<{
     code: string;
     link: string;
@@ -306,6 +356,10 @@ export default function Page() {
   const [qrLoading, setQrLoading] = useState<boolean>(false);
   const [qrError, setQrError] = useState<string>("");
   const [qrSize, setQrSize] = useState<number>(240);
+  const inviteSheetPresence = useDelayedRender(inviteSheetOpen, 280);
+  const promotionsSheetPresence = useDelayedRender(promotionsOpen, 280);
+  const settingsSheetPresence = useDelayedRender(settingsOpen, 280);
+  const qrPresence = useDelayedRender(qrOpen, 320);
 
   useEffect(() => {
     const tgUser = getTelegramUser();
@@ -345,6 +399,21 @@ export default function Page() {
     }
     setLocalProfileResolved(true);
   }, [merchantId]);
+
+  // Синхронизация локальных селектов даты с profileForm.birthDate
+  useEffect(() => {
+    const b = profileForm.birthDate;
+    if (b && /^\d{4}-\d{2}-\d{2}$/.test(b)) {
+      const [y, m, d] = b.split("-");
+      setBirthYear(y);
+      setBirthMonth(m);
+      setBirthDay(d);
+    } else {
+      setBirthYear("");
+      setBirthMonth("");
+      setBirthDay("");
+    }
+  }, [profileForm.birthDate]);
 
   // Автоподстановка пригласительного кода из Telegram start_param/startapp (payload.referralCode)
   useEffect(() => {
@@ -571,7 +640,7 @@ export default function Page() {
         try {
           tg.BackButton?.offClick?.(close);
           if (usedOnEvent) tg.offEvent?.("backButtonClicked", close);
-          // Прятать кнопку только если нет других верхних шторок — оставим как есть (FeedbackManager может управлять сам)
+          tg.BackButton?.hide?.();
         } catch {}
       };
     }
@@ -1208,6 +1277,8 @@ export default function Page() {
     return nodes;
   };
 
+  const inviteFieldVisible = (referralEnabled || !customerId);
+
   if (screenLoading) {
     return (
       <div className={styles.page}>
@@ -1230,11 +1301,16 @@ export default function Page() {
     <div className={styles.page}>
       {profilePage ? (
         <div className={styles.profileContainer}>
-          <form className={styles.profileCard} onSubmit={handleProfileSubmit}>
+          <form
+            className={`${styles.profileCard} ${
+              inviteFieldVisible ? styles.profileCardExtended : styles.profileCardCompact
+            }`}
+            onSubmit={handleProfileSubmit}
+          >
             <div className={`${styles.appear} ${styles.delay0}`}>
               <div className={styles.profileTitle}>Расскажите о себе</div>
               <div className={styles.profileSubtitle}>
-                Заполните данные, чтобы мы начисляли бонусы лично вам
+                Эта информация поможет нам подобрать акции лично для вас
               </div>
             </div>
             <div className={`${styles.profileField} ${styles.appear} ${styles.delay1}`}>
@@ -1269,14 +1345,67 @@ export default function Page() {
               </div>
             </div>
             <div className={`${styles.profileField} ${styles.appear} ${styles.delay3}`}>
-              <label htmlFor="birth">Дата рождения</label>
-              <input
-                id="birth"
-                type="date"
-                value={profileForm.birthDate}
-                onChange={(e) => setProfileForm((prev) => ({ ...prev, birthDate: e.target.value }))}
-                className={profileTouched && !profileForm.birthDate ? styles.inputError : undefined}
-              />
+              <label htmlFor="birthRow">Дата рождения</label>
+              <div
+                id="birthRow"
+                className={`${styles.dateRow} ${profileTouched && !profileForm.birthDate ? styles.inputErrorBorder : ""}`}
+              >
+                <select
+                  className={styles.dateSelect}
+                  value={birthYear}
+                  onChange={(e) => {
+                    const y = e.target.value;
+                    setBirthYear(y);
+                    applyBirthDate(y, birthMonth, birthDay);
+                  }}
+                >
+                  <option value="" disabled>
+                    Год
+                  </option>
+                  {years.map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className={styles.dateSelect}
+                  value={birthMonth}
+                  onChange={(e) => {
+                    const m = e.target.value;
+                    setBirthMonth(m);
+                    applyBirthDate(birthYear, m, birthDay);
+                  }}
+                >
+                  <option value="" disabled>
+                    Месяц
+                  </option>
+                  {months.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className={styles.dateSelect}
+                  value={birthDay}
+                  onChange={(e) => {
+                    const d = e.target.value;
+                    setBirthDay(d);
+                    applyBirthDate(birthYear, birthMonth, d);
+                  }}
+                  disabled={!birthYear || !birthMonth}
+                >
+                  <option value="" disabled>
+                    День
+                  </option>
+                  {days.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
             {(referralEnabled || !customerId) && (
               <div className={`${styles.profileField} ${styles.appear} ${styles.delay4}`}>
@@ -1291,7 +1420,7 @@ export default function Page() {
                 <span className={styles.profileHint}>
                   {inviteApplied
                     ? "Код успешно активирован."
-                    : "Если у вас есть код друга, введите его и получите приветственный бонус."}
+                    : ""}
                 </span>
               </div>
             )}
@@ -1511,11 +1640,13 @@ export default function Page() {
             </section>
           )}
 
-          {qrOpen && (
+          {qrPresence.shouldRender && (
             <div
-              className={qrStyles.page}
-              style={{ position: 'fixed', inset: 0, overflowY: 'auto', zIndex: 1000 }}
+              className={`${qrStyles.page} ${qrStyles.pageOverlay} ${
+                qrPresence.status === "entered" ? qrStyles.pageEntering : qrStyles.pageLeaving
+              }`}
             >
+              <div className={qrStyles.modalBody}>
                 <section className={qrStyles.qrSection}>
                   <div className={qrStyles.qrHeader}>Покажите QR-код на кассе</div>
                   <div className={qrStyles.qrWrapper} style={{ width: qrWrapperSize, height: qrWrapperSize }}>
@@ -1534,12 +1665,14 @@ export default function Page() {
                     <button
                       type="button"
                       className={qrStyles.refreshButton}
-                      onClick={() => { void refreshQr(); }}
+                      onClick={() => {
+                        void refreshQr();
+                      }}
                       disabled={qrRefreshing}
                     >
                       {qrRefreshing ? "Обновляем…" : "Обновить QR"}
                     </button>
-                    {typeof qrTimeLeft === 'number' && qrToken && (
+                    {typeof qrTimeLeft === "number" && qrToken && (
                       <span className={qrStyles.ttlHint}>{qrTimeLeft} сек.</span>
                     )}
                   </div>
@@ -1548,13 +1681,15 @@ export default function Page() {
                 <section className={qrStyles.infoGrid}>
                   <div className={qrStyles.infoCard}>
                     <div className={qrStyles.infoLabel}>Баланс</div>
-                    <div className={qrStyles.infoValue}>{bal != null ? bal.toLocaleString('ru-RU') : '—'}</div>
+                    <div className={qrStyles.infoValue}>{bal != null ? bal.toLocaleString("ru-RU") : "—"}</div>
                     <div className={qrStyles.infoCaption}>бонусов</div>
                   </div>
                   <div className={qrStyles.infoCard}>
                     <div className={qrStyles.infoLabel}>Уровень</div>
-                    <div className={qrStyles.infoValue}>{levelInfo?.current?.name || '—'}</div>
-                    <div className={qrStyles.infoCaption}>Кэшбэк {typeof qrCashbackPercent === 'number' ? `${qrCashbackPercent}%` : '—%'}</div>
+                    <div className={qrStyles.infoValue}>{levelInfo?.current?.name || "—"}</div>
+                    <div className={qrStyles.infoCaption}>
+                      Кэшбэк {typeof qrCashbackPercent === "number" ? `${qrCashbackPercent}%` : "—%"}
+                    </div>
                   </div>
                 </section>
 
@@ -1565,19 +1700,30 @@ export default function Page() {
                       <div className={qrStyles.progressFill} style={{ width: `${qrProgressData.percent}%` }} />
                     </div>
                     <div className={qrStyles.progressScale}>
-                      <span>{qrProgressData.current.toLocaleString('ru-RU')}</span>
-                      <span>{qrProgressData.threshold.toLocaleString('ru-RU')}</span>
+                      <span>{qrProgressData.current.toLocaleString("ru-RU")}</span>
+                      <span>{qrProgressData.threshold.toLocaleString("ru-RU")}</span>
                     </div>
                   </section>
                 )}
 
                 {qrError && <div className={qrStyles.error}>{qrError}</div>}
               </div>
-            )}
+            </div>
+          )}
 
-      {inviteSheetOpen && referralEnabled && referralInfo && (
-        <div className={styles.modalBackdrop} onClick={() => setInviteSheetOpen(false)}>
-          <div className={styles.sheet} onClick={(e) => e.stopPropagation()}>
+      {inviteSheetPresence.shouldRender && referralEnabled && referralInfo && (
+        <div
+          className={`${styles.modalBackdrop} ${
+            inviteSheetPresence.status === "entered" ? styles.modalBackdropVisible : styles.modalBackdropLeaving
+          }`}
+          onClick={() => setInviteSheetOpen(false)}
+        >
+          <div
+            className={`${styles.sheet} ${styles.sheetAnimated} ${
+              inviteSheetPresence.status === "entered" ? styles.sheetEntering : styles.sheetLeaving
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className={styles.sheetHeader}>Пригласить друга</div>
             <div className={styles.sheetText}>
               {renderReferralMessage(referralInfo.messageTemplate, {
@@ -1588,12 +1734,21 @@ export default function Page() {
               })}
             </div>
             <button
-              className={styles.sheetButton}
-              onClick={() => { void handleInviteFriend(); setInviteSheetOpen(false); }}
+              className={`${styles.sheetButton} ${styles.sheetPrimaryButton}`}
+              onClick={() => {
+                void handleInviteFriend();
+                setInviteSheetOpen(false);
+              }}
             >
               Отправить сообщение
             </button>
-            <button type="button" className={styles.sheetButton} onClick={() => setInviteSheetOpen(false)}>Закрыть</button>
+            <button
+              type="button"
+              className={styles.sheetButton}
+              onClick={() => setInviteSheetOpen(false)}
+            >
+              Закрыть
+            </button>
           </div>
         </div>
       )}
@@ -1602,9 +1757,19 @@ export default function Page() {
 
       {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
 
-      {promotionsOpen && (
-        <div className={styles.modalBackdrop} onClick={() => setPromotionsOpen(false)}>
-          <div className={styles.sheet} onClick={(e) => e.stopPropagation()}>
+      {promotionsSheetPresence.shouldRender && (
+        <div
+          className={`${styles.modalBackdrop} ${
+            promotionsSheetPresence.status === "entered" ? styles.modalBackdropVisible : styles.modalBackdropLeaving
+          }`}
+          onClick={() => setPromotionsOpen(false)}
+        >
+          <div
+            className={`${styles.sheet} ${styles.sheetAnimated} ${
+              promotionsSheetPresence.status === "entered" ? styles.sheetEntering : styles.sheetLeaving
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className={styles.sheetHeader}>Акции</div>
             {promotionsLoading ? (
               <div className={styles.emptyState}>Загрузка…</div>
@@ -1633,14 +1798,30 @@ export default function Page() {
                 ))}
               </ul>
             )}
-            <button type="button" className={styles.sheetButton} onClick={() => setPromotionsOpen(false)}>Закрыть</button>
+            <button type="button" className={styles.sheetButton} onClick={() => setPromotionsOpen(false)}>
+              Закрыть
+            </button>
           </div>
         </div>
       )}
 
-      {settingsOpen && (
-        <div className={styles.modalBackdrop} onClick={() => setSettingsOpen(false)}>
-          <div className={styles.sheet} onClick={(e) => e.stopPropagation()}>
+      {error && !loading && <div className={styles.error}>{error}</div>}
+
+      {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
+
+      {settingsSheetPresence.shouldRender && (
+        <div
+          className={`${styles.modalBackdrop} ${
+            settingsSheetPresence.status === "entered" ? styles.modalBackdropVisible : styles.modalBackdropLeaving
+          }`}
+          onClick={() => setSettingsOpen(false)}
+        >
+          <div
+            className={`${styles.sheet} ${styles.sheetAnimated} ${
+              settingsSheetPresence.status === "entered" ? styles.sheetEntering : styles.sheetLeaving
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className={styles.sheetHeader}>Настройки</div>
             <label className={styles.switchRow}>
               <input type="checkbox" checked={consent} onChange={toggleConsent} />
@@ -1664,6 +1845,7 @@ export default function Page() {
           </div>
         </div>
       )}
+
       </>
       )}
     </div>
