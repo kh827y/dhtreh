@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
+import { isSystemAllAudience } from '../customer-audiences/audience.utils';
 
 export type BroadcastArgs = {
   merchantId: string;
@@ -85,7 +86,15 @@ export class NotificationsService {
     segmentId?: string,
   ): Promise<number> {
     try {
-      if (segmentId) {
+    if (segmentId) {
+        const segment = await this.prisma.customerSegment.findFirst({
+          where: { id: segmentId, merchantId },
+          select: { id: true, isSystem: true, systemKey: true },
+        });
+        if (!segment) return 0;
+        if (isSystemAllAudience(segment)) {
+          return this.prisma.customerStats.count({ where: { merchantId } });
+        }
         const size = await this.prisma.segmentCustomer.count({
           where: { segmentId },
         });

@@ -237,6 +237,7 @@ model Merchant {
   communicationTemplates      CommunicationTemplate[]
   communicationTasks          CommunicationTask[]
   communicationTaskRecipients CommunicationTaskRecipient[]
+  communicationAssets         CommunicationAsset[]
   accessGroups                AccessGroup[]
   staffGroupMemberships       StaffAccessGroup[]
   staffInvitations            StaffInvitation[]
@@ -1312,6 +1313,22 @@ model CommunicationTaskRecipient {
   @@index([merchantId, channel])
 }
 
+model CommunicationAsset {
+  id         String               @id @default(cuid())
+  merchantId String
+  channel    CommunicationChannel
+  kind       String               @default("MEDIA")
+  fileName   String?
+  mimeType   String?
+  byteSize   Int
+  data       Bytes
+  createdAt  DateTime             @default(now())
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+
+  @@index([merchantId, channel])
+}
+
 // OTP codes
 model OtpCode {
   id         String   @id @default(cuid())
@@ -1812,6 +1829,12 @@ model CustomerSegment {
   promoCodes         PromoCode[]
   metricSnapshots    SegmentMetricSnapshot[]
   communicationTasks CommunicationTask[]
+  systemKey          String?
+  isSystem           Boolean   @default(false)
+
+  @@index([merchantId, isSystem])
+  @@index([systemKey])
+  @@unique([merchantId, systemKey])
 }
 
 // Reviews system

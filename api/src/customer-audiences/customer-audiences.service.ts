@@ -7,6 +7,8 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
+import { ALL_CUSTOMERS_SEGMENT_KEY } from './audience.constants';
+import { isSystemAllAudience } from './audience.utils';
 
 export interface CustomerFilters {
   search?: string;
@@ -31,6 +33,10 @@ export interface SegmentPayload {
   actorId?: string;
 }
 
+interface ListSegmentsOptions {
+  includeSystem?: boolean;
+}
+
 @Injectable()
 export class CustomerAudiencesService {
   private readonly logger = new Logger(CustomerAudiencesService.name);
@@ -39,6 +45,38 @@ export class CustomerAudiencesService {
     private readonly prisma: PrismaService,
     private readonly metrics: MetricsService,
   ) {}
+
+  private async ensureDefaultAudience(merchantId: string) {
+    const existing = await this.prisma.customerSegment.findFirst({
+      where: { merchantId, systemKey: ALL_CUSTOMERS_SEGMENT_KEY },
+    });
+    if (existing) return existing;
+    const total = await this.prisma.customerStats.count({
+      where: { merchantId },
+    });
+    const now = new Date();
+    return this.prisma.customerSegment.create({
+      data: {
+        merchantId,
+        name: 'Все клиенты',
+        description: 'Системная аудитория, включающая всех клиентов мерчанта',
+        type: 'SYSTEM',
+        rules: { kind: 'all' } as Prisma.JsonObject,
+        filters: Prisma.JsonNull,
+        metricsSnapshot: {
+          calculatedAt: now.toISOString(),
+          estimatedCustomers: total,
+        } as Prisma.JsonObject,
+        customerCount: total,
+        isActive: true,
+        tags: [],
+        color: null,
+        source: 'system',
+        systemKey: ALL_CUSTOMERS_SEGMENT_KEY,
+        isSystem: true,
+      },
+    });
+  }
 
   private buildCustomerWhere(
     merchantId: string,
@@ -81,7 +119,21 @@ export class CustomerAudiencesService {
   }
 
   async listCustomers(merchantId: string, filters: CustomerFilters = {}) {
-    const where = this.buildCustomerWhere(merchantId, filters);
+    const normalizedFilters: CustomerFilters = { ...filters };
+    if (normalizedFilters.segmentId) {
+      const segment = await this.prisma.customerSegment.findFirst({
+        where: {
+          merchantId,
+          id: normalizedFilters.segmentId,
+        },
+        select: { id: true, isSystem: true, systemKey: true },
+      });
+      if (!segment) throw new NotFoundException('Аудитория не найдена');
+      if (isSystemAllAudience(segment)) {
+        normalizedFilters.segmentId = undefined;
+      }
+    }
+    const where = this.buildCustomerWhere(merchantId, normalizedFilters);
     const take = Math.min(Math.max(filters.limit ?? 50, 1), 200);
     const skip = Math.max(filters.offset ?? 0, 0);
     const [items, total] = await this.prisma.$transaction([
@@ -117,7 +169,7 @@ export class CustomerAudiencesService {
           merchantId,
           filters: {
             hasSearch: Boolean(filters.search),
-            segmentId: filters.segmentId ?? null,
+            segmentId: normalizedFilters.segmentId ?? null,
             tags: filters.tags?.length ?? 0,
             gender: filters.gender?.length ?? 0,
             minVisits: filters.minVisits ?? null,
@@ -213,9 +265,15 @@ export class CustomerAudiencesService {
     return where;
   }
 
-  async listSegments(merchantId: string) {
+  async listSegments(
+    merchantId: string,
+    options: ListSegmentsOptions = {},
+  ) {
+    await this.ensureDefaultAudience(merchantId).catch(() => null);
+    const where: Prisma.CustomerSegmentWhereInput = { merchantId };
+    if (!options.includeSystem) where.isSystem = false;
     const segments = await this.prisma.customerSegment.findMany({
-      where: { merchantId },
+      where,
       orderBy: [{ archivedAt: 'asc' }, { createdAt: 'desc' }],
     });
     try {
@@ -273,6 +331,11 @@ export class CustomerAudiencesService {
       where: { merchantId, id: segmentId },
     });
     if (!segment) throw new NotFoundException('Сегмент не найден');
+    if (isSystemAllAudience(segment)) {
+      throw new BadRequestException(
+        'Системную аудиторию нельзя изменять',
+      );
+    }
     const updated = await this.prisma.customerSegment.update({
       where: { id: segmentId },
       data: {
@@ -310,6 +373,11 @@ export class CustomerAudiencesService {
       where: { merchantId, id: segmentId },
     });
     if (!segment) throw new NotFoundException('Сегмент не найден');
+    if (isSystemAllAudience(segment)) {
+      throw new BadRequestException(
+        'Системную аудиторию нельзя отключать',
+      );
+    }
 
     const updated = await this.prisma.customerSegment.update({
       where: { id: segmentId },
@@ -334,6 +402,11 @@ export class CustomerAudiencesService {
       where: { merchantId, id: segmentId },
     });
     if (!segment) throw new NotFoundException('Сегмент не найден');
+    if (isSystemAllAudience(segment)) {
+      throw new BadRequestException(
+        'Системную аудиторию нельзя архивировать',
+      );
+    }
 
     const archived = await this.prisma.customerSegment.update({
       where: { id: segmentId },

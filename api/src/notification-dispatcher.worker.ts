@@ -9,6 +9,7 @@ import { MetricsService } from './metrics.service';
 import { PushService } from './notifications/push/push.service';
 import { EmailService } from './notifications/email/email.service';
 import { pgTryAdvisoryLock, pgAdvisoryUnlock } from './pg-lock.util';
+import { isSystemAllAudience } from './customer-audiences/audience.utils';
 
 type OutboxRow = {
   id: string;
@@ -189,11 +190,23 @@ export class NotificationDispatcherWorker
         let customerIds: string[] = [];
         if (segmentId) {
           try {
-            const rows = await this.prisma.segmentCustomer.findMany({
-              where: { segmentId },
-              select: { customerId: true },
+            const segment = await this.prisma.customerSegment.findFirst({
+              where: { id: segmentId, merchantId },
+              select: { id: true, isSystem: true, systemKey: true },
             });
-            customerIds = rows.map((r) => r.customerId);
+            if (segment && isSystemAllAudience(segment)) {
+              const rows = await this.prisma.customerStats.findMany({
+                where: { merchantId },
+                select: { customerId: true },
+              });
+              customerIds = rows.map((r) => r.customerId);
+            } else {
+              const rows = await this.prisma.segmentCustomer.findMany({
+                where: { segmentId },
+                select: { customerId: true },
+              });
+              customerIds = rows.map((r) => r.customerId);
+            }
           } catch {}
         }
 

@@ -93,6 +93,34 @@ export class TelegramBotService {
     }
   }
 
+  private async ensureBotLoaded(merchantId: string): Promise<BotConfig | null> {
+    const cached = this.bots.get(merchantId);
+    if (cached) return cached;
+    try {
+      const settings = await this.prisma.merchantSettings.findUnique({
+        where: { merchantId },
+        select: {
+          telegramBotToken: true,
+          telegramBotUsername: true,
+        },
+      });
+      if (settings?.telegramBotToken && settings.telegramBotUsername) {
+        const webhookUrl = `${this.configService.get('API_BASE_URL')}/telegram/webhook/${merchantId}`;
+        const bot: BotConfig = {
+          token: settings.telegramBotToken,
+          username: settings.telegramBotUsername,
+          merchantId,
+          webhookUrl,
+        };
+        this.bots.set(merchantId, bot);
+        return bot;
+      }
+    } catch (error) {
+      this.logger.warn(`Не удалось загрузить данные бота для ${merchantId}: ${error}`);
+    }
+    return null;
+  }
+
   async registerBot(
     merchantId: string,
     botToken: string,
@@ -553,31 +581,104 @@ export class TelegramBotService {
 
   private async sendMessage(
     token: string,
-    chatId: number,
+    chatId: string | number,
     text: string,
     keyboard?: any,
     parseMode?: string,
   ) {
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    const payload: Record<string, any> = {
+      chat_id: chatId,
+      text,
+    };
+    if (keyboard) payload.reply_markup = keyboard;
+    if (parseMode) payload.parse_mode = parseMode;
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        reply_markup: keyboard,
-        parse_mode: parseMode,
-      }),
+      body: JSON.stringify(payload),
     });
+    await this.assertTelegramResponseOk(res);
+  }
+
+  private async sendPhoto(
+    token: string,
+    chatId: string,
+    payload: { buffer: Buffer; mimeType?: string; fileName?: string; caption?: string },
+  ) {
+    const FormDataCtor = (globalThis as any).FormData;
+    const BlobCtor = (globalThis as any).Blob;
+    if (!FormDataCtor || !BlobCtor) {
+      throw new Error('Формат FormData/Blob недоступен в рантайме Node');
+    }
+    const form = new FormDataCtor();
+    form.append('chat_id', chatId);
+    if (payload.caption) form.append('caption', payload.caption);
+    const blob = new BlobCtor([payload.buffer], {
+      type: payload.mimeType || 'image/jpeg',
+    });
+    form.append('photo', blob, payload.fileName || 'image.jpg');
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+      method: 'POST',
+      body: form,
+    });
+    await this.assertTelegramResponseOk(res);
+  }
+
+  async sendCampaignMessage(
+    merchantId: string,
+    tgId: string,
+    options: { text: string; asset?: { buffer: Buffer; mimeType?: string; fileName?: string } },
+  ): Promise<void> {
+    const bot = (await this.ensureBotLoaded(merchantId)) || this.bots.get(merchantId);
+    if (!bot) throw new Error('Telegram-бот не подключён');
+    const chatId = tgId;
+    const text = options.text?.trim() ?? '';
+    if (!text) throw new Error('Пустое сообщение');
+
+    if (options.asset) {
+      if (text.length > 1024) {
+        await this.sendMessage(bot.token, chatId, text);
+        await this.sendPhoto(bot.token, chatId, {
+          buffer: options.asset.buffer,
+          mimeType: options.asset.mimeType,
+          fileName: options.asset.fileName,
+        });
+      } else {
+        await this.sendPhoto(bot.token, chatId, {
+          buffer: options.asset.buffer,
+          mimeType: options.asset.mimeType,
+          fileName: options.asset.fileName,
+          caption: text,
+        });
+      }
+    } else {
+      await this.sendMessage(bot.token, chatId, text);
+    }
   }
 
   private async answerCallbackQuery(token: string, queryId: string) {
-    await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+    const res = await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         callback_query_id: queryId,
       }),
     });
+    await this.assertTelegramResponseOk(res);
+  }
+
+  private async assertTelegramResponseOk(res: globalThis.Response): Promise<void> {
+    const raw = await res.text();
+    let data: any = null;
+    try {
+      data = raw ? JSON.parse(raw) : null;
+    } catch {}
+    const ok = res.ok && (data?.ok ?? true);
+    if (!ok) {
+      const description =
+        data?.description || data?.error_message || raw || `Telegram API error (${res.status})`;
+      throw new Error(description);
+    }
   }
 
   private async deleteWebhook(token: string) {
@@ -618,7 +719,7 @@ export class TelegramBotService {
     if (!bot) return;
 
     try {
-      await this.sendMessage(bot.token, Number(tgId), message);
+      await this.sendMessage(bot.token, tgId, message);
       return { success: true };
     } catch (error) {
       this.logger.error(`Ошибка отправки уведомления: ${error}`);

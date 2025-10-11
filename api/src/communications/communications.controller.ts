@@ -7,6 +7,7 @@ import {
   Put,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { PortalGuard } from '../portal-auth/portal.guard';
@@ -16,6 +17,7 @@ import {
   type TemplatePayload,
 } from './communications.service';
 import { CommunicationChannel } from '@prisma/client';
+import type { Response } from 'express';
 
 @Controller('portal/communications')
 @UseGuards(PortalGuard)
@@ -87,5 +89,18 @@ export class CommunicationsController {
   @Get('tasks/:id/recipients')
   recipients(@Req() req: any, @Param('id') id: string) {
     return this.service.getTaskRecipients(this.merchantId(req), id);
+  }
+
+  @Get('assets/:id')
+  async downloadAsset(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Res() res: Response,
+  ) {
+    const asset = await this.service.getAsset(this.merchantId(req), id);
+    res.setHeader('Content-Type', asset.mimeType ?? 'application/octet-stream');
+    res.setHeader('Content-Length', String(asset.byteSize ?? asset.data?.length ?? 0));
+    if (asset.fileName) res.setHeader('X-Filename', encodeURIComponent(asset.fileName));
+    res.send(asset.data);
   }
 }

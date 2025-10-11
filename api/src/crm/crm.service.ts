@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import type { Response } from 'express';
 import { PrismaService } from '../prisma.service';
+import { isSystemAllAudience } from '../customer-audiences/audience.utils';
 
 @Injectable()
 export class CrmService {
@@ -140,10 +141,34 @@ export class CrmService {
     limit = 50,
     cursor?: string,
   ) {
+    const segment = await this.prisma.customerSegment.findFirst({
+      where: { merchantId, id: segmentId },
+      select: { id: true, isSystem: true, systemKey: true },
+    });
+    if (!segment) throw new NotFoundException('Аудитория не найдена');
+
+    const take = Math.min(Math.max(limit, 1), 200);
+    if (isSystemAllAudience(segment)) {
+      const customers = await this.prisma.customer.findMany({
+        where: { customerStats: { some: { merchantId } } },
+        orderBy: { createdAt: 'desc' },
+        take,
+        ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+      });
+      return {
+        items: customers.map((customer) => ({
+          id: customer.id,
+          phone: customer.phone,
+          name: customer.name,
+        })),
+        nextCursor: customers.length ? customers[customers.length - 1].id : null,
+      };
+    }
+
     const items = await this.prisma.segmentCustomer.findMany({
       where: { segmentId, segment: { merchantId } },
       include: { customer: true },
-      take: Math.min(Math.max(limit, 1), 200),
+      take,
       ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
       orderBy: { createdAt: 'desc' },
     });
@@ -163,6 +188,13 @@ export class CrmService {
     res: Response,
     batch = 1000,
   ) {
+    const segment = await this.prisma.customerSegment.findFirst({
+      where: { merchantId, id: segmentId },
+      select: { id: true, isSystem: true, systemKey: true },
+    });
+    if (!segment) throw new NotFoundException('Аудитория не найдена');
+    const isAll = isSystemAllAudience(segment);
+
     // Заголовки CSV
     res.write(
       [
@@ -180,17 +212,40 @@ export class CrmService {
     );
     let lastId: string | undefined = undefined;
     while (true) {
-      const chunk = await this.prisma.segmentCustomer.findMany({
-        where: { segmentId, segment: { merchantId } },
-        include: {
-          customer: true,
-        },
-        orderBy: { id: 'asc' },
-        take: batch,
-        ...(lastId ? { skip: 1, cursor: { id: lastId } } : {}),
-      });
-      if (!chunk.length) break;
-      const ids = chunk.map((c) => c.customerId);
+      let records:
+        | Array<{ customerId: string; cursorId: string; customer: any }>
+        | undefined;
+      if (isAll) {
+        const customers = await this.prisma.customer.findMany({
+          where: { customerStats: { some: { merchantId } } },
+          orderBy: { id: 'asc' },
+          take: batch,
+          ...(lastId ? { skip: 1, cursor: { id: lastId } } : {}),
+        });
+        if (!customers.length) break;
+        records = customers.map((customer) => ({
+          customerId: customer.id,
+          cursorId: customer.id,
+          customer,
+        }));
+        lastId = customers[customers.length - 1].id;
+      } else {
+        const chunk = await this.prisma.segmentCustomer.findMany({
+          where: { segmentId, segment: { merchantId } },
+          include: { customer: true },
+          orderBy: { id: 'asc' },
+          take: batch,
+          ...(lastId ? { skip: 1, cursor: { id: lastId } } : {}),
+        });
+        if (!chunk.length) break;
+        records = chunk.map((row) => ({
+          customerId: row.customerId,
+          cursorId: row.id,
+          customer: row.customer,
+        }));
+        lastId = chunk[chunk.length - 1].id;
+      }
+      const ids = records!.map((c) => c.customerId);
       const [wallets, stats] = await Promise.all([
         this.prisma.wallet.findMany({
           where: { merchantId, customerId: { in: ids }, type: 'POINTS' as any },
@@ -209,27 +264,26 @@ export class CrmService {
       ]);
       const walletMap = new Map(wallets.map((w) => [w.customerId, w.balance]));
       const statsMap = new Map(stats.map((s) => [s.customerId, s]));
-      for (const row of chunk) {
-        const c = row.customer;
-        const st = statsMap.get(row.customerId);
+      for (const record of records!) {
+        const c = record.customer;
+        const st = statsMap.get(record.customerId);
         const line = [
-          c?.id || '',
+          c?.id || record.customerId || '',
           c?.phone || '',
           c?.email || '',
           c?.name || '',
-          String(walletMap.get(row.customerId) || 0),
+          String(walletMap.get(record.customerId) || 0),
           st?.rfmClass || '',
           String(st?.visits || 0),
           String(st?.totalSpent || 0),
           st?.lastOrderAt ? new Date(st.lastOrderAt).toISOString() : '',
-          (c?.tags || []).join(', '),
+          Array.isArray(c?.tags) ? c.tags.join(', ') : '',
         ]
           .map((s) => '"' + String(s).replace(/"/g, '""') + '"')
           .join(';');
         res.write(line + '\n');
       }
-      lastId = chunk[chunk.length - 1].id;
-      if (chunk.length < batch) break;
+      if (records!.length < batch) break;
     }
   }
 

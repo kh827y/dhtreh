@@ -65,8 +65,14 @@ export class CustomerAudiencesController {
   }
 
   @Get('audiences')
-  listAudiences(@Req() req: any) {
-    return this.service.listSegments(this.merchantId(req));
+  listAudiences(
+    @Req() req: any,
+    @Query('includeSystem') includeSystem?: string,
+  ) {
+    const include = includeSystem === '1' || includeSystem === 'true';
+    return this.service.listSegments(this.merchantId(req), {
+      includeSystem: include,
+    });
   }
 
   @Post('audiences')

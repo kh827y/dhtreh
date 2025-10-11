@@ -329,7 +329,7 @@ export class PortalController {
         ? task.failedCount
         : this.coerceCount(stats.failed ?? stats.errors);
     const metadata = this.extractMetadata(payload, stats);
-    const imageCandidate = media.imageUrl ?? payload.imageUrl;
+    const imageAssetId = media.assetId ?? null;
 
     return {
       id: task.id,
@@ -337,7 +337,13 @@ export class PortalController {
       audienceId: task.audienceId ?? snapshot.legacyAudienceId ?? null,
       audienceName: task.audienceName ?? snapshot.audienceName ?? null,
       text: typeof payload.text === 'string' ? payload.text : '',
-      imageUrl: typeof imageCandidate === 'string' ? imageCandidate : null,
+      imageAssetId: typeof imageAssetId === 'string' ? imageAssetId : null,
+      imageMeta: imageAssetId
+        ? {
+            fileName: media.fileName ?? null,
+            mimeType: media.mimeType ?? null,
+          }
+        : null,
       scheduledAt: task.scheduledAt,
       timezone: task.timezone ?? null,
       status: task.status,
@@ -783,7 +789,7 @@ export class PortalController {
       audienceId?: string;
       audienceName?: string;
       text?: string;
-      imageUrl?: string;
+      media?: any;
       startAt?: string;
       scheduledAt?: string;
       timezone?: string;
@@ -804,7 +810,7 @@ export class PortalController {
         payload: {
           text: body?.text ?? '',
         },
-        media: body?.imageUrl ? { imageUrl: body.imageUrl } : undefined,
+        media: body?.media ?? null,
       })
       .then((task) => this.mapTelegramTask(task));
   }

@@ -11,6 +11,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
+import { CommunicationsDispatcherWorker } from './communications-dispatcher.worker';
 
 export interface TemplatePayload {
   name: string;
@@ -50,11 +51,18 @@ export class CommunicationsService {
   private readonly logger = new Logger(CommunicationsService.name);
   private readonly activeStatuses = ['SCHEDULED', 'RUNNING', 'PAUSED'];
   private readonly archivedStatuses = ['COMPLETED', 'CANCELED', 'ARCHIVED'];
-  private readonly allowedTelegramImageExtensions = ['.jpg', '.jpeg', '.png'];
+  private readonly maxTelegramTextLength = 4096;
+  private readonly maxTelegramMediaBytes = 10 * 1024 * 1024;
+  private readonly allowedTelegramMimeTypes = [
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+  ];
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly metrics: MetricsService,
+    private readonly dispatcher: CommunicationsDispatcherWorker,
   ) {}
 
   async listTemplates(
@@ -274,28 +282,34 @@ export class CommunicationsService {
     if (!text) {
       throw new BadRequestException('Текст сообщения обязателен');
     }
-    if (text.length > 512) {
-      throw new BadRequestException('Текст не должен превышать 512 символов');
+    if (text.length > this.maxTelegramTextLength) {
+      throw new BadRequestException(
+        `Текст не должен превышать ${this.maxTelegramTextLength} символов`,
+      );
     }
-    const imageUrl =
-      payload.media?.imageUrl ?? payload.payload?.imageUrl ?? null;
-    if (imageUrl) {
-      this.validateTelegramImage(imageUrl);
-    }
-    const scheduledAt = this.resolveFutureDate(payload.scheduledAt);
+
+    const scheduledAt = payload.scheduledAt
+      ? this.resolveFutureDate(payload.scheduledAt)
+      : null;
     const audienceSnapshot = payload.audienceSnapshot ?? {
       legacyAudienceId: payload.audienceId ?? payload.audienceCode ?? null,
       audienceName: payload.audienceName ?? null,
     };
 
-    return this.persistTask(merchantId, {
+    const mediaDescriptor = await this.prepareTelegramMedia(merchantId, payload);
+
+    const task = await this.persistTask(merchantId, {
       ...payload,
       scheduledAt,
       audienceSnapshot,
       payload: { ...(payload.payload ?? {}), text },
-      media: imageUrl ? { imageUrl } : (payload.media ?? null),
+      media: mediaDescriptor,
       timezone: payload.timezone ?? null,
     });
+    if (!task.scheduledAt || task.scheduledAt.getTime() <= Date.now()) {
+      this.dispatcher.triggerImmediate(task.id);
+    }
+    return task;
   }
 
   private async persistTask(
@@ -560,15 +574,93 @@ export class CommunicationsService {
     }
   }
 
-  private validateTelegramImage(url: string) {
-    const lower = url.toLowerCase();
-    if (
-      !this.allowedTelegramImageExtensions.some((ext) => lower.endsWith(ext))
-    ) {
+  private async prepareTelegramMedia(
+    merchantId: string,
+    payload: TaskPayload,
+  ): Promise<Prisma.JsonValue | null> {
+    const mediaInput = (payload.media as any) ?? null;
+    if (!mediaInput) return null;
+
+    if (mediaInput.assetId) {
+      const asset = await this.prisma.communicationAsset.findFirst({
+        where: { id: String(mediaInput.assetId), merchantId },
+        select: { id: true },
+      });
+      if (!asset) {
+        throw new BadRequestException('Указанный медиафайл не найден');
+      }
+      return { assetId: asset.id } as Prisma.JsonObject;
+    }
+
+    const base64Raw =
+      mediaInput.imageBase64 || mediaInput.base64 || mediaInput.dataUrl;
+    if (!base64Raw || typeof base64Raw !== 'string') return null;
+
+    const parsed = this.decodeBase64Payload(
+      base64Raw,
+      mediaInput.mimeType,
+      mediaInput.fileName,
+    );
+    if (parsed.buffer.length === 0) {
+      throw new BadRequestException('Пустой медиафайл для рассылки');
+    }
+    if (parsed.buffer.length > this.maxTelegramMediaBytes) {
       throw new BadRequestException(
-        'Разрешены изображения только в форматах JPG или PNG',
+        `Изображение не должно превышать ${Math.floor(this.maxTelegramMediaBytes / (1024 * 1024))} МБ`,
       );
     }
+    if (!this.allowedTelegramMimeTypes.includes(parsed.mimeType)) {
+      throw new BadRequestException('Неподдерживаемый формат изображения');
+    }
+
+    const asset = await this.prisma.communicationAsset.create({
+      data: {
+        merchantId,
+        channel: CommunicationChannel.TELEGRAM,
+        kind: 'MEDIA',
+        fileName: parsed.fileName,
+        mimeType: parsed.mimeType,
+        byteSize: parsed.buffer.length,
+        data: parsed.buffer,
+      },
+      select: {
+        id: true,
+        fileName: true,
+        mimeType: true,
+        byteSize: true,
+      },
+    });
+
+    return {
+      assetId: asset.id,
+      fileName: asset.fileName ?? null,
+      mimeType: asset.mimeType ?? null,
+      byteSize: asset.byteSize,
+    } as Prisma.JsonObject;
+  }
+
+  private decodeBase64Payload(
+    raw: string,
+    mimeHint?: string,
+    fileHint?: string,
+  ): { buffer: Buffer; mimeType: string; fileName: string | null } {
+    const match = raw.match(/^data:([^;]+);base64,(.*)$/);
+    let mimeType = mimeHint ?? 'application/octet-stream';
+    let base64 = raw;
+    if (match) {
+      mimeType = match[1] || mimeType;
+      base64 = match[2] || '';
+    }
+    const cleaned = base64.replace(/\s+/g, '');
+    const buffer = Buffer.from(cleaned, 'base64');
+    const fileName = fileHint ? String(fileHint) : this.defaultFileNameForMime(mimeType);
+    return { buffer, mimeType, fileName };
+  }
+
+  private defaultFileNameForMime(mime: string): string {
+    if (mime === 'image/png') return 'image.png';
+    if (mime === 'image/webp') return 'image.webp';
+    return 'image.jpg';
   }
 
   private async findOwnedTask(
@@ -582,5 +674,15 @@ export class CommunicationsService {
       throw new NotFoundException('Задача не найдена');
     }
     return task;
+  }
+
+  async getAsset(merchantId: string, assetId: string) {
+    const asset = await this.prisma.communicationAsset.findUnique({
+      where: { id: assetId },
+    });
+    if (!asset || asset.merchantId !== merchantId) {
+      throw new NotFoundException('Файл не найден');
+    }
+    return asset;
   }
 }
