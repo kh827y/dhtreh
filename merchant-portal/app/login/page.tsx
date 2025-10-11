@@ -11,9 +11,16 @@ export default function PortalLoginPage() {
   const [msg, setMsg] = React.useState('');
 
   async function login() {
-    setMsg(''); setLoading(true);
+    if (loading) return;
+    setMsg('');
+    setLoading(true);
     try {
-      const r = await fetch('/api/session/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password, code: needCode ? code : undefined }) });
+      const payload = {
+        email: email.trim(),
+        password,
+        code: needCode ? code.trim() : undefined,
+      };
+      const r = await fetch('/api/session/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       if (!r.ok) {
         const t = await r.text();
         if (/TOTP required/i.test(t)) { setNeedCode(true); setMsg('Требуется код аутентификатора'); return; }
@@ -32,21 +39,21 @@ export default function PortalLoginPage() {
           <div style={{ display:'grid', gap: 10 }}>
             <label style={{ display:'grid', gap: 4 }}>
               <span style={{ opacity:.8, fontSize:12 }}>Email</span>
-              <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" type="email" style={{ padding:10, borderRadius:8, background:'rgba(255,255,255,.04)', border:'1px solid rgba(255,255,255,.1)' }} />
+              <input value={email} onChange={e=>{ setEmail(e.target.value); setMsg(''); }} placeholder="you@example.com" type="email" style={{ padding:10, borderRadius:8, background:'rgba(255,255,255,.04)', border:'1px solid rgba(255,255,255,.1)' }} />
             </label>
             <label style={{ display:'grid', gap: 4 }}>
               <span style={{ opacity:.8, fontSize:12 }}>Пароль</span>
-              <input value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" type="password" style={{ padding:10, borderRadius:8, background:'rgba(255,255,255,.04)', border:'1px solid rgba(255,255,255,.1)' }} />
+              <input value={password} onChange={e=>{ setPassword(e.target.value); setMsg(''); }} placeholder="••••••••" type="password" style={{ padding:10, borderRadius:8, background:'rgba(255,255,255,.04)', border:'1px solid rgba(255,255,255,.1)' }} />
             </label>
             {needCode && (
               <label style={{ display:'grid', gap: 4 }}>
                 <span style={{ opacity:.8, fontSize:12 }}>Код аутентификатора</span>
-                <input value={code} onChange={e=>setCode(e.target.value)} placeholder="123456" inputMode="numeric" style={{ padding:10, borderRadius:8, background:'rgba(255,255,255,.04)', border:'1px solid rgba(255,255,255,.1)' }} />
+                <input value={code} onChange={e=>{ setCode(e.target.value); setMsg(''); }} placeholder="123456" inputMode="numeric" maxLength={6} style={{ padding:10, borderRadius:8, background:'rgba(255,255,255,.04)', border:'1px solid rgba(255,255,255,.1)' }} />
               </label>
             )}
             {!!msg && <div style={{ color:'#f87171' }}>{msg}</div>}
             <div style={{ display:'flex', gap: 8, justifyContent:'flex-end' }}>
-              <Button variant="primary" onClick={login} disabled={loading || !email || !password}>{loading ? 'Входим...' : 'Войти'}</Button>
+              <Button variant="primary" onClick={login} disabled={loading || !email.trim() || !password || (needCode && !code.trim())}>{loading ? 'Входим...' : 'Войти'}</Button>
             </div>
           </div>
         </CardBody>

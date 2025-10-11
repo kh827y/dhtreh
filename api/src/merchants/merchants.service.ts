@@ -4,7 +4,6 @@ import {
   BadRequestException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { getJose } from '../loyalty/token.util';
 import { hashPassword, verifyPassword } from '../password.util';
 import { PrismaService } from '../prisma.service';
 import {
@@ -19,6 +18,7 @@ import {
   UpdateStaffDto,
   UpdateOutletPosDto,
 } from './dto';
+import { signPortalJwt as issuePortalJwt } from '../portal-auth/portal-jwt.util';
 // Lazy Ajv import to avoid TS2307 when dependency isn't installed yet
 const __AjvLib: any = (() => {
   try {
@@ -1419,20 +1419,14 @@ export class MerchantsService {
     ttlSeconds = 60 * 60,
     adminImpersonation = false,
   ) {
-    const { SignJWT } = await getJose();
-    const secret = process.env.PORTAL_JWT_SECRET || '';
-    if (!secret) throw new Error('PORTAL_JWT_SECRET not configured');
-    const now = Math.floor(Date.now() / 1000);
-    const jwt = await new SignJWT({
-      sub: merchantId,
+    return issuePortalJwt({
+      merchantId,
+      subject: merchantId,
+      actor: 'MERCHANT',
       role: 'MERCHANT',
       adminImpersonation,
-    })
-      .setProtectedHeader({ alg: 'HS256' })
-      .setIssuedAt(now)
-      .setExpirationTime(now + ttlSeconds)
-      .sign(new TextEncoder().encode(secret));
-    return jwt as string;
+      ttlSeconds,
+    });
   }
   async issueStaffToken(merchantId: string, staffId: string) {
     const user = await this.prisma.staff.findUnique({ where: { id: staffId } });

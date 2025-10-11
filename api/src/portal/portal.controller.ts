@@ -351,17 +351,107 @@ export class PortalController {
     };
   }
 
+  private normalizePortalPermissions(state: any) {
+    if (!state) return {};
+    if (state.allowAll) return { __all__: ['*'] };
+    const result: Record<string, string[]> = {};
+    const entries: Array<[string, unknown]> =
+      state.resources instanceof Map
+        ? Array.from(state.resources.entries()).map(
+            ([key, value]) => [String(key), value] as [string, unknown],
+          )
+        : (Object.entries(state.resources || {}) as Array<[string, unknown]>);
+    for (const [resourceKey, actionsRaw] of entries) {
+      const resource = String(resourceKey || '').trim();
+      if (!resource) continue;
+      let actions: string[] = [];
+      if (actionsRaw instanceof Set) actions = Array.from(actionsRaw);
+      else if (Array.isArray(actionsRaw)) actions = actionsRaw.slice();
+      else if (actionsRaw && typeof actionsRaw === 'object') {
+        actions = Object.keys(actionsRaw).filter((key) => actionsRaw[key]);
+      }
+      const normalized = Array.from(
+        new Set(
+          actions
+            .map((a) => String(a || '').toLowerCase().trim())
+            .filter((a) => !!a),
+        ),
+      ).sort();
+      if (normalized.length) result[resource.toLowerCase()] = normalized;
+    }
+    return result;
+  }
+
   @Get('me')
   @ApiOkResponse({
     schema: {
       type: 'object',
-      properties: { merchantId: { type: 'string' }, role: { type: 'string' } },
+      properties: {
+        merchantId: { type: 'string' },
+        role: { type: 'string' },
+        actor: { type: 'string' },
+        adminImpersonation: { type: 'boolean' },
+        staff: {
+          type: 'object',
+          nullable: true,
+          properties: {
+            id: { type: 'string' },
+            name: { type: 'string', nullable: true },
+            email: { type: 'string', nullable: true },
+            role: { type: 'string', nullable: true },
+            groups: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string' },
+                  name: { type: 'string' },
+                  scope: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
+        permissions: {
+          type: 'object',
+          additionalProperties: {
+            type: 'array',
+            items: { type: 'string' },
+          },
+        },
+      },
     },
   })
   me(@Req() req: any) {
+    const actor = req.portalActor || 'MERCHANT';
+    const staff =
+      actor === 'STAFF'
+        ? {
+            id: String(req.portalStaffId || ''),
+            name:
+              typeof req.portalStaffName === 'string'
+                ? req.portalStaffName
+                : null,
+            email:
+              typeof req.portalStaffEmail === 'string'
+                ? req.portalStaffEmail
+                : null,
+            role:
+              typeof req.portalStaffRole === 'string'
+                ? req.portalStaffRole
+                : null,
+            groups: Array.isArray(req.portalAccessGroups)
+              ? req.portalAccessGroups
+              : [],
+          }
+        : null;
     return {
       merchantId: this.getMerchantId(req),
       role: req.portalRole || 'MERCHANT',
+      actor,
+      adminImpersonation: !!req.portalAdminImpersonation,
+      staff,
+      permissions: this.normalizePortalPermissions(req.portalPermissions),
     };
   }
 

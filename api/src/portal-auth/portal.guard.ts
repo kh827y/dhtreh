@@ -1,9 +1,12 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { GqlExecutionContext } from '@nestjs/graphql';
-import { getJose } from '../loyalty/token.util';
+import { PrismaService } from '../prisma.service';
+import { verifyPortalJwt } from './portal-jwt.util';
 
 @Injectable()
 export class PortalGuard implements CanActivate {
+  constructor(private readonly prisma: PrismaService) {}
+
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req: any =
       context.getType<'http' | 'graphql'>() === 'http'
@@ -14,18 +17,65 @@ export class PortalGuard implements CanActivate {
     const m = /^Bearer\s+(.+)$/i.exec(auth);
     if (!m) return false;
     try {
-      const { jwtVerify } = await getJose();
-      const secret = process.env.PORTAL_JWT_SECRET || '';
-      if (!secret) return false;
-      const { payload } = await jwtVerify(
-        m[1],
-        new TextEncoder().encode(secret),
-      );
-      const sub = String(payload?.sub || '');
-      if (!sub) return false;
-      req.portalMerchantId = sub;
-      req.portalRole = payload?.role || 'MERCHANT';
-      req.portalAdminImpersonation = !!payload?.adminImpersonation;
+      const claims = await verifyPortalJwt(m[1]);
+      const merchantId = claims.merchantId || claims.sub;
+      if (!merchantId) return false;
+      req.portalMerchantId = merchantId;
+      req.portalRole =
+        claims.role || (claims.actor === 'STAFF' ? 'STAFF' : 'MERCHANT');
+      req.portalActor = claims.actor;
+      req.portalAdminImpersonation = !!claims.adminImpersonation;
+      if (claims.actor === 'STAFF') {
+        const staffId = claims.staffId || claims.sub;
+        if (!staffId) return false;
+        const staff = await this.prisma.staff.findFirst({
+          where: { id: staffId, merchantId },
+          include: {
+            accessGroupMemberships: {
+              where: { group: { scope: 'PORTAL', archivedAt: null } },
+              include: { group: { include: { permissions: true } } },
+            },
+          },
+        });
+        if (!staff) return false;
+        if (staff.status !== 'ACTIVE') return false;
+        if (!staff.portalAccessEnabled || !staff.canAccessPortal) return false;
+        if (!staff.hash) return false;
+        req.portalStaffId = staff.id;
+        req.portalStaffEmail = staff.email ?? null;
+        req.portalStaffRole = staff.role;
+        const nameParts = [staff.firstName, staff.lastName].filter(Boolean);
+        const fallbackName =
+          staff.login || staff.email || staff.phone || staff.id;
+        req.portalStaffName =
+          nameParts.length > 0 ? nameParts.join(' ') : fallbackName;
+        req.portalAccessGroups = staff.accessGroupMemberships.map((member) => ({
+          id: member.groupId,
+          name: member.group.name,
+          scope: member.group.scope,
+        }));
+        const resources = new Map<string, Set<string>>();
+        for (const membership of staff.accessGroupMemberships) {
+          for (const permission of membership.group.permissions) {
+            const resource = String(permission.resource || '').toLowerCase();
+            const action = String(permission.action || '').toLowerCase();
+            if (!resource || !action) continue;
+            if (!resources.has(resource)) {
+              resources.set(resource, new Set<string>());
+            }
+            resources.get(resource)!.add(action);
+          }
+        }
+        req.portalPermissions = {
+          allowAll: false,
+          resources,
+        };
+      } else {
+        req.portalPermissions = {
+          allowAll: true,
+          resources: new Map<string, Set<string>>(),
+        };
+      }
       return true;
     } catch {
       return false;

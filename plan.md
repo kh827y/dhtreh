@@ -5,6 +5,14 @@
 - [x] Miniapp: привязать заголовок, QR, кнопку обновления и таймер к фону, чтобы сохранялась пропорциональность при масштабировании.
 - [x] Miniapp: обновить документацию/README при необходимости после правок верстки (обновления не потребовались).
 
+## Фича 2025-10-14 — Merchant Portal: Авторизация по email + пароль (+TOTP), группы доступа
+
+- [x] Backend PortalAuth: единый логин мерчанта/сотрудника (по email), проверка пароля и TOTP (только для мерчанта), обновление `portalLastLoginAt`/`lastPortalLoginAt`, JWT с типом субъекта, `merchantId`, `staffId`, признак имперсонации.
+- [x] PortalGuard/PortalController: верификация токена, подгрузка портальных прав сотрудника (группы `AccessGroup`), расширенный ответ `/portal/me` с permissions/role/actor, проброс `portalPermissions`.
+- [x] Merchant Portal (Next.js): страница логина (TOTP-поле по требованию, валидации), layout и навигация, скрывающая разделы без прав; редиректы неавторизованных.
+- [x] Docs: README + API_DOCUMENTATION про PortalAuth (email staff/merchant, TOTP только для мерчанта, структура `/portal/me`, cookie `portal_jwt`).
+- [x] Проверки: прогнать smoke (логин мерчанта без/с TOTP, сотрудника с ограниченной группой), убедиться что сессия в cookie, middleware блокирует доступ.
+
 ## Фича 2025-10-09 — Реферальная программа в Mini App
 
 - [x] Miniapp: добавлена кнопка `Пригласить друга` рядом с `Акции` (каждая занимает 50% ширины, адаптивная вёрстка): `miniapp/app/page.tsx` + стили `page.module.css` (`.actionsPair`, `.inviteActionButton`).

@@ -51,6 +51,41 @@ describe('PortalAuth (e2e)', () => {
       }),
       update: jest.fn(async () => ({})),
     },
+    staff: {
+      findFirst: jest.fn(async (args: any) => {
+        const email = args?.where?.email;
+        if (!email) return null;
+        const normalized = String(email).toLowerCase();
+        if (normalized === 'staff1@mail.test') {
+          return {
+            id: 'STF-1',
+            merchantId: 'M-STAFF',
+            email: 'staff1@mail.test',
+            status: 'ACTIVE',
+            portalAccessEnabled: true,
+            canAccessPortal: true,
+            hash: hashPassword('staff-secret'),
+            role: 'MANAGER',
+            accessGroupMemberships: [],
+          } as any;
+        }
+        if (normalized === 'staff-disabled@mail.test') {
+          return {
+            id: 'STF-2',
+            merchantId: 'M-STAFF',
+            email: 'staff-disabled@mail.test',
+            status: 'SUSPENDED',
+            portalAccessEnabled: false,
+            canAccessPortal: false,
+            hash: hashPassword('staff-secret'),
+            role: 'CASHIER',
+            accessGroupMemberships: [],
+          } as any;
+        }
+        return null;
+      }),
+      update: jest.fn(async () => ({})),
+    },
   };
 
   beforeAll(async () => {
@@ -74,6 +109,10 @@ describe('PortalAuth (e2e)', () => {
     await app.close();
   });
 
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('POST /portal/auth/login — logs in with email+password (no TOTP)', async () => {
     const res = await request(app.getHttpServer())
       .post('/portal/auth/login')
@@ -87,6 +126,8 @@ describe('PortalAuth (e2e)', () => {
       .expect(200);
     expect(me.body.merchantId).toBe('M-1');
     expect(me.body.role).toBe('MERCHANT');
+    expect(me.body.actor).toBe('MERCHANT');
+    expect(me.body.staffId).toBeNull();
   });
 
   it('POST /portal/auth/login — requires TOTP when enabled', async () => {
@@ -119,6 +160,33 @@ describe('PortalAuth (e2e)', () => {
       .expect(401);
   });
 
+  it('POST /portal/auth/login — staff email+password without TOTP', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/portal/auth/login')
+      .send({ email: 'staff1@mail.test', password: 'staff-secret' })
+      .expect(201);
+    expect(typeof res.body.token).toBe('string');
+    expect(prismaMock.staff.update).toHaveBeenCalled();
+    const me = await request(app.getHttpServer())
+      .get('/portal/auth/me')
+      .set('authorization', `Bearer ${res.body.token}`)
+      .expect(200);
+    expect(me.body.merchantId).toBe('M-STAFF');
+    expect(me.body.actor).toBe('STAFF');
+    expect(me.body.staffId).toBe('STF-1');
+    expect(me.body.role).toBe('MANAGER');
+  });
+
+  it('POST /portal/auth/login — staff without portal access rejected', async () => {
+    await request(app.getHttpServer())
+      .post('/portal/auth/login')
+      .send({ email: 'staff-disabled@mail.test', password: 'staff-secret' })
+      .expect(401);
+    expect(prismaMock.staff.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'STF-2' } }),
+    );
+  });
+
   it('POST /merchants/:id/portal/impersonate — issues token; GET /portal/auth/me accepts it', async () => {
     const imp = await request(app.getHttpServer())
       .post('/merchants/M-imp/portal/impersonate')
@@ -132,5 +200,6 @@ describe('PortalAuth (e2e)', () => {
       .set('authorization', `Bearer ${token}`)
       .expect(200);
     expect(me.body.merchantId).toBe('M-imp');
+    expect(me.body.actor).toBe('MERCHANT');
   });
 });

@@ -8,7 +8,6 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { getJose } from '../loyalty/token.util';
 import {
   ApiBadRequestResponse,
   ApiOkResponse,
@@ -16,38 +15,13 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { verifyPassword } from '../password.util';
+import { signPortalJwt, verifyPortalJwt } from './portal-jwt.util';
+import { StaffStatus } from '@prisma/client';
 
 @ApiTags('portal-auth')
 @Controller('portal/auth')
 export class PortalAuthController {
   constructor(private prisma: PrismaService) {}
-
-  private sha256(s: string) {
-    const crypto = require('crypto');
-    return crypto.createHash('sha256').update(s, 'utf8').digest('hex');
-  }
-  private async signPortalJwt(merchantId: string, ttlSeconds = 60 * 60) {
-    const { SignJWT } = await getJose();
-    const secret = process.env.PORTAL_JWT_SECRET || '';
-    if (!secret) throw new Error('PORTAL_JWT_SECRET not configured');
-    const now = Math.floor(Date.now() / 1000);
-    const jwt = await new SignJWT({ sub: merchantId, role: 'MERCHANT' })
-      .setProtectedHeader({ alg: 'HS256' })
-      .setIssuedAt(now)
-      .setExpirationTime(now + ttlSeconds)
-      .sign(new TextEncoder().encode(secret));
-    return jwt as string;
-  }
-  private async verifyJwt(token: string) {
-    const { jwtVerify } = await getJose();
-    const secret = process.env.PORTAL_JWT_SECRET || '';
-    if (!secret) throw new Error('PORTAL_JWT_SECRET not configured');
-    const { payload } = await jwtVerify(
-      token,
-      new TextEncoder().encode(secret),
-    );
-    return payload;
-  }
 
   @Post('login')
   @ApiOkResponse({
@@ -64,37 +38,75 @@ export class PortalAuthController {
     const password = String(body?.password || '');
     const code = body?.code != null ? String(body.code) : undefined;
     if (!email || !password) throw new UnauthorizedException('Unauthorized');
-    const m = await (this.prisma.merchant as any).findFirst({
+    const merchant = await (this.prisma.merchant as any).findFirst({
       where: { portalEmail: email },
     });
-    if (!m || m.portalLoginEnabled === false)
+    if (merchant && merchant.portalLoginEnabled !== false) {
+      if (
+        !merchant.portalPasswordHash ||
+        !verifyPassword(password, merchant.portalPasswordHash)
+      )
+        throw new UnauthorizedException('Unauthorized');
+      if (merchant.portalTotpEnabled) {
+        const otplib = (() => {
+          try {
+            return require('otplib');
+          } catch {
+            return null;
+          }
+        })();
+        if (!otplib) throw new BadRequestException('TOTP library missing');
+        if (!code) throw new UnauthorizedException('TOTP required');
+        const ok = otplib.authenticator.verify({
+          token: code,
+          secret: merchant.portalTotpSecret,
+        });
+        if (!ok) throw new UnauthorizedException('Invalid code');
+      }
+      await (this.prisma.merchant as any).update({
+        where: { id: merchant.id },
+        data: { portalLastLoginAt: new Date() },
+      });
+      const token = await signPortalJwt({
+        merchantId: merchant.id,
+        subject: merchant.id,
+        actor: 'MERCHANT',
+        role: 'MERCHANT',
+        ttlSeconds: 24 * 60 * 60,
+      });
+      return { token };
+    }
+
+    const staff = await this.prisma.staff.findFirst({
+      where: {
+        email,
+        status: StaffStatus.ACTIVE,
+        portalAccessEnabled: true,
+        canAccessPortal: true,
+      },
+    });
+    if (!staff)
       throw new UnauthorizedException('Unauthorized');
     if (
-      !m.portalPasswordHash ||
-      !verifyPassword(password, m.portalPasswordHash)
+      staff.status !== StaffStatus.ACTIVE ||
+      !staff.portalAccessEnabled ||
+      !staff.canAccessPortal ||
+      !staff.hash ||
+      !verifyPassword(password, staff.hash)
     )
       throw new UnauthorizedException('Unauthorized');
-    if (m.portalTotpEnabled) {
-      const otplib = (() => {
-        try {
-          return require('otplib');
-        } catch {
-          return null;
-        }
-      })();
-      if (!otplib) throw new BadRequestException('TOTP library missing');
-      if (!code) throw new UnauthorizedException('TOTP required');
-      const ok = otplib.authenticator.verify({
-        token: code,
-        secret: m.portalTotpSecret,
-      });
-      if (!ok) throw new UnauthorizedException('Invalid code');
-    }
-    await (this.prisma.merchant as any).update({
-      where: { id: m.id },
-      data: { portalLastLoginAt: new Date() },
+    await this.prisma.staff.update({
+      where: { id: staff.id },
+      data: { lastPortalLoginAt: new Date() },
     });
-    const token = await this.signPortalJwt(m.id, 24 * 60 * 60);
+    const token = await signPortalJwt({
+      merchantId: staff.merchantId,
+      subject: staff.id,
+      actor: 'STAFF',
+      role: staff.role || 'STAFF',
+      staffId: staff.id,
+      ttlSeconds: 24 * 60 * 60,
+    });
     return { token };
   }
 
@@ -102,17 +114,31 @@ export class PortalAuthController {
   @ApiOkResponse({
     schema: {
       type: 'object',
-      properties: { merchantId: { type: 'string' }, role: { type: 'string' } },
+      properties: {
+        merchantId: { type: 'string' },
+        role: { type: 'string' },
+        actor: { type: 'string' },
+        staffId: { type: 'string', nullable: true },
+        adminImpersonation: { type: 'boolean' },
+      },
     },
   })
   @ApiUnauthorizedResponse()
   async me(@Headers('authorization') auth?: string) {
     const m = /^Bearer\s+(.+)$/i.exec(String(auth || ''));
     if (!m) throw new UnauthorizedException();
-    const payload = await this.verifyJwt(m[1]);
+    const claims = await verifyPortalJwt(m[1]);
+    const actor = claims.actor ?? 'MERCHANT';
+    const staffId =
+      actor === 'STAFF'
+        ? claims.staffId || claims.sub || null
+        : undefined;
     return {
-      merchantId: payload?.sub || '',
-      role: payload?.role || 'MERCHANT',
+      merchantId: claims.merchantId || claims.sub || '',
+      role: claims.role || (actor === 'STAFF' ? 'STAFF' : 'MERCHANT'),
+      actor,
+      staffId: staffId ?? null,
+      adminImpersonation: !!claims.adminImpersonation,
     };
   }
 }

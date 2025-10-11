@@ -95,7 +95,85 @@ const sections: SidebarSection[] = [
   },
 ];
 
-async function fetchPortalProfile() {
+type PortalPermissions = Record<string, string[]>;
+type PortalStaffProfile = {
+  id: string;
+  name: string | null;
+  email: string | null;
+  role: string | null;
+  groups: Array<{ id: string; name: string; scope: string }>;
+};
+
+type PortalProfile = {
+  merchantId: string;
+  role: string;
+  actor: string;
+  adminImpersonation: boolean;
+  staff: PortalStaffProfile | null;
+  permissions: PortalPermissions;
+};
+
+const ITEM_PERMISSION_REQUIREMENTS: Record<
+  string,
+  Array<{ resource: string; action?: string }>
+> = {
+  "/": [{ resource: "loyalty", action: "read" }],
+  "/analytics": [{ resource: "analytics", action: "read" }],
+  "/analytics/time": [{ resource: "analytics", action: "read" }],
+  "/analytics/portrait": [{ resource: "analytics", action: "read" }],
+  "/analytics/repeat": [{ resource: "analytics", action: "read" }],
+  "/analytics/dynamics": [{ resource: "analytics", action: "read" }],
+  "/analytics/rfm": [{ resource: "analytics", action: "read" }],
+  "/analytics/outlets": [{ resource: "analytics", action: "read" }],
+  "/analytics/staff": [{ resource: "analytics", action: "read" }],
+  "/analytics/referrals": [{ resource: "analytics", action: "read" }],
+  "/loyalty/mechanics": [{ resource: "loyalty", action: "read" }],
+  "/loyalty/mechanics/birthday": [{ resource: "loyalty", action: "read" }],
+  "/loyalty/mechanics/auto-return": [{ resource: "loyalty", action: "read" }],
+  "/loyalty/actions": [{ resource: "loyalty", action: "read" }],
+  "/loyalty/actions-earn": [{ resource: "loyalty", action: "read" }],
+  "/operations": [{ resource: "loyalty", action: "read" }],
+  "/loyalty/push": [{ resource: "loyalty", action: "read" }],
+  "/loyalty/telegram": [{ resource: "loyalty", action: "read" }],
+  "/promocodes": [{ resource: "loyalty", action: "read" }],
+  "/loyalty/staff-motivation": [{ resource: "loyalty", action: "read" }],
+  "/loyalty/antifraud": [{ resource: "loyalty", action: "read" }],
+  "/loyalty/cashier": [{ resource: "loyalty", action: "read" }],
+  "/reviews": [{ resource: "loyalty", action: "read" }],
+  "/customers": [{ resource: "loyalty", action: "read" }],
+  "/customers/import": [{ resource: "loyalty", action: "read" }],
+  "/audiences": [{ resource: "loyalty", action: "read" }],
+  "/products": [{ resource: "loyalty", action: "read" }],
+  "/categories": [{ resource: "loyalty", action: "read" }],
+  "/wallet": [{ resource: "loyalty", action: "read" }],
+  "/settings/outlets": [{ resource: "outlets", action: "read" }],
+  "/settings/staff": [{ resource: "staff", action: "read" }],
+  "/settings/access": [{ resource: "staff", action: "read" }],
+  "/settings/integrations": [{ resource: "loyalty", action: "read" }],
+  "/settings/telegram": [{ resource: "loyalty", action: "read" }],
+  "/settings/system": [{ resource: "loyalty", action: "read" }],
+};
+
+function normalizePermissions(payload: unknown): PortalPermissions {
+  const out: PortalPermissions = {};
+  if (!payload || typeof payload !== "object") return out;
+  const raw = payload as Record<string, unknown>;
+  for (const key of Object.keys(raw)) {
+    const value = raw[key];
+    if (Array.isArray(value)) {
+      out[key] = Array.from(
+        new Set(
+          value
+            .map((item) => String(item || "").toLowerCase().trim())
+            .filter(Boolean),
+        ),
+      );
+    }
+  }
+  return out;
+}
+
+async function fetchPortalProfile(): Promise<PortalProfile | null> {
   try {
     const store = await cookies();
     const token = store.get("portal_jwt")?.value;
@@ -106,33 +184,112 @@ async function fetchPortalProfile() {
       cache: "no-store",
     });
     if (!res.ok) return null;
-    return (await res.json()) as { merchantId: string; role?: string };
+    const data = await res.json();
+    const permissions = normalizePermissions(data?.permissions);
+    if (
+      Array.isArray(permissions.__all__) &&
+      !permissions.__all__.includes("*")
+    ) {
+      permissions.__all__.push("*");
+    }
+    const actor = typeof data?.actor === "string" ? data.actor : "MERCHANT";
+    const staffRaw = data?.staff;
+    const staff: PortalStaffProfile | null =
+      actor.toUpperCase() === "STAFF" && staffRaw && typeof staffRaw === "object"
+        ? {
+            id: String(staffRaw?.id ?? ""),
+            name:
+              typeof staffRaw?.name === "string"
+                ? staffRaw.name
+                : null,
+            email:
+              typeof staffRaw?.email === "string"
+                ? staffRaw.email
+                : null,
+            role:
+              typeof staffRaw?.role === "string"
+                ? staffRaw.role
+                : null,
+            groups: Array.isArray(staffRaw?.groups)
+              ? staffRaw.groups
+                  .map((group: any) => ({
+                    id: String(group?.id ?? ""),
+                    name: String(group?.name ?? "").trim() || null,
+                    scope: String(group?.scope ?? "").toUpperCase(),
+                  }))
+                  .filter((group) => group.id && group.name)
+              : [],
+          }
+        : null;
+    return {
+      merchantId: String(data?.merchantId ?? ""),
+      role: typeof data?.role === "string" ? data.role : actor,
+      actor,
+      adminImpersonation: Boolean(data?.adminImpersonation),
+      staff,
+      permissions,
+    };
   } catch {
     return null;
   }
 }
 
-function filterSectionsByRole(role?: string): SidebarSection[] {
-  if (!role) return sections;
-  const upper = role.toUpperCase();
-  if (upper === "CASHIER") {
-    return sections
-      .filter((section) => ["wizard", "loyalty"].includes(section.id))
-      .map((section) =>
-        section.id === "loyalty"
-          ? { ...section, items: section.items.filter((item) => item.href === "/loyalty/cashier") }
-          : section,
+function hasPermission(
+  permissions: PortalPermissions,
+  resource: string,
+  action = "read",
+) {
+  if (!permissions) return false;
+  const all = permissions.__all__;
+  if (Array.isArray(all) && (all.includes("*") || all.includes("manage"))) {
+    return true;
+  }
+  const actions = permissions[resource];
+  if (!actions || !actions.length) return false;
+  if (actions.includes("*") || actions.includes("manage")) return true;
+  if (action === "read") return actions.includes("read");
+  return actions.includes(action);
+}
+
+function normalizeHref(href: string) {
+  const base = href.split("?")[0];
+  return base.endsWith("/") && base !== "/" ? base.slice(0, -1) : base;
+}
+
+function canAccessRoute(permissions: PortalPermissions, href: string) {
+  if (!permissions) return false;
+  const rules =
+    ITEM_PERMISSION_REQUIREMENTS[normalizeHref(href)] ?? [
+      { resource: "loyalty", action: "read" },
+    ];
+  return rules.every((rule) =>
+    hasPermission(permissions, rule.resource, rule.action ?? "read"),
+  );
+}
+
+function filterSectionsByProfile(profile: PortalProfile | null): SidebarSection[] {
+  if (!profile) return sections;
+  if (
+    hasPermission(profile.permissions, "__all__", "*") ||
+    profile.actor.toUpperCase() !== "STAFF"
+  ) {
+    return sections;
+  }
+  return sections
+    .map((section) => {
+      const allowedItems = section.items.filter((item) =>
+        canAccessRoute(profile.permissions, item.href),
       );
-  }
-  if (upper === "ANALYST") {
-    return sections.filter((section) => ["wizard", "analytics"].includes(section.id));
-  }
-  return sections;
+      if (!allowedItems.length) return null;
+      return { ...section, items: allowedItems };
+    })
+    .filter(Boolean) as SidebarSection[];
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const profile = await fetchPortalProfile();
-  const filteredSections = filterSectionsByRole(profile?.role);
+  const filteredSections = filterSectionsByProfile(profile);
+  const staffLabel = profile?.staff?.name || profile?.staff?.email || null;
   return (
     <html lang="ru" className="dark">
       <body className={inter.className} style={{ margin: 0 }}>
@@ -143,6 +300,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <b>Merchant Portal</b>
             </div>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center', fontSize: 12, opacity: .7 }}>
+              {staffLabel ? <span>{staffLabel}</span> : null}
               {profile?.role ? <span>Роль: {profile.role}</span> : null}
               <span>v1</span>
             </div>

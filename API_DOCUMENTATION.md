@@ -71,6 +71,36 @@ function verifyBridgeSignature(sigHeader: string, rawBody: string, secret: strin
 }
 ```
 
+### PortalAuth JWT
+
+Merchant Portal использует отдельный JWT, выдаваемый при логине по email.
+
+- `POST /portal/auth/login`
+  ```json
+  {
+    "email": "owner@example.com",
+    "password": "secret123",
+    "code": "123456" // требуется только если у мерчанта включён TOTP
+  }
+  ```
+  Успешный ответ: `{ "token": "<jwt>" }`. Frontend кладёт токен в httpOnly‑cookie `portal_jwt`.
+
+- `GET /portal/auth/me`
+  ```json
+  {
+    "merchantId": "M-123",
+    "role": "MERCHANT",
+    "actor": "MERCHANT",
+    "staffId": null,
+    "adminImpersonation": false,
+    "permissions": {
+      "__all__": ["*"]
+    },
+    "staff": null
+  }
+  ```
+  Для сотрудников поле `actor` = `STAFF`, `staffId` содержит их идентификатор, а `permissions` включает разрешения, собранные из групп доступа (`resource` → список действий). Backend проверяет, что сотрудник активен и имеет `portalAccessEnabled/canAccessPortal`.
+
 #### 7. Акции (мини‑аппа)
 
 ```http
