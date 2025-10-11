@@ -303,4 +303,8 @@ export class CustomerProfileSaveDto {
   @ApiProperty({ type: String, description: 'YYYY-MM-DD' })
   @IsString()
   birthDate!: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  phone?: string;
 }

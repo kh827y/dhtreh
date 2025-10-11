@@ -341,6 +341,23 @@ export class TelegramBotService {
         } else if (text === '/help') {
           await this.handleHelp(bot, chatId);
         }
+      } else if (update.message?.contact) {
+        // Пользователь поделился контактом (номер телефона)
+        const contact = update.message.contact;
+        const userId = contact.user_id || update.message.from?.id || update.message.chat?.id;
+        const phoneRaw: string | undefined = contact.phone_number || contact.phoneNumber;
+        if (userId && phoneRaw) {
+          try {
+            const tgId = String(userId);
+            const customerId = await this.resolveCustomerIdForMerchant(tgId, merchantId);
+            const phone = this.normalizePhoneStrict(phoneRaw);
+            await this.prisma.customer.update({ where: { id: customerId }, data: { phone } });
+            this.logger.log(`Сохранён телефон для customer=${customerId} (merchant=${merchantId})`);
+          } catch (err) {
+            const msg = (err as any)?.message || String(err);
+            this.logger.warn(`Не удалось сохранить телефон из контакта: ${msg}`);
+          }
+        }
       }
 
       // Обработка callback кнопок
@@ -725,5 +742,14 @@ export class TelegramBotService {
       this.logger.error(`Ошибка деактивации бота для ${merchantId}:`, error);
       throw error;
     }
+  }
+
+  private normalizePhoneStrict(phone?: string): string {
+    if (!phone) throw new Error('phone required');
+    let cleaned = String(phone).replace(/\D/g, '');
+    if (cleaned.startsWith('8')) cleaned = '7' + cleaned.substring(1);
+    if (cleaned.length === 10 && !cleaned.startsWith('7')) cleaned = '7' + cleaned;
+    if (cleaned.length !== 11) throw new Error('invalid phone');
+    return '+' + cleaned;
   }
 }

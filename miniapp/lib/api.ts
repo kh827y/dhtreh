@@ -295,7 +295,7 @@ export async function profileGet(merchantId: string, customerId: string): Promis
 export async function profileSave(
   merchantId: string,
   customerId: string,
-  profile: { name: string; gender: 'male' | 'female'; birthDate: string },
+  profile: { name: string; gender: 'male' | 'female'; birthDate: string; phone?: string },
 ): Promise<CustomerProfile> {
   return http('/loyalty/profile', {
     method: 'POST',

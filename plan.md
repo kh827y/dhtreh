@@ -34,6 +34,16 @@
 - [x] Miniapp: обновлены тексты шага профиля — субтитр заменён на «Эта информация поможет нам подобрать акции лично для вас», подсказка под полем пригласительного кода удалена.
 - [x] Miniapp: QR-модалка — при скрытом прогресс-баре контент не растягивается по вертикали (правки `miniapp/app/qr/page.module.css`: `.modalBody { align-items/start; align-content/start; grid-auto-rows: max-content; }`).
 
+## Хотфикс 2025-10-11 — Miniapp: телефон обязателен при сохранении профиля
+
+- [x] Miniapp (`miniapp/app/page.tsx`): двухшаговый сценарий.
+  - Шаг 1 «Расскажите о себе»: по нажатию «Сохранить» при отсутствии номера — переход на шаг привязки (без запроса прав).
+  - Шаг 2 «Привяжите номер телефона»: кнопка «Поделиться номером» вызывает `requestContact()` (fallback `requestPhoneNumber()`). При успешном получении номера профиль сохраняется и происходит переход на главную. При отмене — остаёмся на шаге 2, без действий.
+- [x] Miniapp API‑клиент (`miniapp/lib/api.ts`): `profileSave()` принимает опциональный `phone` и передаёт его на сервер.
+- [x] Backend DTO (`api/src/loyalty/dto.ts`): добавлено поле `phone?: string` в `CustomerProfileSaveDto`.
+- [x] Backend контроллер (`api/src/loyalty/loyalty.controller.ts`): при первом сохранении профиля для клиента телефон обязателен (если ещё не сохранён). Номер нормализуется (`+7XXXXXXXXXX`), сохраняется в `Customer.phone`, при конфликте уникальности возвращается `400` «Номер телефона уже используется».
+- [x] Docs (`API_DOCUMENTATION.md`): обновлён раздел `POST /loyalty/profile` — добавлено поле `phone` и требование обязательности при первичном сохранении.
+
 ## Хотфикс 2025-10-09 — Miniapp UX (скелетоны/BackButton)
 
 - [x] Страница QR (`miniapp/app/qr/page.tsx`): добавлен Telegram BackButton в нативную шапку (`WebApp.BackButton`), обработчик `onClick` → `router.back()`/fallback `push('/')`. Типизация `lib/telegram.ts` расширена (BackButton, onEvent/offEvent).

@@ -91,7 +91,17 @@ export class LoyaltyController {
         if (found) return found;
       } catch {}
     }
+
     return null;
+  }
+
+  private normalizePhoneStrict(phone?: string): string {
+    if (!phone) throw new BadRequestException('phone required');
+    let cleaned = String(phone).replace(/\D/g, '');
+    if (cleaned.startsWith('8')) cleaned = '7' + cleaned.substring(1);
+    if (cleaned.length === 10 && !cleaned.startsWith('7')) cleaned = '7' + cleaned;
+    if (cleaned.length !== 11) throw new BadRequestException('invalid phone');
+    return '+' + cleaned;
   }
 
   // Проверка, что customer принадлежит merchant (через CustomerTelegram или любые артефакты)
@@ -1902,10 +1912,36 @@ export class LoyaltyController {
       throw new BadRequestException('birthDate is invalid');
     }
 
-    const updated = await this.prisma.customer.update({
-      where: { id: customerId },
-      data: { name, gender, birthday: parsed },
-    });
+    const phoneRaw =
+      typeof (body as any)?.phone === 'string' ? (body as any).phone.trim() : '';
+    const mustRequirePhone = !current?.phone;
+    if (mustRequirePhone && !phoneRaw) {
+      throw new BadRequestException(
+        'Без номера телефона мы не можем зарегистрировать вас в программе лояльности',
+      );
+    }
+    let phoneNormalized: string | null = null;
+    if (phoneRaw) {
+      phoneNormalized = this.normalizePhoneStrict(phoneRaw);
+    }
+
+    let updated;
+    try {
+      updated = await this.prisma.customer.update({
+        where: { id: customerId },
+        data: Object.assign(
+          { name, gender, birthday: parsed },
+          phoneNormalized ? { phone: phoneNormalized } : {},
+        ),
+      });
+    } catch (e: any) {
+      const code = e?.code || '';
+      const msg = String(e?.message || '');
+      if (code === 'P2002' || /Unique constraint/i.test(msg)) {
+        throw new BadRequestException('Номер телефона уже используется');
+      }
+      throw e;
+    }
     return {
       name: updated.name ?? current.name ?? null,
       gender:

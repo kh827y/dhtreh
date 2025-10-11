@@ -257,6 +257,9 @@ export default function Page() {
   const [levelCatalog, setLevelCatalog] = useState<MechanicsLevel[]>([]);
   const [telegramUser, setTelegramUser] = useState<TelegramUser | null>(null);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
+  const [phone, setPhone] = useState<string | null>(null);
+  const [needPhoneStep, setNeedPhoneStep] = useState<boolean>(false);
+  const [pendingCustomerIdForPhone, setPendingCustomerIdForPhone] = useState<string | null>(null);
   const [profileForm, setProfileForm] = useState<{
     name: string;
     gender: "male" | "female" | "";
@@ -374,9 +377,6 @@ export default function Page() {
     try {
       if (tg?.ready) tg.ready();
       if (tg?.expand) tg.expand();
-      if (tg?.requestPhoneNumber) {
-        tg.requestPhoneNumber().catch(() => undefined);
-      }
     } catch {
       // ignore telegram errors
     }
@@ -1078,11 +1078,21 @@ export default function Page() {
         }
       }
 
+      // Если номера нет — переходим на шаг привязки номера, сохраняем customerId для второго шага
+      if (!phone) {
+        setNeedPhoneStep(true);
+        setPendingCustomerIdForPhone(effectiveCustomerId);
+        setProfileSaving(false);
+        return;
+      }
+
+      // Если номер уже есть в состоянии — сохраняем профиль сразу
       try {
         await profileSave(merchantId, effectiveCustomerId, {
           name: profileForm.name.trim(),
           gender: profileForm.gender as 'male' | 'female',
           birthDate: profileForm.birthDate,
+          phone: phone,
         });
         if (pendingKey) {
           try { localStorage.removeItem(pendingKey); } catch {}
@@ -1096,8 +1106,118 @@ export default function Page() {
         setProfileSaving(false);
       }
     },
-    [profileForm, referralEnabled, inviteCode, customerId, merchantId, initData, setAuthCustomerId]
+    [merchantId, customerId, profileForm, inviteCode, consent]
   );
+
+  const handleSharePhone = useCallback(async () => {
+    if (profileSaving) return;
+    const tg = getTelegramWebApp();
+    let phoneVal: string | null = null;
+    // Предпочтительно: requestContact
+    if (tg?.requestContact) {
+      try {
+        const getContact = () =>
+          tg.requestContact!.length > 0
+            ? new Promise<any>((resolve) => (tg.requestContact as any)((payload: any) => resolve(payload)))
+            : (tg.requestContact!() as Promise<any>);
+        const res: any = await Promise.race([
+          Promise.resolve(getContact()),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000)),
+        ]).catch(() => null);
+        if (res) {
+          const c = (res as any).contact || {};
+          const p = (c.phoneNumber || c.phone_number || (res as any).phone || (res as any).phone_number || (res as any).phoneNumber || '').toString();
+          if (p && p.trim()) phoneVal = p.trim();
+        }
+      } catch {}
+    }
+    // Fallback: requestPhoneNumber
+    if (!phoneVal && tg?.requestPhoneNumber) {
+      try {
+        const res: any = await Promise.race([
+          Promise.resolve(tg.requestPhoneNumber()),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000)),
+        ]).catch(() => null);
+        if (res) {
+          let p: any = null;
+          if (typeof res === 'string') p = res;
+          else if (res && typeof res === 'object') {
+            p = (res as any).phone || (res as any).phone_number || (res as any).phoneNumber || (res as any).contact?.phone_number || (res as any).contact?.phoneNumber || null;
+          }
+          if (typeof p === 'string' && p.trim()) phoneVal = p.trim();
+        }
+      } catch {}
+    }
+
+    // Если номер не пришёл в WebApp, всё равно пытаемся сохранить профиль несколько раз —
+    // номер мог прийти на бэкенд через webhook и быть добавлен к клиенту.
+    if (!phoneVal) {
+      setProfileSaving(true);
+      const effectiveCustomerId = pendingCustomerIdForPhone || customerId;
+      if (!merchantId || !effectiveCustomerId) {
+        setProfileSaving(false);
+        return;
+      }
+      const maxTries = 10;
+      for (let i = 0; i < maxTries; i++) {
+        try {
+          await profileSave(merchantId, effectiveCustomerId, {
+            name: profileForm.name.trim(),
+            gender: profileForm.gender as 'male' | 'female',
+            birthDate: profileForm.birthDate,
+          });
+          const pendingKey = merchantId ? profilePendingKey(merchantId) : null;
+          if (pendingKey) {
+            try { localStorage.removeItem(pendingKey); } catch {}
+          }
+          setProfileCompleted(true);
+          setNeedPhoneStep(false);
+          setToast({ msg: 'Профиль сохранён', type: 'success' });
+          setProfileSaving(false);
+          return;
+        } catch (error) {
+          const msg = resolveErrorMessage(error);
+          const missingPhone = /Без номера телефона мы не можем зарегистрировать/i.test(msg);
+          if (!missingPhone) {
+            setToast({ msg: `Не удалось сохранить: ${msg}` , type: 'error' });
+            setProfileSaving(false);
+            return;
+          }
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+      }
+      setProfileSaving(false);
+      return;
+    }
+
+    setPhone(phoneVal);
+    setProfileSaving(true);
+    const pendingKey = merchantId ? profilePendingKey(merchantId) : null;
+    const effectiveCustomerId = pendingCustomerIdForPhone || customerId;
+    if (!merchantId || !effectiveCustomerId) {
+      setProfileSaving(false);
+      return;
+    }
+    try {
+      await profileSave(merchantId, effectiveCustomerId, {
+        name: profileForm.name.trim(),
+        gender: profileForm.gender as 'male' | 'female',
+        birthDate: profileForm.birthDate,
+        phone: phoneVal,
+      });
+      if (pendingKey) {
+        try { localStorage.removeItem(pendingKey); } catch {}
+      }
+      setProfileCompleted(true);
+      setNeedPhoneStep(false);
+      setToast({ msg: "Профиль сохранён", type: "success" });
+    } catch (error) {
+      const message = resolveErrorMessage(error);
+      setToast({ msg: `Не удалось сохранить: ${message}`, type: "error" });
+    } finally {
+      setProfileSaving(false);
+    }
+  }, [profileSaving, merchantId, customerId, pendingCustomerIdForPhone, profileForm]);
 
   const handleInviteFriend = useCallback(async () => {
     if (!referralInfo) {
@@ -1301,137 +1421,158 @@ export default function Page() {
     <div className={styles.page}>
       {profilePage ? (
         <div className={styles.profileContainer}>
-          <form
-            className={`${styles.profileCard} ${
-              inviteFieldVisible ? styles.profileCardExtended : styles.profileCardCompact
-            }`}
-            onSubmit={handleProfileSubmit}
-          >
-            <div className={`${styles.appear} ${styles.delay0}`}>
-              <div className={styles.profileTitle}>Расскажите о себе</div>
-              <div className={styles.profileSubtitle}>
-                Эта информация поможет нам подобрать акции лично для вас
+          {needPhoneStep ? (
+            <div className={`${styles.profileCard} ${inviteFieldVisible ? styles.profileCardExtended : styles.profileCardCompact}`}>
+              <div className={`${styles.appear} ${styles.delay0}`}>
+                <div className={styles.profileTitle}>Пожалуйста, привяжите ваш номер телефона.</div>
+                <div className={styles.profileSubtitle}>
+                  Без него мы не сможем зарегистрировать вас в программе лояльности.
+                  <br />
+                  Нажмите для привязки:
+                </div>
               </div>
-            </div>
-            <div className={`${styles.profileField} ${styles.appear} ${styles.delay1}`}>
-              <label htmlFor="name">Имя</label>
-              <input
-                id="name"
-                value={profileForm.name}
-                onChange={(e) => setProfileForm((prev) => ({ ...prev, name: e.target.value }))}
-                placeholder="Введите имя"
-                className={profileTouched && !profileForm.name ? styles.inputError : undefined}
-              />
-            </div>
-            <div className={`${styles.profileField} ${styles.appear} ${styles.delay2}`}>
-              <span>Пол</span>
-              <div
-                className={`${styles.genderRow} ${
-                  profileTouched && !profileForm.gender ? styles.inputErrorBorder : ""
-                }`}
+              <button
+                type="button"
+                className={`${styles.profileSubmit} ${styles.appear} ${inviteFieldVisible ? styles.delay5 : styles.delay4}`}
+                onClick={handleSharePhone}
+                disabled={profileSaving}
               >
-                {genderOptions.map((option) => (
-                  <button
-                    type="button"
-                    key={option.value}
-                    onClick={() => setProfileForm((prev) => ({ ...prev, gender: option.value }))}
-                    className={`${styles.genderButton} ${
-                      profileForm.gender === option.value ? styles.genderButtonActive : ""
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
+                Поделиться номером
+              </button>
             </div>
-            <div className={`${styles.profileField} ${styles.appear} ${styles.delay3}`}>
-              <label htmlFor="birthRow">Дата рождения</label>
-              <div
-                id="birthRow"
-                className={`${styles.dateRow} ${profileTouched && !profileForm.birthDate ? styles.inputErrorBorder : ""}`}
-              >
-                <select
-                  className={styles.dateSelect}
-                  value={birthYear}
-                  onChange={(e) => {
-                    const y = e.target.value;
-                    setBirthYear(y);
-                    applyBirthDate(y, birthMonth, birthDay);
-                  }}
-                >
-                  <option value="" disabled>
-                    Год
-                  </option>
-                  {years.map((y) => (
-                    <option key={y} value={y}>
-                      {y}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  className={styles.dateSelect}
-                  value={birthMonth}
-                  onChange={(e) => {
-                    const m = e.target.value;
-                    setBirthMonth(m);
-                    applyBirthDate(birthYear, m, birthDay);
-                  }}
-                >
-                  <option value="" disabled>
-                    Месяц
-                  </option>
-                  {months.map((m) => (
-                    <option key={m.value} value={m.value}>
-                      {m.label}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  className={styles.dateSelect}
-                  value={birthDay}
-                  onChange={(e) => {
-                    const d = e.target.value;
-                    setBirthDay(d);
-                    applyBirthDate(birthYear, birthMonth, d);
-                  }}
-                  disabled={!birthYear || !birthMonth}
-                >
-                  <option value="" disabled>
-                    День
-                  </option>
-                  {days.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            {(referralEnabled || !customerId) && (
-              <div className={`${styles.profileField} ${styles.appear} ${styles.delay4}`}>
-                <label htmlFor="invite">Пригласительный код</label>
-                <input
-                  id="invite"
-                  value={inviteCode}
-                  onChange={(e) => setInviteCode(e.target.value)}
-                  placeholder="Например, FRIEND123"
-                  disabled={inviteApplied}
-                />
-                <span className={styles.profileHint}>
-                  {inviteApplied
-                    ? "Код успешно активирован."
-                    : ""}
-                </span>
-              </div>
-            )}
-            <button
-              type="submit"
-              className={`${styles.profileSubmit} ${styles.appear} ${referralEnabled ? styles.delay5 : styles.delay4}`}
-              disabled={profileSaving}
+          ) : (
+            <form
+              className={`${styles.profileCard} ${
+                inviteFieldVisible ? styles.profileCardExtended : styles.profileCardCompact
+              }`}
+              onSubmit={handleProfileSubmit}
             >
-              Сохранить
-            </button>
-          </form>
+              <div className={`${styles.appear} ${styles.delay0}`}>
+                <div className={styles.profileTitle}>Расскажите о себе</div>
+                <div className={styles.profileSubtitle}>
+                  Эта информация поможет нам подобрать акции лично для вас
+                </div>
+              </div>
+              <div className={`${styles.profileField} ${styles.appear} ${styles.delay1}`}>
+                <label htmlFor="name">Имя</label>
+                <input
+                  id="name"
+                  value={profileForm.name}
+                  onChange={(e) => setProfileForm((prev) => ({ ...prev, name: e.target.value }))}
+                  placeholder="Введите имя"
+                  className={profileTouched && !profileForm.name ? styles.inputError : undefined}
+                />
+              </div>
+              <div className={`${styles.profileField} ${styles.appear} ${styles.delay2}`}>
+                <span>Пол</span>
+                <div
+                  className={`${styles.genderRow} ${
+                    profileTouched && !profileForm.gender ? styles.inputErrorBorder : ""
+                  }`}
+                >
+                  {genderOptions.map((option) => (
+                    <button
+                      type="button"
+                      key={option.value}
+                      onClick={() => setProfileForm((prev) => ({ ...prev, gender: option.value }))}
+                      className={`${styles.genderButton} ${
+                        profileForm.gender === option.value ? styles.genderButtonActive : ""
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className={`${styles.profileField} ${styles.appear} ${styles.delay3}`}>
+                <label htmlFor="birthRow">Дата рождения</label>
+                <div
+                  id="birthRow"
+                  className={`${styles.dateRow} ${profileTouched && !profileForm.birthDate ? styles.inputErrorBorder : ""}`}
+                >
+                  <select
+                    className={styles.dateSelect}
+                    value={birthYear}
+                    onChange={(e) => {
+                      const y = e.target.value;
+                      setBirthYear(y);
+                      applyBirthDate(y, birthMonth, birthDay);
+                    }}
+                  >
+                    <option value="" disabled>
+                      Год
+                    </option>
+                    {years.map((y) => (
+                      <option key={y} value={y}>
+                        {y}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    className={styles.dateSelect}
+                    value={birthMonth}
+                    onChange={(e) => {
+                      const m = e.target.value;
+                      setBirthMonth(m);
+                      applyBirthDate(birthYear, m, birthDay);
+                    }}
+                  >
+                    <option value="" disabled>
+                      Месяц
+                    </option>
+                    {months.map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    className={styles.dateSelect}
+                    value={birthDay}
+                    onChange={(e) => {
+                      const d = e.target.value;
+                      setBirthDay(d);
+                      applyBirthDate(birthYear, birthMonth, d);
+                    }}
+                    disabled={!birthYear || !birthMonth}
+                  >
+                    <option value="" disabled>
+                      День
+                    </option>
+                    {days.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              {(referralEnabled || !customerId) && (
+                <div className={`${styles.profileField} ${styles.appear} ${styles.delay4}`}>
+                  <label htmlFor="invite">Пригласительный код</label>
+                  <input
+                    id="invite"
+                    value={inviteCode}
+                    onChange={(e) => setInviteCode(e.target.value)}
+                    placeholder="Например, FRIEND123"
+                    disabled={inviteApplied}
+                  />
+                  <span className={styles.profileHint}>
+                    {inviteApplied
+                      ? "Код успешно активирован."
+                      : ""}
+                  </span>
+                </div>
+              )}
+              <button
+                type="submit"
+                className={`${styles.profileSubmit} ${styles.appear} ${referralEnabled ? styles.delay5 : styles.delay4}`}
+                disabled={profileSaving}
+              >
+                Сохранить
+              </button>
+            </form>
+          )}
         </div>
       ) : (
         <>
