@@ -47,6 +47,16 @@ describe('PortalAuth (e2e)', () => {
             portalTotpEnabled: false,
           } as any;
         }
+        if (String(email) === 'staff1@mail.test') {
+          return {
+            id: 'M-conflict',
+            portalEmail: 'staff1@mail.test',
+            portalLoginEnabled: true,
+            portalPasswordHash: hashPassword('merchant-secret'),
+            portalTotpEnabled: false,
+            portalTotpSecret: null,
+          } as any;
+        }
         return null;
       }),
       update: jest.fn(async () => ({})),

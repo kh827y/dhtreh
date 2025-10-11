@@ -366,10 +366,10 @@ export default function StaffPage() {
   const canSubmitCreate = React.useMemo(() => {
     if (!cFirstName.trim()) return false;
     if (cPortal) {
-      return Boolean(cGroup && cEmail.trim());
+      return Boolean(cGroup && cEmail.trim() && cPassword.trim().length >= 6);
     }
     return true;
-  }, [cFirstName, cPortal, cGroup, cEmail]);
+  }, [cFirstName, cPortal, cGroup, cEmail, cPassword]);
 
   async function handleCreate() {
     if (!canSubmitCreate) return;
@@ -389,6 +389,14 @@ export default function StaffPage() {
         email: cPortal ? cEmail.trim() : undefined,
         status: 'ACTIVE',
       };
+      if (cPortal) {
+        const pwd = cPassword.trim();
+        if (pwd) {
+          payload.password = pwd;
+          payload.canAccessPortal = true;
+          payload.portalAccessEnabled = true;
+        }
+      }
       if (normalizedGroup) {
         payload.accessGroupIds = [normalizedGroup];
         const upper = normalizedGroup.toUpperCase();

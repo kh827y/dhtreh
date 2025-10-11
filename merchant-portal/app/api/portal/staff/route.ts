@@ -45,6 +45,18 @@ export function buildStaffPayload(body: any) {
   if (body?.canAccessPortal !== undefined) payload.canAccessPortal = !!body.canAccessPortal;
   if (body?.portalAccessEnabled !== undefined) payload.portalAccessEnabled = !!body.portalAccessEnabled;
   if (body?.pinStrategy !== undefined) payload.pinStrategy = body.pinStrategy == null ? undefined : String(body.pinStrategy);
+  if (body?.password !== undefined) {
+    const raw = body.password == null ? null : String(body.password);
+    payload.password = raw;
+    if (raw && raw.trim()) {
+      payload.canAccessPortal = true;
+      payload.portalAccessEnabled = true;
+    }
+  }
+  if (body?.currentPassword !== undefined) {
+    payload.currentPassword =
+      body.currentPassword == null ? null : String(body.currentPassword);
+  }
   if (Array.isArray(body?.outletIds)) {
     payload.outletIds = body.outletIds.map((id: any) => String(id)).filter((id: string) => id.length > 0);
   }
