@@ -6,59 +6,40 @@ type TabKey = "ACTIVE" | "ARCHIVED";
 
 type TelegramCampaign = {
   id: string;
-  audience: string;
+  audienceId: string | null;
+  audienceName: string | null;
   text: string;
-  startAt: string;
+  scheduledAt: string | null;
   status: string;
-  total: number;
-  success: number;
+  totalRecipients: number;
+  sent: number;
   failed: number;
-  imagePreview?: string;
-  imageName?: string;
+  imageAssetId?: string | null;
+  imageMeta?: {
+    fileName?: string | null;
+    mimeType?: string | null;
+  } | null;
 };
 
-const audienceOptions = [
-  { value: "all", label: "Всем клиентам" },
-  { value: "loyal", label: "Лояльные 60+ дней" },
-  { value: "new", label: "Новые клиенты 30 дней" },
-  { value: "sleep", label: "Заснувшие" },
-  { value: "vip", label: "VIP" },
-];
+type AudienceOption = {
+  id: string;
+  label: string;
+  isSystem: boolean;
+  systemKey?: string | null;
+  customerCount?: number;
+};
 
-const archivedSeed: TelegramCampaign[] = [
-  {
-    id: "tg-001",
-    audience: "all",
-    text: "Новая подборка десертов в Telegram-магазине — загляните!",
-    startAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 28).toISOString(),
-    status: "Отправлена",
-    total: 1840,
-    success: 1768,
-    failed: 72,
-  },
-  {
-    id: "tg-002",
-    audience: "loyal",
-    text: "Лояльным гостям — бесплатный капучино в эту пятницу",
-    startAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 14).toISOString(),
-    status: "Отправлена",
-    total: 940,
-    success: 915,
-    failed: 25,
-  },
-  {
-    id: "tg-003",
-    audience: "sleep",
-    text: "Скучаете по аромату свежеобжаренных зёрен? Возвращайтесь за подарком",
-    startAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 40).toISOString(),
-    status: "Завершена",
-    total: 420,
-    success: 398,
-    failed: 22,
-  },
-];
+type CampaignScopeState = Record<TabKey, TelegramCampaign[]>;
 
-function formatDateTime(value: string) {
+const MAX_SYMBOLS = 4096;
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
+const DEFAULT_SCOPE_STATE: CampaignScopeState = {
+  ACTIVE: [],
+  ARCHIVED: [],
+};
+
+function formatDateTime(value: string | null) {
+  if (!value) return "—";
   return new Date(value).toLocaleString("ru-RU", {
     day: "2-digit",
     month: "2-digit",
@@ -67,19 +48,6 @@ function formatDateTime(value: string) {
     minute: "2-digit",
   });
 }
-
-function getAudienceLabel(value: string) {
-  return audienceOptions.find((option) => option.value === value)?.label ?? value;
-}
-
-const tabs: { id: TabKey; label: string }[] = [
-  { id: "ACTIVE", label: "Активные" },
-  { id: "ARCHIVED", label: "Архивные" },
-];
-
-const MAX_SYMBOLS = 512;
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
-const timezoneHint = "Москва, GMT+3";
 
 function ActionMenu({ actions }: { actions: string[] }) {
   const [open, setOpen] = React.useState(false);
@@ -144,100 +112,202 @@ function ActionMenu({ actions }: { actions: string[] }) {
   );
 }
 
+async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, { cache: "no-store", ...init });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(text || res.statusText);
+  }
+  return text ? (JSON.parse(text) as T) : (undefined as unknown as T);
+}
+
 export default function TelegramPage() {
   const [tab, setTab] = React.useState<TabKey>("ACTIVE");
-  const [activeCampaigns, setActiveCampaigns] = React.useState<TelegramCampaign[]>([]);
-  const [archivedCampaigns] = React.useState<TelegramCampaign[]>(archivedSeed);
+  const [campaigns, setCampaigns] = React.useState<CampaignScopeState>(DEFAULT_SCOPE_STATE);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+  const [audiences, setAudiences] = React.useState<AudienceOption[]>([]);
+  const [audiencesLoaded, setAudiencesLoaded] = React.useState(false);
   const [isModalOpen, setIsModalOpen] = React.useState(false);
-  const [submitAttempted, setSubmitAttempted] = React.useState(false);
+  const [showTextErrors, setShowTextErrors] = React.useState(false);
+  const [showDateError, setShowDateError] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const [imageError, setImageError] = React.useState("");
   const [form, setForm] = React.useState({
-    audience: "all",
+    audience: "",
     text: "",
     startAt: "",
     imagePreview: "",
     imageName: "",
+    imageMimeType: "",
   });
+
+  const loadCampaigns = React.useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [active, archived] = await Promise.all<[
+        TelegramCampaign[],
+        TelegramCampaign[]
+      ]>([
+        fetchJson<TelegramCampaign[]>("/api/portal/communications/telegram?scope=ACTIVE"),
+        fetchJson<TelegramCampaign[]>("/api/portal/communications/telegram?scope=ARCHIVED"),
+      ]);
+      setCampaigns({ ACTIVE: active, ARCHIVED: archived });
+    } catch (err: any) {
+      setError(err?.message || "Не удалось загрузить рассылки");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const loadAudiences = React.useCallback(async () => {
+    if (audiencesLoaded) return;
+    try {
+      const list = await fetchJson<any[]>("/api/portal/audiences?includeSystem=1");
+      const mapped: AudienceOption[] = list
+        .filter((item) => !item.archivedAt)
+        .map((item) => ({
+          id: item.id,
+          label: item.name as string,
+          isSystem: Boolean(item.isSystem),
+          systemKey: item.systemKey ?? null,
+          customerCount: item.customerCount ?? null,
+        }));
+      setAudiences(mapped);
+      setAudiencesLoaded(true);
+      if (!form.audience) {
+        const allOption = mapped.find((a) => a.systemKey === "all-customers" || a.isSystem);
+        if (allOption) {
+          setForm((prev) => ({ ...prev, audience: allOption.id }));
+        } else if (mapped.length) {
+          setForm((prev) => ({ ...prev, audience: mapped[0].id }));
+        }
+      }
+    } catch (err) {
+      setAudiencesLoaded(true);
+    }
+  }, [audiencesLoaded, form.audience]);
+
+  React.useEffect(() => {
+    loadCampaigns().catch(() => {});
+  }, [loadCampaigns]);
 
   const remaining = Math.max(0, MAX_SYMBOLS - form.text.length);
 
   const textError = React.useMemo(() => {
     if (!form.text.trim()) return "Введите текст сообщения";
-    if (form.text.length > MAX_SYMBOLS) return "Превышен лимит символов";
+    if (form.text.length > MAX_SYMBOLS)
+      return `Превышен лимит в ${MAX_SYMBOLS} символов`;
     return "";
   }, [form.text]);
 
   const dateError = React.useMemo(() => {
     if (!form.startAt) return "Укажите дату и время";
-    if (new Date(form.startAt).getTime() < Date.now()) return "Дата не может быть в прошлом";
+    const date = new Date(form.startAt);
+    if (Number.isNaN(date.getTime())) return "Некорректная дата";
+    if (date.getTime() < Date.now()) return "Дата не может быть в прошлом";
     return "";
   }, [form.startAt]);
 
-  const canSave = !textError && !dateError && !imageError;
+  const canSchedule = !textError && !dateError && !imageError && !saving;
+  const canSendNow = !textError && !imageError && !saving;
 
   function openModal() {
     setIsModalOpen(true);
-    setSubmitAttempted(false);
+    setShowTextErrors(false);
+    setShowDateError(false);
+    setImageError("");
+    loadAudiences().catch(() => {});
   }
 
   function closeModal() {
     setIsModalOpen(false);
-    setSubmitAttempted(false);
+    setShowTextErrors(false);
+    setShowDateError(false);
     setImageError("");
-    setForm({ audience: "all", text: "", startAt: "", imagePreview: "", imageName: "" });
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
+    setSaving(false);
+    setForm((prev) => ({
+      ...prev,
+      text: "",
+      startAt: "",
+      imagePreview: "",
+      imageName: "",
+      imageMimeType: "",
+    }));
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   function handleImageChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
-
-    if (!["image/jpeg", "image/png"].includes(file.type)) {
-      setImageError("Поддерживаются только JPEG и PNG");
+    if (!file.type.startsWith("image/")) {
+      setImageError("Поддерживаются только изображения");
       return;
     }
-
     if (file.size > MAX_IMAGE_SIZE) {
-      setImageError("Файл больше 5 МБ");
+      setImageError("Файл больше 10 МБ");
       return;
     }
-
     const reader = new FileReader();
     reader.onload = () => {
       const value = typeof reader.result === "string" ? reader.result : "";
-      setForm((prev) => ({ ...prev, imagePreview: value, imageName: file.name }));
+      setForm((prev) => ({
+        ...prev,
+        imagePreview: value,
+        imageName: file.name,
+        imageMimeType: file.type,
+      }));
       setImageError("");
+    };
+    reader.onerror = () => {
+      setImageError("Не удалось прочитать файл");
     };
     reader.readAsDataURL(file);
   }
 
-  function handleSave() {
-    setSubmitAttempted(true);
-    if (!canSave) return;
+  async function submitCampaign(immediate: boolean) {
+    if (immediate) {
+      setShowTextErrors(true);
+      setShowDateError(false);
+      if (textError || imageError) return;
+    } else {
+      setShowTextErrors(true);
+      setShowDateError(true);
+      if (!canSchedule) return;
+    }
 
-    setActiveCampaigns((prev) => [
-      ...prev,
-      {
-        id: `tg-${Date.now()}`,
-        audience: form.audience,
-        text: form.text.trim(),
-        startAt: form.startAt,
-        status: "Запланирована",
-        total: 0,
-        success: 0,
-        failed: 0,
-        imagePreview: form.imagePreview || undefined,
-        imageName: form.imageName || undefined,
-      },
-    ]);
-
-    closeModal();
+    setSaving(true);
+    try {
+      const selectedAudience = audiences.find((a) => a.id === form.audience);
+      const scheduledAtIso = form.startAt ? new Date(form.startAt).toISOString() : null;
+      await fetchJson("/api/portal/communications/telegram", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          audienceId: form.audience || null,
+          audienceName: selectedAudience?.label ?? null,
+          text: form.text.trim(),
+          scheduledAt: immediate ? null : scheduledAtIso,
+          media: form.imagePreview
+            ? {
+                imageBase64: form.imagePreview,
+                fileName: form.imageName || undefined,
+                mimeType: form.imageMimeType || undefined,
+              }
+            : null,
+        }),
+      });
+      closeModal();
+      await loadCampaigns();
+    } catch (err: any) {
+      setSaving(false);
+      setImageError(err?.message || "Не удалось сохранить рассылку");
+    }
   }
 
-  const currentList = tab === "ACTIVE" ? activeCampaigns : archivedCampaigns;
+  const currentList = campaigns[tab];
   const totalRecords = currentList.length;
 
   return (
@@ -256,28 +326,42 @@ export default function TelegramPage() {
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <div style={{ display: "flex", gap: 12 }}>
-          {tabs.map((item) => (
+          {(["ACTIVE", "ARCHIVED"] as TabKey[]).map((item) => (
             <button
-              key={item.id}
+              key={item}
               type="button"
-              onClick={() => setTab(item.id)}
+              onClick={() => setTab(item)}
               style={{
                 padding: "8px 16px",
                 borderRadius: 999,
                 border: "1px solid transparent",
-                background: tab === item.id ? "#38bdf8" : "rgba(148,163,184,0.1)",
-                color: tab === item.id ? "#0f172a" : "#e2e8f0",
-                fontWeight: tab === item.id ? 600 : 400,
+                background: tab === item ? "#38bdf8" : "rgba(148,163,184,0.1)",
+                color: tab === item ? "#0f172a" : "#e2e8f0",
+                fontWeight: tab === item ? 600 : 400,
               }}
             >
-              {item.label}
+              {item === "ACTIVE" ? "Активные" : "Архивные"}
             </button>
           ))}
         </div>
-        <div style={{ fontSize: 13, opacity: 0.7 }}>Всего: {totalRecords} записей</div>
+        <div style={{ fontSize: 13, opacity: 0.7 }}>Всего: {loading ? "…" : totalRecords} записей</div>
       </div>
 
-      {tab === "ACTIVE" && activeCampaigns.length === 0 ? (
+      {error ? (
+        <div
+          style={{
+            padding: 16,
+            borderRadius: 12,
+            background: "rgba(248,113,113,0.12)",
+            border: "1px solid rgba(248,113,113,0.35)",
+            color: "#fecaca",
+          }}
+        >
+          {error}
+        </div>
+      ) : loading ? (
+        <div style={{ padding: 40, textAlign: "center", opacity: 0.7 }}>Загрузка...</div>
+      ) : tab === "ACTIVE" && currentList.length === 0 ? (
         <div
           style={{
             padding: "48px 24px",
@@ -311,7 +395,7 @@ export default function TelegramPage() {
                 <th style={{ padding: "12px 8px" }}>Текст</th>
                 <th style={{ padding: "12px 8px" }}>Аудитория</th>
                 <th style={{ padding: "12px 8px" }}>Статус</th>
-                <th style={{ padding: "12px 8px" }}>Всего отправлено</th>
+                <th style={{ padding: "12px 8px" }}>Всего</th>
                 <th style={{ padding: "12px 8px" }}>Успешно</th>
                 <th style={{ padding: "12px 8px" }}>Ошибок</th>
                 <th style={{ padding: "12px 8px", width: 60 }}></th>
@@ -320,12 +404,12 @@ export default function TelegramPage() {
             <tbody>
               {currentList.map((campaign) => (
                 <tr key={campaign.id} style={{ borderTop: "1px solid rgba(148,163,184,0.15)" }}>
-                  <td style={{ padding: "12px 8px", whiteSpace: "nowrap" }}>{formatDateTime(campaign.startAt)}</td>
+                  <td style={{ padding: "12px 8px", whiteSpace: "nowrap" }}>{formatDateTime(campaign.scheduledAt)}</td>
                   <td style={{ padding: "12px 8px" }}>
-                    {campaign.imagePreview ? (
+                    {campaign.imageAssetId ? (
                       <img
-                        src={campaign.imagePreview}
-                        alt={campaign.imageName || "Превью"}
+                        src={`/api/portal/communications/assets/${campaign.imageAssetId}`}
+                        alt={campaign.imageMeta?.fileName || "Превью"}
                         style={{ width: 80, height: 54, objectFit: "cover", borderRadius: 8, border: "1px solid rgba(148,163,184,0.3)" }}
                       />
                     ) : (
@@ -345,18 +429,18 @@ export default function TelegramPage() {
                       </div>
                     )}
                   </td>
-                  <td style={{ padding: "12px 8px" }}>{campaign.text}</td>
-                  <td style={{ padding: "12px 8px" }}>{getAudienceLabel(campaign.audience)}</td>
+                  <td style={{ padding: "12px 8px", maxWidth: 320 }}>{campaign.text}</td>
+                  <td style={{ padding: "12px 8px" }}>{campaign.audienceName || "Все клиенты"}</td>
                   <td style={{ padding: "12px 8px" }}>{campaign.status}</td>
-                  <td style={{ padding: "12px 8px" }}>{campaign.total.toLocaleString("ru-RU")}</td>
-                  <td style={{ padding: "12px 8px", color: "#34d399" }}>{campaign.success.toLocaleString("ru-RU")}</td>
-                  <td style={{ padding: "12px 8px", color: "#f87171" }}>{campaign.failed.toLocaleString("ru-RU")}</td>
+                  <td style={{ padding: "12px 8px" }}>{campaign.totalRecipients?.toLocaleString("ru-RU") ?? "—"}</td>
+                  <td style={{ padding: "12px 8px", color: "#34d399" }}>{campaign.sent?.toLocaleString("ru-RU") ?? "—"}</td>
+                  <td style={{ padding: "12px 8px", color: "#f87171" }}>{campaign.failed?.toLocaleString("ru-RU") ?? "—"}</td>
                   <td style={{ padding: "12px 8px" }}>
                     <ActionMenu
                       actions={
                         tab === "ACTIVE"
                           ? ["Просмотр", "Отменить отправку", "В архив", "Дублировать"]
-                          : ["Просмотр", "Дублировать", "Удалить"]
+                          : ["Просмотр", "Дублировать"]
                       }
                     />
                   </td>
@@ -419,6 +503,7 @@ export default function TelegramPage() {
                 <select
                   value={form.audience}
                   onChange={(event) => setForm((prev) => ({ ...prev, audience: event.target.value }))}
+                  onFocus={() => loadAudiences().catch(() => {})}
                   style={{
                     padding: "10px 12px",
                     borderRadius: 12,
@@ -427,32 +512,19 @@ export default function TelegramPage() {
                     color: "#e2e8f0",
                   }}
                 >
-                  {audienceOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
+                  {audiences.map((option) => (
+                    <option key={option.id} value={option.id}>
                       {option.label}
                     </option>
                   ))}
                 </select>
                 <span style={{ fontSize: 12, opacity: 0.65 }}>
-                  Рассылку получат только те участники аудитории, которые ранее взаимодействовали с Telegram-ботом
+                  Рассылку получат клиенты выбранной аудитории, у которых есть связь с Telegram-ботом.
                 </span>
               </label>
 
-              <div
-                style={{
-                  padding: "12px",
-                  borderRadius: 12,
-                  border: "1px solid rgba(148,163,184,0.2)",
-                  background: "rgba(30,41,59,0.6)",
-                  fontSize: 13,
-                  color: "#e2e8f0",
-                }}
-              >
-                Общее количество Telegram-пользователей в системе: <strong>2 480</strong>
-              </div>
-
               <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 13, opacity: 0.75 }}>Дата начала отправки ({timezoneHint})</span>
+                <span style={{ fontSize: 13, opacity: 0.75 }}>Дата начала отправки (локальное время)</span>
                 <input
                   type="datetime-local"
                   value={form.startAt}
@@ -460,12 +532,14 @@ export default function TelegramPage() {
                   style={{
                     padding: "10px 12px",
                     borderRadius: 12,
-                    border: "1px solid rgba(148,163,184,0.35)",
+                    border: showDateError && dateError
+                      ? "1px solid rgba(248,113,113,0.55)"
+                      : "1px solid rgba(148,163,184,0.35)",
                     background: "rgba(15,23,42,0.6)",
                     color: "#e2e8f0",
                   }}
                 />
-                <span style={{ color: "#f87171", fontSize: 12, visibility: submitAttempted && dateError ? "visible" : "hidden" }}>
+                <span style={{ color: "#f87171", fontSize: 12, visibility: showDateError && dateError ? "visible" : "hidden" }}>
                   {dateError || " "}
                 </span>
               </label>
@@ -482,19 +556,21 @@ export default function TelegramPage() {
                   style={{
                     padding: "12px",
                     borderRadius: 12,
-                    border: `1px solid ${submitAttempted && textError ? "rgba(248,113,113,0.55)" : "rgba(148,163,184,0.35)"}`,
+                    border: showTextErrors && textError
+                      ? "1px solid rgba(248,113,113,0.55)"
+                      : "1px solid rgba(148,163,184,0.35)",
                     background: "rgba(15,23,42,0.6)",
                     color: "#e2e8f0",
                     resize: "vertical",
                   }}
                 />
-                <span style={{ color: "#f87171", fontSize: 12, visibility: submitAttempted && textError ? "visible" : "hidden" }}>
+                <span style={{ color: "#f87171", fontSize: 12, visibility: showTextErrors && textError ? "visible" : "hidden" }}>
                   {textError || " "}
                 </span>
               </label>
 
               <div style={{ display: "grid", gap: 8 }}>
-                <span style={{ fontSize: 13, opacity: 0.75 }}>Загрузите изображение (необязательно)</span>
+                <span style={{ fontSize: 13, opacity: 0.75 }}>Добавьте изображение (необязательно)</span>
                 <div
                   style={{
                     border: form.imagePreview
@@ -512,7 +588,7 @@ export default function TelegramPage() {
                     <img
                       src={form.imagePreview}
                       alt={form.imageName || "Выбранное изображение"}
-                      style={{ width: "100%", maxWidth: 360, aspectRatio: "3 / 2", objectFit: "cover", borderRadius: 12 }}
+                      style={{ width: "100%", maxWidth: 360, objectFit: "contain", borderRadius: 12 }}
                     />
                   ) : (
                     <div
@@ -527,7 +603,7 @@ export default function TelegramPage() {
                         opacity: 0.6,
                       }}
                     >
-                      1200×800
+                      Изображение не выбрано
                     </div>
                   )}
                   <div style={{ display: "flex", gap: 8 }}>
@@ -549,7 +625,12 @@ export default function TelegramPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          setForm((prev) => ({ ...prev, imagePreview: "", imageName: "" }));
+                          setForm((prev) => ({
+                            ...prev,
+                            imagePreview: "",
+                            imageName: "",
+                            imageMimeType: "",
+                          }));
                           if (fileInputRef.current) fileInputRef.current.value = "";
                         }}
                         style={{
@@ -567,7 +648,7 @@ export default function TelegramPage() {
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept="image/jpeg,image/png"
+                    accept="image/*"
                     style={{ display: "none" }}
                     onChange={handleImageChange}
                   />
@@ -594,19 +675,35 @@ export default function TelegramPage() {
               </button>
               <button
                 type="button"
-                onClick={handleSave}
-                disabled={!canSave}
+                onClick={() => submitCampaign(true)}
+                disabled={!canSendNow}
                 style={{
                   padding: "10px 18px",
                   borderRadius: 10,
-                  background: canSave ? "#38bdf8" : "rgba(56,189,248,0.3)",
+                  background: canSendNow ? "#22c55e" : "rgba(34,197,94,0.25)",
                   border: "none",
-                  color: canSave ? "#0f172a" : "rgba(15,23,42,0.6)",
+                  color: canSendNow ? "#052e16" : "rgba(15,23,42,0.6)",
                   fontWeight: 600,
-                  cursor: canSave ? "pointer" : "not-allowed",
+                  cursor: canSendNow ? "pointer" : "not-allowed",
                 }}
               >
-                Сохранить
+                {saving ? "Отправка…" : "Запустить сейчас"}
+              </button>
+              <button
+                type="button"
+                onClick={() => submitCampaign(false)}
+                disabled={!canSchedule}
+                style={{
+                  padding: "10px 18px",
+                  borderRadius: 10,
+                  background: canSchedule ? "#38bdf8" : "rgba(56,189,248,0.3)",
+                  border: "none",
+                  color: canSchedule ? "#0f172a" : "rgba(15,23,42,0.6)",
+                  fontWeight: 600,
+                  cursor: canSchedule ? "pointer" : "not-allowed",
+                }}
+              >
+                {saving ? "Сохранение…" : "Запланировать"}
               </button>
             </div>
           </div>
