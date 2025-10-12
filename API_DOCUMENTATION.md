@@ -83,7 +83,18 @@ Merchant Portal использует отдельный JWT, выдаваемы�
     "code": "123456" // требуется только если у мерчанта включён TOTP
   }
   ```
-  Успешный ответ: `{ "token": "<jwt>" }`. Frontend кладёт токен в httpOnly‑cookie `portal_jwt`.
+  Успешный ответ: `{ "token": "<jwt>", "refreshToken": "<jwt>" }`.
+  
+  Хранение на фронтенде (Next.js Merchant Portal):
+  - `portal_jwt` — httpOnly cookie, `path=/`, `SameSite=Lax`, `Secure` в прод, `maxAge=24h`, опциональный `domain` из `PORTAL_COOKIE_DOMAIN`.
+  - `portal_refresh` — httpOnly cookie, `path=/`, `SameSite=Lax`, `Secure` в прод, `maxAge=30d`, опциональный `domain`.
+  - При получении `401` фронт вызывает `POST /portal/auth/refresh` и пересохраняет куки.
+
+- `POST /portal/auth/refresh`
+  ```json
+  { "refreshToken": "<jwt>" }
+  ```
+  Ответ: `{ "token": "<jwt>", "refreshToken": "<jwt>" }` (refresh-токен ротируется).
 
 - `GET /portal/auth/me`
   ```json

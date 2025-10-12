@@ -178,7 +178,8 @@ async function fetchPortalProfile(): Promise<PortalProfile | null> {
     const store = await cookies();
     const token = store.get("portal_jwt")?.value;
     if (!token) return null;
-    const base = (process.env.NEXT_PUBLIC_API_BASE || "http://localhost:3000").replace(/\/$/, "");
+    const base = (process.env.NEXT_PUBLIC_API_BASE || "").replace(/\/$/, "");
+    if (!base) return null;
     const res = await fetch(`${base}/portal/me`, {
       headers: { authorization: `Bearer ${token}` },
       cache: "no-store",

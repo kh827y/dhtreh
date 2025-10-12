@@ -7,7 +7,8 @@ export async function GET(req: NextRequest) {
   if (!token) return new NextResponse('Token required', { status: 400 });
   const res = NextResponse.redirect(new URL(redirect, url.origin));
   const secure = process.env.NODE_ENV === 'production';
-  res.cookies.set({ name: 'portal_jwt', value: token, httpOnly: true, sameSite: 'lax', secure, path: '/' });
+  const domain = (process.env.PORTAL_COOKIE_DOMAIN || '').trim() || undefined;
+  res.cookies.set({ name: 'portal_jwt', value: token, httpOnly: true, sameSite: 'lax', secure, path: '/', maxAge: 24 * 60 * 60, domain });
   return res;
 }
 
@@ -17,6 +18,7 @@ export async function POST(req: NextRequest) {
   if (!token) return new NextResponse('Token required', { status: 400 });
   const res = NextResponse.json({ ok: true });
   const secure = process.env.NODE_ENV === 'production';
-  res.cookies.set({ name: 'portal_jwt', value: token, httpOnly: true, sameSite: 'lax', secure, path: '/' });
+  const domain = (process.env.PORTAL_COOKIE_DOMAIN || '').trim() || undefined;
+  res.cookies.set({ name: 'portal_jwt', value: token, httpOnly: true, sameSite: 'lax', secure, path: '/', maxAge: 24 * 60 * 60, domain });
   return res;
 }

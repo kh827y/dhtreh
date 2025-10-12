@@ -15,7 +15,12 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { verifyPassword } from '../password.util';
-import { signPortalJwt, verifyPortalJwt } from './portal-jwt.util';
+import {
+  signPortalJwt,
+  verifyPortalJwt,
+  signPortalRefreshJwt,
+  verifyPortalRefreshJwt,
+} from './portal-jwt.util';
 import { StaffStatus } from '@prisma/client';
 
 @ApiTags('portal-auth')
@@ -74,7 +79,13 @@ export class PortalAuthController {
           role: 'MERCHANT',
           ttlSeconds: 24 * 60 * 60,
         });
-        return { token };
+        const refreshToken = await signPortalRefreshJwt({
+          merchantId: merchant.id,
+          subject: merchant.id,
+          actor: 'MERCHANT',
+          role: 'MERCHANT',
+        });
+        return { token, refreshToken };
       }
       merchantAuthError = new UnauthorizedException('Unauthorized');
     }
@@ -114,7 +125,44 @@ export class PortalAuthController {
       staffId: staff.id,
       ttlSeconds: 24 * 60 * 60,
     });
-    return { token };
+    const refreshToken = await signPortalRefreshJwt({
+      merchantId: staff.merchantId,
+      subject: staff.id,
+      actor: 'STAFF',
+      role: staff.role || 'STAFF',
+      staffId: staff.id,
+    });
+    return { token, refreshToken };
+  }
+
+  @Post('refresh')
+  @ApiOkResponse({
+    schema: { type: 'object', properties: { token: { type: 'string' }, refreshToken: { type: 'string' } } },
+  })
+  @ApiBadRequestResponse({ description: 'Bad request' })
+  @ApiUnauthorizedResponse({ description: 'Invalid refresh' })
+  async refresh(@Body() body: { refreshToken?: string }) {
+    const refreshToken = String(body?.refreshToken || '');
+    if (!refreshToken) throw new BadRequestException('refreshToken required');
+    const claims = await verifyPortalRefreshJwt(refreshToken);
+    const subject = claims.staffId || claims.sub || claims.merchantId;
+    const token = await signPortalJwt({
+      merchantId: claims.merchantId,
+      subject,
+      actor: claims.actor,
+      role: claims.role,
+      staffId: claims.staffId,
+      ttlSeconds: 24 * 60 * 60,
+    });
+    // rotate refresh token on each refresh
+    const nextRefreshToken = await signPortalRefreshJwt({
+      merchantId: claims.merchantId,
+      subject,
+      actor: claims.actor,
+      role: claims.role,
+      staffId: claims.staffId,
+    });
+    return { token, refreshToken: nextRefreshToken };
   }
 
   @Get('me')

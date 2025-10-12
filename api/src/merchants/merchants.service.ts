@@ -2009,7 +2009,7 @@ export class MerchantsService {
     });
     return { ok: true };
   }
-  async impersonatePortal(merchantId: string, ttlSec = 10 * 60) {
+  async impersonatePortal(merchantId: string, ttlSec = 24 * 60 * 60) {
     // short-lived admin impersonation token
     const token = await this.signPortalJwt(merchantId, ttlSec, true);
     return { token };

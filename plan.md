@@ -1,4 +1,19 @@
 # Planning Mode — Long Run (2025-09-15)  
+## Хотфикс 2025-10-12 — Merchant Portal: сессия/refresh токены
+
+- [x] API (`api/src/portal-auth/portal-jwt.util.ts`): добавлены refresh‑токены (`signPortalRefreshJwt`/`verifyPortalRefreshJwt`) с отдельным секретом `PORTAL_REFRESH_SECRET` (TTL 30 дней).
+- [x] API (`api/src/portal-auth/portal-auth.controller.ts`): `POST /portal/auth/login` теперь возвращает `{ token, refreshToken }`; добавлен `POST /portal/auth/refresh` с ротацией refresh‑токена; TTL access‑токена 24 часа.
+- [x] Merchant Portal:
+  - `app/api/session/login/route.ts`: установка `portal_jwt` (maxAge 24ч) и `portal_refresh` (maxAge 30д), опциональный `PORTAL_COOKIE_DOMAIN`, удалён localhost‑fallback у `NEXT_PUBLIC_API_BASE`.
+  - `app/api/portal/_lib.ts`: авто‑рефреш access‑токена при `401` с установкой новых кук.
+  - `app/api/session/accept-token/route.ts`: `portal_jwt` с `maxAge` и доменом.
+  - `app/api/session/logout/route.ts`: очищаются обе куки `portal_jwt` и `portal_refresh`.
+  - `middleware.ts`: при истёкшем `portal_jwt` и наличии `portal_refresh` — редирект на `/api/session/refresh?redirect=...`, иначе — на `/login`.
+  - `app/api/session/refresh/route.ts`: обновление `portal_jwt`/`portal_refresh` через `POST /portal/auth/refresh` и возврат на исходный URL.
+- [x] ENV: добавлены примеры переменных `PORTAL_REFRESH_SECRET` (API) и `PORTAL_COOKIE_DOMAIN` (merchant-portal) в `infra/env-examples/*`.
+- [x] Docs: обновлён `API_DOCUMENTATION.md` (ответ логина, эндпоинт refresh, поведение кук).
+- [x] Admin Impersonation: TTL имперсонационного токена увеличен с 10 минут до 24 часов (`api/src/merchants/merchants.service.ts: impersonatePortal`).
+
 ## Хотфикс 2025-10-12 — Miniapp: QR-модалка выравнивание
 
 - [x] Miniapp: выровнять карточки «Баланс»/«Уровень» и прогресс с фоном QR-блока, обеспечить равномерное масштабирование элементов.
