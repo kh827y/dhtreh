@@ -293,6 +293,11 @@ export class CustomerProfileDto {
   birthDate?: string | null; // YYYY-MM-DD
 }
 
+export class CustomerPhoneStatusDto {
+  @ApiProperty()
+  hasPhone!: boolean;
+}
+
 export class CustomerProfileSaveDto {
   @ApiProperty() @IsString() merchantId!: string;
   @ApiProperty() @IsString() merchantCustomerId!: string;

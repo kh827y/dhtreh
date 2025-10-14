@@ -1440,6 +1440,9 @@ const result = await client.commit({
   - GET `/loyalty/profile?merchantId={merchantId}&customerId={customerId}` → `{ name: string|null, gender: 'male'|'female'|null, birthDate: 'YYYY-MM-DD'|null }`.
     - Профиль клиента хранится на стороне сервера и изолирован по паре `(merchantId, customerId)`.
     - Используется для кросс-девайс синхронизации данных профиля Mini App.
+  - GET `/loyalty/profile/phone-status?merchantId={merchantId}&customerId={customerId}` → `{ hasPhone: boolean }`.
+    - Возвращает признак наличия номера телефона у клиента на стороне сервера (`Customer.phone`/`MerchantCustomer.phone`).
+    - Mini App запрашивает эндпоинт после действия пользователя "Поделиться номером", чтобы подтвердить получение номера перед сохранением профиля.
   - POST `/loyalty/profile`
     ```json
     {

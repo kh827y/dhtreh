@@ -43,6 +43,7 @@ import {
   ErrorDto,
   CustomerProfileDto,
   CustomerProfileSaveDto,
+  CustomerPhoneStatusDto,
 } from './dto';
 import { looksLikeJwt, signQrToken, verifyQrToken } from './token.util';
 import { PrismaService } from '../prisma.service';
@@ -2037,6 +2038,24 @@ export class LoyaltyController {
       gender,
       birthDate,
     } satisfies CustomerProfileDto;
+  }
+
+  @Get('profile/phone-status')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @ApiOkResponse({ type: CustomerPhoneStatusDto })
+  async getProfilePhoneStatus(
+    @Query('merchantId') merchantId: string,
+    @Query('merchantCustomerId') merchantCustomerId: string,
+  ) {
+    const { merchantCustomer, customer } = await this.resolveMerchantContext(
+      merchantId,
+      merchantCustomerId,
+    );
+    const rawPhone =
+      (merchantCustomer?.phone ?? null) || (customer?.phone ?? null);
+    const hasPhone =
+      typeof rawPhone === 'string' && rawPhone.trim().length > 0;
+    return { hasPhone } satisfies CustomerPhoneStatusDto;
   }
 
   @Post('profile')

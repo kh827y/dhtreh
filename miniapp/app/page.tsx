@@ -19,6 +19,7 @@ import {
   promotionsList,
   promotionClaim,
   profileGet,
+  profilePhoneStatus,
   profileSave,
   teleauth,
   type PromotionItem,
@@ -1045,51 +1046,62 @@ export default function Page() {
     if (!merchantId) return;
     if (phoneShareStage !== "idle") return;
     const tg = getTelegramWebApp();
-    if (!tg || !tg.requestPhoneNumber) {
+    const canRequestPhone = typeof tg?.requestPhoneNumber === "function";
+    const canRequestContact = typeof tg?.requestContact === "function";
+    if (!tg || (!canRequestPhone && !canRequestContact)) {
       setToast({ msg: "Телеграм не поддерживает запрос номера", type: "error" });
       return;
     }
+    setPhone(null);
     setPhoneShareLoading(true);
-    try {
-      const normalize = (raw: unknown): string | null => {
-        if (!raw) return null;
-        const take = (s: string) => {
-          const digits = s.replace(/\D+/g, "");
-          if (digits.length < 10) return null;
-          if (digits.startsWith("8") && digits.length === 11) return "+7" + digits.slice(1);
-          if (digits.startsWith("7") && digits.length === 11) return "+" + digits;
-          if (digits.startsWith("9") && digits.length === 10) return "+7" + digits;
-          if (s.startsWith("+")) return s;
-          return "+" + digits;
-        };
-        if (typeof raw === "string") return take(raw) || null;
-        if (typeof raw === "object") {
-          const r: any = raw;
-          return take(r.phone_number || r.phone || r.value || "");
-        }
-        return null;
+    const normalize = (raw: unknown): string | null => {
+      if (!raw) return null;
+      const take = (s: string) => {
+        const digits = s.replace(/\D+/g, "");
+        if (digits.length < 10) return null;
+        if (digits.startsWith("8") && digits.length === 11) return "+7" + digits.slice(1);
+        if (digits.startsWith("7") && digits.length === 11) return "+" + digits;
+        if (digits.startsWith("9") && digits.length === 10) return "+7" + digits;
+        if (s.startsWith("+")) return s;
+        return "+" + digits;
       };
-
-      // Primary: requestPhoneNumber returns a value in some clients
-      const res = await tg.requestPhoneNumber();
-      const got = normalize(res);
-      if (got) {
-        setPhone(got);
-        setPhoneShareStage("confirm");
-        setToast({ msg: "Номер получен", type: "success" });
-        return;
+      if (typeof raw === "string") return take(raw) || null;
+      if (typeof raw === "object" && raw !== null) {
+        const record = raw as Record<string, unknown>;
+        const candidate =
+          typeof record.phone_number === "string"
+            ? record.phone_number
+            : typeof record.phone === "string"
+            ? record.phone
+            : typeof record.value === "string"
+            ? record.value
+            : null;
+        if (candidate) return take(candidate) || null;
       }
-      // Fallback: requestContact(callback)
-      if (typeof tg.requestContact === "function") {
+      return null;
+    };
+    let promptTriggered = false;
+    let phoneCaptured = false;
+    const markPhone = (value: string | null) => {
+      if (!value) return;
+      phoneCaptured = true;
+      setPhone(value);
+      setToast({ msg: "Номер получен", type: "success" });
+    };
+    try {
+      if (canRequestPhone) {
+        promptTriggered = true;
+        const res = await tg.requestPhoneNumber();
+        markPhone(normalize(res));
+      }
+      if (!phoneCaptured && canRequestContact) {
+        promptTriggered = true;
         await new Promise<void>((resolve) => {
           try {
-            tg.requestContact?.((payload: any) => {
-              const ph = normalize(payload);
-              if (ph) {
-                setPhone(ph);
-                setPhoneShareStage("confirm");
-                setToast({ msg: "Номер получен", type: "success" });
-              } else {
+            tg.requestContact?.((payload: unknown) => {
+              const normalized = normalize(payload);
+              markPhone(normalized);
+              if (!normalized) {
                 setToast({ msg: "Не удалось распознать номер", type: "error" });
               }
               resolve();
@@ -1098,29 +1110,93 @@ export default function Page() {
             resolve();
           }
         });
-        return;
       }
-      // If nothing provided a value, inform user to вввести вручную
-      setToast({ msg: "Не удалось получить номер автоматически — введите вручную", type: "error" });
+      if (!phoneCaptured && promptTriggered) {
+        setToast({ msg: "Номер не был предоставлен — подтвердите или попробуйте ещё раз", type: "info" });
+      }
+      if (!promptTriggered) {
+        setToast({ msg: "Не удалось открыть запрос номера", type: "error" });
+      }
     } catch (err) {
       const msg = resolveErrorMessage(err);
-      setToast({ msg: `Не удалось запросить номер: ${msg}`, type: "error" });
+      const lowered = msg.toLowerCase();
+      if (lowered.includes("denied") || lowered.includes("cancel")) {
+        setToast({ msg: "Вы отменили запрос номера", type: "info" });
+      } else {
+        setToast({ msg: `Не удалось запросить номер: ${msg}`, type: "error" });
+      }
     } finally {
+      if (promptTriggered) {
+        setPhoneShareStage("confirm");
+      }
       setPhoneShareLoading(false);
     }
-  }, [merchantId, phoneShareStage]);
+  }, [merchantId, phoneShareStage, setToast]);
 
   const handleConfirmPhone = useCallback(async () => {
     if (!merchantId) return;
     if (phoneShareStage !== "confirm") return;
+    const effectiveMerchantCustomerId = pendingMerchantCustomerIdForPhone || merchantCustomerId;
+    if (!effectiveMerchantCustomerId) {
+      setToast({ msg: "Не удалось определить клиента", type: "error" });
+      setPhoneShareStage("idle");
+      return;
+    }
+    const genderValid = profileForm.gender === "male" || profileForm.gender === "female";
+    if (!profileForm.name || !genderValid || !profileForm.birthDate) {
+      setToast({ msg: "Заполните профиль перед подтверждением", type: "error" });
+      setPhoneShareStage("idle");
+      return;
+    }
+    const key = profileStorageKey(merchantId);
+    const pendingKey = profilePendingKey(merchantId);
     setPhoneShareLoading(true);
+    setProfileSaving(true);
     try {
-      // Для совместимости: Telegram API подтверждения может отсутствовать
-      setPhoneShareStage("confirm");
+      const status = await profilePhoneStatus(merchantId, effectiveMerchantCustomerId);
+      if (!status?.hasPhone) {
+        setToast({ msg: "Вы не привязали номер телефона, попробуйте ещё раз", type: "error" });
+        setPhoneShareStage("idle");
+        return;
+      }
+      const payload = {
+        name: profileForm.name.trim(),
+        gender: profileForm.gender as "male" | "female",
+        birthDate: profileForm.birthDate,
+        ...(phone ? { phone } : {}),
+      };
+      await profileSave(merchantId, effectiveMerchantCustomerId, payload);
+      try { localStorage.setItem(key, JSON.stringify({ name: payload.name, gender: payload.gender, birthDate: payload.birthDate })); } catch {}
+      try { localStorage.removeItem(pendingKey); } catch {}
+      setMerchantCustomerId(effectiveMerchantCustomerId);
+      setAuthMerchantCustomerId(effectiveMerchantCustomerId);
+      setProfileCompleted(true);
+      setNeedPhoneStep(false);
+      setPendingMerchantCustomerIdForPhone(null);
+      setPhoneShareStage("idle");
+      setToast({ msg: "Профиль сохранён", type: "success" });
+    } catch (error) {
+      const message = resolveErrorMessage(error);
+      if (/без номера телефона/i.test(message)) {
+        setToast({ msg: "Вы не привязали номер телефона, попробуйте ещё раз", type: "error" });
+      } else {
+        setToast({ msg: `Не удалось сохранить профиль: ${message}`, type: "error" });
+      }
+      setPhoneShareStage("idle");
     } finally {
       setPhoneShareLoading(false);
+      setProfileSaving(false);
     }
-  }, [merchantId, phoneShareStage]);
+  }, [
+    merchantId,
+    phoneShareStage,
+    pendingMerchantCustomerIdForPhone,
+    merchantCustomerId,
+    profileForm,
+    phone,
+    setToast,
+    setAuthMerchantCustomerId,
+  ]);
 
   const handleProfileSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {

@@ -376,12 +376,24 @@ export type CustomerProfile = {
   birthDate: string | null; // YYYY-MM-DD
 };
 
+export type CustomerPhoneStatus = {
+  hasPhone: boolean;
+};
+
 export async function profileGet(
   merchantId: string,
   merchantCustomerId: string,
 ): Promise<CustomerProfile> {
   const qs = new URLSearchParams({ merchantId, merchantCustomerId });
   return http(`/loyalty/profile?${qs.toString()}`);
+}
+
+export async function profilePhoneStatus(
+  merchantId: string,
+  merchantCustomerId: string,
+): Promise<CustomerPhoneStatus> {
+  const qs = new URLSearchParams({ merchantId, merchantCustomerId });
+  return http(`/loyalty/profile/phone-status?${qs.toString()}`);
 }
 
 export async function profileSave(
