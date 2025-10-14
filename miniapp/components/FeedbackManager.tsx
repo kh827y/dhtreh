@@ -92,7 +92,8 @@ function computeShareOptions(share: ReviewsShareSettings, activeOutletId: string
 
 export function FeedbackManager() {
   const auth = useMiniappAuthContext();
-  const { merchantId, customerId } = auth;
+  const merchantId = auth.merchantId;
+  const merchantCustomerId = auth.merchantCustomerId;
   const [transactionsList, setTransactionsList] = useState<TransactionItem[]>([]);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackRating, setFeedbackRating] = useState(0);
@@ -110,19 +111,19 @@ export function FeedbackManager() {
   const dismissedTxSet = useMemo(() => new Set(dismissedTransactions), [dismissedTransactions]);
 
   const loadTransactions = useCallback(async () => {
-    if (!merchantId || !customerId) return;
+    if (!merchantId || !merchantCustomerId) return;
     try {
-      const response = await transactions(merchantId, customerId, 20);
+      const response = await transactions(merchantId, merchantCustomerId, 20);
       setTransactionsList(mapTransactions(response.items as TransactionItem[]));
     } catch (error) {
       setToast({ msg: `Не удалось обновить историю: ${resolveErrorMessage(error)}`, type: "error" });
     }
-  }, [merchantId, customerId]);
+  }, [merchantId, merchantCustomerId]);
 
   useEffect(() => {
-    if (!customerId) return;
+    if (!merchantCustomerId) return;
     void loadTransactions();
-  }, [customerId, loadTransactions]);
+  }, [merchantCustomerId, loadTransactions]);
 
   useEffect(() => {
     if (!dismissedReady) return;
@@ -267,7 +268,7 @@ export function FeedbackManager() {
         setToast({ msg: "Поставьте оценку", type: "error" });
         return;
       }
-      if (!merchantId || !customerId) {
+      if (!merchantId || !merchantCustomerId) {
         setToast({ msg: "Не удалось определить клиента", type: "error" });
         return;
       }
@@ -278,7 +279,7 @@ export function FeedbackManager() {
         setFeedbackSubmitting(true);
         const response = await submitReview({
           merchantId,
-          customerId,
+          merchantCustomerId,
           rating: feedbackRating,
           comment: feedbackComment,
           orderId: activeTx?.orderId ?? null,
@@ -353,7 +354,7 @@ export function FeedbackManager() {
       feedbackStage,
       feedbackRating,
       merchantId,
-      customerId,
+      merchantCustomerId,
       feedbackTxId,
       transactionsList,
       feedbackComment,
@@ -366,14 +367,16 @@ export function FeedbackManager() {
   );
 
   useEffect(() => {
-    if (!merchantId || !customerId) return;
+    if (!merchantId || !merchantCustomerId) return;
     const unsubscribe = subscribeToLoyaltyEvents((payload) => {
       if (!payload || typeof payload !== "object") return;
       const data = payload as Record<string, unknown>;
       const eventMerchant = data.merchantId ? String(data.merchantId) : "";
       if (eventMerchant && eventMerchant !== merchantId) return;
+      const eventMc = data.merchantCustomerId ? String(data.merchantCustomerId) : "";
       const eventCustomer = data.customerId ? String(data.customerId) : "";
-      if (eventCustomer && eventCustomer !== customerId) return;
+      if (eventMc && eventMc !== merchantCustomerId) return;
+      // Back-compat: if merchantCustomerId not provided in event, we cannot reliably compare against global customerId; skip filter
       const typeRaw = data.type ?? data.eventType;
       if (typeRaw) {
         const eventType = String(typeRaw).toLowerCase();
@@ -390,11 +393,11 @@ export function FeedbackManager() {
     return () => {
       unsubscribe();
     };
-  }, [merchantId, customerId, loadTransactions]);
+  }, [merchantId, merchantCustomerId, loadTransactions]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (!customerId) return;
+    if (!merchantCustomerId) return;
     const interval = window.setInterval(() => {
       if (document.visibilityState && document.visibilityState !== "visible") return;
       void loadTransactions();
@@ -402,7 +405,7 @@ export function FeedbackManager() {
     return () => {
       window.clearInterval(interval);
     };
-  }, [customerId, loadTransactions]);
+  }, [merchantCustomerId, loadTransactions]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;

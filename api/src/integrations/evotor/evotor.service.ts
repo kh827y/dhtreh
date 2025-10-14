@@ -309,7 +309,7 @@ export class EvotorService {
       }
 
       // Находим или создаем клиента
-      let customer = await this.prisma.customer.findUnique({
+      let customer = await this.prisma.customer.findFirst({
         where: { phone: customerPhone },
       });
 

@@ -207,6 +207,32 @@ CREATE TABLE "public"."Customer" (
 );
 
 -- CreateTable
+CREATE TABLE "public"."CustomerTelegram" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "tgId" TEXT NOT NULL,
+    "merchantCustomerId" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "CustomerTelegram_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."MerchantCustomer" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "customerId" TEXT NOT NULL,
+    "tgId" TEXT,
+    "phone" TEXT,
+    "email" TEXT,
+    "name" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "MerchantCustomer_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "public"."Wallet" (
     "id" TEXT NOT NULL,
     "customerId" TEXT NOT NULL,
@@ -929,6 +955,7 @@ CREATE TABLE "public"."CommunicationTaskRecipient" (
     "taskId" TEXT NOT NULL,
     "merchantId" TEXT NOT NULL,
     "customerId" TEXT,
+    "merchantCustomerId" TEXT,
     "channel" "public"."CommunicationChannel" NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'PENDING',
     "sentAt" TIMESTAMP(3),
@@ -938,6 +965,21 @@ CREATE TABLE "public"."CommunicationTaskRecipient" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "CommunicationTaskRecipient_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."CommunicationAsset" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "channel" "public"."CommunicationChannel" NOT NULL,
+    "kind" TEXT NOT NULL DEFAULT 'MEDIA',
+    "fileName" TEXT,
+    "mimeType" TEXT,
+    "byteSize" INTEGER NOT NULL,
+    "data" BYTEA NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "CommunicationAsset_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -1004,6 +1046,7 @@ CREATE TABLE "public"."ReferralProgram" (
     "stackWithRegistration" BOOLEAN NOT NULL DEFAULT false,
     "messageTemplate" TEXT,
     "placeholders" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    "shareButtonText" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "ReferralProgram_pkey" PRIMARY KEY ("id")
@@ -1371,6 +1414,8 @@ CREATE TABLE "public"."CustomerSegment" (
     "lastEvaluatedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
+    "systemKey" TEXT,
+    "isSystem" BOOLEAN NOT NULL DEFAULT false,
 
     CONSTRAINT "CustomerSegment_pkey" PRIMARY KEY ("id")
 );
@@ -1609,13 +1654,37 @@ CREATE INDEX "IdempotencyKey_expiresAt_idx" ON "public"."IdempotencyKey"("expire
 CREATE UNIQUE INDEX "IdempotencyKey_merchantId_key_key" ON "public"."IdempotencyKey"("merchantId", "key");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Customer_phone_key" ON "public"."Customer"("phone");
+CREATE UNIQUE INDEX "CustomerTelegram_merchantCustomerId_key" ON "public"."CustomerTelegram"("merchantCustomerId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Customer_tgId_key" ON "public"."Customer"("tgId");
+CREATE INDEX "CustomerTelegram_merchantId_idx" ON "public"."CustomerTelegram"("merchantId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Customer_email_key" ON "public"."Customer"("email");
+CREATE INDEX "CustomerTelegram_tgId_idx" ON "public"."CustomerTelegram"("tgId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "CustomerTelegram_merchantId_tgId_key" ON "public"."CustomerTelegram"("merchantId", "tgId");
+
+-- CreateIndex
+CREATE INDEX "MerchantCustomer_customerId_idx" ON "public"."MerchantCustomer"("customerId");
+
+-- CreateIndex
+CREATE INDEX "MerchantCustomer_tgId_idx" ON "public"."MerchantCustomer"("tgId");
+
+-- CreateIndex
+CREATE INDEX "MerchantCustomer_phone_idx" ON "public"."MerchantCustomer"("phone");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "MerchantCustomer_merchantId_customerId_key" ON "public"."MerchantCustomer"("merchantId", "customerId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "MerchantCustomer_merchantId_tgId_key" ON "public"."MerchantCustomer"("merchantId", "tgId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "MerchantCustomer_merchantId_phone_key" ON "public"."MerchantCustomer"("merchantId", "phone");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "MerchantCustomer_merchantId_email_key" ON "public"."MerchantCustomer"("merchantId", "email");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Wallet_customerId_merchantId_type_key" ON "public"."Wallet"("customerId", "merchantId", "type");
@@ -1873,6 +1942,12 @@ CREATE INDEX "CommunicationTaskRecipient_taskId_status_idx" ON "public"."Communi
 CREATE INDEX "CommunicationTaskRecipient_merchantId_channel_idx" ON "public"."CommunicationTaskRecipient"("merchantId", "channel");
 
 -- CreateIndex
+CREATE INDEX "CommunicationTaskRecipient_merchantCustomerId_idx" ON "public"."CommunicationTaskRecipient"("merchantCustomerId");
+
+-- CreateIndex
+CREATE INDEX "CommunicationAsset_merchantId_channel_idx" ON "public"."CommunicationAsset"("merchantId", "channel");
+
+-- CreateIndex
 CREATE INDEX "OtpCode_phone_idx" ON "public"."OtpCode"("phone");
 
 -- CreateIndex
@@ -1966,6 +2041,15 @@ CREATE INDEX "SyncLog_merchantId_createdAt_idx" ON "public"."SyncLog"("merchantI
 CREATE INDEX "SyncLog_integrationId_createdAt_idx" ON "public"."SyncLog"("integrationId", "createdAt");
 
 -- CreateIndex
+CREATE INDEX "CustomerSegment_merchantId_isSystem_idx" ON "public"."CustomerSegment"("merchantId", "isSystem");
+
+-- CreateIndex
+CREATE INDEX "CustomerSegment_systemKey_idx" ON "public"."CustomerSegment"("systemKey");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "CustomerSegment_merchantId_systemKey_key" ON "public"."CustomerSegment"("merchantId", "systemKey");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "Review_transactionId_key" ON "public"."Review"("transactionId");
 
 -- CreateIndex
@@ -2036,6 +2120,18 @@ ALTER TABLE "public"."Consent" ADD CONSTRAINT "Consent_merchantId_fkey" FOREIGN 
 
 -- AddForeignKey
 ALTER TABLE "public"."Consent" ADD CONSTRAINT "Consent_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "public"."Customer"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."CustomerTelegram" ADD CONSTRAINT "CustomerTelegram_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."CustomerTelegram" ADD CONSTRAINT "CustomerTelegram_merchantCustomerId_fkey" FOREIGN KEY ("merchantCustomerId") REFERENCES "public"."MerchantCustomer"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."MerchantCustomer" ADD CONSTRAINT "MerchantCustomer_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."MerchantCustomer" ADD CONSTRAINT "MerchantCustomer_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "public"."Customer"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "public"."Wallet" ADD CONSTRAINT "Wallet_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "public"."Customer"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -2270,6 +2366,12 @@ ALTER TABLE "public"."CommunicationTaskRecipient" ADD CONSTRAINT "CommunicationT
 
 -- AddForeignKey
 ALTER TABLE "public"."CommunicationTaskRecipient" ADD CONSTRAINT "CommunicationTaskRecipient_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "public"."Customer"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."CommunicationTaskRecipient" ADD CONSTRAINT "CommunicationTaskRecipient_merchantCustomerId_fkey" FOREIGN KEY ("merchantCustomerId") REFERENCES "public"."MerchantCustomer"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."CommunicationAsset" ADD CONSTRAINT "CommunicationAsset_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "public"."ReferralProgram" ADD CONSTRAINT "ReferralProgram_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

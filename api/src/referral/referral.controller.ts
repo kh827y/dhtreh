@@ -7,6 +7,7 @@ import {
   Param,
   Query,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -63,8 +64,17 @@ export class ReferralController {
    */
   @Post('activate')
   @ApiOperation({ summary: 'Активировать реферальный код при регистрации' })
-  async activateReferral(@Body() dto: { code: string; refereeId: string }) {
-    return this.referralService.activateReferral(dto.code, dto.refereeId);
+  async activateReferral(
+    @Body()
+    dto: { code: string; refereeId?: string; merchantCustomerId?: string },
+  ) {
+    const refereeId = dto.merchantCustomerId
+      ? await this.referralService.resolveCustomerId(dto.merchantCustomerId)
+      : dto.refereeId;
+    if (!refereeId) {
+      throw new BadRequestException('refereeId or merchantCustomerId required');
+    }
+    return this.referralService.activateReferral(dto.code, refereeId);
   }
 
   /**
@@ -111,7 +121,14 @@ export class ReferralController {
     @Param('customerId') customerId: string,
     @Query('merchantId') merchantId: string,
   ) {
-    return this.referralService.getCustomerReferrals(customerId, merchantId);
+    const resolvedCustomerId = await this.referralService.resolveCustomerId(
+      customerId,
+      merchantId,
+    );
+    return this.referralService.getCustomerReferrals(
+      resolvedCustomerId,
+      merchantId,
+    );
   }
 
   /**
@@ -123,7 +140,14 @@ export class ReferralController {
     @Param('customerId') customerId: string,
     @Query('merchantId') merchantId: string,
   ) {
-    return this.referralService.getCustomerReferralLink(customerId, merchantId);
+    const resolvedCustomerId = await this.referralService.resolveCustomerId(
+      customerId,
+      merchantId,
+    );
+    return this.referralService.getCustomerReferralLink(
+      resolvedCustomerId,
+      merchantId,
+    );
   }
 
   

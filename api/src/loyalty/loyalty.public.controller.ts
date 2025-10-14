@@ -69,15 +69,17 @@ export class LoyaltyPublicController {
     @Body()
     body: {
       merchantId?: string;
-      customerId?: string;
+      merchantCustomerId?: string;
       outletId?: string | null;
       staffId?: string | null;
     },
   ) {
     const merchantId =
       typeof body?.merchantId === 'string' ? body.merchantId.trim() : '';
-    const customerId =
-      typeof body?.customerId === 'string' ? body.customerId.trim() : '';
+    const merchantCustomerId =
+      typeof body?.merchantCustomerId === 'string'
+        ? body.merchantCustomerId.trim()
+        : '';
     const outletId =
       typeof body?.outletId === 'string' && body.outletId.trim()
         ? body.outletId.trim()
@@ -87,7 +89,19 @@ export class LoyaltyPublicController {
         ? body.staffId.trim()
         : null;
     if (!merchantId) throw new BadRequestException('merchantId required');
-    if (!customerId) throw new BadRequestException('customerId required');
+    if (!merchantCustomerId)
+      throw new BadRequestException('merchantCustomerId required');
+
+    const merchantCustomer = await (this.prisma as any)?.merchantCustomer
+      ?.findUnique?.({
+        where: { id: merchantCustomerId },
+        select: { customerId: true, merchantId: true },
+      })
+      .catch(() => null);
+    if (!merchantCustomer || merchantCustomer.merchantId !== merchantId)
+      throw new BadRequestException('merchant customer not found');
+    const customerId = merchantCustomer.customerId;
+
     return this.loyalty.grantRegistrationBonus({
       merchantId,
       customerId,

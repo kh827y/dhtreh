@@ -16,10 +16,10 @@ export class LevelsService {
 
   async getLevel(
     merchantId: string,
-    customerId: string,
+    merchantCustomerId: string,
   ): Promise<{
     merchantId: string;
-    customerId: string;
+    merchantCustomerId: string;
     metric: 'earn' | 'redeem' | 'transactions';
     periodDays: number;
     value: number;
@@ -46,16 +46,24 @@ export class LevelsService {
       }
     } catch {}
     const cfg = { periodDays: base.periodDays, metric: base.metric, levels };
+    const mc = await (this.prisma as any).merchantCustomer?.findUnique?.({
+      where: { id: merchantCustomerId },
+      select: { customerId: true, merchantId: true },
+    });
+    if (!mc || mc.merchantId !== merchantId)
+      throw new Error('merchant customer not found');
+    const customerId = mc.customerId;
+
     const { value, current, next, progressToNext } = await computeLevelState({
       prisma: this.prisma,
       metrics: this.metrics,
       merchantId,
-      customerId,
+      merchantCustomerId,
       config: cfg,
     });
     return {
       merchantId,
-      customerId,
+      merchantCustomerId,
       metric: cfg.metric,
       periodDays: cfg.periodDays,
       value,

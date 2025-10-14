@@ -1,5 +1,5 @@
 export type QrMintResp = { token: string; ttl: number };
-export type BalanceResp = { merchantId: string; customerId: string; balance: number };
+export type BalanceResp = { merchantId: string; merchantCustomerId: string; balance: number };
 export type TransactionsResp = {
   items: Array<{
     id: string;
@@ -21,7 +21,7 @@ export type TransactionsResp = {
 };
 export type LevelsResp = {
   merchantId: string;
-  customerId: string;
+  merchantCustomerId: string;
   metric: 'earn'|'redeem'|'transactions';
   periodDays: number;
   value: number;
@@ -61,6 +61,32 @@ export type ReferralLinkResp = {
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/$/, '');
 
+// Lightweight in-flight deduplication and short-lived cache for GETs
+const __inflight = new Map<string, Promise<unknown>>();
+const __cache = new Map<string, { ts: number; data: unknown }>();
+function __key(path: string, init?: RequestInit) {
+  return JSON.stringify({ p: path, m: init?.method || 'GET', b: init?.body || null });
+}
+async function httpDedup<T>(path: string, init?: RequestInit, cacheTtlMs = 0): Promise<T> {
+  const key = __key(path, init);
+  if (cacheTtlMs > 0) {
+    const c = __cache.get(key);
+    if (c && Date.now() - c.ts <= cacheTtlMs) return c.data as T;
+  }
+  const inflight = __inflight.get(key) as Promise<T> | undefined;
+  if (inflight) return inflight;
+  const p = http<T>(path, init)
+    .then((data) => {
+      if (cacheTtlMs > 0) __cache.set(key, { ts: Date.now(), data });
+      return data;
+    })
+    .finally(() => {
+      __inflight.delete(key);
+    });
+  __inflight.set(key, p as unknown as Promise<unknown>);
+  return p;
+}
+
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(API_BASE + path, {
     headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
@@ -73,13 +99,19 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-export async function teleauth(merchantId: string, initData: string): Promise<{ ok: boolean; customerId: string }> {
-  return http('/loyalty/teleauth', { method: 'POST', body: JSON.stringify({ merchantId, initData }) });
+export async function teleauth(
+  merchantId: string,
+  initData: string,
+): Promise<{ ok: boolean; merchantCustomerId: string }> {
+  return http('/loyalty/teleauth', {
+    method: 'POST',
+    body: JSON.stringify({ merchantId, initData }),
+  });
 }
 
 export async function submitReview(payload: {
   merchantId: string;
-  customerId: string;
+  merchantCustomerId: string;
   rating: number;
   comment?: string;
   orderId?: string | null;
@@ -92,7 +124,7 @@ export async function submitReview(payload: {
 }): Promise<SubmitReviewResponse> {
   const body: Record<string, unknown> = {
     merchantId: payload.merchantId,
-    customerId: payload.customerId,
+    merchantCustomerId: payload.merchantCustomerId,
     rating: payload.rating,
     comment: payload.comment ?? '',
   };
@@ -156,14 +188,14 @@ export async function publicSettings(merchantId: string): Promise<PublicSettings
 }
 
 export async function mintQr(
-  customerId: string,
+  merchantCustomerId: string,
   merchantId?: string,
   ttlSec?: number,
   initData?: string | null,
 ): Promise<QrMintResp> {
   return http('/loyalty/qr', {
     method: 'POST',
-    body: JSON.stringify({ customerId, merchantId, ttlSec, initData: initData || undefined }),
+    body: JSON.stringify({ merchantCustomerId, merchantId, ttlSec, initData: initData || undefined }),
   });
 }
 
@@ -180,8 +212,11 @@ export type PromotionItem = {
   claimed: boolean;
 };
 
-export async function promotionsList(merchantId: string, customerId: string): Promise<PromotionItem[]> {
-  const qs = new URLSearchParams({ merchantId, customerId });
+export async function promotionsList(
+  merchantId: string,
+  merchantCustomerId: string,
+): Promise<PromotionItem[]> {
+  const qs = new URLSearchParams({ merchantId, merchantCustomerId });
   return http(`/loyalty/promotions?${qs.toString()}`);
 }
 
@@ -197,86 +232,140 @@ export type PromotionClaimResp = {
 
 export async function promotionClaim(
   merchantId: string,
-  customerId: string,
+  merchantCustomerId: string,
   promotionId: string,
   outletId?: string | null,
 ): Promise<PromotionClaimResp> {
-  const body: Record<string, unknown> = { merchantId, customerId, promotionId };
+  const body: Record<string, unknown> = {
+    merchantId,
+    merchantCustomerId,
+    promotionId,
+  };
   if (typeof outletId === 'string' && outletId.trim()) body.outletId = outletId.trim();
   return http('/loyalty/promotions/claim', { method: 'POST', body: JSON.stringify(body) });
 }
 
-export async function balance(merchantId: string, customerId: string): Promise<BalanceResp> {
-  return http(`/loyalty/balance/${encodeURIComponent(merchantId)}/${encodeURIComponent(customerId)}`);
+export async function balance(
+  merchantId: string,
+  merchantCustomerId: string,
+): Promise<BalanceResp> {
+  return http(
+    `/loyalty/balance/${encodeURIComponent(merchantId)}/${encodeURIComponent(merchantCustomerId)}`,
+  );
 }
 
-export async function levels(merchantId: string, customerId: string): Promise<LevelsResp> {
-  return http(`/levels/${encodeURIComponent(merchantId)}/${encodeURIComponent(customerId)}`);
+export async function levels(
+  merchantId: string,
+  merchantCustomerId: string,
+): Promise<LevelsResp> {
+  return http(`/levels/${encodeURIComponent(merchantId)}/${encodeURIComponent(merchantCustomerId)}`);
 }
 
 export async function mechanicsLevels(merchantId: string): Promise<MechanicsLevelsResp> {
   return http(`/loyalty/mechanics/levels/${encodeURIComponent(merchantId)}`);
 }
 
-export async function transactions(merchantId: string, customerId: string, limit = 20, before?: string): Promise<TransactionsResp> {
-  const qs = new URLSearchParams({ merchantId, customerId, limit: String(limit), ...(before?{ before }: {}) });
-  return http(`/loyalty/transactions?${qs.toString()}`);
+export async function transactions(
+  merchantId: string,
+  merchantCustomerId: string,
+  limit = 20,
+  before?: string,
+): Promise<TransactionsResp> {
+  const qs = new URLSearchParams({
+    merchantId,
+    merchantCustomerId,
+    limit: String(limit),
+    ...(before ? { before } : {}),
+  });
+  return httpDedup(`/loyalty/transactions?${qs.toString()}`, undefined, 1500);
 }
 
 export async function grantRegistrationBonus(
   merchantId: string,
-  customerId: string,
+  merchantCustomerId: string,
   outletId?: string | null,
 ): Promise<{
   ok: boolean;
-  alreadyGranted?: boolean;
   pointsIssued: number;
-  pending: boolean;
-  maturesAt?: string | null;
-  pointsExpireInDays?: number | null;
+  referenceId?: string;
+  alreadyGranted?: boolean;
+  expiresInDays?: number | null;
   pointsExpireAt?: string | null;
   balance: number;
 }> {
-  const body: Record<string, unknown> = { merchantId, customerId };
+  const body: Record<string, unknown> = {
+    merchantId,
+    merchantCustomerId,
+  };
   if (typeof outletId === 'string' && outletId.trim()) body.outletId = outletId.trim();
   return http('/loyalty/mechanics/registration-bonus', { method: 'POST', body: JSON.stringify(body) });
 }
 
-export async function consentGet(merchantId: string, customerId: string): Promise<{ granted: boolean; consentAt?: string }>
-{ return http(`/loyalty/consent?merchantId=${encodeURIComponent(merchantId)}&customerId=${encodeURIComponent(customerId)}`); }
-
-export async function consentSet(merchantId: string, customerId: string, granted: boolean): Promise<{ ok: boolean }> {
-  return http('/loyalty/consent', { method: 'POST', body: JSON.stringify({ merchantId, customerId, granted }) });
+export async function consentGet(
+  merchantId: string,
+  merchantCustomerId: string,
+): Promise<{ granted: boolean; consentAt?: string }> {
+  return http(`/loyalty/consent?merchantId=${encodeURIComponent(merchantId)}&merchantCustomerId=${encodeURIComponent(merchantCustomerId)}`);
 }
 
-export async function referralLink(customerId: string, merchantId: string): Promise<ReferralLinkResp> {
-  return http(
-    `/referral/link/${encodeURIComponent(customerId)}?merchantId=${encodeURIComponent(merchantId)}`,
+export async function consentSet(
+  merchantId: string,
+  merchantCustomerId: string,
+  granted: boolean,
+): Promise<{ ok: boolean }> {
+  return http('/loyalty/consent', {
+    method: 'POST',
+    body: JSON.stringify({ merchantId, merchantCustomerId, granted }),
+  });
+}
+
+export async function referralLink(
+  merchantCustomerId: string,
+  merchantId: string,
+): Promise<ReferralLinkResp> {
+  if (
+    typeof merchantCustomerId !== 'string' ||
+    !merchantCustomerId ||
+    merchantCustomerId === 'undefined' ||
+    merchantCustomerId.trim() === '' ||
+    typeof merchantId !== 'string' ||
+    !merchantId
+  ) {
+    throw new Error('merchantCustomerId and merchantId are required and must be valid');
+  }
+  return httpDedup(
+    `/referral/link/${encodeURIComponent(merchantCustomerId)}?merchantId=${encodeURIComponent(merchantId)}`,
+    undefined,
+    2000,
   );
 }
 
-export async function referralActivate(code: string, customerId: string): Promise<{ success: boolean; message?: string; referralId?: string }> {
-  return http('/referral/activate', { method: 'POST', body: JSON.stringify({ code, refereeId: customerId }) });
+export async function referralActivate(
+  code: string,
+  merchantCustomerId: string,
+): Promise<{ success: boolean; message?: string; referralId?: string }> {
+  return http('/referral/activate', {
+    method: 'POST',
+    body: JSON.stringify({ code, merchantCustomerId }),
+  });
 }
 
 export async function promoCodeApply(
   merchantId: string,
-  customerId: string,
+  merchantCustomerId: string,
   code: string,
 ): Promise<{
   ok: boolean;
-  promoCodeId: string;
-  code: string;
-  pointsIssued: number;
-  pointsExpireInDays?: number | null;
-  pointsExpireAt?: string | null;
-  balance: number;
-  tierAssigned?: string | null;
+  promotionId: string | null;
+  alreadyUsed: boolean;
   message?: string;
+  balance?: number;
+  earnApplied?: number;
+  redeemApplied?: number;
 }> {
   return http('/loyalty/promocodes/apply', {
     method: 'POST',
-    body: JSON.stringify({ merchantId, customerId, code }),
+    body: JSON.stringify({ merchantId, merchantCustomerId, code }),
   });
 }
 
@@ -287,18 +376,21 @@ export type CustomerProfile = {
   birthDate: string | null; // YYYY-MM-DD
 };
 
-export async function profileGet(merchantId: string, customerId: string): Promise<CustomerProfile> {
-  const qs = new URLSearchParams({ merchantId, customerId });
+export async function profileGet(
+  merchantId: string,
+  merchantCustomerId: string,
+): Promise<CustomerProfile> {
+  const qs = new URLSearchParams({ merchantId, merchantCustomerId });
   return http(`/loyalty/profile?${qs.toString()}`);
 }
 
 export async function profileSave(
   merchantId: string,
-  customerId: string,
+  merchantCustomerId: string,
   profile: { name: string; gender: 'male' | 'female'; birthDate: string; phone?: string },
 ): Promise<CustomerProfile> {
   return http('/loyalty/profile', {
     method: 'POST',
-    body: JSON.stringify({ merchantId, customerId, ...profile }),
+    body: JSON.stringify({ merchantId, merchantCustomerId, ...profile }),
   });
 }

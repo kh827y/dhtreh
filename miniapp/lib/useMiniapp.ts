@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from 'react';
-import { teleauth, publicSettings, ReviewsShareSettings, grantRegistrationBonus } from './api';
+import { teleauth, publicSettings, ReviewsShareSettings, grantRegistrationBonus, referralLink } from './api';
 
 export function getInitData(): string | null {
   try {
@@ -87,7 +87,7 @@ export function getMerchantFromContext(initData: string | null): string | undefi
 
 export function useMiniappAuth(defaultMerchant: string) {
   const [merchantId, setMerchantId] = useState<string>(defaultMerchant);
-  const [customerId, setCustomerId] = useState<string | null>(null);
+  const [merchantCustomerId, setMerchantCustomerId] = useState<string | null>(null);
   const [initData, setInitData] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
@@ -104,17 +104,25 @@ export function useMiniappAuth(defaultMerchant: string) {
       if (ctxMerchant) setMerchantId(ctxMerchant);
       const mId = ctxMerchant || merchantId;
 
-      const customerKey = (m: string) => `miniapp.customerId.v2:${m}`;
+      const customerKey = (m: string) => `miniapp.merchantCustomerId.v1:${m}`;
       const profileKey = (m: string) => `miniapp.profile.v2:${m}`;
+      const sanitize = (v: string | null): string | null => {
+        if (!v) return null;
+        return v === 'undefined' ? null : v;
+      };
 
       // Migrate legacy global customerId to per-merchant key only when нет валидной телеграм-авторизации
-      const legacy = localStorage.getItem('miniapp.customerId');
-      const savedScoped = mId ? localStorage.getItem(customerKey(mId)) : null;
+      const legacy = sanitize(localStorage.getItem('miniapp.customerId'));
+      const legacyMc = sanitize(localStorage.getItem('miniapp.merchantCustomerId'));
+      const savedScoped = sanitize(mId ? localStorage.getItem(customerKey(mId)) : null);
       const hasTelegramAuth = isValidInitData(id);
       if (!hasTelegramAuth) {
-        if (savedScoped) setCustomerId(savedScoped);
-        else if (legacy) {
-          setCustomerId(legacy);
+        if (savedScoped) setMerchantCustomerId(savedScoped);
+        else if (legacyMc) {
+          setMerchantCustomerId(legacyMc);
+          if (mId) localStorage.setItem(customerKey(mId), legacyMc);
+        } else if (legacy) {
+          setMerchantCustomerId(legacy);
           if (mId) localStorage.setItem(customerKey(mId), legacy);
         }
       }
@@ -122,9 +130,9 @@ export function useMiniappAuth(defaultMerchant: string) {
       try {
         const devAuto = (process.env.NEXT_PUBLIC_MINIAPP_DEV_AUTO_CUSTOMER === '1') ||
           ((process.env.NEXT_PUBLIC_MINIAPP_DEV_AUTO_CUSTOMER || '').toLowerCase() === 'true');
-        if (!hasTelegramAuth && !savedScoped && !legacy && devAuto) {
+        if (!hasTelegramAuth && !savedScoped && !legacy && !legacyMc && devAuto) {
           const gen = 'user-' + Math.random().toString(36).slice(2, 10);
-          setCustomerId(gen);
+          setMerchantCustomerId(gen);
           if (mId) localStorage.setItem(customerKey(mId), gen);
         }
       } catch {}
@@ -156,18 +164,27 @@ export function useMiniappAuth(defaultMerchant: string) {
       try {
         // Prefer server teleauth when running inside Telegram (initData present)
         if (hasTelegramAuth && mId) {
-          const prev = savedScoped || legacy || null;
+          const prev = savedScoped || legacyMc || legacy || null;
           const r = await teleauth(mId, id);
-          setCustomerId(r.customerId);
-          localStorage.setItem(customerKey(mId), r.customerId);
-          // Clear legacy global key to avoid cross-merchant leakage
-          try { localStorage.removeItem('miniapp.customerId'); } catch {}
+          console.log('teleauth result:', r);
+          if (r?.merchantCustomerId && typeof r.merchantCustomerId === 'string' && r.merchantCustomerId.trim() && r.merchantCustomerId !== 'undefined') {
+            console.log('setting merchantCustomerId:', r.merchantCustomerId);
+            setMerchantCustomerId(r.merchantCustomerId);
+            localStorage.setItem(customerKey(mId), r.merchantCustomerId);
+          } else {
+            console.log('not setting merchantCustomerId, invalid:', r?.merchantCustomerId);
+          }
+          try {
+            localStorage.removeItem('miniapp.customerId');
+            localStorage.removeItem('miniapp.merchantCustomerId');
+          } catch {}
           // If customer switched, clear per-merchant profile and regBonus flags
-          if (prev && prev !== r.customerId) {
+          if (prev && prev !== r.merchantCustomerId) {
             try { localStorage.removeItem(profileKey(mId)); } catch {}
             try { localStorage.removeItem(`regBonus:${mId}:${prev}`); } catch {}
           }
           setError('');
+          // referralLink будет вызван в page.tsx после установки merchantCustomerId
         }
       } catch (error) {
         setError(error instanceof Error ? error.message : String(error));
@@ -183,17 +200,27 @@ export function useMiniappAuth(defaultMerchant: string) {
   useEffect(() => {
     (async () => {
       try {
-        if (!merchantId || !customerId) return;
-        const key = `regBonus:${merchantId}:${customerId}`;
+        if (!merchantId || !merchantCustomerId) return;
+        const key = `regBonus:${merchantId}:${merchantCustomerId}`;
         const attempted = localStorage.getItem(key);
         if (attempted) return;
-        await grantRegistrationBonus(merchantId, customerId).catch(() => void 0);
+        await grantRegistrationBonus(merchantId, merchantCustomerId).catch(() => void 0);
         localStorage.setItem(key, '1');
       } catch {
         // глушим, чтобы не ломать UX миниаппы — сервер идемпотентен и может быть временно недоступен
       }
     })();
-  }, [merchantId, customerId]);
+  }, [merchantId, merchantCustomerId]);
 
-  return { merchantId, setMerchantId, customerId, setCustomerId, loading, error, theme, shareSettings, initData } as const;
+  return {
+    merchantId,
+    setMerchantId,
+    merchantCustomerId,
+    setMerchantCustomerId,
+    loading,
+    error,
+    theme,
+    shareSettings,
+    initData,
+  } as const;
 }

@@ -53,6 +53,19 @@ const TIME_ICON = (
   </svg>
 );
 
+const CHECK_ICON = (
+  <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+    <path
+      d="M7.5 10.5L9.5 12.5L13 9"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <circle cx="10" cy="10" r="7.2" stroke="currentColor" strokeWidth="1.4" />
+  </svg>
+);
+
 type MechanicsLevel = {
   id?: string;
   name?: string;
@@ -242,9 +255,9 @@ export default function Page() {
   const auth = useMiniappAuthContext();
   const merchantId = auth.merchantId;
   const setMerchantId = auth.setMerchantId;
-  const setAuthCustomerId = auth.setCustomerId;
+  const setAuthMerchantCustomerId = auth.setMerchantCustomerId;
   const initData = auth.initData;
-  const [customerId, setCustomerId] = useState<string | null>(null);
+  const [merchantCustomerId, setMerchantCustomerId] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("");
   const [bal, setBal] = useState<number | null>(null);
   const [tx, setTx] = useState<TransactionItem[]>([]);
@@ -259,7 +272,9 @@ export default function Page() {
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
   const [phone, setPhone] = useState<string | null>(null);
   const [needPhoneStep, setNeedPhoneStep] = useState<boolean>(false);
-  const [pendingCustomerIdForPhone, setPendingCustomerIdForPhone] = useState<string | null>(null);
+  const [pendingMerchantCustomerIdForPhone, setPendingMerchantCustomerIdForPhone] = useState<string | null>(null);
+  const [phoneShareStage, setPhoneShareStage] = useState<"idle" | "confirm">("idle");
+  const [phoneShareLoading, setPhoneShareLoading] = useState<boolean>(false);
   const [profileForm, setProfileForm] = useState<{
     name: string;
     gender: "male" | "female" | "";
@@ -337,6 +352,7 @@ export default function Page() {
   const [referralEnabled, setReferralEnabled] = useState<boolean>(false);
   const [referralLoading, setReferralLoading] = useState<boolean>(false);
   const [referralResolved, setReferralResolved] = useState<boolean>(false);
+  const [referralReloadTick, setReferralReloadTick] = useState<number>(0);
   const [inviteCode, setInviteCode] = useState<string>("");
   const [inviteApplied, setInviteApplied] = useState<boolean>(false);
   const [promoCode, setPromoCode] = useState<string>("");
@@ -467,14 +483,14 @@ export default function Page() {
 
   // Подтянуть профиль с сервера (кросс-девайс) при наличии авторизации
   useEffect(() => {
-    if (!merchantId || !customerId) return;
+    if (!merchantId || !merchantCustomerId) return;
     let cancelled = false;
     const key = profileStorageKey(merchantId);
     const pendingKey = profilePendingKey(merchantId);
     setProfileResolved(false);
     (async () => {
       try {
-        const p = await profileGet(merchantId, customerId);
+        const p = await profileGet(merchantId, merchantCustomerId);
         if (cancelled) return;
         const name = p?.name || "";
         const gender = (p?.gender === "male" || p?.gender === "female") ? p.gender : "";
@@ -493,10 +509,10 @@ export default function Page() {
       }
     })();
     return () => { cancelled = true; };
-  }, [merchantId, customerId]);
+  }, [merchantId, merchantCustomerId]);
 
   useEffect(() => {
-    if (!merchantId || !customerId) return;
+    if (!merchantId || !merchantCustomerId) return;
     if (pendingProfileSync.current) return;
     const key = profileStorageKey(merchantId);
     const pendingKey = profilePendingKey(merchantId);
@@ -523,7 +539,7 @@ export default function Page() {
     pendingProfileSync.current = true;
     (async () => {
       try {
-        await profileSave(merchantId, customerId, { name, gender, birthDate });
+        await profileSave(merchantId, merchantCustomerId, { name, gender, birthDate });
         try {
           localStorage.setItem(key, JSON.stringify({ name, gender, birthDate }));
           localStorage.removeItem(pendingKey);
@@ -536,15 +552,15 @@ export default function Page() {
         pendingProfileSync.current = false;
       }
     })();
-  }, [merchantId, customerId, setToast]);
+  }, [merchantId, merchantCustomerId, setToast]);
 
   useEffect(() => {
     setLoading(auth.loading);
     setError(auth.error);
     if (!auth.loading) {
-      setCustomerId(auth.customerId);
+      setMerchantCustomerId(auth.merchantCustomerId);
     }
-  }, [auth.loading, auth.error, auth.customerId]);
+  }, [auth.loading, auth.error, auth.merchantCustomerId]);
 
   const retry = useCallback(
     async <T,>(fn: () => Promise<T>, tries = 2, delayMs = 500): Promise<T> => {
@@ -569,10 +585,10 @@ export default function Page() {
   }, [(auth as any)?.theme?.ttl]);
 
   const refreshQr = useCallback(async () => {
-    if (!customerId) return;
+    if (!merchantCustomerId) return;
     try {
       setQrRefreshing(true);
-      const minted = await mintQr(customerId, merchantId, qrEffectiveTtl, initData);
+      const minted = await mintQr(merchantCustomerId, merchantId, qrEffectiveTtl, initData);
       setQrToken(minted.token);
       const ttlSec = typeof minted.ttl === "number" && Number.isFinite(minted.ttl) ? minted.ttl : qrEffectiveTtl;
       setQrExpiresAt(Date.now() + Math.max(5, ttlSec) * 1000);
@@ -582,7 +598,7 @@ export default function Page() {
     } finally {
       setQrRefreshing(false);
     }
-  }, [customerId, merchantId, qrEffectiveTtl, initData]);
+  }, [merchantCustomerId, merchantId, qrEffectiveTtl, initData]);
 
   const updateQrSize = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -696,12 +712,12 @@ export default function Page() {
 
   const loadBalance = useCallback(async (opts?: { silent?: boolean }) => {
     const silent = opts?.silent ?? false;
-    if (!customerId) {
-      if (!silent) setStatus("Нет customerId");
+    if (!merchantCustomerId) {
+      if (!silent) setStatus("Нет идентификатора клиента");
       return;
     }
     try {
-      const r = await retry(() => balance(merchantId, customerId));
+      const r = await retry(() => balance(merchantId, merchantCustomerId));
       setBal(r.balance);
       if (!silent) setStatus("Баланс обновлён");
     } catch (error) {
@@ -713,7 +729,7 @@ export default function Page() {
     } finally {
       setBalanceResolved(true);
     }
-  }, [customerId, merchantId, retry]);
+  }, [merchantCustomerId, merchantId, retry]);
 
   const mapTransactions = useCallback(
     (
@@ -756,12 +772,12 @@ export default function Page() {
 
   const loadTx = useCallback(async (opts?: { silent?: boolean }) => {
     const silent = opts?.silent ?? false;
-    if (!customerId) {
-      if (!silent) setStatus("Нет customerId");
+    if (!merchantCustomerId) {
+      if (!silent) setStatus("Нет идентификатора клиента");
       return;
     }
     try {
-      const r = await retry(() => transactions(merchantId, customerId, 20));
+      const r = await retry(() => transactions(merchantId, merchantCustomerId, 20));
       setTx(mapTransactions(r.items));
       setNextBefore(r.nextBefore || null);
       if (!silent) setStatus("История обновлена");
@@ -772,24 +788,24 @@ export default function Page() {
         setToast({ msg: "Не удалось обновить историю", type: "error" });
       }
     }
-  }, [customerId, merchantId, retry, mapTransactions]);
+  }, [merchantCustomerId, merchantId, retry, mapTransactions]);
 
   const loadMore = useCallback(async () => {
-    if (!customerId || !nextBefore) return;
+    if (!merchantCustomerId || !nextBefore) return;
     try {
-      const r = await transactions(merchantId, customerId, 20, nextBefore);
+      const r = await transactions(merchantId, merchantCustomerId, 20, nextBefore);
       setTx((prev) => [...prev, ...mapTransactions(r.items)]);
       setNextBefore(r.nextBefore || null);
     } catch (error) {
       const message = resolveErrorMessage(error);
       setStatus(`Ошибка подгрузки: ${message}`);
     }
-  }, [merchantId, customerId, nextBefore, mapTransactions]);
+  }, [merchantId, merchantCustomerId, nextBefore, mapTransactions]);
 
   const loadLevels = useCallback(async () => {
-    if (!customerId) return;
+    if (!merchantCustomerId) return;
     try {
-      const info = await retry(() => levels(merchantId, customerId));
+      const info = await retry(() => levels(merchantId, merchantCustomerId));
       setLevelInfo(info);
     } catch (error) {
       const message = resolveErrorMessage(error);
@@ -797,7 +813,7 @@ export default function Page() {
     } finally {
       setLevelsResolved(true);
     }
-  }, [customerId, merchantId, retry]);
+  }, [merchantCustomerId, merchantId, retry]);
 
   const loadLevelCatalog = useCallback(async () => {
     try {
@@ -813,13 +829,13 @@ export default function Page() {
   }, [merchantId, retry]);
 
   const loadPromotions = useCallback(async () => {
-    if (!merchantId || !customerId) {
+    if (!merchantId || !merchantCustomerId) {
       setPromotions([]);
       return;
     }
     try {
       setPromotionsLoading(true);
-      const list = await promotionsList(merchantId, customerId);
+      const list = await promotionsList(merchantId, merchantCustomerId);
       setPromotions(Array.isArray(list) ? list : []);
     } catch (error) {
       setPromotions([]);
@@ -828,17 +844,17 @@ export default function Page() {
       setPromotionsLoading(false);
       setPromotionsResolved(true);
     }
-  }, [merchantId, customerId]);
+  }, [merchantId, merchantCustomerId]);
 
   const refreshHistory = useCallback(() => {
-    if (!customerId) return;
+    if (!merchantCustomerId) return;
     const tasks: Array<Promise<unknown>> = [
       loadBalance({ silent: true }),
       loadTx({ silent: true }),
       loadLevels(),
     ];
     void Promise.allSettled(tasks);
-  }, [customerId, loadBalance, loadTx, loadLevels]);
+  }, [merchantCustomerId, loadBalance, loadTx, loadLevels]);
 
   const handleExternalEvent = useCallback(
     (payload: unknown) => {
@@ -846,8 +862,8 @@ export default function Page() {
       const data = payload as Record<string, unknown>;
       const eventMerchant = data.merchantId ? String(data.merchantId) : "";
       if (eventMerchant && eventMerchant !== merchantId) return;
-      const eventCustomer = data.customerId ? String(data.customerId) : "";
-      if (eventCustomer && customerId && eventCustomer !== customerId) return;
+      const eventMc = data.merchantCustomerId ? String(data.merchantCustomerId) : "";
+      if (eventMc && merchantCustomerId && eventMc !== merchantCustomerId) return;
       const typeRaw = data.type ?? data.eventType;
       if (typeRaw) {
         const eventType = String(typeRaw).toLowerCase();
@@ -861,20 +877,20 @@ export default function Page() {
       }
       refreshHistory();
     },
-    [merchantId, customerId, refreshHistory],
+    [merchantId, merchantCustomerId, refreshHistory],
   );
 
   useEffect(() => {
-    if (!merchantId || !customerId) return;
+    if (!merchantId || !merchantCustomerId) return;
     const unsubscribe = subscribeToLoyaltyEvents(handleExternalEvent);
     return () => {
       unsubscribe();
     };
-  }, [merchantId, customerId, handleExternalEvent]);
+  }, [merchantId, merchantCustomerId, handleExternalEvent]);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof document === "undefined") return;
-    if (!customerId) return;
+    if (!merchantCustomerId) return;
     const interval = window.setInterval(() => {
       if (document.visibilityState && document.visibilityState !== "visible") return;
       refreshHistory();
@@ -882,13 +898,15 @@ export default function Page() {
     return () => {
       window.clearInterval(interval);
     };
-  }, [customerId, refreshHistory]);
+  }, [merchantCustomerId, refreshHistory]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
     const onVisibility = () => {
       if (document.visibilityState === "visible") {
         refreshHistory();
+        // Обновить статус реферальной программы при возврате в приложение
+        setReferralReloadTick((v) => v + 1);
       }
     };
     document.addEventListener("visibilitychange", onVisibility);
@@ -898,38 +916,38 @@ export default function Page() {
   }, [refreshHistory]);
 
   const syncConsent = useCallback(async () => {
-    if (!customerId) return;
+    if (!merchantCustomerId) return;
     try {
-      const r = await consentGet(merchantId, customerId);
+      const r = await consentGet(merchantId, merchantCustomerId);
       setConsent(!!r.granted);
     } catch {
       // ignore
     }
-  }, [customerId, merchantId]);
+  }, [merchantCustomerId, merchantId, referralReloadTick]);
 
   useEffect(() => {
     loadLevelCatalog();
   }, [loadLevelCatalog]);
 
   useEffect(() => {
-    if (customerId) {
+    if (merchantCustomerId) {
       syncConsent();
       loadBalance();
       loadTx();
       loadLevels();
       loadPromotions();
     }
-  }, [customerId, syncConsent, loadBalance, loadTx, loadLevels, loadPromotions]);
+  }, [merchantCustomerId, syncConsent, loadBalance, loadTx, loadLevels, loadPromotions]);
 
   const handlePromotionClaim = useCallback(
     async (promotionId: string) => {
-      if (!merchantId || !customerId) {
+      if (!merchantId || !merchantCustomerId) {
         setToast({ msg: "Не удалось определить клиента", type: "error" });
         return;
       }
       try {
         setPromotionsLoading(true);
-        const resp = await promotionClaim(merchantId, customerId, promotionId, null);
+        const resp = await promotionClaim(merchantId, merchantCustomerId, promotionId, null);
         const message = resp.alreadyClaimed
           ? "Уже получено"
           : resp.pointsIssued > 0
@@ -943,13 +961,29 @@ export default function Page() {
         setPromotionsLoading(false);
       }
     },
-    [merchantId, customerId, loadBalance, loadTx, loadPromotions]
+    [merchantId, merchantCustomerId, loadBalance, loadTx, loadPromotions]
   );
 
   useEffect(() => {
-    if (!customerId || !merchantId) {
+    console.log('referral effect running, auth.loading:', auth.loading, 'auth.merchantCustomerId:', auth.merchantCustomerId, 'merchantCustomerId:', merchantCustomerId);
+    if (auth.loading) return;
+    const sanitizeId = (v: string | null | undefined) => (typeof v === "string" && v !== "undefined" && v.trim() ? v : null);
+    const mc = sanitizeId(auth.merchantCustomerId) || sanitizeId(merchantCustomerId);
+    console.log('mc calculated:', mc);
+    if (!mc || !merchantId) {
       setReferralEnabled(false);
       setReferralInfo(null);
+      setReferralResolved(false);
+      setStatus("Реферальная: нет идентификатора клиента");
+      try {
+        const key = merchantId ? `miniapp.merchantCustomerId.v1:${merchantId}` : "";
+        if (key) {
+          const saved = localStorage.getItem(key);
+          if (saved === "undefined" || !saved || !saved.trim()) {
+            localStorage.removeItem(key);
+          }
+        }
+      } catch {}
       return;
     }
     let cancelled = false;
@@ -959,7 +993,8 @@ export default function Page() {
     setReferralInfo(null);
     setInviteApplied(false);
     setInviteCode("");
-    referralLink(customerId, merchantId)
+    setStatus("Реферальная: проверяем состояние...");
+    referralLink(mc, merchantId)
       .then((data) => {
         if (cancelled) return;
         setReferralInfo({
@@ -974,11 +1009,13 @@ export default function Page() {
             typeof data.program?.shareMessageTemplate === 'string' ? data.program.shareMessageTemplate : undefined,
         });
         setReferralEnabled(true);
+        setStatus("Реферальная: активна");
       })
       .catch(() => {
         if (!cancelled) {
           setReferralInfo(null);
           setReferralEnabled(false);
+          setStatus("Реферальная: выключена");
         }
       })
       .finally(() => {
@@ -990,19 +1027,100 @@ export default function Page() {
     return () => {
       cancelled = true;
     };
-  }, [customerId, merchantId]);
+  }, [auth.loading, auth.merchantCustomerId, merchantCustomerId, merchantId, referralReloadTick]);
 
   const toggleConsent = useCallback(async () => {
-    if (!customerId) return;
+    if (!merchantCustomerId) return;
     try {
-      await consentSet(merchantId, customerId, !consent);
+      await consentSet(merchantId, merchantCustomerId, !consent);
       setConsent(!consent);
       setToast({ msg: "Настройки согласия обновлены", type: "success" });
     } catch (error) {
       const message = resolveErrorMessage(error);
       setToast({ msg: `Ошибка согласия: ${message}`, type: "error" });
     }
-  }, [merchantId, customerId, consent]);
+  }, [merchantId, merchantCustomerId, consent]);
+
+  const handleRequestPhone = useCallback(async () => {
+    if (!merchantId) return;
+    if (phoneShareStage !== "idle") return;
+    const tg = getTelegramWebApp();
+    if (!tg || !tg.requestPhoneNumber) {
+      setToast({ msg: "Телеграм не поддерживает запрос номера", type: "error" });
+      return;
+    }
+    setPhoneShareLoading(true);
+    try {
+      const normalize = (raw: unknown): string | null => {
+        if (!raw) return null;
+        const take = (s: string) => {
+          const digits = s.replace(/\D+/g, "");
+          if (digits.length < 10) return null;
+          if (digits.startsWith("8") && digits.length === 11) return "+7" + digits.slice(1);
+          if (digits.startsWith("7") && digits.length === 11) return "+" + digits;
+          if (digits.startsWith("9") && digits.length === 10) return "+7" + digits;
+          if (s.startsWith("+")) return s;
+          return "+" + digits;
+        };
+        if (typeof raw === "string") return take(raw) || null;
+        if (typeof raw === "object") {
+          const r: any = raw;
+          return take(r.phone_number || r.phone || r.value || "");
+        }
+        return null;
+      };
+
+      // Primary: requestPhoneNumber returns a value in some clients
+      const res = await tg.requestPhoneNumber();
+      const got = normalize(res);
+      if (got) {
+        setPhone(got);
+        setPhoneShareStage("confirm");
+        setToast({ msg: "Номер получен", type: "success" });
+        return;
+      }
+      // Fallback: requestContact(callback)
+      if (typeof tg.requestContact === "function") {
+        await new Promise<void>((resolve) => {
+          try {
+            tg.requestContact?.((payload: any) => {
+              const ph = normalize(payload);
+              if (ph) {
+                setPhone(ph);
+                setPhoneShareStage("confirm");
+                setToast({ msg: "Номер получен", type: "success" });
+              } else {
+                setToast({ msg: "Не удалось распознать номер", type: "error" });
+              }
+              resolve();
+            });
+          } catch {
+            resolve();
+          }
+        });
+        return;
+      }
+      // If nothing provided a value, inform user to вввести вручную
+      setToast({ msg: "Не удалось получить номер автоматически — введите вручную", type: "error" });
+    } catch (err) {
+      const msg = resolveErrorMessage(err);
+      setToast({ msg: `Не удалось запросить номер: ${msg}`, type: "error" });
+    } finally {
+      setPhoneShareLoading(false);
+    }
+  }, [merchantId, phoneShareStage]);
+
+  const handleConfirmPhone = useCallback(async () => {
+    if (!merchantId) return;
+    if (phoneShareStage !== "confirm") return;
+    setPhoneShareLoading(true);
+    try {
+      // Для совместимости: Telegram API подтверждения может отсутствовать
+      setPhoneShareStage("confirm");
+    } finally {
+      setPhoneShareLoading(false);
+    }
+  }, [merchantId, phoneShareStage]);
 
   const handleProfileSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -1019,8 +1137,8 @@ export default function Page() {
         try { localStorage.setItem(key, JSON.stringify(profileForm)); } catch {}
       }
 
-      let effectiveCustomerId = customerId;
-      if ((!effectiveCustomerId || !merchantId)) {
+      let effectiveMerchantCustomerId = merchantCustomerId;
+      if ((!effectiveMerchantCustomerId || !merchantId)) {
         let initForAuth = initData;
         if (!isValidInitData(initForAuth)) {
           initForAuth = await waitForInitData(10, 200);
@@ -1028,9 +1146,9 @@ export default function Page() {
         if (merchantId && isValidInitData(initForAuth)) {
           try {
             const result = await teleauth(merchantId, initForAuth);
-            effectiveCustomerId = result.customerId;
-            setAuthCustomerId(result.customerId);
-            setCustomerId(result.customerId);
+            effectiveMerchantCustomerId = result.merchantCustomerId;
+            setAuthMerchantCustomerId(result.merchantCustomerId);
+            setMerchantCustomerId(result.merchantCustomerId);
           } catch (teleauthError) {
             const message = resolveErrorMessage(teleauthError);
             setToast({ msg: `Не удалось авторизоваться в Telegram: ${message}`, type: "error" });
@@ -1048,20 +1166,9 @@ export default function Page() {
         }
       }
 
-      if (!merchantId || !effectiveCustomerId) {
-        if (pendingKey) {
-          try { localStorage.setItem(pendingKey, JSON.stringify(profileForm)); } catch {}
-        }
-        pendingProfileSync.current = false;
-        setToast({ msg: "Профиль сохранён, синхронизируем после завершения авторизации Telegram", type: "info" });
-        setProfileSaving(false);
-        return;
-      }
-
-      // Сначала валидация/активация пригласительного кода (если указан). При недействительном коде — НЕ сохраняем профиль и остаёмся на форме
       if (inviteCode.trim()) {
         try {
-          await referralActivate(inviteCode.trim(), effectiveCustomerId);
+          await referralActivate(inviteCode.trim(), effectiveMerchantCustomerId);
           setInviteApplied(true);
           setInviteCode("");
           setToast({ msg: "Пригласительный код активирован", type: "success" });
@@ -1069,264 +1176,96 @@ export default function Page() {
           const description = resolveErrorMessage(err);
           const isInvalid = /400\s+Bad\s+Request/i.test(description) || /Недействитель|expired|invalid/i.test(description);
           if (isInvalid) {
-            setToast({ msg: "Недействительный пригласительынй код", type: "error" });
+            setToast({ msg: "Недействительный пригласительный код", type: "error" });
             setProfileSaving(false);
             return;
           }
-          // Сеть/сервер: позволяем сохранить профиль, но показываем предупреждение
           setToast({ msg: `Не удалось проверить код: ${description}`, type: "error" });
         }
       }
 
-      // Если номера нет — переходим на шаг привязки номера, сохраняем customerId для второго шага
+      // Если номер нужен, покажем шаг привязки номера и отложим сохранение
       if (!phone) {
         setNeedPhoneStep(true);
-        setPendingCustomerIdForPhone(effectiveCustomerId);
+        setPendingMerchantCustomerIdForPhone(effectiveMerchantCustomerId);
         setProfileSaving(false);
         return;
       }
 
-      // Если номер уже есть в состоянии — сохраняем профиль сразу
       try {
-        await profileSave(merchantId, effectiveCustomerId, {
+        await profileSave(merchantId, effectiveMerchantCustomerId, {
           name: profileForm.name.trim(),
           gender: profileForm.gender as 'male' | 'female',
           birthDate: profileForm.birthDate,
-          phone: phone,
+          phone: phone || undefined,
         });
-        if (pendingKey) {
-          try { localStorage.removeItem(pendingKey); } catch {}
+        if (key) {
+          try { localStorage.setItem(key, JSON.stringify({ name: profileForm.name.trim(), gender: profileForm.gender, birthDate: profileForm.birthDate })); } catch {}
+          try { localStorage.removeItem(pendingKey!); } catch {}
         }
-        setProfileCompleted(true);
         setToast({ msg: "Профиль сохранён", type: "success" });
+        setProfileCompleted(true);
       } catch (error) {
         const message = resolveErrorMessage(error);
-        setToast({ msg: `Не удалось сохранить: ${message}`, type: "error" });
+        setToast({ msg: `Не удалось сохранить профиль: ${message}`, type: "error" });
       } finally {
         setProfileSaving(false);
       }
     },
-    [merchantId, customerId, profileForm, inviteCode, consent]
+    [merchantId, merchantCustomerId, profileForm, inviteCode, phone, initData, setAuthMerchantCustomerId]
   );
-
-  const handleSharePhone = useCallback(async () => {
-    if (profileSaving) return;
-    const tg = getTelegramWebApp();
-    let phoneVal: string | null = null;
-    // Предпочтительно: requestContact
-    if (tg?.requestContact) {
-      try {
-        const getContact = () =>
-          tg.requestContact!.length > 0
-            ? new Promise<any>((resolve) => (tg.requestContact as any)((payload: any) => resolve(payload)))
-            : (tg.requestContact!() as Promise<any>);
-        const res: any = await Promise.race([
-          Promise.resolve(getContact()),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000)),
-        ]).catch(() => null);
-        if (res) {
-          const c = (res as any).contact || {};
-          const p = (c.phoneNumber || c.phone_number || (res as any).phone || (res as any).phone_number || (res as any).phoneNumber || '').toString();
-          if (p && p.trim()) phoneVal = p.trim();
-        }
-      } catch {}
-    }
-    // Fallback: requestPhoneNumber
-    if (!phoneVal && tg?.requestPhoneNumber) {
-      try {
-        const res: any = await Promise.race([
-          Promise.resolve(tg.requestPhoneNumber()),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000)),
-        ]).catch(() => null);
-        if (res) {
-          let p: any = null;
-          if (typeof res === 'string') p = res;
-          else if (res && typeof res === 'object') {
-            p = (res as any).phone || (res as any).phone_number || (res as any).phoneNumber || (res as any).contact?.phone_number || (res as any).contact?.phoneNumber || null;
-          }
-          if (typeof p === 'string' && p.trim()) phoneVal = p.trim();
-        }
-      } catch {}
-    }
-
-    // Если номер не пришёл в WebApp, всё равно пытаемся сохранить профиль несколько раз —
-    // номер мог прийти на бэкенд через webhook и быть добавлен к клиенту.
-    if (!phoneVal) {
-      setProfileSaving(true);
-      const effectiveCustomerId = pendingCustomerIdForPhone || customerId;
-      if (!merchantId || !effectiveCustomerId) {
-        setProfileSaving(false);
-        return;
-      }
-      const maxTries = 10;
-      for (let i = 0; i < maxTries; i++) {
-        try {
-          await profileSave(merchantId, effectiveCustomerId, {
-            name: profileForm.name.trim(),
-            gender: profileForm.gender as 'male' | 'female',
-            birthDate: profileForm.birthDate,
-          });
-          const pendingKey = merchantId ? profilePendingKey(merchantId) : null;
-          if (pendingKey) {
-            try { localStorage.removeItem(pendingKey); } catch {}
-          }
-          setProfileCompleted(true);
-          setNeedPhoneStep(false);
-          setToast({ msg: 'Профиль сохранён', type: 'success' });
-          setProfileSaving(false);
-          return;
-        } catch (error) {
-          const msg = resolveErrorMessage(error);
-          const missingPhone = /Без номера телефона мы не можем зарегистрировать/i.test(msg);
-          if (!missingPhone) {
-            setToast({ msg: `Не удалось сохранить: ${msg}` , type: 'error' });
-            setProfileSaving(false);
-            return;
-          }
-          await new Promise((r) => setTimeout(r, 1000));
-        }
-      }
-      setProfileSaving(false);
-      return;
-    }
-
-    setPhone(phoneVal);
-    setProfileSaving(true);
-    const pendingKey = merchantId ? profilePendingKey(merchantId) : null;
-    const effectiveCustomerId = pendingCustomerIdForPhone || customerId;
-    if (!merchantId || !effectiveCustomerId) {
-      setProfileSaving(false);
-      return;
-    }
-    try {
-      await profileSave(merchantId, effectiveCustomerId, {
-        name: profileForm.name.trim(),
-        gender: profileForm.gender as 'male' | 'female',
-        birthDate: profileForm.birthDate,
-        phone: phoneVal,
-      });
-      if (pendingKey) {
-        try { localStorage.removeItem(pendingKey); } catch {}
-      }
-      setProfileCompleted(true);
-      setNeedPhoneStep(false);
-      setToast({ msg: "Профиль сохранён", type: "success" });
-    } catch (error) {
-      const message = resolveErrorMessage(error);
-      setToast({ msg: `Не удалось сохранить: ${message}`, type: "error" });
-    } finally {
-      setProfileSaving(false);
-    }
-  }, [profileSaving, merchantId, customerId, pendingCustomerIdForPhone, profileForm]);
-
-  const handleInviteFriend = useCallback(async () => {
-    if (!referralInfo) {
-      setToast({ msg: "Реферальная программа недоступна", type: "error" });
-      return;
-    }
-    const templateForShare = referralInfo.shareMessageTemplate || referralInfo.messageTemplate;
-    const message = buildReferralMessage(templateForShare, {
-      merchantName: referralInfo.merchantName,
-      bonusAmount: referralInfo.friendReward, // {bonusamount} в тексте отправки = награда другу
-      code: referralInfo.code,
-      link: referralInfo.link,
-    });
-    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(referralInfo.link)}&text=${encodeURIComponent(message)}`;
-    try {
-      const tg = getTelegramWebApp();
-      if (tg?.openTelegramLink) {
-        tg.openTelegramLink(shareUrl);
-        setToast({ msg: "Откройте Telegram, чтобы отправить приглашение", type: "success" });
-        return;
-      }
-    } catch {
-      // ignore telegram errors
-    }
-    if (typeof navigator !== "undefined" && navigator.share) {
-      try {
-        await navigator.share({ text: message, url: referralInfo.link });
-        setToast({ msg: "Сообщение готово к отправке", type: "success" });
-        return;
-      } catch (error) {
-        if ((error as DOMException)?.name === "AbortError") {
-          return;
-        }
-      }
-    }
-    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-      try {
-        await navigator.clipboard.writeText(message);
-        setToast({ msg: "Текст приглашения скопирован", type: "success" });
-        return;
-      } catch {
-        // ignore clipboard errors
-      }
-    }
-    setToast({ msg: message || "Скопируйте приглашение и отправьте другу", type: "info" });
-  }, [referralInfo]);
-
-  // Прогресс-бар показываем только на странице /qr, не здесь
 
   const availablePromotions = useMemo(
     () => promotions.filter((p) => p && p.canClaim && !p.claimed).length,
-    [promotions]
+    [promotions],
   );
 
   const handlePromoActivate = useCallback(
-    async (event?: FormEvent<HTMLFormElement>) => {
-      event?.preventDefault();
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
       const code = promoCode.trim();
       if (!code) {
-        setToast({ msg: "Введите промокод", type: "error" });
+        setToast({ msg: 'Введите промокод', type: 'error' });
         return;
       }
-    if (!customerId) {
-      setToast({ msg: "Не удалось определить клиента", type: "error" });
-      return;
-    }
-    if (!merchantId) {
-      setToast({ msg: "Не удалось определить мерчанта", type: "error" });
-      return;
-    }
-    setPromoLoading(true);
-    try {
-      const result = await promoCodeApply(merchantId, customerId, code);
-      if (result.ok) {
-        const successMessage = result.message ||
-          (result.pointsIssued > 0
-            ? `Начислено ${result.pointsIssued} баллов`
-            : "Промокод активирован");
-        setToast({ msg: successMessage, type: "success" });
-        setPromoCode("");
-        if (typeof result.balance === "number" && !Number.isNaN(result.balance)) {
-          setBal(result.balance);
-        }
-        await Promise.allSettled([loadBalance(), loadTx()]);
-      } else {
-        setToast({ msg: "Промокод не подошёл", type: "error" });
+      if (!merchantId || !merchantCustomerId) {
+        setToast({ msg: 'Не удалось определить клиента', type: 'error' });
+        return;
       }
-    } catch (error) {
-      const message = resolveErrorMessage(error);
-      setToast({ msg: `Не удалось активировать: ${message}`, type: "error" });
-    } finally {
-      setPromoLoading(false);
-    }
-  },
-    [promoCode, customerId, merchantId, loadBalance, loadTx]
+      setPromoLoading(true);
+      try {
+        const result = await promoCodeApply(merchantId, merchantCustomerId, code);
+        if (result.ok) {
+          const successMessage = result.message || 'Промокод применён';
+          setToast({ msg: successMessage, type: 'success' });
+          setPromoCode('');
+          await Promise.allSettled([loadBalance(), loadTx()]);
+        } else {
+          setToast({ msg: 'Промокод не подошёл', type: 'error' });
+        }
+      } catch (error) {
+        setToast({ msg: `Не удалось активировать: ${resolveErrorMessage(error)}`, type: 'error' });
+      } finally {
+        setPromoLoading(false);
+      }
+    },
+    [promoCode, merchantId, merchantCustomerId, loadBalance, loadTx]
   );
 
-  const cashbackPercent = useMemo(() => {
-    const currentName = levelInfo?.current?.name;
-    if (!currentName) return null;
-    const entry = levelCatalog.find((lvl) => (lvl?.name || "").toLowerCase() === currentName.toLowerCase());
-    if (!entry) return null;
-    if (typeof entry.cashbackPercent === "number") return entry.cashbackPercent;
-    if (entry.benefits && typeof entry.benefits.cashbackPercent === "number") {
-      return entry.benefits.cashbackPercent;
+  const handleInviteFriend = useCallback(async () => {
+    if (!referralInfo) return;
+    const tg = getTelegramWebApp();
+    const link = referralInfo.link || '';
+    if (tg?.openTelegramLink && link) {
+      tg.openTelegramLink(link);
+      return;
     }
-    if (typeof entry.rewardPercent === "number") return entry.rewardPercent;
-    return null;
-  }, [levelInfo, levelCatalog]);
+    try {
+      if (typeof window !== 'undefined' && link) {
+        window.open(link, '_blank', 'noopener,noreferrer');
+      }
+    } catch {}
+  }, [referralInfo]);
 
   const displayName = useMemo(() => {
     if (profileForm.name) return profileForm.name;
@@ -1342,13 +1281,13 @@ export default function Page() {
 
   const screenLoading = useMemo(() => {
     if (auth.loading) return true;
-    if (customerId) {
+    if (merchantCustomerId) {
       return !(balanceResolved && levelsResolved && promotionsResolved && referralResolved && profileResolved);
     }
     return !localProfileResolved;
-  }, [auth.loading, customerId, balanceResolved, levelsResolved, promotionsResolved, referralResolved, profileResolved, localProfileResolved]);
+  }, [auth.loading, merchantCustomerId, balanceResolved, levelsResolved, promotionsResolved, referralResolved, profileResolved, localProfileResolved]);
 
-  const profilePage = !screenLoading && (!customerId || !profileCompleted);
+  const profilePage = !screenLoading && (!merchantCustomerId || !profileCompleted);
 
   // Render message with clickable {link} and {code} placeholders
   const renderReferralMessage = (
@@ -1397,7 +1336,22 @@ export default function Page() {
     return nodes;
   };
 
-  const inviteFieldVisible = (referralEnabled || !customerId);
+  const inviteFieldVisible = referralResolved && referralEnabled;
+
+  const phoneButtonLabel = useMemo(() => {
+    if (phoneShareStage === "confirm") {
+      return (
+        <span className={styles.profilePhoneSuccessLabel}>
+          <span className={styles.profilePhoneSuccessIcon}>{CHECK_ICON}</span>
+          Готово
+        </span>
+      );
+    }
+    return "Поделиться номером";
+  }, [phoneShareStage]);
+
+  const phoneButtonClick = phoneShareStage === "confirm" ? handleConfirmPhone : handleRequestPhone;
+  const phoneButtonDisabled = profileSaving || phoneShareLoading;
 
   if (screenLoading) {
     return (
@@ -1433,11 +1387,11 @@ export default function Page() {
               </div>
               <button
                 type="button"
-                className={`${styles.profileSubmit} ${styles.appear} ${inviteFieldVisible ? styles.delay5 : styles.delay4}`}
-                onClick={handleSharePhone}
-                disabled={profileSaving}
+                className={`${phoneShareStage === "confirm" ? styles.profileSubmitSuccess : styles.profileSubmit} ${styles.appear} ${inviteFieldVisible ? styles.delay5 : styles.delay4}`}
+                onClick={phoneButtonClick}
+                disabled={phoneButtonDisabled}
               >
-                Поделиться номером
+                {phoneButtonLabel}
               </button>
             </div>
           ) : (
@@ -1547,7 +1501,7 @@ export default function Page() {
                   </select>
                 </div>
               </div>
-              {(referralEnabled || !customerId) && (
+              {inviteFieldVisible && (
                 <div className={`${styles.profileField} ${styles.appear} ${styles.delay4}`}>
                   <label htmlFor="invite">Пригласительный код</label>
                   <input
@@ -1645,7 +1599,7 @@ export default function Page() {
               <div className={styles.cardRow}>
                 <span className={styles.cardLabel}>Кэшбэк</span>
                 <span className={styles.cardValue}>
-                  {typeof cashbackPercent === "number" ? `${cashbackPercent}%` : "—"}
+                  {typeof qrCashbackPercent === "number" ? `${qrCashbackPercent}%` : "—"}
                 </span>
               </div>
             </div>
@@ -1767,14 +1721,25 @@ export default function Page() {
               <label>
                 CustomerId
                 <input
-                  value={customerId || ""}
+                  value={merchantCustomerId || ""}
                   placeholder="teleauth заполнит сам"
                   onChange={(e) => {
-                    setCustomerId(e.target.value);
+                    setMerchantCustomerId(e.target.value);
                     try {
-                      const key = merchantId ? `miniapp.customerId.v2:${merchantId}` : 'miniapp.customerId';
-                      localStorage.setItem(key, e.target.value);
-                    } catch {}
+                      if (typeof window !== "undefined" && merchantCustomerId) {
+                        const consentKey = `consent:${merchantId}:${merchantCustomerId}`;
+                        localStorage.setItem(
+                          consentKey,
+                          JSON.stringify({
+                            name: profileForm.name,
+                            gender: profileForm.gender,
+                            birthDate: profileForm.birthDate,
+                          }),
+                        );
+                      }
+                    } catch (error) {
+                      console.error(error);
+                    }
                   }}
                 />
               </label>

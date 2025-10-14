@@ -83,7 +83,7 @@ export class CommitDto {
 export class QrMintDto {
   @ApiProperty()
   @IsString()
-  customerId: string;
+  merchantCustomerId: string;
   @ApiPropertyOptional({ minimum: 10 })
   @IsOptional()
   @Min(10)
@@ -185,7 +185,7 @@ export class PublicSettingsDto {
 
 export class BalanceDto {
   @ApiProperty() merchantId!: string;
-  @ApiProperty() customerId!: string;
+  @ApiProperty() merchantCustomerId!: string;
   @ApiProperty() balance!: number;
 }
 
@@ -207,7 +207,7 @@ export class TransactionItemDto {
     | 'ADJUST';
   @ApiProperty() amount!: number;
   @ApiPropertyOptional() orderId?: string | null;
-  @ApiProperty() customerId!: string;
+  @ApiProperty() merchantCustomerId!: string;
   @ApiProperty() createdAt!: string;
   @ApiPropertyOptional() outletId?: string | null;
   @ApiPropertyOptional({ enum: DeviceType, nullable: true }) outletPosType?:
@@ -295,7 +295,7 @@ export class CustomerProfileDto {
 
 export class CustomerProfileSaveDto {
   @ApiProperty() @IsString() merchantId!: string;
-  @ApiProperty() @IsString() customerId!: string;
+  @ApiProperty() @IsString() merchantCustomerId!: string;
   @ApiProperty() @IsString() name!: string;
   @ApiProperty({ enum: ['male', 'female'] }) @IsString() gender!:
     | 'male'

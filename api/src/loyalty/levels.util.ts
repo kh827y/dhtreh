@@ -70,7 +70,8 @@ export async function computeLevelState(args: {
   prisma: LevelsPrisma;
   metrics?: LevelsMetrics | null;
   merchantId: string;
-  customerId: string;
+  merchantCustomerId?: string | null;
+  customerId?: string | null;
   config: LevelsConfig;
   now?: number | Date;
 }): Promise<{
@@ -79,7 +80,7 @@ export async function computeLevelState(args: {
   next: LevelRule | null;
   progressToNext: number;
 }> {
-  const { prisma, metrics, merchantId, customerId, config } = args;
+  const { prisma, metrics, merchantId, config } = args;
   const nowTs =
     args.now instanceof Date
       ? args.now.getTime()
@@ -88,17 +89,31 @@ export async function computeLevelState(args: {
         : Date.now();
   const since = new Date(nowTs - config.periodDays * 24 * 60 * 60 * 1000);
 
+  let customerId: string | null = args.customerId ?? null;
+  const prismaAny = prisma as any;
+  if (!customerId && args.merchantCustomerId && prismaAny?.merchantCustomer?.findUnique) {
+    const mc = await prismaAny.merchantCustomer.findUnique({
+      where: { id: args.merchantCustomerId },
+      select: { customerId: true, merchantId: true },
+    });
+    if (!mc || mc.merchantId !== merchantId)
+      throw new Error('merchant customer not found');
+    customerId = mc.customerId;
+  }
+  if (!customerId)
+    throw new Error('customer not found');
+
   // Значение для прогресса считаем по чекам (покупкам), а не по баллам.
   // - Для metric === 'transactions' считаем количество чеков за период.
   // - Для остальных метрик считаем сумму покупок: используем сумму total (или eligibleTotal при необходимости).
   let value = 0;
-  if ((prisma as any)?.receipt) {
+  if (prismaAny?.receipt) {
     if (config.metric === 'transactions') {
-      value = await (prisma as any).receipt.count({
+      value = await prismaAny.receipt.count({
         where: { merchantId, customerId, createdAt: { gte: since } },
       });
     } else {
-      const receipts = await (prisma as any).receipt.findMany({
+      const receipts = await prismaAny.receipt.findMany({
         where: { merchantId, customerId, createdAt: { gte: since } },
         select: { total: true, eligibleTotal: true },
       });

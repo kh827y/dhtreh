@@ -90,9 +90,9 @@ export class CrmService {
     if (id) {
       customer = await this.prisma.customer.findUnique({ where: { id } });
     } else if (phone) {
-      customer = await this.prisma.customer.findUnique({ where: { phone } });
+      customer = await this.prisma.customer.findFirst({ where: { phone } });
     } else if (email) {
-      customer = await this.prisma.customer.findUnique({ where: { email } });
+      customer = await this.prisma.customer.findFirst({ where: { email } });
     }
     if (!customer) return null;
 
