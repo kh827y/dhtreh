@@ -1,7 +1,5 @@
 #!/usr/bin/env node
-const path = require('path');
-const fs = require('fs');
-const { parse } = require('dotenv');
+require('dotenv').config();
 
 // Fail-fast ENV validation for Bridge
 (function validateEnv() {
@@ -25,8 +23,6 @@ const { parse } = require('dotenv');
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
-const { v4: uuidv4 } = require('uuid');
-require('dotenv').config();
 const { createQueue } = require('./queue');
 
 const app = express();

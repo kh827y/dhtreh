@@ -1002,8 +1002,8 @@ export class LoyaltyService {
   }
 
   // ————— основной расчёт — анти-replay вне транзакции + идемпотентность —————
-  async quote(dto: QuoteDto & { userToken: string }, qr?: QrMeta) {
-    const customer = await this.ensureCustomerId(dto.userToken);
+  async quote(dto: QuoteDto & { customerId: string }, qr?: QrMeta) {
+    const customer = await this.ensureCustomerId(dto.customerId);
     // Ensure the merchant exists to satisfy FK constraints for wallet/holds
     try {
       await this.prisma.merchant.upsert({

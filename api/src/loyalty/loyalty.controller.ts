@@ -1419,7 +1419,7 @@ export class LoyaltyController {
           total: adjTotal,
           eligibleTotal: adjEligible,
           staffId,
-          userToken: merchantCustomerId,
+          customerId: customer.id,
         },
         qrMeta,
       );

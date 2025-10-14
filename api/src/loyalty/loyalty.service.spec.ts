@@ -9,6 +9,19 @@ describe('LoyaltyService.commit idempotency', () => {
       transaction: { create: jest.fn() },
       eventOutbox: { create: jest.fn() },
       outlet: { findFirst: jest.fn(), update: jest.fn() },
+      merchantCustomer: {
+        findUnique: jest.fn(() => ({ id: 'MC-CTX' })),
+        create: jest.fn(() => ({ id: 'MC-NEW' })),
+      },
+      customer: {
+        findUnique: jest.fn(() => ({
+          id: 'C-CTX',
+          tgId: null,
+          phone: null,
+          email: null,
+          name: null,
+        })),
+      },
       $transaction: jest.fn(async (fn: any) => fn(base)),
     };
     return Object.assign(base, overrides);
