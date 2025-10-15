@@ -604,6 +604,19 @@ export class TelegramBotService {
     await this.sendMessage(bot.token, chatId, message, null, 'Markdown');
   }
 
+  private async callTelegram(
+    token: string,
+    method: string,
+    body: Record<string, any>,
+  ) {
+    const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return this.assertTelegramResponseOk(res);
+  }
+
   private async sendMessage(
     token: string,
     chatId: string | number,
@@ -617,12 +630,7 @@ export class TelegramBotService {
     };
     if (keyboard) payload.reply_markup = keyboard;
     if (parseMode) payload.parse_mode = parseMode;
-    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    await this.assertTelegramResponseOk(res);
+    return this.callTelegram(token, 'sendMessage', payload);
   }
 
   private async sendPhoto(
@@ -681,6 +689,46 @@ export class TelegramBotService {
     }
   }
 
+  async sendPushNotification(
+    merchantId: string,
+    tgId: string,
+    payload: { title?: string; body: string; data?: Record<string, string>; deepLink?: string },
+  ): Promise<void> {
+    const bot =
+      (await this.ensureBotLoaded(merchantId)) || this.bots.get(merchantId);
+    if (!bot) throw new Error('Telegram-бот не подключён');
+    if (!tgId) throw new Error('Неизвестный Telegram ID клиента');
+    const userId = Number(tgId);
+    if (!Number.isFinite(userId)) {
+      throw new Error('Некорректный Telegram ID клиента');
+    }
+
+    const body: Record<string, any> = {
+      user_id: userId,
+      text: payload.body,
+    };
+    if (payload.title) body.title = payload.title;
+    if (payload.data && Object.keys(payload.data).length) {
+      body.additional_data = payload.data;
+    }
+    if (payload.deepLink) {
+      body.redirect_url = payload.deepLink;
+    }
+
+    try {
+      await this.callTelegram(bot.token, 'sendNotification', body);
+      return;
+    } catch (error) {
+      if (!this.isNotificationUnsupported(error)) {
+        throw error;
+      }
+      const fallbackText = payload.title
+        ? `${payload.title}\n\n${payload.body}`
+        : payload.body;
+      await this.sendMessage(bot.token, userId, fallbackText);
+    }
+  }
+
   private async answerCallbackQuery(token: string, queryId: string) {
     const res = await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
       method: 'POST',
@@ -692,7 +740,7 @@ export class TelegramBotService {
     await this.assertTelegramResponseOk(res);
   }
 
-  private async assertTelegramResponseOk(res: globalThis.Response): Promise<void> {
+  private async assertTelegramResponseOk(res: globalThis.Response): Promise<any> {
     const raw = await res.text();
     let data: any = null;
     try {
@@ -704,6 +752,23 @@ export class TelegramBotService {
         data?.description || data?.error_message || raw || `Telegram API error (${res.status})`;
       throw new Error(description);
     }
+    if (data && typeof data === 'object' && 'result' in data) {
+      return (data as any).result;
+    }
+    if (data !== null) return data;
+    return raw ? { raw } : null;
+  }
+
+  private isNotificationUnsupported(error: any): boolean {
+    const message = String(error?.message || error || '').toLowerCase();
+    if (!message) return false;
+    return (
+      message.includes('unknown method') ||
+      message.includes('method not found') ||
+      message.includes('not found') ||
+      message.includes('not available') ||
+      message.includes('sendnotification is not supported')
+    );
   }
 
   private async deleteWebhook(token: string) {

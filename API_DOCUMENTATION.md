@@ -1356,8 +1356,8 @@ const result = await client.commit({
 
 | Endpoint | Метод | Описание |
 | --- | --- | --- |
-| `/portal/push-campaigns?scope=ACTIVE\|ARCHIVED` | GET | Списки push-кампаний мерчанта (активные или архивные). |
-| `/portal/push-campaigns` | POST | Создание новой push-рассылки. Требует `text`, `audience`, `scheduledAt`. |
+| `/portal/push-campaigns?scope=ACTIVE\|ARCHIVED` | GET | Списки push-кампаний мерчанта. Требует подключённый Telegram Mini App (push доставляются через Telegram). |
+| `/portal/push-campaigns` | POST | Создание push-рассылки. Поля: `text` (строка ≤300), `audienceId` (segmentId), `audienceName` (опционально), `scheduledAt` (ISO-дата или `null` для запуска сразу), `timezone` (опционально). |
 | `/portal/push-campaigns/{id}/cancel` | POST | Отмена запланированной рассылки. |
 | `/portal/push-campaigns/{id}/archive` | POST | Перенос кампании в архив. |
 | `/portal/push-campaigns/{id}/duplicate` | POST | Копирование кампании с новым расписанием. |
@@ -1373,6 +1373,8 @@ const result = await client.commit({
 | `/portal/staff-motivation` | GET | Текущие настройки мотивации персонала. |
 | `/portal/staff-motivation` | PUT | Обновление мотивации (включение/отключение, баллы, период рейтинга). |
 | `/portal/loyalty/promotions?status=ALL\|ACTIVE\|PAUSED\|SCHEDULED\|COMPLETED\|ARCHIVED` | GET | Список `LoyaltyPromotion` с агрегатами и аудиторией. |
+
+> Push-рассылки используют Telegram push-уведомления. Регистрация мобильных устройств и FCM-токенов не требуется — достаточно активировать Telegram Mini App.
 | `/portal/loyalty/promotions` | POST | Создание новой акции (название, аудитория, награда, расписание, push-настройки). |
 | `/portal/loyalty/promotions/{id}` | GET | Детальная карточка акции с участниками и статистикой применения. |
 | `/portal/loyalty/promotions/{id}` | PUT | Редактирование акции и её метаданных. |
@@ -1467,7 +1469,24 @@ const result = await client.commit({
 Замечания:
 - Верификация `initData` и подписи диплинка выполняется строго на сервере; фронтенд не должен доверять содержимому `initDataUnsafe`.
 - Для запуска через меню Telegram `startapp` может отсутствовать, поэтому Mini App также использует путь/контекст мерчанта в URL, а сервер определяет токен бота по `merchantId`.
- - Изоляция по мерчанту: один бот = один мерчант. Идентификация клиента в Mini App выполняется по `(merchantId, tgId)` с маппингом `CustomerTelegram`. Баланс, история, уровни, акции и профиль — все операции используют `(merchantId, customerId)`.
+- Изоляция по мерчанту: один бот = один мерчант. Идентификация клиента в Mini App выполняется по `(merchantId, tgId)` с маппингом `CustomerTelegram`. Баланс, история, уровни, акции и профиль — все операции используют `(merchantId, customerId)`.
+
+### Автовозврат клиентов (Auto-Return)
+
+- Настройки берутся из `MerchantSettings.rulesJson.autoReturn`:
+  - `enabled` — глобальный флаг;
+  - `days` — сколько дней после последней покупки ждать перед приглашением;
+  - `text` — текст push-сообщения (до 300 символов);
+  - `giftPoints` — сколько баллов подарить (0 — без подарка);
+  - `giftTtlDays` — срок жизни подарка (0 — бессрочно);
+  - `repeat.enabled` + `repeat.days` — включают повторные попытки.
+- Поддерживаемые плейсхолдеры в тексте: `%username%` (имя клиента или «Уважаемый клиент») и `%bonus%` (количество подарочных баллов, пустая строка если подарков нет).
+- Фоновый воркер `AutoReturnWorker` активен при `WORKERS_ENABLED=1`. Интервал и размер партии на тик настраиваются переменными `AUTO_RETURN_WORKER_INTERVAL_MS` (по умолчанию 6 ч) и `AUTO_RETURN_BATCH_SIZE` (по умолчанию 200).
+- Отбор клиентов выполняется по последним покупкам (`Receipt`). В расчёт берутся только реальные чеки (начисление/списание за покупку); начисления по акциям, промокодам, рефералам и возвратные операции игнорируются.
+- Каждая попытка фиксируется в таблице `AutoReturnAttempt` с полями `merchantId`, `customerId`, `attemptNumber`, `lastPurchaseAt`, `message`, `giftPoints`, `giftExpiresAt`, `status`, `repeatAfterDays`, `giftTransactionId`, `completedAt`, `completionReason`.
+- При включённой опции «Подарить баллы» воркер начисляет транзакцию `TxnType.CAMPAIGN`, обновляет баланс кошелька и, если активирован `EARN_LOTS_FEATURE`, создаёт `EarnLot` c `expiresAt = invitedAt + giftTtlDays`.
+- Повторная попытка запускается через `repeat.days`, если после предыдущей отправки не было чека. Каждая повторная отправка повторно начисляет подарочные баллы.
+- Push-уведомления отправляются через `PushService` (Telegram Mini App). В статусы попыток входят `PENDING`, `SENT`, `RETURNED`, `EXPIRED`, `FAILED`, `CANCELED`. Их можно использовать для аналитики и построения отчётов.
 
 ## Поддержка
 

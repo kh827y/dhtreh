@@ -42,6 +42,7 @@ import { CommunicationsModule } from './communications/communications.module';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { join } from 'path';
+import { AutoReturnWorker } from './auto-return.worker';
 // Optional Redis storage for Throttler
 let throttlerStorage: any = undefined;
 try {
@@ -112,6 +113,7 @@ try {
     TtlBurnWorker,
     PointsBurnWorker,
     EarnActivationWorker,
+    AutoReturnWorker,
     { provide: APP_GUARD, useClass: CustomThrottlerGuard },
   ],
 })

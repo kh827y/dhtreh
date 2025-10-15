@@ -249,7 +249,6 @@ export class CommunicationsService {
   }
 
   private async createPushTask(merchantId: string, payload: TaskPayload) {
-    await this.ensurePushFeatureEnabled(merchantId);
     const text = String(payload?.payload?.text ?? '').trim();
     if (!text) {
       throw new BadRequestException('Текст уведомления обязателен');
@@ -259,21 +258,45 @@ export class CommunicationsService {
         'Длина текста не должна превышать 300 символов',
       );
     }
-    const audienceCode =
-      payload.audienceCode ?? String(payload.payload?.audience ?? '').trim();
-    if (!audienceCode) {
-      throw new BadRequestException('Не выбрана аудитория рассылки');
+    let audienceCode =
+      payload.audienceCode ??
+      (typeof payload.payload?.audience === 'string'
+        ? String(payload.payload.audience).trim()
+        : '');
+    if (!audienceCode && !payload.audienceId) {
+      audienceCode = 'ALL';
     }
-    const scheduledAt = this.resolveFutureDate(payload.scheduledAt);
+    const scheduledAt =
+      payload.scheduledAt === null || payload.scheduledAt === undefined
+        ? null
+        : this.resolveFutureDate(payload.scheduledAt);
+    const snapshot =
+      payload.audienceSnapshot ??
+      (() => {
+        const base: Record<string, any> = {};
+        if (audienceCode) base.code = audienceCode;
+        if (payload.audienceId) base.legacyAudienceId = payload.audienceId;
+        if (payload.audienceName) base.audienceName = payload.audienceName;
+        return Object.keys(base).length ? base : null;
+      })();
 
-    return this.persistTask(merchantId, {
+    const targetName =
+      payload.audienceName ??
+      audienceCode ??
+      (payload.audienceId ? 'Выбранная аудитория' : 'Все клиенты');
+    const task = await this.persistTask(merchantId, {
       ...payload,
       scheduledAt,
-      audienceName: payload.audienceName ?? audienceCode,
-      audienceSnapshot: payload.audienceSnapshot ?? { code: audienceCode },
+      audienceName: targetName,
+      audienceSnapshot: snapshot,
+      audienceId: payload.audienceId ?? null,
       payload: { ...(payload.payload ?? {}), text },
       timezone: payload.timezone ?? null,
     });
+    if (!scheduledAt || scheduledAt.getTime() <= Date.now()) {
+      this.dispatcher.triggerImmediate(task.id);
+    }
+    return task;
   }
 
   private async createTelegramTask(merchantId: string, payload: TaskPayload) {
@@ -539,26 +562,6 @@ export class CommunicationsService {
       );
     }
     return value;
-  }
-
-  private async ensurePushFeatureEnabled(merchantId: string) {
-    const subscription = await this.prisma.subscription.findUnique({
-      where: { merchantId },
-      include: { plan: true },
-    });
-
-    if (!subscription || subscription.status !== 'active') {
-      throw new BadRequestException(
-        'Для создания push-рассылок требуется активная подписка',
-      );
-    }
-
-    const plan = subscription.plan as any;
-    if (!plan?.features?.pushNotifications) {
-      throw new BadRequestException(
-        'Текущий тариф не поддерживает push-рассылки',
-      );
-    }
   }
 
   private async ensureTelegramEnabled(merchantId: string) {

@@ -706,22 +706,35 @@ export class PortalController {
     body: {
       text?: string;
       audience?: string;
+      audienceId?: string;
+      audienceName?: string;
       startAt?: string;
       scheduledAt?: string;
       timezone?: string;
     },
   ) {
     const merchantId = this.getMerchantId(req);
+    const scheduledAt = body?.scheduledAt ?? body?.startAt ?? null;
+    const audienceId = body?.audienceId ? String(body.audienceId) : undefined;
+    const audienceCode =
+      typeof body?.audience === 'string' && body.audience.trim()
+        ? body.audience.trim()
+        : undefined;
+    const audienceName =
+      typeof body?.audienceName === 'string' && body.audienceName.trim()
+        ? body.audienceName.trim()
+        : audienceCode ?? undefined;
     return this.communications
       .createTask(merchantId, {
         channel: CommunicationChannel.PUSH,
-        scheduledAt: body?.scheduledAt ?? body?.startAt ?? null,
+        scheduledAt,
         timezone: body?.timezone ?? null,
-        audienceCode: body?.audience ? String(body.audience) : undefined,
-        audienceName: body?.audience ? String(body.audience) : undefined,
+        audienceId,
+        audienceCode,
+        audienceName,
         payload: {
           text: body?.text ?? '',
-          audience: body?.audience ?? null,
+          audience: audienceCode ?? audienceId ?? null,
         },
       })
       .then((task) => this.mapPushTask(task));

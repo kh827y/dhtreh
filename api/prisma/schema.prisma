@@ -259,6 +259,7 @@ model Merchant {
   // telegram miniapp: per-merchant mapping of tg users
   customerTelegrams           CustomerTelegram[]
   merchantCustomers           MerchantCustomer[]
+  autoReturnAttempts          AutoReturnAttempt[]
   // staff access per outlet
   staffAccesses               StaffOutletAccess[]
   // catalog
@@ -378,6 +379,7 @@ model Customer {
   customerStats               CustomerStats[]
   giftRedemptions             GiftRedemption[]
   promotionParticipants       PromotionParticipant[]
+  autoReturnAttempts          AutoReturnAttempt[]
   tierAssignments             LoyaltyTierAssignment[]
   communicationTaskRecipients CommunicationTaskRecipient[]
   merchantProfiles            MerchantCustomer[]
@@ -542,6 +544,34 @@ model EventOutbox {
 
   @@index([status, nextRetryAt])
   @@index([merchantId, createdAt])
+}
+
+model AutoReturnAttempt {
+  id                String   @id @default(cuid())
+  merchantId        String
+  customerId        String
+  attemptNumber     Int
+  lastPurchaseAt    DateTime
+  invitedAt         DateTime
+  message           String
+  giftPoints        Int      @default(0)
+  giftExpiresAt     DateTime?
+  giftTransactionId String?
+  status            String   @default("PENDING") // PENDING | SENT | RETURNED | EXPIRED | FAILED | CANCELED
+  lastError         String?
+  repeatAfterDays   Int?
+  completedAt       DateTime?
+  completionReason  String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+  customer Customer @relation(fields: [customerId], references: [id])
+
+  @@unique([merchantId, customerId, attemptNumber])
+  @@index([merchantId, customerId])
+  @@index([merchantId, status])
+  @@index([merchantId, invitedAt])
 }
 
 model Outlet {

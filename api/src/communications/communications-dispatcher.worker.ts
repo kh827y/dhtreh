@@ -60,7 +60,9 @@ export class CommunicationsDispatcherWorker
       const due = await this.prisma.communicationTask.findMany({
         where: {
           status: 'SCHEDULED',
-          channel: CommunicationChannel.TELEGRAM,
+          channel: {
+            in: [CommunicationChannel.TELEGRAM, CommunicationChannel.PUSH],
+          },
           archivedAt: null,
           OR: [
             { scheduledAt: null },
@@ -71,11 +73,19 @@ export class CommunicationsDispatcherWorker
         take: Number(process.env.COMM_WORKER_BATCH || '10'),
       });
       for (const task of due) {
-        await this.processTelegramTask(task).catch((err) => {
-          this.logger.error(
-            `Ошибка обработки telegram-задачи ${task.id}: ${err?.message || err}`,
-          );
-        });
+        if (task.channel === CommunicationChannel.TELEGRAM) {
+          await this.processTelegramTask(task).catch((err) => {
+            this.logger.error(
+              `Ошибка обработки telegram-задачи ${task.id}: ${err?.message || err}`,
+            );
+          });
+        } else if (task.channel === CommunicationChannel.PUSH) {
+          await this.processPushTask(task).catch((err) => {
+            this.logger.error(
+              `Ошибка обработки push-задачи ${task.id}: ${err?.message || err}`,
+            );
+          });
+        }
       }
     } finally {
       await pgAdvisoryUnlock(this.prisma, lock.key);
@@ -87,11 +97,22 @@ export class CommunicationsDispatcherWorker
     return value && typeof value === 'object' ? (value as Record<string, any>) : {};
   }
 
+  private toStringRecord(value: any): Record<string, string> | undefined {
+    if (!value || typeof value !== 'object') return undefined;
+    const entries: [string, string][] = [];
+    for (const [key, val] of Object.entries(value)) {
+      if (val === undefined || val === null) continue;
+      entries.push([key, String(val)]);
+    }
+    if (!entries.length) return undefined;
+    return Object.fromEntries(entries);
+  }
+
   triggerImmediate(taskId: string) {
     setTimeout(() => {
       this.runTaskById(taskId).catch((err) =>
         this.logger.error(
-          `Ошибка мгновенного запуска telegram-задачи ${taskId}: ${err?.message || err}`,
+          `Ошибка мгновенного запуска коммуникации ${taskId}: ${err?.message || err}`,
         ),
       );
     }, 0);
@@ -102,11 +123,14 @@ export class CommunicationsDispatcherWorker
       where: { id: taskId },
     });
     if (!task) return;
-    if (task.channel !== CommunicationChannel.TELEGRAM) return;
     if (task.status !== 'SCHEDULED') return;
     if (task.archivedAt) return;
     if (task.scheduledAt && task.scheduledAt.getTime() > Date.now()) return;
-    await this.processTelegramTask(task);
+    if (task.channel === CommunicationChannel.TELEGRAM) {
+      await this.processTelegramTask(task);
+    } else if (task.channel === CommunicationChannel.PUSH) {
+      await this.processPushTask(task);
+    }
   }
 
   private async processTelegramTask(task: any) {
@@ -221,6 +245,104 @@ export class CommunicationsDispatcherWorker
     try {
       this.metrics.inc('portal_communications_tasks_processed_total', {
         channel: 'telegram',
+        result: failed ? (sent ? 'partial' : 'failed') : 'ok',
+      });
+    } catch {}
+  }
+
+  private async processPushTask(task: any) {
+    const now = new Date();
+    await this.prisma.communicationTask.update({
+      where: { id: task.id },
+      data: { status: 'RUNNING', startedAt: now },
+    });
+
+    const payload = this.asRecord(task.payload);
+    const text = String(payload.text || '').trim();
+    if (!text) {
+      await this.finishTask(task.id, {
+        status: 'FAILED',
+        total: 0,
+        sent: 0,
+        failed: 0,
+        error: 'Пустой текст push-уведомления',
+      });
+      return;
+    }
+
+    const recipients = await this.resolveTelegramRecipients(task);
+    if (!recipients.length) {
+      await this.finishTask(task.id, {
+        status: 'COMPLETED',
+        total: 0,
+        sent: 0,
+        failed: 0,
+        error: null,
+      });
+      return;
+    }
+
+    await this.prisma.communicationTaskRecipient.deleteMany({
+      where: { taskId: task.id },
+    });
+
+    const rows: Prisma.CommunicationTaskRecipientCreateManyInput[] = [];
+    let sent = 0;
+    let failed = 0;
+    const title =
+      typeof payload.title === 'string' && payload.title.trim()
+        ? payload.title.trim()
+        : undefined;
+    const deepLink =
+      typeof payload.deepLink === 'string' && payload.deepLink.trim()
+        ? payload.deepLink.trim()
+        : undefined;
+    const extra = this.toStringRecord(payload.data);
+
+    for (const recipient of recipients) {
+      let status = 'SENT';
+      let error: string | null = null;
+      try {
+        await this.telegramBots.sendPushNotification(task.merchantId, recipient.tgId, {
+          title,
+          body: text,
+          data: extra,
+          deepLink,
+        });
+        sent += 1;
+      } catch (err: any) {
+        status = 'FAILED';
+        error = err?.message ? String(err.message) : String(err);
+        failed += 1;
+      }
+
+      rows.push({
+        taskId: task.id,
+        merchantId: task.merchantId,
+        merchantCustomerId: recipient.merchantCustomerId,
+        channel: CommunicationChannel.PUSH,
+        status,
+        sentAt: status === 'SENT' ? new Date() : null,
+        error,
+        metadata: { tgId: recipient.tgId } as Prisma.JsonObject,
+      });
+    }
+
+    if (rows.length) {
+      await this.prisma.communicationTaskRecipient.createMany({ data: rows });
+    }
+
+    await this.finishTask(task.id, {
+      status: failed && !sent ? 'FAILED' : 'COMPLETED',
+      total: recipients.length,
+      sent,
+      failed,
+      error: failed ? 'Часть push-уведомлений не доставлена' : null,
+    });
+
+    try {
+      this.metrics.inc('portal_communications_tasks_processed_total', {
+        channel: 'push',
         result: failed ? (sent ? 'partial' : 'failed') : 'ok',
       });
     } catch {}

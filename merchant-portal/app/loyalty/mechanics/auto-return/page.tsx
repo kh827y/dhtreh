@@ -270,7 +270,7 @@ function SettingsTab() {
                 />
                 <div style={{ fontSize: 12, opacity: 0.7, display: "flex", justifyContent: "space-between" }}>
                   <span>Осталось символов: {charsLeft}</span>
-                  <span>Плейсхолдеры: %username%, %username|обращение_по_умолчанию%</span>
+                  <span>Плейсхолдеры: %username%, %bonus%</span>
                 </div>
               </label>
 

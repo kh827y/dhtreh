@@ -1,8 +1,7 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
-import { PushProvider, SendPushParams } from './push-provider.interface';
-import { FcmProvider } from './providers/fcm.provider';
+import { TelegramBotService } from '../../telegram/telegram-bot.service';
 
 export interface RegisterDeviceDto {
   merchantId: string;
@@ -10,11 +9,7 @@ export interface RegisterDeviceDto {
   token: string;
   platform: 'ios' | 'android' | 'web';
   outletId?: string;
-  deviceInfo?: {
-    model?: string;
-    os?: string;
-    appVersion?: string;
-  };
+  deviceInfo?: Record<string, any>;
 }
 
 export interface SendPushDto {
@@ -30,190 +25,114 @@ export interface SendPushDto {
   priority?: 'high' | 'normal';
 }
 
+type PushRecipient = {
+  merchantCustomerId: string;
+  customerId: string;
+  tgId: string;
+};
+
 @Injectable()
 export class PushService {
-  private provider: PushProvider;
-
   constructor(
-    private configService: ConfigService,
-    private prisma: PrismaService,
-  ) {
-    // Выбираем провайдера (можно расширить для других провайдеров)
-    const providerName = this.configService.get('PUSH_PROVIDER') || 'fcm';
+    private readonly prisma: PrismaService,
+    private readonly telegramBots: TelegramBotService,
+  ) {}
 
-    switch (providerName) {
-      case 'fcm':
-        this.provider = new FcmProvider(configService);
-        break;
-      default:
-        this.provider = new FcmProvider(configService);
-    }
+  async registerDevice(_: RegisterDeviceDto) {
+    throw new BadRequestException(
+      'Регистрация устройств недоступна: push-уведомления отправляются через Telegram Mini App.',
+    );
   }
 
-  /**
-   * Регистрация устройства для push-уведомлений
-   */
-  async registerDevice(dto: RegisterDeviceDto) {
-    // Проверяем существование клиента
-    const customer = await this.prisma.customer.findUnique({
-      where: { id: dto.customerId },
-    });
-
-    if (!customer) {
-      throw new BadRequestException('Клиент не найден');
-    }
-
-    const outletKey = dto.outletId || dto.token;
-    if (!outletKey) {
-      throw new BadRequestException(
-        'Не удалось определить идентификатор устройства',
-      );
-    }
-
-    const deviceInfo = {
-      ...(dto.deviceInfo || {}),
-      ...(dto.outletId ? { outletId: dto.outletId } : {}),
-    };
-
-    // Сохраняем или обновляем токен устройства
-    const device = await this.prisma.pushDevice.upsert({
-      where: {
-        customerId_outletId: {
-          customerId: dto.customerId,
-          outletId: outletKey,
-        },
-      },
-      create: {
-        customerId: dto.customerId,
-        merchantId: dto.merchantId,
-        outletId: outletKey,
-        token: dto.token,
-        platform: dto.platform,
-        deviceInfo,
-        isActive: true,
-      },
-      update: {
-        token: dto.token,
-        platform: dto.platform,
-        deviceInfo,
-        isActive: true,
-        lastActiveAt: new Date(),
-      },
-    });
-
-    // Подписываем на топики мерчанта
-    try {
-      await this.subscribeToMerchantTopics(dto.token, dto.merchantId);
-    } catch (error) {
-      console.error('Failed to subscribe to topics:', error);
-    }
-
-    return {
-      success: true,
-      outletId: device.outletId,
-    };
-  }
-
-  /**
-   * Отправка push-уведомления
-   */
   async sendPush(dto: SendPushDto) {
-    // Проверяем права на отправку маркетинговых уведомлений
-    if (dto.type === 'MARKETING') {
-      const hasFeature = await this.checkPushFeature(dto.merchantId);
-      if (!hasFeature) {
-        throw new BadRequestException(
-          'Push-уведомления не доступны в вашем тарифном плане',
-        );
-      }
+    if (!dto.body?.trim()) {
+      throw new BadRequestException('Текст push-уведомления обязателен');
     }
+    await this.ensureTelegramConnected(dto.merchantId);
 
-    // Получаем токены устройств
-    const tokens = await this.getDeviceTokens(dto);
+    const explicit =
+      dto.customerId && !dto.customerIds?.length
+        ? [dto.customerId]
+        : dto.customerIds ?? [];
+    const recipients = await this.resolveRecipients(
+      dto.merchantId,
+      explicit.length ? explicit : undefined,
+    );
 
-    if (tokens.length === 0) {
+    if (!recipients.length) {
       return {
         success: false,
-        message: 'Нет зарегистрированных устройств',
+        message: 'Нет клиентов с подключённой Telegram Mini App',
         sent: 0,
+        failed: 0,
+        total: 0,
       };
     }
 
-    // Отправляем уведомления
-    const results = await Promise.all(
-      tokens.map(async ({ token, customerId, outletId, registrationId }) => {
-        const result = await this.provider.sendPush({
-          token,
+    const pushLogs: Prisma.PushNotificationCreateManyInput[] = [];
+    let sent = 0;
+    let failed = 0;
+
+    const payloadData = dto.data && Object.keys(dto.data).length
+      ? (dto.data as Prisma.InputJsonValue)
+      : Prisma.JsonNull;
+    for (const recipient of recipients) {
+      try {
+        await this.telegramBots.sendPushNotification(dto.merchantId, recipient.tgId, {
           title: dto.title,
           body: dto.body,
-          data: {
-            ...dto.data,
-            type: dto.type,
-            merchantId: dto.merchantId,
-            campaignId: dto.campaignId || '',
-          },
-          image: dto.image,
-          priority: dto.priority || 'normal',
+          data: dto.data ?? undefined,
+          deepLink: dto.data?.deeplink ?? undefined,
         });
-
-        // Сохраняем в БД
-        await this.prisma.pushNotification.create({
-          data: {
-            merchantId: dto.merchantId,
-            customerId,
-            outletId,
-            deviceToken: token,
-            title: dto.title,
-            body: dto.body,
-            type: dto.type,
-            status: result.success ? 'sent' : 'failed',
-            messageId: result.messageId,
-            campaignId: dto.campaignId,
-            error: result.error,
-            data: dto.data || {},
-          },
+        sent += 1;
+        pushLogs.push({
+          merchantId: dto.merchantId,
+          customerId: recipient.customerId,
+          outletId: null,
+          deviceToken: null,
+          title: dto.title,
+          body: dto.body,
+          type: dto.type,
+          campaignId: dto.campaignId ?? null,
+          data: payloadData,
+          status: 'sent',
+          messageId: null,
+          sentAt: new Date(),
+          error: null,
         });
+      } catch (err: any) {
+        failed += 1;
+        pushLogs.push({
+          merchantId: dto.merchantId,
+          customerId: recipient.customerId,
+          outletId: null,
+          deviceToken: null,
+          title: dto.title,
+          body: dto.body,
+          type: dto.type,
+          campaignId: dto.campaignId ?? null,
+          data: payloadData,
+          status: 'failed',
+          messageId: null,
+          sentAt: null,
+          error: String(err?.message || err || 'Failed to deliver via Telegram'),
+        });
+      }
+    }
 
-        // Обновляем токен если устарел
-        if (result.canonicalToken) {
-          await this.prisma.pushDevice.update({
-            where: { id: registrationId },
-            data: { token: result.canonicalToken },
-          });
-        }
-
-        // Деактивируем устройство если токен недействителен
-        if (!result.success && result.error?.includes('expired')) {
-          await this.prisma.pushDevice.update({
-            where: { id: registrationId },
-            data: { isActive: false },
-          });
-        }
-
-        return result;
-      }),
-    );
-
-    const successCount = results.filter((r) => r.success).length;
-
-    // Обновляем статистику
-    await this.updateStats(
-      dto.merchantId,
-      successCount,
-      tokens.length - successCount,
-    );
+    if (pushLogs.length) {
+      await this.prisma.pushNotification.createMany({ data: pushLogs });
+    }
+    await this.updateStats(dto.merchantId, sent, failed);
 
     return {
-      success: successCount > 0,
-      sent: successCount,
-      failed: tokens.length - successCount,
-      total: tokens.length,
+      success: sent > 0,
+      sent,
+      failed,
+      total: recipients.length,
     };
   }
 
-  /**
-   * Отправка уведомления о транзакции
-   */
   async sendTransactionNotification(
     merchantId: string,
     customerId: string,
@@ -221,13 +140,14 @@ export class PushService {
     amount: number,
     balance: number,
   ) {
+    await this.ensureTelegramConnected(merchantId);
     const merchant = await this.prisma.merchant.findUnique({
       where: { id: merchantId },
+      select: { name: true },
     });
 
     let title = '';
     let body = '';
-
     switch (type) {
       case 'EARN':
         title = `+${amount} баллов`;
@@ -255,22 +175,19 @@ export class PushService {
       type: 'TRANSACTION',
       data: {
         transactionType: type,
-        amount: amount.toString(),
-        balance: balance.toString(),
+        amount: String(amount),
+        balance: String(balance),
       },
       priority: 'high',
     });
   }
 
-  /**
-   * Отправка уведомления о кампании
-   */
   async sendCampaignNotification(
     campaignId: string,
     customerIds: string[],
     title: string,
     body: string,
-    image?: string,
+    _image?: string,
   ) {
     const promotion = await this.prisma.loyaltyPromotion.findUnique({
       where: { id: campaignId },
@@ -289,147 +206,70 @@ export class PushService {
       customerIds,
       title,
       body,
-      image,
       type: 'CAMPAIGN',
       campaignId,
       data: {
         campaignType: legacy.kind ?? 'LOYALTY_PROMOTION',
-        campaignName: promotion.name,
+        campaignName: promotion.name ?? title,
       },
     });
   }
 
-  /**
-   * Отправка по топику
-   */
   async sendToTopic(
     merchantId: string,
     title: string,
     body: string,
     data?: Record<string, string>,
   ) {
-    const topic = `merchant_${merchantId}`;
+    const recipients = await this.resolveRecipients(merchantId);
+    if (!recipients.length) {
+      return { success: false, message: 'Нет подписчиков Mini App' };
+    }
 
-    const result = await this.provider.sendToTopic!(topic, {
-      title,
-      body,
-      data,
-      priority: 'normal',
-    });
+    let sent = 0;
+    let failed = 0;
+    for (const recipient of recipients) {
+      try {
+        await this.telegramBots.sendPushNotification(merchantId, recipient.tgId, {
+          title,
+          body,
+          data,
+        });
+        sent += 1;
+      } catch {
+        failed += 1;
+      }
+    }
 
-    // Сохраняем в БД
     await this.prisma.pushNotification.create({
       data: {
         merchantId,
+        customerId: null,
+        outletId: null,
+        deviceToken: null,
         title,
         body,
         type: 'MARKETING',
-        status: result.success ? 'sent' : 'failed',
-        messageId: result.messageId,
-        error: result.error,
-        data: data || {},
+        campaignId: null,
+        data: data && Object.keys(data).length
+          ? (data as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
+        status: failed ? 'failed' : 'sent',
+        messageId: null,
+        sentAt: failed ? null : new Date(),
+        error: failed ? 'Часть push-уведомлений не доставлена' : null,
       },
     });
 
-    return result;
+    return { success: failed === 0, sent, failed };
   }
 
-  /**
-   * Получение токенов устройств
-   */
-  private async getDeviceTokens(dto: SendPushDto) {
-    const where: any = {
-      merchantId: dto.merchantId,
-      isActive: true,
-    };
-
-    if (dto.customerId) {
-      where.customerId = dto.customerId;
-    } else if (dto.customerIds && dto.customerIds.length > 0) {
-      where.customerId = { in: dto.customerIds };
-    }
-
-    const devices = await this.prisma.pushDevice.findMany({
-      where,
-      select: {
-        id: true,
-        outletId: true,
-        token: true,
-        customerId: true,
-      },
-    });
-
-    return devices.map((d) => ({
-      token: d.token,
-      customerId: d.customerId,
-      outletId: d.outletId,
-      registrationId: d.id,
-    }));
+  async deactivateDevice(_: string) {
+    return { success: true };
   }
 
-  /**
-   * Подписка на топики мерчанта
-   */
-  private async subscribeToMerchantTopics(token: string, merchantId: string) {
-    if (!this.provider.subscribeToTopic) {
-      return;
-    }
-
-    const topics = [
-      `merchant_${merchantId}`, // Все уведомления мерчанта
-      `merchant_${merchantId}_news`, // Новости
-      `merchant_${merchantId}_offers`, // Акции
-    ];
-
-    for (const topic of topics) {
-      try {
-        await this.provider.subscribeToTopic(token, topic);
-      } catch (error) {
-        console.error(`Failed to subscribe to topic ${topic}:`, error);
-      }
-    }
-  }
-
-  /**
-   * Проверка доступности push в тарифе
-   */
-  private async checkPushFeature(merchantId: string) {
-    const subscription = await this.prisma.subscription.findUnique({
-      where: { merchantId },
-      include: { plan: true },
-    });
-
-    if (!subscription || subscription.status !== 'active') {
-      return false;
-    }
-
-    const plan = subscription.plan as any;
-    return plan.features?.pushNotifications === true;
-  }
-
-  /**
-   * Обновление статистики
-   */
-  private async updateStats(merchantId: string, sent: number, failed: number) {
-    await this.prisma.merchantStats.upsert({
-      where: { merchantId },
-      create: {
-        merchantId,
-        pushSent: sent,
-        pushFailed: failed,
-      },
-      update: {
-        pushSent: { increment: sent },
-        pushFailed: { increment: failed },
-      },
-    });
-  }
-
-  /**
-   * Получение статистики push-уведомлений
-   */
   async getPushStats(merchantId: string, period?: { from: Date; to: Date }) {
-    const where: any = { merchantId };
+    const where: Prisma.PushNotificationWhereInput = { merchantId };
     if (period) {
       where.createdAt = {
         gte: period.from,
@@ -437,7 +277,7 @@ export class PushService {
       };
     }
 
-    const [total, sent, failed, byType, activeDevices] = await Promise.all([
+    const [total, sent, failed, byType, activeRecipients] = await Promise.all([
       this.prisma.pushNotification.count({ where }),
       this.prisma.pushNotification.count({
         where: { ...where, status: 'sent' },
@@ -450,11 +290,8 @@ export class PushService {
         where,
         _count: true,
       }),
-      this.prisma.pushDevice.count({
-        where: {
-          merchantId,
-          isActive: true,
-        },
+      this.prisma.merchantCustomer.count({
+        where: { merchantId, tgId: { not: null } },
       }),
     ]);
 
@@ -464,24 +301,18 @@ export class PushService {
       failed,
       deliveryRate: total > 0 ? Math.round((sent / total) * 100) : 0,
       byType: byType.reduce(
-        (acc, item: any) => {
+        (acc, item) => {
           const key = (item?.type ?? 'UNKNOWN') as string;
-          const count =
-            typeof item?._count === 'number'
-              ? item._count
-              : (item?._count?._all ?? 0);
-          acc[key] = Number(count) || 0;
+          const count = Number(item?._count ?? 0);
+          acc[key] = Number.isFinite(count) ? count : 0;
           return acc;
         },
         {} as Record<string, number>,
       ),
-      activeDevices,
+      activeDevices: activeRecipients,
     };
   }
 
-  /**
-   * Шаблоны push-уведомлений
-   */
   getPushTemplates() {
     return [
       {
@@ -529,44 +360,73 @@ export class PushService {
     ];
   }
 
-  /**
-   * Деактивировать устройство
-   */
-  async deactivateDevice(outletId: string) {
-    await this.prisma.pushDevice.updateMany({
-      where: { outletId },
-      data: { isActive: false },
+  async getCustomerWithDevice(customerId: string) {
+    const record = await this.prisma.merchantCustomer.findFirst({
+      where: { customerId, tgId: { not: null } },
+      select: { merchantId: true, customerId: true },
     });
+    if (!record) return null;
+    return { customerId: record.customerId, merchantId: record.merchantId };
   }
 
-  /**
-   * Получить клиента с устройством
-   */
-  async getCustomerWithDevice(
-    customerId: string,
-  ): Promise<{ customerId: string; merchantId: string } | null> {
-    const prismaAny = this.prisma as any;
-    const device = await prismaAny.pushDevice.findFirst({
-      where: {
-        customerId,
-        isActive: true,
-      },
-      include: {
-        customer: {
-          include: {
-            wallets: true,
-          },
-        },
-      },
+  private async ensureTelegramConnected(merchantId: string) {
+    const merchant = await this.prisma.merchant.findUnique({
+      where: { id: merchantId },
+      select: { telegramBotEnabled: true },
     });
+    if (!merchant?.telegramBotEnabled) {
+      throw new BadRequestException(
+        'Подключите Telegram Mini App, чтобы отправлять push-уведомления',
+      );
+    }
+  }
 
-    if (!device || !device.customer?.wallets?.[0]) {
-      return null;
+  private async resolveRecipients(
+    merchantId: string,
+    specificCustomers?: string[],
+  ): Promise<PushRecipient[]> {
+    const where: Prisma.MerchantCustomerWhereInput = {
+      merchantId,
+      tgId: { not: null },
+    };
+    if (specificCustomers?.length) {
+      where.customerId = { in: specificCustomers };
     }
 
-    const derivedMerchantId: string | null =
-      device.merchantId || device.customer.wallets?.[0]?.merchantId || null;
-    if (!derivedMerchantId) return null;
-    return { customerId, merchantId: derivedMerchantId };
+    const rows = await this.prisma.merchantCustomer.findMany({
+      where,
+      select: { id: true, customerId: true, tgId: true },
+    });
+
+    const seen = new Set<string>();
+    const recipients: PushRecipient[] = [];
+    for (const row of rows) {
+      if (!row.tgId) continue;
+      const key = row.tgId.trim();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      recipients.push({
+        merchantCustomerId: row.id,
+        customerId: row.customerId,
+        tgId: key,
+      });
+    }
+    return recipients;
+  }
+
+  private async updateStats(merchantId: string, sent: number, failed: number) {
+    if (!sent && !failed) return;
+    await this.prisma.merchantStats.upsert({
+      where: { merchantId },
+      create: {
+        merchantId,
+        pushSent: sent,
+        pushFailed: failed,
+      },
+      update: {
+        pushSent: { increment: sent },
+        pushFailed: { increment: failed },
+      },
+    });
   }
 }
