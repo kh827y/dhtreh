@@ -1489,6 +1489,29 @@ const result = await client.commit({
 - Повторная попытка запускается через `repeat.days`, если после предыдущей отправки не было чека. Каждая повторная отправка повторно начисляет подарочные баллы.
 - Push-уведомления отправляются через `PushService` (Telegram Mini App). В статусы попыток входят `PENDING`, `SENT`, `RETURNED`, `EXPIRED`, `FAILED`, `CANCELED`. Их можно использовать для аналитики и построения отчётов.
 
+### Поздравления с днём рождения (Birthday)
+
+- Конфигурация хранится в `MerchantSettings.rulesJson.birthday`:
+  - `enabled` — включает механику;
+  - `daysBefore` — за сколько дней до даты рождения отправлять push (0 — в сам день);
+  - `onlyBuyers` — если `true`, в выборку попадают только клиенты с покупками (`CustomerStats.visits > 0` или `totalSpent > 0`);
+  - `text` — текст push-уведомления (до 300 символов). Поддерживаются плейсхолдеры `%username%`, `%username|обращение_по_умолчанию%`, `%bonus%`;
+  - `giftPoints` — размер подарочных баллов (0 — без подарка);
+  - `giftTtlDays` — срок жизни подарочных баллов в днях (0 — бессрочно).
+- Фоновый воркер `BirthdayWorker` активен при `WORKERS_ENABLED=1`. Настраивается переменными `BIRTHDAY_WORKER_INTERVAL_MS` (интервал тикера, по умолчанию 6 ч) и `BIRTHDAY_WORKER_BATCH_SIZE` (максимум обработок за тик, по умолчанию 200).
+- Воркер подбирает клиентов с заполненной датой рождения и подключённым Telegram (`MerchantCustomer.tgId`), учитывает переход границ года (например, дни рождения в начале января) и единоразово создаёт запись в таблице `BirthdayGreeting` для каждой даты рождения (`@@unique(merchantId, customerId, birthdayDate)`).
+- Подарочные баллы начисляются транзакцией `TxnType.CAMPAIGN` (orderId `birthday:<greetingId>`). При активных флагах:
+  - `LEDGER_FEATURE=1` — создаётся `LedgerEntry` с `meta.mode = 'BIRTHDAY'`;
+  - `EARN_LOTS_FEATURE=1` — создаётся `EarnLot` с `expiresAt = sendDate + giftTtlDays`.
+- Push отправляется через `PushService.sendPush` без заголовка (`title` не передаётся для Telegram). Поля `data` содержат `{ type: 'BIRTHDAY', greetingId, birthdayDate, giftPoints }`.
+- Повторные попытки:
+  - незавершённые записи `BirthdayGreeting` со статусами `PENDING` и `FAILED` (кроме `error = 'no recipients'`) повторно отправляются на каждом тике;
+  - при отсутствии получателей статус фиксируется как `FAILED` с `error = 'no recipients'` без перерасчёта подарка.
+- Метрики:
+  - `birthday_greetings_created_total{merchantId}` — созданные поздравления;
+  - `birthday_points_issued_total{merchantId}` — сумма подаренных баллов;
+  - `birthday_push_sent_total{merchantId}` / `birthday_push_failed_total{merchantId,reason}` — успешные и неуспешные рассылки.
+
 ## Поддержка
 
 - Email: support@loyalty.com

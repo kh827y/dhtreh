@@ -260,6 +260,7 @@ model Merchant {
   customerTelegrams           CustomerTelegram[]
   merchantCustomers           MerchantCustomer[]
   autoReturnAttempts          AutoReturnAttempt[]
+  birthdayGreetings           BirthdayGreeting[]
   // staff access per outlet
   staffAccesses               StaffOutletAccess[]
   // catalog
@@ -380,6 +381,7 @@ model Customer {
   giftRedemptions             GiftRedemption[]
   promotionParticipants       PromotionParticipant[]
   autoReturnAttempts          AutoReturnAttempt[]
+  birthdayGreetings           BirthdayGreeting[]
   tierAssignments             LoyaltyTierAssignment[]
   communicationTaskRecipients CommunicationTaskRecipient[]
   merchantProfiles            MerchantCustomer[]
@@ -572,6 +574,30 @@ model AutoReturnAttempt {
   @@index([merchantId, customerId])
   @@index([merchantId, status])
   @@index([merchantId, invitedAt])
+}
+
+model BirthdayGreeting {
+  id                String   @id @default(cuid())
+  merchantId        String
+  customerId        String
+  sendDate          DateTime
+  birthdayDate      DateTime
+  message           String
+  giftPoints        Int      @default(0)
+  giftExpiresAt     DateTime?
+  giftTransactionId String?
+  status            String   @default("PENDING")
+  error             String?
+  sentAt            DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+  customer Customer @relation(fields: [customerId], references: [id])
+
+  @@index([merchantId, sendDate])
+  @@index([merchantId, status])
+  @@unique([merchantId, customerId, birthdayDate])
 }
 
 model Outlet {

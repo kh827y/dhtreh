@@ -45,9 +45,14 @@ export class PushService {
   }
 
   async sendPush(dto: SendPushDto) {
-    if (!dto.body?.trim()) {
+    const body = typeof dto.body === 'string' ? dto.body.trim() : '';
+    if (!body) {
       throw new BadRequestException('Текст push-уведомления обязателен');
     }
+    const title =
+      typeof dto.title === 'string' && dto.title.trim()
+        ? dto.title.trim()
+        : '';
     await this.ensureTelegramConnected(dto.merchantId);
 
     const explicit =
@@ -79,8 +84,8 @@ export class PushService {
     for (const recipient of recipients) {
       try {
         await this.telegramBots.sendPushNotification(dto.merchantId, recipient.tgId, {
-          title: dto.title,
-          body: dto.body,
+          title: title || undefined,
+          body,
           data: dto.data ?? undefined,
           deepLink: dto.data?.deeplink ?? undefined,
         });
@@ -90,8 +95,8 @@ export class PushService {
           customerId: recipient.customerId,
           outletId: null,
           deviceToken: null,
-          title: dto.title,
-          body: dto.body,
+          title,
+          body,
           type: dto.type,
           campaignId: dto.campaignId ?? null,
           data: payloadData,
@@ -107,8 +112,8 @@ export class PushService {
           customerId: recipient.customerId,
           outletId: null,
           deviceToken: null,
-          title: dto.title,
-          body: dto.body,
+          title,
+          body,
           type: dto.type,
           campaignId: dto.campaignId ?? null,
           data: payloadData,
