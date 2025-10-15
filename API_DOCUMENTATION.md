@@ -1438,18 +1438,19 @@ const result = await client.commit({
   - POST `/loyalty/teleauth` body: `{ merchantId, initData }`
     - Сервер валидирует `initData` по токену бота данного мерчанта (`MerchantSettings.telegramBotToken`).
     - При наличии `start_param`/`startapp` валидирует подпись по `TMA_LINK_SECRET` и сверяет `merchantId` (при расхождении — 400).
-    - В ответе возвращается `{ ok: true, customerId }`.
-  - GET `/loyalty/profile?merchantId={merchantId}&customerId={customerId}` → `{ name: string|null, gender: 'male'|'female'|null, birthDate: 'YYYY-MM-DD'|null }`.
-    - Профиль клиента хранится на стороне сервера и изолирован по паре `(merchantId, customerId)`.
+    - Для каждого мерчанта создаётся собственная связка `MerchantCustomer` → `Customer`, даже если Telegram аккаунт уже авторизован в другой сети.
+    - В ответе возвращается `{ ok: true, merchantCustomerId }`.
+  - GET `/loyalty/profile?merchantId={merchantId}&merchantCustomerId={merchantCustomerId}` → `{ name: string|null, gender: 'male'|'female'|null, birthDate: 'YYYY-MM-DD'|null }`.
+    - Профиль клиента хранится на стороне сервера и изолирован по паре `(merchantId, merchantCustomerId)`. Авторизация у другого мерчанта не заполняет профиль автоматически.
     - Используется для кросс-девайс синхронизации данных профиля Mini App.
-  - GET `/loyalty/profile/phone-status?merchantId={merchantId}&customerId={customerId}` → `{ hasPhone: boolean }`.
+  - GET `/loyalty/profile/phone-status?merchantId={merchantId}&merchantCustomerId={merchantCustomerId}` → `{ hasPhone: boolean }`.
     - Возвращает признак наличия номера телефона у клиента на стороне сервера (`Customer.phone`/`MerchantCustomer.phone`).
     - Mini App запрашивает эндпоинт после действия пользователя "Поделиться номером", чтобы подтвердить получение номера перед сохранением профиля.
   - POST `/loyalty/profile`
     ```json
     {
       "merchantId": "M-1",
-      "customerId": "cust_123",
+      "merchantCustomerId": "cust_123",
       "name": "Иван Иванов",
       "gender": "male",
       "birthDate": "1995-04-12",

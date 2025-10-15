@@ -2625,33 +2625,26 @@ export class LoyaltyService {
     initData: string,
   ): Promise<{ merchantCustomerId: string }> {
     console.log('ensureMerchantCustomerByTelegram called with merchantId:', merchantId, 'tgId:', tgId);
-    let customer = await this.prisma.customer.findFirst({ where: { tgId } });
-    if (!customer) {
-      customer = await this.prisma.customer.create({ data: { tgId } });
-    }
-    console.log('customer:', customer);
     const existing = await this.prisma.merchantCustomer.findUnique({
-      where: {
-        merchantId_customerId: { merchantId, customerId: customer.id },
-      },
+      where: { merchantId_tgId: { merchantId, tgId } },
     });
-    console.log('existing merchantCustomer:', existing);
-    let merchantCustomer;
     if (existing) {
-      merchantCustomer = await this.prisma.merchantCustomer.update({
-        where: { id: existing.id },
-        data: {},
-      });
-    } else {
-      merchantCustomer = await this.prisma.merchantCustomer.create({
-        data: {
-          merchantId,
-          customerId: customer.id,
-          name: null,
-          phone: null,
-        },
-      });
+      return { merchantCustomerId: existing.id };
     }
+    const customer = await this.prisma.customer.create({
+      data: { tgId },
+      select: { id: true },
+    });
+    const merchantCustomer = await this.prisma.merchantCustomer.create({
+      data: {
+        merchantId,
+        customerId: customer.id,
+        name: null,
+        phone: null,
+        tgId,
+      },
+      select: { id: true },
+    });
     console.log('merchantCustomer:', merchantCustomer);
     return { merchantCustomerId: merchantCustomer.id };
   }

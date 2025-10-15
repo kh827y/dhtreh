@@ -160,12 +160,17 @@ export class PortalCustomersService {
       [dto.firstName, dto.lastName].filter(Boolean).join(' ').trim() ||
       undefined;
 
+    const prismaAny = this.prisma as any;
     const existsPhone = phone
-      ? await this.prisma.customer.findFirst({ where: { phone } })
+      ? await prismaAny?.merchantCustomer?.findUnique?.({
+          where: { merchantId_phone: { merchantId, phone } },
+        })
       : null;
     if (existsPhone) throw new BadRequestException('Phone already used');
     const existsEmail = email
-      ? await this.prisma.customer.findFirst({ where: { email } })
+      ? await prismaAny?.merchantCustomer?.findUnique?.({
+          where: { merchantId_email: { merchantId, email } },
+        })
       : null;
     if (existsEmail) throw new BadRequestException('Email already used');
 
@@ -197,6 +202,28 @@ export class PortalCustomersService {
       },
     });
 
+    await prismaAny?.merchantCustomer?.upsert?.({
+      where: {
+        merchantId_customerId: {
+          merchantId,
+          customerId: customer.id,
+        },
+      },
+      update: {
+        phone: phone ?? null,
+        email: email ?? null,
+        name: name ?? null,
+      },
+      create: {
+        merchantId,
+        customerId: customer.id,
+        tgId: null,
+        phone: phone ?? null,
+        email: email ?? null,
+        name: name ?? null,
+      },
+    });
+
     return this.get(merchantId, customer.id);
   }
 
@@ -205,6 +232,7 @@ export class PortalCustomersService {
     customerId: string,
     dto: Partial<PortalCustomerDto> & { firstName?: string; lastName?: string },
   ) {
+    const prismaAny = this.prisma as any;
     const c = await this.prisma.customer.findUnique({
       where: { id: customerId },
     });
@@ -214,20 +242,65 @@ export class PortalCustomersService {
     if (dto.phone !== undefined) {
       const phone = dto.phone?.trim() || null;
       if (phone) {
-        const clash = await this.prisma.customer.findFirst({
-          where: { phone, id: { not: customerId } },
+        const clash = await prismaAny?.merchantCustomer?.findUnique?.({
+          where: { merchantId_phone: { merchantId, phone } },
         });
-        if (clash) throw new BadRequestException('Phone already used');
+        if (clash && clash.customerId !== customerId) {
+          throw new BadRequestException('Phone already used');
+        }
+        const mc = await prismaAny?.merchantCustomer?.findUnique?.({
+          where: {
+            merchantId_customerId: { merchantId, customerId },
+          },
+          select: { id: true },
+        });
+        if (mc) {
+          await prismaAny?.merchantCustomer?.update?.({
+            where: { id: mc.id },
+            data: { phone },
+          });
+        } else {
+          await prismaAny?.merchantCustomer?.create?.({
+            data: {
+              merchantId,
+              customerId,
+              phone,
+            },
+          });
+        }
+      } else {
+        await prismaAny?.merchantCustomer?.updateMany?.({
+          where: { merchantId, customerId },
+          data: { phone: null },
+        });
       }
       data.phone = phone;
     }
     if (dto.email !== undefined) {
       const email = dto.email?.trim()?.toLowerCase() || null;
       if (email) {
-        const clash = await this.prisma.customer.findFirst({
-          where: { email, id: { not: customerId } },
+        const clash = await prismaAny?.merchantCustomer?.findUnique?.({
+          where: { merchantId_email: { merchantId, email } },
         });
-        if (clash) throw new BadRequestException('Email already used');
+        if (clash && clash.customerId !== customerId) {
+          throw new BadRequestException('Email already used');
+        }
+        await prismaAny?.merchantCustomer?.upsert?.({
+          where: {
+            merchantId_customerId: { merchantId, customerId },
+          },
+          update: { email },
+          create: {
+            merchantId,
+            customerId,
+            email,
+          },
+        });
+      } else {
+        await prismaAny?.merchantCustomer?.updateMany?.({
+          where: { merchantId, customerId },
+          data: { email: null },
+        });
       }
       data.email = email;
     }
@@ -241,6 +314,17 @@ export class PortalCustomersService {
         [dto.firstName, dto.lastName].filter(Boolean).join(' ').trim() ||
         null;
       data.name = name;
+      await prismaAny?.merchantCustomer?.upsert?.({
+        where: {
+          merchantId_customerId: { merchantId, customerId },
+        },
+        update: { name },
+        create: {
+          merchantId,
+          customerId,
+          name,
+        },
+      });
     }
     if (dto.birthday !== undefined)
       data.birthday = dto.birthday ? new Date(dto.birthday) : null;

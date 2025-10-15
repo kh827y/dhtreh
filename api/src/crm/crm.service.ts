@@ -87,12 +87,26 @@ export class CrmService {
     id?: string,
   ) {
     let customer = null as any;
+    const associatedWithMerchant = {
+      OR: [
+        { merchantProfiles: { some: { merchantId } } },
+        { wallets: { some: { merchantId } } },
+        { transactions: { some: { merchantId } } },
+        { Receipt: { some: { merchantId } } },
+      ],
+    };
     if (id) {
-      customer = await this.prisma.customer.findUnique({ where: { id } });
+      customer = await this.prisma.customer.findFirst({
+        where: Object.assign({ id }, associatedWithMerchant),
+      });
     } else if (phone) {
-      customer = await this.prisma.customer.findFirst({ where: { phone } });
+      customer = await this.prisma.customer.findFirst({
+        where: Object.assign({ phone }, associatedWithMerchant),
+      });
     } else if (email) {
-      customer = await this.prisma.customer.findFirst({ where: { email } });
+      customer = await this.prisma.customer.findFirst({
+        where: Object.assign({ email }, associatedWithMerchant),
+      });
     }
     if (!customer) return null;
 

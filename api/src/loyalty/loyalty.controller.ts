@@ -220,39 +220,15 @@ export class LoyaltyController {
         return { merchantCustomerId: existing.id, customerId: existing.customerId };
       }
 
-      let customerId: string | null = null;
-      const reuse = await txAny?.merchantCustomer?.findFirst?.({
-        where: { tgId },
-        select: { customerId: true },
-      });
-      if (reuse) customerId = reuse.customerId;
-      if (!customerId) {
-        const existingCustomer = await tx.customer
-          .findFirst({ where: { tgId } })
-          .catch(() => null);
-        if (existingCustomer) customerId = existingCustomer.id;
-      }
-
       const preferredName = nameFromInit;
-      if (!customerId) {
-        const createdCustomer = await tx.customer.create({
-          data: {
-            tgId,
-            name: preferredName ?? undefined,
-          },
-        });
-        customerId = createdCustomer.id;
-      } else {
-        try {
-          await tx.customer.update({
-            where: { id: customerId },
-            data: Object.assign(
-              { tgId },
-              preferredName ? { name: preferredName } : {},
-            ),
-          });
-        } catch {}
-      }
+      const createdCustomer = await tx.customer.create({
+        data: {
+          tgId,
+          name: preferredName ?? undefined,
+        },
+        select: { id: true },
+      });
+      const customerId = createdCustomer.id;
 
       const created = await txAny?.merchantCustomer?.create?.({
         data: {
@@ -1978,7 +1954,12 @@ export class LoyaltyController {
       console.log('teleauth merchantCustomerId (telegram ensure):', merchantCustomerId);
       if (!merchantCustomerId) {
         try {
-          const existingCustomer = await this.prisma.customer.findFirst({ where: { tgId } });
+          const existingCustomer = await this.prisma.customer.findFirst({
+            where: {
+              tgId,
+              merchantProfiles: { some: { merchantId } },
+            },
+          });
           if (existingCustomer) {
             const mc = await this.ensureMerchantCustomerByCustomerId(merchantId, existingCustomer.id);
             merchantCustomerId = mc.id;

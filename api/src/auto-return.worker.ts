@@ -56,10 +56,11 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
       this.logger.log('AutoReturnWorker disabled (WORKERS_ENABLED=0)');
       return;
     }
-    const intervalMs = Math.max(
-      DAY_MS,
-      Number(process.env.AUTO_RETURN_WORKER_INTERVAL_MS || 6 * 60 * 60 * 1000),
-    );
+    const rawInterval = Number(process.env.AUTO_RETURN_WORKER_INTERVAL_MS);
+    const intervalMs =
+      Number.isFinite(rawInterval) && rawInterval > 0
+        ? Math.max(60_000, rawInterval)
+        : DAY_MS;
     this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
     if (typeof this.timer.unref === 'function') this.timer.unref();
     this.startedAt = new Date();
@@ -644,15 +645,15 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
     merchant: MerchantConfig,
     attempt: AutoReturnAttempt,
   ) {
-    const titleBase = merchant.name?.trim()
-      ? `${merchant.name.trim()}: возвращайтесь`
-      : 'Мы скучаем!';
+    const pushText =
+      attempt.message?.trim() || 'Возвращайтесь в нашу программу лояльности';
+    const titleBase = pushText.length > 120 ? pushText.slice(0, 120) : pushText;
     try {
       const result = await this.push.sendPush({
         merchantId: merchant.id,
         customerId: attempt.customerId,
         title: titleBase,
-        body: attempt.message,
+        body: pushText,
         type: 'CAMPAIGN',
         data: {
           type: 'AUTO_RETURN',

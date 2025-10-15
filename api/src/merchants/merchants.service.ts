@@ -1813,7 +1813,17 @@ export class MerchantsService {
     return w?.balance ?? 0;
   }
   async findCustomerByPhone(merchantId: string, phone: string) {
-    const c = await this.prisma.customer.findFirst({ where: { phone } });
+    const c = await this.prisma.customer.findFirst({
+      where: {
+        phone,
+        OR: [
+          { merchantProfiles: { some: { merchantId } } },
+          { wallets: { some: { merchantId } } },
+          { transactions: { some: { merchantId } } },
+          { Receipt: { some: { merchantId } } },
+        ],
+      },
+    });
     if (!c) return null;
     const bal = await this.getBalance(merchantId, c.id);
     return { customerId: c.id, phone: c.phone, balance: bal };

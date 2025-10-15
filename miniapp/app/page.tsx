@@ -1153,9 +1153,20 @@ export default function Page() {
     setPhoneShareLoading(true);
     setProfileSaving(true);
     try {
-      const status = await profilePhoneStatus(merchantId, effectiveMerchantCustomerId);
-      if (!status?.hasPhone) {
-        setToast({ msg: "Вы не привязали номер телефона, попробуйте ещё раз", type: "error" });
+      let serverHasPhone = false;
+      let statusError: unknown = null;
+      try {
+        const status = await profilePhoneStatus(merchantId, effectiveMerchantCustomerId);
+        serverHasPhone = Boolean(status?.hasPhone);
+      } catch (statusErr) {
+        statusError = statusErr;
+      }
+      const normalizedPhone = typeof phone === "string" ? phone.trim() : "";
+      if (!serverHasPhone && !normalizedPhone) {
+        const message = statusError
+          ? `Не удалось подтвердить привязку номера: ${resolveErrorMessage(statusError)}`
+          : "Вы не привязали номер телефона, попробуйте ещё раз";
+        setToast({ msg: message, type: "error" });
         setPhoneShareStage("idle");
         return;
       }
@@ -1163,7 +1174,7 @@ export default function Page() {
         name: profileForm.name.trim(),
         gender: profileForm.gender as "male" | "female",
         birthDate: profileForm.birthDate,
-        ...(phone ? { phone } : {}),
+        ...(normalizedPhone ? { phone: normalizedPhone } : {}),
       };
       await profileSave(merchantId, effectiveMerchantCustomerId, payload);
       try { localStorage.setItem(key, JSON.stringify({ name: payload.name, gender: payload.gender, birthDate: payload.birthDate })); } catch {}

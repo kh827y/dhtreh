@@ -722,9 +722,12 @@ export class TelegramBotService {
       if (!this.isNotificationUnsupported(error)) {
         throw error;
       }
-      const fallbackText = payload.title
-        ? `${payload.title}\n\n${payload.body}`
-        : payload.body;
+      const normalizedTitle = payload.title?.trim() ?? '';
+      const normalizedBody = payload.body?.trim() ?? '';
+      const fallbackText =
+        normalizedTitle && normalizedBody && normalizedTitle !== normalizedBody
+          ? `${normalizedTitle}\n\n${normalizedBody}`
+          : normalizedBody;
       await this.sendMessage(bot.token, userId, fallbackText);
     }
   }
@@ -843,12 +846,26 @@ export class TelegramBotService {
     }
 
     let customerId: string | null = null;
+    const associatedWithMerchant = {
+      OR: [
+        { merchantProfiles: { some: { merchantId } } },
+        { wallets: { some: { merchantId } } },
+        { transactions: { some: { merchantId } } },
+        { Receipt: { some: { merchantId } } },
+      ],
+    };
     if (tgId) {
-      const existingCustomer = await this.prisma.customer.findFirst({ where: { tgId } });
+      const existingCustomer = await this.prisma.customer.findFirst({
+        where: Object.assign({ tgId }, associatedWithMerchant),
+        select: { id: true },
+      });
       if (existingCustomer) customerId = existingCustomer.id;
     }
     if (!customerId && phone) {
-      const existingCustomerByPhone = await this.prisma.customer.findFirst({ where: { phone } });
+      const existingCustomerByPhone = await this.prisma.customer.findFirst({
+        where: Object.assign({ phone }, associatedWithMerchant),
+        select: { id: true },
+      });
       if (existingCustomerByPhone) customerId = existingCustomerByPhone.id;
     }
     if (!customerId) {
