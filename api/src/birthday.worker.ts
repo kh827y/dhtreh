@@ -235,7 +235,6 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
     const name = vars.username || 'Уважаемый клиент';
     const bonus = vars.bonus || '';
     return template
-      .replace(/%username\|обращение_по_умолчанию%/gi, name)
       .replace(/%username%/gi, name)
       .replace(/%bonus%/gi, bonus);
   }
@@ -366,17 +365,16 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
     const ids = Array.from(new Set(candidates.map((c) => c.customerId)));
     if (!ids.length) return [];
 
-    const stats = await this.prisma.customerStats.findMany({
-      where: { merchantId: merchant.id, customerId: { in: ids } },
-      select: { customerId: true, visits: true, totalSpent: true },
+    const receipts = await this.prisma.receipt.findMany({
+      where: {
+        merchantId: merchant.id,
+        customerId: { in: ids },
+        total: { gt: 0 },
+      },
+      select: { customerId: true },
+      distinct: ['customerId'],
     });
-    const eligible = new Set(
-      stats
-        .filter(
-          (s) => (s.visits ?? 0) > 0 || (s.totalSpent ?? 0) > 0,
-        )
-        .map((s) => s.customerId),
-    );
+    const eligible = new Set(receipts.map((r) => r.customerId));
 
     return candidates.filter((candidate) =>
       eligible.has(candidate.customerId),

@@ -62,9 +62,9 @@ export async function PUT(req: NextRequest) {
   const enabled = Boolean(body.enabled);
   const daysBeforeInput = Number(body.daysBefore ?? body.days);
   const daysBefore = Math.max(0, Math.floor(Number.isFinite(daysBeforeInput) ? daysBeforeInput : 0));
-  if (enabled && daysBefore <= 0) {
+  if (enabled && daysBefore < 0) {
     return new Response(
-      JSON.stringify({ error: "ValidationError", message: "Количество дней до поздравления должно быть положительным" }),
+      JSON.stringify({ error: "ValidationError", message: "Количество дней до поздравления не может быть отрицательным" }),
       { status: 400, headers: { "Content-Type": "application/json" } },
     );
   }
