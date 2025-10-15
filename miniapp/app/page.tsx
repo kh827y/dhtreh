@@ -67,6 +67,8 @@ const CHECK_ICON = (
   </svg>
 );
 
+const PHONE_NOT_LINKED_MESSAGE = "Вы не привязали номер, попробуйте еще раз";
+
 type MechanicsLevel = {
   id?: string;
   name?: string;
@@ -276,6 +278,7 @@ export default function Page() {
   const [pendingMerchantCustomerIdForPhone, setPendingMerchantCustomerIdForPhone] = useState<string | null>(null);
   const [phoneShareStage, setPhoneShareStage] = useState<"idle" | "confirm">("idle");
   const [phoneShareLoading, setPhoneShareLoading] = useState<boolean>(false);
+  const [phoneShareError, setPhoneShareError] = useState<string | null>(null);
   const [profileForm, setProfileForm] = useState<{
     name: string;
     gender: "male" | "female" | "";
@@ -1052,6 +1055,7 @@ export default function Page() {
       setToast({ msg: "Телеграм не поддерживает запрос номера", type: "error" });
       return;
     }
+    setPhoneShareError(null);
     setPhone(null);
     setPhoneShareLoading(true);
     const normalize = (raw: unknown): string | null => {
@@ -1136,6 +1140,7 @@ export default function Page() {
   const handleConfirmPhone = useCallback(async () => {
     if (!merchantId) return;
     if (phoneShareStage !== "confirm") return;
+    setPhoneShareError(null);
     const effectiveMerchantCustomerId = pendingMerchantCustomerIdForPhone || merchantCustomerId;
     if (!effectiveMerchantCustomerId) {
       setToast({ msg: "Не удалось определить клиента", type: "error" });
@@ -1163,10 +1168,11 @@ export default function Page() {
       }
       const normalizedPhone = typeof phone === "string" ? phone.trim() : "";
       if (!serverHasPhone && !normalizedPhone) {
-        const message = statusError
-          ? `Не удалось подтвердить привязку номера: ${resolveErrorMessage(statusError)}`
-          : "Вы не привязали номер телефона, попробуйте ещё раз";
-        setToast({ msg: message, type: "error" });
+        if (statusError) {
+          // статус мог не успеть обновиться, покажем пользователю понятное сообщение
+        }
+        setToast({ msg: PHONE_NOT_LINKED_MESSAGE, type: "error" });
+        setPhoneShareError(PHONE_NOT_LINKED_MESSAGE);
         setPhoneShareStage("idle");
         return;
       }
@@ -1185,14 +1191,24 @@ export default function Page() {
       setNeedPhoneStep(false);
       setPendingMerchantCustomerIdForPhone(null);
       setPhoneShareStage("idle");
+      setPhoneShareError(null);
       setToast({ msg: "Профиль сохранён", type: "success" });
     } catch (error) {
       const message = resolveErrorMessage(error);
-      if (/без номера телефона/i.test(message)) {
-        setToast({ msg: "Вы не привязали номер телефона, попробуйте ещё раз", type: "error" });
-      } else {
-        setToast({ msg: `Не удалось сохранить профиль: ${message}`, type: "error" });
+      const lowered = message.toLowerCase();
+      const phoneMissing =
+        lowered.includes("без номера") ||
+        lowered.includes("не привязали номер") ||
+        lowered.includes("номер обязателен") ||
+        lowered.includes("phone_required") ||
+        lowered.includes("phone is required");
+      if (phoneMissing) {
+        setPhoneShareError(PHONE_NOT_LINKED_MESSAGE);
       }
+      setToast({
+        msg: phoneMissing ? PHONE_NOT_LINKED_MESSAGE : `Не удалось сохранить профиль: ${message}`,
+        type: "error",
+      });
       setPhoneShareStage("idle");
     } finally {
       setPhoneShareLoading(false);
@@ -1425,7 +1441,17 @@ export default function Page() {
 
   const inviteFieldVisible = referralResolved && referralEnabled;
 
+  const phoneConfirmLoading = phoneShareStage === "confirm" && (profileSaving || phoneShareLoading);
+
   const phoneButtonLabel = useMemo(() => {
+    if (phoneConfirmLoading) {
+      return (
+        <span className={styles.profilePhoneLoadingLabel}>
+          <span className={styles.profilePhoneSpinner} aria-hidden="true" />
+          Готово
+        </span>
+      );
+    }
     if (phoneShareStage === "confirm") {
       return (
         <span className={styles.profilePhoneSuccessLabel}>
@@ -1435,7 +1461,7 @@ export default function Page() {
       );
     }
     return "Поделиться номером";
-  }, [phoneShareStage]);
+  }, [phoneConfirmLoading, phoneShareStage]);
 
   const phoneButtonClick = phoneShareStage === "confirm" ? handleConfirmPhone : handleRequestPhone;
   const phoneButtonDisabled = profileSaving || phoneShareLoading;
@@ -1480,6 +1506,11 @@ export default function Page() {
               >
                 {phoneButtonLabel}
               </button>
+              {phoneShareError && (
+                <div className={`${styles.profileErrorMessage} ${styles.appear} ${inviteFieldVisible ? styles.delay5 : styles.delay4}`}>
+                  {phoneShareError}
+                </div>
+              )}
             </div>
           ) : (
             <form
