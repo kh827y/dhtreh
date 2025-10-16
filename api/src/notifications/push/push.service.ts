@@ -50,15 +50,13 @@ export class PushService {
       throw new BadRequestException('Текст push-уведомления обязателен');
     }
     const title =
-      typeof dto.title === 'string' && dto.title.trim()
-        ? dto.title.trim()
-        : '';
+      typeof dto.title === 'string' && dto.title.trim() ? dto.title.trim() : '';
     await this.ensureTelegramConnected(dto.merchantId);
 
     const explicit =
       dto.customerId && !dto.customerIds?.length
         ? [dto.customerId]
-        : dto.customerIds ?? [];
+        : (dto.customerIds ?? []);
     const recipients = await this.resolveRecipients(
       dto.merchantId,
       explicit.length ? explicit : undefined,
@@ -78,17 +76,22 @@ export class PushService {
     let sent = 0;
     let failed = 0;
 
-    const payloadData = dto.data && Object.keys(dto.data).length
-      ? (dto.data as Prisma.InputJsonValue)
-      : Prisma.JsonNull;
+    const payloadData =
+      dto.data && Object.keys(dto.data).length
+        ? (dto.data as Prisma.InputJsonValue)
+        : Prisma.JsonNull;
     for (const recipient of recipients) {
       try {
-        await this.telegramBots.sendPushNotification(dto.merchantId, recipient.tgId, {
-          title: title || undefined,
-          body,
-          data: dto.data ?? undefined,
-          deepLink: dto.data?.deeplink ?? undefined,
-        });
+        await this.telegramBots.sendPushNotification(
+          dto.merchantId,
+          recipient.tgId,
+          {
+            title: title || undefined,
+            body,
+            data: dto.data ?? undefined,
+            deepLink: dto.data?.deeplink ?? undefined,
+          },
+        );
         sent += 1;
         pushLogs.push({
           merchantId: dto.merchantId,
@@ -120,7 +123,9 @@ export class PushService {
           status: 'failed',
           messageId: null,
           sentAt: null,
-          error: String(err?.message || err || 'Failed to deliver via Telegram'),
+          error: String(
+            err?.message || err || 'Failed to deliver via Telegram',
+          ),
         });
       }
     }
@@ -235,11 +240,15 @@ export class PushService {
     let failed = 0;
     for (const recipient of recipients) {
       try {
-        await this.telegramBots.sendPushNotification(merchantId, recipient.tgId, {
-          title,
-          body,
-          data,
-        });
+        await this.telegramBots.sendPushNotification(
+          merchantId,
+          recipient.tgId,
+          {
+            title,
+            body,
+            data,
+          },
+        );
         sent += 1;
       } catch {
         failed += 1;
@@ -256,9 +265,10 @@ export class PushService {
         body,
         type: 'MARKETING',
         campaignId: null,
-        data: data && Object.keys(data).length
-          ? (data as Prisma.InputJsonValue)
-          : Prisma.JsonNull,
+        data:
+          data && Object.keys(data).length
+            ? (data as Prisma.InputJsonValue)
+            : Prisma.JsonNull,
         status: failed ? 'failed' : 'sent',
         messageId: null,
         sentAt: failed ? null : new Date(),
@@ -307,7 +317,7 @@ export class PushService {
       deliveryRate: total > 0 ? Math.round((sent / total) * 100) : 0,
       byType: byType.reduce(
         (acc, item) => {
-          const key = (item?.type ?? 'UNKNOWN') as string;
+          const key = item?.type ?? 'UNKNOWN';
           const count = Number(item?._count ?? 0);
           acc[key] = Number.isFinite(count) ? count : 0;
           return acc;

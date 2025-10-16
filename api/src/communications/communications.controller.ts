@@ -99,8 +99,12 @@ export class CommunicationsController {
   ) {
     const asset = await this.service.getAsset(this.merchantId(req), id);
     res.setHeader('Content-Type', asset.mimeType ?? 'application/octet-stream');
-    res.setHeader('Content-Length', String(asset.byteSize ?? asset.data?.length ?? 0));
-    if (asset.fileName) res.setHeader('X-Filename', encodeURIComponent(asset.fileName));
+    res.setHeader(
+      'Content-Length',
+      String(asset.byteSize ?? asset.data?.length ?? 0),
+    );
+    if (asset.fileName)
+      res.setHeader('X-Filename', encodeURIComponent(asset.fileName));
     res.send(asset.data);
   }
 }

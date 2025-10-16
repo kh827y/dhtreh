@@ -66,7 +66,11 @@ export class ReferralController {
   @ApiOperation({ summary: 'Активировать реферальный код при регистрации' })
   async activateReferral(
     @Body()
-    dto: { code: string; refereeId?: string; merchantCustomerId?: string },
+    dto: {
+      code: string;
+      refereeId?: string;
+      merchantCustomerId?: string;
+    },
   ) {
     const refereeId = dto.merchantCustomerId
       ? await this.referralService.resolveCustomerId(dto.merchantCustomerId)
@@ -149,8 +153,6 @@ export class ReferralController {
       merchantId,
     );
   }
-
-  
 
   /**
    * Топ рефереров

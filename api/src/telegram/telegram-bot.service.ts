@@ -116,7 +116,9 @@ export class TelegramBotService {
         return bot;
       }
     } catch (error) {
-      this.logger.warn(`Не удалось загрузить данные бота для ${merchantId}: ${error}`);
+      this.logger.warn(
+        `Не удалось загрузить данные бота для ${merchantId}: ${error}`,
+      );
     }
     return null;
   }
@@ -372,15 +374,23 @@ export class TelegramBotService {
       } else if (update.message?.contact) {
         // Пользователь поделился контактом (номер телефона)
         const contact = update.message.contact;
-        const userId = contact.user_id || update.message.from?.id || update.message.chat?.id;
-        const phoneRaw: string | undefined = contact.phone_number || contact.phoneNumber;
+        const userId =
+          contact.user_id || update.message.from?.id || update.message.chat?.id;
+        const phoneRaw: string | undefined =
+          contact.phone_number || contact.phoneNumber;
         if (userId && phoneRaw) {
           const tgId = String(userId);
           const phone = this.normalizePhoneStrict(phoneRaw);
-          let profile: Awaited<ReturnType<typeof this.resolveMerchantCustomer>> | null = null;
+          let profile: Awaited<
+            ReturnType<typeof this.resolveMerchantCustomer>
+          > | null = null;
           try {
             profile = await this.resolveMerchantCustomer(merchantId, { tgId });
-            await this.updateMerchantCustomer(merchantId, profile.merchantCustomerId, { phone });
+            await this.updateMerchantCustomer(
+              merchantId,
+              profile.merchantCustomerId,
+              { phone },
+            );
             try {
               await this.prisma.customer.update({
                 where: { id: profile.customerId },
@@ -391,11 +401,14 @@ export class TelegramBotService {
               `Сохранён телефон для merchantCustomer=${profile.merchantCustomerId} (merchant=${merchantId})`,
             );
           } catch (err) {
-            const code = (err as any)?.code || '';
-            const msg = (err as any)?.message || String(err);
+            const code = err?.code || '';
+            const msg = err?.message || String(err);
             if (code === 'P2002' || /Unique constraint/i.test(msg)) {
               try {
-                const existing = await this.findMerchantCustomerByPhone(merchantId, phone);
+                const existing = await this.findMerchantCustomerByPhone(
+                  merchantId,
+                  phone,
+                );
                 if (!existing) throw err;
                 await this.linkTelegramToMerchantCustomer(
                   tgId,
@@ -407,13 +420,15 @@ export class TelegramBotService {
                   `Телефон уже использовался. Подвязали Telegram пользователя ${tgId} к merchantCustomer=${existing.id} (merchant=${merchantId})`,
                 );
               } catch (linkError) {
-                const linkMsg = (linkError as any)?.message || String(linkError);
+                const linkMsg = linkError?.message || String(linkError);
                 this.logger.warn(
                   `Не удалось привязать существующего клиента по номеру: ${linkMsg}`,
                 );
               }
             } else {
-              this.logger.warn(`Не удалось сохранить телефон из контакта: ${msg}`);
+              this.logger.warn(
+                `Не удалось сохранить телефон из контакта: ${msg}`,
+              );
             }
           }
         }
@@ -636,7 +651,12 @@ export class TelegramBotService {
   private async sendPhoto(
     token: string,
     chatId: string,
-    payload: { buffer: Buffer; mimeType?: string; fileName?: string; caption?: string },
+    payload: {
+      buffer: Buffer;
+      mimeType?: string;
+      fileName?: string;
+      caption?: string;
+    },
   ) {
     const FormDataCtor = (globalThis as any).FormData;
     const BlobCtor = (globalThis as any).Blob;
@@ -660,9 +680,13 @@ export class TelegramBotService {
   async sendCampaignMessage(
     merchantId: string,
     tgId: string,
-    options: { text: string; asset?: { buffer: Buffer; mimeType?: string; fileName?: string } },
+    options: {
+      text: string;
+      asset?: { buffer: Buffer; mimeType?: string; fileName?: string };
+    },
   ): Promise<void> {
-    const bot = (await this.ensureBotLoaded(merchantId)) || this.bots.get(merchantId);
+    const bot =
+      (await this.ensureBotLoaded(merchantId)) || this.bots.get(merchantId);
     if (!bot) throw new Error('Telegram-бот не подключён');
     const chatId = tgId;
     const text = options.text?.trim() ?? '';
@@ -692,7 +716,12 @@ export class TelegramBotService {
   async sendPushNotification(
     merchantId: string,
     tgId: string,
-    payload: { title?: string; body: string; data?: Record<string, string>; deepLink?: string },
+    payload: {
+      title?: string;
+      body: string;
+      data?: Record<string, string>;
+      deepLink?: string;
+    },
   ): Promise<void> {
     const bot =
       (await this.ensureBotLoaded(merchantId)) || this.bots.get(merchantId);
@@ -733,17 +762,22 @@ export class TelegramBotService {
   }
 
   private async answerCallbackQuery(token: string, queryId: string) {
-    const res = await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        callback_query_id: queryId,
-      }),
-    });
+    const res = await fetch(
+      `https://api.telegram.org/bot${token}/answerCallbackQuery`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          callback_query_id: queryId,
+        }),
+      },
+    );
     await this.assertTelegramResponseOk(res);
   }
 
-  private async assertTelegramResponseOk(res: globalThis.Response): Promise<any> {
+  private async assertTelegramResponseOk(
+    res: globalThis.Response,
+  ): Promise<any> {
     const raw = await res.text();
     let data: any = null;
     try {
@@ -752,11 +786,14 @@ export class TelegramBotService {
     const ok = res.ok && (data?.ok ?? true);
     if (!ok) {
       const description =
-        data?.description || data?.error_message || raw || `Telegram API error (${res.status})`;
+        data?.description ||
+        data?.error_message ||
+        raw ||
+        `Telegram API error (${res.status})`;
       throw new Error(description);
     }
     if (data && typeof data === 'object' && 'result' in data) {
-      return (data as any).result;
+      return data.result;
     }
     if (data !== null) return data;
     return raw ? { raw } : null;
@@ -820,7 +857,8 @@ export class TelegramBotService {
   ): Promise<{ merchantCustomerId: string; customerId: string }> {
     const prismaAny = this.prisma as any;
     const { tgId, phone } = opts;
-    if (!tgId && !phone) throw new Error('resolveMerchantCustomer requires tgId or phone');
+    if (!tgId && !phone)
+      throw new Error('resolveMerchantCustomer requires tgId or phone');
 
     const manager = prismaAny?.merchantCustomer;
 
@@ -829,7 +867,11 @@ export class TelegramBotService {
         where: { merchantId_tgId: { merchantId, tgId } },
         select: { id: true, customerId: true },
       });
-      if (existing) return { merchantCustomerId: existing.id, customerId: existing.customerId };
+      if (existing)
+        return {
+          merchantCustomerId: existing.id,
+          customerId: existing.customerId,
+        };
     }
 
     if (phone && manager?.findUnique) {
@@ -962,7 +1004,10 @@ export class TelegramBotService {
         update: { merchantCustomerId },
       });
 
-      if (previousProfile && previousProfile.merchantCustomerId !== merchantCustomerId) {
+      if (
+        previousProfile &&
+        previousProfile.merchantCustomerId !== merchantCustomerId
+      ) {
         await txAny?.merchantCustomer?.update?.({
           where: { id: previousProfile.merchantCustomerId },
           data: { tgId: null },
@@ -1052,7 +1097,8 @@ export class TelegramBotService {
     if (!phone) throw new Error('phone required');
     let cleaned = String(phone).replace(/\D/g, '');
     if (cleaned.startsWith('8')) cleaned = '7' + cleaned.substring(1);
-    if (cleaned.length === 10 && !cleaned.startsWith('7')) cleaned = '7' + cleaned;
+    if (cleaned.length === 10 && !cleaned.startsWith('7'))
+      cleaned = '7' + cleaned;
     if (cleaned.length !== 11) throw new Error('invalid phone');
     return '+' + cleaned;
   }

@@ -38,7 +38,9 @@ export class CommunicationsDispatcherWorker
     const intervalMs = Number(process.env.COMM_WORKER_INTERVAL_MS || '15000');
     this.timer = setInterval(() => this.tick().catch(() => {}), intervalMs);
     if (typeof this.timer.unref === 'function') this.timer.unref();
-    this.logger.log(`CommunicationsDispatcherWorker started, interval=${intervalMs}ms`);
+    this.logger.log(
+      `CommunicationsDispatcherWorker started, interval=${intervalMs}ms`,
+    );
   }
 
   onModuleDestroy() {
@@ -64,10 +66,7 @@ export class CommunicationsDispatcherWorker
             in: [CommunicationChannel.TELEGRAM, CommunicationChannel.PUSH],
           },
           archivedAt: null,
-          OR: [
-            { scheduledAt: null },
-            { scheduledAt: { lte: new Date() } },
-          ],
+          OR: [{ scheduledAt: null }, { scheduledAt: { lte: new Date() } }],
         },
         orderBy: { createdAt: 'asc' },
         take: Number(process.env.COMM_WORKER_BATCH || '10'),
@@ -94,7 +93,9 @@ export class CommunicationsDispatcherWorker
   }
 
   private asRecord(value: Prisma.JsonValue | null): Record<string, any> {
-    return value && typeof value === 'object' ? (value as Record<string, any>) : {};
+    return value && typeof value === 'object'
+      ? (value as Record<string, any>)
+      : {};
   }
 
   private toStringRecord(value: any): Record<string, string> | undefined {
@@ -200,17 +201,21 @@ export class CommunicationsDispatcherWorker
       let status = 'SENT';
       let error: string | null = null;
       try {
-        await this.telegramBots.sendCampaignMessage(task.merchantId, recipient.tgId, {
-          text,
-          asset:
-            asset && asset.data
-              ? {
-                  buffer: asset.data as Buffer,
-                  mimeType: asset.mimeType ?? undefined,
-                  fileName: asset.fileName ?? undefined,
-                }
-              : undefined,
-        });
+        await this.telegramBots.sendCampaignMessage(
+          task.merchantId,
+          recipient.tgId,
+          {
+            text,
+            asset:
+              asset && asset.data
+                ? {
+                    buffer: asset.data as Buffer,
+                    mimeType: asset.mimeType ?? undefined,
+                    fileName: asset.fileName ?? undefined,
+                  }
+                : undefined,
+          },
+        );
         sent += 1;
       } catch (err: any) {
         status = 'FAILED';
@@ -303,12 +308,16 @@ export class CommunicationsDispatcherWorker
       let status = 'SENT';
       let error: string | null = null;
       try {
-        await this.telegramBots.sendPushNotification(task.merchantId, recipient.tgId, {
-          title,
-          body: text,
-          data: extra,
-          deepLink,
-        });
+        await this.telegramBots.sendPushNotification(
+          task.merchantId,
+          recipient.tgId,
+          {
+            title,
+            body: text,
+            data: extra,
+            deepLink,
+          },
+        );
         sent += 1;
       } catch (err: any) {
         status = 'FAILED';
@@ -350,7 +359,13 @@ export class CommunicationsDispatcherWorker
 
   private async finishTask(
     taskId: string,
-    stats: { status: string; total: number; sent: number; failed: number; error: string | null },
+    stats: {
+      status: string;
+      total: number;
+      sent: number;
+      failed: number;
+      error: string | null;
+    },
   ) {
     await this.prisma.communicationTask.update({
       where: { id: taskId },
@@ -371,7 +386,9 @@ export class CommunicationsDispatcherWorker
     });
   }
 
-  private async resolveTelegramRecipients(task: any): Promise<TelegramRecipient[]> {
+  private async resolveTelegramRecipients(
+    task: any,
+  ): Promise<TelegramRecipient[]> {
     const merchantId = task.merchantId as string;
     const audienceId = task.audienceId as string | null;
     const customerIds = await this.collectAudienceCustomerIds(
@@ -416,18 +433,18 @@ export class CommunicationsDispatcherWorker
       tgId: string | null;
     }> = [];
     if (Array.isArray(customerIds)) {
-      const missingIds = customerIds.filter(
-        (id) => !bindingCustomers.has(id),
-      );
+      const missingIds = customerIds.filter((id) => !bindingCustomers.has(id));
       if (missingIds.length) {
-        fallbackMerchantCustomers = await this.prisma.merchantCustomer.findMany({
-          where: {
-            merchantId,
-            customerId: { in: missingIds },
-            tgId: { not: null },
+        fallbackMerchantCustomers = await this.prisma.merchantCustomer.findMany(
+          {
+            where: {
+              merchantId,
+              customerId: { in: missingIds },
+              tgId: { not: null },
+            },
+            select: { id: true, customerId: true, tgId: true },
           },
-          select: { id: true, customerId: true, tgId: true },
-        });
+        );
       }
     } else {
       fallbackMerchantCustomers = await this.prisma.merchantCustomer.findMany({

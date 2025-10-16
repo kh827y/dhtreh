@@ -366,7 +366,7 @@ export class PortalController {
         ? Array.from(state.resources.entries()).map(
             ([key, value]) => [String(key), value] as [string, unknown],
           )
-        : (Object.entries(state.resources || {}) as Array<[string, unknown]>);
+        : Object.entries(state.resources || {});
     for (const [resourceKey, actionsRaw] of entries) {
       const resource = String(resourceKey || '').trim();
       if (!resource) continue;
@@ -379,7 +379,11 @@ export class PortalController {
       const normalized = Array.from(
         new Set(
           actions
-            .map((a) => String(a || '').toLowerCase().trim())
+            .map((a) =>
+              String(a || '')
+                .toLowerCase()
+                .trim(),
+            )
             .filter((a) => !!a),
         ),
       ).sort();
@@ -727,7 +731,7 @@ export class PortalController {
     const audienceName =
       typeof body?.audienceName === 'string' && body.audienceName.trim()
         ? body.audienceName.trim()
-        : audienceCode ?? undefined;
+        : (audienceCode ?? undefined);
     return this.communications
       .createTask(merchantId, {
         channel: CommunicationChannel.PUSH,

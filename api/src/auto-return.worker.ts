@@ -102,7 +102,12 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
   private async loadActiveConfigs(): Promise<MerchantConfig[]> {
     const rows = await this.prisma.merchant.findMany({
       where: { archivedAt: null },
-      select: { id: true, name: true, telegramBotEnabled: true, settings: { select: { rulesJson: true } } },
+      select: {
+        id: true,
+        name: true,
+        telegramBotEnabled: true,
+        settings: { select: { rulesJson: true } },
+      },
     });
 
     const result: MerchantConfig[] = [];
@@ -147,9 +152,10 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
       0,
       Math.floor(Number(autoReturn.giftTtlDays ?? 0) || 0),
     );
-    const repeatRaw = autoReturn.repeat && typeof autoReturn.repeat === 'object'
-      ? autoReturn.repeat
-      : null;
+    const repeatRaw =
+      autoReturn.repeat && typeof autoReturn.repeat === 'object'
+        ? autoReturn.repeat
+        : null;
     const repeatValue =
       repeatRaw?.days ??
       autoReturn.repeatDays ??
@@ -235,9 +241,10 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
       await this.sendAttemptPush(merchant, attempt);
       const entry = stateByCustomer.get(attempt.customerId);
       if (entry && entry.active && entry.active.id === attempt.id) {
-        entry.active = await this.prisma.autoReturnAttempt.findUnique({
-          where: { id: attempt.id },
-        }) ?? undefined;
+        entry.active =
+          (await this.prisma.autoReturnAttempt.findUnique({
+            where: { id: attempt.id },
+          })) ?? undefined;
       }
     }
 
@@ -298,12 +305,13 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
         const entry = stateByCustomer.get(attempt.customerId);
         if (entry) {
           const idx = entry.attempts.findIndex((a) => a.id === attempt.id);
-          if (idx >= 0) entry.attempts[idx] = {
-            ...attempt,
-            status: 'RETURNED',
-            completedAt: purchase.createdAt,
-            completionReason: 'purchase',
-          };
+          if (idx >= 0)
+            entry.attempts[idx] = {
+              ...attempt,
+              status: 'RETURNED',
+              completedAt: purchase.createdAt,
+              completionReason: 'purchase',
+            };
           if (entry.active && entry.active.id === attempt.id) {
             entry.active = undefined;
           }
@@ -463,8 +471,7 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
     const username =
       (merchantCustomer.name || customer?.name || 'Уважаемый клиент').trim() ||
       'Уважаемый клиент';
-    const bonusValue =
-      config.giftPoints > 0 ? String(config.giftPoints) : '';
+    const bonusValue = config.giftPoints > 0 ? String(config.giftPoints) : '';
     const message = this.applyPlaceholders(config.text, {
       username,
       bonus: bonusValue,
@@ -529,7 +536,7 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
               customerId,
               type: TxnType.CAMPAIGN,
               amount: config.giftPoints,
-              orderId: `auto_return:${created!.id}`,
+              orderId: `auto_return:${created.id}`,
               outletId: null,
               staffId: null,
             },
@@ -544,8 +551,8 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
                 debit: LedgerAccount.MERCHANT_LIABILITY,
                 credit: LedgerAccount.CUSTOMER_BALANCE,
                 amount: config.giftPoints,
-                orderId: `auto_return:${created!.id}`,
-                meta: { mode: 'AUTO_RETURN', attemptId: created!.id },
+                orderId: `auto_return:${created.id}`,
+                meta: { mode: 'AUTO_RETURN', attemptId: created.id },
               },
             });
             this.metrics.inc('loyalty_ledger_entries_total', {
@@ -575,7 +582,7 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
                   earnedAt: invitedAt,
                   maturesAt: null,
                   expiresAt,
-                  orderId: `auto_return:${created!.id}`,
+                  orderId: `auto_return:${created.id}`,
                   receiptId: null,
                   status: 'ACTIVE',
                 },
@@ -584,7 +591,7 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
           }
 
           await tx.autoReturnAttempt.update({
-            where: { id: created!.id },
+            where: { id: created.id },
             data: {
               giftTransactionId,
               giftExpiresAt,

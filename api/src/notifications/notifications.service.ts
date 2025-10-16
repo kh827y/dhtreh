@@ -86,7 +86,7 @@ export class NotificationsService {
     segmentId?: string,
   ): Promise<number> {
     try {
-    if (segmentId) {
+      if (segmentId) {
         const segment = await this.prisma.customerSegment.findFirst({
           where: { id: segmentId, merchantId },
           select: { id: true, isSystem: true, systemKey: true },

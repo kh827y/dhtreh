@@ -91,7 +91,10 @@ export default function CustomersPage() {
     return customers.filter((customer, index) => {
       const rowNumber = index + 1;
       if (filters.index && !String(rowNumber).includes(filters.index.trim())) return false;
-      if (filters.login && !customer.login.toLowerCase().includes(filters.login.trim().toLowerCase())) return false;
+      if (filters.login) {
+        const haystack = (customer.phone || customer.login || "").toLowerCase();
+        if (!haystack.includes(filters.login.trim().toLowerCase())) return false;
+      }
       if (filters.name) {
         const fullName = getFullName(customer).toLowerCase();
         if (!fullName.includes(filters.name.trim().toLowerCase())) return false;
@@ -139,7 +142,10 @@ export default function CustomersPage() {
     return () => window.clearTimeout(timeout);
   }, [toast]);
 
-  const existingLogins = React.useMemo(() => customers.map((customer) => customer.login), [customers]);
+  const existingLogins = React.useMemo(
+    () => customers.map((customer) => customer.phone || customer.login),
+    [customers],
+  );
   const groupsCatalog = React.useMemo(() => {
     const defaults = ["Постоянные", "Стандарт", "Новые", "VIP", "Сонные"];
     const dynamic = customers.map((c) => c.group).filter((group): group is string => Boolean(group));
@@ -353,7 +359,7 @@ export default function CustomersPage() {
                     <td style={cellStyle}>{startIndex + index + 1}</td>
                     <td style={cellStyle}>
                       <Link href={`/customers/${customer.id}`} style={linkStyle}>
-                        {customer.login}
+                        {customer.phone || customer.login}
                       </Link>
                     </td>
                     <td style={cellStyle}>
@@ -451,9 +457,6 @@ function formatVisitFrequency(customer: CustomerRecord): string {
     if (customer.visitFrequencyDays === 0) return "Ежедневно";
     return `≈ ${customer.visitFrequencyDays} дн.`;
   }
-  if (customer.visits > 0) {
-    return `${customer.visits} виз.`;
-  }
   return "—";
 }
 
@@ -481,7 +484,7 @@ function formatCurrency(value: number): string {
 
 function mapCustomerToForm(customer: CustomerRecord): Partial<CustomerFormPayload> {
   return {
-    login: customer.login,
+    login: customer.phone || customer.login,
     email: customer.email ?? "",
     firstName: customer.firstName ?? "",
     lastName: customer.lastName ?? "",

@@ -319,7 +319,10 @@ export class CommunicationsService {
       audienceName: payload.audienceName ?? null,
     };
 
-    const mediaDescriptor = await this.prepareTelegramMedia(merchantId, payload);
+    const mediaDescriptor = await this.prepareTelegramMedia(
+      merchantId,
+      payload,
+    );
 
     const task = await this.persistTask(merchantId, {
       ...payload,
@@ -581,7 +584,7 @@ export class CommunicationsService {
     merchantId: string,
     payload: TaskPayload,
   ): Promise<Prisma.JsonValue | null> {
-    const mediaInput = (payload.media as any) ?? null;
+    const mediaInput = payload.media ?? null;
     if (!mediaInput) return null;
 
     if (mediaInput.assetId) {
@@ -656,7 +659,9 @@ export class CommunicationsService {
     }
     const cleaned = base64.replace(/\s+/g, '');
     const buffer = Buffer.from(cleaned, 'base64');
-    const fileName = fileHint ? String(fileHint) : this.defaultFileNameForMime(mimeType);
+    const fileName = fileHint
+      ? String(fileHint)
+      : this.defaultFileNameForMime(mimeType);
     return { buffer, mimeType, fileName };
   }
 

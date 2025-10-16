@@ -77,7 +77,9 @@ export default function ComplimentaryPointsPage() {
         const list = await api<any[]>(`/api/customers?search=${encodeURIComponent(searchValue)}`);
         const normalized = Array.isArray(list) ? list.map(normalizeCustomer) : [];
         const normalizedPhone = searchValue.replace(/\D+/g, "");
-        const match = normalized.find((item) => item.phone.replace(/\D+/g, "") === normalizedPhone);
+        const match = normalized.find(
+          (item) => (item.phone || item.login || "").replace(/\D+/g, "") === normalizedPhone,
+        );
         if (!cancelled) setCustomer(match ?? null);
         if (!cancelled && !match) setLookupError("Клиент с указанным телефоном не найден");
       } catch (error: any) {

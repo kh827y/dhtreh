@@ -70,9 +70,7 @@ describe('BirthdayWorker helpers', () => {
       username: 'Анна',
       bonus: '200',
     });
-    expect(renderedWithName).toBe(
-      'Привет, Анна! Вам начислено 200 баллов.',
-    );
+    expect(renderedWithName).toBe('Привет, Анна! Вам начислено 200 баллов.');
 
     const renderedFallback = worker.applyPlaceholders(template, {
       username: '',

@@ -175,7 +175,9 @@ export class CrmService {
           phone: customer.phone,
           name: customer.name,
         })),
-        nextCursor: customers.length ? customers[customers.length - 1].id : null,
+        nextCursor: customers.length
+          ? customers[customers.length - 1].id
+          : null,
       };
     }
 

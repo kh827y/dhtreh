@@ -265,10 +265,7 @@ export class CustomerAudiencesService {
     return where;
   }
 
-  async listSegments(
-    merchantId: string,
-    options: ListSegmentsOptions = {},
-  ) {
+  async listSegments(merchantId: string, options: ListSegmentsOptions = {}) {
     await this.ensureDefaultAudience(merchantId).catch(() => null);
     const where: Prisma.CustomerSegmentWhereInput = { merchantId };
     if (!options.includeSystem) where.isSystem = false;
@@ -332,9 +329,7 @@ export class CustomerAudiencesService {
     });
     if (!segment) throw new NotFoundException('Сегмент не найден');
     if (isSystemAllAudience(segment)) {
-      throw new BadRequestException(
-        'Системную аудиторию нельзя изменять',
-      );
+      throw new BadRequestException('Системную аудиторию нельзя изменять');
     }
     const updated = await this.prisma.customerSegment.update({
       where: { id: segmentId },
@@ -374,9 +369,7 @@ export class CustomerAudiencesService {
     });
     if (!segment) throw new NotFoundException('Сегмент не найден');
     if (isSystemAllAudience(segment)) {
-      throw new BadRequestException(
-        'Системную аудиторию нельзя отключать',
-      );
+      throw new BadRequestException('Системную аудиторию нельзя отключать');
     }
 
     const updated = await this.prisma.customerSegment.update({
@@ -403,9 +396,7 @@ export class CustomerAudiencesService {
     });
     if (!segment) throw new NotFoundException('Сегмент не найден');
     if (isSystemAllAudience(segment)) {
-      throw new BadRequestException(
-        'Системную аудиторию нельзя архивировать',
-      );
+      throw new BadRequestException('Системную аудиторию нельзя архивировать');
     }
 
     const archived = await this.prisma.customerSegment.update({

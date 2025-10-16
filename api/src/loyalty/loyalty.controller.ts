@@ -116,7 +116,8 @@ export class LoyaltyController {
     if (!phone) throw new BadRequestException('phone required');
     let cleaned = String(phone).replace(/\D/g, '');
     if (cleaned.startsWith('8')) cleaned = '7' + cleaned.substring(1);
-    if (cleaned.length === 10 && !cleaned.startsWith('7')) cleaned = '7' + cleaned;
+    if (cleaned.length === 10 && !cleaned.startsWith('7'))
+      cleaned = '7' + cleaned;
     if (cleaned.length !== 11) throw new BadRequestException('invalid phone');
     return '+' + cleaned;
   }
@@ -217,7 +218,10 @@ export class LoyaltyController {
           update: { merchantCustomerId: existing.id },
           create: { merchantId, tgId, merchantCustomerId: existing.id },
         });
-        return { merchantCustomerId: existing.id, customerId: existing.customerId };
+        return {
+          merchantCustomerId: existing.id,
+          customerId: existing.customerId,
+        };
       }
 
       const preferredName = nameFromInit;
@@ -310,9 +314,7 @@ export class LoyaltyController {
   ) {
     const mid = typeof merchantId === 'string' ? merchantId.trim() : '';
     const mcid =
-      typeof merchantCustomerId === 'string'
-        ? merchantCustomerId.trim()
-        : '';
+      typeof merchantCustomerId === 'string' ? merchantCustomerId.trim() : '';
     if (!mid) throw new BadRequestException('merchantId required');
     if (!mcid) throw new BadRequestException('merchantCustomerId required');
 
@@ -1259,8 +1261,7 @@ export class LoyaltyController {
       });
       if (s?.qrTtlSec) ttl = s.qrTtlSec;
     }
-    if (!dto.merchantId)
-      throw new BadRequestException('merchantId required');
+    if (!dto.merchantId) throw new BadRequestException('merchantId required');
     await this.resolveMerchantContext(dto.merchantId, dto.merchantCustomerId);
     const token = await signQrToken(
       secret,
@@ -1595,7 +1596,7 @@ export class LoyaltyController {
       }
     } catch {}
     if (merchantCustomerId && data && typeof data === 'object') {
-      (data as any).merchantCustomerId = merchantCustomerId;
+      data.merchantCustomerId = merchantCustomerId;
     }
     return data;
   }
@@ -1852,7 +1853,7 @@ export class LoyaltyController {
       }
     } catch {}
     if (merchantCustomerId && data && typeof data === 'object') {
-      (data as any).merchantCustomerId = merchantCustomerId;
+      data.merchantCustomerId = merchantCustomerId;
     }
     return data;
   }
@@ -1944,14 +1945,22 @@ export class LoyaltyController {
     // По tgId формируем учётку клиента. Разграничение по мерчанту через MerchantCustomer/CustomerTelegram.
     const tgId = String(r.userId);
     if (merchantId) {
-      console.log('teleauth calling ensureMerchantCustomerByTelegram with merchantId:', merchantId, 'tgId:', tgId);
-      let result = await this.ensureMerchantCustomerByTelegram(
+      console.log(
+        'teleauth calling ensureMerchantCustomerByTelegram with merchantId:',
+        merchantId,
+        'tgId:',
+        tgId,
+      );
+      const result = await this.ensureMerchantCustomerByTelegram(
         merchantId,
         tgId,
         initData,
       );
       let merchantCustomerId = result?.merchantCustomerId;
-      console.log('teleauth merchantCustomerId (telegram ensure):', merchantCustomerId);
+      console.log(
+        'teleauth merchantCustomerId (telegram ensure):',
+        merchantCustomerId,
+      );
       if (!merchantCustomerId) {
         try {
           const existingCustomer = await this.prisma.customer.findFirst({
@@ -1961,9 +1970,15 @@ export class LoyaltyController {
             },
           });
           if (existingCustomer) {
-            const mc = await this.ensureMerchantCustomerByCustomerId(merchantId, existingCustomer.id);
+            const mc = await this.ensureMerchantCustomerByCustomerId(
+              merchantId,
+              existingCustomer.id,
+            );
             merchantCustomerId = mc.id;
-            console.log('teleauth merchantCustomerId (fallback by customerId):', merchantCustomerId);
+            console.log(
+              'teleauth merchantCustomerId (fallback by customerId):',
+              merchantCustomerId,
+            );
           }
         } catch {}
       }
@@ -1978,8 +1993,7 @@ export class LoyaltyController {
     const customer = await this.prisma.customer
       .findFirst({ where: { tgId } })
       .catch(() => null);
-    if (customer)
-      return { ok: true, merchantCustomerId: customer.id };
+    if (customer) return { ok: true, merchantCustomerId: customer.id };
     const legacy = await this.prisma.customer
       .findUnique({ where: { id: legacyId } })
       .catch(() => null);
@@ -2034,8 +2048,7 @@ export class LoyaltyController {
     );
     const rawPhone =
       (merchantCustomer?.phone ?? null) || (customer?.phone ?? null);
-    const hasPhone =
-      typeof rawPhone === 'string' && rawPhone.trim().length > 0;
+    const hasPhone = typeof rawPhone === 'string' && rawPhone.trim().length > 0;
     return { hasPhone } satisfies CustomerPhoneStatusDto;
   }
 
@@ -2082,7 +2095,9 @@ export class LoyaltyController {
     }
 
     const phoneRaw =
-      typeof (body as any)?.phone === 'string' ? (body as any).phone.trim() : '';
+      typeof (body as any)?.phone === 'string'
+        ? (body as any).phone.trim()
+        : '';
     const mustRequirePhone = !merchantCustomer.phone;
     if (mustRequirePhone && !phoneRaw) {
       throw new BadRequestException(

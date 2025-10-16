@@ -3,12 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  HoldMode,
-  HoldStatus,
-  Prisma,
-  WalletType,
-} from '@prisma/client';
+import { HoldMode, HoldStatus, Prisma, WalletType } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 
 export type PortalCustomerReferrerDto = {
@@ -89,6 +84,8 @@ export type PortalCustomerDto = {
   createdAt: string | null;
   comment: string | null;
   accrualsBlocked: boolean;
+  levelId?: string | null;
+  levelName?: string | null;
   referrer?: PortalCustomerReferrerDto | null;
   invite?: PortalCustomerInviteDto | null;
   expiry?: PortalCustomerExpiryDto[];
@@ -128,6 +125,22 @@ const customerBaseSelect = (merchantId: string) =>
         updatedAt: true,
       },
     },
+    tierAssignments: {
+      where: {
+        merchantId,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
+      orderBy: { assignedAt: 'desc' },
+      take: 1,
+      select: {
+        tier: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    },
     wallets: {
       where: { merchantId, type: WalletType.POINTS },
       select: { balance: true },
@@ -153,6 +166,10 @@ type Aggregates = {
   pendingBalance: Map<string, number>;
   spendCurrentMonth: Map<string, number>;
   spendPreviousMonth: Map<string, number>;
+  totalSpent: Map<string, number>;
+  visitCount: Map<string, number>;
+  firstPurchaseAt: Map<string, Date>;
+  lastPurchaseAt: Map<string, Date>;
 };
 
 @Injectable()
@@ -206,11 +223,13 @@ export class PortalCustomersService {
     return Math.floor(diff / msPerDay);
   }
 
-  private computeVisitFrequency(stats: {
-    visits: number | null;
-    firstSeenAt: Date | null;
-    lastOrderAt: Date | null;
-  } | null): number | null {
+  private computeVisitFrequency(
+    stats: {
+      visits: number | null;
+      firstSeenAt: Date | null;
+      lastOrderAt: Date | null;
+    } | null,
+  ): number | null {
     if (!stats) return null;
     const visits = Number(stats.visits ?? 0);
     if (visits <= 1) return null;
@@ -258,9 +277,21 @@ export class PortalCustomersService {
     const pendingBalance = new Map<string, number>();
     const spendCurrentMonth = new Map<string, number>();
     const spendPreviousMonth = new Map<string, number>();
+    const totalSpent = new Map<string, number>();
+    const visitCount = new Map<string, number>();
+    const firstPurchaseAt = new Map<string, Date>();
+    const lastPurchaseAt = new Map<string, Date>();
 
     if (!customerIds.length) {
-      return { pendingBalance, spendCurrentMonth, spendPreviousMonth };
+      return {
+        pendingBalance,
+        spendCurrentMonth,
+        spendPreviousMonth,
+        totalSpent,
+        visitCount,
+        firstPurchaseAt,
+        lastPurchaseAt,
+      };
     }
 
     const now = new Date();
@@ -272,7 +303,7 @@ export class PortalCustomersService {
       1,
     );
 
-    const [pendingHolds, pendingLots, currentMonth, previousMonth] =
+    const [pendingHolds, pendingLots, currentMonth, previousMonth, overall] =
       await Promise.all([
         this.prisma.hold.groupBy({
           by: ['customerId'],
@@ -311,6 +342,18 @@ export class PortalCustomersService {
           },
           _sum: { total: true },
         }),
+        this.prisma.receipt.groupBy({
+          by: ['customerId'],
+          where: {
+            merchantId,
+            customerId: { in: customerIds },
+            total: { gt: 0 },
+          },
+          _sum: { total: true },
+          _count: { _all: true },
+          _max: { createdAt: true },
+          _min: { createdAt: true },
+        }),
       ]);
 
     for (const row of pendingHolds) {
@@ -344,26 +387,53 @@ export class PortalCustomersService {
       );
     }
 
-    return { pendingBalance, spendCurrentMonth, spendPreviousMonth };
+    for (const row of overall) {
+      const total = Math.max(0, Number(row._sum?.total ?? 0));
+      totalSpent.set(row.customerId, total);
+      const count = Number(row._count?._all ?? 0);
+      visitCount.set(row.customerId, count);
+      const last = row._max?.createdAt ?? null;
+      if (last) lastPurchaseAt.set(row.customerId, last);
+      const first = row._min?.createdAt ?? null;
+      if (first) firstPurchaseAt.set(row.customerId, first);
+    }
+
+    return {
+      pendingBalance,
+      spendCurrentMonth,
+      spendPreviousMonth,
+      totalSpent,
+      visitCount,
+      firstPurchaseAt,
+      lastPurchaseAt,
+    };
   }
 
   private buildBaseDto(
     entity: CustomerBase,
-    aggregates: {
-      pendingBalance: number;
-      spendCurrentMonth: number;
-      spendPreviousMonth: number;
-    },
+    aggregates: Aggregates,
   ): PortalCustomerDto {
     const profile = Array.isArray(entity.merchantProfiles)
-      ? entity.merchantProfiles[0] ?? null
+      ? (entity.merchantProfiles[0] ?? null)
       : null;
     const stats = Array.isArray(entity.customerStats)
-      ? entity.customerStats[0] ?? null
+      ? (entity.customerStats[0] ?? null)
       : null;
     const wallet = Array.isArray(entity.wallets)
-      ? entity.wallets[0] ?? null
+      ? (entity.wallets[0] ?? null)
       : null;
+    const tierAssignment = Array.isArray(entity.tierAssignments)
+      ? (entity.tierAssignments[0] ?? null)
+      : null;
+
+    const id = entity.id;
+    const pendingBalance = aggregates.pendingBalance.get(id) ?? 0;
+    const spendCurrentMonth = aggregates.spendCurrentMonth.get(id) ?? 0;
+    const spendPreviousMonth = aggregates.spendPreviousMonth.get(id) ?? 0;
+    const aggregatedTotalSpent = aggregates.totalSpent.get(id);
+    const aggregatedVisits = aggregates.visitCount.get(id);
+    const aggregatedLastPurchase = aggregates.lastPurchaseAt.get(id) ?? null;
+    const aggregatedFirstPurchase = aggregates.firstPurchaseAt.get(id) ?? null;
 
     const primaryPhone =
       (profile?.phone ?? entity.phone ?? null)?.toString() ?? null;
@@ -379,25 +449,35 @@ export class PortalCustomersService {
       ? new Date(entity.birthday).toISOString()
       : null;
     const age = this.calculateAge(birthdayIso);
-    const visits = Number(stats?.visits ?? 0);
-    const averageCheck = Math.round(Number(stats?.avgCheck ?? 0));
-    const daysSinceLastVisit = this.differenceInDays(stats?.lastOrderAt ?? null);
+    const statsVisits = Number(stats?.visits ?? 0);
+    const visits = aggregatedVisits ?? statsVisits;
+    const statsTotalSpent = Math.max(0, Number(stats?.totalSpent ?? 0));
+    const spendTotal = aggregatedTotalSpent ?? statsTotalSpent;
+    const averageCheck =
+      visits > 0
+        ? Math.round(spendTotal / visits)
+        : Math.round(Number(stats?.avgCheck ?? 0));
+    const lastPurchaseDate =
+      aggregatedLastPurchase ?? stats?.lastOrderAt ?? null;
+    const daysSinceLastVisit = this.differenceInDays(lastPurchaseDate);
     const visitFrequencyDays = this.computeVisitFrequency({
       visits,
-      firstSeenAt: stats?.firstSeenAt ?? null,
-      lastOrderAt: stats?.lastOrderAt ?? null,
+      firstSeenAt: aggregatedFirstPurchase ?? stats?.firstSeenAt ?? null,
+      lastOrderAt: lastPurchaseDate,
     });
-    const spendTotal = Math.max(0, Number(stats?.totalSpent ?? 0));
     const registeredSource = profile?.createdAt ?? entity.createdAt ?? null;
     const registeredAt = registeredSource
       ? new Date(registeredSource).toISOString()
       : null;
+    const levelName = tierAssignment?.tier?.name ?? null;
+    const levelId = tierAssignment?.tier?.id ?? null;
 
     const genderRaw =
       typeof entity.gender === 'string' ? entity.gender.toLowerCase() : null;
-    const gender = genderRaw && PortalCustomersService.allowedGenders.has(genderRaw)
-      ? genderRaw
-      : 'unknown';
+    const gender =
+      genderRaw && PortalCustomersService.allowedGenders.has(genderRaw)
+        ? genderRaw
+        : 'unknown';
 
     const tags = this.sanitizeTags(entity.tags);
 
@@ -412,19 +492,21 @@ export class PortalCustomersService {
       gender,
       tags,
       balance: wallet ? Number(wallet.balance ?? 0) : 0,
-      pendingBalance: aggregates.pendingBalance,
+      pendingBalance,
       visits,
       averageCheck,
       daysSinceLastVisit,
       visitFrequencyDays,
       age,
-      spendPreviousMonth: aggregates.spendPreviousMonth,
-      spendCurrentMonth: aggregates.spendCurrentMonth,
+      spendPreviousMonth,
+      spendCurrentMonth,
       spendTotal,
       registeredAt,
       createdAt: registeredAt,
       comment: profile?.comment ?? null,
       accrualsBlocked: Boolean(profile?.accrualsBlocked),
+      levelId,
+      levelName,
     };
   }
 
@@ -509,7 +591,7 @@ export class PortalCustomersService {
       .filter((id): id is string => Boolean(id));
     if (!refereeIds.length) return [];
 
-    const [profiles, stats] = await Promise.all([
+    const [profiles, stats, purchases] = await Promise.all([
       (this.prisma as any)?.merchantCustomer?.findMany?.({
         where: { merchantId, customerId: { in: refereeIds } },
         select: { customerId: true, name: true, phone: true, createdAt: true },
@@ -517,6 +599,15 @@ export class PortalCustomersService {
       this.prisma.customerStats.findMany({
         where: { merchantId, customerId: { in: refereeIds } },
         select: { customerId: true, visits: true },
+      }),
+      this.prisma.receipt.groupBy({
+        by: ['customerId'],
+        where: {
+          merchantId,
+          customerId: { in: refereeIds },
+          total: { gt: 0 },
+        },
+        _count: { _all: true },
       }),
     ]);
 
@@ -528,6 +619,11 @@ export class PortalCustomersService {
     const statsMap = new Map<string, number>();
     for (const stat of stats) {
       statsMap.set(stat.customerId, Number(stat.visits ?? 0));
+    }
+
+    const purchasesMap = new Map<string, number>();
+    for (const row of purchases ?? []) {
+      purchasesMap.set(row.customerId, Number(row._count?._all ?? 0));
     }
 
     return referrals.map((ref) => {
@@ -547,7 +643,10 @@ export class PortalCustomersService {
           null,
         phone: profile?.phone ?? ref.referee?.phone ?? null,
         joinedAt: joinedAt ? joinedAt.toISOString() : null,
-        purchases: statsMap.get(ref.refereeId ?? '') ?? null,
+        purchases:
+          purchasesMap.get(ref.refereeId ?? '') ??
+          statsMap.get(ref.refereeId ?? '') ??
+          0,
       };
     });
   }
@@ -631,13 +730,7 @@ export class PortalCustomersService {
     const ids = items.map((item) => item.id);
     const aggregates = await this.computeAggregates(merchantId, ids);
 
-    return items.map((item) =>
-      this.buildBaseDto(item, {
-        pendingBalance: aggregates.pendingBalance.get(item.id) ?? 0,
-        spendCurrentMonth: aggregates.spendCurrentMonth.get(item.id) ?? 0,
-        spendPreviousMonth: aggregates.spendPreviousMonth.get(item.id) ?? 0,
-      }),
-    );
+    return items.map((item) => this.buildBaseDto(item, aggregates));
   }
 
   async get(merchantId: string, customerId: string) {
@@ -651,11 +744,7 @@ export class PortalCustomersService {
 
     const aggregates = await this.computeAggregates(merchantId, [customerId]);
 
-    const baseDto = this.buildBaseDto(customer, {
-      pendingBalance: aggregates.pendingBalance.get(customerId) ?? 0,
-      spendCurrentMonth: aggregates.spendCurrentMonth.get(customerId) ?? 0,
-      spendPreviousMonth: aggregates.spendPreviousMonth.get(customerId) ?? 0,
-    });
+    const baseDto = this.buildBaseDto(customer, aggregates);
     baseDto.balance = walletBalance;
 
     const [
@@ -730,12 +819,12 @@ export class PortalCustomersService {
       this.resolveInvitedCustomers(merchantId, customerId),
     ]);
 
-    const receiptMap = new Map<string, typeof receipts[number]>();
+    const receiptMap = new Map<string, (typeof receipts)[number]>();
     for (const receipt of receipts) {
       if (receipt.orderId) receiptMap.set(receipt.orderId, receipt);
     }
 
-    const reviewByOrderId = new Map<string, typeof reviews[number]>();
+    const reviewByOrderId = new Map<string, (typeof reviews)[number]>();
     for (const review of reviews) {
       if (review.orderId) reviewByOrderId.set(review.orderId, review);
     }
@@ -768,8 +857,10 @@ export class PortalCustomersService {
       .filter((item): item is PortalCustomerExpiryDto => Boolean(item));
 
     baseDto.transactions = transactions.map((tx) => {
-      const receipt = tx.orderId ? receiptMap.get(tx.orderId) ?? null : null;
-      const review = tx.orderId ? reviewByOrderId.get(tx.orderId) ?? null : null;
+      const receipt = tx.orderId ? (receiptMap.get(tx.orderId) ?? null) : null;
+      const review = tx.orderId
+        ? (reviewByOrderId.get(tx.orderId) ?? null)
+        : null;
       const change = Number(tx.amount ?? 0);
       const purchaseAmount = receipt ? Number(receipt.total ?? 0) : 0;
       const toPay =
@@ -786,9 +877,11 @@ export class PortalCustomersService {
             .join(' ')
             .trim() || null
         : tx.staff
-        ? [tx.staff.firstName, tx.staff.lastName].filter(Boolean).join(' ').trim() ||
-          null
-        : null;
+          ? [tx.staff.firstName, tx.staff.lastName]
+              .filter(Boolean)
+              .join(' ')
+              .trim() || null
+          : null;
       const outletName =
         receipt?.outlet?.name ??
         tx.outlet?.name ??

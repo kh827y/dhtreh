@@ -137,7 +137,13 @@ export class PortalAuthController {
 
   @Post('refresh')
   @ApiOkResponse({
-    schema: { type: 'object', properties: { token: { type: 'string' }, refreshToken: { type: 'string' } } },
+    schema: {
+      type: 'object',
+      properties: {
+        token: { type: 'string' },
+        refreshToken: { type: 'string' },
+      },
+    },
   })
   @ApiBadRequestResponse({ description: 'Bad request' })
   @ApiUnauthorizedResponse({ description: 'Invalid refresh' })
@@ -185,9 +191,7 @@ export class PortalAuthController {
     const claims = await verifyPortalJwt(m[1]);
     const actor = claims.actor ?? 'MERCHANT';
     const staffId =
-      actor === 'STAFF'
-        ? claims.staffId || claims.sub || null
-        : undefined;
+      actor === 'STAFF' ? claims.staffId || claims.sub || null : undefined;
     return {
       merchantId: claims.merchantId || claims.sub || '',
       role: claims.role || (actor === 'STAFF' ? 'STAFF' : 'MERCHANT'),

@@ -1,5 +1,11 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
-import { Prisma, ReferralProgram, TxnType, WalletType, LedgerAccount } from '@prisma/client';
+import {
+  Prisma,
+  ReferralProgram,
+  TxnType,
+  WalletType,
+  LedgerAccount,
+} from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { EmailService } from '../notifications/email/email.service';
@@ -147,7 +153,9 @@ export class ReferralService {
       if (merchantId) {
         const linked = await (this.prisma as any).merchantCustomer
           ?.findUnique?.({
-            where: { merchantId_customerId: { merchantId, customerId: customer.id } },
+            where: {
+              merchantId_customerId: { merchantId, customerId: customer.id },
+            },
             select: { id: true },
           })
           .catch(() => null);
@@ -199,10 +207,14 @@ export class ReferralService {
       where: { code },
     });
     if (!personal) {
-      throw new BadRequestException('Недействительный или истекший реферальный код');
+      throw new BadRequestException(
+        'Недействительный или истекший реферальный код',
+      );
     }
     if (personal.customerId === refereeId) {
-      throw new BadRequestException('Нельзя использовать свой собственный реферальный код');
+      throw new BadRequestException(
+        'Нельзя использовать свой собственный реферальный код',
+      );
     }
     const programId = personal.programId ?? null;
     if (!programId) {
@@ -218,7 +230,9 @@ export class ReferralService {
       where: { refereeId, programId },
     });
     if (existingReferee) {
-      throw new BadRequestException('Вы уже участвуете в реферальной программе');
+      throw new BadRequestException(
+        'Вы уже участвуете в реферальной программе',
+      );
     }
     const created = await this.prisma.referral.create({
       data: {
@@ -235,7 +249,11 @@ export class ReferralService {
       const amount = this.roundTwo(program.refereeReward ?? 0);
       await this.prisma.$transaction(async (tx) => {
         let wallet = await tx.wallet.findFirst({
-          where: { customerId: refereeId, merchantId: program.merchantId, type: WalletType.POINTS },
+          where: {
+            customerId: refereeId,
+            merchantId: program.merchantId,
+            type: WalletType.POINTS,
+          },
         });
         if (!wallet) {
           wallet = await tx.wallet.create({
@@ -248,7 +266,10 @@ export class ReferralService {
           });
         }
         const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
-        await tx.wallet.update({ where: { id: wallet.id }, data: { balance: (fresh?.balance ?? 0) + amount } });
+        await tx.wallet.update({
+          where: { id: wallet.id },
+          data: { balance: (fresh?.balance ?? 0) + amount },
+        });
         await tx.transaction.create({
           data: {
             customerId: refereeId,
@@ -610,7 +631,9 @@ export class ReferralService {
         merchantName: program.merchant?.name || '',
         messageTemplate: this.normalizeMessageTemplate(program.messageTemplate),
         placeholders: this.normalizePlaceholders(program.placeholders),
-        shareMessageTemplate: this.normalizeShareMessage(program.shareButtonText),
+        shareMessageTemplate: this.normalizeShareMessage(
+          program.shareButtonText,
+        ),
       },
     };
   }
@@ -646,9 +669,14 @@ export class ReferralService {
     return code!;
   }
 
-  private async generateReferralLink(merchantId: string, code: string): Promise<string> {
+  private async generateReferralLink(
+    merchantId: string,
+    code: string,
+  ): Promise<string> {
     // Use Telegram Mini App deep link with plain startapp ref_ code if bot is configured
-    const settings = await this.prisma.merchantSettings.findUnique({ where: { merchantId } });
+    const settings = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+    });
     const username = settings?.telegramBotUsername || null;
     if (username) {
       const uname = username.startsWith('@') ? username.slice(1) : username;
@@ -656,11 +684,15 @@ export class ReferralService {
       return `https://t.me/${uname}/?startapp=${encodeURIComponent(startParam)}`;
     }
     // Fallback to website link if Telegram Mini App is not configured
-    const baseUrl = this.configService.get('WEBSITE_URL') || 'https://loyalty.com';
+    const baseUrl =
+      this.configService.get('WEBSITE_URL') || 'https://loyalty.com';
     return `${baseUrl.replace(/\/$/, '')}/referral/${merchantId}/${code}`;
   }
 
-  private async generateQrCodeUrl(merchantId: string, code: string): Promise<string> {
+  private async generateQrCodeUrl(
+    merchantId: string,
+    code: string,
+  ): Promise<string> {
     const link = await this.generateReferralLink(merchantId, code);
     return `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(link)}`;
   }
@@ -1006,16 +1038,15 @@ export class ReferralService {
         rewardType,
         multiLevel,
         levelRewards: multiLevel ? normalizedLevels : Prisma.JsonNull,
-      stackWithRegistration:
-        dto.stackWithRegistration ?? existing.stackWithRegistration,
-      messageTemplate: this.normalizeMessageTemplate(messageTemplate),
-      placeholders: this.normalizePlaceholders(placeholders),
-      // сохраняем шаблон сообщения для отправки
-      shareButtonText: this.normalizeShareMessage(shareMessage),
-    },
-  });
-}
+        stackWithRegistration:
+          dto.stackWithRegistration ?? existing.stackWithRegistration,
+        messageTemplate: this.normalizeMessageTemplate(messageTemplate),
+        placeholders: this.normalizePlaceholders(placeholders),
+        // сохраняем шаблон сообщения для отправки
+        shareButtonText: this.normalizeShareMessage(shareMessage),
+      },
+    });
+  }
 
-// checkReferralCode() — удалено, используйте только персональные коды
-
+  // checkReferralCode() — удалено, используйте только персональные коды
 }

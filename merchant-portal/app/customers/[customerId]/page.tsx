@@ -204,12 +204,8 @@ export default function CustomerCardPage() {
           <h1 style={{ fontSize: 28, fontWeight: 700 }}>{fullName}</h1>
           <div style={{ opacity: 0.7, display: "flex", gap: 12, flexWrap: "wrap" }}>
             <span>{customer.phone || customer.login}</span>
-            {customer.level ? (
-              <>
-                <span>•</span>
-                <span>{customer.level}</span>
-              </>
-            ) : null}
+            <span>•</span>
+            <span>Уровень: {customer.levelName || "—"}</span>
             <span>•</span>
             <span>{formatPoints(customer.bonusBalance)} бонусов</span>
           </div>
@@ -396,7 +392,7 @@ export default function CustomerCardPage() {
                     <td style={cellStyle}>{invitee.name || invitee.phone || invitee.id}</td>
                     <td style={cellStyle}>{invitee.phone || "—"}</td>
                     <td style={cellStyle}>{formatDate(invitee.joinedAt)}</td>
-                    <td style={cellStyle}>{invitee.purchases ?? "—"}</td>
+                    <td style={cellStyle}>{invitee.purchases != null ? invitee.purchases : "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -444,9 +440,6 @@ function formatVisitFrequency(customer: CustomerRecord): string {
     if (customer.visitFrequencyDays === 0) return "Ежедневно";
     return `≈ ${customer.visitFrequencyDays} дн.`;
   }
-  if (customer.visits > 0) {
-    return `${customer.visits} виз.`;
-  }
   return "—";
 }
 
@@ -467,6 +460,7 @@ function buildProfileRows(customer: CustomerRecord) {
     { label: "Пол", value: genderLabel },
     { label: "Возраст", value: customer.age != null ? customer.age : "—" },
     { label: "Дата рождения", value: formatDate(customer.birthday) },
+    { label: "Уровень", value: customer.levelName || "—" },
     { label: "Бонусных баллов", value: formatPoints(customer.bonusBalance) },
     { label: "Отложенных баллов", value: formatPoints(customer.pendingBalance) },
     {

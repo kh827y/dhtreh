@@ -81,7 +81,11 @@ export class PortalTelegramIntegrationService {
     if (miniappUrl && !/[?&]merchant=/.test(miniappUrl)) {
       miniappUrl = `${miniappUrl.replace(/\/$/, '')}/?merchant=${encodeURIComponent(merchantId)}`;
     }
-    if (miniappUrl && miniappUrl.includes('?merchant=') && !miniappUrl.includes('/?merchant=')) {
+    if (
+      miniappUrl &&
+      miniappUrl.includes('?merchant=') &&
+      !miniappUrl.includes('/?merchant=')
+    ) {
       miniappUrl = miniappUrl.replace('?merchant=', '/?merchant=');
     }
 
@@ -153,8 +157,12 @@ export class PortalTelegramIntegrationService {
       } catch (e: any) {
         menuMessage = ` Меню‑кнопка не установлена: ${String(e?.message || e)}.`;
       }
-      const mainAppMessage = ' Для корректной работы ссылок вида t.me/<бот>/?startapp=... необходимо установить Main App у бота в BotFather на тот же URL, что и у Menu Button (это действие недоступно через Bot API).';
-      return { ...state, message: `${baseMessage}${webhookMessage}${menuMessage} ${mainAppMessage}` };
+      const mainAppMessage =
+        ' Для корректной работы ссылок вида t.me/<бот>/?startapp=... необходимо установить Main App у бота в BotFather на тот же URL, что и у Menu Button (это действие недоступно через Bot API).';
+      return {
+        ...state,
+        message: `${baseMessage}${webhookMessage}${menuMessage} ${mainAppMessage}`,
+      };
     } catch (error: any) {
       const description = error?.message
         ? String(error.message)
@@ -332,7 +340,8 @@ export class PortalTelegramIntegrationService {
     });
     if (!settings?.telegramBotToken)
       throw new BadRequestException('Токен бота не задан');
-    const base = settings?.miniappBaseUrl || `${this.config.get('MINIAPP_BASE_URL')}`;
+    const base =
+      settings?.miniappBaseUrl || `${this.config.get('MINIAPP_BASE_URL')}`;
     if (!base) throw new BadRequestException('MINIAPP_BASE_URL не задан');
     let url = String(base);
     const hasMerchantParam = /[?&]merchant=/.test(url);

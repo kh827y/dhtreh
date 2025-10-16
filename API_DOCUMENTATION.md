@@ -1363,7 +1363,7 @@ const result = await client.commit({
 
 #### GET /portal/customers
 - Параметры: `search` (телефон, email или ФИО), `limit` (1–200, по умолчанию 50), `offset`.
-- Ответ: массив объектов с полями `id`, `phone`, `email`, `firstName`, `lastName`, `gender`, `birthday`, `tags[]`, `balance`, `pendingBalance`, `visits`, `visitFrequencyDays`, `daysSinceLastVisit`, `averageCheck`, `spendPreviousMonth`, `spendCurrentMonth`, `spendTotal`, `registeredAt`, `comment`, `accrualsBlocked`.
+- Ответ: массив объектов с полями `id`, `phone`, `email`, `firstName`, `lastName`, `gender`, `birthday`, `tags[]`, `balance`, `pendingBalance`, `visits`, `visitFrequencyDays`, `daysSinceLastVisit`, `averageCheck`, `spendPreviousMonth`, `spendCurrentMonth`, `spendTotal`, `registeredAt`, `comment`, `accrualsBlocked`, `levelName`.
 
 #### GET /portal/customers/{customerId}
 Возвращает все поля из списка плюс расширенные блоки:

@@ -98,7 +98,8 @@ export class LoyaltyService {
     });
     if (!direct) return; // покупатель не является приглашённым по активной программе
 
-    const triggerAll = String(program.rewardTrigger || 'first').toLowerCase() === 'all';
+    const triggerAll =
+      String(program.rewardTrigger || 'first').toLowerCase() === 'all';
     const canFirstPayout = direct.status === 'ACTIVATED';
     if (!triggerAll && !canFirstPayout) {
       // Режим только «за первую покупку» уже отработал
@@ -107,8 +108,8 @@ export class LoyaltyService {
 
     // Конфигурация уровней
     const rewardType = String(program.rewardType || 'FIXED').toUpperCase();
-    const lvCfgArr = Array.isArray((program as any).levelRewards)
-      ? ((program as any).levelRewards as Array<any>)
+    const lvCfgArr = Array.isArray(program.levelRewards)
+      ? (program.levelRewards as Array<any>)
       : [];
 
     const getLevelCfg = (lvl: number) =>
@@ -135,10 +136,7 @@ export class LoyaltyService {
     const maxLevels = program.multiLevel
       ? Math.max(
           1,
-          lvCfgArr.reduce(
-            (m, x) => Math.max(m, Number(x?.level || 0) || 0),
-            1,
-          ),
+          lvCfgArr.reduce((m, x) => Math.max(m, Number(x?.level || 0) || 0), 1),
         )
       : 1;
 
@@ -2059,7 +2057,9 @@ export class LoyaltyService {
               0,
               Math.floor(
                 Number(
-                  (hold.eligibleTotal != null ? hold.eligibleTotal : hold.total) ?? 0,
+                  (hold.eligibleTotal != null
+                    ? hold.eligibleTotal
+                    : hold.total) ?? 0,
                 ),
               ),
             ),
@@ -2624,7 +2624,12 @@ export class LoyaltyService {
     tgId: string,
     initData: string,
   ): Promise<{ merchantCustomerId: string }> {
-    console.log('ensureMerchantCustomerByTelegram called with merchantId:', merchantId, 'tgId:', tgId);
+    console.log(
+      'ensureMerchantCustomerByTelegram called with merchantId:',
+      merchantId,
+      'tgId:',
+      tgId,
+    );
     const existing = await this.prisma.merchantCustomer.findUnique({
       where: { merchantId_tgId: { merchantId, tgId } },
     });

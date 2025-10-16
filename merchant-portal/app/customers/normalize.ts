@@ -129,12 +129,14 @@ export function normalizeCustomer(input: any): CustomerRecord {
 
   const visits = Math.max(0, toNumber(input?.visits));
   const visitFrequencyLabel =
-    visitFrequencyDays != null ? `≈ ${visitFrequencyDays} дн.` : null;
+    visitFrequencyDays != null && visitFrequencyDays !== 0
+      ? `≈ ${visitFrequencyDays} дн.`
+      : null;
 
   return {
     id: String(input?.id ?? ""),
     login: phone || toStringOrNull(input?.email ?? input?.id) ?? "",
-    phone,
+    phone: phone || null,
     email: toStringOrNull(input?.email),
     firstName,
     lastName,
@@ -162,7 +164,8 @@ export function normalizeCustomer(input: any): CustomerRecord {
     expiry,
     reviews,
     invited,
-    level: toStringOrNull(input?.level),
+    levelName: toStringOrNull(input?.levelName ?? input?.level),
+    levelId: toStringOrNull(input?.levelId),
     group: toStringOrNull(input?.group),
     customerNumber: toStringOrNull(input?.customerNumber),
   };

@@ -66,9 +66,7 @@ export async function verifyPortalJwt(token: string): Promise<PortalJwtClaims> {
   const merchantIdCandidate =
     typeof payload.merchantId === 'string' ? payload.merchantId : undefined;
   const merchantId =
-    merchantIdCandidate ||
-    (actor === 'MERCHANT' ? sub : undefined) ||
-    '';
+    merchantIdCandidate || (actor === 'MERCHANT' ? sub : undefined) || '';
   if (!merchantId) throw new Error('Invalid portal token: merchantId missing');
   const staffIdCandidate =
     actor === 'STAFF'
@@ -77,23 +75,15 @@ export async function verifyPortalJwt(token: string): Promise<PortalJwtClaims> {
         : undefined
       : undefined;
   const staffId =
-    actor === 'STAFF'
-      ? staffIdCandidate || (sub ? sub : undefined)
-      : undefined;
+    actor === 'STAFF' ? staffIdCandidate || (sub ? sub : undefined) : undefined;
   const adminImpersonation = !!payload.adminImpersonation;
   const version =
-    typeof payload.version === 'number'
-      ? payload.version
-      : PORTAL_JWT_VERSION;
+    typeof payload.version === 'number' ? payload.version : PORTAL_JWT_VERSION;
   return {
     sub,
     merchantId,
     actor,
-    role:
-      roleRaw ||
-      (actor === 'STAFF'
-        ? 'STAFF'
-        : 'MERCHANT'),
+    role: roleRaw || (actor === 'STAFF' ? 'STAFF' : 'MERCHANT'),
     staffId,
     adminImpersonation,
     version,
@@ -106,7 +96,9 @@ type SignPortalRefreshJwtOptions = Omit<SignPortalJwtOptions, 'ttlSeconds'> & {
   ttlSeconds?: number;
 };
 
-export async function signPortalRefreshJwt(options: SignPortalRefreshJwtOptions) {
+export async function signPortalRefreshJwt(
+  options: SignPortalRefreshJwtOptions,
+) {
   const { merchantId, subject, actor, role } = options;
   if (!merchantId) throw new Error('merchantId is required');
   if (!subject) throw new Error('subject is required');
@@ -134,7 +126,9 @@ export async function signPortalRefreshJwt(options: SignPortalRefreshJwtOptions)
   return token as string;
 }
 
-export async function verifyPortalRefreshJwt(token: string): Promise<PortalJwtClaims> {
+export async function verifyPortalRefreshJwt(
+  token: string,
+): Promise<PortalJwtClaims> {
   const { jwtVerify } = await getJose();
   const secret = process.env.PORTAL_REFRESH_SECRET || '';
   if (!secret) throw new Error('PORTAL_REFRESH_SECRET not configured');
@@ -146,17 +140,21 @@ export async function verifyPortalRefreshJwt(token: string): Promise<PortalJwtCl
   const roleRaw = typeof payload.role === 'string' ? payload.role : undefined;
   const merchantIdCandidate =
     typeof payload.merchantId === 'string' ? payload.merchantId : undefined;
-  const merchantId = merchantIdCandidate || (actor === 'MERCHANT' ? sub : '') || '';
-  if (!merchantId) throw new Error('Invalid portal refresh token: merchantId missing');
+  const merchantId =
+    merchantIdCandidate || (actor === 'MERCHANT' ? sub : '') || '';
+  if (!merchantId)
+    throw new Error('Invalid portal refresh token: merchantId missing');
   const staffIdCandidate =
     actor === 'STAFF'
       ? typeof payload.staffId === 'string'
         ? payload.staffId
         : undefined
       : undefined;
-  const staffId = actor === 'STAFF' ? staffIdCandidate || (sub ? sub : undefined) : undefined;
+  const staffId =
+    actor === 'STAFF' ? staffIdCandidate || (sub ? sub : undefined) : undefined;
   const adminImpersonation = !!payload.adminImpersonation;
-  const version = typeof payload.version === 'number' ? payload.version : PORTAL_JWT_VERSION;
+  const version =
+    typeof payload.version === 'number' ? payload.version : PORTAL_JWT_VERSION;
   return {
     sub,
     merchantId,

@@ -234,9 +234,7 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
   ): string {
     const name = vars.username || 'Уважаемый клиент';
     const bonus = vars.bonus || '';
-    return template
-      .replace(/%username%/gi, name)
-      .replace(/%bonus%/gi, bonus);
+    return template.replace(/%username%/gi, name).replace(/%bonus%/gi, bonus);
   }
 
   private async resumePending(merchant: MerchantConfig, target: Date) {
@@ -376,9 +374,7 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
     });
     const eligible = new Set(receipts.map((r) => r.customerId));
 
-    return candidates.filter((candidate) =>
-      eligible.has(candidate.customerId),
-    );
+    return candidates.filter((candidate) => eligible.has(candidate.customerId));
   }
 
   private async createGreeting(

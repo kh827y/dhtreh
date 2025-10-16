@@ -29,9 +29,7 @@ const DEFAULT_TEMPLATE =
   'Баллы в размере %amount% сгорят %burn_date%. Успейте воспользоваться!';
 
 @Injectable()
-export class PointsTtlReminderWorker
-  implements OnModuleInit, OnModuleDestroy
-{
+export class PointsTtlReminderWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PointsTtlReminderWorker.name);
   private timer: ReturnType<typeof setInterval> | null = null;
   private running = false;
@@ -187,9 +185,7 @@ export class PointsTtlReminderWorker
     const reminders = this.aggregateLots(lots, ttlMs, now, windowEnd);
     if (!reminders.length) return;
 
-    const customerIds = Array.from(
-      new Set(reminders.map((r) => r.customerId)),
-    );
+    const customerIds = Array.from(new Set(reminders.map((r) => r.customerId)));
     const merchantCustomers = await this.prisma.merchantCustomer.findMany({
       where: {
         merchantId: config.merchantId,
@@ -222,7 +218,8 @@ export class PointsTtlReminderWorker
       }
       const username =
         (mc.name && mc.name.trim()) ||
-        (customerById.get(reminder.customerId) || '') ||
+        customerById.get(reminder.customerId) ||
+        '' ||
         '';
       const amountText = reminder.totalPoints.toLocaleString('ru-RU');
       const burnDateHuman = this.formatBurnDate(reminder.burnDate);

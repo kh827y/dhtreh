@@ -57,7 +57,7 @@ export type InvitedCustomer = {
 export type CustomerRecord = {
   id: string;
   login: string;
-  phone: string;
+  phone: string | null;
   email: string | null;
   firstName: string | null;
   lastName: string | null;
@@ -84,7 +84,8 @@ export type CustomerRecord = {
   expiry: CustomerExpiry[];
   reviews: CustomerReview[];
   invited: InvitedCustomer[];
-  level?: string | null;
+  levelName: string | null;
+  levelId?: string | null;
   group?: string | null;
   customerNumber?: string | null;
 };

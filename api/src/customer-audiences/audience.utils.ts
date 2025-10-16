@@ -1,8 +1,6 @@
 import { ALL_CUSTOMERS_SEGMENT_KEY } from './audience.constants';
 
-export function isAllCustomersSegmentKey(
-  key?: string | null,
-): boolean {
+export function isAllCustomersSegmentKey(key?: string | null): boolean {
   return key === ALL_CUSTOMERS_SEGMENT_KEY;
 }
 

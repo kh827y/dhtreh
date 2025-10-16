@@ -68,14 +68,16 @@ describe('PointsTtlReminderWorker', () => {
         ]),
       },
       merchantCustomer: {
-        findMany: jest.fn().mockResolvedValue([
-          { customerId: 'C1', name: 'Иван', tgId: '12345' },
-        ]),
+        findMany: jest
+          .fn()
+          .mockResolvedValue([
+            { customerId: 'C1', name: 'Иван', tgId: '12345' },
+          ]),
       },
       customer: {
-        findMany: jest.fn().mockResolvedValue([
-          { id: 'C1', name: 'Иван Иванов' },
-        ]),
+        findMany: jest
+          .fn()
+          .mockResolvedValue([{ id: 'C1', name: 'Иван Иванов' }]),
       },
       pushNotification: {
         findFirst: jest.fn().mockResolvedValue(null),
@@ -100,7 +102,12 @@ describe('PointsTtlReminderWorker', () => {
     expect(payload.type).toBe('SYSTEM');
     expect(payload.body).toContain('Привет, Иван!');
     expect(payload.body).toContain('130');
-    const expectedDate = burnDate.toISOString().slice(0, 10).split('-').reverse().join('.');
+    const expectedDate = burnDate
+      .toISOString()
+      .slice(0, 10)
+      .split('-')
+      .reverse()
+      .join('.');
     expect(payload.body).toContain(expectedDate);
     expect(payload.data).toEqual({
       burnDate: burnDate.toISOString().slice(0, 10),
@@ -113,9 +120,7 @@ describe('PointsTtlReminderWorker', () => {
     const ttlDays = 15;
     const daysBefore = 3;
     const earnedAt = new Date(now.getTime() - (ttlDays - 1) * DAY_MS);
-    const burnDateIso = new Date(
-      earnedAt.getTime() + ttlDays * DAY_MS,
-    )
+    const burnDateIso = new Date(earnedAt.getTime() + ttlDays * DAY_MS)
       .toISOString()
       .slice(0, 10);
 
@@ -131,9 +136,9 @@ describe('PointsTtlReminderWorker', () => {
         ]),
       },
       merchantCustomer: {
-        findMany: jest.fn().mockResolvedValue([
-          { customerId: 'C1', name: null, tgId: '999' },
-        ]),
+        findMany: jest
+          .fn()
+          .mockResolvedValue([{ customerId: 'C1', name: null, tgId: '999' }]),
       },
       customer: {
         findMany: jest.fn().mockResolvedValue([]),
@@ -176,9 +181,9 @@ describe('PointsTtlReminderWorker', () => {
         ]),
       },
       merchantCustomer: {
-        findMany: jest.fn().mockResolvedValue([
-          { customerId: 'C1', name: 'NoTg', tgId: null },
-        ]),
+        findMany: jest
+          .fn()
+          .mockResolvedValue([{ customerId: 'C1', name: 'NoTg', tgId: null }]),
       },
       customer: {
         findMany: jest.fn().mockResolvedValue([]),

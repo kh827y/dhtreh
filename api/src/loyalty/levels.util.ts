@@ -91,7 +91,11 @@ export async function computeLevelState(args: {
 
   let customerId: string | null = args.customerId ?? null;
   const prismaAny = prisma as any;
-  if (!customerId && args.merchantCustomerId && prismaAny?.merchantCustomer?.findUnique) {
+  if (
+    !customerId &&
+    args.merchantCustomerId &&
+    prismaAny?.merchantCustomer?.findUnique
+  ) {
     const mc = await prismaAny.merchantCustomer.findUnique({
       where: { id: args.merchantCustomerId },
       select: { customerId: true, merchantId: true },
@@ -100,8 +104,7 @@ export async function computeLevelState(args: {
       throw new Error('merchant customer not found');
     customerId = mc.customerId;
   }
-  if (!customerId)
-    throw new Error('customer not found');
+  if (!customerId) throw new Error('customer not found');
 
   // Значение для прогресса считаем по чекам (покупкам), а не по баллам.
   // - Для metric === 'transactions' считаем количество чеков за период.
