@@ -463,9 +463,10 @@ Response 200:
 
 - Настройка TTL на мерчанте: `MerchantSettings.pointsTtlDays` (0/empty — выключено).
 - Фичефлаги/интервалы:
-  - `POINTS_TTL_FEATURE=1` — включает превью сгорания (worker `PointsTtlWorker`).
-  - `POINTS_TTL_BURN=1` — включает фактическое сгорание (worker `PointsBurnWorker`).
-  - `EARN_LOTS_FEATURE=1` — включает точный учёт по лотам (рекомендуется при TTL).
+- `POINTS_TTL_FEATURE=1` — включает превью сгорания (worker `PointsTtlWorker`).
+- `POINTS_TTL_BURN=1` — включает фактическое сгорание (worker `PointsBurnWorker`).
+- `EARN_LOTS_FEATURE=1` — включает точный учёт по лотам (рекомендуется при TTL).
+- `POINTS_TTL_REMINDER=1` — включает push-напоминания через Telegram Mini App (worker `PointsTtlReminderWorker`).
   - `POINTS_TTL_INTERVAL_MS` — период превью (default 6h).
   - `POINTS_TTL_BURN_INTERVAL_MS` — период сжигания (default 6h).
 
@@ -482,6 +483,12 @@ Response 200:
 - По каждому клиенту с просроченными лотами рассчитывается объём списания `burnAmount = min(wallet.balance, sum(remainingLots))`.
 - Списываются лоты (увеличение `consumedPoints`), уменьшается баланс кошелька, создаётся транзакция `ADJUST` и событие
   `eventType = loyalty.points_ttl.burned` с `{ merchantId, customerId, amount, cutoff }`. При включённом `LEDGER_FEATURE` создаётся зеркальная проводка.
+
+3) Напоминания о скором сгорании (`PointsTtlReminderWorker`)
+
+- Использует `rulesJson.burnReminder` в `MerchantSettings` (`enabled`, `daysBefore`, `text`).
+- Отправляет push-уведомления в Telegram Mini App без заголовка (`title=''`) с плейсхолдерами: `%username%` (имя клиента или «Уважаемый клиент»), `%amount%` (сумма сгорающих баллов с разделителями) и `%burn_date%` (`dd.MM.yyyy`).
+- Повторные уведомления с тем же `burn_date` игнорируются (проверяется лог в `PushNotification`).
 
 Админка:
 

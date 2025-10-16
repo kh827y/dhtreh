@@ -5,6 +5,7 @@ import { HoldGcWorker } from './hold-gc.worker';
 import { IdempotencyGcWorker } from './idempotency-gc.worker';
 import { PointsTtlWorker } from './points-ttl.worker';
 import { PointsBurnWorker } from './points-burn.worker';
+import { PointsTtlReminderWorker } from './points-ttl-reminder.worker';
 
 @Controller()
 export class HealthController {
@@ -15,6 +16,7 @@ export class HealthController {
     private idemGc: IdempotencyGcWorker,
     private ttlPreview: PointsTtlWorker,
     private ttlBurn: PointsBurnWorker,
+    private ttlReminder: PointsTtlReminderWorker,
   ) {}
 
   @Get('healthz')
@@ -44,6 +46,10 @@ export class HealthController {
           ttlBurn: {
             alive: !!this.ttlBurn?.startedAt,
             lastTickAt: this.ttlBurn?.lastTickAt?.toISOString?.(),
+          },
+          ttlReminder: {
+            alive: !!this.ttlReminder?.startedAt,
+            lastTickAt: this.ttlReminder?.lastTickAt?.toISOString?.(),
           },
         },
       };
@@ -93,6 +99,10 @@ export class HealthController {
           ttlBurn: {
             alive: !!this.ttlBurn?.startedAt,
             lastTickAt: this.ttlBurn?.lastTickAt?.toISOString?.(),
+          },
+          ttlReminder: {
+            alive: !!this.ttlReminder?.startedAt,
+            lastTickAt: this.ttlReminder?.lastTickAt?.toISOString?.(),
           },
         },
       };

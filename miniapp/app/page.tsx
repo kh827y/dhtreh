@@ -192,6 +192,24 @@ const HISTORY_ICONS: Record<TransactionKind, ReactNode> = {
       />
     </svg>
   ),
+  burn: (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path
+        d="M11 2.5c0 1.7-1.1 2.8-2.2 3.9C7.6 7.5 7 8.5 7 10c0 2.4 1.8 4 3.8 4 2 0 3.6-1.4 3.6-3.6 0-1.2-.5-2.2-1.1-3.1l-.6-.9c1.9 1.2 3.7 3.2 3.7 6.1 0 3.6-2.8 6.2-6.3 6.2S4 16.2 4 12.8c0-2.6 1.3-4.5 3.2-6.2 1.1-1 1.8-2.1 1.8-3.6"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M9.5 13.5c0 .8.6 1.5 1.5 1.5 1 0 1.8-.8 1.8-1.8 0-.7-.3-1.2-.8-1.7"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  ),
 };
 
 function getTelegramUser(): TelegramUser | null {

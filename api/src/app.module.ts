@@ -26,6 +26,7 @@ import { NotificationDispatcherWorker } from './notification-dispatcher.worker';
 import { TtlBurnWorker } from './ttl-burn.worker';
 import { PointsBurnWorker } from './points-burn.worker';
 import { PointsTtlWorker } from './points-ttl.worker';
+import { PointsTtlReminderWorker } from './points-ttl-reminder.worker';
 import { EarnActivationWorker } from './earn-activation.worker';
 import { GiftsModule } from './gifts/gifts.module';
 import { ReferralModule } from './referral/referral.module';
@@ -111,6 +112,7 @@ try {
     NotificationDispatcherWorker,
     IdempotencyGcWorker,
     PointsTtlWorker,
+    PointsTtlReminderWorker,
     TtlBurnWorker,
     PointsBurnWorker,
     EarnActivationWorker,

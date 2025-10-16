@@ -14,8 +14,6 @@ type State = {
   enabled: boolean;
   daysBefore: string;
   text: string;
-  pointsTtlDays: number;
-  telegramBotConnected: boolean;
 };
 
 const defaultText = "Баллы в размере %amount% сгорят %burn_date%. Успейте воспользоваться!";
@@ -28,8 +26,6 @@ const initialState: State = {
   enabled: false,
   daysBefore: "5",
   text: defaultText,
-  pointsTtlDays: 0,
-  telegramBotConnected: false,
 };
 
 export default function BurnReminderPage() {
@@ -49,8 +45,6 @@ export default function BurnReminderPage() {
         enabled: Boolean(json?.enabled),
         daysBefore: String(Number(json?.daysBefore ?? json?.days ?? 5) || 5),
         text: typeof json?.text === "string" ? json.text : defaultText,
-        pointsTtlDays: Number(json?.pointsTtlDays ?? 0) || 0,
-        telegramBotConnected: Boolean(json?.telegramBotConnected),
       }));
     } catch (error: any) {
       setState((prev) => ({
@@ -201,32 +195,21 @@ export default function BurnReminderPage() {
                 </div>
               </label>
 
-              <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", alignItems: "stretch" }}>
-                <div style={{ display: "grid", gap: 10 }}>
-                  <div style={{ fontSize: 12, opacity: 0.7 }}>Предпросмотр</div>
-                  <div
-                    style={{
-                      borderRadius: 16,
-                      padding: "16px 18px",
-                      background: "linear-gradient(135deg, rgba(59,130,246,0.15), rgba(236,72,153,0.12))",
-                      minHeight: 120,
-                      display: "grid",
-                      gap: 8,
-                    }}
-                  >
-                    <div style={{ fontSize: 12, opacity: 0.7 }}>Push-уведомление</div>
-                    <div style={{ fontSize: 16, fontWeight: 600 }}>Скоро сгорят баллы</div>
-                    <div style={{ fontSize: 13, lineHeight: 1.5 }}>{state.text}</div>
-                    <div style={{ fontSize: 12, opacity: 0.7 }}>Отправим за {state.daysBefore || "?"} дней до даты сгорания</div>
-                  </div>
-                </div>
-                <div style={{ fontSize: 12, opacity: 0.7, display: "grid", gap: 8 }}>
-                  <div>
-                    <strong>Срок жизни баллов:</strong> {state.pointsTtlDays > 0 ? `${state.pointsTtlDays} дней` : "не задан"}
-                  </div>
-                  <div>
-                    <strong>Подключен Telegram-бот:</strong> {state.telegramBotConnected ? "да" : "нет"}
-                  </div>
+              <div style={{ display: "grid", gap: 10 }}>
+                <div style={{ fontSize: 12, opacity: 0.7 }}>Предпросмотр</div>
+                <div
+                  style={{
+                    borderRadius: 16,
+                    padding: "16px 18px",
+                    background: "linear-gradient(135deg, rgba(59,130,246,0.15), rgba(236,72,153,0.12))",
+                    minHeight: 120,
+                    display: "grid",
+                    gap: 8,
+                  }}
+                >
+                  <div style={{ fontSize: 12, opacity: 0.7 }}>Push-уведомление</div>
+                  <div style={{ fontSize: 16, fontWeight: 600 }}>Скоро сгорят баллы</div>
+                  <div style={{ fontSize: 13, lineHeight: 1.5 }}>{state.text}</div>
                 </div>
               </div>
 

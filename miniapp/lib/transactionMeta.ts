@@ -6,12 +6,14 @@ export type TransactionKind =
   | "refund"
   | "adjust"
   | "referral"
+  | "burn"
   | "other";
 
 export type TransactionMeta = { title: string; kind: TransactionKind };
 
 export function getTransactionMeta(type: string): TransactionMeta {
   const lower = type.toLowerCase();
+  if (lower === "adjust") return { title: "Баллы сгорели", kind: "burn" };
   if (lower.includes('referral')) return { title: 'Реферальная программа', kind: 'referral' };
   if (lower.includes('registration')) return { title: 'Бонус за регистрацию', kind: 'earn' };
   if (lower.includes("promo")) return { title: "Промокод", kind: "promo" };
