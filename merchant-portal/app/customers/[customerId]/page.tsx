@@ -10,6 +10,7 @@ import {
   type CustomerRecord,
   type CustomerTransaction,
 } from "../data";
+import { normalizeCustomer } from "../normalize";
 import { CustomerFormModal, type CustomerFormPayload } from "../customer-form-modal";
 
 const { Edit3, PlusCircle, MinusCircle, Gift, X } = Icons;
@@ -136,7 +137,7 @@ export default function CustomerCardPage() {
     );
   }
 
-  const fullName = getFullName(customer) || customer.login;
+  const fullName = getFullName(customer) || customer.phone || customer.login;
   const profileRows = buildProfileRows(customer);
 
   function handleAccrueSuccess(message: string) {
@@ -145,7 +146,7 @@ export default function CustomerCardPage() {
     // Перечитать данные клиента после изменения на сервере
     (async () => {
       try {
-        const fresh = await api<CustomerRecord>(`/api/customers/${encodeURIComponent(customer.id)}`);
+        const fresh = await api<any>(`/api/customers/${encodeURIComponent(customer.id)}`);
         setCustomer(fresh ? normalizeCustomer(fresh) : customer);
       } catch {}
     })();
@@ -156,7 +157,7 @@ export default function CustomerCardPage() {
     setRedeemOpen(false);
     (async () => {
       try {
-        const fresh = await api<CustomerRecord>(`/api/customers/${encodeURIComponent(customer.id)}`);
+        const fresh = await api<any>(`/api/customers/${encodeURIComponent(customer.id)}`);
         setCustomer(fresh ? normalizeCustomer(fresh) : customer);
       } catch {}
     })();
@@ -164,36 +165,25 @@ export default function CustomerCardPage() {
 
   async function handleEditSubmit(payload: CustomerFormPayload) {
     if (!customer) return;
-    const updated: CustomerRecord = {
-      ...customer,
-      login: payload.login.trim(),
-      firstName: payload.firstName.trim(),
-      lastName: payload.lastName.trim(),
-      email: payload.email.trim(),
-      birthday: payload.birthday,
-      age: payload.birthday ? calculateAge(payload.birthday) : customer.age,
-      tags: normalizeTags(payload.tags),
-      comment: payload.comment.trim(),
-      group: payload.group || customer.group,
-      blocked: payload.blockAccruals,
+    const baseBody = {
+      phone: payload.login.trim(),
+      email: payload.email.trim() || undefined,
+      firstName: payload.firstName.trim() || undefined,
+      lastName: payload.lastName.trim() || undefined,
+      name: [payload.firstName.trim(), payload.lastName.trim()].filter(Boolean).join(" ").trim() || undefined,
+      birthday: payload.birthday || undefined,
       gender: payload.gender,
+      tags: parseTags(payload.tags),
+      comment: payload.comment.trim() || undefined,
+      accrualsBlocked: payload.blockAccruals,
     };
     try {
-      const apiBody = {
-        phone: updated.login,
-        email: updated.email,
-        firstName: updated.firstName,
-        lastName: updated.lastName,
-        name: [updated.firstName, updated.lastName].filter(Boolean).join(" ").trim() || undefined,
-        birthday: updated.birthday,
-        gender: updated.gender,
-        tags: updated.tags,
-      };
-      const saved = await api<CustomerRecord>(`/api/customers/${encodeURIComponent(customer.id)}` , {
+      const saved = await api<any>(`/api/customers/${encodeURIComponent(customer.id)}`, {
         method: "PUT",
-        body: JSON.stringify(apiBody),
+        body: JSON.stringify(baseBody),
       });
-      setCustomer(saved || updated);
+      const normalized = normalizeCustomer(saved ?? { ...customer, ...baseBody });
+      setCustomer(normalized);
       setToast("Данные клиента обновлены");
       setEditOpen(false);
     } catch (e: any) {
@@ -213,9 +203,13 @@ export default function CustomerCardPage() {
         <div style={{ display: "grid", gap: 6 }}>
           <h1 style={{ fontSize: 28, fontWeight: 700 }}>{fullName}</h1>
           <div style={{ opacity: 0.7, display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <span>{customer.login}</span>
-            <span>•</span>
-            <span>{customer.level} уровень</span>
+            <span>{customer.phone || customer.login}</span>
+            {customer.level ? (
+              <>
+                <span>•</span>
+                <span>{customer.level}</span>
+              </>
+            ) : null}
             <span>•</span>
             <span>{formatPoints(customer.bonusBalance)} бонусов</span>
           </div>
@@ -233,7 +227,11 @@ export default function CustomerCardPage() {
           <Button
             variant="primary"
             leftIcon={<Gift size={16} />}
-            onClick={() => router.push(`/customers/complimentary?phone=${encodeURIComponent(customer.login)}&customerId=${customer.id}`)}
+            onClick={() =>
+              router.push(
+                `/customers/complimentary?phone=${encodeURIComponent(customer.phone || customer.login)}&customerId=${customer.id}`,
+              )
+            }
           >
             Начислить комплиментарные баллы
           </Button>
@@ -299,26 +297,32 @@ export default function CustomerCardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {customer.transactions.map((operation, index) => (
-                    <tr
-                      key={operation.id}
-                      style={{ ...rowStyle, cursor: "pointer" }}
-                      onClick={() => setSelectedTransaction(operation)}
-                    >
-                      <td style={cellStyle}>{index + 1}</td>
-                      <td style={cellStyle}>{formatCurrency(operation.purchaseAmount)}</td>
-                      <td style={{ ...cellStyle, color: operation.change >= 0 ? "#4ade80" : "#f87171" }}>
-                        {operation.change >= 0 ? "+" : ""}
-                        {formatPoints(Math.abs(operation.change))}
-                      </td>
-                      <td style={cellStyle}>{operation.details}</td>
-                      <td style={cellStyle}>{formatDateTime(operation.datetime)}</td>
-                      <td style={cellStyle}>{operation.outlet}</td>
-                      <td style={cellStyle}>
-                        {operation.rating ? <StarRating rating={operation.rating} size={18} /> : "—"}
-                      </td>
-                    </tr>
-                  ))}
+                  {customer.transactions.map((operation, index) => {
+                    const isBlockedAccrual = operation.type === "EARN" && operation.blockedAccrual;
+                    const changeColor =
+                      operation.change > 0 && !isBlockedAccrual ? "#4ade80" : "#f87171";
+                    const changePrefix = operation.change > 0 ? "+" : "";
+                    return (
+                      <tr
+                        key={operation.id}
+                        style={{ ...rowStyle, cursor: "pointer", opacity: isBlockedAccrual ? 0.85 : 1 }}
+                        onClick={() => setSelectedTransaction(operation)}
+                      >
+                        <td style={cellStyle}>{index + 1}</td>
+                        <td style={cellStyle}>{formatCurrency(operation.purchaseAmount)}</td>
+                        <td style={{ ...cellStyle, color: changeColor }}>
+                          {changePrefix}
+                          {formatPoints(Math.abs(operation.change))}
+                        </td>
+                        <td style={cellStyle}>{operation.details}</td>
+                        <td style={cellStyle}>{formatDateTime(operation.datetime)}</td>
+                        <td style={cellStyle}>{operation.outlet || "—"}</td>
+                        <td style={cellStyle}>
+                          {operation.rating != null ? <StarRating rating={operation.rating} size={18} /> : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -363,9 +367,15 @@ export default function CustomerCardPage() {
         <CardBody style={{ display: "grid", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
             <span style={{ fontSize: 13, opacity: 0.7 }}>Промокод клиента:</span>
-            <code style={codeStyle}>{customer.inviteCode}</code>
+            <code style={codeStyle}>{customer.invite?.code ?? "—"}</code>
             <span style={{ fontSize: 13, opacity: 0.65 }}>
-              Ссылка: https://t.me/loyalty_bot?start=ref_{customer.inviteCode}
+              Ссылка: {customer.invite?.link ? (
+                <a href={customer.invite.link} style={{ color: "#a5b4fc" }} target="_blank" rel="noreferrer">
+                  {customer.invite.link}
+                </a>
+              ) : (
+                "—"
+              )}
             </span>
           </div>
           {customer.invited.length === 0 ? (
@@ -383,8 +393,8 @@ export default function CustomerCardPage() {
               <tbody>
                 {customer.invited.map((invitee) => (
                   <tr key={invitee.id} style={rowStyle}>
-                    <td style={cellStyle}>{invitee.name}</td>
-                    <td style={cellStyle}>{invitee.login}</td>
+                    <td style={cellStyle}>{invitee.name || invitee.phone || invitee.id}</td>
+                    <td style={cellStyle}>{invitee.phone || "—"}</td>
                     <td style={cellStyle}>{formatDate(invitee.joinedAt)}</td>
                     <td style={cellStyle}>{invitee.purchases ?? "—"}</td>
                   </tr>
@@ -421,79 +431,49 @@ export default function CustomerCardPage() {
   );
 }
 
-function calculateAge(birthday: string): number {
-  try {
-    const date = new Date(birthday);
-    if (Number.isNaN(date.getTime())) return 0;
-    const now = new Date();
-    let age = now.getFullYear() - date.getFullYear();
-    const monthDiff = now.getMonth() - date.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < date.getDate())) {
-      age -= 1;
-    }
-    return age;
-  } catch {
-    return 0;
-  }
-}
-
-function normalizeCustomer(input: any): CustomerRecord {
-  const c = input || {};
-  return {
-    id: String(c.id || ''),
-    login: String(c.login || c.phone || ''),
-    firstName: String(c.firstName || c.name?.split?.(' ')?.[0] || ''),
-    lastName: String(c.lastName || c.name?.split?.(' ')?.slice?.(1)?.join(' ') || ''),
-    email: String(c.email || ''),
-    visitFrequency: String(c.visitFrequency || '—'),
-    averageCheck: Number(c.averageCheck || 0),
-    birthday: String(c.birthday || ''),
-    age: Number(c.age || (c.birthday ? calculateAge(String(c.birthday)) : 0)),
-    gender: (c.gender === 'male' || c.gender === 'female' || c.gender === 'unknown') ? c.gender : 'unknown',
-    daysSinceLastVisit: Number(c.daysSinceLastVisit || 0),
-    visitCount: Number(c.visitCount || 0),
-    bonusBalance: Number(c.bonusBalance || c.balance || 0),
-    pendingBalance: Number(c.pendingBalance || 0),
-    level: String(c.level || '—'),
-    spendPreviousMonth: Number(c.spendPreviousMonth || 0),
-    spendCurrentMonth: Number(c.spendCurrentMonth || 0),
-    spendTotal: Number(c.spendTotal || 0),
-    stamps: Number(c.stamps || 0),
-    tags: Array.isArray(c.tags) ? c.tags : [],
-    registeredAt: String(c.registeredAt || new Date().toISOString()),
-    comment: String(c.comment || ''),
-    blocked: Boolean(c.blocked || false),
-    referrer: c.referrer ? String(c.referrer) : undefined,
-    group: String(c.group || 'Стандарт'),
-    inviteCode: String(c.inviteCode || 'INVITE'),
-    customerNumber: String(c.customerNumber || `CL-${String(c.id || '').slice(-4).padStart(4, '0')}`),
-    deviceNumber: c.deviceNumber ? String(c.deviceNumber) : undefined,
-    transactions: Array.isArray(c.transactions) ? c.transactions : [],
-    expiry: Array.isArray(c.expiry) ? c.expiry : [],
-    reviews: Array.isArray(c.reviews) ? c.reviews : [],
-    invited: Array.isArray(c.invited) ? c.invited : [],
-  };
-}
-
-function normalizeTags(tags: string): string[] {
+function parseTags(tags: string): string[] {
   return tags
     .split(/[,;]+/)
     .map((item) => item.trim())
     .filter(Boolean);
 }
 
+function formatVisitFrequency(customer: CustomerRecord): string {
+  if (customer.visitFrequency) return customer.visitFrequency;
+  if (customer.visitFrequencyDays != null) {
+    if (customer.visitFrequencyDays === 0) return "Ежедневно";
+    return `≈ ${customer.visitFrequencyDays} дн.`;
+  }
+  if (customer.visits > 0) {
+    return `${customer.visits} виз.`;
+  }
+  return "—";
+}
+
 function buildProfileRows(customer: CustomerRecord) {
   const genderLabel = customer.gender === "male" ? "Мужской" : customer.gender === "female" ? "Женский" : "Не указан";
+  const referrerValue = customer.referrer ? (
+    <Link href={`/customers/${customer.referrer.id}`} style={{ color: "#a5b4fc", textDecoration: "none" }}>
+      {customer.referrer.name || customer.referrer.phone || customer.referrer.id}
+    </Link>
+  ) : (
+    "—"
+  );
+
   return [
-    { label: "Логин", value: customer.login },
+    { label: "Телефон", value: customer.phone || customer.login || "—" },
+    { label: "Email", value: customer.email || "—" },
     { label: "Имя", value: getFullName(customer) || "—" },
+    { label: "Пол", value: genderLabel },
+    { label: "Возраст", value: customer.age != null ? customer.age : "—" },
+    { label: "Дата рождения", value: formatDate(customer.birthday) },
     { label: "Бонусных баллов", value: formatPoints(customer.bonusBalance) },
     { label: "Отложенных баллов", value: formatPoints(customer.pendingBalance) },
-    { label: "Пол", value: genderLabel },
-    { label: "Возраст", value: customer.age || "—" },
-    { label: "Дата рождения", value: formatDate(customer.birthday) },
-    { label: "Дней с последнего визита", value: customer.daysSinceLastVisit },
-    { label: "Частота визитов", value: `${customer.visitFrequency}` },
+    {
+      label: "Дней с последнего визита",
+      value: customer.daysSinceLastVisit != null ? customer.daysSinceLastVisit : "—",
+    },
+    { label: "Частота визитов", value: formatVisitFrequency(customer) },
     { label: "Средний чек", value: formatCurrency(customer.averageCheck) },
     {
       label: "Сумма покупок",
@@ -505,12 +485,11 @@ function buildProfileRows(customer: CustomerRecord) {
         </div>
       ),
     },
-    { label: "Накопленных штампов", value: customer.stamps },
     { label: "Теги", value: customer.tags.length ? customer.tags.join(", ") : "—" },
     { label: "Дата регистрации", value: formatDateTime(customer.registeredAt) },
     { label: "Комментарий к пользователю", value: customer.comment || "—" },
     { label: "Блокировка начислений", value: customer.blocked ? "Да" : "Нет" },
-    { label: "Приглашавший", value: customer.referrer || "—" },
+    { label: "Пригласивший", value: referrerValue },
   ];
 }
 
@@ -572,12 +551,14 @@ const toastStyle: React.CSSProperties = {
   boxShadow: "0 16px 60px rgba(30,64,175,0.35)",
 };
 
-function formatCurrency(value: number): string {
-  return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(value);
+function formatCurrency(value?: number | null): string {
+  if (value == null || Number.isNaN(Number(value))) return "—";
+  return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(Number(value));
 }
 
-function formatPoints(value: number): string {
-  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(value);
+function formatPoints(value?: number | null): string {
+  if (value == null || Number.isNaN(Number(value))) return "0";
+  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(Number(value));
 }
 
 function formatDate(value?: string): string {
@@ -605,15 +586,15 @@ function formatDateTime(value?: string): string {
 function mapCustomerToForm(customer: CustomerRecord): Partial<CustomerFormPayload> {
   return {
     login: customer.login,
-    email: customer.email,
-    firstName: customer.firstName,
-    lastName: customer.lastName,
+    email: customer.email ?? "",
+    firstName: customer.firstName ?? "",
+    lastName: customer.lastName ?? "",
     tags: customer.tags.join(", "),
-    birthday: customer.birthday,
-    group: customer.group,
+    birthday: customer.birthday ?? "",
+    group: customer.group ?? "Стандарт",
     blockAccruals: customer.blocked,
     gender: customer.gender,
-    comment: customer.comment,
+    comment: customer.comment ?? "",
   };
 }
 
@@ -682,7 +663,7 @@ const AccrueModal: React.FC<AccrueModalProps> = ({ customer, onClose, onSuccess 
         receipt: form.receipt || "",
         manager: "Система",
         carrier: "Телефон",
-        carrierCode: customer.login.slice(-4),
+        carrierCode: (customer.phone || customer.login).slice(-4),
         toPay: Math.max(0, (isFinite(amountValue) ? amountValue : 0)),
         paidByPoints: 0,
         total: Math.max(0, (isFinite(amountValue) ? amountValue : 0)),
@@ -713,7 +694,7 @@ const AccrueModal: React.FC<AccrueModalProps> = ({ customer, onClose, onSuccess 
             <h4 style={sectionHeadingStyle}>Информация о клиенте</h4>
             <label style={fieldStyle}>
               <span style={labelStyle}>Телефон клиента</span>
-              <input style={inputStyle} value={customer.login} disabled />
+              <input style={inputStyle} value={customer.phone || customer.login} disabled />
             </label>
             <label style={fieldStyle}>
               <span style={labelStyle}># Клиента</span>
@@ -849,7 +830,7 @@ const RedeemModal: React.FC<RedeemModalProps> = ({ customer, onClose, onSuccess 
         receipt: "",
         manager: "Система",
         carrier: "Телефон",
-        carrierCode: customer.login.slice(-4),
+        carrierCode: (customer.phone || customer.login).slice(-4),
         toPay: 0,
         paidByPoints: Math.abs(points),
         total: 0,
@@ -880,7 +861,7 @@ const RedeemModal: React.FC<RedeemModalProps> = ({ customer, onClose, onSuccess 
             <h4 style={sectionHeadingStyle}>Информация о клиенте</h4>
             <label style={fieldStyle}>
               <span style={labelStyle}>Телефон клиента</span>
-              <input style={inputStyle} value={customer.login} disabled />
+              <input style={inputStyle} value={customer.phone || customer.login} disabled />
             </label>
             <label style={fieldStyle}>
               <span style={labelStyle}># Клиента</span>
@@ -948,28 +929,32 @@ type TransactionModalProps = {
 const TransactionModal: React.FC<TransactionModalProps> = ({ transaction, onClose, customer }) => {
   const earned = Math.max(transaction.change, 0);
   const spent = Math.max(-transaction.change, 0);
+  const carrierLabel = transaction.carrier
+    ? `${transaction.carrier}${transaction.carrierCode ? ` • ${transaction.carrierCode}` : ""}`
+    : transaction.carrierCode ?? "—";
+  const receiptLabel = transaction.receiptNumber ? `Чек №${transaction.receiptNumber}` : undefined;
   return (
     <div style={modalOverlayStyle}>
       <div style={modalStyle} role="dialog" aria-modal="true">
         <ModalHeader
           title={`Транзакция от ${formatDateTime(transaction.datetime)}`}
-          subtitle={`Чек №${transaction.receipt}`}
+          subtitle={receiptLabel}
           onClose={onClose}
         />
         <div style={modalBodyStyle}>
           <section style={modalSectionStyle}>
             <h4 style={sectionHeadingStyle}>Основные данные</h4>
-            <InfoRow label="Торговая точка" value={transaction.outlet} />
-            <InfoRow label="Клиент" value={getFullName(customer) || customer.login} />
-            <InfoRow label="Менеджер" value={transaction.manager} />
-            <InfoRow label="Носитель" value={`${transaction.carrier}${transaction.carrierCode ? ` • ${transaction.carrierCode}` : ""}`} />
+            <InfoRow label="Торговая точка" value={transaction.outlet || "—"} />
+            <InfoRow label="Клиент" value={getFullName(customer) || customer.phone || customer.login} />
+            <InfoRow label="Менеджер" value={transaction.manager || "—"} />
+            <InfoRow label="Носитель" value={carrierLabel} />
           </section>
           <section style={modalSectionStyle}>
             <h4 style={sectionHeadingStyle}>Баллы и оплата</h4>
             <InfoRow label="Начислено" value={`+${formatPoints(earned)}`} />
             <InfoRow label="Списано" value={`-${formatPoints(spent)}`} />
             <InfoRow label="К оплате" value={formatCurrency(transaction.toPay)} />
-            <InfoRow label="Оплачено баллами" value={formatPoints(transaction.paidByPoints)} />
+            <InfoRow label="Оплачено баллами" value={formatPoints(transaction.paidByPoints ?? 0)} />
             <InfoRow label="Итог" value={formatCurrency(transaction.total)} />
           </section>
         </div>

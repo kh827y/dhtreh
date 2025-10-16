@@ -534,6 +534,8 @@ export class PortalController {
       birthday?: string;
       gender?: string;
       tags?: string[];
+      comment?: string;
+      accrualsBlocked?: boolean;
     },
   ) {
     return this.customersService.create(this.getMerchantId(req), body || {});
@@ -554,6 +556,8 @@ export class PortalController {
       birthday?: string;
       gender?: string;
       tags?: string[];
+      comment?: string;
+      accrualsBlocked?: boolean;
     },
   ) {
     return this.customersService.update(

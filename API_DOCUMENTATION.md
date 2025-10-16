@@ -1359,6 +1359,49 @@ const result = await client.commit({
 });
 ```
 
+### Merchant Portal — Клиенты
+
+#### GET /portal/customers
+- Параметры: `search` (телефон, email или ФИО), `limit` (1–200, по умолчанию 50), `offset`.
+- Ответ: массив объектов с полями `id`, `phone`, `email`, `firstName`, `lastName`, `gender`, `birthday`, `tags[]`, `balance`, `pendingBalance`, `visits`, `visitFrequencyDays`, `daysSinceLastVisit`, `averageCheck`, `spendPreviousMonth`, `spendCurrentMonth`, `spendTotal`, `registeredAt`, `comment`, `accrualsBlocked`.
+
+#### GET /portal/customers/{customerId}
+Возвращает все поля из списка плюс расширенные блоки:
+- `invite` — `{ code, link }` либо `null`.
+- `referrer` — `{ id, name, phone }`, если клиент был приглашён.
+- `expiry` — массив `{ id, accrualDate, expiresAt, amount, status }` по активным/отложенным начислениям.
+- `transactions` — операции с баллами (последние 200): `id`, `type`, `change`, `purchaseAmount`, `details`, `datetime`, `outlet`, `rating`, `receiptNumber`, `manager`, `carrier`, `carrierCode`, `toPay`, `paidByPoints`, `total`, `blockedAccrual`.
+- `reviews` — отзывы `{ id, outlet, rating, comment, createdAt }`.
+- `invited` — приглашённые `{ id, name, phone, joinedAt, purchases }`.
+
+#### POST /portal/customers
+```http
+POST /portal/customers
+Authorization: Bearer <portal_jwt>
+Content-Type: application/json
+
+{
+  "phone": "+79991234567",
+  "email": "user@example.com",
+  "firstName": "Иван",
+  "lastName": "Петров",
+  "name": "Иван Петров",
+  "birthday": "1992-05-12",
+  "gender": "male",
+  "tags": ["vip", "кофе"],
+  "comment": "Любит сезонные десерты",
+  "accrualsBlocked": false
+}
+
+Response 200: объект клиента, как в GET /portal/customers/{id}
+```
+
+#### PUT /portal/customers/{customerId}
+Тот же payload, что и при создании. Поля не переданные в теле — без изменений.
+
+#### DELETE /portal/customers/{customerId}
+Удаляет кошелёк мерчанта (если нет чеков/транзакций), возвращает `{ "ok": true }`.
+
 ### Merchant Portal API — рассылки, акции и мотивация
 
 | Endpoint | Метод | Описание |

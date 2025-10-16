@@ -83,11 +83,11 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
     const digits = form.login.replace(/\D+/g, "");
 
     if (!form.login.trim()) {
-      nextErrors.login = "Укажите логин клиента";
+      nextErrors.login = "Укажите телефон клиента";
     } else if (digits.length < 11) {
       nextErrors.login = "Минимум 11 цифр";
     } else if (existingLogins.some((login) => login === form.login && login !== loginToIgnore)) {
-      nextErrors.login = "Логин уже используется";
+      nextErrors.login = "Телефон уже используется";
     }
 
     if (!form.email.trim()) {
@@ -153,7 +153,7 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
         </div>
         <div style={{ padding: "18px 24px", display: "grid", gap: 16, maxHeight: "70vh", overflowY: "auto" }}>
           <label style={fieldStyle}>
-            <span style={labelStyle}>Логин (телефон)</span>
+            <span style={labelStyle}>Телефон</span>
             <input
               style={inputStyle}
               value={form.login}

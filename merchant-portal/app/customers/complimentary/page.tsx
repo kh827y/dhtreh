@@ -4,7 +4,8 @@ import React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardHeader, CardBody, Button } from "@loyalty/ui";
-import { getCustomerById, getCustomerByLogin } from "../data";
+import { type CustomerRecord } from "../data";
+import { normalizeCustomer } from "../normalize";
 
 type FormState = {
   amount: string;
@@ -26,17 +27,72 @@ export default function ComplimentaryPointsPage() {
   const rawPhone = searchParams.get("phone") || "";
   const customerId = searchParams.get("customerId") || "";
   const phone = maskPhone(rawPhone);
-  const customer = rawPhone
-    ? getCustomerByLogin(maskPhone(rawPhone)) ?? getCustomerByLogin(rawPhone)
-    : customerId
-    ? getCustomerById(customerId)
-    : null;
-
+  const [customer, setCustomer] = React.useState<CustomerRecord | null>(null);
+  const [loadingCustomer, setLoadingCustomer] = React.useState(false);
+  const [lookupError, setLookupError] = React.useState<string | null>(null);
   const [form, setForm] = React.useState<FormState>(initialState);
   const [errors, setErrors] = React.useState<FormErrors>({});
   const [submitting, setSubmitting] = React.useState(false);
   const [toast, setToast] = React.useState<string | null>(null);
   const [apiError, setApiError] = React.useState<string | null>(null);
+
+  // Хелпер для запросов к локальному прокси /api/customers
+  async function api<T = any>(url: string, init?: RequestInit): Promise<T> {
+    const res = await fetch(url, {
+      ...init,
+      headers: { "content-type": "application/json", ...(init?.headers || {}) },
+      cache: "no-store",
+    });
+    const text = await res.text();
+    if (!res.ok) throw new Error(text || res.statusText);
+    try {
+      return text ? (JSON.parse(text) as T) : ((undefined as unknown) as T);
+    } catch {
+      return ((undefined as unknown) as T);
+    }
+  }
+
+  React.useEffect(() => {
+    let cancelled = false;
+    if (!rawPhone && !customerId) {
+      setCustomer(null);
+      return () => {
+        cancelled = true;
+      };
+    }
+    setLoadingCustomer(true);
+    setLookupError(null);
+    (async () => {
+      try {
+        if (customerId) {
+          const data = await api<any>(`/api/customers/${encodeURIComponent(customerId)}`);
+          if (!cancelled) setCustomer(data ? normalizeCustomer(data) : null);
+          return;
+        }
+        const searchValue = rawPhone || phone;
+        if (!searchValue) {
+          setCustomer(null);
+          return;
+        }
+        const list = await api<any[]>(`/api/customers?search=${encodeURIComponent(searchValue)}`);
+        const normalized = Array.isArray(list) ? list.map(normalizeCustomer) : [];
+        const normalizedPhone = searchValue.replace(/\D+/g, "");
+        const match = normalized.find((item) => item.phone.replace(/\D+/g, "") === normalizedPhone);
+        if (!cancelled) setCustomer(match ?? null);
+        if (!cancelled && !match) setLookupError("Клиент с указанным телефоном не найден");
+      } catch (error: any) {
+        if (!cancelled) {
+          setLookupError(error?.message || "Не удалось загрузить клиента");
+          setCustomer(null);
+        }
+      } finally {
+        if (!cancelled) setLoadingCustomer(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [rawPhone, customerId, phone]);
 
   React.useEffect(() => {
     if (!toast) return;
@@ -73,7 +129,12 @@ export default function ComplimentaryPointsPage() {
     return Object.keys(nextErrors).length === 0;
   }
 
-  const canSubmit = !!rawPhone && form.amount.trim().length > 0 && form.expiresIn.trim().length > 0 && !submitting;
+  const canSubmit =
+    !!rawPhone &&
+    form.amount.trim().length > 0 &&
+    form.expiresIn.trim().length > 0 &&
+    !submitting &&
+    !loadingCustomer;
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -84,8 +145,7 @@ export default function ComplimentaryPointsPage() {
       return;
     }
 
-    const targetCustomer = customer ?? getCustomerByLogin(rawPhone) ?? getCustomerByLogin(phone);
-    if (!targetCustomer) {
+    if (!customer) {
       setApiError("Клиент не найден. Проверьте телефон или откройте форму из карточки клиента.");
       return;
     }
@@ -95,7 +155,7 @@ export default function ComplimentaryPointsPage() {
     setSubmitting(false);
     setToast("Баллы начислены");
 
-    const redirectId = customerId || targetCustomer.id;
+    const redirectId = customerId || customer.id;
     window.setTimeout(() => {
       router.push(`/customers/${redirectId}#operations`);
     }, 500);
@@ -110,14 +170,15 @@ export default function ComplimentaryPointsPage() {
           <form onSubmit={handleSubmit} style={{ display: "grid", gap: 20, maxWidth: 520 }}>
             <div style={{ display: "grid", gap: 12 }}>
               <label style={fieldStyle}>
-                <span style={labelStyle}>Телефон клиента</span>
-                <input style={{ ...inputStyle, opacity: 0.8 }} value={phone || rawPhone || "—"} disabled />
-                {!rawPhone && (
-                  <span style={{ fontSize: 12, color: "#f87171" }}>
-                    Поле доступно только при переходе из карточки клиента или списка.
-                  </span>
-                )}
-              </label>
+              <span style={labelStyle}>Телефон клиента</span>
+              <input style={{ ...inputStyle, opacity: 0.8 }} value={phone || rawPhone || "—"} disabled />
+              {!rawPhone && (
+                <span style={{ fontSize: 12, color: "#f87171" }}>
+                  Поле доступно только при переходе из карточки клиента или списка.
+                </span>
+              )}
+              {lookupError && <ErrorText>{lookupError}</ErrorText>}
+            </label>
 
               <label style={fieldStyle}>
                 <span style={labelStyle}>Начислить баллов</span>

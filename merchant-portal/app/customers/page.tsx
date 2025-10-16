@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card, CardHeader, CardBody, Button, Icons } from "@loyalty/ui";
 import { type CustomerRecord, getFullName } from "./data";
+import { normalizeCustomer } from "./normalize";
 import { CustomerFormModal, type CustomerFormPayload } from "./customer-form-modal";
 
 const { Plus, Upload, Edit3, Gift, ChevronLeft, ChevronRight, Search, Trash2 } = Icons;
@@ -96,7 +97,10 @@ export default function CustomersPage() {
         if (!fullName.includes(filters.name.trim().toLowerCase())) return false;
       }
       if (filters.email && !(customer.email || "").toLowerCase().includes(filters.email.trim().toLowerCase())) return false;
-      if (filters.frequency && !customer.visitFrequency.toLowerCase().includes(filters.frequency.trim().toLowerCase())) return false;
+      if (filters.frequency) {
+        const freq = formatVisitFrequency(customer).toLowerCase();
+        if (!freq.includes(filters.frequency.trim().toLowerCase())) return false;
+      }
       if (filters.averageCheck) {
         const min = Number(filters.averageCheck);
         if (!Number.isNaN(min) && customer.averageCheck < min) return false;
@@ -136,10 +140,11 @@ export default function CustomersPage() {
   }, [toast]);
 
   const existingLogins = React.useMemo(() => customers.map((customer) => customer.login), [customers]);
-  const groupsCatalog = React.useMemo(
-    () => Array.from(new Set(["Постоянные", "Стандарт", "Новые", "VIP", "Сонные", ...customers.map((c) => c.group)])),
-    [customers],
-  );
+  const groupsCatalog = React.useMemo(() => {
+    const defaults = ["Постоянные", "Стандарт", "Новые", "VIP", "Сонные"];
+    const dynamic = customers.map((c) => c.group).filter((group): group is string => Boolean(group));
+    return Array.from(new Set([...defaults, ...dynamic]));
+  }, [customers]);
 
   function openCreateModal() {
     setModalState({ mode: "create" });
@@ -170,56 +175,27 @@ export default function CustomersPage() {
   async function handleModalSubmit(payload: CustomerFormPayload) {
     if (!modalState) return;
 
+    const baseBody = {
+      phone: payload.login.trim(),
+      email: payload.email.trim() || undefined,
+      firstName: payload.firstName.trim() || undefined,
+      lastName: payload.lastName.trim() || undefined,
+      name: [payload.firstName.trim(), payload.lastName.trim()].filter(Boolean).join(" ").trim() || undefined,
+      birthday: payload.birthday || undefined,
+      gender: payload.gender,
+      tags: parseTags(payload.tags),
+      comment: payload.comment.trim() || undefined,
+      accrualsBlocked: payload.blockAccruals,
+    };
+
     if (modalState.mode === "create") {
-      const newCustomer: CustomerRecord = {
-        id: `cust-${Date.now()}`,
-        login: payload.login.trim(),
-        firstName: payload.firstName.trim(),
-        lastName: payload.lastName.trim(),
-        email: payload.email.trim(),
-        visitFrequency: "—",
-        averageCheck: 0,
-        birthday: payload.birthday,
-        age: payload.birthday ? calculateAge(payload.birthday) : 0,
-        gender: payload.gender,
-        daysSinceLastVisit: 0,
-        visitCount: 0,
-        bonusBalance: 0,
-        pendingBalance: 0,
-        level: "—",
-        spendPreviousMonth: 0,
-        spendCurrentMonth: 0,
-        spendTotal: 0,
-        stamps: 0,
-        tags: normalizeTags(payload.tags),
-        registeredAt: new Date().toISOString(),
-        comment: payload.comment.trim(),
-        blocked: payload.blockAccruals,
-        referrer: undefined,
-        group: payload.group || "Стандарт",
-        inviteCode: generateInviteCode(payload.firstName || payload.lastName || "CLIENT"),
-        customerNumber: generateCustomerNumber(customers.length + 1),
-        deviceNumber: undefined,
-        transactions: [],
-        expiry: [],
-        reviews: [],
-        invited: [],
-      };
       try {
-        const apiBody = {
-          phone: newCustomer.login,
-          email: newCustomer.email,
-          firstName: newCustomer.firstName,
-          lastName: newCustomer.lastName,
-          name: [newCustomer.firstName, newCustomer.lastName].filter(Boolean).join(" ").trim() || undefined,
-          birthday: newCustomer.birthday,
-          gender: newCustomer.gender,
-          tags: newCustomer.tags,
-        };
-        const created = await api<any>("/api/customers", { method: "POST", body: JSON.stringify(apiBody) });
-        const normalized = created ? normalizeCustomer(created) : newCustomer;
+        const created = await api<any>("/api/customers", {
+          method: "POST",
+          body: JSON.stringify(baseBody),
+        });
+        const normalized = normalizeCustomer(created);
         setCustomers((prev) => [normalized, ...prev]);
-        // Перечитываем список, чтобы убедиться, что сохранение прошло на бэкенде
         try {
           const fresh = await api<any[]>("/api/customers");
           if (Array.isArray(fresh)) setCustomers(fresh.map(normalizeCustomer));
@@ -230,38 +206,13 @@ export default function CustomersPage() {
       }
     } else if (modalState.mode === "edit" && modalState.customer) {
       const { customer } = modalState;
-      const updated: CustomerRecord = {
-        ...customer,
-        login: payload.login.trim(),
-        firstName: payload.firstName.trim(),
-        lastName: payload.lastName.trim(),
-        email: payload.email.trim(),
-        birthday: payload.birthday,
-        age: payload.birthday ? calculateAge(payload.birthday) : customer.age,
-        tags: normalizeTags(payload.tags),
-        comment: payload.comment.trim(),
-        group: payload.group || customer.group,
-        blocked: payload.blockAccruals,
-        gender: payload.gender,
-      };
       try {
-        const apiBody = {
-          phone: updated.login,
-          email: updated.email,
-          firstName: updated.firstName,
-          lastName: updated.lastName,
-          name: [updated.firstName, updated.lastName].filter(Boolean).join(" ").trim() || undefined,
-          birthday: updated.birthday,
-          gender: updated.gender,
-          tags: updated.tags,
-        };
         const saved = await api<any>(`/api/customers/${encodeURIComponent(customer.id)}`, {
           method: "PUT",
-          body: JSON.stringify(apiBody),
+          body: JSON.stringify(baseBody),
         });
-        const normalized = saved ? normalizeCustomer(saved) : updated;
+        const normalized = normalizeCustomer(saved ?? { ...customer, ...baseBody });
         setCustomers((prev) => prev.map((item) => (item.id === customer.id ? normalized : item)));
-        // Перечитываем список из бэкенда для строгой синхронизации
         try {
           const fresh = await api<any[]>("/api/customers");
           if (Array.isArray(fresh)) setCustomers(fresh.map(normalizeCustomer));
@@ -300,7 +251,7 @@ export default function CustomersPage() {
               <thead>
                 <tr>
                   <th style={headerCellStyle}>#</th>
-                  <th style={headerCellStyle}>Логин (телефон)</th>
+                  <th style={headerCellStyle}>Телефон</th>
                   <th style={headerCellStyle}>Имя</th>
                   <th style={headerCellStyle}>Электронная почта</th>
                   <th style={headerCellStyle}>Частота визитов</th>
@@ -411,7 +362,7 @@ export default function CustomersPage() {
                       </Link>
                     </td>
                     <td style={cellStyle}>{customer.email || "—"}</td>
-                    <td style={cellStyle}>{customer.visitFrequency}</td>
+                    <td style={cellStyle}>{formatVisitFrequency(customer)}</td>
                     <td style={cellStyle}>{formatCurrency(customer.averageCheck)}</td>
                     <td style={cellStyle}>{formatDate(customer.birthday)}</td>
                     <td style={cellStyle}>{customer.age || "—"}</td>
@@ -494,23 +445,19 @@ export default function CustomersPage() {
   );
 }
 
-function calculateAge(birthday: string): number {
-  try {
-    const date = new Date(birthday);
-    if (Number.isNaN(date.getTime())) return 0;
-    const now = new Date();
-    let age = now.getFullYear() - date.getFullYear();
-    const monthDiff = now.getMonth() - date.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < date.getDate())) {
-      age -= 1;
-    }
-    return age;
-  } catch {
-    return 0;
+function formatVisitFrequency(customer: CustomerRecord): string {
+  if (customer.visitFrequency) return customer.visitFrequency;
+  if (customer.visitFrequencyDays != null) {
+    if (customer.visitFrequencyDays === 0) return "Ежедневно";
+    return `≈ ${customer.visitFrequencyDays} дн.`;
   }
+  if (customer.visits > 0) {
+    return `${customer.visits} виз.`;
+  }
+  return "—";
 }
 
-function normalizeTags(tags: string): string[] {
+function parseTags(tags: string): string[] {
   return tags
     .split(/[,;]+/)
     .map((item) => item.trim())
@@ -532,66 +479,18 @@ function formatCurrency(value: number): string {
   return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(value);
 }
 
-function generateCustomerNumber(index: number): string {
-  return `CL-${String(index).padStart(4, "0")}`;
-}
-
-function generateInviteCode(seed: string): string {
-  const normalized = seed.replace(/[^A-Za-zА-Яа-я0-9]/g, "").slice(0, 6) || "CLIENT";
-  const suffix = String(Math.floor(Math.random() * 9000) + 1000);
-  return `${normalized.toUpperCase()}-${suffix}`;
-}
-
 function mapCustomerToForm(customer: CustomerRecord): Partial<CustomerFormPayload> {
   return {
     login: customer.login,
-    email: customer.email,
-    firstName: customer.firstName,
-    lastName: customer.lastName,
+    email: customer.email ?? "",
+    firstName: customer.firstName ?? "",
+    lastName: customer.lastName ?? "",
     tags: customer.tags.join(", "),
-    birthday: customer.birthday,
-    group: customer.group,
+    birthday: customer.birthday ?? "",
+    group: customer.group ?? "Стандарт",
     blockAccruals: customer.blocked,
     gender: customer.gender,
-    comment: customer.comment,
-  };
-}
-
-function normalizeCustomer(input: any): CustomerRecord {
-  const c = input || {};
-  return {
-    id: String(c.id || ''),
-    login: String(c.login || c.phone || ''),
-    firstName: String(c.firstName || c.name?.split?.(' ')?.[0] || ''),
-    lastName: String(c.lastName || c.name?.split?.(' ')?.slice?.(1)?.join(' ') || ''),
-    email: String(c.email || ''),
-    visitFrequency: String(c.visitFrequency || '—'),
-    averageCheck: Number(c.averageCheck || 0),
-    birthday: String(c.birthday || ''),
-    age: Number(c.age || (c.birthday ? calculateAge(String(c.birthday)) : 0)),
-    gender: (c.gender === 'male' || c.gender === 'female' || c.gender === 'unknown') ? c.gender : 'unknown',
-    daysSinceLastVisit: Number(c.daysSinceLastVisit || 0),
-    visitCount: Number(c.visitCount || 0),
-    bonusBalance: Number(c.bonusBalance || c.balance || 0),
-    pendingBalance: Number(c.pendingBalance || 0),
-    level: String(c.level || '—'),
-    spendPreviousMonth: Number(c.spendPreviousMonth || 0),
-    spendCurrentMonth: Number(c.spendCurrentMonth || 0),
-    spendTotal: Number(c.spendTotal || 0),
-    stamps: Number(c.stamps || 0),
-    tags: Array.isArray(c.tags) ? c.tags : [],
-    registeredAt: String(c.registeredAt || new Date().toISOString()),
-    comment: String(c.comment || ''),
-    blocked: Boolean(c.blocked || false),
-    referrer: c.referrer ? String(c.referrer) : undefined,
-    group: String(c.group || 'Стандарт'),
-    inviteCode: String(c.inviteCode || 'INVITE'),
-    customerNumber: String(c.customerNumber || `CL-${String(c.id || '').slice(-4).padStart(4, '0')}`),
-    deviceNumber: c.deviceNumber ? String(c.deviceNumber) : undefined,
-    transactions: Array.isArray(c.transactions) ? c.transactions : [],
-    expiry: Array.isArray(c.expiry) ? c.expiry : [],
-    reviews: Array.isArray(c.reviews) ? c.reviews : [],
-    invited: Array.isArray(c.invited) ? c.invited : [],
+    comment: customer.comment ?? "",
   };
 }
 

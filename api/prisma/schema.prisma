@@ -411,6 +411,8 @@ model MerchantCustomer {
   phone       String?
   email       String?
   name        String?
+  comment     String?
+  accrualsBlocked Boolean @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
