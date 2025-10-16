@@ -193,18 +193,11 @@ const HISTORY_ICONS: Record<TransactionKind, ReactNode> = {
     </svg>
   ),
   burn: (
-    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path
-        d="M11 2.5c0 1.7-1.1 2.8-2.2 3.9C7.6 7.5 7 8.5 7 10c0 2.4 1.8 4 3.8 4 2 0 3.6-1.4 3.6-3.6 0-1.2-.5-2.2-1.1-3.1l-.6-.9c1.9 1.2 3.7 3.2 3.7 6.1 0 3.6-2.8 6.2-6.3 6.2S4 16.2 4 12.8c0-2.6 1.3-4.5 3.2-6.2 1.1-1 1.8-2.1 1.8-3.6"
+        d="M18.122 17.645a7.185 7.185 0 0 1-2.656 2.495 7.06 7.06 0 0 1-3.52.853 6.617 6.617 0 0 1-3.306-.718 6.73 6.73 0 0 1-2.54-2.266c-2.672-4.57.287-8.846.887-9.668A4.448 4.448 0 0 0 8.07 6.31 4.49 4.49 0 0 0 7.997 4c1.284.965 6.43 3.258 5.525 10.631 1.496-1.136 2.7-3.046 2.846-6.216 1.43 1.061 3.985 5.462 1.754 9.23Z"
         stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M9.5 13.5c0 .8.6 1.5 1.5 1.5 1 0 1.8-.8 1.8-1.8 0-.7-.3-1.2-.8-1.7"
-        stroke="currentColor"
-        strokeWidth="1.5"
+        strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
