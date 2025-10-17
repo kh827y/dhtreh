@@ -4,23 +4,44 @@ import React from "react";
 import { Card, CardHeader, CardBody, Button, Icons } from "@loyalty/ui";
 import StarRating from "../../components/StarRating";
 
-type OperationType = "PURCHASE" | "REGISTRATION" | "BIRTHDAY" | "AUTO_RETURN";
+type OperationKind =
+  | "PURCHASE"
+  | "REGISTRATION"
+  | "BIRTHDAY"
+  | "AUTO_RETURN"
+  | "MANUAL_ACCRUAL"
+  | "MANUAL_REDEEM"
+  | "COMPLIMENTARY"
+  | "REFERRAL"
+  | "REFUND"
+  | "BURN"
+  | "ADJUST"
+  | "EARN"
+  | "REDEEM"
+  | "CAMPAIGN"
+  | "OTHER";
 
 type Operation = {
   id: string;
   datetime: string;
-  outlet: { id: string; name: string };
+  outlet: { id: string; name: string | null };
   client: { id: string; name: string };
-  manager: { id: string; name: string };
-  rating: number;
+  manager: { id: string; name: string | null };
+  rating: number | null;
   spent: number;
-  earned: { amount: number; source: string };
+  spentSource: string | null;
+  earned: number;
+  earnedSource: string | null;
   total: number;
   paidByPoints: number;
   toPay: number;
   receipt: string;
-  carrier: { id: string; name: string; code: string };
-  type: OperationType;
+  orderId: string;
+  carrier: { id: string; name: string; code: string } | null;
+  kind: OperationKind;
+  details: string;
+  note: string | null;
+  change: number;
   canceledAt: string | null;
   canceledBy?: { id: string; name: string | null } | null;
 };
@@ -28,6 +49,38 @@ type Operation = {
 const { Search, ChevronLeft, ChevronRight, X } = Icons;
 
 // убрали мок-данные; список загружается с сервера
+
+const operationKindLabels: Record<OperationKind, string> = {
+  PURCHASE: "Покупка",
+  REGISTRATION: "Регистрация",
+  BIRTHDAY: "День рождения",
+  AUTO_RETURN: "Автовозврат",
+  MANUAL_ACCRUAL: "Начислено администратором",
+  MANUAL_REDEEM: "Списание администратором",
+  COMPLIMENTARY: "Комплиментарные баллы",
+  REFERRAL: "Реферальное начисление",
+  REFUND: "Возврат покупки",
+  BURN: "Сгорание баллов",
+  ADJUST: "Корректировка",
+  EARN: "Начисление",
+  REDEEM: "Списание",
+  CAMPAIGN: "Акции и промо",
+  OTHER: "Прочие операции",
+};
+
+const kindFilterOptions: Array<{ value: OperationKind; label: string }> = [
+  { value: "PURCHASE", label: operationKindLabels.PURCHASE },
+  { value: "MANUAL_ACCRUAL", label: operationKindLabels.MANUAL_ACCRUAL },
+  { value: "MANUAL_REDEEM", label: operationKindLabels.MANUAL_REDEEM },
+  { value: "COMPLIMENTARY", label: operationKindLabels.COMPLIMENTARY },
+  { value: "REFUND", label: operationKindLabels.REFUND },
+  { value: "BIRTHDAY", label: operationKindLabels.BIRTHDAY },
+  { value: "AUTO_RETURN", label: operationKindLabels.AUTO_RETURN },
+  { value: "REGISTRATION", label: operationKindLabels.REGISTRATION },
+  { value: "REFERRAL", label: operationKindLabels.REFERRAL },
+  { value: "BURN", label: operationKindLabels.BURN },
+  { value: "CAMPAIGN", label: operationKindLabels.CAMPAIGN },
+];
 
 function formatDate(date: string) {
   return new Date(date).toLocaleDateString("ru-RU");
@@ -58,14 +111,15 @@ function mapOperationFromDto(item: any): Operation {
     wallet: 'Цифровая карта Wallet',
     card: 'Пластиковая карта',
   };
-  const carrierId = carrierIdMap[carrierType] || 'phone';
-  const carrierName = carrierNameMap[carrierId] || 'Номер телефона';
-  const receipt = String(item?.receiptNumber || item?.orderId || '');
-  const earnedAmount = Number(item?.earn?.amount || 0);
-  const spentAmount = Number(item?.redeem?.amount || 0);
+  const carrierId = carrierIdMap[carrierType] || carrierType.toLowerCase() || 'other';
+  const fallbackCarrierName = carrierNameMap[carrierId] || '—';
+  const receipt = String(item?.receiptNumber || item?.orderId || item?.id || '');
+  const earnedAmount = Number(item?.earn?.amount ?? 0);
+  const spentAmount = Number(item?.redeem?.amount ?? 0);
+  const totalAmount = Number(item?.totalAmount ?? 0);
   const customerName = String(item?.customer?.name || item?.customer?.phone || 'Клиент');
   const managerId = String(item?.staff?.id || '');
-  const managerName = String(item?.staff?.name || '—');
+  const managerName = item?.staff?.name != null ? String(item.staff.name) : null;
   const canceledAt = item?.canceledAt ? String(item.canceledAt) : null;
   const canceledByName =
     item?.canceledBy?.name ||
@@ -78,21 +132,52 @@ function mapOperationFromDto(item: any): Operation {
         name: canceledByName ? String(canceledByName) : null,
       }
     : null;
+  const rawKind = String(item?.kind || '').toUpperCase();
+  const allowedKinds = Object.keys(operationKindLabels) as OperationKind[];
+  const kind = allowedKinds.includes(rawKind as OperationKind)
+    ? (rawKind as OperationKind)
+    : 'OTHER';
+  const details = String(
+    item?.details || item?.earn?.source || item?.redeem?.source || 'Операция с баллами',
+  );
+  const note = typeof item?.note === 'string' ? item.note : null;
+  const change = Number(item?.change ?? earnedAmount - spentAmount);
+  const carrierLabel =
+    item?.carrier?.label != null && String(item.carrier.label).trim()
+      ? String(item.carrier.label).trim()
+      : fallbackCarrierName;
+  const carrierCode = String(item?.carrier?.code || '');
   return {
     id: String(item?.id || receipt),
     datetime: String(item?.occurredAt || new Date().toISOString()),
-    outlet: { id: String(item?.outlet?.id || ''), name: String(item?.outlet?.name || '—') },
+    outlet: {
+      id: String(item?.outlet?.id || ''),
+      name:
+        item?.outlet?.name != null
+          ? String(item.outlet.name)
+          : item?.outlet?.code != null
+            ? String(item.outlet.code)
+            : null,
+    },
     client: { id: String(item?.customer?.id || ''), name: customerName },
     manager: { id: managerId, name: managerName },
-    rating: Number(item?.rating || 0),
+    rating: item?.rating != null ? Number(item.rating) : null,
     spent: Math.max(0, spentAmount),
-    earned: { amount: Math.max(0, earnedAmount), source: String(item?.earn?.source || '') },
-    total: Number(item?.totalAmount || 0),
+    spentSource: item?.redeem?.source ? String(item.redeem.source) : null,
+    earned: Math.max(0, earnedAmount),
+    earnedSource: item?.earn?.source ? String(item.earn.source) : null,
+    total: totalAmount,
     paidByPoints: Math.max(0, spentAmount),
-    toPay: Number(item?.totalAmount || 0),
+    toPay: Math.max(0, totalAmount - Math.max(0, spentAmount)),
     receipt,
-    carrier: { id: carrierId, name: carrierName, code: String(item?.carrier?.code || '') },
-    type: 'PURCHASE',
+    orderId: String(item?.orderId || item?.id || ''),
+    carrier: item?.carrier
+      ? { id: carrierId, name: carrierLabel, code: carrierCode }
+      : null,
+    kind,
+    details,
+    note,
+    change,
     canceledAt,
     canceledBy,
   };
@@ -104,7 +189,7 @@ export default function OperationsPage() {
   const [staffScope, setStaffScope] = React.useState("all");
   const [managerFilter, setManagerFilter] = React.useState("all");
   const [outletFilter, setOutletFilter] = React.useState("all");
-  const [typeFilter, setTypeFilter] = React.useState<"ALL" | OperationType>("ALL");
+  const [typeFilter, setTypeFilter] = React.useState<"ALL" | OperationKind>("ALL");
   const [directionFilter, setDirectionFilter] = React.useState("both");
   const [carrierFilter, setCarrierFilter] = React.useState("all");
   const [search, setSearch] = React.useState("");
@@ -158,6 +243,7 @@ export default function OperationsPage() {
       const dir = directionFilter === "earn" ? "EARN" : directionFilter === "spend" ? "REDEEM" : "ALL";
       qs.set("direction", dir);
       if (search.trim()) qs.set("receiptNumber", search.trim());
+      if (typeFilter !== "ALL") qs.set("operationType", typeFilter);
       // Переносим фильтр носителя (если нужен)
       if (carrierFilter !== "all") {
         const carrierMap: Record<string, string> = { phone: "PHONE", app: "APP", wallet: "WALLET", card: "CARD" };
@@ -257,10 +343,11 @@ export default function OperationsPage() {
             <FilterBlock label="Тип операции">
               <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value as typeof typeFilter)} style={selectStyle}>
                 <option value="ALL">Все операции</option>
-                <option value="PURCHASE">Покупка</option>
-                <option value="REGISTRATION">Регистрация</option>
-                <option value="BIRTHDAY">День Рождения</option>
-                <option value="AUTO_RETURN">Автовозврат</option>
+                {kindFilterOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
             </FilterBlock>
             <FilterBlock label="Списания и начисления">
@@ -320,13 +407,19 @@ export default function OperationsPage() {
                 }}
               >
                 <div style={rowGridStyle}>
-                  <div>
+                  <div style={{ display: "grid", gap: 6 }}>
                     <div style={{ fontWeight: 700 }}>{formatDateTime(operation.datetime)}</div>
-                    <div style={{ fontSize: 12, opacity: 0.65 }}>Чек №{operation.receipt}</div>
+                    <div style={{ fontSize: 12, opacity: 0.75 }}>{operation.details}</div>
+                    <div style={{ fontSize: 12, opacity: 0.6 }}>
+                      Чек/ID: {operation.receipt || operation.orderId || operation.id}
+                    </div>
+                    {operation.note && (
+                      <div style={{ fontSize: 11, opacity: 0.6 }}>{operation.note}</div>
+                    )}
                   </div>
                   <div style={{ display: "grid", gap: 8 }}>
                     <div style={{ fontSize: 12, opacity: 0.6 }}>Торговая точка</div>
-                    <div style={{ fontWeight: 600 }}>{operation.outlet.name}</div>
+                    <div style={{ fontWeight: 600 }}>{operation.outlet.name || "—"}</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 12, fontSize: 12 }}>
                       <span>
                         Клиент: {" "}
@@ -338,22 +431,32 @@ export default function OperationsPage() {
                           {operation.client.name}
                         </a>
                       </span>
-                      <span>Менеджер: {operation.manager.name}</span>
+                      <span>Менеджер: {operation.manager.name || "—"}</span>
                     </div>
                   </div>
                   <div style={{ display: "flex", justifyContent: "center" }}>
-                    <StarRating rating={operation.rating} size={18} />
+                    {operation.rating != null ? (
+                      <StarRating rating={operation.rating} size={18} />
+                    ) : (
+                      <span style={{ opacity: 0.45 }}>—</span>
+                    )}
                   </div>
                   <div style={totalsGridStyle}>
                     <div>
                       <div style={{ fontSize: 12, opacity: 0.6 }}>– Списано</div>
-                      <div style={{ color: "#f87171", fontWeight: 600 }}>–{formatPoints(operation.spent)}</div>
-                      <div style={{ fontSize: 11, opacity: 0.6 }}>баллов</div>
+                      <div style={{ color: "#f87171", fontWeight: 600 }}>
+                        –{formatPoints(operation.spent)}
+                      </div>
+                      <div style={{ fontSize: 11, opacity: 0.6 }}>
+                        {operation.spentSource || "баллы"}
+                      </div>
                     </div>
                     <div>
                       <div style={{ fontSize: 12, opacity: 0.6 }}>+ Начислено</div>
-                      <div style={{ color: "#4ade80", fontWeight: 600 }}>+{formatPoints(operation.earned.amount)}</div>
-                      <div style={{ fontSize: 11, opacity: 0.6 }}>{operation.earned.source || ""}</div>
+                      <div style={{ color: "#4ade80", fontWeight: 600 }}>
+                        +{formatPoints(operation.earned)}
+                      </div>
+                      <div style={{ fontSize: 11, opacity: 0.6 }}>{operation.earnedSource || ''}</div>
                     </div>
                     <div>
                       <div style={{ fontSize: 12, opacity: 0.6 }}>Сумма чека, ₽</div>
@@ -407,7 +510,12 @@ export default function OperationsPage() {
                 <div style={{ fontSize: 18, fontWeight: 700 }}>
                   {formatDate(preview.datetime)} {formatTime(preview.datetime)}
                 </div>
-                <div style={{ fontSize: 12, opacity: 0.7 }}>Чек №{preview.receipt}</div>
+                <div style={{ fontSize: 12, opacity: 0.7 }}>
+                  {preview.details}
+                </div>
+                <div style={{ fontSize: 12, opacity: 0.65 }}>
+                  Чек/ID: {preview.receipt || preview.orderId || preview.id}
+                </div>
               </div>
               <button
                 type="button"
@@ -419,7 +527,7 @@ export default function OperationsPage() {
               </button>
             </div>
             <div style={{ padding: 24, display: "grid", gap: 16, overflowY: "auto", maxHeight: "70vh" }}>
-              <InfoRow label="Торговая точка" value={preview.outlet.name} />
+              <InfoRow label="Торговая точка" value={preview.outlet.name || '—'} />
               <InfoRow
                 label="Клиент"
                 value={
@@ -428,14 +536,21 @@ export default function OperationsPage() {
                   </a>
                 }
               />
-              <InfoRow label="Менеджер" value={preview.manager.name} />
-              <InfoRow label="Носитель (способ предъявления)" value={`${preview.carrier.name} • ${preview.carrier.code}`} />
+              <InfoRow label="Менеджер" value={preview.manager.name || '—'} />
+              <InfoRow
+                label="Носитель (способ предъявления)"
+                value={
+                  preview.carrier
+                    ? `${preview.carrier.name} • ${preview.carrier.code}`
+                    : '—'
+                }
+              />
               <div style={{ border: "1px solid rgba(148,163,184,0.16)", borderRadius: 14, padding: 16, display: "grid", gap: 10 }}>
                 <div style={{ fontWeight: 600 }}>Бонусные баллы</div>
                 <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
                   <div>
                     <div style={{ fontSize: 12, opacity: 0.6 }}>Начислено</div>
-                    <div style={{ color: "#4ade80", fontWeight: 600 }}>+{formatPoints(preview.earned.amount)}</div>
+                    <div style={{ color: "#4ade80", fontWeight: 600 }}>+{formatPoints(preview.earned)}</div>
                   </div>
                   <div>
                     <div style={{ fontSize: 12, opacity: 0.6 }}>Списано</div>

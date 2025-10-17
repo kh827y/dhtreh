@@ -1435,9 +1435,9 @@ Response 200: объект клиента, как в GET /portal/customers/{id}
 | `/portal/loyalty/promotions/{id}/status` | POST | Смена статуса (`DRAFT` → `ACTIVE`/`PAUSED`/`ARCHIVED`). |
 | `/portal/loyalty/promotions/bulk/status` | POST | Массовое изменение статусов по списку `ids`. |
 | `/portal/loyalty/promotions/{id}/duplicate` | POST | Создание черновика на основе существующей акции. |
-| `/portal/operations/log` | GET | Журнал начислений и списаний с фильтрами (даты, сотрудник, точка, направление). |
-| `/portal/operations/log/{receiptId}` | GET | Детали конкретной операции (состав транзакций, возможность отмены). |
-| `/portal/operations/log/{receiptId}/cancel` | POST | Отмена операции: помечает чек отменённым и инициирует возврат/списание баллов. |
+| `/portal/operations/log` | GET | Журнал начислений и списаний с фильтрами (даты, сотрудник, точка, направление, тип операции `operationType`). |
+| `/portal/operations/log/{receiptId}` | GET | Детали конкретной операции (для покупок и индивидуальных транзакций, информация об отмене). |
+| `/portal/operations/log/{receiptId}/cancel` | POST | Отмена операции: для покупок — отмена чека с перерасчётом, для остальных транзакций — обратное начисление/списание. |
 | `/portal/customers/{customerId}/transactions/accrual` | POST | Ручное начисление баллов (сумма покупки, чек, авто- или ручной ввод баллов, торговая точка). |
 | `/portal/customers/{customerId}/transactions/redeem` | POST | Ручное списание баллов (количество баллов, торговая точка, комментарий — опционально). |
 | `/portal/customers/{customerId}/transactions/complimentary` | POST | Начисление комплиментарных баллов (количество, срок сгорания, торговая точка, комментарий ≤60 символов). |

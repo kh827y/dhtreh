@@ -515,6 +515,10 @@ model Transaction {
   outletId   String?
   staffId    String?
   metadata   Json?
+  canceledAt DateTime?
+  canceledByStaffId String?
+
+  canceledBy Staff? @relation("TransactionCanceledBy", fields: [canceledByStaffId], references: [id], onDelete: SetNull)
 
   outlet  Outlet?  @relation(fields: [outletId], references: [id], onDelete: SetNull)
   staff   Staff?   @relation(fields: [staffId], references: [id], onDelete: SetNull)
@@ -752,6 +756,7 @@ model Staff {
   // telegram staff notifications (invites created by this staff)
   createdTelegramInvites        TelegramStaffInvite[]   @relation("StaffCreatedTelegramInvites")
   receiptsCanceled              Receipt[]               @relation("ReceiptCanceledBy")
+  transactionsCanceled          Transaction[]           @relation("TransactionCanceledBy")
 
   @@unique([merchantId, login])
   @@index([merchantId])

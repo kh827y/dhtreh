@@ -1178,6 +1178,15 @@ export class PortalCustomersService {
           lastName: true,
         },
       },
+      canceledBy: {
+        select: {
+          id: true,
+          login: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+        },
+      },
     } satisfies Prisma.TransactionInclude;
 
     const receiptSelect = {
@@ -1393,6 +1402,12 @@ export class PortalCustomersService {
         review?.transaction?.outlet?.name ??
         null;
       const carrierCode = receipt?.outlet?.code ?? tx.outlet?.code ?? null;
+      const txCanceledAt = tx.canceledAt
+        ? tx.canceledAt.toISOString()
+        : null;
+      const txCanceledByName = tx.canceledBy
+        ? this.formatStaffName(tx.canceledBy)
+        : null;
 
       return {
         id: tx.id,
@@ -1413,15 +1428,24 @@ export class PortalCustomersService {
         blockedAccrual:
           tx.type === 'EARN' ? Boolean(baseDto.accrualsBlocked) : false,
         receiptId: receipt?.id ?? null,
-        canceledAt: receipt?.canceledAt
-          ? receipt.canceledAt.toISOString()
-          : null,
-        canceledBy: receipt?.canceledBy
-          ? {
-              id: receipt.canceledBy.id,
-              name: this.formatStaffName(receipt.canceledBy),
-            }
-          : null,
+        canceledAt: txCanceledAt
+          ? txCanceledAt
+          : receipt?.canceledAt
+            ? receipt.canceledAt.toISOString()
+            : null,
+        canceledBy: txCanceledAt
+          ? tx.canceledBy
+            ? {
+                id: tx.canceledBy.id,
+                name: txCanceledByName,
+              }
+            : null
+          : receipt?.canceledBy
+            ? {
+                id: receipt.canceledBy.id,
+                name: this.formatStaffName(receipt.canceledBy),
+              }
+            : null,
         note: descriptor.note ?? null,
         kind: descriptor.kind,
       };

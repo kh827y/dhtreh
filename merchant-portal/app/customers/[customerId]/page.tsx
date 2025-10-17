@@ -229,11 +229,12 @@ export default function CustomerCardPage() {
   }
 
   async function handleCancelTransaction(operation: CustomerTransaction) {
-    if (!operation.receiptId) return;
+    const targetId = operation.receiptId || operation.id;
+    if (!targetId) return;
     const confirmMessage = window.confirm("Вы уверены, что хотите отменить транзакцию?");
     if (!confirmMessage) return;
     try {
-      const res = await fetch(`/api/operations/log/${encodeURIComponent(operation.receiptId)}/cancel`, {
+      const res = await fetch(`/api/operations/log/${encodeURIComponent(targetId)}/cancel`, {
         method: "POST",
         headers: { "content-type": "application/json" },
       });
@@ -376,9 +377,9 @@ export default function CustomerCardPage() {
               </thead>
               <tbody>
                   {customer.transactions.map((operation, index) => {
-                    const isBlockedAccrual = operation.type === "EARN" && operation.blockedAccrual;
-                    const isCanceled = Boolean(operation.canceledAt);
-                    const canCancel = Boolean(operation.receiptId) && !isCanceled;
+                  const isBlockedAccrual = operation.type === "EARN" && operation.blockedAccrual;
+                  const isCanceled = Boolean(operation.canceledAt);
+                  const canCancel = !isCanceled;
                     const isComplimentary = operation.kind === "COMPLIMENTARY";
                     const changePrefix =
                       operation.change > 0 ? "+" : operation.change < 0 ? "−" : "";
