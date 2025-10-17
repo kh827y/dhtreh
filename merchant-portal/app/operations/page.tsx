@@ -90,10 +90,6 @@ function formatTime(date: string) {
   return new Date(date).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
 }
 
-function formatDateTime(date: string) {
-  return `${formatDate(date)} ${formatTime(date)}`;
-}
-
 function formatRub(value: number) {
   return value.toLocaleString("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 });
 }
@@ -183,6 +179,9 @@ function mapOperationFromDto(item: any): Operation {
   };
 }
 
+const PAGE_SIZE = 10;
+const purchaseSummaryKinds: OperationKind[] = ["PURCHASE"];
+
 export default function OperationsPage() {
   const [dateFrom, setDateFrom] = React.useState("");
   const [dateTo, setDateTo] = React.useState("");
@@ -197,6 +196,7 @@ export default function OperationsPage() {
   const [preview, setPreview] = React.useState<Operation | null>(null);
   const [items, setItems] = React.useState<Operation[]>([]);
   const [total, setTotal] = React.useState(0);
+  const [hoveredRowId, setHoveredRowId] = React.useState<string | null>(null);
 
   async function cancelOperation(operation: Operation) {
     if (!operation?.id) return;
@@ -250,7 +250,7 @@ export default function OperationsPage() {
         const c = carrierMap[carrierFilter] || carrierFilter.toUpperCase();
         qs.set("carrier", c);
       }
-      const pageSize = 4;
+      const pageSize = PAGE_SIZE;
       qs.set("limit", String(pageSize));
       qs.set("offset", String((page - 1) * pageSize));
 
@@ -278,7 +278,7 @@ export default function OperationsPage() {
     setPage(1);
   }, [dateFrom, dateTo, typeFilter, directionFilter, outletFilter, managerFilter, carrierFilter, search]);
 
-  const pageSize = 4;
+  const pageSize = PAGE_SIZE;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const pageItems = items;
 
@@ -383,9 +383,23 @@ export default function OperationsPage() {
 
       <Card>
         <CardHeader title="Список операций" />
-        <CardBody style={{ display: "grid", gap: 12 }}>
+        <CardBody style={{ display: "grid", gap: 0 }}>
           {pageItems.map((operation) => {
             const isCanceled = Boolean(operation.canceledAt);
+            const ratingValue = operation.rating ?? 0;
+            const hasOutlet = Boolean(operation.outlet?.name);
+            const hasManager = Boolean(operation.manager?.name);
+            const isPurchaseOperation = purchaseSummaryKinds.includes(operation.kind);
+            const summaryLabel = isPurchaseOperation ? "Сумма покупки" : null;
+            const summaryValue =
+              isPurchaseOperation && operation.total > 0
+                ? formatRub(operation.total)
+                : operation.details || "—";
+            const earnedPoints = `+${formatPoints(operation.earned)}`;
+            const spentPoints = operation.spent > 0 ? `-${formatPoints(operation.spent)}` : "0";
+            const isHovered = hoveredRowId === operation.id;
+            const customerId = operation.client?.id?.trim();
+            const customerHref = customerId ? `/customers/${customerId}` : null;
             return (
               <div
                 key={operation.id}
@@ -398,77 +412,62 @@ export default function OperationsPage() {
                     setPreview(operation);
                   }
                 }}
+                onMouseEnter={() => setHoveredRowId(operation.id)}
+                onMouseLeave={() => {
+                  setHoveredRowId((current) => (current === operation.id ? null : current));
+                }}
                 style={{
                   ...rowStyle,
-                  border: isCanceled ? "1px solid rgba(248,113,113,0.35)" : rowStyle.border,
-                  background: isCanceled
-                    ? "rgba(248,113,113,0.08)"
-                    : rowStyle.background,
+                  background: isHovered ? "rgba(148,163,184,0.08)" : "transparent",
+                  color: "inherit",
                 }}
               >
                 <div style={rowGridStyle}>
-                  <div style={{ display: "grid", gap: 6 }}>
-                    <div style={{ fontWeight: 700 }}>{formatDateTime(operation.datetime)}</div>
-                    <div style={{ fontSize: 12, opacity: 0.75 }}>{operation.details}</div>
-                    <div style={{ fontSize: 12, opacity: 0.6 }}>
-                      Чек/ID: {operation.receipt || operation.orderId || operation.id}
-                    </div>
-                    {operation.note && (
-                      <div style={{ fontSize: 11, opacity: 0.6 }}>{operation.note}</div>
-                    )}
+                  <div style={dateCellStyle}>
+                    <span style={{ fontWeight: 700 }}>{formatDate(operation.datetime)}</span>
+                    <span style={{ fontSize: 12, opacity: 0.7 }}>{formatTime(operation.datetime)}</span>
                   </div>
-                  <div style={{ display: "grid", gap: 8 }}>
-                    <div style={{ fontSize: 12, opacity: 0.6 }}>Торговая точка</div>
-                    <div style={{ fontWeight: 600 }}>{operation.outlet.name || "—"}</div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 12, fontSize: 12 }}>
-                      <span>
-                        Клиент: {" "}
+                  <div style={infoCellStyle}>
+                    {hasOutlet && <span style={{ fontWeight: 600 }}>{operation.outlet.name}</span>}
+                    <span>
+                      Клиент:{" "}
+                      {customerHref ? (
                         <a
-                          href={`/customers/${operation.client.id}`}
-                          style={{ color: "#818cf8" }}
-                          onClick={(e) => e.stopPropagation()}
+                          href={customerHref}
+                          style={{ color: "#25c2a0" }}
+                          onClick={(event) => event.stopPropagation()}
                         >
                           {operation.client.name}
                         </a>
-                      </span>
-                      <span>Менеджер: {operation.manager.name || "—"}</span>
-                    </div>
+                      ) : (
+                        <span>{operation.client.name}</span>
+                      )}
+                    </span>
+                    {hasManager && <span>Сотрудник: {operation.manager.name}</span>}
                   </div>
-                  <div style={{ display: "flex", justifyContent: "center" }}>
-                    {operation.rating != null ? (
-                      <StarRating rating={operation.rating} size={18} />
-                    ) : (
-                      <span style={{ opacity: 0.45 }}>—</span>
-                    )}
+                  <div style={ratingCellStyle}>
+                    <StarRating rating={ratingValue} size={18} />
                   </div>
-                  <div style={totalsGridStyle}>
-                    <div>
-                      <div style={{ fontSize: 12, opacity: 0.6 }}>– Списано</div>
-                      <div style={{ color: "#f87171", fontWeight: 600 }}>
-                        –{formatPoints(operation.spent)}
-                      </div>
-                      <div style={{ fontSize: 11, opacity: 0.6 }}>
-                        {operation.spentSource || "баллы"}
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 12, opacity: 0.6 }}>+ Начислено</div>
-                      <div style={{ color: "#4ade80", fontWeight: 600 }}>
-                        +{formatPoints(operation.earned)}
-                      </div>
-                      <div style={{ fontSize: 11, opacity: 0.6 }}>{operation.earnedSource || ''}</div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 12, opacity: 0.6 }}>Сумма чека, ₽</div>
-                      <div style={{ fontWeight: 600 }}>{formatRub(operation.total)}</div>
-                    </div>
+                  <div style={{ ...statusCellStyle, color: isCanceled ? "#f87171" : "inherit" }}>
+                    {isCanceled ? "Операция отменена администратором" : ""}
+                  </div>
+                  <div style={pointsCellStyle}>
+                    <span style={cellLabelStyle}>Начислено</span>
+                    <span style={{ color: "#16a34a", fontWeight: 600 }}>{earnedPoints}</span>
+                  </div>
+                  <div style={pointsCellStyle}>
+                    <span style={cellLabelStyle}>Списано</span>
+                    <span style={{ color: operation.spent > 0 ? "#dc2626" : "inherit", fontWeight: 600 }}>
+                      {spentPoints}
+                    </span>
+                  </div>
+                  <div style={summaryCellStyle}>
+                    {summaryLabel && <span style={cellLabelStyle}>{summaryLabel}</span>}
+                    <span style={{ fontWeight: isPurchaseOperation && operation.total > 0 ? 600 : 400 }}>
+                      {summaryValue}
+                    </span>
                   </div>
                 </div>
-                {isCanceled && (
-                  <div style={{ marginTop: 12, fontSize: 13, fontWeight: 600, color: "#f87171" }}>
-                    Операция отменена администратором
-                  </div>
-                )}
               </div>
             );
           })}
@@ -636,28 +635,68 @@ const selectStyle: React.CSSProperties = {
  
 
 const rowStyle: React.CSSProperties = {
-  border: "1px solid rgba(148,163,184,0.14)",
-  borderRadius: 16,
-  background: "linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02))",
-  padding: 18,
+  borderRadius: 0,
+  borderBottom: "1px solid rgba(148,163,184,0.18)",
+  padding: "14px 0",
   textAlign: "left",
-  color: "inherit",
   cursor: "pointer",
+  transition: "background 0.15s ease",
 };
 
 const rowGridStyle: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "160px minmax(0,1fr) 160px minmax(0,320px)",
-  gap: 16,
+  gridTemplateColumns:
+    "minmax(120px, 1fr) minmax(220px, 1.6fr) minmax(120px, 1fr) minmax(200px, 1.2fr) minmax(120px, 1fr) minmax(120px, 1fr) minmax(160px, 1.2fr)",
+  columnGap: 24,
+  rowGap: 4,
   alignItems: "center",
 };
 
-const totalsGridStyle: React.CSSProperties = {
+const dateCellStyle: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(3, minmax(0,1fr))",
-  gap: 12,
+  gap: 4,
+  alignContent: "center",
+};
+
+const infoCellStyle: React.CSSProperties = {
+  display: "grid",
+  gap: 4,
+  alignContent: "center",
+  justifyItems: "start",
+  fontSize: 13,
+};
+
+const ratingCellStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "center",
+  alignItems: "center",
+};
+
+const statusCellStyle: React.CSSProperties = {
+  fontSize: 13,
+  fontWeight: 600,
+  minHeight: 24,
+  display: "flex",
+  alignItems: "center",
+};
+
+const pointsCellStyle: React.CSSProperties = {
+  display: "grid",
+  gap: 4,
   justifyItems: "end",
   fontSize: 13,
+};
+
+const summaryCellStyle: React.CSSProperties = {
+  display: "grid",
+  gap: 4,
+  justifyItems: "end",
+  fontSize: 13,
+};
+
+const cellLabelStyle: React.CSSProperties = {
+  fontSize: 12,
+  opacity: 0.65,
 };
 
 const modalOverlayStyle: React.CSSProperties = {
