@@ -69,6 +69,14 @@ const CHECK_ICON = (
 
 const PHONE_NOT_LINKED_MESSAGE = "Вы не привязали номер, попробуйте еще раз";
 
+const REFUND_REFERENCE_FORMAT: Intl.DateTimeFormatOptions = {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+};
+
 type MechanicsLevel = {
   id?: string;
   name?: string;
@@ -776,7 +784,7 @@ export default function Page() {
         daysUntilMature?: number | null;
       }>,
     ) => {
-      return items
+      const mapped = items
         .filter((i) => i && typeof i === "object")
         .map((i) => ({
           id: i.id,
@@ -791,7 +799,7 @@ export default function Page() {
           reviewCreatedAt: i.reviewCreatedAt ?? null,
           pending: Boolean(i.pending),
           maturesAt: i.maturesAt ?? null,
-          daysUntilMature: typeof i.daysUntilMature === 'number' ? i.daysUntilMature : null,
+          daysUntilMature: typeof i.daysUntilMature === "number" ? i.daysUntilMature : null,
           source:
             typeof i.source === "string" && i.source.trim().length > 0
               ? i.source.trim()
@@ -800,7 +808,30 @@ export default function Page() {
             typeof i.comment === "string" && i.comment.trim().length > 0
               ? i.comment.trim()
               : null,
+          canceledAt:
+            typeof i.canceledAt === "string" && i.canceledAt.trim().length > 0
+              ? i.canceledAt.trim()
+              : null,
+          relatedOperationAt:
+            typeof i.relatedOperationAt === "string" && i.relatedOperationAt.trim().length > 0
+              ? i.relatedOperationAt.trim()
+              : null,
         }));
+      return mapped.filter((item) => {
+        if (!item.canceledAt) return true;
+        const typeUpper = (item.type || "").toUpperCase();
+        const sourceUpper = (item.source || "").toUpperCase();
+        const orderId = item.orderId || "";
+        const isPurchase =
+          orderId &&
+          (typeUpper === "EARN" || typeUpper === "REDEEM") &&
+          sourceUpper !== "MANUAL_ACCRUAL" &&
+          sourceUpper !== "MANUAL_REDEEM" &&
+          sourceUpper !== "COMPLIMENTARY" &&
+          !orderId.startsWith("manual_") &&
+          !orderId.startsWith("complimentary:");
+        return isPurchase;
+      });
     },
     []
   );
@@ -1812,11 +1843,24 @@ export default function Page() {
                 {tx.map((item, idx) => {
                   const meta = getTransactionMeta(item.type, item.source);
                   const typeUpper = String(item.type).toUpperCase();
-                  const isPending = Boolean(item.pending) && (typeUpper === 'EARN' || typeUpper === 'REGISTRATION');
+                  const isPending = Boolean(item.pending) && (typeUpper === "EARN" || typeUpper === "REGISTRATION");
                   const isComplimentary = meta.kind === "complimentary";
-                  const title = isPending
-                    ? (typeUpper === 'REGISTRATION' ? 'Бонус за регистрацию - на удержании' : 'Начисление на удержании')
-                    : meta.title;
+                  let title: string;
+                  if (isPending) {
+                    title =
+                      typeUpper === "REGISTRATION"
+                        ? "Бонус за регистрацию - на удержании"
+                        : "Начисление на удержании";
+                  } else if (meta.kind === "refund") {
+                    const relatedAt = item.relatedOperationAt;
+                    const relatedTimestamp = relatedAt ? Date.parse(relatedAt) : NaN;
+                    const relatedLabel = Number.isNaN(relatedTimestamp)
+                      ? null
+                      : new Date(relatedTimestamp).toLocaleString("ru-RU", REFUND_REFERENCE_FORMAT);
+                    title = relatedLabel ? `${meta.title} от ${relatedLabel}` : meta.title;
+                  } else {
+                    title = meta.title;
+                  }
                   const extraNotes: string[] = [];
                   if (isPending) {
                     const days =

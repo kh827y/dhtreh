@@ -56,9 +56,11 @@ function mapTransactions(
     reviewId?: string | null;
     reviewRating?: number | null;
     reviewCreatedAt?: string | null;
+    source?: string | null;
+    canceledAt?: string | null;
   }>,
 ): TransactionItem[] {
-  return items
+  const mapped = items
     .filter((item) => item && typeof item === "object")
     .map((item) => ({
       id: item.id,
@@ -71,7 +73,16 @@ function mapTransactions(
       reviewId: item.reviewId ?? null,
       reviewRating: typeof item.reviewRating === "number" ? item.reviewRating : null,
       reviewCreatedAt: item.reviewCreatedAt ?? null,
+      source:
+        typeof item.source === "string" && item.source.trim().length > 0
+          ? item.source.trim()
+          : null,
+      canceledAt:
+        typeof item.canceledAt === "string" && item.canceledAt.trim().length > 0
+          ? item.canceledAt.trim()
+          : null,
     }));
+  return mapped.filter((item) => !item.canceledAt);
 }
 
 function computeShareOptions(share: ReviewsShareSettings, activeOutletId: string | null) {

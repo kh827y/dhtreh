@@ -274,6 +274,20 @@ export class TransactionItemDto {
     description: 'Комментарий или описание операции из metadata',
   })
   comment?: string | null;
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description: 'Когда операция была отменена (если применимо)',
+  })
+  canceledAt?: string | null;
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description: 'Дата и время исходной операции (для возвратов)',
+  })
+  relatedOperationAt?: string | null;
 }
 
 export class TransactionsRespDto {

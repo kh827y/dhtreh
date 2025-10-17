@@ -2514,7 +2514,50 @@ export class LoyaltyService {
     }
 
     // 3) Нормализация
+    const refundOrderIds = Array.from(
+      new Set(
+        txItems
+          .map((entity) => {
+            if (entity.type !== TxnType.REFUND) return null;
+            if (typeof entity.orderId !== 'string') return null;
+            const trimmed = entity.orderId.trim();
+            return trimmed.length > 0 ? trimmed : null;
+          })
+          .filter((value): value is string => Boolean(value)),
+      ),
+    );
+    const refundOriginsByOrderId = new Map<string, string>();
+    if (refundOrderIds.length > 0) {
+      const receipts = await this.prisma.receipt.findMany({
+        where: { merchantId, orderId: { in: refundOrderIds } },
+        select: { orderId: true, createdAt: true },
+      });
+      for (const receipt of receipts) {
+        if (!receipt.orderId) continue;
+        refundOriginsByOrderId.set(
+          receipt.orderId,
+          receipt.createdAt.toISOString(),
+        );
+      }
+    }
+    const fallbackOriginsByOrderId = new Map<string, string>();
+    for (const entity of txItems) {
+      if (entity.type === TxnType.REFUND) continue;
+      if (typeof entity.orderId !== 'string') continue;
+      const trimmed = entity.orderId.trim();
+      if (!trimmed) continue;
+      const iso = entity.createdAt.toISOString();
+      const existing = fallbackOriginsByOrderId.get(trimmed);
+      if (!existing || iso < existing) {
+        fallbackOriginsByOrderId.set(trimmed, iso);
+      }
+    }
+
     const normalizedTxs = txItems.map((entity) => {
+      const orderId =
+        typeof entity.orderId === 'string' && entity.orderId.trim().length > 0
+          ? entity.orderId.trim()
+          : null;
       const metadata =
         entity && typeof (entity as any)?.metadata === 'object' && (entity as any)?.metadata
           ? ((entity as any).metadata as Record<string, any>)
@@ -2536,7 +2579,7 @@ export class LoyaltyService {
             ? ('REGISTRATION' as any)
             : entity.type,
         amount: entity.amount,
-        orderId: entity.orderId ?? null,
+        orderId,
         customerId: entity.customerId,
         createdAt: entity.createdAt.toISOString(),
         outletId: entity.outletId ?? null,
@@ -2555,6 +2598,15 @@ export class LoyaltyService {
         daysUntilMature: undefined,
         source,
         comment,
+        canceledAt: entity.canceledAt
+          ? entity.canceledAt.toISOString()
+          : null,
+        relatedOperationAt:
+          entity.type === TxnType.REFUND && orderId
+            ? refundOriginsByOrderId.get(orderId) ??
+              fallbackOriginsByOrderId.get(orderId) ??
+              null
+            : null,
       };
     });
 
@@ -2588,6 +2640,8 @@ export class LoyaltyService {
         daysUntilMature: daysUntil,
         source: null,
         comment: null,
+        canceledAt: null,
+        relatedOperationAt: null,
       };
     });
 

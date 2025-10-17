@@ -18,6 +18,8 @@ export type TransactionsResp = {
   daysUntilMature?: number | null;
   source?: string | null;
   comment?: string | null;
+  canceledAt?: string | null;
+  relatedOperationAt?: string | null;
   }>;
   nextBefore?: string | null;
 };

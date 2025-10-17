@@ -12,6 +12,10 @@ export type TransactionItem = {
   pending?: boolean;
   maturesAt?: string | null;
   daysUntilMature?: number | null;
+  source?: string | null;
+  comment?: string | null;
+  canceledAt?: string | null;
+  relatedOperationAt?: string | null;
 };
 
 export const REVIEW_LOOKBACK_MS = 72 * 60 * 60 * 1000;
