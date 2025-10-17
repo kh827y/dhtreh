@@ -7,11 +7,20 @@ export type TransactionKind =
   | "adjust"
   | "referral"
   | "burn"
+  | "complimentary"
   | "other";
 
 export type TransactionMeta = { title: string; kind: TransactionKind };
 
-export function getTransactionMeta(type: string): TransactionMeta {
+export function getTransactionMeta(type: string, source?: string | null): TransactionMeta {
+  const sourceUpper =
+    typeof source === "string" && source.trim().length > 0 ? source.trim().toUpperCase() : null;
+  if (sourceUpper === "COMPLIMENTARY") {
+    return { title: "Начислено администратором", kind: "complimentary" };
+  }
+  if (sourceUpper === "MANUAL_ACCRUAL") {
+    return { title: "Начисление", kind: "earn" };
+  }
   const lower = type.toLowerCase();
   if (lower === "adjust") return { title: "Баллы сгорели", kind: "burn" };
   if (lower.includes('referral')) return { title: 'Реферальная программа', kind: 'referral' };

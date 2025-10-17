@@ -11,11 +11,13 @@ export type TransactionsResp = {
     outletId?: string | null;
     staffId?: string | null;
     reviewId?: string | null;
-    reviewRating?: number | null;
-    reviewCreatedAt?: string | null;
-    pending?: boolean;
-    maturesAt?: string | null;
-    daysUntilMature?: number | null;
+  reviewRating?: number | null;
+  reviewCreatedAt?: string | null;
+  pending?: boolean;
+  maturesAt?: string | null;
+  daysUntilMature?: number | null;
+  source?: string | null;
+  comment?: string | null;
   }>;
   nextBefore?: string | null;
 };

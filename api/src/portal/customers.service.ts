@@ -936,7 +936,7 @@ export class PortalCustomersService {
     }
 
     if (source === 'COMPLIMENTARY') {
-      details = 'Начислено администратором';
+      details = 'Комплиментарные баллы';
       kind = 'COMPLIMENTARY';
       if (typeof params.metadata?.comment === 'string') {
         const trimmed = params.metadata.comment.trim();
@@ -1480,7 +1480,11 @@ export class PortalCustomersService {
     const appliedPoints = points;
 
     const orderId = `manual_accrual:${randomUUID()}`;
-    const comment = payload.comment?.trim() || null;
+    const rawComment = payload.comment?.trim() || null;
+    if (rawComment && rawComment.length > 60) {
+      throw new BadRequestException('Комментарий не должен превышать 60 символов');
+    }
+    const comment = rawComment;
     const receiptNumber = payload.receiptNumber?.trim() || null;
     const outletId = payload.outletId ?? null;
     const ttlDays = await this.resolvePointsTtlDays(merchantId);
@@ -1659,7 +1663,11 @@ export class PortalCustomersService {
         ? new Date(Date.now() + expiresInDays * msPerDay)
         : null;
     const orderId = `complimentary:${randomUUID()}`;
-    const comment = payload.comment?.trim() || null;
+    const rawComment = payload.comment?.trim() || null;
+    if (rawComment && rawComment.length > 60) {
+      throw new BadRequestException('Комментарий не должен превышать 60 символов');
+    }
+    const comment = rawComment;
     const outletId = payload.outletId ?? null;
     const metadata = {
       source: 'COMPLIMENTARY',

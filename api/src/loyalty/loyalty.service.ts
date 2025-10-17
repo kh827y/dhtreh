@@ -2514,31 +2514,49 @@ export class LoyaltyService {
     }
 
     // 3) Нормализация
-    const normalizedTxs = txItems.map((entity) => ({
-      id: entity.id,
-      type:
-        entity.orderId === 'registration_bonus'
-          ? ('REGISTRATION' as any)
-          : entity.type,
-      amount: entity.amount,
-      orderId: entity.orderId ?? null,
-      customerId: entity.customerId,
-      createdAt: entity.createdAt.toISOString(),
-      outletId: entity.outletId ?? null,
-      outletPosType: entity.outlet?.posType ?? null,
-      outletLastSeenAt: entity.outlet?.posLastSeenAt
-        ? entity.outlet.posLastSeenAt.toISOString()
-        : null,
-      staffId: entity.staffId ?? null,
-      reviewId: entity.reviews?.[0]?.id ?? null,
-      reviewRating: entity.reviews?.[0]?.rating ?? null,
-      reviewCreatedAt: entity.reviews?.[0]?.createdAt
-        ? entity.reviews[0].createdAt.toISOString()
-        : null,
-      pending: undefined,
-      maturesAt: undefined,
-      daysUntilMature: undefined,
-    }));
+    const normalizedTxs = txItems.map((entity) => {
+      const metadata =
+        entity && typeof (entity as any)?.metadata === 'object' && (entity as any)?.metadata
+          ? ((entity as any).metadata as Record<string, any>)
+          : null;
+      const rawSource =
+        typeof metadata?.source === 'string' && metadata.source.trim().length > 0
+          ? metadata.source.trim()
+          : null;
+      const source = rawSource ? rawSource.toUpperCase() : null;
+      const comment =
+        typeof metadata?.comment === 'string' && metadata.comment.trim().length > 0
+          ? metadata.comment.trim()
+          : null;
+
+      return {
+        id: entity.id,
+        type:
+          entity.orderId === 'registration_bonus'
+            ? ('REGISTRATION' as any)
+            : entity.type,
+        amount: entity.amount,
+        orderId: entity.orderId ?? null,
+        customerId: entity.customerId,
+        createdAt: entity.createdAt.toISOString(),
+        outletId: entity.outletId ?? null,
+        outletPosType: entity.outlet?.posType ?? null,
+        outletLastSeenAt: entity.outlet?.posLastSeenAt
+          ? entity.outlet.posLastSeenAt.toISOString()
+          : null,
+        staffId: entity.staffId ?? null,
+        reviewId: entity.reviews?.[0]?.id ?? null,
+        reviewRating: entity.reviews?.[0]?.rating ?? null,
+        reviewCreatedAt: entity.reviews?.[0]?.createdAt
+          ? entity.reviews[0].createdAt.toISOString()
+          : null,
+        pending: undefined,
+        maturesAt: undefined,
+        daysUntilMature: undefined,
+        source,
+        comment,
+      };
+    });
 
     const normalizedPending = pendingLots.map((lot) => {
       const outlet = lot.outletId ? outletsMap.get(lot.outletId) : null;
@@ -2568,6 +2586,8 @@ export class LoyaltyService {
         pending: true,
         maturesAt: mat ? mat.toISOString() : null,
         daysUntilMature: daysUntil,
+        source: null,
+        comment: null,
       };
     });
 

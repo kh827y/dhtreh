@@ -1216,6 +1216,10 @@ const ComplimentaryModal: React.FC<ComplimentaryModalProps> = ({ customer, onClo
       nextErrors.expiresIn = "Срок не может быть отрицательным";
     }
 
+    if (form.comment.trim().length > 60) {
+      nextErrors.comment = "Комментарий не должен превышать 60 символов";
+    }
+
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
   }
@@ -1313,7 +1317,12 @@ const ComplimentaryModal: React.FC<ComplimentaryModalProps> = ({ customer, onClo
                 value={form.comment}
                 onChange={(event) => update("comment", event.target.value)}
                 placeholder="Комментарий увидит клиент в истории"
+                maxLength={60}
               />
+              <span style={{ fontSize: 12, opacity: 0.7 }}>
+                {form.comment.length}/60
+              </span>
+              {errors.comment && <ErrorText>{errors.comment}</ErrorText>}
             </label>
           </section>
           {apiError && <ErrorText>{apiError}</ErrorText>}

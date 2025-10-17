@@ -713,6 +713,11 @@
   border-left-color: #f59e0b;
 }
 
+.historyTone_complimentary {
+  background: linear-gradient(135deg, rgba(244, 114, 182, 0.22), rgba(236, 72, 153, 0.08));
+  border-left-color: #f472b6;
+}
+
 .historyTone_promo {
   background: linear-gradient(135deg, rgba(129, 140, 248, 0.22), rgba(99, 102, 241, 0.08));
   border-left-color: #6366f1;
@@ -778,6 +783,12 @@
   box-shadow: 0 12px 26px rgba(245, 158, 11, 0.32);
 }
 
+.historyIcon_complimentary {
+  background: linear-gradient(135deg, #ec4899, #f472b6);
+  color: #ffffff;
+  box-shadow: 0 12px 26px rgba(244, 114, 182, 0.32);
+}
+
 .historyIcon_promo {
   background: linear-gradient(135deg, #6366f1, #8b5cf6);
   color: #ffffff;
@@ -833,6 +844,8 @@
 .historyNote {
   font-size: 12px;
   color: #6b5bd3;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .historyAmount {

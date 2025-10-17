@@ -200,11 +200,25 @@ export class QrMintRespDto {
 
 export class TransactionItemDto {
   @ApiProperty() id!: string;
-  @ApiProperty({ enum: ['EARN', 'REDEEM', 'REFUND', 'ADJUST'] }) type!:
+  @ApiProperty({
+    enum: [
+      'EARN',
+      'REDEEM',
+      'REFUND',
+      'ADJUST',
+      'CAMPAIGN',
+      'REFERRAL',
+      'REGISTRATION',
+    ],
+  })
+  type!:
     | 'EARN'
     | 'REDEEM'
     | 'REFUND'
-    | 'ADJUST';
+    | 'ADJUST'
+    | 'CAMPAIGN'
+    | 'REFERRAL'
+    | 'REGISTRATION';
   @ApiProperty() amount!: number;
   @ApiPropertyOptional() orderId?: string | null;
   @ApiProperty() merchantCustomerId!: string;
@@ -250,6 +264,16 @@ export class TransactionItemDto {
     description: 'Сколько дней осталось до зачисления (округлено вверх)',
   })
   daysUntilMature?: number | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Источник операции из metadata (например MANUAL_ACCRUAL, COMPLIMENTARY)',
+  })
+  source?: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Комментарий или описание операции из metadata',
+  })
+  comment?: string | null;
 }
 
 export class TransactionsRespDto {
