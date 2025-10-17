@@ -285,7 +285,7 @@ export default function OperationsPage() {
   return (
     <div style={{ display: "grid", gap: 20 }}>
       <div style={{ display: "grid", gap: 4 }}>
-        <div style={{ fontSize: 24, fontWeight: 700 }}>Журнал начисления баллов</div>
+        <div style={{ fontSize: 24, fontWeight: 700 }}>Журнал операций</div>
         <div style={{ fontSize: 13, opacity: 0.65 }}>Всего: {total} записей</div>
       </div>
 

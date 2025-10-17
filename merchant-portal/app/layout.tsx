@@ -41,7 +41,7 @@ const sections: SidebarSection[] = [
       { href: "/loyalty/mechanics", label: "Механики" },
       { href: "/loyalty/actions", label: "Акции" },
       { href: "/loyalty/actions-earn", label: "Акции с начислением баллов" },
-      { href: "/operations", label: "Журнал начисления баллов" },
+      { href: "/operations", label: "Журнал операций" },
       { href: "/loyalty/push", label: "Push‑рассылки" },
       { href: "/loyalty/telegram", label: "Telegram‑рассылки" },
       { href: "/promocodes", label: "Промокоды" },

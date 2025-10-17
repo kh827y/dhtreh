@@ -767,37 +767,49 @@ export class PortalCustomersService {
   } {
     const base = this.describeTransactionBase(params);
 
-    if (!params.receipt?.canceledAt) {
+    const isCanceled = Boolean(params.receipt?.canceledAt || params.tx.canceledAt);
+    if (!isCanceled) {
       return base;
     }
 
     if (params.tx.type === 'REFUND') {
-      const receipt = params.receipt;
+      const receipt = params.receipt ?? null;
       const receiptNumber =
-        typeof receipt.receiptNumber === 'string' &&
-        receipt.receiptNumber.trim().length > 0
+        receipt && typeof receipt.receiptNumber === 'string' && receipt.receiptNumber.trim().length > 0
           ? receipt.receiptNumber.trim()
           : null;
-      const orderId =
-        typeof receipt.orderId === 'string' && receipt.orderId.trim().length > 0
+      const orderIdFromReceipt =
+        receipt && typeof receipt.orderId === 'string' && receipt.orderId.trim().length > 0
           ? receipt.orderId.trim()
           : null;
-      const fallbackId =
-        typeof receipt.id === 'string' && receipt.id.length > 0
-          ? receipt.id.slice(-6)
+      const orderIdFromTx =
+        typeof params.tx.orderId === 'string' && params.tx.orderId.trim().length > 0
+          ? params.tx.orderId.trim()
           : null;
-      const identifier = receiptNumber ?? orderId ?? fallbackId ?? '—';
-      const canceledAtLabel = this.formatReceiptDateTime(receipt.createdAt);
+      const fallbackId =
+        receipt && typeof receipt.id === 'string' && receipt.id.length > 0
+          ? receipt.id.slice(-6)
+          : typeof params.tx.id === 'string' && params.tx.id.length > 0
+            ? params.tx.id.slice(-6)
+            : null;
+      const identifier = receiptNumber ?? orderIdFromReceipt ?? orderIdFromTx ?? fallbackId ?? '—';
+      const canceledAtSource = receipt?.createdAt ?? params.tx.createdAt ?? null;
+      const canceledAtLabel = this.formatReceiptDateTime(canceledAtSource);
       return {
-        details: `Операция #${identifier} (${canceledAtLabel}) отменена`,
+        details: `Возврат покупки #${identifier} (${canceledAtLabel}) - совершён администратором`,
         kind: 'CANCELED',
         note: null,
         purchaseAmount: base.purchaseAmount,
       };
     }
 
+    const alreadyPrefixed = base.details.startsWith('Операция отменена:');
+    const details = alreadyPrefixed
+      ? base.details
+      : `Операция отменена: ${base.details}`;
+
     return {
-      details: `Операция отменена: ${base.details}`,
+      details,
       kind: base.kind,
       note: base.note ?? null,
       purchaseAmount: base.purchaseAmount,
