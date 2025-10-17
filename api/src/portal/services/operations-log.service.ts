@@ -1,6 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
+import { LoyaltyService } from '../../loyalty/loyalty.service';
 
 export interface OperationsLogFilters {
   from?: string | Date;
@@ -32,6 +37,8 @@ export interface OperationsLogItemDto {
     code?: string | null;
     label?: string | null;
   } | null;
+  canceledAt: string | null;
+  canceledBy?: { id: string; name: string | null } | null;
 }
 
 export interface OperationsLogListDto {
@@ -52,7 +59,10 @@ export interface OperationDetailsDto {
 
 @Injectable()
 export class OperationsLogService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly loyalty: LoyaltyService,
+  ) {}
 
   async list(
     merchantId: string,
@@ -104,6 +114,7 @@ export class OperationsLogService {
           customer: true,
           staff: true,
           outlet: true,
+          canceledBy: true,
         },
       }),
     ]);
@@ -131,6 +142,7 @@ export class OperationsLogService {
         customer: true,
         staff: true,
         outlet: true,
+        canceledBy: true,
       },
     });
 
@@ -162,8 +174,72 @@ export class OperationsLogService {
         amount: tx.amount,
         createdAt: tx.createdAt.toISOString(),
       })),
-      canCancel: true,
+      canCancel: !receipt.canceledAt,
     };
+  }
+
+  async cancelReceipt(
+    merchantId: string,
+    receiptId: string,
+    staffId?: string | null,
+  ): Promise<OperationsLogItemDto> {
+    const existing = await this.prisma.receipt.findUnique({
+      where: { id: receiptId },
+      include: {
+        customer: true,
+        staff: true,
+        outlet: true,
+        canceledBy: true,
+      },
+    });
+    if (!existing || existing.merchantId !== merchantId) {
+      throw new NotFoundException('Операция не найдена');
+    }
+    if (existing.canceledAt) {
+      throw new BadRequestException('Операция уже отменена');
+    }
+    if (!existing.orderId) {
+      throw new BadRequestException(
+        'Для операции не указан идентификатор заказа',
+      );
+    }
+
+    try {
+      await this.loyalty.refund(
+        merchantId,
+        existing.orderId,
+        existing.total,
+        existing.eligibleTotal ?? existing.total,
+      );
+    } catch (error: any) {
+      throw new BadRequestException(
+        error?.message || 'Не удалось отменить операцию',
+      );
+    }
+
+    const updated = await this.prisma.receipt.update({
+      where: { id: receiptId },
+      data: {
+        canceledAt: new Date(),
+        canceledByStaffId: staffId ?? null,
+      },
+      include: {
+        customer: true,
+        staff: true,
+        outlet: true,
+        canceledBy: true,
+      },
+    });
+
+    const ratings = await this.fetchRatings(
+      merchantId,
+      updated.orderId ? [updated.orderId] : [],
+    );
+
+    return this.mapReceipt(
+      updated,
+      ratings.get(updated.orderId ?? '') ?? null,
+    );
   }
 
   private toDate(value: string | Date): Date {
@@ -199,7 +275,7 @@ export class OperationsLogService {
 
   private mapReceipt(
     receipt: Prisma.ReceiptGetPayload<{
-      include: { customer: true; staff: true; outlet: true };
+      include: { customer: true; staff: true; outlet: true; canceledBy: true };
     }>,
     rating: number | null,
   ): OperationsLogItemDto {
@@ -208,6 +284,15 @@ export class OperationsLogService {
           .filter(Boolean)
           .join(' ')
           .trim() || receipt.staff.id
+      : null;
+    const canceledByName = receipt.canceledBy
+      ? [receipt.canceledBy.firstName, receipt.canceledBy.lastName]
+          .filter(Boolean)
+          .join(' ')
+          .trim() ||
+        receipt.canceledBy.login ||
+        receipt.canceledBy.email ||
+        receipt.canceledBy.id
       : null;
 
     return {
@@ -241,12 +326,21 @@ export class OperationsLogService {
       receiptNumber: receipt.receiptNumber ?? null,
       orderId: receipt.orderId,
       carrier: this.buildCarrier(receipt),
+      canceledAt: receipt.canceledAt
+        ? receipt.canceledAt.toISOString()
+        : null,
+      canceledBy: receipt.canceledBy
+        ? {
+            id: receipt.canceledBy.id,
+            name: canceledByName,
+          }
+        : null,
     };
   }
 
   private buildCarrier(
     receipt: Prisma.ReceiptGetPayload<{
-      include: { customer: true; outlet: true };
+      include: { customer: true; outlet: true; canceledBy: true };
     }>,
   ): OperationsLogItemDto['carrier'] {
     if (receipt.outlet) {

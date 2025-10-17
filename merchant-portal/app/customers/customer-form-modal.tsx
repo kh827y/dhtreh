@@ -90,9 +90,7 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
       nextErrors.login = "Телефон уже используется";
     }
 
-    if (!form.email.trim()) {
-      nextErrors.email = "Введите email";
-    } else if (!/^[\w-.]+@[\w-]+\.[A-Za-z]{2,}$/.test(form.email.trim())) {
+    if (form.email.trim() && !/^[\w-.]+@[\w-]+\.[A-Za-z]{2,}$/.test(form.email.trim())) {
       nextErrors.email = "Некорректный email";
     }
 
@@ -101,11 +99,6 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
       if (Number.isNaN(date.getTime())) {
         nextErrors.birthday = "Некорректная дата";
       }
-    }
-
-    if (mode === "create") {
-      if (!form.password.trim()) nextErrors.password = "Пароль обязателен";
-      if (!form.confirmPassword.trim()) nextErrors.confirmPassword = "Подтвердите пароль";
     }
 
     if (form.password || form.confirmPassword) {

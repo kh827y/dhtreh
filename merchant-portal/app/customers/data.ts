@@ -36,6 +36,11 @@ export type CustomerTransaction = {
   paidByPoints: number | null;
   total: number | null;
   blockedAccrual: boolean;
+  receiptId?: string | null;
+  canceledAt?: string | null;
+  canceledBy?: { id: string; name: string | null } | null;
+  note?: string | null;
+  kind?: string | null;
 };
 
 export type CustomerReview = {
@@ -88,6 +93,7 @@ export type CustomerRecord = {
   levelId?: string | null;
   group?: string | null;
   customerNumber?: string | null;
+  earnRateBps?: number | null;
 };
 
 export function getFullName(customer: CustomerRecord): string {

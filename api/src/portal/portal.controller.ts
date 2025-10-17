@@ -571,6 +571,66 @@ export class PortalController {
     );
   }
 
+  @Post('customers/:customerId/transactions/accrual')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  manualAccrual(
+    @Req() req: any,
+    @Param('customerId') customerId: string,
+    @Body() body: any,
+  ) {
+    return this.customersService.accrueManual(
+      this.getMerchantId(req),
+      String(customerId || ''),
+      req.portalStaffId ?? null,
+      {
+        purchaseAmount: body?.purchaseAmount,
+        points: body?.points,
+        receiptNumber: body?.receiptNumber,
+        outletId: body?.outletId,
+        comment: body?.comment,
+      },
+    );
+  }
+
+  @Post('customers/:customerId/transactions/redeem')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  manualRedeem(
+    @Req() req: any,
+    @Param('customerId') customerId: string,
+    @Body() body: any,
+  ) {
+    return this.customersService.redeemManual(
+      this.getMerchantId(req),
+      String(customerId || ''),
+      req.portalStaffId ?? null,
+      {
+        points: body?.points,
+        outletId: body?.outletId,
+        comment: body?.comment,
+      },
+    );
+  }
+
+  @Post('customers/:customerId/transactions/complimentary')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  manualComplimentary(
+    @Req() req: any,
+    @Param('customerId') customerId: string,
+    @Body() body: any,
+  ) {
+    return this.customersService.issueComplimentary(
+      this.getMerchantId(req),
+      String(customerId || ''),
+      req.portalStaffId ?? null,
+      {
+        points: body?.points,
+        expiresInDays: body?.expiresInDays,
+        outletId: body?.outletId,
+        comment: body?.comment,
+      },
+    );
+  }
+
   @Delete('customers/:customerId')
   @ApiOkResponse({
     schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
@@ -1057,6 +1117,14 @@ export class PortalController {
   @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
   getOperationDetails(@Req() req: any, @Param('receiptId') receiptId: string) {
     return this.operations.getDetails(this.getMerchantId(req), receiptId);
+  }
+
+  @Post('operations/log/:receiptId/cancel')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  cancelOperation(@Req() req: any, @Param('receiptId') receiptId: string) {
+    const merchantId = this.getMerchantId(req);
+    const staffId: string | null = req.portalStaffId ?? null;
+    return this.operations.cancelReceipt(merchantId, receiptId, staffId);
   }
 
   // ===== Analytics wrappers (portal-friendly) =====

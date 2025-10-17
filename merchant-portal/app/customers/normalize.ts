@@ -37,6 +37,22 @@ function normalizeTransaction(input: any): CustomerTransaction {
     paidByPoints: input?.paidByPoints != null ? toNumber(input.paidByPoints) : null,
     total: input?.total != null ? toNumber(input.total) : null,
     blockedAccrual: Boolean(input?.blockedAccrual),
+    receiptId: toStringOrNull(input?.receiptId),
+    canceledAt: toStringOrNull(input?.canceledAt),
+    canceledBy:
+      input?.canceledBy && typeof input.canceledBy === "object"
+        ? {
+            id: toStringOrNull(input.canceledBy.id) ?? "",
+            name:
+              toStringOrNull(
+                input.canceledBy.name ??
+                  input.canceledBy.fullName ??
+                  input.canceledBy.login,
+              ) ?? null,
+          }
+        : null,
+    note: toStringOrNull(input?.note),
+    kind: toStringOrNull(input?.kind),
   };
 }
 
@@ -114,7 +130,9 @@ export function normalizeCustomer(input: any): CustomerRecord {
     ? input.transactions.map(normalizeTransaction)
     : [];
   const expiry = Array.isArray(input?.expiry)
-    ? input.expiry.map(normalizeExpiry).filter((item) => item.amount > 0)
+    ? input.expiry
+        .map(normalizeExpiry)
+        .filter((item) => item.amount > 0 && item.expiresAt)
     : [];
   const reviews = Array.isArray(input?.reviews)
     ? input.reviews.map(normalizeReview)
@@ -168,5 +186,9 @@ export function normalizeCustomer(input: any): CustomerRecord {
     levelId: toStringOrNull(input?.levelId),
     group: toStringOrNull(input?.group),
     customerNumber: toStringOrNull(input?.customerNumber),
+    earnRateBps:
+      input?.earnRateBps != null
+        ? Math.max(0, Math.floor(Number(input.earnRateBps)))
+        : null,
   };
 }

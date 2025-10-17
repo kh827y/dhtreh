@@ -3,8 +3,16 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { HoldMode, HoldStatus, Prisma, WalletType } from '@prisma/client';
+import {
+  HoldMode,
+  HoldStatus,
+  Prisma,
+  TxnType,
+  WalletType,
+} from '@prisma/client';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma.service';
+import { planConsume } from '../loyalty/lots.util';
 
 export type PortalCustomerReferrerDto = {
   id: string;
@@ -42,6 +50,11 @@ export type PortalCustomerTransactionDto = {
   paidByPoints: number | null;
   total: number | null;
   blockedAccrual: boolean;
+  receiptId?: string | null;
+  canceledAt?: string | null;
+  canceledBy?: { id: string; name: string | null } | null;
+  note?: string | null;
+  kind?: string | null;
 };
 
 export type PortalCustomerReviewDto = {
@@ -92,6 +105,7 @@ export type PortalCustomerDto = {
   transactions?: PortalCustomerTransactionDto[];
   reviews?: PortalCustomerReviewDto[];
   invited?: PortalInvitedCustomerDto[];
+  earnRateBps?: number | null;
 };
 
 export type ListCustomersQuery = {
@@ -651,27 +665,433 @@ export class PortalCustomersService {
     });
   }
 
-  private buildTransactionDetails(
-    type: string,
-    accrualsBlocked: boolean,
+  private asRecord(input: any): Record<string, any> | null {
+    if (!input) return null;
+    if (typeof input === 'string') {
+      try {
+        const parsed = JSON.parse(input);
+        return parsed && typeof parsed === 'object' ? parsed : null;
+      } catch {
+        return null;
+      }
+    }
+    if (typeof input === 'object') return input as Record<string, any>;
+    return null;
+  }
+
+  private parseAmount(value: any): number | null {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+    const num = Number(value);
+    if (!Number.isFinite(num)) return null;
+    return Math.max(0, Math.round(num));
+  }
+
+  private formatStaffName(
+    staff:
+      | {
+          id?: string | null;
+          firstName?: string | null;
+          lastName?: string | null;
+          login?: string | null;
+          email?: string | null;
+        }
+      | null
+      | undefined,
+  ): string | null {
+    if (!staff) return null;
+    const parts = [staff.firstName, staff.lastName]
+      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      .map((value) => value.trim());
+    if (parts.length) return parts.join(' ');
+    if (staff.login && staff.login.trim()) return staff.login.trim();
+    if (staff.email && staff.email.trim()) return staff.email.trim();
+    return staff.id ?? null;
+  }
+
+  private describeTransaction(params: {
+    tx: Prisma.TransactionGetPayload<{
+      include: {
+        outlet: { select: { name: true; code: true } };
+        staff: {
+          select: {
+            id?: true;
+            firstName?: true;
+            lastName?: true;
+            login?: true;
+            email?: true;
+          };
+        };
+      };
+    }>;
+    receipt: Prisma.ReceiptGetPayload<{
+      select: {
+        id: true;
+        orderId: true;
+        total: true;
+        redeemApplied: true;
+        earnApplied: true;
+        receiptNumber: true;
+        createdAt: true;
+        outlet: { select: { name: true; code: true } };
+        staff: {
+          select: {
+            id: true;
+            firstName: true;
+            lastName: true;
+            login: true;
+            email: true;
+          };
+        };
+        canceledAt: true;
+        canceledBy: {
+          select: {
+            id: true;
+            firstName: true;
+            lastName: true;
+            login: true;
+            email: true;
+          };
+        };
+      };
+    }> | null;
+    metadata: Record<string, any> | null;
+    promoUsage?: { code: string | null; name: string | null } | null;
+    accrualsBlocked: boolean;
+  }): {
+    details: string;
+    kind: string;
+    note?: string | null;
+    purchaseAmount: number;
+  } {
+    const base = this.describeTransactionBase(params);
+
+    if (!params.receipt?.canceledAt) {
+      return base;
+    }
+
+    if (params.tx.type === 'REFUND') {
+      const receipt = params.receipt;
+      const receiptNumber =
+        typeof receipt.receiptNumber === 'string' &&
+        receipt.receiptNumber.trim().length > 0
+          ? receipt.receiptNumber.trim()
+          : null;
+      const orderId =
+        typeof receipt.orderId === 'string' && receipt.orderId.trim().length > 0
+          ? receipt.orderId.trim()
+          : null;
+      const fallbackId =
+        typeof receipt.id === 'string' && receipt.id.length > 0
+          ? receipt.id.slice(-6)
+          : null;
+      const identifier = receiptNumber ?? orderId ?? fallbackId ?? '—';
+      const canceledAtLabel = this.formatReceiptDateTime(receipt.createdAt);
+      return {
+        details: `Операция #${identifier} (${canceledAtLabel}) отменена`,
+        kind: 'CANCELED',
+        note: null,
+        purchaseAmount: base.purchaseAmount,
+      };
+    }
+
+    return {
+      details: `Операция отменена: ${base.details}`,
+      kind: base.kind,
+      note: base.note ?? null,
+      purchaseAmount: base.purchaseAmount,
+    };
+  }
+
+  private describeTransactionBase(params: {
+    tx: Prisma.TransactionGetPayload<{
+      include: {
+        outlet: { select: { name: true; code: true } };
+        staff: {
+          select: {
+            id?: true;
+            firstName?: true;
+            lastName?: true;
+            login?: true;
+            email?: true;
+          };
+        };
+      };
+    }>;
+    receipt: Prisma.ReceiptGetPayload<{
+      select: {
+        id: true;
+        orderId: true;
+        total: true;
+        redeemApplied: true;
+        earnApplied: true;
+        receiptNumber: true;
+        createdAt: true;
+        outlet: { select: { name: true; code: true } };
+        staff: {
+          select: {
+            id: true;
+            firstName: true;
+            lastName: true;
+            login: true;
+            email: true;
+          };
+        };
+        canceledAt: true;
+        canceledBy: {
+          select: {
+            id: true;
+            firstName: true;
+            lastName: true;
+            login: true;
+            email: true;
+          };
+        };
+      };
+    }> | null;
+    metadata: Record<string, any> | null;
+    promoUsage?: { code: string | null; name: string | null } | null;
+    accrualsBlocked: boolean;
+  }): {
+    details: string;
+    kind: string;
+    note?: string | null;
+    purchaseAmount: number;
+  } {
+    const change = Number(params.tx.amount ?? 0);
+    const metaPurchase = this.parseAmount(params.metadata?.purchaseAmount);
+    const purchaseAmount =
+      params.receipt != null
+        ? Math.max(0, Number(params.receipt.total ?? 0))
+        : metaPurchase ?? 0;
+    const rawSource = params.metadata?.source;
+    const source =
+      typeof rawSource === 'string' ? rawSource.trim().toUpperCase() : null;
+
+    let details = 'Операция с баллами';
+    let kind = 'OTHER';
+    let note: string | null = null;
+
+    if (params.tx.type === 'EARN' && params.accrualsBlocked) {
+      details = 'Начисление заблокировано администратором';
+      kind = 'EARN_BLOCKED';
+      return { details, kind, note, purchaseAmount };
+    }
+
+    if (params.tx.orderId === 'registration_bonus') {
+      details = 'Баллы за регистрацию';
+      kind = 'REGISTRATION';
+      return { details, kind, note, purchaseAmount };
+    }
+
+    if (params.tx.type === 'REFERRAL') {
+      details = 'Реферальное начисление';
+      kind = 'REFERRAL';
+      return { details, kind, note, purchaseAmount };
+    }
+
+    if (params.tx.type === 'REFUND') {
+      details = 'Возврат покупки';
+      kind = 'REFUND';
+      return { details, kind, note, purchaseAmount };
+    }
+
+    if (params.tx.type === 'ADJUST') {
+      if (change < 0) {
+        details = 'Сгорание баллов';
+        kind = 'BURN';
+      } else {
+        details = 'Корректировка баланса';
+        kind = 'ADJUST';
+      }
+      return { details, kind, note, purchaseAmount };
+    }
+
+    if (params.tx.type === 'REDEEM') {
+      if (source === 'MANUAL_REDEEM') {
+        details = 'Списание администратором';
+        kind = 'MANUAL_REDEEM';
+        if (typeof params.metadata?.comment === 'string') {
+          const trimmed = params.metadata.comment.trim();
+          if (trimmed) note = trimmed;
+        }
+      } else {
+        details = 'Списание за покупку';
+        kind = 'PURCHASE_REDEEM';
+      }
+      return { details, kind, note, purchaseAmount };
+    }
+
+    if (
+      params.tx.type === 'EARN' &&
+      params.promoUsage &&
+      (params.promoUsage.code || params.promoUsage.name)
+    ) {
+      const label = params.promoUsage.code ?? params.promoUsage.name;
+      details = 'Баллы по промокоду';
+      kind = 'PROMOCODE';
+      note = label ? `Промокод ${label}` : null;
+      return { details, kind, note, purchaseAmount };
+    }
+
+    if (source === 'COMPLIMENTARY') {
+      details = 'Начислено администратором';
+      kind = 'COMPLIMENTARY';
+      if (typeof params.metadata?.comment === 'string') {
+        const trimmed = params.metadata.comment.trim();
+        if (trimmed) note = trimmed;
+      }
+      return { details, kind, note, purchaseAmount };
+    }
+
+    if (params.tx.type === 'CAMPAIGN') {
+      if (params.tx.orderId?.startsWith('birthday:')) {
+        details = 'Баллы за день рождения';
+        kind = 'BIRTHDAY';
+      } else if (params.tx.orderId?.startsWith('auto_return:')) {
+        details = 'Баллы за автовозврат';
+        kind = 'AUTO_RETURN';
+      } else if (source === 'MANUAL_ACCRUAL') {
+        details = 'Начислено администратором';
+        kind = 'MANUAL_ACCRUAL';
+        if (typeof params.metadata?.comment === 'string') {
+          const trimmed = params.metadata.comment.trim();
+          if (trimmed) note = trimmed;
+        }
+      } else {
+        details = 'Баллы по акции';
+        kind = 'CAMPAIGN';
+      }
+      return { details, kind, note, purchaseAmount };
+    }
+
+    if (params.tx.type === 'EARN') {
+      details = 'Начисление за покупку';
+      kind = 'PURCHASE_EARN';
+      return { details, kind, note, purchaseAmount };
+    }
+
+    return { details, kind, note, purchaseAmount };
+  }
+
+  private formatReceiptDateTime(
+    value: Date | string | null | undefined,
   ): string {
-    switch (type) {
-      case 'EARN':
-        return accrualsBlocked
-          ? 'Начисление заблокировано администратором'
-          : 'Начисление баллов за покупку';
-      case 'REDEEM':
-        return 'Списание баллов';
-      case 'REFUND':
-        return 'Возврат баллов';
-      case 'ADJUST':
-        return 'Корректировка баланса';
-      case 'CAMPAIGN':
-        return 'Баллы по акции';
-      case 'REFERRAL':
-        return 'Реферальное начисление';
-      default:
-        return 'Операция с баллами';
+    if (!value) return '—';
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return new Intl.DateTimeFormat('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(date);
+  }
+
+  private async resolveEarnRateBps(
+    merchantId: string,
+    customerId: string,
+  ): Promise<number> {
+    const assignment = await this.prisma.loyaltyTierAssignment.findFirst({
+      where: {
+        merchantId,
+        customerId,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
+      orderBy: { assignedAt: 'desc' },
+      include: {
+        tier: {
+          select: {
+            earnRateBps: true,
+          },
+        },
+      },
+    });
+    if (assignment?.tier?.earnRateBps != null) {
+      return Math.max(0, Math.floor(Number(assignment.tier.earnRateBps)));
+    }
+
+    const initialTier = await this.prisma.loyaltyTier.findFirst({
+      where: { merchantId, isInitial: true },
+      orderBy: [{ thresholdAmount: 'asc' }, { createdAt: 'asc' }],
+      select: { earnRateBps: true },
+    });
+    if (initialTier?.earnRateBps != null) {
+      return Math.max(0, Math.floor(Number(initialTier.earnRateBps)));
+    }
+
+    const settings = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+      select: { earnBps: true },
+    });
+    return Math.max(0, Math.floor(Number(settings?.earnBps ?? 0)));
+  }
+
+  private async resolvePointsTtlDays(
+    merchantId: string,
+  ): Promise<number | null> {
+    const settings = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+      select: { pointsTtlDays: true },
+    });
+    const ttl = settings?.pointsTtlDays;
+    if (ttl === null || ttl === undefined) return null;
+    const num = Number(ttl);
+    if (!Number.isFinite(num) || num <= 0) return null;
+    return Math.round(num);
+  }
+
+  private async consumeLotsForRedeem(
+    tx: Prisma.TransactionClient,
+    merchantId: string,
+    customerId: string,
+    amount: number,
+    orderId: string | null,
+  ) {
+    if (process.env.EARN_LOTS_FEATURE !== '1') return;
+    if (amount <= 0) return;
+
+    const lots = await tx.earnLot.findMany({
+      where: { merchantId, customerId },
+      orderBy: { earnedAt: 'asc' },
+    });
+    if (!lots.length) return;
+
+    const updates = planConsume(
+      lots.map((lot) => ({
+        id: lot.id,
+        points: lot.points,
+        consumedPoints: lot.consumedPoints || 0,
+        earnedAt: lot.earnedAt,
+      })),
+      amount,
+    );
+
+    for (const update of updates) {
+      const current = lots.find((lot) => lot.id === update.id);
+      if (!current) continue;
+      await tx.earnLot.update({
+        where: { id: update.id },
+        data: {
+          consumedPoints: (current.consumedPoints || 0) + update.deltaConsumed,
+        },
+      });
+      await tx.eventOutbox.create({
+        data: {
+          merchantId,
+          eventType: 'loyalty.earnlot.consumed',
+          payload: {
+            merchantId,
+            customerId,
+            lotId: update.id,
+            consumed: update.deltaConsumed,
+            orderId,
+            at: new Date().toISOString(),
+          },
+        },
+      });
     }
   }
 
@@ -747,10 +1167,53 @@ export class PortalCustomersService {
     const baseDto = this.buildBaseDto(customer, aggregates);
     baseDto.balance = walletBalance;
 
+    const transactionInclude = {
+      outlet: { select: { name: true, code: true } },
+      staff: {
+        select: {
+          id: true,
+          login: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+        },
+      },
+    } satisfies Prisma.TransactionInclude;
+
+    const receiptSelect = {
+      id: true,
+      orderId: true,
+      total: true,
+      redeemApplied: true,
+      earnApplied: true,
+      receiptNumber: true,
+      createdAt: true,
+      canceledAt: true,
+      outlet: { select: { name: true, code: true } },
+      staff: {
+        select: {
+          id: true,
+          login: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+        },
+      },
+      canceledBy: {
+        select: {
+          id: true,
+          login: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+        },
+      },
+    } satisfies Prisma.ReceiptSelect;
+
     const [
       lots,
-      transactions,
-      receipts,
+      transactionsRaw,
+      receiptsRaw,
       reviews,
       referrer,
       personalCode,
@@ -776,25 +1239,12 @@ export class PortalCustomersService {
         where: { merchantId, customerId },
         orderBy: { createdAt: 'desc' },
         take: 200,
-        include: {
-          outlet: { select: { name: true, code: true } },
-          staff: { select: { firstName: true, lastName: true } },
-        },
+        include: transactionInclude,
       }),
       this.prisma.receipt.findMany({
         where: { merchantId, customerId },
         orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          orderId: true,
-          total: true,
-          redeemApplied: true,
-          earnApplied: true,
-          receiptNumber: true,
-          createdAt: true,
-          outlet: { select: { name: true, code: true } },
-          staff: { select: { firstName: true, lastName: true } },
-        },
+        select: receiptSelect,
       }),
       this.prisma.review.findMany({
         where: { merchantId, customerId },
@@ -819,7 +1269,14 @@ export class PortalCustomersService {
       this.resolveInvitedCustomers(merchantId, customerId),
     ]);
 
+    const transactions = transactionsRaw as Prisma.TransactionGetPayload<{
+      include: typeof transactionInclude;
+    }>[];
+    const receipts = receiptsRaw as Prisma.ReceiptGetPayload<{
+      select: typeof receiptSelect;
+    }>[];
     const receiptMap = new Map<string, (typeof receipts)[number]>();
+
     for (const receipt of receipts) {
       if (receipt.orderId) receiptMap.set(receipt.orderId, receipt);
     }
@@ -827,6 +1284,33 @@ export class PortalCustomersService {
     const reviewByOrderId = new Map<string, (typeof reviews)[number]>();
     for (const review of reviews) {
       if (review.orderId) reviewByOrderId.set(review.orderId, review);
+    }
+
+    const orderIds = receipts
+      .map((receipt) => receipt.orderId)
+      .filter((id): id is string => Boolean(id));
+    const promoUsageByOrder = new Map<
+      string,
+      { code: string | null; name: string | null }
+    >();
+    if (orderIds.length) {
+      const promoUsages = await this.prisma.promoCodeUsage.findMany({
+        where: {
+          merchantId,
+          customerId,
+          orderId: { in: orderIds },
+        },
+        include: {
+          promoCode: { select: { code: true, name: true } },
+        },
+      });
+      for (const usage of promoUsages) {
+        if (!usage.orderId) continue;
+        promoUsageByOrder.set(usage.orderId, {
+          code: usage.promoCode?.code ?? null,
+          name: usage.promoCode?.name ?? null,
+        });
+      }
     }
 
     baseDto.referrer = referrer;
@@ -854,33 +1338,53 @@ export class PortalCustomersService {
           status: lot.status === 'PENDING' ? 'PENDING' : 'ACTIVE',
         };
       })
-      .filter((item): item is PortalCustomerExpiryDto => Boolean(item));
+      .filter((item): item is PortalCustomerExpiryDto => item !== null)
+      .filter((item) => item.expiresAt !== null);
 
     baseDto.transactions = transactions.map((tx) => {
-      const receipt = tx.orderId ? (receiptMap.get(tx.orderId) ?? null) : null;
-      const review = tx.orderId
-        ? (reviewByOrderId.get(tx.orderId) ?? null)
+      const orderId = tx.orderId ?? null;
+      const receipt = orderId ? receiptMap.get(orderId) ?? null : null;
+      const review = orderId ? reviewByOrderId.get(orderId) ?? null : null;
+      const metadata = this.asRecord((tx as any)?.metadata);
+      const promoUsage = orderId
+        ? promoUsageByOrder.get(orderId) ?? null
         : null;
       const change = Number(tx.amount ?? 0);
-      const purchaseAmount = receipt ? Number(receipt.total ?? 0) : 0;
+
+      const descriptor = this.describeTransaction({
+        tx,
+        receipt,
+        metadata,
+        promoUsage,
+        accrualsBlocked: Boolean(baseDto.accrualsBlocked),
+      });
+
+      const purchaseAmount = descriptor.purchaseAmount;
+      const metaToPay = this.parseAmount(metadata?.toPay);
+      const metaTotal = this.parseAmount(metadata?.total);
+      const metaPaidBy = this.parseAmount(metadata?.paidByPoints);
+
       const toPay =
         receipt != null
           ? Math.max(
               0,
               Number(receipt.total ?? 0) - Number(receipt.redeemApplied ?? 0),
             )
-          : null;
-      const paidByPoints = receipt ? Number(receipt.redeemApplied ?? 0) : null;
+          : metaToPay;
+      const paidByPoints =
+        receipt != null
+          ? Number(receipt.redeemApplied ?? 0)
+          : tx.type === 'REDEEM'
+            ? Math.abs(change)
+            : metaPaidBy;
+      const total =
+        receipt != null
+          ? Number(receipt.total ?? 0)
+          : metaTotal ?? purchaseAmount ?? null;
       const manager = receipt?.staff
-        ? [receipt.staff.firstName, receipt.staff.lastName]
-            .filter(Boolean)
-            .join(' ')
-            .trim() || null
+        ? this.formatStaffName(receipt.staff)
         : tx.staff
-          ? [tx.staff.firstName, tx.staff.lastName]
-              .filter(Boolean)
-              .join(' ')
-              .trim() || null
+          ? this.formatStaffName(tx.staff)
           : null;
       const outletName =
         receipt?.outlet?.name ??
@@ -896,10 +1400,7 @@ export class PortalCustomersService {
         change,
         purchaseAmount,
         datetime: tx.createdAt.toISOString(),
-        details: this.buildTransactionDetails(
-          tx.type,
-          Boolean(baseDto.accrualsBlocked),
-        ),
+        details: descriptor.details,
         outlet: outletName,
         rating: review?.rating ?? null,
         receiptNumber: receipt?.receiptNumber ?? null,
@@ -908,9 +1409,21 @@ export class PortalCustomersService {
         carrierCode,
         toPay,
         paidByPoints,
-        total: receipt ? Number(receipt.total ?? 0) : null,
+        total,
         blockedAccrual:
           tx.type === 'EARN' ? Boolean(baseDto.accrualsBlocked) : false,
+        receiptId: receipt?.id ?? null,
+        canceledAt: receipt?.canceledAt
+          ? receipt.canceledAt.toISOString()
+          : null,
+        canceledBy: receipt?.canceledBy
+          ? {
+              id: receipt.canceledBy.id,
+              name: this.formatStaffName(receipt.canceledBy),
+            }
+          : null,
+        note: descriptor.note ?? null,
+        kind: descriptor.kind,
       };
     });
 
@@ -924,7 +1437,308 @@ export class PortalCustomersService {
 
     baseDto.invited = invited;
 
+    try {
+      baseDto.earnRateBps = await this.resolveEarnRateBps(
+        merchantId,
+        customerId,
+      );
+    } catch {
+      baseDto.earnRateBps = null;
+    }
+
     return baseDto;
+  }
+
+  async accrueManual(
+    merchantId: string,
+    customerId: string,
+    staffId: string | null,
+    payload: {
+      purchaseAmount: number;
+      points?: number | null;
+      receiptNumber?: string | null;
+      outletId?: string | null;
+      comment?: string | null;
+    },
+  ) {
+    const purchaseAmount = this.parseAmount(payload.purchaseAmount);
+    if (!purchaseAmount || purchaseAmount <= 0) {
+      throw new BadRequestException('Сумма покупки должна быть больше 0');
+    }
+
+    let points =
+      payload.points != null ? this.parseAmount(payload.points) : null;
+    if (points == null) {
+      const earnRate = await this.resolveEarnRateBps(merchantId, customerId);
+      points = Math.floor((purchaseAmount * earnRate) / 10_000);
+    }
+    if (!points || points <= 0) {
+      throw new BadRequestException(
+        'Количество начисляемых баллов должно быть больше 0',
+      );
+    }
+    const appliedPoints = points;
+
+    const orderId = `manual_accrual:${randomUUID()}`;
+    const comment = payload.comment?.trim() || null;
+    const receiptNumber = payload.receiptNumber?.trim() || null;
+    const outletId = payload.outletId ?? null;
+    const ttlDays = await this.resolvePointsTtlDays(merchantId);
+    const expiresAt =
+      ttlDays && ttlDays > 0
+        ? new Date(Date.now() + ttlDays * msPerDay)
+        : null;
+    const metadata = {
+      source: 'MANUAL_ACCRUAL',
+      purchaseAmount,
+      total: purchaseAmount,
+      receiptNumber,
+      comment,
+    };
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      let wallet = await tx.wallet.findUnique({
+        where: {
+          customerId_merchantId_type: {
+            customerId,
+            merchantId,
+            type: WalletType.POINTS,
+          },
+        },
+      });
+      if (!wallet) {
+        wallet = await tx.wallet.create({
+          data: {
+            customerId,
+            merchantId,
+            type: WalletType.POINTS,
+            balance: 0,
+          },
+        });
+      }
+      const updatedWallet = await tx.wallet.update({
+        where: { id: wallet.id },
+        data: { balance: wallet.balance + appliedPoints },
+      });
+
+      if (process.env.EARN_LOTS_FEATURE === '1' && appliedPoints > 0) {
+        await tx.earnLot.create({
+          data: {
+            merchantId,
+            customerId,
+            points: appliedPoints,
+            consumedPoints: 0,
+            earnedAt: new Date(),
+            maturesAt: null,
+            expiresAt,
+            orderId,
+            receiptId: null,
+            outletId: outletId ?? null,
+            staffId: staffId ?? null,
+            status: 'ACTIVE',
+          },
+        });
+      }
+
+      const transaction = await tx.transaction.create({
+        data: {
+          customerId,
+          merchantId,
+          type: TxnType.CAMPAIGN,
+          amount: appliedPoints,
+          orderId,
+          outletId: outletId ?? null,
+          staffId: staffId ?? null,
+          metadata,
+        },
+      });
+
+      return {
+        transactionId: transaction.id,
+        balance: updatedWallet.balance,
+      };
+    });
+
+    return {
+      ok: true,
+      pointsIssued: appliedPoints,
+      orderId,
+      transactionId: result.transactionId,
+      comment,
+    };
+  }
+
+  async redeemManual(
+    merchantId: string,
+    customerId: string,
+    staffId: string | null,
+    payload: { points: number; outletId?: string | null; comment?: string | null },
+  ) {
+    const points = this.parseAmount(payload.points);
+    if (!points || points <= 0) {
+      throw new BadRequestException('Количество списываемых баллов должно быть больше 0');
+    }
+    const redeemPoints = points;
+
+    const orderId = `manual_redeem:${randomUUID()}`;
+    const metadata = {
+      source: 'MANUAL_REDEEM',
+      comment: payload.comment?.trim() || null,
+    };
+    const outletId = payload.outletId ?? null;
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const wallet = await tx.wallet.findUnique({
+        where: {
+          customerId_merchantId_type: {
+            customerId,
+            merchantId,
+            type: WalletType.POINTS,
+          },
+        },
+      });
+      if (!wallet) {
+        throw new BadRequestException('У клиента отсутствует кошелёк с баллами');
+      }
+      if (wallet.balance < redeemPoints) {
+        throw new BadRequestException('Недостаточно баллов на балансе клиента');
+      }
+
+      const updatedWallet = await tx.wallet.update({
+        where: { id: wallet.id },
+        data: { balance: wallet.balance - redeemPoints },
+      });
+
+      await this.consumeLotsForRedeem(tx, merchantId, customerId, redeemPoints, orderId);
+
+      const transaction = await tx.transaction.create({
+        data: {
+          customerId,
+          merchantId,
+          type: TxnType.REDEEM,
+          amount: -redeemPoints,
+          orderId,
+          outletId: outletId ?? null,
+          staffId: staffId ?? null,
+          metadata,
+        },
+      });
+
+      return {
+        transactionId: transaction.id,
+        balance: updatedWallet.balance,
+      };
+    });
+
+    return {
+      ok: true,
+      pointsRedeemed: redeemPoints,
+      orderId,
+      transactionId: result.transactionId,
+    };
+  }
+
+  async issueComplimentary(
+    merchantId: string,
+    customerId: string,
+    staffId: string | null,
+    payload: { points: number; expiresInDays?: number | null; outletId?: string | null; comment?: string | null },
+  ) {
+    const points = this.parseAmount(payload.points);
+    if (!points || points <= 0) {
+      throw new BadRequestException('Количество баллов должно быть больше 0');
+    }
+    const bonusPoints = points;
+
+    const expiresInDays =
+      payload.expiresInDays !== undefined && payload.expiresInDays !== null
+        ? Math.max(0, Math.round(Number(payload.expiresInDays)))
+        : null;
+    const expiresAt =
+      expiresInDays && expiresInDays > 0
+        ? new Date(Date.now() + expiresInDays * msPerDay)
+        : null;
+    const orderId = `complimentary:${randomUUID()}`;
+    const comment = payload.comment?.trim() || null;
+    const outletId = payload.outletId ?? null;
+    const metadata = {
+      source: 'COMPLIMENTARY',
+      comment,
+      expiresInDays,
+    };
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      let wallet = await tx.wallet.findUnique({
+        where: {
+          customerId_merchantId_type: {
+            customerId,
+            merchantId,
+            type: WalletType.POINTS,
+          },
+        },
+      });
+      if (!wallet) {
+        wallet = await tx.wallet.create({
+          data: {
+            customerId,
+            merchantId,
+            type: WalletType.POINTS,
+            balance: 0,
+          },
+        });
+      }
+
+      const updatedWallet = await tx.wallet.update({
+        where: { id: wallet.id },
+        data: { balance: wallet.balance + bonusPoints },
+      });
+
+      if (process.env.EARN_LOTS_FEATURE === '1' && bonusPoints > 0) {
+        await tx.earnLot.create({
+          data: {
+            merchantId,
+            customerId,
+            points: bonusPoints,
+            consumedPoints: 0,
+            earnedAt: new Date(),
+            maturesAt: null,
+            expiresAt,
+            orderId,
+            receiptId: null,
+            outletId: outletId ?? null,
+            staffId: staffId ?? null,
+            status: 'ACTIVE',
+          },
+        });
+      }
+
+      const transaction = await tx.transaction.create({
+        data: {
+          customerId,
+          merchantId,
+          type: TxnType.CAMPAIGN,
+          amount: bonusPoints,
+          orderId,
+          outletId: outletId ?? null,
+          staffId: staffId ?? null,
+          metadata,
+        },
+      });
+
+      return {
+        transactionId: transaction.id,
+        balance: updatedWallet.balance,
+      };
+    });
+
+    return {
+      ok: true,
+      pointsIssued: bonusPoints,
+      orderId,
+      transactionId: result.transactionId,
+      comment,
+      expiresAt: expiresAt ? expiresAt.toISOString() : null,
+    };
   }
 
   async create(

@@ -21,6 +21,8 @@ type Operation = {
   receipt: string;
   carrier: { id: string; name: string; code: string };
   type: OperationType;
+  canceledAt: string | null;
+  canceledBy?: { id: string; name: string | null } | null;
 };
 
 const { Search, ChevronLeft, ChevronRight, X } = Icons;
@@ -64,6 +66,18 @@ function mapOperationFromDto(item: any): Operation {
   const customerName = String(item?.customer?.name || item?.customer?.phone || 'Клиент');
   const managerId = String(item?.staff?.id || '');
   const managerName = String(item?.staff?.name || '—');
+  const canceledAt = item?.canceledAt ? String(item.canceledAt) : null;
+  const canceledByName =
+    item?.canceledBy?.name ||
+    item?.canceledBy?.fullName ||
+    item?.canceledBy?.login ||
+    null;
+  const canceledBy = canceledAt
+    ? {
+        id: String(item?.canceledBy?.id || ''),
+        name: canceledByName ? String(canceledByName) : null,
+      }
+    : null;
   return {
     id: String(item?.id || receipt),
     datetime: String(item?.occurredAt || new Date().toISOString()),
@@ -79,6 +93,8 @@ function mapOperationFromDto(item: any): Operation {
     receipt,
     carrier: { id: carrierId, name: carrierName, code: String(item?.carrier?.code || '') },
     type: 'PURCHASE',
+    canceledAt,
+    canceledBy,
   };
 }
 
@@ -96,6 +112,38 @@ export default function OperationsPage() {
   const [preview, setPreview] = React.useState<Operation | null>(null);
   const [items, setItems] = React.useState<Operation[]>([]);
   const [total, setTotal] = React.useState(0);
+
+  async function cancelOperation(operation: Operation) {
+    if (!operation?.id) return;
+    const confirmed = window.confirm("Вы уверены, что хотите отменить транзакцию?");
+    if (!confirmed) return;
+    try {
+      const res = await fetch(`/api/operations/log/${encodeURIComponent(operation.id)}/cancel`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      });
+      const text = await res.text();
+      if (!res.ok) {
+        throw new Error(text || res.statusText);
+      }
+      let mapped: Operation | null = null;
+      if (text) {
+        try {
+          const data = JSON.parse(text);
+          mapped = mapOperationFromDto(data);
+        } catch {
+          mapped = null;
+        }
+      }
+      setItems((prev) =>
+        prev.map((item) => (mapped && item.id === mapped.id ? mapped : item)),
+      );
+      setPreview((prev) => (prev && mapped && prev.id === mapped.id ? mapped : prev));
+      window.alert("Операция отменена администратором");
+    } catch (error: any) {
+      window.alert(error?.message || "Не удалось отменить операцию");
+    }
+  }
 
   // Подтягиваем реальные данные из БД через API-прокси
   React.useEffect(() => {
@@ -249,59 +297,78 @@ export default function OperationsPage() {
       <Card>
         <CardHeader title="Список операций" />
         <CardBody style={{ display: "grid", gap: 12 }}>
-          {pageItems.map((operation) => (
-            <div
-              key={operation.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => setPreview(operation)}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPreview(operation); } }}
-              style={rowStyle}
-            >
-              <div style={rowGridStyle}>
-                <div>
-                  <div style={{ fontWeight: 700 }}>{formatDateTime(operation.datetime)}</div>
-                  <div style={{ fontSize: 12, opacity: 0.65 }}>Чек №{operation.receipt}</div>
-                </div>
-                <div style={{ display: "grid", gap: 8 }}>
-                  <div style={{ fontSize: 12, opacity: 0.6 }}>Торговая точка</div>
-                  <div style={{ fontWeight: 600 }}>{operation.outlet.name}</div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 12, fontSize: 12 }}>
-                    <span>
-                      Клиент: {" "}
-                      <a
-                        href={`/customers/${operation.client.id}`}
-                        style={{ color: "#818cf8" }}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {operation.client.name}
-                      </a>
-                    </span>
-                    <span>Менеджер: {operation.manager.name}</span>
-                  </div>
-                </div>
-                <div style={{ display: "flex", justifyContent: "center" }}>
-                  <StarRating rating={operation.rating} size={18} />
-                </div>
-                <div style={totalsGridStyle}>
+          {pageItems.map((operation) => {
+            const isCanceled = Boolean(operation.canceledAt);
+            return (
+              <div
+                key={operation.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => setPreview(operation)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setPreview(operation);
+                  }
+                }}
+                style={{
+                  ...rowStyle,
+                  border: isCanceled ? "1px solid rgba(248,113,113,0.35)" : rowStyle.border,
+                  background: isCanceled
+                    ? "rgba(248,113,113,0.08)"
+                    : rowStyle.background,
+                }}
+              >
+                <div style={rowGridStyle}>
                   <div>
-                    <div style={{ fontSize: 12, opacity: 0.6 }}>– Списано</div>
-                    <div style={{ color: "#f87171", fontWeight: 600 }}>–{formatPoints(operation.spent)}</div>
-                    <div style={{ fontSize: 11, opacity: 0.6 }}>баллов</div>
+                    <div style={{ fontWeight: 700 }}>{formatDateTime(operation.datetime)}</div>
+                    <div style={{ fontSize: 12, opacity: 0.65 }}>Чек №{operation.receipt}</div>
                   </div>
-                  <div>
-                    <div style={{ fontSize: 12, opacity: 0.6 }}>+ Начислено</div>
-                    <div style={{ color: "#4ade80", fontWeight: 600 }}>+{formatPoints(operation.earned.amount)}</div>
-                    <div style={{ fontSize: 11, opacity: 0.6 }}>{operation.earned.source || ""}</div>
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <div style={{ fontSize: 12, opacity: 0.6 }}>Торговая точка</div>
+                    <div style={{ fontWeight: 600 }}>{operation.outlet.name}</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 12, fontSize: 12 }}>
+                      <span>
+                        Клиент: {" "}
+                        <a
+                          href={`/customers/${operation.client.id}`}
+                          style={{ color: "#818cf8" }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {operation.client.name}
+                        </a>
+                      </span>
+                      <span>Менеджер: {operation.manager.name}</span>
+                    </div>
                   </div>
-                  <div>
-                    <div style={{ fontSize: 12, opacity: 0.6 }}>Сумма чека, ₽</div>
-                    <div style={{ fontWeight: 600 }}>{formatRub(operation.total)}</div>
+                  <div style={{ display: "flex", justifyContent: "center" }}>
+                    <StarRating rating={operation.rating} size={18} />
+                  </div>
+                  <div style={totalsGridStyle}>
+                    <div>
+                      <div style={{ fontSize: 12, opacity: 0.6 }}>– Списано</div>
+                      <div style={{ color: "#f87171", fontWeight: 600 }}>–{formatPoints(operation.spent)}</div>
+                      <div style={{ fontSize: 11, opacity: 0.6 }}>баллов</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 12, opacity: 0.6 }}>+ Начислено</div>
+                      <div style={{ color: "#4ade80", fontWeight: 600 }}>+{formatPoints(operation.earned.amount)}</div>
+                      <div style={{ fontSize: 11, opacity: 0.6 }}>{operation.earned.source || ""}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 12, opacity: 0.6 }}>Сумма чека, ₽</div>
+                      <div style={{ fontWeight: 600 }}>{formatRub(operation.total)}</div>
+                    </div>
                   </div>
                 </div>
+                {isCanceled && (
+                  <div style={{ marginTop: 12, fontSize: 13, fontWeight: 600, color: "#f87171" }}>
+                    Операция отменена администратором
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
           {!pageItems.length && (
             <div style={{ textAlign: "center", padding: 24, opacity: 0.6 }}>Нет операций для выбранных фильтров</div>
           )}
@@ -381,9 +448,20 @@ export default function OperationsPage() {
                 <SummaryCard label="Оплачено баллами" value={`${formatPoints(preview.paidByPoints)} баллов`} />
                 <SummaryCard label="Итого" value={formatRub(preview.total)} />
               </div>
+              {preview.canceledAt && (
+                <div style={{ marginTop: 8, fontSize: 13, fontWeight: 600, color: "#f87171" }}>
+                  Операция отменена администратором
+                </div>
+              )}
             </div>
             <div style={modalFooterStyle}>
-              <Button variant="secondary">Отменить транзакцию</Button>
+              <Button
+                variant="secondary"
+                disabled={Boolean(preview.canceledAt)}
+                onClick={() => cancelOperation(preview)}
+              >
+                {preview.canceledAt ? "Уже отменена" : "Отменить транзакцию"}
+              </Button>
             </div>
           </div>
         </div>

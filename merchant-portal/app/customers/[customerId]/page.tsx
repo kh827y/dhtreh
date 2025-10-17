@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { useRouter, useParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import { Card, CardHeader, CardBody, Button, Icons } from "@loyalty/ui";
 import StarRating from "../../../components/StarRating";
 import {
@@ -13,43 +13,50 @@ import {
 import { normalizeCustomer } from "../normalize";
 import { CustomerFormModal, type CustomerFormPayload } from "../customer-form-modal";
 
-const { Edit3, PlusCircle, MinusCircle, Gift, X } = Icons;
+const { Edit3, PlusCircle, MinusCircle, Gift, X, XCircle } = Icons;
 
-const outlets = [
-  { id: "out-1", name: "Кофейня на Лиговском" },
-  { id: "out-2", name: "Точка у метро Чкаловская" },
-  { id: "out-3", name: "Pop-up в бизнес-центре" },
-];
+type OutletOption = {
+  id: string;
+  name: string;
+};
 
 type AccrueForm = {
   amount: string;
   receipt: string;
   manualPoints: string;
   outletId: string;
-  deviceNumber: string;
 };
 
 type RedeemForm = {
   amount: string;
   outletId: string;
-  deviceNumber: string;
 };
 
 type AccrueErrors = Partial<Record<keyof AccrueForm, string>> & { amount?: string; manualPoints?: string };
 type RedeemErrors = Partial<Record<keyof RedeemForm, string>> & { amount?: string };
+type ComplimentaryForm = {
+  points: string;
+  expiresIn: string;
+  comment: string;
+};
+type ComplimentaryErrors = Partial<Record<keyof ComplimentaryForm, string>> & {
+  points?: string;
+  expiresIn?: string;
+};
 
 export default function CustomerCardPage() {
-  const router = useRouter();
   const params = useParams<{ customerId: string | string[] }>();
   const customerIdRaw = Array.isArray(params.customerId) ? params.customerId[0] : params.customerId;
   const customerId = String(customerIdRaw || '');
   const [customer, setCustomer] = React.useState<CustomerRecord | null>(null);
   const [accrueOpen, setAccrueOpen] = React.useState(false);
   const [redeemOpen, setRedeemOpen] = React.useState(false);
-  const [selectedTransaction, setSelectedTransaction] = React.useState<CustomerTransaction | null>(null);
+  const [complimentaryOpen, setComplimentaryOpen] = React.useState(false);
   const [toast, setToast] = React.useState<string | null>(null);
   const [editOpen, setEditOpen] = React.useState(false);
   const [existingLogins, setExistingLogins] = React.useState<string[]>([]);
+  const [outlets, setOutlets] = React.useState<OutletOption[]>([]);
+  const [outletsLoading, setOutletsLoading] = React.useState(true);
 
   // Хелпер для запросов к локальному прокси /api/customers
   async function api<T = any>(url: string, init?: RequestInit): Promise<T> {
@@ -112,6 +119,59 @@ export default function CustomerCardPage() {
   }, []);
 
   React.useEffect(() => {
+    let cancelled = false;
+    setOutletsLoading(true);
+    (async () => {
+      try {
+        const res = await fetch("/api/portal/outlets?status=active", { cache: "no-store" });
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(errorText || res.statusText);
+        }
+        const data = await res.json().catch(() => ({}));
+        const items = Array.isArray(data?.items)
+          ? data.items
+          : Array.isArray(data)
+            ? data
+            : [];
+        const normalized = items
+          .map((item: any) => {
+            const rawId =
+              typeof item?.id === "string" && item.id.trim()
+                ? item.id.trim()
+                : item?.id != null
+                  ? String(item.id)
+                  : "";
+            if (!rawId) return null;
+            const label =
+              typeof item?.name === "string" && item.name.trim()
+                ? item.name.trim()
+                : typeof item?.code === "string" && item.code.trim()
+                  ? item.code.trim()
+                  : rawId;
+            return { id: rawId, name: label } as OutletOption;
+          })
+          .filter((item): item is OutletOption => Boolean(item));
+        if (!cancelled) {
+          setOutlets(normalized);
+        }
+      } catch (error) {
+        console.error(error);
+        if (!cancelled) {
+          setOutlets([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setOutletsLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  React.useEffect(() => {
     if (!toast) return;
     const timeout = window.setTimeout(() => setToast(null), 4000);
     return () => window.clearTimeout(timeout);
@@ -122,6 +182,16 @@ export default function CustomerCardPage() {
     const base = ["Постоянные", "Стандарт", "VIP", "Новые", "Сонные"];
     return Array.from(new Set([customer?.group, ...base].filter(Boolean) as string[]));
   }, [customer?.group]);
+
+  const reloadCustomer = React.useCallback(async () => {
+    if (!customerId) return;
+    try {
+      const fresh = await api<CustomerRecord>(`/api/customers/${encodeURIComponent(customerId)}`);
+      setCustomer(fresh ? normalizeCustomer(fresh) : null);
+    } catch (error) {
+      console.error(error);
+    }
+  }, [customerId]);
 
   if (!customer) {
     return (
@@ -143,24 +213,39 @@ export default function CustomerCardPage() {
   function handleAccrueSuccess(message: string) {
     setToast(message);
     setAccrueOpen(false);
-    // Перечитать данные клиента после изменения на сервере
-    (async () => {
-      try {
-        const fresh = await api<any>(`/api/customers/${encodeURIComponent(customer.id)}`);
-        setCustomer(fresh ? normalizeCustomer(fresh) : customer);
-      } catch {}
-    })();
+    void reloadCustomer();
   }
 
   function handleRedeemSuccess(message: string) {
     setToast(message);
     setRedeemOpen(false);
-    (async () => {
-      try {
-        const fresh = await api<any>(`/api/customers/${encodeURIComponent(customer.id)}`);
-        setCustomer(fresh ? normalizeCustomer(fresh) : customer);
-      } catch {}
-    })();
+    void reloadCustomer();
+  }
+
+  function handleComplimentarySuccess(message: string) {
+    setToast(message);
+    setComplimentaryOpen(false);
+    void reloadCustomer();
+  }
+
+  async function handleCancelTransaction(operation: CustomerTransaction) {
+    if (!operation.receiptId) return;
+    const confirmMessage = window.confirm("Вы уверены, что хотите отменить транзакцию?");
+    if (!confirmMessage) return;
+    try {
+      const res = await fetch(`/api/operations/log/${encodeURIComponent(operation.receiptId)}/cancel`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      });
+      const text = await res.text();
+      if (!res.ok) {
+        throw new Error(text || res.statusText);
+      }
+      setToast("Операция отменена администратором");
+      void reloadCustomer();
+    } catch (error: any) {
+      setToast(error?.message || "Не удалось отменить операцию");
+    }
   }
 
   async function handleEditSubmit(payload: CustomerFormPayload) {
@@ -223,11 +308,7 @@ export default function CustomerCardPage() {
           <Button
             variant="primary"
             leftIcon={<Gift size={16} />}
-            onClick={() =>
-              router.push(
-                `/customers/complimentary?phone=${encodeURIComponent(customer.phone || customer.login)}&customerId=${customer.id}`,
-              )
-            }
+            onClick={() => setComplimentaryOpen(true)}
           >
             Начислить комплиментарные баллы
           </Button>
@@ -286,35 +367,88 @@ export default function CustomerCardPage() {
                     <th style={headerCellStyle}>#</th>
                     <th style={headerCellStyle}>Сумма покупки</th>
                     <th style={headerCellStyle}>Баллов</th>
-                    <th style={headerCellStyle}>Подробности/Основание</th>
-                    <th style={headerCellStyle}>Дата/время</th>
-                    <th style={headerCellStyle}>Торговая точка</th>
-                    <th style={headerCellStyle}>Оценка</th>
-                  </tr>
-                </thead>
-                <tbody>
+                  <th style={headerCellStyle}>Подробности/Основание</th>
+                  <th style={headerCellStyle}>Дата/время</th>
+                  <th style={headerCellStyle}>Торговая точка</th>
+                  <th style={headerCellStyle}>Оценка</th>
+                  <th style={{ ...headerCellStyle, textAlign: "right" }}>Действия</th>
+                </tr>
+              </thead>
+              <tbody>
                   {customer.transactions.map((operation, index) => {
                     const isBlockedAccrual = operation.type === "EARN" && operation.blockedAccrual;
-                    const changeColor =
-                      operation.change > 0 && !isBlockedAccrual ? "#4ade80" : "#f87171";
-                    const changePrefix = operation.change > 0 ? "+" : "";
+                    const isCanceled = Boolean(operation.canceledAt);
+                    const canCancel = Boolean(operation.receiptId) && !isCanceled;
+                    const isComplimentary = operation.kind === "COMPLIMENTARY";
+                    const changePrefix =
+                      operation.change > 0 ? "+" : operation.change < 0 ? "−" : "";
+                    const changeColor = isCanceled
+                      ? "rgba(148,163,184,0.75)"
+                      : operation.change > 0 && !isBlockedAccrual
+                        ? "#4ade80"
+                        : "#f87171";
+                    const detailsColor = isCanceled
+                      ? "#94a3b8"
+                      : isComplimentary
+                        ? "#f472b6"
+                        : "inherit";
                     return (
                       <tr
                         key={operation.id}
-                        style={{ ...rowStyle, cursor: "pointer", opacity: isBlockedAccrual ? 0.85 : 1 }}
-                        onClick={() => setSelectedTransaction(operation)}
+                        style={{
+                          ...rowStyle,
+                          opacity: isCanceled ? 0.6 : isBlockedAccrual ? 0.85 : 1,
+                          background: isComplimentary
+                            ? "rgba(244,114,182,0.08)"
+                            : rowStyle.background,
+                        }}
                       >
                         <td style={cellStyle}>{index + 1}</td>
                         <td style={cellStyle}>{formatCurrency(operation.purchaseAmount)}</td>
-                        <td style={{ ...cellStyle, color: changeColor }}>
+                        <td style={{ ...cellStyle, color: changeColor, fontWeight: 600 }}>
                           {changePrefix}
                           {formatPoints(Math.abs(operation.change))}
                         </td>
-                        <td style={cellStyle}>{operation.details}</td>
+                        <td style={{ ...cellStyle, verticalAlign: "top" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            {isComplimentary && (
+                              <span style={{ color: "#f472b6", display: "flex" }}>
+                                <Gift size={14} />
+                              </span>
+                            )}
+                            <span style={{ color: detailsColor, fontWeight: isCanceled ? 600 : 500 }}>
+                              {operation.details}
+                            </span>
+                          </div>
+                          {operation.note && (
+                            <div style={{ fontSize: 12, opacity: isCanceled ? 0.6 : 0.75, marginTop: 4 }}>
+                              {operation.note}
+                            </div>
+                          )}
+                          {operation.canceledAt && operation.canceledBy?.name && (
+                            <div style={{ fontSize: 11, opacity: 0.6, marginTop: 4 }}>
+                              Отменил: {operation.canceledBy.name}
+                            </div>
+                          )}
+                        </td>
                         <td style={cellStyle}>{formatDateTime(operation.datetime)}</td>
                         <td style={cellStyle}>{operation.outlet || "—"}</td>
                         <td style={cellStyle}>
                           {operation.rating != null ? <StarRating rating={operation.rating} size={18} /> : "—"}
+                        </td>
+                        <td style={{ ...cellStyle, textAlign: "right" }}>
+                          {canCancel ? (
+                            <button
+                              type="button"
+                              onClick={() => handleCancelTransaction(operation)}
+                              style={cancelButtonStyle}
+                            >
+                              <XCircle size={14} />
+                              <span>Отменить</span>
+                            </button>
+                          ) : (
+                            <span style={{ opacity: 0.45 }}>—</span>
+                          )}
                         </td>
                       </tr>
                     );
@@ -402,15 +536,31 @@ export default function CustomerCardPage() {
       </Card>
 
       {accrueOpen && (
-        <AccrueModal customer={customer} onClose={() => setAccrueOpen(false)} onSuccess={handleAccrueSuccess} />
+        <AccrueModal
+          customer={customer}
+          onClose={() => setAccrueOpen(false)}
+          onSuccess={handleAccrueSuccess}
+          outlets={outlets}
+          outletsLoading={outletsLoading}
+        />
       )}
 
       {redeemOpen && (
-        <RedeemModal customer={customer} onClose={() => setRedeemOpen(false)} onSuccess={handleRedeemSuccess} />
+        <RedeemModal
+          customer={customer}
+          onClose={() => setRedeemOpen(false)}
+          onSuccess={handleRedeemSuccess}
+          outlets={outlets}
+          outletsLoading={outletsLoading}
+        />
       )}
 
-      {selectedTransaction && (
-        <TransactionModal transaction={selectedTransaction} onClose={() => setSelectedTransaction(null)} customer={customer} />
+      {complimentaryOpen && (
+        <ComplimentaryModal
+          customer={customer}
+          onClose={() => setComplimentaryOpen(false)}
+          onSuccess={handleComplimentarySuccess}
+        />
       )}
 
       <CustomerFormModal
@@ -545,6 +695,20 @@ const toastStyle: React.CSSProperties = {
   boxShadow: "0 16px 60px rgba(30,64,175,0.35)",
 };
 
+const cancelButtonStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "6px 10px",
+  borderRadius: 999,
+  border: "1px solid rgba(248,113,113,0.35)",
+  background: "rgba(248,113,113,0.08)",
+  color: "#fca5a5",
+  fontSize: 12,
+  cursor: "pointer",
+  transition: "background 0.2s ease",
+};
+
 function formatCurrency(value?: number | null): string {
   if (value == null || Number.isNaN(Number(value))) return "—";
   return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(Number(value));
@@ -596,40 +760,83 @@ type AccrueModalProps = {
   customer: CustomerRecord;
   onClose: () => void;
   onSuccess: (message: string) => void;
+  outlets: OutletOption[];
+  outletsLoading: boolean;
 };
 
-const AccrueModal: React.FC<AccrueModalProps> = ({ customer, onClose, onSuccess }) => {
+const AccrueModal: React.FC<AccrueModalProps> = ({
+  customer,
+  onClose,
+  onSuccess,
+  outlets,
+  outletsLoading,
+}) => {
   const [form, setForm] = React.useState<AccrueForm>({
     amount: "",
     receipt: "",
     manualPoints: "",
-    outletId: outlets[0]?.id ?? "",
-    deviceNumber: customer.deviceNumber ?? "",
+    outletId: "",
   });
+  const [autoCalc, setAutoCalc] = React.useState(() => customer.earnRateBps != null);
   const [errors, setErrors] = React.useState<AccrueErrors>({});
+  const [apiError, setApiError] = React.useState<string | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
+
+  const earnRateBps = customer.earnRateBps ?? null;
+  const outletsUnavailable = !outletsLoading && outlets.length === 0;
+
+  React.useEffect(() => {
+    if (!outlets.length) return;
+    setForm((prev) => {
+      if (prev.outletId && outlets.some((item) => item.id === prev.outletId)) {
+        return prev;
+      }
+      return { ...prev, outletId: outlets[0].id };
+    });
+  }, [outlets]);
 
   function update<K extends keyof AccrueForm>(key: K, value: AccrueForm[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
+  const amountValue = React.useMemo(() => {
+    const raw = form.amount.replace(",", ".").trim();
+    if (!raw) return NaN;
+    const num = Number(raw);
+    return Number.isFinite(num) ? num : NaN;
+  }, [form.amount]);
+
+  const autoPoints = React.useMemo(() => {
+    if (!autoCalc || earnRateBps == null) return 0;
+    if (!Number.isFinite(amountValue) || amountValue <= 0) return 0;
+    return Math.max(0, Math.floor((amountValue * earnRateBps) / 10_000));
+  }, [autoCalc, earnRateBps, amountValue]);
+
   function validate(): boolean {
     const nextErrors: AccrueErrors = {};
-    const amountValue = Number(form.amount.replace(",", "."));
     if (!form.amount.trim()) {
       nextErrors.amount = "Укажите сумму покупки";
-    } else if (Number.isNaN(amountValue) || amountValue <= 0) {
+    } else if (!Number.isFinite(amountValue) || amountValue <= 0) {
       nextErrors.amount = "Сумма должна быть больше 0";
     }
 
-    if (form.manualPoints.trim()) {
-      const manualValue = Number(form.manualPoints);
-      if (Number.isNaN(manualValue) || manualValue < 0) {
-        nextErrors.manualPoints = "Укажите неотрицательное число";
+    if (!autoCalc) {
+      const raw = form.manualPoints.trim();
+      if (!raw) {
+        nextErrors.manualPoints = "Укажите количество баллов";
+      } else {
+        const value = Number(raw);
+        if (!Number.isFinite(value) || value <= 0) {
+          nextErrors.manualPoints = "Количество баллов должно быть больше 0";
+        }
       }
     }
 
-    if (!form.outletId) {
+    if (outlets.length === 0) {
+      if (!outletsLoading) {
+        nextErrors.outletId = "Нет доступных торговых точек";
+      }
+    } else if (!form.outletId) {
       nextErrors.outletId = "Выберите торговую точку";
     }
 
@@ -639,41 +846,49 @@ const AccrueModal: React.FC<AccrueModalProps> = ({ customer, onClose, onSuccess 
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setApiError(null);
+    if (outletsLoading) {
+      setErrors((prev) => ({ ...prev, outletId: "Дождитесь загрузки списка торговых точек" }));
+      return;
+    }
     if (!validate()) return;
 
     try {
       setSubmitting(true);
-      const amountValue = Number(form.amount.replace(",", "."));
-      const manualValue = form.manualPoints.trim() ? Number(form.manualPoints) : Math.round(amountValue * 0.1);
-      const outletName = outlets.find((o) => o.id === form.outletId)?.name || "Торговая точка";
-      const tx: CustomerTransaction = {
-        id: `txn-${Date.now()}`,
-        purchaseAmount: isFinite(amountValue) ? amountValue : 0,
-        change: manualValue,
-        details: form.manualPoints.trim() ? "Ручное начисление баллов" : "АвтонНачисление 10%",
-        datetime: new Date().toISOString(),
-        outlet: outletName,
-        rating: 0,
-        receipt: form.receipt || "",
-        manager: "Система",
-        carrier: "Телефон",
-        carrierCode: (customer.phone || customer.login).slice(-4),
-        toPay: Math.max(0, (isFinite(amountValue) ? amountValue : 0)),
-        paidByPoints: 0,
-        total: Math.max(0, (isFinite(amountValue) ? amountValue : 0)),
+      const payload: Record<string, unknown> = {
+        purchaseAmount: Number.isFinite(amountValue) ? amountValue : 0,
+        receiptNumber: form.receipt.trim() || undefined,
+        outletId: form.outletId || undefined,
       };
-      const next: CustomerRecord = {
-        ...customer,
-        bonusBalance: Math.max(0, (customer.bonusBalance || 0) + manualValue),
-        transactions: [tx, ...(Array.isArray(customer.transactions) ? customer.transactions : [])],
-      };
-      await fetch(`/api/customers/${encodeURIComponent(customer.id)}`, {
-        method: "PUT",
+      if (!autoCalc) {
+        payload.points = Number(form.manualPoints);
+      }
+
+      const res = await fetch(`/api/customers/${encodeURIComponent(customer.id)}/transactions/accrual`, {
+        method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(next),
-        cache: "no-store",
+        body: JSON.stringify(payload),
       });
-      onSuccess("Баллы начислены");
+      const text = await res.text();
+      if (!res.ok) {
+        throw new Error(text || res.statusText);
+      }
+      let data: any = {};
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = {};
+        }
+      }
+      const pointsIssued = data?.pointsIssued ?? (autoCalc ? autoPoints : Number(form.manualPoints));
+      const message =
+        pointsIssued && Number.isFinite(pointsIssued)
+          ? `Начислено ${formatPoints(pointsIssued)} баллов`
+          : "Баллы начислены";
+      onSuccess(message);
+    } catch (error: any) {
+      setApiError(error?.message || "Не удалось начислить баллы");
     } finally {
       setSubmitting(false);
     }
@@ -690,19 +905,6 @@ const AccrueModal: React.FC<AccrueModalProps> = ({ customer, onClose, onSuccess 
               <span style={labelStyle}>Телефон клиента</span>
               <input style={inputStyle} value={customer.phone || customer.login} disabled />
             </label>
-            <label style={fieldStyle}>
-              <span style={labelStyle}># Клиента</span>
-              <input style={inputStyle} value={customer.customerNumber} disabled />
-            </label>
-            <label style={fieldStyle}>
-              <span style={labelStyle}># Устройства</span>
-              <input
-                style={inputStyle}
-                value={form.deviceNumber}
-                onChange={(event) => update("deviceNumber", event.target.value)}
-                placeholder="Необязательно"
-              />
-            </label>
           </section>
 
           <section style={modalSectionStyle}>
@@ -718,7 +920,7 @@ const AccrueModal: React.FC<AccrueModalProps> = ({ customer, onClose, onSuccess 
               {errors.amount && <ErrorText>{errors.amount}</ErrorText>}
             </label>
             <label style={fieldStyle}>
-              <span style={labelStyle}># чека</span>
+              <span style={labelStyle}>Номер чека</span>
               <input
                 style={inputStyle}
                 value={form.receipt}
@@ -729,12 +931,43 @@ const AccrueModal: React.FC<AccrueModalProps> = ({ customer, onClose, onSuccess 
             <label style={fieldStyle}>
               <span style={labelStyle}>Какое количество баллов начислить</span>
               <input
-                style={inputStyle}
-                value={form.manualPoints}
+                style={{ ...inputStyle, opacity: autoCalc ? 0.75 : 1 }}
+                value={autoCalc ? (autoPoints > 0 ? String(autoPoints) : "") : form.manualPoints}
                 onChange={(event) => update("manualPoints", event.target.value)}
-                placeholder="Оставьте пустым для автокалькуляции"
+                placeholder={autoCalc ? "Автоматический расчёт" : "Например, 120"}
+                readOnly={autoCalc}
               />
-              <span style={{ fontSize: 12, opacity: 0.65 }}>Если поле пустое — система рассчитает баллы автоматически.</span>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+                  <input
+                    type="checkbox"
+                    checked={autoCalc}
+                    disabled={earnRateBps == null}
+                    onChange={(event) => {
+                      const next = event.target.checked && earnRateBps != null;
+                      setAutoCalc(next);
+                      if (!next) {
+                        update("manualPoints", autoPoints > 0 ? String(autoPoints) : "");
+                      } else {
+                        update("manualPoints", "");
+                      }
+                    }}
+                  />
+                  <span>
+                    Автокалькуляция
+                    {earnRateBps != null ? ` (${(earnRateBps / 100).toFixed(2)}%)` : ""}
+                  </span>
+                </label>
+              </div>
+              <span style={{ fontSize: 12, opacity: 0.7 }}>
+                {autoCalc
+                  ? earnRateBps != null
+                    ? autoPoints > 0
+                      ? `Будет начислено ${formatPoints(autoPoints)} баллов по уровню клиента.`
+                      : "Введите сумму покупки, чтобы рассчитать начисление."
+                    : "Ставка уровня недоступна, укажите количество баллов вручную."
+                  : "Укажите, сколько баллов нужно начислить вручную."}
+              </span>
               {errors.manualPoints && <ErrorText>{errors.manualPoints}</ErrorText>}
             </label>
             <label style={fieldStyle}>
@@ -743,22 +976,29 @@ const AccrueModal: React.FC<AccrueModalProps> = ({ customer, onClose, onSuccess 
                 style={inputStyle}
                 value={form.outletId}
                 onChange={(event) => update("outletId", event.target.value)}
+                disabled={outletsLoading || outletsUnavailable}
               >
-                {outlets.map((outlet) => (
-                  <option key={outlet.id} value={outlet.id}>
-                    {outlet.name}
-                  </option>
-                ))}
+                {outletsLoading && <option value="">Загрузка…</option>}
+                {!outletsLoading && outlets.length === 0 && (
+                  <option value="">Нет доступных торговых точек</option>
+                )}
+                {!outletsLoading &&
+                  outlets.map((outlet) => (
+                    <option key={outlet.id} value={outlet.id}>
+                      {outlet.name}
+                    </option>
+                  ))}
               </select>
               {errors.outletId && <ErrorText>{errors.outletId}</ErrorText>}
             </label>
           </section>
+          {apiError && <ErrorText>{apiError}</ErrorText>}
         </div>
         <div style={modalFooterStyle}>
           <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>
             Отмена
           </Button>
-          <Button type="submit" disabled={submitting}>
+          <Button type="submit" disabled={submitting || outletsLoading || outletsUnavailable}>
             {submitting ? "Создаём…" : "Создать"}
           </Button>
         </div>
@@ -771,16 +1011,42 @@ type RedeemModalProps = {
   customer: CustomerRecord;
   onClose: () => void;
   onSuccess: (message: string) => void;
+  outlets: OutletOption[];
+  outletsLoading: boolean;
 };
 
-const RedeemModal: React.FC<RedeemModalProps> = ({ customer, onClose, onSuccess }) => {
+type ComplimentaryModalProps = {
+  customer: CustomerRecord;
+  onClose: () => void;
+  onSuccess: (message: string) => void;
+};
+
+const RedeemModal: React.FC<RedeemModalProps> = ({
+  customer,
+  onClose,
+  onSuccess,
+  outlets,
+  outletsLoading,
+}) => {
   const [form, setForm] = React.useState<RedeemForm>({
     amount: "",
-    outletId: outlets[0]?.id ?? "",
-    deviceNumber: customer.deviceNumber ?? "",
+    outletId: "",
   });
   const [errors, setErrors] = React.useState<RedeemErrors>({});
+  const [apiError, setApiError] = React.useState<string | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
+
+  const outletsUnavailable = !outletsLoading && outlets.length === 0;
+
+  React.useEffect(() => {
+    if (!outlets.length) return;
+    setForm((prev) => {
+      if (prev.outletId && outlets.some((item) => item.id === prev.outletId)) {
+        return prev;
+      }
+      return { ...prev, outletId: outlets[0].id };
+    });
+  }, [outlets]);
 
   function update<K extends keyof RedeemForm>(key: K, value: RedeemForm[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -797,7 +1063,11 @@ const RedeemModal: React.FC<RedeemModalProps> = ({ customer, onClose, onSuccess 
       nextErrors.amount = "Недостаточно баллов на балансе";
     }
 
-    if (!form.outletId) {
+    if (outlets.length === 0) {
+      if (!outletsLoading) {
+        nextErrors.outletId = "Нет доступных торговых точек";
+      }
+    } else if (!form.outletId) {
       nextErrors.outletId = "Выберите торговую точку";
     }
 
@@ -807,40 +1077,45 @@ const RedeemModal: React.FC<RedeemModalProps> = ({ customer, onClose, onSuccess 
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setApiError(null);
+    if (outletsLoading) {
+      setErrors((prev) => ({ ...prev, outletId: "Дождитесь загрузки списка торговых точек" }));
+      return;
+    }
     if (!validate()) return;
 
     try {
       setSubmitting(true);
-      const points = Number(form.amount);
-      const outletName = outlets.find((o) => o.id === form.outletId)?.name || "Торговая точка";
-      const tx: CustomerTransaction = {
-        id: `txn-${Date.now()}`,
-        purchaseAmount: 0,
-        change: -Math.abs(points),
-        details: "Ручное списание баллов",
-        datetime: new Date().toISOString(),
-        outlet: outletName,
-        rating: 0,
-        receipt: "",
-        manager: "Система",
-        carrier: "Телефон",
-        carrierCode: (customer.phone || customer.login).slice(-4),
-        toPay: 0,
-        paidByPoints: Math.abs(points),
-        total: 0,
+      const payload: Record<string, unknown> = {
+        points: Number(form.amount),
+        outletId: form.outletId || undefined,
       };
-      const next: CustomerRecord = {
-        ...customer,
-        bonusBalance: Math.max(0, (customer.bonusBalance || 0) - Math.abs(points)),
-        transactions: [tx, ...(Array.isArray(customer.transactions) ? customer.transactions : [])],
-      };
-      await fetch(`/api/customers/${encodeURIComponent(customer.id)}`, {
-        method: "PUT",
+
+      const res = await fetch(`/api/customers/${encodeURIComponent(customer.id)}/transactions/redeem`, {
+        method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(next),
-        cache: "no-store",
+        body: JSON.stringify(payload),
       });
-      onSuccess("Баллы списаны");
+      const text = await res.text();
+      if (!res.ok) {
+        throw new Error(text || res.statusText);
+      }
+      let data: any = {};
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = {};
+        }
+      }
+      const pointsRedeemed = data?.pointsRedeemed ?? Number(form.amount);
+      const message =
+        pointsRedeemed && Number.isFinite(pointsRedeemed)
+          ? `Списано ${formatPoints(pointsRedeemed)} баллов`
+          : "Баллы списаны";
+      onSuccess(message);
+    } catch (error: any) {
+      setApiError(error?.message || "Не удалось списать баллы");
     } finally {
       setSubmitting(false);
     }
@@ -857,19 +1132,9 @@ const RedeemModal: React.FC<RedeemModalProps> = ({ customer, onClose, onSuccess 
               <span style={labelStyle}>Телефон клиента</span>
               <input style={inputStyle} value={customer.phone || customer.login} disabled />
             </label>
-            <label style={fieldStyle}>
-              <span style={labelStyle}># Клиента</span>
-              <input style={inputStyle} value={customer.customerNumber} disabled />
-            </label>
-            <label style={fieldStyle}>
-              <span style={labelStyle}># Устройства</span>
-              <input
-                style={inputStyle}
-                value={form.deviceNumber}
-                onChange={(event) => update("deviceNumber", event.target.value)}
-                placeholder="Необязательно"
-              />
-            </label>
+            <div style={{ fontSize: 12, opacity: 0.65 }}>
+              Доступно для списания: {formatPoints(customer.bonusBalance)} баллов
+            </div>
           </section>
 
           <section style={modalSectionStyle}>
@@ -890,22 +1155,29 @@ const RedeemModal: React.FC<RedeemModalProps> = ({ customer, onClose, onSuccess 
                 style={inputStyle}
                 value={form.outletId}
                 onChange={(event) => update("outletId", event.target.value)}
+                disabled={outletsLoading || outletsUnavailable}
               >
-                {outlets.map((outlet) => (
-                  <option key={outlet.id} value={outlet.id}>
-                    {outlet.name}
-                  </option>
-                ))}
+                {outletsLoading && <option value="">Загрузка…</option>}
+                {!outletsLoading && outlets.length === 0 && (
+                  <option value="">Нет доступных торговых точек</option>
+                )}
+                {!outletsLoading &&
+                  outlets.map((outlet) => (
+                    <option key={outlet.id} value={outlet.id}>
+                      {outlet.name}
+                    </option>
+                  ))}
               </select>
               {errors.outletId && <ErrorText>{errors.outletId}</ErrorText>}
             </label>
           </section>
+          {apiError && <ErrorText>{apiError}</ErrorText>}
         </div>
         <div style={modalFooterStyle}>
           <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>
             Отмена
           </Button>
-          <Button type="submit" disabled={submitting}>
+          <Button type="submit" disabled={submitting || outletsLoading || outletsUnavailable}>
             {submitting ? "Создаём…" : "Создать"}
           </Button>
         </div>
@@ -914,48 +1186,147 @@ const RedeemModal: React.FC<RedeemModalProps> = ({ customer, onClose, onSuccess 
   );
 };
 
-type TransactionModalProps = {
-  transaction: CustomerTransaction;
-  onClose: () => void;
-  customer: CustomerRecord;
-};
+const ComplimentaryModal: React.FC<ComplimentaryModalProps> = ({ customer, onClose, onSuccess }) => {
+  const [form, setForm] = React.useState<ComplimentaryForm>({
+    points: "",
+    expiresIn: "0",
+    comment: "",
+  });
+  const [errors, setErrors] = React.useState<ComplimentaryErrors>({});
+  const [apiError, setApiError] = React.useState<string | null>(null);
+  const [submitting, setSubmitting] = React.useState(false);
 
-const TransactionModal: React.FC<TransactionModalProps> = ({ transaction, onClose, customer }) => {
-  const earned = Math.max(transaction.change, 0);
-  const spent = Math.max(-transaction.change, 0);
-  const carrierLabel = transaction.carrier
-    ? `${transaction.carrier}${transaction.carrierCode ? ` • ${transaction.carrierCode}` : ""}`
-    : transaction.carrierCode ?? "—";
-  const receiptLabel = transaction.receiptNumber ? `Чек №${transaction.receiptNumber}` : undefined;
+  function update<K extends keyof ComplimentaryForm>(key: K, value: ComplimentaryForm[K]) {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function validate(): boolean {
+    const nextErrors: ComplimentaryErrors = {};
+    const pointsValue = Number(form.points);
+    if (!form.points.trim()) {
+      nextErrors.points = "Укажите количество баллов";
+    } else if (Number.isNaN(pointsValue) || pointsValue <= 0) {
+      nextErrors.points = "Баллы должны быть больше 0";
+    }
+
+    const expiresValue = Number(form.expiresIn);
+    if (form.expiresIn === "") {
+      nextErrors.expiresIn = "Укажите срок";
+    } else if (Number.isNaN(expiresValue) || expiresValue < 0) {
+      nextErrors.expiresIn = "Срок не может быть отрицательным";
+    }
+
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  }
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setApiError(null);
+    if (!validate()) return;
+
+    try {
+      setSubmitting(true);
+      const payload: Record<string, unknown> = {
+        points: Number(form.points),
+        expiresInDays: Number(form.expiresIn),
+        comment: form.comment.trim() || undefined,
+      };
+
+      const res = await fetch(
+        `/api/customers/${encodeURIComponent(customer.id)}/transactions/complimentary`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+      );
+      const text = await res.text();
+      if (!res.ok) {
+        throw new Error(text || res.statusText);
+      }
+      let data: any = {};
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = {};
+        }
+      }
+      const pointsIssued = data?.pointsIssued ?? Number(form.points);
+      const message =
+        pointsIssued && Number.isFinite(pointsIssued)
+          ? `Начислено ${formatPoints(pointsIssued)} комплиментарных баллов`
+          : "Комплиментарные баллы начислены";
+      onSuccess(message);
+    } catch (error: any) {
+      setApiError(error?.message || "Не удалось начислить комплиментарные баллы");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <div style={modalOverlayStyle}>
-      <div style={modalStyle} role="dialog" aria-modal="true">
-        <ModalHeader
-          title={`Транзакция от ${formatDateTime(transaction.datetime)}`}
-          subtitle={receiptLabel}
-          onClose={onClose}
-        />
+      <form onSubmit={handleSubmit} style={modalStyle} role="dialog" aria-modal="true">
+        <ModalHeader title="Комплиментарные баллы" onClose={onClose} />
         <div style={modalBodyStyle}>
           <section style={modalSectionStyle}>
-            <h4 style={sectionHeadingStyle}>Основные данные</h4>
-            <InfoRow label="Торговая точка" value={transaction.outlet || "—"} />
-            <InfoRow label="Клиент" value={getFullName(customer) || customer.phone || customer.login} />
-            <InfoRow label="Менеджер" value={transaction.manager || "—"} />
-            <InfoRow label="Носитель" value={carrierLabel} />
+            <h4 style={sectionHeadingStyle}>Информация о клиенте</h4>
+            <label style={fieldStyle}>
+              <span style={labelStyle}>Телефон клиента</span>
+              <input style={inputStyle} value={customer.phone || customer.login} disabled />
+            </label>
           </section>
+
           <section style={modalSectionStyle}>
-            <h4 style={sectionHeadingStyle}>Баллы и оплата</h4>
-            <InfoRow label="Начислено" value={`+${formatPoints(earned)}`} />
-            <InfoRow label="Списано" value={`-${formatPoints(spent)}`} />
-            <InfoRow label="К оплате" value={formatCurrency(transaction.toPay)} />
-            <InfoRow label="Оплачено баллами" value={formatPoints(transaction.paidByPoints ?? 0)} />
-            <InfoRow label="Итог" value={formatCurrency(transaction.total)} />
+            <h4 style={sectionHeadingStyle}>Параметры начисления</h4>
+            <label style={fieldStyle}>
+              <span style={labelStyle}>Начислить баллов</span>
+              <input
+                style={inputStyle}
+                type="number"
+                min={1}
+                step={1}
+                value={form.points}
+                onChange={(event) => update("points", event.target.value)}
+                placeholder="Например, 500"
+              />
+              {errors.points && <ErrorText>{errors.points}</ErrorText>}
+            </label>
+            <label style={fieldStyle}>
+              <span style={labelStyle}>Срок до сгорания (дней)</span>
+              <input
+                style={inputStyle}
+                type="number"
+                min={0}
+                value={form.expiresIn}
+                onChange={(event) => update("expiresIn", event.target.value)}
+              />
+              <span style={{ fontSize: 12, opacity: 0.7 }}>Укажите 0, если срок действия баллов не ограничен.</span>
+              {errors.expiresIn && <ErrorText>{errors.expiresIn}</ErrorText>}
+            </label>
+            <label style={fieldStyle}>
+              <span style={labelStyle}>Комментарий</span>
+              <textarea
+                style={{ ...inputStyle, minHeight: 80, resize: "vertical" }}
+                value={form.comment}
+                onChange={(event) => update("comment", event.target.value)}
+                placeholder="Комментарий увидит клиент в истории"
+              />
+            </label>
           </section>
+          {apiError && <ErrorText>{apiError}</ErrorText>}
         </div>
         <div style={modalFooterStyle}>
-          <Button variant="secondary">Отменить транзакцию</Button>
+          <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>
+            Отмена
+          </Button>
+          <Button type="submit" disabled={submitting}>
+            {submitting ? "Начисляем…" : "Начислить"}
+          </Button>
         </div>
-      </div>
+      </form>
     </div>
   );
 };

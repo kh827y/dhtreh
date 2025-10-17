@@ -1371,6 +1371,7 @@ const result = await client.commit({
 - `referrer` — `{ id, name, phone }`, если клиент был приглашён.
 - `expiry` — массив `{ id, accrualDate, expiresAt, amount, status }` по активным/отложенным начислениям.
 - `transactions` — операции с баллами (последние 200): `id`, `type`, `change`, `purchaseAmount`, `details`, `datetime`, `outlet`, `rating`, `receiptNumber`, `manager`, `carrier`, `carrierCode`, `toPay`, `paidByPoints`, `total`, `blockedAccrual`.
+  - `details` отображает пользовательские подписи операций: «Начисление за покупку», «Списание за покупку», «Начислено администратором» (ручные и комплиментарные начисления), «Списание администратором», «Реферальное начисление», «Баллы по промокоду», «Баллы по акции», «Баллы за день рождения», «Баллы за автовозврат», «Баллы за регистрацию», «Возврат покупки», «Сгорание баллов», «Корректировка баланса», «Начисление заблокировано администратором», а при отменах — «Операция отменена: …» (для исходных операций) и «Операция #N (ДД.ММ.ГГГГ, ЧЧ:ММ) отменена» (для фиксирующей записи отмены).
 - `reviews` — отзывы `{ id, outlet, rating, comment, createdAt }`.
 - `invited` — приглашённые `{ id, name, phone, joinedAt, purchases }`.
 
@@ -1433,6 +1434,10 @@ Response 200: объект клиента, как в GET /portal/customers/{id}
 | `/portal/loyalty/promotions/{id}/duplicate` | POST | Создание черновика на основе существующей акции. |
 | `/portal/operations/log` | GET | Журнал начислений и списаний с фильтрами (даты, сотрудник, точка, направление). |
 | `/portal/operations/log/{receiptId}` | GET | Детали конкретной операции (состав транзакций, возможность отмены). |
+| `/portal/operations/log/{receiptId}/cancel` | POST | Отмена операции: помечает чек отменённым и инициирует возврат/списание баллов. |
+| `/portal/customers/{customerId}/transactions/accrual` | POST | Ручное начисление баллов (сумма покупки, чек, авто- или ручной ввод баллов, торговая точка). |
+| `/portal/customers/{customerId}/transactions/redeem` | POST | Ручное списание баллов (количество баллов, торговая точка, комментарий — опционально). |
+| `/portal/customers/{customerId}/transactions/complimentary` | POST | Начисление комплиментарных баллов (количество, срок сгорания, торговая точка, комментарий). |
 
 Каждый эндпоинт требует аутентифицированного вызова из Merchant Portal. Поля дат (`scheduledAt`, `startDate`, `endDate`) передаются в формате ISO 8601.
 

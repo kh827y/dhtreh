@@ -491,11 +491,15 @@ model Receipt {
 
   outlet Outlet? @relation(fields: [outletId], references: [id], onDelete: SetNull)
   staff  Staff?  @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  canceledAt        DateTime?
+  canceledByStaffId String?
+  canceledBy        Staff?  @relation("ReceiptCanceledBy", fields: [canceledByStaffId], references: [id], onDelete: SetNull)
 
   @@unique([merchantId, orderId])
   @@index([merchantId, createdAt])
   @@index([merchantId, outletId])
   @@index([merchantId, staffId])
+  @@index([merchantId, canceledAt])
 }
 
 model Transaction {
@@ -510,6 +514,7 @@ model Transaction {
   createdAt  DateTime @default(now())
   outletId   String?
   staffId    String?
+  metadata   Json?
 
   outlet  Outlet?  @relation(fields: [outletId], references: [id], onDelete: SetNull)
   staff   Staff?   @relation(fields: [staffId], references: [id], onDelete: SetNull)
@@ -746,6 +751,7 @@ model Staff {
   staffMetricsDaily             StaffKpiDaily[]
   // telegram staff notifications (invites created by this staff)
   createdTelegramInvites        TelegramStaffInvite[]   @relation("StaffCreatedTelegramInvites")
+  receiptsCanceled              Receipt[]               @relation("ReceiptCanceledBy")
 
   @@unique([merchantId, login])
   @@index([merchantId])

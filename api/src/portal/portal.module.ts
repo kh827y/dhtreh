@@ -18,6 +18,7 @@ import { PortalTelegramNotifyService } from './services/telegram-notify.service'
 import { CommunicationsModule } from '../communications/communications.module';
 import { ReferralModule } from '../referral/referral.module';
 import { PortalReviewsService } from './services/reviews.service';
+import { LoyaltyModule } from '../loyalty/loyalty.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { PortalReviewsService } from './services/reviews.service';
     TelegramModule,
     CommunicationsModule,
     ReferralModule,
+    LoyaltyModule,
   ],
   controllers: [PortalController],
   providers: [

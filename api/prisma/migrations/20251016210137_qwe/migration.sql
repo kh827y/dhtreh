@@ -226,6 +226,8 @@ CREATE TABLE "public"."MerchantCustomer" (
     "phone" TEXT,
     "email" TEXT,
     "name" TEXT,
+    "comment" TEXT,
+    "accrualsBlocked" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -280,6 +282,8 @@ CREATE TABLE "public"."Receipt" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "outletId" TEXT,
     "staffId" TEXT,
+    "canceledAt" TIMESTAMP(3),
+    "canceledByStaffId" TEXT,
 
     CONSTRAINT "Receipt_pkey" PRIMARY KEY ("id")
 );
@@ -295,6 +299,7 @@ CREATE TABLE "public"."Transaction" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "outletId" TEXT,
     "staffId" TEXT,
+    "metadata" JSONB,
 
     CONSTRAINT "Transaction_pkey" PRIMARY KEY ("id")
 );
@@ -326,6 +331,49 @@ CREATE TABLE "public"."EventOutbox" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "EventOutbox_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."AutoReturnAttempt" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "customerId" TEXT NOT NULL,
+    "attemptNumber" INTEGER NOT NULL,
+    "lastPurchaseAt" TIMESTAMP(3) NOT NULL,
+    "invitedAt" TIMESTAMP(3) NOT NULL,
+    "message" TEXT NOT NULL,
+    "giftPoints" INTEGER NOT NULL DEFAULT 0,
+    "giftExpiresAt" TIMESTAMP(3),
+    "giftTransactionId" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'PENDING',
+    "lastError" TEXT,
+    "repeatAfterDays" INTEGER,
+    "completedAt" TIMESTAMP(3),
+    "completionReason" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "AutoReturnAttempt_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."BirthdayGreeting" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "customerId" TEXT NOT NULL,
+    "sendDate" TIMESTAMP(3) NOT NULL,
+    "birthdayDate" TIMESTAMP(3) NOT NULL,
+    "message" TEXT NOT NULL,
+    "giftPoints" INTEGER NOT NULL DEFAULT 0,
+    "giftExpiresAt" TIMESTAMP(3),
+    "giftTransactionId" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'PENDING',
+    "error" TEXT,
+    "sentAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "BirthdayGreeting_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -1714,6 +1762,9 @@ CREATE INDEX "Receipt_merchantId_outletId_idx" ON "public"."Receipt"("merchantId
 CREATE INDEX "Receipt_merchantId_staffId_idx" ON "public"."Receipt"("merchantId", "staffId");
 
 -- CreateIndex
+CREATE INDEX "Receipt_merchantId_canceledAt_idx" ON "public"."Receipt"("merchantId", "canceledAt");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "Receipt_merchantId_orderId_key" ON "public"."Receipt"("merchantId", "orderId");
 
 -- CreateIndex
@@ -1739,6 +1790,27 @@ CREATE INDEX "EventOutbox_status_nextRetryAt_idx" ON "public"."EventOutbox"("sta
 
 -- CreateIndex
 CREATE INDEX "EventOutbox_merchantId_createdAt_idx" ON "public"."EventOutbox"("merchantId", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "AutoReturnAttempt_merchantId_customerId_idx" ON "public"."AutoReturnAttempt"("merchantId", "customerId");
+
+-- CreateIndex
+CREATE INDEX "AutoReturnAttempt_merchantId_status_idx" ON "public"."AutoReturnAttempt"("merchantId", "status");
+
+-- CreateIndex
+CREATE INDEX "AutoReturnAttempt_merchantId_invitedAt_idx" ON "public"."AutoReturnAttempt"("merchantId", "invitedAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "AutoReturnAttempt_merchantId_customerId_attemptNumber_key" ON "public"."AutoReturnAttempt"("merchantId", "customerId", "attemptNumber");
+
+-- CreateIndex
+CREATE INDEX "BirthdayGreeting_merchantId_sendDate_idx" ON "public"."BirthdayGreeting"("merchantId", "sendDate");
+
+-- CreateIndex
+CREATE INDEX "BirthdayGreeting_merchantId_status_idx" ON "public"."BirthdayGreeting"("merchantId", "status");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "BirthdayGreeting_merchantId_customerId_birthdayDate_key" ON "public"."BirthdayGreeting"("merchantId", "customerId", "birthdayDate");
 
 -- CreateIndex
 CREATE INDEX "Outlet_merchantId_idx" ON "public"."Outlet"("merchantId");
@@ -2164,6 +2236,9 @@ ALTER TABLE "public"."Receipt" ADD CONSTRAINT "Receipt_outletId_fkey" FOREIGN KE
 ALTER TABLE "public"."Receipt" ADD CONSTRAINT "Receipt_staffId_fkey" FOREIGN KEY ("staffId") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "public"."Receipt" ADD CONSTRAINT "Receipt_canceledByStaffId_fkey" FOREIGN KEY ("canceledByStaffId") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "public"."Transaction" ADD CONSTRAINT "Transaction_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "public"."Customer"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -2174,6 +2249,18 @@ ALTER TABLE "public"."Transaction" ADD CONSTRAINT "Transaction_outletId_fkey" FO
 
 -- AddForeignKey
 ALTER TABLE "public"."Transaction" ADD CONSTRAINT "Transaction_staffId_fkey" FOREIGN KEY ("staffId") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."AutoReturnAttempt" ADD CONSTRAINT "AutoReturnAttempt_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."AutoReturnAttempt" ADD CONSTRAINT "AutoReturnAttempt_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "public"."Customer"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."BirthdayGreeting" ADD CONSTRAINT "BirthdayGreeting_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."BirthdayGreeting" ADD CONSTRAINT "BirthdayGreeting_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "public"."Customer"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "public"."Outlet" ADD CONSTRAINT "Outlet_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
