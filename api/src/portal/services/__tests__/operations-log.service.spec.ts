@@ -8,11 +8,15 @@ describe('OperationsLogService', () => {
     $transaction: jest.fn(),
   } as any;
 
+  const loyalty = {
+    refund: jest.fn(),
+  } as any;
+
   let service: OperationsLogService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new OperationsLogService(prisma);
+    service = new OperationsLogService(prisma, loyalty);
   });
 
   it('maps receipts to log DTO', async () => {

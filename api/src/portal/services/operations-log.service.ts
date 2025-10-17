@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, TxnType, WalletType } from '@prisma/client';
+import { Prisma, Transaction, TxnType, WalletType } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { LoyaltyService } from '../../loyalty/loyalty.service';
 import { planRevoke, planUnconsume } from '../../loyalty/lots.util';
@@ -361,7 +361,12 @@ export class OperationsLogService {
           break;
       }
       if (andConditions.length) {
-        where.AND = [...(where.AND ?? []), ...andConditions];
+        const existingAnd = where.AND
+          ? Array.isArray(where.AND)
+            ? where.AND
+            : [where.AND]
+          : [];
+        where.AND = [...existingAnd, ...andConditions];
       } else {
         where.OR = baseOr;
       }
@@ -475,9 +480,9 @@ export class OperationsLogService {
   }
 
   private describeTransaction(
-    tx: Prisma.TransactionGetPayload<{
-      include: { customer: true; staff: true; outlet: true };
-    }> | Prisma.Transaction,
+    tx: Prisma.TransactionGetPayload<{ 
+      include: { customer: true; staff: true; outlet: true }; 
+    }> | Transaction,
     metadata: Record<string, any> | null,
   ): { details: string; kind: string; note?: string | null; purchaseAmount?: number | null } {
     const change = Number((tx as any)?.amount ?? 0) || 0;
