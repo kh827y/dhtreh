@@ -1097,6 +1097,8 @@ export class PortalController {
     @Query('outletId') outletId?: string,
     @Query('direction') direction?: string,
     @Query('receiptNumber') receiptNumber?: string,
+    @Query('operationType') operationType?: string,
+    @Query('carrier') carrier?: string,
     @Query('limit') limitStr?: string,
     @Query('offset') offsetStr?: string,
   ) {
@@ -1107,6 +1109,8 @@ export class PortalController {
       outletId: outletId || undefined,
       direction: this.normalizeDirection(direction),
       receiptNumber: receiptNumber || undefined,
+      operationType: operationType || undefined,
+      carrier: carrier || undefined,
       limit: limitStr ? parseInt(limitStr, 10) : undefined,
       offset: offsetStr ? parseInt(offsetStr, 10) : undefined,
     };
@@ -1124,7 +1128,7 @@ export class PortalController {
   cancelOperation(@Req() req: any, @Param('receiptId') receiptId: string) {
     const merchantId = this.getMerchantId(req);
     const staffId: string | null = req.portalStaffId ?? null;
-    return this.operations.cancelReceipt(merchantId, receiptId, staffId);
+    return this.operations.cancelOperation(merchantId, receiptId, staffId);
   }
 
   // ===== Analytics wrappers (portal-friendly) =====

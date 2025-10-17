@@ -13,7 +13,7 @@ import {
 import { normalizeCustomer } from "../normalize";
 import { CustomerFormModal, type CustomerFormPayload } from "../customer-form-modal";
 
-const { Edit3, PlusCircle, MinusCircle, Gift, X, XCircle } = Icons;
+const { Edit3, PlusCircle, MinusCircle, Gift, X, XCircle, ChevronLeft, ChevronRight } = Icons;
 
 type OutletOption = {
   id: string;
@@ -44,6 +44,8 @@ type ComplimentaryErrors = Partial<Record<keyof ComplimentaryForm, string>> & {
   expiresIn?: string;
 };
 
+const TABLE_PAGE_SIZE = 7;
+
 export default function CustomerCardPage() {
   const params = useParams<{ customerId: string | string[] }>();
   const customerIdRaw = Array.isArray(params.customerId) ? params.customerId[0] : params.customerId;
@@ -57,6 +59,10 @@ export default function CustomerCardPage() {
   const [existingLogins, setExistingLogins] = React.useState<string[]>([]);
   const [outlets, setOutlets] = React.useState<OutletOption[]>([]);
   const [outletsLoading, setOutletsLoading] = React.useState(true);
+  const [expiryPageIndex, setExpiryPageIndex] = React.useState(0);
+  const [transactionsPageIndex, setTransactionsPageIndex] = React.useState(0);
+  const [reviewsPageIndex, setReviewsPageIndex] = React.useState(0);
+  const [invitedPageIndex, setInvitedPageIndex] = React.useState(0);
 
   // Хелпер для запросов к локальному прокси /api/customers
   async function api<T = any>(url: string, init?: RequestInit): Promise<T> {
@@ -183,6 +189,13 @@ export default function CustomerCardPage() {
     return Array.from(new Set([customer?.group, ...base].filter(Boolean) as string[]));
   }, [customer?.group]);
 
+  React.useEffect(() => {
+    setExpiryPageIndex(0);
+    setTransactionsPageIndex(0);
+    setReviewsPageIndex(0);
+    setInvitedPageIndex(0);
+  }, [customer?.id]);
+
   const reloadCustomer = React.useCallback(async () => {
     if (!customerId) return;
     try {
@@ -210,6 +223,53 @@ export default function CustomerCardPage() {
   const fullName = getFullName(customer) || customer.phone || customer.login;
   const profileRows = buildProfileRows(customer);
 
+  const expiryTotalPages = Math.max(1, Math.ceil(customer.expiry.length / TABLE_PAGE_SIZE));
+  const expiryPage = Math.min(expiryPageIndex, expiryTotalPages - 1);
+  const expiryStartIndex = expiryPage * TABLE_PAGE_SIZE;
+  const expiryPageItems = customer.expiry.slice(
+    expiryStartIndex,
+    expiryStartIndex + TABLE_PAGE_SIZE,
+  );
+  const hasExpiryPagination = customer.expiry.length > TABLE_PAGE_SIZE;
+
+  const transactionsTotalPages = Math.max(
+    1,
+    Math.ceil(customer.transactions.length / TABLE_PAGE_SIZE),
+  );
+  const transactionsPage = Math.min(
+    transactionsPageIndex,
+    transactionsTotalPages - 1,
+  );
+  const transactionsStartIndex = transactionsPage * TABLE_PAGE_SIZE;
+  const transactionsPageItems = customer.transactions.slice(
+    transactionsStartIndex,
+    transactionsStartIndex + TABLE_PAGE_SIZE,
+  );
+  const hasTransactionsPagination =
+    customer.transactions.length > TABLE_PAGE_SIZE;
+
+  const reviewsTotalPages = Math.max(
+    1,
+    Math.ceil(customer.reviews.length / TABLE_PAGE_SIZE),
+  );
+  const reviewsPage = Math.min(reviewsPageIndex, reviewsTotalPages - 1);
+  const reviewsPageItems = customer.reviews.slice(
+    reviewsPage * TABLE_PAGE_SIZE,
+    reviewsPage * TABLE_PAGE_SIZE + TABLE_PAGE_SIZE,
+  );
+  const hasReviewsPagination = customer.reviews.length > TABLE_PAGE_SIZE;
+
+  const invitedTotalPages = Math.max(
+    1,
+    Math.ceil(customer.invited.length / TABLE_PAGE_SIZE),
+  );
+  const invitedPage = Math.min(invitedPageIndex, invitedTotalPages - 1);
+  const invitedPageItems = customer.invited.slice(
+    invitedPage * TABLE_PAGE_SIZE,
+    invitedPage * TABLE_PAGE_SIZE + TABLE_PAGE_SIZE,
+  );
+  const hasInvitedPagination = customer.invited.length > TABLE_PAGE_SIZE;
+
   function handleAccrueSuccess(message: string) {
     setToast(message);
     setAccrueOpen(false);
@@ -229,11 +289,12 @@ export default function CustomerCardPage() {
   }
 
   async function handleCancelTransaction(operation: CustomerTransaction) {
-    if (!operation.receiptId) return;
+    const targetId = operation.receiptId || operation.id;
+    if (!targetId) return;
     const confirmMessage = window.confirm("Вы уверены, что хотите отменить транзакцию?");
     if (!confirmMessage) return;
     try {
-      const res = await fetch(`/api/operations/log/${encodeURIComponent(operation.receiptId)}/cancel`, {
+      const res = await fetch(`/api/operations/log/${encodeURIComponent(targetId)}/cancel`, {
         method: "POST",
         headers: { "content-type": "application/json" },
       });
@@ -330,26 +391,42 @@ export default function CustomerCardPage() {
           {customer.expiry.length === 0 ? (
             <div style={{ opacity: 0.6 }}>Нет начислений с ограниченным сроком действия.</div>
           ) : (
-            <table style={tableStyle}>
-              <thead>
-                <tr>
-                  <th style={headerCellStyle}>#</th>
-                  <th style={headerCellStyle}>Дата начисления</th>
-                  <th style={headerCellStyle}>Дата сгорания</th>
-                  <th style={headerCellStyle}>Баллов</th>
-                </tr>
-              </thead>
-              <tbody>
-                {customer.expiry.map((item, index) => (
-                  <tr key={item.id} style={rowStyle}>
-                    <td style={cellStyle}>{index + 1}</td>
-                    <td style={cellStyle}>{formatDate(item.accrualDate)}</td>
-                    <td style={cellStyle}>{formatDate(item.expiresAt)}</td>
-                    <td style={cellStyle}>{formatPoints(item.amount)}</td>
+            <>
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={headerCellStyle}>#</th>
+                    <th style={headerCellStyle}>Дата начисления</th>
+                    <th style={headerCellStyle}>Дата сгорания</th>
+                    <th style={headerCellStyle}>Баллов</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {expiryPageItems.map((item, index) => (
+                    <tr key={item.id} style={rowStyle}>
+                      <td style={cellStyle}>{expiryStartIndex + index + 1}</td>
+                      <td style={cellStyle}>{formatDate(item.accrualDate)}</td>
+                      <td style={cellStyle}>{formatDate(item.expiresAt)}</td>
+                      <td style={cellStyle}>{formatPoints(item.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {hasExpiryPagination && (
+                <PaginationControls
+                  page={expiryPage}
+                  totalPages={expiryTotalPages}
+                  onPrev={() =>
+                    setExpiryPageIndex((current) => Math.max(0, current - 1))
+                  }
+                  onNext={() =>
+                    setExpiryPageIndex((current) =>
+                      Math.min(expiryTotalPages - 1, current + 1),
+                    )
+                  }
+                />
+              )}
+            </>
           )}
         </CardBody>
       </Card>
@@ -360,38 +437,39 @@ export default function CustomerCardPage() {
           {customer.transactions.length === 0 ? (
             <div style={{ opacity: 0.6 }}>Пока нет операций с баллами.</div>
           ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ ...tableStyle, minWidth: 960 }}>
-                <thead>
-                  <tr>
-                    <th style={headerCellStyle}>#</th>
-                    <th style={headerCellStyle}>Сумма покупки</th>
-                    <th style={headerCellStyle}>Баллов</th>
-                  <th style={headerCellStyle}>Подробности/Основание</th>
-                  <th style={headerCellStyle}>Дата/время</th>
-                  <th style={headerCellStyle}>Торговая точка</th>
-                  <th style={headerCellStyle}>Оценка</th>
-                  <th style={{ ...headerCellStyle, textAlign: "right" }}>Действия</th>
-                </tr>
-              </thead>
-              <tbody>
-                  {customer.transactions.map((operation, index) => {
-                    const isBlockedAccrual = operation.type === "EARN" && operation.blockedAccrual;
-                    const isCanceled = Boolean(operation.canceledAt);
-                    const canCancel = Boolean(operation.receiptId) && !isCanceled;
-                    const isComplimentary = operation.kind === "COMPLIMENTARY";
-                    const changePrefix =
-                      operation.change > 0 ? "+" : operation.change < 0 ? "−" : "";
-                    const changeColor = isCanceled
-                      ? "rgba(148,163,184,0.75)"
-                      : operation.change > 0 && !isBlockedAccrual
-                        ? "#4ade80"
-                        : "#f87171";
-                    const detailsColor = isCanceled
-                      ? "#94a3b8"
-                      : isComplimentary
-                        ? "#f472b6"
-                        : "inherit";
+            <>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ ...tableStyle, minWidth: 960 }}>
+                  <thead>
+                    <tr>
+                      <th style={headerCellStyle}>#</th>
+                      <th style={headerCellStyle}>Сумма покупки</th>
+                      <th style={headerCellStyle}>Баллов</th>
+                      <th style={headerCellStyle}>Подробности/Основание</th>
+                      <th style={headerCellStyle}>Дата/время</th>
+                      <th style={headerCellStyle}>Торговая точка</th>
+                      <th style={headerCellStyle}>Оценка</th>
+                      <th style={{ ...headerCellStyle, textAlign: "right" }}>Действия</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {transactionsPageItems.map((operation, index) => {
+                      const isBlockedAccrual = operation.type === "EARN" && operation.blockedAccrual;
+                      const isCanceled = Boolean(operation.canceledAt);
+                      const canCancel = !isCanceled;
+                      const isComplimentary = operation.kind === "COMPLIMENTARY";
+                      const changePrefix =
+                        operation.change > 0 ? "+" : operation.change < 0 ? "−" : "";
+                      const changeColor = isCanceled
+                        ? "rgba(148,163,184,0.75)"
+                        : operation.change > 0 && !isBlockedAccrual
+                          ? "#4ade80"
+                          : "#f87171";
+                      const detailsColor = isCanceled
+                        ? "#94a3b8"
+                        : isComplimentary
+                          ? "#f472b6"
+                          : "inherit";
                     return (
                       <tr
                         key={operation.id}
@@ -403,7 +481,7 @@ export default function CustomerCardPage() {
                             : rowStyle.background,
                         }}
                       >
-                        <td style={cellStyle}>{index + 1}</td>
+                        <td style={cellStyle}>{transactionsStartIndex + index + 1}</td>
                         <td style={cellStyle}>{formatCurrency(operation.purchaseAmount)}</td>
                         <td style={{ ...cellStyle, color: changeColor, fontWeight: 600 }}>
                           {changePrefix}
@@ -452,10 +530,25 @@ export default function CustomerCardPage() {
                         </td>
                       </tr>
                     );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {hasTransactionsPagination && (
+                <PaginationControls
+                  page={transactionsPage}
+                  totalPages={transactionsTotalPages}
+                  onPrev={() =>
+                    setTransactionsPageIndex((current) => Math.max(0, current - 1))
+                  }
+                  onNext={() =>
+                    setTransactionsPageIndex((current) =>
+                      Math.min(transactionsTotalPages - 1, current + 1),
+                    )
+                  }
+                />
+              )}
+            </>
           )}
         </CardBody>
       </Card>
@@ -466,28 +559,44 @@ export default function CustomerCardPage() {
           {customer.reviews.length === 0 ? (
             <div style={{ opacity: 0.6 }}>Клиент ещё не оставил отзывов.</div>
           ) : (
-            <table style={tableStyle}>
-              <thead>
-                <tr>
-                  <th style={headerCellStyle}>Дата</th>
-                  <th style={headerCellStyle}>Торговая точка</th>
-                  <th style={headerCellStyle}>Оценка</th>
-                  <th style={headerCellStyle}>Комментарий</th>
-                </tr>
-              </thead>
-              <tbody>
-                {customer.reviews.map((review) => (
-                  <tr key={review.id} style={rowStyle}>
-                    <td style={cellStyle}>{formatDateTime(review.createdAt)}</td>
-                    <td style={cellStyle}>{review.outlet}</td>
-                    <td style={cellStyle}>
-                      <StarRating rating={review.rating} size={18} />
-                    </td>
-                    <td style={cellStyle}>{review.comment}</td>
+            <>
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={headerCellStyle}>Дата</th>
+                    <th style={headerCellStyle}>Торговая точка</th>
+                    <th style={headerCellStyle}>Оценка</th>
+                    <th style={headerCellStyle}>Комментарий</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {reviewsPageItems.map((review) => (
+                    <tr key={review.id} style={rowStyle}>
+                      <td style={cellStyle}>{formatDateTime(review.createdAt)}</td>
+                      <td style={cellStyle}>{review.outlet}</td>
+                      <td style={cellStyle}>
+                        <StarRating rating={review.rating} size={18} />
+                      </td>
+                      <td style={cellStyle}>{review.comment}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {hasReviewsPagination && (
+                <PaginationControls
+                  page={reviewsPage}
+                  totalPages={reviewsTotalPages}
+                  onPrev={() =>
+                    setReviewsPageIndex((current) => Math.max(0, current - 1))
+                  }
+                  onNext={() =>
+                    setReviewsPageIndex((current) =>
+                      Math.min(reviewsTotalPages - 1, current + 1),
+                    )
+                  }
+                />
+              )}
+            </>
           )}
         </CardBody>
       </Card>
@@ -511,26 +620,42 @@ export default function CustomerCardPage() {
           {customer.invited.length === 0 ? (
             <div style={{ opacity: 0.6 }}>По этому промокоду ещё никто не зарегистрировался.</div>
           ) : (
-            <table style={tableStyle}>
-              <thead>
-                <tr>
-                  <th style={headerCellStyle}>Клиент</th>
-                  <th style={headerCellStyle}>Телефон</th>
-                  <th style={headerCellStyle}>Дата присоединения</th>
-                  <th style={headerCellStyle}>Покупок</th>
-                </tr>
-              </thead>
-              <tbody>
-                {customer.invited.map((invitee) => (
-                  <tr key={invitee.id} style={rowStyle}>
-                    <td style={cellStyle}>{invitee.name || invitee.phone || invitee.id}</td>
-                    <td style={cellStyle}>{invitee.phone || "—"}</td>
-                    <td style={cellStyle}>{formatDate(invitee.joinedAt)}</td>
-                    <td style={cellStyle}>{invitee.purchases != null ? invitee.purchases : "—"}</td>
+            <>
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={headerCellStyle}>Клиент</th>
+                    <th style={headerCellStyle}>Телефон</th>
+                    <th style={headerCellStyle}>Дата присоединения</th>
+                    <th style={headerCellStyle}>Покупок</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {invitedPageItems.map((invitee) => (
+                    <tr key={invitee.id} style={rowStyle}>
+                      <td style={cellStyle}>{invitee.name || invitee.phone || invitee.id}</td>
+                      <td style={cellStyle}>{invitee.phone || "—"}</td>
+                      <td style={cellStyle}>{formatDate(invitee.joinedAt)}</td>
+                      <td style={cellStyle}>{invitee.purchases != null ? invitee.purchases : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {hasInvitedPagination && (
+                <PaginationControls
+                  page={invitedPage}
+                  totalPages={invitedTotalPages}
+                  onPrev={() =>
+                    setInvitedPageIndex((current) => Math.max(0, current - 1))
+                  }
+                  onNext={() =>
+                    setInvitedPageIndex((current) =>
+                      Math.min(invitedTotalPages - 1, current + 1),
+                    )
+                  }
+                />
+              )}
+            </>
           )}
         </CardBody>
       </Card>
@@ -648,6 +773,55 @@ const InfoRow: React.FC<InfoRowProps> = ({ label, value }) => (
     <span>{value}</span>
   </div>
 );
+
+type PaginationControlsProps = {
+  page: number;
+  totalPages: number;
+  onPrev: () => void;
+  onNext: () => void;
+};
+
+const PaginationControls: React.FC<PaginationControlsProps> = ({
+  page,
+  totalPages,
+  onPrev,
+  onNext,
+}) => (
+  <div style={paginationWrapperStyle}>
+    <span style={{ fontSize: 12, opacity: 0.7 }}>
+      Страница {page + 1} из {totalPages}
+    </span>
+    <div style={{ display: "flex", gap: 8 }}>
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={onPrev}
+        disabled={page === 0}
+        leftIcon={<ChevronLeft size={14} />}
+      >
+        Назад
+      </Button>
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={onNext}
+        disabled={page + 1 >= totalPages}
+        rightIcon={<ChevronRight size={14} />}
+      >
+        Вперёд
+      </Button>
+    </div>
+  </div>
+);
+
+const paginationWrapperStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  marginTop: 12,
+  flexWrap: "wrap",
+  gap: 8,
+};
 
 const tableStyle: React.CSSProperties = {
   width: "100%",

@@ -767,37 +767,49 @@ export class PortalCustomersService {
   } {
     const base = this.describeTransactionBase(params);
 
-    if (!params.receipt?.canceledAt) {
+    const isCanceled = Boolean(params.receipt?.canceledAt || params.tx.canceledAt);
+    if (!isCanceled) {
       return base;
     }
 
     if (params.tx.type === 'REFUND') {
-      const receipt = params.receipt;
+      const receipt = params.receipt ?? null;
       const receiptNumber =
-        typeof receipt.receiptNumber === 'string' &&
-        receipt.receiptNumber.trim().length > 0
+        receipt && typeof receipt.receiptNumber === 'string' && receipt.receiptNumber.trim().length > 0
           ? receipt.receiptNumber.trim()
           : null;
-      const orderId =
-        typeof receipt.orderId === 'string' && receipt.orderId.trim().length > 0
+      const orderIdFromReceipt =
+        receipt && typeof receipt.orderId === 'string' && receipt.orderId.trim().length > 0
           ? receipt.orderId.trim()
           : null;
-      const fallbackId =
-        typeof receipt.id === 'string' && receipt.id.length > 0
-          ? receipt.id.slice(-6)
+      const orderIdFromTx =
+        typeof params.tx.orderId === 'string' && params.tx.orderId.trim().length > 0
+          ? params.tx.orderId.trim()
           : null;
-      const identifier = receiptNumber ?? orderId ?? fallbackId ?? '—';
-      const canceledAtLabel = this.formatReceiptDateTime(receipt.createdAt);
+      const fallbackId =
+        receipt && typeof receipt.id === 'string' && receipt.id.length > 0
+          ? receipt.id.slice(-6)
+          : typeof params.tx.id === 'string' && params.tx.id.length > 0
+            ? params.tx.id.slice(-6)
+            : null;
+      const identifier = receiptNumber ?? orderIdFromReceipt ?? orderIdFromTx ?? fallbackId ?? '—';
+      const canceledAtSource = receipt?.createdAt ?? params.tx.createdAt ?? null;
+      const canceledAtLabel = this.formatReceiptDateTime(canceledAtSource);
       return {
-        details: `Операция #${identifier} (${canceledAtLabel}) отменена`,
+        details: `Возврат покупки #${identifier} (${canceledAtLabel}) - совершён администратором`,
         kind: 'CANCELED',
         note: null,
         purchaseAmount: base.purchaseAmount,
       };
     }
 
+    const alreadyPrefixed = base.details.startsWith('Операция отменена:');
+    const details = alreadyPrefixed
+      ? base.details
+      : `Операция отменена: ${base.details}`;
+
     return {
-      details: `Операция отменена: ${base.details}`,
+      details,
       kind: base.kind,
       note: base.note ?? null,
       purchaseAmount: base.purchaseAmount,
@@ -1178,6 +1190,15 @@ export class PortalCustomersService {
           lastName: true,
         },
       },
+      canceledBy: {
+        select: {
+          id: true,
+          login: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+        },
+      },
     } satisfies Prisma.TransactionInclude;
 
     const receiptSelect = {
@@ -1393,6 +1414,12 @@ export class PortalCustomersService {
         review?.transaction?.outlet?.name ??
         null;
       const carrierCode = receipt?.outlet?.code ?? tx.outlet?.code ?? null;
+      const txCanceledAt = tx.canceledAt
+        ? tx.canceledAt.toISOString()
+        : null;
+      const txCanceledByName = tx.canceledBy
+        ? this.formatStaffName(tx.canceledBy)
+        : null;
 
       return {
         id: tx.id,
@@ -1413,15 +1440,24 @@ export class PortalCustomersService {
         blockedAccrual:
           tx.type === 'EARN' ? Boolean(baseDto.accrualsBlocked) : false,
         receiptId: receipt?.id ?? null,
-        canceledAt: receipt?.canceledAt
-          ? receipt.canceledAt.toISOString()
-          : null,
-        canceledBy: receipt?.canceledBy
-          ? {
-              id: receipt.canceledBy.id,
-              name: this.formatStaffName(receipt.canceledBy),
-            }
-          : null,
+        canceledAt: txCanceledAt
+          ? txCanceledAt
+          : receipt?.canceledAt
+            ? receipt.canceledAt.toISOString()
+            : null,
+        canceledBy: txCanceledAt
+          ? tx.canceledBy
+            ? {
+                id: tx.canceledBy.id,
+                name: txCanceledByName,
+              }
+            : null
+          : receipt?.canceledBy
+            ? {
+                id: receipt.canceledBy.id,
+                name: this.formatStaffName(receipt.canceledBy),
+              }
+            : null,
         note: descriptor.note ?? null,
         kind: descriptor.kind,
       };
