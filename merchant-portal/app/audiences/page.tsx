@@ -2,413 +2,1264 @@
 
 import React from "react";
 import { Card, CardHeader, CardBody, Button, Skeleton } from "@loyalty/ui";
+import { Plus, Users, Edit2, RefreshCcw, Trash2, X, Search } from "lucide-react";
 import Toggle from "../../components/Toggle";
 import TagSelect from "../../components/TagSelect";
 import RangeSlider from "../../components/RangeSlider";
-import { Search, PlusCircle, X, Trash2, Users2 } from "lucide-react";
 
-const tableColumns = [
-  { key: 'name', label: 'Название' },
-  { key: 'participants', label: 'Участники' },
-  { key: 'age', label: 'Возраст' },
-  { key: 'gender', label: 'Пол' },
-  { key: 'averageCheck', label: 'Средний чек' },
-  { key: 'lastPurchaseDays', label: 'Дней с последней покупки' },
-  { key: 'purchaseCount', label: 'Количество покупок' },
-  { key: 'purchaseSum', label: 'Сумма покупок' },
-  { key: 'birthday', label: 'День рождения' },
-  { key: 'registrationDays', label: 'Дней с момента регистрации' },
-  { key: 'device', label: 'Устройство' },
-] as const;
-
-type AudienceRow = {
-  id: string;
-  name: string;
-  participants: number;
-  age: string;
-  gender: string;
-  averageCheck: string;
-  lastPurchaseDays: string;
-  purchaseCount: string;
-  purchaseSum: string;
-  birthday: string;
-  registrationDays: string;
-  device: string;
-  settings: AudienceSettings;
-  members: AudienceMember[];
-};
-
-type AudienceMember = {
-  id: string;
-  phone: string;
-  name: string;
-  birthday: string;
-  age: number;
-  registrationDate: string;
-};
-
-type AudienceSettings = {
-  visitedEnabled: boolean;
-  visitedOutlets: string[];
-  productEnabled: boolean;
-  products: string[];
-  genderEnabled: boolean;
-  gender: 'male' | 'female' | '';
-  ageEnabled: boolean;
-  age: [number, number];
-  birthdayEnabled: boolean;
-  birthday: [number, number];
-  registrationEnabled: boolean;
-  registration: [number, number];
-  lastPurchaseEnabled: boolean;
-  lastPurchase: [number, number];
-  purchaseCountEnabled: boolean;
-  purchaseCount: [number, number];
-  averageCheckEnabled: boolean;
-  averageCheck: [number, number];
-  purchaseSumEnabled: boolean;
-  purchaseSum: [number, number];
-  levelEnabled: boolean;
-  level: string;
-  rfmRecencyEnabled: boolean;
-  rfmRecency: string;
-  rfmFrequencyEnabled: boolean;
-  rfmFrequency: string;
-  rfmMonetaryEnabled: boolean;
-  rfmMonetary: string;
-  deviceEnabled: boolean;
-  device: string;
-};
-
-const defaultSettings: AudienceSettings = {
-  visitedEnabled: false,
-  visitedOutlets: [],
-  productEnabled: false,
-  products: [],
-  genderEnabled: false,
-  gender: '',
-  ageEnabled: false,
-  age: [0, 100],
-  birthdayEnabled: false,
-  birthday: [0, 365],
-  registrationEnabled: false,
-  registration: [0, 365],
-  lastPurchaseEnabled: false,
-  lastPurchase: [0, 365],
-  purchaseCountEnabled: false,
-  purchaseCount: [0, 1000],
-  averageCheckEnabled: false,
-  averageCheck: [0, 10000],
-  purchaseSumEnabled: false,
-  purchaseSum: [0, 200000],
-  levelEnabled: false,
-  level: '',
-  rfmRecencyEnabled: false,
-  rfmRecency: '',
-  rfmFrequencyEnabled: false,
-  rfmFrequency: '',
-  rfmMonetaryEnabled: false,
-  rfmMonetary: '',
-  deviceEnabled: false,
-  device: '',
-};
-
-const outletOptions = [
-  { value: 'outlet-1', label: 'Точка на Тверской' },
-  { value: 'outlet-2', label: 'ТРЦ Авиапарк' },
-  { value: 'outlet-3', label: 'МЕГА Химки' },
-  { value: 'outlet-4', label: 'Онлайн' },
-];
-
-const productOptions = [
-  { value: 'prod-1', label: 'Лимонад' },
-  { value: 'prod-2', label: 'Бургер' },
-  { value: 'prod-3', label: 'Кофе' },
-  { value: 'prod-4', label: 'Салат' },
-];
-
-const levelOptions = [
-  { value: 'bronze', label: 'Bronze' },
-  { value: 'silver', label: 'Silver' },
-  { value: 'gold', label: 'Gold' },
-];
-
-const rfmOptions = [
-  { value: 'A', label: 'A' },
-  { value: 'B', label: 'B' },
-  { value: 'C', label: 'C' },
-  { value: 'D', label: 'D' },
-];
-
-// API helper
-async function api<T = any>(url: string, init?: RequestInit): Promise<T> {
+async function fetchJson<T = any>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
-    headers: { 'content-type': 'application/json', ...(init?.headers || {}) },
-    cache: 'no-store',
+    headers: { "content-type": "application/json", ...(init?.headers || {}) },
+    cache: "no-store",
   });
   const text = await res.text();
   if (!res.ok) throw new Error(text || res.statusText);
-  try { return text ? JSON.parse(text) as T : (undefined as unknown as T); } catch { return (undefined as unknown as T); }
+  return text ? (JSON.parse(text) as T) : ((undefined as unknown) as T);
 }
 
-function calculateAge(birthday: string): number {
-  try {
-    const d = new Date(birthday);
-    if (Number.isNaN(d.getTime())) return 0;
-    const now = new Date();
-    let age = now.getFullYear() - d.getFullYear();
-    const m = now.getMonth() - d.getMonth();
-    if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age -= 1;
-    return age;
-  } catch { return 0; }
+type NumberRange = { min?: number | null; max?: number | null };
+type BirthdayRange = { from?: string | null; to?: string | null };
+
+type AudienceFilters = {
+  gender?: string[];
+  outletIds?: string[];
+  tierIds?: string[];
+  devicePlatforms?: string[];
+  registrationDays?: NumberRange;
+  lastPurchaseDays?: NumberRange;
+  visits?: NumberRange;
+  averageCheck?: NumberRange;
+  totalSpent?: NumberRange;
+  age?: NumberRange;
+  birthday?: BirthdayRange;
+};
+
+type AudienceRecord = {
+  id: string;
+  name: string;
+  description?: string | null;
+  customerCount: number;
+  isActive: boolean;
+  isSystem?: boolean;
+  archivedAt?: string | null;
+  lastEvaluatedAt?: string | null;
+  filters: AudienceFilters | null;
+  updatedAt?: string | null;
+};
+
+type OutletOption = { id: string; name: string };
+type TierOption = { id: string; name: string };
+
+type AudienceMember = {
+  id: string;
+  name: string;
+  phone: string;
+  birthday: string | null;
+  createdAt: string | null;
+};
+
+type AudienceFormState = {
+  name: string;
+  description: string;
+  isActive: boolean;
+  gender: { enabled: boolean; values: string[] };
+  outlets: { enabled: boolean; values: string[] };
+  tiers: { enabled: boolean; values: string[] };
+  device: { enabled: boolean; values: string[] };
+  registrationDays: { enabled: boolean; range: [number | null, number | null] };
+  lastPurchaseDays: { enabled: boolean; range: [number | null, number | null] };
+  visits: { enabled: boolean; range: [number | null, number | null] };
+  averageCheck: { enabled: boolean; range: [number | null, number | null] };
+  totalSpent: { enabled: boolean; range: [number | null, number | null] };
+  age: { enabled: boolean; range: [number | null, number | null] };
+  birthday: { enabled: boolean; from: string | null; to: string | null };
+};
+
+type Dictionaries = {
+  outlets: OutletOption[];
+  tiers: TierOption[];
+};
+
+type AudienceFormPayload = {
+  name: string;
+  description?: string;
+  isActive: boolean;
+  filters: AudienceFilters;
+};
+
+const DEVICE_OPTIONS = [
+  { value: "ios", label: "iOS" },
+  { value: "android", label: "Android" },
+];
+
+const GENDER_OPTIONS = [
+  { value: "male", label: "Мужской" },
+  { value: "female", label: "Женский" },
+];
+
+const defaultFormState: AudienceFormState = {
+  name: "",
+  description: "",
+  isActive: true,
+  gender: { enabled: false, values: [] },
+  outlets: { enabled: false, values: [] },
+  tiers: { enabled: false, values: [] },
+  device: { enabled: false, values: [] },
+  registrationDays: { enabled: false, range: [null, null] },
+  lastPurchaseDays: { enabled: false, range: [null, null] },
+  visits: { enabled: false, range: [null, null] },
+  averageCheck: { enabled: false, range: [null, null] },
+  totalSpent: { enabled: false, range: [null, null] },
+  age: { enabled: false, range: [null, null] },
+  birthday: { enabled: false, from: null, to: null },
+};
+
+function rangeToTuple(range?: NumberRange | null): [number | null, number | null] {
+  return [range?.min ?? null, range?.max ?? null];
 }
 
-function settingsToFilters(s: AudienceSettings) {
-  const filters: any = {};
-  if (s.genderEnabled && s.gender) filters.gender = [s.gender];
-  if (s.purchaseCountEnabled) {
-    filters.minVisits = s.purchaseCount?.[0];
-    filters.maxVisits = s.purchaseCount?.[1];
+function normalizeRange(range: [number | null, number | null]): NumberRange | null {
+  const [min, max] = range;
+  const minValue = min != null ? Number(min) : null;
+  const maxValue = max != null ? Number(max) : null;
+  if (minValue == null && maxValue == null) return null;
+  const result: NumberRange = {};
+  if (minValue != null && Number.isFinite(minValue)) result.min = minValue;
+  if (maxValue != null && Number.isFinite(maxValue)) result.max = maxValue;
+  if (result.min == null && result.max == null) return null;
+  return result;
+}
+
+function formatNumber(value: number | null | undefined): string {
+  if (value == null) return "";
+  return value.toLocaleString("ru-RU");
+}
+
+function formatRange(range?: NumberRange | null, unit?: string): string {
+  if (!range) return "";
+  const { min, max } = range;
+  if (min != null && max != null) {
+    if (min === max) return `${formatNumber(min)}${unit ? ` ${unit}` : ""}`;
+    return `${formatNumber(min)}–${formatNumber(max)}${unit ? ` ${unit}` : ""}`;
   }
-  if (s.rfmRecencyEnabled && s.rfmRecency) filters.rfmClasses = [s.rfmRecency];
-  if (s.rfmFrequencyEnabled && s.rfmFrequency) filters.rfmClasses = [...(filters.rfmClasses || []), s.rfmFrequency];
-  if (s.rfmMonetaryEnabled && s.rfmMonetary) filters.rfmClasses = [...(filters.rfmClasses || []), s.rfmMonetary];
-  if (s.lastPurchaseEnabled) {
-    const now = new Date();
-    const from = new Date(now.getTime() - (s.lastPurchase?.[1] ?? 0) * 24 * 3600 * 1000);
-    const to = new Date(now.getTime() - (s.lastPurchase?.[0] ?? 0) * 24 * 3600 * 1000);
-    filters.lastVisitFrom = from.toISOString();
-    filters.lastVisitTo = to.toISOString();
+  if (min != null) return `от ${formatNumber(min)}${unit ? ` ${unit}` : ""}`;
+  if (max != null) return `до ${formatNumber(max)}${unit ? ` ${unit}` : ""}`;
+  return "";
+}
+
+function formatCurrencyRange(range?: NumberRange | null): string {
+  const label = formatRange(range, "₽");
+  return label.replace(" ₽", "₽");
+}
+
+function formatFilters(
+  filters: AudienceFilters | null,
+  dictionaries: Dictionaries,
+): string[] {
+  if (!filters) return [];
+  const parts: string[] = [];
+  if (filters.gender?.length) {
+    parts.push(
+      `Пол: ${filters.gender
+        .map((g) => (g === "male" ? "Мужской" : g === "female" ? "Женский" : g))
+        .join(", ")}`,
+    );
   }
-  // tags/level/device/birthday/age/products/outlets можно хранить в rules
+  if (filters.outletIds?.length) {
+    const names = filters.outletIds
+      .map((id) => dictionaries.outlets.find((o) => o.id === id)?.name || id)
+      .join(", ");
+    parts.push(`Точки: ${names}`);
+  }
+  if (filters.tierIds?.length) {
+    const names = filters.tierIds
+      .map((id) => dictionaries.tiers.find((t) => t.id === id)?.name || id)
+      .join(", ");
+    parts.push(`Уровни: ${names}`);
+  }
+  if (filters.devicePlatforms?.length) {
+    const names = filters.devicePlatforms
+      .map((d) => (d === "ios" ? "iOS" : d === "android" ? "Android" : d))
+      .join(", ");
+    parts.push(`Устройства: ${names}`);
+  }
+  if (filters.registrationDays) {
+    const label = formatRange(filters.registrationDays, "дней");
+    if (label) parts.push(`С регистрации: ${label}`);
+  }
+  if (filters.lastPurchaseDays) {
+    const label = formatRange(filters.lastPurchaseDays, "дней");
+    if (label) parts.push(`С последней покупки: ${label}`);
+  }
+  if (filters.visits) {
+    const label = formatRange(filters.visits, "покупок");
+    if (label) parts.push(`Количество покупок: ${label}`);
+  }
+  if (filters.averageCheck) {
+    const label = formatCurrencyRange(filters.averageCheck);
+    if (label) parts.push(`Средний чек: ${label}`);
+  }
+  if (filters.totalSpent) {
+    const label = formatCurrencyRange(filters.totalSpent);
+    if (label) parts.push(`Сумма покупок: ${label}`);
+  }
+  if (filters.age) {
+    const label = formatRange(filters.age, "лет");
+    if (label) parts.push(`Возраст: ${label}`);
+  }
+  if (filters.birthday) {
+    const { from, to } = filters.birthday;
+    if (from && to) parts.push(`День рождения: ${from} – ${to}`);
+    else if (from) parts.push(`День рождения после ${from}`);
+    else if (to) parts.push(`День рождения до ${to}`);
+  }
+  return parts;
+}
+
+function filtersToFormState(filters: AudienceFilters | null): AudienceFormState {
+  const state: AudienceFormState = JSON.parse(JSON.stringify(defaultFormState));
+  if (!filters) return state;
+  if (filters.gender?.length) {
+    state.gender.enabled = true;
+    state.gender.values = filters.gender;
+  }
+  if (filters.outletIds?.length) {
+    state.outlets.enabled = true;
+    state.outlets.values = filters.outletIds;
+  }
+  if (filters.tierIds?.length) {
+    state.tiers.enabled = true;
+    state.tiers.values = filters.tierIds;
+  }
+  if (filters.devicePlatforms?.length) {
+    state.device.enabled = true;
+    state.device.values = filters.devicePlatforms;
+  }
+  if (filters.registrationDays) {
+    state.registrationDays.enabled = true;
+    state.registrationDays.range = rangeToTuple(filters.registrationDays);
+  }
+  if (filters.lastPurchaseDays) {
+    state.lastPurchaseDays.enabled = true;
+    state.lastPurchaseDays.range = rangeToTuple(filters.lastPurchaseDays);
+  }
+  if (filters.visits) {
+    state.visits.enabled = true;
+    state.visits.range = rangeToTuple(filters.visits);
+  }
+  if (filters.averageCheck) {
+    state.averageCheck.enabled = true;
+    state.averageCheck.range = rangeToTuple(filters.averageCheck);
+  }
+  if (filters.totalSpent) {
+    state.totalSpent.enabled = true;
+    state.totalSpent.range = rangeToTuple(filters.totalSpent);
+  }
+  if (filters.age) {
+    state.age.enabled = true;
+    state.age.range = rangeToTuple(filters.age);
+  }
+  if (filters.birthday) {
+    state.birthday.enabled = true;
+    state.birthday.from = filters.birthday.from ?? null;
+    state.birthday.to = filters.birthday.to ?? null;
+  }
+  return state;
+}
+
+function formStateToFilters(state: AudienceFormState): AudienceFilters {
+  const filters: AudienceFilters = {};
+  if (state.gender.enabled && state.gender.values.length)
+    filters.gender = state.gender.values;
+  if (state.outlets.enabled && state.outlets.values.length)
+    filters.outletIds = state.outlets.values;
+  if (state.tiers.enabled && state.tiers.values.length)
+    filters.tierIds = state.tiers.values;
+  if (state.device.enabled && state.device.values.length)
+    filters.devicePlatforms = state.device.values;
+  if (state.registrationDays.enabled) {
+    const range = normalizeRange(state.registrationDays.range);
+    if (range) filters.registrationDays = range;
+  }
+  if (state.lastPurchaseDays.enabled) {
+    const range = normalizeRange(state.lastPurchaseDays.range);
+    if (range) filters.lastPurchaseDays = range;
+  }
+  if (state.visits.enabled) {
+    const range = normalizeRange(state.visits.range);
+    if (range) filters.visits = range;
+  }
+  if (state.averageCheck.enabled) {
+    const range = normalizeRange(state.averageCheck.range);
+    if (range) filters.averageCheck = range;
+  }
+  if (state.totalSpent.enabled) {
+    const range = normalizeRange(state.totalSpent.range);
+    if (range) filters.totalSpent = range;
+  }
+  if (state.age.enabled) {
+    const range = normalizeRange(state.age.range);
+    if (range) filters.age = range;
+  }
+  if (state.birthday.enabled) {
+    const from = state.birthday.from?.trim();
+    const to = state.birthday.to?.trim();
+    if (from || to) filters.birthday = { from: from || null, to: to || null };
+  }
   return filters;
 }
 
-function filtersToDisplay(filters: any) {
-  const display = {
-    age: '—',
-    gender: 'Смешанный',
-    averageCheck: '—',
-    lastPurchaseDays: '—',
-    purchaseCount: '—',
-    purchaseSum: '—',
-    birthday: '—',
-    registrationDays: '—',
-    device: '—',
-  } as Pick<AudienceRow, 'age'|'gender'|'averageCheck'|'lastPurchaseDays'|'purchaseCount'|'purchaseSum'|'birthday'|'registrationDays'|'device'>;
-  if (Array.isArray(filters?.gender) && filters.gender.length === 1) display.gender = filters.gender[0] === 'male' ? 'Мужской' : filters.gender[0] === 'female' ? 'Женский' : 'Смешанный';
-  if (filters?.minVisits != null || filters?.maxVisits != null) display.purchaseCount = `${filters.minVisits ?? 0}-${filters.maxVisits ?? '∞'}`;
-  if (filters?.lastVisitFrom || filters?.lastVisitTo) display.lastPurchaseDays = 'по периоду';
-  return display;
-}
-
-function segmentToAudienceRow(seg: any): AudienceRow {
-  const filters = seg.filters || {};
-  const d = filtersToDisplay(filters);
+function mapAudience(row: any): AudienceRecord {
   return {
-    id: String(seg.id),
-    name: String(seg.name || 'Без названия'),
-    participants: Number(seg.customerCount || 0),
-    age: d.age,
-    gender: d.gender,
-    averageCheck: d.averageCheck,
-    lastPurchaseDays: d.lastPurchaseDays,
-    purchaseCount: d.purchaseCount,
-    purchaseSum: d.purchaseSum,
-    birthday: d.birthday,
-    registrationDays: d.registrationDays,
-    device: d.device,
-    settings: defaultSettings,
-    members: [],
+    id: String(row.id),
+    name: String(row.name ?? "Без названия"),
+    description: row.description ?? null,
+    customerCount: Number(row.customerCount ?? 0),
+    isActive: row.isActive !== false,
+    isSystem: Boolean(row.isSystem),
+    archivedAt: row.archivedAt ?? null,
+    lastEvaluatedAt: row.lastEvaluatedAt ?? null,
+    filters: (row.filters as AudienceFilters | null) ?? null,
+    updatedAt: row.updatedAt ?? null,
   };
 }
 
-function mapMember(row: any): AudienceMember {
-  return {
-    id: String(row.id || ''),
-    phone: String(row.phone || ''),
-    name: String(row.name || row.phone || row.id || ''),
-    birthday: row.birthday ? String(row.birthday) : '',
-    age: row.birthday ? calculateAge(String(row.birthday)) : 0,
-    registrationDate: String(row.createdAt || ''),
-  };
+function mapOutletList(data: any): OutletOption[] {
+  const items = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+  return items
+    .map((item: any) => ({ id: String(item.id), name: String(item.name ?? "Без названия") }))
+    .filter((item: OutletOption) => item.id);
 }
 
-// no sample data: always load from API
+function mapTierList(data: any): TierOption[] {
+  const items = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+  return items
+    .map((item: any) => ({ id: String(item.id), name: String(item.name ?? "Без названия") }))
+    .filter((item: TierOption) => item.id);
+}
 
-export default function AudiencesPage() {
-  const [search, setSearch] = React.useState('');
-  const [audiences, setAudiences] = React.useState<AudienceRow[]>([]);
-  const [loading, setLoading] = React.useState(false);
-  const [modalMode, setModalMode] = React.useState<'create' | 'edit' | null>(null);
-  const [currentAudience, setCurrentAudience] = React.useState<AudienceRow | null>(null);
-  const [settings, setSettings] = React.useState<AudienceSettings>(defaultSettings);
-  const [audienceName, setAudienceName] = React.useState('');
-  const [tab, setTab] = React.useState<'settings' | 'members'>('settings');
-  const [memberSearch, setMemberSearch] = React.useState('');
+const AudienceMembersModal: React.FC<{
+  audience: AudienceRecord;
+  onClose: () => void;
+}> = ({ audience, onClose }) => {
+  const [members, setMembers] = React.useState<AudienceMember[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+  const [search, setSearch] = React.useState("");
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    fetchJson<any>(`/api/customers?segmentId=${encodeURIComponent(audience.id)}&limit=200`)
+      .then((res) => {
+        if (cancelled) return;
+        const list = Array.isArray(res?.items) ? res.items : Array.isArray(res) ? res : [];
+        const mapped = list.map((item: any) => ({
+          id: String(item.id),
+          name: String(item.name || item.phone || item.id || ""),
+          phone: String(item.phone || ""),
+          birthday: item.birthday ? String(item.birthday) : null,
+          createdAt: item.createdAt ? String(item.createdAt) : null,
+        }));
+        setMembers(mapped);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [audience.id]);
+
+  const filteredMembers = React.useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return members;
+    return members.filter(
+      (member) =>
+        member.name.toLowerCase().includes(term) ||
+        member.phone.toLowerCase().includes(term),
+    );
+  }, [members, search]);
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15,23,42,0.74)",
+        backdropFilter: "blur(8px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 20,
+        zIndex: 120,
+      }}
+    >
+      <div
+        style={{
+          width: "min(720px, 96vw)",
+          maxHeight: "92vh",
+          background: "rgba(12,16,26,0.96)",
+          borderRadius: 22,
+          border: "1px solid rgba(148,163,184,0.18)",
+          boxShadow: "0 28px 80px rgba(2,6,23,0.5)",
+          display: "grid",
+          gridTemplateRows: "auto 1fr auto",
+        }}
+      >
+        <div
+          style={{
+            padding: "18px 24px",
+            borderBottom: "1px solid rgba(148,163,184,0.16)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>Состав аудитории</div>
+            <div style={{ fontSize: 13, opacity: 0.65 }}>{audience.name}</div>
+          </div>
+          <button className="btn btn-ghost" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <div style={{ padding: 24, display: "grid", gap: 16 }}>
+          <div style={{ position: "relative", maxWidth: 320 }}>
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Поиск по имени или телефону"
+              style={{ width: "100%", padding: "10px 36px 10px 12px", borderRadius: 10 }}
+            />
+            <Search
+              size={16}
+              style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", opacity: 0.6 }}
+            />
+          </div>
+          {loading ? (
+            <Skeleton height={180} />
+          ) : error ? (
+            <div style={{ padding: 16, background: "rgba(220,38,38,0.12)", borderRadius: 12 }}>{error}</div>
+          ) : filteredMembers.length ? (
+            <div style={{ maxHeight: 360, overflowY: "auto", borderRadius: 14, border: "1px solid rgba(148,163,184,0.16)" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.4, opacity: 0.7 }}>
+                    <th style={{ textAlign: "left", padding: "8px 12px" }}>№</th>
+                    <th style={{ textAlign: "left", padding: "8px 12px" }}>Имя</th>
+                    <th style={{ textAlign: "left", padding: "8px 12px" }}>Телефон</th>
+                    <th style={{ textAlign: "left", padding: "8px 12px" }}>День рождения</th>
+                    <th style={{ textAlign: "left", padding: "8px 12px" }}>Регистрация</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredMembers.map((member, index) => (
+                    <tr key={member.id} style={{ borderBottom: "1px solid rgba(148,163,184,0.1)" }}>
+                      <td style={{ padding: "8px 12px" }}>{index + 1}</td>
+                      <td style={{ padding: "8px 12px" }}>
+                        <a
+                          href={`/customers/${encodeURIComponent(member.id)}`}
+                          style={{ color: "inherit", textDecoration: "none" }}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {member.name}
+                        </a>
+                      </td>
+                      <td style={{ padding: "8px 12px" }}>{member.phone || "—"}</td>
+                      <td style={{ padding: "8px 12px" }}>
+                        {member.birthday ? new Date(member.birthday).toLocaleDateString("ru-RU") : "—"}
+                      </td>
+                      <td style={{ padding: "8px 12px" }}>
+                        {member.createdAt ? new Date(member.createdAt).toLocaleDateString("ru-RU") : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div style={{ padding: 16, opacity: 0.7 }}>Участники не найдены</div>
+          )}
+        </div>
+        <div
+          style={{
+            padding: "16px 24px",
+            borderTop: "1px solid rgba(148,163,184,0.16)",
+            display: "flex",
+            justifyContent: "flex-end",
+          }}
+        >
+          <Button onClick={onClose}>Закрыть</Button>
+        </div>
+      </div>
+    </div>
+  );
+};
+type AudienceFormModalProps = {
+  mode: "create" | "edit";
+  audience: AudienceRecord | null;
+  dictionaries: Dictionaries;
+  onSubmit: (payload: AudienceFormPayload) => Promise<void>;
+  onArchive?: () => Promise<void>;
+  onClose: () => void;
+};
+
+const AudienceFormModal: React.FC<AudienceFormModalProps> = ({
+  mode,
+  audience,
+  dictionaries,
+  onSubmit,
+  onArchive,
+  onClose,
+}) => {
+  const readOnly = Boolean(audience?.isSystem);
+  const [state, setState] = React.useState<AudienceFormState>(() => {
+    const initial = filtersToFormState(audience?.filters ?? null);
+    initial.name = audience?.name ?? "";
+    initial.description = audience?.description ?? "";
+    initial.isActive = audience?.isActive ?? true;
+    return initial;
+  });
   const [saving, setSaving] = React.useState(false);
-  const [membersLoading, setMembersLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const handleSubmit = async () => {
+    if (!state.name.trim()) {
+      setError("Укажите название аудитории");
+      return;
+    }
+    setError(null);
+    setSaving(true);
+    try {
+      const filters = formStateToFilters(state);
+      await onSubmit({
+        name: state.name.trim(),
+        description: state.description?.trim() || undefined,
+        isActive: state.isActive,
+        filters,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleArchive = async () => {
+    if (!onArchive) return;
+    if (!confirm("Архивировать аудиторию?")) return;
+    setSaving(true);
+    try {
+      await onArchive();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setSaving(false);
+      return;
+    }
+  };
+
+  const setRange = (
+    key:
+      | "registrationDays"
+      | "lastPurchaseDays"
+      | "visits"
+      | "averageCheck"
+      | "totalSpent"
+      | "age",
+    value: [number, number],
+  ) => {
+    setState((prev) => ({
+      ...prev,
+      [key]: { ...prev[key], range: [value[0], value[1]] },
+    }));
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15,23,42,0.74)",
+        backdropFilter: "blur(8px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 20,
+        zIndex: 120,
+      }}
+    >
+      <div
+        style={{
+          width: "min(960px, 96vw)",
+          maxHeight: "94vh",
+          overflow: "auto",
+          background: "rgba(12,16,26,0.96)",
+          borderRadius: 22,
+          border: "1px solid rgba(148,163,184,0.18)",
+          boxShadow: "0 28px 80px rgba(2,6,23,0.5)",
+          display: "grid",
+          gridTemplateRows: "auto 1fr auto",
+        }}
+      >
+        <div
+          style={{
+            padding: "18px 24px",
+            borderBottom: "1px solid rgba(148,163,184,0.16)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>
+              {mode === "create"
+                ? "Создать аудиторию"
+                : readOnly
+                ? "Просмотр аудитории"
+                : "Редактировать аудиторию"}
+            </div>
+            <div style={{ fontSize: 13, opacity: 0.65 }}>
+              {mode === "edit" && audience
+                ? `${audience.customerCount.toLocaleString("ru-RU")} участников`
+                : ""}
+            </div>
+          </div>
+          <button className="btn btn-ghost" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <div style={{ padding: 24, display: "grid", gap: 20 }}>
+          {readOnly ? (
+            <div style={{ padding: 12, borderRadius: 12, background: "rgba(148,163,184,0.12)", fontSize: 13 }}>
+              Системная аудитория не редактируется.
+            </div>
+          ) : null}
+          <div style={{ display: "grid", gap: 8 }}>
+            <label style={{ fontSize: 13, opacity: 0.7 }}>Название *</label>
+            <input
+              value={state.name}
+              onChange={(event) => setState((prev) => ({ ...prev, name: event.target.value }))}
+              placeholder="Например, Постоянные гости"
+              style={{ padding: 12, borderRadius: 10 }}
+              disabled={readOnly || saving}
+            />
+          </div>
+          <div style={{ display: "grid", gap: 8 }}>
+            <label style={{ fontSize: 13, opacity: 0.7 }}>Описание</label>
+            <textarea
+              value={state.description}
+              onChange={(event) => setState((prev) => ({ ...prev, description: event.target.value }))}
+              placeholder="Добавьте заметку для коллег"
+              rows={3}
+              style={{ padding: 12, borderRadius: 10, resize: "vertical" }}
+              disabled={readOnly || saving}
+            />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <Toggle
+              checked={state.isActive}
+              onChange={(value) => setState((prev) => ({ ...prev, isActive: value }))}
+              label={state.isActive ? "Активна" : "Выключена"}
+              disabled={readOnly || saving}
+            />
+          </div>
+
+          <div style={{ display: "grid", gap: 16 }}>
+            <ToggleRow
+              title="Пол"
+              enabled={state.gender.enabled}
+              onToggle={(enabled) =>
+                setState((prev) => ({
+                  ...prev,
+                  gender: { ...prev.gender, enabled },
+                }))
+              }
+            >
+              <TagSelect
+                allowMultiple
+                options={GENDER_OPTIONS}
+                value={state.gender.values}
+                onChange={(values) =>
+                  setState((prev) => ({
+                    ...prev,
+                    gender: { ...prev.gender, values },
+                  }))
+                }
+                disabled={readOnly || saving}
+              />
+            </ToggleRow>
+
+            <ToggleRow
+              title="Посещал точки"
+              enabled={state.outlets.enabled}
+              onToggle={(enabled) =>
+                setState((prev) => ({
+                  ...prev,
+                  outlets: { ...prev.outlets, enabled },
+                }))
+              }
+            >
+              <TagSelect
+                allowMultiple
+                options={dictionaries.outlets.map((item) => ({ value: item.id, label: item.name }))}
+                value={state.outlets.values}
+                onChange={(values) =>
+                  setState((prev) => ({
+                    ...prev,
+                    outlets: { ...prev.outlets, values },
+                  }))
+                }
+                disabled={readOnly || saving}
+              />
+            </ToggleRow>
+
+            <ToggleRow
+              title="Лояльность: уровень"
+              enabled={state.tiers.enabled}
+              onToggle={(enabled) =>
+                setState((prev) => ({
+                  ...prev,
+                  tiers: { ...prev.tiers, enabled },
+                }))
+              }
+            >
+              <TagSelect
+                allowMultiple
+                options={dictionaries.tiers.map((tier) => ({ value: tier.id, label: tier.name }))}
+                value={state.tiers.values}
+                onChange={(values) =>
+                  setState((prev) => ({
+                    ...prev,
+                    tiers: { ...prev.tiers, values },
+                  }))
+                }
+                disabled={readOnly || saving}
+              />
+            </ToggleRow>
+
+            <ToggleRow
+              title="Устройства"
+              enabled={state.device.enabled}
+              onToggle={(enabled) =>
+                setState((prev) => ({
+                  ...prev,
+                  device: { ...prev.device, enabled },
+                }))
+              }
+            >
+              <TagSelect
+                allowMultiple
+                options={DEVICE_OPTIONS}
+                value={state.device.values}
+                onChange={(values) =>
+                  setState((prev) => ({
+                    ...prev,
+                    device: { ...prev.device, values },
+                  }))
+                }
+                disabled={readOnly || saving}
+              />
+            </ToggleRow>
+
+            <ToggleRow
+              title="Дней с момента регистрации"
+              enabled={state.registrationDays.enabled}
+              onToggle={(enabled) =>
+                setState((prev) => ({
+                  ...prev,
+                  registrationDays: { ...prev.registrationDays, enabled },
+                }))
+              }
+            >
+              <RangeSlider
+                min={0}
+                max={1000}
+                value={[
+                  state.registrationDays.range[0] ?? 0,
+                  state.registrationDays.range[1] ?? 100,
+                ]}
+                onChange={(value) => setRange("registrationDays", value)}
+                disabled={readOnly || saving}
+              />
+            </ToggleRow>
+
+            <ToggleRow
+              title="Дней с последней покупки"
+              enabled={state.lastPurchaseDays.enabled}
+              onToggle={(enabled) =>
+                setState((prev) => ({
+                  ...prev,
+                  lastPurchaseDays: { ...prev.lastPurchaseDays, enabled },
+                }))
+              }
+            >
+              <RangeSlider
+                min={0}
+                max={365}
+                value={[
+                  state.lastPurchaseDays.range[0] ?? 0,
+                  state.lastPurchaseDays.range[1] ?? 30,
+                ]}
+                onChange={(value) => setRange("lastPurchaseDays", value)}
+                disabled={readOnly || saving}
+              />
+            </ToggleRow>
+
+            <ToggleRow
+              title="Количество покупок"
+              enabled={state.visits.enabled}
+              onToggle={(enabled) =>
+                setState((prev) => ({
+                  ...prev,
+                  visits: { ...prev.visits, enabled },
+                }))
+              }
+            >
+              <RangeSlider
+                min={0}
+                max={100}
+                value={[
+                  state.visits.range[0] ?? 0,
+                  state.visits.range[1] ?? 10,
+                ]}
+                onChange={(value) => setRange("visits", value)}
+                disabled={readOnly || saving}
+              />
+            </ToggleRow>
+
+            <ToggleRow
+              title="Средний чек"
+              enabled={state.averageCheck.enabled}
+              onToggle={(enabled) =>
+                setState((prev) => ({
+                  ...prev,
+                  averageCheck: { ...prev.averageCheck, enabled },
+                }))
+              }
+            >
+              <DualInputRange
+                prefix="₽"
+                value={state.averageCheck.range}
+                onChange={(value) =>
+                  setState((prev) => ({
+                    ...prev,
+                    averageCheck: { ...prev.averageCheck, range: value },
+                  }))
+                }
+                disabled={readOnly || saving}
+              />
+            </ToggleRow>
+
+            <ToggleRow
+              title="Сумма покупок"
+              enabled={state.totalSpent.enabled}
+              onToggle={(enabled) =>
+                setState((prev) => ({
+                  ...prev,
+                  totalSpent: { ...prev.totalSpent, enabled },
+                }))
+              }
+            >
+              <DualInputRange
+                prefix="₽"
+                value={state.totalSpent.range}
+                onChange={(value) =>
+                  setState((prev) => ({
+                    ...prev,
+                    totalSpent: { ...prev.totalSpent, range: value },
+                  }))
+                }
+                disabled={readOnly || saving}
+              />
+            </ToggleRow>
+
+            <ToggleRow
+              title="Возраст"
+              enabled={state.age.enabled}
+              onToggle={(enabled) =>
+                setState((prev) => ({
+                  ...prev,
+                  age: { ...prev.age, enabled },
+                }))
+              }
+            >
+              <RangeSlider
+                min={0}
+                max={120}
+                value={[
+                  state.age.range[0] ?? 18,
+                  state.age.range[1] ?? 60,
+                ]}
+                onChange={(value) => setRange("age", value)}
+                disabled={readOnly || saving}
+              />
+            </ToggleRow>
+
+            <ToggleRow
+              title="День рождения"
+              enabled={state.birthday.enabled}
+              onToggle={(enabled) =>
+                setState((prev) => ({
+                  ...prev,
+                  birthday: { ...prev.birthday, enabled },
+                }))
+              }
+            >
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                <div style={{ display: "grid", gap: 6 }}>
+                  <span style={{ fontSize: 12, opacity: 0.7 }}>С</span>
+                  <input
+                    type="date"
+                    value={state.birthday.from ?? ""}
+                    onChange={(event) =>
+                      setState((prev) => ({
+                        ...prev,
+                        birthday: { ...prev.birthday, from: event.target.value || null },
+                      }))
+                    }
+                    style={{ padding: 10, borderRadius: 10 }}
+                    disabled={readOnly || saving}
+                  />
+                </div>
+                <div style={{ display: "grid", gap: 6 }}>
+                  <span style={{ fontSize: 12, opacity: 0.7 }}>По</span>
+                  <input
+                    type="date"
+                    value={state.birthday.to ?? ""}
+                    onChange={(event) =>
+                      setState((prev) => ({
+                        ...prev,
+                        birthday: { ...prev.birthday, to: event.target.value || null },
+                      }))
+                    }
+                    style={{ padding: 10, borderRadius: 10 }}
+                    disabled={readOnly || saving}
+                  />
+                </div>
+              </div>
+            </ToggleRow>
+          </div>
+
+          {error ? (
+            <div style={{ color: "#fca5a5", fontSize: 13 }}>{error}</div>
+          ) : null}
+        </div>
+        <div
+          style={{
+            padding: "16px 24px",
+            borderTop: "1px solid rgba(148,163,184,0.16)",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
+          {mode === "edit" && !readOnly && onArchive ? (
+            <Button variant="danger" onClick={handleArchive} disabled={saving} startIcon={<Trash2 size={16} />}>
+              Архивировать
+            </Button>
+          ) : null}
+          <div style={{ marginLeft: "auto", display: "flex", gap: 12 }}>
+            <button className="btn" onClick={onClose} disabled={saving}>
+              Отмена
+            </button>
+            {!readOnly ? (
+              <Button variant="primary" onClick={handleSubmit} disabled={saving} startIcon={<Users size={16} />}>
+                {saving ? "Сохраняем…" : "Сохранить"}
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+const ToggleRow: React.FC<{
+  title: string;
+  enabled: boolean;
+  onToggle: (enabled: boolean) => void;
+  children: React.ReactNode;
+}> = ({ title, enabled, onToggle, children }) => (
+  <div
+    style={{
+      border: "1px solid rgba(148,163,184,0.18)",
+      borderRadius: 16,
+      padding: 16,
+      background: "rgba(148,163,184,0.06)",
+      display: "grid",
+      gap: 12,
+    }}
+  >
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ fontWeight: 600 }}>{title}</div>
+      <Toggle checked={enabled} onChange={onToggle} label={enabled ? "Вкл" : "Выкл"} />
+    </div>
+    {enabled ? <div>{children}</div> : null}
+  </div>
+);
+
+const DualInputRange: React.FC<{
+  value: [number | null, number | null];
+  onChange: (value: [number | null, number | null]) => void;
+  prefix?: string;
+  disabled?: boolean;
+}> = ({ value, onChange, prefix, disabled }) => (
+  <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+    <span style={{ opacity: 0.7 }}>От</span>
+    <input
+      value={value[0] ?? ""}
+      onChange={(event) =>
+        onChange([event.target.value ? Number(event.target.value) : null, value[1]])
+      }
+      style={{ padding: 10, borderRadius: 10, width: 140 }}
+      disabled={disabled}
+      type="number"
+      min={0}
+    />
+    <span style={{ opacity: 0.7 }}>до</span>
+    <input
+      value={value[1] ?? ""}
+      onChange={(event) =>
+        onChange([value[0], event.target.value ? Number(event.target.value) : null])
+      }
+      style={{ padding: 10, borderRadius: 10, width: 140 }}
+      disabled={disabled}
+      type="number"
+      min={0}
+    />
+    {prefix ? <span style={{ opacity: 0.7 }}>{prefix}</span> : null}
+  </div>
+);
+
+const AudiencesPage: React.FC = () => {
+  const [audiences, setAudiences] = React.useState<AudienceRecord[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+  const [search, setSearch] = React.useState("");
+  const [modalState, setModalState] = React.useState<{
+    mode: "create" | "edit";
+    audience: AudienceRecord | null;
+  } | null>(null);
+  const [membersAudience, setMembersAudience] = React.useState<AudienceRecord | null>(null);
+  const [dictionaries, setDictionaries] = React.useState<Dictionaries>({ outlets: [], tiers: [] });
+
+  const loadDictionaries = React.useCallback(async () => {
+    try {
+      const [outletsRes, tiersRes] = await Promise.allSettled([
+        fetchJson<any>("/api/portal/outlets?limit=200"),
+        fetchJson<any>("/api/portal/loyalty/tiers"),
+      ]);
+      const outlets =
+        outletsRes.status === "fulfilled" ? mapOutletList(outletsRes.value) : [];
+      const tiers = tiersRes.status === "fulfilled" ? mapTierList(tiersRes.value) : [];
+      setDictionaries({ outlets, tiers });
+    } catch (err) {
+      console.error(err);
+    }
+  }, []);
 
   const loadAudiences = React.useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const list = await api<any[]>(`/api/portal/audiences`);
-      const rows = Array.isArray(list) ? list.map(segmentToAudienceRow) : [];
+      const list = await fetchJson<any[]>("/api/portal/audiences");
+      const rows = Array.isArray(list) ? list.map(mapAudience) : [];
       setAudiences(rows);
-    } catch (e) {
-      console.error(e);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
       setAudiences([]);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  React.useEffect(() => { loadAudiences(); }, [loadAudiences]);
-
-  // Load members when opening members tab
   React.useEffect(() => {
-    const id = currentAudience?.id;
-    if (!id) return;
-    if (tab !== 'members') return;
-    setMembersLoading(true);
-    (async () => {
-      try {
-        const qs = new URLSearchParams({ segmentId: id, limit: '100' });
-        const res = await api<any>(`/api/customers?${qs.toString()}`);
-        const items = Array.isArray(res?.items) ? res.items : Array.isArray(res) ? res : [];
-        const mapped = items.map(mapMember);
-        setCurrentAudience((prev) => (prev && prev.id === id ? { ...prev, members: mapped } : prev));
-      } catch (e) { console.error(e); }
-      finally { setMembersLoading(false); }
-    })();
-  }, [tab, currentAudience?.id]);
+    loadDictionaries();
+    loadAudiences();
+  }, [loadDictionaries, loadAudiences]);
 
-  const filtered = React.useMemo(() =>
-    audiences.filter((aud) => aud.name.toLowerCase().includes(search.toLowerCase())),
-  [audiences, search]);
+  const filteredAudiences = React.useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return audiences;
+    return audiences.filter((audience) => audience.name.toLowerCase().includes(term));
+  }, [audiences, search]);
 
-  const openCreate = () => {
-    setModalMode('create');
-    setAudienceName('');
-    setSettings(defaultSettings);
-    setCurrentAudience(null);
-    setTab('settings');
-  };
-
-  const openEdit = (audience: AudienceRow) => {
-    setModalMode('edit');
-    setAudienceName(audience.name);
-    setSettings(audience.settings);
-    setCurrentAudience(audience);
-    setTab('settings');
-  };
-
-  const closeModal = () => {
-    setModalMode(null);
-    setAudienceName('');
-    setSettings(defaultSettings);
-    setCurrentAudience(null);
-    setMemberSearch('');
-  };
-
-  const handleSubmit = async () => {
-    if (!audienceName.trim()) {
-      alert('Укажите название аудитории');
-      return;
+  const handleSubmit = async (payload: AudienceFormPayload, audienceId?: string) => {
+    if (audienceId) {
+      await fetchJson(`/api/portal/audiences/${encodeURIComponent(audienceId)}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          name: payload.name,
+          description: payload.description ?? null,
+          filters: payload.filters,
+          isActive: payload.isActive,
+          rules: { source: "portal" },
+          tags: [],
+        }),
+      });
+    } else {
+      await fetchJson("/api/portal/audiences", {
+        method: "POST",
+        body: JSON.stringify({
+          name: payload.name,
+          description: payload.description ?? null,
+          filters: payload.filters,
+          isActive: payload.isActive,
+          rules: { source: "portal" },
+          tags: [],
+        }),
+      });
     }
-    setSaving(true);
-    try {
-      const payload = { name: audienceName.trim(), rules: { ui: 'audience-settings' }, filters: settingsToFilters(settings) };
-      if (modalMode === 'create') {
-        await api(`/api/portal/audiences`, { method: 'POST', body: JSON.stringify(payload) });
-      } else if (modalMode === 'edit' && currentAudience) {
-        await api(`/api/portal/audiences/${encodeURIComponent(currentAudience.id)}`, { method: 'PUT', body: JSON.stringify(payload) });
-      }
-      await loadAudiences();
-      closeModal();
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setSaving(false);
-    }
+    await loadAudiences();
+    setModalState(null);
   };
 
-  const handleDelete = async () => {
-    if (!currentAudience) return;
-    if (!confirm('Удалить аудиторию?')) return;
-    try {
-      await api(`/api/portal/audiences/${encodeURIComponent(currentAudience.id)}/archive`, { method: 'POST', body: JSON.stringify({}) });
-      await loadAudiences();
-      closeModal();
-    } catch (e) { console.error(e); }
+  const handleArchive = async (audience: AudienceRecord) => {
+    await fetchJson(`/api/portal/audiences/${encodeURIComponent(audience.id)}/archive`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    await loadAudiences();
+    setModalState(null);
   };
 
-  const filteredMembers = React.useMemo(() => {
-    if (!currentAudience) return [] as AudienceMember[];
-    const term = memberSearch.trim().toLowerCase();
-    if (!term) return currentAudience.members;
-    return currentAudience.members.filter((m) =>
-      m.phone.toLowerCase().includes(term) ||
-      m.name.toLowerCase().includes(term),
-    );
-  }, [currentAudience, memberSearch]);
+  const handleRefresh = async (audience: AudienceRecord) => {
+    await fetchJson(`/api/portal/audiences/${encodeURIComponent(audience.id)}/refresh`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    await loadAudiences();
+  };
+
+  const openCreate = () => setModalState({ mode: "create", audience: null });
+  const openEdit = (audience: AudienceRecord) =>
+    setModalState({ mode: "edit", audience });
+  const openMembers = (audience: AudienceRecord) => setMembersAudience(audience);
 
   return (
-    <div style={{ display: 'grid', gap: 20 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
+    <div style={{ display: "grid", gap: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
         <div>
           <div style={{ fontSize: 24, fontWeight: 700 }}>Аудитории клиентов</div>
-          <div style={{ fontSize: 13, opacity: 0.7 }}>Сегментируйте клиентов по поведению и характеристикам</div>
+          <div style={{ fontSize: 13, opacity: 0.7 }}>
+            Сегментируйте клиентов по поведению и характеристикам, запускайте персональные коммуникации.
+          </div>
         </div>
-        <Button variant="primary" onClick={openCreate} startIcon={<PlusCircle size={18} />}>Создать аудиторию</Button>
+        <Button variant="primary" onClick={openCreate} startIcon={<Plus size={16} />}>
+          Создать аудиторию
+        </Button>
       </div>
 
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ position: 'relative', flex: '0 1 320px' }}>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ position: "relative", flex: "0 1 320px" }}>
           <input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(event) => setSearch(event.target.value)}
             placeholder="Поиск по названию"
-            style={{ width: '100%', padding: '10px 36px 10px 12px', borderRadius: 10 }}
+            style={{ width: "100%", padding: "10px 36px 10px 12px", borderRadius: 10 }}
           />
-          <Search size={16} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', opacity: 0.6 }} />
+          <Search
+            size={16}
+            style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", opacity: 0.6 }}
+          />
         </div>
       </div>
 
       <Card>
-        <CardHeader title="Аудитории" subtitle={`${filtered.length} записей`} />
+        <CardHeader
+          title="Аудитории"
+          subtitle={
+            loading
+              ? "Загрузка…"
+              : `${filteredAudiences.length.toLocaleString("ru-RU")} из ${audiences.length.toLocaleString("ru-RU")}`
+          }
+        />
         <CardBody>
-          {loading ? (
+          {error ? (
+            <div style={{ padding: 16, background: "rgba(220,38,38,0.12)", borderRadius: 12 }}>{error}</div>
+          ) : loading ? (
             <Skeleton height={220} />
-          ) : filtered.length ? (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 960 }}>
+          ) : filteredAudiences.length ? (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
                 <thead>
-                  <tr>
-                    {tableColumns.map((col) => (
-                      <th key={col.key as string} style={{ textAlign: 'left', padding: '10px 12px', fontSize: 11, opacity: 0.65, letterSpacing: 0.4, textTransform: 'uppercase', borderBottom: '1px solid rgba(148,163,184,0.18)' }}>
-                        {col.label}
-                      </th>
-                    ))}
+                  <tr style={{ textAlign: "left", fontSize: 12, textTransform: "uppercase", letterSpacing: 0.4, opacity: 0.65 }}>
+                    <th style={{ padding: "10px 12px" }}>Название</th>
+                    <th style={{ padding: "10px 12px" }}>Размер</th>
+                    <th style={{ padding: "10px 12px" }}>Фильтры</th>
+                    <th style={{ padding: "10px 12px" }}>Обновлено</th>
+                    <th style={{ padding: "10px 12px" }}>Действия</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((aud) => (
-                    <tr key={aud.id} onClick={() => openEdit(aud)} style={{ cursor: 'pointer', borderBottom: '1px solid rgba(148,163,184,0.1)' }}>
-                      <td style={{ padding: '12px 12px', fontWeight: 600 }}>{aud.name}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.participants}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.age}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.gender}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.averageCheck}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.lastPurchaseDays}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.purchaseCount}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.purchaseSum}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.birthday}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.registrationDays}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.device}</td>
-                    </tr>
-                  ))}
+                  {filteredAudiences.map((audience) => {
+                    const filtersSummary = formatFilters(audience.filters, dictionaries);
+                    const status = audience.archivedAt
+                      ? "В архиве"
+                      : audience.isActive
+                      ? "Активна"
+                      : "Выключена";
+                    return (
+                      <tr key={audience.id} style={{ borderBottom: "1px solid rgba(148,163,184,0.12)" }}>
+                        <td style={{ padding: "12px" }}>
+                          <div style={{ fontWeight: 600 }}>{audience.name}</div>
+                          <div style={{ fontSize: 12, opacity: 0.7 }}>{status}</div>
+                        </td>
+                        <td style={{ padding: "12px" }}>{audience.customerCount.toLocaleString("ru-RU")}</td>
+                        <td style={{ padding: "12px" }}>
+                          {filtersSummary.length ? (
+                            <div style={{ display: "grid", gap: 4 }}>
+                              {filtersSummary.map((item) => (
+                                <div key={item} style={{ fontSize: 12, opacity: 0.8 }}>
+                                  {item}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <span style={{ opacity: 0.6 }}>Все клиенты</span>
+                          )}
+                        </td>
+                        <td style={{ padding: "12px" }}>
+                          {audience.lastEvaluatedAt
+                            ? new Date(audience.lastEvaluatedAt).toLocaleString("ru-RU")
+                            : "—"}
+                        </td>
+                        <td style={{ padding: "12px" }}>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            <Button
+                              variant="secondary"
+                              onClick={() => openMembers(audience)}
+                              startIcon={<Users size={14} />}
+                            >
+                              Состав
+                            </Button>
+                            {!audience.isSystem ? (
+                              <Button
+                                variant="secondary"
+                                onClick={() => openEdit(audience)}
+                                startIcon={<Edit2 size={14} />}
+                              >
+                                Редактировать
+                              </Button>
+                            ) : null}
+                            <Button
+                              variant="ghost"
+                              onClick={() => handleRefresh(audience)}
+                              startIcon={<RefreshCcw size={14} />}
+                            >
+                              Обновить
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -418,274 +1269,24 @@ export default function AudiencesPage() {
         </CardBody>
       </Card>
 
-      {modalMode && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.74)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, zIndex: 90 }}>
-          <div style={{ width: 'min(960px, 96vw)', maxHeight: '94vh', overflow: 'auto', background: 'rgba(12,16,26,0.96)', borderRadius: 22, border: '1px solid rgba(148,163,184,0.16)', boxShadow: '0 28px 80px rgba(2,6,23,0.5)', display: 'grid', gridTemplateRows: 'auto 1fr auto' }}>
-            <div style={{ padding: '18px 24px', borderBottom: '1px solid rgba(148,163,184,0.16)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ fontSize: 18, fontWeight: 700 }}>{modalMode === 'create' ? 'Создать аудиторию' : audienceName}</div>
-                <div style={{ fontSize: 13, opacity: 0.65 }}>{modalMode === 'create' ? 'Настройте фильтры и сохраните аудиторию' : `${currentAudience?.participants ?? 0} участников`}</div>
-              </div>
-              <button className="btn btn-ghost" onClick={closeModal}><X size={18} /></button>
-            </div>
-
-            <div style={{ padding: 24, display: 'grid', gap: 20 }}>
-              <div style={{ display: 'grid', gap: 8 }}>
-                <label style={{ fontSize: 13, opacity: 0.8 }}>Название *</label>
-                <input value={audienceName} onChange={(e) => setAudienceName(e.target.value)} placeholder="Например, Лояльные" style={{ padding: 12, borderRadius: 10 }} />
-              </div>
-
-              {modalMode === 'edit' && (
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <button className={tab === 'settings' ? 'btn btn-primary' : 'btn'} onClick={() => setTab('settings')}>Настройки</button>
-                  <button className={tab === 'members' ? 'btn btn-primary' : 'btn'} onClick={() => setTab('members')}>Состав аудитории</button>
-                </div>
-              )}
-
-              {tab === 'settings' && (
-                <SettingsForm settings={settings} onChange={setSettings} />
-              )}
-
-              {tab === 'members' && currentAudience && (
-                <div style={{ display: 'grid', gap: 16 }}>
-                  <div style={{ position: 'relative', maxWidth: 320 }}>
-                    <input
-                      value={memberSearch}
-                      onChange={(e) => setMemberSearch(e.target.value)}
-                      placeholder="Поиск по телефону или имени"
-                      style={{ width: '100%', padding: '10px 36px 10px 12px', borderRadius: 10 }}
-                    />
-                    <Search size={16} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', opacity: 0.6 }} />
-                  </div>
-                  <div style={{ maxHeight: 260, overflowY: 'auto', border: '1px solid rgba(148,163,184,0.18)', borderRadius: 14 }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                      <thead>
-                        <tr style={{ background: 'rgba(148,163,184,0.08)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-                          <th style={{ padding: '8px 12px', textAlign: 'left' }}>№</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'left' }}>Телефон</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'left' }}>Имя</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'left' }}>День рождения</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'left' }}>Возраст</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'left' }}>Дата регистрации</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredMembers.map((member, index) => (
-                          <tr key={member.id} style={{ borderBottom: '1px solid rgba(148,163,184,0.1)' }}>
-                            <td style={{ padding: '8px 12px' }}>{index + 1}</td>
-                            <td style={{ padding: '8px 12px' }}>{member.phone}</td>
-                            <td style={{ padding: '8px 12px' }}>{member.name}</td>
-                            <td style={{ padding: '8px 12px' }}>{new Date(member.birthday).toLocaleDateString('ru-RU')}</td>
-                            <td style={{ padding: '8px 12px' }}>{member.age}</td>
-                            <td style={{ padding: '8px 12px' }}>{new Date(member.registrationDate).toLocaleDateString('ru-RU')}</td>
-                          </tr>
-                        ))}
-                        {!filteredMembers.length && (
-                          <tr>
-                            <td colSpan={6} style={{ padding: 16, textAlign: 'center', opacity: 0.6 }}>Совпадения не найдены</td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div style={{ padding: '16px 24px', borderTop: '1px solid rgba(148,163,184,0.16)', display: 'flex', justifyContent: modalMode === 'edit' ? 'space-between' : 'flex-end', gap: 12 }}>
-              {modalMode === 'edit' && currentAudience && (
-                <Button variant="danger" startIcon={<Trash2 size={16} />} onClick={handleDelete}>Удалить аудиторию</Button>
-              )}
-              <div style={{ display: 'flex', gap: 12 }}>
-                <button className="btn" onClick={closeModal} disabled={saving}>Отмена</button>
-                <Button variant="primary" onClick={handleSubmit} disabled={saving} startIcon={<Users2 size={16} />}>
-                  {saving ? 'Сохраняем…' : 'Сохранить'}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-type SettingsFormProps = {
-  settings: AudienceSettings;
-  onChange: (next: AudienceSettings) => void;
-};
-
-const SettingsForm: React.FC<SettingsFormProps> = ({ settings, onChange }) => {
-  const update = (patch: Partial<AudienceSettings>) => onChange({ ...settings, ...patch });
-
-  return (
-    <div style={{ display: 'grid', gap: 18 }}>
-      <ToggleRow
-        title="Посещал точку"
-        enabled={settings.visitedEnabled}
-        onToggle={(value) => update({ visitedEnabled: value })}
-      >
-        <TagSelect
-          options={outletOptions}
-          value={settings.visitedOutlets}
-          onChange={(value) => update({ visitedOutlets: value })}
-          placeholder="Выберите торговые точки"
+      {modalState ? (
+        <AudienceFormModal
+          mode={modalState.mode}
+          audience={modalState.audience}
+          dictionaries={dictionaries}
+          onClose={() => setModalState(null)}
+          onSubmit={(payload) =>
+            handleSubmit(payload, modalState.mode === "edit" ? modalState.audience?.id : undefined)
+          }
+          onArchive={modalState.audience ? () => handleArchive(modalState.audience) : undefined}
         />
-      </ToggleRow>
+      ) : null}
 
-      <ToggleRow
-        title="Покупал товар"
-        enabled={settings.productEnabled}
-        onToggle={(value) => update({ productEnabled: value })}
-      >
-        <TagSelect
-          options={productOptions}
-          value={settings.products}
-          onChange={(value) => update({ products: value })}
-          placeholder="Выберите товары"
-        />
-      </ToggleRow>
-
-      <ToggleRow
-        title="Пол"
-        enabled={settings.genderEnabled}
-        onToggle={(value) => update({ genderEnabled: value })}
-      >
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button className={settings.gender === 'male' ? 'btn btn-primary' : 'btn'} onClick={() => update({ gender: 'male' })}>Мужской</button>
-          <button className={settings.gender === 'female' ? 'btn btn-primary' : 'btn'} onClick={() => update({ gender: 'female' })}>Женский</button>
-        </div>
-      </ToggleRow>
-
-      <ToggleRow
-        title="Возраст"
-        enabled={settings.ageEnabled}
-        onToggle={(value) => update({ ageEnabled: value })}
-      >
-        <RangeSlider min={0} max={100} value={settings.age} onChange={(value) => update({ age: value })} />
-      </ToggleRow>
-
-      <ToggleRow
-        title="День рождения"
-        enabled={settings.birthdayEnabled}
-        onToggle={(value) => update({ birthdayEnabled: value })}
-      >
-        <RangeSlider min={0} max={365} value={settings.birthday} onChange={(value) => update({ birthday: value })} />
-      </ToggleRow>
-
-      <ToggleRow
-        title="Дней с момента регистрации"
-        enabled={settings.registrationEnabled}
-        onToggle={(value) => update({ registrationEnabled: value })}
-      >
-        <RangeSlider min={0} max={1000} value={settings.registration} onChange={(value) => update({ registration: value })} />
-      </ToggleRow>
-
-      <ToggleRow
-        title="Дней с последней покупки"
-        enabled={settings.lastPurchaseEnabled}
-        onToggle={(value) => update({ lastPurchaseEnabled: value })}
-      >
-        <RangeSlider min={0} max={365} value={settings.lastPurchase} onChange={(value) => update({ lastPurchase: value })} />
-      </ToggleRow>
-
-      <ToggleRow
-        title="Количество покупок"
-        enabled={settings.purchaseCountEnabled}
-        onToggle={(value) => update({ purchaseCountEnabled: value })}
-      >
-        <RangeSlider min={0} max={1000} value={settings.purchaseCount} onChange={(value) => update({ purchaseCount: value })} />
-      </ToggleRow>
-
-      <ToggleRow
-        title="Средний чек"
-        enabled={settings.averageCheckEnabled}
-        onToggle={(value) => update({ averageCheckEnabled: value })}
-      >
-        <DualInputRange value={settings.averageCheck} onChange={(value) => update({ averageCheck: value })} prefix="₽" />
-      </ToggleRow>
-
-      <ToggleRow
-        title="Сумма покупок"
-        enabled={settings.purchaseSumEnabled}
-        onToggle={(value) => update({ purchaseSumEnabled: value })}
-      >
-        <DualInputRange value={settings.purchaseSum} onChange={(value) => update({ purchaseSum: value })} prefix="₽" />
-      </ToggleRow>
-
-      <ToggleRow
-        title="Уровень клиента"
-        enabled={settings.levelEnabled}
-        onToggle={(value) => update({ levelEnabled: value })}
-      >
-        <TagSelect options={levelOptions} value={settings.level ? [settings.level] : []} onChange={(value) => update({ level: value[0] || '' })} allowMultiple={false} placeholder="Выберите уровень" />
-      </ToggleRow>
-
-      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))' }}>
-        <ToggleRow title="RFM Давность" enabled={settings.rfmRecencyEnabled} onToggle={(value) => update({ rfmRecencyEnabled: value })}>
-          <TagSelect options={rfmOptions} value={settings.rfmRecency ? [settings.rfmRecency] : []} onChange={(value) => update({ rfmRecency: value[0] || '' })} allowMultiple={false} placeholder="Выберите" />
-        </ToggleRow>
-        <ToggleRow title="RFM Частота" enabled={settings.rfmFrequencyEnabled} onToggle={(value) => update({ rfmFrequencyEnabled: value })}>
-          <TagSelect options={rfmOptions} value={settings.rfmFrequency ? [settings.rfmFrequency] : []} onChange={(value) => update({ rfmFrequency: value[0] || '' })} allowMultiple={false} placeholder="Выберите" />
-        </ToggleRow>
-        <ToggleRow title="RFM Деньги" enabled={settings.rfmMonetaryEnabled} onToggle={(value) => update({ rfmMonetaryEnabled: value })}>
-          <TagSelect options={rfmOptions} value={settings.rfmMonetary ? [settings.rfmMonetary] : []} onChange={(value) => update({ rfmMonetary: value[0] || '' })} allowMultiple={false} placeholder="Выберите" />
-        </ToggleRow>
-      </div>
-
-      <ToggleRow
-        title="Устройство"
-        enabled={settings.deviceEnabled}
-        onToggle={(value) => update({ deviceEnabled: value })}
-      >
-        <TagSelect
-          options={[{ value: 'Android', label: 'Android' }, { value: 'iOS', label: 'iOS' }]}
-          value={settings.device ? [settings.device] : []}
-          onChange={(value) => update({ device: value[0] || '' })}
-          allowMultiple={false}
-          placeholder="Выберите платформу"
-        />
-      </ToggleRow>
+      {membersAudience ? (
+        <AudienceMembersModal audience={membersAudience} onClose={() => setMembersAudience(null)} />
+      ) : null}
     </div>
   );
 };
 
-type ToggleRowProps = {
-  title: string;
-  enabled: boolean;
-  onToggle: (value: boolean) => void;
-  children: React.ReactNode;
-};
-
-const ToggleRow: React.FC<ToggleRowProps> = ({ title, enabled, onToggle, children }) => (
-  <div style={{
-    border: '1px solid rgba(148,163,184,0.18)',
-    borderRadius: 16,
-    padding: 16,
-    background: 'rgba(148,163,184,0.06)',
-    display: 'grid',
-    gap: 12,
-  }}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-      <div style={{ fontWeight: 600, fontSize: 14 }}>{title}</div>
-      <Toggle checked={enabled} onChange={onToggle} label={enabled ? 'Вкл' : 'Выкл'} />
-    </div>
-    {enabled && <div>{children}</div>}
-  </div>
-);
-
-type DualInputRangeProps = {
-  value: [number, number];
-  onChange: (value: [number, number]) => void;
-  prefix?: string;
-};
-
-const DualInputRange: React.FC<DualInputRangeProps> = ({ value, onChange, prefix }) => (
-  <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-    <span style={{ opacity: 0.7 }}>От</span>
-    <input value={value[0]} onChange={(e) => onChange([Number(e.target.value || 0), value[1]])} style={{ padding: 10, borderRadius: 10, width: 120 }} />
-    <span style={{ opacity: 0.7 }}>до</span>
-    <input value={value[1]} onChange={(e) => onChange([value[0], Number(e.target.value || 0)])} style={{ padding: 10, borderRadius: 10, width: 120 }} />
-    {prefix && <span style={{ opacity: 0.7 }}>{prefix}</span>}
-  </div>
-);
+export default AudiencesPage;
