@@ -357,7 +357,18 @@ export class CustomerAudiencesService {
     return cleaned;
   }
 
-  private prepareSegmentFiltersForStorage(filters: any): Prisma.InputJsonValue {
+  private cloneDateFilter(
+    value: Prisma.DateTimeFilter | Date | string | null | undefined,
+  ): Prisma.DateTimeFilter {
+    if (!value) return {};
+    if (value instanceof Date) return {};
+    if (typeof value === 'string') return {};
+    return { ...value };
+  }
+
+  private prepareSegmentFiltersForStorage(
+    filters: any,
+  ): Prisma.JsonObject | null {
     const normalized = this.normalizeSegmentFilters(filters);
     const payload: Record<string, any> = {};
     if (normalized.tags?.length) payload.tags = normalized.tags;
@@ -384,7 +395,7 @@ export class CustomerAudiencesService {
     if (birthday) payload.birthday = birthday;
     return Object.keys(payload).length > 0
       ? (payload as Prisma.JsonObject)
-      : Prisma.JsonNull;
+      : null;
   }
 
   private segmentFiltersForResponse(filters: any): Record<string, any> | null {
@@ -767,25 +778,17 @@ export class CustomerAudiencesService {
       const profileRange: Prisma.MerchantCustomerWhereInput = { merchantId };
       if (range.max != null) {
         const fromDate = startOfDay(subDays(now, Math.floor(range.max)));
-        statsRange.firstSeenAt = {
-          ...(statsRange.firstSeenAt ?? {}),
-          gte: fromDate,
-        };
-        profileRange.createdAt = {
-          ...(profileRange.createdAt ?? {}),
-          gte: fromDate,
-        };
+        const firstSeenFilter = this.cloneDateFilter(statsRange.firstSeenAt);
+        statsRange.firstSeenAt = { ...firstSeenFilter, gte: fromDate };
+        const createdFilter = this.cloneDateFilter(profileRange.createdAt);
+        profileRange.createdAt = { ...createdFilter, gte: fromDate };
       }
       if (range.min != null) {
         const toDate = endOfDay(subDays(now, Math.floor(range.min)));
-        statsRange.firstSeenAt = {
-          ...(statsRange.firstSeenAt ?? {}),
-          lte: toDate,
-        };
-        profileRange.createdAt = {
-          ...(profileRange.createdAt ?? {}),
-          lte: toDate,
-        };
+        const firstSeenFilter = this.cloneDateFilter(statsRange.firstSeenAt);
+        statsRange.firstSeenAt = { ...firstSeenFilter, lte: toDate };
+        const createdFilter = this.cloneDateFilter(profileRange.createdAt);
+        profileRange.createdAt = { ...createdFilter, lte: toDate };
       }
       andConditions.push({
         OR: [
@@ -836,19 +839,24 @@ export class CustomerAudiencesService {
       payload.filters ?? null,
     );
 
+    const createPayload: Prisma.CustomerSegmentUncheckedCreateInput = {
+      merchantId,
+      name: payload.name.trim(),
+      description: payload.description ?? null,
+      rules: payload.rules ?? {},
+      tags: sanitizedTags,
+      color: payload.color ?? null,
+      isActive: payload.isActive ?? true,
+      createdById: payload.actorId ?? null,
+      updatedById: payload.actorId ?? null,
+    };
+
+    if (storedFilters !== null) {
+      createPayload.filters = storedFilters;
+    }
+
     const segment = await this.prisma.customerSegment.create({
-      data: {
-        merchantId,
-        name: payload.name.trim(),
-        description: payload.description ?? null,
-        rules: payload.rules ?? {},
-        filters: storedFilters,
-        tags: sanitizedTags,
-        color: payload.color ?? null,
-        isActive: payload.isActive ?? true,
-        createdById: payload.actorId ?? null,
-        updatedById: payload.actorId ?? null,
-      },
+      data: createPayload,
     });
 
     await this.recalculateSegmentMembership(merchantId, segment);
@@ -902,20 +910,27 @@ export class CustomerAudiencesService {
         : [];
     const storedFilters =
       payload.filters === undefined
-        ? segment.filters
+        ? undefined
         : this.prepareSegmentFiltersForStorage(payload.filters);
+
+    const updateData: Prisma.CustomerSegmentUncheckedUpdateInput = {
+      name: payload.name?.trim() ?? segment.name,
+      description: payload.description ?? segment.description,
+      rules: payload.rules ?? segment.rules,
+      tags: sanitizedTags,
+      color: payload.color ?? segment.color,
+      isActive: payload.isActive ?? segment.isActive,
+      updatedById: payload.actorId ?? segment.updatedById,
+    };
+
+    if (storedFilters !== undefined) {
+      updateData.filters =
+        storedFilters === null ? Prisma.JsonNull : storedFilters;
+    }
+
     const updated = await this.prisma.customerSegment.update({
       where: { id: segmentId },
-      data: {
-        name: payload.name?.trim() ?? segment.name,
-        description: payload.description ?? segment.description,
-        rules: payload.rules ?? segment.rules,
-        filters: storedFilters,
-        tags: sanitizedTags,
-        color: payload.color ?? segment.color,
-        isActive: payload.isActive ?? segment.isActive,
-        updatedById: payload.actorId ?? segment.updatedById,
-      },
+      data: updateData,
     });
 
     await this.recalculateSegmentMembership(merchantId, segmentId);
