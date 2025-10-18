@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import type { CustomerSegment } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
 import { ALL_CUSTOMERS_SEGMENT_KEY } from './audience.constants';
@@ -357,6 +358,76 @@ export class CustomerAudiencesService {
       this.metrics.inc('portal_audiences_changed_total', { action: 'update' });
     } catch {}
     return updated;
+  }
+
+  async recalculateSegmentMembership(
+    merchantId: string,
+    segmentInput: CustomerSegment | string,
+  ) {
+    const segment =
+      typeof segmentInput === 'string'
+        ? await this.prisma.customerSegment.findFirst({
+            where: { merchantId, id: segmentInput },
+          })
+        : segmentInput;
+    if (!segment) throw new NotFoundException('Сегмент не найден');
+    if (segment.merchantId !== merchantId)
+      throw new NotFoundException('Сегмент не найден');
+    if (isSystemAllAudience(segment)) {
+      this.logger.debug(
+        `Skip recalculation for system audience ${segment.id}`,
+      );
+      return { segmentId: segment.id, processed: 0, skipped: true };
+    }
+
+    const filters =
+      segment.filters &&
+      typeof segment.filters === 'object' &&
+      !Array.isArray(segment.filters)
+        ? (segment.filters as Record<string, any>)
+        : {};
+    const where = this.buildSegmentWhere(merchantId, filters);
+    const customers = await this.prisma.customer.findMany({
+      where,
+      select: { id: true },
+    });
+    const customerIds = customers.map((c) => c.id);
+    const now = new Date();
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.segmentCustomer.deleteMany({
+        where: { segmentId: segment.id },
+      });
+      if (customerIds.length) {
+        await tx.segmentCustomer.createMany({
+          data: customerIds.map((customerId) => ({
+            segmentId: segment.id,
+            customerId,
+          })),
+          skipDuplicates: true,
+        });
+      }
+      await tx.customerSegment.update({
+        where: { id: segment.id },
+        data: {
+          customerCount: customerIds.length,
+          lastEvaluatedAt: now,
+        },
+      });
+    });
+
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.audiences.recalculate',
+          merchantId,
+          segmentId: segment.id,
+          customers: customerIds.length,
+        }),
+      );
+      this.metrics.inc('portal_audience_recalculate_total');
+    } catch {}
+    return { segmentId: segment.id, processed: customerIds.length };
   }
 
   async setSegmentActive(
