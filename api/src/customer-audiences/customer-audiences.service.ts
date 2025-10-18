@@ -38,6 +38,20 @@ interface ListSegmentsOptions {
   includeSystem?: boolean;
 }
 
+type NumberRange = {
+  min?: number;
+  max?: number;
+};
+
+interface ParsedSegmentFilters {
+  where: Prisma.CustomerWhereInput;
+  post: {
+    birthdayOffset?: NumberRange;
+  };
+}
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
 @Injectable()
 export class CustomerAudiencesService {
   private readonly logger = new Logger(CustomerAudiencesService.name);
@@ -46,6 +60,442 @@ export class CustomerAudiencesService {
     private readonly prisma: PrismaService,
     private readonly metrics: MetricsService,
   ) {}
+
+  private toNumber(value: unknown): number | undefined {
+    if (value === null || value === undefined) return undefined;
+    const num = Number(value);
+    if (!Number.isFinite(num)) return undefined;
+    return num;
+  }
+
+  private parseNumberRange(value: unknown): NumberRange | undefined {
+    if (Array.isArray(value) && value.length >= 2) {
+      const min = this.toNumber(value[0]);
+      const max = this.toNumber(value[1]);
+      if (min === undefined && max === undefined) return undefined;
+      const range: NumberRange = {};
+      if (min !== undefined) range.min = min;
+      if (max !== undefined) range.max = max;
+      return range;
+    }
+    if (value && typeof value === 'object') {
+      const obj = value as Record<string, unknown>;
+      const min =
+        this.toNumber(obj.min) ??
+        this.toNumber(obj.from) ??
+        this.toNumber(obj.start) ??
+        this.toNumber(obj.gte);
+      const max =
+        this.toNumber(obj.max) ??
+        this.toNumber(obj.to) ??
+        this.toNumber(obj.end) ??
+        this.toNumber(obj.lte);
+      if (min === undefined && max === undefined) return undefined;
+      const range: NumberRange = {};
+      if (min !== undefined) range.min = min;
+      if (max !== undefined) range.max = max;
+      return range;
+    }
+    const single = this.toNumber(value);
+    if (single !== undefined) {
+      return { min: single, max: single };
+    }
+    return undefined;
+  }
+
+  private sanitizeRange(
+    range: NumberRange | undefined,
+    options: { min?: number; max?: number; clamp?: { min?: number; max?: number } } = {},
+  ): NumberRange | undefined {
+    if (!range) return undefined;
+    let { min, max } = range;
+    const clampMin = options.clamp?.min;
+    const clampMax = options.clamp?.max;
+    if (min !== undefined) {
+      if (!Number.isFinite(min)) min = undefined;
+      else {
+        if (options.min !== undefined) min = Math.max(min, options.min);
+        if (clampMin !== undefined) min = Math.max(min, clampMin);
+        if (clampMax !== undefined) min = Math.min(min, clampMax);
+      }
+    }
+    if (max !== undefined) {
+      if (!Number.isFinite(max)) max = undefined;
+      else {
+        if (options.min !== undefined) max = Math.max(max, options.min);
+        if (options.max !== undefined) max = Math.min(max, options.max);
+        if (clampMin !== undefined) max = Math.max(max, clampMin);
+        if (clampMax !== undefined) max = Math.min(max, clampMax);
+      }
+    }
+    if (min !== undefined && max !== undefined && min > max) {
+      const tmp = min;
+      min = max;
+      max = tmp;
+    }
+    const result: NumberRange = {};
+    if (min !== undefined) result.min = min;
+    if (max !== undefined) result.max = max;
+    return Object.keys(result).length ? result : undefined;
+  }
+
+  private parseStringArray(value: unknown): string[] {
+    if (Array.isArray(value)) {
+      return value
+        .map((item) => (typeof item === 'string' ? item : String(item ?? '')))
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+    if (typeof value === 'string') {
+      return value
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+    return [];
+  }
+
+  private parseSegmentFilters(
+    merchantId: string,
+    filters: unknown,
+  ): ParsedSegmentFilters {
+    const andConditions: Prisma.CustomerWhereInput[] = [
+      {
+        OR: [
+          { merchantProfiles: { some: { merchantId } } },
+          { customerStats: { some: { merchantId } } },
+          { Receipt: { some: { merchantId } } },
+        ],
+      },
+    ];
+    const post: ParsedSegmentFilters['post'] = {};
+    if (!filters || typeof filters !== 'object') {
+      return { where: { AND: andConditions }, post };
+    }
+
+    const source = filters as Record<string, unknown>;
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    const tags = this.parseStringArray(source.tags);
+    if (tags.length) {
+      andConditions.push({ tags: { hasSome: tags } });
+    }
+
+    const gender = this.parseStringArray(source.gender).map((value) =>
+      value.toLowerCase(),
+    );
+    if (gender.length) {
+      andConditions.push({ gender: { in: gender } });
+    }
+
+    const statsFilters: Prisma.CustomerStatsWhereInput = { merchantId };
+    let statsHasConditions = false;
+
+    const rfmClasses = this.parseStringArray(source.rfmClasses);
+    if (rfmClasses.length) {
+      statsHasConditions = true;
+      statsFilters.rfmClass = { in: rfmClasses };
+    }
+
+    const purchaseCountInput =
+      source.purchaseCount ??
+      source.visits ??
+      (source.minVisits !== undefined || source.maxVisits !== undefined
+        ? { min: source.minVisits, max: source.maxVisits }
+        : undefined);
+    const purchaseCountRange = this.sanitizeRange(
+      this.parseNumberRange(purchaseCountInput),
+      { min: 0 },
+    );
+    if (purchaseCountRange) {
+      const visitsFilter: Prisma.IntFilter = {};
+      if (purchaseCountRange.min !== undefined)
+        visitsFilter.gte = Math.floor(purchaseCountRange.min);
+      if (purchaseCountRange.max !== undefined)
+        visitsFilter.lte = Math.floor(purchaseCountRange.max);
+      if (Object.keys(visitsFilter).length) {
+        statsHasConditions = true;
+        statsFilters.visits = {
+          ...(statsFilters.visits ?? {}),
+          ...visitsFilter,
+        };
+      }
+    }
+
+    const lastOrderAt: Prisma.DateTimeFilter = {};
+    const lastVisitFromRaw = source.lastVisitFrom;
+    const lastVisitToRaw = source.lastVisitTo;
+    if (typeof lastVisitFromRaw === 'string') {
+      const date = new Date(lastVisitFromRaw);
+      if (!Number.isNaN(date.getTime())) lastOrderAt.gte = date;
+    }
+    if (typeof lastVisitToRaw === 'string') {
+      const date = new Date(lastVisitToRaw);
+      if (!Number.isNaN(date.getTime())) lastOrderAt.lte = date;
+    }
+
+    const lastPurchaseInput =
+      source.lastPurchaseDays ??
+      source.daysSinceLastPurchase ??
+      (source.lastPurchase != null ? source.lastPurchase : undefined);
+    const lastPurchaseRange = this.sanitizeRange(
+      this.parseNumberRange(lastPurchaseInput),
+      { min: 0 },
+    );
+    if (lastPurchaseRange) {
+      if (lastPurchaseRange.max !== undefined) {
+        const gte = new Date(now.getTime() - lastPurchaseRange.max * MS_PER_DAY);
+        lastOrderAt.gte = gte;
+      }
+      if (lastPurchaseRange.min !== undefined) {
+        const lte = new Date(now.getTime() - lastPurchaseRange.min * MS_PER_DAY);
+        lastOrderAt.lte = lte;
+      }
+    }
+    if (Object.keys(lastOrderAt).length) {
+      statsHasConditions = true;
+      statsFilters.lastOrderAt = {
+        ...(statsFilters.lastOrderAt ?? {}),
+        ...lastOrderAt,
+      };
+    }
+
+    const avgCheckInput = source.averageCheck ?? source.avgCheck;
+    const avgCheckRange = this.sanitizeRange(
+      this.parseNumberRange(avgCheckInput),
+      { min: 0 },
+    );
+    if (avgCheckRange) {
+      const avgCheckFilter: Prisma.FloatFilter = {};
+      if (avgCheckRange.min !== undefined)
+        avgCheckFilter.gte = avgCheckRange.min;
+      if (avgCheckRange.max !== undefined)
+        avgCheckFilter.lte = avgCheckRange.max;
+      if (Object.keys(avgCheckFilter).length) {
+        statsHasConditions = true;
+        statsFilters.avgCheck = {
+          ...(statsFilters.avgCheck ?? {}),
+          ...avgCheckFilter,
+        };
+      }
+    }
+
+    const totalSpentInput =
+      source.totalSpent ??
+      source.purchaseSum ??
+      (source.total !== undefined ? source.total : undefined);
+    const totalSpentRange = this.sanitizeRange(
+      this.parseNumberRange(totalSpentInput),
+      { min: 0 },
+    );
+    if (totalSpentRange) {
+      const totalFilter: Prisma.IntFilter = {};
+      if (totalSpentRange.min !== undefined)
+        totalFilter.gte = Math.floor(totalSpentRange.min);
+      if (totalSpentRange.max !== undefined)
+        totalFilter.lte = Math.floor(totalSpentRange.max);
+      if (Object.keys(totalFilter).length) {
+        statsHasConditions = true;
+        statsFilters.totalSpent = {
+          ...(statsFilters.totalSpent ?? {}),
+          ...totalFilter,
+        };
+      }
+    }
+
+    if (statsHasConditions) {
+      andConditions.push({ customerStats: { some: statsFilters } });
+    }
+
+    const registrationInput =
+      source.registrationDays ??
+      source.registration ??
+      (source.registrationFrom !== undefined || source.registrationTo !== undefined
+        ? { min: source.registrationFrom, max: source.registrationTo }
+        : undefined);
+    const registrationRange = this.sanitizeRange(
+      this.parseNumberRange(registrationInput),
+      { min: 0 },
+    );
+    if (registrationRange) {
+      const createdAt: Prisma.DateTimeFilter = {};
+      if (registrationRange.max !== undefined) {
+        createdAt.gte = new Date(
+          now.getTime() - registrationRange.max * MS_PER_DAY,
+        );
+      }
+      if (registrationRange.min !== undefined) {
+        createdAt.lte = new Date(
+          now.getTime() - registrationRange.min * MS_PER_DAY,
+        );
+      }
+      if (Object.keys(createdAt).length) {
+        andConditions.push({
+          merchantProfiles: {
+            some: {
+              merchantId,
+              createdAt,
+            },
+          },
+        });
+      }
+    }
+
+    const ageInput = source.age ?? source.ageRange;
+    const ageRange = this.sanitizeRange(
+      this.parseNumberRange(ageInput),
+      { min: 0, max: 150 },
+    );
+    if (ageRange) {
+      const birthdayFilter: Prisma.DateTimeFilter = {};
+      if (ageRange.min !== undefined) {
+        const maxBirthDate = new Date(today);
+        maxBirthDate.setFullYear(
+          maxBirthDate.getFullYear() - Math.floor(ageRange.min),
+        );
+        birthdayFilter.lte = maxBirthDate;
+      }
+      if (ageRange.max !== undefined) {
+        const minBirthDate = new Date(today);
+        minBirthDate.setFullYear(
+          minBirthDate.getFullYear() - Math.floor(ageRange.max) - 1,
+        );
+        minBirthDate.setDate(minBirthDate.getDate() + 1);
+        birthdayFilter.gte = minBirthDate;
+      }
+      if (Object.keys(birthdayFilter).length) {
+        andConditions.push({ birthday: birthdayFilter });
+      }
+    }
+
+    const birthdayInput =
+      source.birthdayOffset ??
+      source.birthdayWindow ??
+      source.birthday;
+    const birthdayRange = this.sanitizeRange(
+      this.parseNumberRange(birthdayInput),
+      { clamp: { min: -366, max: 366 } },
+    );
+    if (birthdayRange) {
+      post.birthdayOffset = birthdayRange;
+    }
+
+    const outlets = this.parseStringArray(
+      source.outlets ?? source.visitedOutlets,
+    );
+    if (outlets.length) {
+      andConditions.push({
+        Receipt: {
+          some: {
+            merchantId,
+            outletId: { in: outlets },
+          },
+        },
+      });
+    }
+
+    const levelIds = this.parseStringArray(
+      source.levelIds ??
+        source.levels ??
+        (typeof source.level === 'string' ? [source.level] : undefined),
+    );
+    if (levelIds.length) {
+      andConditions.push({
+        tierAssignments: {
+          some: {
+            merchantId,
+            tierId: { in: levelIds },
+          },
+        },
+      });
+    }
+
+    const devicePlatforms = this.parseStringArray(
+      source.devicePlatforms ?? source.device,
+    )
+      .map((value) => value.toLowerCase())
+      .filter(Boolean);
+    if (devicePlatforms.length) {
+      andConditions.push({
+        pushDevices: {
+          some: {
+            platform: { in: devicePlatforms },
+            isActive: true,
+          },
+        },
+      });
+    }
+
+    return { where: { AND: andConditions }, post };
+  }
+
+  private matchesBirthdayOffset(
+    birthday: Date | string | null | undefined,
+    range?: NumberRange,
+  ): boolean {
+    if (!range) return true;
+    if (!birthday) return false;
+    const date =
+      birthday instanceof Date ? birthday : new Date(String(birthday || ''));
+    if (Number.isNaN(date.getTime())) return false;
+
+    const from = range.min ?? -366;
+    const to = range.max ?? 366;
+    const today = new Date();
+    const todayStart = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate(),
+    );
+
+    let nextBirthday = new Date(
+      todayStart.getFullYear(),
+      date.getMonth(),
+      date.getDate(),
+    );
+    if (nextBirthday < todayStart) {
+      nextBirthday.setFullYear(nextBirthday.getFullYear() + 1);
+    }
+
+    let previousBirthday = new Date(
+      todayStart.getFullYear(),
+      date.getMonth(),
+      date.getDate(),
+    );
+    if (previousBirthday > todayStart) {
+      previousBirthday.setFullYear(previousBirthday.getFullYear() - 1);
+    }
+
+    const daysUntil = Math.round(
+      (nextBirthday.getTime() - todayStart.getTime()) / MS_PER_DAY,
+    );
+    const daysSince = Math.round(
+      (todayStart.getTime() - previousBirthday.getTime()) / MS_PER_DAY,
+    );
+    const negativeDays = -daysSince;
+
+    const positiveMatch =
+      to >= 0 &&
+      daysUntil >= Math.max(0, from) &&
+      daysUntil <= Math.max(0, to);
+    const negativeMatch =
+      from <= 0 &&
+      negativeDays >= Math.min(0, from) &&
+      negativeDays <= Math.min(0, to);
+
+    return positiveMatch || negativeMatch;
+  }
+
+  private matchesPostFilters(
+    customer: { birthday: Date | null },
+    post: ParsedSegmentFilters['post'],
+  ): boolean {
+    if (!this.matchesBirthdayOffset(customer.birthday, post.birthdayOffset)) {
+      return false;
+    }
+    return true;
+  }
 
   private async ensureDefaultAudience(merchantId: string) {
     const existing = await this.prisma.customerSegment.findFirst({
@@ -225,45 +675,7 @@ export class CustomerAudiencesService {
     merchantId: string,
     filters: any,
   ): Prisma.CustomerWhereInput {
-    if (!filters || typeof filters !== 'object') return {};
-    const where: Prisma.CustomerWhereInput = {};
-    if (filters.tags?.length) {
-      where.tags = { hasSome: filters.tags };
-    }
-    if (filters.gender?.length) {
-      where.gender = { in: filters.gender };
-    }
-    if (filters.rfmClasses?.length) {
-      where.customerStats = {
-        some: { merchantId, rfmClass: { in: filters.rfmClasses } },
-      };
-    }
-    if (filters.minVisits != null || filters.maxVisits != null) {
-      const visits: Prisma.IntFilter = {};
-      if (filters.minVisits != null) visits.gte = filters.minVisits;
-      if (filters.maxVisits != null) visits.lte = filters.maxVisits;
-      where.customerStats = {
-        some: {
-          ...(where.customerStats?.some ?? {}),
-          merchantId,
-          visits,
-        },
-      };
-    }
-    if (filters.lastVisitFrom || filters.lastVisitTo) {
-      const lastOrderAt: Prisma.DateTimeFilter = {};
-      if (filters.lastVisitFrom)
-        lastOrderAt.gte = new Date(filters.lastVisitFrom);
-      if (filters.lastVisitTo) lastOrderAt.lte = new Date(filters.lastVisitTo);
-      where.customerStats = {
-        some: {
-          ...(where.customerStats?.some ?? {}),
-          merchantId,
-          lastOrderAt,
-        },
-      };
-    }
-    return where;
+    return this.parseSegmentFilters(merchantId, filters).where;
   }
 
   async listSegments(merchantId: string, options: ListSegmentsOptions = {}) {
@@ -317,7 +729,18 @@ export class CustomerAudiencesService {
       );
       this.metrics.inc('portal_audiences_changed_total', { action: 'create' });
     } catch {}
-    return segment;
+    let updated: CustomerSegment | null = null;
+    try {
+      await this.recalculateSegmentMembership(merchantId, segment);
+      updated = await this.prisma.customerSegment.findFirst({
+        where: { id: segment.id },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Failed to recalculate new audience ${segment.id}: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+    return updated ?? segment;
   }
 
   async updateSegment(
@@ -357,7 +780,18 @@ export class CustomerAudiencesService {
       );
       this.metrics.inc('portal_audiences_changed_total', { action: 'update' });
     } catch {}
-    return updated;
+    let refreshed: CustomerSegment | null = null;
+    try {
+      await this.recalculateSegmentMembership(merchantId, updated);
+      refreshed = await this.prisma.customerSegment.findFirst({
+        where: { id: updated.id },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Failed to recalculate audience ${updated.id}: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+    return refreshed ?? updated;
   }
 
   async recalculateSegmentMembership(
@@ -386,12 +820,15 @@ export class CustomerAudiencesService {
       !Array.isArray(segment.filters)
         ? (segment.filters as Record<string, any>)
         : {};
-    const where = this.buildSegmentWhere(merchantId, filters);
+    const { where, post } = this.parseSegmentFilters(merchantId, filters);
     const customers = await this.prisma.customer.findMany({
       where,
-      select: { id: true },
+      select: { id: true, birthday: true },
     });
-    const customerIds = customers.map((c) => c.id);
+    const matchingCustomers = customers.filter((customer) =>
+      this.matchesPostFilters({ birthday: customer.birthday }, post),
+    );
+    const customerIds = matchingCustomers.map((c) => c.id);
     const now = new Date();
 
     await this.prisma.$transaction(async (tx) => {
@@ -428,6 +865,99 @@ export class CustomerAudiencesService {
       this.metrics.inc('portal_audience_recalculate_total');
     } catch {}
     return { segmentId: segment.id, processed: customerIds.length };
+  }
+
+  async evaluateCustomerSegments(merchantId: string, customerId: string) {
+    const segments = await this.prisma.customerSegment.findMany({
+      where: { merchantId, archivedAt: null },
+      select: {
+        id: true,
+        filters: true,
+        isSystem: true,
+      },
+    });
+    let added = 0;
+    let removed = 0;
+    const now = new Date();
+
+    for (const segment of segments) {
+      if (isSystemAllAudience(segment)) continue;
+      const filters =
+        segment.filters &&
+        typeof segment.filters === 'object' &&
+        !Array.isArray(segment.filters)
+          ? (segment.filters as Record<string, any>)
+          : {};
+      const { where, post } = this.parseSegmentFilters(merchantId, filters);
+      const candidateWhere: Prisma.CustomerWhereInput = { id: customerId };
+      if (where.AND) {
+        candidateWhere.AND = Array.isArray(where.AND)
+          ? (where.AND as Prisma.CustomerWhereInput[])
+          : [where.AND as Prisma.CustomerWhereInput];
+      } else {
+        Object.assign(candidateWhere, where);
+      }
+      const candidate = await this.prisma.customer.findFirst({
+        where: candidateWhere,
+        select: { id: true, birthday: true },
+      });
+      const matches =
+        !!candidate &&
+        this.matchesPostFilters({ birthday: candidate.birthday }, post);
+
+      await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.segmentCustomer.findUnique({
+          where: {
+            segmentId_customerId: {
+              segmentId: segment.id,
+              customerId,
+            },
+          },
+        });
+        let changed = false;
+        if (matches && !existing) {
+          await tx.segmentCustomer.create({
+            data: { segmentId: segment.id, customerId },
+          });
+          added += 1;
+          changed = true;
+        } else if (!matches && existing) {
+          await tx.segmentCustomer.delete({
+            where: {
+              segmentId_customerId: {
+                segmentId: segment.id,
+                customerId,
+              },
+            },
+          });
+          removed += 1;
+          changed = true;
+        }
+        if (changed) {
+          const count = await tx.segmentCustomer.count({
+            where: { segmentId: segment.id },
+          });
+          await tx.customerSegment.update({
+            where: { id: segment.id },
+            data: { customerCount: count, lastEvaluatedAt: now },
+          });
+        }
+      });
+    }
+
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.audiences.evaluateCustomer',
+          merchantId,
+          customerId,
+          segments: segments.length,
+          added,
+          removed,
+        }),
+      );
+    } catch {}
+    return { processed: segments.length, added, removed };
   }
 
   async setSegmentActive(
@@ -492,22 +1022,18 @@ export class CustomerAudiencesService {
       where: { merchantId, id: segmentId },
     });
     if (!segment) throw new NotFoundException('Сегмент не найден');
-    const where = this.buildSegmentWhere(merchantId, segment.filters ?? {});
-    const count = await this.prisma.customer.count({
-      where: { ...where, segments: { some: { segmentId } } },
-    });
-
-    const updated = await this.prisma.customerSegment.update({
+    await this.recalculateSegmentMembership(merchantId, segment);
+    const updated = await this.prisma.customerSegment.findFirst({
       where: { id: segmentId },
-      data: { customerCount: count, lastEvaluatedAt: new Date() },
     });
+    if (!updated) throw new NotFoundException('Сегмент не найден');
     try {
       this.logger.log(
         JSON.stringify({
           event: 'portal.audiences.refresh',
           merchantId,
           segmentId,
-          customerCount: count,
+          customerCount: updated.customerCount,
         }),
       );
       this.metrics.inc('portal_audience_refresh_total');

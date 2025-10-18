@@ -1,13 +1,20 @@
 "use client";
 
 import React from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardHeader, CardBody, Button, Skeleton } from "@loyalty/ui";
 import Toggle from "../../components/Toggle";
 import TagSelect from "../../components/TagSelect";
 import RangeSlider from "../../components/RangeSlider";
 import { Search, PlusCircle, X, Trash2, Users2 } from "lucide-react";
 
-const tableColumns = [
+type TableColumn = {
+  key: keyof AudienceRow | 'actions';
+  label: string;
+  render?: (audience: AudienceRow) => React.ReactNode;
+};
+
+const tableColumns: TableColumn[] = [
   { key: 'name', label: 'Название' },
   { key: 'participants', label: 'Участники' },
   { key: 'age', label: 'Возраст' },
@@ -19,7 +26,10 @@ const tableColumns = [
   { key: 'birthday', label: 'День рождения' },
   { key: 'registrationDays', label: 'Дней с момента регистрации' },
   { key: 'device', label: 'Устройство' },
-] as const;
+  { key: 'actions', label: 'Состав аудитории' },
+];
+
+type Option = { value: string; label: string };
 
 type AudienceRow = {
   id: string;
@@ -35,7 +45,7 @@ type AudienceRow = {
   registrationDays: string;
   device: string;
   settings: AudienceSettings;
-  members: AudienceMember[];
+  filters: Record<string, unknown>;
 };
 
 type AudienceMember = {
@@ -90,7 +100,7 @@ const defaultSettings: AudienceSettings = {
   ageEnabled: false,
   age: [0, 100],
   birthdayEnabled: false,
-  birthday: [0, 365],
+  birthday: [-30, 30],
   registrationEnabled: false,
   registration: [0, 365],
   lastPurchaseEnabled: false,
@@ -113,24 +123,11 @@ const defaultSettings: AudienceSettings = {
   device: '',
 };
 
-const outletOptions = [
-  { value: 'outlet-1', label: 'Точка на Тверской' },
-  { value: 'outlet-2', label: 'ТРЦ Авиапарк' },
-  { value: 'outlet-3', label: 'МЕГА Химки' },
-  { value: 'outlet-4', label: 'Онлайн' },
-];
-
 const productOptions = [
   { value: 'prod-1', label: 'Лимонад' },
   { value: 'prod-2', label: 'Бургер' },
   { value: 'prod-3', label: 'Кофе' },
   { value: 'prod-4', label: 'Салат' },
-];
-
-const levelOptions = [
-  { value: 'bronze', label: 'Bronze' },
-  { value: 'silver', label: 'Silver' },
-  { value: 'gold', label: 'Gold' },
 ];
 
 const rfmOptions = [
@@ -164,25 +161,145 @@ function calculateAge(birthday: string): number {
   } catch { return 0; }
 }
 
+function formatDateRu(value: string): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleDateString('ru-RU');
+}
+
+function parseNumber(value: unknown): number | null {
+  const num = typeof value === 'string' && value.trim() === '' ? NaN : Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+function parseStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === 'string' ? item : String(item ?? '')))
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function parseRangeInput(value: unknown): [number | null, number | null] {
+  if (Array.isArray(value) && value.length >= 2) {
+    return [parseNumber(value[0]), parseNumber(value[1])];
+  }
+  if (value && typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    const min =
+      parseNumber(obj.min) ??
+      parseNumber(obj.from) ??
+      parseNumber(obj.start) ??
+      parseNumber(obj.gte);
+    const max =
+      parseNumber(obj.max) ??
+      parseNumber(obj.to) ??
+      parseNumber(obj.end) ??
+      parseNumber(obj.lte);
+    return [min, max];
+  }
+  const single = parseNumber(value);
+  return single !== null ? [single, single] : [null, null];
+}
+
+function normalizeRange(
+  range: [number | null, number | null],
+  clamp?: { min: number; max: number },
+): [number | null, number | null] {
+  let [min, max] = range;
+  if (clamp) {
+    if (min !== null) min = Math.max(clamp.min, Math.min(clamp.max, min));
+    if (max !== null) max = Math.max(clamp.min, Math.min(clamp.max, max));
+  }
+  if (min !== null && max !== null && min > max) {
+    const tmp = min;
+    min = max;
+    max = tmp;
+  }
+  return [min, max];
+}
+
+function applyRangeFallback(
+  range: [number | null, number | null],
+  fallback: [number, number],
+): [number, number] {
+  return [range[0] ?? fallback[0], range[1] ?? fallback[1]];
+}
+
+function normalizeDeviceLabel(value: string): string {
+  const lower = value.toLowerCase();
+  if (lower.startsWith('android')) return 'Android';
+  if (lower.startsWith('ios')) return 'iOS';
+  return value;
+}
+
 function settingsToFilters(s: AudienceSettings) {
-  const filters: any = {};
-  if (s.genderEnabled && s.gender) filters.gender = [s.gender];
-  if (s.purchaseCountEnabled) {
-    filters.minVisits = s.purchaseCount?.[0];
-    filters.maxVisits = s.purchaseCount?.[1];
+  const filters: Record<string, unknown> = {};
+  if (s.visitedEnabled && s.visitedOutlets.length) {
+    filters.outlets = s.visitedOutlets.slice();
   }
-  if (s.rfmRecencyEnabled && s.rfmRecency) filters.rfmClasses = [s.rfmRecency];
-  if (s.rfmFrequencyEnabled && s.rfmFrequency) filters.rfmClasses = [...(filters.rfmClasses || []), s.rfmFrequency];
-  if (s.rfmMonetaryEnabled && s.rfmMonetary) filters.rfmClasses = [...(filters.rfmClasses || []), s.rfmMonetary];
+  if (s.genderEnabled && s.gender) {
+    filters.gender = [s.gender];
+  }
+  if (s.ageEnabled) {
+    const [min, max] = s.age;
+    filters.age = { min, max };
+  }
+  if (s.birthdayEnabled) {
+    const [min, max] = s.birthday;
+    filters.birthdayOffset = { min, max };
+  }
+  if (s.registrationEnabled) {
+    const [min, max] = s.registration;
+    filters.registrationDays = { min, max };
+  }
   if (s.lastPurchaseEnabled) {
-    const now = new Date();
-    const from = new Date(now.getTime() - (s.lastPurchase?.[1] ?? 0) * 24 * 3600 * 1000);
-    const to = new Date(now.getTime() - (s.lastPurchase?.[0] ?? 0) * 24 * 3600 * 1000);
-    filters.lastVisitFrom = from.toISOString();
-    filters.lastVisitTo = to.toISOString();
+    const [min, max] = s.lastPurchase;
+    filters.lastPurchaseDays = { min, max };
   }
-  // tags/level/device/birthday/age/products/outlets можно хранить в rules
+  if (s.purchaseCountEnabled) {
+    const [min, max] = s.purchaseCount;
+    filters.purchaseCount = { min, max };
+  }
+  if (s.averageCheckEnabled) {
+    const [min, max] = s.averageCheck;
+    filters.averageCheck = { min, max };
+  }
+  if (s.purchaseSumEnabled) {
+    const [min, max] = s.purchaseSum;
+    filters.totalSpent = { min, max };
+  }
+  if (s.levelEnabled && s.level) {
+    filters.levelIds = [s.level];
+  }
+  if (s.deviceEnabled && s.device) {
+    filters.devicePlatforms = [s.device.toLowerCase()];
+  }
   return filters;
+}
+
+function formatRange(
+  min: number | null,
+  max: number | null,
+  suffix = '',
+): string {
+  const formatValue = (value: number) => `${value.toLocaleString('ru-RU')}${suffix}`;
+  if (min !== null && max !== null) {
+    if (min === max) return formatValue(min);
+    return `${formatValue(min)}–${formatValue(max)}`;
+  }
+  if (min !== null) return `от ${formatValue(min)}`;
+  if (max !== null) return `до ${formatValue(max)}`;
+  return '—';
 }
 
 function filtersToDisplay(filters: any) {
@@ -196,41 +313,316 @@ function filtersToDisplay(filters: any) {
     birthday: '—',
     registrationDays: '—',
     device: '—',
-  } as Pick<AudienceRow, 'age'|'gender'|'averageCheck'|'lastPurchaseDays'|'purchaseCount'|'purchaseSum'|'birthday'|'registrationDays'|'device'>;
-  if (Array.isArray(filters?.gender) && filters.gender.length === 1) display.gender = filters.gender[0] === 'male' ? 'Мужской' : filters.gender[0] === 'female' ? 'Женский' : 'Смешанный';
-  if (filters?.minVisits != null || filters?.maxVisits != null) display.purchaseCount = `${filters.minVisits ?? 0}-${filters.maxVisits ?? '∞'}`;
-  if (filters?.lastVisitFrom || filters?.lastVisitTo) display.lastPurchaseDays = 'по периоду';
+  } as Pick<AudienceRow, 'age' | 'gender' | 'averageCheck' | 'lastPurchaseDays' | 'purchaseCount' | 'purchaseSum' | 'birthday' | 'registrationDays' | 'device'>;
+
+  if (!filters || typeof filters !== 'object') {
+    return display;
+  }
+
+  const source = filters as Record<string, unknown>;
+  const genderValues = parseStringArray(source.gender);
+  if (genderValues.length === 1) {
+    const value = genderValues[0].toLowerCase();
+    if (value === 'male') display.gender = 'Мужской';
+    else if (value === 'female') display.gender = 'Женский';
+    else display.gender = 'Смешанный';
+  }
+
+  const ageRange = normalizeRange(parseRangeInput(source.age ?? source.ageRange));
+  if (ageRange[0] !== null || ageRange[1] !== null) {
+    display.age = formatRange(ageRange[0], ageRange[1]);
+  }
+
+  const purchaseRange = normalizeRange(
+    parseRangeInput(
+      source.purchaseCount ??
+        source.visits ??
+        (source.minVisits !== undefined || source.maxVisits !== undefined
+          ? { min: source.minVisits, max: source.maxVisits }
+          : undefined),
+    ),
+  );
+  if (purchaseRange[0] !== null || purchaseRange[1] !== null) {
+    display.purchaseCount = formatRange(purchaseRange[0], purchaseRange[1]);
+  }
+
+  const lastPurchaseRange = normalizeRange(
+    parseRangeInput(
+      source.lastPurchaseDays ??
+        source.daysSinceLastPurchase ??
+        (source.lastPurchase != null ? source.lastPurchase : undefined),
+    ),
+  );
+  if (lastPurchaseRange[0] !== null || lastPurchaseRange[1] !== null) {
+    display.lastPurchaseDays = formatRange(
+      lastPurchaseRange[0],
+      lastPurchaseRange[1],
+      ' дн.',
+    );
+  }
+
+  const avgCheckRange = normalizeRange(
+    parseRangeInput(source.averageCheck ?? source.avgCheck),
+  );
+  if (avgCheckRange[0] !== null || avgCheckRange[1] !== null) {
+    display.averageCheck = formatRange(
+      avgCheckRange[0],
+      avgCheckRange[1],
+      ' ₽',
+    );
+  }
+
+  const totalRange = normalizeRange(
+    parseRangeInput(
+      source.totalSpent ??
+        source.purchaseSum ??
+        (source.total !== undefined ? source.total : undefined),
+    ),
+  );
+  if (totalRange[0] !== null || totalRange[1] !== null) {
+    display.purchaseSum = formatRange(
+      totalRange[0],
+      totalRange[1],
+      ' ₽',
+    );
+  }
+
+  const birthdayRange = normalizeRange(
+    parseRangeInput(
+      source.birthdayOffset ?? source.birthdayWindow ?? source.birthday,
+    ),
+    { min: -366, max: 366 },
+  );
+  if (birthdayRange[0] !== null || birthdayRange[1] !== null) {
+    display.birthday = formatRange(
+      birthdayRange[0],
+      birthdayRange[1],
+      ' дн.',
+    );
+  }
+
+  const registrationRange = normalizeRange(
+    parseRangeInput(
+      source.registrationDays ??
+        source.registration ??
+        (source.registrationFrom !== undefined ||
+        source.registrationTo !== undefined
+          ? { min: source.registrationFrom, max: source.registrationTo }
+          : undefined),
+    ),
+  );
+  if (registrationRange[0] !== null || registrationRange[1] !== null) {
+    display.registrationDays = formatRange(
+      registrationRange[0],
+      registrationRange[1],
+      ' дн.',
+    );
+  }
+
+  const deviceValues = parseStringArray(
+    source.devicePlatforms ?? source.device,
+  );
+  if (deviceValues.length === 1) {
+    display.device = normalizeDeviceLabel(deviceValues[0]);
+  }
+
   return display;
 }
 
+function filtersToSettings(filters: any): AudienceSettings {
+  const settings: AudienceSettings = { ...defaultSettings };
+  if (!filters || typeof filters !== 'object') return settings;
+  const source = filters as Record<string, unknown>;
+
+  const outlets = parseStringArray(source.outlets ?? source.visitedOutlets);
+  if (outlets.length) {
+    settings.visitedEnabled = true;
+    settings.visitedOutlets = outlets;
+  }
+
+  const genderValues = parseStringArray(source.gender);
+  if (genderValues.length === 1) {
+    const value = genderValues[0].toLowerCase();
+    if (value === 'male' || value === 'female') {
+      settings.genderEnabled = true;
+      settings.gender = value;
+    }
+  }
+
+  const ageRange = applyRangeFallback(
+    normalizeRange(parseRangeInput(source.age ?? source.ageRange), {
+      min: 0,
+      max: 100,
+    }),
+    defaultSettings.age,
+  );
+  if (ageRange[0] !== defaultSettings.age[0] || ageRange[1] !== defaultSettings.age[1]) {
+    settings.ageEnabled = true;
+    settings.age = ageRange;
+  }
+
+  const birthdayRange = applyRangeFallback(
+    normalizeRange(
+      parseRangeInput(
+        source.birthdayOffset ?? source.birthdayWindow ?? source.birthday,
+      ),
+      { min: -30, max: 30 },
+    ),
+    defaultSettings.birthday,
+  );
+  if (
+    birthdayRange[0] !== defaultSettings.birthday[0] ||
+    birthdayRange[1] !== defaultSettings.birthday[1]
+  ) {
+    settings.birthdayEnabled = true;
+    settings.birthday = birthdayRange;
+  }
+
+  const registrationRange = applyRangeFallback(
+    normalizeRange(
+      parseRangeInput(
+        source.registrationDays ??
+          source.registration ??
+          (source.registrationFrom !== undefined ||
+          source.registrationTo !== undefined
+            ? { min: source.registrationFrom, max: source.registrationTo }
+            : undefined),
+      ),
+      { min: 0, max: 1000 },
+    ),
+    defaultSettings.registration,
+  );
+  if (
+    registrationRange[0] !== defaultSettings.registration[0] ||
+    registrationRange[1] !== defaultSettings.registration[1]
+  ) {
+    settings.registrationEnabled = true;
+    settings.registration = registrationRange;
+  }
+
+  const lastPurchaseRange = applyRangeFallback(
+    normalizeRange(
+      parseRangeInput(
+        source.lastPurchaseDays ??
+          source.daysSinceLastPurchase ??
+          (source.lastPurchase != null ? source.lastPurchase : undefined),
+      ),
+      { min: 0, max: 365 },
+    ),
+    defaultSettings.lastPurchase,
+  );
+  if (
+    lastPurchaseRange[0] !== defaultSettings.lastPurchase[0] ||
+    lastPurchaseRange[1] !== defaultSettings.lastPurchase[1]
+  ) {
+    settings.lastPurchaseEnabled = true;
+    settings.lastPurchase = lastPurchaseRange;
+  }
+
+  const purchaseCountRange = applyRangeFallback(
+    normalizeRange(
+      parseRangeInput(
+        source.purchaseCount ??
+          source.visits ??
+          (source.minVisits !== undefined || source.maxVisits !== undefined
+            ? { min: source.minVisits, max: source.maxVisits }
+            : undefined),
+      ),
+      { min: 0, max: 1000 },
+    ),
+    defaultSettings.purchaseCount,
+  );
+  if (
+    purchaseCountRange[0] !== defaultSettings.purchaseCount[0] ||
+    purchaseCountRange[1] !== defaultSettings.purchaseCount[1]
+  ) {
+    settings.purchaseCountEnabled = true;
+    settings.purchaseCount = purchaseCountRange;
+  }
+
+  const averageCheckRange = applyRangeFallback(
+    normalizeRange(parseRangeInput(source.averageCheck ?? source.avgCheck)),
+    defaultSettings.averageCheck,
+  );
+  if (
+    averageCheckRange[0] !== defaultSettings.averageCheck[0] ||
+    averageCheckRange[1] !== defaultSettings.averageCheck[1]
+  ) {
+    settings.averageCheckEnabled = true;
+    settings.averageCheck = averageCheckRange;
+  }
+
+  const totalSpentRange = applyRangeFallback(
+    normalizeRange(
+      parseRangeInput(
+        source.totalSpent ??
+          source.purchaseSum ??
+          (source.total !== undefined ? source.total : undefined),
+      ),
+    ),
+    defaultSettings.purchaseSum,
+  );
+  if (
+    totalSpentRange[0] !== defaultSettings.purchaseSum[0] ||
+    totalSpentRange[1] !== defaultSettings.purchaseSum[1]
+  ) {
+    settings.purchaseSumEnabled = true;
+    settings.purchaseSum = totalSpentRange;
+  }
+
+  const levelValues = parseStringArray(
+    source.levelIds ??
+      source.levels ??
+      (typeof source.level === 'string' ? [source.level] : undefined),
+  );
+  if (levelValues.length === 1) {
+    settings.levelEnabled = true;
+    settings.level = levelValues[0];
+  }
+
+  const deviceValues = parseStringArray(
+    source.devicePlatforms ?? source.device,
+  );
+  if (deviceValues.length === 1) {
+    settings.deviceEnabled = true;
+    settings.device = normalizeDeviceLabel(deviceValues[0]);
+  }
+
+  return settings;
+}
+
 function segmentToAudienceRow(seg: any): AudienceRow {
-  const filters = seg.filters || {};
-  const d = filtersToDisplay(filters);
+  const filters =
+    seg.filters && typeof seg.filters === 'object' && !Array.isArray(seg.filters)
+      ? (seg.filters as Record<string, unknown>)
+      : {};
+  const display = filtersToDisplay(filters);
   return {
     id: String(seg.id),
     name: String(seg.name || 'Без названия'),
     participants: Number(seg.customerCount || 0),
-    age: d.age,
-    gender: d.gender,
-    averageCheck: d.averageCheck,
-    lastPurchaseDays: d.lastPurchaseDays,
-    purchaseCount: d.purchaseCount,
-    purchaseSum: d.purchaseSum,
-    birthday: d.birthday,
-    registrationDays: d.registrationDays,
-    device: d.device,
-    settings: defaultSettings,
-    members: [],
+    age: display.age,
+    gender: display.gender,
+    averageCheck: display.averageCheck,
+    lastPurchaseDays: display.lastPurchaseDays,
+    purchaseCount: display.purchaseCount,
+    purchaseSum: display.purchaseSum,
+    birthday: display.birthday,
+    registrationDays: display.registrationDays,
+    device: display.device,
+    settings: filtersToSettings(filters),
+    filters,
   };
 }
 
 function mapMember(row: any): AudienceMember {
+  const birthday = row?.birthday ? String(row.birthday) : '';
   return {
     id: String(row.id || ''),
     phone: String(row.phone || ''),
     name: String(row.name || row.phone || row.id || ''),
-    birthday: row.birthday ? String(row.birthday) : '',
-    age: row.birthday ? calculateAge(String(row.birthday)) : 0,
+    birthday,
+    age: birthday ? calculateAge(birthday) : 0,
     registrationDate: String(row.createdAt || ''),
   };
 }
@@ -238,6 +630,7 @@ function mapMember(row: any): AudienceMember {
 // no sample data: always load from API
 
 export default function AudiencesPage() {
+  const router = useRouter();
   const [search, setSearch] = React.useState('');
   const [audiences, setAudiences] = React.useState<AudienceRow[]>([]);
   const [loading, setLoading] = React.useState(false);
@@ -245,10 +638,13 @@ export default function AudiencesPage() {
   const [currentAudience, setCurrentAudience] = React.useState<AudienceRow | null>(null);
   const [settings, setSettings] = React.useState<AudienceSettings>(defaultSettings);
   const [audienceName, setAudienceName] = React.useState('');
-  const [tab, setTab] = React.useState<'settings' | 'members'>('settings');
   const [memberSearch, setMemberSearch] = React.useState('');
   const [saving, setSaving] = React.useState(false);
   const [membersLoading, setMembersLoading] = React.useState(false);
+  const [membersModalAudience, setMembersModalAudience] = React.useState<AudienceRow | null>(null);
+  const [membersModalMembers, setMembersModalMembers] = React.useState<AudienceMember[]>([]);
+  const [outletOptions, setOutletOptions] = React.useState<Option[]>([]);
+  const [levelOptions, setLevelOptions] = React.useState<Option[]>([]);
 
   const loadAudiences = React.useCallback(async () => {
     setLoading(true);
@@ -266,23 +662,100 @@ export default function AudiencesPage() {
 
   React.useEffect(() => { loadAudiences(); }, [loadAudiences]);
 
-  // Load members when opening members tab
   React.useEffect(() => {
-    const id = currentAudience?.id;
-    if (!id) return;
-    if (tab !== 'members') return;
+    (async () => {
+      try {
+        const res = await api<any>(`/api/portal/outlets?status=ACTIVE`);
+        const list = Array.isArray(res?.items)
+          ? res.items
+          : Array.isArray(res)
+            ? res
+            : [];
+        setOutletOptions(
+          list.map((outlet: any) => ({
+            value: String(outlet.id ?? ''),
+            label: String(outlet.name || outlet.id || ''),
+          })),
+        );
+      } catch (e) {
+        console.error(e);
+      }
+    })();
+  }, []);
+
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const res = await api<any>(`/api/portal/loyalty/tiers`);
+        const list = Array.isArray(res?.items)
+          ? res.items
+          : Array.isArray(res)
+            ? res
+            : [];
+        setLevelOptions(
+          list.map((tier: any) => ({
+            value: String(tier.id ?? ''),
+            label: String(tier.name || tier.id || ''),
+          })),
+        );
+      } catch (e) {
+        console.error(e);
+      }
+    })();
+  }, []);
+
+  // Load members when opening members tab
+  // members modal loads data on open; see openMembersModal
+
+  const openMembersModal = (
+    audience: AudienceRow,
+    event?: React.MouseEvent<HTMLButtonElement>,
+  ) => {
+    event?.stopPropagation();
+    setMembersModalAudience(audience);
+    setMemberSearch('');
+    setMembersModalMembers([]);
     setMembersLoading(true);
     (async () => {
       try {
-        const qs = new URLSearchParams({ segmentId: id, limit: '100' });
+        const qs = new URLSearchParams({ segmentId: audience.id, limit: '100' });
         const res = await api<any>(`/api/customers?${qs.toString()}`);
-        const items = Array.isArray(res?.items) ? res.items : Array.isArray(res) ? res : [];
-        const mapped = items.map(mapMember);
-        setCurrentAudience((prev) => (prev && prev.id === id ? { ...prev, members: mapped } : prev));
-      } catch (e) { console.error(e); }
-      finally { setMembersLoading(false); }
+        const items = Array.isArray(res?.items)
+          ? res.items
+          : Array.isArray(res)
+            ? res
+            : [];
+        setMembersModalMembers(items.map(mapMember));
+      } catch (e) {
+        console.error(e);
+        setMembersModalMembers([]);
+      } finally {
+        setMembersLoading(false);
+      }
     })();
-  }, [tab, currentAudience?.id]);
+  };
+
+  const closeMembersModal = () => {
+    setMembersModalAudience(null);
+    setMembersModalMembers([]);
+    setMemberSearch('');
+    setMembersLoading(false);
+  };
+
+  const handleMemberClick = (member: AudienceMember) => {
+    closeMembersModal();
+    router.push(`/customers/${member.id}`);
+  };
+
+  const filteredMembers = React.useMemo(() => {
+    const term = memberSearch.trim().toLowerCase();
+    if (!term) return membersModalMembers;
+    return membersModalMembers.filter(
+      (member) =>
+        member.phone.toLowerCase().includes(term) ||
+        member.name.toLowerCase().includes(term),
+    );
+  }, [membersModalMembers, memberSearch]);
 
   const filtered = React.useMemo(() =>
     audiences.filter((aud) => aud.name.toLowerCase().includes(search.toLowerCase())),
@@ -344,16 +817,6 @@ export default function AudiencesPage() {
     } catch (e) { console.error(e); }
   };
 
-  const filteredMembers = React.useMemo(() => {
-    if (!currentAudience) return [] as AudienceMember[];
-    const term = memberSearch.trim().toLowerCase();
-    if (!term) return currentAudience.members;
-    return currentAudience.members.filter((m) =>
-      m.phone.toLowerCase().includes(term) ||
-      m.name.toLowerCase().includes(term),
-    );
-  }, [currentAudience, memberSearch]);
-
   return (
     <div style={{ display: 'grid', gap: 20 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
@@ -395,18 +858,38 @@ export default function AudiencesPage() {
                 </thead>
                 <tbody>
                   {filtered.map((aud) => (
-                    <tr key={aud.id} onClick={() => openEdit(aud)} style={{ cursor: 'pointer', borderBottom: '1px solid rgba(148,163,184,0.1)' }}>
-                      <td style={{ padding: '12px 12px', fontWeight: 600 }}>{aud.name}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.participants}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.age}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.gender}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.averageCheck}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.lastPurchaseDays}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.purchaseCount}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.purchaseSum}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.birthday}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.registrationDays}</td>
-                      <td style={{ padding: '12px 12px' }}>{aud.device}</td>
+                    <tr
+                      key={aud.id}
+                      onClick={() => openEdit(aud)}
+                      style={{ cursor: 'pointer', borderBottom: '1px solid rgba(148,163,184,0.1)' }}
+                    >
+                      {tableColumns.map((col) => {
+                        const isName = col.key === 'name';
+                        const cellStyle: React.CSSProperties = {
+                          padding: '12px 12px',
+                          ...(isName ? { fontWeight: 600 } : {}),
+                        };
+                        let value: React.ReactNode;
+                        if (col.key === 'actions') {
+                          value = (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={(event) => openMembersModal(aud, event)}
+                              startIcon={<Users2 size={16} />}
+                            >
+                              Открыть
+                            </Button>
+                          );
+                        } else {
+                          value = aud[col.key as keyof AudienceRow] ?? '—';
+                        }
+                        return (
+                          <td key={col.key as string} style={cellStyle}>
+                            {value}
+                          </td>
+                        );
+                      })}
                     </tr>
                   ))}
                 </tbody>
@@ -418,9 +901,122 @@ export default function AudiencesPage() {
         </CardBody>
       </Card>
 
-      {modalMode && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.74)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, zIndex: 90 }}>
-          <div style={{ width: 'min(960px, 96vw)', maxHeight: '94vh', overflow: 'auto', background: 'rgba(12,16,26,0.96)', borderRadius: 22, border: '1px solid rgba(148,163,184,0.16)', boxShadow: '0 28px 80px rgba(2,6,23,0.5)', display: 'grid', gridTemplateRows: 'auto 1fr auto' }}>
+        {membersModalAudience && (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(15,23,42,0.74)',
+              backdropFilter: 'blur(8px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 20,
+              zIndex: 95,
+            }}
+          >
+            <div
+              style={{
+                width: 'min(720px, 96vw)',
+                maxHeight: '94vh',
+                overflow: 'hidden',
+                background: 'rgba(12,16,26,0.96)',
+                borderRadius: 22,
+                border: '1px solid rgba(148,163,184,0.16)',
+                boxShadow: '0 28px 80px rgba(2,6,23,0.5)',
+                display: 'grid',
+                gridTemplateRows: 'auto 1fr',
+              }}
+            >
+              <div
+                style={{
+                  padding: '18px 24px',
+                  borderBottom: '1px solid rgba(148,163,184,0.16)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 18, fontWeight: 700 }}>{membersModalAudience.name}</div>
+                  <div style={{ fontSize: 13, opacity: 0.65 }}>
+                    {membersModalAudience.participants} участников
+                  </div>
+                </div>
+                <button className="btn btn-ghost" onClick={closeMembersModal}>
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div style={{ padding: 24, display: 'grid', gap: 16 }}>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    value={memberSearch}
+                    onChange={(event) => setMemberSearch(event.target.value)}
+                    placeholder="Поиск по телефону или имени"
+                    style={{ width: '100%', padding: '10px 36px 10px 12px', borderRadius: 10 }}
+                  />
+                  <Search
+                    size={16}
+                    style={{
+                      position: 'absolute',
+                      right: 12,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      opacity: 0.6,
+                    }}
+                  />
+                </div>
+
+                {membersLoading ? (
+                  <Skeleton height={220} />
+                ) : filteredMembers.length ? (
+                  <div
+                    style={{
+                      display: 'grid',
+                      gap: 10,
+                      maxHeight: '52vh',
+                      overflowY: 'auto',
+                      paddingRight: 4,
+                    }}
+                  >
+                    {filteredMembers.map((member) => (
+                      <button
+                        key={member.id}
+                        onClick={() => handleMemberClick(member)}
+                        className="btn btn-ghost"
+                        style={{
+                          justifyContent: 'space-between',
+                          textAlign: 'left',
+                          padding: '12px 16px',
+                          borderRadius: 14,
+                          border: '1px solid rgba(148,163,184,0.18)',
+                        }}
+                      >
+                        <div style={{ display: 'grid', gap: 4 }}>
+                          <div style={{ fontWeight: 600 }}>{member.name || member.phone}</div>
+                          <div style={{ fontSize: 12, opacity: 0.7 }}>
+                            {member.phone}
+                            {member.age ? ` • ${member.age} лет` : ''}
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 12, opacity: 0.6 }}>
+                          Зарегистрирован: {formatDateRu(member.registrationDate)}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ padding: 12, opacity: 0.7 }}>Участники не найдены</div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {modalMode && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.74)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, zIndex: 90 }}>
+            <div style={{ width: 'min(960px, 96vw)', maxHeight: '94vh', overflow: 'auto', background: 'rgba(12,16,26,0.96)', borderRadius: 22, border: '1px solid rgba(148,163,184,0.16)', boxShadow: '0 28px 80px rgba(2,6,23,0.5)', display: 'grid', gridTemplateRows: 'auto 1fr auto' }}>
             <div style={{ padding: '18px 24px', borderBottom: '1px solid rgba(148,163,184,0.16)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <div style={{ fontSize: 18, fontWeight: 700 }}>{modalMode === 'create' ? 'Создать аудиторию' : audienceName}</div>
@@ -435,61 +1031,12 @@ export default function AudiencesPage() {
                 <input value={audienceName} onChange={(e) => setAudienceName(e.target.value)} placeholder="Например, Лояльные" style={{ padding: 12, borderRadius: 10 }} />
               </div>
 
-              {modalMode === 'edit' && (
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <button className={tab === 'settings' ? 'btn btn-primary' : 'btn'} onClick={() => setTab('settings')}>Настройки</button>
-                  <button className={tab === 'members' ? 'btn btn-primary' : 'btn'} onClick={() => setTab('members')}>Состав аудитории</button>
-                </div>
-              )}
-
-              {tab === 'settings' && (
-                <SettingsForm settings={settings} onChange={setSettings} />
-              )}
-
-              {tab === 'members' && currentAudience && (
-                <div style={{ display: 'grid', gap: 16 }}>
-                  <div style={{ position: 'relative', maxWidth: 320 }}>
-                    <input
-                      value={memberSearch}
-                      onChange={(e) => setMemberSearch(e.target.value)}
-                      placeholder="Поиск по телефону или имени"
-                      style={{ width: '100%', padding: '10px 36px 10px 12px', borderRadius: 10 }}
-                    />
-                    <Search size={16} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', opacity: 0.6 }} />
-                  </div>
-                  <div style={{ maxHeight: 260, overflowY: 'auto', border: '1px solid rgba(148,163,184,0.18)', borderRadius: 14 }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                      <thead>
-                        <tr style={{ background: 'rgba(148,163,184,0.08)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-                          <th style={{ padding: '8px 12px', textAlign: 'left' }}>№</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'left' }}>Телефон</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'left' }}>Имя</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'left' }}>День рождения</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'left' }}>Возраст</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'left' }}>Дата регистрации</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredMembers.map((member, index) => (
-                          <tr key={member.id} style={{ borderBottom: '1px solid rgba(148,163,184,0.1)' }}>
-                            <td style={{ padding: '8px 12px' }}>{index + 1}</td>
-                            <td style={{ padding: '8px 12px' }}>{member.phone}</td>
-                            <td style={{ padding: '8px 12px' }}>{member.name}</td>
-                            <td style={{ padding: '8px 12px' }}>{new Date(member.birthday).toLocaleDateString('ru-RU')}</td>
-                            <td style={{ padding: '8px 12px' }}>{member.age}</td>
-                            <td style={{ padding: '8px 12px' }}>{new Date(member.registrationDate).toLocaleDateString('ru-RU')}</td>
-                          </tr>
-                        ))}
-                        {!filteredMembers.length && (
-                          <tr>
-                            <td colSpan={6} style={{ padding: 16, textAlign: 'center', opacity: 0.6 }}>Совпадения не найдены</td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
+              <SettingsForm
+                settings={settings}
+                onChange={setSettings}
+                outletOptions={outletOptions}
+                levelOptions={levelOptions}
+              />
             </div>
 
             <div style={{ padding: '16px 24px', borderTop: '1px solid rgba(148,163,184,0.16)', display: 'flex', justifyContent: modalMode === 'edit' ? 'space-between' : 'flex-end', gap: 12 }}>
@@ -513,9 +1060,16 @@ export default function AudiencesPage() {
 type SettingsFormProps = {
   settings: AudienceSettings;
   onChange: (next: AudienceSettings) => void;
+  outletOptions: Option[];
+  levelOptions: Option[];
 };
 
-const SettingsForm: React.FC<SettingsFormProps> = ({ settings, onChange }) => {
+const SettingsForm: React.FC<SettingsFormProps> = ({
+  settings,
+  onChange,
+  outletOptions,
+  levelOptions,
+}) => {
   const update = (patch: Partial<AudienceSettings>) => onChange({ ...settings, ...patch });
 
   return (
@@ -570,7 +1124,7 @@ const SettingsForm: React.FC<SettingsFormProps> = ({ settings, onChange }) => {
         enabled={settings.birthdayEnabled}
         onToggle={(value) => update({ birthdayEnabled: value })}
       >
-        <RangeSlider min={0} max={365} value={settings.birthday} onChange={(value) => update({ birthday: value })} />
+        <RangeSlider min={-30} max={30} value={settings.birthday} onChange={(value) => update({ birthday: value })} />
       </ToggleRow>
 
       <ToggleRow

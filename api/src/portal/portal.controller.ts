@@ -503,6 +503,7 @@ export class PortalController {
     @Query('search') search?: string,
     @Query('limit') limitStr?: string,
     @Query('offset') offsetStr?: string,
+    @Query('segmentId') segmentId?: string,
   ) {
     const limit = limitStr
       ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200)
@@ -512,6 +513,7 @@ export class PortalController {
       search,
       limit,
       offset,
+      segmentId,
     });
   }
 
