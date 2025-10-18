@@ -358,12 +358,17 @@ export class CustomerAudiencesService {
   }
 
   private cloneDateFilter(
-    value: Prisma.DateTimeFilter | Date | string | null | undefined,
-  ): Prisma.DateTimeFilter {
+    value:
+      | Prisma.DateTimeFilter<any>
+      | Date
+      | string
+      | null
+      | undefined,
+  ): Prisma.DateTimeFilter<any> {
     if (!value) return {};
     if (value instanceof Date) return {};
     if (typeof value === 'string') return {};
-    return { ...value };
+    return { ...(value as Prisma.DateTimeFilter<any>) };
   }
 
   private prepareSegmentFiltersForStorage(
