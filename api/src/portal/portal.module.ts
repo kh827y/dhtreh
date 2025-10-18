@@ -19,6 +19,7 @@ import { CommunicationsModule } from '../communications/communications.module';
 import { ReferralModule } from '../referral/referral.module';
 import { PortalReviewsService } from './services/reviews.service';
 import { LoyaltyModule } from '../loyalty/loyalty.module';
+import { CustomerAudiencesModule } from '../customer-audiences/customer-audiences.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { LoyaltyModule } from '../loyalty/loyalty.module';
     NotificationsModule,
     AnalyticsModule,
     GiftsModule,
+    CustomerAudiencesModule,
     TelegramModule,
     CommunicationsModule,
     ReferralModule,
