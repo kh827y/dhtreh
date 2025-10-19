@@ -4,7 +4,7 @@ import React from "react";
 import { Card, CardHeader, CardBody, Button } from "@loyalty/ui";
 import Toggle from "../../../components/Toggle";
 
-type Subscriber = { id: string; chatId: string; chatType: string; username: string | null; title: string | null; addedAt?: string | null; lastSeenAt?: string | null };
+type Subscriber = { id: string; chatId: string; chatType: string; username: string | null; title: string | null; staffId?: string | null; actorType?: string | null; addedAt?: string | null; lastSeenAt?: string | null };
 
 export default function TelegramSettingsPage() {
   const [state, setState] = React.useState<{ configured: boolean; botUsername: string | null; botLink: string | null } | null>(null);
@@ -12,9 +12,13 @@ export default function TelegramSettingsPage() {
   const [subs, setSubs] = React.useState<Subscriber[] | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
-  const [dailyDigest, setDailyDigest] = React.useState(true);
-  const [notifyOrders, setNotifyOrders] = React.useState(true);
-  const [notifyReviews, setNotifyReviews] = React.useState(true);
+  const [prefs, setPrefs] = React.useState({
+    notifyOrders: true,
+    notifyReviews: true,
+    notifyDailyDigest: true,
+    notifyFraud: true,
+  });
+  const [prefsSaving, setPrefsSaving] = React.useState(false);
 
   const loadAll = async () => {
     setBusy(true); setErr('');
@@ -37,6 +41,21 @@ export default function TelegramSettingsPage() {
       }
       const list = await fetch('/api/portal/settings/telegram-notify/subscribers').then(r=>r.json());
       setSubs(Array.isArray(list) ? list : []);
+      try {
+        const prefRes = await fetch('/api/portal/settings/telegram-notify/preferences');
+        let prefJson: any = null;
+        try { prefJson = await prefRes.json(); } catch {}
+        if (prefRes.ok && prefJson && typeof prefJson === 'object') {
+          setPrefs({
+            notifyOrders: !!prefJson.notifyOrders,
+            notifyReviews: !!prefJson.notifyReviews,
+            notifyDailyDigest: !!prefJson.notifyDailyDigest,
+            notifyFraud: prefJson.notifyFraud !== undefined ? !!prefJson.notifyFraud : true,
+          });
+        } else if (!prefRes.ok) {
+          setErr((prefJson && prefJson.message) || 'Не удалось загрузить настройки уведомлений');
+        }
+      } catch {}
     } catch (e:any) {
       setErr(String(e?.message || e));
       setState(null); setInvite(null); setSubs([]);
@@ -77,6 +96,38 @@ export default function TelegramSettingsPage() {
     } finally { setBusy(false); }
   };
 
+  const updatePreference = async (field: keyof typeof prefs, value: boolean) => {
+    const previous = prefs[field];
+    setErr('');
+    setPrefs((prevState) => ({ ...prevState, [field]: value }));
+    try {
+      setPrefsSaving(true);
+      const res = await fetch('/api/portal/settings/telegram-notify/preferences', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: value }),
+      });
+      let next: any = null;
+      try { next = await res.json(); } catch {}
+      if (!res.ok) {
+        throw new Error((next && next.message) || 'Не удалось сохранить настройки уведомлений');
+      }
+      if (next && typeof next === 'object') {
+        setPrefs({
+          notifyOrders: !!next.notifyOrders,
+          notifyReviews: !!next.notifyReviews,
+          notifyDailyDigest: !!next.notifyDailyDigest,
+          notifyFraud: next.notifyFraud !== undefined ? !!next.notifyFraud : true,
+        });
+      }
+    } catch (e:any) {
+      setErr(String(e?.message || e));
+      setPrefs((prevState) => ({ ...prevState, [field]: previous }));
+    } finally {
+      setPrefsSaving(false);
+    }
+  };
+
   return (
     <div style={{ display: 'grid', gap: 20 }}>
       <div>
@@ -112,9 +163,42 @@ export default function TelegramSettingsPage() {
             </div>
 
             <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
-              <Toggle checked={notifyOrders} onChange={setNotifyOrders} label="Оповещать о новых заказах" />
-              <Toggle checked={notifyReviews} onChange={setNotifyReviews} label="Оповещать о новых отзывах" />
-              <Toggle checked={dailyDigest} onChange={setDailyDigest} label="Ежедневная сводка по показателям" />
+              <Toggle
+                checked={prefs.notifyOrders}
+                onChange={(next) => updatePreference('notifyOrders', next)}
+                label="Оповещать о новых заказах"
+                disabled={prefsSaving}
+              />
+              <Toggle
+                checked={prefs.notifyReviews}
+                onChange={(next) => updatePreference('notifyReviews', next)}
+                label="Оповещать о новых отзывах"
+                disabled={prefsSaving}
+              />
+              <Toggle
+                checked={prefs.notifyDailyDigest}
+                onChange={(next) => updatePreference('notifyDailyDigest', next)}
+                label="Ежедневная сводка по показателям"
+                disabled={prefsSaving}
+              />
+              <div style={{ display: 'grid', gap: 6 }}>
+                <Toggle
+                  checked={prefs.notifyFraud}
+                  onChange={(next) => updatePreference('notifyFraud', next)}
+                  label="Оповещения о подозрительных действиях"
+                  disabled={prefsSaving}
+                />
+                <div style={{ fontSize: 12, opacity: 0.7 }}>
+                  Настроить уведомления о подозрительной активности можно на странице{" "}
+                  <a
+                    href="http://localhost:3004/loyalty/antifraud"
+                    style={{ color: '#818cf8' }}
+                  >
+                    Защита от мошенничества
+                  </a>
+                  .
+                </div>
+              </div>
             </div>
           </div>
         </CardBody>

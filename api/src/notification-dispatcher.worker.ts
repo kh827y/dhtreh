@@ -10,6 +10,10 @@ import { PushService } from './notifications/push/push.service';
 import { EmailService } from './notifications/email/email.service';
 import { pgTryAdvisoryLock, pgAdvisoryUnlock } from './pg-lock.util';
 import { isSystemAllAudience } from './customer-audiences/audience.utils';
+import {
+  TelegramStaffNotificationsService,
+  type StaffNotificationPayload,
+} from './telegram/staff-notifications.service';
 
 type OutboxRow = {
   id: string;
@@ -41,6 +45,7 @@ export class NotificationDispatcherWorker
     private metrics: MetricsService,
     private push: PushService,
     private email: EmailService,
+    private staffNotify: TelegramStaffNotificationsService,
   ) {}
 
   private applyVars(tpl: string, vars: Record<string, any>): string {
@@ -409,6 +414,32 @@ export class NotificationDispatcherWorker
           this.metrics.inc('notifications_processed_total', {
             type: 'test',
             result: 'sent',
+          });
+        } catch {}
+        return;
+      }
+      if (type === 'notify.staff.telegram') {
+        const merchantId = String(payload.merchantId || row.merchantId || '');
+        if (!merchantId) {
+          await this.prisma.eventOutbox.update({
+            where: { id: row.id },
+            data: { status: 'FAILED', lastError: 'merchantId missing' },
+          });
+          throw new Error('merchantId missing for notify.staff.telegram');
+        }
+        const staffPayload = payload as StaffNotificationPayload;
+        const result = await this.staffNotify.dispatch(
+          merchantId,
+          staffPayload,
+        );
+        await this.prisma.eventOutbox.update({
+          where: { id: row.id },
+          data: { status: 'SENT', lastError: null },
+        });
+        try {
+          this.metrics.inc('notifications_processed_total', {
+            type: 'staff',
+            result: result.delivered > 0 ? 'sent' : 'skipped',
           });
         } catch {}
         return;

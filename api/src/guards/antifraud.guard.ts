@@ -9,11 +9,20 @@ import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
 import { AntiFraudService } from '../antifraud/antifraud.service';
 import { AlertsService } from '../alerts/alerts.service';
+import { TelegramStaffNotificationsService } from '../telegram/staff-notifications.service';
 
 function envNum(name: string, def: number) {
   const v = (process.env[name] || '').trim();
   const n = Number(v);
   return Number.isFinite(n) && n > 0 ? n : def;
+}
+
+function envBool(name: string, def: boolean) {
+  const v = (process.env[name] || '').trim().toLowerCase();
+  if (!v) return def;
+  if (['1', 'true', 'yes', 'on'].includes(v)) return true;
+  if (['0', 'false', 'no', 'off'].includes(v)) return false;
+  return def;
 }
 
 @Injectable()
@@ -23,6 +32,7 @@ export class AntiFraudGuard implements CanActivate {
     private metrics: MetricsService,
     private antifraud: AntiFraudService,
     private alerts: AlertsService,
+    private staffNotify: TelegramStaffNotificationsService,
   ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
@@ -84,8 +94,11 @@ export class AntiFraudGuard implements CanActivate {
       customer: {
         limit: envNum('AF_LIMIT_CUSTOMER', 5),
         windowSec: envNum('AF_WINDOW_CUSTOMER_SEC', 120),
-        dailyCap: envNum('AF_DAILY_CAP_CUSTOMER', 0),
+        dailyCap: envNum('AF_DAILY_CAP_CUSTOMER', 5),
         weeklyCap: envNum('AF_WEEKLY_CAP_CUSTOMER', 0),
+        monthlyCap: envNum('AF_MONTHLY_CAP_CUSTOMER', 40),
+        pointsCap: envNum('AF_POINTS_CAP_CUSTOMER', 3000),
+        blockDaily: envBool('AF_BLOCK_DAILY_CUSTOMER', false),
       },
       outlet: {
         limit: envNum('AF_LIMIT_OUTLET', 20),
@@ -130,6 +143,16 @@ export class AntiFraudGuard implements CanActivate {
             weeklyCap: Number(
               af.customer?.weeklyCap ?? limits.customer.weeklyCap,
             ),
+            monthlyCap: Number(
+              af.customer?.monthlyCap ?? limits.customer.monthlyCap,
+            ),
+            pointsCap: Number(
+              af.customer?.pointsCap ?? limits.customer.pointsCap,
+            ),
+            blockDaily:
+              af.customer?.blockDaily === undefined
+                ? limits.customer.blockDaily
+                : Boolean(af.customer.blockDaily),
           },
           outlet: {
             limit: Number(outletCfg?.limit ?? limits.outlet.limit),
@@ -163,9 +186,12 @@ export class AntiFraudGuard implements CanActivate {
     const startOfWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); // rolling 7-day window
     startOfWeek.setHours(0, 0, 0, 0);
 
-    // Helper for block
     const resolvedOutletId = outletId || undefined;
-    const block = (scope: string, count: number, limit: number) => {
+    const notifyVelocity = (
+      scope: string,
+      count: number,
+      limit: number,
+    ) => {
       this.metrics.inc('antifraud_velocity_block_total', {
         scope,
         operation: isCommit ? 'commit' : 'refund',
@@ -176,10 +202,36 @@ export class AntiFraudGuard implements CanActivate {
             merchantId,
             reason: 'velocity',
             scope,
-            ctx: { customerId, outletId: resolvedOutletId, staffId },
+            ctx: {
+              customerId,
+              outletId: resolvedOutletId,
+              staffId,
+              count,
+              limit,
+            },
           })
           .catch(() => {});
       } catch {}
+      try {
+        this.staffNotify
+          .enqueueEvent(merchantId, {
+            kind: 'FRAUD',
+            reason: 'velocity',
+            scope,
+            operation: isCommit ? 'commit' : 'refund',
+            customerId: customerId ?? null,
+            outletId: resolvedOutletId ?? null,
+            staffId: staffId ?? null,
+            at: new Date().toISOString(),
+            count,
+            limit,
+          })
+          .catch(() => {});
+      } catch {}
+    };
+
+    const block = (scope: string, count: number, limit: number) => {
+      notifyVelocity(scope, count, limit);
       throw new HttpException(
         `Антифрод: превышен лимит операций (${scope}=${count}/${limit})`,
         HttpStatus.TOO_MANY_REQUESTS,
@@ -282,8 +334,13 @@ export class AntiFraudGuard implements CanActivate {
         const daily = await this.prisma.transaction.count({
           where: { merchantId, customerId, createdAt: { gte: since24h } },
         });
-        if (daily >= limits.customer.dailyCap)
-          block('customer_daily', daily, limits.customer.dailyCap);
+        if (daily >= limits.customer.dailyCap) {
+          if (limits.customer.blockDaily) {
+            block('customer_daily', daily, limits.customer.dailyCap);
+          } else {
+            notifyVelocity('customer_daily', daily, limits.customer.dailyCap);
+          }
+        }
       }
       if (limits.customer.weeklyCap && limits.customer.weeklyCap > 0) {
         const weekly = await this.prisma.transaction.count({
@@ -291,6 +348,14 @@ export class AntiFraudGuard implements CanActivate {
         });
         if (weekly >= limits.customer.weeklyCap)
           block('customer_weekly', weekly, limits.customer.weeklyCap);
+      }
+      if (limits.customer.monthlyCap && limits.customer.monthlyCap > 0) {
+        const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        const monthly = await this.prisma.transaction.count({
+          where: { merchantId, customerId, createdAt: { gte: monthAgo } },
+        });
+        if (monthly >= limits.customer.monthlyCap)
+          notifyVelocity('customer_monthly', monthly, limits.customer.monthlyCap);
       }
     }
 
@@ -329,6 +394,51 @@ export class AntiFraudGuard implements CanActivate {
               ipAddress: ipAddr,
               userAgent: ua,
             };
+            if (
+              hold.mode === 'EARN' &&
+              limits.customer.pointsCap &&
+              limits.customer.pointsCap > 0
+            ) {
+              const earnPoints = Math.abs(Number(hold.earnPoints ?? 0));
+              if (earnPoints > limits.customer.pointsCap) {
+                this.metrics.inc('antifraud_blocked_total', {
+                  level: 'LIMIT',
+                  reason: 'points_cap',
+                });
+                try {
+                  this.alerts
+                    .antifraudBlocked({
+                      merchantId: hold.merchantId,
+                      reason: 'factor',
+                      factor: 'points_cap',
+                      ctx: {
+                        customerId: hold.customerId,
+                        outletId: hold.outletId || undefined,
+                        staffId: hold.staffId,
+                        amount: earnPoints,
+                        limit: limits.customer.pointsCap,
+                      },
+                    })
+                    .catch(() => {});
+                } catch {}
+                try {
+                  this.staffNotify
+                    .enqueueEvent(hold.merchantId, {
+                      kind: 'FRAUD',
+                      reason: 'factor',
+                      scope: 'points_cap',
+                      amount: earnPoints,
+                      customerId: hold.customerId ?? null,
+                      outletId: hold.outletId ?? null,
+                      staffId: hold.staffId ?? null,
+                      operation: isCommit ? 'commit' : 'refund',
+                      at: new Date().toISOString(),
+                      limit: limits.customer.pointsCap,
+                    })
+                    .catch(() => {});
+                } catch {}
+              }
+            }
             // Быстрая проверка факторной блокировки: no_outlet_id
             try {
               const s = await this.prisma.merchantSettings.findUnique({
@@ -357,6 +467,20 @@ export class AntiFraudGuard implements CanActivate {
                         outletId: hold.outletId || undefined,
                         staffId: hold.staffId,
                       },
+                    })
+                    .catch(() => {});
+                } catch {}
+                try {
+                  this.staffNotify
+                    .enqueueEvent(hold.merchantId, {
+                      kind: 'FRAUD',
+                      reason: 'factor',
+                      scope: factor,
+                      operation: isCommit ? 'commit' : 'refund',
+                      customerId: hold.customerId ?? null,
+                      outletId: hold.outletId ?? null,
+                      staffId: hold.staffId ?? null,
+                      at: new Date().toISOString(),
                     })
                     .catch(() => {});
                 } catch {}
@@ -393,6 +517,20 @@ export class AntiFraudGuard implements CanActivate {
                       outletId: hold.outletId || undefined,
                       staffId: hold.staffId,
                     },
+                  })
+                  .catch(() => {});
+              } catch {}
+              try {
+                this.staffNotify
+                  .enqueueEvent(hold.merchantId, {
+                    kind: 'FRAUD',
+                    reason: 'risk',
+                    level: String(score.level),
+                    customerId: hold.customerId ?? null,
+                    outletId: hold.outletId ?? null,
+                    staffId: hold.staffId ?? null,
+                    operation: isCommit ? 'commit' : 'refund',
+                    at: new Date().toISOString(),
                   })
                   .catch(() => {});
               } catch {}
@@ -438,6 +576,20 @@ export class AntiFraudGuard implements CanActivate {
                         outletId: hold.outletId || undefined,
                         staffId: hold.staffId,
                       },
+                    })
+                    .catch(() => {});
+                } catch {}
+                try {
+                  this.staffNotify
+                    .enqueueEvent(hold.merchantId, {
+                      kind: 'FRAUD',
+                      reason: 'factor',
+                      scope: matched,
+                      customerId: hold.customerId ?? null,
+                      outletId: hold.outletId ?? null,
+                      staffId: hold.staffId ?? null,
+                      operation: isCommit ? 'commit' : 'refund',
+                      at: new Date().toISOString(),
                     })
                     .catch(() => {});
                 } catch {}

@@ -1308,6 +1308,17 @@ Response 200:
   "shouldBlock": false,
   "shouldReview": false
 }
+
+### Лимиты на начисления (rulesJson.af.customer)
+
+В настройках мерчанта (`PUT /portal/settings`) блок `rulesJson.af.customer` принимает дополнительные параметры:
+
+- `dailyCap` — сколько начислений одному клиенту допускается за сутки (0 — без ограничения).
+- `blockDaily` — если `true`, операции начисления, превысившие дневной лимит, блокируются и получают 429; по умолчанию `false`, тогда система только уведомляет.
+- `monthlyCap` — сколько начислений одному клиенту допускается за 30 дней (0 — без ограничения); при превышении операции не блокируются, мерчант получает уведомление.
+- `pointsCap` — максимальное количество баллов для одной операции начисления (0 — без ограничения); при превышении операция не блокируется, но антифрод шлёт уведомление.
+
+При отсутствии значений в базе портал подставляет дефолты: `dailyCap = 5`, `monthlyCap = 40`, `pointsCap = 3000`.
 ```
 
 ## Коды ошибок
@@ -1505,8 +1516,10 @@ Response 200: объект клиента, как в GET /portal/customers/{id}
 - Portal API (Merchant Portal):
   - GET `/portal/settings/telegram-notify/state` → `{ configured, botUsername, botLink }`
   - POST `/portal/settings/telegram-notify/invite` → `{ ok: true, startUrl, startGroupUrl, token }`
-  - GET `/portal/settings/telegram-notify/subscribers` → `Array<{ id, chatId, chatType, username?, title?, addedAt?, lastSeenAt? }>`
-  - POST `/portal/settings/telegram-notify/subscribers/{id}/deactivate` → `{ ok: true }`
+- GET `/portal/settings/telegram-notify/subscribers` → `Array<{ id, chatId, chatType, username?, title?, addedAt?, lastSeenAt? }>`
+- POST `/portal/settings/telegram-notify/subscribers/{id}/deactivate` → `{ ok: true }`
+- GET `/portal/settings/telegram-notify/preferences` → `{ notifyOrders: boolean, notifyReviews: boolean, notifyDailyDigest: boolean, notifyFraud: boolean }`
+- POST `/portal/settings/telegram-notify/preferences` → принимает частичное тело с любыми сочетаниями `notifyOrders`, `notifyReviews`, `notifyDailyDigest`, `notifyFraud` (boolean) и возвращает актуальные настройки.
 
 Замечания:
 - Подписка сотрудников/групп осуществляется по deep-link `t.me/<bot>?start=<token>` или `?startgroup=<token>`. Токены выпускаются на стороне портала и привязаны к мерчанту.

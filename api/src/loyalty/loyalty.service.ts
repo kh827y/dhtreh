@@ -6,6 +6,10 @@ import {
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
 import {
+  TelegramStaffNotificationsService,
+  type StaffNotificationPayload,
+} from '../telegram/staff-notifications.service';
+import {
   PromoCodesService,
   type PromoCodeApplyResult,
 } from '../promocodes/promocodes.service';
@@ -687,6 +691,7 @@ export class LoyaltyService {
     private prisma: PrismaService,
     private metrics: MetricsService,
     private promoCodes: PromoCodesService,
+    private staffNotifications: TelegramStaffNotificationsService,
   ) {}
 
   // ===== Earn Lots helpers (optional feature) =====
@@ -2100,6 +2105,21 @@ export class LoyaltyService {
             } as any,
           },
         });
+        try {
+          await tx.eventOutbox.create({
+            data: {
+              merchantId: hold.merchantId,
+              eventType: 'notify.staff.telegram',
+              payload: {
+                kind: 'ORDER',
+                receiptId: created.id,
+                at:
+                  (created as any)?.createdAt?.toISOString?.() ??
+                  new Date().toISOString(),
+              } satisfies StaffNotificationPayload,
+            },
+          });
+        } catch {}
         // ===== Автоповышение уровня по порогу (portal-managed tiers) =====
         try {
           // период для расчёта прогресса

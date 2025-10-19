@@ -10,8 +10,7 @@ type AntifraudFormState = {
   dailyCap: string;
   monthlyCap: string;
   maxPointsPerOperation: string;
-  emails: string;
-  notifyAdmins: boolean;
+  blockDaily: boolean;
 };
 
 type FormErrors = Partial<Record<keyof AntifraudFormState, string>>;
@@ -19,9 +18,8 @@ type FormErrors = Partial<Record<keyof AntifraudFormState, string>>;
 const initialState: AntifraudFormState = {
   dailyCap: "5",
   monthlyCap: "40",
-  maxPointsPerOperation: "1000",
-  emails: "fraud-alerts@example.com",
-  notifyAdmins: true,
+  maxPointsPerOperation: "3000",
+  blockDaily: false,
 };
 
 export default function AntifraudPage() {
@@ -29,10 +27,48 @@ export default function AntifraudPage() {
   const [errors, setErrors] = React.useState<FormErrors>({});
   const [saving, setSaving] = React.useState(false);
   const [savedAt, setSavedAt] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [requestError, setRequestError] = React.useState('');
 
   function handleChange<K extends keyof AntifraudFormState>(key: K, value: AntifraudFormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
+
+  React.useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setRequestError('');
+      try {
+        const res = await fetch('/api/portal/loyalty/antifraud', {
+          cache: 'no-store',
+        });
+        let data: any = null;
+        try { data = await res.json(); } catch {}
+        if (!res.ok) {
+          throw new Error((data && data.message) || 'Не удалось загрузить настройки антифрода');
+        }
+        if (!cancelled && data && typeof data === 'object') {
+          setForm({
+            dailyCap: String(data.dailyCap ?? initialState.dailyCap),
+            monthlyCap: String(data.monthlyCap ?? initialState.monthlyCap),
+            maxPointsPerOperation: String(data.maxPoints ?? initialState.maxPointsPerOperation),
+            blockDaily: data.blockDaily === undefined ? initialState.blockDaily : Boolean(data.blockDaily),
+          });
+          setSavedAt(null);
+          setErrors({});
+        }
+      } catch (e: any) {
+        if (!cancelled) setRequestError(String(e?.message || e));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function validate(): boolean {
     const nextErrors: FormErrors = {};
@@ -40,24 +76,13 @@ export default function AntifraudPage() {
       ["dailyCap", form.dailyCap, Number(form.dailyCap) >= 0],
       ["monthlyCap", form.monthlyCap, Number(form.monthlyCap) >= 0],
       ["maxPointsPerOperation", form.maxPointsPerOperation, Number(form.maxPointsPerOperation) > 0],
-      [
-        "emails",
-        form.emails,
-        form.emails
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean)
-          .every((item) => /^(?:[\w-.]+@)[\w-]+\.[A-Za-z]{2,}$/.test(item)),
-      ],
     ];
 
     toValidate.forEach(([key, value, condition]) => {
       if (!String(value).trim()) {
         nextErrors[key] = "Поле обязательно";
       } else if (!condition) {
-        if (key === "emails") {
-          nextErrors[key] = "Укажите корректные email через запятую";
-        } else if (key === "maxPointsPerOperation") {
+        if (key === "maxPointsPerOperation") {
           nextErrors[key] = "Укажите положительное число";
         } else {
           nextErrors[key] = "Укажите число не меньше 0";
@@ -75,9 +100,38 @@ export default function AntifraudPage() {
 
     setSaving(true);
     setErrors({});
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    setSaving(false);
-    setSavedAt(new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }));
+    setRequestError('');
+    const payload = {
+      dailyCap: Math.max(0, Math.floor(Number(form.dailyCap) || 0)),
+      monthlyCap: Math.max(0, Math.floor(Number(form.monthlyCap) || 0)),
+      maxPoints: Math.max(1, Math.floor(Number(form.maxPointsPerOperation) || 0)),
+      blockDaily: form.blockDaily,
+    };
+    try {
+      const res = await fetch('/api/portal/loyalty/antifraud', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      let data: any = null;
+      try { data = await res.json(); } catch {}
+      if (!res.ok) {
+        throw new Error((data && data.message) || 'Не удалось сохранить настройки антифрода');
+      }
+      if (data && typeof data === 'object') {
+        setForm({
+          dailyCap: String(data.dailyCap ?? payload.dailyCap),
+          monthlyCap: String(data.monthlyCap ?? payload.monthlyCap),
+          maxPointsPerOperation: String(data.maxPoints ?? payload.maxPoints),
+          blockDaily: data.blockDaily === undefined ? payload.blockDaily : Boolean(data.blockDaily),
+        });
+      }
+      setSavedAt(new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }));
+    } catch (e: any) {
+      setRequestError(String(e?.message || e));
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -115,6 +169,7 @@ export default function AntifraudPage() {
             subtitle="Установите частотные лимиты на одного клиента"
           />
           <CardBody style={{ display: "grid", gap: 18 }}>
+            {requestError && <div style={{ color: "#f87171" }}>{requestError}</div>}
             <div style={fieldGridStyle}>
               <Field label="Покупателю начислены бонусы более N раз за день">
                 <input
@@ -125,6 +180,7 @@ export default function AntifraudPage() {
                   onChange={(event) => handleChange("dailyCap", event.target.value)}
                   style={inputStyle}
                   placeholder="Например, 5"
+                  disabled={loading || saving}
                 />
                 {errors.dailyCap && <ErrorText>{errors.dailyCap}</ErrorText>}
               </Field>
@@ -137,6 +193,7 @@ export default function AntifraudPage() {
                   onChange={(event) => handleChange("monthlyCap", event.target.value)}
                   style={inputStyle}
                   placeholder="Например, 30"
+                  disabled={loading || saving}
                 />
                 {errors.monthlyCap && <ErrorText>{errors.monthlyCap}</ErrorText>}
               </Field>
@@ -149,57 +206,42 @@ export default function AntifraudPage() {
                   onChange={(event) => handleChange("maxPointsPerOperation", event.target.value)}
                   style={inputStyle}
                   placeholder="Например, 1500"
+                  disabled={loading || saving}
                 />
                 {errors.maxPointsPerOperation && <ErrorText>{errors.maxPointsPerOperation}</ErrorText>}
               </Field>
             </div>
-          </CardBody>
-
-          <CardHeader
-            title="Контакты для уведомлений"
-            subtitle="Кому отправлять сообщения об аномалиях"
-          />
-          <CardBody style={{ display: "grid", gap: 18 }}>
-            <Field label="Email">
-              <input
-                type="text"
-                value={form.emails}
-                onChange={(event) => handleChange("emails", event.target.value)}
-                style={inputStyle}
-                placeholder="alert@example.com, support@example.com"
-              />
-              <div style={{ fontSize: 12, opacity: 0.65 }}>
-                Допускается несколько адресов через запятую. Пробел после запятой допустим и будет проигнорирован.
-              </div>
-              {errors.emails && <ErrorText>{errors.emails}</ErrorText>}
-            </Field>
             <div
               style={{
                 border: "1px solid rgba(148,163,184,0.18)",
                 borderRadius: 14,
                 padding: "14px 16px",
-                display: "flex",
-                flexDirection: "column",
-                gap: 8,
+                display: "grid",
+                gap: 6,
                 background: "rgba(15,23,42,0.35)",
               }}
             >
               <Toggle
-                checked={form.notifyAdmins}
-                onChange={(next) => handleChange("notifyAdmins", next)}
-                label="Уведомлять администраторов торговых точек"
+                checked={form.blockDaily}
+                onChange={(next) => handleChange("blockDaily", next)}
+                label="Блокировать операции при превышении дневного лимита"
+                disabled={loading || saving}
               />
               <span style={{ fontSize: 12, opacity: 0.7 }}>
-                Мы отправим дубли на email администраторов всех точек, связанных с программой лояльности.
+                Остальные лимиты (месячный и по сумме начисления) только создают уведомление и не останавливают операции.
               </span>
             </div>
           </CardBody>
 
           <div style={{ padding: 16, borderTop: "1px solid rgba(255,255,255,0.08)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ fontSize: 12, opacity: savedAt ? 0.7 : 0.4 }}>
-              {savedAt ? `Последнее сохранение: ${savedAt}` : 'Не сохранено'}
+              {loading
+                ? 'Загрузка…'
+                : savedAt
+                  ? `Последнее сохранение: ${savedAt}`
+                  : 'Не сохранено'}
             </div>
-            <Button type="submit" disabled={saving}>
+            <Button type="submit" disabled={saving || loading}>
               {saving ? "Сохраняем…" : "Сохранить"}
             </Button>
           </div>

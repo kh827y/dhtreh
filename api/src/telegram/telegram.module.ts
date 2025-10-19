@@ -6,11 +6,21 @@ import { AdminIpGuard } from '../admin-ip.guard';
 import { TelegramController } from './telegram.controller';
 import { TelegramNotifyService } from './telegram-notify.service';
 import { TelegramNotifyController } from './telegram-notify.controller';
+import { TelegramStaffNotificationsService } from './staff-notifications.service';
 
 @Module({
   imports: [ConfigModule, PrismaModule],
   controllers: [TelegramController, TelegramNotifyController],
-  providers: [TelegramBotService, TelegramNotifyService, AdminIpGuard],
-  exports: [TelegramBotService, TelegramNotifyService],
+  providers: [
+    TelegramBotService,
+    TelegramNotifyService,
+    TelegramStaffNotificationsService,
+    AdminIpGuard,
+  ],
+  exports: [
+    TelegramBotService,
+    TelegramNotifyService,
+    TelegramStaffNotificationsService,
+  ],
 })
 export class TelegramModule {}

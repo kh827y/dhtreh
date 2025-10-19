@@ -5,12 +5,19 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { TelegramNotifyService } from '../../telegram/telegram-notify.service';
+import {
+  TelegramStaffNotificationsService,
+  type StaffNotifyActor,
+  type StaffNotifySettings,
+} from '../../telegram/staff-notifications.service';
+import { TelegramStaffActorType } from '@prisma/client';
 
 @Injectable()
 export class PortalTelegramNotifyService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notify: TelegramNotifyService,
+    private readonly staffNotify: TelegramStaffNotificationsService,
   ) {}
 
   async getState(merchantId: string) {
@@ -34,7 +41,10 @@ export class PortalTelegramNotifyService {
     return rand.slice(0, 32);
   }
 
-  async issueInvite(merchantId: string, forceNew?: boolean) {
+  async issueInvite(
+    merchantId: string,
+    options?: { forceNew?: boolean; staffId?: string | null },
+  ) {
     if (!merchantId) throw new BadRequestException('merchantId required');
     const botInfo = await this.notify.getBotInfo();
     if (!botInfo?.username)
@@ -47,11 +57,16 @@ export class PortalTelegramNotifyService {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const prismaAny = this.prisma as any;
     let invite = null as any;
-    if (!forceNew) {
+    const staffId = options?.staffId ? String(options.staffId) : null;
+    const actorType = staffId
+      ? TelegramStaffActorType.STAFF
+      : TelegramStaffActorType.MERCHANT;
+    if (!options?.forceNew) {
       invite = await prismaAny.telegramStaffInvite
         .findFirst({
           where: {
             merchantId,
+            staffId: staffId ?? null,
             OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
             createdAt: { gte: sevenDaysAgo },
           },
@@ -66,8 +81,30 @@ export class PortalTelegramNotifyService {
           merchantId,
           token: this.genToken(),
           expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          staffId: staffId ?? null,
+          actorType,
         },
       });
+    } else {
+      const needsUpdate =
+        (invite.staffId ?? null) !== (staffId ?? null) ||
+        invite.actorType !== actorType ||
+        (invite.expiresAt &&
+          invite.expiresAt.getTime() < Date.now() + 5 * 24 * 60 * 60 * 1000);
+      if (needsUpdate) {
+        invite = await prismaAny.telegramStaffInvite.update({
+          where: { id: invite.id },
+          data: {
+            staffId: staffId ?? null,
+            actorType,
+            expiresAt:
+              invite.expiresAt &&
+              invite.expiresAt.getTime() < Date.now() + 5 * 24 * 60 * 60 * 1000
+                ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+                : invite.expiresAt,
+          },
+        });
+      }
     }
 
     const startUrl = `https://t.me/${username}?start=${invite.token}`;
@@ -88,6 +125,8 @@ export class PortalTelegramNotifyService {
       chatType: r.chatType,
       username: r.username ?? null,
       title: r.title ?? null,
+      staffId: r.staffId ?? null,
+      actorType: r.actorType ?? null,
       addedAt: r.addedAt?.toISOString?.() || null,
       lastSeenAt: r.lastSeenAt?.toISOString?.() || null,
     }));
@@ -107,5 +146,22 @@ export class PortalTelegramNotifyService {
       data: { isActive: false },
     });
     return { ok: true } as const;
+  }
+
+  async getPreferences(
+    merchantId: string,
+    actor: StaffNotifyActor,
+  ): Promise<StaffNotifySettings> {
+    if (!merchantId) throw new BadRequestException('merchantId required');
+    return this.staffNotify.getPreferences(merchantId, actor);
+  }
+
+  async updatePreferences(
+    merchantId: string,
+    actor: StaffNotifyActor,
+    patch: Partial<StaffNotifySettings>,
+  ): Promise<StaffNotifySettings> {
+    if (!merchantId) throw new BadRequestException('merchantId required');
+    return this.staffNotify.updatePreferences(merchantId, actor, patch);
   }
 }

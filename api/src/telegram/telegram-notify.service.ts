@@ -1,6 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { ConfigService } from '@nestjs/config';
+import { TelegramStaffNotificationsService } from './staff-notifications.service';
+import { TelegramStaffActorType } from '@prisma/client';
 
 interface TgChat {
   id: number;
@@ -16,6 +18,8 @@ export class TelegramNotifyService {
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
+    @Inject(forwardRef(() => TelegramStaffNotificationsService))
+    private staffNotifications: TelegramStaffNotificationsService,
   ) {}
 
   private get token(): string | undefined {
@@ -123,12 +127,16 @@ export class TelegramNotifyService {
     }
   }
 
-  private async sendMessage(chatId: number, text: string) {
+  private async sendMessage(chatId: number | string, text: string) {
     try {
       await this.api('sendMessage', { chat_id: chatId, text });
     } catch (e) {
       this.logger.warn(`sendMessage failed: ${e}`);
     }
+  }
+
+  async sendStaffMessage(chatId: string, text: string) {
+    await this.sendMessage(chatId, text);
   }
 
   private parseStartToken(text: string, botUsername?: string): string | null {
@@ -200,31 +208,27 @@ export class TelegramNotifyService {
       return;
     }
 
-    // Upsert subscriber
-    await prismaAny.telegramStaffSubscriber.upsert({
-      where: {
-        merchantId_chatId: {
-          merchantId: invite.merchantId,
-          chatId: String(chat.id),
-        },
-      },
-      update: {
-        chatType: chat.type,
-        username: chat.username || null,
-        title: chat.title || null,
-        isActive: true,
-        lastSeenAt: now,
-      },
-      create: {
-        merchantId: invite.merchantId,
-        chatId: String(chat.id),
-        chatType: chat.type,
-        username: chat.username || null,
-        title: chat.title || null,
-        addedAt: now,
-        lastSeenAt: now,
-        isActive: true,
-      },
+    const chatId = String(chat.id);
+    const chatType = String(chat.type || 'private');
+    const isGroup =
+      chatType.includes('group') ||
+      chatType === 'channel' ||
+      chatType === 'supergroup';
+    const inviteActor: TelegramStaffActorType =
+      invite.actorType ?? TelegramStaffActorType.STAFF;
+    const actorType = isGroup ? TelegramStaffActorType.GROUP : inviteActor;
+    const staffId =
+      actorType === TelegramStaffActorType.STAFF
+        ? (invite.staffId ?? null)
+        : null;
+
+    await this.staffNotifications.ensureInviteMetadata(invite.id, actorType);
+    await this.staffNotifications.ensureSubscriber(invite.merchantId, chatId, {
+      chatType,
+      username: chat.username ?? null,
+      title: chat.title ?? null,
+      staffId,
+      actorType,
     });
 
     try {

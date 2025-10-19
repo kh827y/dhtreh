@@ -76,6 +76,7 @@ import {
 } from './services/operations-log.service';
 import { PortalTelegramIntegrationService } from './services/telegram-integration.service';
 import { PortalTelegramNotifyService } from './services/telegram-notify.service';
+import type { StaffNotifyActor } from '../telegram/staff-notifications.service';
 import {
   ReferralService,
   type ReferralProgramSettingsDto,
@@ -175,6 +176,13 @@ export class PortalController {
 
   private normalizeTelegramScope(scope?: string): 'ACTIVE' | 'ARCHIVED' {
     return scope === 'ARCHIVED' ? 'ARCHIVED' : 'ACTIVE';
+  }
+
+  private resolveTelegramActor(req: any): StaffNotifyActor {
+    if (req?.portalActor === 'STAFF' && req?.portalStaffId) {
+      return { kind: 'STAFF', staffId: String(req.portalStaffId) };
+    }
+    return { kind: 'MERCHANT' };
   }
 
   private normalizeActionsTab(tab?: string): ActionsTab {
@@ -1387,10 +1395,12 @@ export class PortalController {
     },
   })
   telegramNotifyInvite(@Req() req: any, @Body() body: { forceNew?: boolean }) {
-    return this.telegramNotify.issueInvite(
-      this.getMerchantId(req),
-      !!body?.forceNew,
-    );
+    const actor = this.resolveTelegramActor(req);
+    const staffId = actor.kind === 'STAFF' ? actor.staffId : null;
+    return this.telegramNotify.issueInvite(this.getMerchantId(req), {
+      forceNew: !!body?.forceNew,
+      staffId,
+    });
   }
 
   @Get('settings/telegram-notify/subscribers')
@@ -1402,6 +1412,58 @@ export class PortalController {
   })
   telegramNotifySubscribers(@Req() req: any) {
     return this.telegramNotify.listSubscribers(this.getMerchantId(req));
+  }
+
+  @Get('settings/telegram-notify/preferences')
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        notifyOrders: { type: 'boolean' },
+        notifyReviews: { type: 'boolean' },
+        notifyDailyDigest: { type: 'boolean' },
+        notifyFraud: { type: 'boolean' },
+      },
+    },
+  })
+  telegramNotifyPreferences(@Req() req: any) {
+    const actor = this.resolveTelegramActor(req);
+    return this.telegramNotify.getPreferences(this.getMerchantId(req), actor);
+  }
+
+  @Post('settings/telegram-notify/preferences')
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        notifyOrders: { type: 'boolean' },
+        notifyReviews: { type: 'boolean' },
+        notifyDailyDigest: { type: 'boolean' },
+        notifyFraud: { type: 'boolean' },
+      },
+    },
+  })
+  telegramNotifyUpdatePreferences(
+    @Req() req: any,
+    @Body()
+    body: {
+      notifyOrders?: boolean;
+      notifyReviews?: boolean;
+      notifyDailyDigest?: boolean;
+      notifyFraud?: boolean;
+    },
+  ) {
+    const actor = this.resolveTelegramActor(req);
+    return this.telegramNotify.updatePreferences(
+      this.getMerchantId(req),
+      actor,
+      {
+        notifyOrders: body?.notifyOrders,
+        notifyReviews: body?.notifyReviews,
+        notifyDailyDigest: body?.notifyDailyDigest,
+        notifyFraud: body?.notifyFraud,
+      },
+    );
   }
 
   @Post('settings/telegram-notify/subscribers/:id/deactivate')

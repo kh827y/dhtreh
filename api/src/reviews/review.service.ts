@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { TelegramStaffNotificationsService } from '../telegram/staff-notifications.service';
 
 export interface CreateReviewDto {
   merchantId: string;
@@ -21,7 +22,10 @@ export interface CreateReviewOptions {
 
 @Injectable()
 export class ReviewService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private staffNotify: TelegramStaffNotificationsService,
+  ) {}
 
   /**
    * Создать отзыв
@@ -153,6 +157,13 @@ export class ReviewService {
           },
         },
       });
+      try {
+        await this.staffNotify.enqueueEvent(dto.merchantId, {
+          kind: 'REVIEW',
+          reviewId: review.id,
+          at: new Date().toISOString(),
+        });
+      } catch {}
       return {
         id: review.id,
         rating: review.rating,

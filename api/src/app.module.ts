@@ -45,6 +45,7 @@ import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { join } from 'path';
 import { AutoReturnWorker } from './auto-return.worker';
 import { BirthdayWorker } from './birthday.worker';
+import { TelegramStaffDigestWorker } from './telegram/staff-digest.worker';
 // Optional Redis storage for Throttler
 let throttlerStorage: any = undefined;
 try {
@@ -118,6 +119,7 @@ try {
     EarnActivationWorker,
     AutoReturnWorker,
     BirthdayWorker,
+    TelegramStaffDigestWorker,
     { provide: APP_GUARD, useClass: CustomThrottlerGuard },
   ],
 })

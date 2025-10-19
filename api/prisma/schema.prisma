@@ -83,6 +83,12 @@ enum StaffStatus {
   ARCHIVED
 }
 
+enum TelegramStaffActorType {
+  MERCHANT
+  STAFF
+  GROUP
+}
+
 enum StaffOutletAccessStatus {
   ACTIVE
   REVOKED
@@ -404,21 +410,21 @@ model CustomerTelegram {
 }
 
 model MerchantCustomer {
-  id          String   @id @default(cuid())
-  merchantId  String
-  customerId  String
-  tgId        String?
-  phone       String?
-  email       String?
-  name        String?
-  comment     String?
-  accrualsBlocked Boolean @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String   @id @default(cuid())
+  merchantId      String
+  customerId      String
+  tgId            String?
+  phone           String?
+  email           String?
+  name            String?
+  comment         String?
+  accrualsBlocked Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  merchant Merchant @relation(fields: [merchantId], references: [id])
-  customer Customer @relation(fields: [customerId], references: [id])
-  telegramLinks CustomerTelegram[]
+  merchant                Merchant                     @relation(fields: [merchantId], references: [id])
+  customer                Customer                     @relation(fields: [customerId], references: [id])
+  telegramLinks           CustomerTelegram[]
   communicationRecipients CommunicationTaskRecipient[]
 
   @@unique([merchantId, customerId])
@@ -489,11 +495,11 @@ model Receipt {
   outletId      String?
   staffId       String?
 
-  outlet Outlet? @relation(fields: [outletId], references: [id], onDelete: SetNull)
-  staff  Staff?  @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  outlet            Outlet?   @relation(fields: [outletId], references: [id], onDelete: SetNull)
+  staff             Staff?    @relation(fields: [staffId], references: [id], onDelete: SetNull)
   canceledAt        DateTime?
   canceledByStaffId String?
-  canceledBy        Staff?  @relation("ReceiptCanceledBy", fields: [canceledByStaffId], references: [id], onDelete: SetNull)
+  canceledBy        Staff?    @relation("ReceiptCanceledBy", fields: [canceledByStaffId], references: [id], onDelete: SetNull)
 
   @@unique([merchantId, orderId])
   @@index([merchantId, createdAt])
@@ -503,19 +509,19 @@ model Receipt {
 }
 
 model Transaction {
-  id         String   @id @default(cuid())
-  customerId String
-  customer   Customer @relation(fields: [customerId], references: [id])
-  merchantId String
-  merchant   Merchant @relation(fields: [merchantId], references: [id])
-  type       TxnType
-  amount     Int
-  orderId    String?
-  createdAt  DateTime @default(now())
-  outletId   String?
-  staffId    String?
-  metadata   Json?
-  canceledAt DateTime?
+  id                String    @id @default(cuid())
+  customerId        String
+  customer          Customer  @relation(fields: [customerId], references: [id])
+  merchantId        String
+  merchant          Merchant  @relation(fields: [merchantId], references: [id])
+  type              TxnType
+  amount            Int
+  orderId           String?
+  createdAt         DateTime  @default(now())
+  outletId          String?
+  staffId           String?
+  metadata          Json?
+  canceledAt        DateTime?
   canceledByStaffId String?
 
   canceledBy Staff? @relation("TransactionCanceledBy", fields: [canceledByStaffId], references: [id], onDelete: SetNull)
@@ -560,23 +566,23 @@ model EventOutbox {
 }
 
 model AutoReturnAttempt {
-  id                String   @id @default(cuid())
+  id                String    @id @default(cuid())
   merchantId        String
   customerId        String
   attemptNumber     Int
   lastPurchaseAt    DateTime
   invitedAt         DateTime
   message           String
-  giftPoints        Int      @default(0)
+  giftPoints        Int       @default(0)
   giftExpiresAt     DateTime?
   giftTransactionId String?
-  status            String   @default("PENDING") // PENDING | SENT | RETURNED | EXPIRED | FAILED | CANCELED
+  status            String    @default("PENDING") // PENDING | SENT | RETURNED | EXPIRED | FAILED | CANCELED
   lastError         String?
   repeatAfterDays   Int?
   completedAt       DateTime?
   completionReason  String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   merchant Merchant @relation(fields: [merchantId], references: [id])
   customer Customer @relation(fields: [customerId], references: [id])
@@ -588,27 +594,27 @@ model AutoReturnAttempt {
 }
 
 model BirthdayGreeting {
-  id                String   @id @default(cuid())
+  id                String    @id @default(cuid())
   merchantId        String
   customerId        String
   sendDate          DateTime
   birthdayDate      DateTime
   message           String
-  giftPoints        Int      @default(0)
+  giftPoints        Int       @default(0)
   giftExpiresAt     DateTime?
   giftTransactionId String?
-  status            String   @default("PENDING")
+  status            String    @default("PENDING")
   error             String?
   sentAt            DateTime?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   merchant Merchant @relation(fields: [merchantId], references: [id])
   customer Customer @relation(fields: [customerId], references: [id])
 
+  @@unique([merchantId, customerId, birthdayDate])
   @@index([merchantId, sendDate])
   @@index([merchantId, status])
-  @@unique([merchantId, customerId, birthdayDate])
 }
 
 model Outlet {
@@ -727,36 +733,38 @@ model Staff {
   reviewResponses               ReviewResponse[]
   accesses                      StaffOutletAccess[]
   accessGroupMemberships        StaffAccessGroup[]
-  accessGroupAssignments        StaffAccessGroup[]      @relation("StaffAccessGroupAssignedBy")
-  invitationsIssued             StaffInvitation[]       @relation("StaffInvitedBy")
-  invitation                    StaffInvitation?        @relation("StaffInvitationStaff")
-  issuedOutletPins              StaffOutletAccess[]     @relation("StaffOutletAccessIssuer")
-  promoCodesCreated             PromoCode[]             @relation("PromoCodeCreatedBy")
-  promoCodesUpdated             PromoCode[]             @relation("PromoCodeUpdatedBy")
-  promotionsCreated             LoyaltyPromotion[]      @relation("PromotionCreatedBy")
-  promotionsUpdated             LoyaltyPromotion[]      @relation("PromotionUpdatedBy")
-  communicationTemplatesCreated CommunicationTemplate[] @relation("CommunicationTemplateCreatedBy")
-  communicationTemplatesUpdated CommunicationTemplate[] @relation("CommunicationTemplateUpdatedBy")
-  communicationTasksCreated     CommunicationTask[]     @relation("CommunicationTaskCreatedBy")
-  mechanicLogs                  LoyaltyMechanicLog[]    @relation("MechanicLogActor")
-  mechanicsCreated              LoyaltyMechanic[]       @relation("MechanicCreatedBy")
-  mechanicsUpdated              LoyaltyMechanic[]       @relation("MechanicUpdatedBy")
-  tierAssignmentsAuthored       LoyaltyTierAssignment[] @relation("TierAssignedBy")
-  revokedOutletPins             StaffOutletAccess[]     @relation("StaffOutletAccessRevoker")
-  dataImportsStarted            DataImportJob[]         @relation("DataImportStartedBy")
+  accessGroupAssignments        StaffAccessGroup[]        @relation("StaffAccessGroupAssignedBy")
+  invitationsIssued             StaffInvitation[]         @relation("StaffInvitedBy")
+  invitation                    StaffInvitation?          @relation("StaffInvitationStaff")
+  issuedOutletPins              StaffOutletAccess[]       @relation("StaffOutletAccessIssuer")
+  promoCodesCreated             PromoCode[]               @relation("PromoCodeCreatedBy")
+  promoCodesUpdated             PromoCode[]               @relation("PromoCodeUpdatedBy")
+  promotionsCreated             LoyaltyPromotion[]        @relation("PromotionCreatedBy")
+  promotionsUpdated             LoyaltyPromotion[]        @relation("PromotionUpdatedBy")
+  communicationTemplatesCreated CommunicationTemplate[]   @relation("CommunicationTemplateCreatedBy")
+  communicationTemplatesUpdated CommunicationTemplate[]   @relation("CommunicationTemplateUpdatedBy")
+  communicationTasksCreated     CommunicationTask[]       @relation("CommunicationTaskCreatedBy")
+  mechanicLogs                  LoyaltyMechanicLog[]      @relation("MechanicLogActor")
+  mechanicsCreated              LoyaltyMechanic[]         @relation("MechanicCreatedBy")
+  mechanicsUpdated              LoyaltyMechanic[]         @relation("MechanicUpdatedBy")
+  tierAssignmentsAuthored       LoyaltyTierAssignment[]   @relation("TierAssignedBy")
+  revokedOutletPins             StaffOutletAccess[]       @relation("StaffOutletAccessRevoker")
+  dataImportsStarted            DataImportJob[]           @relation("DataImportStartedBy")
   accessLogs                    StaffAccessLog[]
-  accessLogActions              StaffAccessLog[]        @relation("StaffAccessLogActor")
-  accessGroupsCreated           AccessGroup[]           @relation("AccessGroupCreatedBy")
-  accessGroupsUpdated           AccessGroup[]           @relation("AccessGroupUpdatedBy")
-  segmentsCreated               CustomerSegment[]       @relation("SegmentCreatedBy")
-  segmentsUpdated               CustomerSegment[]       @relation("SegmentUpdatedBy")
+  accessLogActions              StaffAccessLog[]          @relation("StaffAccessLogActor")
+  accessGroupsCreated           AccessGroup[]             @relation("AccessGroupCreatedBy")
+  accessGroupsUpdated           AccessGroup[]             @relation("AccessGroupUpdatedBy")
+  segmentsCreated               CustomerSegment[]         @relation("SegmentCreatedBy")
+  segmentsUpdated               CustomerSegment[]         @relation("SegmentUpdatedBy")
   promoCodeUsages               PromoCodeUsage[]
   cashierSessions               CashierSession[]
   staffMetricsDaily             StaffKpiDaily[]
   // telegram staff notifications (invites created by this staff)
-  createdTelegramInvites        TelegramStaffInvite[]   @relation("StaffCreatedTelegramInvites")
-  receiptsCanceled              Receipt[]               @relation("ReceiptCanceledBy")
-  transactionsCanceled          Transaction[]           @relation("TransactionCanceledBy")
+  createdTelegramInvites        TelegramStaffInvite[]     @relation("StaffCreatedTelegramInvites")
+  telegramStaffInvites          TelegramStaffInvite[]     @relation("TelegramStaffInviteStaff")
+  telegramStaffSubscribers      TelegramStaffSubscriber[] @relation("TelegramStaffSubscriberStaff")
+  receiptsCanceled              Receipt[]                 @relation("ReceiptCanceledBy")
+  transactionsCanceled          Transaction[]             @relation("TransactionCanceledBy")
 
   @@unique([merchantId, login])
   @@index([merchantId])
@@ -1181,35 +1189,44 @@ model TelegramBot {
 
 // Telegram staff notifications (global bot) — invites and subscribers
 model TelegramStaffInvite {
-  id          String    @id @default(cuid())
+  id          String                 @id @default(cuid())
   merchantId  String
-  token       String    @unique
-  createdAt   DateTime  @default(now())
+  token       String                 @unique
+  createdAt   DateTime               @default(now())
   expiresAt   DateTime?
   createdById String?
+  staffId     String?
+  actorType   TelegramStaffActorType @default(STAFF)
 
   merchant  Merchant @relation(fields: [merchantId], references: [id])
   createdBy Staff?   @relation("StaffCreatedTelegramInvites", fields: [createdById], references: [id])
+  staff     Staff?   @relation("TelegramStaffInviteStaff", fields: [staffId], references: [id], onDelete: SetNull)
 
   @@index([merchantId, createdAt])
   @@index([expiresAt])
+  @@index([merchantId, staffId, createdAt])
 }
 
 model TelegramStaffSubscriber {
-  id         String    @id @default(cuid())
+  id         String                 @id @default(cuid())
   merchantId String
   chatId     String
   chatType   String // user | group | supergroup | channel
   username   String?
   title      String?
-  addedAt    DateTime  @default(now())
+  addedAt    DateTime               @default(now())
   lastSeenAt DateTime?
-  isActive   Boolean   @default(true)
+  isActive   Boolean                @default(true)
+  staffId    String?
+  actorType  TelegramStaffActorType @default(STAFF)
 
   merchant Merchant @relation(fields: [merchantId], references: [id])
+  staff    Staff?   @relation("TelegramStaffSubscriberStaff", fields: [staffId], references: [id], onDelete: SetNull)
 
   @@unique([merchantId, chatId])
   @@index([merchantId, isActive])
+  @@index([merchantId, staffId])
+  @@index([merchantId, actorType])
 }
 
 model Plan {
@@ -1392,22 +1409,22 @@ model CommunicationTask {
 }
 
 model CommunicationTaskRecipient {
-  id         String               @id @default(cuid())
-  taskId     String
-  merchantId String
-  customerId String?
+  id                 String               @id @default(cuid())
+  taskId             String
+  merchantId         String
+  customerId         String?
   merchantCustomerId String?
-  channel    CommunicationChannel
-  status     String               @default("PENDING")
-  sentAt     DateTime?
-  error      String?
-  metadata   Json?
-  createdAt  DateTime             @default(now())
-  updatedAt  DateTime             @updatedAt
+  channel            CommunicationChannel
+  status             String               @default("PENDING")
+  sentAt             DateTime?
+  error              String?
+  metadata           Json?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
 
-  task     CommunicationTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  merchant Merchant          @relation(fields: [merchantId], references: [id])
-  customer Customer?         @relation(fields: [customerId], references: [id])
+  task             CommunicationTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  merchant         Merchant          @relation(fields: [merchantId], references: [id])
+  customer         Customer?         @relation(fields: [customerId], references: [id])
   merchantCustomer MerchantCustomer? @relation(fields: [merchantCustomerId], references: [id])
 
   @@index([taskId, status])
@@ -1932,11 +1949,11 @@ model CustomerSegment {
   metricSnapshots    SegmentMetricSnapshot[]
   communicationTasks CommunicationTask[]
   systemKey          String?
-  isSystem           Boolean   @default(false)
+  isSystem           Boolean                 @default(false)
 
+  @@unique([merchantId, systemKey])
   @@index([merchantId, isSystem])
   @@index([systemKey])
-  @@unique([merchantId, systemKey])
 }
 
 // Reviews system
