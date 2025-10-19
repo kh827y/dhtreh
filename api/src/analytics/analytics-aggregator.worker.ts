@@ -140,7 +140,7 @@ export class AnalyticsAggregatorWorker {
 
     const receipts = await this.prisma.receipt.groupBy({
       by: ['customerId'],
-      where: { merchantId },
+      where: { merchantId, total: { gt: 0 }, canceledAt: null },
       _sum: { total: true },
       _count: { id: true },
       _max: { createdAt: true },
