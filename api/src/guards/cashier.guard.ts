@@ -12,6 +12,83 @@ export class CashierGuard implements CanActivate {
     return path.startsWith('/') ? path : `/${path}`;
   }
 
+  private readCookie(req: any, name: string): string | null {
+    const header = req?.headers?.cookie;
+    if (!header || typeof header !== 'string') return null;
+    const parts = header.split(';');
+    for (const part of parts) {
+      const [rawKey, ...rest] = part.split('=');
+      if (!rawKey) continue;
+      const key = rawKey.trim();
+      if (key === name) {
+        const value = rest.join('=').trim();
+        return decodeURIComponent(value || '');
+      }
+    }
+    return null;
+  }
+
+  private async resolveCashierSession(
+    req: any,
+    merchantIdHint?: string,
+  ): Promise<{
+    id: string;
+    merchantId: string;
+    staffId: string;
+    outletId: string | null;
+  } | null> {
+    const token = this.readCookie(req, 'cashier_session');
+    if (!token) return null;
+    const hash = crypto.createHash('sha256').update(token, 'utf8').digest('hex');
+    const session = await this.prisma.cashierSession.findFirst({
+      where: { tokenHash: hash },
+      select: {
+        id: true,
+        merchantId: true,
+        staffId: true,
+        outletId: true,
+        endedAt: true,
+        expiresAt: true,
+        lastSeenAt: true,
+        staff: { select: { status: true } },
+      },
+    });
+    if (!session || session.endedAt) return null;
+    if (merchantIdHint && merchantIdHint !== session.merchantId) return null;
+    const now = new Date();
+    if (session.expiresAt && session.expiresAt <= now) {
+      await this.prisma.cashierSession.update({
+        where: { id: session.id },
+        data: { endedAt: now, result: 'expired' },
+      });
+      return null;
+    }
+    if (session.staff && session.staff.status && session.staff.status !== 'ACTIVE') {
+      await this.prisma.cashierSession.update({
+        where: { id: session.id },
+        data: { endedAt: now, result: 'staff_inactive' },
+      });
+      return null;
+    }
+    if (
+      !session.lastSeenAt ||
+      now.getTime() - session.lastSeenAt.getTime() > 60_000
+    ) {
+      try {
+        await this.prisma.cashierSession.update({
+          where: { id: session.id },
+          data: { lastSeenAt: now },
+        });
+      } catch {}
+    }
+    return {
+      id: session.id,
+      merchantId: session.merchantId,
+      staffId: session.staffId,
+      outletId: session.outletId ?? null,
+    };
+  }
+
   private async resolveOperationContext(
     normalizedPath: string,
     req: any,
@@ -240,25 +317,81 @@ export class CashierGuard implements CanActivate {
       path === '/loyalty/cashier/login' ||
       path === '/loyalty/cashier/staff-token' ||
       path === '/loyalty/cashier/staff-access' ||
+      path === '/loyalty/cashier/session' ||
       path === '/loyalty/promocodes/apply' ||
       path === '/loyalty/reviews' ||
       path === '/loyalty/promotions/claim';
     if (isPublicGet || isAlwaysPublic) return true;
 
-    // Проверяем требование ключа на уровне мерчанта
+    let merchantIdFromRequest: string | undefined =
+      body?.merchantId ||
+      req?.params?.merchantId ||
+      req?.query?.merchantId ||
+      undefined;
+
+    let sessionContext: { id: string; merchantId: string; staffId: string; outletId: string | null } | null =
+      null;
+    if (!key) {
+      try {
+        sessionContext = await this.resolveCashierSession(
+          req,
+          merchantIdFromRequest,
+        );
+      } catch {
+        sessionContext = null;
+      }
+      if (!merchantIdFromRequest && sessionContext) {
+        merchantIdFromRequest = sessionContext.merchantId;
+      }
+    }
+
     let requireStaffKey = false;
     let merchantSettings: any = null;
-    try {
-      const merchantId =
-        body?.merchantId || req?.params?.merchantId || req?.query?.merchantId;
-      if (merchantId) {
+    if (merchantIdFromRequest) {
+      try {
         merchantSettings = await this.prisma.merchantSettings.findUnique({
-          where: { merchantId },
+          where: { merchantId: merchantIdFromRequest },
         });
         requireStaffKey = Boolean(merchantSettings?.requireStaffKey);
-      }
-    } catch {}
+      } catch {}
+    }
+
     if (!key) {
+      if (sessionContext) {
+        const bodyIsObject = body && typeof body === 'object';
+        const requestedOutletIdRaw =
+          (bodyIsObject ? body?.outletId : undefined) ||
+          req?.params?.outletId ||
+          req?.query?.outletId ||
+          undefined;
+        const requestedOutletId =
+          requestedOutletIdRaw != null
+            ? String(requestedOutletIdRaw)
+            : undefined;
+        if (
+          sessionContext.outletId &&
+          requestedOutletId &&
+          requestedOutletId !== sessionContext.outletId
+        ) {
+          return false;
+        }
+        if (
+          bodyIsObject &&
+          body?.staffId != null &&
+          String(body.staffId) !== sessionContext.staffId
+        ) {
+          return false;
+        }
+        if (bodyIsObject) {
+          (body as any).merchantId = sessionContext.merchantId;
+          (body as any).staffId = sessionContext.staffId;
+          if (sessionContext.outletId) {
+            (body as any).outletId = sessionContext.outletId;
+          }
+        }
+        (req as any).cashierSession = sessionContext;
+        return true;
+      }
       if (!requireStaffKey) return true;
       if (req?.teleauth?.customerId) return true;
       if (
@@ -272,7 +405,7 @@ export class CashierGuard implements CanActivate {
       const { ok } = await this.validateBridgeSignature(
         normalizedPath,
         req,
-        body?.merchantId || req?.params?.merchantId || req?.query?.merchantId,
+        merchantIdFromRequest,
         merchantSettings,
       );
       if (ok) {
@@ -281,8 +414,7 @@ export class CashierGuard implements CanActivate {
       return false;
     }
     const hash = crypto.createHash('sha256').update(key, 'utf8').digest('hex');
-    let merchantIdForStaff =
-      body?.merchantId || req?.params?.merchantId || req?.query?.merchantId;
+    let merchantIdForStaff = merchantIdFromRequest;
     let contextForStaff:
       | { merchantId?: string; outletId?: string | null }
       | undefined;
@@ -306,22 +438,22 @@ export class CashierGuard implements CanActivate {
       },
     });
     if (!staff) return false;
-    let requestedOutletId =
+    let requestedOutletIdRaw =
       body?.outletId ||
       req?.params?.outletId ||
       req?.query?.outletId ||
       undefined;
-    if (!requestedOutletId) {
-      if (!contextForStaff) {
-        contextForStaff = await this.resolveOperationContext(
-          normalizedPath,
-          req,
-          merchantIdForStaff,
-        );
-      }
-      if (contextForStaff?.outletId) {
-        requestedOutletId = contextForStaff.outletId || undefined;
-      }
+    let requestedOutletId =
+      requestedOutletIdRaw != null ? String(requestedOutletIdRaw) : undefined;
+    if (!contextForStaff) {
+      contextForStaff = await this.resolveOperationContext(
+        normalizedPath,
+        req,
+        merchantIdForStaff,
+      );
+    }
+    if (contextForStaff?.outletId) {
+      requestedOutletId = String(contextForStaff.outletId);
     }
     if (String(staff.role || '').toUpperCase() === 'CASHIER') {
       const allowedOutletId: string | undefined =

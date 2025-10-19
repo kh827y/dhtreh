@@ -10,6 +10,9 @@ import {
   DeviceType,
   StaffOutletAccessStatus,
   StaffStatus,
+  StaffRole,
+  Prisma,
+  Staff,
 } from '@prisma/client';
 import {
   CreateStaffDto,
@@ -187,7 +190,7 @@ export class MerchantsService {
     const auth = await this.authenticateCashier(merchantLogin, password9);
     const merchantId = auth.merchantId;
     const searchValue = String(staffIdOrLogin || '').trim();
-    let staffRecord = searchValue
+    let staffRecord: Staff | null = searchValue
       ? await this.prisma.staff.findFirst({
           where: {
             merchantId,
@@ -215,16 +218,15 @@ export class MerchantsService {
         throw new UnauthorizedException('Invalid PIN or outlet access');
       }
     } else {
-      access = await this.prisma.staffOutletAccess.findFirst({
-        where: {
-          merchantId,
-          outletId,
-          pinCode,
-          status: StaffOutletAccessStatus.ACTIVE,
-        },
-        include: { staff: true },
-      });
-      staffRecord = access?.staff ?? null;
+      const resolved = await this.resolveActiveAccessByPin(
+        merchantId,
+        pinCode,
+      );
+      access = resolved.access;
+      staffRecord = resolved.staff;
+      if (access.outletId !== outletId) {
+        throw new UnauthorizedException('PIN assigned to another outlet');
+      }
     }
 
     if (!access || !staffRecord || staffRecord.merchantId !== merchantId) {
@@ -1059,6 +1061,53 @@ export class MerchantsService {
       transactionsTotal: counters.get(`${a.staffId}|${a.outletId}`) || 0,
     }));
   }
+
+  private async resolveActiveAccessByPin(
+    merchantId: string,
+    pinCode: string,
+  ): Promise<{ access: { id: string; outletId: string; pinCode: string | null; outlet?: { id: string; name: string | null } | null }; staff: Staff }> {
+    if (!merchantId) throw new BadRequestException('merchantId required');
+    const normalizedPin = String(pinCode || '').trim();
+    if (!normalizedPin)
+      throw new BadRequestException('pinCode (4 digits) required');
+    const matches = await this.prisma.staffOutletAccess.findMany({
+      where: {
+        merchantId,
+        pinCode: normalizedPin,
+        status: StaffOutletAccessStatus.ACTIVE,
+      },
+      include: {
+        staff: true,
+        outlet: { select: { id: true, name: true } },
+      },
+      take: 2,
+    });
+    if (!matches.length)
+      throw new NotFoundException('Staff access by PIN not found');
+    if (matches.length > 1) {
+      throw new BadRequestException(
+        'PIN не уникален внутри мерчанта. Сгенерируйте новый PIN для сотрудников.',
+      );
+    }
+    const access = matches[0];
+    const staff = access.staff;
+    if (!staff || staff.merchantId !== merchantId)
+      throw new NotFoundException('Staff not found');
+    if (staff.status && staff.status !== StaffStatus.ACTIVE) {
+      throw new UnauthorizedException('Staff inactive');
+    }
+    return {
+      access: {
+        id: access.id,
+        outletId: access.outletId,
+        pinCode: access.pinCode ?? null,
+        outlet: access.outlet
+          ? { id: access.outlet.id, name: access.outlet.name ?? null }
+          : null,
+      },
+      staff,
+    };
+  }
   async addStaffAccess(merchantId: string, staffId: string, outletId: string) {
     const [user, outlet] = await Promise.all([
       this.prisma.staff.findUnique({ where: { id: staffId } }),
@@ -1168,23 +1217,13 @@ export class MerchantsService {
   }
 
   async getStaffAccessByPin(merchantId: string, pinCode: string) {
-    if (!merchantId) throw new BadRequestException('merchantId required');
-    const access = await this.prisma.staffOutletAccess.findFirst({
-      where: {
-        merchantId,
-        pinCode,
-        status: StaffOutletAccessStatus.ACTIVE,
-      },
-      include: { staff: true },
-    });
-    const staff = access?.staff;
-    if (!access || !staff || staff.merchantId !== merchantId) {
-      throw new NotFoundException('Staff not found');
-    }
-    if (staff.status && staff.status !== StaffStatus.ACTIVE) {
-      throw new UnauthorizedException('Staff inactive');
-    }
+    const { access, staff } = await this.resolveActiveAccessByPin(
+      merchantId,
+      pinCode,
+    );
     const accesses = await this.listStaffAccess(merchantId, staff.id);
+    const matched =
+      accesses.find((item) => item.outletId === access.outletId) ?? null;
     return {
       staff: {
         id: staff.id,
@@ -1194,6 +1233,15 @@ export class MerchantsService {
         role: staff.role,
         pinCode: access.pinCode || undefined,
       },
+      outlet: matched
+        ? {
+            id: matched.outletId,
+            name: matched.outletName ?? matched.outletId,
+          }
+        : {
+            id: access.outletId,
+            name: access.outlet?.name ?? access.outletId,
+          },
       accesses,
     };
   }
@@ -1447,6 +1495,186 @@ export class MerchantsService {
     await this.prisma.staff.update({
       where: { id: staffId },
       data: { apiKeyHash: null },
+    });
+    return { ok: true };
+  }
+
+  private randomSessionToken() {
+    const crypto = require('crypto');
+    return crypto.randomBytes(48).toString('hex');
+  }
+
+  async startCashierSession(
+    merchantLogin: string,
+    password9: string,
+    pinCode: string,
+    rememberPin?: boolean,
+    context?: { ip?: string | null; userAgent?: string | null },
+  ) {
+    const normalizedLogin = String(merchantLogin || '').trim().toLowerCase();
+    const normalizedPassword = String(password9 || '').trim();
+    if (!normalizedLogin || !normalizedPassword || normalizedPassword.length !== 9)
+      throw new BadRequestException(
+        'merchantLogin and 9-digit password required',
+      );
+    const normalizedPin = String(pinCode || '').trim();
+    if (!normalizedPin || normalizedPin.length !== 4)
+      throw new BadRequestException('pinCode (4 digits) required');
+
+    const auth = await this.authenticateCashier(
+      normalizedLogin,
+      normalizedPassword,
+    );
+    const merchantId = auth.merchantId;
+    const { access, staff } = await this.resolveActiveAccessByPin(
+      merchantId,
+      normalizedPin,
+    );
+    if (!access.outletId)
+      throw new BadRequestException('Outlet for PIN access not found');
+
+    const token = this.randomSessionToken();
+    const hash = this.sha256(token);
+    const now = new Date();
+    const [session] = await this.prisma.$transaction([
+      this.prisma.cashierSession.create({
+        data: {
+          merchantId,
+          staffId: staff.id,
+          outletId: access.outletId,
+          pinAccessId: access.id,
+          startedAt: now,
+          lastSeenAt: now,
+          tokenHash: hash,
+          rememberPin: !!rememberPin,
+          ipAddress: context?.ip ?? null,
+          userAgent: context?.userAgent ?? null,
+          metadata: {
+            merchantLogin: normalizedLogin,
+          } as Prisma.InputJsonValue,
+        },
+        include: {
+          outlet: { select: { id: true, name: true } },
+          staff: true,
+        },
+      }),
+      this.prisma.staff.update({
+        where: { id: staff.id },
+        data: { lastCashierLoginAt: now },
+      }),
+    ]);
+
+    const displayName =
+      [session.staff.firstName, session.staff.lastName]
+        .filter((part) => typeof part === 'string' && part?.trim?.())
+        .map((part) => (part as string).trim())
+        .join(' ') || session.staff.login || null;
+
+    return {
+      token,
+      session: {
+        id: session.id,
+        merchantId,
+        staff: {
+          id: session.staff.id,
+          login: session.staff.login ?? null,
+          firstName: session.staff.firstName ?? null,
+          lastName: session.staff.lastName ?? null,
+          role: session.staff.role,
+          displayName,
+        },
+        outlet: {
+          id: session.outletId,
+          name: session.outlet?.name ?? session.outletId ?? null,
+        },
+        startedAt: session.startedAt,
+        rememberPin: !!rememberPin,
+      },
+    };
+  }
+
+  async getCashierSessionByToken(token: string) {
+    const raw = String(token || '').trim();
+    if (!raw) return null;
+    const hash = this.sha256(raw);
+    const session = await this.prisma.cashierSession.findFirst({
+      where: { tokenHash: hash },
+      include: {
+        staff: true,
+        outlet: { select: { id: true, name: true } },
+      },
+    });
+    if (!session || session.endedAt) return null;
+    if (session.expiresAt && session.expiresAt.getTime() <= Date.now()) {
+      await this.prisma.cashierSession.update({
+        where: { id: session.id },
+        data: { endedAt: new Date(), result: 'expired' },
+      });
+      return null;
+    }
+    if (
+      session.staff.status &&
+      session.staff.status !== StaffStatus.ACTIVE
+    ) {
+      await this.prisma.cashierSession.update({
+        where: { id: session.id },
+        data: {
+          endedAt: new Date(),
+          result: 'staff_inactive',
+        },
+      });
+      return null;
+    }
+    const now = new Date();
+    if (
+      !session.lastSeenAt ||
+      now.getTime() - session.lastSeenAt.getTime() > 60_000
+    ) {
+      try {
+        await this.prisma.cashierSession.update({
+          where: { id: session.id },
+          data: { lastSeenAt: now },
+        });
+        session.lastSeenAt = now;
+      } catch {}
+    }
+    const displayName =
+      [session.staff.firstName, session.staff.lastName]
+        .filter((part) => typeof part === 'string' && part?.trim?.())
+        .map((part) => (part as string).trim())
+        .join(' ') || session.staff.login || null;
+    return {
+      id: session.id,
+      merchantId: session.merchantId,
+      staff: {
+        id: session.staff.id,
+        login: session.staff.login ?? null,
+        firstName: session.staff.firstName ?? null,
+        lastName: session.staff.lastName ?? null,
+        role: session.staff.role,
+        displayName,
+      },
+      outlet: {
+        id: session.outletId,
+        name: session.outlet?.name ?? session.outletId ?? null,
+      },
+      startedAt: session.startedAt,
+      lastSeenAt: session.lastSeenAt ?? now,
+      rememberPin: !!session.rememberPin,
+    };
+  }
+
+  async endCashierSessionByToken(token: string, reason = 'logout') {
+    const raw = String(token || '').trim();
+    if (!raw) return { ok: true };
+    const hash = this.sha256(raw);
+    const session = await this.prisma.cashierSession.findFirst({
+      where: { tokenHash: hash, endedAt: null },
+    });
+    if (!session) return { ok: true };
+    await this.prisma.cashierSession.update({
+      where: { id: session.id },
+      data: { endedAt: new Date(), result: reason },
     });
     return { ok: true };
   }

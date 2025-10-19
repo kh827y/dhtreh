@@ -788,6 +788,7 @@ model StaffOutletAccess {
   revokedBy   Staff?           @relation("StaffOutletAccessRevoker", fields: [revokedById], references: [id])
   sessions    CashierSession[]
 
+  @@unique([merchantId, pinCode])
   @@unique([merchantId, staffId, outletId])
   @@index([merchantId, outletId])
   @@index([staffId, status])
@@ -907,10 +908,14 @@ model CashierSession {
   outletId    String?
   pinAccessId String?
   startedAt   DateTime  @default(now())
+  lastSeenAt  DateTime?
   endedAt     DateTime?
   result      String?
   ipAddress   String?
   userAgent   String?
+  tokenHash   String    @unique
+  expiresAt   DateTime?
+  rememberPin Boolean   @default(false)
   metadata    Json?
   createdAt   DateTime  @default(now())
 

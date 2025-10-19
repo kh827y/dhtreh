@@ -19,6 +19,61 @@ type QuoteEarnResp = {
   message?: string;
 };
 type Txn = { id: string; type: 'EARN'|'REDEEM'|'REFUND'|'ADJUST'; amount: number; orderId?: string|null; receiptNumber?: string|null; createdAt: string; outletId?: string|null; outletPosType?: string|null; outletLastSeenAt?: string|null };
+type CashierSessionInfo = {
+  sessionId: string;
+  merchantId: string;
+  staff: {
+    id: string;
+    role: string;
+    login?: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
+    displayName?: string | null;
+  };
+  outlet: {
+    id: string;
+    name?: string | null;
+  };
+  startedAt: string;
+  lastSeenAt?: string | null;
+  rememberPin?: boolean;
+};
+
+const COOKIE_LOGIN = 'cashier_login';
+const COOKIE_PASSWORD = 'cashier_password';
+const COOKIE_PIN = 'cashier_pin';
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 180; // ~180 дней в секундах
+
+const isBrowser = typeof document !== 'undefined';
+const isSecureContext =
+  typeof window !== 'undefined' &&
+  typeof window.location !== 'undefined' &&
+  window.location.protocol === 'https:';
+
+const readCookie = (name: string): string | null => {
+  if (!isBrowser) return null;
+  const entries = document.cookie ? document.cookie.split(';') : [];
+  for (const entry of entries) {
+    const [rawKey, ...rest] = entry.split('=');
+    if (!rawKey) continue;
+    if (rawKey.trim() === name) {
+      return decodeURIComponent(rest.join('=').trim());
+    }
+  }
+  return null;
+};
+
+const writeCookie = (name: string, value: string, maxAgeSeconds = COOKIE_MAX_AGE) => {
+  if (!isBrowser) return;
+  const secure = isSecureContext ? '; Secure' : '';
+  document.cookie = `${name}=${encodeURIComponent(value)}; path=/; SameSite=Lax; max-age=${maxAgeSeconds}${secure}`;
+};
+
+const deleteCookie = (name: string) => {
+  if (!isBrowser) return;
+  const secure = isSecureContext ? '; Secure' : '';
+  document.cookie = `${name}=; path=/; SameSite=Lax; max-age=0${secure}`;
+};
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
 const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
@@ -49,12 +104,10 @@ export default function Page() {
   const [histBusy, setHistBusy] = useState(false);
   const [histNextBefore, setHistNextBefore] = useState<string | null>(null);
 
-  // контекст точки/устройства/сотрудника
-  const [outlets, setOutlets] = useState<Array<{id:string; name:string}>>([]);
-  const [staff, setStaff] = useState<Array<{id:string; login?:string; role:string}>>([]);
-  const [outletId, setOutletId] = useState<string>('');
-  const [staffId, setStaffId] = useState<string>('');
-  const [staffKey, setStaffKey] = useState<string>('');
+  // сессия кассира
+  const [session, setSession] = useState<CashierSessionInfo | null>(null);
+  const [sessionLoading, setSessionLoading] = useState<boolean>(true);
+  const [rememberPin, setRememberPin] = useState<boolean>(false);
   // cashier auth (merchant login + 9-digit password)
   const [merchantLogin, setMerchantLogin] = useState<string>('');
   const [passwordDigits, setPasswordDigits] = useState<string>('');
@@ -63,28 +116,94 @@ export default function Page() {
   const [step, setStep] = useState<'merchant' | 'pin' | 'terminal'>('merchant');
   const [staffLookup, setStaffLookup] = useState<{
     staff: { id: string; login?: string; firstName?: string; lastName?: string; role: string };
+    outlet?: { id: string; name?: string | null };
     accesses: Array<{ outletId: string; outletName: string }>;
   } | null>(null);
   const password9 = passwordDigits;
+
   useEffect(() => {
-    try {
-      const v = localStorage.getItem('cashier_staff_key_v1');
-      if (v) {
-        setStaffKey(v);
-        setStep('terminal');
-      }
-    } catch {}
-    try { const v = localStorage.getItem('cashier_merchant_login_v1'); if (v != null) setMerchantLogin(v); } catch {}
-    try { const v = localStorage.getItem('cashier_merchant_id_v1'); if (v != null) setMerchantId(v); } catch {}
-  }, []);
-  useEffect(() => {
-    try { localStorage.setItem('cashier_staff_key_v1', staffKey || ''); } catch {}
-    if (staffKey) {
-      setStep('terminal');
+    const savedLogin = readCookie(COOKIE_LOGIN);
+    if (savedLogin) setMerchantLogin(savedLogin);
+    const savedPassword = readCookie(COOKIE_PASSWORD);
+    if (savedPassword) setPasswordDigits(savedPassword);
+    const savedPin = readCookie(COOKIE_PIN);
+    if (savedPin) {
+      setPinDigits(savedPin);
+      setRememberPin(true);
     }
-  }, [staffKey]);
-  useEffect(() => { try { localStorage.setItem('cashier_merchant_login_v1', merchantLogin || ''); } catch {} }, [merchantLogin]);
-  useEffect(() => { try { localStorage.setItem('cashier_merchant_id_v1', merchantId || ''); } catch {} }, [merchantId]);
+  }, []);
+
+  const mapSessionResponse = (payload: any): CashierSessionInfo => {
+    const staffData = payload?.staff ?? {};
+    const outletData = payload?.outlet ?? {};
+    return {
+      sessionId: payload?.sessionId || '',
+      merchantId: String(payload?.merchantId || MERCHANT || ''),
+      staff: {
+        id: String(staffData?.id || ''),
+        role: staffData?.role || 'CASHIER',
+        login: staffData?.login ?? null,
+        firstName: staffData?.firstName ?? null,
+        lastName: staffData?.lastName ?? null,
+        displayName: staffData?.displayName ?? null,
+      },
+      outlet: {
+        id: String(outletData?.id || ''),
+        name:
+          typeof outletData?.name === 'string'
+            ? outletData.name
+            : outletData?.id ?? null,
+      },
+      startedAt: payload?.startedAt || new Date().toISOString(),
+      lastSeenAt: payload?.lastSeenAt ?? null,
+      rememberPin: Boolean(payload?.rememberPin),
+    };
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    const bootstrap = async () => {
+      setSessionLoading(true);
+      try {
+        const resp = await fetch(`${API_BASE}/loyalty/cashier/session`, {
+          credentials: 'include',
+        });
+        if (!resp.ok) {
+          if (!cancelled) setSession(null);
+          return;
+        }
+        const data = await resp.json();
+        if (cancelled) return;
+        if (data?.active) {
+          const info = mapSessionResponse(data);
+          setSession(info);
+          setMerchantId(info.merchantId || MERCHANT);
+          setRememberPin(Boolean(info.rememberPin));
+        } else {
+          setSession(null);
+        }
+      } catch {
+        if (!cancelled) setSession(null);
+      } finally {
+        if (!cancelled) setSessionLoading(false);
+      }
+    };
+    bootstrap();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (sessionLoading) return;
+    if (session) {
+      setMerchantId(session.merchantId || MERCHANT);
+      setStep('terminal');
+    } else {
+      setStep(passwordDigits.length === 9 && merchantLogin.trim() ? 'pin' : 'merchant');
+    }
+  }, [session, sessionLoading, passwordDigits, merchantLogin]);
 
   // Сгенерируем уникальный orderId при первом монтировании, чтобы избежать идемпотентных коллизий после перезагрузки
   useEffect(() => {
@@ -92,23 +211,31 @@ export default function Page() {
   }, []);
 
   async function callQuote() {
+    if (!session) {
+      alert('Сначала авторизуйтесь в кассире.');
+      return;
+    }
     setBusy(true);
     const requestId = 'req_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8);
     setResult(null);
     setHoldId(null);
     try {
+      const activeMerchantId = session?.merchantId || merchantId;
+      const activeOutletId = session?.outlet?.id || undefined;
+      const activeStaffId = session?.staff?.id || undefined;
       const r = await fetch(`${API_BASE}/loyalty/quote`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId, ...(staffKey ? { 'X-Staff-Key': staffKey } : {}) },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId },
         body: JSON.stringify({
-          merchantId,
+          merchantId: activeMerchantId,
           mode,
           userToken,
           orderId,
           total,
           eligibleTotal,
-          outletId: outletId || undefined,
-          staffId: staffId || undefined,
+          outletId: activeOutletId || undefined,
+          staffId: activeStaffId || undefined,
         }),
       });
       if (!r.ok) {
@@ -141,17 +268,26 @@ export default function Page() {
   async function cashierLogin() {
     setAuthMsg('');
     try {
-      if (!normalizedLogin || !password9 || password9.length !== 9) throw new Error('Укажите логин мерчанта и 9‑значный пароль');
-      const r = await fetch(`${API_BASE}/loyalty/cashier/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ merchantLogin: normalizedLogin, password9 }) });
+      if (!normalizedLogin || !password9 || password9.length !== 9)
+        throw new Error('Укажите логин мерчанта и 9‑значный пароль');
+      const r = await fetch(`${API_BASE}/loyalty/cashier/login`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ merchantLogin: normalizedLogin, password9 }),
+      });
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
       if (data?.merchantId) {
-        setMerchantId(String(data.merchantId));
-        setStep('pin');
+        const resolvedMerchantId = String(data.merchantId);
+        setMerchantId(resolvedMerchantId);
         setStaffLookup(null);
-        setPinDigits('');
         setMerchantLogin(normalizedLogin);
+        writeCookie(COOKIE_LOGIN, normalizedLogin);
+        writeCookie(COOKIE_PASSWORD, password9);
+        if (!rememberPin) setPinDigits('');
       }
+      setStep('pin');
     } catch (e: any) {
       setAuthMsg(String(e?.message || e));
     }
@@ -161,16 +297,32 @@ export default function Page() {
     setAuthMsg('');
     if (!pin || pin.length !== 4) return;
     try {
-      if (!normalizedLogin || !password9 || password9.length !== 9) throw new Error('Сначала выполните вход мерчанта');
+      if (!normalizedLogin || !password9 || password9.length !== 9)
+        throw new Error('Сначала выполните вход мерчанта');
       setPinDigits(pin);
       const r = await fetch(`${API_BASE}/loyalty/cashier/staff-access`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ merchantLogin: normalizedLogin, password9, pinCode: pin }),
+        body: JSON.stringify({
+          merchantLogin: normalizedLogin,
+          password9,
+          pinCode: pin,
+        }),
       });
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
       const accesses = Array.isArray(data?.accesses) ? data.accesses : [];
+      const outletInfo =
+        data?.outlet && data.outlet.id
+          ? {
+              id: String(data.outlet.id),
+              name:
+                typeof data.outlet.name === 'string'
+                  ? data.outlet.name
+                  : String(data.outlet.id),
+            }
+          : undefined;
       setStaffLookup({
         staff: {
           id: data?.staff?.id,
@@ -179,62 +331,98 @@ export default function Page() {
           lastName: data?.staff?.lastName,
           role: data?.staff?.role,
         },
+        outlet: outletInfo,
         accesses,
       });
-      if (data?.staff?.id) setStaffId(String(data.staff.id));
-      if (accesses.length) setOutletId(accesses[0].outletId);
+      if (rememberPin) writeCookie(COOKIE_PIN, pin);
     } catch (e: any) {
       setAuthMsg(String(e?.message || e));
     }
   }
 
-  async function issueStaffToken() {
+  async function startCashierSessionAuth() {
     setAuthMsg('');
     try {
-      if (!normalizedLogin || !password9 || password9.length !== 9) throw new Error('Сначала войдите как кассир (логин/пароль 9 цифр)');
-      if (!staffLookup?.staff?.id) throw new Error('Введите PIN сотрудника');
-      const selectedOutlet = outletId || staffLookup.accesses[0]?.outletId;
-      if (!selectedOutlet) throw new Error('Выберите торговую точку');
-      if (!pinDigits || pinDigits.length !== 4) throw new Error('Введите PIN сотрудника');
-      const r = await fetch(`${API_BASE}/loyalty/cashier/staff-token`, {
+      if (!normalizedLogin || !password9 || password9.length !== 9)
+        throw new Error('Сначала войдите как мерчант (логин/пароль 9 цифр)');
+      if (!pinDigits || pinDigits.length !== 4)
+        throw new Error('Введите PIN сотрудника');
+      const r = await fetch(`${API_BASE}/loyalty/cashier/session`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ merchantLogin: normalizedLogin, password9, staffIdOrLogin: staffLookup.staff.id, outletId: selectedOutlet, pinCode: pinDigits }),
+        body: JSON.stringify({
+          merchantLogin: normalizedLogin,
+          password9,
+          pinCode: pinDigits,
+          rememberPin,
+        }),
       });
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
-      if (data?.token) {
-        setStaffKey(String(data.token));
-        try { localStorage.setItem('cashier_staff_key_v1', String(data.token)); } catch {}
-        setPinDigits('');
-        setStep('terminal');
+      const sessionInfo = mapSessionResponse(data);
+      setSession(sessionInfo);
+      setMerchantId(sessionInfo.merchantId || MERCHANT);
+      setRememberPin(Boolean(sessionInfo.rememberPin));
+      writeCookie(COOKIE_LOGIN, normalizedLogin);
+      writeCookie(COOKIE_PASSWORD, password9);
+      if (rememberPin) {
+        writeCookie(COOKIE_PIN, pinDigits);
+      } else {
+        deleteCookie(COOKIE_PIN);
       }
+      setAuthMsg('');
+      setStep('terminal');
     } catch (e: any) {
       setAuthMsg(String(e?.message || e));
     }
   }
 
-  function logoutStaff() {
-    setStaffKey('');
-    try { localStorage.removeItem('cashier_staff_key_v1'); } catch {}
+  async function logoutStaff() {
+    try {
+      await fetch(`${API_BASE}/loyalty/cashier/session`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+    } catch {
+      // ignore logout errors, cookie will be cleared client-side
+    }
+    setSession(null);
     setStaffLookup(null);
-    setPinDigits('');
+    if (!rememberPin) {
+      setPinDigits('');
+      deleteCookie(COOKIE_PIN);
+    } else {
+      const savedPin = readCookie(COOKIE_PIN);
+      if (savedPin) setPinDigits(savedPin);
+    }
+    setRememberPin(Boolean(readCookie(COOKIE_PIN)));
     setStep(passwordDigits.length === 9 && merchantLogin.trim() ? 'pin' : 'merchant');
   }
 
   async function callCommit() {
+    if (!session) {
+      alert('Сначала авторизуйтесь в кассире.');
+      return;
+    }
     if (!holdId) return alert('Сначала сделайте расчёт (QUOTE).');
     setBusy(true);
     const requestId = 'req_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8);
     try {
       const normalizedReceiptNumber = receiptNumber.trim();
+      const activeMerchantId = session?.merchantId || merchantId;
+      const activeOutletId = session?.outlet?.id || undefined;
+      const activeStaffId = session?.staff?.id || undefined;
       const r = await fetch(`${API_BASE}/loyalty/commit`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId, ...(staffKey?{ 'X-Staff-Key': staffKey }: {}) },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId },
         body: JSON.stringify({
-          merchantId,
+          merchantId: activeMerchantId,
           holdId,
           orderId,
+          outletId: activeOutletId || undefined,
+          staffId: activeStaffId || undefined,
           receiptNumber: normalizedReceiptNumber ? normalizedReceiptNumber : undefined,
           requestId,
         }),
@@ -243,7 +431,7 @@ export default function Page() {
       if (data?.ok) {
         emitLoyaltyEvent({
           type: 'loyalty.commit',
-          merchantId,
+          merchantId: activeMerchantId,
           customerId: resolveCustomerIdFromToken(userToken),
           orderId,
           receiptNumber: normalizedReceiptNumber || undefined,
@@ -270,7 +458,10 @@ export default function Page() {
 
   async function loadBalance() {
     try {
-      const r = await fetch(`${API_BASE}/loyalty/balance/${merchantId}/${encodeURIComponent(userToken)}`);
+      const activeMerchantId = session?.merchantId || merchantId;
+      const r = await fetch(`${API_BASE}/loyalty/balance/${activeMerchantId}/${encodeURIComponent(userToken)}`, {
+        credentials: 'include',
+      });
       const data = await r.json();
       alert(`Баланс клиента ${data.customerId} в мерчанте ${data.merchantId}: ${data.balance} ₽`);
     } catch (e: any) {
@@ -403,6 +594,10 @@ export default function Page() {
 
   // ==== Refund ====
   async function doRefund() {
+    if (!session) {
+      alert('Сначала авторизуйтесь в кассире.');
+      return;
+    }
     const receipt = refundReceiptNumber.trim();
     if (!receipt || refundTotal <= 0)
       return alert('Укажи номер чека и сумму возврата (>0)');
@@ -412,10 +607,20 @@ export default function Page() {
       return;
     }
     try {
+      const activeMerchantId = session?.merchantId || merchantId;
+      const activeOutletId = session?.outlet?.id || undefined;
+      const activeStaffId = session?.staff?.id || undefined;
       const r = await fetch(`${API_BASE}/loyalty/refund`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(staffKey?{ 'X-Staff-Key': staffKey }: {}) },
-        body: JSON.stringify({ merchantId, orderId: resolvedOrderId, refundTotal }),
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          merchantId: activeMerchantId,
+          orderId: resolvedOrderId,
+          refundTotal,
+          outletId: activeOutletId || undefined,
+          staffId: activeStaffId || undefined,
+        }),
       });
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
@@ -431,6 +636,7 @@ export default function Page() {
     if (histBusy) return;
     setHistBusy(true);
     try {
+      const activeMerchantId = session?.merchantId || merchantId;
       let customerId = userToken;
       if (userToken.split('.').length === 3) {
         const manual = prompt('Для истории нужен merchantCustomerId (например, mc_...). Введите его или customerId:');
@@ -438,12 +644,12 @@ export default function Page() {
         customerId = manual;
       }
       const url = new URL(`${API_BASE}/loyalty/transactions`);
-      url.searchParams.set('merchantId', merchantId);
+      url.searchParams.set('merchantId', activeMerchantId);
       url.searchParams.set('merchantCustomerId', customerId);
       url.searchParams.set('customerId', customerId);
       url.searchParams.set('limit', '20');
       if (!reset && histNextBefore) url.searchParams.set('before', histNextBefore);
-      const r = await fetch(url.toString());
+      const r = await fetch(url.toString(), { credentials: 'include' });
       const data = await r.json();
       const items: Txn[] = data.items ?? [];
       setHistory(old => reset ? items : [...old, ...items]);
@@ -458,31 +664,6 @@ export default function Page() {
   useEffect(() => { setHistory([]); setHistNextBefore(null); }, [userToken, merchantId]);
 
   // загрузка списков точек/сотрудников
-  useEffect(() => {
-    (async () => {
-      try {
-        const [ro, rs] = await Promise.all([
-          fetch(`${API_BASE}/loyalty/outlets/${merchantId}`),
-          fetch(`${API_BASE}/loyalty/staff/${merchantId}`),
-        ]);
-        const [lo, ls] = await Promise.all([ro.json(), rs.json()]);
-        setOutlets(Array.isArray(lo) ? lo : []);
-        setStaff(Array.isArray(ls) ? ls : []);
-        try {
-          const saved = JSON.parse(localStorage.getItem('cashier_ctx_v1') || '{}');
-          if (saved?.outletId) setOutletId(saved.outletId);
-          if (saved?.staffId) setStaffId(saved.staffId);
-        } catch {}
-      } catch {}
-    })();
-  }, [merchantId]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('cashier_ctx_v1', JSON.stringify({ outletId, staffId }));
-    } catch {}
-  }, [outletId, staffId]);
-
   return (
     <main style={{ maxWidth: 920, margin: '40px auto', fontFamily: 'system-ui, Arial' }}>
       <h1>Виртуальный терминал кассира</h1>
@@ -530,7 +711,7 @@ export default function Page() {
             <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
               <div style={{ fontSize: 13, opacity: 0.75 }}>Логин мерчанта:</div>
               <code style={{ padding: '2px 8px', borderRadius: 6, background: '#fff', border: '1px solid #eee' }}>{normalizedLogin || '—'}</code>
-              <button className="btn btn-ghost" onClick={() => setStep('merchant')}>Изменить</button>
+              <button className="btn btn-ghost" onClick={() => { setStaffLookup(null); setStep('merchant'); }}>Изменить</button>
             </div>
             <div style={{ display: 'grid', gap: 8 }}>
               <label style={{ fontSize: 13, opacity: 0.8 }}>PIN сотрудника</label>
@@ -544,9 +725,24 @@ export default function Page() {
                 onComplete={lookupStaffByPin}
                 placeholderChar="○"
               />
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
                 <button onClick={() => lookupStaffByPin(pinDigits)} disabled={pinDigits.length !== 4} style={{ padding: '6px 12px' }}>Проверить PIN</button>
-                {staffKey ? <button className="btn btn-ghost" onClick={logoutStaff}>Сбросить ключ</button> : null}
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, opacity: 0.75 }}>
+                  <input
+                    type="checkbox"
+                    checked={rememberPin}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setRememberPin(checked);
+                      if (checked && pinDigits.length === 4) {
+                        writeCookie(COOKIE_PIN, pinDigits);
+                      } else if (!checked) {
+                        deleteCookie(COOKIE_PIN);
+                      }
+                    }}
+                  />
+                  Сохранить PIN
+                </label>
               </div>
             </div>
             {staffLookup && (
@@ -559,42 +755,60 @@ export default function Page() {
                   <div style={{ fontSize: 12, opacity: 0.6 }}>{staffLookup.staff.role}</div>
                 </div>
                 <div>
-                  <label style={{ fontSize: 13, opacity: 0.7 }}>Торговая точка</label>
-                  <select value={outletId} onChange={(e)=>setOutletId(e.target.value)} style={{ padding: 8, minWidth: 220, borderRadius: 8, border: '1px solid #ddd' }}>
-                    {staffLookup.accesses.length ? null : <option value="">Нет доступных точек</option>}
-                    {staffLookup.accesses.map((acc) => (
-                      <option key={acc.outletId} value={acc.outletId}>{acc.outletName}</option>
-                    ))}
-                  </select>
+                  <div style={{ fontSize: 13, opacity: 0.7 }}>Торговая точка</div>
+                  <div style={{ fontSize: 15 }}>
+                    {staffLookup.outlet
+                      ? `${staffLookup.outlet.name || staffLookup.outlet.id} (${staffLookup.outlet.id})`
+                      : 'Определяется автоматически'}
+                  </div>
                 </div>
-                <button
-                  onClick={issueStaffToken}
-                  style={{ padding: '8px 16px' }}
-                  disabled={!staffLookup.accesses.length}
-                >
-                  Получить ключ кассира
-                </button>
+                {staffLookup.accesses.length > 1 && (
+                  <div style={{ fontSize: 12, opacity: 0.6 }}>
+                    Доступные точки: {staffLookup.accesses.map((acc) => acc.outletName || acc.outletId).join(', ')}
+                  </div>
+                )}
               </div>
             )}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                onClick={startCashierSessionAuth}
+                style={{ padding: '8px 16px' }}
+                disabled={!staffLookup?.staff?.id}
+              >
+                Перейти к терминалу
+              </button>
+              <button
+                className="btn btn-ghost"
+                onClick={() => {
+                  setStaffLookup(null);
+                  setStep('merchant');
+                }}
+              >
+                Назад
+              </button>
+            </div>
             {authMsg && <div style={{ color: '#d33' }}>{authMsg}</div>}
           </div>
         )}
 
-        {step === 'terminal' && (
-          <div style={{ display: 'grid', gap: 12 }}>
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-              <div style={{ fontSize: 13, opacity: 0.7 }}>Мерчант:</div>
-              <code style={{ padding: '2px 8px', borderRadius: 6, background: '#fff', border: '1px solid #eee' }}>{normalizedLogin || merchantLogin || '—'}</code>
+        {step === 'terminal' && session && (
+          <div style={{ display: 'grid', gap: 10 }}>
+            <div style={{ fontSize: 13, opacity: 0.7 }}>Мерчант:</div>
+            <code style={{ padding: '2px 8px', borderRadius: 6, background: '#fff', border: '1px solid #eee', width: 'fit-content' }}>{session.merchantId || normalizedLogin || merchantLogin || '—'}</code>
+            <div style={{ fontSize: 13, opacity: 0.7 }}>Сотрудник:</div>
+            <div style={{ fontSize: 16, fontWeight: 600 }}>
+              {session.staff.displayName?.trim() || [session.staff.firstName, session.staff.lastName].filter(Boolean).join(' ') || session.staff.login || session.staff.id}
             </div>
-            {staffId && (
-              <div style={{ fontSize: 13, opacity: 0.75 }}>Активный сотрудник ID: <code>{staffId}</code></div>
-            )}
-            {staffKey && (
-              <div style={{ fontSize: 12, color: '#0a0' }}>X-Staff-Key установлен. Запросы будут подписаны.</div>
-            )}
+            <div style={{ fontSize: 12, opacity: 0.6 }}>Роль: {session.staff.role}</div>
+            <div style={{ fontSize: 13, opacity: 0.7 }}>Торговая точка:</div>
+            <div style={{ fontSize: 15 }}>
+              {session.outlet.name || session.outlet.id || '—'}{session.outlet.id ? ` (${session.outlet.id})` : ''}
+            </div>
+            <div style={{ fontSize: 12, opacity: 0.6 }}>
+              Сессия с: {new Date(session.startedAt).toLocaleString()}
+            </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button className="btn" onClick={() => setStep('pin')}>Сменить PIN</button>
-              <button className="btn btn-ghost" onClick={logoutStaff}>Сбросить ключ</button>
+              <button className="btn" onClick={logoutStaff}>Выйти из сессии</button>
             </div>
           </div>
         )}
@@ -616,12 +830,6 @@ export default function Page() {
             <button onClick={loadBalance} style={{ padding: '8px 12px' }}>
               Баланс
             </button>
-            <input
-              value={staffKey}
-              onChange={(e) => setStaffKey(e.target.value)}
-              placeholder="X-Staff-Key (если требуется)"
-              style={{ flex: 1, minWidth: 240, padding: 8 }}
-            />
           </div>
         </label>
 
@@ -651,26 +859,9 @@ export default function Page() {
           <label><input type="radio" name="mode" checked={mode === 'earn'} onChange={() => setMode('earn')} /> Начислить</label>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <label>
-            Точка:
-            <select value={outletId} onChange={(e) => setOutletId(e.target.value)} style={{ padding: 8, minWidth: 180 }}>
-              <option value="">(не выбрано)</option>
-              {outlets.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
-            </select>
-          </label>
-          <label>
-            Сотрудник:
-            <select value={staffId} onChange={(e) => setStaffId(e.target.value)} style={{ padding: 8, minWidth: 180 }}>
-              <option value="">(не выбрано)</option>
-              {staff.map(s => <option key={s.id} value={s.id}>{s.login||s.id.slice(0,6)} · {s.role}</option>)}
-            </select>
-          </label>
-        </div>
-
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          <button onClick={callQuote} disabled={busy} style={{ padding: '8px 16px' }}>Посчитать (QUOTE)</button>
-          <button onClick={callCommit} disabled={busy || !holdId} style={{ padding: '8px 16px' }}>Оплачено (COMMIT)</button>
+          <button onClick={callQuote} disabled={busy || !session} style={{ padding: '8px 16px' }}>Посчитать (QUOTE)</button>
+          <button onClick={callCommit} disabled={busy || !holdId || !session} style={{ padding: '8px 16px' }}>Оплачено (COMMIT)</button>
         </div>
 
         {result && (
@@ -688,7 +879,7 @@ export default function Page() {
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <input value={refundReceiptNumber} onChange={(e) => setRefundReceiptNumber(e.target.value)} placeholder="номер чека" style={{ padding: 8, flex: 1, minWidth: 220 }} />
         <input type="number" value={refundTotal} onChange={(e) => setRefundTotal(+e.target.value)} placeholder="refundTotal" style={{ padding: 8, width: 160 }} />
-        <button onClick={doRefund} style={{ padding: '8px 16px' }}>Сделать возврат</button>
+        <button onClick={doRefund} disabled={!session} style={{ padding: '8px 16px' }}>Сделать возврат</button>
       </div>
 
       {/* History */}

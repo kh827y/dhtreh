@@ -20,10 +20,42 @@ Local: http://localhost:3000
 ## Аутентификация
 
 ### Staff Key Authentication
-Для операций кассира используется ключ сотрудника:
+Для интеграций POS/bridge по-прежнему доступен ключ сотрудника:
 ```http
 X-Staff-Key: sk_live_xxxxxxxxxxxxxx
 ```
+Однако виртуальный терминал кассира теперь использует cookie-сессии, поэтому `X-Staff-Key` не требуется в браузере.
+
+### Cashier Session Authentication
+Фронтенд кассира проходит двухшаговую авторизацию:
+
+1. **Вход мерчанта** — `POST /loyalty/cashier/login`
+   ```json
+   {
+     "merchantLogin": "market123",
+     "password9": "123456789"
+   }
+   ```
+   Возвращает `merchantId`, фронт сохраняет логин/пароль в куках (для автозаполнения).
+
+2. **Запуск сессии сотрудника** — `POST /loyalty/cashier/session`
+   ```json
+   {
+     "merchantLogin": "market123",
+     "password9": "123456789",
+     "pinCode": "0421",
+     "rememberPin": true
+   }
+   ```
+   При успешном запросе устанавливается HTTP-only кука `cashier_session`, а в ответе возвращаются данные сотрудника и торговой точки. Если пользователь выбрал `rememberPin=true`, фронт хранит PIN в своей cookie для автоподстановки.
+
+3. **Проверка активной сессии** — `GET /loyalty/cashier/session`
+   Возвращает `{ "active": true, ... }` и сведения о текущем сотруднике; при отсутствии сессии — `{ "active": false }`.
+
+4. **Выход** — `DELETE /loyalty/cashier/session`
+   Завершает серверную сессию и очищает cookie.
+
+Все защищённые операции (`quote`, `commit`, `refund`, и т.д.) должны выполняться с `credentials: 'include'`, чтобы браузер отправлял `cashier_session`.
 
 ### Admin Key Authentication
 Для административных операций:

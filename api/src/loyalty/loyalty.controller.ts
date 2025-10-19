@@ -3,6 +3,7 @@ import {
   Controller,
   Post,
   Get,
+  Delete,
   Param,
   Query,
   BadRequestException,
@@ -110,6 +111,57 @@ export class LoyaltyController {
     }
 
     return null;
+  }
+
+  private readCookie(req: Request, name: string): string | null {
+    const header = req?.headers?.cookie;
+    if (!header || typeof header !== 'string') return null;
+    const parts = header.split(';');
+    for (const part of parts) {
+      const [rawKey, ...rest] = part.split('=');
+      if (!rawKey) continue;
+      const key = rawKey.trim();
+      if (key === name) {
+        const value = rest.join('=').trim();
+        return decodeURIComponent(value || '');
+      }
+    }
+    return null;
+  }
+
+  private writeCashierSessionCookie(res: Response, token: string) {
+    const secure = process.env.NODE_ENV === 'production';
+    res.cookie('cashier_session', token, {
+      httpOnly: true,
+      secure,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 1000 * 60 * 60 * 24 * 180, // ~180 дней
+    });
+  }
+
+  private clearCashierSessionCookie(res: Response) {
+    const secure = process.env.NODE_ENV === 'production';
+    res.cookie('cashier_session', '', {
+      httpOnly: true,
+      secure,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 0,
+    });
+  }
+
+  private resolveClientIp(req: Request): string | null {
+    const header = req.headers['x-forwarded-for'];
+    if (Array.isArray(header) && header.length) {
+      return header[0]?.split(',')?.[0]?.trim() || null;
+    }
+    if (typeof header === 'string' && header.trim()) {
+      return header.split(',')[0]?.trim() || null;
+    }
+    if (req.ip) return req.ip;
+    const remote = (req as any)?.socket?.remoteAddress;
+    return remote ? String(remote) : null;
   }
 
   private normalizePhoneStrict(phone?: string): string {
@@ -1105,6 +1157,120 @@ export class LoyaltyController {
       password9,
     );
     return this.merchants.getStaffAccessByPin(auth.merchantId, pinCode);
+  }
+
+  @Post('cashier/session')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        ok: { type: 'boolean' },
+        merchantId: { type: 'string' },
+        sessionId: { type: 'string' },
+        staff: { type: 'object', additionalProperties: true },
+        outlet: { type: 'object', additionalProperties: true },
+        startedAt: { type: 'string', format: 'date-time' },
+      },
+    },
+  })
+  async startCashierSession(
+    @Body()
+    body: {
+      merchantLogin?: string;
+      password9?: string;
+      pinCode?: string;
+      rememberPin?: boolean;
+    },
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const merchantLogin = String(body?.merchantLogin || '');
+    const password9 = String(body?.password9 || '');
+    const pinCode = String(body?.pinCode || '');
+    const rememberPin = Boolean(body?.rememberPin);
+    if (!merchantLogin || !password9 || password9.length !== 9)
+      throw new BadRequestException(
+        'merchantLogin and 9-digit password required',
+      );
+    if (!pinCode || pinCode.length !== 4)
+      throw new BadRequestException('pinCode (4 digits) required');
+    const result = await this.merchants.startCashierSession(
+      merchantLogin,
+      password9,
+      pinCode,
+      rememberPin,
+      {
+        ip: this.resolveClientIp(req),
+        userAgent: req.headers['user-agent'] || null,
+      },
+    );
+    this.writeCashierSessionCookie(res, result.token);
+    return {
+      ok: true,
+      merchantId: result.session.merchantId,
+      sessionId: result.session.id,
+      staff: result.session.staff,
+      outlet: result.session.outlet,
+      startedAt: result.session.startedAt,
+      rememberPin: result.session.rememberPin,
+    };
+  }
+
+  @Get('cashier/session')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        active: { type: 'boolean' },
+        merchantId: { type: 'string', nullable: true },
+        sessionId: { type: 'string', nullable: true },
+        staff: { type: 'object', nullable: true, additionalProperties: true },
+        outlet: { type: 'object', nullable: true, additionalProperties: true },
+        startedAt: { type: 'string', format: 'date-time', nullable: true },
+        lastSeenAt: { type: 'string', format: 'date-time', nullable: true },
+      },
+    },
+  })
+  async currentCashierSession(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const token = this.readCookie(req, 'cashier_session');
+    if (!token) return { active: false };
+    const session = await this.merchants.getCashierSessionByToken(token);
+    if (!session) {
+      this.clearCashierSessionCookie(res);
+      return { active: false };
+    }
+    return {
+      active: true,
+      merchantId: session.merchantId,
+      sessionId: session.id,
+      staff: session.staff,
+      outlet: session.outlet,
+      startedAt: session.startedAt,
+      lastSeenAt: session.lastSeenAt,
+      rememberPin: session.rememberPin,
+    };
+  }
+
+  @Delete('cashier/session')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiOkResponse({
+    schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
+  })
+  async logoutCashierSession(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const token = this.readCookie(req, 'cashier_session');
+    if (token) {
+      await this.merchants.endCashierSessionByToken(token, 'logout');
+    }
+    this.clearCashierSessionCookie(res);
+    return { ok: true };
   }
 
   private async verifyStaffKey(
