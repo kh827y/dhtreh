@@ -217,7 +217,9 @@ export class CustomerAudiencesService {
       if (Object.keys(visitsFilter).length) {
         statsHasConditions = true;
         statsFilters.visits = {
-          ...(statsFilters.visits ?? {}),
+          ...(typeof statsFilters.visits === 'object' && statsFilters.visits !== null
+            ? (statsFilters.visits as Prisma.IntFilter)
+            : {}),
           ...visitsFilter,
         };
       }
@@ -256,7 +258,9 @@ export class CustomerAudiencesService {
     if (Object.keys(lastOrderAt).length) {
       statsHasConditions = true;
       statsFilters.lastOrderAt = {
-        ...(statsFilters.lastOrderAt ?? {}),
+        ...(typeof statsFilters.lastOrderAt === 'object' && statsFilters.lastOrderAt !== null
+          ? (statsFilters.lastOrderAt as Prisma.DateTimeFilter)
+          : {}),
         ...lastOrderAt,
       };
     }
@@ -275,7 +279,9 @@ export class CustomerAudiencesService {
       if (Object.keys(avgCheckFilter).length) {
         statsHasConditions = true;
         statsFilters.avgCheck = {
-          ...(statsFilters.avgCheck ?? {}),
+          ...(typeof statsFilters.avgCheck === 'object' && statsFilters.avgCheck !== null
+            ? (statsFilters.avgCheck as Prisma.FloatFilter)
+            : {}),
           ...avgCheckFilter,
         };
       }
@@ -298,7 +304,9 @@ export class CustomerAudiencesService {
       if (Object.keys(totalFilter).length) {
         statsHasConditions = true;
         statsFilters.totalSpent = {
-          ...(statsFilters.totalSpent ?? {}),
+          ...(typeof statsFilters.totalSpent === 'object' && statsFilters.totalSpent !== null
+            ? (statsFilters.totalSpent as Prisma.IntFilter)
+            : {}),
           ...totalFilter,
         };
       }

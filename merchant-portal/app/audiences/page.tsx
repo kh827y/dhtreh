@@ -766,7 +766,6 @@ export default function AudiencesPage() {
     setAudienceName('');
     setSettings(defaultSettings);
     setCurrentAudience(null);
-    setTab('settings');
   };
 
   const openEdit = (audience: AudienceRow) => {
@@ -774,7 +773,6 @@ export default function AudiencesPage() {
     setAudienceName(audience.name);
     setSettings(audience.settings);
     setCurrentAudience(audience);
-    setTab('settings');
   };
 
   const closeModal = () => {
