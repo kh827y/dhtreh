@@ -710,12 +710,9 @@ function parseTags(tags: string): string[] {
 }
 
 function formatVisitFrequency(customer: CustomerRecord): string {
-  if (customer.visitFrequency) return customer.visitFrequency;
-  if (customer.visitFrequencyDays != null) {
-    if (customer.visitFrequencyDays === 0) return "Ежедневно";
-    return `≈ ${customer.visitFrequencyDays} дн.`;
-  }
-  return "—";
+  const value = customer.visitFrequencyDays;
+  if (value == null || value <= 0) return "—";
+  return value.toLocaleString("ru-RU");
 }
 
 function buildProfileRows(customer: CustomerRecord) {

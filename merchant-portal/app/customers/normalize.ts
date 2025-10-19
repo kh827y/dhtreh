@@ -8,6 +8,12 @@ import {
   type CustomerReferrer,
 } from "./data";
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+type TransactionForStats = CustomerTransaction & {
+  __sourceDatetime?: string | null;
+};
+
 function toNumber(input: unknown, fallback = 0): number {
   const value = Number(input);
   return Number.isFinite(value) ? value : fallback;
@@ -73,6 +79,74 @@ function normalizeTransaction(input: any): CustomerTransaction {
     note: toStringOrNull(input?.note),
     kind: toStringOrNull(input?.kind),
   };
+}
+
+function hasPositiveValue(value: number | null | undefined): boolean {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function transactionDateForStats(transaction: TransactionForStats): Date | null {
+  const source = transaction.__sourceDatetime ?? transaction.datetime;
+  if (!transaction.__sourceDatetime) return null;
+  if (!source) return null;
+  const parsed = new Date(source);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function computePurchaseStats(
+  transactions: TransactionForStats[],
+  visitsHint: number | null | undefined,
+): {
+  purchaseCount: number;
+  lastPurchaseDays: number | null;
+  frequencyDays: number | null;
+} {
+  const purchases = transactions.filter((txn) => {
+    if (
+      hasPositiveValue(txn.total) ||
+      hasPositiveValue(txn.purchaseAmount) ||
+      hasPositiveValue(txn.toPay)
+    ) {
+      return true;
+    }
+    const type = typeof txn.type === "string" ? txn.type.toLowerCase() : "";
+    if (["earn", "purchase", "order", "sale"].includes(type)) return true;
+    const kind = typeof txn.kind === "string" ? txn.kind.toLowerCase() : "";
+    if (/(purchase|order|sale|покуп)/.test(kind)) return true;
+    return false;
+  });
+
+  const datedPurchases = purchases
+    .map((txn) => transactionDateForStats(txn))
+    .filter((date): date is Date => Boolean(date))
+    .sort((a, b) => a.getTime() - b.getTime());
+
+  const purchaseCount = purchases.length;
+  const lastPurchaseAt = datedPurchases[datedPurchases.length - 1] ?? null;
+  const firstPurchaseAt = datedPurchases[0] ?? null;
+
+  const lastPurchaseDays = lastPurchaseAt
+    ? Math.max(0, Math.floor((Date.now() - lastPurchaseAt.getTime()) / MS_PER_DAY))
+    : null;
+
+  let frequencyDays: number | null = null;
+  const visitsFromHint =
+    visitsHint != null && Number.isFinite(visitsHint) ? Math.max(0, Math.round(visitsHint)) : 0;
+
+  if (firstPurchaseAt && lastPurchaseAt && datedPurchases.length >= 2) {
+    const spanDays = Math.max(
+      0,
+      Math.round((lastPurchaseAt.getTime() - firstPurchaseAt.getTime()) / MS_PER_DAY),
+    );
+    if (spanDays > 0) {
+      const effectiveVisits = Math.max(datedPurchases.length, visitsFromHint || 0);
+      if (effectiveVisits >= 2) {
+        frequencyDays = Math.max(1, Math.round(spanDays / (effectiveVisits - 1)));
+      }
+    }
+  }
+
+  return { purchaseCount, lastPurchaseDays, frequencyDays };
 }
 
 function normalizeExpiry(input: any): CustomerExpiry {
@@ -145,12 +219,18 @@ export function normalizeCustomer(input: any): CustomerRecord {
     input?.visitFrequency,
     Array.isArray(input?.customerStats) ? input.customerStats[0]?.visitFrequencyDays : undefined,
   );
-  const visitFrequencyDays =
-    visitFrequencyDaysRaw != null ? Math.max(0, visitFrequencyDaysRaw) : null;
 
-  const transactions = Array.isArray(input?.transactions)
-    ? input.transactions.map(normalizeTransaction)
-    : [];
+  const rawTransactions = Array.isArray(input?.transactions) ? input.transactions : [];
+  const transactions: CustomerTransaction[] = [];
+  const transactionsForStats: TransactionForStats[] = [];
+  for (const raw of rawTransactions) {
+    const normalized = normalizeTransaction(raw);
+    transactions.push(normalized);
+    transactionsForStats.push({
+      ...normalized,
+      __sourceDatetime: toStringOrNull(raw?.datetime),
+    });
+  }
   const expiry = Array.isArray(input?.expiry)
     ? input.expiry
         .map(normalizeExpiry)
@@ -167,17 +247,15 @@ export function normalizeCustomer(input: any): CustomerRecord {
     ? input.tags.filter((tag: unknown) => typeof tag === "string").map((tag: string) => tag.trim()).filter(Boolean)
     : [];
 
-  const visits = Math.max(0, toNumber(input?.visits ?? input?.purchaseCount));
-  let visitFrequencyLabel =
-    toStringOrNull(input?.visitFrequencyLabel ?? input?.visitFrequencyText ?? input?.visitFrequencyReadable)?.trim() || null;
-  if (!visitFrequencyLabel) {
-    const textualFrequency = toStringOrNull(input?.visitFrequency);
-    if (textualFrequency && toOptionalNumber(textualFrequency) === null) {
-      visitFrequencyLabel = textualFrequency.trim() || null;
-    }
-  }
-  if (!visitFrequencyLabel && visitFrequencyDays != null && visitFrequencyDays !== 0) {
-    visitFrequencyLabel = `≈ ${visitFrequencyDays} дн.`;
+  const visitsFromApiRaw = toOptionalNumber(input?.visits ?? input?.purchaseCount);
+  const purchaseStats = computePurchaseStats(transactionsForStats, visitsFromApiRaw);
+  const visitsFromApi = visitsFromApiRaw != null ? Math.max(0, Math.round(visitsFromApiRaw)) : null;
+  const visits = visitsFromApi && visitsFromApi > 0 ? visitsFromApi : purchaseStats.purchaseCount;
+
+  let visitFrequencyDays =
+    visitFrequencyDaysRaw != null ? Math.max(0, Math.round(visitFrequencyDaysRaw)) : null;
+  if (purchaseStats.frequencyDays != null) {
+    visitFrequencyDays = purchaseStats.frequencyDays;
   }
 
   const daysSinceLastPurchaseRaw = pickNumber(
@@ -186,8 +264,11 @@ export function normalizeCustomer(input: any): CustomerRecord {
     input?.lastPurchaseDays,
     Array.isArray(input?.customerStats) ? input.customerStats[0]?.daysSinceLastPurchase : undefined,
   );
-  const daysSinceLastVisit =
+  let daysSinceLastVisit =
     daysSinceLastPurchaseRaw != null ? Math.max(0, Math.round(daysSinceLastPurchaseRaw)) : null;
+  if (purchaseStats.lastPurchaseDays != null) {
+    daysSinceLastVisit = purchaseStats.lastPurchaseDays;
+  }
 
   return {
     id: String(input?.id ?? ""),
@@ -202,7 +283,7 @@ export function normalizeCustomer(input: any): CustomerRecord {
     daysSinceLastVisit,
     visitFrequencyDays,
     visits,
-    visitFrequency: visitFrequencyLabel,
+    visitFrequency: null,
     averageCheck: Math.max(0, toNumber(input?.averageCheck)),
     bonusBalance: Math.max(0, toNumber(input?.balance ?? input?.bonusBalance)),
     pendingBalance: Math.max(0, toNumber(input?.pendingBalance)),

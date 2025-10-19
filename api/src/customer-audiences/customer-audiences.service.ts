@@ -105,7 +105,11 @@ export class CustomerAudiencesService {
 
   private sanitizeRange(
     range: NumberRange | undefined,
-    options: { min?: number; max?: number; clamp?: { min?: number; max?: number } } = {},
+    options: {
+      min?: number;
+      max?: number;
+      clamp?: { min?: number; max?: number };
+    } = {},
   ): NumberRange | undefined {
     if (!range) return undefined;
     let { min, max } = range;
@@ -217,7 +221,8 @@ export class CustomerAudiencesService {
       if (Object.keys(visitsFilter).length) {
         statsHasConditions = true;
         statsFilters.visits = {
-          ...(typeof statsFilters.visits === 'object' && statsFilters.visits !== null
+          ...(typeof statsFilters.visits === 'object' &&
+          statsFilters.visits !== null
             ? (statsFilters.visits as Prisma.IntFilter)
             : {}),
           ...visitsFilter,
@@ -247,18 +252,23 @@ export class CustomerAudiencesService {
     );
     if (lastPurchaseRange) {
       if (lastPurchaseRange.max !== undefined) {
-        const gte = new Date(now.getTime() - lastPurchaseRange.max * MS_PER_DAY);
+        const gte = new Date(
+          now.getTime() - lastPurchaseRange.max * MS_PER_DAY,
+        );
         lastOrderAt.gte = gte;
       }
       if (lastPurchaseRange.min !== undefined) {
-        const lte = new Date(now.getTime() - lastPurchaseRange.min * MS_PER_DAY);
+        const lte = new Date(
+          now.getTime() - lastPurchaseRange.min * MS_PER_DAY,
+        );
         lastOrderAt.lte = lte;
       }
     }
     if (Object.keys(lastOrderAt).length) {
       statsHasConditions = true;
       statsFilters.lastOrderAt = {
-        ...(typeof statsFilters.lastOrderAt === 'object' && statsFilters.lastOrderAt !== null
+        ...(typeof statsFilters.lastOrderAt === 'object' &&
+        statsFilters.lastOrderAt !== null
           ? (statsFilters.lastOrderAt as Prisma.DateTimeFilter)
           : {}),
         ...lastOrderAt,
@@ -279,7 +289,8 @@ export class CustomerAudiencesService {
       if (Object.keys(avgCheckFilter).length) {
         statsHasConditions = true;
         statsFilters.avgCheck = {
-          ...(typeof statsFilters.avgCheck === 'object' && statsFilters.avgCheck !== null
+          ...(typeof statsFilters.avgCheck === 'object' &&
+          statsFilters.avgCheck !== null
             ? (statsFilters.avgCheck as Prisma.FloatFilter)
             : {}),
           ...avgCheckFilter,
@@ -304,7 +315,8 @@ export class CustomerAudiencesService {
       if (Object.keys(totalFilter).length) {
         statsHasConditions = true;
         statsFilters.totalSpent = {
-          ...(typeof statsFilters.totalSpent === 'object' && statsFilters.totalSpent !== null
+          ...(typeof statsFilters.totalSpent === 'object' &&
+          statsFilters.totalSpent !== null
             ? (statsFilters.totalSpent as Prisma.IntFilter)
             : {}),
           ...totalFilter,
@@ -319,7 +331,8 @@ export class CustomerAudiencesService {
     const registrationInput =
       source.registrationDays ??
       source.registration ??
-      (source.registrationFrom !== undefined || source.registrationTo !== undefined
+      (source.registrationFrom !== undefined ||
+      source.registrationTo !== undefined
         ? { min: source.registrationFrom, max: source.registrationTo }
         : undefined);
     const registrationRange = this.sanitizeRange(
@@ -351,10 +364,10 @@ export class CustomerAudiencesService {
     }
 
     const ageInput = source.age ?? source.ageRange;
-    const ageRange = this.sanitizeRange(
-      this.parseNumberRange(ageInput),
-      { min: 0, max: 150 },
-    );
+    const ageRange = this.sanitizeRange(this.parseNumberRange(ageInput), {
+      min: 0,
+      max: 150,
+    });
     if (ageRange) {
       const birthdayFilter: Prisma.DateTimeFilter = {};
       if (ageRange.min !== undefined) {
@@ -378,9 +391,7 @@ export class CustomerAudiencesService {
     }
 
     const birthdayInput =
-      source.birthdayOffset ??
-      source.birthdayWindow ??
-      source.birthday;
+      source.birthdayOffset ?? source.birthdayWindow ?? source.birthday;
     const birthdayRange = this.sanitizeRange(
       this.parseNumberRange(birthdayInput),
       { clamp: { min: -366, max: 366 } },
@@ -457,7 +468,7 @@ export class CustomerAudiencesService {
       today.getDate(),
     );
 
-    let nextBirthday = new Date(
+    const nextBirthday = new Date(
       todayStart.getFullYear(),
       date.getMonth(),
       date.getDate(),
@@ -466,7 +477,7 @@ export class CustomerAudiencesService {
       nextBirthday.setFullYear(nextBirthday.getFullYear() + 1);
     }
 
-    let previousBirthday = new Date(
+    const previousBirthday = new Date(
       todayStart.getFullYear(),
       date.getMonth(),
       date.getDate(),
@@ -484,9 +495,7 @@ export class CustomerAudiencesService {
     const negativeDays = -daysSince;
 
     const positiveMatch =
-      to >= 0 &&
-      daysUntil >= Math.max(0, from) &&
-      daysUntil <= Math.max(0, to);
+      to >= 0 && daysUntil >= Math.max(0, from) && daysUntil <= Math.max(0, to);
     const negativeMatch =
       from <= 0 &&
       negativeDays >= Math.min(0, from) &&
@@ -503,6 +512,126 @@ export class CustomerAudiencesService {
       return false;
     }
     return true;
+  }
+
+  private async refreshCustomerStats(
+    merchantId: string,
+    customerIds?: string[],
+  ) {
+    const ids = customerIds
+      ?.map((id) => id?.trim())
+      .filter((id): id is string => Boolean(id));
+
+    const receiptWhere: Prisma.ReceiptWhereInput = {
+      merchantId,
+      total: { gt: 0 },
+    };
+    if (ids?.length) {
+      receiptWhere.customerId = { in: ids };
+    }
+
+    const walletWhere: Prisma.WalletWhereInput = { merchantId };
+    if (ids?.length) {
+      walletWhere.customerId = { in: ids };
+    }
+
+    const [receipts, wallets] = await Promise.all([
+      this.prisma.receipt.groupBy({
+        by: ['customerId'],
+        where: receiptWhere,
+        _sum: { total: true },
+        _count: { id: true },
+        _max: { createdAt: true },
+        _min: { createdAt: true },
+      }),
+      this.prisma.wallet.findMany({
+        where: walletWhere,
+        select: { customerId: true, createdAt: true },
+      }),
+    ]);
+
+    const firstSeenMap = new Map<string, Date>();
+    for (const wallet of wallets) {
+      const prev = firstSeenMap.get(wallet.customerId);
+      if (!prev || wallet.createdAt < prev) {
+        firstSeenMap.set(wallet.customerId, wallet.createdAt);
+      }
+    }
+
+    type StatEntry = {
+      visits: number;
+      totalSpent: number;
+      lastOrderAt: Date | null;
+      firstSeenAt: Date | null;
+    };
+
+    const statsMap = new Map<string, StatEntry>();
+
+    for (const row of receipts) {
+      const customerId = row.customerId;
+      if (!customerId) continue;
+      const visits = Number(row._count?.id ?? 0);
+      const total = Math.max(0, Number(row._sum?.total ?? 0));
+      const lastOrderAt = row._max?.createdAt ?? null;
+      const firstPurchase = row._min?.createdAt ?? null;
+      const firstSeenAt = firstSeenMap.get(customerId) ?? firstPurchase ?? null;
+      statsMap.set(customerId, {
+        visits,
+        totalSpent: total,
+        lastOrderAt,
+        firstSeenAt,
+      });
+    }
+
+    const coverageIds = ids?.length ? ids : Array.from(firstSeenMap.keys());
+    for (const id of coverageIds) {
+      if (statsMap.has(id)) continue;
+      const firstSeenAt = firstSeenMap.get(id) ?? null;
+      if (!firstSeenAt) continue;
+      statsMap.set(id, {
+        visits: 0,
+        totalSpent: 0,
+        lastOrderAt: null,
+        firstSeenAt,
+      });
+    }
+
+    if (!statsMap.size) return;
+
+    const entries = Array.from(statsMap.entries());
+    const now = new Date();
+    const chunkSize = 25;
+
+    for (let i = 0; i < entries.length; i += chunkSize) {
+      const chunk = entries.slice(i, i + chunkSize);
+      await this.prisma.$transaction(
+        chunk.map(([customerId, data]) =>
+          this.prisma.customerStats.upsert({
+            where: {
+              merchantId_customerId: { merchantId, customerId } as any,
+            },
+            update: {
+              visits: data.visits,
+              totalSpent: data.totalSpent,
+              avgCheck: data.visits > 0 ? data.totalSpent / data.visits : 0,
+              lastOrderAt: data.lastOrderAt,
+              firstSeenAt: data.firstSeenAt ?? undefined,
+              lastSeenAt: now,
+            },
+            create: {
+              merchantId,
+              customerId,
+              visits: data.visits,
+              totalSpent: data.totalSpent,
+              avgCheck: data.visits > 0 ? data.totalSpent / data.visits : 0,
+              lastOrderAt: data.lastOrderAt,
+              firstSeenAt: data.firstSeenAt ?? now,
+              lastSeenAt: now,
+            },
+          }),
+        ),
+      );
+    }
   }
 
   private async ensureDefaultAudience(merchantId: string) {
@@ -816,11 +945,11 @@ export class CustomerAudiencesService {
     if (segment.merchantId !== merchantId)
       throw new NotFoundException('Сегмент не найден');
     if (isSystemAllAudience(segment)) {
-      this.logger.debug(
-        `Skip recalculation for system audience ${segment.id}`,
-      );
+      this.logger.debug(`Skip recalculation for system audience ${segment.id}`);
       return { segmentId: segment.id, processed: 0, skipped: true };
     }
+
+    await this.refreshCustomerStats(merchantId);
 
     const filters =
       segment.filters &&
@@ -887,6 +1016,8 @@ export class CustomerAudiencesService {
     let added = 0;
     let removed = 0;
     const now = new Date();
+
+    await this.refreshCustomerStats(merchantId, [customerId]);
 
     for (const segment of segments) {
       if (isSystemAllAudience(segment)) continue;
