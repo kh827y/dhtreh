@@ -710,12 +710,10 @@ function parseTags(tags: string): string[] {
 }
 
 function formatVisitFrequency(customer: CustomerRecord): string {
-  if (customer.visitFrequency) return customer.visitFrequency;
-  if (customer.visitFrequencyDays != null) {
-    if (customer.visitFrequencyDays === 0) return "Ежедневно";
-    return `≈ ${customer.visitFrequencyDays} дн.`;
-  }
-  return "—";
+  const value = customer.visitFrequencyDays;
+  if (value == null || value <= 0) return "—";
+  const rounded = Math.max(1, Math.round(value));
+  return `≈${rounded.toLocaleString("ru-RU")} дн.`;
 }
 
 function buildProfileRows(customer: CustomerRecord) {
@@ -739,10 +737,11 @@ function buildProfileRows(customer: CustomerRecord) {
     { label: "Бонусных баллов", value: formatPoints(customer.bonusBalance) },
     { label: "Отложенных баллов", value: formatPoints(customer.pendingBalance) },
     {
-      label: "Дней с последнего визита",
+      label: "Дней с последней покупки",
       value: customer.daysSinceLastVisit != null ? customer.daysSinceLastVisit : "—",
     },
     { label: "Частота визитов", value: formatVisitFrequency(customer) },
+    { label: "Количество покупок", value: customer.visits != null ? customer.visits : "—" },
     { label: "Средний чек", value: formatCurrency(customer.averageCheck) },
     {
       label: "Сумма покупок",
