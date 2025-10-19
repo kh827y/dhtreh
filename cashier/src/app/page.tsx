@@ -18,7 +18,7 @@ type QuoteEarnResp = {
   holdId?: string;
   message?: string;
 };
-type Txn = { id: string; type: 'EARN'|'REDEEM'|'REFUND'|'ADJUST'; amount: number; orderId?: string|null; createdAt: string; outletId?: string|null; outletPosType?: string|null; outletLastSeenAt?: string|null };
+type Txn = { id: string; type: 'EARN'|'REDEEM'|'REFUND'|'ADJUST'; amount: number; orderId?: string|null; receiptNumber?: string|null; createdAt: string; outletId?: string|null; outletPosType?: string|null; outletLastSeenAt?: string|null };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
 const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
@@ -33,6 +33,7 @@ export default function Page() {
   const [orderId, setOrderId] = useState<string>('O-1');
   const [total, setTotal] = useState<number>(1000);
   const [eligibleTotal, setEligibleTotal] = useState<number>(1000);
+  const [receiptNumber, setReceiptNumber] = useState<string>('');
 
   const [holdId, setHoldId] = useState<string | null>(null);
   const [result, setResult] = useState<QuoteRedeemResp | QuoteEarnResp | null>(null);
@@ -40,7 +41,7 @@ export default function Page() {
   const [scanOpen, setScanOpen] = useState(false);
 
   // refund UI
-  const [refundOrderId, setRefundOrderId] = useState<string>('O-1');
+  const [refundReceiptNumber, setRefundReceiptNumber] = useState<string>('');
   const [refundTotal, setRefundTotal] = useState<number>(0);
 
   // history UI
@@ -53,8 +54,6 @@ export default function Page() {
   const [staff, setStaff] = useState<Array<{id:string; login?:string; role:string}>>([]);
   const [outletId, setOutletId] = useState<string>('');
   const [staffId, setStaffId] = useState<string>('');
-  const [category, setCategory] = useState<string>('');
-  const [promoCode, setPromoCode] = useState<string>('');
   const [staffKey, setStaffKey] = useState<string>('');
   // cashier auth (merchant login + 9-digit password)
   const [merchantLogin, setMerchantLogin] = useState<string>('');
@@ -101,7 +100,16 @@ export default function Page() {
       const r = await fetch(`${API_BASE}/loyalty/quote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId, ...(staffKey ? { 'X-Staff-Key': staffKey } : {}) },
-        body: JSON.stringify({ merchantId, mode, userToken, orderId, total, eligibleTotal, outletId: outletId || undefined, staffId: staffId || undefined, category: category || undefined, promoCode: promoCode || undefined }),
+        body: JSON.stringify({
+          merchantId,
+          mode,
+          userToken,
+          orderId,
+          total,
+          eligibleTotal,
+          outletId: outletId || undefined,
+          staffId: staffId || undefined,
+        }),
       });
       if (!r.ok) {
         const text = await r.text();
@@ -219,10 +227,17 @@ export default function Page() {
     setBusy(true);
     const requestId = 'req_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8);
     try {
+      const normalizedReceiptNumber = receiptNumber.trim();
       const r = await fetch(`${API_BASE}/loyalty/commit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId, ...(staffKey?{ 'X-Staff-Key': staffKey }: {}) },
-        body: JSON.stringify({ merchantId, holdId, orderId, receiptNumber: '000001', requestId, promoCode: promoCode || undefined }),
+        body: JSON.stringify({
+          merchantId,
+          holdId,
+          orderId,
+          receiptNumber: normalizedReceiptNumber ? normalizedReceiptNumber : undefined,
+          requestId,
+        }),
       });
       const data = await r.json();
       if (data?.ok) {
@@ -231,6 +246,7 @@ export default function Page() {
           merchantId,
           customerId: resolveCustomerIdFromToken(userToken),
           orderId,
+          receiptNumber: normalizedReceiptNumber || undefined,
           redeemApplied: typeof data?.redeemApplied === 'number' ? data.redeemApplied : undefined,
           earnApplied: typeof data?.earnApplied === 'number' ? data.earnApplied : undefined,
           alreadyCommitted: Boolean(data?.alreadyCommitted),
@@ -239,6 +255,7 @@ export default function Page() {
         alert(data?.alreadyCommitted ? 'Операция уже была зафиксирована ранее (идемпотентно).' : 'Операция зафиксирована.');
         setHoldId(null);
         setResult(null);
+        setReceiptNumber('');
         setOrderId('O-' + Math.floor(Math.random() * 100000));
         // не очищаем список сканирований — повторный скан того же QR должен блокироваться
       } else {
@@ -312,11 +329,32 @@ export default function Page() {
     }
   };
 
+  const findOrderIdForReceipt = (candidate: string): string | null => {
+    const normalized = candidate.trim();
+    if (!normalized) return null;
+    const priority = history.find(
+      (h) =>
+        h.receiptNumber &&
+        h.orderId &&
+        h.receiptNumber.trim() === normalized &&
+        (h.type === 'REDEEM' || h.type === 'EARN'),
+    );
+    if (priority?.orderId) return priority.orderId;
+    const fallback = history.find(
+      (h) =>
+        h.receiptNumber &&
+        h.orderId &&
+        h.receiptNumber.trim() === normalized,
+    );
+    return fallback?.orderId ?? null;
+  };
+
   const emitLoyaltyEvent = (payload: {
     type: string;
     merchantId: string;
     customerId?: string | null;
     orderId?: string;
+    receiptNumber?: string;
     redeemApplied?: number;
     earnApplied?: number;
     alreadyCommitted?: boolean;
@@ -365,15 +403,23 @@ export default function Page() {
 
   // ==== Refund ====
   async function doRefund() {
-    if (!refundOrderId || refundTotal <= 0) return alert('Укажи orderId и сумму возврата (>0)');
+    const receipt = refundReceiptNumber.trim();
+    if (!receipt || refundTotal <= 0)
+      return alert('Укажи номер чека и сумму возврата (>0)');
+    const resolvedOrderId = findOrderIdForReceipt(receipt);
+    if (!resolvedOrderId) {
+      alert('Не нашли операцию с таким номером чека. Загрузите историю клиента и попробуйте снова.');
+      return;
+    }
     try {
       const r = await fetch(`${API_BASE}/loyalty/refund`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(staffKey?{ 'X-Staff-Key': staffKey }: {}) },
-        body: JSON.stringify({ merchantId, orderId: refundOrderId, refundTotal }),
+        body: JSON.stringify({ merchantId, orderId: resolvedOrderId, refundTotal }),
       });
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
+      setRefundReceiptNumber('');
       alert(`Refund OK. share=${(data.share*100).toFixed(1)}%, +${data.pointsRestored} / -${data.pointsRevoked}`);
     } catch (e: any) {
       alert('Ошибка refund: ' + e?.message);
@@ -387,12 +433,13 @@ export default function Page() {
     try {
       let customerId = userToken;
       if (userToken.split('.').length === 3) {
-        const manual = prompt('Для истории нужен customerId (например, user-1). Введите его:');
+        const manual = prompt('Для истории нужен merchantCustomerId (например, mc_...). Введите его или customerId:');
         if (!manual) { setHistBusy(false); return; }
         customerId = manual;
       }
       const url = new URL(`${API_BASE}/loyalty/transactions`);
       url.searchParams.set('merchantId', merchantId);
+      url.searchParams.set('merchantCustomerId', customerId);
       url.searchParams.set('customerId', customerId);
       url.searchParams.set('limit', '20');
       if (!reset && histNextBefore) url.searchParams.set('before', histNextBefore);
@@ -425,7 +472,6 @@ export default function Page() {
           const saved = JSON.parse(localStorage.getItem('cashier_ctx_v1') || '{}');
           if (saved?.outletId) setOutletId(saved.outletId);
           if (saved?.staffId) setStaffId(saved.staffId);
-          if (saved?.category) setCategory(saved.category);
         } catch {}
       } catch {}
     })();
@@ -433,9 +479,9 @@ export default function Page() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('cashier_ctx_v1', JSON.stringify({ outletId, staffId, category }));
+      localStorage.setItem('cashier_ctx_v1', JSON.stringify({ outletId, staffId }));
     } catch {}
-  }, [outletId, staffId, category]);
+  }, [outletId, staffId]);
 
   return (
     <main style={{ maxWidth: 920, margin: '40px auto', fontFamily: 'system-ui, Arial' }}>
@@ -579,15 +625,6 @@ export default function Page() {
           </div>
         </label>
 
-        <label>
-          Номер заказа:
-          <input
-            value={orderId}
-            onChange={(e) => setOrderId(e.target.value)}
-            style={{ width: '100%', padding: 8 }}
-          />
-        </label>
-
         <div style={{ display: 'flex', gap: 12 }}>
           <label style={{ flex: 1 }}>
             Сумма чека (total):
@@ -598,13 +635,15 @@ export default function Page() {
             <input type="number" value={eligibleTotal} onChange={(e) => setEligibleTotal(+e.target.value)} style={{ width: '100%', padding: 8 }} />
           </label>
         </div>
-        <div style={{ display: 'flex', gap: 12 }}>
-          <label style={{ flex: 1 }}>
-            Промокод (опц.):
-            <input value={promoCode} onChange={(e)=>setPromoCode(e.target.value)} style={{ width: '100%', padding: 8 }} placeholder="например, SAVE10 или BONUS100" />
-          </label>
-        </div>
-
+        <label>
+          Номер чека (опц.):
+          <input
+            value={receiptNumber}
+            onChange={(e) => setReceiptNumber(e.target.value)}
+            placeholder="например, 123456 или A-77"
+            style={{ width: '100%', padding: 8 }}
+          />
+        </label>
         <div>
           Режим:&nbsp;
           <label><input type="radio" name="mode" checked={mode === 'redeem'} onChange={() => setMode('redeem')} /> Списать</label>
@@ -627,16 +666,11 @@ export default function Page() {
               {staff.map(s => <option key={s.id} value={s.id}>{s.login||s.id.slice(0,6)} · {s.role}</option>)}
             </select>
           </label>
-          <label>
-            Категория:
-            <input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="например, GROCERIES" style={{ padding: 8, minWidth: 180 }} />
-          </label>
         </div>
 
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <button onClick={callQuote} disabled={busy} style={{ padding: '8px 16px' }}>Посчитать (QUOTE)</button>
           <button onClick={callCommit} disabled={busy || !holdId} style={{ padding: '8px 16px' }}>Оплачено (COMMIT)</button>
-          <button onClick={() => setOrderId('O-' + Math.floor(Math.random()*100000))} disabled={busy} style={{ padding: '8px 16px' }}>Новый orderId</button>
         </div>
 
         {result && (
@@ -652,7 +686,7 @@ export default function Page() {
       {/* Refund */}
       <h2 style={{ marginTop: 28 }}>Refund</h2>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        <input value={refundOrderId} onChange={(e) => setRefundOrderId(e.target.value)} placeholder="orderId" style={{ padding: 8, flex: 1, minWidth: 220 }} />
+        <input value={refundReceiptNumber} onChange={(e) => setRefundReceiptNumber(e.target.value)} placeholder="номер чека" style={{ padding: 8, flex: 1, minWidth: 220 }} />
         <input type="number" value={refundTotal} onChange={(e) => setRefundTotal(+e.target.value)} placeholder="refundTotal" style={{ padding: 8, width: 160 }} />
         <button onClick={doRefund} style={{ padding: '8px 16px' }}>Сделать возврат</button>
       </div>
@@ -672,7 +706,7 @@ export default function Page() {
             </div>
             <div>
               Сумма: <b>{h.amount > 0 ? '+' : ''}{h.amount} ₽</b>
-              {h.orderId ? ` · Заказ: ${h.orderId}` : ''}
+              {h.receiptNumber ? ` · Чек: ${h.receiptNumber}` : ''}
               {h.outletId ? ` · Точка: ${h.outletId}` : ''}
               {h.outletPosType ? ` · POS: ${h.outletPosType}` : ''}
               {h.outletLastSeenAt ? ` · Активность: ${new Date(h.outletLastSeenAt).toLocaleString()}` : ''}

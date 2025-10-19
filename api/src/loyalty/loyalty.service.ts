@@ -2513,6 +2513,41 @@ export class LoyaltyService {
         });
     }
 
+    const orderIdsForReceipts = Array.from(
+      new Set(
+        txItems
+          .map((entity) => {
+            if (typeof entity.orderId !== 'string') return null;
+            const trimmed = entity.orderId.trim();
+            return trimmed.length > 0 ? trimmed : null;
+          })
+          .filter((value): value is string => Boolean(value)),
+      ),
+    );
+    const receiptMetaByOrderId = new Map<
+      string,
+      { receiptNumber: string | null; createdAt: string }
+    >();
+    if (orderIdsForReceipts.length > 0) {
+      const receipts = await this.prisma.receipt.findMany({
+        where: { merchantId, orderId: { in: orderIdsForReceipts } },
+        select: { orderId: true, receiptNumber: true, createdAt: true },
+      });
+      for (const receipt of receipts) {
+        if (!receipt.orderId) continue;
+        const key = receipt.orderId;
+        const normalized =
+          typeof receipt.receiptNumber === 'string' &&
+          receipt.receiptNumber.trim().length > 0
+            ? receipt.receiptNumber.trim()
+            : null;
+        receiptMetaByOrderId.set(key, {
+          receiptNumber: normalized,
+          createdAt: receipt.createdAt.toISOString(),
+        });
+      }
+    }
+
     // 3) Нормализация
     const refundOrderIds = Array.from(
       new Set(
@@ -2527,17 +2562,10 @@ export class LoyaltyService {
       ),
     );
     const refundOriginsByOrderId = new Map<string, string>();
-    if (refundOrderIds.length > 0) {
-      const receipts = await this.prisma.receipt.findMany({
-        where: { merchantId, orderId: { in: refundOrderIds } },
-        select: { orderId: true, createdAt: true },
-      });
-      for (const receipt of receipts) {
-        if (!receipt.orderId) continue;
-        refundOriginsByOrderId.set(
-          receipt.orderId,
-          receipt.createdAt.toISOString(),
-        );
+    for (const order of refundOrderIds) {
+      const meta = receiptMetaByOrderId.get(order);
+      if (meta?.createdAt) {
+        refundOriginsByOrderId.set(order, meta.createdAt);
       }
     }
     const fallbackOriginsByOrderId = new Map<string, string>();
@@ -2559,16 +2587,20 @@ export class LoyaltyService {
           ? entity.orderId.trim()
           : null;
       const metadata =
-        entity && typeof (entity as any)?.metadata === 'object' && (entity as any)?.metadata
+        entity &&
+        typeof (entity as any)?.metadata === 'object' &&
+        (entity as any)?.metadata
           ? ((entity as any).metadata as Record<string, any>)
           : null;
       const rawSource =
-        typeof metadata?.source === 'string' && metadata.source.trim().length > 0
+        typeof metadata?.source === 'string' &&
+        metadata.source.trim().length > 0
           ? metadata.source.trim()
           : null;
       const source = rawSource ? rawSource.toUpperCase() : null;
       const comment =
-        typeof metadata?.comment === 'string' && metadata.comment.trim().length > 0
+        typeof metadata?.comment === 'string' &&
+        metadata.comment.trim().length > 0
           ? metadata.comment.trim()
           : null;
 
@@ -2580,6 +2612,9 @@ export class LoyaltyService {
             : entity.type,
         amount: entity.amount,
         orderId,
+        receiptNumber: orderId
+          ? (receiptMetaByOrderId.get(orderId)?.receiptNumber ?? null)
+          : null,
         customerId: entity.customerId,
         createdAt: entity.createdAt.toISOString(),
         outletId: entity.outletId ?? null,
@@ -2598,14 +2633,12 @@ export class LoyaltyService {
         daysUntilMature: undefined,
         source,
         comment,
-        canceledAt: entity.canceledAt
-          ? entity.canceledAt.toISOString()
-          : null,
+        canceledAt: entity.canceledAt ? entity.canceledAt.toISOString() : null,
         relatedOperationAt:
           entity.type === TxnType.REFUND && orderId
-            ? refundOriginsByOrderId.get(orderId) ??
+            ? (refundOriginsByOrderId.get(orderId) ??
               fallbackOriginsByOrderId.get(orderId) ??
-              null
+              null)
             : null,
       };
     });

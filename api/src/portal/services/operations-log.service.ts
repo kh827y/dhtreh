@@ -135,14 +135,14 @@ export class OperationsLogService {
     ]);
 
     const ratingOrderIds = Array.from(
-      new Set(
-        [
-          ...receipts.map((r) => r.orderId).filter((id): id is string => Boolean(id)),
-          ...transactions
-            .map((tx) => tx.orderId)
-            .filter((id): id is string => Boolean(id)),
-        ],
-      ),
+      new Set([
+        ...receipts
+          .map((r) => r.orderId)
+          .filter((id): id is string => Boolean(id)),
+        ...transactions
+          .map((tx) => tx.orderId)
+          .filter((id): id is string => Boolean(id)),
+      ]),
     );
     const ratings = await this.fetchRatings(merchantId, ratingOrderIds);
 
@@ -151,12 +151,15 @@ export class OperationsLogService {
         this.mapReceipt(receipt, ratings.get(receipt.orderId ?? '') ?? null),
       ),
       ...transactions
-        .map((tx) => this.mapTransaction(tx, ratings.get(tx.orderId ?? '') ?? null))
+        .map((tx) =>
+          this.mapTransaction(tx, ratings.get(tx.orderId ?? '') ?? null),
+        )
         .filter((item): item is OperationsLogItemDto => item !== null),
     ];
 
-    items.sort((a, b) =>
-      new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime(),
+    items.sort(
+      (a, b) =>
+        new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime(),
     );
 
     return {
@@ -264,7 +267,9 @@ export class OperationsLogService {
     ];
 
     if (receiptSearch) {
-      baseOr.push({ orderId: { contains: receiptSearch, mode: 'insensitive' } });
+      baseOr.push({
+        orderId: { contains: receiptSearch, mode: 'insensitive' },
+      });
     }
 
     if (kind && kind !== 'PURCHASE') {
@@ -409,7 +414,10 @@ export class OperationsLogService {
       ? [tx.staff.firstName, tx.staff.lastName]
           .filter(Boolean)
           .join(' ')
-          .trim() || tx.staff.login || tx.staff.email || tx.staff.id
+          .trim() ||
+        tx.staff.login ||
+        tx.staff.email ||
+        tx.staff.id
       : null;
 
     const canceledByName = tx.canceledBy
@@ -480,11 +488,18 @@ export class OperationsLogService {
   }
 
   private describeTransaction(
-    tx: Prisma.TransactionGetPayload<{ 
-      include: { customer: true; staff: true; outlet: true }; 
-    }> | Transaction,
+    tx:
+      | Prisma.TransactionGetPayload<{
+          include: { customer: true; staff: true; outlet: true };
+        }>
+      | Transaction,
     metadata: Record<string, any> | null,
-  ): { details: string; kind: string; note?: string | null; purchaseAmount?: number | null } {
+  ): {
+    details: string;
+    kind: string;
+    note?: string | null;
+    purchaseAmount?: number | null;
+  } {
     const change = Number((tx as any)?.amount ?? 0) || 0;
     const purchaseAmount = this.parseAmount(metadata?.purchaseAmount);
     const sourceRaw = metadata?.source;
@@ -531,11 +546,15 @@ export class OperationsLogService {
     }
 
     if (tx.type === TxnType.CAMPAIGN) {
-      if (typeof tx.orderId === 'string' && tx.orderId.startsWith('birthday:')) {
+      if (
+        typeof tx.orderId === 'string' &&
+        tx.orderId.startsWith('birthday:')
+      ) {
         details = 'Баллы за день рождения';
         kind = 'BIRTHDAY';
       } else if (
-        typeof tx.orderId === 'string' && tx.orderId.startsWith('auto_return:')
+        typeof tx.orderId === 'string' &&
+        tx.orderId.startsWith('auto_return:')
       ) {
         details = 'Баллы за автовозврат';
         kind = 'AUTO_RETURN';
@@ -555,10 +574,7 @@ export class OperationsLogService {
     }
 
     if (tx.type === TxnType.EARN) {
-      if (
-        tx.orderId === 'registration_bonus' ||
-        source === 'REGISTRATION'
-      ) {
+      if (tx.orderId === 'registration_bonus' || source === 'REGISTRATION') {
         details = 'Баллы за регистрацию';
         kind = 'REGISTRATION';
       } else {
@@ -759,10 +775,7 @@ export class OperationsLogService {
       updated.orderId ? [updated.orderId] : [],
     );
 
-    return this.mapReceipt(
-      updated,
-      ratings.get(updated.orderId ?? '') ?? null,
-    );
+    return this.mapReceipt(updated, ratings.get(updated.orderId ?? '') ?? null);
   }
 
   private async cancelTransactionInternal(
@@ -818,9 +831,13 @@ export class OperationsLogService {
     }
 
     await this.prisma.$transaction(async (tx) => {
-      const freshWallet = await tx.wallet.findUnique({ where: { id: wallet.id } });
+      const freshWallet = await tx.wallet.findUnique({
+        where: { id: wallet.id },
+      });
       if (!freshWallet) {
-        throw new BadRequestException('У клиента отсутствует кошелёк с баллами');
+        throw new BadRequestException(
+          'У клиента отсутствует кошелёк с баллами',
+        );
       }
       if (delta < 0 && freshWallet.balance < -delta) {
         throw new BadRequestException(
@@ -886,10 +903,7 @@ export class OperationsLogService {
     );
 
     const dto = updated
-      ? this.mapTransaction(
-          updated,
-          ratings.get(updated.orderId ?? '') ?? null,
-        )
+      ? this.mapTransaction(updated, ratings.get(updated.orderId ?? '') ?? null)
       : null;
 
     if (!dto) {
@@ -1087,9 +1101,7 @@ export class OperationsLogService {
       details: 'Покупка',
       note: null,
       carrier: this.buildCarrier(receipt),
-      canceledAt: receipt.canceledAt
-        ? receipt.canceledAt.toISOString()
-        : null,
+      canceledAt: receipt.canceledAt ? receipt.canceledAt.toISOString() : null,
       canceledBy: receipt.canceledBy
         ? {
             id: receipt.canceledBy.id,

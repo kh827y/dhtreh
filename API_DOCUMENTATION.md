@@ -594,7 +594,7 @@ Response 200:
 
 #### 6. История транзакций
 ```http
-GET /loyalty/transactions?merchantId={merchantId}&customerId={customerId}&limit=20&before={date}
+GET /loyalty/transactions?merchantId={merchantId}&merchantCustomerId={merchantCustomerId}&limit=20&before={date}
 
 Response 200:
 {
@@ -604,6 +604,7 @@ Response 200:
       "type": "EARN" | "REDEEM" | "REFUND" | "ADJUST" | "CAMPAIGN" | "REFERRAL" | "REGISTRATION",
       "amount": 100,
       "orderId": "string",
+      "receiptNumber": "string | null",
       "createdAt": "2024-01-01T00:00:00Z",
       "outletId": "OUT-1",
       "outletPosType": "SMART",
@@ -629,6 +630,8 @@ Response 200:
   - Для «ожидающих» элементов поле `type` = `EARN` или `REGISTRATION` (для бонуса за регистрацию), а `id` имеет вид `lot:<earnLotId>`.
   - Тип `REGISTRATION` используется только для фронтенда (отображение «Бонус за регистрацию»); по сути это начисление баллов.
   - Поле `source` передаёт значение из metadata транзакции (например, `MANUAL_ACCRUAL` или `COMPLIMENTARY`). Мини-приложение отображает ручные начисления с `MANUAL_ACCRUAL` как обычные покупки, а `COMPLIMENTARY` — отдельным розовым блоком «Начислено администратором». `comment` содержит пользовательский комментарий администратора, если он был указан.
+- Если по заказу создан чек (`Receipt`), в ответе появится `receiptNumber`. Этот идентификатор отображается во всех фронтах и используется кассиром для ручного возврата вместо публичного `orderId`.
+- Параметр `merchantCustomerId` обязателен; `customerId` поддерживается только для обратной совместимости и будет удалён после завершения миграции миниаппы.
 
 ### Публичные механики — Бонус за регистрацию
 

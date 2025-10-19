@@ -221,6 +221,7 @@ export class TransactionItemDto {
     | 'REGISTRATION';
   @ApiProperty() amount!: number;
   @ApiPropertyOptional() orderId?: string | null;
+  @ApiPropertyOptional({ nullable: true }) receiptNumber?: string | null;
   @ApiProperty() merchantCustomerId!: string;
   @ApiProperty() createdAt!: string;
   @ApiPropertyOptional() outletId?: string | null;
@@ -266,7 +267,8 @@ export class TransactionItemDto {
   daysUntilMature?: number | null;
   @ApiPropertyOptional({
     nullable: true,
-    description: 'Источник операции из metadata (например MANUAL_ACCRUAL, COMPLIMENTARY)',
+    description:
+      'Источник операции из metadata (например MANUAL_ACCRUAL, COMPLIMENTARY)',
   })
   source?: string | null;
   @ApiPropertyOptional({

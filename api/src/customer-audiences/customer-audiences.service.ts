@@ -253,9 +253,7 @@ export class CustomerAudiencesService {
     if (lastPurchaseRange) {
       if (lastPurchaseRange.max !== undefined) {
         const maxDays = Math.max(0, Math.floor(lastPurchaseRange.max));
-        const gtBoundary = new Date(
-          now.getTime() - (maxDays + 1) * MS_PER_DAY,
-        );
+        const gtBoundary = new Date(now.getTime() - (maxDays + 1) * MS_PER_DAY);
         lastOrderAt.gt = gtBoundary;
       }
       if (lastPurchaseRange.min !== undefined) {
@@ -1031,9 +1029,7 @@ export class CustomerAudiencesService {
       const { where, post } = this.parseSegmentFilters(merchantId, filters);
       const candidateWhere: Prisma.CustomerWhereInput = { id: customerId };
       if (where.AND) {
-        candidateWhere.AND = Array.isArray(where.AND)
-          ? (where.AND as Prisma.CustomerWhereInput[])
-          : [where.AND as Prisma.CustomerWhereInput];
+        candidateWhere.AND = Array.isArray(where.AND) ? where.AND : [where.AND];
       } else {
         Object.assign(candidateWhere, where);
       }

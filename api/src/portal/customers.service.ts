@@ -716,7 +716,10 @@ export class PortalCustomersService {
   ): string | null {
     if (!staff) return null;
     const parts = [staff.firstName, staff.lastName]
-      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      .filter(
+        (value): value is string =>
+          typeof value === 'string' && value.trim().length > 0,
+      )
       .map((value) => value.trim());
     if (parts.length) return parts.join(' ');
     if (staff.login && staff.login.trim()) return staff.login.trim();
@@ -781,7 +784,9 @@ export class PortalCustomersService {
   } {
     const base = this.describeTransactionBase(params);
 
-    const isCanceled = Boolean(params.receipt?.canceledAt || params.tx.canceledAt);
+    const isCanceled = Boolean(
+      params.receipt?.canceledAt || params.tx.canceledAt,
+    );
     if (!isCanceled) {
       return base;
     }
@@ -789,15 +794,20 @@ export class PortalCustomersService {
     if (params.tx.type === 'REFUND') {
       const receipt = params.receipt ?? null;
       const receiptNumber =
-        receipt && typeof receipt.receiptNumber === 'string' && receipt.receiptNumber.trim().length > 0
+        receipt &&
+        typeof receipt.receiptNumber === 'string' &&
+        receipt.receiptNumber.trim().length > 0
           ? receipt.receiptNumber.trim()
           : null;
       const orderIdFromReceipt =
-        receipt && typeof receipt.orderId === 'string' && receipt.orderId.trim().length > 0
+        receipt &&
+        typeof receipt.orderId === 'string' &&
+        receipt.orderId.trim().length > 0
           ? receipt.orderId.trim()
           : null;
       const orderIdFromTx =
-        typeof params.tx.orderId === 'string' && params.tx.orderId.trim().length > 0
+        typeof params.tx.orderId === 'string' &&
+        params.tx.orderId.trim().length > 0
           ? params.tx.orderId.trim()
           : null;
       const fallbackId =
@@ -806,8 +816,14 @@ export class PortalCustomersService {
           : typeof params.tx.id === 'string' && params.tx.id.length > 0
             ? params.tx.id.slice(-6)
             : null;
-      const identifier = receiptNumber ?? orderIdFromReceipt ?? orderIdFromTx ?? fallbackId ?? '—';
-      const canceledAtSource = receipt?.createdAt ?? params.tx.createdAt ?? null;
+      const identifier =
+        receiptNumber ??
+        orderIdFromReceipt ??
+        orderIdFromTx ??
+        fallbackId ??
+        '—';
+      const canceledAtSource =
+        receipt?.createdAt ?? params.tx.createdAt ?? null;
       const canceledAtLabel = this.formatReceiptDateTime(canceledAtSource);
       return {
         details: `Возврат покупки #${identifier} (${canceledAtLabel}) - совершён администратором`,
@@ -890,7 +906,7 @@ export class PortalCustomersService {
     const purchaseAmount =
       params.receipt != null
         ? Math.max(0, Number(params.receipt.total ?? 0))
-        : metaPurchase ?? 0;
+        : (metaPurchase ?? 0);
     const rawSource = params.metadata?.source;
     const source =
       typeof rawSource === 'string' ? rawSource.trim().toUpperCase() : null;
@@ -1392,11 +1408,11 @@ export class PortalCustomersService {
 
     baseDto.transactions = transactions.map((tx) => {
       const orderId = tx.orderId ?? null;
-      const receipt = orderId ? receiptMap.get(orderId) ?? null : null;
-      const review = orderId ? reviewByOrderId.get(orderId) ?? null : null;
+      const receipt = orderId ? (receiptMap.get(orderId) ?? null) : null;
+      const review = orderId ? (reviewByOrderId.get(orderId) ?? null) : null;
       const metadata = this.asRecord((tx as any)?.metadata);
       const promoUsage = orderId
-        ? promoUsageByOrder.get(orderId) ?? null
+        ? (promoUsageByOrder.get(orderId) ?? null)
         : null;
       const change = Number(tx.amount ?? 0);
 
@@ -1429,7 +1445,7 @@ export class PortalCustomersService {
       const total =
         receipt != null
           ? Number(receipt.total ?? 0)
-          : metaTotal ?? purchaseAmount ?? null;
+          : (metaTotal ?? purchaseAmount ?? null);
       const manager = receipt?.staff
         ? this.formatStaffName(receipt.staff)
         : tx.staff
@@ -1442,9 +1458,7 @@ export class PortalCustomersService {
         review?.transaction?.outlet?.name ??
         null;
       const carrierCode = receipt?.outlet?.code ?? tx.outlet?.code ?? null;
-      const txCanceledAt = tx.canceledAt
-        ? tx.canceledAt.toISOString()
-        : null;
+      const txCanceledAt = tx.canceledAt ? tx.canceledAt.toISOString() : null;
       const txCanceledByName = tx.canceledBy
         ? this.formatStaffName(tx.canceledBy)
         : null;
@@ -1546,16 +1560,16 @@ export class PortalCustomersService {
     const orderId = `manual_accrual:${randomUUID()}`;
     const rawComment = payload.comment?.trim() || null;
     if (rawComment && rawComment.length > 60) {
-      throw new BadRequestException('Комментарий не должен превышать 60 символов');
+      throw new BadRequestException(
+        'Комментарий не должен превышать 60 символов',
+      );
     }
     const comment = rawComment;
     const receiptNumber = payload.receiptNumber?.trim() || null;
     const outletId = payload.outletId ?? null;
     const ttlDays = await this.resolvePointsTtlDays(merchantId);
     const expiresAt =
-      ttlDays && ttlDays > 0
-        ? new Date(Date.now() + ttlDays * msPerDay)
-        : null;
+      ttlDays && ttlDays > 0 ? new Date(Date.now() + ttlDays * msPerDay) : null;
     const metadata = {
       source: 'MANUAL_ACCRUAL',
       purchaseAmount,
@@ -1640,11 +1654,17 @@ export class PortalCustomersService {
     merchantId: string,
     customerId: string,
     staffId: string | null,
-    payload: { points: number; outletId?: string | null; comment?: string | null },
+    payload: {
+      points: number;
+      outletId?: string | null;
+      comment?: string | null;
+    },
   ) {
     const points = this.parseAmount(payload.points);
     if (!points || points <= 0) {
-      throw new BadRequestException('Количество списываемых баллов должно быть больше 0');
+      throw new BadRequestException(
+        'Количество списываемых баллов должно быть больше 0',
+      );
     }
     const redeemPoints = points;
 
@@ -1666,7 +1686,9 @@ export class PortalCustomersService {
         },
       });
       if (!wallet) {
-        throw new BadRequestException('У клиента отсутствует кошелёк с баллами');
+        throw new BadRequestException(
+          'У клиента отсутствует кошелёк с баллами',
+        );
       }
       if (wallet.balance < redeemPoints) {
         throw new BadRequestException('Недостаточно баллов на балансе клиента');
@@ -1677,7 +1699,13 @@ export class PortalCustomersService {
         data: { balance: wallet.balance - redeemPoints },
       });
 
-      await this.consumeLotsForRedeem(tx, merchantId, customerId, redeemPoints, orderId);
+      await this.consumeLotsForRedeem(
+        tx,
+        merchantId,
+        customerId,
+        redeemPoints,
+        orderId,
+      );
 
       const transaction = await tx.transaction.create({
         data: {
@@ -1710,7 +1738,12 @@ export class PortalCustomersService {
     merchantId: string,
     customerId: string,
     staffId: string | null,
-    payload: { points: number; expiresInDays?: number | null; outletId?: string | null; comment?: string | null },
+    payload: {
+      points: number;
+      expiresInDays?: number | null;
+      outletId?: string | null;
+      comment?: string | null;
+    },
   ) {
     const points = this.parseAmount(payload.points);
     if (!points || points <= 0) {
@@ -1729,7 +1762,9 @@ export class PortalCustomersService {
     const orderId = `complimentary:${randomUUID()}`;
     const rawComment = payload.comment?.trim() || null;
     if (rawComment && rawComment.length > 60) {
-      throw new BadRequestException('Комментарий не должен превышать 60 символов');
+      throw new BadRequestException(
+        'Комментарий не должен превышать 60 символов',
+      );
     }
     const comment = rawComment;
     const outletId = payload.outletId ?? null;
