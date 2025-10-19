@@ -252,15 +252,15 @@ export class CustomerAudiencesService {
     );
     if (lastPurchaseRange) {
       if (lastPurchaseRange.max !== undefined) {
-        const gte = new Date(
-          now.getTime() - lastPurchaseRange.max * MS_PER_DAY,
+        const maxDays = Math.max(0, Math.floor(lastPurchaseRange.max));
+        const gtBoundary = new Date(
+          now.getTime() - (maxDays + 1) * MS_PER_DAY,
         );
-        lastOrderAt.gte = gte;
+        lastOrderAt.gt = gtBoundary;
       }
       if (lastPurchaseRange.min !== undefined) {
-        const lte = new Date(
-          now.getTime() - lastPurchaseRange.min * MS_PER_DAY,
-        );
+        const minDays = Math.max(0, Math.floor(lastPurchaseRange.min));
+        const lte = new Date(now.getTime() - minDays * MS_PER_DAY);
         lastOrderAt.lte = lte;
       }
     }
@@ -525,6 +525,7 @@ export class CustomerAudiencesService {
     const receiptWhere: Prisma.ReceiptWhereInput = {
       merchantId,
       total: { gt: 0 },
+      canceledAt: null,
     };
     if (ids?.length) {
       receiptWhere.customerId = { in: ids };

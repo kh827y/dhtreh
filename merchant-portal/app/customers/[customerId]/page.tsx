@@ -712,7 +712,8 @@ function parseTags(tags: string): string[] {
 function formatVisitFrequency(customer: CustomerRecord): string {
   const value = customer.visitFrequencyDays;
   if (value == null || value <= 0) return "—";
-  return value.toLocaleString("ru-RU");
+  const rounded = Math.max(1, Math.round(value));
+  return `≈${rounded.toLocaleString("ru-RU")} дн.`;
 }
 
 function buildProfileRows(customer: CustomerRecord) {
