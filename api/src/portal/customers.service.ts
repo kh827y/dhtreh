@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -13,6 +14,8 @@ import {
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma.service';
 import { planConsume } from '../loyalty/lots.util';
+import { CustomerAudiencesService } from '../customer-audiences/customer-audiences.service';
+import { isSystemAllAudience } from '../customer-audiences/audience.utils';
 
 export type PortalCustomerReferrerDto = {
   id: string;
@@ -112,6 +115,7 @@ export type ListCustomersQuery = {
   search?: string;
   limit?: number;
   offset?: number;
+  segmentId?: string;
 };
 
 const msPerDay = 24 * 60 * 60 * 1000;
@@ -194,7 +198,12 @@ export class PortalCustomersService {
     'unknown',
   ]);
 
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(PortalCustomersService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audiences: CustomerAudiencesService,
+  ) {}
 
   private sanitizeTags(input: unknown): string[] {
     if (!Array.isArray(input)) return [];
@@ -1137,22 +1146,36 @@ export class PortalCustomersService {
         } satisfies Prisma.CustomerWhereInput)
       : {};
 
+    let segmentCondition: Prisma.CustomerWhereInput | null = null;
+    if (query.segmentId) {
+      const segment = await this.prisma.customerSegment.findFirst({
+        where: { merchantId, id: query.segmentId },
+        select: { id: true, isSystem: true, systemKey: true },
+      });
+      if (!segment) throw new NotFoundException('Аудитория не найдена');
+      if (!isSystemAllAudience(segment)) {
+        segmentCondition = { segments: { some: { segmentId: segment.id } } };
+      }
+    }
+
+    const association: Prisma.CustomerWhereInput = {
+      OR: [
+        { wallets: { some: { merchantId, type: WalletType.POINTS } } },
+        { transactions: { some: { merchantId } } },
+        { Receipt: { some: { merchantId } } },
+        { merchantProfiles: { some: { merchantId } } },
+      ],
+    };
+
+    const andConditions: Prisma.CustomerWhereInput[] = [association];
+    if (Object.keys(whereSearch).length) andConditions.push(whereSearch);
+    if (segmentCondition) andConditions.push(segmentCondition);
+
+    const where: Prisma.CustomerWhereInput =
+      andConditions.length > 1 ? { AND: andConditions } : association;
+
     const items = await this.prisma.customer.findMany({
-      where: {
-        ...whereSearch,
-        OR: [
-          { wallets: { some: { merchantId, type: WalletType.POINTS } } },
-          { transactions: { some: { merchantId } } },
-          { Receipt: { some: { merchantId } } },
-          {
-            merchantProfiles: {
-              some: {
-                merchantId,
-              },
-            },
-          },
-        ],
-      },
+      where,
       select: customerBaseSelect(merchantId),
       orderBy: { createdAt: 'desc' },
       take: limit,
@@ -1850,6 +1873,14 @@ export class PortalCustomersService {
       },
     });
 
+    try {
+      await this.audiences.evaluateCustomerSegments(merchantId, customer.id);
+    } catch (err) {
+      this.logger.warn(
+        `Failed to evaluate audiences for new customer ${customer.id}: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+
     return this.get(merchantId, customer.id);
   }
 
@@ -1974,6 +2005,14 @@ export class PortalCustomersService {
         update: merchantUpdate,
         create: merchantCreate,
       });
+    }
+
+    try {
+      await this.audiences.evaluateCustomerSegments(merchantId, customerId);
+    } catch (err) {
+      this.logger.warn(
+        `Failed to evaluate audiences for customer ${customerId}: ${err instanceof Error ? err.message : err}`,
+      );
     }
 
     await this.ensureWallet(merchantId, customerId);
