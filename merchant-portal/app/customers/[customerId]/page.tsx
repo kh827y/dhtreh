@@ -739,10 +739,11 @@ function buildProfileRows(customer: CustomerRecord) {
     { label: "Бонусных баллов", value: formatPoints(customer.bonusBalance) },
     { label: "Отложенных баллов", value: formatPoints(customer.pendingBalance) },
     {
-      label: "Дней с последнего визита",
+      label: "Дней с последней покупки",
       value: customer.daysSinceLastVisit != null ? customer.daysSinceLastVisit : "—",
     },
     { label: "Частота визитов", value: formatVisitFrequency(customer) },
+    { label: "Количество покупок", value: customer.visits != null ? customer.visits : "—" },
     { label: "Средний чек", value: formatCurrency(customer.averageCheck) },
     {
       label: "Сумма покупок",

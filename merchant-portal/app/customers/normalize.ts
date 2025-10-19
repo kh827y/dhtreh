@@ -19,6 +19,25 @@ function toStringOrNull(input: unknown): string | null {
   return null;
 }
 
+function toOptionalNumber(input: unknown): number | null {
+  if (typeof input === "string" && input.trim() === "") return null;
+  const value = Number(input);
+  return Number.isFinite(value) ? value : null;
+}
+
+function pickNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const record = value as Record<string, unknown>;
+      const nested = pickNumber(record.days, record.value, record.amount, record.count);
+      if (nested !== null) return nested;
+    }
+    const parsed = toOptionalNumber(value);
+    if (parsed !== null) return parsed;
+  }
+  return null;
+}
+
 function normalizeTransaction(input: any): CustomerTransaction {
   return {
     id: String(input?.id ?? ""),
@@ -120,11 +139,14 @@ export function normalizeCustomer(input: any): CustomerRecord {
   const birthday = toStringOrNull(input?.birthday);
   const registeredAt = toStringOrNull(input?.registeredAt ?? input?.createdAt);
 
-  const visitFrequencyRaw = input?.visitFrequencyDays;
+  const visitFrequencyDaysRaw = pickNumber(
+    input?.visitFrequencyDays,
+    input?.visitFrequencyInterval,
+    input?.visitFrequency,
+    Array.isArray(input?.customerStats) ? input.customerStats[0]?.visitFrequencyDays : undefined,
+  );
   const visitFrequencyDays =
-    visitFrequencyRaw != null && Number.isFinite(Number(visitFrequencyRaw))
-      ? Math.max(0, Number(visitFrequencyRaw))
-      : null;
+    visitFrequencyDaysRaw != null ? Math.max(0, visitFrequencyDaysRaw) : null;
 
   const transactions = Array.isArray(input?.transactions)
     ? input.transactions.map(normalizeTransaction)
@@ -145,11 +167,27 @@ export function normalizeCustomer(input: any): CustomerRecord {
     ? input.tags.filter((tag: unknown) => typeof tag === "string").map((tag: string) => tag.trim()).filter(Boolean)
     : [];
 
-  const visits = Math.max(0, toNumber(input?.visits));
-  const visitFrequencyLabel =
-    visitFrequencyDays != null && visitFrequencyDays !== 0
-      ? `≈ ${visitFrequencyDays} дн.`
-      : null;
+  const visits = Math.max(0, toNumber(input?.visits ?? input?.purchaseCount));
+  let visitFrequencyLabel =
+    toStringOrNull(input?.visitFrequencyLabel ?? input?.visitFrequencyText ?? input?.visitFrequencyReadable)?.trim() || null;
+  if (!visitFrequencyLabel) {
+    const textualFrequency = toStringOrNull(input?.visitFrequency);
+    if (textualFrequency && toOptionalNumber(textualFrequency) === null) {
+      visitFrequencyLabel = textualFrequency.trim() || null;
+    }
+  }
+  if (!visitFrequencyLabel && visitFrequencyDays != null && visitFrequencyDays !== 0) {
+    visitFrequencyLabel = `≈ ${visitFrequencyDays} дн.`;
+  }
+
+  const daysSinceLastPurchaseRaw = pickNumber(
+    input?.daysSinceLastVisit,
+    input?.daysSinceLastPurchase,
+    input?.lastPurchaseDays,
+    Array.isArray(input?.customerStats) ? input.customerStats[0]?.daysSinceLastPurchase : undefined,
+  );
+  const daysSinceLastVisit =
+    daysSinceLastPurchaseRaw != null ? Math.max(0, Math.round(daysSinceLastPurchaseRaw)) : null;
 
   return {
     id: String(input?.id ?? ""),
@@ -161,9 +199,8 @@ export function normalizeCustomer(input: any): CustomerRecord {
     gender: input?.gender === "male" || input?.gender === "female" ? input.gender : "unknown",
     birthday,
     age: input?.age != null ? toNumber(input.age) : null,
-    daysSinceLastVisit:
-      input?.daysSinceLastVisit != null ? Math.max(0, toNumber(input.daysSinceLastVisit)) : null,
-    visitFrequencyDays: visitFrequencyDays != null ? Math.max(0, visitFrequencyDays) : null,
+    daysSinceLastVisit,
+    visitFrequencyDays,
     visits,
     visitFrequency: visitFrequencyLabel,
     averageCheck: Math.max(0, toNumber(input?.averageCheck)),

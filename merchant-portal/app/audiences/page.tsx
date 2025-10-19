@@ -173,6 +173,13 @@ function parseNumber(value: unknown): number | null {
   return Number.isFinite(num) ? num : null;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return null;
+}
+
 function parseStringArray(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value
@@ -429,6 +436,130 @@ function filtersToDisplay(filters: any) {
   return display;
 }
 
+type MetricEntry = {
+  value?: number | null;
+  min?: number | null;
+  max?: number | null;
+};
+
+function parseMetricEntry(value: unknown): MetricEntry | null {
+  const directNumber = parseNumber(value);
+  if (directNumber !== null) {
+    return { value: directNumber };
+  }
+
+  if (Array.isArray(value)) {
+    const numbers = value
+      .map((item) => parseNumber(item))
+      .filter((item): item is number => item !== null);
+    if (!numbers.length) return null;
+    const min = Math.min(...numbers);
+    const max = Math.max(...numbers);
+    if (min === max) return { value: min };
+    return { min, max };
+  }
+
+  const record = asRecord(value);
+  if (!record) return null;
+
+  const nestedKeys = ['metrics', 'stats', 'value', 'data'];
+  for (const key of nestedKeys) {
+    if (key in record) {
+      const nested = parseMetricEntry(record[key]);
+      if (nested) return nested;
+    }
+  }
+
+  const directKeys = ['avg', 'average', 'mean', 'median', 'value', 'count', 'total', 'sum', 'amount'];
+  for (const key of directKeys) {
+    if (key in record) {
+      const parsed = parseNumber(record[key]);
+      if (parsed !== null) return { value: parsed };
+    }
+  }
+
+  const min =
+    parseNumber(record.min ?? record.from ?? record.start ?? record.gte ?? record.lower ?? record.low) ?? null;
+  const max =
+    parseNumber(record.max ?? record.to ?? record.end ?? record.lte ?? record.upper ?? record.high) ?? null;
+  if (min !== null || max !== null) {
+    if (min !== null && max !== null && min === max) {
+      return { value: min };
+    }
+    return { min, max };
+  }
+
+  return null;
+}
+
+function formatMetricEntry(entry: MetricEntry | null, suffix = '', { approx = true }: { approx?: boolean } = {}) {
+  if (!entry) return null;
+  if (entry.value != null) {
+    const formatted = `${entry.value.toLocaleString('ru-RU')}${suffix}`;
+    return approx ? `≈ ${formatted}` : formatted;
+  }
+  if (entry.min != null || entry.max != null) {
+    return formatRange(entry.min ?? null, entry.max ?? null, suffix);
+  }
+  return null;
+}
+
+function metricsToDisplay(snapshot: unknown) {
+  const outer = asRecord(snapshot) ?? {};
+  const source =
+    asRecord(outer.metrics) ??
+    asRecord(outer.stats) ??
+    outer;
+
+  const getEntry = (...keys: string[]) => {
+    for (const key of keys) {
+      if (key in source) {
+        const entry = parseMetricEntry(source[key]);
+        if (entry) return entry;
+      }
+    }
+    return null;
+  };
+
+  const lastPurchaseEntry = getEntry(
+    'lastPurchaseDays',
+    'daysSinceLastPurchase',
+    'recency',
+    'recencyDays',
+    'lastPurchase',
+    'lastOrderDays',
+  );
+  const purchaseCountEntry = getEntry(
+    'purchaseCount',
+    'visits',
+    'orders',
+    'transactions',
+    'checks',
+  );
+  const averageCheckEntry = getEntry(
+    'averageCheck',
+    'avgCheck',
+    'meanCheck',
+    'avg_order_value',
+    'checkAverage',
+  );
+  const totalSpentEntry = getEntry(
+    'purchaseSum',
+    'totalSpent',
+    'revenue',
+    'turnover',
+    'totalRevenue',
+    'spend',
+  );
+
+  return {
+    lastPurchaseDays: formatMetricEntry(lastPurchaseEntry, ' дн.'),
+    purchaseCount: formatMetricEntry(purchaseCountEntry, '', { approx: true }),
+    averageCheck: formatMetricEntry(averageCheckEntry, ' ₽'),
+    purchaseSum: formatMetricEntry(totalSpentEntry, ' ₽'),
+  } satisfies Partial<Pick<AudienceRow, 'lastPurchaseDays' | 'purchaseCount' | 'averageCheck' | 'purchaseSum'>>;
+}
+
 function filtersToSettings(filters: any): AudienceSettings {
   const settings: AudienceSettings = { ...defaultSettings };
   if (!filters || typeof filters !== 'object') return settings;
@@ -597,16 +728,17 @@ function segmentToAudienceRow(seg: any): AudienceRow {
       ? (seg.filters as Record<string, unknown>)
       : {};
   const display = filtersToDisplay(filters);
+  const metricsDisplay = metricsToDisplay(seg?.metricsSnapshot);
   return {
     id: String(seg.id),
     name: String(seg.name || 'Без названия'),
     participants: Number(seg.customerCount || 0),
     age: display.age,
     gender: display.gender,
-    averageCheck: display.averageCheck,
-    lastPurchaseDays: display.lastPurchaseDays,
-    purchaseCount: display.purchaseCount,
-    purchaseSum: display.purchaseSum,
+    averageCheck: metricsDisplay.averageCheck ?? display.averageCheck,
+    lastPurchaseDays: metricsDisplay.lastPurchaseDays ?? display.lastPurchaseDays,
+    purchaseCount: metricsDisplay.purchaseCount ?? display.purchaseCount,
+    purchaseSum: metricsDisplay.purchaseSum ?? display.purchaseSum,
     birthday: display.birthday,
     registrationDays: display.registrationDays,
     device: display.device,
