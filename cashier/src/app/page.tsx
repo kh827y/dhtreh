@@ -725,7 +725,7 @@ export default function Page() {
       customerId ? loadCustomerLevel(merchant, customerId) : Promise.resolve(null),
     ]);
     setOverview({
-      customerId: customerId ?? token || null,
+      customerId: customerId ?? token ?? null,
       name: name ?? null,
       levelName,
       balance,
@@ -835,6 +835,8 @@ export default function Page() {
       return;
     }
 
+    let effectiveQuote = (result as QuoteRedeemResp) ?? null;
+    let redeemToUse = normalized;
     if (normalized !== lastRequestedRedeem) {
       const updated = await callQuote({
         total,
@@ -843,18 +845,22 @@ export default function Page() {
         receiptNumber,
       });
       if (!updated) return;
-      const updatedRedeem = (updated as QuoteRedeemResp).pointsToBurn ?? normalized;
+      effectiveQuote = updated as QuoteRedeemResp;
+      const updatedRedeem = effectiveQuote.pointsToBurn ?? normalized;
+      redeemToUse = updatedRedeem;
       setSelectedPoints(updatedRedeem);
       setLastRequestedRedeem(updatedRedeem);
     }
 
-    const current = (result as QuoteRedeemResp) ?? {};
-    const finalPayable = current.finalPayable ?? Math.max(total - selectedPoints, 0);
+    const finalPayable =
+      typeof effectiveQuote?.finalPayable === 'number'
+        ? effectiveQuote.finalPayable
+        : Math.max(total - redeemToUse, 0);
     setConfirmSnapshot({
       purchaseTotal: total,
       finalPayable,
       pointsEarn: 0,
-      pointsBurn: selectedPoints,
+      pointsBurn: redeemToUse,
     });
     setFlowStep('confirm');
   };
@@ -868,7 +874,7 @@ export default function Page() {
       purchaseTotal: total,
       pointsEarn: appliedEarn,
       pointsBurn: appliedRedeem,
-      finalPayable: total - appliedRedeem,
+      finalPayable: typeof data?.finalPayable === 'number' ? data.finalPayable : total - appliedRedeem,
     });
     setFlowStep('receipt');
     await fetchCustomerOverview(userToken);
