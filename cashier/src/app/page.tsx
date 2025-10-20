@@ -857,6 +857,22 @@ export default function Page() {
       pointsBurn: selectedPoints,
     });
     setFlowStep('confirm');
+  }
+
+  const handlePointsChange = (value: number) => {
+    if (mode !== 'redeem') {
+      setSelectedPoints(0);
+      return;
+    }
+    const quote = result as QuoteRedeemResp | null;
+    const maxRedeem = quote?.pointsToBurn ?? 0;
+    const normalized = Number.isFinite(value) ? Math.max(0, Math.min(Math.round(value), maxRedeem)) : 0;
+    setSelectedPoints(normalized);
+  };
+
+  const handlePointsInput = (raw: string) => {
+    const digits = raw.replace(/[^0-9]/g, '');
+    handlePointsChange(digits ? Number(digits) : 0);
   };
 
   const handleConfirm = async () => {
@@ -1095,53 +1111,60 @@ export default function Page() {
   }, [flowStep]);
 
   const renderAuth = () => (
-    <div className="flex flex-col min-h-screen bg-slate-900 text-white">
-      <div className="flex-1 flex flex-col px-6 py-8">
-        <div className="mt-8">
-          <h1 className="text-3xl font-semibold">Терминал кассира</h1>
-          <p className="text-sm text-slate-300 mt-2">Авторизуйтесь, чтобы начать обслуживание клиентов.</p>
+    <main className="min-h-screen bg-gradient-to-br from-sky-500 via-violet-500 to-fuchsia-500 px-5 py-10 text-slate-900 md:flex md:items-center md:justify-center">
+      <div className="mx-auto w-full max-w-md space-y-10 rounded-[36px] bg-white/90 p-8 shadow-[0_40px_90px_-35px_rgba(76,29,149,0.55)] backdrop-blur">
+        <div className="space-y-3 text-center">
+          <span className="text-xs font-semibold uppercase tracking-[0.32em] text-slate-500">Терминал</span>
+          <h1 className="text-3xl font-bold text-slate-900">Панель кассира</h1>
+          <p className="text-sm text-slate-600">Авторизуйтесь, чтобы начать обслуживание клиентов.</p>
         </div>
-        <div className="mt-10 space-y-8">
-          <div className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-slate-500">
-            <span className={step === 'merchant' ? 'text-white' : ''}>1. Мерчант</span>
-            <span className="opacity-40">•</span>
-            <span className={step === 'pin' ? 'text-white' : ''}>2. PIN</span>
-            <span className="opacity-40">•</span>
-            <span className={step === 'terminal' ? 'text-white' : ''}>3. Терминал</span>
-          </div>
-          {step === 'merchant' && (
-            <div className="space-y-6">
-              <div className="space-y-2">
-                <label className="text-sm text-slate-300">Логин мерчанта</label>
-                <input
-                  value={merchantLogin}
-                  onChange={(e) => setMerchantLogin(e.target.value)}
-                  placeholder="Например, greenmarket"
-                  className="w-full rounded-2xl bg-slate-800 px-4 py-3 text-base placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm text-slate-300">Пароль (9 цифр)</label>
+        <div className="flex items-center justify-center gap-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-300">
+          <span className={step === 'merchant' ? 'text-violet-500' : ''}>1. Мерчант</span>
+          <span className="opacity-50">•</span>
+          <span className={step === 'pin' ? 'text-violet-500' : ''}>2. PIN</span>
+          <span className="opacity-50">•</span>
+          <span className={step === 'terminal' ? 'text-violet-500' : ''}>3. Терминал</span>
+        </div>
+        {step === 'merchant' && (
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-700">Логин мерчанта</label>
+              <input
+                value={merchantLogin}
+                onChange={(e) => setMerchantLogin(e.target.value)}
+                placeholder="Например, greenmarket"
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 placeholder:text-slate-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-violet-400"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-700">Пароль (9 цифр)</label>
+              <div className="rounded-2xl border border-dashed border-violet-200 bg-gradient-to-r from-violet-50 to-sky-50 p-3">
                 <SegmentedInput length={9} groupSize={3} value={passwordDigits} onChange={setPasswordDigits} placeholderChar="○" autoFocus />
               </div>
-              <button
-                onClick={cashierLogin}
-                disabled={!merchantLogin.trim() || passwordDigits.length !== 9}
-                className="w-full rounded-full bg-emerald-400 py-3 text-slate-900 font-semibold disabled:opacity-30"
-              >
-                Продолжить
-              </button>
-              {authMsg && <div className="text-sm text-red-400">{authMsg}</div>}
             </div>
-          )}
-          {step === 'pin' && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between text-sm text-slate-400">
-                <div>Логин: <span className="text-white">{normalizedLogin || '—'}</span></div>
-                <button className="text-emerald-300" onClick={() => { setStaffLookup(null); setStep('merchant'); }}>Изменить</button>
+            <button
+              onClick={cashierLogin}
+              disabled={!merchantLogin.trim() || passwordDigits.length !== 9}
+              className="w-full rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 py-3 text-base font-semibold text-white shadow-lg shadow-fuchsia-200/70 transition hover:brightness-110 disabled:opacity-40"
+            >
+              Продолжить
+            </button>
+            {authMsg && <div className="text-sm text-rose-500">{authMsg}</div>}
+          </div>
+        )}
+        {step === 'pin' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between text-sm text-slate-500">
+              <div>
+                Логин: <span className="font-semibold text-slate-800">{normalizedLogin || '—'}</span>
               </div>
-              <div className="space-y-3">
-                <label className="text-sm text-slate-300">PIN сотрудника</label>
+              <button className="text-violet-500 underline" onClick={() => { setStaffLookup(null); setStep('merchant'); }}>
+                Изменить
+              </button>
+            </div>
+            <div className="space-y-3">
+              <label className="text-sm font-medium text-slate-700">PIN сотрудника</label>
+              <div className="rounded-2xl border border-dashed border-violet-200 bg-gradient-to-r from-violet-50 to-sky-50 p-3">
                 <SegmentedInput
                   length={4}
                   value={pinDigits}
@@ -1152,328 +1175,333 @@ export default function Page() {
                   onComplete={lookupStaffByPin}
                   placeholderChar="○"
                 />
-                <div className="flex items-center justify-between text-sm text-slate-400">
-                  <button
-                    onClick={() => lookupStaffByPin(pinDigits)}
-                    disabled={pinDigits.length !== 4}
-                    className="rounded-full border border-slate-700 px-4 py-2 disabled:opacity-30"
-                  >
-                    Проверить PIN
-                  </button>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      className="accent-emerald-400"
-                      checked={rememberPin}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setRememberPin(checked);
-                        if (checked && pinDigits.length === 4) {
-                          writeCookie(COOKIE_PIN, pinDigits);
-                        } else if (!checked) {
-                          deleteCookie(COOKIE_PIN);
-                        }
-                      }}
-                    />
-                    <span>Сохранить PIN</span>
-                  </label>
-                </div>
               </div>
-              {staffLookup && (
-                <div className="rounded-3xl bg-slate-800 p-4 space-y-2">
-                  <div className="text-xs text-slate-400">Сотрудник</div>
-                  <div className="text-lg font-semibold">
-                    {[staffLookup.staff.firstName, staffLookup.staff.lastName].filter(Boolean).join(' ') ||
-                      staffLookup.staff.login ||
-                      staffLookup.staff.id}
-                  </div>
-                  <div className="text-xs text-emerald-300">{staffLookup.staff.role}</div>
-                  {staffLookup.outlet && (
-                    <div className="text-sm text-slate-300">Точка: {staffLookup.outlet.name}</div>
-                  )}
-                  {staffLookup.accesses?.length ? (
-                    <div className="text-xs text-slate-400">
-                      Доступ к {staffLookup.accesses.length} точкам
-                    </div>
-                  ) : null}
-                </div>
-              )}
-              <button
-                onClick={startCashierSessionAuth}
-                disabled={!staffLookup}
-                className="w-full rounded-full bg-emerald-400 py-3 text-slate-900 font-semibold disabled:opacity-30"
-              >
-                Продолжить в терминал
-              </button>
-              {authMsg && <div className="text-sm text-red-400">{authMsg}</div>}
-            </div>
-          )}
-        </div>
-      </div>
-      <div className="px-6 pb-8 text-xs text-slate-500">© {new Date().getFullYear()} Программа лояльности</div>
-    </div>
-  );
-
-  const renderHomeTab = () => (
-    <div className="flex-1 overflow-y-auto px-6 pb-32">
-      <div className="mt-6 space-y-6">
-        <div className="rounded-3xl bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 p-6 shadow-xl">
-          <div className="text-sm text-slate-400">Сотрудник</div>
-          <div className="text-xl font-semibold text-white">{staffName}</div>
-          <div className="text-sm text-slate-400 mt-3">Торговая точка</div>
-          <div className="text-base text-white">{outletName || '—'}</div>
-        </div>
-
-        {flowStep === 'idle' && (
-          <div className="space-y-6">
-            <div className="rounded-3xl bg-slate-800/80 backdrop-blur p-6 text-center">
-              <p className="text-sm text-slate-300">Чтобы начать, отсканируйте QR клиента или введите токен вручную.</p>
-            </div>
-            <button
-              onClick={() => setScanOpen(true)}
-              className="mx-auto flex h-48 w-48 items-center justify-center rounded-full bg-emerald-400 text-slate-900 text-lg font-semibold shadow-emerald-500/40 shadow-lg"
-            >
-              Сканировать QR
-            </button>
-            <div className="rounded-3xl bg-slate-800/80 backdrop-blur p-6 space-y-4">
-              <div className="text-sm text-slate-300">Ручной ввод токена</div>
-              <div className="flex items-center gap-3">
-                <input
-                  value={manualTokenInput}
-                  onChange={(e) => setManualTokenInput(e.target.value)}
-                  placeholder="Вставьте токен клиента"
-                  className="flex-1 rounded-2xl bg-slate-900 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
+              <div className="flex items-center justify-between text-sm text-slate-500">
                 <button
-                  onClick={() => manualTokenInput.trim() && beginFlow(manualTokenInput.trim())}
-                  className="rounded-full bg-emerald-500 px-4 py-3 text-slate-900 text-sm font-semibold"
+                  onClick={() => lookupStaffByPin(pinDigits)}
+                  disabled={pinDigits.length !== 4}
+                  className="rounded-full border border-violet-200 px-4 py-2 font-semibold text-violet-600 transition hover:border-violet-400 disabled:opacity-40"
                 >
-                  Продолжить
+                  Проверить PIN
                 </button>
+                <label className="flex items-center gap-2 text-slate-500">
+                  <input
+                    type="checkbox"
+                    className="accent-violet-500"
+                    checked={rememberPin}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setRememberPin(checked);
+                      if (checked && pinDigits.length === 4) {
+                        writeCookie(COOKIE_PIN, pinDigits);
+                      } else if (!checked) {
+                        deleteCookie(COOKIE_PIN);
+                      }
+                    }}
+                  />
+                  <span>Сохранить PIN</span>
+                </label>
+              </div>
+            </div>
+            {staffLookup && (
+              <div className="rounded-[28px] bg-gradient-to-r from-sky-100 via-fuchsia-100 to-rose-100 p-5 shadow-inner">
+                <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Сотрудник</div>
+                <div className="pt-2 text-lg font-semibold text-slate-900">
+                  {[staffLookup.staff.firstName, staffLookup.staff.lastName].filter(Boolean).join(' ') ||
+                    staffLookup.staff.login ||
+                    staffLookup.staff.id}
+                </div>
+                <div className="text-xs font-medium text-violet-600">{staffLookup.staff.role}</div>
+                {staffLookup.outlet && (
+                  <div className="text-sm text-slate-600">Точка: {staffLookup.outlet.name}</div>
+                )}
+                {staffLookup.accesses?.length ? (
+                  <div className="text-xs text-slate-500">
+                    Доступ к {staffLookup.accesses.length} точкам
+                  </div>
+                ) : null}
+              </div>
+            )}
+            <button
+              onClick={startCashierSessionAuth}
+              disabled={!staffLookup}
+              className="w-full rounded-full bg-gradient-to-r from-emerald-400 to-lime-400 py-3 text-base font-semibold text-slate-900 shadow-lg shadow-lime-200/70 transition hover:brightness-110 disabled:opacity-40"
+            >
+              Продолжить в терминал
+            </button>
+            {authMsg && <div className="text-sm text-rose-500">{authMsg}</div>}
+          </div>
+        )}
+        <div className="text-center text-xs text-slate-400">© {new Date().getFullYear()} Программа лояльности</div>
+      </div>
+    </main>
+  );
+  const renderHomeTab = () => {
+    const redeemQuote = (result as QuoteRedeemResp | null) ?? null;
+
+    return (
+      <div className="flex-1 overflow-y-auto px-2 pb-32 sm:px-4">
+        <div className="mt-6 space-y-6">
+          <div className="rounded-[32px] bg-gradient-to-r from-amber-400 via-rose-500 to-indigo-500 p-[1px] shadow-[0_25px_55px_-25px_rgba(120,40,200,0.65)]">
+            <div className="rounded-[30px] bg-white/95 p-6 text-slate-900">
+              <div className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">Сотрудник</div>
+              <div className="pt-3 text-xl font-semibold text-slate-900">{staffName}</div>
+              <div className="mt-4 grid grid-cols-2 gap-3 text-sm text-slate-600">
+                <div className="rounded-2xl bg-slate-50/80 p-3">
+                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-[0.18em]">Точка</div>
+                  <div className="pt-1 font-medium text-slate-800">{outletName || '—'}</div>
+                </div>
+                <div className="rounded-2xl bg-slate-50/80 p-3 text-right">
+                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-[0.18em]">Смена</div>
+                  <div className="pt-1 font-medium text-slate-800">#{session?.sessionId?.slice(-6) || '—'}</div>
+                </div>
               </div>
             </div>
           </div>
-        )}
 
-        {flowStep !== 'idle' && (
-          <div className="space-y-6">
-            <div className="rounded-3xl bg-slate-800/60 backdrop-blur p-6 space-y-4">
-              <div className="text-sm text-slate-300">Информация о клиенте</div>
-              <div className="text-lg font-semibold text-white">{overview.name || 'Имя неизвестно'}</div>
-              <div className="flex items-center justify-between text-sm text-slate-300">
-                <span>Уровень</span>
-                <span className="font-medium text-emerald-300">{overview.levelName || '—'}</span>
+          {flowStep === 'idle' && (
+            <div className="space-y-6">
+              <div className="rounded-[28px] bg-white/85 p-5 text-center text-sm text-slate-600 shadow-inner">
+                Чтобы начать обслуживание, отсканируйте QR клиента или введите токен вручную.
               </div>
-              <div className="flex items-center justify-between text-sm text-slate-300">
-                <span>Баланс</span>
-                <span className="font-medium text-white">{formatCurrency(overview.balance)}</span>
-              </div>
-              <div className="flex items-center justify-between text-xs text-slate-500">
-                <span>ID клиента</span>
-                <span>{overview.customerId || '—'}</span>
-              </div>
-            </div>
-
-            {flowStep === 'details' && (
-              <div className="rounded-3xl bg-slate-800/60 backdrop-blur p-6 space-y-5">
-                <div className="space-y-2">
-                  <label className="text-sm text-slate-300">Сумма покупки</label>
+              <button
+                onClick={() => setScanOpen(true)}
+                className="mx-auto flex h-52 w-52 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 via-teal-400 to-cyan-500 text-lg font-semibold text-white shadow-[0_30px_60px_-30px_rgba(14,116,144,0.85)] transition hover:scale-[1.02] active:scale-[0.98]"
+              >
+                Сканировать QR
+              </button>
+              <div className="space-y-4 rounded-[28px] bg-white/95 p-6 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.45)]">
+                <div className="text-sm font-medium text-slate-700">Ручной ввод токена</div>
+                <div className="flex items-center gap-3">
                   <input
-                    inputMode="decimal"
-                    value={purchaseAmountInput}
-                    onChange={(e) => setPurchaseAmountInput(e.target.value)}
-                    placeholder="0"
-                    className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-lg text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    value={manualTokenInput}
+                    onChange={(e) => setManualTokenInput(e.target.value)}
+                    placeholder="Вставьте токен клиента"
+                    className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-emerald-300"
                   />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm text-slate-300">Номер чека</label>
-                  <input
-                    value={receiptInput}
-                    onChange={(e) => setReceiptInput(e.target.value)}
-                    placeholder="Например, 123456"
-                    className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-base text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-                <div className="flex gap-2 bg-slate-900 rounded-2xl p-1">
                   <button
-                    onClick={() => setMode('redeem')}
-                    className={`flex-1 rounded-2xl py-3 text-sm font-semibold ${mode === 'redeem' ? 'bg-emerald-500 text-slate-900' : 'text-slate-400'}`}
-                  >
-                    Списание баллов
-                  </button>
-                  <button
-                    onClick={() => setMode('earn')}
-                    className={`flex-1 rounded-2xl py-3 text-sm font-semibold ${mode === 'earn' ? 'bg-emerald-500 text-slate-900' : 'text-slate-400'}`}
-                  >
-                    Только начисление
-                  </button>
-                </div>
-                {quoteError && <div className="text-sm text-red-400">{quoteError}</div>}
-                <div className="flex gap-3">
-                  <button
-                    onClick={resetFlow}
-                    className="flex-1 rounded-full border border-slate-600 py-3 text-sm font-semibold text-slate-300"
-                  >
-                    Отменить
-                  </button>
-                  <button
-                    onClick={handleDetailsContinue}
-                    disabled={busy}
-                    className="flex-1 rounded-full bg-emerald-500 py-3 text-sm font-semibold text-slate-900 disabled:opacity-40"
+                    onClick={() => manualTokenInput.trim() && beginFlow(manualTokenInput.trim())}
+                    className="rounded-full bg-gradient-to-r from-emerald-400 to-lime-300 px-5 py-3 text-sm font-semibold text-slate-900 shadow-md shadow-emerald-200/60"
                   >
                     Продолжить
                   </button>
                 </div>
               </div>
-            )}
+            </div>
+          )}
 
-            {flowStep === 'points' && (
-              <div className="rounded-3xl bg-slate-800/60 backdrop-blur p-6 space-y-5">
-                <div className="text-sm text-slate-300">Доступно для оплаты</div>
-                <div className="text-3xl font-semibold text-white">
-                  {formatCurrency((result as QuoteRedeemResp)?.discountToApply ?? selectedPoints)}
+          {flowStep !== 'idle' && (
+            <div className="space-y-6">
+              <div className="rounded-[28px] bg-white/95 p-6 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.45)]">
+                <div className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">Информация о клиенте</div>
+                <div className="pt-3 text-lg font-semibold text-slate-900">{overview.name || 'Имя неизвестно'}</div>
+                <div className="mt-4 space-y-3 text-sm text-slate-600">
+                  <div className="flex items-center justify-between">
+                    <span>Уровень</span>
+                    <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-600">{overview.levelName || '—'}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Баланс</span>
+                    <span className="font-semibold text-slate-900">{formatCurrency(overview.balance)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-slate-400">
+                    <span>ID клиента</span>
+                    <span>{overview.customerId || '—'}</span>
+                  </div>
                 </div>
-                <div className="flex items-center justify-between text-sm text-slate-400">
-                  <span>Баллов к списанию</span>
+              </div>
+
+              {flowStep === 'details' && (
+                <div className="space-y-6 rounded-[28px] bg-white/95 p-6 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.45)]">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-700">Сумма покупки</label>
+                    <input
+                      inputMode="decimal"
+                      value={purchaseAmountInput}
+                      onChange={(e) => setPurchaseAmountInput(e.target.value)}
+                      placeholder="0"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-lg text-slate-900 placeholder:text-slate-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-emerald-300"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-700">Номер чека</label>
+                    <input
+                      value={receiptInput}
+                      onChange={(e) => setReceiptInput(e.target.value)}
+                      placeholder="Например, 123456"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 placeholder:text-slate-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-emerald-300"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1">
+                    <button
+                      onClick={() => setMode('redeem')}
+                      className={`rounded-2xl py-3 text-sm font-semibold transition ${mode === 'redeem' ? 'bg-white text-emerald-500 shadow' : 'text-slate-500'}`}
+                    >
+                      Списание баллов
+                    </button>
+                    <button
+                      onClick={() => setMode('earn')}
+                      className={`rounded-2xl py-3 text-sm font-semibold transition ${mode === 'earn' ? 'bg-white text-indigo-500 shadow' : 'text-slate-500'}`}
+                    >
+                      Только начисление
+                    </button>
+                  </div>
+                  {quoteError && <div className="text-sm text-rose-500">{quoteError}</div>}
+                  <div className="flex gap-3">
+                    <button
+                      onClick={resetFlow}
+                      className="flex-1 rounded-full border border-slate-200 py-3 text-sm font-semibold text-slate-600 hover:border-slate-300"
+                    >
+                      Отменить
+                    </button>
+                    <button
+                      onClick={handleDetailsContinue}
+                      disabled={busy}
+                      className="flex-1 rounded-full bg-gradient-to-r from-indigo-500 to-fuchsia-500 py-3 text-sm font-semibold text-white shadow-lg shadow-fuchsia-200/70 transition hover:brightness-110 disabled:opacity-40"
+                    >
+                      Продолжить
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {flowStep === 'points' && redeemQuote && (
+                <div className="space-y-5 rounded-[28px] bg-white/95 p-6 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.45)]">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-medium text-slate-700">Доступно для оплаты</div>
+                    <div className="text-lg font-semibold text-emerald-500">{formatCurrency(redeemQuote.discountToApply)}</div>
+                  </div>
+                  <div className="flex items-center justify-between text-sm text-slate-600">
+                    <span>Баланс для списания</span>
+                    <span className="font-semibold text-slate-900">{formatPoints(redeemQuote.pointsToBurn)} баллов</span>
+                  </div>
                   <button
-                    onClick={() => handlePointsSubmit(true)}
-                    disabled={busy}
-                    className="text-emerald-300 font-medium disabled:opacity-40"
+                    onClick={() => handlePointsChange(redeemQuote.pointsToBurn ?? 0)}
+                    className="w-full rounded-full bg-gradient-to-r from-emerald-400 to-lime-300 py-3 text-sm font-semibold text-slate-900 shadow-md shadow-emerald-200/60"
                   >
-                    СПИСАТЬ ВСЕ
+                    Списать всё
                   </button>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm text-slate-300">СПИСАТЬ БАЛЛЫ</label>
-                  <div className="flex items-center gap-3">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-700">Списать баллы</label>
                     <input
                       inputMode="numeric"
                       value={selectedPoints ? String(selectedPoints) : ''}
-                      onChange={(e) => {
-                        const raw = e.target.value.replace(/[^0-9]/g, '');
-                        const next = Number(raw);
-                        if (!Number.isFinite(next)) return;
-                        const max = (result as QuoteRedeemResp)?.pointsToBurn ?? 0;
-                        setSelectedPoints(Math.min(next, max));
-                      }}
+                      onChange={(e) => handlePointsInput(e.target.value)}
                       placeholder="0"
-                      className="flex-1 rounded-2xl bg-slate-900 px-4 py-3 text-lg text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 placeholder:text-slate-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-emerald-300"
                     />
-                    <span className="text-sm text-slate-400">☆</span>
+                  </div>
+                  <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-600">
+                    Можно использовать: {formatPoints(redeemQuote.pointsToBurn)} баллов
+                  </div>
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      onClick={() => setFlowStep('details')}
+                      className="flex-1 rounded-full border border-slate-200 py-3 text-sm font-semibold text-slate-600 hover:border-slate-300"
+                    >
+                      Назад
+                    </button>
+                    <button
+                      onClick={() => void handlePointsSubmit(false)}
+                      disabled={busy}
+                      className="flex-1 rounded-full bg-gradient-to-r from-indigo-500 to-fuchsia-500 py-3 text-sm font-semibold text-white shadow-lg shadow-fuchsia-200/70 transition hover:brightness-110 disabled:opacity-40"
+                    >
+                      {selectedPoints > 0 ? 'Списать' : 'Не списывать'}
+                    </button>
                   </div>
                 </div>
-                <div className="text-xs text-slate-400">
-                  Можно использовать: {formatPoints((result as QuoteRedeemResp)?.pointsToBurn ?? 0)} баллов
-                </div>
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => setFlowStep('details')}
-                    className="flex-1 rounded-full border border-slate-600 py-3 text-sm font-semibold text-slate-300"
-                  >
-                    Назад
-                  </button>
-                  <button
-                    onClick={() => handlePointsSubmit(false)}
-                    disabled={busy}
-                    className="flex-1 rounded-full bg-emerald-500 py-3 text-sm font-semibold text-slate-900 disabled:opacity-40"
-                  >
-                    {selectedPoints > 0 ? 'СПИСАТЬ' : 'НЕ СПИСЫВАТЬ'}
-                  </button>
-                </div>
-              </div>
-            )}
+              )}
 
-            {flowStep === 'confirm' && confirmSnapshot && (
-              <div className="rounded-3xl bg-slate-800/60 backdrop-blur p-6 space-y-4">
-                <div className="text-sm text-slate-300">Подтвердите операцию</div>
-                <div className="space-y-2 text-sm text-slate-300">
-                  <div className="flex justify-between">
-                    <span>Сумма покупки</span>
-                    <span className="text-white font-semibold">{formatCurrency(confirmSnapshot.purchaseTotal)}</span>
+              {flowStep === 'confirm' && confirmSnapshot && (
+                <div className="space-y-4 rounded-[28px] bg-white/95 p-6 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.45)]">
+                  <div className="text-lg font-semibold text-slate-900">Подтвердите операцию</div>
+                  <div className="space-y-3 text-sm text-slate-600">
+                    <div className="flex justify-between">
+                      <span>Сумма покупки</span>
+                      <span className="font-semibold text-slate-900">{formatCurrency(confirmSnapshot.purchaseTotal)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Клиенту будет начислено</span>
+                      <span className="font-semibold text-emerald-500">{formatPoints(confirmSnapshot.pointsEarn)} баллов</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>С клиента будет списано</span>
+                      <span className="font-semibold text-amber-500">{formatPoints(confirmSnapshot.pointsBurn)} баллов</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span>Клиенту будет начислено</span>
-                    <span className="text-emerald-300 font-semibold">{formatPoints(confirmSnapshot.pointsEarn)} баллов</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>С клиента будет списано</span>
-                    <span className="text-orange-300 font-semibold">{formatPoints(confirmSnapshot.pointsBurn)} баллов</span>
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      onClick={() => setFlowStep(mode === 'redeem' ? 'points' : 'details')}
+                      className="flex-1 rounded-full border border-slate-200 py-3 text-sm font-semibold text-slate-600 hover:border-slate-300"
+                    >
+                      Отмена
+                    </button>
+                    <button
+                      onClick={handleConfirm}
+                      disabled={busy}
+                      className="flex-1 rounded-full bg-gradient-to-r from-indigo-500 to-fuchsia-500 py-3 text-sm font-semibold text-white shadow-lg shadow-fuchsia-200/70 transition hover:brightness-110 disabled:opacity-40"
+                    >
+                      ОК
+                    </button>
                   </div>
                 </div>
-                <div className="flex gap-3 pt-2">
-                  <button
-                    onClick={() => setFlowStep(mode === 'redeem' ? 'points' : 'details')}
-                    className="flex-1 rounded-full border border-slate-600 py-3 text-sm font-semibold text-slate-300"
-                  >
-                    Отмена
-                  </button>
-                  <button
-                    onClick={handleConfirm}
-                    disabled={busy}
-                    className="flex-1 rounded-full bg-emerald-500 py-3 text-sm font-semibold text-slate-900 disabled:opacity-40"
-                  >
-                    ОК
-                  </button>
-                </div>
-              </div>
-            )}
+              )}
 
-            {flowStep === 'receipt' && receiptData && (
-              <div className="relative overflow-hidden rounded-3xl bg-slate-900 px-6 py-8 shadow-2xl">
-                <div className="absolute left-1/2 top-0 h-6 w-24 -translate-x-1/2 rounded-b-full bg-slate-800" />
-                <div className="animate-[receipt_0.6s_ease-out]">
-                  <div className="text-center text-sm text-slate-400">ИТОГО</div>
-                  <div className="mt-4 space-y-3 text-sm text-slate-300">
-                    <div>
-                      <div className="uppercase text-xs tracking-wider text-slate-500">Покупатель</div>
-                      <div className="text-white font-semibold">{overview.name || '—'}</div>
-                    </div>
-                    <div>
-                      <div className="uppercase text-xs tracking-wider text-slate-500">Сотрудник</div>
-                      <div className="text-white font-semibold">{staffName || '—'}</div>
-                    </div>
-                    <div className="border-t border-dashed border-slate-700 pt-3 mt-3 space-y-2">
-                      <div className="flex justify-between">
-                        <span>Сумма покупки</span>
-                        <span className="text-white">{formatCurrency(receiptData.purchaseTotal)}</span>
+              {flowStep === 'receipt' && receiptData && (
+                <div className="relative overflow-hidden rounded-[32px] bg-gradient-to-b from-indigo-900 to-slate-900 px-6 py-8 text-white shadow-[0_35px_70px_-40px_rgba(30,41,59,0.95)]">
+                  <div className="absolute left-1/2 top-0 h-6 w-28 -translate-x-1/2 rounded-b-full bg-white/20" />
+                  <div className="animate-[receipt_0.6s_ease-out]">
+                    <div className="text-center text-sm uppercase tracking-[0.4em] text-white/60">Итог</div>
+                    <div className="mt-4 space-y-4 text-sm text-white/80">
+                      <div>
+                        <div className="text-xs uppercase tracking-[0.3em] text-white/50">Покупатель</div>
+                        <div className="text-white font-semibold">{overview.name || '—'}</div>
                       </div>
-                      <div className="flex justify-between text-emerald-300">
-                        <span>Начислено баллов</span>
-                        <span>{formatPoints(receiptData.pointsEarn)}</span>
+                      <div>
+                        <div className="text-xs uppercase tracking-[0.3em] text-white/50">Сотрудник</div>
+                        <div className="text-white font-semibold">{staffName || '—'}</div>
                       </div>
-                      <div className="flex justify-between text-orange-300">
-                        <span>Списано баллов</span>
-                        <span>{formatPoints(receiptData.pointsBurn)}</span>
+                      <div className="border-t border-dashed border-white/20 pt-3 mt-3 space-y-2">
+                        <div className="flex justify-between">
+                          <span>Сумма покупки</span>
+                          <span className="font-semibold text-white">{formatCurrency(receiptData.purchaseTotal)}</span>
+                        </div>
+                        <div className="flex justify-between text-emerald-300">
+                          <span>Начислено баллов</span>
+                          <span>{formatPoints(receiptData.pointsEarn)}</span>
+                        </div>
+                        <div className="flex justify-between text-amber-300">
+                          <span>Списано баллов</span>
+                          <span>{formatPoints(receiptData.pointsBurn)}</span>
+                        </div>
                       </div>
-                    </div>
-                    <div className="border-t border-dashed border-slate-700 pt-3 mt-3 flex justify-between text-lg font-semibold text-white">
-                      <span>К ОПЛАТЕ</span>
-                      <span>{formatCurrency(receiptData.finalPayable)}</span>
+                      <div className="border-t border-dashed border-white/20 pt-3 mt-3 flex justify-between text-lg font-semibold text-white">
+                        <span>К оплате</span>
+                        <span>{formatCurrency(receiptData.finalPayable)}</span>
+                      </div>
                     </div>
                   </div>
+                  <button
+                    onClick={handleReceiptClose}
+                    className="mt-6 w-full rounded-full bg-gradient-to-r from-emerald-400 to-lime-300 py-3 text-sm font-semibold text-slate-900 shadow-md shadow-emerald-200/60"
+                  >
+                    Закрыть
+                  </button>
                 </div>
-                <button
-                  onClick={handleReceiptClose}
-                  className="mt-6 w-full rounded-full bg-emerald-500 py-3 text-sm font-semibold text-slate-900"
-                >
-                  Закрыть
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          )}
+        </div>
       </div>
-    </div>
-  );
-
+    );
+  };
   const renderHistoryTab = () => (
-    <div className="flex-1 overflow-y-auto px-6 pb-32">
+    <div className="flex-1 overflow-y-auto px-2 pb-32 sm:px-4">
       <div className="mt-6 space-y-4">
         <button
           onClick={() => loadHistory(true)}
           disabled={histBusy}
-          className="w-full rounded-full bg-slate-800 py-3 text-sm font-semibold text-white disabled:opacity-40"
+          className="w-full rounded-full bg-gradient-to-r from-sky-500 to-violet-500 py-3 text-sm font-semibold text-white shadow-lg shadow-violet-200/70 transition hover:brightness-110 disabled:opacity-40"
         >
           Загрузить историю
         </button>
@@ -1482,16 +1510,27 @@ export default function Page() {
             const isEarn = item.type === 'EARN';
             const isRedeem = item.type === 'REDEEM';
             const isRefund = item.type === 'REFUND';
-            const color = isEarn ? 'text-emerald-300' : isRedeem ? 'text-orange-300' : 'text-slate-300';
+            const color = isEarn ? 'text-emerald-600' : isRedeem ? 'text-amber-600' : isRefund ? 'text-rose-600' : 'text-slate-600';
+            const badge = isEarn ? 'bg-emerald-100 text-emerald-700' : isRedeem ? 'bg-amber-100 text-amber-700' : isRefund ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600';
+            const cardBg = isEarn
+              ? 'border-emerald-200/70 bg-gradient-to-br from-emerald-50 to-emerald-100/70'
+              : isRedeem
+              ? 'border-amber-200/70 bg-gradient-to-br from-amber-50 to-amber-100/70'
+              : isRefund
+              ? 'border-rose-200/70 bg-gradient-to-br from-rose-50 to-rose-100/70'
+              : 'border-slate-200/70 bg-white/90';
             const sign = item.amount > 0 ? '+' : '';
             return (
-              <div key={item.id} className="space-y-2 border-b border-slate-800 pb-3">
-                <div className="flex items-center justify-between text-sm text-slate-400">
+              <div key={item.id} className={`space-y-2 rounded-[24px] border px-5 py-4 shadow-[0_18px_40px_-30px_rgba(15,23,42,0.35)] ${cardBg}`}>
+                <div className="flex items-center justify-between text-xs text-slate-500">
                   <span>{formatDateTime(item.createdAt)}</span>
-                  <span className="text-slate-500">{item.outletId || '—'}</span>
+                  <span className="font-medium text-slate-600">{item.outletId || '—'}</span>
                 </div>
-                <div className="text-xs uppercase tracking-widest text-slate-500">{item.type}</div>
-                <div className={`text-base font-semibold ${color}`}>
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  <span className={`rounded-full px-3 py-1 text-[11px] ${badge}`}>{item.type}</span>
+                  {item.outletPosType && <span className="text-slate-400">{item.outletPosType}</span>}
+                </div>
+                <div className={`text-lg font-semibold ${color}`}>
                   {sign}{item.amount} ₽
                 </div>
                 <div className="text-xs text-slate-500">
@@ -1501,16 +1540,17 @@ export default function Page() {
                   {isEarn && `Клиенту начислено ${Math.abs(item.amount)} ☆`}
                   {isRedeem && `С клиента списано ${Math.abs(item.amount)} ☆`}
                   {isRefund && `Возврат ${Math.abs(item.amount)} ₽`}
+                  {!isEarn && !isRedeem && !isRefund && item.amount !== 0 && `Изменение на ${Math.abs(item.amount)} ₽`}
                 </div>
               </div>
             );
           })}
-          {!history.length && <div className="text-sm text-slate-400">Нет операций</div>}
+          {!history.length && <div className="rounded-[24px] bg-white/90 px-5 py-4 text-sm text-slate-500 shadow-inner">Нет операций</div>}
           {histNextBefore && (
             <button
               onClick={() => loadHistory(false)}
               disabled={histBusy}
-              className="w-full rounded-full border border-slate-700 py-3 text-sm font-semibold text-white disabled:opacity-40"
+              className="w-full rounded-full border border-slate-200 bg-white/90 py-3 text-sm font-semibold text-slate-600 shadow-[0_15px_35px_-30px_rgba(15,23,42,0.4)] transition hover:border-slate-300 disabled:opacity-40"
             >
               Показать ещё
             </button>
@@ -1519,52 +1559,58 @@ export default function Page() {
       </div>
     </div>
   );
-
   const renderRatingTab = () => (
-    <div className="flex-1 overflow-y-auto px-6 pb-32">
+    <div className="flex-1 overflow-y-auto px-2 pb-32 sm:px-4">
       <div className="mt-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-white">Рейтинг сотрудников</h2>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setRatingInfoOpen(true)}
-              className="h-10 w-10 rounded-full border border-slate-700 text-lg text-white"
-            >
-              ?
-            </button>
-            <button className="h-10 w-10 rounded-full border border-slate-700 text-white">⛃</button>
+        <div className="rounded-[28px] bg-gradient-to-r from-indigo-500 to-fuchsia-500 p-[1px] shadow-[0_25px_55px_-25px_rgba(120,40,200,0.65)]">
+          <div className="flex items-center justify-between rounded-[26px] bg-white/95 px-5 py-4 text-slate-900">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">Рейтинг сотрудников</h2>
+              <p className="text-xs text-slate-500">Лучшие за последние дни</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setRatingInfoOpen(true)}
+                className="h-10 w-10 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 text-lg font-semibold text-white shadow-md shadow-fuchsia-200/70"
+              >
+                ?
+              </button>
+              <button className="h-10 w-10 rounded-full border border-slate-200 bg-white text-lg text-slate-500 shadow-sm">⛃</button>
+            </div>
           </div>
         </div>
-        {leaderboardLoading && <div className="text-sm text-slate-400">Загружаем данные...</div>}
-        {leaderboardError && <div className="text-sm text-red-400">{leaderboardError}</div>}
+        {leaderboardLoading && <div className="rounded-[26px] bg-white/90 px-5 py-4 text-sm text-slate-500 shadow-inner">Загружаем данные...</div>}
+        {leaderboardError && <div className="rounded-[26px] bg-rose-50 px-5 py-4 text-sm text-rose-500 shadow-inner">{leaderboardError}</div>}
         <div className="space-y-4">
           {leaderboard.map((entry, index) => (
-            <div key={entry.staffId} className="rounded-3xl bg-slate-800/70 p-4 flex items-center justify-between">
+            <div key={entry.staffId} className="flex items-center justify-between rounded-[26px] border border-slate-200/70 bg-white/95 px-5 py-4 shadow-[0_18px_40px_-30px_rgba(15,23,42,0.35)]">
               <div>
-                <div className="text-xs text-slate-500">#{index + 1}</div>
-                <div className="text-base font-semibold text-white">{entry.staffName}</div>
-                <div className="text-xs text-slate-400">{entry.outletName || '—'}</div>
+                <div className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">#{index + 1}</div>
+                <div className="pt-1 text-base font-semibold text-slate-900">{entry.staffName}</div>
+                <div className="text-xs text-slate-500">{entry.outletName || '—'}</div>
               </div>
-              <div className="text-lg font-semibold text-emerald-300">{formatPoints(entry.points)}</div>
+              <div className="rounded-full bg-gradient-to-r from-amber-400 to-orange-500 px-5 py-2 text-lg font-semibold text-white shadow-md shadow-amber-200/60">
+                {formatPoints(entry.points)}
+              </div>
             </div>
           ))}
           {!leaderboard.length && !leaderboardLoading && (
-            <div className="rounded-3xl bg-slate-800/60 p-4 text-sm text-slate-400">
+            <div className="rounded-[26px] bg-white/90 px-5 py-4 text-sm text-slate-500 shadow-inner">
               Нет данных для отображения.
             </div>
           )}
         </div>
       </div>
       {ratingInfoOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6">
-          <div className="w-full max-w-sm rounded-3xl bg-slate-900 p-6 space-y-4">
-            <h3 className="text-lg font-semibold text-white">Информация</h3>
-            <p className="text-sm text-slate-300">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-6">
+          <div className="w-full max-w-sm space-y-4 rounded-[32px] bg-white/95 p-6 text-slate-900 shadow-[0_30px_60px_-30px_rgba(30,64,175,0.6)]">
+            <h3 className="text-lg font-semibold text-slate-900">Информация</h3>
+            <p className="text-sm text-slate-600">
               Рейтинг строится за последние N дней. Сотруднику начисляется N очков — за начисление бонусов старому клиенту, N очков — за начисление бонусов новому клиенту.
             </p>
             <button
               onClick={() => setRatingInfoOpen(false)}
-              className="w-full rounded-full bg-emerald-500 py-3 text-sm font-semibold text-slate-900"
+              className="w-full rounded-full bg-gradient-to-r from-indigo-500 to-fuchsia-500 py-3 text-sm font-semibold text-white shadow-lg shadow-fuchsia-200/70"
             >
               Понятно
             </button>
@@ -1573,82 +1619,85 @@ export default function Page() {
       )}
     </div>
   );
-
   const renderReturnsTab = () => (
-    <div className="flex-1 overflow-y-auto px-6 pb-32">
+    <div className="flex-1 overflow-y-auto px-2 pb-32 sm:px-4">
       <div className="mt-6 space-y-6">
-        <div className="rounded-3xl bg-slate-800/70 p-6 space-y-4">
-          <div className="text-sm text-slate-300">Оформить возврат по чеку</div>
+        <div className="space-y-4 rounded-[28px] bg-white/95 p-6 shadow-[0_20px_45px_-30px_rgba(15,23,42,0.45)]">
+          <div className="text-sm font-semibold text-slate-800">Оформить возврат по чеку</div>
           <input
             value={refundReceiptNumber}
             onChange={(e) => setRefundReceiptNumber(e.target.value)}
             placeholder="Номер чека"
-            className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-rose-300"
           />
           <input
             type="number"
             value={refundTotal ? String(refundTotal) : ''}
             onChange={(e) => setRefundTotal(Number(e.target.value))}
             placeholder="Сумма возврата"
-            className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-rose-300"
           />
           <button
             onClick={doRefund}
-            className="w-full rounded-full bg-emerald-500 py-3 text-sm font-semibold text-slate-900"
+            className="w-full rounded-full bg-gradient-to-r from-rose-500 to-orange-400 py-3 text-sm font-semibold text-white shadow-lg shadow-rose-200/70"
           >
             Оформить возврат
           </button>
         </div>
         <div className="space-y-4">
-          <h3 className="text-sm text-slate-300">История возвратов</h3>
+          <h3 className="text-sm font-semibold text-slate-700">История возвратов</h3>
           {refundHistory.map((item) => (
-            <div key={item.id} className="rounded-3xl bg-slate-800/60 p-4 space-y-1">
-              <div className="text-sm text-slate-400">{formatDateTime(item.createdAt)}</div>
-              <div className="text-base font-semibold text-orange-300">Возврат {formatCurrency(Math.abs(item.amount))}</div>
-              <div className="text-xs text-slate-500">Чек {item.receiptNumber || '—'}</div>
+            <div key={item.id} className="rounded-[26px] border border-rose-200/60 bg-gradient-to-br from-rose-50 to-rose-100/70 px-5 py-4 shadow-[0_18px_40px_-32px_rgba(159,18,57,0.55)]">
+              <div className="text-sm font-medium text-rose-600">Возврат {formatCurrency(Math.abs(item.amount))}</div>
+              <div className="text-xs text-rose-500">{formatDateTime(item.createdAt)}</div>
+              <div className="text-xs text-rose-500/80">Чек {item.receiptNumber || '—'}</div>
             </div>
           ))}
-          {!refundHistory.length && <div className="text-sm text-slate-400">Пока нет возвратов.</div>}
+          {!refundHistory.length && <div className="rounded-[26px] bg-white/90 px-5 py-4 text-sm text-slate-500 shadow-inner">Пока нет возвратов.</div>}
         </div>
       </div>
     </div>
   );
-
   if (step !== 'terminal' || !session) {
     return renderAuth();
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 text-white">
-      <div className="mx-auto flex min-h-screen w-full max-w-md flex-col">
-        <header className="px-6 pt-10">
-          <div className="flex items-center justify-between">
+    <main className="flex min-h-screen justify-center bg-gradient-to-br from-sky-500 via-violet-500 to-fuchsia-500 px-4 text-slate-900">
+      <div className="relative mx-auto flex min-h-screen w-full max-w-[420px] flex-col overflow-hidden rounded-none bg-white/90 px-5 pb-28 pt-8 shadow-[0_40px_90px_-35px_rgba(76,29,149,0.55)] backdrop-blur md:my-12 md:rounded-[40px] md:px-8 md:pb-32">
+        <header className="rounded-[28px] bg-gradient-to-r from-indigo-500 to-fuchsia-500 px-5 py-5 text-white shadow-lg shadow-fuchsia-300/60">
+          <div className="flex items-start justify-between">
             <div>
-              <div className="text-xs uppercase tracking-[0.3em] text-slate-500">{session.merchantId}</div>
-              <h1 className="text-2xl font-semibold text-white">{flowHeader}</h1>
+              <div className="text-xs uppercase tracking-[0.3em] text-white/70">{session.merchantId}</div>
+              <h1 className="pt-2 text-2xl font-semibold text-white">{flowHeader}</h1>
             </div>
-            <button onClick={logoutStaff} className="text-sm text-slate-400 underline">Выйти</button>
+            <button
+              onClick={logoutStaff}
+              className="rounded-full bg-white/15 px-4 py-2 text-xs font-semibold text-white transition hover:bg-white/25"
+            >
+              Выйти
+            </button>
           </div>
         </header>
-        <div className="flex-1">
+        <div className="mt-6 flex-1">
           {activeTab === 'home' && renderHomeTab()}
           {activeTab === 'history' && renderHistoryTab()}
           {activeTab === 'rating' && renderRatingTab()}
           {activeTab === 'returns' && renderReturnsTab()}
         </div>
-        <nav className="sticky bottom-0 flex w-full items-center justify-between bg-slate-900/90 px-6 py-4 backdrop-blur">
+        <nav className="sticky bottom-0 mt-8 flex items-center justify-between rounded-full border border-slate-200/70 bg-white/95 px-4 py-3 shadow-[0_20px_40px_-30px_rgba(15,23,42,0.45)]">
           {[
-            { key: 'home', label: 'Главная', icon: '⌂' },
-            { key: 'history', label: 'История', icon: '⟲' },
-            { key: 'rating', label: 'Рейтинг', icon: '★' },
-            { key: 'returns', label: 'Возвраты', icon: '↺' },
+            { key: 'home', label: 'Главная', icon: '🏠' },
+            { key: 'history', label: 'История', icon: '🗂️' },
+            { key: 'rating', label: 'Рейтинг', icon: '⭐' },
+            { key: 'returns', label: 'Возвраты', icon: '↩️' },
           ].map((item) => (
             <button
               key={item.key}
               onClick={() => setActiveTab(item.key as typeof activeTab)}
-              className={`flex flex-col items-center text-xs ${activeTab === item.key ? 'text-emerald-300' : 'text-slate-400'}`}
+              className={`flex flex-col items-center gap-1 rounded-full px-3 py-2 text-xs font-semibold transition ${activeTab === item.key ? 'bg-gradient-to-r from-indigo-500 to-fuchsia-500 text-white shadow-md shadow-fuchsia-200/70' : 'text-slate-500 hover:text-slate-700'}`}
             >
-              <span className="text-lg">{item.icon}</span>
+              <span className="text-lg leading-none">{item.icon}</span>
               <span>{item.label}</span>
             </button>
           ))}
@@ -1656,22 +1705,22 @@ export default function Page() {
       </div>
 
       {scanOpen && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/95 p-6 text-white">
-          <div className="w-full max-w-sm space-y-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur">
+          <div className="w-full max-w-sm space-y-6 rounded-[32px] bg-white/95 p-6 text-slate-900 shadow-[0_40px_90px_-35px_rgba(76,29,149,0.55)]">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Сканирование QR</h2>
-              <button onClick={() => setScanOpen(false)} className="text-2xl">×</button>
+              <h2 className="text-lg font-semibold text-slate-900">Сканирование QR</h2>
+              <button onClick={() => setScanOpen(false)} className="text-2xl text-slate-400 transition hover:text-slate-600">×</button>
             </div>
-            <div className="rounded-3xl bg-slate-900 p-4">
+            <div className="rounded-[28px] bg-gradient-to-br from-indigo-500/10 to-fuchsia-500/10 p-4">
               <QrScanner onResult={onScan} onClose={() => setScanOpen(false)} />
             </div>
             <div className="space-y-3">
-              <div className="text-sm text-slate-300">Или введите токен вручную</div>
+              <div className="text-sm font-medium text-slate-700">Или введите токен вручную</div>
               <input
                 value={manualTokenInput}
                 onChange={(e) => setManualTokenInput(e.target.value)}
                 placeholder="Токен клиента"
-                className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-300"
               />
               <button
                 onClick={() => {
@@ -1680,7 +1729,7 @@ export default function Page() {
                     setScanOpen(false);
                   }
                 }}
-                className="w-full rounded-full bg-emerald-500 py-3 text-sm font-semibold text-slate-900"
+                className="w-full rounded-full bg-gradient-to-r from-indigo-500 to-fuchsia-500 py-3 text-sm font-semibold text-white shadow-lg shadow-fuchsia-200/70"
               >
                 Продолжить
               </button>

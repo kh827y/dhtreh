@@ -125,15 +125,15 @@ export default function QrScanner({ onResult, onClose }: Props) {
   };
 
   return (
-    <div className="relative w-full overflow-hidden rounded-3xl bg-slate-950/80 p-4">
-      <div id={divIdRef.current} className="mx-auto h-64 w-64 overflow-hidden rounded-2xl bg-black/40" />
+    <div className="relative w-full overflow-hidden rounded-[28px] bg-white/90 p-4 shadow-[0_25px_60px_-40px_rgba(79,70,229,0.5)]">
+      <div id={divIdRef.current} className="mx-auto h-64 w-64 overflow-hidden rounded-2xl border border-indigo-200 bg-slate-900/90 shadow-inner" />
       <button
         onClick={handleClose}
-        className="absolute right-4 top-4 h-8 w-8 rounded-full bg-slate-800 text-white"
+        className="absolute right-4 top-4 h-9 w-9 rounded-full bg-gradient-to-r from-indigo-500 to-fuchsia-500 text-white shadow-md shadow-fuchsia-200/70"
       >
         ✕
       </button>
-      <div className="pt-4 text-center text-sm text-slate-300">Наведи камеру на QR из мини-аппы</div>
+      <div className="pt-4 text-center text-sm text-slate-600">Наведи камеру на QR из мини-аппы</div>
     </div>
   );
 }
