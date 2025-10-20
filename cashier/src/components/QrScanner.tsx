@@ -1,24 +1,37 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-// @ts-ignore
+// @ts-expect-error: библиотека не предоставляет типы
 import { Html5Qrcode } from 'html5-qrcode';
+
+type Html5QrcodeLike = {
+  start: (
+    config: { facingMode: 'environment' },
+    options: { fps: number; qrbox: { width: number; height: number } },
+    onSuccess: (decodedText: string) => void,
+    onError: () => void,
+  ) => Promise<void>;
+  stop: () => Promise<void>;
+  clear: () => Promise<void>;
+};
 
 type Props = { onResult: (text: string) => void; onClose: () => void };
 
 // Глобальные барьеры на уровне окна, чтобы переживать HMR/StrictMode
-const __qrGlobal = (globalThis as any);
+const __qrGlobal = globalThis as typeof globalThis & {
+  __QR_SCANNER_STATE__?: { locked: boolean; lastStop: Promise<void> | null };
+};
 if (!__qrGlobal.__QR_SCANNER_STATE__) {
-  __qrGlobal.__QR_SCANNER_STATE__ = { locked: false, lastStop: null as Promise<void> | null };
+  __qrGlobal.__QR_SCANNER_STATE__ = { locked: false, lastStop: null };
 }
 const QR_STATE: { locked: boolean; lastStop: Promise<void> | null } = __qrGlobal.__QR_SCANNER_STATE__;
 
 export default function QrScanner({ onResult, onClose }: Props) {
   const divIdRef = useRef<string>('qr-reader-' + Math.random().toString(36).slice(2));
-  const qrRef = useRef<any>(null);
-  const startedRef = useRef(false);   // <— защита от повторного старта в StrictMode
+  const qrRef = useRef<Html5QrcodeLike | null>(null);
+  const startedRef = useRef(false); // <— защита от повторного старта в StrictMode
   const handledRef = useRef(false);
-  const mountedRef = useRef(true);    // <— дополнительная защита от StrictMode
+  const mountedRef = useRef(true); // <— дополнительная защита от StrictMode
   const onResultRef = useRef(onResult);
   const onCloseRef = useRef(onClose);
   const stopRef = useRef<() => Promise<void> | void>(() => {});
@@ -81,9 +94,10 @@ export default function QrScanner({ onResult, onClose }: Props) {
           () => {}
         );
         await startPromiseRef.current;
-      } catch (e: any) {
+      } catch (e: unknown) {
         // Браузер может кидать AbortError при быстром закрытии/остановке — не показываем алерт в этом случае
-        const msg = String(e?.name || e?.message || e || '');
+        const err = e as { name?: string; message?: string } | undefined;
+        const msg = String(err?.name || err?.message || e || '');
         if (!/AbortError/i.test(msg)) {
           console.error(e);
           alert('Не удалось запустить камеру. Разрешите доступ к камере или используйте другой браузер.');
@@ -111,10 +125,15 @@ export default function QrScanner({ onResult, onClose }: Props) {
   };
 
   return (
-    <div style={{ position: 'relative', padding: 12, border: '1px solid #ddd', borderRadius: 12 }}>
-      <div id={divIdRef.current} style={{ width: 280, margin: '0 auto' }} />
-      <button onClick={handleClose} style={{ position: 'absolute', top: 8, right: 8 }}>✕</button>
-      <div style={{ textAlign: 'center', marginTop: 8, color: '#666' }}>Наведи камеру на QR из мини-аппы</div>
+    <div className="relative w-full overflow-hidden rounded-3xl bg-slate-950/80 p-4">
+      <div id={divIdRef.current} className="mx-auto h-64 w-64 overflow-hidden rounded-2xl bg-black/40" />
+      <button
+        onClick={handleClose}
+        className="absolute right-4 top-4 h-8 w-8 rounded-full bg-slate-800 text-white"
+      >
+        ✕
+      </button>
+      <div className="pt-4 text-center text-sm text-slate-300">Наведи камеру на QR из мини-аппы</div>
     </div>
   );
 }

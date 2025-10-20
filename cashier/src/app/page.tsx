@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import QrScanner from '../components/QrScanner';
 import SegmentedInput from '../components/SegmentedInput';
 
@@ -12,13 +12,26 @@ type QuoteRedeemResp = {
   holdId?: string;
   message?: string;
 };
+
 type QuoteEarnResp = {
   canEarn?: boolean;
   pointsToEarn?: number;
   holdId?: string;
   message?: string;
 };
-type Txn = { id: string; type: 'EARN'|'REDEEM'|'REFUND'|'ADJUST'; amount: number; orderId?: string|null; receiptNumber?: string|null; createdAt: string; outletId?: string|null; outletPosType?: string|null; outletLastSeenAt?: string|null };
+
+type Txn = {
+  id: string;
+  type: 'EARN' | 'REDEEM' | 'REFUND' | 'ADJUST';
+  amount: number;
+  orderId?: string | null;
+  receiptNumber?: string | null;
+  createdAt: string;
+  outletId?: string | null;
+  outletPosType?: string | null;
+  outletLastSeenAt?: string | null;
+};
+
 type CashierSessionInfo = {
   sessionId: string;
   merchantId: string;
@@ -39,10 +52,60 @@ type CashierSessionInfo = {
   rememberPin?: boolean;
 };
 
+type RawSessionPayload = {
+  sessionId?: unknown;
+  merchantId?: unknown;
+  staff?: {
+    id?: unknown;
+    role?: unknown;
+    login?: unknown;
+    firstName?: unknown;
+    lastName?: unknown;
+    displayName?: unknown;
+  } | null;
+  outlet?: {
+    id?: unknown;
+    name?: unknown;
+  } | null;
+  startedAt?: unknown;
+  lastSeenAt?: unknown;
+  rememberPin?: unknown;
+};
+
+type CustomerOverview = {
+  customerId: string | null;
+  name: string | null;
+  levelName: string | null;
+  balance: number | null;
+};
+
+type LeaderboardEntry = {
+  staffId: string;
+  staffName: string;
+  outletName: string | null;
+  points: number;
+};
+
+type RefundHistoryItem = {
+  id: string;
+  createdAt: string;
+  amount: number;
+  receiptNumber?: string | null;
+};
+
+type RawLeaderboardItem = {
+  staffId?: unknown;
+  staffName?: unknown;
+  staffDisplayName?: unknown;
+  staffLogin?: unknown;
+  outletName?: unknown;
+  points?: unknown;
+};
+
 const COOKIE_LOGIN = 'cashier_login';
 const COOKIE_PASSWORD = 'cashier_password';
 const COOKIE_PIN = 'cashier_pin';
-const COOKIE_MAX_AGE = 60 * 60 * 24 * 180; // ~180 дней в секундах
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 180;
 
 const isBrowser = typeof document !== 'undefined';
 const isSecureContext =
@@ -80,14 +143,101 @@ const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
 const LOYALTY_EVENT_CHANNEL = 'loyalty:events';
 const LOYALTY_EVENT_STORAGE_KEY = 'loyalty:lastEvent';
 
+const base64UrlDecode = (s: string) => {
+  try {
+    s = s.replace(/-/g, '+').replace(/_/g, '/');
+    const pad = s.length % 4 ? 4 - (s.length % 4) : 0;
+    return atob(s + '='.repeat(pad));
+  } catch {
+    return '';
+  }
+};
+
+const extractNameFromToken = (token: string): string | null => {
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const payload = JSON.parse(base64UrlDecode(parts[1]) || '{}');
+    const nameCandidate =
+      payload?.name ??
+      payload?.username ??
+      payload?.displayName ??
+      payload?.fullName ??
+      null;
+    if (nameCandidate) return String(nameCandidate);
+  } catch {
+    /* noop */
+  }
+  return null;
+};
+
+const resolveCustomerIdFromToken = (token: string): string | null => {
+  const trimmed = (token || '').trim();
+  if (!trimmed) return null;
+  const parts = trimmed.split('.');
+  if (parts.length !== 3) return trimmed;
+  try {
+    const payload = JSON.parse(base64UrlDecode(parts[1]) || '{}');
+    const candidate =
+      payload?.cid ??
+      payload?.customerId ??
+      payload?.sub ??
+      payload?.userId ??
+      payload?.id ??
+      null;
+    return candidate ? String(candidate) : null;
+  } catch {
+    return null;
+  }
+};
+
+const qrKeyFromToken = (token: string) => {
+  const trimmed = token.trim();
+  const parts = trimmed.split('.');
+  if (parts.length === 3) {
+    try {
+      const payload = JSON.parse(base64UrlDecode(parts[1]) || '{}');
+      if (payload?.jti) return `jti:${payload.jti}`;
+    } catch {
+      /* noop */
+    }
+  }
+  return `raw:${trimmed}`;
+};
+
+const formatDateTime = (value: string) => {
+  try {
+    const date = new Date(value);
+    return new Intl.DateTimeFormat('ru-RU', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(date);
+  } catch {
+    return value;
+  }
+};
+
+const formatCurrency = (value: number | null | undefined) => {
+  if (value == null || Number.isNaN(value)) return '0 ₽';
+  return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 }).format(value);
+};
+
+const formatPoints = (value: number | null | undefined) => {
+  if (value == null || Number.isNaN(value)) return '0';
+  return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(value);
+};
+
 export default function Page() {
   const [merchantId, setMerchantId] = useState<string>(MERCHANT);
 
   const [mode, setMode] = useState<'redeem' | 'earn'>('redeem');
-  const [userToken, setUserToken] = useState<string>('user-1'); // сюда вставится отсканированный JWT
-  const [orderId, setOrderId] = useState<string>('O-1');
-  const [total, setTotal] = useState<number>(1000);
-  const [eligibleTotal, setEligibleTotal] = useState<number>(1000);
+  const [userToken, setUserToken] = useState<string>('');
+  const [orderId, setOrderId] = useState<string>('');
+  const [total, setTotal] = useState<number>(0);
+  const [eligibleTotal, setEligibleTotal] = useState<number>(0);
   const [receiptNumber, setReceiptNumber] = useState<string>('');
 
   const [holdId, setHoldId] = useState<string | null>(null);
@@ -95,20 +245,17 @@ export default function Page() {
   const [busy, setBusy] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
 
-  // refund UI
   const [refundReceiptNumber, setRefundReceiptNumber] = useState<string>('');
   const [refundTotal, setRefundTotal] = useState<number>(0);
 
-  // history UI
   const [history, setHistory] = useState<Txn[]>([]);
   const [histBusy, setHistBusy] = useState(false);
   const [histNextBefore, setHistNextBefore] = useState<string | null>(null);
 
-  // сессия кассира
   const [session, setSession] = useState<CashierSessionInfo | null>(null);
   const [sessionLoading, setSessionLoading] = useState<boolean>(true);
   const [rememberPin, setRememberPin] = useState<boolean>(false);
-  // cashier auth (merchant login + 9-digit password)
+
   const [merchantLogin, setMerchantLogin] = useState<string>('');
   const [passwordDigits, setPasswordDigits] = useState<string>('');
   const [pinDigits, setPinDigits] = useState<string>('');
@@ -119,7 +266,42 @@ export default function Page() {
     outlet?: { id: string; name?: string | null };
     accesses: Array<{ outletId: string; outletName: string }>;
   } | null>(null);
+
+  const [activeTab, setActiveTab] = useState<'home' | 'history' | 'rating' | 'returns'>('home');
+  const [flowStep, setFlowStep] = useState<'idle' | 'details' | 'points' | 'confirm' | 'receipt'>('idle');
+  const [purchaseAmountInput, setPurchaseAmountInput] = useState<string>('');
+  const [receiptInput, setReceiptInput] = useState<string>('');
+  const [selectedPoints, setSelectedPoints] = useState<number>(0);
+  const [lastRequestedRedeem, setLastRequestedRedeem] = useState<number>(0);
+  const [quoteError, setQuoteError] = useState<string>('');
+  const [confirmSnapshot, setConfirmSnapshot] = useState<{
+    purchaseTotal: number;
+    finalPayable: number;
+    pointsEarn: number;
+    pointsBurn: number;
+  } | null>(null);
+  const [receiptData, setReceiptData] = useState<{
+    purchaseTotal: number;
+    pointsEarn: number;
+    pointsBurn: number;
+    finalPayable: number;
+  } | null>(null);
+  const [overview, setOverview] = useState<CustomerOverview>({
+    customerId: null,
+    name: null,
+    levelName: null,
+    balance: null,
+  });
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+  const [leaderboardError, setLeaderboardError] = useState<string>('');
+  const [ratingInfoOpen, setRatingInfoOpen] = useState(false);
+  const [refundHistory, setRefundHistory] = useState<RefundHistoryItem[]>([]);
+
+  const [manualTokenInput, setManualTokenInput] = useState('');
+
   const password9 = passwordDigits;
+  const normalizedLogin = merchantLogin.trim().toLowerCase().replace(/[^a-z]/g, '') || merchantLogin.trim().toLowerCase();
 
   useEffect(() => {
     const savedLogin = readCookie(COOKIE_LOGIN);
@@ -133,30 +315,33 @@ export default function Page() {
     }
   }, []);
 
-  const mapSessionResponse = (payload: any): CashierSessionInfo => {
-    const staffData = payload?.staff ?? {};
-    const outletData = payload?.outlet ?? {};
+  const mapSessionResponse = (payload: unknown): CashierSessionInfo => {
+    const raw = (payload ?? {}) as RawSessionPayload;
+    const staffData = raw.staff ?? {};
+    const outletData = raw.outlet ?? {};
     return {
-      sessionId: payload?.sessionId || '',
-      merchantId: String(payload?.merchantId || MERCHANT || ''),
+      sessionId: String(raw.sessionId ?? ''),
+      merchantId: String(raw.merchantId ?? MERCHANT ?? ''),
       staff: {
-        id: String(staffData?.id || ''),
-        role: staffData?.role || 'CASHIER',
-        login: staffData?.login ?? null,
-        firstName: staffData?.firstName ?? null,
-        lastName: staffData?.lastName ?? null,
-        displayName: staffData?.displayName ?? null,
+        id: String(staffData?.id ?? ''),
+        role: typeof staffData?.role === 'string' ? staffData.role : 'CASHIER',
+        login: typeof staffData?.login === 'string' ? staffData.login : null,
+        firstName: typeof staffData?.firstName === 'string' ? staffData.firstName : null,
+        lastName: typeof staffData?.lastName === 'string' ? staffData.lastName : null,
+        displayName: typeof staffData?.displayName === 'string' ? staffData.displayName : null,
       },
       outlet: {
-        id: String(outletData?.id || ''),
+        id: String(outletData?.id ?? ''),
         name:
           typeof outletData?.name === 'string'
             ? outletData.name
-            : outletData?.id ?? null,
+            : typeof outletData?.id === 'string'
+              ? outletData.id
+              : null,
       },
-      startedAt: payload?.startedAt || new Date().toISOString(),
-      lastSeenAt: payload?.lastSeenAt ?? null,
-      rememberPin: Boolean(payload?.rememberPin),
+      startedAt: typeof raw.startedAt === 'string' ? raw.startedAt : new Date().toISOString(),
+      lastSeenAt: typeof raw.lastSeenAt === 'string' ? raw.lastSeenAt : null,
+      rememberPin: Boolean(raw.rememberPin),
     };
   };
 
@@ -192,7 +377,6 @@ export default function Page() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -205,71 +389,49 @@ export default function Page() {
     }
   }, [session, sessionLoading, passwordDigits, merchantLogin]);
 
-  // Сгенерируем уникальный orderId при первом монтировании, чтобы избежать идемпотентных коллизий после перезагрузки
   useEffect(() => {
     setOrderId('O-' + Math.floor(Date.now() % 1_000_000));
   }, []);
 
-  async function callQuote() {
-    if (!session) {
-      alert('Сначала авторизуйтесь в кассире.');
-      return;
-    }
-    setBusy(true);
-    const requestId = 'req_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8);
-    setResult(null);
-    setHoldId(null);
+  const emitLoyaltyEvent = (payload: {
+    type: string;
+    merchantId: string;
+    customerId?: string | null;
+    orderId?: string;
+    receiptNumber?: string;
+    redeemApplied?: number;
+    earnApplied?: number;
+    alreadyCommitted?: boolean;
+    mode?: 'redeem' | 'earn';
+  }) => {
+    if (typeof window === 'undefined') return;
+    if (!payload.type || !payload.merchantId) return;
+    const enriched = {
+      ...payload,
+      ts: Date.now(),
+    };
     try {
-      const activeMerchantId = session?.merchantId || merchantId;
-      const activeOutletId = session?.outlet?.id || undefined;
-      const activeStaffId = session?.staff?.id || undefined;
-      const r = await fetch(`${API_BASE}/loyalty/quote`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId },
-        body: JSON.stringify({
-          merchantId: activeMerchantId,
-          mode,
-          userToken,
-          orderId,
-          total,
-          eligibleTotal,
-          outletId: activeOutletId || undefined,
-          staffId: activeStaffId || undefined,
-        }),
-      });
-      if (!r.ok) {
-        const text = await r.text();
-        throw new Error(text || r.statusText);
+      if (typeof window.BroadcastChannel !== 'undefined') {
+        const channel = new BroadcastChannel(LOYALTY_EVENT_CHANNEL);
+        channel.postMessage(enriched);
+        channel.close();
       }
-      const data = await r.json();
-      setResult(data);
-      setHoldId((data as any).holdId ?? null);
-    } catch (e: any) {
-      const msg = String(e?.message || e);
-      setScanOpen(false);
-      if (msg.includes('QR токен уже использован')) {
-        alert('Этот QR уже использован. Попросите клиента обновить QR в мини-аппе.');
-      } else if (msg.includes('ERR_JWT_EXPIRED') || msg.includes('JWTExpired') || msg.includes('"exp"')) {
-        alert('QR истёк по времени. Попросите клиента обновить QR в мини-аппе и отсканируйте заново.');
-      } else if (msg.includes('другого мерчанта')) {
-        alert('QR выписан для другого мерчанта.');
-      } else {
-        alert('Ошибка запроса: ' + msg);
-      }
-    } finally {
-      setBusy(false);
+    } catch {
+      /* noop */
     }
-  }
+    try {
+      localStorage.setItem(LOYALTY_EVENT_STORAGE_KEY, JSON.stringify(enriched));
+    } catch {
+      /* noop */
+    }
+  };
 
-  // ===== Cashier Auth =====
-  const normalizedLogin = merchantLogin.trim().toLowerCase().replace(/[^a-z]/g, '') || merchantLogin.trim().toLowerCase();
-
-  async function cashierLogin() {
+  const cashierLogin = async () => {
     setAuthMsg('');
     try {
-      if (!normalizedLogin || !password9 || password9.length !== 9)
+      if (!normalizedLogin || !password9 || password9.length !== 9) {
         throw new Error('Укажите логин мерчанта и 9‑значный пароль');
+      }
       const r = await fetch(`${API_BASE}/loyalty/cashier/login`, {
         method: 'POST',
         credentials: 'include',
@@ -288,17 +450,19 @@ export default function Page() {
         if (!rememberPin) setPinDigits('');
       }
       setStep('pin');
-    } catch (e: any) {
-      setAuthMsg(String(e?.message || e));
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      setAuthMsg(message);
     }
-  }
+  };
 
-  async function lookupStaffByPin(pin: string) {
+  const lookupStaffByPin = async (pin: string) => {
     setAuthMsg('');
     if (!pin || pin.length !== 4) return;
     try {
-      if (!normalizedLogin || !password9 || password9.length !== 9)
+      if (!normalizedLogin || !password9 || password9.length !== 9) {
         throw new Error('Сначала выполните вход мерчанта');
+      }
       setPinDigits(pin);
       const r = await fetch(`${API_BASE}/loyalty/cashier/staff-access`, {
         method: 'POST',
@@ -317,10 +481,7 @@ export default function Page() {
         data?.outlet && data.outlet.id
           ? {
               id: String(data.outlet.id),
-              name:
-                typeof data.outlet.name === 'string'
-                  ? data.outlet.name
-                  : String(data.outlet.id),
+              name: typeof data.outlet.name === 'string' ? data.outlet.name : String(data.outlet.id),
             }
           : undefined;
       setStaffLookup({
@@ -335,18 +496,21 @@ export default function Page() {
         accesses,
       });
       if (rememberPin) writeCookie(COOKIE_PIN, pin);
-    } catch (e: any) {
-      setAuthMsg(String(e?.message || e));
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      setAuthMsg(message);
     }
-  }
+  };
 
-  async function startCashierSessionAuth() {
+  const startCashierSessionAuth = async () => {
     setAuthMsg('');
     try {
-      if (!normalizedLogin || !password9 || password9.length !== 9)
+      if (!normalizedLogin || !password9 || password9.length !== 9) {
         throw new Error('Сначала войдите как мерчант (логин/пароль 9 цифр)');
-      if (!pinDigits || pinDigits.length !== 4)
+      }
+      if (!pinDigits || pinDigits.length !== 4) {
         throw new Error('Введите PIN сотрудника');
+      }
       const r = await fetch(`${API_BASE}/loyalty/cashier/session`, {
         method: 'POST',
         credentials: 'include',
@@ -373,19 +537,20 @@ export default function Page() {
       }
       setAuthMsg('');
       setStep('terminal');
-    } catch (e: any) {
-      setAuthMsg(String(e?.message || e));
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      setAuthMsg(message);
     }
-  }
+  };
 
-  async function logoutStaff() {
+  const logoutStaff = async () => {
     try {
       await fetch(`${API_BASE}/loyalty/cashier/session`, {
         method: 'DELETE',
         credentials: 'include',
       });
     } catch {
-      // ignore logout errors, cookie will be cleared client-side
+      /* ignore */
     }
     setSession(null);
     setStaffLookup(null);
@@ -398,16 +563,83 @@ export default function Page() {
     }
     setRememberPin(Boolean(readCookie(COOKIE_PIN)));
     setStep(passwordDigits.length === 9 && merchantLogin.trim() ? 'pin' : 'merchant');
-  }
+    resetFlow();
+  };
 
-  async function callCommit() {
+  const callQuote = async (
+    overrides?: Partial<{ total: number; eligibleTotal: number; mode: 'redeem' | 'earn'; receiptNumber: string }>,
+  ): Promise<QuoteRedeemResp | QuoteEarnResp | null> => {
     if (!session) {
       alert('Сначала авторизуйтесь в кассире.');
-      return;
+      return null;
     }
-    if (!holdId) return alert('Сначала сделайте расчёт (QUOTE).');
     setBusy(true);
-    const requestId = 'req_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8);
+    const requestId = 'req_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+    setResult(null);
+    setHoldId(null);
+    const totalToSend = overrides?.total ?? total;
+    const eligibleToSend = overrides?.eligibleTotal ?? eligibleTotal;
+    const modeToSend = overrides?.mode ?? mode;
+    const receiptToSend = overrides?.receiptNumber ?? receiptNumber;
+    try {
+      const activeMerchantId = session?.merchantId || merchantId;
+      const activeOutletId = session?.outlet?.id || undefined;
+      const activeStaffId = session?.staff?.id || undefined;
+      const r = await fetch(`${API_BASE}/loyalty/quote`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId },
+        body: JSON.stringify({
+          merchantId: activeMerchantId,
+          mode: modeToSend,
+          userToken,
+          orderId,
+          total: totalToSend,
+          eligibleTotal: eligibleToSend,
+          outletId: activeOutletId || undefined,
+          staffId: activeStaffId || undefined,
+          receiptNumber: receiptToSend || undefined,
+        }),
+      });
+      if (!r.ok) {
+        const text = await r.text();
+        throw new Error(text || r.statusText);
+      }
+      const data = await r.json();
+      setResult(data);
+      const holdCandidate = (data as { holdId?: unknown } | null)?.holdId;
+      setHoldId(typeof holdCandidate === 'string' ? holdCandidate : null);
+      return data;
+    } catch (e: unknown) {
+      const err = e as { message?: unknown } | undefined;
+      const msg = String(err?.message ?? e ?? '');
+      setScanOpen(false);
+      if (msg.includes('QR токен уже использован')) {
+        alert('Этот QR уже использован. Попросите клиента обновить QR в мини-аппе.');
+      } else if (msg.includes('ERR_JWT_EXPIRED') || msg.includes('JWTExpired') || msg.includes('"exp"')) {
+        alert('QR истёк по времени. Попросите клиента обновить QR в мини-аппе и отсканируйте заново.');
+      } else if (msg.includes('другого мерчанта')) {
+        alert('QR выписан для другого мерчанта.');
+      } else {
+        alert('Ошибка расчёта: ' + msg);
+      }
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const callCommit = async () => {
+    if (!session) {
+      alert('Сначала авторизуйтесь в кассире.');
+      return null;
+    }
+    if (!holdId) {
+      alert('Сначала сделайте расчёт.');
+      return null;
+    }
+    setBusy(true);
+    const requestId = 'req_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
     try {
       const normalizedReceiptNumber = receiptNumber.trim();
       const activeMerchantId = session?.merchantId || merchantId;
@@ -440,85 +672,260 @@ export default function Page() {
           alreadyCommitted: Boolean(data?.alreadyCommitted),
           mode,
         });
-        alert(data?.alreadyCommitted ? 'Операция уже была зафиксирована ранее (идемпотентно).' : 'Операция зафиксирована.');
         setHoldId(null);
         setResult(null);
-        setReceiptNumber('');
         setOrderId('O-' + Math.floor(Math.random() * 100000));
-        // не очищаем список сканирований — повторный скан того же QR должен блокироваться
-      } else {
-        alert('Commit вернул неуспех: ' + JSON.stringify(data));
+        return data;
       }
-    } catch (e: any) {
-      alert('Ошибка commit: ' + e?.message);
+      alert('Commit вернул неуспех: ' + JSON.stringify(data));
+      return null;
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      alert('Ошибка commit: ' + message);
+      return null;
     } finally {
       setBusy(false);
     }
-  }
+  };
 
-  async function loadBalance() {
+  const loadCustomerBalance = async (token: string, merchant: string): Promise<number | null> => {
     try {
-      const activeMerchantId = session?.merchantId || merchantId;
-      const r = await fetch(`${API_BASE}/loyalty/balance/${activeMerchantId}/${encodeURIComponent(userToken)}`, {
+      const r = await fetch(`${API_BASE}/loyalty/balance/${merchant}/${encodeURIComponent(token)}`, {
         credentials: 'include',
       });
+      if (!r.ok) return null;
       const data = await r.json();
-      alert(`Баланс клиента ${data.customerId} в мерчанте ${data.merchantId}: ${data.balance} ₽`);
-    } catch (e: any) {
-      alert('Ошибка получения баланса: ' + e?.message);
-    }
-  }
-
-  // защита от повторных onResult
-  const scanHandledRef = useRef(false);
-  // сбрасываем флаг только при открытии окна сканера
-  useEffect(() => { if (scanOpen) scanHandledRef.current = false; }, [scanOpen]);
-  // блок повторных сканов (храним ключи в sessionStorage, переживает HMR/обновления)
-  const scannedTokensRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem('scannedQrKeys_v1');
-      if (raw) scannedTokensRef.current = new Set(JSON.parse(raw));
-    } catch {}
-  }, []);
-  const saveScanned = () => {
-    try { sessionStorage.setItem('scannedQrKeys_v1', JSON.stringify(Array.from(scannedTokensRef.current))); } catch {}
-  };
-  const base64UrlDecode = (s: string) => {
-    try {
-      s = s.replace(/-/g, '+').replace(/_/g, '/');
-      const pad = s.length % 4 ? 4 - (s.length % 4) : 0;
-      return atob(s + '='.repeat(pad));
-    } catch { return ''; }
-  };
-  const extractQrKey = (text: string): string => {
-    const t = (text || '').trim();
-    const parts = t.split('.');
-    if (parts.length === 3) {
-      try { const payload = JSON.parse(base64UrlDecode(parts[1]) || '{}'); if (payload?.jti) return `jti:${payload.jti}`; } catch {}
-    }
-    return `raw:${t}`;
-  };
-
-  const resolveCustomerIdFromToken = (token: string): string | null => {
-    const trimmed = (token || '').trim();
-    if (!trimmed) return null;
-    const parts = trimmed.split('.');
-    if (parts.length !== 3) return trimmed;
-    try {
-      const payload = JSON.parse(base64UrlDecode(parts[1]) || '{}');
-      const candidate =
-        payload?.cid ??
-        payload?.customerId ??
-        payload?.sub ??
-        payload?.userId ??
-        payload?.id ??
-        null;
-      return candidate ? String(candidate) : null;
+      if (typeof data?.balance === 'number') return data.balance;
+      return null;
     } catch {
       return null;
     }
   };
+
+  const loadCustomerLevel = async (merchant: string, customerId: string): Promise<string | null> => {
+    try {
+      const r = await fetch(`${API_BASE}/levels/${merchant}/${encodeURIComponent(customerId)}`, {
+        credentials: 'include',
+      });
+      if (!r.ok) return null;
+      const data = await r.json();
+      const levelName = data?.current?.name ?? data?.level?.name ?? null;
+      return levelName ? String(levelName) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const fetchCustomerOverview = async (token: string) => {
+    const merchant = session?.merchantId || merchantId;
+    const customerId = resolveCustomerIdFromToken(token);
+    const name = extractNameFromToken(token);
+    const [balance, levelName] = await Promise.all([
+      loadCustomerBalance(token, merchant),
+      customerId ? loadCustomerLevel(merchant, customerId) : Promise.resolve(null),
+    ]);
+    setOverview({
+      customerId: customerId ?? token || null,
+      name: name ?? null,
+      levelName,
+      balance,
+    });
+  };
+
+  const resetFlow = () => {
+    setFlowStep('idle');
+    setPurchaseAmountInput('');
+    setReceiptInput('');
+    setSelectedPoints(0);
+    setLastRequestedRedeem(0);
+    setQuoteError('');
+    setConfirmSnapshot(null);
+    setReceiptData(null);
+    setResult(null);
+    setHoldId(null);
+    setOverview({ customerId: null, name: null, levelName: null, balance: null });
+    setUserToken('');
+    setManualTokenInput('');
+    setReceiptNumber('');
+    setTotal(0);
+    setEligibleTotal(0);
+  };
+
+  const beginFlow = async (token: string) => {
+    setUserToken(token);
+    setManualTokenInput('');
+    setFlowStep('details');
+    setPurchaseAmountInput('');
+    setReceiptInput('');
+    setSelectedPoints(0);
+    setLastRequestedRedeem(0);
+    setQuoteError('');
+    setConfirmSnapshot(null);
+    setReceiptData(null);
+    setResult(null);
+    setHoldId(null);
+    await fetchCustomerOverview(token);
+  };
+
+  const handleDetailsContinue = async () => {
+    setQuoteError('');
+    const parsedAmount = Number(purchaseAmountInput.replace(',', '.'));
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      setQuoteError('Введите сумму покупки больше нуля.');
+      return;
+    }
+    setTotal(parsedAmount);
+    setReceiptNumber(receiptInput.trim());
+    setEligibleTotal(parsedAmount);
+    if (mode === 'redeem') {
+      const quote = await callQuote({
+        total: parsedAmount,
+        eligibleTotal: parsedAmount,
+        mode: 'redeem',
+        receiptNumber: receiptInput.trim(),
+      });
+      if (!quote) return;
+      const maxRedeem = (quote as QuoteRedeemResp)?.pointsToBurn ?? 0;
+      setSelectedPoints(maxRedeem);
+      setLastRequestedRedeem(maxRedeem);
+      setFlowStep('points');
+    } else {
+      const quote = await callQuote({
+        total: parsedAmount,
+        eligibleTotal: parsedAmount,
+        mode: 'earn',
+        receiptNumber: receiptInput.trim(),
+      });
+      if (!quote) return;
+      const earn = (quote as QuoteEarnResp)?.pointsToEarn ?? 0;
+      setConfirmSnapshot({
+        purchaseTotal: parsedAmount,
+        finalPayable: parsedAmount,
+        pointsEarn: earn,
+        pointsBurn: 0,
+      });
+      setFlowStep('confirm');
+    }
+  };
+
+  const handlePointsSubmit = async (redeemAll: boolean) => {
+    if (mode !== 'redeem') return;
+    const quote = result as QuoteRedeemResp | null;
+    const maxRedeem = quote?.pointsToBurn ?? 0;
+    const desired = redeemAll ? maxRedeem : Math.min(selectedPoints, maxRedeem);
+    const normalized = Number.isFinite(desired) && desired > 0 ? Math.round(desired) : 0;
+    setSelectedPoints(normalized);
+    if (normalized === 0) {
+      const earnOnly = await callQuote({
+        total,
+        eligibleTotal: 0,
+        mode: 'earn',
+        receiptNumber,
+      });
+      if (!earnOnly) return;
+      const earn = (earnOnly as QuoteEarnResp)?.pointsToEarn ?? 0;
+      setConfirmSnapshot({
+        purchaseTotal: total,
+        finalPayable: total,
+        pointsEarn: earn,
+        pointsBurn: 0,
+      });
+      setMode('earn');
+      setFlowStep('confirm');
+      return;
+    }
+
+    if (normalized !== lastRequestedRedeem) {
+      const updated = await callQuote({
+        total,
+        eligibleTotal: normalized,
+        mode: 'redeem',
+        receiptNumber,
+      });
+      if (!updated) return;
+      const updatedRedeem = (updated as QuoteRedeemResp).pointsToBurn ?? normalized;
+      setSelectedPoints(updatedRedeem);
+      setLastRequestedRedeem(updatedRedeem);
+    }
+
+    const current = (result as QuoteRedeemResp) ?? {};
+    const finalPayable = current.finalPayable ?? Math.max(total - selectedPoints, 0);
+    setConfirmSnapshot({
+      purchaseTotal: total,
+      finalPayable,
+      pointsEarn: 0,
+      pointsBurn: selectedPoints,
+    });
+    setFlowStep('confirm');
+  };
+
+  const handleConfirm = async () => {
+    const data = await callCommit();
+    if (!data) return;
+    const appliedRedeem = typeof data?.redeemApplied === 'number' ? data.redeemApplied : selectedPoints;
+    const appliedEarn = typeof data?.earnApplied === 'number' ? data.earnApplied : 0;
+    setReceiptData({
+      purchaseTotal: total,
+      pointsEarn: appliedEarn,
+      pointsBurn: appliedRedeem,
+      finalPayable: total - appliedRedeem,
+    });
+    setFlowStep('receipt');
+    await fetchCustomerOverview(userToken);
+    loadHistory(true);
+  };
+
+  const handleReceiptClose = () => {
+    setReceiptData(null);
+    resetFlow();
+  };
+
+  const loadHistory = async (reset = false) => {
+    if (histBusy) return;
+    setHistBusy(true);
+    try {
+      const activeMerchantId = session?.merchantId || merchantId;
+      let customerId = userToken;
+      if (userToken.split('.').length === 3) {
+        const manual = prompt('Для истории нужен merchantCustomerId (например, mc_...). Введите его или customerId:');
+        if (!manual) {
+          setHistBusy(false);
+          return;
+        }
+        customerId = manual;
+      }
+      const url = new URL(`${API_BASE}/loyalty/transactions`);
+      url.searchParams.set('merchantId', activeMerchantId);
+      url.searchParams.set('merchantCustomerId', customerId);
+      url.searchParams.set('customerId', customerId);
+      url.searchParams.set('limit', '20');
+      if (!reset && histNextBefore) url.searchParams.set('before', histNextBefore);
+      const r = await fetch(url.toString(), { credentials: 'include' });
+      const data = await r.json();
+      const items: Txn[] = data.items ?? [];
+      setHistory((old) => (reset ? items : [...old, ...items]));
+      setHistNextBefore(data.nextBefore ?? null);
+      if (reset) {
+        const refunds = items.filter((i) => i.type === 'REFUND').map((i) => ({
+          id: i.id,
+          createdAt: i.createdAt,
+          amount: i.amount,
+          receiptNumber: i.receiptNumber ?? null,
+        }));
+        setRefundHistory(refunds);
+      }
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      alert('Ошибка истории: ' + message);
+    } finally {
+      setHistBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    setHistory([]);
+    setHistNextBefore(null);
+  }, [userToken, merchantId]);
 
   const findOrderIdForReceipt = (candidate: string): string | null => {
     const normalized = candidate.trim();
@@ -531,76 +938,20 @@ export default function Page() {
         (h.type === 'REDEEM' || h.type === 'EARN'),
     );
     if (priority?.orderId) return priority.orderId;
-    const fallback = history.find(
-      (h) =>
-        h.receiptNumber &&
-        h.orderId &&
-        h.receiptNumber.trim() === normalized,
-    );
+    const fallback = history.find((h) => h.receiptNumber && h.orderId && h.receiptNumber.trim() === normalized);
     return fallback?.orderId ?? null;
   };
 
-  const emitLoyaltyEvent = (payload: {
-    type: string;
-    merchantId: string;
-    customerId?: string | null;
-    orderId?: string;
-    receiptNumber?: string;
-    redeemApplied?: number;
-    earnApplied?: number;
-    alreadyCommitted?: boolean;
-    mode?: 'redeem' | 'earn';
-  }) => {
-    if (typeof window === 'undefined') return;
-    if (!payload.type || !payload.merchantId) return;
-    const enriched = {
-      ...payload,
-      ts: Date.now(),
-    };
-    try {
-      if (typeof window.BroadcastChannel !== 'undefined') {
-        const channel = new BroadcastChannel(LOYALTY_EVENT_CHANNEL);
-        channel.postMessage(enriched);
-        channel.close();
-      }
-    } catch {
-      // ignore broadcast errors
-    }
-    try {
-      localStorage.setItem(LOYALTY_EVENT_STORAGE_KEY, JSON.stringify(enriched));
-    } catch {
-      // ignore storage errors
-    }
-  };
-
-  function onScan(text: string) {
-    // первым делом ставим флаг, чтобы отсечь повторные вызовы в этом открытии
-    if (scanHandledRef.current) return;
-    scanHandledRef.current = true;
-    // закрываем окно сканера до любых alert, чтобы не ловить лавину повторов
-    setScanOpen(false);
-    // если этот же токен уже сканировался — показываем одно предупреждение
-    const key = extractQrKey(text);
-    if (scannedTokensRef.current.has(key)) {
-      alert('Этот QR уже сканирован. Попросите клиента обновить QR в мини-аппе.');
-      return;
-    }
-    scannedTokensRef.current.add(key); saveScanned();
-    // Всегда подставляем считанный токен, чтобы кассир видел, что считано
-    setUserToken(text);
-    // авто-QUOTE
-    setTimeout(() => { callQuote(); }, 100);
-  }
-
-  // ==== Refund ====
-  async function doRefund() {
+  const doRefund = async () => {
     if (!session) {
       alert('Сначала авторизуйтесь в кассире.');
       return;
     }
     const receipt = refundReceiptNumber.trim();
-    if (!receipt || refundTotal <= 0)
-      return alert('Укажи номер чека и сумму возврата (>0)');
+    if (!receipt || refundTotal <= 0) {
+      alert('Укажи номер чека и сумму возврата (>0)');
+      return;
+    }
     const resolvedOrderId = findOrderIdForReceipt(receipt);
     if (!resolvedOrderId) {
       alert('Не нашли операцию с таким номером чека. Загрузите историю клиента и попробуйте снова.');
@@ -625,291 +976,719 @@ export default function Page() {
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
       setRefundReceiptNumber('');
-      alert(`Refund OK. share=${(data.share*100).toFixed(1)}%, +${data.pointsRestored} / -${data.pointsRevoked}`);
-    } catch (e: any) {
-      alert('Ошибка refund: ' + e?.message);
+      alert(`Возврат выполнен. share=${(data.share * 100).toFixed(1)}%, восстановлено ${data.pointsRestored}, списано ${data.pointsRevoked}`);
+      loadHistory(true);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      alert('Ошибка refund: ' + message);
     }
-  }
+  };
 
-  // ==== История ====
-  async function loadHistory(reset = false) {
-    if (histBusy) return;
-    setHistBusy(true);
+  const loadLeaderboard = useCallback(async () => {
+    if (!session) {
+      setLeaderboard([]);
+      return;
+    }
+    setLeaderboardLoading(true);
+    setLeaderboardError('');
     try {
-      const activeMerchantId = session?.merchantId || merchantId;
-      let customerId = userToken;
-      if (userToken.split('.').length === 3) {
-        const manual = prompt('Для истории нужен merchantCustomerId (например, mc_...). Введите его или customerId:');
-        if (!manual) { setHistBusy(false); return; }
-        customerId = manual;
-      }
-      const url = new URL(`${API_BASE}/loyalty/transactions`);
-      url.searchParams.set('merchantId', activeMerchantId);
-      url.searchParams.set('merchantCustomerId', customerId);
-      url.searchParams.set('customerId', customerId);
-      url.searchParams.set('limit', '20');
-      if (!reset && histNextBefore) url.searchParams.set('before', histNextBefore);
+      const url = new URL(`${API_BASE}/loyalty/cashier/leaderboard`);
+      url.searchParams.set('merchantId', session.merchantId);
       const r = await fetch(url.toString(), { credentials: 'include' });
+      if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
-      const items: Txn[] = data.items ?? [];
-      setHistory(old => reset ? items : [...old, ...items]);
-      setHistNextBefore(data.nextBefore ?? null);
-    } catch (e: any) {
-      alert('Ошибка истории: ' + e?.message);
+      const items: RawLeaderboardItem[] = Array.isArray(data?.items) ? data.items : [];
+      const entries: LeaderboardEntry[] = items.map((item) => ({
+        staffId: String(item.staffId ?? ''),
+        staffName:
+          typeof item.staffName === 'string'
+            ? item.staffName
+            : typeof item.staffDisplayName === 'string'
+              ? item.staffDisplayName
+              : typeof item.staffLogin === 'string'
+                ? item.staffLogin
+                : '—',
+        outletName: typeof item.outletName === 'string' ? item.outletName : null,
+        points: Number(item.points ?? 0),
+      }));
+      entries.sort((a, b) => b.points - a.points);
+      setLeaderboard(entries);
+    } catch (e: unknown) {
+      setLeaderboard([]);
+      const message = e instanceof Error ? e.message : String(e ?? '');
+      setLeaderboardError(message || 'Не удалось загрузить рейтинг');
     } finally {
-      setHistBusy(false);
+      setLeaderboardLoading(false);
     }
-  }
+  }, [session]);
 
-  useEffect(() => { setHistory([]); setHistNextBefore(null); }, [userToken, merchantId]);
+  useEffect(() => {
+    if (activeTab === 'rating') {
+      void loadLeaderboard();
+    }
+  }, [activeTab, loadLeaderboard]);
 
-  // загрузка списков точек/сотрудников
-  return (
-    <main style={{ maxWidth: 920, margin: '40px auto', fontFamily: 'system-ui, Arial' }}>
-      <h1>Виртуальный терминал кассира</h1>
-      <div style={{ color: '#666', marginTop: 6 }}>Мерчант: <code>{merchantId}</code></div>
+  const scanHandledRef = useRef(false);
+  useEffect(() => {
+    if (scanOpen) scanHandledRef.current = false;
+  }, [scanOpen]);
 
-      {/* Cashier Auth */}
-      <section style={{ marginTop: 16, padding: 16, border: '1px solid #eee', borderRadius: 12, background: '#fafafa' }}>
-        <h2 style={{ margin: 0, marginBottom: 12, fontSize: 18 }}>Авторизация кассира</h2>
-        <div style={{ display: 'flex', gap: 12, fontSize: 12, opacity: 0.7, marginBottom: 12, flexWrap: 'wrap' }}>
-          <span style={{ fontWeight: step === 'merchant' ? 700 : 500 }}>1. Логин мерчанта</span>
-          <span style={{ fontWeight: step === 'pin' ? 700 : 500 }}>2. PIN сотрудника</span>
-          <span style={{ fontWeight: step === 'terminal' ? 700 : 500 }}>3. Работа в терминале</span>
+  const scannedTokensRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('scannedQrKeys_v1');
+      if (raw) scannedTokensRef.current = new Set(JSON.parse(raw));
+    } catch {
+      /* noop */
+    }
+  }, []);
+  const saveScanned = () => {
+    try {
+      sessionStorage.setItem('scannedQrKeys_v1', JSON.stringify(Array.from(scannedTokensRef.current)));
+    } catch {
+      /* noop */
+    }
+  };
+
+  const onScan = async (text: string) => {
+    if (scanHandledRef.current) return;
+    scanHandledRef.current = true;
+    setScanOpen(false);
+    const key = qrKeyFromToken(text);
+    if (scannedTokensRef.current.has(key)) {
+      alert('Этот QR уже сканирован. Попросите клиента обновить QR в мини-аппе.');
+      return;
+    }
+    scannedTokensRef.current.add(key);
+    saveScanned();
+    await beginFlow(text);
+  };
+
+  const staffName = useMemo(() => {
+    if (!session) return '';
+    return (
+      session.staff.displayName?.trim() ||
+      [session.staff.firstName, session.staff.lastName].filter(Boolean).join(' ') ||
+      session.staff.login ||
+      session.staff.id
+    );
+  }, [session]);
+
+  const outletName = useMemo(() => {
+    if (!session) return '';
+    return session.outlet.name || session.outlet.id || '';
+  }, [session]);
+
+  const flowHeader = useMemo(() => {
+    switch (flowStep) {
+      case 'details':
+        return 'Оформление покупки';
+      case 'points':
+        return 'Списание баллов';
+      case 'confirm':
+        return 'Подтверждение операции';
+      case 'receipt':
+        return 'Чек операции';
+      default:
+        return 'Главная';
+    }
+  }, [flowStep]);
+
+  const renderAuth = () => (
+    <div className="flex flex-col min-h-screen bg-slate-900 text-white">
+      <div className="flex-1 flex flex-col px-6 py-8">
+        <div className="mt-8">
+          <h1 className="text-3xl font-semibold">Терминал кассира</h1>
+          <p className="text-sm text-slate-300 mt-2">Авторизуйтесь, чтобы начать обслуживание клиентов.</p>
         </div>
-
-        {step === 'merchant' && (
-          <div style={{ display: 'grid', gap: 14 }}>
-            <div style={{ display: 'grid', gap: 6 }}>
-              <label style={{ fontSize: 13, opacity: 0.8 }}>Логин мерчанта</label>
-              <input
-                value={merchantLogin}
-                onChange={(e)=>setMerchantLogin(e.target.value)}
-                placeholder="Например, greenmarket"
-                style={{ padding: 10, borderRadius: 8, border: '1px solid #ddd', maxWidth: 280 }}
-              />
-            </div>
-            <div style={{ display: 'grid', gap: 6 }}>
-              <label style={{ fontSize: 13, opacity: 0.8 }}>Пароль (9 цифр)</label>
-              <SegmentedInput length={9} groupSize={3} value={passwordDigits} onChange={setPasswordDigits} placeholderChar="○" autoFocus />
-            </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div className="mt-10 space-y-8">
+          <div className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-slate-500">
+            <span className={step === 'merchant' ? 'text-white' : ''}>1. Мерчант</span>
+            <span className="opacity-40">•</span>
+            <span className={step === 'pin' ? 'text-white' : ''}>2. PIN</span>
+            <span className="opacity-40">•</span>
+            <span className={step === 'terminal' ? 'text-white' : ''}>3. Терминал</span>
+          </div>
+          {step === 'merchant' && (
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-sm text-slate-300">Логин мерчанта</label>
+                <input
+                  value={merchantLogin}
+                  onChange={(e) => setMerchantLogin(e.target.value)}
+                  placeholder="Например, greenmarket"
+                  className="w-full rounded-2xl bg-slate-800 px-4 py-3 text-base placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm text-slate-300">Пароль (9 цифр)</label>
+                <SegmentedInput length={9} groupSize={3} value={passwordDigits} onChange={setPasswordDigits} placeholderChar="○" autoFocus />
+              </div>
               <button
                 onClick={cashierLogin}
-                style={{ padding: '8px 16px' }}
                 disabled={!merchantLogin.trim() || passwordDigits.length !== 9}
+                className="w-full rounded-full bg-emerald-400 py-3 text-slate-900 font-semibold disabled:opacity-30"
               >
-                Войти в панель кассира
+                Продолжить
               </button>
+              {authMsg && <div className="text-sm text-red-400">{authMsg}</div>}
             </div>
-            {authMsg && <div style={{ color: '#d33' }}>{authMsg}</div>}
-          </div>
-        )}
-
-        {step === 'pin' && (
-          <div style={{ display: 'grid', gap: 14 }}>
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-              <div style={{ fontSize: 13, opacity: 0.75 }}>Логин мерчанта:</div>
-              <code style={{ padding: '2px 8px', borderRadius: 6, background: '#fff', border: '1px solid #eee' }}>{normalizedLogin || '—'}</code>
-              <button className="btn btn-ghost" onClick={() => { setStaffLookup(null); setStep('merchant'); }}>Изменить</button>
-            </div>
-            <div style={{ display: 'grid', gap: 8 }}>
-              <label style={{ fontSize: 13, opacity: 0.8 }}>PIN сотрудника</label>
-              <SegmentedInput
-                length={4}
-                value={pinDigits}
-                onChange={(val) => {
-                  setPinDigits(val);
-                  if (val.length < 4) setStaffLookup(null);
-                }}
-                onComplete={lookupStaffByPin}
-                placeholderChar="○"
-              />
-              <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                <button onClick={() => lookupStaffByPin(pinDigits)} disabled={pinDigits.length !== 4} style={{ padding: '6px 12px' }}>Проверить PIN</button>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, opacity: 0.75 }}>
-                  <input
-                    type="checkbox"
-                    checked={rememberPin}
-                    onChange={(e) => {
-                      const checked = e.target.checked;
-                      setRememberPin(checked);
-                      if (checked && pinDigits.length === 4) {
-                        writeCookie(COOKIE_PIN, pinDigits);
-                      } else if (!checked) {
-                        deleteCookie(COOKIE_PIN);
-                      }
-                    }}
-                  />
-                  Сохранить PIN
-                </label>
+          )}
+          {step === 'pin' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between text-sm text-slate-400">
+                <div>Логин: <span className="text-white">{normalizedLogin || '—'}</span></div>
+                <button className="text-emerald-300" onClick={() => { setStaffLookup(null); setStep('merchant'); }}>Изменить</button>
               </div>
-            </div>
-            {staffLookup && (
-              <div style={{ display: 'grid', gap: 10, padding: 12, border: '1px solid #e1e1e1', borderRadius: 10, background: '#fff' }}>
-                <div>
-                  <div style={{ fontSize: 13, opacity: 0.7 }}>Сотрудник</div>
-                  <div style={{ fontSize: 16, fontWeight: 600 }}>
-                    {[staffLookup.staff.firstName, staffLookup.staff.lastName].filter(Boolean).join(' ') || staffLookup.staff.login || staffLookup.staff.id}
-                  </div>
-                  <div style={{ fontSize: 12, opacity: 0.6 }}>{staffLookup.staff.role}</div>
+              <div className="space-y-3">
+                <label className="text-sm text-slate-300">PIN сотрудника</label>
+                <SegmentedInput
+                  length={4}
+                  value={pinDigits}
+                  onChange={(val) => {
+                    setPinDigits(val);
+                    if (val.length < 4) setStaffLookup(null);
+                  }}
+                  onComplete={lookupStaffByPin}
+                  placeholderChar="○"
+                />
+                <div className="flex items-center justify-between text-sm text-slate-400">
+                  <button
+                    onClick={() => lookupStaffByPin(pinDigits)}
+                    disabled={pinDigits.length !== 4}
+                    className="rounded-full border border-slate-700 px-4 py-2 disabled:opacity-30"
+                  >
+                    Проверить PIN
+                  </button>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      className="accent-emerald-400"
+                      checked={rememberPin}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setRememberPin(checked);
+                        if (checked && pinDigits.length === 4) {
+                          writeCookie(COOKIE_PIN, pinDigits);
+                        } else if (!checked) {
+                          deleteCookie(COOKIE_PIN);
+                        }
+                      }}
+                    />
+                    <span>Сохранить PIN</span>
+                  </label>
                 </div>
-                <div>
-                  <div style={{ fontSize: 13, opacity: 0.7 }}>Торговая точка</div>
-                  <div style={{ fontSize: 15 }}>
-                    {staffLookup.outlet
-                      ? `${staffLookup.outlet.name || staffLookup.outlet.id} (${staffLookup.outlet.id})`
-                      : 'Определяется автоматически'}
-                  </div>
-                </div>
-                {staffLookup.accesses.length > 1 && (
-                  <div style={{ fontSize: 12, opacity: 0.6 }}>
-                    Доступные точки: {staffLookup.accesses.map((acc) => acc.outletName || acc.outletId).join(', ')}
-                  </div>
-                )}
               </div>
-            )}
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {staffLookup && (
+                <div className="rounded-3xl bg-slate-800 p-4 space-y-2">
+                  <div className="text-xs text-slate-400">Сотрудник</div>
+                  <div className="text-lg font-semibold">
+                    {[staffLookup.staff.firstName, staffLookup.staff.lastName].filter(Boolean).join(' ') ||
+                      staffLookup.staff.login ||
+                      staffLookup.staff.id}
+                  </div>
+                  <div className="text-xs text-emerald-300">{staffLookup.staff.role}</div>
+                  {staffLookup.outlet && (
+                    <div className="text-sm text-slate-300">Точка: {staffLookup.outlet.name}</div>
+                  )}
+                  {staffLookup.accesses?.length ? (
+                    <div className="text-xs text-slate-400">
+                      Доступ к {staffLookup.accesses.length} точкам
+                    </div>
+                  ) : null}
+                </div>
+              )}
               <button
                 onClick={startCashierSessionAuth}
-                style={{ padding: '8px 16px' }}
-                disabled={!staffLookup?.staff?.id}
+                disabled={!staffLookup}
+                className="w-full rounded-full bg-emerald-400 py-3 text-slate-900 font-semibold disabled:opacity-30"
               >
-                Перейти к терминалу
+                Продолжить в терминал
               </button>
-              <button
-                className="btn btn-ghost"
-                onClick={() => {
-                  setStaffLookup(null);
-                  setStep('merchant');
-                }}
-              >
-                Назад
-              </button>
+              {authMsg && <div className="text-sm text-red-400">{authMsg}</div>}
             </div>
-            {authMsg && <div style={{ color: '#d33' }}>{authMsg}</div>}
-          </div>
-        )}
+          )}
+        </div>
+      </div>
+      <div className="px-6 pb-8 text-xs text-slate-500">© {new Date().getFullYear()} Программа лояльности</div>
+    </div>
+  );
 
-        {step === 'terminal' && session && (
-          <div style={{ display: 'grid', gap: 10 }}>
-            <div style={{ fontSize: 13, opacity: 0.7 }}>Мерчант:</div>
-            <code style={{ padding: '2px 8px', borderRadius: 6, background: '#fff', border: '1px solid #eee', width: 'fit-content' }}>{session.merchantId || normalizedLogin || merchantLogin || '—'}</code>
-            <div style={{ fontSize: 13, opacity: 0.7 }}>Сотрудник:</div>
-            <div style={{ fontSize: 16, fontWeight: 600 }}>
-              {session.staff.displayName?.trim() || [session.staff.firstName, session.staff.lastName].filter(Boolean).join(' ') || session.staff.login || session.staff.id}
-            </div>
-            <div style={{ fontSize: 12, opacity: 0.6 }}>Роль: {session.staff.role}</div>
-            <div style={{ fontSize: 13, opacity: 0.7 }}>Торговая точка:</div>
-            <div style={{ fontSize: 15 }}>
-              {session.outlet.name || session.outlet.id || '—'}{session.outlet.id ? ` (${session.outlet.id})` : ''}
-            </div>
-            <div style={{ fontSize: 12, opacity: 0.6 }}>
-              Сессия с: {new Date(session.startedAt).toLocaleString()}
-            </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button className="btn" onClick={logoutStaff}>Выйти из сессии</button>
-            </div>
-          </div>
-        )}
-      </section>
+  const renderHomeTab = () => (
+    <div className="flex-1 overflow-y-auto px-6 pb-32">
+      <div className="mt-6 space-y-6">
+        <div className="rounded-3xl bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 p-6 shadow-xl">
+          <div className="text-sm text-slate-400">Сотрудник</div>
+          <div className="text-xl font-semibold text-white">{staffName}</div>
+          <div className="text-sm text-slate-400 mt-3">Торговая точка</div>
+          <div className="text-base text-white">{outletName || '—'}</div>
+        </div>
 
-      <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
-        <label>
-          Клиент (userToken/сканер):
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <input
-              value={userToken}
-              onChange={(e) => setUserToken(e.target.value)}
-              placeholder="сканируй QR или вставь токен"
-              style={{ flex: 1, minWidth: 280, padding: 8 }}
-            />
-            <button onClick={() => setScanOpen(true)} disabled={scanOpen} style={{ padding: '8px 12px' }}>
+        {flowStep === 'idle' && (
+          <div className="space-y-6">
+            <div className="rounded-3xl bg-slate-800/80 backdrop-blur p-6 text-center">
+              <p className="text-sm text-slate-300">Чтобы начать, отсканируйте QR клиента или введите токен вручную.</p>
+            </div>
+            <button
+              onClick={() => setScanOpen(true)}
+              className="mx-auto flex h-48 w-48 items-center justify-center rounded-full bg-emerald-400 text-slate-900 text-lg font-semibold shadow-emerald-500/40 shadow-lg"
+            >
               Сканировать QR
             </button>
-            <button onClick={loadBalance} style={{ padding: '8px 12px' }}>
-              Баланс
+            <div className="rounded-3xl bg-slate-800/80 backdrop-blur p-6 space-y-4">
+              <div className="text-sm text-slate-300">Ручной ввод токена</div>
+              <div className="flex items-center gap-3">
+                <input
+                  value={manualTokenInput}
+                  onChange={(e) => setManualTokenInput(e.target.value)}
+                  placeholder="Вставьте токен клиента"
+                  className="flex-1 rounded-2xl bg-slate-900 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <button
+                  onClick={() => manualTokenInput.trim() && beginFlow(manualTokenInput.trim())}
+                  className="rounded-full bg-emerald-500 px-4 py-3 text-slate-900 text-sm font-semibold"
+                >
+                  Продолжить
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {flowStep !== 'idle' && (
+          <div className="space-y-6">
+            <div className="rounded-3xl bg-slate-800/60 backdrop-blur p-6 space-y-4">
+              <div className="text-sm text-slate-300">Информация о клиенте</div>
+              <div className="text-lg font-semibold text-white">{overview.name || 'Имя неизвестно'}</div>
+              <div className="flex items-center justify-between text-sm text-slate-300">
+                <span>Уровень</span>
+                <span className="font-medium text-emerald-300">{overview.levelName || '—'}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm text-slate-300">
+                <span>Баланс</span>
+                <span className="font-medium text-white">{formatCurrency(overview.balance)}</span>
+              </div>
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <span>ID клиента</span>
+                <span>{overview.customerId || '—'}</span>
+              </div>
+            </div>
+
+            {flowStep === 'details' && (
+              <div className="rounded-3xl bg-slate-800/60 backdrop-blur p-6 space-y-5">
+                <div className="space-y-2">
+                  <label className="text-sm text-slate-300">Сумма покупки</label>
+                  <input
+                    inputMode="decimal"
+                    value={purchaseAmountInput}
+                    onChange={(e) => setPurchaseAmountInput(e.target.value)}
+                    placeholder="0"
+                    className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-lg text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm text-slate-300">Номер чека</label>
+                  <input
+                    value={receiptInput}
+                    onChange={(e) => setReceiptInput(e.target.value)}
+                    placeholder="Например, 123456"
+                    className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-base text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div className="flex gap-2 bg-slate-900 rounded-2xl p-1">
+                  <button
+                    onClick={() => setMode('redeem')}
+                    className={`flex-1 rounded-2xl py-3 text-sm font-semibold ${mode === 'redeem' ? 'bg-emerald-500 text-slate-900' : 'text-slate-400'}`}
+                  >
+                    Списание баллов
+                  </button>
+                  <button
+                    onClick={() => setMode('earn')}
+                    className={`flex-1 rounded-2xl py-3 text-sm font-semibold ${mode === 'earn' ? 'bg-emerald-500 text-slate-900' : 'text-slate-400'}`}
+                  >
+                    Только начисление
+                  </button>
+                </div>
+                {quoteError && <div className="text-sm text-red-400">{quoteError}</div>}
+                <div className="flex gap-3">
+                  <button
+                    onClick={resetFlow}
+                    className="flex-1 rounded-full border border-slate-600 py-3 text-sm font-semibold text-slate-300"
+                  >
+                    Отменить
+                  </button>
+                  <button
+                    onClick={handleDetailsContinue}
+                    disabled={busy}
+                    className="flex-1 rounded-full bg-emerald-500 py-3 text-sm font-semibold text-slate-900 disabled:opacity-40"
+                  >
+                    Продолжить
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {flowStep === 'points' && (
+              <div className="rounded-3xl bg-slate-800/60 backdrop-blur p-6 space-y-5">
+                <div className="text-sm text-slate-300">Доступно для оплаты</div>
+                <div className="text-3xl font-semibold text-white">
+                  {formatCurrency((result as QuoteRedeemResp)?.discountToApply ?? selectedPoints)}
+                </div>
+                <div className="flex items-center justify-between text-sm text-slate-400">
+                  <span>Баллов к списанию</span>
+                  <button
+                    onClick={() => handlePointsSubmit(true)}
+                    disabled={busy}
+                    className="text-emerald-300 font-medium disabled:opacity-40"
+                  >
+                    СПИСАТЬ ВСЕ
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm text-slate-300">СПИСАТЬ БАЛЛЫ</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      inputMode="numeric"
+                      value={selectedPoints ? String(selectedPoints) : ''}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/[^0-9]/g, '');
+                        const next = Number(raw);
+                        if (!Number.isFinite(next)) return;
+                        const max = (result as QuoteRedeemResp)?.pointsToBurn ?? 0;
+                        setSelectedPoints(Math.min(next, max));
+                      }}
+                      placeholder="0"
+                      className="flex-1 rounded-2xl bg-slate-900 px-4 py-3 text-lg text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <span className="text-sm text-slate-400">☆</span>
+                  </div>
+                </div>
+                <div className="text-xs text-slate-400">
+                  Можно использовать: {formatPoints((result as QuoteRedeemResp)?.pointsToBurn ?? 0)} баллов
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setFlowStep('details')}
+                    className="flex-1 rounded-full border border-slate-600 py-3 text-sm font-semibold text-slate-300"
+                  >
+                    Назад
+                  </button>
+                  <button
+                    onClick={() => handlePointsSubmit(false)}
+                    disabled={busy}
+                    className="flex-1 rounded-full bg-emerald-500 py-3 text-sm font-semibold text-slate-900 disabled:opacity-40"
+                  >
+                    {selectedPoints > 0 ? 'СПИСАТЬ' : 'НЕ СПИСЫВАТЬ'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {flowStep === 'confirm' && confirmSnapshot && (
+              <div className="rounded-3xl bg-slate-800/60 backdrop-blur p-6 space-y-4">
+                <div className="text-sm text-slate-300">Подтвердите операцию</div>
+                <div className="space-y-2 text-sm text-slate-300">
+                  <div className="flex justify-between">
+                    <span>Сумма покупки</span>
+                    <span className="text-white font-semibold">{formatCurrency(confirmSnapshot.purchaseTotal)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Клиенту будет начислено</span>
+                    <span className="text-emerald-300 font-semibold">{formatPoints(confirmSnapshot.pointsEarn)} баллов</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>С клиента будет списано</span>
+                    <span className="text-orange-300 font-semibold">{formatPoints(confirmSnapshot.pointsBurn)} баллов</span>
+                  </div>
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => setFlowStep(mode === 'redeem' ? 'points' : 'details')}
+                    className="flex-1 rounded-full border border-slate-600 py-3 text-sm font-semibold text-slate-300"
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    onClick={handleConfirm}
+                    disabled={busy}
+                    className="flex-1 rounded-full bg-emerald-500 py-3 text-sm font-semibold text-slate-900 disabled:opacity-40"
+                  >
+                    ОК
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {flowStep === 'receipt' && receiptData && (
+              <div className="relative overflow-hidden rounded-3xl bg-slate-900 px-6 py-8 shadow-2xl">
+                <div className="absolute left-1/2 top-0 h-6 w-24 -translate-x-1/2 rounded-b-full bg-slate-800" />
+                <div className="animate-[receipt_0.6s_ease-out]">
+                  <div className="text-center text-sm text-slate-400">ИТОГО</div>
+                  <div className="mt-4 space-y-3 text-sm text-slate-300">
+                    <div>
+                      <div className="uppercase text-xs tracking-wider text-slate-500">Покупатель</div>
+                      <div className="text-white font-semibold">{overview.name || '—'}</div>
+                    </div>
+                    <div>
+                      <div className="uppercase text-xs tracking-wider text-slate-500">Сотрудник</div>
+                      <div className="text-white font-semibold">{staffName || '—'}</div>
+                    </div>
+                    <div className="border-t border-dashed border-slate-700 pt-3 mt-3 space-y-2">
+                      <div className="flex justify-between">
+                        <span>Сумма покупки</span>
+                        <span className="text-white">{formatCurrency(receiptData.purchaseTotal)}</span>
+                      </div>
+                      <div className="flex justify-between text-emerald-300">
+                        <span>Начислено баллов</span>
+                        <span>{formatPoints(receiptData.pointsEarn)}</span>
+                      </div>
+                      <div className="flex justify-between text-orange-300">
+                        <span>Списано баллов</span>
+                        <span>{formatPoints(receiptData.pointsBurn)}</span>
+                      </div>
+                    </div>
+                    <div className="border-t border-dashed border-slate-700 pt-3 mt-3 flex justify-between text-lg font-semibold text-white">
+                      <span>К ОПЛАТЕ</span>
+                      <span>{formatCurrency(receiptData.finalPayable)}</span>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={handleReceiptClose}
+                  className="mt-6 w-full rounded-full bg-emerald-500 py-3 text-sm font-semibold text-slate-900"
+                >
+                  Закрыть
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const renderHistoryTab = () => (
+    <div className="flex-1 overflow-y-auto px-6 pb-32">
+      <div className="mt-6 space-y-4">
+        <button
+          onClick={() => loadHistory(true)}
+          disabled={histBusy}
+          className="w-full rounded-full bg-slate-800 py-3 text-sm font-semibold text-white disabled:opacity-40"
+        >
+          Загрузить историю
+        </button>
+        <div className="space-y-4">
+          {history.map((item) => {
+            const isEarn = item.type === 'EARN';
+            const isRedeem = item.type === 'REDEEM';
+            const isRefund = item.type === 'REFUND';
+            const color = isEarn ? 'text-emerald-300' : isRedeem ? 'text-orange-300' : 'text-slate-300';
+            const sign = item.amount > 0 ? '+' : '';
+            return (
+              <div key={item.id} className="space-y-2 border-b border-slate-800 pb-3">
+                <div className="flex items-center justify-between text-sm text-slate-400">
+                  <span>{formatDateTime(item.createdAt)}</span>
+                  <span className="text-slate-500">{item.outletId || '—'}</span>
+                </div>
+                <div className="text-xs uppercase tracking-widest text-slate-500">{item.type}</div>
+                <div className={`text-base font-semibold ${color}`}>
+                  {sign}{item.amount} ₽
+                </div>
+                <div className="text-xs text-slate-500">
+                  {item.receiptNumber ? `Чек ${item.receiptNumber}` : 'Чек не указан'}
+                </div>
+                <div className="text-xs text-slate-500">
+                  {isEarn && `Клиенту начислено ${Math.abs(item.amount)} ☆`}
+                  {isRedeem && `С клиента списано ${Math.abs(item.amount)} ☆`}
+                  {isRefund && `Возврат ${Math.abs(item.amount)} ₽`}
+                </div>
+              </div>
+            );
+          })}
+          {!history.length && <div className="text-sm text-slate-400">Нет операций</div>}
+          {histNextBefore && (
+            <button
+              onClick={() => loadHistory(false)}
+              disabled={histBusy}
+              className="w-full rounded-full border border-slate-700 py-3 text-sm font-semibold text-white disabled:opacity-40"
+            >
+              Показать ещё
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderRatingTab = () => (
+    <div className="flex-1 overflow-y-auto px-6 pb-32">
+      <div className="mt-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-white">Рейтинг сотрудников</h2>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setRatingInfoOpen(true)}
+              className="h-10 w-10 rounded-full border border-slate-700 text-lg text-white"
+            >
+              ?
+            </button>
+            <button className="h-10 w-10 rounded-full border border-slate-700 text-white">⛃</button>
+          </div>
+        </div>
+        {leaderboardLoading && <div className="text-sm text-slate-400">Загружаем данные...</div>}
+        {leaderboardError && <div className="text-sm text-red-400">{leaderboardError}</div>}
+        <div className="space-y-4">
+          {leaderboard.map((entry, index) => (
+            <div key={entry.staffId} className="rounded-3xl bg-slate-800/70 p-4 flex items-center justify-between">
+              <div>
+                <div className="text-xs text-slate-500">#{index + 1}</div>
+                <div className="text-base font-semibold text-white">{entry.staffName}</div>
+                <div className="text-xs text-slate-400">{entry.outletName || '—'}</div>
+              </div>
+              <div className="text-lg font-semibold text-emerald-300">{formatPoints(entry.points)}</div>
+            </div>
+          ))}
+          {!leaderboard.length && !leaderboardLoading && (
+            <div className="rounded-3xl bg-slate-800/60 p-4 text-sm text-slate-400">
+              Нет данных для отображения.
+            </div>
+          )}
+        </div>
+      </div>
+      {ratingInfoOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6">
+          <div className="w-full max-w-sm rounded-3xl bg-slate-900 p-6 space-y-4">
+            <h3 className="text-lg font-semibold text-white">Информация</h3>
+            <p className="text-sm text-slate-300">
+              Рейтинг строится за последние N дней. Сотруднику начисляется N очков — за начисление бонусов старому клиенту, N очков — за начисление бонусов новому клиенту.
+            </p>
+            <button
+              onClick={() => setRatingInfoOpen(false)}
+              className="w-full rounded-full bg-emerald-500 py-3 text-sm font-semibold text-slate-900"
+            >
+              Понятно
             </button>
           </div>
-        </label>
-
-        <div style={{ display: 'flex', gap: 12 }}>
-          <label style={{ flex: 1 }}>
-            Сумма чека (total):
-            <input type="number" value={total} onChange={(e) => setTotal(+e.target.value)} style={{ width: '100%', padding: 8 }} />
-          </label>
-          <label style={{ flex: 1 }}>
-            База (eligibleTotal):
-            <input type="number" value={eligibleTotal} onChange={(e) => setEligibleTotal(+e.target.value)} style={{ width: '100%', padding: 8 }} />
-          </label>
         </div>
-        <label>
-          Номер чека (опц.):
+      )}
+    </div>
+  );
+
+  const renderReturnsTab = () => (
+    <div className="flex-1 overflow-y-auto px-6 pb-32">
+      <div className="mt-6 space-y-6">
+        <div className="rounded-3xl bg-slate-800/70 p-6 space-y-4">
+          <div className="text-sm text-slate-300">Оформить возврат по чеку</div>
           <input
-            value={receiptNumber}
-            onChange={(e) => setReceiptNumber(e.target.value)}
-            placeholder="например, 123456 или A-77"
-            style={{ width: '100%', padding: 8 }}
+            value={refundReceiptNumber}
+            onChange={(e) => setRefundReceiptNumber(e.target.value)}
+            placeholder="Номер чека"
+            className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
           />
-        </label>
-        <div>
-          Режим:&nbsp;
-          <label><input type="radio" name="mode" checked={mode === 'redeem'} onChange={() => setMode('redeem')} /> Списать</label>
-          &nbsp;&nbsp;
-          <label><input type="radio" name="mode" checked={mode === 'earn'} onChange={() => setMode('earn')} /> Начислить</label>
+          <input
+            type="number"
+            value={refundTotal ? String(refundTotal) : ''}
+            onChange={(e) => setRefundTotal(Number(e.target.value))}
+            placeholder="Сумма возврата"
+            className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          />
+          <button
+            onClick={doRefund}
+            className="w-full rounded-full bg-emerald-500 py-3 text-sm font-semibold text-slate-900"
+          >
+            Оформить возврат
+          </button>
         </div>
-
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          <button onClick={callQuote} disabled={busy || !session} style={{ padding: '8px 16px' }}>Посчитать (QUOTE)</button>
-          <button onClick={callCommit} disabled={busy || !holdId || !session} style={{ padding: '8px 16px' }}>Оплачено (COMMIT)</button>
-        </div>
-
-        {result && (
-          <pre style={{ background: '#f6f6f6', padding: 12, overflow: 'auto' }}>
-            {JSON.stringify(result, null, 2)}
-          </pre>
-        )}
-        {holdId && <div>Текущий holdId: <code>{holdId}</code></div>}
-      </div>
-
-      {scanOpen && <div style={{ marginTop: 20 }}><QrScanner onResult={onScan} onClose={() => setScanOpen(false)} /></div>}
-
-      {/* Refund */}
-      <h2 style={{ marginTop: 28 }}>Refund</h2>
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        <input value={refundReceiptNumber} onChange={(e) => setRefundReceiptNumber(e.target.value)} placeholder="номер чека" style={{ padding: 8, flex: 1, minWidth: 220 }} />
-        <input type="number" value={refundTotal} onChange={(e) => setRefundTotal(+e.target.value)} placeholder="refundTotal" style={{ padding: 8, width: 160 }} />
-        <button onClick={doRefund} disabled={!session} style={{ padding: '8px 16px' }}>Сделать возврат</button>
-      </div>
-
-      {/* History */}
-      <h2 style={{ marginTop: 28 }}>История операций</h2>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-        <button onClick={() => loadHistory(true)} disabled={histBusy} style={{ padding: '6px 10px' }}>Загрузить</button>
-        {histNextBefore && <button onClick={() => loadHistory(false)} disabled={histBusy} style={{ padding: '6px 10px' }}>Показать ещё</button>}
-      </div>
-      <div style={{ display: 'grid', gap: 8 }}>
-        {history.map(h => (
-          <div key={h.id} style={{ border: '1px solid #eee', borderRadius: 8, padding: 10 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <b>{h.type}</b>
-              <span>{new Date(h.createdAt).toLocaleString()}</span>
+        <div className="space-y-4">
+          <h3 className="text-sm text-slate-300">История возвратов</h3>
+          {refundHistory.map((item) => (
+            <div key={item.id} className="rounded-3xl bg-slate-800/60 p-4 space-y-1">
+              <div className="text-sm text-slate-400">{formatDateTime(item.createdAt)}</div>
+              <div className="text-base font-semibold text-orange-300">Возврат {formatCurrency(Math.abs(item.amount))}</div>
+              <div className="text-xs text-slate-500">Чек {item.receiptNumber || '—'}</div>
             </div>
+          ))}
+          {!refundHistory.length && <div className="text-sm text-slate-400">Пока нет возвратов.</div>}
+        </div>
+      </div>
+    </div>
+  );
+
+  if (step !== 'terminal' || !session) {
+    return renderAuth();
+  }
+
+  return (
+    <main className="min-h-screen bg-slate-950 text-white">
+      <div className="mx-auto flex min-h-screen w-full max-w-md flex-col">
+        <header className="px-6 pt-10">
+          <div className="flex items-center justify-between">
             <div>
-              Сумма: <b>{h.amount > 0 ? '+' : ''}{h.amount} ₽</b>
-              {h.receiptNumber ? ` · Чек: ${h.receiptNumber}` : ''}
-              {h.outletId ? ` · Точка: ${h.outletId}` : ''}
-              {h.outletPosType ? ` · POS: ${h.outletPosType}` : ''}
-              {h.outletLastSeenAt ? ` · Активность: ${new Date(h.outletLastSeenAt).toLocaleString()}` : ''}
+              <div className="text-xs uppercase tracking-[0.3em] text-slate-500">{session.merchantId}</div>
+              <h1 className="text-2xl font-semibold text-white">{flowHeader}</h1>
+            </div>
+            <button onClick={logoutStaff} className="text-sm text-slate-400 underline">Выйти</button>
+          </div>
+        </header>
+        <div className="flex-1">
+          {activeTab === 'home' && renderHomeTab()}
+          {activeTab === 'history' && renderHistoryTab()}
+          {activeTab === 'rating' && renderRatingTab()}
+          {activeTab === 'returns' && renderReturnsTab()}
+        </div>
+        <nav className="sticky bottom-0 flex w-full items-center justify-between bg-slate-900/90 px-6 py-4 backdrop-blur">
+          {[
+            { key: 'home', label: 'Главная', icon: '⌂' },
+            { key: 'history', label: 'История', icon: '⟲' },
+            { key: 'rating', label: 'Рейтинг', icon: '★' },
+            { key: 'returns', label: 'Возвраты', icon: '↺' },
+          ].map((item) => (
+            <button
+              key={item.key}
+              onClick={() => setActiveTab(item.key as typeof activeTab)}
+              className={`flex flex-col items-center text-xs ${activeTab === item.key ? 'text-emerald-300' : 'text-slate-400'}`}
+            >
+              <span className="text-lg">{item.icon}</span>
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {scanOpen && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/95 p-6 text-white">
+          <div className="w-full max-w-sm space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Сканирование QR</h2>
+              <button onClick={() => setScanOpen(false)} className="text-2xl">×</button>
+            </div>
+            <div className="rounded-3xl bg-slate-900 p-4">
+              <QrScanner onResult={onScan} onClose={() => setScanOpen(false)} />
+            </div>
+            <div className="space-y-3">
+              <div className="text-sm text-slate-300">Или введите токен вручную</div>
+              <input
+                value={manualTokenInput}
+                onChange={(e) => setManualTokenInput(e.target.value)}
+                placeholder="Токен клиента"
+                className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+              <button
+                onClick={() => {
+                  if (manualTokenInput.trim()) {
+                    void beginFlow(manualTokenInput.trim());
+                    setScanOpen(false);
+                  }
+                }}
+                className="w-full rounded-full bg-emerald-500 py-3 text-sm font-semibold text-slate-900"
+              >
+                Продолжить
+              </button>
             </div>
           </div>
-        ))}
-        {(!history.length && !histBusy) && <div style={{ color: '#666' }}>Нет данных</div>}
-      </div>
-
-      <p style={{ marginTop: 24, color: '#666' }}>
-        Камера работает на <code>http://localhost</code> без HTTPS. Если открываешь с другого IP — понадобится HTTPS.
-      </p>
+        </div>
+      )}
     </main>
   );
 }
+
