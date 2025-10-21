@@ -251,10 +251,29 @@ export default function AnalyticsTimePage() {
   const dayOfWeekOption = React.useMemo(() => {
     if (!activity) return null;
     const dayData = weekDayLabels.map((_, idx) => activity.dayOfWeek.find((item) => item.day === idx + 1) ?? { day: idx + 1, orders: 0, customers: 0, revenue: 0, averageCheck: 0 });
-    const orders = dayData.map((row) => row.orders);
-    const customers = dayData.map((row) => row.customers);
     const avgCheck = dayData.map((row) => row.averageCheck);
+    const orders = dayData.map((row) => row.orders);
     const revenue = dayData.map((row) => row.revenue);
+    const maxAvgCheck = Math.max(1, ...avgCheck);
+    const maxOrders = Math.max(1, ...orders);
+    const maxRevenue = Math.max(1, ...revenue);
+    const normalize = (values: number[], max: number) =>
+      values.map((value) => ({
+        value: max > 0 ? value / max : 0,
+        real: value,
+      }));
+    const normalizedAvgCheck = normalize(avgCheck, maxAvgCheck);
+    const normalizedOrders = normalize(orders, maxOrders);
+    const normalizedRevenue = normalize(revenue, maxRevenue);
+    const buildYAxis = () => ({
+      type: "value" as const,
+      min: 0,
+      max: 1,
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: { show: false },
+      splitLine: { show: false },
+    });
 
     return {
       tooltip: {
@@ -262,59 +281,48 @@ export default function AnalyticsTimePage() {
         axisPointer: { type: "shadow" },
         formatter: (params: any[]) => {
           const index = params?.[0]?.dataIndex ?? 0;
-          const items = params
-            .map((p) => `${p.marker} ${p.seriesName}: ${toNumber(p.data?.value ?? p.data ?? 0)}${p.seriesName === "Средний чек" ? " ₽" : ""}`)
-            .join("<br/>");
-          return `${weekDayLabels[index]}<br/>${items}<br/>Выручка: ${toCurrency(revenue[index] ?? 0)}`;
+          const point = dayData[index] ?? { averageCheck: 0, orders: 0, revenue: 0 };
+          return [
+            weekDayLabels[index],
+            `Средний чек: ${toCurrency(point.averageCheck ?? 0)}`,
+            `Количество продаж: ${toNumber(point.orders ?? 0)}`,
+            `Выручка: ${toCurrency(point.revenue ?? 0)}`,
+          ].join("<br/>");
         },
       },
       legend: { top: 0 },
-      grid: { left: 40, right: 40, top: 40, bottom: 50 },
+      grid: { left: 10, right: 10, top: 40, bottom: 30 },
       xAxis: {
         type: "category",
         data: weekDayLabels,
         axisTick: { alignWithLabel: true },
+        axisLine: { show: false },
       },
-      yAxis: [
-        {
-          type: "value",
-          name: "Операции / Клиенты",
-          nameLocation: "center",
-          nameGap: 60,
-        },
-        {
-          type: "value",
-          name: "₽",
-          nameLocation: "center",
-          nameGap: 45,
-          position: "right",
-        },
-      ],
+      yAxis: [buildYAxis(), buildYAxis(), buildYAxis()],
       series: [
         {
-          name: "Продажи",
-          type: "bar",
-          data: orders,
-          barGap: "20%",
-          itemStyle: { color: "#38bdf8", borderRadius: [8, 8, 0, 0] },
-          yAxisIndex: 0,
-        },
-        {
-          name: "Клиентов",
-          type: "bar",
-          data: customers,
-          barGap: "60%",
-          itemStyle: { color: "#22c55e", borderRadius: [8, 8, 0, 0] },
-          yAxisIndex: 0,
-        },
-        {
           name: "Средний чек",
-          type: "line",
-          smooth: true,
-          data: avgCheck.map((value, idx) => ({ value, revenue: revenue[idx] })),
+          type: "bar",
+          data: normalizedAvgCheck,
+          barWidth: "20%",
+          itemStyle: { color: "#38bdf8", borderRadius: 8 },
+          yAxisIndex: 0,
+        },
+        {
+          name: "Количество продаж",
+          type: "bar",
+          data: normalizedOrders,
+          barWidth: "20%",
+          itemStyle: { color: "#22c55e", borderRadius: 8 },
           yAxisIndex: 1,
-          lineStyle: { color: "#f97316", width: 3 },
-          itemStyle: { color: "#f97316" },
+        },
+        {
+          name: "Выручка",
+          type: "bar",
+          data: normalizedRevenue,
+          barWidth: "20%",
+          itemStyle: { color: "#f97316", borderRadius: 8 },
+          yAxisIndex: 2,
         },
       ],
     } as const;
@@ -323,10 +331,29 @@ export default function AnalyticsTimePage() {
   const hoursOption = React.useMemo(() => {
     if (!activity) return null;
     const hourData = hourLabels.map((_, idx) => activity.hours.find((item) => item.hour === idx) ?? { hour: idx, orders: 0, customers: 0, revenue: 0, averageCheck: 0 });
-    const orders = hourData.map((row) => row.orders);
-    const customers = hourData.map((row) => row.customers);
     const avgCheck = hourData.map((row) => row.averageCheck);
+    const orders = hourData.map((row) => row.orders);
     const revenue = hourData.map((row) => row.revenue);
+    const maxAvgCheck = Math.max(1, ...avgCheck);
+    const maxOrders = Math.max(1, ...orders);
+    const maxRevenue = Math.max(1, ...revenue);
+    const normalize = (values: number[], max: number) =>
+      values.map((value) => ({
+        value: max > 0 ? value / max : 0,
+        real: value,
+      }));
+    const normalizedAvgCheck = normalize(avgCheck, maxAvgCheck);
+    const normalizedOrders = normalize(orders, maxOrders);
+    const normalizedRevenue = normalize(revenue, maxRevenue);
+    const buildYAxis = () => ({
+      type: "value" as const,
+      min: 0,
+      max: 1,
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: { show: false },
+      splitLine: { show: false },
+    });
 
     return {
       tooltip: {
@@ -334,135 +361,129 @@ export default function AnalyticsTimePage() {
         axisPointer: { type: "shadow" },
         formatter: (params: any[]) => {
           const index = params?.[0]?.dataIndex ?? 0;
-          const rows = params
-            .map((p) => `${p.marker} ${p.seriesName}: ${toNumber(p.data?.value ?? p.data ?? 0)}${p.seriesName === "Средний чек" ? " ₽" : ""}`)
-            .join("<br/>");
-          return `${hourLabels[index]}<br/>${rows}<br/>Выручка: ${toCurrency(revenue[index] ?? 0)}`;
+          const point = hourData[index] ?? { averageCheck: 0, orders: 0, revenue: 0 };
+          return [
+            hourLabels[index],
+            `Средний чек: ${toCurrency(point.averageCheck ?? 0)}`,
+            `Количество продаж: ${toNumber(point.orders ?? 0)}`,
+            `Выручка: ${toCurrency(point.revenue ?? 0)}`,
+          ].join("<br/>");
         },
       },
       legend: { top: 0 },
-      grid: { left: 40, right: 40, top: 40, bottom: 60 },
+      grid: { left: 10, right: 10, top: 40, bottom: 40 },
       xAxis: {
         type: "category",
         data: hourLabels,
         axisLabel: { interval: 1, rotate: 45 },
+        axisLine: { show: false },
       },
-      yAxis: [
-        {
-          type: "value",
-          name: "Операции / Клиенты",
-          nameLocation: "center",
-          nameGap: 60,
-        },
-        {
-          type: "value",
-          name: "₽",
-          nameLocation: "center",
-          nameGap: 45,
-          position: "right",
-        },
-      ],
+      yAxis: [buildYAxis(), buildYAxis(), buildYAxis()],
       series: [
-        {
-          name: "Продажи",
-          type: "bar",
-          data: orders,
-          itemStyle: { color: "#38bdf8", borderRadius: [6, 6, 0, 0] },
-          yAxisIndex: 0,
-        },
-        {
-          name: "Клиентов",
-          type: "bar",
-          data: customers,
-          itemStyle: { color: "#22c55e", borderRadius: [6, 6, 0, 0] },
-          yAxisIndex: 0,
-        },
         {
           name: "Средний чек",
-          type: "line",
-          smooth: true,
-          data: avgCheck.map((value, idx) => ({ value, revenue: revenue[idx] })),
-          yAxisIndex: 1,
-          lineStyle: { color: "#f97316", width: 3 },
-          itemStyle: { color: "#f97316" },
+          type: "bar",
+          data: normalizedAvgCheck,
+          barWidth: "18%",
+          itemStyle: { color: "#38bdf8", borderRadius: 6 },
+          yAxisIndex: 0,
         },
-      ],
-    } as const;
-  }, [activity]);
-
-  const heatmapOption = React.useMemo(() => {
-    if (!activity) return null;
-    const maxCustomers = Math.max(
-      1,
-      ...activity.heatmap.map((cell) => cell.customers),
-    );
-    const seriesData = activity.heatmap.map((cell) => [
-      cell.hour,
-      cell.day - 1,
-      cell.customers,
-      cell.averageCheck,
-      cell.orders,
-      cell.revenue,
-    ]);
-
-    return {
-      tooltip: {
-        trigger: "item",
-        formatter: (params: any) => {
-          const value = params?.value ?? [];
-          const hourIdx = value[0] ?? 0;
-          const dayIdx = value[1] ?? 0;
-          const customers = value[2] ?? 0;
-          const avgCheck = value[3] ?? 0;
-          const orders = value[4] ?? 0;
-          const revenue = value[5] ?? 0;
-          return `${weekDayLabels[dayIdx]}, ${hourLabels[hourIdx]}<br/>Клиентов: ${toNumber(customers)}<br/>Средний чек: ${toCurrency(avgCheck)}<br/>Продаж: ${toNumber(orders)}<br/>Сумма: ${toCurrency(revenue)}`;
-        },
-      },
-      grid: { left: 80, right: 30, top: 30, bottom: 60 },
-      xAxis: {
-        type: "category",
-        data: hourLabels,
-        name: "Часы",
-        nameLocation: "center",
-        nameGap: 40,
-        axisLabel: { interval: 1, rotate: 45 },
-      },
-      yAxis: {
-        type: "category",
-        data: weekDayLabels,
-        name: "Дни недели",
-        nameLocation: "center",
-        nameGap: 60,
-      },
-      visualMap: {
-        min: 0,
-        max: maxCustomers,
-        calculable: false,
-        orient: "horizontal",
-        left: "center",
-        bottom: 10,
-        inRange: {
-          color: ["#ede9fe", "#818cf8", "#312e81"],
-        },
-      },
-      series: [
         {
-          type: "heatmap",
-          data: seriesData,
-          label: {
-            show: true,
-            color: "#0f172a",
-            fontWeight: 600,
-            formatter: (params: any) => `${params.value?.[2] ?? 0}`,
-          },
-          itemStyle: {
-            borderRadius: 6,
-          },
+          name: "Количество продаж",
+          type: "bar",
+          data: normalizedOrders,
+          barWidth: "18%",
+          itemStyle: { color: "#22c55e", borderRadius: 6 },
+          yAxisIndex: 1,
+        },
+        {
+          name: "Выручка",
+          type: "bar",
+          data: normalizedRevenue,
+          barWidth: "18%",
+          itemStyle: { color: "#f97316", borderRadius: 6 },
+          yAxisIndex: 2,
         },
       ],
     } as const;
   }, [activity]);
+
+  const heatmapMatrix = React.useMemo(() => {
+    if (!activity) return null;
+    const map = new Map<string, HeatmapCell>();
+    for (const cell of activity.heatmap) {
+      map.set(`${cell.day}:${cell.hour}`, cell);
+    }
+    const rows = weekDayLabels.map((_, dayIdx) => {
+      return hourLabels.map((_, hourIdx) => {
+        const item = map.get(`${dayIdx + 1}:${hourIdx}`);
+        if (!item) {
+          return { day: dayIdx + 1, hour: hourIdx, orders: 0, averageCheck: 0, revenue: 0 } as HeatmapCell;
+        }
+        return item;
+      });
+    });
+    return rows;
+  }, [activity]);
+
+  const heatmapMaxOrders = React.useMemo(() => {
+    if (!heatmapMatrix) return 1;
+    return Math.max(
+      1,
+      ...heatmapMatrix.flat().map((cell) => cell.orders ?? 0),
+    );
+  }, [heatmapMatrix]);
+
+  const renderHeatmap = React.useCallback(() => {
+    if (!heatmapMatrix) {
+      return <div style={{ padding: "40px 0", opacity: 0.6 }}>Нет данных</div>;
+    }
+    return (
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ borderCollapse: "collapse", fontSize: 11, minWidth: 720 }}>
+          <thead>
+            <tr>
+              <th style={{ padding: "6px 8px", textAlign: "left", opacity: 0.7 }}>День/Час</th>
+              {hourLabels.map((label) => (
+                <th key={label} style={{ padding: "6px 8px", textAlign: "center", opacity: 0.75 }}>
+                  {label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {heatmapMatrix.map((row, rowIdx) => (
+              <tr key={weekDayLabels[rowIdx]}>
+                <td style={{ padding: "6px 8px", opacity: 0.75 }}>{weekDayLabels[rowIdx]}</td>
+                {row.map((cell) => {
+                  const intensity = Math.min(1, (cell.orders || 0) / heatmapMaxOrders);
+                  const bgAlpha = 0.18 + intensity * 0.62;
+                  const background = `rgba(99,102,241,${bgAlpha.toFixed(2)})`;
+                  return (
+                    <td
+                      key={`${cell.day}-${cell.hour}`}
+                      title={`Час: ${hourLabels[cell.hour]}\nСредний чек: ${toCurrency(cell.averageCheck || 0)}\nСумма продаж: ${toCurrency(cell.revenue || 0)}`}
+                      style={{
+                        padding: "6px 8px",
+                        textAlign: "center",
+                        background,
+                        color: "#e2e8f0",
+                        borderRadius: 6,
+                        minWidth: 44,
+                        fontWeight: 600,
+                      }}
+                    >
+                      {toNumber(cell.orders || 0)}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }, [heatmapMatrix, heatmapMaxOrders]);
 
   const recencyLimitConfig = recencyLimits[grouping];
   const sliderLabel = formatRecencyRange(grouping, limit);
@@ -521,17 +542,22 @@ export default function AnalyticsTimePage() {
         </CardBody>
       </Card>
 
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-        {activityPeriods.map((item) => (
-          <Button
-            key={item.value}
-            variant={activityPeriod === item.value ? "primary" : "secondary"}
-            size="sm"
-            onClick={() => setActivityPeriod(item.value)}
-          >
-            {item.label}
-          </Button>
-        ))}
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+        <span style={{ fontSize: 13, opacity: 0.75 }}>
+          Выберите период для отображения на следующих показателях:
+        </span>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          {activityPeriods.map((item) => (
+            <Button
+              key={item.value}
+              variant={activityPeriod === item.value ? "primary" : "secondary"}
+              size="sm"
+              onClick={() => setActivityPeriod(item.value)}
+            >
+              {item.label}
+            </Button>
+          ))}
+        </div>
       </div>
 
       <Card>
@@ -562,15 +588,9 @@ export default function AnalyticsTimePage() {
       </Card>
 
       <Card>
-        <CardHeader title="Подробно по дням-часам" subtitle="Наведите на позицию в таблице, чтобы увидеть Средний чек, Количество продаж, Сумму продаж" />
+        <CardHeader title="Подробно по дням-часам" subtitle="В ячейках таблицы показано количество продаж. Наведите, чтобы увидеть средний чек и сумму продаж." />
         <CardBody>
-          {activityLoading ? (
-            <Skeleton height={420} />
-          ) : heatmapOption ? (
-            <Chart option={heatmapOption as any} height={420} />
-          ) : (
-            <div style={{ padding: "40px 0", opacity: 0.6 }}>Нет данных</div>
-          )}
+          {activityLoading ? <Skeleton height={360} /> : renderHeatmap()}
         </CardBody>
       </Card>
     </div>
