@@ -6,7 +6,11 @@ import {
   ApiBearerAuth,
   ApiQuery,
 } from '@nestjs/swagger';
-import { AnalyticsService, DashboardPeriod } from './analytics.service';
+import {
+  AnalyticsService,
+  DashboardPeriod,
+  RecencyGrouping,
+} from './analytics.service';
 import { ApiKeyGuard } from '../guards/api-key.guard';
 
 @ApiTags('Analytics')
@@ -305,6 +309,65 @@ export class AnalyticsController {
   ) {
     const period = this.getPeriod(periodType, from, to);
     return this.analyticsService.getCampaignMetrics(merchantId, period);
+  }
+
+  /**
+   * Давность последней покупки по клиентам
+   */
+  @Get('time/recency/:merchantId')
+  @ApiOperation({
+    summary: 'Распределение клиентов по давности последней покупки',
+  })
+  @ApiQuery({
+    name: 'group',
+    enum: ['day', 'week', 'month'],
+    required: false,
+    description: 'Группировка: day | week | month (по умолчанию day)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    type: Number,
+    required: false,
+    description: 'Количество отображаемых интервалов (в пределах допустимого)',
+  })
+  async getRecencyDistribution(
+    @Param('merchantId') merchantId: string,
+    @Query('group') group?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const grouping: RecencyGrouping =
+      group === 'week' || group === 'month' ? group : 'day';
+    const parsedLimit = Number.parseInt(String(limit ?? ''), 10);
+    const effectiveLimit = Number.isFinite(parsedLimit) ? parsedLimit : undefined;
+    return this.analyticsService.getPurchaseRecencyDistribution(
+      merchantId,
+      grouping,
+      effectiveLimit,
+    );
+  }
+
+  /**
+   * Активность по дням недели и часам
+   */
+  @Get('time/activity/:merchantId')
+  @ApiOperation({
+    summary: 'Активность клиентов по дням недели, часам и тепловая карта',
+  })
+  @ApiQuery({
+    name: 'period',
+    enum: ['day', 'week', 'month', 'quarter', 'year'],
+    required: false,
+  })
+  @ApiQuery({ name: 'from', type: String, required: false })
+  @ApiQuery({ name: 'to', type: String, required: false })
+  async getTimeActivity(
+    @Param('merchantId') merchantId: string,
+    @Query('period') periodType?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    const period = this.getPeriod(periodType, from, to);
+    return this.analyticsService.getTimeActivityMetrics(merchantId, period);
   }
 
   /**

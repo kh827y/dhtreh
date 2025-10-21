@@ -122,6 +122,47 @@ export interface BusinessMetrics {
   revenue: number;
 }
 
+export type RecencyGrouping = 'day' | 'week' | 'month';
+
+export interface RecencyBucket {
+  index: number;
+  value: number;
+  label: string;
+  customers: number;
+}
+
+export interface PurchaseRecencyDistribution {
+  group: RecencyGrouping;
+  buckets: RecencyBucket[];
+  totalCustomers: number;
+}
+
+export interface TimeActivityStats {
+  orders: number;
+  customers: number;
+  revenue: number;
+  averageCheck: number;
+}
+
+export interface TimeActivityDay extends TimeActivityStats {
+  day: number;
+}
+
+export interface TimeActivityHour extends TimeActivityStats {
+  hour: number;
+}
+
+export interface TimeHeatmapCell extends TimeActivityStats {
+  day: number;
+  hour: number;
+}
+
+export interface TimeActivityMetrics {
+  dayOfWeek: TimeActivityDay[];
+  hours: TimeActivityHour[];
+  heatmap: TimeHeatmapCell[];
+}
+
 // Вспомогательные интерфейсы
 interface HourlyData {
   hour: number;
@@ -1959,5 +2000,243 @@ export class AnalyticsService {
 
     rows.sort((a, b) => b.transactions - a.transactions);
     return rows;
+  }
+
+  async getPurchaseRecencyDistribution(
+    merchantId: string,
+    group: RecencyGrouping,
+    rawLimit?: number,
+  ): Promise<PurchaseRecencyDistribution> {
+    const normalizedGroup: RecencyGrouping =
+      group === 'week' || group === 'month' ? group : 'day';
+    const defaults: Record<RecencyGrouping, number> = {
+      day: 30,
+      week: 10,
+      month: 5,
+    };
+    const maximums: Record<RecencyGrouping, number> = {
+      day: 365,
+      week: 52,
+      month: 12,
+    };
+    const limit = Math.max(
+      1,
+      Math.min(rawLimit ?? defaults[normalizedGroup], maximums[normalizedGroup]),
+    );
+
+    const rows = await this.prisma.$queryRaw<
+      Array<{ days: number; customers: number }>
+    >(Prisma.sql`
+      SELECT
+        GREATEST(
+          0,
+          FLOOR(EXTRACT(EPOCH FROM (NOW() - "lastOrderAt")) / 86400)
+        )::int AS days,
+        COUNT(*)::int AS customers
+      FROM "CustomerStats"
+      WHERE "merchantId" = ${merchantId}
+        AND "lastOrderAt" IS NOT NULL
+      GROUP BY 1
+      ORDER BY 1 ASC
+    `);
+
+    const bucketsMap = new Map<number, number>();
+
+    const mapToBucket = (days: number): number => {
+      if (normalizedGroup === 'day') return days;
+      if (normalizedGroup === 'week') {
+        if (days <= 0) return 0;
+        const base = Math.floor(days / 7);
+        return days % 7 === 0 ? Math.max(base - 1, 0) : base;
+      }
+      if (days <= 0) return 0;
+      const base = Math.floor(days / 30);
+      return days % 30 === 0 ? Math.max(base - 1, 0) : base;
+    };
+
+    for (const row of rows) {
+      const bucket = mapToBucket(Number(row.days || 0));
+      if (bucket < 0 || bucket >= limit) continue;
+      const current = bucketsMap.get(bucket) ?? 0;
+      bucketsMap.set(bucket, current + Number(row.customers || 0));
+    }
+
+    const buckets: RecencyBucket[] = [];
+    for (let index = 0; index < limit; index++) {
+      const customers = bucketsMap.get(index) ?? 0;
+      if (normalizedGroup === 'day') {
+        buckets.push({
+          index,
+          value: index,
+          label: String(index),
+          customers,
+        });
+        continue;
+      }
+      if (normalizedGroup === 'week') {
+        const value = index + 1;
+        buckets.push({
+          index,
+          value,
+          label: this.pluralize(value, ['неделя', 'недели', 'недель']),
+          customers,
+        });
+        continue;
+      }
+      const value = index + 1;
+      buckets.push({
+        index,
+        value,
+        label: this.pluralize(value, ['месяц', 'месяца', 'месяцев']),
+        customers,
+      });
+    }
+
+    const totalCustomers = buckets.reduce(
+      (acc, bucket) => acc + bucket.customers,
+      0,
+    );
+
+    return {
+      group: normalizedGroup,
+      buckets,
+      totalCustomers,
+    };
+  }
+
+  async getTimeActivityMetrics(
+    merchantId: string,
+    period: DashboardPeriod,
+  ): Promise<TimeActivityMetrics> {
+    const [dayRows, hourRows, cellRows] = await Promise.all([
+      this.prisma.$queryRaw<
+        Array<{
+          dow: number;
+          orders: number;
+          customers: number;
+          revenue: number;
+        }>
+      >(Prisma.sql`
+        SELECT
+          EXTRACT(ISODOW FROM "createdAt")::int AS dow,
+          COUNT(*)::int AS orders,
+          COUNT(DISTINCT "customerId")::int AS customers,
+          COALESCE(SUM("total"), 0)::int AS revenue
+        FROM "Receipt"
+        WHERE "merchantId" = ${merchantId}
+          AND "createdAt" BETWEEN ${period.from} AND ${period.to}
+          AND "canceledAt" IS NULL
+          AND "total" > 0
+        GROUP BY 1
+      `),
+      this.prisma.$queryRaw<
+        Array<{
+          hour: number;
+          orders: number;
+          customers: number;
+          revenue: number;
+        }>
+      >(Prisma.sql`
+        SELECT
+          EXTRACT(HOUR FROM "createdAt")::int AS hour,
+          COUNT(*)::int AS orders,
+          COUNT(DISTINCT "customerId")::int AS customers,
+          COALESCE(SUM("total"), 0)::int AS revenue
+        FROM "Receipt"
+        WHERE "merchantId" = ${merchantId}
+          AND "createdAt" BETWEEN ${period.from} AND ${period.to}
+          AND "canceledAt" IS NULL
+          AND "total" > 0
+        GROUP BY 1
+      `),
+      this.prisma.$queryRaw<
+        Array<{
+          dow: number;
+          hour: number;
+          orders: number;
+          customers: number;
+          revenue: number;
+        }>
+      >(Prisma.sql`
+        SELECT
+          EXTRACT(ISODOW FROM "createdAt")::int AS dow,
+          EXTRACT(HOUR FROM "createdAt")::int AS hour,
+          COUNT(*)::int AS orders,
+          COUNT(DISTINCT "customerId")::int AS customers,
+          COALESCE(SUM("total"), 0)::int AS revenue
+        FROM "Receipt"
+        WHERE "merchantId" = ${merchantId}
+          AND "createdAt" BETWEEN ${period.from} AND ${period.to}
+          AND "canceledAt" IS NULL
+          AND "total" > 0
+        GROUP BY 1, 2
+      `),
+    ]);
+
+    const hoursRange = Array.from({ length: 24 }, (_, idx) => idx);
+    const isoWeekDays = Array.from({ length: 7 }, (_, idx) => idx + 1); // 1..7
+
+    const cellMap = new Map<string, TimeHeatmapCell>();
+
+    for (const row of cellRows) {
+      const day = Math.min(Math.max(Number(row.dow || 1), 1), 7);
+      const hour = Math.min(Math.max(Number(row.hour || 0), 0), 23);
+      const orders = Math.max(0, Number(row.orders || 0));
+      const revenue = Math.max(0, Number(row.revenue || 0));
+      const customers = Math.max(0, Number(row.customers || 0));
+      const averageCheck = orders > 0 ? revenue / orders : 0;
+      const key = `${day}:${hour}`;
+      cellMap.set(key, { day, hour, orders, customers, revenue, averageCheck });
+    }
+
+    const dayOfWeek: TimeActivityDay[] = isoWeekDays.map((day) => {
+      const row = dayRows.find((item) => Number(item.dow || 0) === day);
+      const orders = Math.max(0, Number(row?.orders || 0));
+      const revenue = Math.max(0, Number(row?.revenue || 0));
+      const customers = Math.max(0, Number(row?.customers || 0));
+      const averageCheck = orders > 0 ? revenue / orders : 0;
+      return { day, orders, revenue, customers, averageCheck };
+    });
+
+    const hours: TimeActivityHour[] = hoursRange.map((hour) => {
+      const row = hourRows.find((item) => Number(item.hour || 0) === hour);
+      const orders = Math.max(0, Number(row?.orders || 0));
+      const revenue = Math.max(0, Number(row?.revenue || 0));
+      const customers = Math.max(0, Number(row?.customers || 0));
+      const averageCheck = orders > 0 ? revenue / orders : 0;
+      return { hour, orders, revenue, customers, averageCheck };
+    });
+
+    const heatmap: TimeHeatmapCell[] = [];
+    for (const day of isoWeekDays) {
+      for (const hour of hoursRange) {
+        const key = `${day}:${hour}`;
+        const existing = cellMap.get(key);
+        if (existing) {
+          heatmap.push(existing);
+        } else {
+          heatmap.push({
+            day,
+            hour,
+            orders: 0,
+            customers: 0,
+            revenue: 0,
+            averageCheck: 0,
+          });
+        }
+      }
+    }
+
+    return { dayOfWeek, hours, heatmap };
+  }
+
+  private pluralize(value: number, forms: [string, string, string]): string {
+    const mod100 = value % 100;
+    if (mod100 >= 11 && mod100 <= 14)
+      return `${value} ${forms[2]}`.trim();
+    const mod10 = value % 10;
+    if (mod10 === 1) return `${value} ${forms[0]}`.trim();
+    if (mod10 >= 2 && mod10 <= 4) return `${value} ${forms[1]}`.trim();
+    return `${value} ${forms[2]}`.trim();
   }
 }

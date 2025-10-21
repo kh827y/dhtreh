@@ -40,7 +40,10 @@ import {
   type BroadcastArgs,
 } from '../notifications/notifications.service';
 import { PortalCustomersService } from './customers.service';
-import { AnalyticsService } from '../analytics/analytics.service';
+import {
+  AnalyticsService,
+  RecencyGrouping,
+} from '../analytics/analytics.service';
 import { GiftsService } from '../gifts/gifts.service';
 import { PortalCatalogService } from './catalog.service';
 import {
@@ -1277,6 +1280,38 @@ export class PortalController {
       merchantId,
       this.computePeriod(period, from, to),
       outletId,
+    );
+  }
+  @Get('analytics/time/recency')
+  analyticsTimeRecency(
+    @Req() req: any,
+    @Query('group') group?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const merchantId = this.getMerchantId(req);
+    const grouping: RecencyGrouping =
+      group === 'week' || group === 'month' ? group : 'day';
+    const parsedLimit = Number.parseInt(String(limit ?? ''), 10);
+    const effectiveLimit = Number.isFinite(parsedLimit)
+      ? parsedLimit
+      : undefined;
+    return this.analytics.getPurchaseRecencyDistribution(
+      merchantId,
+      grouping,
+      effectiveLimit,
+    );
+  }
+  @Get('analytics/time/activity')
+  analyticsTimeActivity(
+    @Req() req: any,
+    @Query('period') period?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    const merchantId = this.getMerchantId(req);
+    return this.analytics.getTimeActivityMetrics(
+      merchantId,
+      this.computePeriod(period, from, to),
     );
   }
 
