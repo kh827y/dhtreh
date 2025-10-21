@@ -16,6 +16,10 @@ import {
 import { Mode, QuoteDto } from './dto';
 import { parseLevelsConfig } from './levels.util';
 import {
+  StaffMotivationEngine,
+  type StaffMotivationSettingsNormalized,
+} from '../staff-motivation/staff-motivation.engine';
+import {
   HoldStatus,
   TxnType,
   WalletType,
@@ -692,6 +696,7 @@ export class LoyaltyService {
     private metrics: MetricsService,
     private promoCodes: PromoCodesService,
     private staffNotifications: TelegramStaffNotificationsService,
+    private staffMotivation: StaffMotivationEngine,
   ) {}
 
   // ===== Earn Lots helpers (optional feature) =====
@@ -1588,6 +1593,30 @@ export class LoyaltyService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
+        let staffMotivationSettings: StaffMotivationSettingsNormalized | null =
+          null;
+        let staffMotivationIsFirstPurchase = false;
+        if (hold.staffId) {
+          try {
+            staffMotivationSettings = await this.staffMotivation.getSettings(
+              tx,
+              hold.merchantId,
+            );
+            if (staffMotivationSettings.enabled) {
+              const previousPurchases = await tx.receipt.count({
+                where: {
+                  merchantId: hold.merchantId,
+                  customerId: hold.customerId,
+                  canceledAt: null,
+                },
+              });
+              staffMotivationIsFirstPurchase = previousPurchases === 0;
+            }
+          } catch {
+            staffMotivationSettings = null;
+            staffMotivationIsFirstPurchase = false;
+          }
+        }
         // Идемпотентность: если чек уже есть — ничего не делаем
         const existing = await tx.receipt.findUnique({
           where: {
@@ -2053,6 +2082,22 @@ export class LoyaltyService {
           },
         });
 
+        if (hold.staffId && staffMotivationSettings?.enabled) {
+          try {
+            await this.staffMotivation.recordPurchase(tx, {
+              merchantId: hold.merchantId,
+              staffId: hold.staffId,
+              outletId: hold.outletId ?? null,
+              customerId: hold.customerId,
+              orderId,
+              receiptId: created.id,
+              eventAt: created.createdAt ?? new Date(),
+              isFirstPurchase: staffMotivationIsFirstPurchase,
+              settings: staffMotivationSettings,
+            });
+          } catch {}
+        }
+
         // Начисление реферальных бонусов пригласителям (многоуровневая схема, триггеры first/all)
         try {
           await this.applyReferralRewards(tx, {
@@ -2425,6 +2470,14 @@ export class LoyaltyService {
           });
         }
       }
+      try {
+        await this.staffMotivation.recordRefund(tx, {
+          merchantId,
+          orderId,
+          eventAt: new Date(),
+          share,
+        });
+      } catch {}
       await tx.eventOutbox.create({
         data: {
           merchantId,
@@ -2456,6 +2509,17 @@ export class LoyaltyService {
         merchantCustomerId: context.merchantCustomerId,
       };
     });
+  }
+
+  async getStaffMotivationConfig(merchantId: string) {
+    return this.staffMotivation.getSettings(this.prisma, merchantId);
+  }
+
+  async getStaffMotivationLeaderboard(
+    merchantId: string,
+    options?: { outletId?: string | null; limit?: number },
+  ) {
+    return this.staffMotivation.getLeaderboard(merchantId, options);
   }
 
   async transactions(

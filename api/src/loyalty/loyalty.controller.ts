@@ -1273,6 +1273,87 @@ export class LoyaltyController {
     return { ok: true };
   }
 
+  @Get('cashier/leaderboard')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        enabled: { type: 'boolean' },
+        settings: { type: 'object', additionalProperties: true },
+        period: { type: 'object', additionalProperties: true },
+        items: {
+          type: 'array',
+          items: { type: 'object', additionalProperties: true },
+        },
+      },
+    },
+  })
+  async cashierLeaderboard(
+    @Req() req: any,
+    @Query('merchantId') merchantIdQuery?: string,
+    @Query('outletId') outletId?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const session = req?.cashierSession ?? null;
+    const merchantId =
+      session?.merchantId ??
+      (typeof merchantIdQuery === 'string' && merchantIdQuery.trim()
+        ? merchantIdQuery.trim()
+        : null);
+    if (!merchantId) {
+      throw new BadRequestException('merchantId required');
+    }
+    const normalizedOutlet =
+      typeof outletId === 'string' && outletId.trim()
+        ? outletId.trim()
+        : undefined;
+    let parsedLimit: number | undefined;
+    if (typeof limit === 'string' && limit.trim()) {
+      const numeric = Number(limit);
+      if (Number.isFinite(numeric) && numeric > 0) {
+        parsedLimit = Math.floor(numeric);
+      }
+    }
+    const result = await this.service.getStaffMotivationLeaderboard(
+      merchantId,
+      {
+        outletId: normalizedOutlet ?? null,
+        limit: parsedLimit,
+      },
+    );
+    return {
+      enabled: result.settings.enabled,
+      settings: {
+        enabled: result.settings.enabled,
+        pointsForNewCustomer: result.settings.pointsForNewCustomer,
+        pointsForExistingCustomer: result.settings.pointsForExistingCustomer,
+        leaderboardPeriod: result.settings.leaderboardPeriod,
+        customDays: result.settings.customDays,
+        updatedAt: result.settings.updatedAt
+          ? result.settings.updatedAt.toISOString()
+          : null,
+      },
+      period: {
+        kind: result.period.period,
+        customDays: result.period.customDays,
+        from: result.period.from.toISOString(),
+        to: result.period.to.toISOString(),
+        days: result.period.days,
+        label: result.period.label,
+      },
+      items: result.items.map((item) => ({
+        staffId: item.staffId,
+        staffName: item.staffName,
+        staffDisplayName: item.staffDisplayName,
+        staffLogin: item.staffLogin,
+        outletId: item.outletId,
+        outletName: item.outletName,
+        points: item.points,
+      })),
+    };
+  }
+
   private async verifyStaffKey(
     merchantId: string,
     key: string,

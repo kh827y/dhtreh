@@ -14,6 +14,7 @@ import { PromoCodesModule } from '../promocodes/promocodes.module';
 import { MerchantsModule } from '../merchants/merchants.module';
 import { ReviewModule } from '../reviews/review.module';
 import { TelegramModule } from '../telegram/telegram.module';
+import { StaffMotivationEngine } from '../staff-motivation/staff-motivation.engine';
 
 @Module({
   imports: [
@@ -27,7 +28,13 @@ import { TelegramModule } from '../telegram/telegram.module';
     TelegramModule,
     forwardRef(() => ReviewModule),
   ],
-  providers: [LoyaltyService, CashierGuard, SubscriptionGuard, AntiFraudGuard],
+  providers: [
+    LoyaltyService,
+    CashierGuard,
+    SubscriptionGuard,
+    AntiFraudGuard,
+    StaffMotivationEngine,
+  ],
   controllers: [LoyaltyController, LoyaltyPublicController],
   exports: [LoyaltyService],
 })

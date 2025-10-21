@@ -230,6 +230,58 @@ const formatPoints = (value: number | null | undefined) => {
   return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(value);
 };
 
+const MOTIVATION_MAX_CUSTOM_DAYS = 365;
+const MOTIVATION_DEFAULT_NEW_POINTS = 30;
+const MOTIVATION_DEFAULT_EXISTING_POINTS = 10;
+
+const resolveMotivationDays = (kind: string, customDays?: number | null) => {
+  const normalized = (kind || '').toLowerCase();
+  switch (normalized) {
+    case 'week':
+      return 7;
+    case 'month':
+      return 30;
+    case 'quarter':
+      return 90;
+    case 'year':
+      return 365;
+    case 'custom': {
+      const numeric = Math.round(Number(customDays ?? 0));
+      if (!Number.isFinite(numeric) || numeric <= 0) return 1;
+      if (numeric > MOTIVATION_MAX_CUSTOM_DAYS) return MOTIVATION_MAX_CUSTOM_DAYS;
+      return numeric;
+    }
+    default:
+      return 7;
+  }
+};
+
+const buildMotivationPeriodLabel = (kind: string, customDays?: number | null) => {
+  const normalized = (kind || '').toLowerCase();
+  if (normalized === 'custom') {
+    const days = resolveMotivationDays(normalized, customDays);
+    const suffix =
+      days % 10 === 1 && days % 100 !== 11
+        ? 'день'
+        : days % 10 >= 2 && days % 10 <= 4 && (days % 100 < 10 || days % 100 >= 20)
+          ? 'дня'
+          : 'дней';
+    return `Последние ${days} ${suffix}`;
+  }
+  switch (normalized) {
+    case 'week':
+      return 'Последние 7 дней';
+    case 'month':
+      return 'Последние 30 дней';
+    case 'quarter':
+      return 'Последние 90 дней';
+    case 'year':
+      return 'Последние 365 дней';
+    default:
+      return 'Последние 7 дней';
+  }
+};
+
 export default function Page() {
   const [merchantId, setMerchantId] = useState<string>(MERCHANT);
 
@@ -295,6 +347,14 @@ export default function Page() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [leaderboardError, setLeaderboardError] = useState<string>('');
+  const [motivationInfo, setMotivationInfo] = useState<{
+    enabled: boolean;
+    periodKind: string;
+    periodLabel: string;
+    pointsNew: number;
+    pointsExisting: number;
+  } | null>(null);
+  const [leaderboardOutletFilter, setLeaderboardOutletFilter] = useState<string | null>(null);
   const [ratingInfoOpen, setRatingInfoOpen] = useState(false);
   const [refundHistory, setRefundHistory] = useState<RefundHistoryItem[]>([]);
 
@@ -378,6 +438,12 @@ export default function Page() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!session?.outlet?.id) {
+      setLeaderboardOutletFilter(null);
+    }
+  }, [session?.outlet?.id]);
 
   useEffect(() => {
     if (sessionLoading) return;
@@ -993,6 +1059,7 @@ export default function Page() {
   const loadLeaderboard = useCallback(async () => {
     if (!session) {
       setLeaderboard([]);
+      setMotivationInfo(null);
       return;
     }
     setLeaderboardLoading(true);
@@ -1000,10 +1067,43 @@ export default function Page() {
     try {
       const url = new URL(`${API_BASE}/loyalty/cashier/leaderboard`);
       url.searchParams.set('merchantId', session.merchantId);
+      if (leaderboardOutletFilter) {
+        url.searchParams.set('outletId', leaderboardOutletFilter);
+      }
       const r = await fetch(url.toString(), { credentials: 'include' });
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
-      const items: RawLeaderboardItem[] = Array.isArray(data?.items) ? data.items : [];
+      const settings = (data?.settings ?? {}) as any;
+      const period = (data?.period ?? {}) as any;
+      const periodKind =
+        typeof period?.kind === 'string'
+          ? period.kind
+          : typeof settings?.leaderboardPeriod === 'string'
+            ? settings.leaderboardPeriod
+            : 'week';
+      const periodLabel =
+        typeof period?.label === 'string'
+          ? period.label
+          : buildMotivationPeriodLabel(
+              periodKind,
+              period?.customDays ?? settings?.customDays ?? null,
+            );
+      const info = {
+        enabled: Boolean(data?.enabled),
+        periodKind,
+        periodLabel,
+        pointsNew: Number(
+          settings?.pointsForNewCustomer ?? MOTIVATION_DEFAULT_NEW_POINTS,
+        ),
+        pointsExisting: Number(
+          settings?.pointsForExistingCustomer ??
+            MOTIVATION_DEFAULT_EXISTING_POINTS,
+        ),
+      };
+      setMotivationInfo(info);
+      const items: RawLeaderboardItem[] = Array.isArray(data?.items)
+        ? data.items
+        : [];
       const entries: LeaderboardEntry[] = items.map((item) => ({
         staffId: String(item.staffId ?? ''),
         staffName:
@@ -1014,19 +1114,21 @@ export default function Page() {
               : typeof item.staffLogin === 'string'
                 ? item.staffLogin
                 : '—',
-        outletName: typeof item.outletName === 'string' ? item.outletName : null,
+        outletName:
+          typeof item.outletName === 'string' ? item.outletName : null,
         points: Number(item.points ?? 0),
       }));
       entries.sort((a, b) => b.points - a.points);
       setLeaderboard(entries);
     } catch (e: unknown) {
       setLeaderboard([]);
+      setMotivationInfo(null);
       const message = e instanceof Error ? e.message : String(e ?? '');
       setLeaderboardError(message || 'Не удалось загрузить рейтинг');
     } finally {
       setLeaderboardLoading(false);
     }
-  }, [session]);
+  }, [session, leaderboardOutletFilter]);
 
   useEffect(() => {
     if (activeTab === 'rating') {
@@ -1526,59 +1628,123 @@ export default function Page() {
     </div>
   );
 
-  const renderRatingTab = () => (
-    <div className="flex-1 overflow-y-auto px-6 pb-32">
-      <div className="mt-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-white">Рейтинг сотрудников</h2>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setRatingInfoOpen(true)}
-              className="h-10 w-10 rounded-full border border-slate-700 text-lg text-white"
-            >
-              ?
-            </button>
-            <button className="h-10 w-10 rounded-full border border-slate-700 text-white">⛃</button>
-          </div>
-        </div>
-        {leaderboardLoading && <div className="text-sm text-slate-400">Загружаем данные...</div>}
-        {leaderboardError && <div className="text-sm text-red-400">{leaderboardError}</div>}
-        <div className="space-y-4">
-          {leaderboard.map((entry, index) => (
-            <div key={entry.staffId} className="rounded-3xl bg-slate-800/70 p-4 flex items-center justify-between">
-              <div>
-                <div className="text-xs text-slate-500">#{index + 1}</div>
-                <div className="text-base font-semibold text-white">{entry.staffName}</div>
-                <div className="text-xs text-slate-400">{entry.outletName || '—'}</div>
-              </div>
-              <div className="text-lg font-semibold text-emerald-300">{formatPoints(entry.points)}</div>
+  const renderRatingTab = () => {
+    const filterActive = Boolean(leaderboardOutletFilter);
+    const outletLabel =
+      session?.outlet?.name ||
+      session?.outlet?.id ||
+      leaderboardOutletFilter ||
+      '';
+    const info = motivationInfo;
+    const infoSummary =
+      info && info.enabled
+        ? `Период: ${info.periodLabel}. Баллы за нового клиента — ${info.pointsNew}, за постоянного — ${info.pointsExisting}.`
+        : null;
+    const infoModalText = info
+      ? info.enabled
+        ? `Рейтинг строится за ${info.periodLabel.toLowerCase()}. Кассир получает ${info.pointsNew} очков за покупку нового клиента и ${info.pointsExisting} очков за обслуживание постоянного клиента.`
+        : 'Мотивация персонала отключена в портале. Новые очки не начисляются, пока функция выключена.'
+      : 'Настройки мотивации загружаются из портала мерчанта.';
+    return (
+      <div className="flex-1 overflow-y-auto px-6 pb-32">
+        <div className="mt-6 space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-white">Рейтинг сотрудников</h2>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setRatingInfoOpen(true)}
+                className="h-10 w-10 rounded-full border border-slate-700 text-lg text-white"
+              >
+                ?
+              </button>
+              <button
+                onClick={() => {
+                  if (!session?.outlet?.id) return;
+                  setLeaderboardOutletFilter((prev) =>
+                    prev ? null : session.outlet!.id,
+                  );
+                }}
+                disabled={!session?.outlet?.id}
+                className={`h-10 w-10 rounded-full border ${
+                  filterActive
+                    ? 'border-emerald-400 bg-emerald-500/10 text-emerald-300'
+                    : 'border-slate-700 text-white'
+                } disabled:opacity-40`}
+                title={
+                  session?.outlet?.id
+                    ? filterActive
+                      ? 'Показаны только результаты по вашей точке'
+                      : 'Отфильтровать рейтинг по вашей точке'
+                    : 'Фильтр доступен после выбора торговой точки'
+                }
+              >
+                ⛃
+              </button>
             </div>
-          ))}
-          {!leaderboard.length && !leaderboardLoading && (
-            <div className="rounded-3xl bg-slate-800/60 p-4 text-sm text-slate-400">
-              Нет данных для отображения.
+          </div>
+          {infoSummary && (
+            <div className="text-xs text-slate-400">{infoSummary}</div>
+          )}
+          {filterActive && outletLabel && (
+            <div className="text-xs text-emerald-300">
+              Фильтр: {outletLabel}
             </div>
           )}
-        </div>
-      </div>
-      {ratingInfoOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6">
-          <div className="w-full max-w-sm rounded-3xl bg-slate-900 p-6 space-y-4">
-            <h3 className="text-lg font-semibold text-white">Информация</h3>
-            <p className="text-sm text-slate-300">
-              Рейтинг строится за последние N дней. Сотруднику начисляется N очков — за начисление бонусов старому клиенту, N очков — за начисление бонусов новому клиенту.
-            </p>
-            <button
-              onClick={() => setRatingInfoOpen(false)}
-              className="w-full rounded-full bg-emerald-500 py-3 text-sm font-semibold text-slate-900"
-            >
-              Понятно
-            </button>
+          {leaderboardLoading && (
+            <div className="text-sm text-slate-400">Загружаем данные...</div>
+          )}
+          {leaderboardError && (
+            <div className="text-sm text-red-400">{leaderboardError}</div>
+          )}
+          {!leaderboardLoading && info && !info.enabled && (
+            <div className="rounded-3xl bg-slate-800/60 p-4 text-sm text-slate-400">
+              Мотивация персонала отключена в портале, новые очки не начисляются.
+            </div>
+          )}
+          <div className="space-y-4">
+            {leaderboard.map((entry, index) => (
+              <div
+                key={entry.staffId}
+                className="rounded-3xl bg-slate-800/70 p-4 flex items-center justify-between"
+              >
+                <div>
+                  <div className="text-xs text-slate-500">#{index + 1}</div>
+                  <div className="text-base font-semibold text-white">
+                    {entry.staffName}
+                  </div>
+                  <div className="text-xs text-slate-400">
+                    {entry.outletName || '—'}
+                  </div>
+                </div>
+                <div className="text-lg font-semibold text-emerald-300">
+                  {formatPoints(entry.points)}
+                </div>
+              </div>
+            ))}
+            {!leaderboard.length && !leaderboardLoading && (
+              <div className="rounded-3xl bg-slate-800/60 p-4 text-sm text-slate-400">
+                Нет данных для отображения.
+              </div>
+            )}
           </div>
         </div>
-      )}
-    </div>
-  );
+        {ratingInfoOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6">
+            <div className="w-full max-w-sm rounded-3xl bg-slate-900 p-6 space-y-4">
+              <h3 className="text-lg font-semibold text-white">Информация</h3>
+              <p className="text-sm text-slate-300">{infoModalText}</p>
+              <button
+                onClick={() => setRatingInfoOpen(false)}
+                className="w-full rounded-full bg-emerald-500 py-3 text-sm font-semibold text-slate-900"
+              >
+                Понятно
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderReturnsTab = () => (
     <div className="flex-1 overflow-y-auto px-6 pb-32">
@@ -1697,4 +1863,3 @@ export default function Page() {
     </main>
   );
 }
-

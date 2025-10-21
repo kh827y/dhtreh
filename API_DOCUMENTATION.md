@@ -57,6 +57,45 @@ X-Staff-Key: sk_live_xxxxxxxxxxxxxx
 
 Все защищённые операции (`quote`, `commit`, `refund`, и т.д.) должны выполняться с `credentials: 'include'`, чтобы браузер отправлял `cashier_session`.
 
+#### GET /loyalty/cashier/leaderboard
+- Требует активную cookie-сессию кассира (`cashier_session`).
+- Query-параметры:
+  - `merchantId` — идентификатор мерчанта (обязателен, но при запросе из браузера подставляется из сессии).
+  - `outletId` — опционально, чтобы ограничить рейтинг конкретной торговой точкой (не может отличаться от точки сессии кассира).
+- Ответ:
+  ```json
+  {
+    "enabled": true,
+    "settings": {
+      "pointsForNewCustomer": 30,
+      "pointsForExistingCustomer": 10,
+      "leaderboardPeriod": "month",
+      "customDays": null,
+      "updatedAt": "2025-11-05T10:15:00.123Z"
+    },
+    "period": {
+      "kind": "month",
+      "label": "Последние 30 дней",
+      "days": 30,
+      "customDays": null,
+      "from": "2025-10-07T00:00:00.000Z",
+      "to": "2025-11-05T23:59:59.999Z"
+    },
+    "items": [
+      {
+        "staffId": "S-123",
+        "staffName": "Ирина М.",
+        "staffDisplayName": "Ирина М.",
+        "staffLogin": "irina",
+        "outletId": "OUT-1",
+        "outletName": "Кофейня на Тверской",
+        "points": 320
+      }
+    ]
+  }
+  ```
+- Начисление очков идёт только по покупкам с привязанным сотрудником; возвраты и отмены снижают рейтинг пропорционально доле возврата.
+
 ### Admin Key Authentication
 Для административных операций:
 ```http
@@ -1489,6 +1528,11 @@ Response 200: объект клиента, как в GET /portal/customers/{id}
 | `/portal/customers/{customerId}/transactions/accrual` | POST | Ручное начисление баллов (сумма покупки, чек, авто- или ручной ввод баллов, торговая точка). |
 | `/portal/customers/{customerId}/transactions/redeem` | POST | Ручное списание баллов (количество баллов, торговая точка, комментарий — опционально). |
 | `/portal/customers/{customerId}/transactions/complimentary` | POST | Начисление комплиментарных баллов (количество, срок сгорания, торговая точка, комментарий ≤60 символов). |
+
+Примечания по мотивации персонала:
+- По умолчанию начисляется 30 очков за покупку нового клиента и 10 очков за обслуженного постоянного клиента (если мерчант не менял значения).
+- Поддерживаемые периоды рейтинга: `week`, `month`, `quarter`, `year`, `custom`. Для `custom` задаётся целое количество дней от 1 до 365 (`customDays`).
+- Возвраты и отмены покупок пересчитывают рейтинг: очки сотрудника списываются пропорционально доле возврата.
 
 Каждый эндпоинт требует аутентифицированного вызова из Merchant Portal. Поля дат (`scheduledAt`, `startDate`, `endDate`) передаются в формате ISO 8601.
 

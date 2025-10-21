@@ -1,5 +1,12 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
+import {
+  STAFF_MOTIVATION_ALLOWED_PERIODS,
+  STAFF_MOTIVATION_DEFAULT_EXISTING_POINTS,
+  STAFF_MOTIVATION_DEFAULT_NEW_POINTS,
+  STAFF_MOTIVATION_MAX_CUSTOM_DAYS,
+  normalizePeriod,
+} from '../../staff-motivation/staff-motivation.constants';
 
 export interface StaffMotivationSettingsDto {
   enabled: boolean;
@@ -20,27 +27,27 @@ export interface UpdateStaffMotivationPayload {
 
 @Injectable()
 export class StaffMotivationService {
-  private readonly allowedPeriods = new Set([
-    'week',
-    'month',
-    'quarter',
-    'custom',
-  ]);
-
   constructor(private readonly prisma: PrismaService) {}
 
   async getSettings(merchantId: string): Promise<StaffMotivationSettingsDto> {
     const settings = await this.prisma.merchantSettings.findUnique({
       where: { merchantId },
     });
+    const normalized = normalizePeriod(
+      settings?.staffMotivationLeaderboardPeriod ?? null,
+      settings?.staffMotivationCustomDays ?? null,
+    );
 
     return {
       enabled: settings?.staffMotivationEnabled ?? false,
-      pointsForNewCustomer: settings?.staffMotivationNewCustomerPoints ?? 0,
+      pointsForNewCustomer:
+        settings?.staffMotivationNewCustomerPoints ??
+        STAFF_MOTIVATION_DEFAULT_NEW_POINTS,
       pointsForExistingCustomer:
-        settings?.staffMotivationExistingCustomerPoints ?? 0,
-      leaderboardPeriod: settings?.staffMotivationLeaderboardPeriod ?? 'week',
-      customDays: settings?.staffMotivationCustomDays ?? null,
+        settings?.staffMotivationExistingCustomerPoints ??
+        STAFF_MOTIVATION_DEFAULT_EXISTING_POINTS,
+      leaderboardPeriod: normalized.period,
+      customDays: normalized.customDays,
       updatedAt: settings?.updatedAt ?? new Date(0),
     };
   }
@@ -95,7 +102,11 @@ export class StaffMotivationService {
   }
 
   private validatePayload(payload: UpdateStaffMotivationPayload) {
-    if (!this.allowedPeriods.has(payload.leaderboardPeriod)) {
+    if (
+      !STAFF_MOTIVATION_ALLOWED_PERIODS.includes(
+        payload.leaderboardPeriod as any,
+      )
+    ) {
       throw new BadRequestException('Недопустимый период рейтинга');
     }
 
@@ -108,9 +119,13 @@ export class StaffMotivationService {
 
     if (payload.leaderboardPeriod === 'custom') {
       const days = payload.customDays ?? 0;
-      if (!Number.isInteger(days) || days <= 0 || days > 365) {
+      if (
+        !Number.isInteger(days) ||
+        days <= 0 ||
+        days > STAFF_MOTIVATION_MAX_CUSTOM_DAYS
+      ) {
         throw new BadRequestException(
-          'Для собственного периода укажите количество дней от 1 до 365',
+          `Для собственного периода укажите количество дней от 1 до ${STAFF_MOTIVATION_MAX_CUSTOM_DAYS}`,
         );
       }
     }

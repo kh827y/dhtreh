@@ -27,6 +27,25 @@ describe('LoyaltyService.commit idempotency', () => {
     return Object.assign(base, overrides);
   }
 
+  function mkStaffMotivation(overrides: any = {}) {
+    return Object.assign(
+      {
+        getSettings: jest.fn().mockResolvedValue({
+          enabled: false,
+          pointsForNewCustomer: 30,
+          pointsForExistingCustomer: 10,
+          leaderboardPeriod: 'week',
+          customDays: null,
+          updatedAt: null,
+        }),
+        recordPurchase: jest.fn().mockResolvedValue({ pointsIssued: 0 }),
+        recordRefund: jest.fn().mockResolvedValue({ pointsDeducted: 0 }),
+        getLeaderboard: jest.fn(),
+      },
+      overrides,
+    );
+  }
+
   const metrics = {
     inc: jest.fn(),
     observe: jest.fn(),
@@ -47,7 +66,14 @@ describe('LoyaltyService.commit idempotency', () => {
       earnApplied: 5,
     });
 
-    const svc = new LoyaltyService(prisma, metrics, undefined as any);
+    const staffMotivation = mkStaffMotivation();
+    const svc = new LoyaltyService(
+      prisma,
+      metrics,
+      undefined as any,
+      undefined as any,
+      staffMotivation,
+    );
     const r = await svc.commit('H1', 'O-1');
     expect(r.alreadyCommitted).toBe(true);
     expect(r.receiptId).toBe('R1');
@@ -96,7 +122,14 @@ describe('LoyaltyService.commit idempotency', () => {
       return fn(tx);
     });
 
-    const svc = new LoyaltyService(prisma, metrics, undefined as any);
+    const staffMotivation = mkStaffMotivation();
+    const svc = new LoyaltyService(
+      prisma,
+      metrics,
+      undefined as any,
+      undefined as any,
+      staffMotivation,
+    );
     const r = await svc.commit('H1', 'O-1');
     expect(r.alreadyCommitted).toBe(true);
     expect(r.receiptId).toBe('R_EXIST');
@@ -143,7 +176,14 @@ describe('LoyaltyService.commit idempotency', () => {
       });
       return fn(txUsed);
     });
-    const svc = new LoyaltyService(prisma, metrics, undefined as any);
+    const staffMotivation = mkStaffMotivation();
+    const svc = new LoyaltyService(
+      prisma,
+      metrics,
+      undefined as any,
+      undefined as any,
+      staffMotivation,
+    );
     const r = await svc.commit('H2', 'O-2');
     expect(r.ok).toBe(true);
     expect(r.receiptId).toBe('R2');
@@ -192,7 +232,14 @@ describe('LoyaltyService.commit idempotency', () => {
       });
       return fn(txUsed);
     });
-    const svc = new LoyaltyService(prisma, metrics, undefined as any);
+    const staffMotivation = mkStaffMotivation();
+    const svc = new LoyaltyService(
+      prisma,
+      metrics,
+      undefined as any,
+      undefined as any,
+      staffMotivation,
+    );
     await svc.commit('H3', 'ORDER-3');
     expect(txUsed.outlet.update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'OUT-1' } }),
@@ -200,7 +247,14 @@ describe('LoyaltyService.commit idempotency', () => {
   });
 
   it('caches rules per outlet', () => {
-    const svc = new LoyaltyService({} as any, metrics, undefined as any);
+    const staffMotivation = mkStaffMotivation();
+    const svc = new LoyaltyService(
+      {} as any,
+      metrics,
+      undefined as any,
+      undefined as any,
+      staffMotivation,
+    );
     const base = { earnBps: 100, redeemLimitBps: 200 };
     const fn1 = (svc as any).compileRules('M-1', 'OUT-1', base, null, null);
     const fn2 = (svc as any).compileRules('M-1', 'OUT-1', base, null, null);

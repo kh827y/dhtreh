@@ -29,7 +29,8 @@ describe('StaffMotivationService', () => {
     const settings = await service.getSettings('m1');
     expect(settings).toMatchObject({
       enabled: false,
-      pointsForNewCustomer: 0,
+      pointsForNewCustomer: 30,
+      pointsForExistingCustomer: 10,
       leaderboardPeriod: 'week',
     });
   });

@@ -55,6 +55,25 @@ const metrics = {
 } as any;
 const promoCodes = { apply: jest.fn() } as any;
 
+function mkStaffMotivation(overrides: any = {}) {
+  return Object.assign(
+    {
+      getSettings: jest.fn().mockResolvedValue({
+        enabled: false,
+        pointsForNewCustomer: 30,
+        pointsForExistingCustomer: 10,
+        leaderboardPeriod: 'week',
+        customDays: null,
+        updatedAt: null,
+      }),
+      recordPurchase: jest.fn().mockResolvedValue({ pointsIssued: 0 }),
+      recordRefund: jest.fn().mockResolvedValue({ pointsDeducted: 0 }),
+      getLeaderboard: jest.fn(),
+    },
+    overrides,
+  );
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
 });
@@ -62,7 +81,14 @@ beforeEach(() => {
 describe('LoyaltyService.quote with level benefits (Wave 2)', () => {
   it('applies earnBps bonus by current level', async () => {
     const prisma = mkPrisma();
-    const svc = new LoyaltyService(prisma, metrics, promoCodes);
+    const staffMotivation = mkStaffMotivation();
+    const svc = new LoyaltyService(
+      prisma,
+      metrics,
+      promoCodes,
+      undefined as any,
+      staffMotivation,
+    );
 
     const res = await (svc as any).quote(
       {
@@ -117,7 +143,14 @@ describe('LoyaltyService.quote with level benefits (Wave 2)', () => {
         })),
       },
     });
-    const svc = new LoyaltyService(prisma, metrics, promoCodes);
+    const staffMotivation = mkStaffMotivation();
+    const svc = new LoyaltyService(
+      prisma,
+      metrics,
+      promoCodes,
+      undefined as any,
+      staffMotivation,
+    );
 
     const res = await (svc as any).quote(
       {

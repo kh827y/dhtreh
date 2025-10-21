@@ -83,6 +83,11 @@ enum StaffStatus {
   ARCHIVED
 }
 
+enum StaffMotivationAction {
+  PURCHASE
+  REFUND
+}
+
 enum TelegramStaffActorType {
   MERCHANT
   STAFF
@@ -250,6 +255,7 @@ model Merchant {
   staffAccessLogs             StaffAccessLog[]
   outletMetrics               OutletKpiDaily[]
   staffMetrics                StaffKpiDaily[]
+  staffMotivationEntries      StaffMotivationEntry[]
   cashierSessions             CashierSession[]
   dataImports                 DataImportJob[]
   segmentMetrics              SegmentMetricSnapshot[]
@@ -326,8 +332,8 @@ model MerchantSettings {
   phone                                 String?
   monthlyReports                        Boolean   @default(false)
   staffMotivationEnabled                Boolean   @default(false)
-  staffMotivationNewCustomerPoints      Int       @default(0)
-  staffMotivationExistingCustomerPoints Int       @default(0)
+  staffMotivationNewCustomerPoints      Int       @default(30)
+  staffMotivationExistingCustomerPoints Int       @default(10)
   staffMotivationLeaderboardPeriod      String?
   staffMotivationCustomDays             Int?
   updatedAt                             DateTime  @default(now())
@@ -391,6 +397,7 @@ model Customer {
   tierAssignments             LoyaltyTierAssignment[]
   communicationTaskRecipients CommunicationTaskRecipient[]
   merchantProfiles            MerchantCustomer[]
+  staffMotivationEntries      StaffMotivationEntry[]
 }
 
 /// Mapping of Telegram user to per-merchant Customer account
@@ -663,6 +670,7 @@ model Outlet {
   promoCodeUsages       PromoCodeUsage[]
   promotionParticipants PromotionParticipant[]
   staffMetrics          StaffKpiDaily[]
+  staffMotivationEntries StaffMotivationEntry[]
 
   @@unique([merchantId, externalId])
   @@unique([merchantId, code])
@@ -759,6 +767,7 @@ model Staff {
   promoCodeUsages               PromoCodeUsage[]
   cashierSessions               CashierSession[]
   staffMetricsDaily             StaffKpiDaily[]
+  staffMotivationEntries        StaffMotivationEntry[]
   // telegram staff notifications (invites created by this staff)
   createdTelegramInvites        TelegramStaffInvite[]     @relation("StaffCreatedTelegramInvites")
   telegramStaffInvites          TelegramStaffInvite[]     @relation("TelegramStaffInviteStaff")
@@ -2105,6 +2114,34 @@ model StaffKpiDaily {
 
   @@unique([staffId, outletId, date])
   @@index([merchantId, date])
+}
+
+model StaffMotivationEntry {
+  id         String                 @id @default(cuid())
+  merchantId String
+  staffId    String
+  outletId   String?
+  customerId String
+  orderId    String
+  receiptId  String?
+  action     StaffMotivationAction
+  points     Int
+  isNew      Boolean                @default(false)
+  share      Float?
+  eventAt    DateTime               @default(now())
+  meta       Json?
+  createdAt  DateTime               @default(now())
+  updatedAt  DateTime               @updatedAt
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+  staff    Staff    @relation(fields: [staffId], references: [id])
+  outlet   Outlet?  @relation(fields: [outletId], references: [id], onDelete: SetNull)
+  customer Customer @relation(fields: [customerId], references: [id])
+
+  @@index([merchantId, eventAt])
+  @@index([merchantId, staffId, eventAt])
+  @@index([merchantId, orderId])
+  @@index([merchantId, outletId, eventAt])
 }
 
 model SegmentMetricSnapshot {
