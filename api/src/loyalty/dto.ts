@@ -104,9 +104,14 @@ export class RefundDto {
   @ApiProperty()
   @IsString()
   merchantId: string;
-  @ApiProperty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
-  orderId: string;
+  orderId?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  receiptNumber?: string;
   // сумма возврата по чеку; для частичного возврата укажи часть
   @ApiProperty({ minimum: 0 })
   @IsNumber()
@@ -187,6 +192,26 @@ export class BalanceDto {
   @ApiProperty() merchantId!: string;
   @ApiProperty() merchantCustomerId!: string;
   @ApiProperty() balance!: number;
+}
+
+export class CashierCustomerResolveDto {
+  @ApiProperty()
+  @IsString()
+  merchantId!: string;
+  @ApiProperty()
+  @IsString()
+  userToken!: string;
+}
+
+export class CashierCustomerResolveRespDto {
+  @ApiProperty()
+  merchantCustomerId!: string;
+  @ApiProperty()
+  customerId!: string;
+  @ApiPropertyOptional({ nullable: true })
+  name?: string | null;
+  @ApiPropertyOptional({ nullable: true })
+  balance?: number | null;
 }
 
 export class OkDto {

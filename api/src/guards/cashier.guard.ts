@@ -149,20 +149,45 @@ export class CashierGuard implements CanActivate {
       }
     } else if (normalizedPath === '/loyalty/refund') {
       merchantId = merchantId || body?.merchantId;
-      if (merchantId && body?.orderId) {
-        if (body?.refundTotal !== undefined && body?.refundTotal !== null) {
+      const hasTotals =
+        body?.refundTotal !== undefined && body?.refundTotal !== null;
+      if (merchantId && hasTotals) {
+        let resolvedOrderId: string | null = null;
+        if (typeof body?.orderId === 'string') {
+          const trimmed = body.orderId.trim();
+          if (trimmed) resolvedOrderId = trimmed;
+        }
+        const receiptNumber =
+          typeof body?.receiptNumber === 'string' && body.receiptNumber
+            ? String(body.receiptNumber).trim()
+            : '';
+        if (!resolvedOrderId && receiptNumber) {
+          try {
+            const receipt = await this.prisma.receipt.findFirst({
+              where: { merchantId, receiptNumber },
+              select: { orderId: true, outletId: true },
+            });
+            if (receipt?.orderId) {
+              resolvedOrderId = receipt.orderId;
+              outletId = receipt.outletId ?? null;
+            }
+          } catch {}
+        }
+        if (merchantId && !outletId && resolvedOrderId) {
           try {
             const receipt = await this.prisma.receipt.findUnique({
               where: {
-                merchantId_orderId: { merchantId, orderId: body?.orderId },
+                merchantId_orderId: { merchantId, orderId: resolvedOrderId },
               },
               select: { outletId: true },
             });
-            outletId = receipt?.outletId ?? null;
+            outletId = receipt?.outletId ?? outletId ?? null;
           } catch {}
+        }
+        if (resolvedOrderId) {
           payload = JSON.stringify({
             merchantId,
-            orderId: body.orderId,
+            orderId: resolvedOrderId,
             refundTotal: body.refundTotal,
             refundEligibleTotal: body?.refundEligibleTotal ?? undefined,
           });

@@ -96,6 +96,28 @@ X-Staff-Key: sk_live_xxxxxxxxxxxxxx
   ```
 - Начисление очков идёт только по покупкам с привязанным сотрудником; возвраты и отмены снижают рейтинг пропорционально доле возврата.
 
+#### POST /loyalty/cashier/customer
+- Требует активную cookie-сессию кассира.
+- Позволяет термналу получить `merchantCustomerId` и базовую информацию о клиенте по QR-токену.
+- Тело запроса:
+  ```json
+  {
+    "merchantId": "M-100",
+    "userToken": "jwt_or_plain_token"
+  }
+  ```
+- Ответ 200:
+  ```json
+  {
+    "merchantCustomerId": "mc_123",
+    "customerId": "c_456",
+    "name": "Иван Петров",
+    "balance": 1800
+  }
+  ```
+- Если QR выписан для другого мерчанта — 400 с текстом `QR выписан для другого мерчанта`.
+- Поле `balance` может быть `null`, если кошелёк ещё не создан; фронтенд может вызвать `/loyalty/balance` с полученным `merchantCustomerId`, чтобы пересчитать баланс.
+
 ### Admin Key Authentication
 Для административных операций:
 ```http
@@ -637,7 +659,8 @@ X-Staff-Key: required_if_enabled
 
 {
   "merchantId": "string",
-  "orderId": "string",
+  "orderId": "string",        // опционально, если известен
+  "receiptNumber": "string",  // опционально; при отсутствии orderId backend найдёт чек по номеру
   "refundTotal": 1000,
   "refundEligibleTotal": 1000 // optional
 }
@@ -647,8 +670,11 @@ Response 200:
   "ok": true,
   "share": 0.5,
   "pointsRestored": 250,
-  "pointsRevoked": 25
+  "pointsRevoked": 25,
+  "merchantCustomerId": "mc_123" // возвращается, если чек найден
 }
+
+> Примечание: передавайте либо `orderId`, либо `receiptNumber`. Если оба поля указаны, приоритет у `orderId`.
 ```
 
 #### 5. Баланс

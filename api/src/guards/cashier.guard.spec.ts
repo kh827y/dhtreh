@@ -21,7 +21,7 @@ describe('CashierGuard', () => {
       staff: { findFirst: jest.fn() },
       hold: { findUnique: jest.fn() },
       outlet: { findFirst: jest.fn() },
-      receipt: { findUnique: jest.fn() },
+      receipt: { findUnique: jest.fn(), findFirst: jest.fn() },
     };
     guard = new CashierGuard(prisma);
   });
@@ -372,5 +372,56 @@ describe('CashierGuard', () => {
     });
 
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
+  });
+
+  it('при requireStaffKey валидирует bridge-подпись на refund по receiptNumber, если orderId не передан', async () => {
+    const secret = 'refund_secret';
+    prisma.merchantSettings.findUnique.mockResolvedValue({
+      requireStaffKey: true,
+      requireBridgeSig: true,
+      bridgeSecret: secret,
+    });
+    prisma.receipt.findFirst.mockResolvedValue({
+      orderId: 'ORD-555',
+      outletId: 'OUT-5',
+    });
+    prisma.receipt.findUnique.mockResolvedValue({ outletId: 'OUT-5' });
+    prisma.outlet.findFirst.mockResolvedValue({
+      bridgeSecret: secret,
+      bridgeSecretNext: null,
+    });
+
+    const payload = JSON.stringify({
+      merchantId: 'M-55',
+      orderId: 'ORD-555',
+      refundTotal: 1500,
+      refundEligibleTotal: 1200,
+    });
+    const ts = Math.floor(Date.now() / 1000).toString();
+    const sig = crypto
+      .createHmac('sha256', secret)
+      .update(ts + '.' + payload)
+      .digest('base64');
+    const header = `v1,ts=${ts},sig=${sig}`;
+
+    const ctx = makeCtx({
+      method: 'POST',
+      route: { path: '/loyalty/refund' },
+      headers: { 'x-bridge-signature': header },
+      body: {
+        merchantId: 'M-55',
+        receiptNumber: 'R-777',
+        refundTotal: 1500,
+        refundEligibleTotal: 1200,
+      },
+      query: {},
+      params: {},
+    });
+
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    expect(prisma.receipt.findFirst).toHaveBeenCalledWith({
+      where: { merchantId: 'M-55', receiptNumber: 'R-777' },
+      select: { orderId: true, outletId: true },
+    });
   });
 });

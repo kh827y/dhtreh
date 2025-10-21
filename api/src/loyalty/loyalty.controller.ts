@@ -36,6 +36,8 @@ import {
   QrMintRespDto,
   OkDto,
   BalanceDto,
+  CashierCustomerResolveDto,
+  CashierCustomerResolveRespDto,
   PublicSettingsDto,
   TransactionsRespDto,
   PublicOutletDto,
@@ -1256,6 +1258,56 @@ export class LoyaltyController {
     };
   }
 
+  @Post('cashier/customer')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiOkResponse({ type: CashierCustomerResolveRespDto })
+  @ApiBadRequestResponse({ type: ErrorDto })
+  async resolveCashierCustomer(@Body() dto: CashierCustomerResolveDto) {
+    const merchantId =
+      typeof dto?.merchantId === 'string' ? dto.merchantId.trim() : '';
+    const userToken =
+      typeof dto?.userToken === 'string' ? dto.userToken.trim() : '';
+    if (!merchantId) throw new BadRequestException('merchantId required');
+    if (!userToken) throw new BadRequestException('userToken required');
+    const resolved = await this.resolveFromToken(userToken);
+    if (
+      resolved.merchantAud &&
+      resolved.merchantAud !== 'any' &&
+      resolved.merchantAud !== merchantId
+    ) {
+      throw new BadRequestException('QR выписан для другого мерчанта');
+    }
+    const { customer, merchantCustomer } = await this.resolveMerchantContext(
+      merchantId,
+      resolved.merchantCustomerId,
+    );
+    const customerName =
+      typeof customer.name === 'string' && customer.name.trim().length > 0
+        ? customer.name.trim()
+        : null;
+    const merchantCustomerName =
+      typeof merchantCustomer.name === 'string' &&
+      merchantCustomer.name.trim().length > 0
+        ? merchantCustomer.name.trim()
+        : null;
+    let balance: number | null = null;
+    try {
+      const balanceResp = await this.service.balance(
+        merchantId,
+        merchantCustomer.id,
+      );
+      balance = typeof balanceResp?.balance === 'number'
+        ? balanceResp.balance
+        : null;
+    } catch {}
+    return {
+      merchantCustomerId: merchantCustomer.id,
+      customerId: customer.id,
+      name: customerName ?? merchantCustomerName ?? null,
+      balance,
+    } satisfies CashierCustomerResolveRespDto;
+  }
+
   @Delete('cashier/session')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @ApiOkResponse({
@@ -1952,13 +2004,42 @@ export class LoyaltyController {
     @Res({ passthrough: true }) res: Response,
     @Req() req: Request & { requestId?: string },
   ) {
-    await this.enforceRequireStaffKey(dto.merchantId, req);
+    const merchantId =
+      typeof dto?.merchantId === 'string' ? dto.merchantId.trim() : '';
+    if (!merchantId) throw new BadRequestException('merchantId required');
+    let orderId =
+      typeof dto?.orderId === 'string' && dto.orderId.trim().length > 0
+        ? dto.orderId.trim()
+        : '';
+    const receiptNumber =
+      typeof dto?.receiptNumber === 'string' &&
+      dto.receiptNumber.trim().length > 0
+        ? dto.receiptNumber.trim()
+        : null;
+    if (!orderId) {
+      if (!receiptNumber) {
+        throw new BadRequestException(
+          'orderId or receiptNumber must be provided',
+        );
+      }
+      const receipt = await this.prisma.receipt.findFirst({
+        where: { merchantId, receiptNumber },
+        select: { orderId: true },
+      });
+      if (!receipt?.orderId) {
+        throw new BadRequestException('Receipt not found');
+      }
+      orderId = receipt.orderId;
+    }
+    (dto as any).merchantId = merchantId;
+    (dto as any).orderId = orderId;
+    await this.enforceRequireStaffKey(merchantId, req);
     let merchantCustomerId: string | null = null;
     let data: any;
     // проверка подписи Bridge до выполнения
     try {
       const s = await this.prisma.merchantSettings.findUnique({
-        where: { merchantId: dto.merchantId },
+        where: { merchantId },
       });
       if (s?.requireBridgeSig) {
         const sig =
@@ -1968,18 +2049,15 @@ export class LoyaltyController {
           const rcp = await this.prisma.receipt.findUnique({
             where: {
               merchantId_orderId: {
-                merchantId: dto.merchantId,
-                orderId: dto.orderId,
+                merchantId,
+                orderId,
               },
             },
             select: { outletId: true },
           });
           receiptOutletId = rcp?.outletId ?? null;
         } catch {}
-        const outlet = await this.resolveOutlet(
-          dto.merchantId,
-          receiptOutletId,
-        );
+        const outlet = await this.resolveOutlet(merchantId, receiptOutletId);
         let secret: string | null = outlet?.bridgeSecret ?? null;
         let alt: string | null = outlet?.bridgeSecretNext ?? null;
         if (!secret && !alt) {
@@ -1987,8 +2065,8 @@ export class LoyaltyController {
           alt = (s as any)?.bridgeSecretNext || null;
         }
         const bodyForSig = JSON.stringify({
-          merchantId: dto.merchantId,
-          orderId: dto.orderId,
+          merchantId,
+          orderId,
           refundTotal: dto.refundTotal,
           refundEligibleTotal: dto.refundEligibleTotal ?? undefined,
         });
@@ -2004,15 +2082,15 @@ export class LoyaltyController {
       if (idemKey) {
         const saved = await this.prisma.idempotencyKey.findUnique({
           where: {
-            merchantId_key: { merchantId: dto.merchantId, key: idemKey },
+            merchantId_key: { merchantId, key: idemKey },
           },
         });
         if (saved) {
           data = saved.response as any;
         } else {
           data = await this.service.refund(
-            dto.merchantId,
-            dto.orderId,
+            merchantId,
+            orderId,
             dto.refundTotal,
             dto.refundEligibleTotal,
             req.requestId,
@@ -2021,15 +2099,15 @@ export class LoyaltyController {
             const receipt = await this.prisma.receipt.findUnique({
               where: {
                 merchantId_orderId: {
-                  merchantId: dto.merchantId,
-                  orderId: dto.orderId,
+                  merchantId,
+                  orderId,
                 },
               },
               select: { customerId: true },
             });
             if (receipt?.customerId) {
               const mc = await this.ensureMerchantCustomerByCustomerId(
-                dto.merchantId,
+                merchantId,
                 receipt.customerId,
               );
               merchantCustomerId = mc.id;
@@ -2040,7 +2118,7 @@ export class LoyaltyController {
             const exp = new Date(Date.now() + ttlH * 3600 * 1000);
             await this.prisma.idempotencyKey.create({
               data: {
-                merchantId: dto.merchantId,
+                merchantId,
                 key: idemKey,
                 response: data,
                 expiresAt: exp,
@@ -2050,8 +2128,8 @@ export class LoyaltyController {
         }
       } else {
         data = await this.service.refund(
-          dto.merchantId,
-          dto.orderId,
+          merchantId,
+          orderId,
           dto.refundTotal,
           dto.refundEligibleTotal,
           req.requestId,
@@ -2060,15 +2138,15 @@ export class LoyaltyController {
           const receipt = await this.prisma.receipt.findUnique({
             where: {
               merchantId_orderId: {
-                merchantId: dto.merchantId,
-                orderId: dto.orderId,
+                merchantId,
+                orderId,
               },
             },
             select: { customerId: true },
           });
           if (receipt?.customerId) {
             const mc = await this.ensureMerchantCustomerByCustomerId(
-              dto.merchantId,
+              merchantId,
               receipt.customerId,
             );
             merchantCustomerId = mc.id;
@@ -2082,7 +2160,7 @@ export class LoyaltyController {
     }
     try {
       const s = await this.prisma.merchantSettings.findUnique({
-        where: { merchantId: dto.merchantId },
+        where: { merchantId },
       });
       const secret = s?.webhookSecret;
       if (secret) {
@@ -2092,7 +2170,7 @@ export class LoyaltyController {
           .update(`${ts}.${body}`)
           .digest('base64');
         res.setHeader('X-Loyalty-Signature', `v1,ts=${ts},sig=${sig}`);
-        res.setHeader('X-Merchant-Id', dto.merchantId);
+        res.setHeader('X-Merchant-Id', merchantId);
         res.setHeader('X-Signature-Timestamp', ts);
         if (s?.webhookKeyId)
           res.setHeader('X-Signature-Key-Id', s.webhookKeyId);

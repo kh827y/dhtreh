@@ -287,6 +287,7 @@ export default function Page() {
 
   const [mode, setMode] = useState<'redeem' | 'earn'>('redeem');
   const [userToken, setUserToken] = useState<string>('');
+  const [merchantCustomerId, setMerchantCustomerId] = useState<string | null>(null);
   const [orderId, setOrderId] = useState<string>('');
   const [total, setTotal] = useState<number>(0);
   const [eligibleTotal, setEligibleTotal] = useState<number>(0);
@@ -726,6 +727,9 @@ export default function Page() {
         }),
       });
       const data = await r.json();
+      if (typeof data?.merchantCustomerId === 'string') {
+        setMerchantCustomerId(data.merchantCustomerId);
+      }
       if (data?.ok) {
         emitLoyaltyEvent({
           type: 'loyalty.commit',
@@ -754,9 +758,9 @@ export default function Page() {
     }
   };
 
-  const loadCustomerBalance = async (token: string, merchant: string): Promise<number | null> => {
+  const loadCustomerBalance = async (merchantCustomerId: string, merchant: string): Promise<number | null> => {
     try {
-      const r = await fetch(`${API_BASE}/loyalty/balance/${merchant}/${encodeURIComponent(token)}`, {
+      const r = await fetch(`${API_BASE}/loyalty/balance/${merchant}/${encodeURIComponent(merchantCustomerId)}`, {
         credentials: 'include',
       });
       if (!r.ok) return null;
@@ -784,18 +788,66 @@ export default function Page() {
 
   const fetchCustomerOverview = async (token: string) => {
     const merchant = session?.merchantId || merchantId;
-    const customerId = resolveCustomerIdFromToken(token);
-    const name = extractNameFromToken(token);
-    const [balance, levelName] = await Promise.all([
-      loadCustomerBalance(token, merchant),
-      customerId ? loadCustomerLevel(merchant, customerId) : Promise.resolve(null),
-    ]);
-    setOverview({
-      customerId: customerId ?? token ?? null,
-      name: name ?? null,
-      levelName,
-      balance,
-    });
+    if (!merchant) return;
+    const fallbackName = extractNameFromToken(token);
+    try {
+      const r = await fetch(`${API_BASE}/loyalty/cashier/customer`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ merchantId: merchant, userToken: token }),
+      });
+      if (!r.ok) {
+        const text = await r.text();
+        throw new Error(text || r.statusText);
+      }
+      const data = await r.json();
+      const resolvedMerchantCustomerId =
+        typeof data?.merchantCustomerId === 'string'
+          ? data.merchantCustomerId
+          : null;
+      const resolvedCustomerId =
+        typeof data?.customerId === 'string' && data.customerId.trim().length > 0
+          ? data.customerId.trim()
+          : null;
+      const nameFromApi =
+        typeof data?.name === 'string' && data.name.trim().length > 0
+          ? data.name.trim()
+          : null;
+      setMerchantCustomerId(resolvedMerchantCustomerId);
+      const balanceHint =
+        typeof data?.balance === 'number' ? data.balance : null;
+      const balancePromise =
+        resolvedMerchantCustomerId != null
+          ? balanceHint != null
+            ? Promise.resolve(balanceHint)
+            : loadCustomerBalance(resolvedMerchantCustomerId, merchant)
+          : Promise.resolve<number | null>(null);
+      const levelPromise =
+        resolvedCustomerId != null
+          ? loadCustomerLevel(merchant, resolvedCustomerId)
+          : Promise.resolve<string | null>(null);
+      const [balance, levelName] = await Promise.all([
+        balancePromise,
+        levelPromise,
+      ]);
+      setOverview({
+        customerId: resolvedCustomerId,
+        name: nameFromApi ?? fallbackName ?? null,
+        levelName,
+        balance,
+      });
+    } catch (e: unknown) {
+      setMerchantCustomerId(null);
+      setOverview({
+        customerId: null,
+        name: fallbackName ?? null,
+        levelName: null,
+        balance: null,
+      });
+      const message = e instanceof Error ? e.message : String(e);
+      alert('Не удалось загрузить данные клиента: ' + message);
+    }
   };
 
   const resetFlow = () => {
@@ -809,6 +861,7 @@ export default function Page() {
     setReceiptData(null);
     setResult(null);
     setHoldId(null);
+    setMerchantCustomerId(null);
     setOverview({ customerId: null, name: null, levelName: null, balance: null });
     setUserToken('');
     setManualTokenInput('');
@@ -819,6 +872,8 @@ export default function Page() {
 
   const beginFlow = async (token: string) => {
     setUserToken(token);
+    setMerchantCustomerId(null);
+    setOverview({ customerId: null, name: null, levelName: null, balance: null });
     setManualTokenInput('');
     setFlowStep('details');
     setPurchaseAmountInput('');
@@ -954,36 +1009,34 @@ export default function Page() {
 
   const loadHistory = async (reset = false) => {
     if (histBusy) return;
+    const activeMerchantId = session?.merchantId || merchantId;
+    if (!activeMerchantId || !merchantCustomerId) return;
     setHistBusy(true);
     try {
-      const activeMerchantId = session?.merchantId || merchantId;
-      let customerId = userToken;
-      if (userToken.split('.').length === 3) {
-        const manual = prompt('Для истории нужен merchantCustomerId (например, mc_...). Введите его или customerId:');
-        if (!manual) {
-          setHistBusy(false);
-          return;
-        }
-        customerId = manual;
-      }
       const url = new URL(`${API_BASE}/loyalty/transactions`);
       url.searchParams.set('merchantId', activeMerchantId);
-      url.searchParams.set('merchantCustomerId', customerId);
-      url.searchParams.set('customerId', customerId);
+      url.searchParams.set('merchantCustomerId', merchantCustomerId);
+      if (overview.customerId) url.searchParams.set('customerId', overview.customerId);
       url.searchParams.set('limit', '20');
       if (!reset && histNextBefore) url.searchParams.set('before', histNextBefore);
       const r = await fetch(url.toString(), { credentials: 'include' });
+      if (!r.ok) {
+        const text = await r.text();
+        throw new Error(text || r.statusText);
+      }
       const data = await r.json();
-      const items: Txn[] = data.items ?? [];
+      const items: Txn[] = Array.isArray(data.items) ? data.items : [];
       setHistory((old) => (reset ? items : [...old, ...items]));
-      setHistNextBefore(data.nextBefore ?? null);
+      setHistNextBefore(typeof data.nextBefore === 'string' ? data.nextBefore : null);
       if (reset) {
-        const refunds = items.filter((i) => i.type === 'REFUND').map((i) => ({
-          id: i.id,
-          createdAt: i.createdAt,
-          amount: i.amount,
-          receiptNumber: i.receiptNumber ?? null,
-        }));
+        const refunds = items
+          .filter((i) => i.type === 'REFUND')
+          .map((i) => ({
+            id: i.id,
+            createdAt: i.createdAt,
+            amount: i.amount,
+            receiptNumber: i.receiptNumber ?? null,
+          }));
         setRefundHistory(refunds);
       }
     } catch (e: unknown) {
@@ -996,23 +1049,9 @@ export default function Page() {
 
   useEffect(() => {
     setHistory([]);
+    setRefundHistory([]);
     setHistNextBefore(null);
-  }, [userToken, merchantId]);
-
-  const findOrderIdForReceipt = (candidate: string): string | null => {
-    const normalized = candidate.trim();
-    if (!normalized) return null;
-    const priority = history.find(
-      (h) =>
-        h.receiptNumber &&
-        h.orderId &&
-        h.receiptNumber.trim() === normalized &&
-        (h.type === 'REDEEM' || h.type === 'EARN'),
-    );
-    if (priority?.orderId) return priority.orderId;
-    const fallback = history.find((h) => h.receiptNumber && h.orderId && h.receiptNumber.trim() === normalized);
-    return fallback?.orderId ?? null;
-  };
+  }, [merchantCustomerId, session?.merchantId, merchantId]);
 
   const doRefund = async () => {
     if (!session) {
@@ -1024,31 +1063,40 @@ export default function Page() {
       alert('Укажи номер чека и сумму возврата (>0)');
       return;
     }
-    const resolvedOrderId = findOrderIdForReceipt(receipt);
-    if (!resolvedOrderId) {
-      alert('Не нашли операцию с таким номером чека. Загрузите историю клиента и попробуйте снова.');
-      return;
-    }
     try {
       const activeMerchantId = session?.merchantId || merchantId;
-      const activeOutletId = session?.outlet?.id || undefined;
-      const activeStaffId = session?.staff?.id || undefined;
       const r = await fetch(`${API_BASE}/loyalty/refund`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           merchantId: activeMerchantId,
-          orderId: resolvedOrderId,
+          receiptNumber: receipt,
           refundTotal,
-          outletId: activeOutletId || undefined,
-          staffId: activeStaffId || undefined,
         }),
       });
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
+      if (typeof data?.merchantCustomerId === 'string') {
+        setMerchantCustomerId(data.merchantCustomerId);
+      }
+      const sharePercent =
+        typeof data?.share === 'number'
+          ? ((data.share * 100).toFixed(1) as string)
+          : '—';
+      const restored =
+        typeof data?.pointsRestored === 'number'
+          ? String(data.pointsRestored)
+          : '—';
+      const revoked =
+        typeof data?.pointsRevoked === 'number'
+          ? String(data.pointsRevoked)
+          : '—';
       setRefundReceiptNumber('');
-      alert(`Возврат выполнен. share=${(data.share * 100).toFixed(1)}%, восстановлено ${data.pointsRestored}, списано ${data.pointsRevoked}`);
+      setRefundTotal(0);
+      alert(
+        `Возврат выполнен. доля=${sharePercent}%, восстановлено ${restored}, списано ${revoked}`,
+      );
       loadHistory(true);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
@@ -1187,7 +1235,10 @@ export default function Page() {
     return session.outlet.name || session.outlet.id || '';
   }, [session]);
 
-  const flowHeader = useMemo(() => {
+  const pageTitle = useMemo(() => {
+    if (activeTab === 'history') return 'История операций';
+    if (activeTab === 'rating') return 'Рейтинг сотрудников';
+    if (activeTab === 'returns') return 'Возвраты по чекам';
     switch (flowStep) {
       case 'details':
         return 'Оформление покупки';
@@ -1200,7 +1251,7 @@ export default function Page() {
       default:
         return 'Главная';
     }
-  }, [flowStep]);
+  }, [activeTab, flowStep]);
 
   const renderAuth = () => (
     <div className="flex flex-col min-h-screen bg-slate-900 text-white">
@@ -1325,12 +1376,14 @@ export default function Page() {
   const renderHomeTab = () => (
     <div className="flex-1 overflow-y-auto px-6 pb-32">
       <div className="mt-6 space-y-6">
-        <div className="rounded-3xl bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 p-6 shadow-xl">
-          <div className="text-sm text-slate-400">Сотрудник</div>
-          <div className="text-xl font-semibold text-white">{staffName}</div>
-          <div className="text-sm text-slate-400 mt-3">Торговая точка</div>
-          <div className="text-base text-white">{outletName || '—'}</div>
-        </div>
+        {flowStep === 'idle' && (
+          <div className="rounded-3xl bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 p-6 shadow-xl">
+            <div className="text-sm text-slate-400">Сотрудник</div>
+            <div className="text-xl font-semibold text-white">{staffName}</div>
+            <div className="text-sm text-slate-400 mt-3">Торговая точка</div>
+            <div className="text-base text-white">{outletName || '—'}</div>
+          </div>
+        )}
 
         {flowStep === 'idle' && (
           <div className="space-y-6">
@@ -1375,10 +1428,6 @@ export default function Page() {
               <div className="flex items-center justify-between text-sm text-slate-300">
                 <span>Баланс</span>
                 <span className="font-medium text-white">{formatCurrency(overview.balance)}</span>
-              </div>
-              <div className="flex items-center justify-between text-xs text-slate-500">
-                <span>ID клиента</span>
-                <span>{overview.customerId || '—'}</span>
               </div>
             </div>
 
@@ -1580,11 +1629,16 @@ export default function Page() {
       <div className="mt-6 space-y-4">
         <button
           onClick={() => loadHistory(true)}
-          disabled={histBusy}
+          disabled={histBusy || !merchantCustomerId}
           className="w-full rounded-full bg-slate-800 py-3 text-sm font-semibold text-white disabled:opacity-40"
         >
           Загрузить историю
         </button>
+        {!merchantCustomerId && (
+          <div className="text-xs text-slate-500">
+            Отсканируйте клиента, чтобы посмотреть историю операций.
+          </div>
+        )}
         <div className="space-y-4">
           {history.map((item) => {
             const isEarn = item.type === 'EARN';
@@ -1795,10 +1849,7 @@ export default function Page() {
       <div className="mx-auto flex min-h-screen w-full max-w-md flex-col">
         <header className="px-6 pt-10">
           <div className="flex items-center justify-between">
-            <div>
-              <div className="text-xs uppercase tracking-[0.3em] text-slate-500">{session.merchantId}</div>
-              <h1 className="text-2xl font-semibold text-white">{flowHeader}</h1>
-            </div>
+            <h1 className="text-2xl font-semibold text-white">{pageTitle}</h1>
             <button onClick={logoutStaff} className="text-sm text-slate-400 underline">Выйти</button>
           </div>
         </header>
