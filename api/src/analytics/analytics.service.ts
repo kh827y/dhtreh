@@ -72,6 +72,7 @@ export interface CustomerPortraitMetrics {
   }>;
   age: Array<{
     bucket: string;
+    age: number;
     customers: number;
     transactions: number;
     revenue: number;
@@ -80,6 +81,7 @@ export interface CustomerPortraitMetrics {
   sexAge: Array<{
     sex: string;
     bucket: string;
+    age: number;
     customers: number;
     transactions: number;
     revenue: number;
@@ -251,12 +253,25 @@ export class AnalyticsService {
   async getCustomerPortrait(
     merchantId: string,
     period: DashboardPeriod,
+    audienceId?: string | null,
   ): Promise<CustomerPortraitMetrics> {
+    const maxAge = 100;
+    const normalizedAudienceId =
+      audienceId && audienceId.trim().toLowerCase() !== 'all'
+        ? String(audienceId)
+        : null;
     const tx = await this.prisma.transaction.findMany({
       where: {
         merchantId,
         createdAt: { gte: period.from, lte: period.to },
         type: 'EARN',
+        ...(normalizedAudienceId
+          ? {
+              customer: {
+                segments: { some: { segmentId: normalizedAudienceId } },
+              },
+            }
+          : {}),
       },
       select: {
         amount: true,
@@ -264,135 +279,132 @@ export class AnalyticsService {
         customer: { select: { id: true, gender: true, birthday: true } },
       },
     });
-    const genderMap = new Map<
-      string,
-      { customers: Set<string>; transactions: number; revenue: number }
-    >();
-    const ageBuckets = [
-      '<18',
-      '18-24',
-      '25-34',
-      '35-44',
-      '45-54',
-      '55-64',
-      '65+',
-    ];
-    const ageMap = new Map<
-      string,
-      { customers: Set<string>; transactions: number; revenue: number }
-    >();
-    const sexAgeMap = new Map<
-      string,
-      { customers: Set<string>; transactions: number; revenue: number }
-    >();
 
-    const bucketOf = (age: number | null): string => {
-      if (age == null || isNaN(age)) return '25-34';
-      if (age < 18) return '<18';
-      if (age <= 24) return '18-24';
-      if (age <= 34) return '25-34';
-      if (age <= 44) return '35-44';
-      if (age <= 54) return '45-54';
-      if (age <= 64) return '55-64';
-      return '65+';
+    type Stats = {
+      customers: Set<string>;
+      transactions: number;
+      revenue: number;
+    };
+
+    const ensureStats = <K>(map: Map<K, Stats>, key: K): Stats => {
+      let stats = map.get(key);
+      if (!stats) {
+        stats = {
+          customers: new Set<string>(),
+          transactions: 0,
+          revenue: 0,
+        };
+        map.set(key, stats);
+      }
+      return stats;
+    };
+
+    const genderMap = new Map<string, Stats>();
+    const ageMap = new Map<number, Stats>();
+    const sexAgeMap = new Map<string, Stats>();
+
+    const today = period.to || new Date();
+    const normalizeSex = (sex?: string | null): string => {
+      if (sex === 'M' || sex === 'F') return sex;
+      return 'U';
+    };
+    const calculateAge = (birthday: Date | null): number | null => {
+      if (!birthday) return null;
+      const diff = today.getTime() - birthday.getTime();
+      if (!Number.isFinite(diff) || diff < 0) return null;
+      return Math.floor(diff / (365.25 * 24 * 60 * 60 * 1000));
     };
 
     for (const t of tx) {
-      const sex = t.customer?.gender || 'U';
-      const bday = t.customer?.birthday || null;
-      const today = period.to || new Date();
-      const age = bday
-        ? Math.floor(
-            (today.getTime() - bday.getTime()) / (365.25 * 24 * 60 * 60 * 1000),
-          )
-        : null;
-      const bucket = bucketOf(age);
+      const sex = normalizeSex(t.customer?.gender);
       const abs = Math.abs(t.amount || 0);
 
-      // gender
-      if (!genderMap.has(sex))
-        genderMap.set(sex, {
-          customers: new Set(),
-          transactions: 0,
-          revenue: 0,
-        });
-      const g = genderMap.get(sex)!;
-      if (t.customer?.id) g.customers.add(t.customer.id);
-      g.transactions++;
-      g.revenue += abs;
+      const genderStats = ensureStats(genderMap, sex);
+      if (t.customer?.id) genderStats.customers.add(t.customer.id);
+      genderStats.transactions++;
+      genderStats.revenue += abs;
 
-      // age
-      if (!ageMap.has(bucket))
-        ageMap.set(bucket, {
-          customers: new Set(),
-          transactions: 0,
-          revenue: 0,
-        });
-      const a = ageMap.get(bucket)!;
-      if (t.customer?.id) a.customers.add(t.customer.id);
-      a.transactions++;
-      a.revenue += abs;
+      const ageValue = calculateAge(t.customer?.birthday || null);
+      if (ageValue != null) {
+        const boundedAge = Math.max(0, Math.min(maxAge, ageValue));
+        const ageStats = ensureStats(ageMap, boundedAge);
+        if (t.customer?.id) ageStats.customers.add(t.customer.id);
+        ageStats.transactions++;
+        ageStats.revenue += abs;
 
-      // sex×age
-      const key = `${sex}:${bucket}`;
-      if (!sexAgeMap.has(key))
-        sexAgeMap.set(key, {
-          customers: new Set(),
-          transactions: 0,
-          revenue: 0,
-        });
-      const sa = sexAgeMap.get(key)!;
-      if (t.customer?.id) sa.customers.add(t.customer.id);
-      sa.transactions++;
-      sa.revenue += abs;
+        const sexAgeKey = `${sex}:${boundedAge}`;
+        const sexAgeStats = ensureStats(sexAgeMap, sexAgeKey);
+        if (t.customer?.id) sexAgeStats.customers.add(t.customer.id);
+        sexAgeStats.transactions++;
+        sexAgeStats.revenue += abs;
+      }
     }
 
-    const gender = Array.from(genderMap.entries())
-      .map(([sex, v]) => ({
-        sex,
-        customers: v.customers.size,
-        transactions: v.transactions,
-        revenue: Math.round(v.revenue),
-        averageCheck:
-          v.transactions > 0 ? Math.round(v.revenue / v.transactions) : 0,
-      }))
-      .sort((a, b) => b.revenue - a.revenue);
+    const baseSexes: string[] = ['M', 'F'];
+    for (const base of baseSexes) ensureStats(genderMap, base);
 
-    const age = ageBuckets.map((bucket) => {
-      const v = ageMap.get(bucket) || {
-        customers: new Set<string>(),
-        transactions: 0,
-        revenue: 0,
-      };
+    const genderOrder = [
+      ...baseSexes,
+      ...Array.from(genderMap.keys()).filter((sex) => !baseSexes.includes(sex)),
+    ];
+    const gender = genderOrder.map((sex) => {
+      const stats = ensureStats(genderMap, sex);
+      const revenue = Math.round(stats.revenue);
       return {
-        bucket,
-        customers: v.customers.size,
-        transactions: v.transactions,
-        revenue: Math.round(v.revenue),
+        sex,
+        customers: stats.customers.size,
+        transactions: stats.transactions,
+        revenue,
         averageCheck:
-          v.transactions > 0 ? Math.round(v.revenue / v.transactions) : 0,
+          stats.transactions > 0
+            ? Math.round(revenue / stats.transactions)
+            : 0,
+      };
+    });
+
+    const age = Array.from({ length: maxAge + 1 }, (_, ageValue) => {
+      const stats = ensureStats(ageMap, ageValue);
+      const revenue = Math.round(stats.revenue);
+      return {
+        bucket: String(ageValue),
+        age: ageValue,
+        customers: stats.customers.size,
+        transactions: stats.transactions,
+        revenue,
+        averageCheck:
+          stats.transactions > 0
+            ? Math.round(revenue / stats.transactions)
+            : 0,
       };
     });
 
     const sexAge: Array<{
       sex: string;
       bucket: string;
+      age: number;
       customers: number;
       transactions: number;
       revenue: number;
       averageCheck: number;
     }> = [];
-    for (const [key, v] of sexAgeMap.entries()) {
-      const [sex, bucket] = key.split(':');
-      sexAge.push({
-        sex,
-        bucket,
-        customers: v.customers.size,
-        transactions: v.transactions,
-        revenue: Math.round(v.revenue),
-        averageCheck:
-          v.transactions > 0 ? Math.round(v.revenue / v.transactions) : 0,
-      });
+    for (const sex of baseSexes) {
+      for (let ageValue = 0; ageValue <= maxAge; ageValue++) {
+        const key = `${sex}:${ageValue}`;
+        const stats = ensureStats(sexAgeMap, key);
+        const revenue = Math.round(stats.revenue);
+        sexAge.push({
+          sex,
+          bucket: String(ageValue),
+          age: ageValue,
+          customers: stats.customers.size,
+          transactions: stats.transactions,
+          revenue,
+          averageCheck:
+            stats.transactions > 0
+              ? Math.round(revenue / stats.transactions)
+              : 0,
+        });
+      }
     }
 
     return { gender, age, sexAge };

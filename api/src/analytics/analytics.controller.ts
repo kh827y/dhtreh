@@ -65,14 +65,20 @@ export class AnalyticsController {
   })
   @ApiQuery({ name: 'from', type: String, required: false })
   @ApiQuery({ name: 'to', type: String, required: false })
+  @ApiQuery({ name: 'audienceId', type: String, required: false })
   async getCustomerPortrait(
     @Param('merchantId') merchantId: string,
     @Query('period') periodType?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('audienceId') audienceId?: string,
   ) {
     const period = this.getPeriod(periodType, from, to);
-    return this.analyticsService.getCustomerPortrait(merchantId, period);
+    return this.analyticsService.getCustomerPortrait(
+      merchantId,
+      period,
+      audienceId,
+    );
   }
 
   /**
