@@ -71,7 +71,7 @@ export interface CustomerPortraitMetrics {
     averageCheck: number;
   }>;
   age: Array<{
-    bucket: string;
+    age: number;
     customers: number;
     transactions: number;
     revenue: number;
@@ -79,7 +79,7 @@ export interface CustomerPortraitMetrics {
   }>;
   sexAge: Array<{
     sex: string;
-    bucket: string;
+    age: number;
     customers: number;
     transactions: number;
     revenue: number;
@@ -251,12 +251,20 @@ export class AnalyticsService {
   async getCustomerPortrait(
     merchantId: string,
     period: DashboardPeriod,
+    segmentId?: string,
   ): Promise<CustomerPortraitMetrics> {
     const tx = await this.prisma.transaction.findMany({
       where: {
         merchantId,
         createdAt: { gte: period.from, lte: period.to },
         type: 'EARN',
+        ...(segmentId
+          ? {
+              customer: {
+                segments: { some: { segmentId } },
+              },
+            }
+          : {}),
       },
       select: {
         amount: true,
@@ -268,17 +276,8 @@ export class AnalyticsService {
       string,
       { customers: Set<string>; transactions: number; revenue: number }
     >();
-    const ageBuckets = [
-      '<18',
-      '18-24',
-      '25-34',
-      '35-44',
-      '45-54',
-      '55-64',
-      '65+',
-    ];
     const ageMap = new Map<
-      string,
+      number,
       { customers: Set<string>; transactions: number; revenue: number }
     >();
     const sexAgeMap = new Map<
@@ -286,30 +285,34 @@ export class AnalyticsService {
       { customers: Set<string>; transactions: number; revenue: number }
     >();
 
-    const bucketOf = (age: number | null): string => {
-      if (age == null || isNaN(age)) return '25-34';
-      if (age < 18) return '<18';
-      if (age <= 24) return '18-24';
-      if (age <= 34) return '25-34';
-      if (age <= 44) return '35-44';
-      if (age <= 54) return '45-54';
-      if (age <= 64) return '55-64';
-      return '65+';
+    const today = period.to || new Date();
+    const normalizeSex = (value: string | null | undefined): string => {
+      const v = (value || '').toString().trim().toUpperCase();
+      if (v === 'M' || v === 'MALE' || v === 'М' || v === 'МУЖ' || v === 'МУЖСКОЙ')
+        return 'M';
+      if (v === 'F' || v === 'FEMALE' || v === 'Ж' || v === 'ЖЕН' || v === 'ЖЕНСКИЙ')
+        return 'F';
+      return 'U';
+    };
+
+    const clampAge = (value: number | null): number | null => {
+      if (value == null || Number.isNaN(value)) return null;
+      if (value < 0) return 0;
+      if (value > 100) return 100;
+      return value;
     };
 
     for (const t of tx) {
-      const sex = t.customer?.gender || 'U';
+      const sex = normalizeSex(t.customer?.gender);
       const bday = t.customer?.birthday || null;
-      const today = period.to || new Date();
       const age = bday
         ? Math.floor(
             (today.getTime() - bday.getTime()) / (365.25 * 24 * 60 * 60 * 1000),
           )
         : null;
-      const bucket = bucketOf(age);
+      const ageValue = clampAge(age);
       const abs = Math.abs(t.amount || 0);
 
-      // gender
       if (!genderMap.has(sex))
         genderMap.set(sex, {
           customers: new Set(),
@@ -321,30 +324,30 @@ export class AnalyticsService {
       g.transactions++;
       g.revenue += abs;
 
-      // age
-      if (!ageMap.has(bucket))
-        ageMap.set(bucket, {
-          customers: new Set(),
-          transactions: 0,
-          revenue: 0,
-        });
-      const a = ageMap.get(bucket)!;
-      if (t.customer?.id) a.customers.add(t.customer.id);
-      a.transactions++;
-      a.revenue += abs;
+      if (ageValue != null) {
+        if (!ageMap.has(ageValue))
+          ageMap.set(ageValue, {
+            customers: new Set(),
+            transactions: 0,
+            revenue: 0,
+          });
+        const a = ageMap.get(ageValue)!;
+        if (t.customer?.id) a.customers.add(t.customer.id);
+        a.transactions++;
+        a.revenue += abs;
 
-      // sex×age
-      const key = `${sex}:${bucket}`;
-      if (!sexAgeMap.has(key))
-        sexAgeMap.set(key, {
-          customers: new Set(),
-          transactions: 0,
-          revenue: 0,
-        });
-      const sa = sexAgeMap.get(key)!;
-      if (t.customer?.id) sa.customers.add(t.customer.id);
-      sa.transactions++;
-      sa.revenue += abs;
+        const key = `${sex}:${ageValue}`;
+        if (!sexAgeMap.has(key))
+          sexAgeMap.set(key, {
+            customers: new Set(),
+            transactions: 0,
+            revenue: 0,
+          });
+        const sa = sexAgeMap.get(key)!;
+        if (t.customer?.id) sa.customers.add(t.customer.id);
+        sa.transactions++;
+        sa.revenue += abs;
+      }
     }
 
     const gender = Array.from(genderMap.entries())
@@ -358,42 +361,49 @@ export class AnalyticsService {
       }))
       .sort((a, b) => b.revenue - a.revenue);
 
-    const age = ageBuckets.map((bucket) => {
-      const v = ageMap.get(bucket) || {
-        customers: new Set<string>(),
-        transactions: 0,
-        revenue: 0,
-      };
-      return {
-        bucket,
-        customers: v.customers.size,
-        transactions: v.transactions,
-        revenue: Math.round(v.revenue),
-        averageCheck:
-          v.transactions > 0 ? Math.round(v.revenue / v.transactions) : 0,
-      };
-    });
-
-    const sexAge: Array<{
-      sex: string;
-      bucket: string;
+    const age: Array<{
+      age: number;
       customers: number;
       transactions: number;
       revenue: number;
       averageCheck: number;
     }> = [];
-    for (const [key, v] of sexAgeMap.entries()) {
-      const [sex, bucket] = key.split(':');
-      sexAge.push({
-        sex,
-        bucket,
-        customers: v.customers.size,
-        transactions: v.transactions,
-        revenue: Math.round(v.revenue),
-        averageCheck:
-          v.transactions > 0 ? Math.round(v.revenue / v.transactions) : 0,
+    for (let value = 0; value <= 100; value++) {
+      const bucket = ageMap.get(value);
+      const revenue = bucket ? bucket.revenue : 0;
+      const transactions = bucket ? bucket.transactions : 0;
+      age.push({
+        age: value,
+        customers: bucket ? bucket.customers.size : 0,
+        transactions,
+        revenue: Math.round(revenue),
+        averageCheck: transactions > 0 ? Math.round(revenue / transactions) : 0,
       });
     }
+
+    const sexAgeOrder: Record<string, number> = { M: 0, F: 1, U: 2 };
+    const sexAge = Array.from(sexAgeMap.entries())
+      .map(([key, v]) => {
+        const [sex, ageRaw] = key.split(':');
+        const ageValue = Number(ageRaw);
+        const revenue = v.revenue;
+        return {
+          sex,
+          age: Number.isFinite(ageValue) ? ageValue : 0,
+          customers: v.customers.size,
+          transactions: v.transactions,
+          revenue: Math.round(revenue),
+          averageCheck:
+            v.transactions > 0 ? Math.round(revenue / v.transactions) : 0,
+        };
+      })
+      .sort((a, b) => {
+        if (a.age !== b.age) return a.age - b.age;
+        const aOrder = sexAgeOrder[a.sex] ?? 3;
+        const bOrder = sexAgeOrder[b.sex] ?? 3;
+        if (aOrder !== bOrder) return aOrder - bOrder;
+        return a.sex.localeCompare(b.sex);
+      });
 
     return { gender, age, sexAge };
   }
