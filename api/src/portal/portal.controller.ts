@@ -1164,11 +1164,13 @@ export class PortalController {
     @Query('period') period?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('segmentId') segmentId?: string,
   ) {
     const merchantId = this.getMerchantId(req);
     return this.analytics.getCustomerPortrait(
       merchantId,
       this.computePeriod(period, from, to),
+      segmentId,
     );
   }
   @Get('analytics/repeat')

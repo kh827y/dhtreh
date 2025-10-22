@@ -415,11 +415,15 @@ export async function getOperationalMetrics(merchantId: string, qp?: { period?: 
   return http(`/analytics/operations/${encodeURIComponent(merchantId)}${p.toString()?`?${p.toString()}`:''}`);
 }
 
-export async function getCustomerPortraitAnalytics(merchantId: string, qp?: { period?: string; from?: string; to?: string }) {
+export async function getCustomerPortraitAnalytics(
+  merchantId: string,
+  qp?: { period?: string; from?: string; to?: string; segmentId?: string },
+) {
   const p = new URLSearchParams();
   if (qp?.period) p.set('period', qp.period);
   if (qp?.from) p.set('from', qp.from);
   if (qp?.to) p.set('to', qp.to);
+  if (qp?.segmentId) p.set('segmentId', qp.segmentId);
   return http(`/analytics/portrait/${encodeURIComponent(merchantId)}${p.toString()?`?${p.toString()}`:''}`);
 }
 
