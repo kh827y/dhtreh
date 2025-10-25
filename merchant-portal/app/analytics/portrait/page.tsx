@@ -37,6 +37,20 @@ const formatInteger = (value: number) =>
 
 const formatCurrency = (value: number) => `${formatInteger(value)} ₽`;
 
+const describeSexAgeLabel = (label: string) => {
+  if (typeof label !== "string" || !label) return "";
+  const [sexPrefix, agePart] = label.split("-");
+  const gender =
+    sexPrefix === "М"
+      ? "Мужской"
+      : sexPrefix === "Ж"
+        ? "Женский"
+        : sexPrefix || "Не указан";
+  const ageValue = Number(agePart);
+  if (Number.isFinite(ageValue)) return `${gender}, ${ageValue} лет`;
+  return gender;
+};
+
 export default function AnalyticsPortraitPage() {
   const [audiences, setAudiences] = React.useState<AudienceOption[]>([defaultAudienceOption]);
   const [audience, setAudience] = React.useState<AudienceOption>(defaultAudienceOption);
@@ -223,8 +237,8 @@ export default function AnalyticsPortraitPage() {
     } as const;
   }, [normalizedGenderData]);
 
-  const genderBarCharts = React.useMemo(() => {
-    if (!normalizedGenderData.length) return [] as Array<{ key: string; title: string; option: unknown }>;
+  const genderBarsOption = React.useMemo(() => {
+    if (!normalizedGenderData.length) return null;
     const map = new Map(normalizedGenderData.map((item) => [item.sex as "M" | "F" | "U", item]));
     const preferred: Array<"M" | "F"> = ["M", "F"];
     let categories: Array<"M" | "F" | "U"> = preferred.filter((key) => map.has(key));
@@ -234,64 +248,93 @@ export default function AnalyticsPortraitPage() {
         .filter((value, index, self) => self.indexOf(value) === index);
     }
     const labels = categories.map((key) => sexDisplayName[key] || key);
-    const buildChart = (
-      metric: "averageCheck" | "transactions" | "revenue",
-      title: string,
-      color: string,
-      formatter: (value: number) => string,
-    ) => {
-      const dataset = categories.map((sex) => map.get(sex)?.[metric] ?? 0);
-      return {
-        key: metric,
-        title,
-        option: {
-          color: [color],
-          grid: { left: 28, right: 16, top: 32, bottom: 24, containLabel: true },
-          tooltip: {
-            trigger: "axis",
-            axisPointer: { type: "shadow" },
-            formatter: (params: any) => {
-              if (!Array.isArray(params)) return "";
-              return params
-                .map((item) => {
-                  const value = Number(item?.value ?? 0);
-                  return `${item.marker}${item.name}: ${formatter(value)}`;
-                })
-                .join("<br/>");
-            },
-          },
-          xAxis: {
-            type: "category",
-            data: labels,
-            axisTick: { show: false },
-            axisLabel: { color: "rgba(226,232,240,0.9)" },
-          },
-          yAxis: {
-            type: "value",
-            axisLine: { show: false },
-            axisTick: { show: false },
-            splitLine: { lineStyle: { color: "rgba(148,163,184,0.12)" } },
-            axisLabel: {
-              color: "rgba(148,163,184,0.7)",
-              formatter: (value: number) => formatter(Number(value)),
-            },
-          },
-          series: [
-            {
-              type: "bar",
-              data: dataset,
-              barMaxWidth: 48,
-              itemStyle: { borderRadius: [8, 8, 0, 0], color },
-            },
-          ],
-        },
-      };
-    };
-    return [
-      buildChart("averageCheck", "Средний чек", "#f97316", formatCurrency),
-      buildChart("transactions", "Количество продаж", "#38bdf8", formatInteger),
-      buildChart("revenue", "Сумма продаж", "#22c55e", formatCurrency),
+    const metrics: Array<{
+      key: "averageCheck" | "transactions" | "revenue";
+      name: string;
+      color: string;
+      formatter: (value: number) => string;
+      yAxisPosition: "left" | "right";
+      yAxisOffset: number;
+    }> = [
+      {
+        key: "averageCheck",
+        name: "Средний чек",
+        color: "#f97316",
+        formatter: formatCurrency,
+        yAxisPosition: "left",
+        yAxisOffset: 0,
+      },
+      {
+        key: "transactions",
+        name: "Количество продаж",
+        color: "#38bdf8",
+        formatter: formatInteger,
+        yAxisPosition: "right",
+        yAxisOffset: 0,
+      },
+      {
+        key: "revenue",
+        name: "Сумма продаж",
+        color: "#22c55e",
+        formatter: formatCurrency,
+        yAxisPosition: "right",
+        yAxisOffset: 48,
+      },
     ];
+    return {
+      color: metrics.map((metric) => metric.color),
+      legend: {
+        top: 4,
+        textStyle: { color: "rgba(226,232,240,0.85)" },
+        data: metrics.map((metric) => metric.name),
+      },
+      grid: { left: 16, right: 32, top: 48, bottom: 32 },
+      tooltip: {
+        trigger: "axis",
+        axisPointer: { type: "shadow" },
+        formatter: (params: any) => {
+          if (!Array.isArray(params) || !params.length) return "";
+          const axisLabel = params[0]?.axisValueLabel || params[0]?.axisValue || "";
+          const lines: string[] = [];
+          if (axisLabel) lines.push(String(axisLabel));
+          for (const item of params) {
+            const meta = metrics.find((metric) => metric.name === item.seriesName);
+            const formatter = meta?.formatter || formatInteger;
+            const value = Number(item?.value ?? 0);
+            lines.push(`${item.marker}${item.seriesName}: ${formatter(value)}`);
+          }
+          return lines.join("<br/>");
+        },
+      },
+      xAxis: {
+        type: "category",
+        data: labels,
+        axisTick: { alignWithLabel: true },
+        axisLabel: { color: "rgba(226,232,240,0.9)" },
+      },
+      yAxis: metrics.map((metric, index) => ({
+        type: "value",
+        position: metric.yAxisPosition,
+        offset: metric.yAxisOffset,
+        axisLine: { show: false },
+        axisTick: { show: false },
+        splitLine: { show: false },
+        axisLabel: { show: false },
+        max: (value: { max: number }) => {
+          const base = value?.max ?? 0;
+          if (base <= 0) return 1;
+          return Math.round(base * 1.2);
+        },
+      })),
+      series: metrics.map((metric, index) => ({
+        name: metric.name,
+        type: "bar",
+        yAxisIndex: index,
+        data: categories.map((sex) => map.get(sex)?.[metric.key] ?? 0),
+        barMaxWidth: 36,
+        itemStyle: { borderRadius: [8, 8, 0, 0], color: metric.color },
+      })),
+    } as const;
   }, [normalizedGenderData]);
 
   const ageOption = React.useMemo(() => {
@@ -330,8 +373,13 @@ export default function AnalyticsPortraitPage() {
         trigger: "axis",
         axisPointer: { type: "line" },
         formatter: (params: any) => {
-          if (!Array.isArray(params)) return "";
-          return params
+          if (!Array.isArray(params) || !params.length) return "";
+          const axisValue = params[0]?.axisValue;
+          const header =
+            axisValue !== undefined
+              ? `Возраст: ${formatInteger(Number(axisValue) || 0)}`
+              : "";
+          const body = params
             .map((item) => {
               const value = Array.isArray(item.value)
                 ? Number(item.value[1] ?? 0)
@@ -340,6 +388,7 @@ export default function AnalyticsPortraitPage() {
               return `${item.marker}${item.seriesName}: ${formatter(value)}`;
             })
             .join("<br/>");
+          return [header, body].filter((line) => line).join("<br/>");
         },
       },
       xAxis: {
@@ -493,21 +542,30 @@ export default function AnalyticsPortraitPage() {
           trigger: "axis",
           axisPointer: { type: "line" },
           formatter: (params: any) => {
-            if (!Array.isArray(params)) return "";
-            return params
+            if (!Array.isArray(params) || !params.length) return "";
+            const axisValue = params[0]?.axisValue;
+            const header =
+              typeof axisValue === "string" ? describeSexAgeLabel(axisValue) : "";
+            const body = params
               .map((item) => {
                 const value = Number(item?.value ?? 0);
                 const formatter = seriesFormatters[item.seriesName] || formatInteger;
                 return `${item.marker}${item.seriesName}: ${formatter(value)}`;
               })
               .join("<br/>");
+            return [header, body].filter((line) => line).join("<br/>");
           },
         },
         xAxis: {
           type: "category",
           data: categories,
           axisTick: { alignWithLabel: true },
-          axisLabel: { color: "rgba(226,232,240,0.9)", interval: 3, rotate: 45 },
+          axisLabel: {
+            color: "rgba(226,232,240,0.9)",
+            interval: 0,
+            rotate: 45,
+            hideOverlap: true,
+          },
         },
         yAxis: [0, 1, 2, 3].map((_, index) => ({
           type: "value",
@@ -634,13 +692,13 @@ export default function AnalyticsPortraitPage() {
             <div style={{ display: "grid", gridTemplateColumns: "minmax(240px, 360px) 1fr", gap: 24, alignItems: "center" }}>
               <Chart option={genderOption as any} height={300} />
               <div style={{ display: "grid", gap: 20 }}>
-                {genderBarCharts.length ? (
-                  genderBarCharts.map((metric) => (
-                    <div key={metric.key} style={{ display: "grid", gap: 8 }}>
-                      <span style={{ fontSize: 12, opacity: 0.7 }}>{metric.title}</span>
-                      <Chart option={metric.option as any} height={180} />
-                    </div>
-                  ))
+                {genderBarsOption ? (
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <span style={{ fontSize: 12, opacity: 0.7 }}>
+                      Средний чек, количество и сумма продаж по полу
+                    </span>
+                    <Chart option={genderBarsOption as any} height={320} />
+                  </div>
                 ) : (
                   <div style={{ opacity: 0.7 }}>Недостаточно данных по полу</div>
                 )}

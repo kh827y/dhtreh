@@ -253,11 +253,11 @@ export class AnalyticsService {
     period: DashboardPeriod,
     segmentId?: string,
   ): Promise<CustomerPortraitMetrics> {
-    const tx = await this.prisma.transaction.findMany({
+    const receipts = await this.prisma.receipt.findMany({
       where: {
         merchantId,
+        canceledAt: null,
         createdAt: { gte: period.from, lte: period.to },
-        type: 'EARN',
         ...(segmentId
           ? {
               customer: {
@@ -267,8 +267,9 @@ export class AnalyticsService {
           : {}),
       },
       select: {
-        amount: true,
+        total: true,
         createdAt: true,
+        customerId: true,
         customer: { select: { id: true, gender: true, birthday: true } },
       },
     });
@@ -302,16 +303,17 @@ export class AnalyticsService {
       return value;
     };
 
-    for (const t of tx) {
-      const sex = normalizeSex(t.customer?.gender);
-      const bday = t.customer?.birthday || null;
+    for (const receipt of receipts) {
+      const customerId = receipt.customerId || receipt.customer?.id || null;
+      const sex = normalizeSex(receipt.customer?.gender);
+      const bday = receipt.customer?.birthday || null;
       const age = bday
         ? Math.floor(
             (today.getTime() - bday.getTime()) / (365.25 * 24 * 60 * 60 * 1000),
           )
         : null;
       const ageValue = clampAge(age);
-      const abs = Math.abs(t.amount || 0);
+      const total = Math.max(0, receipt.total || 0);
 
       if (!genderMap.has(sex))
         genderMap.set(sex, {
@@ -320,9 +322,9 @@ export class AnalyticsService {
           revenue: 0,
         });
       const g = genderMap.get(sex)!;
-      if (t.customer?.id) g.customers.add(t.customer.id);
+      if (customerId) g.customers.add(customerId);
       g.transactions++;
-      g.revenue += abs;
+      g.revenue += total;
 
       if (ageValue != null) {
         if (!ageMap.has(ageValue))
@@ -332,9 +334,9 @@ export class AnalyticsService {
             revenue: 0,
           });
         const a = ageMap.get(ageValue)!;
-        if (t.customer?.id) a.customers.add(t.customer.id);
+        if (customerId) a.customers.add(customerId);
         a.transactions++;
-        a.revenue += abs;
+        a.revenue += total;
 
         const key = `${sex}:${ageValue}`;
         if (!sexAgeMap.has(key))
@@ -344,9 +346,9 @@ export class AnalyticsService {
             revenue: 0,
           });
         const sa = sexAgeMap.get(key)!;
-        if (t.customer?.id) sa.customers.add(t.customer.id);
+        if (customerId) sa.customers.add(customerId);
         sa.transactions++;
-        sa.revenue += abs;
+        sa.revenue += total;
       }
     }
 
