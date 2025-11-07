@@ -10,6 +10,7 @@ import {
   AnalyticsService,
   DashboardPeriod,
   RecencyGrouping,
+  TimeGrouping,
 } from './analytics.service';
 import { ApiKeyGuard } from '../guards/api-key.guard';
 
@@ -27,7 +28,7 @@ export class AnalyticsController {
   @ApiOperation({ summary: 'Получить полную аналитику для владельца бизнеса' })
   @ApiQuery({
     name: 'period',
-    enum: ['day', 'week', 'month', 'quarter', 'year'],
+    enum: ['yesterday', 'day', 'week', 'month', 'quarter', 'year'],
     required: false,
   })
   @ApiQuery({
@@ -60,7 +61,7 @@ export class AnalyticsController {
   @ApiOperation({ summary: 'Портрет клиента: пол, возраст, пол×возраст' })
   @ApiQuery({
     name: 'period',
-    enum: ['day', 'week', 'month', 'quarter', 'year'],
+    enum: ['yesterday', 'day', 'week', 'month', 'quarter', 'year'],
     required: false,
   })
   @ApiQuery({ name: 'from', type: String, required: false })
@@ -88,7 +89,7 @@ export class AnalyticsController {
   @ApiOperation({ summary: 'Повторные покупки и распределение покупок' })
   @ApiQuery({
     name: 'period',
-    enum: ['day', 'week', 'month', 'quarter', 'year'],
+    enum: ['yesterday', 'day', 'week', 'month', 'quarter', 'year'],
     required: false,
   })
   @ApiQuery({ name: 'from', type: String, required: false })
@@ -136,7 +137,7 @@ export class AnalyticsController {
   @ApiOperation({ summary: 'Сводка реферальной программы за период' })
   @ApiQuery({
     name: 'period',
-    enum: ['day', 'week', 'month', 'quarter', 'year'],
+    enum: ['yesterday', 'day', 'week', 'month', 'quarter', 'year'],
     required: false,
   })
   @ApiQuery({ name: 'from', type: String, required: false })
@@ -160,7 +161,7 @@ export class AnalyticsController {
   })
   @ApiQuery({
     name: 'period',
-    enum: ['day', 'week', 'month', 'quarter', 'year'],
+    enum: ['yesterday', 'day', 'week', 'month', 'quarter', 'year'],
     required: false,
   })
   @ApiQuery({ name: 'from', type: String, required: false })
@@ -188,7 +189,12 @@ export class AnalyticsController {
   @ApiOperation({ summary: 'Получить метрики выручки' })
   @ApiQuery({
     name: 'period',
-    enum: ['day', 'week', 'month', 'quarter', 'year'],
+    enum: ['yesterday', 'day', 'week', 'month', 'quarter', 'year'],
+    required: false,
+  })
+  @ApiQuery({
+    name: 'group',
+    enum: ['day', 'week', 'month'],
     required: false,
   })
   async getRevenueMetrics(
@@ -196,9 +202,14 @@ export class AnalyticsController {
     @Query('period') periodType?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('group') group?: string,
   ) {
     const period = this.getPeriod(periodType, from, to);
-    return this.analyticsService.getRevenueMetrics(merchantId, period);
+    return this.analyticsService.getRevenueMetrics(
+      merchantId,
+      period,
+      this.normalizeGrouping(group),
+    );
   }
 
   /**
@@ -208,7 +219,7 @@ export class AnalyticsController {
   @ApiOperation({ summary: 'Получить метрики клиентов' })
   @ApiQuery({
     name: 'period',
-    enum: ['day', 'week', 'month', 'quarter', 'year'],
+    enum: ['yesterday', 'day', 'week', 'month', 'quarter', 'year'],
     required: false,
   })
   async getCustomerMetrics(
@@ -228,7 +239,12 @@ export class AnalyticsController {
   @ApiOperation({ summary: 'Получить метрики программы лояльности' })
   @ApiQuery({
     name: 'period',
-    enum: ['day', 'week', 'month', 'quarter', 'year'],
+    enum: ['yesterday', 'day', 'week', 'month', 'quarter', 'year'],
+    required: false,
+  })
+  @ApiQuery({
+    name: 'group',
+    enum: ['day', 'week', 'month'],
     required: false,
   })
   async getLoyaltyMetrics(
@@ -236,9 +252,14 @@ export class AnalyticsController {
     @Query('period') periodType?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('group') group?: string,
   ) {
     const period = this.getPeriod(periodType, from, to);
-    return this.analyticsService.getLoyaltyMetrics(merchantId, period);
+    return this.analyticsService.getLoyaltyMetrics(
+      merchantId,
+      period,
+      this.normalizeGrouping(group),
+    );
   }
 
   /**
@@ -248,7 +269,7 @@ export class AnalyticsController {
   @ApiOperation({ summary: 'Статистика механики автовозврата клиентов' })
   @ApiQuery({
     name: 'period',
-    enum: ['day', 'week', 'month', 'quarter', 'year'],
+    enum: ['yesterday', 'day', 'week', 'month', 'quarter', 'year'],
     required: false,
   })
   @ApiQuery({ name: 'from', type: String, required: false })
@@ -276,7 +297,7 @@ export class AnalyticsController {
   @ApiOperation({ summary: 'Статистика механики поздравлений с днём рождения' })
   @ApiQuery({
     name: 'period',
-    enum: ['day', 'week', 'month', 'quarter', 'year'],
+    enum: ['yesterday', 'day', 'week', 'month', 'quarter', 'year'],
     required: false,
   })
   @ApiQuery({ name: 'from', type: String, required: false })
@@ -304,7 +325,7 @@ export class AnalyticsController {
   @ApiOperation({ summary: 'Получить метрики маркетинговых кампаний' })
   @ApiQuery({
     name: 'period',
-    enum: ['day', 'week', 'month', 'quarter', 'year'],
+    enum: ['yesterday', 'day', 'week', 'month', 'quarter', 'year'],
     required: false,
   })
   async getCampaignMetrics(
@@ -344,7 +365,9 @@ export class AnalyticsController {
     const grouping: RecencyGrouping =
       group === 'week' || group === 'month' ? group : 'day';
     const parsedLimit = Number.parseInt(String(limit ?? ''), 10);
-    const effectiveLimit = Number.isFinite(parsedLimit) ? parsedLimit : undefined;
+    const effectiveLimit = Number.isFinite(parsedLimit)
+      ? parsedLimit
+      : undefined;
     return this.analyticsService.getPurchaseRecencyDistribution(
       merchantId,
       grouping,
@@ -361,7 +384,7 @@ export class AnalyticsController {
   })
   @ApiQuery({
     name: 'period',
-    enum: ['day', 'week', 'month', 'quarter', 'year'],
+    enum: ['yesterday', 'day', 'week', 'month', 'quarter', 'year'],
     required: false,
   })
   @ApiQuery({ name: 'from', type: String, required: false })
@@ -425,7 +448,7 @@ export class AnalyticsController {
   })
   @ApiQuery({
     name: 'period',
-    enum: ['day', 'week', 'month', 'quarter', 'year'],
+    enum: ['yesterday', 'day', 'week', 'month', 'quarter', 'year'],
     required: false,
   })
   async getOperationalMetrics(
@@ -503,10 +526,21 @@ export class AnalyticsController {
       type: 'day',
     };
 
+    const timezone = await this.analyticsService.resolveTimezone(merchantId);
     const [revenue, customers, loyalty] = await Promise.all([
-      this.analyticsService.getRevenueMetrics(merchantId, period),
+      this.analyticsService.getRevenueMetrics(
+        merchantId,
+        period,
+        undefined,
+        timezone,
+      ),
       this.analyticsService.getCustomerMetrics(merchantId, period),
-      this.analyticsService.getLoyaltyMetrics(merchantId, period),
+      this.analyticsService.getLoyaltyMetrics(
+        merchantId,
+        period,
+        undefined,
+        timezone,
+      ),
     ]);
 
     return {
@@ -529,77 +563,101 @@ export class AnalyticsController {
     fromStr?: string,
     toStr?: string,
   ): DashboardPeriod {
-    const now = new Date();
-    let from = new Date();
-    let to = new Date();
-
     if (fromStr && toStr) {
-      // Custom период
-      from = new Date(fromStr);
-      to = new Date(toStr);
-      return { from, to, type: 'custom' };
+      const rawFrom = new Date(fromStr);
+      const rawTo = new Date(toStr);
+      if (!Number.isNaN(rawFrom.getTime()) && !Number.isNaN(rawTo.getTime())) {
+        let from = new Date(rawFrom);
+        let to = new Date(rawTo);
+        if (from.getTime() > to.getTime()) {
+          const tmp = from;
+          from = to;
+          to = tmp;
+        }
+        from.setHours(0, 0, 0, 0);
+        to.setHours(23, 59, 59, 999);
+        return { from, to, type: 'custom' };
+      }
     }
 
-    // Предустановленные периоды
+    const today = new Date();
+    const from = new Date(today);
+    let to = new Date(today);
+
     switch (periodType) {
+      case 'yesterday':
+        from.setDate(from.getDate() - 1);
+        from.setHours(0, 0, 0, 0);
+        to = new Date(from);
+        to.setHours(23, 59, 59, 999);
+        break;
       case 'day':
         from.setHours(0, 0, 0, 0);
         to.setHours(23, 59, 59, 999);
         break;
-
-      case 'week':
+      case 'week': {
         const dayOfWeek = from.getDay();
-        const diff = from.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
-        from.setDate(diff);
+        const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+        from.setDate(from.getDate() + diff);
         from.setHours(0, 0, 0, 0);
         to = new Date(from);
         to.setDate(to.getDate() + 6);
         to.setHours(23, 59, 59, 999);
         break;
-
+      }
       case 'month':
         from.setDate(1);
         from.setHours(0, 0, 0, 0);
         to = new Date(from);
         to.setMonth(to.getMonth() + 1);
-        to.setDate(0); // Последний день месяца
+        to.setDate(0);
         to.setHours(23, 59, 59, 999);
         break;
-
-      case 'quarter':
+      case 'quarter': {
         const quarter = Math.floor(from.getMonth() / 3);
-        from.setMonth(quarter * 3);
-        from.setDate(1);
+        from.setMonth(quarter * 3, 1);
         from.setHours(0, 0, 0, 0);
         to = new Date(from);
         to.setMonth(to.getMonth() + 3);
         to.setDate(0);
         to.setHours(23, 59, 59, 999);
         break;
-
+      }
       case 'year':
-        from.setMonth(0);
-        from.setDate(1);
+        from.setMonth(0, 1);
         from.setHours(0, 0, 0, 0);
-        to.setMonth(11);
-        to.setDate(31);
+        to = new Date(from);
+        to.setMonth(11, 31);
         to.setHours(23, 59, 59, 999);
         break;
-
       default:
-        // По умолчанию - текущий месяц
         from.setDate(1);
         from.setHours(0, 0, 0, 0);
         to = new Date(from);
         to.setMonth(to.getMonth() + 1);
         to.setDate(0);
         to.setHours(23, 59, 59, 999);
+        break;
     }
 
-    return {
-      from,
-      to,
-      type: (periodType as DashboardPeriod['type']) || 'month',
-    };
+    const normalized: DashboardPeriod['type'] =
+      periodType === 'yesterday' ||
+      periodType === 'day' ||
+      periodType === 'week' ||
+      periodType === 'month' ||
+      periodType === 'quarter' ||
+      periodType === 'year'
+        ? (periodType as DashboardPeriod['type'])
+        : 'month';
+
+    return { from, to, type: normalized };
+  }
+
+  private normalizeGrouping(value?: string): TimeGrouping | undefined {
+    const normalized = String(value || '').toLowerCase();
+    if (normalized === 'week') return 'week';
+    if (normalized === 'month') return 'month';
+    if (normalized === 'day') return 'day';
+    return undefined;
   }
 }

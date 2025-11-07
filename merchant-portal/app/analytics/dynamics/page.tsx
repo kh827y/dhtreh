@@ -2,81 +2,218 @@
 
 import React from "react";
 import { Card, CardHeader, CardBody, Chart, Skeleton, Button } from "@loyalty/ui";
+import { useTimezone } from "../../../components/TimezoneProvider";
 
-type RevenuePoint = { date: string; revenue: number; transactions: number; customers: number };
-type RevenueMetrics = { totalRevenue: number; averageCheck: number; transactionCount: number; dailyRevenue: RevenuePoint[] };
-type LoyaltyPoint = { date: string; accrued: number; redeemed: number; burned: number; balance: number };
-type LoyaltyMetrics = { pointsSeries: LoyaltyPoint[] };
+type DetailGrouping = "day" | "week" | "month";
+type PeriodPreset = "yesterday" | "week" | "month" | "quarter" | "year" | "custom";
 
-type FilterOption = { value: string; label: string };
-
-const periods: FilterOption[] = [
-  { value: "7d", label: "7 дней" },
-  { value: "30d", label: "30 дней" },
-  { value: "90d", label: "90 дней" },
-  { value: "ytd", label: "С начала года" },
-];
-
-const groupings: Array<{ value: "day" | "week" | "month" | "quarter" | "year"; label: string }> = [
-  { value: "day", label: "День" },
+const presetOptions: Array<{ value: Exclude<PeriodPreset, "custom">; label: string }> = [
+  { value: "yesterday", label: "Вчера" },
   { value: "week", label: "Неделя" },
   { value: "month", label: "Месяц" },
   { value: "quarter", label: "Квартал" },
   { value: "year", label: "Год" },
 ];
 
+const detailOptions: Array<{ value: DetailGrouping; label: string }> = [
+  { value: "day", label: "По дням" },
+  { value: "week", label: "По неделям" },
+  { value: "month", label: "По месяцам" },
+];
+
+type RevenuePoint = {
+  date: string;
+  revenue: number;
+  transactions: number;
+  customers: number;
+  averageCheck: number;
+};
+
+type RevenueMetrics = {
+  totalRevenue: number;
+  averageCheck: number;
+  transactionCount: number;
+  revenueGrowth?: number;
+  hourlyDistribution: Array<{ hour: number; revenue: number; transactions: number }>;
+  dailyRevenue: RevenuePoint[];
+  seriesGrouping?: DetailGrouping;
+};
+
+type LoyaltyPoint = {
+  date: string;
+  accrued: number;
+  redeemed: number;
+  burned: number;
+  balance: number;
+};
+
+type LoyaltyMetrics = {
+  pointsSeries: LoyaltyPoint[];
+  pointsGrouping?: DetailGrouping;
+};
+
+function parseBucketDate(value: string) {
+  const [y, m, d] = value.split("-").map((part) => Number(part));
+  if (!y || !m || !d) return null;
+  return new Date(Date.UTC(y, m - 1, d));
+}
+
 export default function AnalyticsDynamicsPage() {
-  const [period, setPeriod] = React.useState<FilterOption>(periods[1]);
-  const [grouping, setGrouping] = React.useState<(typeof groupings)[number]["value"]>("day");
-  const [loading, setLoading] = React.useState(true);
+  const [preset, setPreset] = React.useState<PeriodPreset>("week");
+  const [detail, setDetail] = React.useState<DetailGrouping>("day");
+  const [customDraft, setCustomDraft] = React.useState<{ from: string; to: string }>({ from: "", to: "" });
+  const [customApplied, setCustomApplied] = React.useState<{ from: string; to: string } | null>(null);
+  const [loading, setLoading] = React.useState(false);
   const [msg, setMsg] = React.useState("");
   const [revenue, setRevenue] = React.useState<RevenueMetrics | null>(null);
   const [loyalty, setLoyalty] = React.useState<LoyaltyMetrics | null>(null);
-
-  const load = React.useCallback(async () => {
-    setLoading(true);
-    setMsg("");
-    try {
-      const query = new URLSearchParams({ period: period.value, group: grouping }).toString();
-      const [r1, r2] = await Promise.all([
-        fetch(`/api/portal/analytics/revenue?${query}`).then((response) => response.json()),
-        fetch(`/api/portal/analytics/loyalty?${query}`).then((response) => response.json()),
-      ]);
-
-      setRevenue(r1);
-
-      if (Array.isArray(r2?.pointsSeries)) {
-        setLoyalty(r2);
-      } else {
-        const fallbackSeries: LoyaltyPoint[] = (r1?.dailyRevenue || []).map((point, index) => {
-          const accrued = Math.round(point.revenue * 0.18);
-          const redeemed = Math.round(point.revenue * 0.09);
-          const burned = Math.round(point.revenue * 0.015 * ((index % 4) + 1));
-          const balance = accrued - redeemed - burned;
-          return { date: point.date, accrued, redeemed, burned, balance };
-        });
-        setLoyalty({ pointsSeries: fallbackSeries });
+  const timezone = useTimezone();
+  const monthFormatter = React.useMemo(
+    () => new Intl.DateTimeFormat("ru-RU", { month: "short", year: "numeric", timeZone: timezone.iana }),
+    [timezone],
+  );
+  const dayFormatter = React.useMemo(
+    () => new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", timeZone: timezone.iana }),
+    [timezone],
+  );
+  const formatBucketLabel = React.useCallback(
+    (date: string, grouping: DetailGrouping) => {
+      const parsed = parseBucketDate(date);
+      if (!parsed || Number.isNaN(parsed.getTime())) return date;
+      if (grouping === "month") {
+        return monthFormatter.format(parsed);
       }
-    } catch (error: any) {
-      setMsg(String(error?.message || error));
-    } finally {
-      setLoading(false);
+      if (grouping === "week") {
+        const end = new Date(parsed.getTime() + 6 * 86400000);
+        return `${dayFormatter.format(parsed)} – ${dayFormatter.format(end)}`;
+      }
+      return dayFormatter.format(parsed);
+    },
+    [monthFormatter, dayFormatter],
+  );
+
+  const handlePresetChange = React.useCallback((value: Exclude<PeriodPreset, "custom">) => {
+    setPreset(value);
+    setCustomApplied(null);
+    setMsg("");
+  }, []);
+
+  const applyCustomRange = React.useCallback(() => {
+    if (!customDraft.from || !customDraft.to) {
+      setMsg("Укажите даты начала и окончания");
+      return;
     }
-  }, [grouping, period.value]);
+    const fromDate = new Date(customDraft.from);
+    const toDate = new Date(customDraft.to);
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+      setMsg("Некорректные даты");
+      return;
+    }
+    if (fromDate.getTime() > toDate.getTime()) {
+      setMsg("Дата начала не может быть позже даты окончания");
+      return;
+    }
+    setCustomApplied({ from: customDraft.from, to: customDraft.to });
+    setPreset("custom");
+    setMsg("");
+  }, [customDraft]);
 
   React.useEffect(() => {
-    load();
-  }, [load]);
+    if (preset === "yesterday" && detail !== "day") {
+      setDetail("day");
+    }
+  }, [preset, detail]);
+
+  React.useEffect(() => {
+    if (preset === "custom" && !customApplied) {
+      return;
+    }
+    const controller = new AbortController();
+    let cancelled = false;
+
+    setLoading(true);
+    setMsg("");
+
+    const baseParams = new URLSearchParams();
+    if (preset === "custom" && customApplied) {
+      baseParams.set("from", customApplied.from);
+      baseParams.set("to", customApplied.to);
+    } else {
+      baseParams.set("period", preset);
+    }
+
+    const revenueParams = new URLSearchParams(baseParams);
+    const loyaltyParams = new URLSearchParams(baseParams);
+    loyaltyParams.set("group", detail);
+
+    Promise.all([
+      fetch(`/api/portal/analytics/revenue?${revenueParams.toString()}`, { signal: controller.signal }),
+      fetch(`/api/portal/analytics/loyalty?${loyaltyParams.toString()}`, { signal: controller.signal }),
+    ])
+      .then(async ([revenueRes, loyaltyRes]) => {
+        const [revenueJson, loyaltyJson] = await Promise.all([
+          revenueRes.json().catch(() => ({} as RevenueMetrics)),
+          loyaltyRes.json().catch(() => ({} as LoyaltyMetrics)),
+        ]);
+        if (!revenueRes.ok) {
+          throw new Error((revenueJson as any)?.message || "Не удалось загрузить данные выручки");
+        }
+        if (!loyaltyRes.ok) {
+          throw new Error((loyaltyJson as any)?.message || "Не удалось загрузить данные по баллам");
+        }
+        return [revenueJson as RevenueMetrics, loyaltyJson as LoyaltyMetrics] as const;
+      })
+      .then(([revenueData, loyaltyData]) => {
+        if (cancelled) return;
+        setRevenue(revenueData);
+        setLoyalty(loyaltyData);
+      })
+      .catch((error: any) => {
+        if (cancelled || error?.name === "AbortError") return;
+        setRevenue(null);
+        setLoyalty(null);
+        setMsg(String(error?.message || error));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [preset, detail, customApplied]);
+
+  const revenueGrouping: DetailGrouping = React.useMemo(() => {
+    const grouping = revenue?.seriesGrouping;
+    if (grouping === "week" || grouping === "month") return grouping;
+    return "day";
+  }, [revenue?.seriesGrouping]);
+
+  const pointsGrouping: DetailGrouping = React.useMemo(() => {
+    const grouping = loyalty?.pointsGrouping;
+    if (grouping === "week" || grouping === "month") return grouping;
+    return grouping === "day" ? "day" : detail;
+  }, [loyalty?.pointsGrouping, detail]);
 
   const averageCheckOption = React.useMemo(() => {
     const points = revenue?.dailyRevenue ?? [];
-    const labels = points.map((point) => point.date);
-    const values = points.map((point) => {
-      const base = Math.max(1, point.transactions);
-      return Number((point.revenue / base).toFixed(2));
-    });
+    if (!points.length) {
+      return {
+        grid: { left: 30, right: 18, top: 30, bottom: 44 },
+        xAxis: { type: "category", data: [], boundaryGap: false },
+        yAxis: { type: "value" },
+        series: [],
+      } as const;
+    }
+    const labels = points.map((point) => formatBucketLabel(point.date, revenueGrouping));
+    const values = points.map((point) => Math.round(point.averageCheck * 100) / 100);
     return {
-      tooltip: { trigger: "axis" },
+      tooltip: {
+        trigger: "axis",
+        valueFormatter: (val: number) =>
+          `${Number(val || 0).toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ₽`,
+      },
       grid: { left: 30, right: 18, top: 30, bottom: 44 },
       xAxis: { type: "category", data: labels, boundaryGap: false },
       yAxis: { type: "value", name: "₽", nameLocation: "end", nameGap: 14 },
@@ -88,110 +225,179 @@ export default function AnalyticsDynamicsPage() {
           data: values,
           lineStyle: { width: 3, color: "#22c55e" },
           itemStyle: { color: "#22c55e" },
-          areaStyle: { opacity: 0.1, color: "#22c55e" },
+          areaStyle: { opacity: 0.12, color: "#22c55e" },
         },
       ],
     } as const;
-  }, [revenue]);
+  }, [revenue?.dailyRevenue, revenueGrouping]);
 
   const pointsOption = React.useMemo(() => {
-    const points = loyalty?.pointsSeries ?? [];
-    const labels = points.map((item) => item.date);
+    const series = loyalty?.pointsSeries ?? [];
+    if (!series.length) {
+      return {
+        grid: { left: 30, right: 18, top: 40, bottom: 54 },
+        xAxis: { type: "category", data: [] },
+        yAxis: { type: "value" },
+        series: [],
+      } as const;
+    }
+    const labels = series.map((point) => formatBucketLabel(point.date, pointsGrouping));
+    const accrued = series.map((point) => point.accrued);
+    const redeemed = series.map((point) => -point.redeemed);
+    const burned = series.map((point) => -point.burned);
+    const balance = series.map((point) => point.balance);
     return {
-      tooltip: { trigger: "axis" },
+      tooltip: {
+        trigger: "axis",
+        valueFormatter: (val: number) =>
+          `${Math.abs(Number(val || 0)).toLocaleString("ru-RU")} б.`,
+      },
       legend: { data: ["Начислено", "Списано", "Сгорело", "Баланс"], top: 0 },
-      grid: { left: 30, right: 18, top: 40, bottom: 50 },
+      grid: { left: 30, right: 18, top: 40, bottom: 54 },
       xAxis: { type: "category", data: labels },
-      yAxis: { type: "value", name: "Баллы", nameLocation: "center", nameGap: 40 },
+      yAxis: { type: "value", name: "Баллы", nameLocation: "end", nameGap: 32 },
       series: [
         {
           name: "Начислено",
           type: "bar",
           stack: "points",
-          data: points.map((item) => item.accrued),
+          data: accrued,
           itemStyle: { color: "#38bdf8" },
         },
         {
           name: "Списано",
           type: "bar",
           stack: "points",
-          data: points.map((item) => -item.redeemed),
+          data: redeemed,
           itemStyle: { color: "#f97316" },
         },
         {
           name: "Сгорело",
           type: "bar",
           stack: "points",
-          data: points.map((item) => -item.burned),
+          data: burned,
           itemStyle: { color: "#f87171" },
         },
         {
           name: "Баланс",
           type: "line",
-          data: points.map((item, index) => {
-            const cumulative = points.slice(0, index + 1).reduce((acc, current) => acc + current.accrued - current.redeemed - current.burned, 0);
-            return cumulative;
-          }),
+          smooth: true,
+          data: balance,
           lineStyle: { width: 2, color: "#a855f7" },
           itemStyle: { color: "#a855f7" },
         },
       ],
     } as const;
-  }, [loyalty]);
+  }, [loyalty?.pointsSeries, pointsGrouping]);
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
+      <header
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 16,
+        }}
+      >
         <div>
           <div style={{ fontSize: 26, fontWeight: 700 }}>Динамика</div>
           <div style={{ fontSize: 13, opacity: 0.7 }}>Показатели выручки и программы лояльности в динамике</div>
+          <div style={{ fontSize: 12, opacity: 0.65, marginTop: 4 }}>Все даты указаны по {timezone.label}</div>
         </div>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-            <span style={{ opacity: 0.75 }}>Период</span>
-            <select
-              value={period.value}
-              onChange={(event) => {
-                const next = periods.find((item) => item.value === event.target.value) || periods[0];
-                setPeriod(next);
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 12,
+            alignItems: "center",
+            justifyContent: "flex-end",
+          }}
+        >
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {presetOptions.map((option) => (
+              <Button
+                key={option.value}
+                variant={preset === option.value ? "primary" : "secondary"}
+                size="sm"
+                onClick={() => handlePresetChange(option.value)}
+                disabled={loading && preset === option.value}
+              >
+                {option.label}
+              </Button>
+            ))}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 13 }}>
+            <span style={{ opacity: 0.75 }}>Кастомный период</span>
+            <input
+              type="date"
+              value={customDraft.from}
+              onChange={(event) => setCustomDraft((prev) => ({ ...prev, from: event.target.value }))}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 10,
+                background: "rgba(15,23,42,0.6)",
+                border: "1px solid rgba(148,163,184,0.35)",
+                color: "#e2e8f0",
               }}
-              style={{ padding: "8px 12px", borderRadius: 10, background: "rgba(15,23,42,0.6)", border: "1px solid rgba(148,163,184,0.35)", color: "#e2e8f0" }}
+            />
+            <input
+              type="date"
+              value={customDraft.to}
+              onChange={(event) => setCustomDraft((prev) => ({ ...prev, to: event.target.value }))}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 10,
+                background: "rgba(15,23,42,0.6)",
+                border: "1px solid rgba(148,163,184,0.35)",
+                color: "#e2e8f0",
+              }}
+            />
+            <Button
+              variant={preset === "custom" ? "primary" : "secondary"}
+              size="sm"
+              onClick={applyCustomRange}
+              disabled={loading || !customDraft.from || !customDraft.to}
             >
-              {periods.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </label>
+              Применить
+            </Button>
+          </div>
         </div>
       </header>
-
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {groupings.map((item) => (
-          <Button
-            key={item.value}
-            variant={grouping === item.value ? "primary" : "secondary"}
-            size="sm"
-            onClick={() => setGrouping(item.value)}
-          >
-            {item.label}
-          </Button>
-        ))}
-      </div>
 
       <Card>
         <CardHeader title="Средний чек" subtitle="Динамика среднего чека, ₽" />
         <CardBody>
-          {loading ? <Skeleton height={320} /> : <Chart option={averageCheckOption as any} height={340} />}
+          {loading && !revenue ? <Skeleton height={340} /> : <Chart option={averageCheckOption as any} height={340} />}
         </CardBody>
       </Card>
 
       <Card>
-        <CardHeader title="Баллы" subtitle="Начисление, списание и сгорание баллов" />
+        <CardHeader title="Баллы" subtitle="Начисление, списание, сгорание и баланс" />
         <CardBody>
-          {loading ? <Skeleton height={360} /> : <Chart option={pointsOption as any} height={360} />}
-          {msg && <div style={{ color: "#f87171", marginTop: 12 }}>{msg}</div>}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+            {detailOptions.map((option) => (
+              <Button
+                key={option.value}
+                size="sm"
+                variant={pointsGrouping === option.value ? "primary" : "secondary"}
+                onClick={() => {
+                  setDetail(option.value);
+                  setMsg("");
+                }}
+                disabled={loading && detail === option.value}
+              >
+                {option.label}
+              </Button>
+            ))}
+          </div>
+          {loading && !loyalty ? <Skeleton height={360} /> : <Chart option={pointsOption as any} height={360} />}
+          {msg && (
+            <div style={{ color: "#f87171", marginTop: 12 }}>
+              {msg}
+            </div>
+          )}
         </CardBody>
       </Card>
     </div>

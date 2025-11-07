@@ -2,12 +2,19 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { Prisma, PromotionStatus } from '@prisma/client';
+import {
+  DEFAULT_TIMEZONE_CODE,
+  RussiaTimezone,
+  findTimezone,
+} from '../timezone/russia-timezones';
 
 export interface DashboardPeriod {
   from: Date;
   to: Date;
-  type: 'day' | 'week' | 'month' | 'quarter' | 'year' | 'custom';
+  type: 'yesterday' | 'day' | 'week' | 'month' | 'quarter' | 'year' | 'custom';
 }
+
+export type TimeGrouping = 'day' | 'week' | 'month';
 
 export interface DashboardMetrics {
   revenue: RevenueMetrics;
@@ -24,6 +31,7 @@ export interface RevenueMetrics {
   revenueGrowth: number;
   hourlyDistribution: HourlyData[];
   dailyRevenue: DailyData[];
+  seriesGrouping: TimeGrouping;
 }
 
 export interface CustomerMetrics {
@@ -45,6 +53,8 @@ export interface LoyaltyMetrics {
   activeWallets: number;
   programROI: number;
   conversionRate: number;
+  pointsSeries: PointsSeriesItem[];
+  pointsGrouping: TimeGrouping;
 }
 
 export interface CampaignMetrics {
@@ -175,6 +185,15 @@ interface DailyData {
   revenue: number;
   transactions: number;
   customers: number;
+  averageCheck: number;
+}
+
+interface PointsSeriesItem {
+  date: string;
+  accrued: number;
+  redeemed: number;
+  burned: number;
+  balance: number;
 }
 
 interface TopCustomer {
@@ -232,14 +251,16 @@ export class AnalyticsService {
   async getDashboard(
     merchantId: string,
     period: DashboardPeriod,
+    timezone?: string | RussiaTimezone,
   ): Promise<DashboardMetrics> {
+    const tz = await this.getTimezoneInfo(merchantId, timezone);
     const [revenue, customers, loyalty, campaigns, operations] =
       await Promise.all([
-        this.getRevenueMetrics(merchantId, period),
+        this.getRevenueMetrics(merchantId, period, undefined, tz),
         this.getCustomerMetrics(merchantId, period),
-        this.getLoyaltyMetrics(merchantId, period),
+        this.getLoyaltyMetrics(merchantId, period, undefined, tz),
         this.getCampaignMetrics(merchantId, period),
-        this.getOperationalMetrics(merchantId, period),
+        this.getOperationalMetrics(merchantId, period, tz),
       ]);
 
     return { revenue, customers, loyalty, campaigns, operations };
@@ -289,9 +310,21 @@ export class AnalyticsService {
     const today = period.to || new Date();
     const normalizeSex = (value: string | null | undefined): string => {
       const v = (value || '').toString().trim().toUpperCase();
-      if (v === 'M' || v === 'MALE' || v === 'М' || v === 'МУЖ' || v === 'МУЖСКОЙ')
+      if (
+        v === 'M' ||
+        v === 'MALE' ||
+        v === 'М' ||
+        v === 'МУЖ' ||
+        v === 'МУЖСКОЙ'
+      )
         return 'M';
-      if (v === 'F' || v === 'FEMALE' || v === 'Ж' || v === 'ЖЕН' || v === 'ЖЕНСКИЙ')
+      if (
+        v === 'F' ||
+        v === 'FEMALE' ||
+        v === 'Ж' ||
+        v === 'ЖЕН' ||
+        v === 'ЖЕНСКИЙ'
+      )
         return 'F';
       return 'U';
     };
@@ -723,46 +756,79 @@ export class AnalyticsService {
   async getRevenueMetrics(
     merchantId: string,
     period: DashboardPeriod,
+    grouping?: TimeGrouping,
+    timezone?: string | RussiaTimezone,
   ): Promise<RevenueMetrics> {
-    const where = {
-      merchantId,
-      createdAt: { gte: period.from, lte: period.to },
-    };
+    const tz = await this.getTimezoneInfo(merchantId, timezone);
+    const effectiveGrouping = this.resolveGrouping(period, grouping);
+    const [currentTotals] = await this.prisma.$queryRaw<
+      Array<{
+        revenue: Prisma.Decimal | number | null;
+        orders: bigint | number | null;
+      }>
+    >(Prisma.sql`
+      SELECT
+        COALESCE(SUM(r."total"), 0)::numeric AS revenue,
+        COUNT(*)::bigint AS orders
+      FROM "Receipt" r
+      WHERE r."merchantId" = ${merchantId}
+        AND r."createdAt" >= ${period.from}
+        AND r."createdAt" <= ${period.to}
+        AND r."canceledAt" IS NULL
+        AND NOT EXISTS (
+          SELECT 1
+          FROM "Transaction" refund
+          WHERE refund."merchantId" = r."merchantId"
+            AND refund."orderId" = r."orderId"
+            AND refund."type" = 'REFUND'
+            AND refund."canceledAt" IS NULL
+        )
+    `);
 
-    const transactions = await this.prisma.transaction.findMany({
-      where: { ...where, type: { in: ['EARN', 'REDEEM'] } },
-    });
-
-    const totalRevenue = transactions
-      .filter((t) => t.type === 'EARN')
-      .reduce((sum, t) => sum + Math.abs(t.amount), 0);
-
-    const transactionCount = transactions.length;
+    const totalRevenue = Number(currentTotals?.revenue || 0);
+    const transactionCount = Number(currentTotals?.orders || 0);
     const averageCheck =
       transactionCount > 0 ? totalRevenue / transactionCount : 0;
 
-    // Рост относительно предыдущего периода
     const previousPeriod = this.getPreviousPeriod(period);
-    const previousRevenue = await this.prisma.transaction.aggregate({
-      where: {
-        merchantId,
-        type: 'EARN',
-        createdAt: { gte: previousPeriod.from, lte: previousPeriod.to },
-      },
-      _sum: { amount: true },
-    });
+    const [previousTotals] = await this.prisma.$queryRaw<
+      Array<{ revenue: Prisma.Decimal | number | null }>
+    >(Prisma.sql`
+      SELECT
+        COALESCE(SUM(r."total"), 0)::numeric AS revenue
+      FROM "Receipt" r
+      WHERE r."merchantId" = ${merchantId}
+        AND r."createdAt" >= ${previousPeriod.from}
+        AND r."createdAt" <= ${previousPeriod.to}
+        AND r."canceledAt" IS NULL
+        AND NOT EXISTS (
+          SELECT 1
+          FROM "Transaction" refund
+          WHERE refund."merchantId" = r."merchantId"
+            AND refund."orderId" = r."orderId"
+            AND refund."type" = 'REFUND'
+            AND refund."canceledAt" IS NULL
+        )
+    `);
 
-    const revenueGrowth = previousRevenue._sum.amount
-      ? ((totalRevenue - Math.abs(previousRevenue._sum.amount)) /
-          Math.abs(previousRevenue._sum.amount)) *
-        100
-      : 0;
+    const previousRevenueTotal = Number(previousTotals?.revenue || 0);
+
+    const revenueGrowth =
+      previousRevenueTotal > 0
+        ? ((totalRevenue - previousRevenueTotal) / previousRevenueTotal) * 100
+        : 0;
 
     const hourlyDistribution = await this.getHourlyDistribution(
       merchantId,
       period,
+      tz,
     );
-    const dailyRevenue = await this.getDailyRevenue(merchantId, period);
+    const dailyRevenue = await this.getDailyRevenue(
+      merchantId,
+      period,
+      effectiveGrouping,
+      tz,
+    );
 
     return {
       totalRevenue,
@@ -771,6 +837,7 @@ export class AnalyticsService {
       revenueGrowth: Math.round(revenueGrowth * 10) / 10,
       hourlyDistribution,
       dailyRevenue,
+      seriesGrouping: effectiveGrouping,
     };
   }
 
@@ -856,32 +923,70 @@ export class AnalyticsService {
   async getLoyaltyMetrics(
     merchantId: string,
     period: DashboardPeriod,
+    grouping?: TimeGrouping,
+    timezone?: string | RussiaTimezone,
   ): Promise<LoyaltyMetrics> {
-    const where = {
-      merchantId,
-      createdAt: { gte: period.from, lte: period.to },
-    };
+    const tz = await this.getTimezoneInfo(merchantId, timezone);
+    const effectiveGrouping = this.resolveGrouping(period, grouping);
 
-    const [earned, redeemed, balances, activeWallets] = await Promise.all([
-      this.prisma.transaction.aggregate({
-        where: { ...where, type: 'EARN' },
-        _sum: { amount: true },
-      }),
-      this.prisma.transaction.aggregate({
-        where: { ...where, type: 'REDEEM' },
-        _sum: { amount: true },
-      }),
-      this.prisma.wallet.aggregate({
-        where: { merchantId },
-        _avg: { balance: true },
-      }),
-      this.prisma.wallet.count({
-        where: { merchantId, balance: { gt: 0 } },
-      }),
-    ]);
+    const [earnedRows, redeemedRows, balances, activeWallets, pointsSeries] =
+      await Promise.all([
+        this.prisma.$queryRaw<
+          Array<{ total: Prisma.Decimal | number | null }>
+        >(Prisma.sql`
+          SELECT COALESCE(SUM(t."amount"), 0)::numeric AS total
+          FROM "Transaction" t
+          WHERE t."merchantId" = ${merchantId}
+            AND t."createdAt" >= ${period.from}
+            AND t."createdAt" <= ${period.to}
+            AND t."canceledAt" IS NULL
+            AND t."type" = 'EARN'
+            AND (
+              t."orderId" IS NULL
+              OR NOT EXISTS (
+                SELECT 1
+                FROM "Transaction" refund
+                WHERE refund."merchantId" = t."merchantId"
+                  AND refund."orderId" = t."orderId"
+                  AND refund."type" = 'REFUND'
+                  AND refund."canceledAt" IS NULL
+              )
+            )
+        `),
+        this.prisma.$queryRaw<
+          Array<{ total: Prisma.Decimal | number | null }>
+        >(Prisma.sql`
+          SELECT COALESCE(SUM(t."amount"), 0)::numeric AS total
+          FROM "Transaction" t
+          WHERE t."merchantId" = ${merchantId}
+            AND t."createdAt" >= ${period.from}
+            AND t."createdAt" <= ${period.to}
+            AND t."canceledAt" IS NULL
+            AND t."type" = 'REDEEM'
+            AND (
+              t."orderId" IS NULL
+              OR NOT EXISTS (
+                SELECT 1
+                FROM "Transaction" refund
+                WHERE refund."merchantId" = t."merchantId"
+                  AND refund."orderId" = t."orderId"
+                  AND refund."type" = 'REFUND'
+                  AND refund."canceledAt" IS NULL
+              )
+            )
+        `),
+        this.prisma.wallet.aggregate({
+          where: { merchantId },
+          _avg: { balance: true },
+        }),
+        this.prisma.wallet.count({
+          where: { merchantId, balance: { gt: 0 } },
+        }),
+        this.getPointsSeries(merchantId, period, effectiveGrouping, tz),
+      ]);
 
-    const totalPointsIssued = Math.abs(earned._sum.amount || 0);
-    const totalPointsRedeemed = Math.abs(redeemed._sum.amount || 0);
+    const totalPointsIssued = Math.abs(Number(earnedRows?.[0]?.total || 0));
+    const totalPointsRedeemed = Math.abs(Number(redeemedRows?.[0]?.total || 0));
     const redemptionRate =
       totalPointsIssued > 0
         ? (totalPointsRedeemed / totalPointsIssued) * 100
@@ -901,6 +1006,8 @@ export class AnalyticsService {
       activeWallets,
       programROI: Math.round(roi * 10) / 10,
       conversionRate: Math.round(conversionRate * 10) / 10,
+      pointsSeries,
+      pointsGrouping: effectiveGrouping,
     };
   }
 
@@ -980,11 +1087,13 @@ export class AnalyticsService {
   async getOperationalMetrics(
     merchantId: string,
     period: DashboardPeriod,
+    timezone?: string | RussiaTimezone,
   ): Promise<OperationalMetrics> {
+    const tz = await this.getTimezoneInfo(merchantId, timezone);
     const [topOutlets, topStaff, peakHours, outletUsage] = await Promise.all([
       this.getTopOutlets(merchantId, period),
       this.getTopStaff(merchantId, period),
-      this.getPeakHours(merchantId, period),
+      this.getPeakHours(merchantId, period, tz),
       this.getOutletUsage(merchantId, period),
     ]);
 
@@ -1636,6 +1745,57 @@ export class AnalyticsService {
 
   // Вспомогательные методы
 
+  private async getTimezoneInfo(
+    merchantId: string,
+    timezone?: string | RussiaTimezone | null,
+  ): Promise<RussiaTimezone> {
+    if (!timezone) {
+      const row = await this.prisma.merchantSettings.findUnique({
+        where: { merchantId },
+        select: { timezone: true },
+      });
+      return findTimezone(row?.timezone ?? DEFAULT_TIMEZONE_CODE);
+    }
+    if (typeof timezone === 'string') return findTimezone(timezone);
+    return timezone;
+  }
+
+  async resolveTimezone(
+    merchantId: string,
+    timezone?: string | RussiaTimezone,
+  ) {
+    return this.getTimezoneInfo(merchantId, timezone);
+  }
+
+  private formatDateLabel(date: Date, timezone: RussiaTimezone) {
+    const local = new Date(
+      date.getTime() + timezone.utcOffsetMinutes * 60 * 1000,
+    );
+    const year = local.getUTCFullYear();
+    const month = String(local.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(local.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  private truncateForTimezone(
+    date: Date,
+    grouping: TimeGrouping,
+    timezone: RussiaTimezone,
+  ): Date {
+    const local = new Date(
+      date.getTime() + timezone.utcOffsetMinutes * 60 * 1000,
+    );
+    local.setUTCHours(0, 0, 0, 0);
+    if (grouping === 'week') {
+      const day = local.getUTCDay();
+      const diff = day === 0 ? -6 : 1 - day;
+      local.setUTCDate(local.getUTCDate() + diff);
+    } else if (grouping === 'month') {
+      local.setUTCDate(1);
+    }
+    return new Date(local.getTime() - timezone.utcOffsetMinutes * 60 * 1000);
+  }
+
   private getPreviousPeriod(period: DashboardPeriod): DashboardPeriod {
     const duration = period.to.getTime() - period.from.getTime();
     return {
@@ -1648,81 +1808,321 @@ export class AnalyticsService {
   private async getHourlyDistribution(
     merchantId: string,
     period: DashboardPeriod,
+    timezone: RussiaTimezone,
   ): Promise<HourlyData[]> {
-    const transactions = await this.prisma.transaction.findMany({
-      where: {
-        merchantId,
-        createdAt: { gte: period.from, lte: period.to },
-      },
-      select: { createdAt: true, amount: true },
-    });
+    const offsetInterval = Prisma.sql`${timezone.utcOffsetMinutes} * interval '1 minute'`;
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        hour: number;
+        revenue: Prisma.Decimal | number | null;
+        transactions: bigint | number | null;
+      }>
+    >(Prisma.sql`
+      SELECT
+        EXTRACT(HOUR FROM (r."createdAt" + ${offsetInterval}))::int AS hour,
+        SUM(r."total")::numeric AS revenue,
+        COUNT(*)::bigint AS transactions
+      FROM "Receipt" r
+      WHERE r."merchantId" = ${merchantId}
+        AND r."createdAt" >= ${period.from}
+        AND r."createdAt" <= ${period.to}
+        AND r."canceledAt" IS NULL
+        AND NOT EXISTS (
+          SELECT 1
+          FROM "Transaction" refund
+          WHERE refund."merchantId" = r."merchantId"
+            AND refund."orderId" = r."orderId"
+            AND refund."type" = 'REFUND'
+            AND refund."canceledAt" IS NULL
+        )
+      GROUP BY 1
+    `);
 
-    const hourlyData: Record<
-      number,
-      { revenue: number; transactions: number }
-    > = {};
-    for (let hour = 0; hour < 24; hour++) {
-      hourlyData[hour] = { revenue: 0, transactions: 0 };
+    const map = new Map<number, { revenue: number; transactions: number }>();
+    for (const row of rows) {
+      const hour = Number(row.hour ?? 0);
+      if (Number.isNaN(hour)) continue;
+      map.set(hour, {
+        revenue: Number(row.revenue ?? 0),
+        transactions: Number(row.transactions ?? 0),
+      });
     }
 
-    transactions.forEach((t) => {
-      const hour = t.createdAt.getHours();
-      hourlyData[hour].revenue += Math.abs(t.amount);
-      hourlyData[hour].transactions++;
+    return Array.from({ length: 24 }, (_, hour) => {
+      const stats = map.get(hour);
+      return {
+        hour,
+        revenue: Math.round(stats?.revenue ?? 0),
+        transactions: Number(stats?.transactions ?? 0),
+      };
     });
-
-    return Object.entries(hourlyData).map(([hour, data]) => ({
-      hour: parseInt(hour),
-      revenue: Math.round(data.revenue),
-      transactions: data.transactions,
-    }));
   }
 
   private async getDailyRevenue(
     merchantId: string,
     period: DashboardPeriod,
+    grouping: TimeGrouping,
+    timezone: RussiaTimezone,
   ): Promise<DailyData[]> {
-    const days = Math.ceil(
-      (period.to.getTime() - period.from.getTime()) / (1000 * 60 * 60 * 24),
-    );
-    const dailyData: DailyData[] = [];
+    const groupingFragment =
+      grouping === 'month'
+        ? Prisma.sql`'month'`
+        : grouping === 'week'
+          ? Prisma.sql`'week'`
+          : Prisma.sql`'day'`;
+    const offsetInterval = Prisma.sql`${timezone.utcOffsetMinutes} * interval '1 minute'`;
 
-    for (let i = 0; i < Math.min(days, 31); i++) {
-      const dayStart = new Date(period.from);
-      dayStart.setDate(dayStart.getDate() + i);
-      dayStart.setHours(0, 0, 0, 0);
+    const rawSeries = await this.prisma.$queryRaw<
+      Array<{
+        bucket: Date;
+        revenue: Prisma.Decimal | bigint | number | null;
+        orders: bigint | number | null;
+        customers: bigint | number | null;
+      }>
+    >(Prisma.sql`
+        SELECT
+          date_trunc(${groupingFragment}, r."createdAt" + ${offsetInterval}) - ${offsetInterval} AS bucket,
+          SUM(r."total")::numeric AS revenue,
+          COUNT(*)::bigint AS orders,
+          COUNT(DISTINCT r."customerId")::bigint AS customers
+        FROM "Receipt" r
+        WHERE r."merchantId" = ${merchantId}
+          AND r."createdAt" >= ${period.from}
+          AND r."createdAt" <= ${period.to}
+          AND r."canceledAt" IS NULL
+          AND NOT EXISTS (
+            SELECT 1
+            FROM "Transaction" refund
+            WHERE refund."merchantId" = r."merchantId"
+              AND refund."orderId" = r."orderId"
+              AND refund."type" = 'REFUND'
+              AND refund."canceledAt" IS NULL
+          )
+        GROUP BY 1
+        ORDER BY 1
+      `);
 
-      const dayEnd = new Date(dayStart);
-      dayEnd.setHours(23, 59, 59, 999);
+    const byLabel = new Map<
+      string,
+      { revenue: number; orders: number; customers: number }
+    >();
+    for (const row of rawSeries) {
+      const label = this.formatDateLabel(new Date(row.bucket), timezone);
+      const revenue = Number(row.revenue ?? 0);
+      const orders = Math.round(Number(row.orders ?? 0));
+      const customers = Math.round(Number(row.customers ?? 0));
+      byLabel.set(label, { revenue, orders, customers });
+    }
 
-      const [revenue, customers] = await Promise.all([
-        this.prisma.transaction.aggregate({
-          where: {
-            merchantId,
-            type: 'EARN',
-            createdAt: { gte: dayStart, lte: dayEnd },
-          },
-          _sum: { amount: true },
-          _count: true,
-        }),
-        this.prisma.transaction.groupBy({
-          by: ['customerId'],
-          where: {
-            merchantId,
-            createdAt: { gte: dayStart, lte: dayEnd },
-          },
-        }),
-      ]);
+    const start = this.truncateForTimezone(period.from, grouping, timezone);
+    const end = this.truncateForTimezone(period.to, grouping, timezone);
+    const result: DailyData[] = [];
+    let cursor = new Date(start);
+    while (cursor.getTime() <= end.getTime()) {
+      const label = this.formatDateLabel(cursor, timezone);
+      const entry = byLabel.get(label) || {
+        revenue: 0,
+        orders: 0,
+        customers: 0,
+      };
+      const averageCheck = entry.orders > 0 ? entry.revenue / entry.orders : 0;
+      result.push({
+        date: label,
+        revenue: Math.round(entry.revenue),
+        transactions: entry.orders,
+        customers: entry.customers,
+        averageCheck: Math.round(averageCheck * 100) / 100,
+      });
+      cursor = this.advanceDate(cursor, grouping, timezone);
+    }
 
-      dailyData.push({
-        date: dayStart.toISOString().split('T')[0],
-        revenue: Math.abs(revenue._sum.amount || 0),
-        transactions: revenue._count,
-        customers: customers.length,
+    return result;
+  }
+
+  private async getPointsSeries(
+    merchantId: string,
+    period: DashboardPeriod,
+    grouping: TimeGrouping,
+    timezone: RussiaTimezone,
+  ): Promise<PointsSeriesItem[]> {
+    const groupingFragment =
+      grouping === 'month'
+        ? Prisma.sql`'month'`
+        : grouping === 'week'
+          ? Prisma.sql`'week'`
+          : Prisma.sql`'day'`;
+    const offsetInterval = Prisma.sql`${timezone.utcOffsetMinutes} * interval '1 minute'`;
+
+    const [rawSeries, initialBalanceRows] = await Promise.all([
+      this.prisma.$queryRaw<
+        Array<{
+          bucket: Date;
+          accrued: Prisma.Decimal | bigint | number | null;
+          redeemed: Prisma.Decimal | bigint | number | null;
+          burned: Prisma.Decimal | bigint | number | null;
+          net: Prisma.Decimal | bigint | number | null;
+        }>
+      >(Prisma.sql`
+        SELECT
+          date_trunc(${groupingFragment}, t."createdAt" + ${offsetInterval}) - ${offsetInterval} AS bucket,
+          SUM(
+            CASE
+              WHEN t."type" IN ('EARN', 'CAMPAIGN', 'REFERRAL', 'ADJUST') AND t."amount" > 0
+                THEN t."amount"
+              ELSE 0
+            END
+          )::numeric AS accrued,
+          SUM(
+            CASE
+              WHEN t."type" = 'REDEEM'
+                THEN -t."amount"
+              ELSE 0
+            END
+          )::numeric AS redeemed,
+          SUM(
+            CASE
+              WHEN t."type" = 'ADJUST' AND t."amount" < 0
+                THEN -t."amount"
+              ELSE 0
+            END
+          )::numeric AS burned,
+          SUM(t."amount")::numeric AS net
+        FROM "Transaction" t
+        WHERE t."merchantId" = ${merchantId}
+          AND t."createdAt" >= ${period.from}
+          AND t."createdAt" <= ${period.to}
+          AND t."canceledAt" IS NULL
+          AND t."type" <> 'REFUND'
+          AND (
+            t."orderId" IS NULL
+            OR NOT EXISTS (
+              SELECT 1
+              FROM "Transaction" refund
+              WHERE refund."merchantId" = t."merchantId"
+                AND refund."orderId" = t."orderId"
+                AND refund."type" = 'REFUND'
+                AND refund."canceledAt" IS NULL
+            )
+          )
+        GROUP BY 1
+        ORDER BY 1
+      `),
+      this.prisma.$queryRaw<
+        Array<{ balance: Prisma.Decimal | number | null }>
+      >(Prisma.sql`
+        SELECT
+          COALESCE(SUM(t."amount"), 0)::numeric AS balance
+        FROM "Transaction" t
+        WHERE t."merchantId" = ${merchantId}
+          AND t."createdAt" < ${period.from}
+          AND t."canceledAt" IS NULL
+          AND t."type" <> 'REFUND'
+          AND (
+            t."orderId" IS NULL
+            OR NOT EXISTS (
+              SELECT 1
+              FROM "Transaction" refund
+              WHERE refund."merchantId" = t."merchantId"
+                AND refund."orderId" = t."orderId"
+                AND refund."type" = 'REFUND'
+                AND refund."canceledAt" IS NULL
+            )
+          )
+      `),
+    ]);
+
+    const initialBalance = Number(initialBalanceRows?.[0]?.balance || 0);
+    const byLabel = new Map<
+      string,
+      { accrued: number; redeemed: number; burned: number; net: number }
+    >();
+
+    for (const row of rawSeries) {
+      const label = this.formatDateLabel(new Date(row.bucket), timezone);
+      byLabel.set(label, {
+        accrued: Math.round(Number(row.accrued ?? 0)),
+        redeemed: Math.round(Number(row.redeemed ?? 0)),
+        burned: Math.round(Number(row.burned ?? 0)),
+        net: Number(row.net ?? 0),
       });
     }
 
-    return dailyData;
+    const start = this.truncateForTimezone(period.from, grouping, timezone);
+    const end = this.truncateForTimezone(period.to, grouping, timezone);
+    const result: PointsSeriesItem[] = [];
+    let cursor = new Date(start);
+    let balance = initialBalance;
+
+    while (cursor.getTime() <= end.getTime()) {
+      const label = this.formatDateLabel(cursor, timezone);
+      const entry = byLabel.get(label) || {
+        accrued: 0,
+        redeemed: 0,
+        burned: 0,
+        net: 0,
+      };
+      balance += entry.net;
+      result.push({
+        date: label,
+        accrued: entry.accrued,
+        redeemed: entry.redeemed,
+        burned: entry.burned,
+        balance: Math.round(balance),
+      });
+      cursor = this.advanceDate(cursor, grouping, timezone);
+    }
+
+    return result;
+  }
+
+  private resolveGrouping(
+    period: DashboardPeriod,
+    requested?: TimeGrouping,
+  ): TimeGrouping {
+    if (requested === 'day' || requested === 'week' || requested === 'month') {
+      return requested;
+    }
+    const totalDays = Math.max(
+      1,
+      Math.ceil(
+        (period.to.getTime() - period.from.getTime()) / (1000 * 60 * 60 * 24),
+      ),
+    );
+    if (totalDays > 210) return 'month';
+    if (totalDays > 45) return 'week';
+    return 'day';
+  }
+
+  private truncateDate(value: Date, grouping: TimeGrouping): Date {
+    const date = new Date(value);
+    date.setUTCHours(0, 0, 0, 0);
+    if (grouping === 'week') {
+      const day = date.getUTCDay();
+      const offset = (day + 6) % 7;
+      date.setUTCDate(date.getUTCDate() - offset);
+    } else if (grouping === 'month') {
+      date.setUTCDate(1);
+    }
+    return date;
+  }
+
+  private advanceDate(
+    value: Date,
+    grouping: TimeGrouping,
+    timezone: RussiaTimezone,
+  ): Date {
+    const offsetMs = timezone.utcOffsetMinutes * 60 * 1000;
+    const local = new Date(value.getTime() + offsetMs);
+    if (grouping === 'week') {
+      local.setUTCDate(local.getUTCDate() + 7);
+    } else if (grouping === 'month') {
+      local.setUTCMonth(local.getUTCMonth() + 1);
+      local.setUTCDate(1);
+    } else {
+      local.setUTCDate(local.getUTCDate() + 1);
+    }
+    local.setUTCHours(0, 0, 0, 0);
+    return new Date(local.getTime() - offsetMs);
   }
 
   private async calculateCustomerLTV(merchantId: string): Promise<number> {
@@ -1959,8 +2359,13 @@ export class AnalyticsService {
   private async getPeakHours(
     merchantId: string,
     period: DashboardPeriod,
+    timezone: RussiaTimezone,
   ): Promise<string[]> {
-    const hourlyData = await this.getHourlyDistribution(merchantId, period);
+    const hourlyData = await this.getHourlyDistribution(
+      merchantId,
+      period,
+      timezone,
+    );
     const sorted = hourlyData.sort((a, b) => b.transactions - a.transactions);
     const top3 = sorted.slice(0, 3);
     return top3.map((h) => `${h.hour}:00-${h.hour + 1}:00`);
@@ -2033,7 +2438,10 @@ export class AnalyticsService {
     };
     const limit = Math.max(
       1,
-      Math.min(rawLimit ?? defaults[normalizedGroup], maximums[normalizedGroup]),
+      Math.min(
+        rawLimit ?? defaults[normalizedGroup],
+        maximums[normalizedGroup],
+      ),
     );
 
     const rows = await this.prisma.$queryRaw<
@@ -2119,7 +2527,10 @@ export class AnalyticsService {
   async getTimeActivityMetrics(
     merchantId: string,
     period: DashboardPeriod,
+    timezone?: string | RussiaTimezone,
   ): Promise<TimeActivityMetrics> {
+    const tz = await this.getTimezoneInfo(merchantId, timezone);
+    const offsetInterval = Prisma.sql`${tz.utcOffsetMinutes} * interval '1 minute'`;
     const [dayRows, hourRows, cellRows] = await Promise.all([
       this.prisma.$queryRaw<
         Array<{
@@ -2130,7 +2541,7 @@ export class AnalyticsService {
         }>
       >(Prisma.sql`
         SELECT
-          EXTRACT(ISODOW FROM "createdAt")::int AS dow,
+          EXTRACT(ISODOW FROM ("createdAt" + ${offsetInterval}))::int AS dow,
           COUNT(*)::int AS orders,
           COUNT(DISTINCT "customerId")::int AS customers,
           COALESCE(SUM("total"), 0)::int AS revenue
@@ -2150,7 +2561,7 @@ export class AnalyticsService {
         }>
       >(Prisma.sql`
         SELECT
-          EXTRACT(HOUR FROM "createdAt")::int AS hour,
+          EXTRACT(HOUR FROM ("createdAt" + ${offsetInterval}))::int AS hour,
           COUNT(*)::int AS orders,
           COUNT(DISTINCT "customerId")::int AS customers,
           COALESCE(SUM("total"), 0)::int AS revenue
@@ -2171,8 +2582,8 @@ export class AnalyticsService {
         }>
       >(Prisma.sql`
         SELECT
-          EXTRACT(ISODOW FROM "createdAt")::int AS dow,
-          EXTRACT(HOUR FROM "createdAt")::int AS hour,
+          EXTRACT(ISODOW FROM ("createdAt" + ${offsetInterval}))::int AS dow,
+          EXTRACT(HOUR FROM ("createdAt" + ${offsetInterval}))::int AS hour,
           COUNT(*)::int AS orders,
           COUNT(DISTINCT "customerId")::int AS customers,
           COALESCE(SUM("total"), 0)::int AS revenue
@@ -2244,8 +2655,7 @@ export class AnalyticsService {
 
   private pluralize(value: number, forms: [string, string, string]): string {
     const mod100 = value % 100;
-    if (mod100 >= 11 && mod100 <= 14)
-      return `${value} ${forms[2]}`.trim();
+    if (mod100 >= 11 && mod100 <= 14) return `${value} ${forms[2]}`.trim();
     const mod10 = value % 10;
     if (mod10 === 1) return `${value} ${forms[0]}`.trim();
     if (mod10 >= 2 && mod10 <= 4) return `${value} ${forms[1]}`.trim();

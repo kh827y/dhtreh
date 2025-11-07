@@ -330,6 +330,7 @@ model MerchantSettings {
   outboxPausedUntil                     DateTime?
   smsSignature                          String?
   phone                                 String?
+  timezone                              String?   @default("MSK+4")
   monthlyReports                        Boolean   @default(false)
   staffMotivationEnabled                Boolean   @default(false)
   staffMotivationNewCustomerPoints      Int       @default(30)

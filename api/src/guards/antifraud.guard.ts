@@ -187,11 +187,7 @@ export class AntiFraudGuard implements CanActivate {
     startOfWeek.setHours(0, 0, 0, 0);
 
     const resolvedOutletId = outletId || undefined;
-    const notifyVelocity = (
-      scope: string,
-      count: number,
-      limit: number,
-    ) => {
+    const notifyVelocity = (scope: string, count: number, limit: number) => {
       this.metrics.inc('antifraud_velocity_block_total', {
         scope,
         operation: isCommit ? 'commit' : 'refund',
@@ -355,7 +351,11 @@ export class AntiFraudGuard implements CanActivate {
           where: { merchantId, customerId, createdAt: { gte: monthAgo } },
         });
         if (monthly >= limits.customer.monthlyCap)
-          notifyVelocity('customer_monthly', monthly, limits.customer.monthlyCap);
+          notifyVelocity(
+            'customer_monthly',
+            monthly,
+            limits.customer.monthlyCap,
+          );
       }
     }
 

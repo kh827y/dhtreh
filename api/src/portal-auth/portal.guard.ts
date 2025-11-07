@@ -2,6 +2,10 @@ import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { GqlExecutionContext } from '@nestjs/graphql';
 import { PrismaService } from '../prisma.service';
 import { verifyPortalJwt } from './portal-jwt.util';
+import {
+  DEFAULT_TIMEZONE_CODE,
+  findTimezone,
+} from '../timezone/russia-timezones';
 
 @Injectable()
 export class PortalGuard implements CanActivate {
@@ -76,6 +80,16 @@ export class PortalGuard implements CanActivate {
           resources: new Map<string, Set<string>>(),
         };
       }
+      const timezoneRow = await this.prisma.merchantSettings.findUnique({
+        where: { merchantId },
+        select: { timezone: true },
+      });
+      const timezone = findTimezone(
+        timezoneRow?.timezone ?? DEFAULT_TIMEZONE_CODE,
+      );
+      req.portalTimezone = timezone.code;
+      req.portalTimezoneOffsetMinutes = timezone.utcOffsetMinutes;
+      req.portalTimezoneIana = timezone.iana;
       return true;
     } catch {
       return false;

@@ -3,6 +3,7 @@
 import React from "react";
 import { Card, CardHeader, CardBody, Button, Icons } from "@loyalty/ui";
 import StarRating from "../../components/StarRating";
+import { useTimezone } from "../../components/TimezoneProvider";
 
 type OperationKind =
   | "PURCHASE"
@@ -81,14 +82,6 @@ const kindFilterOptions: Array<{ value: OperationKind; label: string }> = [
   { value: "BURN", label: operationKindLabels.BURN },
   { value: "CAMPAIGN", label: operationKindLabels.CAMPAIGN },
 ];
-
-function formatDate(date: string) {
-  return new Date(date).toLocaleDateString("ru-RU");
-}
-
-function formatTime(date: string) {
-  return new Date(date).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
-}
 
 function formatRub(value: number) {
   return value.toLocaleString("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 });
@@ -197,6 +190,22 @@ export default function OperationsPage() {
   const [items, setItems] = React.useState<Operation[]>([]);
   const [total, setTotal] = React.useState(0);
   const [hoveredRowId, setHoveredRowId] = React.useState<string | null>(null);
+  const timezone = useTimezone();
+  const dateFormatter = React.useMemo(
+    () => new Intl.DateTimeFormat("ru-RU", { timeZone: timezone.iana }),
+    [timezone],
+  );
+  const timeFormatter = React.useMemo(
+    () =>
+      new Intl.DateTimeFormat("ru-RU", {
+        timeZone: timezone.iana,
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    [timezone],
+  );
+  const formatDate = React.useCallback((value: string) => dateFormatter.format(new Date(value)), [dateFormatter]);
+  const formatTime = React.useCallback((value: string) => timeFormatter.format(new Date(value)), [timeFormatter]);
 
   async function cancelOperation(operation: Operation) {
     if (!operation?.id) return;
@@ -287,6 +296,7 @@ export default function OperationsPage() {
       <div style={{ display: "grid", gap: 4 }}>
         <div style={{ fontSize: 24, fontWeight: 700 }}>Журнал операций</div>
         <div style={{ fontSize: 13, opacity: 0.65 }}>Всего: {total} записей</div>
+        <div style={{ fontSize: 12, opacity: 0.6 }}>Время отображается по {timezone.label}</div>
       </div>
 
       <Card>

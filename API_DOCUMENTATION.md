@@ -254,6 +254,16 @@ Merchant Portal использует отдельный JWT, выдаваемы�
 - `GET /portal/analytics/time/recency` — принимает те же query-параметры, что и основной эндпоинт, использует merchantId из сессии.
 - `GET /portal/analytics/time/activity` — параметры `period` / `from` / `to`, выдаёт данные для дашборда `/analytics/time`.
 - `GET /portal/analytics/portrait` — параметры `period` / `from` / `to` / `segmentId`, возвращает `gender[]`, `age[]`, `sexAge[]`, где `transactions` равны количеству чеков, а `revenue` и `averageCheck` строятся по `Receipt.total` (фактической сумме продажи).
+- `GET /portal/analytics/revenue` — поддерживает `period=yesterday|day|week|month|quarter|year` либо пару `from`/`to` (ISO-даты, границы нормализуются к началу/концу суток). Дополнительно можно передать `group=day|week|month` для явной детализации рядов. В ответе:
+  - `totalRevenue`, `averageCheck`, `transactionCount`, `revenueGrowth`;
+  - `hourlyDistribution[]` — 24 элемента с фактической выручкой по часам;
+  - `dailyRevenue[]` — временной ряд с полями `date` (`YYYY-MM-DD` начала бакета), `revenue`, `transactions`, `customers`, `averageCheck`;
+  - `seriesGrouping` — фактическая группировка (`day | week | month`), может отличаться от запрошенной, если период слишком широкий.
+  - Все агрегаты и ряды игнорируют чеки, по которым есть отмена или возврат (по `Receipt.canceledAt` либо наличию REFUND-транзакций на тот же `orderId`).
+- `GET /portal/analytics/loyalty` — принимает тот же набор параметров (`period` / `from` / `to`, опционально `group=day|week|month`). Помимо агрегатов (`totalPointsIssued`, `totalPointsRedeemed`, `pointsRedemptionRate`, `averageBalance`, `activeWallets`, `programROI`, `conversionRate`) возвращает:
+  - `pointsSeries[]` — динамика в разрезе бакетов: `date` (`YYYY-MM-DD`), `accrued`, `redeemed`, `burned`, `balance` (накопительный остаток);
+  - `pointsGrouping` — реальная детализация (`day | week | month`), совпадает с запрошенной, если она допустима для выбранного периода.
+  - Транзакции, привязанные к отменённым/возвращённым чекам (наличие REFUND по `orderId` либо `canceledAt`), исключаются, поэтому начисления/списания из таких чеков не попадают в статистику и графики.
 
 #### 7. Акции (мини‑аппа)
 
@@ -1640,6 +1650,8 @@ Response 200: объект клиента, как в GET /portal/customers/{id}
 - POST `/portal/settings/telegram-notify/subscribers/{id}/deactivate` → `{ ok: true }`
 - GET `/portal/settings/telegram-notify/preferences` → `{ notifyOrders: boolean, notifyReviews: boolean, notifyDailyDigest: boolean, notifyFraud: boolean }`
 - POST `/portal/settings/telegram-notify/preferences` → принимает частичное тело с любыми сочетаниями `notifyOrders`, `notifyReviews`, `notifyDailyDigest`, `notifyFraud` (boolean) и возвращает актуальные настройки.
+- GET `/portal/settings/timezone` → `{ timezone, options[] }`, где `timezone` и каждый элемент `options` содержит поля `code` (`МСК±N`), `label`, `city`, `description`, `mskOffset`, `utcOffsetMinutes`, `iana`. Используется порталом и аналитикой как единый источник часового пояса.
+- PUT `/portal/settings/timezone` → тело `{ code: "MSK+4" }`, ответ `{ ok: true, timezone, options[] }`.
 
 Замечания:
 - Подписка сотрудников/групп осуществляется по deep-link `t.me/<bot>?start=<token>` или `?startgroup=<token>`. Токены выпускаются на стороне портала и привязаны к мерчанту.

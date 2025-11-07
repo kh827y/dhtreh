@@ -39,7 +39,10 @@ export class CashierGuard implements CanActivate {
   } | null> {
     const token = this.readCookie(req, 'cashier_session');
     if (!token) return null;
-    const hash = crypto.createHash('sha256').update(token, 'utf8').digest('hex');
+    const hash = crypto
+      .createHash('sha256')
+      .update(token, 'utf8')
+      .digest('hex');
     const session = await this.prisma.cashierSession.findFirst({
       where: { tokenHash: hash },
       select: {
@@ -63,7 +66,11 @@ export class CashierGuard implements CanActivate {
       });
       return null;
     }
-    if (session.staff && session.staff.status && session.staff.status !== 'ACTIVE') {
+    if (
+      session.staff &&
+      session.staff.status &&
+      session.staff.status !== 'ACTIVE'
+    ) {
       await this.prisma.cashierSession.update({
         where: { id: session.id },
         data: { endedAt: now, result: 'staff_inactive' },
@@ -354,8 +361,12 @@ export class CashierGuard implements CanActivate {
       req?.query?.merchantId ||
       undefined;
 
-    let sessionContext: { id: string; merchantId: string; staffId: string; outletId: string | null } | null =
-      null;
+    let sessionContext: {
+      id: string;
+      merchantId: string;
+      staffId: string;
+      outletId: string | null;
+    } | null = null;
     if (!key) {
       try {
         sessionContext = await this.resolveCashierSession(
@@ -408,13 +419,13 @@ export class CashierGuard implements CanActivate {
           return false;
         }
         if (bodyIsObject) {
-          (body as any).merchantId = sessionContext.merchantId;
-          (body as any).staffId = sessionContext.staffId;
+          body.merchantId = sessionContext.merchantId;
+          body.staffId = sessionContext.staffId;
           if (sessionContext.outletId) {
-            (body as any).outletId = sessionContext.outletId;
+            body.outletId = sessionContext.outletId;
           }
         }
-        (req as any).cashierSession = sessionContext;
+        req.cashierSession = sessionContext;
         return true;
       }
       if (!requireStaffKey) return true;
@@ -463,7 +474,7 @@ export class CashierGuard implements CanActivate {
       },
     });
     if (!staff) return false;
-    let requestedOutletIdRaw =
+    const requestedOutletIdRaw =
       body?.outletId ||
       req?.params?.outletId ||
       req?.query?.outletId ||

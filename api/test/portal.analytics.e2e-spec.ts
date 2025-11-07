@@ -45,6 +45,7 @@ describe('Portal Analytics (e2e smoke)', () => {
           revenueGrowth: 0,
           hourlyDistribution: [],
           dailyRevenue: [],
+          seriesGrouping: 'day',
         },
         customers: {
           totalCustomers: 0,
@@ -64,6 +65,8 @@ describe('Portal Analytics (e2e smoke)', () => {
           activeWallets: 0,
           programROI: 0,
           conversionRate: 0,
+          pointsSeries: [],
+          pointsGrouping: 'day',
         },
         campaigns: {
           activeCampaigns: 0,

@@ -12,13 +12,15 @@ export const STAFF_MOTIVATION_ALLOWED_PERIODS = [
 export type StaffMotivationPeriod =
   (typeof STAFF_MOTIVATION_ALLOWED_PERIODS)[number];
 
-const PERIOD_DAY_MAP: Record<Exclude<StaffMotivationPeriod, 'custom'>, number> =
-  {
-    week: 7,
-    month: 30,
-    quarter: 90,
-    year: 365,
-  };
+const PERIOD_DAY_MAP: Record<
+  Exclude<StaffMotivationPeriod, 'custom'>,
+  number
+> = {
+  week: 7,
+  month: 30,
+  quarter: 90,
+  year: 365,
+};
 
 export const STAFF_MOTIVATION_MAX_CUSTOM_DAYS = 365;
 
@@ -77,7 +79,14 @@ export function periodLabel(
       return 'Последние 365 дней';
     case 'custom': {
       const days = clampDays(customDays) ?? 30;
-      const suffix = days % 10 === 1 && days % 100 !== 11 ? 'день' : days % 10 >= 2 && days % 10 <= 4 && (days % 100 < 10 || days % 100 >= 20) ? 'дня' : 'дней';
+      const suffix =
+        days % 10 === 1 && days % 100 !== 11
+          ? 'день'
+          : days % 10 >= 2 &&
+              days % 10 <= 4 &&
+              (days % 100 < 10 || days % 100 >= 20)
+            ? 'дня'
+            : 'дней';
       return `Последние ${days} ${suffix}`;
     }
     default:

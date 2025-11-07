@@ -10,6 +10,7 @@ import {
 } from 'class-validator';
 import { DeviceType, StaffRole } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { RUSSIA_TIMEZONES } from '../timezone/russia-timezones';
 
 export class UpdateMerchantSettingsDto {
   @ApiProperty({ minimum: 0, maximum: 10000, description: '10000 б.п. = 100%' })
@@ -162,6 +163,14 @@ export class UpdateMerchantSettingsDto {
   @IsOptional()
   @IsString()
   miniappLogoUrl?: string;
+
+  @ApiPropertyOptional({
+    description: 'Часовой пояс мерчанта в формате «МСК±N»',
+    enum: RUSSIA_TIMEZONES.map((tz) => tz.code),
+  })
+  @IsOptional()
+  @IsIn(RUSSIA_TIMEZONES.map((tz) => tz.code))
+  timezone?: string;
 }
 
 export class CreateOutletDto {
@@ -332,6 +341,11 @@ export class MerchantSettingsRespDto {
   @ApiPropertyOptional() miniappThemeBg?: string | null;
   @ApiPropertyOptional() miniappLogoUrl?: string | null;
   @ApiPropertyOptional() outboxPausedUntil?: Date | null;
+  @ApiProperty({
+    description: 'Код часового пояса в формате «МСК±N»',
+    enum: RUSSIA_TIMEZONES.map((tz) => tz.code),
+  })
+  timezone!: string;
 }
 
 export class OutletDto {
@@ -378,6 +392,12 @@ export class TokenRespDto {
 }
 export class OkDto {
   @ApiProperty() ok!: boolean;
+}
+
+export class UpdateTimezoneDto {
+  @ApiProperty({ enum: RUSSIA_TIMEZONES.map((tz) => tz.code) })
+  @IsIn(RUSSIA_TIMEZONES.map((tz) => tz.code))
+  code!: string;
 }
 
 export class UpdateOutletPosDto {

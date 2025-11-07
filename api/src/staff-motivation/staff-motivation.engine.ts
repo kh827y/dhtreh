@@ -306,7 +306,10 @@ export class StaffMotivationEngine {
       _sum: { points: true },
     });
 
-    const topOutletByStaff = new Map<string, { outletId: string | null; points: number }>();
+    const topOutletByStaff = new Map<
+      string,
+      { outletId: string | null; points: number }
+    >();
     for (const entry of perOutlet) {
       const key = entry.staffId;
       const points = Number(entry._sum?.points ?? 0);
@@ -342,9 +345,7 @@ export class StaffMotivationEngine {
       const fullName = info
         ? buildStaffName(info.firstName, info.lastName)
         : null;
-      const staffLabel =
-        fullName ||
-        (info?.login ? String(info.login) : null);
+      const staffLabel = fullName || (info?.login ? String(info.login) : null);
       return {
         staffId: row.staffId,
         staffName: staffLabel,
@@ -353,7 +354,7 @@ export class StaffMotivationEngine {
         outletId: outletInfo?.outletId ?? null,
         outletName:
           outletInfo?.outletId != null
-            ? outletMap.get(outletInfo.outletId) ?? outletInfo.outletId
+            ? (outletMap.get(outletInfo.outletId) ?? outletInfo.outletId)
             : null,
         points: row.points,
       };

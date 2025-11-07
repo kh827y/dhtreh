@@ -1296,9 +1296,8 @@ export class LoyaltyController {
         merchantId,
         merchantCustomer.id,
       );
-      balance = typeof balanceResp?.balance === 'number'
-        ? balanceResp.balance
-        : null;
+      balance =
+        typeof balanceResp?.balance === 'number' ? balanceResp.balance : null;
     } catch {}
     return {
       merchantCustomerId: merchantCustomer.id,

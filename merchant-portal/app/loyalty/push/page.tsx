@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { useTimezone } from "../../../components/TimezoneProvider";
 
 type TabKey = "ACTIVE" | "ARCHIVED";
 
@@ -69,10 +70,8 @@ export default function PushPage() {
     audience: "",
     startAt: "",
   });
-  const timezoneLabel = React.useMemo(() => {
-    const { timeZone } = Intl.DateTimeFormat().resolvedOptions();
-    return timeZone?.replace(/_/g, " ") ?? "локальному времени";
-  }, []);
+  const timezoneInfo = useTimezone();
+  const timezoneLabel = timezoneInfo.label;
 
   const loadCampaigns = React.useCallback(async () => {
     setLoading(true);
@@ -188,7 +187,7 @@ export default function PushPage() {
         text: form.text.trim(),
         audienceId: form.audience || null,
         audienceName: selectedAudience?.label ?? null,
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        timezone: timezoneInfo.iana,
       };
       if (!immediate && form.startAt) {
         body.scheduledAt = new Date(form.startAt).toISOString();

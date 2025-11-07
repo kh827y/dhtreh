@@ -3,6 +3,7 @@ import React from "react";
 import { Inter } from "next/font/google";
 import SidebarNav, { SidebarSection } from "../components/SidebarNav";
 import { cookies } from "next/headers";
+import TimezoneProvider, { PortalTimezone } from "../components/TimezoneProvider";
 
 export const metadata = {
   title: "Merchant Portal",
@@ -111,6 +112,11 @@ type PortalProfile = {
   adminImpersonation: boolean;
   staff: PortalStaffProfile | null;
   permissions: PortalPermissions;
+};
+
+type PortalTimezonePayload = {
+  timezone: PortalTimezone;
+  options: PortalTimezone[];
 };
 
 const ITEM_PERMISSION_REQUIREMENTS: Record<
@@ -235,6 +241,41 @@ async function fetchPortalProfile(): Promise<PortalProfile | null> {
   }
 }
 
+const FALLBACK_TIMEZONE: PortalTimezone = {
+  code: "MSK+4",
+  label: "Барнаул (Алтай и Красноярский край, МСК+4, UTC+7)",
+  city: "Барнаул",
+  description: "Алтай и Красноярский край",
+  mskOffset: 4,
+  utcOffsetMinutes: 420,
+  iana: "Asia/Barnaul",
+};
+
+async function fetchPortalTimezone(): Promise<PortalTimezonePayload> {
+  try {
+    const store = await cookies();
+    const token = store.get("portal_jwt")?.value;
+    if (!token) {
+      return { timezone: FALLBACK_TIMEZONE, options: [FALLBACK_TIMEZONE] };
+    }
+    const base = (process.env.NEXT_PUBLIC_API_BASE || "").replace(/\/$/, "");
+    if (!base) {
+      return { timezone: FALLBACK_TIMEZONE, options: [FALLBACK_TIMEZONE] };
+    }
+    const res = await fetch(`${base}/portal/settings/timezone`, {
+      headers: { authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error("Failed to load timezone");
+    const data = (await res.json()) as PortalTimezonePayload;
+    const timezone = data?.timezone ?? FALLBACK_TIMEZONE;
+    const options = Array.isArray(data?.options) && data.options.length > 0 ? data.options : [timezone];
+    return { timezone, options };
+  } catch {
+    return { timezone: FALLBACK_TIMEZONE, options: [FALLBACK_TIMEZONE] };
+  }
+}
+
 function hasPermission(
   permissions: PortalPermissions,
   resource: string,
@@ -289,30 +330,33 @@ function filterSectionsByProfile(profile: PortalProfile | null): SidebarSection[
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const profile = await fetchPortalProfile();
+  const timezonePayload = await fetchPortalTimezone();
   const filteredSections = filterSectionsByProfile(profile);
   const staffLabel = profile?.staff?.name || profile?.staff?.email || null;
   return (
     <html lang="ru" className="dark">
       <body className={inter.className} style={{ margin: 0 }}>
-        <div style={{ display: 'grid', gridTemplateRows: '64px 1fr', gridTemplateColumns: '260px 1fr', minHeight: '100dvh' }}>
-          <header className="glass" style={{ gridColumn: '1 / -1', display:'flex', alignItems:'center', justifyContent:'space-between', padding: '0 16px' }}>
-            <div style={{ display:'flex', alignItems:'center', gap: 10 }}>
-              <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg, var(--brand-primary), var(--brand-accent))' }} />
-              <b>Merchant Portal</b>
-            </div>
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center', fontSize: 12, opacity: .7 }}>
-              {staffLabel ? <span>{staffLabel}</span> : null}
-              {profile?.role ? <span>Роль: {profile.role}</span> : null}
-              <span>v1</span>
-            </div>
-          </header>
-          <aside style={{ borderRight: '1px solid rgba(255,255,255,.06)', padding: 8, overflow: 'auto' }}>
-            <SidebarNav sections={filteredSections} />
-          </aside>
-          <main style={{ padding: 16 }}>
-            {children}
-          </main>
-        </div>
+        <TimezoneProvider timezone={timezonePayload.timezone} options={timezonePayload.options}>
+          <div style={{ display: 'grid', gridTemplateRows: '64px 1fr', gridTemplateColumns: '260px 1fr', minHeight: '100dvh' }}>
+            <header className="glass" style={{ gridColumn: '1 / -1', display:'flex', alignItems:'center', justifyContent:'space-between', padding: '0 16px' }}>
+              <div style={{ display:'flex', alignItems:'center', gap: 10 }}>
+                <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg, var(--brand-primary), var(--brand-accent))' }} />
+                <b>Merchant Portal</b>
+              </div>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center', fontSize: 12, opacity: .7 }}>
+                {staffLabel ? <span>{staffLabel}</span> : null}
+                {profile?.role ? <span>Роль: {profile.role}</span> : null}
+                <span>v1</span>
+              </div>
+            </header>
+            <aside style={{ borderRight: '1px solid rgba(255,255,255,.06)', padding: 8, overflow: 'auto' }}>
+              <SidebarNav sections={filteredSections} />
+            </aside>
+            <main style={{ padding: 16 }}>
+              {children}
+            </main>
+          </div>
+        </TimezoneProvider>
       </body>
     </html>
   );

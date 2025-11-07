@@ -22,6 +22,11 @@ import {
   UpdateOutletPosDto,
 } from './dto';
 import { signPortalJwt as issuePortalJwt } from '../portal-auth/portal-jwt.util';
+import {
+  DEFAULT_TIMEZONE_CODE,
+  findTimezone,
+  serializeTimezone,
+} from '../timezone/russia-timezones';
 // Lazy Ajv import to avoid TS2307 when dependency isn't installed yet
 const __AjvLib: any = (() => {
   try {
@@ -218,10 +223,7 @@ export class MerchantsService {
         throw new UnauthorizedException('Invalid PIN or outlet access');
       }
     } else {
-      const resolved = await this.resolveActiveAccessByPin(
-        merchantId,
-        pinCode,
-      );
+      const resolved = await this.resolveActiveAccessByPin(merchantId, pinCode);
       access = resolved.access;
       staffRecord = resolved.staff;
       if (access.outletId !== outletId) {
@@ -352,6 +354,7 @@ export class MerchantsService {
       miniappThemeBg: s.miniappThemeBg ?? null,
       miniappLogoUrl: s.miniappLogoUrl ?? null,
       outboxPausedUntil: s.outboxPausedUntil ?? null,
+      timezone: s.timezone ?? DEFAULT_TIMEZONE_CODE,
     };
   }
 
@@ -510,6 +513,7 @@ export class MerchantsService {
         miniappThemePrimary: extras?.miniappThemePrimary ?? undefined,
         miniappThemeBg: extras?.miniappThemeBg ?? undefined,
         miniappLogoUrl: extras?.miniappLogoUrl ?? undefined,
+        timezone: extras?.timezone ?? undefined,
       },
       create: {
         merchantId,
@@ -541,6 +545,7 @@ export class MerchantsService {
         miniappThemePrimary: extras?.miniappThemePrimary ?? null,
         miniappThemeBg: extras?.miniappThemeBg ?? null,
         miniappLogoUrl: extras?.miniappLogoUrl ?? null,
+        timezone: extras?.timezone ?? undefined,
       },
     });
     return {
@@ -569,6 +574,7 @@ export class MerchantsService {
       miniappThemePrimary: (updated as any).miniappThemePrimary ?? null,
       miniappThemeBg: (updated as any).miniappThemeBg ?? null,
       miniappLogoUrl: (updated as any).miniappLogoUrl ?? null,
+      timezone: updated.timezone ?? DEFAULT_TIMEZONE_CODE,
     };
   }
 
@@ -1065,7 +1071,15 @@ export class MerchantsService {
   private async resolveActiveAccessByPin(
     merchantId: string,
     pinCode: string,
-  ): Promise<{ access: { id: string; outletId: string; pinCode: string | null; outlet?: { id: string; name: string | null } | null }; staff: Staff }> {
+  ): Promise<{
+    access: {
+      id: string;
+      outletId: string;
+      pinCode: string | null;
+      outlet?: { id: string; name: string | null } | null;
+    };
+    staff: Staff;
+  }> {
     if (!merchantId) throw new BadRequestException('merchantId required');
     const normalizedPin = String(pinCode || '').trim();
     if (!normalizedPin)
@@ -1511,9 +1525,15 @@ export class MerchantsService {
     rememberPin?: boolean,
     context?: { ip?: string | null; userAgent?: string | null },
   ) {
-    const normalizedLogin = String(merchantLogin || '').trim().toLowerCase();
+    const normalizedLogin = String(merchantLogin || '')
+      .trim()
+      .toLowerCase();
     const normalizedPassword = String(password9 || '').trim();
-    if (!normalizedLogin || !normalizedPassword || normalizedPassword.length !== 9)
+    if (
+      !normalizedLogin ||
+      !normalizedPassword ||
+      normalizedPassword.length !== 9
+    )
       throw new BadRequestException(
         'merchantLogin and 9-digit password required',
       );
@@ -1568,7 +1588,9 @@ export class MerchantsService {
       [session.staff.firstName, session.staff.lastName]
         .filter((part) => typeof part === 'string' && part?.trim?.())
         .map((part) => (part as string).trim())
-        .join(' ') || session.staff.login || null;
+        .join(' ') ||
+      session.staff.login ||
+      null;
 
     return {
       token,
@@ -1612,10 +1634,7 @@ export class MerchantsService {
       });
       return null;
     }
-    if (
-      session.staff.status &&
-      session.staff.status !== StaffStatus.ACTIVE
-    ) {
+    if (session.staff.status && session.staff.status !== StaffStatus.ACTIVE) {
       await this.prisma.cashierSession.update({
         where: { id: session.id },
         data: {
@@ -1642,7 +1661,9 @@ export class MerchantsService {
       [session.staff.firstName, session.staff.lastName]
         .filter((part) => typeof part === 'string' && part?.trim?.())
         .map((part) => (part as string).trim())
-        .join(' ') || session.staff.login || null;
+        .join(' ') ||
+      session.staff.login ||
+      null;
     return {
       id: session.id,
       merchantId: session.merchantId,
@@ -2170,6 +2191,39 @@ export class MerchantsService {
       });
       return { ok: true };
     }
+  }
+
+  async getTimezone(merchantId: string) {
+    const row = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+      select: { timezone: true },
+    });
+    return serializeTimezone(row?.timezone ?? DEFAULT_TIMEZONE_CODE);
+  }
+
+  async updateTimezone(merchantId: string, code: string) {
+    const normalized = findTimezone(code);
+    await this.prisma.merchantSettings.upsert({
+      where: { merchantId },
+      update: { timezone: normalized.code, updatedAt: new Date() },
+      create: {
+        merchantId,
+        earnBps: 500,
+        redeemLimitBps: 5000,
+        qrTtlSec: 120,
+        requireBridgeSig: false,
+        bridgeSecret: null,
+        requireStaffKey: false,
+        redeemCooldownSec: 0,
+        earnCooldownSec: 0,
+        redeemDailyCap: null,
+        earnDailyCap: null,
+        requireJwtForQuote: false,
+        rulesJson: Prisma.JsonNull,
+        timezone: normalized.code,
+      },
+    });
+    return serializeTimezone(normalized.code);
   }
   async rotatePortalKey(merchantId: string) {
     const m = await this.prisma.merchant.findUnique({

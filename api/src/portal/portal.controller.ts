@@ -28,6 +28,7 @@ import {
   UpdateMerchantSettingsDto,
   UpdateOutletPosDto,
   UpdateOutletStatusDto,
+  UpdateTimezoneDto,
 } from '../merchants/dto';
 import { ErrorDto, TransactionItemDto } from '../loyalty/dto';
 import {
@@ -42,7 +43,9 @@ import {
 import { PortalCustomersService } from './customers.service';
 import {
   AnalyticsService,
+  DashboardPeriod,
   RecencyGrouping,
+  TimeGrouping,
 } from '../analytics/analytics.service';
 import { GiftsService } from '../gifts/gifts.service';
 import { PortalCatalogService } from './catalog.service';
@@ -85,6 +88,11 @@ import {
   type ReferralProgramSettingsDto,
 } from '../referral/referral.service';
 import { PortalReviewsService } from './services/reviews.service';
+import {
+  DEFAULT_TIMEZONE_CODE,
+  RUSSIA_TIMEZONES,
+  serializeTimezone,
+} from '../timezone/russia-timezones';
 
 @ApiTags('portal')
 @Controller('portal')
@@ -112,65 +120,147 @@ export class PortalController {
   private getMerchantId(req: any) {
     return String(req.portalMerchantId || '');
   }
-  private computePeriod(periodType?: string, fromStr?: string, toStr?: string) {
-    let from = new Date();
-    let to = new Date();
+  private getTimezoneOffsetMinutes(req: any): number {
+    const raw = Number(req?.portalTimezoneOffsetMinutes ?? NaN);
+    if (Number.isFinite(raw)) return raw;
+    return 7 * 60; // default Барнаул (UTC+7)
+  }
+
+  private shiftToTimezone(date: Date, offsetMinutes: number) {
+    return new Date(date.getTime() + offsetMinutes * 60 * 1000);
+  }
+
+  private shiftFromTimezone(date: Date, offsetMinutes: number) {
+    return new Date(date.getTime() - offsetMinutes * 60 * 1000);
+  }
+
+  private parseLocalDate(
+    value: string,
+    offsetMinutes: number,
+    endOfDay = false,
+  ): Date | null {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!match) return null;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    if (!year || !month || !day) return null;
+    const date = new Date(
+      Date.UTC(
+        year,
+        month - 1,
+        day,
+        endOfDay ? 23 : 0,
+        endOfDay ? 59 : 0,
+        endOfDay ? 59 : 0,
+        endOfDay ? 999 : 0,
+      ),
+    );
+    return this.shiftFromTimezone(date, offsetMinutes);
+  }
+
+  private computePeriod(
+    req: any,
+    periodType?: string,
+    fromStr?: string,
+    toStr?: string,
+  ) {
+    const offset = this.getTimezoneOffsetMinutes(req);
     if (fromStr && toStr) {
-      from = new Date(fromStr);
-      to = new Date(toStr);
-      return { from, to, type: 'custom' as const };
+      const from = this.parseLocalDate(fromStr, offset, false);
+      const to = this.parseLocalDate(toStr, offset, true);
+      if (from && to) {
+        if (from.getTime() > to.getTime()) {
+          return { from: to, to: from, type: 'custom' as const };
+        }
+        return { from, to, type: 'custom' as const };
+      }
     }
+
+    const now = new Date();
+    const localNow = this.shiftToTimezone(now, offset);
+    let fromLocal = new Date(localNow);
+    let toLocal = new Date(localNow);
+
     switch (periodType) {
+      case 'yesterday':
+        fromLocal.setUTCDate(fromLocal.getUTCDate() - 1);
+        fromLocal.setUTCHours(0, 0, 0, 0);
+        toLocal = new Date(fromLocal);
+        toLocal.setUTCHours(23, 59, 59, 999);
+        break;
       case 'day':
-        from.setHours(0, 0, 0, 0);
-        to.setHours(23, 59, 59, 999);
+        fromLocal.setUTCHours(0, 0, 0, 0);
+        toLocal.setUTCHours(23, 59, 59, 999);
         break;
       case 'week': {
-        const dayOfWeek = from.getDay();
-        const diff = from.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
-        from.setDate(diff);
-        from.setHours(0, 0, 0, 0);
-        to = new Date(from);
-        to.setDate(to.getDate() + 6);
-        to.setHours(23, 59, 59, 999);
+        const dayOfWeek = fromLocal.getUTCDay();
+        const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+        fromLocal.setUTCDate(fromLocal.getUTCDate() + diff);
+        fromLocal.setUTCHours(0, 0, 0, 0);
+        toLocal = new Date(fromLocal);
+        toLocal.setUTCDate(toLocal.getUTCDate() + 6);
+        toLocal.setUTCHours(23, 59, 59, 999);
         break;
       }
       case 'month':
-        from.setDate(1);
-        from.setHours(0, 0, 0, 0);
-        to = new Date(from);
-        to.setMonth(to.getMonth() + 1);
-        to.setDate(0);
-        to.setHours(23, 59, 59, 999);
+        fromLocal.setUTCDate(1);
+        fromLocal.setUTCHours(0, 0, 0, 0);
+        toLocal = new Date(fromLocal);
+        toLocal.setUTCMonth(toLocal.getUTCMonth() + 1);
+        toLocal.setUTCDate(0);
+        toLocal.setUTCHours(23, 59, 59, 999);
         break;
       case 'quarter': {
-        const quarter = Math.floor(from.getMonth() / 3);
-        from.setMonth(quarter * 3);
-        from.setDate(1);
-        from.setHours(0, 0, 0, 0);
-        to = new Date(from);
-        to.setMonth(to.getMonth() + 3);
-        to.setDate(0);
-        to.setHours(23, 59, 59, 999);
+        const quarter = Math.floor(fromLocal.getUTCMonth() / 3);
+        fromLocal.setUTCMonth(quarter * 3, 1);
+        fromLocal.setUTCHours(0, 0, 0, 0);
+        toLocal = new Date(fromLocal);
+        toLocal.setUTCMonth(toLocal.getUTCMonth() + 3);
+        toLocal.setUTCDate(0);
+        toLocal.setUTCHours(23, 59, 59, 999);
         break;
       }
       case 'year':
-        from.setMonth(0);
-        from.setDate(1);
-        from.setHours(0, 0, 0, 0);
-        to.setMonth(11);
-        to.setDate(31);
-        to.setHours(23, 59, 59, 999);
+        fromLocal.setUTCMonth(0, 1);
+        fromLocal.setUTCHours(0, 0, 0, 0);
+        toLocal = new Date(fromLocal);
+        toLocal.setUTCMonth(11, 31);
+        toLocal.setUTCHours(23, 59, 59, 999);
         break;
       default:
-        from.setDate(1);
-        from.setHours(0, 0, 0, 0);
-        to = new Date(from);
-        to.setMonth(to.getMonth() + 1);
-        to.setDate(0);
-        to.setHours(23, 59, 59, 999);
+        fromLocal.setUTCDate(1);
+        fromLocal.setUTCHours(0, 0, 0, 0);
+        toLocal = new Date(fromLocal);
+        toLocal.setUTCMonth(toLocal.getUTCMonth() + 1);
+        toLocal.setUTCDate(0);
+        toLocal.setUTCHours(23, 59, 59, 999);
+        break;
     }
-    return { from, to, type: (periodType as any) || 'month' };
+
+    const normalized: DashboardPeriod['type'] =
+      periodType === 'yesterday' ||
+      periodType === 'day' ||
+      periodType === 'week' ||
+      periodType === 'month' ||
+      periodType === 'quarter' ||
+      periodType === 'year'
+        ? (periodType as DashboardPeriod['type'])
+        : 'month';
+
+    return {
+      from: this.shiftFromTimezone(fromLocal, offset),
+      to: this.shiftFromTimezone(toLocal, offset),
+      type: normalized,
+    };
+  }
+
+  private normalizeGrouping(value?: string): TimeGrouping | undefined {
+    const normalized = String(value || '').toLowerCase();
+    if (normalized === 'week') return 'week';
+    if (normalized === 'month') return 'month';
+    if (normalized === 'day') return 'day';
+    return undefined;
   }
 
   private normalizePushScope(scope?: string): 'ACTIVE' | 'ARCHIVED' {
@@ -1115,9 +1205,14 @@ export class PortalController {
     @Query('limit') limitStr?: string,
     @Query('offset') offsetStr?: string,
   ) {
+    const offset = this.getTimezoneOffsetMinutes(req);
+    const fromDate = from
+      ? this.parseLocalDate(from, offset, false)
+      : undefined;
+    const toDate = to ? this.parseLocalDate(to, offset, true) : undefined;
     const filters: OperationsLogFilters = {
-      from: from || undefined,
-      to: to || undefined,
+      from: fromDate || undefined,
+      to: toDate || undefined,
       staffId: staffId || undefined,
       outletId: outletId || undefined,
       direction: this.normalizeDirection(direction),
@@ -1155,7 +1250,8 @@ export class PortalController {
     const merchantId = this.getMerchantId(req);
     return this.analytics.getDashboard(
       merchantId,
-      this.computePeriod(period, from, to),
+      this.computePeriod(req, period, from, to),
+      String(req.portalTimezone || DEFAULT_TIMEZONE_CODE),
     );
   }
   @Get('analytics/portrait')
@@ -1169,7 +1265,7 @@ export class PortalController {
     const merchantId = this.getMerchantId(req);
     return this.analytics.getCustomerPortrait(
       merchantId,
-      this.computePeriod(period, from, to),
+      this.computePeriod(req, period, from, to),
       segmentId,
     );
   }
@@ -1184,7 +1280,7 @@ export class PortalController {
     const merchantId = this.getMerchantId(req);
     return this.analytics.getRepeatPurchases(
       merchantId,
-      this.computePeriod(period, from, to),
+      this.computePeriod(req, period, from, to),
       outletId,
     );
   }
@@ -1212,7 +1308,7 @@ export class PortalController {
     const merchantId = this.getMerchantId(req);
     return this.analytics.getReferralSummary(
       merchantId,
-      this.computePeriod(period, from, to),
+      this.computePeriod(req, period, from, to),
     );
   }
   @Get('analytics/operations')
@@ -1225,7 +1321,8 @@ export class PortalController {
     const merchantId = this.getMerchantId(req);
     return this.analytics.getOperationalMetrics(
       merchantId,
-      this.computePeriod(period, from, to),
+      this.computePeriod(req, period, from, to),
+      String(req.portalTimezone || DEFAULT_TIMEZONE_CODE),
     );
   }
   @Get('analytics/revenue')
@@ -1234,11 +1331,15 @@ export class PortalController {
     @Query('period') period?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('group') group?: string,
   ) {
     const merchantId = this.getMerchantId(req);
+    const timezoneCode = String(req.portalTimezone || DEFAULT_TIMEZONE_CODE);
     return this.analytics.getRevenueMetrics(
       merchantId,
-      this.computePeriod(period, from, to),
+      this.computePeriod(req, period, from, to),
+      this.normalizeGrouping(group),
+      timezoneCode,
     );
   }
   @Get('analytics/customers')
@@ -1251,7 +1352,7 @@ export class PortalController {
     const merchantId = this.getMerchantId(req);
     return this.analytics.getCustomerMetrics(
       merchantId,
-      this.computePeriod(period, from, to),
+      this.computePeriod(req, period, from, to),
     );
   }
   @Get('analytics/auto-return')
@@ -1265,7 +1366,7 @@ export class PortalController {
     const merchantId = this.getMerchantId(req);
     return this.analytics.getAutoReturnMetrics(
       merchantId,
-      this.computePeriod(period, from, to),
+      this.computePeriod(req, period, from, to),
       outletId,
     );
   }
@@ -1280,7 +1381,7 @@ export class PortalController {
     const merchantId = this.getMerchantId(req);
     return this.analytics.getBirthdayMechanicMetrics(
       merchantId,
-      this.computePeriod(period, from, to),
+      this.computePeriod(req, period, from, to),
       outletId,
     );
   }
@@ -1313,7 +1414,8 @@ export class PortalController {
     const merchantId = this.getMerchantId(req);
     return this.analytics.getTimeActivityMetrics(
       merchantId,
-      this.computePeriod(period, from, to),
+      this.computePeriod(req, period, from, to),
+      String(req.portalTimezone || DEFAULT_TIMEZONE_CODE),
     );
   }
 
@@ -1323,11 +1425,15 @@ export class PortalController {
     @Query('period') period?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('group') group?: string,
   ) {
     const merchantId = this.getMerchantId(req);
+    const timezoneCode = String(req.portalTimezone || DEFAULT_TIMEZONE_CODE);
     return this.analytics.getLoyaltyMetrics(
       merchantId,
-      this.computePeriod(period, from, to),
+      this.computePeriod(req, period, from, to),
+      this.normalizeGrouping(group),
+      timezoneCode,
     );
   }
   @Get('analytics/cohorts')
@@ -1598,6 +1704,27 @@ export class PortalController {
       dto.requireStaffKey,
       dto,
     );
+  }
+
+  @Get('settings/timezone')
+  async getTimezoneSetting(@Req() req: any) {
+    const merchantId = this.getMerchantId(req);
+    const timezone = await this.service.getTimezone(merchantId);
+    return {
+      timezone,
+      options: RUSSIA_TIMEZONES.map((tz) => serializeTimezone(tz.code)),
+    };
+  }
+
+  @Put('settings/timezone')
+  async updateTimezoneSetting(@Req() req: any, @Body() dto: UpdateTimezoneDto) {
+    const merchantId = this.getMerchantId(req);
+    const timezone = await this.service.updateTimezone(merchantId, dto.code);
+    return {
+      ok: true,
+      timezone,
+      options: RUSSIA_TIMEZONES.map((tz) => serializeTimezone(tz.code)),
+    };
   }
 
   // Catalog — Categories
