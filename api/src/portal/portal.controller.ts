@@ -93,6 +93,7 @@ import {
   RUSSIA_TIMEZONES,
   serializeTimezone,
 } from '../timezone/russia-timezones';
+import { UpdateRfmSettingsDto } from '../analytics/dto/update-rfm-settings.dto';
 
 @ApiTags('portal')
 @Controller('portal')
@@ -1449,6 +1450,17 @@ export class PortalController {
       by === 'week' ? 'week' : 'month',
       limit,
     );
+  }
+  @Get('analytics/rfm')
+  rfmAnalytics(@Req() req: any) {
+    return this.analytics.getRfmGroupsAnalytics(this.getMerchantId(req));
+  }
+  @Put('analytics/rfm/settings')
+  updateRfmAnalyticsSettings(
+    @Req() req: any,
+    @Body() dto: UpdateRfmSettingsDto,
+  ) {
+    return this.analytics.updateRfmSettings(this.getMerchantId(req), dto);
   }
   @Get('analytics/rfm-heatmap')
   rfmHeatmap(@Req() req: any) {

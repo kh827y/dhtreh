@@ -159,6 +159,29 @@ export class CustomerAudiencesService {
     return [];
   }
 
+  private parseRfmScoreList(value: unknown): number[] {
+    const scores: number[] = [];
+    const push = (entry: unknown) => {
+      if (entry === null || entry === undefined) return;
+      if (typeof entry === 'string' && entry.includes(',')) {
+        entry
+          .split(',')
+          .map((part) => part.trim())
+          .filter(Boolean)
+          .forEach(push);
+        return;
+      }
+      const num = Number(entry);
+      if (Number.isFinite(num)) scores.push(Math.round(num));
+    };
+    if (Array.isArray(value)) value.forEach(push);
+    else push(value);
+    const normalized = scores.filter(
+      (score) => Number.isInteger(score) && score >= 1 && score <= 5,
+    );
+    return Array.from(new Set(normalized));
+  }
+
   private parseSegmentFilters(
     merchantId: string,
     filters: unknown,
@@ -200,6 +223,37 @@ export class CustomerAudiencesService {
     if (rfmClasses.length) {
       statsHasConditions = true;
       statsFilters.rfmClass = { in: rfmClasses };
+    }
+
+    const rfmRecencyScores = this.parseRfmScoreList(
+      source.rfmRecency ??
+        source.rfmRecencyScores ??
+        source.rfmRecencyGroup ??
+        source.rfmR,
+    );
+    if (rfmRecencyScores.length) {
+      statsHasConditions = true;
+      statsFilters.rfmR = { in: rfmRecencyScores };
+    }
+
+    const rfmFrequencyScores = this.parseRfmScoreList(
+      source.rfmFrequency ??
+        source.rfmFrequencyScores ??
+        source.rfmF,
+    );
+    if (rfmFrequencyScores.length) {
+      statsHasConditions = true;
+      statsFilters.rfmF = { in: rfmFrequencyScores };
+    }
+
+    const rfmMonetaryScores = this.parseRfmScoreList(
+      source.rfmMonetary ??
+        source.rfmMonetaryScores ??
+        source.rfmM,
+    );
+    if (rfmMonetaryScores.length) {
+      statsHasConditions = true;
+      statsFilters.rfmM = { in: rfmMonetaryScores };
     }
 
     const purchaseCountInput =

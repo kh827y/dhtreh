@@ -212,7 +212,7 @@ export class AnalyticsAggregatorWorker {
     const qM = quantiles(mons);
 
     function scoreRecency(v: number) {
-      // Чем меньше дней — тем лучше (5)
+      // чем меньше давность, тем ближе балл к 5 (перенумеруем далее)
       if (v <= qR.q20) return 5;
       if (v <= qR.q40) return 4;
       if (v <= qR.q60) return 3;
@@ -223,6 +223,7 @@ export class AnalyticsAggregatorWorker {
       v: number,
       qs: { q20: number; q40: number; q60: number; q80: number },
     ) {
+      // большее значение → выше балл (до инверсии 6 - score)
       if (v <= qs.q20) return 1;
       if (v <= qs.q40) return 2;
       if (v <= qs.q60) return 3;
@@ -231,9 +232,12 @@ export class AnalyticsAggregatorWorker {
     }
 
     for (const s of derived) {
-      const rfmR = scoreRecency(s.daysSince);
-      const rfmF = scoreAsc(s.visits, qF);
-      const rfmM = scoreAsc(s.totalSpent, qM);
+      const recencyScore = scoreRecency(s.daysSince);
+      const freqScore = scoreAsc(s.visits, qF);
+      const moneyScore = scoreAsc(s.totalSpent, qM);
+      const rfmR = 6 - recencyScore;
+      const rfmF = 6 - freqScore;
+      const rfmM = 6 - moneyScore;
       const rfmScore = rfmR * 100 + rfmF * 10 + rfmM; // классический RFM код
       const rfmClass = `${rfmR}-${rfmF}-${rfmM}`;
 

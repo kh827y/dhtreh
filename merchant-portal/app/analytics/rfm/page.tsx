@@ -3,56 +3,182 @@
 import React from "react";
 import { Card, CardHeader, CardBody, Button, Skeleton } from "@loyalty/ui";
 
-const mockGroups = [
-  { id: 1, recency: "0–30 дней", frequency: ">4 покупок", money: "> 9 000 ₽" },
-  { id: 2, recency: "31–90 дней", frequency: "2–4 покупок", money: "4 500–9 000 ₽" },
-  { id: 3, recency: "91–180 дней", frequency: "1 покупка", money: "до 4 500 ₽" },
-  { id: 4, recency: "> 180 дней", frequency: "0 покупок", money: "—" },
-];
-
-const mockSizes = [
-  { code: "2-2-2", customers: 428 },
-  { code: "2-1-1", customers: 312 },
-  { code: "1-1-2", customers: 184 },
-  { code: "0-0-1", customers: 132 },
-  { code: "0-0-0", customers: 86 },
-];
-
-type DraftSettings = {
-  recency: number;
+type RfmRange = { min: number | null; max: number | null };
+type RfmGroup = {
+  score: number;
+  recency: RfmRange;
+  frequency: RfmRange;
+  monetary: RfmRange;
+};
+type RfmDistributionRow = { class: string; customers: number };
+type RfmSettingsState = {
+  recencyDays: number;
   frequencyMode: "auto" | "manual";
-  frequencyThreshold: number;
+  frequencyThreshold: number | null;
+  frequencySuggested: number | null;
   moneyMode: "auto" | "manual";
-  moneyThreshold: number;
+  moneyThreshold: number | null;
+  moneySuggested: number | null;
+};
+type RfmAnalyticsResponse = {
+  settings: RfmSettingsState;
+  groups: RfmGroup[];
+  distribution: RfmDistributionRow[];
+  totals: { customers: number };
 };
 
-const defaultSettings: DraftSettings = {
-  recency: 365,
+const defaultSettings: RfmSettingsState = {
+  recencyDays: 365,
   frequencyMode: "auto",
-  frequencyThreshold: 3,
+  frequencyThreshold: null,
+  frequencySuggested: null,
   moneyMode: "auto",
-  moneyThreshold: 9000,
+  moneyThreshold: null,
+  moneySuggested: null,
 };
+
+const currencyFormatter = new Intl.NumberFormat("ru-RU");
+
+function formatRange(range: RfmRange, formatter: (value: number) => string) {
+  const hasMin = typeof range.min === "number" && Number.isFinite(range.min);
+  const hasMax = typeof range.max === "number" && Number.isFinite(range.max);
+  if (hasMin && hasMax) {
+    const minValue = formatter(Math.max(0, Math.round(range.min!)));
+    const maxValue = formatter(Math.max(0, Math.round(range.max!)));
+    if (range.min === range.max) return minValue;
+    return `${minValue} – ${maxValue}`;
+  }
+  if (hasMin) {
+    const minValue = formatter(Math.max(0, Math.round(range.min!)));
+    return `≥ ${minValue}`;
+  }
+  if (hasMax) {
+    const maxValue = formatter(Math.max(0, Math.round(range.max!)));
+    return `≤ ${maxValue}`;
+  }
+  return "—";
+}
+
+function formatRecencyRange(range: RfmRange) {
+  return formatRange(range, (value) => `${value.toLocaleString("ru-RU")} дн.`);
+}
+
+function formatFrequencyRange(range: RfmRange) {
+  return formatRange(range, (value) => `${value.toLocaleString("ru-RU")} покупок`);
+}
+
+function formatMoneyRange(range: RfmRange) {
+  return formatRange(range, (value) => `${currencyFormatter.format(value)} ₽`);
+}
+
+async function fetchAnalytics(): Promise<RfmAnalyticsResponse> {
+  const res = await fetch("/api/portal/analytics/rfm", { cache: "no-store" });
+  if (!res.ok) {
+    const message = await res.text();
+    throw new Error(message || res.statusText);
+  }
+  return res.json() as Promise<RfmAnalyticsResponse>;
+}
+
+async function updateSettings(payload: {
+  recencyDays: number;
+  frequencyMode: "auto" | "manual";
+  frequencyThreshold?: number;
+  moneyMode: "auto" | "manual";
+  moneyThreshold?: number;
+}): Promise<RfmAnalyticsResponse> {
+  const res = await fetch("/api/portal/analytics/rfm/settings", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const message = await res.text();
+    throw new Error(message || res.statusText);
+  }
+  return res.json() as Promise<RfmAnalyticsResponse>;
+}
 
 export default function AnalyticsRfmPage() {
+  const [analytics, setAnalytics] = React.useState<RfmAnalyticsResponse | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [saving, setSaving] = React.useState(false);
   const [open, setOpen] = React.useState(false);
-  const [settings, setSettings] = React.useState<DraftSettings>(defaultSettings);
-  const [draft, setDraft] = React.useState<DraftSettings>(defaultSettings);
-  const [loading, setLoading] = React.useState(false);
+  const [settings, setSettings] = React.useState<RfmSettingsState>(defaultSettings);
+  const [draft, setDraft] = React.useState<RfmSettingsState>(defaultSettings);
 
-  const dirty = React.useMemo(
-    () =>
-      draft.recency !== settings.recency ||
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await fetchAnalytics();
+      setAnalytics(data);
+      setSettings(data.settings);
+      setDraft(data.settings);
+    } catch (error) {
+      console.error("Не удалось загрузить RFM-аналитику", error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    load();
+  }, [load]);
+
+  const groups = analytics?.groups ?? [];
+  const distribution = analytics?.distribution ?? [];
+
+  const dirty = React.useMemo(() => {
+    return (
+      draft.recencyDays !== settings.recencyDays ||
       draft.frequencyMode !== settings.frequencyMode ||
-      draft.frequencyThreshold !== settings.frequencyThreshold ||
+      (draft.frequencyMode === "manual" && draft.frequencyThreshold !== settings.frequencyThreshold) ||
       draft.moneyMode !== settings.moneyMode ||
-      draft.moneyThreshold !== settings.moneyThreshold,
-    [draft, settings]
-  );
+      (draft.moneyMode === "manual" && draft.moneyThreshold !== settings.moneyThreshold)
+    );
+  }, [draft, settings]);
 
-  const applySettings = () => {
-    setSettings(draft);
-    setOpen(false);
+  const applySettings = async () => {
+    if (draft.recencyDays < 1) {
+      alert("Давность должна быть положительным числом дней");
+      return;
+    }
+    if (draft.frequencyMode === "manual") {
+      if (!draft.frequencyThreshold || draft.frequencyThreshold < 1) {
+        alert("Количество покупок должно быть не меньше 1");
+        return;
+      }
+    }
+    if (draft.moneyMode === "manual") {
+      if (draft.moneyThreshold == null || draft.moneyThreshold < 0) {
+        alert("Сумма чека должна быть неотрицательной");
+        return;
+      }
+    }
+    setSaving(true);
+    try {
+      const payload = {
+        recencyDays: Math.max(1, Math.round(draft.recencyDays)),
+        frequencyMode: draft.frequencyMode,
+        ...(draft.frequencyMode === "manual"
+          ? { frequencyThreshold: Math.max(1, Math.round(draft.frequencyThreshold ?? 1)) }
+          : {}),
+        moneyMode: draft.moneyMode,
+        ...(draft.moneyMode === "manual"
+          ? { moneyThreshold: Math.max(0, Math.round(draft.moneyThreshold ?? 0)) }
+          : {}),
+      } as const;
+      const data = await updateSettings(payload);
+      setAnalytics(data);
+      setSettings(data.settings);
+      setDraft(data.settings);
+      setOpen(false);
+    } catch (error) {
+      console.error("Не удалось сохранить настройки RFM", error);
+      alert("Не удалось сохранить настройки");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const closeModal = () => {
@@ -67,7 +193,7 @@ export default function AnalyticsRfmPage() {
           <div style={{ fontSize: 26, fontWeight: 700 }}>RFM-Анализ</div>
           <div style={{ fontSize: 13, opacity: 0.7 }}>Сегментация клиентов по давности, частоте и сумме покупок</div>
         </div>
-        <Button variant="secondary" onClick={() => setOpen(true)}>Настройки</Button>
+        <Button variant="secondary" onClick={() => { setDraft(settings); setOpen(true); }} disabled={loading}>Настройки</Button>
       </header>
 
       <Card>
@@ -94,14 +220,20 @@ export default function AnalyticsRfmPage() {
                 </tr>
               </thead>
               <tbody>
-                {mockGroups.map((group) => (
-                  <tr key={group.id} style={{ borderTop: "1px solid rgba(148,163,184,0.15)" }}>
-                    <td style={{ padding: "10px 8px" }}>{group.id}</td>
-                    <td style={{ padding: "10px 8px" }}>{group.recency}</td>
-                    <td style={{ padding: "10px 8px" }}>{group.frequency}</td>
-                    <td style={{ padding: "10px 8px" }}>{group.money}</td>
+                {groups.length ? (
+                  groups.map((group) => (
+                    <tr key={group.score} style={{ borderTop: "1px solid rgba(148,163,184,0.15)" }}>
+                      <td style={{ padding: "10px 8px" }}>{group.score}</td>
+                      <td style={{ padding: "10px 8px" }}>{formatRecencyRange(group.recency)}</td>
+                      <td style={{ padding: "10px 8px" }}>{formatFrequencyRange(group.frequency)}</td>
+                      <td style={{ padding: "10px 8px" }}>{formatMoneyRange(group.monetary)}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={4} style={{ padding: "12px 8px", opacity: 0.7 }}>Недостаточно данных для расчёта групп.</td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           )}
@@ -122,12 +254,18 @@ export default function AnalyticsRfmPage() {
                 </tr>
               </thead>
               <tbody>
-                {mockSizes.map((row) => (
-                  <tr key={row.code} style={{ borderTop: "1px solid rgba(148,163,184,0.15)" }}>
-                    <td style={{ padding: "10px 8px" }}>{row.code}</td>
-                    <td style={{ padding: "10px 8px" }}>{row.customers.toLocaleString("ru-RU")}</td>
+                {distribution.length ? (
+                  distribution.map((row) => (
+                    <tr key={row.class} style={{ borderTop: "1px solid rgba(148,163,184,0.15)" }}>
+                      <td style={{ padding: "10px 8px" }}>{row.class}</td>
+                      <td style={{ padding: "10px 8px" }}>{row.customers.toLocaleString("ru-RU")}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={2} style={{ padding: "12px 8px", opacity: 0.7 }}>Нет клиентов, подходящих под расчёт RFM.</td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           )}
@@ -174,58 +312,88 @@ export default function AnalyticsRfmPage() {
                 <input
                   type="number"
                   min={1}
-                  value={draft.recency}
-                  onChange={(event) => setDraft((prev) => ({ ...prev, recency: Number(event.target.value) }))}
+                  value={draft.recencyDays}
+                  onChange={(event) => {
+                    const next = Number(event.target.value);
+                    setDraft((prev) => ({ ...prev, recencyDays: Number.isFinite(next) ? Math.max(1, Math.round(next)) : prev.recencyDays }));
+                  }}
                   style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(148,163,184,0.35)", background: "rgba(15,23,42,0.6)", color: "#e2e8f0" }}
                 />
+                <span style={{ fontSize: 12, opacity: 0.65 }}>После какого количества дней покупатель будет безвозвратно потерян</span>
               </label>
 
               <label style={{ display: "grid", gap: 6 }}>
                 <span style={{ fontSize: 13, opacity: 0.75 }}>Frequency (частота)</span>
                 <select
                   value={draft.frequencyMode}
-                  onChange={(event) => setDraft((prev) => ({ ...prev, frequencyMode: event.target.value as DraftSettings["frequencyMode"] }))}
+                  onChange={(event) => {
+                    const nextMode = event.target.value as RfmSettingsState["frequencyMode"];
+                    setDraft((prev) => ({ ...prev, frequencyMode: nextMode }));
+                  }}
                   style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(148,163,184,0.35)", background: "rgba(15,23,42,0.6)", color: "#e2e8f0" }}
                 >
                   <option value="auto">Автоматически</option>
                   <option value="manual">Задать вручную</option>
                 </select>
-                {draft.frequencyMode === "manual" && (
+                {draft.frequencyMode === "manual" ? (
                   <input
                     type="number"
                     min={1}
-                    value={draft.frequencyThreshold}
-                    onChange={(event) => setDraft((prev) => ({ ...prev, frequencyThreshold: Number(event.target.value) }))}
+                    value={draft.frequencyThreshold ?? ""}
+                    onChange={(event) => {
+                      const next = Number(event.target.value);
+                      setDraft((prev) => ({ ...prev, frequencyThreshold: Number.isFinite(next) ? Math.max(1, Math.round(next)) : prev.frequencyThreshold }));
+                    }}
                     style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(148,163,184,0.35)", background: "rgba(15,23,42,0.6)", color: "#e2e8f0" }}
                   />
+                ) : (
+                  <div style={{ fontSize: 12, opacity: 0.65 }}>
+                    {draft.frequencySuggested != null
+                      ? `Автоподбор: ≥ ${draft.frequencySuggested.toLocaleString("ru-RU")} покупок`
+                      : "Автоподбор будет доступен после появления данных"}
+                  </div>
                 )}
+                <span style={{ fontSize: 12, opacity: 0.65 }}>После какого количества покупок покупателя можно считать сверх-лояльным</span>
               </label>
 
               <label style={{ display: "grid", gap: 6 }}>
                 <span style={{ fontSize: 13, opacity: 0.75 }}>Money (сумма чека)</span>
                 <select
                   value={draft.moneyMode}
-                  onChange={(event) => setDraft((prev) => ({ ...prev, moneyMode: event.target.value as DraftSettings["moneyMode"] }))}
+                  onChange={(event) => {
+                    const nextMode = event.target.value as RfmSettingsState["moneyMode"];
+                    setDraft((prev) => ({ ...prev, moneyMode: nextMode }));
+                  }}
                   style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(148,163,184,0.35)", background: "rgba(15,23,42,0.6)", color: "#e2e8f0" }}
                 >
                   <option value="auto">Автоматически</option>
                   <option value="manual">Задать вручную</option>
                 </select>
-                {draft.moneyMode === "manual" && (
+                {draft.moneyMode === "manual" ? (
                   <input
                     type="number"
                     min={0}
-                    value={draft.moneyThreshold}
-                    onChange={(event) => setDraft((prev) => ({ ...prev, moneyThreshold: Number(event.target.value) }))}
+                    value={draft.moneyThreshold ?? ""}
+                    onChange={(event) => {
+                      const next = Number(event.target.value);
+                      setDraft((prev) => ({ ...prev, moneyThreshold: Number.isFinite(next) ? Math.max(0, Math.round(next)) : prev.moneyThreshold }));
+                    }}
                     style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(148,163,184,0.35)", background: "rgba(15,23,42,0.6)", color: "#e2e8f0" }}
                   />
+                ) : (
+                  <div style={{ fontSize: 12, opacity: 0.65 }}>
+                    {draft.moneySuggested != null
+                      ? `Автоподбор: ≥ ${currencyFormatter.format(draft.moneySuggested)} ₽`
+                      : "Автоподбор станет доступен, когда появятся продажи"}
+                  </div>
                 )}
+                <span style={{ fontSize: 12, opacity: 0.65 }}>Какую сумму чека можно считать максимально возможной. Все покупатели с чеком выше указанного будут попадать в группу</span>
               </label>
             </div>
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 24 }}>
-              <Button variant="secondary" onClick={closeModal}>Отмена</Button>
-              <Button variant="primary" onClick={applySettings} disabled={!dirty}>Сохранить</Button>
+              <Button variant="secondary" onClick={closeModal} disabled={saving}>Отмена</Button>
+              <Button variant="primary" onClick={applySettings} disabled={!dirty || saving}>Сохранить</Button>
             </div>
           </div>
         </div>

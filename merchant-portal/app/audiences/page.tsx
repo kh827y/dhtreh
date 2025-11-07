@@ -130,12 +130,10 @@ const productOptions = [
   { value: 'prod-4', label: 'Салат' },
 ];
 
-const rfmOptions = [
-  { value: 'A', label: 'A' },
-  { value: 'B', label: 'B' },
-  { value: 'C', label: 'C' },
-  { value: 'D', label: 'D' },
-];
+const rfmOptions = Array.from({ length: 5 }, (_, index) => {
+  const value = String(index + 1);
+  return { value, label: value };
+});
 
 // API helper
 async function api<T = any>(url: string, init?: RequestInit): Promise<T> {
@@ -178,6 +176,20 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     return value as Record<string, unknown>;
   }
   return null;
+}
+
+function normalizeRfmValue(value: unknown): string {
+  const items = Array.isArray(value) ? value : [value];
+  for (const item of items) {
+    if (item === null || item === undefined) continue;
+    const str = String(item).trim();
+    if (!str) continue;
+    const num = Number(str);
+    if (Number.isFinite(num) && num >= 1 && num <= 5) {
+      return String(Math.round(num));
+    }
+  }
+  return '';
 }
 
 function parseStringArray(value: unknown): string[] {
@@ -287,6 +299,24 @@ function settingsToFilters(s: AudienceSettings) {
   }
   if (s.levelEnabled && s.level) {
     filters.levelIds = [s.level];
+  }
+  if (s.rfmRecencyEnabled && s.rfmRecency) {
+    const score = Number(s.rfmRecency);
+    if (Number.isFinite(score)) {
+      filters.rfmRecency = Math.round(score);
+    }
+  }
+  if (s.rfmFrequencyEnabled && s.rfmFrequency) {
+    const score = Number(s.rfmFrequency);
+    if (Number.isFinite(score)) {
+      filters.rfmFrequency = Math.round(score);
+    }
+  }
+  if (s.rfmMonetaryEnabled && s.rfmMonetary) {
+    const score = Number(s.rfmMonetary);
+    if (Number.isFinite(score)) {
+      filters.rfmMonetary = Math.round(score);
+    }
   }
   if (s.deviceEnabled && s.device) {
     filters.devicePlatforms = [s.device.toLowerCase()];
@@ -717,6 +747,33 @@ function filtersToSettings(filters: any): AudienceSettings {
   if (deviceValues.length === 1) {
     settings.deviceEnabled = true;
     settings.device = normalizeDeviceLabel(deviceValues[0]);
+  }
+
+  const recencyValue = normalizeRfmValue(
+    source.rfmRecency ??
+      source.rfmRecencyScores ??
+      source.rfmRecencyGroup ??
+      source.rfmR,
+  );
+  if (recencyValue) {
+    settings.rfmRecencyEnabled = true;
+    settings.rfmRecency = recencyValue;
+  }
+
+  const frequencyValue = normalizeRfmValue(
+    source.rfmFrequency ?? source.rfmFrequencyScores ?? source.rfmF,
+  );
+  if (frequencyValue) {
+    settings.rfmFrequencyEnabled = true;
+    settings.rfmFrequency = frequencyValue;
+  }
+
+  const monetaryValue = normalizeRfmValue(
+    source.rfmMonetary ?? source.rfmMonetaryScores ?? source.rfmM,
+  );
+  if (monetaryValue) {
+    settings.rfmMonetaryEnabled = true;
+    settings.rfmMonetary = monetaryValue;
   }
 
   return settings;

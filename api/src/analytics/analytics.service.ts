@@ -7,6 +7,7 @@ import {
   RussiaTimezone,
   findTimezone,
 } from '../timezone/russia-timezones';
+import { UpdateRfmSettingsDto } from './dto/update-rfm-settings.dto';
 
 export interface DashboardPeriod {
   from: Date;
@@ -73,6 +74,22 @@ export interface OperationalMetrics {
   peakHours: string[];
   outletUsage: OutletUsageStats[];
 }
+
+type RfmRange = { min: number | null; max: number | null };
+type RfmGroupSummary = {
+  score: number;
+  recency: RfmRange;
+  frequency: RfmRange;
+  monetary: RfmRange;
+};
+type ParsedRfmSettings = {
+  recencyDays?: number;
+  frequency?: { mode?: 'auto' | 'manual'; threshold?: number | null };
+  monetary?: { mode?: 'auto' | 'manual'; threshold?: number | null };
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_RECENCY_DAYS = 365;
 
 export interface CustomerPortraitMetrics {
   gender: Array<{
@@ -760,9 +777,316 @@ export class AnalyticsService {
     for (const r of rows) {
       const R = Math.min(Math.max(r.rfmR || 1, 1), 5);
       const F = Math.min(Math.max(r.rfmF || 1, 1), 5);
-      grid[5 - R][F - 1]++; // по вертикали R сверху=5, снизу=1; горизонталь F слева=1..5
+      grid[R - 1][F - 1]++;
     }
     return { grid, totals: { count: rows.length } };
+  }
+
+  private toJsonObject(
+    value: Prisma.JsonValue | null | undefined,
+  ): Prisma.JsonObject | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return null;
+    }
+    return value as Prisma.JsonObject;
+  }
+
+  private toNumber(value: unknown): number | undefined {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return undefined;
+  }
+
+  private parseRfmSettings(
+    rulesJson: Prisma.JsonValue | null | undefined,
+  ): ParsedRfmSettings {
+    const root = this.toJsonObject(rulesJson);
+    if (!root) return {};
+    const raw = root.rfm;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    const rfm = raw as Prisma.JsonObject;
+    const recencyDays = this.toNumber(rfm.recencyDays);
+    const frequencyRaw = this.toJsonObject(rfm.frequency as Prisma.JsonValue);
+    const monetaryRaw = this.toJsonObject(rfm.monetary as Prisma.JsonValue);
+    return {
+      recencyDays:
+        recencyDays && recencyDays > 0
+          ? Math.round(recencyDays)
+          : undefined,
+      frequency: frequencyRaw
+        ? {
+            mode:
+              frequencyRaw.mode === 'manual' ? 'manual' : 'auto',
+            threshold: this.toNumber(frequencyRaw.threshold),
+          }
+        : undefined,
+      monetary: monetaryRaw
+        ? {
+            mode: monetaryRaw.mode === 'manual' ? 'manual' : 'auto',
+            threshold: this.toNumber(monetaryRaw.threshold),
+          }
+        : undefined,
+    };
+  }
+
+  private mergeRfmRules(
+    rulesJson: Prisma.JsonValue | null | undefined,
+    rfm: {
+      recencyDays: number;
+      frequency: { mode: 'auto' | 'manual'; threshold: number | null };
+      monetary: { mode: 'auto' | 'manual'; threshold: number | null };
+    },
+  ): Prisma.JsonObject {
+    const root = this.toJsonObject(rulesJson);
+    const next: Prisma.JsonObject = root ? { ...root } : {};
+    next.rfm = {
+      recencyDays: rfm.recencyDays,
+      frequency: {
+        mode: rfm.frequency.mode,
+        ...(rfm.frequency.threshold != null
+          ? { threshold: rfm.frequency.threshold }
+          : {}),
+      },
+      monetary: {
+        mode: rfm.monetary.mode,
+        ...(rfm.monetary.threshold != null
+          ? { threshold: rfm.monetary.threshold }
+          : {}),
+      },
+    } as Prisma.JsonObject;
+    return next;
+  }
+
+  private normalizeScore(value?: number | null): number | null {
+    if (value === null || value === undefined) return null;
+    const num = Number(value);
+    if (!Number.isFinite(num)) return null;
+    const rounded = Math.round(num);
+    if (rounded < 1 || rounded > 5) return null;
+    return rounded;
+  }
+
+  private pushToBucket(
+    buckets: Map<number, number[]>,
+    score: number,
+    value: number,
+  ) {
+    if (!Number.isFinite(value)) return;
+    const bucket = buckets.get(score);
+    if (bucket) {
+      bucket.push(value);
+    } else {
+      buckets.set(score, [value]);
+    }
+  }
+
+  private buildRange(values: number[]): RfmRange {
+    if (!values.length) return { min: null, max: null };
+    let min = values[0];
+    let max = values[0];
+    for (const value of values) {
+      if (value < min) min = value;
+      if (value > max) max = value;
+    }
+    return { min, max };
+  }
+
+  private computeQuantiles(values: number[]) {
+    if (!values.length) {
+      return { q20: null, q40: null, q60: null, q80: null };
+    }
+    const sorted = values.slice().sort((a, b) => a - b);
+    const pick = (p: number) => {
+      if (!sorted.length) return null;
+      const idx = Math.floor((sorted.length - 1) * p);
+      return sorted[Math.max(0, Math.min(sorted.length - 1, idx))];
+    };
+    return {
+      q20: pick(0.2),
+      q40: pick(0.4),
+      q60: pick(0.6),
+      q80: pick(0.8),
+    };
+  }
+
+  private suggestUpperQuantile(
+    values: number[],
+    options: { minimum?: number } = {},
+  ): number | null {
+    if (!values.length) return null;
+    const { q80, q60, q40 } = this.computeQuantiles(values);
+    const candidate =
+      q80 ?? q60 ?? q40 ?? values[values.length - 1] ?? values[0];
+    if (candidate == null || !Number.isFinite(candidate)) return null;
+    const rounded = Math.round(candidate);
+    if (options.minimum != null) {
+      return Math.max(options.minimum, rounded);
+    }
+    return rounded;
+  }
+
+  private computeRecencyDays(
+    lastOrderAt: Date | null | undefined,
+    fallback: number,
+    now: Date,
+  ): number {
+    if (!(lastOrderAt instanceof Date) || Number.isNaN(lastOrderAt.getTime())) {
+      return fallback + 1;
+    }
+    const diff = now.getTime() - lastOrderAt.getTime();
+    if (diff <= 0) return 0;
+    return Math.max(0, Math.floor(diff / DAY_MS));
+  }
+
+  async getRfmGroupsAnalytics(merchantId: string) {
+    const [settingsRow, stats] = await Promise.all([
+      this.prisma.merchantSettings.findUnique({
+        where: { merchantId },
+        select: { rulesJson: true },
+      }),
+      this.prisma.customerStats.findMany({
+        where: { merchantId },
+        select: {
+          rfmClass: true,
+          rfmR: true,
+          rfmF: true,
+          rfmM: true,
+          lastOrderAt: true,
+          visits: true,
+          totalSpent: true,
+        },
+      }),
+    ]);
+    const storedSettings = this.parseRfmSettings(settingsRow?.rulesJson);
+    const recencyHorizon =
+      storedSettings.recencyDays && storedSettings.recencyDays > 0
+        ? storedSettings.recencyDays
+        : DEFAULT_RECENCY_DAYS;
+    const now = new Date();
+    const recencyBuckets = new Map<number, number[]>();
+    const frequencyBuckets = new Map<number, number[]>();
+    const monetaryBuckets = new Map<number, number[]>();
+    const frequencyValues: number[] = [];
+    const monetaryValues: number[] = [];
+    const distribution = new Map<string, number>();
+
+    for (const row of stats) {
+      const daysSince = this.computeRecencyDays(
+        row.lastOrderAt,
+        recencyHorizon,
+        now,
+      );
+      const visits = Number(row.visits ?? 0);
+      const totalSpent = Number(row.totalSpent ?? 0);
+
+      const rScore = this.normalizeScore(row.rfmR);
+      const fScore = this.normalizeScore(row.rfmF);
+      const mScore = this.normalizeScore(row.rfmM);
+
+      if (rScore) this.pushToBucket(recencyBuckets, rScore, daysSince);
+      if (fScore) this.pushToBucket(frequencyBuckets, fScore, visits);
+      if (mScore) this.pushToBucket(monetaryBuckets, mScore, totalSpent);
+
+      frequencyValues.push(visits);
+      monetaryValues.push(totalSpent);
+
+      const classKey =
+        typeof row.rfmClass === 'string' && row.rfmClass.trim()
+          ? row.rfmClass
+          : rScore && fScore && mScore
+            ? `${rScore}-${fScore}-${mScore}`
+            : 'unknown';
+      distribution.set(classKey, (distribution.get(classKey) ?? 0) + 1);
+    }
+
+    const suggestedFrequency = this.suggestUpperQuantile(frequencyValues, {
+      minimum: 1,
+    });
+    const suggestedMoney = this.suggestUpperQuantile(monetaryValues, {
+      minimum: 0,
+    });
+
+    const groups: RfmGroupSummary[] = [1, 2, 3, 4, 5].map((score) => ({
+      score,
+      recency: this.buildRange(recencyBuckets.get(score) ?? []),
+      frequency: this.buildRange(frequencyBuckets.get(score) ?? []),
+      monetary: this.buildRange(monetaryBuckets.get(score) ?? []),
+    }));
+
+    const frequencyMode =
+      storedSettings.frequency?.mode === 'manual' ? 'manual' : 'auto';
+    const moneyMode =
+      storedSettings.monetary?.mode === 'manual' ? 'manual' : 'auto';
+
+    const settingsResponse = {
+      recencyDays: recencyHorizon,
+      frequencyMode,
+      frequencyThreshold:
+        frequencyMode === 'manual'
+          ? storedSettings.frequency?.threshold ??
+            suggestedFrequency ??
+            null
+          : suggestedFrequency ?? null,
+      frequencySuggested: suggestedFrequency ?? null,
+      moneyMode,
+      moneyThreshold:
+        moneyMode === 'manual'
+          ? storedSettings.monetary?.threshold ?? suggestedMoney ?? null
+          : suggestedMoney ?? null,
+      moneySuggested: suggestedMoney ?? null,
+    };
+
+    const distributionRows = Array.from(distribution.entries())
+      .map(([segment, customers]) => ({ class: segment, customers }))
+      .sort(
+        (a, b) =>
+          (b.customers ?? 0) - (a.customers ?? 0) ||
+          a.class.localeCompare(b.class),
+      );
+
+    return {
+      merchantId,
+      settings: settingsResponse,
+      groups,
+      distribution: distributionRows,
+      totals: { customers: stats.length },
+    };
+  }
+
+  async updateRfmSettings(
+    merchantId: string,
+    dto: UpdateRfmSettingsDto,
+  ) {
+    const settingsRow = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+      select: { rulesJson: true },
+    });
+    const nextRules = this.mergeRfmRules(settingsRow?.rulesJson, {
+      recencyDays: dto.recencyDays,
+      frequency: {
+        mode: dto.frequencyMode,
+        threshold:
+          dto.frequencyMode === 'manual'
+            ? dto.frequencyThreshold ?? null
+            : null,
+      },
+      monetary: {
+        mode: dto.moneyMode,
+        threshold:
+          dto.moneyMode === 'manual' ? dto.moneyThreshold ?? null : null,
+      },
+    });
+    await this.prisma.merchantSettings.upsert({
+      where: { merchantId },
+      update: { rulesJson: nextRules, updatedAt: new Date() },
+      create: { merchantId, rulesJson: nextRules },
+    });
+    return this.getRfmGroupsAnalytics(merchantId);
   }
 
   /**
