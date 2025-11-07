@@ -77,7 +77,9 @@ describe('Portal Analytics (e2e smoke)', () => {
         },
         operations: {
           topOutlets: [],
+          outletMetrics: [],
           topStaff: [],
+          staffMetrics: [],
           peakHours: [],
           outletUsage: [],
         },

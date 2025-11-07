@@ -1,93 +1,118 @@
 "use client";
 
 import React from "react";
-import { Card, CardHeader, CardBody, Skeleton } from "@loyalty/ui";
+import { Card, CardHeader, CardBody, Skeleton, Button } from "@loyalty/ui";
 
-type ApiOutletRow = { id: string; name: string; revenue: number; transactions: number; growth?: number };
-type OutletRow = {
+type ApiOutletRow = {
   id: string;
   name: string;
-  sales: number;
   revenue: number;
-  avgCheck: number;
-  pointsAccrued: number;
+  transactions: number;
+  averageCheck: number;
+  pointsIssued: number;
   pointsRedeemed: number;
-  buyers: number;
+  customers: number;
   newCustomers: number;
 };
 
-const periods = [
-  { value: "7d", label: "7 дней" },
-  { value: "30d", label: "30 дней" },
-  { value: "90d", label: "90 дней" },
-  { value: "ytd", label: "С начала года" },
-];
+type OperationsResponse = {
+  outletMetrics?: ApiOutletRow[];
+};
+
+type DateRange = { from: string; to: string };
+
+function formatDateInput(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getDefaultRange(): DateRange {
+  const today = new Date();
+  const to = formatDateInput(today);
+  const fromDate = new Date(today);
+  fromDate.setDate(fromDate.getDate() - 29);
+  const from = formatDateInput(fromDate);
+  return { from, to };
+}
 
 export default function AnalyticsOutletsPage() {
-  const [period, setPeriod] = React.useState(periods[1]);
+  const initialRange = React.useMemo(() => getDefaultRange(), []);
+  const [rangeDraft, setRangeDraft] = React.useState<DateRange>(initialRange);
+  const [appliedRange, setAppliedRange] = React.useState<DateRange>(initialRange);
   const [loading, setLoading] = React.useState(true);
   const [msg, setMsg] = React.useState("");
   const [items, setItems] = React.useState<ApiOutletRow[]>([]);
 
+  const applyRange = React.useCallback(() => {
+    if (!rangeDraft.from || !rangeDraft.to) {
+      setMsg("Укажите даты начала и окончания");
+      return;
+    }
+    const fromDate = new Date(rangeDraft.from);
+    const toDate = new Date(rangeDraft.to);
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+      setMsg("Некорректные даты");
+      return;
+    }
+    if (fromDate.getTime() > toDate.getTime()) {
+      setMsg("Дата начала не может быть позже даты окончания");
+      return;
+    }
+    setAppliedRange({ ...rangeDraft });
+    setMsg("");
+  }, [rangeDraft]);
+
   React.useEffect(() => {
+    if (!appliedRange.from || !appliedRange.to) return;
+    const controller = new AbortController();
     let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setMsg("");
-      try {
-        const res = await fetch(`/api/portal/analytics/operations?period=${period.value}`);
-        const data = await res.json();
-        if (!cancelled) {
-          setItems(Array.isArray(data?.topOutlets) ? data.topOutlets : []);
+    setLoading(true);
+    setMsg("");
+    const params = new URLSearchParams({ from: appliedRange.from, to: appliedRange.to });
+    fetch(`/api/portal/analytics/operations?${params.toString()}`, { signal: controller.signal })
+      .then(async (res) => {
+        const data = (await res.json().catch(() => ({}))) as OperationsResponse | { message?: string };
+        if (!res.ok) {
+          throw new Error((data as any)?.message || "Не удалось загрузить аналитику по точкам");
         }
-      } catch (error: any) {
-        if (!cancelled) setMsg(String(error?.message || error));
-      } finally {
+        return data as OperationsResponse;
+      })
+      .then((data) => {
+        if (cancelled) return;
+        setItems(Array.isArray(data.outletMetrics) ? data.outletMetrics : []);
+      })
+      .catch((error: any) => {
+        if (cancelled || error?.name === "AbortError") return;
+        setMsg(String(error?.message || error));
+        setItems([]);
+      })
+      .finally(() => {
         if (!cancelled) setLoading(false);
-      }
-    })();
+      });
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, [period]);
-
-  const normalized = React.useMemo<OutletRow[]>(() => {
-    return items.map((outlet) => {
-      const sales = outlet.transactions ?? 0;
-      const revenue = outlet.revenue ?? 0;
-      const avgCheck = sales > 0 ? revenue / sales : 0;
-      const pointsAccrued = Math.round(revenue * 0.12);
-      const pointsRedeemed = Math.round(revenue * 0.05);
-      const buyers = Math.max(0, Math.round(sales * 0.82));
-      const newCustomers = Math.round(buyers * 0.18);
-      return {
-        id: outlet.id,
-        name: outlet.name,
-        sales,
-        revenue,
-        avgCheck,
-        pointsAccrued,
-        pointsRedeemed,
-        buyers,
-        newCustomers,
-      };
-    });
-  }, [items]);
+  }, [appliedRange.from, appliedRange.to]);
 
   const totals = React.useMemo(() => {
-    return normalized.reduce(
+    return items.reduce(
       (acc, row) => {
-        acc.sales += row.sales;
-        acc.revenue += row.revenue;
-        acc.pointsAccrued += row.pointsAccrued;
-        acc.pointsRedeemed += row.pointsRedeemed;
-        acc.buyers += row.buyers;
-        acc.newCustomers += row.newCustomers;
+        acc.sales += row.transactions || 0;
+        acc.revenue += row.revenue || 0;
+        acc.pointsIssued += row.pointsIssued || 0;
+        acc.pointsRedeemed += row.pointsRedeemed || 0;
+        acc.buyers += row.customers || 0;
+        acc.newCustomers += row.newCustomers || 0;
         return acc;
       },
-      { sales: 0, revenue: 0, pointsAccrued: 0, pointsRedeemed: 0, buyers: 0, newCustomers: 0 }
+      { sales: 0, revenue: 0, pointsIssued: 0, pointsRedeemed: 0, buyers: 0, newCustomers: 0 }
     );
-  }, [normalized]);
+  }, [items]);
+
+  const totalAvgCheck = totals.sales > 0 ? totals.revenue / totals.sales : 0;
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
@@ -96,23 +121,46 @@ export default function AnalyticsOutletsPage() {
           <div style={{ fontSize: 26, fontWeight: 700 }}>Активность торговых точек</div>
           <div style={{ fontSize: 13, opacity: 0.7 }}>Эффективность точек продаж за выбранный период</div>
         </div>
-        <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
-          <span style={{ opacity: 0.75 }}>Период</span>
-          <select
-            value={period.value}
-            onChange={(event) => {
-              const next = periods.find((item) => item.value === event.target.value) || periods[0];
-              setPeriod(next);
-            }}
-            style={{ padding: "8px 12px", borderRadius: 10, background: "rgba(15,23,42,0.6)", border: "1px solid rgba(148,163,184,0.35)", color: "#e2e8f0" }}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", fontSize: 13 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ opacity: 0.75 }}>С</span>
+            <input
+              type="date"
+              value={rangeDraft.from}
+              onChange={(event) => setRangeDraft((prev) => ({ ...prev, from: event.target.value }))}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 10,
+                background: "rgba(15,23,42,0.6)",
+                border: "1px solid rgba(148,163,184,0.35)",
+                color: "#e2e8f0",
+              }}
+            />
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ opacity: 0.75 }}>По</span>
+            <input
+              type="date"
+              value={rangeDraft.to}
+              onChange={(event) => setRangeDraft((prev) => ({ ...prev, to: event.target.value }))}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 10,
+                background: "rgba(15,23,42,0.6)",
+                border: "1px solid rgba(148,163,184,0.35)",
+                color: "#e2e8f0",
+              }}
+            />
+          </label>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={applyRange}
+            disabled={loading || !rangeDraft.from || !rangeDraft.to}
           >
-            {periods.map((item) => (
-              <option key={item.value} value={item.value}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-        </label>
+            Применить
+          </Button>
+        </div>
       </header>
 
       <Card>
@@ -137,19 +185,19 @@ export default function AnalyticsOutletsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {normalized.map((row, index) => (
+                  {items.map((row, index) => (
                     <tr key={row.id} style={{ borderTop: "1px solid rgba(148,163,184,0.15)" }}>
                       <td style={{ padding: "10px 8px" }}>{index + 1}</td>
                       <td style={{ padding: "10px 8px" }}>
                         <div style={{ fontWeight: 600 }}>{row.name || row.id}</div>
                         <div style={{ opacity: 0.6 }}>{row.id}</div>
                       </td>
-                      <td style={{ padding: "10px 8px" }}>{row.sales.toLocaleString("ru-RU")}</td>
-                      <td style={{ padding: "10px 8px" }}>{Math.round(row.revenue).toLocaleString("ru-RU")}</td>
-                      <td style={{ padding: "10px 8px" }}>{Math.round(row.avgCheck).toLocaleString("ru-RU")}</td>
-                      <td style={{ padding: "10px 8px" }}>{row.pointsAccrued.toLocaleString("ru-RU")}</td>
-                      <td style={{ padding: "10px 8px" }}>{row.pointsRedeemed.toLocaleString("ru-RU")}</td>
-                      <td style={{ padding: "10px 8px" }}>{row.buyers.toLocaleString("ru-RU")}</td>
+                      <td style={{ padding: "10px 8px" }}>{(row.transactions || 0).toLocaleString("ru-RU")}</td>
+                      <td style={{ padding: "10px 8px" }}>{Math.round(row.revenue || 0).toLocaleString("ru-RU")}</td>
+                      <td style={{ padding: "10px 8px" }}>{Math.round(row.averageCheck || 0).toLocaleString("ru-RU")}</td>
+                      <td style={{ padding: "10px 8px" }}>{Math.round(row.pointsIssued || 0).toLocaleString("ru-RU")}</td>
+                      <td style={{ padding: "10px 8px" }}>{Math.round(row.pointsRedeemed || 0).toLocaleString("ru-RU")}</td>
+                      <td style={{ padding: "10px 8px" }}>{Math.round(row.customers || 0).toLocaleString("ru-RU")}</td>
                       <td style={{ padding: "10px 8px" }}>{row.newCustomers.toLocaleString("ru-RU")}</td>
                     </tr>
                   ))}
@@ -159,15 +207,20 @@ export default function AnalyticsOutletsPage() {
                     <td style={{ padding: "12px 8px" }} colSpan={2}>ИТОГО</td>
                     <td style={{ padding: "12px 8px" }}>{totals.sales.toLocaleString("ru-RU")}</td>
                     <td style={{ padding: "12px 8px" }}>{Math.round(totals.revenue).toLocaleString("ru-RU")}</td>
-                    <td style={{ padding: "12px 8px" }}>{normalized.length ? Math.round(totals.revenue / Math.max(1, totals.sales)).toLocaleString("ru-RU") : "—"}</td>
-                    <td style={{ padding: "12px 8px" }}>{totals.pointsAccrued.toLocaleString("ru-RU")}</td>
+                    <td style={{ padding: "12px 8px" }}>{items.length ? Math.round(totalAvgCheck).toLocaleString("ru-RU") : "—"}</td>
+                    <td style={{ padding: "12px 8px" }}>{totals.pointsIssued.toLocaleString("ru-RU")}</td>
                     <td style={{ padding: "12px 8px" }}>{totals.pointsRedeemed.toLocaleString("ru-RU")}</td>
                     <td style={{ padding: "12px 8px" }}>{totals.buyers.toLocaleString("ru-RU")}</td>
                     <td style={{ padding: "12px 8px" }}>{totals.newCustomers.toLocaleString("ru-RU")}</td>
                   </tr>
                 </tfoot>
               </table>
-              {!normalized.length && <div style={{ marginTop: 12, opacity: 0.7 }}>Нет данных за выбранный период</div>}
+              {!items.length && <div style={{ marginTop: 12, opacity: 0.7 }}>Нет данных за выбранный период</div>}
+              <div style={{ marginTop: 10, fontSize: 12, opacity: 0.7 }}>
+                ИТОГО: продажи — {totals.sales.toLocaleString("ru-RU")}, сумма продаж — {Math.round(totals.revenue).toLocaleString("ru-RU")} ₽,
+                средний чек — {items.length ? Math.round(totalAvgCheck).toLocaleString("ru-RU") : "—"} ₽,
+                покупатели — {totals.buyers.toLocaleString("ru-RU")}, новые клиенты — {totals.newCustomers.toLocaleString("ru-RU")}.
+              </div>
               {msg && <div style={{ color: "#f87171", marginTop: 12 }}>{msg}</div>}
             </div>
           )}

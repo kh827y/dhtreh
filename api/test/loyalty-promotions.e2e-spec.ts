@@ -548,6 +548,7 @@ const analyticsStub: Partial<AnalyticsService> = {
         revenueGrowth: 0,
         hourlyDistribution: [],
         dailyRevenue: [],
+        seriesGrouping: 'day',
       },
       customers: {
         totalCustomers: 0,
@@ -567,6 +568,8 @@ const analyticsStub: Partial<AnalyticsService> = {
         activeWallets: 0,
         programROI: 0,
         conversionRate: 0,
+        pointsSeries: [],
+        pointsGrouping: 'day',
       },
       campaigns: {
         activeCampaigns: 0,
@@ -577,7 +580,9 @@ const analyticsStub: Partial<AnalyticsService> = {
       },
       operations: {
         topOutlets: [],
+        outletMetrics: [],
         topStaff: [],
+        staffMetrics: [],
         peakHours: [],
         outletUsage: [],
       },

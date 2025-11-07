@@ -5,7 +5,14 @@ import { Card, CardHeader, CardBody, Skeleton } from '@loyalty/ui';
 type OutletPerf = { id: string; name: string; revenue: number; transactions: number; growth: number };
 type StaffPerf = { id: string; name: string; transactions: number; revenue: number; averageCheck: number };
 type OutletUsage = { outletId: string; name: string; transactions: number; lastActive: string | null };
-type Resp = { topOutlets: OutletPerf[]; topStaff: StaffPerf[]; peakHours: string[]; outletUsage: OutletUsage[] };
+type Resp = {
+  topOutlets: OutletPerf[];
+  outletMetrics?: OutletPerf[];
+  topStaff: StaffPerf[];
+  staffMetrics?: StaffPerf[];
+  peakHours: string[];
+  outletUsage: OutletUsage[];
+};
 
 export default function AnalyticsActivityPage() {
   const [data, setData] = React.useState<Resp | null>(null);
