@@ -8,6 +8,7 @@ import {
   findTimezone,
 } from '../timezone/russia-timezones';
 import { UpdateRfmSettingsDto } from './dto/update-rfm-settings.dto';
+import { fetchReceiptAggregates } from '../common/receipt-aggregates.util';
 
 export interface DashboardPeriod {
   from: Date;
@@ -566,9 +567,32 @@ export class AnalyticsService {
         customers,
       }))
       .sort((a, b) => a.purchases - b.purchases);
-    const newBuyers = await this.prisma.wallet.count({
-      where: { merchantId, createdAt: { gte: period.from, lte: period.to } },
-    });
+    const [newBuyersRow] = await this.prisma.$queryRaw<
+      Array<{ count: number }>
+    >(Prisma.sql`
+      SELECT COUNT(*)::int AS count
+      FROM (
+        SELECT
+          r."customerId" AS customer_id,
+          MIN(r."createdAt") AS first_purchase
+        FROM "Receipt" r
+        WHERE r."merchantId" = ${merchantId}
+          AND r."total" > 0
+          AND r."canceledAt" IS NULL
+          AND r."customerId" IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1
+            FROM "Transaction" refund
+            WHERE refund."merchantId" = r."merchantId"
+              AND refund."orderId" = r."orderId"
+              AND refund."type" = 'REFUND'
+              AND refund."canceledAt" IS NULL
+          )
+        GROUP BY r."customerId"
+        HAVING MIN(r."createdAt") BETWEEN ${period.from} AND ${period.to}
+      ) AS first_orders
+    `);
+    const newBuyers = Number(newBuyersRow?.count ?? 0);
     return { uniqueBuyers, newBuyers, repeatBuyers, histogram };
   }
 
@@ -680,16 +704,15 @@ export class AnalyticsService {
       ),
     );
     if (newCustomerIds.length > 0) {
-      const revenueAggregate = await this.prisma.receipt.aggregate({
-        where: {
-          merchantId,
-          customerId: { in: newCustomerIds },
-          createdAt: { gte: period.from, lte: period.to },
-          canceledAt: null,
-        },
-        _sum: { total: true },
+      const revenueRows = await fetchReceiptAggregates(this.prisma, {
+        merchantId,
+        customerIds: newCustomerIds,
+        period,
       });
-      referralRevenue = revenueAggregate._sum.total || 0;
+      referralRevenue = revenueRows.reduce(
+        (sum, row) => sum + Math.max(0, row.totalSpent),
+        0,
+      );
     }
 
     return {

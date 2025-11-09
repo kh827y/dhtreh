@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma.service';
+import { fetchReceiptAggregates } from '../common/receipt-aggregates.util';
 
 function startOfDay(d: Date) {
   const x = new Date(d);
@@ -138,14 +139,7 @@ export class AnalyticsAggregatorWorker {
         firstSeenMap.set(w.customerId, w.createdAt);
     }
 
-    const receipts = await this.prisma.receipt.groupBy({
-      by: ['customerId'],
-      where: { merchantId, total: { gt: 0 }, canceledAt: null },
-      _sum: { total: true },
-      _count: { id: true },
-      _max: { createdAt: true },
-      _min: { createdAt: true },
-    });
+    const receipts = await fetchReceiptAggregates(this.prisma, { merchantId });
 
     // Подготовим массивы для R/F/M
     const stats: Array<{
@@ -159,10 +153,10 @@ export class AnalyticsAggregatorWorker {
     for (const r of receipts) {
       stats.push({
         customerId: r.customerId,
-        visits: r._count.id || 0,
-        totalSpent: r._sum.total || 0,
-        lastOrderAt: r._max.createdAt || undefined,
-        firstSeenAt: firstSeenMap.get(r.customerId),
+        visits: r.visits || 0,
+        totalSpent: r.totalSpent || 0,
+        lastOrderAt: r.lastPurchaseAt || undefined,
+        firstSeenAt: firstSeenMap.get(r.customerId) ?? r.firstPurchaseAt ?? undefined,
       });
     }
 

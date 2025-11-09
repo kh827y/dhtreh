@@ -16,6 +16,7 @@ import { PrismaService } from '../prisma.service';
 import { planConsume } from '../loyalty/lots.util';
 import { CustomerAudiencesService } from '../customer-audiences/customer-audiences.service';
 import { isSystemAllAudience } from '../customer-audiences/audience.utils';
+import { fetchReceiptAggregates } from '../common/receipt-aggregates.util';
 
 export type PortalCustomerReferrerDto = {
   id: string;
@@ -326,63 +327,47 @@ export class PortalCustomersService {
       1,
     );
 
-    const [pendingHolds, pendingLots, currentMonth, previousMonth, overall] =
-      await Promise.all([
-        this.prisma.hold.groupBy({
-          by: ['customerId'],
-          where: {
-            merchantId,
-            customerId: { in: customerIds },
-            status: HoldStatus.PENDING,
-            mode: HoldMode.EARN,
-          },
-          _sum: { earnPoints: true },
-        }),
-        this.prisma.earnLot.groupBy({
-          by: ['customerId'],
-          where: {
-            merchantId,
-            customerId: { in: customerIds },
-            status: 'PENDING',
-          },
-          _sum: { points: true, consumedPoints: true },
-        }),
-        this.prisma.receipt.groupBy({
-          by: ['customerId'],
-          where: {
-            merchantId,
-            customerId: { in: customerIds },
-            createdAt: { gte: currentMonthStart, lt: nextMonthStart },
-            total: { gt: 0 },
-            canceledAt: null,
-          },
-          _sum: { total: true },
-        }),
-        this.prisma.receipt.groupBy({
-          by: ['customerId'],
-          where: {
-            merchantId,
-            customerId: { in: customerIds },
-            createdAt: { gte: previousMonthStart, lt: currentMonthStart },
-            total: { gt: 0 },
-            canceledAt: null,
-          },
-          _sum: { total: true },
-        }),
-        this.prisma.receipt.groupBy({
-          by: ['customerId'],
-          where: {
-            merchantId,
-            customerId: { in: customerIds },
-            total: { gt: 0 },
-            canceledAt: null,
-          },
-          _sum: { total: true },
-          _count: { _all: true },
-          _max: { createdAt: true },
-          _min: { createdAt: true },
-        }),
-      ]);
+    const [
+      pendingHolds,
+      pendingLots,
+      currentMonth,
+      previousMonth,
+      overall,
+    ] = await Promise.all([
+      this.prisma.hold.groupBy({
+        by: ['customerId'],
+        where: {
+          merchantId,
+          customerId: { in: customerIds },
+          status: HoldStatus.PENDING,
+          mode: HoldMode.EARN,
+        },
+        _sum: { earnPoints: true },
+      }),
+      this.prisma.earnLot.groupBy({
+        by: ['customerId'],
+        where: {
+          merchantId,
+          customerId: { in: customerIds },
+          status: 'PENDING',
+        },
+        _sum: { points: true, consumedPoints: true },
+      }),
+      fetchReceiptAggregates(this.prisma, {
+        merchantId,
+        customerIds,
+        period: { from: currentMonthStart, to: nextMonthStart, inclusiveEnd: false },
+      }),
+      fetchReceiptAggregates(this.prisma, {
+        merchantId,
+        customerIds,
+        period: { from: previousMonthStart, to: currentMonthStart, inclusiveEnd: false },
+      }),
+      fetchReceiptAggregates(this.prisma, {
+        merchantId,
+        customerIds,
+      }),
+    ]);
 
     for (const row of pendingHolds) {
       const value = Math.max(0, Number(row._sum?.earnPoints ?? 0));
@@ -402,27 +387,20 @@ export class PortalCustomersService {
     }
 
     for (const row of currentMonth) {
-      spendCurrentMonth.set(
-        row.customerId,
-        Math.max(0, Number(row._sum?.total ?? 0)),
-      );
+      spendCurrentMonth.set(row.customerId, Math.max(0, row.totalSpent));
     }
 
     for (const row of previousMonth) {
-      spendPreviousMonth.set(
-        row.customerId,
-        Math.max(0, Number(row._sum?.total ?? 0)),
-      );
+      spendPreviousMonth.set(row.customerId, Math.max(0, row.totalSpent));
     }
 
     for (const row of overall) {
-      const total = Math.max(0, Number(row._sum?.total ?? 0));
+      const total = Math.max(0, row.totalSpent);
       totalSpent.set(row.customerId, total);
-      const count = Number(row._count?._all ?? 0);
-      visitCount.set(row.customerId, count);
-      const last = row._max?.createdAt ?? null;
+      visitCount.set(row.customerId, Math.max(0, row.visits));
+      const last = row.lastPurchaseAt ?? null;
       if (last) lastPurchaseAt.set(row.customerId, last);
-      const first = row._min?.createdAt ?? null;
+      const first = row.firstPurchaseAt ?? null;
       if (first) firstPurchaseAt.set(row.customerId, first);
     }
 
@@ -628,14 +606,9 @@ export class PortalCustomersService {
         where: { merchantId, customerId: { in: refereeIds } },
         select: { customerId: true, visits: true },
       }),
-      this.prisma.receipt.groupBy({
-        by: ['customerId'],
-        where: {
-          merchantId,
-          customerId: { in: refereeIds },
-          total: { gt: 0 },
-        },
-        _count: { _all: true },
+      fetchReceiptAggregates(this.prisma, {
+        merchantId,
+        customerIds: refereeIds,
       }),
     ]);
 
@@ -651,7 +624,7 @@ export class PortalCustomersService {
 
     const purchasesMap = new Map<string, number>();
     for (const row of purchases ?? []) {
-      purchasesMap.set(row.customerId, Number(row._count?._all ?? 0));
+      purchasesMap.set(row.customerId, Math.max(0, row.visits));
     }
 
     return referrals.map((ref) => {

@@ -7,6 +7,7 @@ import {
 import { Prisma } from '@prisma/client';
 import type { CustomerSegment } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { fetchReceiptAggregates } from '../common/receipt-aggregates.util';
 import { MetricsService } from '../metrics.service';
 import { ALL_CUSTOMERS_SEGMENT_KEY } from './audience.constants';
 import { isSystemAllAudience } from './audience.utils';
@@ -570,28 +571,15 @@ export class CustomerAudiencesService {
       ?.map((id) => id?.trim())
       .filter((id): id is string => Boolean(id));
 
-    const receiptWhere: Prisma.ReceiptWhereInput = {
-      merchantId,
-      total: { gt: 0 },
-      canceledAt: null,
-    };
-    if (ids?.length) {
-      receiptWhere.customerId = { in: ids };
-    }
-
     const walletWhere: Prisma.WalletWhereInput = { merchantId };
     if (ids?.length) {
       walletWhere.customerId = { in: ids };
     }
 
     const [receipts, wallets] = await Promise.all([
-      this.prisma.receipt.groupBy({
-        by: ['customerId'],
-        where: receiptWhere,
-        _sum: { total: true },
-        _count: { id: true },
-        _max: { createdAt: true },
-        _min: { createdAt: true },
+      fetchReceiptAggregates(this.prisma, {
+        merchantId,
+        customerIds: ids,
       }),
       this.prisma.wallet.findMany({
         where: walletWhere,
@@ -619,10 +607,10 @@ export class CustomerAudiencesService {
     for (const row of receipts) {
       const customerId = row.customerId;
       if (!customerId) continue;
-      const visits = Number(row._count?.id ?? 0);
-      const total = Math.max(0, Number(row._sum?.total ?? 0));
-      const lastOrderAt = row._max?.createdAt ?? null;
-      const firstPurchase = row._min?.createdAt ?? null;
+      const visits = Math.max(0, row.visits);
+      const total = Math.max(0, row.totalSpent);
+      const lastOrderAt = row.lastPurchaseAt ?? null;
+      const firstPurchase = row.firstPurchaseAt ?? null;
       const firstSeenAt = firstSeenMap.get(customerId) ?? firstPurchase ?? null;
       statsMap.set(customerId, {
         visits,
