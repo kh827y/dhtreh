@@ -511,8 +511,13 @@ export class OperationsLogService {
     let note: string | null = null;
 
     if (tx.type === TxnType.REFERRAL) {
-      details = 'Реферальное начисление';
-      kind = 'REFERRAL';
+      if (source === 'REFERRAL_ROLLBACK') {
+        details = 'Возврат реферала';
+        kind = 'REFERRAL_ROLLBACK';
+      } else {
+        details = 'Реферальное начисление';
+        kind = 'REFERRAL';
+      }
       return { details, kind, note, purchaseAmount };
     }
 

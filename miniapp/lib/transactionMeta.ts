@@ -18,6 +18,9 @@ export function getTransactionMeta(type: string, source?: string | null): Transa
   if (sourceUpper === "COMPLIMENTARY") {
     return { title: "Начислено администратором", kind: "complimentary" };
   }
+  if (sourceUpper === "REFERRAL_ROLLBACK") {
+    return { title: "Возврат реферала", kind: "referral" };
+  }
   if (sourceUpper === "MANUAL_ACCRUAL") {
     return { title: "Начисление", kind: "earn" };
   }

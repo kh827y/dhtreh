@@ -645,7 +645,7 @@ export class AnalyticsService {
     merchantId: string,
     period: DashboardPeriod,
   ): Promise<ReferralSummary> {
-    const [activations, completedCount] = await Promise.all([
+    const [activations, firstPurchaseRows] = await Promise.all([
       this.prisma.referral.findMany({
         where: {
           program: { merchantId },
@@ -657,16 +657,45 @@ export class AnalyticsService {
           referrer: { select: { name: true } },
         },
       }),
-      this.prisma.referral.count({
-        where: {
-          program: { merchantId },
-          completedAt: { gte: period.from, lte: period.to },
-          status: 'COMPLETED',
-        },
-      }),
+      this.prisma.$queryRaw<Array<{ count: number }>>(Prisma.sql`
+        WITH referees AS (
+          SELECT DISTINCT ref."refereeId" AS customer_id
+          FROM "Referral" ref
+          JOIN "ReferralProgram" prog ON prog."id" = ref."programId"
+          WHERE prog."merchantId" = ${merchantId}
+            AND ref."refereeId" IS NOT NULL
+            AND ref."status" IN ('ACTIVATED', 'COMPLETED')
+        ),
+        valid_receipts AS (
+          SELECT r."customerId", r."createdAt"
+          FROM "Receipt" r
+          WHERE r."merchantId" = ${merchantId}
+            AND r."total" > 0
+            AND r."canceledAt" IS NULL
+            AND NOT EXISTS (
+              SELECT 1
+              FROM "Transaction" refund
+              WHERE refund."merchantId" = r."merchantId"
+                AND refund."orderId" = r."orderId"
+                AND refund."type" = 'REFUND'
+                AND refund."canceledAt" IS NULL
+            )
+        ),
+        first_purchases AS (
+          SELECT
+            vr."customerId",
+            MIN(vr."createdAt") AS first_purchase_at
+          FROM valid_receipts vr
+          JOIN referees rf ON rf.customer_id = vr."customerId"
+          GROUP BY vr."customerId"
+        )
+        SELECT COUNT(*)::int AS count
+        FROM first_purchases fp
+        WHERE fp.first_purchase_at BETWEEN ${period.from} AND ${period.to}
+      `),
     ]);
     const registeredViaReferral = activations.length;
-    const purchasedViaReferral = completedCount;
+    const purchasedViaReferral = Number(firstPurchaseRows?.[0]?.count ?? 0);
 
     const leaderboard = new Map<string, { name: string; invited: number }>();
     for (const entry of activations) {

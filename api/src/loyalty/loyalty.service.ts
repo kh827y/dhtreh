@@ -26,6 +26,7 @@ import {
   LedgerAccount,
   HoldMode,
   DeviceType,
+  Prisma,
 } from '@prisma/client';
 import { randomUUID } from 'crypto';
 
@@ -189,6 +190,12 @@ export class LoyaltyService {
               orderId: `referral_reward_${ctx.receiptId}_L${level}`,
               outletId: ctx.outletId,
               staffId: ctx.staffId,
+              metadata: {
+                source: 'REFERRAL_BONUS',
+                referralLevel: level,
+                receiptId: ctx.receiptId,
+                buyerId: ctx.buyerId,
+              } as Prisma.JsonObject,
             },
           });
           if (process.env.LEDGER_FEATURE === '1') {
@@ -237,6 +244,134 @@ export class LoyaltyService {
         },
       });
     }
+  }
+
+  private async rollbackReferralRewards(
+    tx: any,
+    params: {
+      merchantId: string;
+      receipt: {
+        id: string;
+        orderId: string;
+        customerId: string;
+        outletId: string | null;
+        staffId: string | null;
+      };
+    },
+  ) {
+    const prefix = `referral_reward_${params.receipt.id}`;
+    const rewards = await tx.transaction.findMany({
+      where: {
+        merchantId: params.merchantId,
+        type: TxnType.REFERRAL,
+        orderId: { startsWith: prefix },
+      },
+    });
+    if (!rewards.length) {
+      return;
+    }
+
+    for (const reward of rewards) {
+      const amount = Math.abs(Number(reward.amount ?? 0));
+      if (!amount) continue;
+      const rollbackOrderId =
+        typeof reward.orderId === 'string' && reward.orderId.length
+          ? reward.orderId.replace('referral_reward_', 'referral_rollback_')
+          : `referral_rollback_${reward.id}`;
+      const existingRollback = await tx.transaction.findFirst({
+        where: { merchantId: params.merchantId, orderId: rollbackOrderId },
+      });
+      if (existingRollback) continue;
+
+      const wallet = await tx.wallet.findFirst({
+        where: {
+          merchantId: params.merchantId,
+          customerId: reward.customerId,
+          type: WalletType.POINTS,
+        },
+      });
+      if (!wallet) continue;
+      const fresh = await tx.wallet.findUnique({ where: { id: wallet.id } });
+      await tx.wallet.update({
+        where: { id: wallet.id },
+        data: { balance: (fresh?.balance ?? 0) - amount },
+      });
+      await tx.transaction.create({
+        data: {
+          customerId: reward.customerId,
+          merchantId: params.merchantId,
+          type: TxnType.REFERRAL,
+          amount: -amount,
+          orderId: rollbackOrderId,
+          outletId: reward.outletId ?? params.receipt.outletId ?? null,
+          staffId: reward.staffId ?? params.receipt.staffId ?? null,
+          metadata: {
+            source: 'REFERRAL_ROLLBACK',
+            originalOrderId: reward.orderId ?? null,
+            originalTransactionId: reward.id,
+            receiptId: params.receipt.id,
+          } as Prisma.JsonObject,
+        },
+      });
+      if (process.env.LEDGER_FEATURE === '1') {
+        await tx.ledgerEntry.create({
+          data: {
+            merchantId: params.merchantId,
+            customerId: reward.customerId,
+            debit: LedgerAccount.CUSTOMER_BALANCE,
+            credit: LedgerAccount.MERCHANT_LIABILITY,
+            amount,
+            orderId: params.receipt.orderId,
+            outletId: reward.outletId ?? params.receipt.outletId ?? null,
+            staffId: reward.staffId ?? params.receipt.staffId ?? null,
+            meta: { mode: 'REFERRAL', kind: 'rollback' },
+          },
+        });
+        this.metrics.inc('loyalty_ledger_entries_total', {
+          type: 'referral_rollback',
+        });
+        this.metrics.inc(
+          'loyalty_ledger_amount_total',
+          { type: 'referral_rollback' },
+          amount,
+        );
+      }
+    }
+
+    await this.reopenReferralAfterRefund(
+      tx,
+      params.merchantId,
+      params.receipt.customerId,
+    );
+  }
+
+  private async reopenReferralAfterRefund(
+    tx: any,
+    merchantId: string,
+    customerId: string,
+  ) {
+    const referral = await tx.referral.findFirst({
+      where: {
+        refereeId: customerId,
+        status: 'COMPLETED',
+        program: { merchantId },
+      },
+      include: { program: true },
+      orderBy: { completedAt: 'desc' },
+    });
+    if (!referral) return;
+    const trigger = String(referral.program?.rewardTrigger || 'first').toLowerCase();
+    if (trigger === 'all') {
+      return;
+    }
+    await tx.referral.update({
+      where: { id: referral.id },
+      data: {
+        status: 'ACTIVATED',
+        completedAt: null,
+        purchaseAmount: null,
+      },
+    });
   }
 
   async grantRegistrationBonus(params: {
@@ -2469,6 +2604,18 @@ export class LoyaltyService {
             type: 'refund_revoke',
           });
         }
+      }
+      if (Math.abs(share - 1) < 0.001) {
+        await this.rollbackReferralRewards(tx, {
+          merchantId,
+          receipt: {
+            id: receipt.id,
+            orderId,
+            customerId: receipt.customerId,
+            outletId: receipt.outletId ?? null,
+            staffId: receipt.staffId ?? null,
+          },
+        });
       }
       try {
         await this.staffMotivation.recordRefund(tx, {

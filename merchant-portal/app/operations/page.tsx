@@ -14,6 +14,7 @@ type OperationKind =
   | "MANUAL_REDEEM"
   | "COMPLIMENTARY"
   | "REFERRAL"
+  | "REFERRAL_ROLLBACK"
   | "REFUND"
   | "BURN"
   | "ADJUST"
@@ -60,6 +61,7 @@ const operationKindLabels: Record<OperationKind, string> = {
   MANUAL_REDEEM: "Списание администратором",
   COMPLIMENTARY: "Комплиментарные баллы",
   REFERRAL: "Реферальное начисление",
+  REFERRAL_ROLLBACK: "Возврат реферала",
   REFUND: "Возврат покупки",
   BURN: "Сгорание баллов",
   ADJUST: "Корректировка",
@@ -79,6 +81,7 @@ const kindFilterOptions: Array<{ value: OperationKind; label: string }> = [
   { value: "AUTO_RETURN", label: operationKindLabels.AUTO_RETURN },
   { value: "REGISTRATION", label: operationKindLabels.REGISTRATION },
   { value: "REFERRAL", label: operationKindLabels.REFERRAL },
+  { value: "REFERRAL_ROLLBACK", label: operationKindLabels.REFERRAL_ROLLBACK },
   { value: "BURN", label: operationKindLabels.BURN },
   { value: "CAMPAIGN", label: operationKindLabels.CAMPAIGN },
 ];
