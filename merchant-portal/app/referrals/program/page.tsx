@@ -23,6 +23,7 @@ type LoadedData = {
   message: string;
   placeholders?: string[];
   shareMessageTemplate?: string;
+  minPurchaseAmount: number;
 };
 
 type State = {
@@ -41,6 +42,7 @@ type State = {
   message: string;
   placeholders: string[];
   shareMessage: string;
+  minPurchaseAmount: string;
 };
 
 const rewardTriggers: Array<{ value: RewardTrigger; label: string }> = [
@@ -77,6 +79,7 @@ const initialState: State = {
   placeholders: ["{businessname}", "{bonusamount}", "{code}", "{link}"],
   shareMessage:
     "Переходите по ссылке {link} и получите {bonusamount} бонусов на баланс в программе лояльности {businessname}",
+  minPurchaseAmount: "0",
 };
 
 function normalizeNumber(value: string, { allowZero = true, max }: { allowZero?: boolean; max?: number } = {}) {
@@ -135,6 +138,7 @@ export default function ReferralProgramSettingsPage() {
           typeof json?.shareMessageTemplate === "string" && json.shareMessageTemplate.trim()
             ? json.shareMessageTemplate.slice(0, 300)
             : initialState.shareMessage,
+        minPurchaseAmount: String(Number(json?.minPurchaseAmount ?? 0) || 0),
       }));
     } catch (error: any) {
       setState((prev) => ({
@@ -248,6 +252,16 @@ export default function ReferralProgramSettingsPage() {
       return;
     }
 
+    const minPurchaseAmount = normalizeNumber(state.minPurchaseAmount, { allowZero: true });
+    if (minPurchaseAmount == null) {
+      setState((prev) => ({
+        ...prev,
+        error: "Укажите корректную минимальную сумму заказа",
+        banner: null,
+      }));
+      return;
+    }
+
     let levelsPayload: Array<{ level: number; enabled: boolean; reward: number }> = [];
     if (state.multiLevel) {
       try {
@@ -294,6 +308,7 @@ export default function ReferralProgramSettingsPage() {
       message: state.message.trim(),
       placeholders: state.placeholders,
       shareMessage: state.shareMessage.trim(),
+      minPurchaseAmount,
     };
 
     if (state.multiLevel) {
@@ -544,6 +559,30 @@ export default function ReferralProgramSettingsPage() {
                     })}
                   </div>
                 )}
+
+                <label style={{ display: "grid", gap: 6, maxWidth: 260 }}>
+                  <span>Минимальная сумма заказа для награды</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={state.minPurchaseAmount}
+                    onChange={(event) =>
+                      setState((prev) => ({ ...prev, minPurchaseAmount: event.target.value }))
+                    }
+                    disabled={state.saving}
+                    style={{
+                      padding: "10px 12px",
+                      borderRadius: 10,
+                      border: "1px solid rgba(148,163,184,0.35)",
+                      background: "rgba(15,23,42,0.6)",
+                      color: "#e2e8f0",
+                    }}
+                  />
+                  <span style={{ fontSize: 12, opacity: 0.7 }}>
+                    Если указать 0, награда начисляется при любой сумме заказа.
+                  </span>
+                </label>
 
                 <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
                   <div

@@ -314,6 +314,7 @@ export class PortalController {
         : 'fixed';
     const rewardValueRaw = Number(body?.rewardValue ?? 0);
     const friendRewardRaw = Number(body?.friendReward ?? 0);
+    const minPurchaseRaw = Number(body?.minPurchaseAmount ?? 0);
     const placeholders = Array.isArray(body?.placeholders)
       ? body.placeholders
           .map((item: any) => (typeof item === 'string' ? item.trim() : ''))
@@ -340,6 +341,10 @@ export class PortalController {
       placeholders,
       shareMessage:
         typeof body?.shareMessage === 'string' ? body.shareMessage : undefined,
+      minPurchaseAmount:
+        Number.isFinite(minPurchaseRaw) && minPurchaseRaw > 0
+          ? Math.round(minPurchaseRaw)
+          : 0,
     };
   }
 

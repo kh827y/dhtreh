@@ -46,6 +46,7 @@ export interface ReferralProgramSettingsDto {
   message: string;
   placeholders?: string[];
   shareMessage?: string;
+  minPurchaseAmount: number;
 }
 
 const REFERRAL_PLACEHOLDERS = [
@@ -856,6 +857,7 @@ export class ReferralService {
       placeholders: this.normalizePlaceholders(program.placeholders),
       merchantName: program.merchant?.name || '',
       shareMessageTemplate: this.normalizeShareMessage(program.shareButtonText),
+      minPurchaseAmount: Math.max(0, Math.round(program.minPurchaseAmount ?? 0)),
     };
   }
 
@@ -887,14 +889,15 @@ export class ReferralService {
         multiLevel: false,
         rewardValue: 300,
         levels: this.normalizeLevels([], false, 'FIXED', 300),
-        friendReward: 0,
-        stackWithRegistration: false,
-        message: this.normalizeMessageTemplate(null),
-        placeholders: this.normalizePlaceholders(null),
-        merchantName: '',
-        shareMessageTemplate: this.normalizeShareMessage(null),
-      };
-    }
+      friendReward: 0,
+      stackWithRegistration: false,
+      message: this.normalizeMessageTemplate(null),
+      placeholders: this.normalizePlaceholders(null),
+      merchantName: '',
+      shareMessageTemplate: this.normalizeShareMessage(null),
+      minPurchaseAmount: 0,
+    };
+  }
 
     return this.mapProgramToSettings(program);
   }
@@ -924,6 +927,10 @@ export class ReferralService {
       : payload.rewardValue;
     const friendReward = this.roundTwo(payload.friendReward);
     const status = payload.enabled ? 'ACTIVE' : 'PAUSED';
+    const minPurchaseAmount = Math.max(
+      0,
+      Math.round(payload.minPurchaseAmount ?? 0),
+    );
 
     const normalizedPlaceholders = this.normalizePlaceholders(
       payload.placeholders ?? existing?.placeholders ?? null,
@@ -943,6 +950,7 @@ export class ReferralService {
       shareButtonText: this.normalizeShareMessage(payload.shareMessage),
       status,
       isActive: payload.enabled,
+      minPurchaseAmount,
     } satisfies Prisma.ReferralProgramUpdateInput;
 
     if (existing) {
@@ -956,7 +964,6 @@ export class ReferralService {
           merchantId,
           name: 'Реферальная программа',
           description: null,
-          minPurchaseAmount: 0,
           maxReferrals: 100,
           expiryDays: 30,
           ...data,

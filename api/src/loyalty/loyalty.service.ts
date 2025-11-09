@@ -260,14 +260,64 @@ export class LoyaltyService {
     },
   ) {
     const prefix = `referral_reward_${params.receipt.id}`;
-    const rewards = await tx.transaction.findMany({
+    let rewards = await tx.transaction.findMany({
       where: {
         merchantId: params.merchantId,
         type: TxnType.REFERRAL,
         orderId: { startsWith: prefix },
+        canceledAt: null,
       },
     });
-    if (!rewards.length) {
+
+    const programInfo = await tx.referralProgram.findFirst({
+      where: { merchantId: params.merchantId },
+      orderBy: { createdAt: 'desc' },
+      select: { rewardTrigger: true, minPurchaseAmount: true },
+    });
+
+    let skipRollback = false;
+    if (programInfo && programInfo.rewardTrigger !== 'all') {
+      const minPurchaseAmount = Math.max(
+        0,
+        Math.round(Number(programInfo.minPurchaseAmount ?? 0)),
+      );
+      const otherValidPurchases = await tx.$queryRaw(
+        Prisma.sql`
+        SELECT 1
+        FROM "Receipt" r
+        WHERE r."merchantId" = ${params.merchantId}
+          AND r."customerId" = ${params.receipt.customerId}
+          AND r."id" <> ${params.receipt.id}
+          AND r."canceledAt" IS NULL
+          AND r."total" > 0
+          AND r."total" >= ${minPurchaseAmount}
+          AND NOT EXISTS (
+            SELECT 1
+            FROM "Transaction" refund
+            WHERE refund."merchantId" = r."merchantId"
+              AND refund."orderId" = r."orderId"
+              AND refund."type" = 'REFUND'
+              AND refund."canceledAt" IS NULL
+          )
+        LIMIT 1`,
+      );
+      if (
+        Array.isArray(otherValidPurchases) &&
+        otherValidPurchases.length > 0
+      ) {
+        skipRollback = true;
+      }
+    }
+
+    if (!rewards.length && !skipRollback) {
+      rewards = await this.loadReferralRewardsForCustomer(
+        tx,
+        params.merchantId,
+        params.receipt.customerId,
+      );
+    }
+
+    if (!rewards.length || skipRollback) {
       return;
     }
 
@@ -345,6 +395,33 @@ export class LoyaltyService {
     );
   }
 
+  private async loadReferralRewardsForCustomer(
+    tx: any,
+    merchantId: string,
+    customerId: string,
+  ) {
+    const receipts = await tx.receipt.findMany({
+      where: { merchantId, customerId },
+      select: { id: true },
+    });
+    if (!receipts.length) return [];
+    const orderIds: string[] = [];
+    for (const receipt of receipts) {
+      for (let level = 1; level <= 5; level += 1) {
+        orderIds.push(`referral_reward_${receipt.id}_L${level}`);
+      }
+    }
+    if (!orderIds.length) return [];
+    return tx.transaction.findMany({
+      where: {
+        merchantId,
+        type: TxnType.REFERRAL,
+        orderId: { in: orderIds },
+        canceledAt: null,
+      },
+    });
+  }
+
   private async reopenReferralAfterRefund(
     tx: any,
     merchantId: string,
@@ -371,6 +448,53 @@ export class LoyaltyService {
         completedAt: null,
         purchaseAmount: null,
       },
+    });
+  }
+
+  async restoreReferralRewardsAfterRefundCancellation(
+    merchantId: string,
+    orderId?: string | null,
+  ) {
+    if (!orderId) return;
+    const receipt = await this.prisma.receipt.findUnique({
+      where: { merchantId_orderId: { merchantId, orderId } },
+      select: {
+        id: true,
+        customerId: true,
+        total: true,
+        eligibleTotal: true,
+        outletId: true,
+        staffId: true,
+        merchantId: true,
+      },
+    });
+    if (!receipt) return;
+
+    await this.prisma.$transaction(async (tx) => {
+      const existingReward = await tx.transaction.findFirst({
+        where: {
+          merchantId,
+          type: TxnType.REFERRAL,
+          orderId: { startsWith: `referral_reward_${receipt.id}_L` },
+          canceledAt: null,
+        },
+      });
+      if (existingReward) return;
+
+      await this.applyReferralRewards(tx, {
+        merchantId,
+        buyerId: receipt.customerId,
+        purchaseAmount: Math.max(
+          0,
+          Math.floor(
+            Number(receipt.eligibleTotal ?? receipt.total ?? 0),
+          ),
+        ),
+        receiptId: receipt.id,
+        orderId,
+        outletId: receipt.outletId ?? null,
+        staffId: receipt.staffId ?? null,
+      });
     });
   }
 
