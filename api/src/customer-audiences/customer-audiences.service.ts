@@ -237,9 +237,7 @@ export class CustomerAudiencesService {
     }
 
     const rfmFrequencyScores = this.parseRfmScoreList(
-      source.rfmFrequency ??
-        source.rfmFrequencyScores ??
-        source.rfmF,
+      source.rfmFrequency ?? source.rfmFrequencyScores ?? source.rfmF,
     );
     if (rfmFrequencyScores.length) {
       statsHasConditions = true;
@@ -247,9 +245,7 @@ export class CustomerAudiencesService {
     }
 
     const rfmMonetaryScores = this.parseRfmScoreList(
-      source.rfmMonetary ??
-        source.rfmMonetaryScores ??
-        source.rfmM,
+      source.rfmMonetary ?? source.rfmMonetaryScores ?? source.rfmM,
     );
     if (rfmMonetaryScores.length) {
       statsHasConditions = true;

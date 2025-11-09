@@ -88,6 +88,13 @@ type ParsedRfmSettings = {
   monetary?: { mode?: 'auto' | 'manual'; threshold?: number | null };
 };
 
+type Quantiles = {
+  q20: number | null;
+  q40: number | null;
+  q60: number | null;
+  q80: number | null;
+};
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_RECENCY_DAYS = 365;
 
@@ -320,12 +327,43 @@ export class AnalyticsService {
           : {}),
       },
       select: {
+        orderId: true,
         total: true,
         createdAt: true,
         customerId: true,
         customer: { select: { id: true, gender: true, birthday: true } },
       },
     });
+
+    const receiptOrderIds = Array.from(
+      new Set(
+        receipts
+          .map((receipt) => receipt.orderId)
+          .filter((value): value is string => Boolean(value)),
+      ),
+    );
+    let relevantReceipts = receipts;
+    if (receiptOrderIds.length > 0) {
+      const refundedOrders = await this.prisma.transaction.findMany({
+        where: {
+          merchantId,
+          type: 'REFUND',
+          canceledAt: null,
+          orderId: { in: receiptOrderIds },
+        },
+        select: { orderId: true },
+      });
+      if (refundedOrders.length > 0) {
+        const refundSet = new Set(
+          refundedOrders
+            .map((entry) => entry.orderId)
+            .filter((value): value is string => Boolean(value)),
+        );
+        relevantReceipts = receipts.filter(
+          (receipt) => !refundSet.has(receipt.orderId),
+        );
+      }
+    }
     const genderMap = new Map<
       string,
       { customers: Set<string>; transactions: number; revenue: number }
@@ -368,7 +406,7 @@ export class AnalyticsService {
       return value;
     };
 
-    for (const receipt of receipts) {
+    for (const receipt of relevantReceipts) {
       const customerId = receipt.customerId || receipt.customer?.id || null;
       const sex = normalizeSex(receipt.customer?.gender);
       const bday = receipt.customer?.birthday || null;
@@ -483,27 +521,49 @@ export class AnalyticsService {
     period: DashboardPeriod,
     outletId?: string,
   ): Promise<RepeatPurchasesMetrics> {
-    const group = await this.prisma.transaction.groupBy({
-      by: ['customerId'],
-      where: {
-        merchantId,
-        type: 'EARN',
-        createdAt: { gte: period.from, lte: period.to },
-        ...(outletId ? { outletId } : {}),
-      },
-      _count: true,
-    });
-    const uniqueBuyers = group.length;
-    const repeatBuyers = group.filter((g) => g._count >= 2).length;
-    const histogramMap: Record<number, number> = {};
-    for (const g of group) {
-      const c = g._count;
-      histogramMap[c] = (histogramMap[c] || 0) + 1;
+    const outletFilter = outletId && outletId !== 'all' ? outletId : null;
+    const purchases = await this.prisma.$queryRaw<
+      Array<{ customerId: string; purchases: bigint | number | null }>
+    >(Prisma.sql`
+      SELECT
+        r."customerId" AS "customerId",
+        COUNT(*)::bigint AS purchases
+      FROM "Receipt" r
+      WHERE r."merchantId" = ${merchantId}
+        AND r."createdAt" >= ${period.from}
+        AND r."createdAt" <= ${period.to}
+        AND r."canceledAt" IS NULL
+        AND r."total" > 0
+        ${outletFilter ? Prisma.sql`AND r."outletId" = ${outletFilter}` : Prisma.sql``}
+        AND NOT EXISTS (
+          SELECT 1
+          FROM "Transaction" refund
+          WHERE refund."merchantId" = r."merchantId"
+            AND refund."orderId" = r."orderId"
+            AND refund."type" = 'REFUND'
+            AND refund."canceledAt" IS NULL
+        )
+      GROUP BY r."customerId"
+    `);
+    const buyers = purchases
+      .map((row) => ({
+        customerId: row.customerId,
+        purchases: Number(row.purchases ?? 0),
+      }))
+      .filter((row) => Boolean(row.customerId) && row.purchases > 0);
+    const uniqueBuyers = buyers.length;
+    const repeatBuyers = buyers.filter((row) => row.purchases >= 2).length;
+    const histogramMap = new Map<number, number>();
+    for (const entry of buyers) {
+      histogramMap.set(
+        entry.purchases,
+        (histogramMap.get(entry.purchases) ?? 0) + 1,
+      );
     }
-    const histogram = Object.keys(histogramMap)
-      .map((k) => ({
-        purchases: parseInt(k, 10),
-        customers: histogramMap[parseInt(k, 10)],
+    const histogram = Array.from(histogramMap.entries())
+      .map(([count, customers]) => ({
+        purchases: count,
+        customers,
       }))
       .sort((a, b) => a.purchases - b.purchases);
     const newBuyers = await this.prisma.wallet.count({
@@ -561,51 +621,79 @@ export class AnalyticsService {
     merchantId: string,
     period: DashboardPeriod,
   ): Promise<ReferralSummary> {
-    const [activated, completed] = await Promise.all([
-      this.prisma.referral.count({
+    const [activations, completedCount] = await Promise.all([
+      this.prisma.referral.findMany({
         where: {
           program: { merchantId },
           activatedAt: { gte: period.from, lte: period.to },
         },
+        select: {
+          referrerId: true,
+          refereeId: true,
+          referrer: { select: { name: true } },
+        },
       }),
-      this.prisma.referral.findMany({
+      this.prisma.referral.count({
         where: {
           program: { merchantId },
           completedAt: { gte: period.from, lte: period.to },
           status: 'COMPLETED',
         },
-        select: {
-          referrerId: true,
-          purchaseAmount: true,
-          referrer: { select: { name: true } },
-        },
       }),
     ]);
-    const purchasedViaReferral = completed.length;
-    const referralRevenue = completed.reduce(
-      (s, r) => s + (r.purchaseAmount || 0),
-      0,
-    );
-    const map = new Map<string, { name: string; invited: number }>();
-    for (const r of completed) {
-      if (!map.has(r.referrerId))
-        map.set(r.referrerId, {
-          name: r.referrer?.name || 'Без имени',
+    const registeredViaReferral = activations.length;
+    const purchasedViaReferral = completedCount;
+
+    const leaderboard = new Map<string, { name: string; invited: number }>();
+    for (const entry of activations) {
+      if (!entry.referrerId) continue;
+      if (!leaderboard.has(entry.referrerId)) {
+        leaderboard.set(entry.referrerId, {
+          name: entry.referrer?.name || 'Без имени',
           invited: 0,
         });
-      map.get(r.referrerId)!.invited++;
+      }
+      leaderboard.get(entry.referrerId)!.invited += 1;
     }
-    const top = Array.from(map.entries())
+
+    const top = Array.from(leaderboard.entries())
       .map(([customerId, v]) => ({
         customerId,
         name: v.name,
         invited: v.invited,
       }))
-      .sort((a, b) => b.invited - a.invited)
+      .sort((a, b) => {
+        if (b.invited === a.invited) {
+          return a.customerId.localeCompare(b.customerId);
+        }
+        return b.invited - a.invited;
+      })
       .slice(0, 20)
       .map((x, i) => ({ rank: i + 1, ...x }));
+
+    let referralRevenue = 0;
+    const newCustomerIds = Array.from(
+      new Set(
+        activations
+          .map((item) => item.refereeId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    );
+    if (newCustomerIds.length > 0) {
+      const revenueAggregate = await this.prisma.receipt.aggregate({
+        where: {
+          merchantId,
+          customerId: { in: newCustomerIds },
+          createdAt: { gte: period.from, lte: period.to },
+          canceledAt: null,
+        },
+        _sum: { total: true },
+      });
+      referralRevenue = revenueAggregate._sum.total || 0;
+    }
+
     return {
-      registeredViaReferral: activated,
+      registeredViaReferral,
       purchasedViaReferral,
       referralRevenue,
       topReferrers: top,
@@ -788,7 +876,7 @@ export class AnalyticsService {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       return null;
     }
-    return value as Prisma.JsonObject;
+    return value;
   }
 
   private toNumber(value: unknown): number | undefined {
@@ -809,19 +897,16 @@ export class AnalyticsService {
     if (!root) return {};
     const raw = root.rfm;
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
-    const rfm = raw as Prisma.JsonObject;
+    const rfm = raw;
     const recencyDays = this.toNumber(rfm.recencyDays);
     const frequencyRaw = this.toJsonObject(rfm.frequency as Prisma.JsonValue);
     const monetaryRaw = this.toJsonObject(rfm.monetary as Prisma.JsonValue);
     return {
       recencyDays:
-        recencyDays && recencyDays > 0
-          ? Math.round(recencyDays)
-          : undefined,
+        recencyDays && recencyDays > 0 ? Math.round(recencyDays) : undefined,
       frequency: frequencyRaw
         ? {
-            mode:
-              frequencyRaw.mode === 'manual' ? 'manual' : 'auto',
+            mode: frequencyRaw.mode === 'manual' ? 'manual' : 'auto',
             threshold: this.toNumber(frequencyRaw.threshold),
           }
         : undefined,
@@ -914,6 +999,38 @@ export class AnalyticsService {
     };
   }
 
+  private deriveRecencyScore(
+    value: number,
+    quantiles: Quantiles,
+  ): number | null {
+    if (!Number.isFinite(value)) return null;
+    const { q20, q40, q60, q80 } = quantiles;
+    if (q20 == null || q40 == null || q60 == null || q80 == null) {
+      return null;
+    }
+    if (value <= q20) return 1;
+    if (value <= q40) return 2;
+    if (value <= q60) return 3;
+    if (value <= q80) return 4;
+    return 5;
+  }
+
+  private deriveDescendingScore(
+    value: number,
+    quantiles: Quantiles,
+  ): number | null {
+    if (!Number.isFinite(value)) return null;
+    const { q20, q40, q60, q80 } = quantiles;
+    if (q20 == null || q40 == null || q60 == null || q80 == null) {
+      return null;
+    }
+    if (value <= q20) return 5;
+    if (value <= q40) return 4;
+    if (value <= q60) return 3;
+    if (value <= q80) return 2;
+    return 1;
+  }
+
   private suggestUpperQuantile(
     values: number[],
     options: { minimum?: number } = {},
@@ -971,35 +1088,77 @@ export class AnalyticsService {
     const recencyBuckets = new Map<number, number[]>();
     const frequencyBuckets = new Map<number, number[]>();
     const monetaryBuckets = new Map<number, number[]>();
+    const recencyValues: number[] = [];
     const frequencyValues: number[] = [];
     const monetaryValues: number[] = [];
     const distribution = new Map<string, number>();
 
-    for (const row of stats) {
+    const prepared = stats.map((row) => {
       const daysSince = this.computeRecencyDays(
         row.lastOrderAt,
         recencyHorizon,
         now,
       );
-      const visits = Number(row.visits ?? 0);
-      const totalSpent = Number(row.totalSpent ?? 0);
+      const visits = Math.max(0, Number(row.visits ?? 0));
+      const totalSpent = Math.max(0, Number(row.totalSpent ?? 0));
 
       const rScore = this.normalizeScore(row.rfmR);
       const fScore = this.normalizeScore(row.rfmF);
       const mScore = this.normalizeScore(row.rfmM);
 
-      if (rScore) this.pushToBucket(recencyBuckets, rScore, daysSince);
-      if (fScore) this.pushToBucket(frequencyBuckets, fScore, visits);
-      if (mScore) this.pushToBucket(monetaryBuckets, mScore, totalSpent);
-
+      recencyValues.push(daysSince);
       frequencyValues.push(visits);
       monetaryValues.push(totalSpent);
 
+      return {
+        row,
+        daysSince,
+        visits,
+        totalSpent,
+        rScore,
+        fScore,
+        mScore,
+      };
+    });
+
+    const recencyQuantiles =
+      recencyValues.length > 0 ? this.computeQuantiles(recencyValues) : null;
+    const frequencyQuantiles =
+      frequencyValues.length > 0
+        ? this.computeQuantiles(frequencyValues)
+        : null;
+    const monetaryQuantiles =
+      monetaryValues.length > 0 ? this.computeQuantiles(monetaryValues) : null;
+
+    for (const entry of prepared) {
+      const resolvedRScore =
+        entry.rScore ??
+        (recencyQuantiles
+          ? this.deriveRecencyScore(entry.daysSince, recencyQuantiles)
+          : null);
+      const resolvedFScore =
+        entry.fScore ??
+        (frequencyQuantiles
+          ? this.deriveDescendingScore(entry.visits, frequencyQuantiles)
+          : null);
+      const resolvedMScore =
+        entry.mScore ??
+        (monetaryQuantiles
+          ? this.deriveDescendingScore(entry.totalSpent, monetaryQuantiles)
+          : null);
+
+      if (resolvedRScore)
+        this.pushToBucket(recencyBuckets, resolvedRScore, entry.daysSince);
+      if (resolvedFScore)
+        this.pushToBucket(frequencyBuckets, resolvedFScore, entry.visits);
+      if (resolvedMScore)
+        this.pushToBucket(monetaryBuckets, resolvedMScore, entry.totalSpent);
+
       const classKey =
-        typeof row.rfmClass === 'string' && row.rfmClass.trim()
-          ? row.rfmClass
-          : rScore && fScore && mScore
-            ? `${rScore}-${fScore}-${mScore}`
+        typeof entry.row.rfmClass === 'string' && entry.row.rfmClass.trim()
+          ? entry.row.rfmClass
+          : resolvedRScore && resolvedFScore && resolvedMScore
+            ? `${resolvedRScore}-${resolvedFScore}-${resolvedMScore}`
             : 'unknown';
       distribution.set(classKey, (distribution.get(classKey) ?? 0) + 1);
     }
@@ -1028,16 +1187,14 @@ export class AnalyticsService {
       frequencyMode,
       frequencyThreshold:
         frequencyMode === 'manual'
-          ? storedSettings.frequency?.threshold ??
-            suggestedFrequency ??
-            null
-          : suggestedFrequency ?? null,
+          ? (storedSettings.frequency?.threshold ?? suggestedFrequency ?? null)
+          : (suggestedFrequency ?? null),
       frequencySuggested: suggestedFrequency ?? null,
       moneyMode,
       moneyThreshold:
         moneyMode === 'manual'
-          ? storedSettings.monetary?.threshold ?? suggestedMoney ?? null
-          : suggestedMoney ?? null,
+          ? (storedSettings.monetary?.threshold ?? suggestedMoney ?? null)
+          : (suggestedMoney ?? null),
       moneySuggested: suggestedMoney ?? null,
     };
 
@@ -1058,10 +1215,7 @@ export class AnalyticsService {
     };
   }
 
-  async updateRfmSettings(
-    merchantId: string,
-    dto: UpdateRfmSettingsDto,
-  ) {
+  async updateRfmSettings(merchantId: string, dto: UpdateRfmSettingsDto) {
     const settingsRow = await this.prisma.merchantSettings.findUnique({
       where: { merchantId },
       select: { rulesJson: true },
@@ -1072,13 +1226,13 @@ export class AnalyticsService {
         mode: dto.frequencyMode,
         threshold:
           dto.frequencyMode === 'manual'
-            ? dto.frequencyThreshold ?? null
+            ? (dto.frequencyThreshold ?? null)
             : null,
       },
       monetary: {
         mode: dto.moneyMode,
         threshold:
-          dto.moneyMode === 'manual' ? dto.moneyThreshold ?? null : null,
+          dto.moneyMode === 'manual' ? (dto.moneyThreshold ?? null) : null,
       },
     });
     await this.prisma.merchantSettings.upsert({
@@ -2851,7 +3005,11 @@ export class AnalyticsService {
           GROUP BY sr."staffId", sr."outletId"
         `),
         this.prisma.$queryRaw<
-          Array<{ staffId: string; outletId: string | null; newCustomers: bigint | number | null }>
+          Array<{
+            staffId: string;
+            outletId: string | null;
+            newCustomers: bigint | number | null;
+          }>
         >(Prisma.sql`
           WITH base_receipts AS (
             SELECT
@@ -2975,7 +3133,7 @@ export class AnalyticsService {
       if (!rowsMap.has(key)) {
         const staff = staffMap.get(staffId);
         const outletLabel =
-          outletId != null ? outletMap.get(outletId) ?? outletId : null;
+          outletId != null ? (outletMap.get(outletId) ?? outletId) : null;
         rowsMap.set(key, {
           id: staffId,
           name: buildStaffLabel(staff, staffId),
@@ -3221,6 +3379,16 @@ export class AnalyticsService {
   ): Promise<TimeActivityMetrics> {
     const tz = await this.getTimezoneInfo(merchantId, timezone);
     const offsetInterval = Prisma.sql`${tz.utcOffsetMinutes} * interval '1 minute'`;
+    const refundExclusion = Prisma.sql`
+      AND NOT EXISTS (
+        SELECT 1
+        FROM "Transaction" refund
+        WHERE refund."merchantId" = r."merchantId"
+          AND refund."orderId" = r."orderId"
+          AND refund."type" = 'REFUND'
+          AND refund."canceledAt" IS NULL
+      )
+    `;
     const [dayRows, hourRows, cellRows] = await Promise.all([
       this.prisma.$queryRaw<
         Array<{
@@ -3231,15 +3399,16 @@ export class AnalyticsService {
         }>
       >(Prisma.sql`
         SELECT
-          EXTRACT(ISODOW FROM ("createdAt" + ${offsetInterval}))::int AS dow,
+          EXTRACT(ISODOW FROM (r."createdAt" + ${offsetInterval}))::int AS dow,
           COUNT(*)::int AS orders,
-          COUNT(DISTINCT "customerId")::int AS customers,
-          COALESCE(SUM("total"), 0)::int AS revenue
-        FROM "Receipt"
-        WHERE "merchantId" = ${merchantId}
-          AND "createdAt" BETWEEN ${period.from} AND ${period.to}
-          AND "canceledAt" IS NULL
-          AND "total" > 0
+          COUNT(DISTINCT r."customerId")::int AS customers,
+          COALESCE(SUM(r."total"), 0)::int AS revenue
+        FROM "Receipt" r
+        WHERE r."merchantId" = ${merchantId}
+          AND r."createdAt" BETWEEN ${period.from} AND ${period.to}
+          AND r."canceledAt" IS NULL
+          AND r."total" > 0
+          ${refundExclusion}
         GROUP BY 1
       `),
       this.prisma.$queryRaw<
@@ -3251,15 +3420,16 @@ export class AnalyticsService {
         }>
       >(Prisma.sql`
         SELECT
-          EXTRACT(HOUR FROM ("createdAt" + ${offsetInterval}))::int AS hour,
+          EXTRACT(HOUR FROM (r."createdAt" + ${offsetInterval}))::int AS hour,
           COUNT(*)::int AS orders,
-          COUNT(DISTINCT "customerId")::int AS customers,
-          COALESCE(SUM("total"), 0)::int AS revenue
-        FROM "Receipt"
-        WHERE "merchantId" = ${merchantId}
-          AND "createdAt" BETWEEN ${period.from} AND ${period.to}
-          AND "canceledAt" IS NULL
-          AND "total" > 0
+          COUNT(DISTINCT r."customerId")::int AS customers,
+          COALESCE(SUM(r."total"), 0)::int AS revenue
+        FROM "Receipt" r
+        WHERE r."merchantId" = ${merchantId}
+          AND r."createdAt" BETWEEN ${period.from} AND ${period.to}
+          AND r."canceledAt" IS NULL
+          AND r."total" > 0
+          ${refundExclusion}
         GROUP BY 1
       `),
       this.prisma.$queryRaw<
@@ -3272,16 +3442,17 @@ export class AnalyticsService {
         }>
       >(Prisma.sql`
         SELECT
-          EXTRACT(ISODOW FROM ("createdAt" + ${offsetInterval}))::int AS dow,
-          EXTRACT(HOUR FROM ("createdAt" + ${offsetInterval}))::int AS hour,
+          EXTRACT(ISODOW FROM (r."createdAt" + ${offsetInterval}))::int AS dow,
+          EXTRACT(HOUR FROM (r."createdAt" + ${offsetInterval}))::int AS hour,
           COUNT(*)::int AS orders,
-          COUNT(DISTINCT "customerId")::int AS customers,
-          COALESCE(SUM("total"), 0)::int AS revenue
-        FROM "Receipt"
-        WHERE "merchantId" = ${merchantId}
-          AND "createdAt" BETWEEN ${period.from} AND ${period.to}
-          AND "canceledAt" IS NULL
-          AND "total" > 0
+          COUNT(DISTINCT r."customerId")::int AS customers,
+          COALESCE(SUM(r."total"), 0)::int AS revenue
+        FROM "Receipt" r
+        WHERE r."merchantId" = ${merchantId}
+          AND r."createdAt" BETWEEN ${period.from} AND ${period.to}
+          AND r."canceledAt" IS NULL
+          AND r."total" > 0
+          ${refundExclusion}
         GROUP BY 1, 2
       `),
     ]);

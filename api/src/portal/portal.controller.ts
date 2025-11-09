@@ -180,7 +180,7 @@ export class PortalController {
 
     const now = new Date();
     const localNow = this.shiftToTimezone(now, offset);
-    let fromLocal = new Date(localNow);
+    const fromLocal = new Date(localNow);
     let toLocal = new Date(localNow);
 
     switch (periodType) {

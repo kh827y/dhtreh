@@ -1,10 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsIn,
-  IsInt,
-  Min,
-  ValidateIf,
-} from 'class-validator';
+import { IsIn, IsInt, Min, ValidateIf } from 'class-validator';
 
 export class UpdateRfmSettingsDto {
   @ApiProperty({
