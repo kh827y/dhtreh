@@ -471,7 +471,76 @@ export class LoyaltyService {
     if (!receipt) return;
 
     await this.prisma.$transaction(async (tx) => {
-      const existingReward = await tx.transaction.findFirst({
+      const rollbacks = await tx.transaction.findMany({
+        where: {
+          merchantId,
+          type: TxnType.REFERRAL,
+          canceledAt: null,
+          AND: [
+            {
+              metadata: {
+                path: ['source'],
+                equals: 'REFERRAL_ROLLBACK',
+              },
+            },
+            {
+              metadata: {
+                path: ['receiptId'],
+                equals: receipt.id,
+              },
+            },
+          ],
+        },
+      });
+
+      for (const rollback of rollbacks) {
+        const restoreAmount = Math.abs(Number(rollback.amount ?? 0));
+        if (!restoreAmount) continue;
+        const wallet = await tx.wallet.findFirst({
+          where: {
+            merchantId,
+            customerId: rollback.customerId,
+            type: WalletType.POINTS,
+          },
+        });
+        if (!wallet) continue;
+        const freshWallet = await tx.wallet.findUnique({
+          where: { id: wallet.id },
+        });
+        await tx.wallet.update({
+          where: { id: wallet.id },
+          data: { balance: (freshWallet?.balance ?? 0) + restoreAmount },
+        });
+        await tx.transaction.update({
+          where: { id: rollback.id },
+          data: { canceledAt: new Date() },
+        });
+        if (process.env.LEDGER_FEATURE === '1') {
+          await tx.ledgerEntry.create({
+            data: {
+              merchantId,
+              customerId: rollback.customerId,
+              debit: LedgerAccount.MERCHANT_LIABILITY,
+              credit: LedgerAccount.CUSTOMER_BALANCE,
+              amount: restoreAmount,
+              orderId,
+              outletId: rollback.outletId ?? receipt.outletId ?? null,
+              staffId: rollback.staffId ?? receipt.staffId ?? null,
+              meta: { mode: 'REFERRAL', kind: 'rollback_cancel' },
+            },
+          });
+          this.metrics.inc('loyalty_ledger_entries_total', {
+            type: 'referral_rollback_cancel',
+          });
+          this.metrics.inc(
+            'loyalty_ledger_amount_total',
+            { type: 'referral_rollback_cancel' },
+            restoreAmount,
+          );
+        }
+      }
+
+      const activeReward = await tx.transaction.findFirst({
         where: {
           merchantId,
           type: TxnType.REFERRAL,
@@ -479,7 +548,7 @@ export class LoyaltyService {
           canceledAt: null,
         },
       });
-      if (existingReward) return;
+      if (activeReward) return;
 
       await this.applyReferralRewards(tx, {
         merchantId,
