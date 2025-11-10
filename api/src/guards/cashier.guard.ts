@@ -2,10 +2,87 @@ import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import * as crypto from 'crypto';
 import { verifyBridgeSignature } from '../loyalty/bridge.util';
+import {
+  readTelegramInitDataFromHeader,
+  resolveTelegramAuthContext,
+  type TelegramAuthContext,
+} from '../loyalty/telegram-auth.helper';
 
 @Injectable()
 export class CashierGuard implements CanActivate {
   constructor(private prisma: PrismaService) {}
+
+  private readonly telegramProtectedPaths: Array<
+    string | { prefix: string }
+  > = [
+    '/loyalty/profile',
+    '/loyalty/profile/phone-status',
+    '/loyalty/consent',
+    '/loyalty/promotions',
+    '/loyalty/promotions/claim',
+    '/loyalty/promocodes/apply',
+    '/loyalty/reviews',
+    '/loyalty/qr',
+    '/loyalty/transactions',
+    { prefix: '/loyalty/balance/' },
+    { prefix: '/loyalty/outlets/' },
+    { prefix: '/loyalty/staff/' },
+  ];
+
+  private requiresTelegramCustomer(path: string): boolean {
+    return this.telegramProtectedPaths.some((entry) => {
+      if (typeof entry === 'string') {
+        return path === entry;
+      }
+      return path.startsWith(entry.prefix);
+    });
+  }
+
+  private extractMerchantCustomerId(req: any): string | null {
+    const sources = [
+      req?.body?.merchantCustomerId,
+      req?.params?.merchantCustomerId,
+      req?.query?.merchantCustomerId,
+      req?.body?.customerId,
+      req?.params?.customerId,
+    ];
+    for (const source of sources) {
+      if (typeof source === 'string' && source.trim()) {
+        return source.trim();
+      }
+    }
+    return null;
+  }
+
+  private async ensureTelegramContextForRequest(
+    req: any,
+    merchantIdHint?: string,
+    tokenHint?: string | null,
+  ): Promise<TelegramAuthContext | null> {
+    try {
+      const initData = readTelegramInitDataFromHeader(req);
+      if (!initData) return null;
+      const merchantId =
+        merchantIdHint ||
+        req?.body?.merchantId ||
+        req?.query?.merchantId ||
+        req?.params?.merchantId ||
+        null;
+      if (!merchantId) return null;
+      const ctx = await resolveTelegramAuthContext(
+        this.prisma,
+        merchantId,
+        initData,
+        tokenHint,
+      );
+      if (ctx) {
+        req.teleauth = ctx;
+      }
+      return ctx;
+    } catch {
+      return null;
+    }
+  }
 
   private normalizePath(path: string): string {
     if (!path) return '';
@@ -335,24 +412,13 @@ export class CashierGuard implements CanActivate {
     const key = (req.headers['x-staff-key'] as string | undefined) || '';
     // whitelist публичных GET маршрутов (всегда разрешены): balance, settings, transactions, публичные списки
     const isPublicGet =
-      method === 'GET' &&
-      (path.startsWith('/loyalty/balance/') ||
-        path.startsWith('/loyalty/settings/') ||
-        path === '/loyalty/transactions' ||
-        path.startsWith('/loyalty/outlets/') ||
-        path.startsWith('/loyalty/staff/') ||
-        path.startsWith('/loyalty/promotions'));
+      method === 'GET' && path.startsWith('/loyalty/settings/');
     const isAlwaysPublic =
       path === '/loyalty/teleauth' ||
-      path === '/loyalty/profile' ||
-      path === '/loyalty/consent' ||
       path === '/loyalty/cashier/login' ||
       path === '/loyalty/cashier/staff-token' ||
       path === '/loyalty/cashier/staff-access' ||
-      path === '/loyalty/cashier/session' ||
-      path === '/loyalty/promocodes/apply' ||
-      path === '/loyalty/reviews' ||
-      path === '/loyalty/promotions/claim';
+      path === '/loyalty/cashier/session';
     if (isPublicGet || isAlwaysPublic) return true;
 
     let merchantIdFromRequest: string | undefined =
@@ -392,6 +458,17 @@ export class CashierGuard implements CanActivate {
       } catch {}
     }
 
+    const teleauthContext = await this.ensureTelegramContextForRequest(
+      req,
+      merchantIdFromRequest,
+      merchantSettings?.telegramBotToken ?? null,
+    );
+    if (!merchantIdFromRequest && teleauthContext) {
+      merchantIdFromRequest = teleauthContext.merchantId;
+    }
+    const requiresTelegramCustomer =
+      this.requiresTelegramCustomer(normalizedPath);
+
     if (!key) {
       if (sessionContext) {
         const bodyIsObject = body && typeof body === 'object';
@@ -428,8 +505,21 @@ export class CashierGuard implements CanActivate {
         req.cashierSession = sessionContext;
         return true;
       }
-      if (!requireStaffKey) return true;
-      if (req?.teleauth?.customerId) return true;
+      if (!requireStaffKey) {
+        if (requiresTelegramCustomer && !teleauthContext) return false;
+        if (requiresTelegramCustomer && teleauthContext) {
+          const requestedMerchantCustomerId =
+            this.extractMerchantCustomerId(req);
+          if (
+            requestedMerchantCustomerId &&
+            requestedMerchantCustomerId !== teleauthContext.merchantCustomerId
+          ) {
+            return false;
+          }
+        }
+        return true;
+      }
+      if (teleauthContext) return true;
       if (
         normalizedPath === '/loyalty/qr' &&
         typeof body?.merchantId === 'string' &&

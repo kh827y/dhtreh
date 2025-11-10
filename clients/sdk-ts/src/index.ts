@@ -1,4 +1,10 @@
 export type LoyaltyApiOptions = { baseUrl: string; fetch?: typeof fetch };
+export type TeleauthResponse = {
+  ok: boolean;
+  merchantCustomerId: string;
+  hasPhone: boolean;
+  onboarded: boolean;
+};
 // For Node HMAC in signBridgeSignature without requiring @types/node
 declare const require: any;
 
@@ -63,7 +69,7 @@ export class LoyaltyApi {
   }
 
   teleauth(merchantId: string, initData: string) {
-    return this.http('/loyalty/teleauth', { method: 'POST', body: JSON.stringify({ merchantId, initData }) });
+    return this.http<TeleauthResponse>('/loyalty/teleauth', { method: 'POST', body: JSON.stringify({ merchantId, initData }) });
   }
 
   mintQr(customerId: string, merchantId?: string, ttlSec?: number, initData?: string) {
@@ -93,4 +99,3 @@ export class LoyaltyApi {
     },
   } as const;
 }
-

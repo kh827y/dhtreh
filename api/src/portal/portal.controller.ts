@@ -611,16 +611,24 @@ export class PortalController {
     @Query('limit') limitStr?: string,
     @Query('offset') offsetStr?: string,
     @Query('segmentId') segmentId?: string,
+    @Query('registeredOnly') registeredOnlyStr?: string,
   ) {
     const limit = limitStr
       ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200)
       : 50;
     const offset = offsetStr ? Math.max(parseInt(offsetStr, 10) || 0, 0) : 0;
+    let registeredOnly: boolean | undefined;
+    if (typeof registeredOnlyStr === 'string') {
+      registeredOnly = !['0', 'false', 'no'].includes(
+        registeredOnlyStr.trim().toLowerCase(),
+      );
+    }
     return this.customersService.list(this.getMerchantId(req), {
       search,
       limit,
       offset,
       segmentId,
+      registeredOnly,
     });
   }
 

@@ -61,6 +61,7 @@ import { validateTelegramInitData } from './telegram.util';
 import { PromosService } from '../promos/promos.service';
 import { PromoCodesService } from '../promocodes/promocodes.service';
 import { ReviewService } from '../reviews/review.service';
+import { LevelsService } from '../levels/levels.service';
 import type { MerchantSettings, Customer } from '@prisma/client';
 import {
   LedgerAccount,
@@ -99,6 +100,7 @@ export class LoyaltyController {
     private readonly promoCodes: PromoCodesService,
     private readonly merchants: MerchantsService,
     private readonly reviews: ReviewService,
+    private readonly levelsService: LevelsService,
   ) {}
 
   private async resolveOutlet(merchantId?: string, outletId?: string | null) {
@@ -359,26 +361,38 @@ export class LoyaltyController {
     return created as MerchantCustomerWithCustomer;
   }
 
-  // ===== Promotions (miniapp public) =====
-  @Get('promotions')
-  @Throttle({ default: { limit: 60, ttl: 60_000 } })
-  async listPromotions(
-    @Query('merchantId') merchantId?: string,
-    @Query('merchantCustomerId') merchantCustomerId?: string,
-  ) {
-    const mid = typeof merchantId === 'string' ? merchantId.trim() : '';
-    const mcid =
-      typeof merchantCustomerId === 'string' ? merchantCustomerId.trim() : '';
-    if (!mid) throw new BadRequestException('merchantId required');
-    if (!mcid) throw new BadRequestException('merchantCustomerId required');
+  private toProfileDto(
+    customer: Customer,
+    merchantCustomer: MerchantCustomerWithCustomer,
+  ): CustomerProfileDto {
+    const gender =
+      customer.gender === 'male' || customer.gender === 'female'
+        ? customer.gender
+        : null;
+    const birthDate = customer.birthday
+      ? customer.birthday.toISOString().slice(0, 10)
+      : null;
+    return {
+      name: customer.name ?? merchantCustomer.name ?? null,
+      gender,
+      birthDate,
+    } satisfies CustomerProfileDto;
+  }
 
-    const merchantCustomer = await this.ensureCustomerForMerchant(mid, mcid);
+  private async listPromotionsForCustomer(
+    merchantId: string,
+    merchantCustomerId: string,
+  ) {
+    const merchantCustomer = await this.ensureCustomerForMerchant(
+      merchantId,
+      merchantCustomerId,
+    );
     const customerId = merchantCustomer.customerId;
 
     const now = new Date();
     const promos = await this.prisma.loyaltyPromotion.findMany({
       where: {
-        merchantId: mid,
+        merchantId,
         status: { in: ['ACTIVE', 'SCHEDULED'] as any },
         AND: [
           {
@@ -406,7 +420,7 @@ export class LoyaltyController {
     });
     const existing = await this.prisma.promotionParticipant.findMany({
       where: {
-        merchantId: mid,
+        merchantId,
         customerId,
         promotionId: { in: promos.map((p) => p.id) },
       },
@@ -429,6 +443,96 @@ export class LoyaltyController {
         !claimedSet.has(p.id),
       claimed: claimedSet.has(p.id),
     }));
+  }
+
+  private computeProfileFlags(data: {
+    name?: string | null;
+    phone?: string | null;
+    gender?: string | null;
+    birthday?: Date | null;
+  }) {
+    const hasPhone =
+      typeof data.phone === 'string' && data.phone.trim().length > 0;
+    const hasName =
+      typeof data.name === 'string' && data.name.trim().length > 0;
+    const hasBirthDate =
+      data.birthday instanceof Date && !Number.isNaN(data.birthday.getTime());
+    const genderOk = data.gender === 'male' || data.gender === 'female';
+    return {
+      hasPhone,
+      onboarded: hasPhone && hasName && hasBirthDate && genderOk,
+    };
+  }
+
+  private async fetchMerchantCustomerProfileFlags(
+    merchantCustomerId: string,
+  ): Promise<{ hasPhone: boolean; onboarded: boolean }> {
+    try {
+      const mc = await this.prisma.merchantCustomer.findUnique({
+        where: { id: merchantCustomerId },
+        select: {
+          phone: true,
+          name: true,
+          customer: {
+            select: {
+              name: true,
+              phone: true,
+              gender: true,
+              birthday: true,
+            },
+          },
+        },
+      });
+      if (!mc) return { hasPhone: false, onboarded: false };
+      return this.computeProfileFlags({
+        name: mc.customer?.name ?? mc.name,
+        phone: mc.phone ?? mc.customer?.phone,
+        gender: mc.customer?.gender ?? null,
+        birthday: mc.customer?.birthday ?? null,
+      });
+    } catch {
+      return { hasPhone: false, onboarded: false };
+    }
+  }
+
+  private async fetchCustomerProfileFlags(
+    customerId: string,
+  ): Promise<{ hasPhone: boolean; onboarded: boolean }> {
+    try {
+      const customer = await this.prisma.customer.findUnique({
+        where: { id: customerId },
+        select: {
+          name: true,
+          phone: true,
+          gender: true,
+          birthday: true,
+        },
+      });
+      if (!customer) return { hasPhone: false, onboarded: false };
+      return this.computeProfileFlags({
+        name: customer.name ?? null,
+        phone: customer.phone ?? null,
+        gender: customer.gender ?? null,
+        birthday: customer.birthday ?? null,
+      });
+    } catch {
+      return { hasPhone: false, onboarded: false };
+    }
+  }
+
+  // ===== Promotions (miniapp public) =====
+  @Get('promotions')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  async listPromotions(
+    @Query('merchantId') merchantId?: string,
+    @Query('merchantCustomerId') merchantCustomerId?: string,
+  ) {
+    const mid = typeof merchantId === 'string' ? merchantId.trim() : '';
+    const mcid =
+      typeof merchantCustomerId === 'string' ? merchantCustomerId.trim() : '';
+    if (!mid) throw new BadRequestException('merchantId required');
+    if (!mcid) throw new BadRequestException('merchantCustomerId required');
+    return this.listPromotionsForCustomer(mid, mcid);
   }
 
   @Post('promotions/claim')
@@ -2269,22 +2373,12 @@ export class LoyaltyController {
     // По tgId формируем учётку клиента. Разграничение по мерчанту через MerchantCustomer/CustomerTelegram.
     const tgId = String(r.userId);
     if (merchantId) {
-      console.log(
-        'teleauth calling ensureMerchantCustomerByTelegram with merchantId:',
-        merchantId,
-        'tgId:',
-        tgId,
-      );
       const result = await this.ensureMerchantCustomerByTelegram(
         merchantId,
         tgId,
         initData,
       );
       let merchantCustomerId = result?.merchantCustomerId;
-      console.log(
-        'teleauth merchantCustomerId (telegram ensure):',
-        merchantCustomerId,
-      );
       if (!merchantCustomerId) {
         try {
           const existingCustomer = await this.prisma.customer.findFirst({
@@ -2299,17 +2393,16 @@ export class LoyaltyController {
               existingCustomer.id,
             );
             merchantCustomerId = mc.id;
-            console.log(
-              'teleauth merchantCustomerId (fallback by customerId):',
-              merchantCustomerId,
-            );
           }
         } catch {}
       }
       if (!merchantCustomerId) {
         throw new BadRequestException('Failed to create merchant customer');
       }
-      return { ok: true, merchantCustomerId };
+      const flags = await this.fetchMerchantCustomerProfileFlags(
+        merchantCustomerId,
+      );
+      return { ok: true, merchantCustomerId, ...flags };
     }
 
     // Back-compat: если merchantId не указан — ведём себя как раньше (глобальная учётка по tgId)
@@ -2317,7 +2410,10 @@ export class LoyaltyController {
     const customer = await this.prisma.customer
       .findFirst({ where: { tgId } })
       .catch(() => null);
-    if (customer) return { ok: true, merchantCustomerId: customer.id };
+    if (customer) {
+      const flags = await this.fetchCustomerProfileFlags(customer.id);
+      return { ok: true, merchantCustomerId: customer.id, ...flags };
+    }
     const legacy = await this.prisma.customer
       .findUnique({ where: { id: legacyId } })
       .catch(() => null);
@@ -2328,10 +2424,17 @@ export class LoyaltyController {
           data: { tgId },
         });
       } catch {}
-      return { ok: true, merchantCustomerId: legacy.id };
+      const flags = await this.fetchCustomerProfileFlags(legacy.id);
+      return { ok: true, merchantCustomerId: legacy.id, ...flags };
     }
     const created = await this.prisma.customer.create({ data: { tgId } });
-    return { ok: true, merchantCustomerId: created.id };
+    const flags = this.computeProfileFlags({
+      name: created.name ?? null,
+      phone: created.phone ?? null,
+      gender: created.gender ?? null,
+      birthday: created.birthday ?? null,
+    });
+    return { ok: true, merchantCustomerId: created.id, ...flags };
   }
 
   @Get('profile')
@@ -2345,18 +2448,7 @@ export class LoyaltyController {
       merchantId,
       merchantCustomerId,
     );
-    const gender =
-      customer.gender === 'male' || customer.gender === 'female'
-        ? customer.gender
-        : null;
-    const birthDate = customer.birthday
-      ? customer.birthday.toISOString().slice(0, 10)
-      : null;
-    return {
-      name: customer.name ?? merchantCustomer.name ?? null,
-      gender,
-      birthDate,
-    } satisfies CustomerProfileDto;
+    return this.toProfileDto(customer, merchantCustomer);
   }
 
   @Get('profile/phone-status')
@@ -2554,6 +2646,51 @@ export class LoyaltyController {
       where: { merchantId_customerId: { merchantId, customerId: customer.id } },
     });
     return { granted: !!c, consentAt: c?.consentAt?.toISOString() };
+  }
+
+  @Get('bootstrap')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  async bootstrap(
+    @Query('merchantId') merchantId: string,
+    @Query('merchantCustomerId') merchantCustomerId: string,
+    @Query('transactionsLimit') txLimitStr?: string,
+  ) {
+    const limit = txLimitStr
+      ? Math.min(Math.max(parseInt(txLimitStr, 10) || 20, 1), 100)
+      : 20;
+    const { customer, merchantCustomer } = await this.resolveMerchantContext(
+      merchantId,
+      merchantCustomerId,
+    );
+    const consent = await this.prisma.consent.findUnique({
+      where: {
+        merchantId_customerId: {
+          merchantId,
+          customerId: customer.id,
+        },
+      },
+    });
+    const [balanceResp, levelsResp, transactionsResp, promotions] =
+      await Promise.all([
+        this.service.balance(merchantId, merchantCustomerId),
+        this.levelsService.getLevel(merchantId, merchantCustomerId),
+        this.service.transactions(
+          merchantId,
+          merchantCustomerId,
+          limit,
+          undefined,
+          {},
+        ),
+        this.listPromotionsForCustomer(merchantId, merchantCustomerId),
+      ]);
+    return {
+      profile: this.toProfileDto(customer, merchantCustomer),
+      consent: { granted: !!consent, consentAt: consent?.consentAt?.toISOString() ?? null },
+      balance: balanceResp,
+      levels: levelsResp,
+      transactions: transactionsResp,
+      promotions,
+    };
   }
 
   @Post('consent')

@@ -7,6 +7,7 @@ import QrCanvas from "../components/QrCanvas";
 import Spinner from "../components/Spinner";
 import {
   balance,
+  bootstrap,
   consentGet,
   consentSet,
   levels,
@@ -23,6 +24,7 @@ import {
   profileSave,
   teleauth,
   type PromotionItem,
+  type CustomerProfile,
 } from "../lib/api";
 import Toast from "../components/Toast";
 import { useMiniappAuthContext } from "../lib/MiniappAuthContext";
@@ -290,6 +292,10 @@ export default function Page() {
   const merchantId = auth.merchantId;
   const setMerchantId = auth.setMerchantId;
   const setAuthMerchantCustomerId = auth.setMerchantCustomerId;
+  const teleOnboarded = auth.teleOnboarded;
+  const setAuthTeleOnboarded = auth.setTeleOnboarded;
+  const teleHasPhone = auth.teleHasPhone;
+  const setAuthTeleHasPhone = auth.setTeleHasPhone;
   const initData = auth.initData;
   const [merchantCustomerId, setMerchantCustomerId] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("");
@@ -310,19 +316,20 @@ export default function Page() {
   const [phoneShareStage, setPhoneShareStage] = useState<"idle" | "confirm">("idle");
   const [phoneShareLoading, setPhoneShareLoading] = useState<boolean>(false);
   const [phoneShareError, setPhoneShareError] = useState<string | null>(null);
-  const [profileForm, setProfileForm] = useState<{
-    name: string;
-    gender: "male" | "female" | "";
-    birthDate: string;
-  }>({
-    name: "",
-    gender: "",
-    birthDate: "",
-  });
-  const [profileCompleted, setProfileCompleted] = useState<boolean>(true);
-  const [profileTouched, setProfileTouched] = useState<boolean>(false);
-  const [profileSaving, setProfileSaving] = useState<boolean>(false);
-  const pendingProfileSync = useRef<boolean>(false);
+const [profileForm, setProfileForm] = useState<{
+  name: string;
+  gender: "male" | "female" | "";
+  birthDate: string;
+}>({
+  name: "",
+  gender: "",
+  birthDate: "",
+});
+const [profileCompleted, setProfileCompleted] = useState<boolean>(true);
+const [profileTouched, setProfileTouched] = useState<boolean>(false);
+const [profileSaving, setProfileSaving] = useState<boolean>(false);
+const pendingProfileSync = useRef<boolean>(false);
+const profilePrefetchedRef = useRef<boolean>(false);
   const [birthYear, setBirthYear] = useState<string>("");
   const [birthMonth, setBirthMonth] = useState<string>("");
   const [birthDay, setBirthDay] = useState<string>("");
@@ -332,8 +339,8 @@ export default function Page() {
     for (let y = currentYear; y >= 1900; y--) ylist.push(String(y));
     return ylist;
   }, [currentYear]);
-  const months = useMemo(
-    () => [
+const months = useMemo(
+  () => [
       { value: "01", label: "Январь" },
       { value: "02", label: "Февраль" },
       { value: "03", label: "Март" },
@@ -356,10 +363,35 @@ export default function Page() {
     if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) return 31;
     return new Date(y, m, 0).getDate();
   }, [birthYear, birthMonth]);
-  const days = useMemo(
-    () => Array.from({ length: daysInSelectedMonth }, (_, i) => String(i + 1).padStart(2, "0")),
-    [daysInSelectedMonth],
-  );
+const days = useMemo(
+  () => Array.from({ length: daysInSelectedMonth }, (_, i) => String(i + 1).padStart(2, "0")),
+  [daysInSelectedMonth],
+);
+
+const applyServerProfile = useCallback(
+  (profile: CustomerProfile | null) => {
+    const name = profile?.name || "";
+    const gender = profile?.gender === "male" || profile?.gender === "female" ? profile.gender : "";
+    const birthDate = typeof profile?.birthDate === "string" ? profile.birthDate : "";
+    setProfileForm({ name, gender, birthDate });
+    const valid = Boolean(name && gender && birthDate);
+    setProfileCompleted(valid);
+    if (merchantId) {
+      const key = profileStorageKey(merchantId);
+      const pendingKey = profilePendingKey(merchantId);
+      try {
+        localStorage.setItem(key, JSON.stringify({ name, gender, birthDate }));
+      } catch {}
+      try {
+        localStorage.removeItem(pendingKey);
+      } catch {}
+    }
+  },
+  [merchantId],
+);
+
+
+
   const applyBirthDate = useCallback(
     (y: string, m: string, d: string) => {
       if (y && m && d) {
@@ -451,6 +483,11 @@ export default function Page() {
     setLocalProfileResolved(true);
   }, [merchantId]);
 
+  useEffect(() => {
+    if (teleOnboarded === null) return;
+    setProfileCompleted(teleOnboarded);
+  }, [teleOnboarded]);
+
   // Синхронизация локальных селектов даты с profileForm.birthDate
   useEffect(() => {
     const b = profileForm.birthDate;
@@ -519,24 +556,22 @@ export default function Page() {
   // Подтянуть профиль с сервера (кросс-девайс) при наличии авторизации
   useEffect(() => {
     if (!merchantId || !merchantCustomerId) return;
+    if (teleOnboarded === false) {
+      setProfileResolved(true);
+      return;
+    }
+    if (profilePrefetchedRef.current) {
+      profilePrefetchedRef.current = false;
+      setProfileResolved(true);
+      return;
+    }
     let cancelled = false;
-    const key = profileStorageKey(merchantId);
-    const pendingKey = profilePendingKey(merchantId);
     setProfileResolved(false);
     (async () => {
       try {
         const p = await profileGet(merchantId, merchantCustomerId);
         if (cancelled) return;
-        const name = p?.name || "";
-        const gender = (p?.gender === "male" || p?.gender === "female") ? p.gender : "";
-        const birthDate = p?.birthDate || "";
-        const valid = Boolean(name && (gender === "male" || gender === "female") && birthDate);
-        setProfileForm({ name, gender, birthDate });
-        setProfileCompleted(valid);
-        try {
-          localStorage.setItem(key, JSON.stringify({ name, gender, birthDate }));
-          localStorage.removeItem(pendingKey);
-        } catch {}
+        applyServerProfile(p);
       } catch {
         // сервер мог не иметь профиля — оставим локальные данные/валидацию
       } finally {
@@ -544,10 +579,11 @@ export default function Page() {
       }
     })();
     return () => { cancelled = true; };
-  }, [merchantId, merchantCustomerId]);
+  }, [merchantId, merchantCustomerId, teleOnboarded, applyServerProfile]);
 
   useEffect(() => {
     if (!merchantId || !merchantCustomerId) return;
+    if (teleHasPhone === false) return;
     if (pendingProfileSync.current) return;
     const key = profileStorageKey(merchantId);
     const pendingKey = profilePendingKey(merchantId);
@@ -581,13 +617,14 @@ export default function Page() {
         } catch {}
         setProfileForm({ name, gender, birthDate });
         setProfileCompleted(true);
+        setAuthTeleOnboarded(true);
       } catch (error) {
         setToast({ msg: `Не удалось синхронизировать профиль: ${resolveErrorMessage(error)}`, type: "error" });
       } finally {
         pendingProfileSync.current = false;
       }
     })();
-  }, [merchantId, merchantCustomerId, setToast]);
+  }, [merchantId, merchantCustomerId, teleHasPhone, setToast, setAuthTeleOnboarded]);
 
   useEffect(() => {
     setLoading(auth.loading);
@@ -881,18 +918,65 @@ export default function Page() {
     }
   }, [merchantCustomerId, merchantId, retry]);
 
+
   const loadLevelCatalog = useCallback(async () => {
+    if (!merchantId) return;
     try {
       const cfg = await retry(() => mechanicsLevels(merchantId));
       if (Array.isArray(cfg?.levels)) {
         setLevelCatalog(
-          cfg.levels.filter((lvl: MechanicsLevel) => lvl && typeof lvl === "object") as MechanicsLevel[]
+          cfg.levels.filter((lvl: MechanicsLevel) => lvl && typeof lvl === "object") as MechanicsLevel[],
         );
       }
     } catch {
       setLevelCatalog([]);
     }
   }, [merchantId, retry]);
+
+  const loadBootstrap = useCallback(async () => {
+    if (!merchantId || !merchantCustomerId) return false;
+    try {
+      const data = await bootstrap(merchantId, merchantCustomerId, { transactionsLimit: 20 });
+      if (data.profile) {
+        applyServerProfile(data.profile);
+        profilePrefetchedRef.current = true;
+        setProfileResolved(true);
+      } else {
+        setProfileResolved(true);
+      }
+      if (data.consent) {
+        setConsent(Boolean(data.consent.granted));
+      }
+      if (data.balance && typeof data.balance.balance === "number") {
+        setBal(data.balance.balance);
+      }
+      setBalanceResolved(true);
+      if (data.levels) {
+        setLevelInfo(data.levels);
+      }
+      setLevelsResolved(true);
+      if (data.transactions) {
+        setTx(mapTransactions(Array.isArray(data.transactions.items) ? data.transactions.items : []));
+        setNextBefore(data.transactions.nextBefore || null);
+      } else {
+        setTx([]);
+        setNextBefore(null);
+      }
+      if (Array.isArray(data.promotions)) {
+        setPromotions(data.promotions);
+      } else {
+        setPromotions([]);
+      }
+      setPromotionsResolved(true);
+      setPromotionsLoading(false);
+      setStatus("Данные обновлены");
+      return true;
+    } catch (error) {
+      const message = resolveErrorMessage(error);
+      setToast({ msg: `Не удалось загрузить данные: ${message}`, type: "error" });
+      return false;
+    }
+  }, [merchantId, merchantCustomerId, applyServerProfile, mapTransactions, setToast]);
 
   const loadPromotions = useCallback(async () => {
     if (!merchantId || !merchantCustomerId) {
@@ -911,6 +995,7 @@ export default function Page() {
       setPromotionsResolved(true);
     }
   }, [merchantId, merchantCustomerId]);
+
 
   const refreshHistory = useCallback(() => {
     if (!merchantCustomerId) return;
@@ -991,19 +1076,29 @@ export default function Page() {
     }
   }, [merchantCustomerId, merchantId, referralReloadTick]);
 
+  const authLoading = auth.loading;
   useEffect(() => {
+    if (authLoading) return;
     loadLevelCatalog();
-  }, [loadLevelCatalog]);
+  }, [authLoading, loadLevelCatalog]);
 
   useEffect(() => {
-    if (merchantCustomerId) {
-      syncConsent();
-      loadBalance();
-      loadTx();
-      loadLevels();
-      loadPromotions();
-    }
-  }, [merchantCustomerId, syncConsent, loadBalance, loadTx, loadLevels, loadPromotions]);
+    if (!merchantCustomerId) return;
+    let cancelled = false;
+    (async () => {
+      const ok = await loadBootstrap();
+      if (!ok && !cancelled) {
+        syncConsent();
+        loadBalance();
+        loadTx();
+        loadLevels();
+        loadPromotions();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [merchantCustomerId, loadBootstrap, syncConsent, loadBalance, loadTx, loadLevels, loadPromotions]);
 
   const handlePromotionClaim = useCallback(
     async (promotionId: string) => {
@@ -1220,13 +1315,15 @@ export default function Page() {
     setPhoneShareLoading(true);
     setProfileSaving(true);
     try {
-      let serverHasPhone = false;
+      let serverHasPhone = teleHasPhone === true;
       let statusError: unknown = null;
-      try {
-        const status = await profilePhoneStatus(merchantId, effectiveMerchantCustomerId);
-        serverHasPhone = Boolean(status?.hasPhone);
-      } catch (statusErr) {
-        statusError = statusErr;
+      if (!serverHasPhone) {
+        try {
+          const status = await profilePhoneStatus(merchantId, effectiveMerchantCustomerId);
+          serverHasPhone = Boolean(status?.hasPhone);
+        } catch (statusErr) {
+          statusError = statusErr;
+        }
       }
       const normalizedPhone = typeof phone === "string" ? phone.trim() : "";
       if (!serverHasPhone && !normalizedPhone) {
@@ -1249,6 +1346,8 @@ export default function Page() {
       try { localStorage.removeItem(pendingKey); } catch {}
       setMerchantCustomerId(effectiveMerchantCustomerId);
       setAuthMerchantCustomerId(effectiveMerchantCustomerId);
+      setAuthTeleHasPhone(true);
+      setAuthTeleOnboarded(true);
       setProfileCompleted(true);
       setNeedPhoneStep(false);
       setPendingMerchantCustomerIdForPhone(null);
@@ -1285,6 +1384,9 @@ export default function Page() {
     phone,
     setToast,
     setAuthMerchantCustomerId,
+    teleHasPhone,
+    setAuthTeleHasPhone,
+    setAuthTeleOnboarded,
   ]);
 
   const handleProfileSubmit = useCallback(
@@ -1314,6 +1416,8 @@ export default function Page() {
             effectiveMerchantCustomerId = result.merchantCustomerId;
             setAuthMerchantCustomerId(result.merchantCustomerId);
             setMerchantCustomerId(result.merchantCustomerId);
+            setAuthTeleOnboarded(Boolean(result.onboarded));
+            setAuthTeleHasPhone(Boolean(result.hasPhone));
           } catch (teleauthError) {
             const message = resolveErrorMessage(teleauthError);
             setToast({ msg: `Не удалось авторизоваться в Telegram: ${message}`, type: "error" });
@@ -1370,6 +1474,8 @@ export default function Page() {
         }
         setToast({ msg: "Профиль сохранён", type: "success" });
         setProfileCompleted(true);
+        setAuthTeleHasPhone(true);
+        setAuthTeleOnboarded(true);
       } catch (error) {
         const message = resolveErrorMessage(error);
         setToast({ msg: `Не удалось сохранить профиль: ${message}`, type: "error" });
@@ -1377,7 +1483,7 @@ export default function Page() {
         setProfileSaving(false);
       }
     },
-    [merchantId, merchantCustomerId, profileForm, inviteCode, phone, initData, setAuthMerchantCustomerId]
+    [merchantId, merchantCustomerId, profileForm, inviteCode, phone, initData, setAuthMerchantCustomerId, setAuthTeleOnboarded, setAuthTeleHasPhone]
   );
 
   const availablePromotions = useMemo(
@@ -1446,11 +1552,28 @@ export default function Page() {
 
   const screenLoading = useMemo(() => {
     if (auth.loading) return true;
-    if (merchantCustomerId) {
-      return !(balanceResolved && levelsResolved && promotionsResolved && referralResolved && profileResolved);
-    }
-    return !localProfileResolved;
-  }, [auth.loading, merchantCustomerId, balanceResolved, levelsResolved, promotionsResolved, referralResolved, profileResolved, localProfileResolved]);
+    if (!merchantCustomerId) return !localProfileResolved;
+    if (!profileCompleted) return false;
+    const profileGate = teleOnboarded == null ? profileResolved : true;
+    return !(
+      balanceResolved &&
+      levelsResolved &&
+      promotionsResolved &&
+      referralResolved &&
+      profileGate
+    );
+  }, [
+    auth.loading,
+    merchantCustomerId,
+    profileCompleted,
+    teleOnboarded,
+    balanceResolved,
+    levelsResolved,
+    promotionsResolved,
+    referralResolved,
+    profileResolved,
+    localProfileResolved,
+  ]);
 
   const profilePage = !screenLoading && (!merchantCustomerId || !profileCompleted);
 
@@ -1546,10 +1669,8 @@ export default function Page() {
     );
   }
 
-  return (
-    <div className={styles.page}>
-      {profilePage ? (
-        <div className={styles.profileContainer}>
+  const profileContent = (
+    <div className={styles.profileContainer}>
           {needPhoneStep ? (
             <div className={`${styles.profileCard} ${inviteFieldVisible ? styles.profileCardExtended : styles.profileCardCompact}`}>
               <div className={`${styles.appear} ${styles.delay0}`}>
@@ -1708,8 +1829,10 @@ export default function Page() {
             </form>
           )}
         </div>
-      ) : (
-        <>
+  );
+
+  const dashboardContent = (
+    <>
           <header className={`${styles.header} ${styles.appear} ${styles.delay0}`}>
             <div className={styles.userBlock}>
               <div className={styles.avatarWrap}>
@@ -2160,9 +2283,14 @@ export default function Page() {
           </div>
         </div>
       )}
+    </>
+  );
 
-      </>
-      )}
+  const mainContent = profilePage ? profileContent : dashboardContent;
+
+  return (
+    <div className={styles.page}>
+      {mainContent}
     </div>
   );
 }

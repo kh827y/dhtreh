@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from 'react';
-import { teleauth, publicSettings, ReviewsShareSettings, grantRegistrationBonus, referralLink } from './api';
+import { teleauth, publicSettings, ReviewsShareSettings, grantRegistrationBonus, setTelegramAuthInitData } from './api';
 
 export function getInitData(): string | null {
   try {
@@ -93,103 +93,124 @@ export function useMiniappAuth(defaultMerchant: string) {
   const [error, setError] = useState<string>('');
   const [theme, setTheme] = useState<{ primary?: string|null; bg?: string|null; logo?: string|null; ttl?: number }>({});
   const [shareSettings, setShareSettings] = useState<ReviewsShareSettings>(null);
+  const [teleOnboarded, setTeleOnboarded] = useState<boolean | null>(null);
+  const [teleHasPhone, setTeleHasPhone] = useState<boolean | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const id = await waitForInitData();
+      setLoading(true);
+      setError('');
+      setTeleOnboarded(null);
+      setTeleHasPhone(null);
+      setMerchantCustomerId(null);
+      const resolvedInitData = await waitForInitData();
       if (cancelled) return;
-      setInitData(id);
-      const ctxMerchant = getMerchantFromContext(id);
-      if (ctxMerchant) setMerchantId(ctxMerchant);
-      const mId = ctxMerchant || merchantId;
-
+      setInitData(resolvedInitData);
+      setTelegramAuthInitData(
+        isValidInitData(resolvedInitData) ? resolvedInitData : null,
+      );
+      const ctxMerchant = getMerchantFromContext(resolvedInitData);
+      const fallbackMerchant = ctxMerchant || defaultMerchant || merchantId;
+      if (ctxMerchant && ctxMerchant !== merchantId) setMerchantId(ctxMerchant);
+      else if (!ctxMerchant && defaultMerchant && defaultMerchant !== merchantId)
+        setMerchantId(defaultMerchant);
+      if (!fallbackMerchant) {
+        setError('Не удалось определить мерчанта');
+        setLoading(false);
+        return;
+      }
+      if (!isValidInitData(resolvedInitData)) {
+        setError('Откройте миниаппу внутри Telegram');
+        setLoading(false);
+        return;
+      }
       const customerKey = (m: string) => `miniapp.merchantCustomerId.v1:${m}`;
       const profileKey = (m: string) => `miniapp.profile.v2:${m}`;
-      const sanitize = (v: string | null): string | null => {
-        if (!v) return null;
-        return v === 'undefined' ? null : v;
-      };
-
-      // Migrate legacy global customerId to per-merchant key only when нет валидной телеграм-авторизации
-      const legacy = sanitize(localStorage.getItem('miniapp.customerId'));
-      const legacyMc = sanitize(localStorage.getItem('miniapp.merchantCustomerId'));
-      const savedScoped = sanitize(mId ? localStorage.getItem(customerKey(mId)) : null);
-      const hasTelegramAuth = isValidInitData(id);
-      if (!hasTelegramAuth) {
-        if (savedScoped) setMerchantCustomerId(savedScoped);
-        else if (legacyMc) {
-          setMerchantCustomerId(legacyMc);
-          if (mId) localStorage.setItem(customerKey(mId), legacyMc);
-        } else if (legacy) {
-          setMerchantCustomerId(legacy);
-          if (mId) localStorage.setItem(customerKey(mId), legacy);
-        }
+      let previousScoped: string | null = null;
+      try {
+        const stored = localStorage.getItem(customerKey(fallbackMerchant));
+        previousScoped =
+            stored && stored !== 'undefined' && stored.trim() ? stored : null;
+      } catch {
+        previousScoped = null;
       }
-      // Dev fallback only when нет валидного initData и ничего не сохранено
       try {
-        const devAuto = (process.env.NEXT_PUBLIC_MINIAPP_DEV_AUTO_CUSTOMER === '1') ||
-          ((process.env.NEXT_PUBLIC_MINIAPP_DEV_AUTO_CUSTOMER || '').toLowerCase() === 'true');
-        if (!hasTelegramAuth && !savedScoped && !legacy && !legacyMc && devAuto) {
-          const gen = 'user-' + Math.random().toString(36).slice(2, 10);
-          setMerchantCustomerId(gen);
-          if (mId) localStorage.setItem(customerKey(mId), gen);
+        const [settingsResult, authResult] = await Promise.allSettled([
+          publicSettings(fallbackMerchant),
+          teleauth(fallbackMerchant, resolvedInitData),
+        ]);
+        if (cancelled) return;
+        if (settingsResult.status === 'fulfilled') {
+          const s = settingsResult.value;
+          setTheme({
+            primary: s.miniappThemePrimary,
+            bg: s.miniappThemeBg,
+            logo: s.miniappLogoUrl,
+            ttl: s.qrTtlSec,
+          });
+          const normalizedShare = s.reviewsShare
+            ? {
+                ...s.reviewsShare,
+                platforms: Array.isArray(s.reviewsShare.platforms)
+                  ? s.reviewsShare.platforms
+                      .filter(
+                        (platform): platform is typeof s.reviewsShare.platforms[number] =>
+                          !!platform && typeof platform === 'object',
+                      )
+                      .map((platform) => ({
+                        ...platform,
+                        outlets: Array.isArray(platform.outlets)
+                          ? platform.outlets
+                              .filter(
+                                (outlet): outlet is { outletId: string; url: string } =>
+                                  !!outlet &&
+                                  typeof outlet === 'object' &&
+                                  typeof outlet.outletId === 'string' &&
+                                  typeof outlet.url === 'string',
+                              )
+                              .map((outlet) => ({
+                                outletId: outlet.outletId,
+                                url: outlet.url,
+                              }))
+                          : [],
+                      }))
+                  : [],
+              }
+            : null;
+          setShareSettings(normalizedShare);
         }
-      } catch {}
-
-      try {
-        const s = await publicSettings(mId);
-        setTheme({ primary: s.miniappThemePrimary, bg: s.miniappThemeBg, logo: s.miniappLogoUrl, ttl: s.qrTtlSec });
-        const normalizedShare = s.reviewsShare
-          ? {
-              ...s.reviewsShare,
-              platforms: Array.isArray(s.reviewsShare.platforms)
-                ? s.reviewsShare.platforms
-                    .filter((platform): platform is typeof s.reviewsShare.platforms[number] => !!platform && typeof platform === 'object')
-                    .map((platform) => ({
-                      ...platform,
-                      outlets: Array.isArray(platform.outlets)
-                        ? platform.outlets
-                            .filter((outlet): outlet is { outletId: string; url: string } => {
-                              return !!outlet && typeof outlet === 'object' && typeof outlet.outletId === 'string' && typeof outlet.url === 'string';
-                            })
-                            .map((outlet) => ({ outletId: outlet.outletId, url: outlet.url }))
-                        : [],
-                    }))
-                : [],
-            }
-          : null;
-        setShareSettings(normalizedShare);
-      } catch {}
-      try {
-        // Prefer server teleauth when running inside Telegram (initData present)
-        if (hasTelegramAuth && mId) {
-          const prev = savedScoped || legacyMc || legacy || null;
-          const r = await teleauth(mId, id);
-          console.log('teleauth result:', r);
-          if (r?.merchantCustomerId && typeof r.merchantCustomerId === 'string' && r.merchantCustomerId.trim() && r.merchantCustomerId !== 'undefined') {
-            console.log('setting merchantCustomerId:', r.merchantCustomerId);
-            setMerchantCustomerId(r.merchantCustomerId);
-            localStorage.setItem(customerKey(mId), r.merchantCustomerId);
-          } else {
-            console.log('not setting merchantCustomerId, invalid:', r?.merchantCustomerId);
-          }
-          try {
-            localStorage.removeItem('miniapp.customerId');
-            localStorage.removeItem('miniapp.merchantCustomerId');
-          } catch {}
-          // If customer switched, clear per-merchant profile and regBonus flags
-          if (prev && prev !== r.merchantCustomerId) {
-            try { localStorage.removeItem(profileKey(mId)); } catch {}
-            try { localStorage.removeItem(`regBonus:${mId}:${prev}`); } catch {}
-          }
-          setError('');
-          // referralLink будет вызван в page.tsx после установки merchantCustomerId
+        if (authResult.status === 'rejected') throw authResult.reason;
+        const payload = authResult.value;
+        if (
+          !payload?.merchantCustomerId ||
+          typeof payload.merchantCustomerId !== 'string'
+        ) {
+          throw new Error('merchantCustomerId missing in teleauth response');
         }
+        setMerchantCustomerId(payload.merchantCustomerId);
+        setTeleOnboarded(Boolean(payload.onboarded));
+        setTeleHasPhone(Boolean(payload.hasPhone));
+        try {
+          localStorage.setItem(
+            customerKey(fallbackMerchant),
+            payload.merchantCustomerId,
+          );
+          localStorage.removeItem('miniapp.customerId');
+          localStorage.removeItem('miniapp.merchantCustomerId');
+          if (previousScoped && previousScoped !== payload.merchantCustomerId) {
+            localStorage.removeItem(profileKey(fallbackMerchant));
+            localStorage.removeItem(
+              `regBonus:${fallbackMerchant}:${previousScoped}`,
+            );
+          }
+        } catch {}
+        setError('');
       } catch (error) {
+        if (cancelled) return;
         setError(error instanceof Error ? error.message : String(error));
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
@@ -217,6 +238,10 @@ export function useMiniappAuth(defaultMerchant: string) {
     setMerchantId,
     merchantCustomerId,
     setMerchantCustomerId,
+    teleOnboarded,
+    setTeleOnboarded,
+    teleHasPhone,
+    setTeleHasPhone,
     loading,
     error,
     theme,

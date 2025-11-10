@@ -5,11 +5,13 @@ import {
   Param,
   Post,
   BadRequestException,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { PrismaService } from '../prisma.service';
 import { LoyaltyService } from './loyalty.service';
+import { TelegramMiniappGuard } from '../guards/telegram-miniapp.guard';
 
 @ApiTags('loyalty-public')
 @Controller('loyalty')
@@ -63,6 +65,7 @@ export class LoyaltyPublicController {
   }
 
   // Публичный эндпоинт: бонус за регистрацию
+  @UseGuards(TelegramMiniappGuard)
   @Post('mechanics/registration-bonus')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async grantRegistrationBonus(

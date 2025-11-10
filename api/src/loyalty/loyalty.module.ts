@@ -5,6 +5,7 @@ import { LoyaltyPublicController } from './loyalty.public.controller';
 import { PrismaModule } from '../prisma.module';
 import { MetricsModule } from '../metrics.module';
 import { CashierGuard } from '../guards/cashier.guard';
+import { TelegramMiniappGuard } from '../guards/telegram-miniapp.guard';
 import { SubscriptionModule } from '../subscription/subscription.module';
 import { SubscriptionGuard } from '../guards/subscription.guard';
 import { AntiFraudGuard } from '../guards/antifraud.guard';
@@ -15,6 +16,7 @@ import { MerchantsModule } from '../merchants/merchants.module';
 import { ReviewModule } from '../reviews/review.module';
 import { TelegramModule } from '../telegram/telegram.module';
 import { StaffMotivationEngine } from '../staff-motivation/staff-motivation.engine';
+import { LevelsModule } from '../levels/levels.module';
 
 @Module({
   imports: [
@@ -26,11 +28,13 @@ import { StaffMotivationEngine } from '../staff-motivation/staff-motivation.engi
     PromoCodesModule,
     MerchantsModule,
     TelegramModule,
+    LevelsModule,
     forwardRef(() => ReviewModule),
   ],
   providers: [
     LoyaltyService,
     CashierGuard,
+    TelegramMiniappGuard,
     SubscriptionGuard,
     AntiFraudGuard,
     StaffMotivationEngine,

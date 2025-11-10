@@ -117,6 +117,7 @@ export type ListCustomersQuery = {
   limit?: number;
   offset?: number;
   segmentId?: string;
+  registeredOnly?: boolean;
 };
 
 const msPerDay = 24 * 60 * 60 * 1000;
@@ -1114,6 +1115,7 @@ export class PortalCustomersService {
     const limit = Math.min(Math.max(query.limit ?? 50, 1), 200);
     const offset = Math.max(query.offset ?? 0, 0);
     const search = query.search?.trim();
+    const registeredOnly = query.registeredOnly ?? true;
 
     const whereSearch = search
       ? ({
@@ -1164,6 +1166,34 @@ export class PortalCustomersService {
     const andConditions: Prisma.CustomerWhereInput[] = [association];
     if (Object.keys(whereSearch).length) andConditions.push(whereSearch);
     if (segmentCondition) andConditions.push(segmentCondition);
+    if (registeredOnly) {
+      andConditions.push({
+        AND: [
+          { birthday: { not: null } },
+          { gender: { in: ['male', 'female'] } },
+          {
+            OR: [
+              { phone: { not: null } },
+              {
+                merchantProfiles: {
+                  some: { merchantId, phone: { not: null } },
+                },
+              },
+            ],
+          },
+          {
+            OR: [
+              { name: { not: null } },
+              {
+                merchantProfiles: {
+                  some: { merchantId, name: { not: null } },
+                },
+              },
+            ],
+          },
+        ],
+      });
+    }
 
     const where: Prisma.CustomerWhereInput =
       andConditions.length > 1 ? { AND: andConditions } : association;

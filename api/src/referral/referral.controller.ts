@@ -1,13 +1,13 @@
 import {
+  Body,
+  BadRequestException,
   Controller,
   Get,
+  Param,
   Post,
   Put,
-  Body,
-  Param,
   Query,
   UseGuards,
-  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -18,6 +18,7 @@ import {
 import { ReferralService } from './referral.service';
 import type { CreateReferralProgramDto } from './referral.service';
 import { ApiKeyGuard } from '../guards/api-key.guard';
+import { TelegramMiniappGuard } from '../guards/telegram-miniapp.guard';
 
 @ApiTags('Referral Program')
 @Controller('referral')
@@ -62,6 +63,7 @@ export class ReferralController {
   /**
    * Активировать реферальный код
    */
+  @UseGuards(TelegramMiniappGuard)
   @Post('activate')
   @ApiOperation({ summary: 'Активировать реферальный код при регистрации' })
   async activateReferral(
@@ -138,6 +140,7 @@ export class ReferralController {
   /**
    * Получить персональную реферальную ссылку
    */
+  @UseGuards(TelegramMiniappGuard)
   @Get('link/:customerId')
   @ApiOperation({ summary: 'Получить персональную реферальную ссылку клиента' })
   async getCustomerLink(

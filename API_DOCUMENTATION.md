@@ -1568,7 +1568,8 @@ const result = await client.commit({
 ### Merchant Portal — Клиенты
 
 #### GET /portal/customers
-- Параметры: `search` (телефон, email или ФИО), `limit` (1–200, по умолчанию 50), `offset`.
+- Параметры: `search` (телефон, email или ФИО), `limit` (1–200, по умолчанию 50), `offset`, `segmentId`, `registeredOnly` (по умолчанию `true`). Чтобы увидеть «сырых» клиентов без телефона/пола/даты рождения, передайте `registeredOnly=0`.
+- По умолчанию сервер возвращает только тех клиентов, у кого заполнены имя, пол (`male|female`), дата рождения и телефон (в `MerchantCustomer` или `Customer`).
 - Ответ: массив объектов с полями `id`, `phone`, `email`, `firstName`, `lastName`, `gender`, `birthday`, `tags[]`, `balance`, `pendingBalance`, `visits`, `visitFrequencyDays`, `daysSinceLastVisit`, `averageCheck`, `spendPreviousMonth`, `spendCurrentMonth`, `spendTotal`, `registeredAt`, `comment`, `accrualsBlocked`, `levelName`.
 
 #### GET /portal/customers/{customerId}
@@ -1710,7 +1711,11 @@ Response 200: объект клиента, как в GET /portal/customers/{id}
     - Сервер валидирует `initData` по токену бота данного мерчанта (`MerchantSettings.telegramBotToken`).
     - При наличии `start_param`/`startapp` валидирует подпись по `TMA_LINK_SECRET` и сверяет `merchantId` (при расхождении — 400).
     - Для каждого мерчанта создаётся собственная связка `MerchantCustomer` → `Customer`, даже если Telegram аккаунт уже авторизован в другой сети.
-    - В ответе возвращается `{ ok: true, merchantCustomerId }`.
+    - Ответ: `{ ok: true, merchantCustomerId, hasPhone: boolean, onboarded: boolean }`, где `hasPhone` отображает наличие телефона на стороне сервера, а `onboarded` = `true`, только если заполнены имя, пол (`male|female`), дата рождения и телефон. Эти флаги используются мини‑аппой для пропуска лишних запросов профиля и мгновенного выбора экрана.
+  - GET `/loyalty/bootstrap?merchantId=...&merchantCustomerId=...&transactionsLimit=20`
+    - Возвращает агрегированный ответ для стартового экрана: `{ profile, consent, balance, levels, transactions, promotions }`.
+    - `transactionsLimit` (1–100, по умолчанию 20) задаёт количество операций в первой пачке истории. Остальные поля соответствуют отдельным эндпоинтам (`/loyalty/profile`, `/loyalty/consent`, `/loyalty/balance`, `/levels`, `/loyalty/transactions`, `/loyalty/promotions`).
+  - Все последующие запросы мини‑аппы (профиль, согласия, промо, отзывы, регистрационный бонус и т.д.) должны содержать заголовок `Authorization: tma <initData>`. Сервер валидирует подпись Telegram для каждого запроса.
   - GET `/loyalty/profile?merchantId={merchantId}&merchantCustomerId={merchantCustomerId}` → `{ name: string|null, gender: 'male'|'female'|null, birthDate: 'YYYY-MM-DD'|null }`.
     - Профиль клиента хранится на стороне сервера и изолирован по паре `(merchantId, merchantCustomerId)`. Авторизация у другого мерчанта не заполняет профиль автоматически.
     - Используется для кросс-девайс синхронизации данных профиля Mini App.

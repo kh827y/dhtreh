@@ -64,6 +64,15 @@ export type ReferralLinkResp = {
 };
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/$/, '');
+let telegramInitDataAuth: string | null = null;
+
+export function setTelegramAuthInitData(initData: string | null) {
+  if (typeof initData === 'string' && initData.includes('hash=')) {
+    telegramInitDataAuth = initData;
+  } else {
+    telegramInitDataAuth = null;
+  }
+}
 
 // Lightweight in-flight deduplication and short-lived cache for GETs
 const __inflight = new Map<string, Promise<unknown>>();
@@ -92,9 +101,16 @@ async function httpDedup<T>(path: string, init?: RequestInit, cacheTtlMs = 0): P
 }
 
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...((init?.headers as Record<string, string>) || {}),
+  };
+  if (!headers.Authorization && telegramInitDataAuth) {
+    headers.Authorization = `tma ${telegramInitDataAuth}`;
+  }
   const res = await fetch(API_BASE + path, {
-    headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
     ...init,
+    headers,
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -103,14 +119,42 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
+export type TeleauthResponse = {
+  ok: boolean;
+  merchantCustomerId: string;
+  hasPhone: boolean;
+  onboarded: boolean;
+};
+
 export async function teleauth(
   merchantId: string,
   initData: string,
-): Promise<{ ok: boolean; merchantCustomerId: string }> {
+): Promise<TeleauthResponse> {
   return http('/loyalty/teleauth', {
     method: 'POST',
     body: JSON.stringify({ merchantId, initData }),
   });
+}
+
+export type BootstrapResp = {
+  profile: CustomerProfile | null;
+  consent: { granted: boolean; consentAt?: string | null } | null;
+  balance: BalanceResp | null;
+  levels: LevelsResp | null;
+  transactions: TransactionsResp | null;
+  promotions: PromotionItem[] | null;
+};
+
+export async function bootstrap(
+  merchantId: string,
+  merchantCustomerId: string,
+  opts?: { transactionsLimit?: number },
+): Promise<BootstrapResp> {
+  const qs = new URLSearchParams({ merchantId, merchantCustomerId });
+  if (opts?.transactionsLimit) {
+    qs.set('transactionsLimit', String(opts.transactionsLimit));
+  }
+  return http(`/loyalty/bootstrap?${qs.toString()}`);
 }
 
 export async function submitReview(payload: {
