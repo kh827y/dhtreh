@@ -884,15 +884,6 @@ export class OperationsLogService {
       });
     });
 
-    if (existing.type === TxnType.REFUND && existing.orderId) {
-      try {
-        await this.loyalty.restoreReferralRewardsAfterRefundCancellation(
-          merchantId,
-          existing.orderId,
-        );
-      } catch {}
-    }
-
     const updated = await this.prisma.transaction.findUnique({
       where: { id: existing.id },
       include: {
