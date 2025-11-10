@@ -706,7 +706,8 @@ export class OperationsLogService {
           createdAt: transaction.createdAt.toISOString(),
         },
       ],
-      canCancel: !transaction.canceledAt,
+      canCancel:
+        !transaction.canceledAt && transaction.type !== TxnType.REFUND,
     };
   }
 
@@ -811,6 +812,9 @@ export class OperationsLogService {
     }
     if (existing.canceledAt) {
       throw new BadRequestException('Операция уже отменена');
+    }
+    if (existing.type === TxnType.REFUND) {
+      throw new BadRequestException('Возвраты нельзя отменить');
     }
 
     const wallet = await this.prisma.wallet.findUnique({

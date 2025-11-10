@@ -212,6 +212,10 @@ export default function OperationsPage() {
 
   async function cancelOperation(operation: Operation) {
     if (!operation?.id) return;
+    if (operation.kind === "REFUND") {
+      window.alert("Возвраты нельзя отменить");
+      return;
+    }
     const confirmed = window.confirm("Вы уверены, что хотите отменить транзакцию?");
     if (!confirmed) return;
     try {
@@ -584,10 +588,14 @@ export default function OperationsPage() {
             <div style={modalFooterStyle}>
               <Button
                 variant="secondary"
-                disabled={Boolean(preview.canceledAt)}
+                disabled={Boolean(preview.canceledAt) || preview.kind === "REFUND"}
                 onClick={() => cancelOperation(preview)}
               >
-                {preview.canceledAt ? "Уже отменена" : "Отменить транзакцию"}
+                {preview.canceledAt
+                  ? "Уже отменена"
+                  : preview.kind === "REFUND"
+                    ? "Возврат нельзя отменить"
+                    : "Отменить транзакцию"}
               </Button>
             </div>
           </div>

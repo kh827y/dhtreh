@@ -289,6 +289,10 @@ export default function CustomerCardPage() {
   }
 
   async function handleCancelTransaction(operation: CustomerTransaction) {
+    if (operation.kind === "REFUND") {
+      setToast("Возвраты нельзя отменить");
+      return;
+    }
     const targetId = operation.receiptId || operation.id;
     if (!targetId) return;
     const confirmMessage = window.confirm("Вы уверены, что хотите отменить транзакцию?");
@@ -456,7 +460,7 @@ export default function CustomerCardPage() {
                     {transactionsPageItems.map((operation, index) => {
                       const isBlockedAccrual = operation.type === "EARN" && operation.blockedAccrual;
                       const isCanceled = Boolean(operation.canceledAt);
-                      const canCancel = !isCanceled;
+                      const canCancel = !isCanceled && operation.kind !== "REFUND";
                       const isComplimentary = operation.kind === "COMPLIMENTARY";
                       const changePrefix =
                         operation.change > 0 ? "+" : operation.change < 0 ? "−" : "";
