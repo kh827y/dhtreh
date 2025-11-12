@@ -301,21 +301,28 @@ export default function Page() {
   const setAuthTeleHasPhone = auth.setTeleHasPhone;
   const initData = auth.initData;
   const authThemeTtl = auth.theme?.ttl;
-  const [merchantCustomerId, setMerchantCustomerId] = useState<string | null>(() =>
-    readStoredMerchantCustomerId(auth.merchantId),
+  const storedMerchantCustomerId = useMemo(
+    () => readStoredMerchantCustomerId(merchantId),
+    [merchantId],
   );
+  const [merchantCustomerId, setMerchantCustomerId] = useState<string | null>(() => storedMerchantCustomerId);
+  const initialSnapshot = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    if (!merchantId || !storedMerchantCustomerId) return null;
+    return loadSnapshot(merchantId, storedMerchantCustomerId);
+  }, [merchantId, storedMerchantCustomerId]);
   const [status, setStatus] = useState<string>("");
-  const [bal, setBal] = useState<number | null>(null);
-  const [tx, setTx] = useState<TransactionItem[]>([]);
-  const [nextBefore, setNextBefore] = useState<string | null>(null);
+  const [bal, setBal] = useState<number | null>(() => initialSnapshot?.balance ?? null);
+  const [tx, setTx] = useState<TransactionItem[]>(() => initialSnapshot?.transactions ?? []);
+  const [nextBefore, setNextBefore] = useState<string | null>(() => initialSnapshot?.nextBefore ?? null);
   const [consent, setConsent] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>("");
   const [toast, setToast] = useState<{ msg: string; type?: "info" | "error" | "success" } | null>(null);
-  const [levelInfo, setLevelInfo] = useState<LevelInfo | null>(null);
+  const [levelInfo, setLevelInfo] = useState<LevelInfo | null>(() => initialSnapshot?.levelInfo ?? null);
   const [levelCatalog, setLevelCatalog] = useState<MechanicsLevel[]>([]);
-  const [cashbackPercent, setCashbackPercent] = useState<number | null>(null);
-  const [telegramUser, setTelegramUser] = useState<TelegramUser | null>(null);
+  const [cashbackPercent, setCashbackPercent] = useState<number | null>(() => initialSnapshot?.cashbackPercent ?? null);
+  const [telegramUser, setTelegramUser] = useState<TelegramUser | null>(() => initialSnapshot?.telegramProfile ?? null);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
   const [phone, setPhone] = useState<string | null>(null);
   const [needPhoneStep, setNeedPhoneStep] = useState<boolean>(false);
@@ -332,12 +339,12 @@ const [profileForm, setProfileForm] = useState<{
   gender: "",
   birthDate: "",
 });
-const [profileCompleted, setProfileCompleted] = useState<boolean>(true);
+const [, setProfileCompleted] = useState<boolean>(true);
 const [profileTouched, setProfileTouched] = useState<boolean>(false);
 const [profileSaving, setProfileSaving] = useState<boolean>(false);
 const pendingProfileSync = useRef<boolean>(false);
 const profilePrefetchedRef = useRef<boolean>(false);
-const snapshotRef = useRef<MiniappSnapshot | null>(null);
+const snapshotRef = useRef<MiniappSnapshot | null>(initialSnapshot);
   const [birthYear, setBirthYear] = useState<string>("");
   const [birthMonth, setBirthMonth] = useState<string>("");
   const [birthDay, setBirthDay] = useState<string>("");
@@ -423,20 +430,22 @@ const applyServerProfile = useCallback(
     friendReward: number;
     inviterReward: number;
     shareMessageTemplate?: string;
-  } | null>(null);
-  const [referralEnabled, setReferralEnabled] = useState<boolean>(false);
+  } | null>(() => initialSnapshot?.referral?.info ?? null);
+  const [referralEnabled, setReferralEnabled] = useState<boolean>(() =>
+    Boolean(initialSnapshot?.referral?.enabled && initialSnapshot.referral?.info),
+  );
   const [referralLoading, setReferralLoading] = useState<boolean>(false);
-  const [referralResolved, setReferralResolved] = useState<boolean>(false);
+  const [referralResolved, setReferralResolved] = useState<boolean>(() => Boolean(initialSnapshot?.referral?.info));
   const [referralReloadTick, setReferralReloadTick] = useState<number>(0);
-  const [inviteCode, setInviteCode] = useState<string>("");
-  const [inviteApplied, setInviteApplied] = useState<boolean>(false);
+  const [inviteCode, setInviteCode] = useState<string>(() => initialSnapshot?.referral?.inviteCode ?? "");
+  const [inviteApplied, setInviteApplied] = useState<boolean>(() => Boolean(initialSnapshot?.referral?.inviteApplied));
   const [promoCode, setPromoCode] = useState<string>("");
   const [promoLoading, setPromoLoading] = useState<boolean>(false);
   const [promotionsOpen, setPromotionsOpen] = useState<boolean>(false);
-  const [promotions, setPromotions] = useState<PromotionItem[]>([]);
+  const [promotions, setPromotions] = useState<PromotionItem[]>(() => initialSnapshot?.promotions ?? []);
   const [promotionsLoading, setPromotionsLoading] = useState<boolean>(false);
   const [inviteSheetOpen, setInviteSheetOpen] = useState<boolean>(false);
-  const [historyReady, setHistoryReady] = useState<boolean>(false);
+  const [historyReady, setHistoryReady] = useState<boolean>(() => (initialSnapshot?.transactions?.length ?? 0) > 0);
   // QR modal state
   const [qrOpen, setQrOpen] = useState<boolean>(false);
   const [qrToken, setQrToken] = useState<string>("");
@@ -459,45 +468,36 @@ const applyServerProfile = useCallback(
     },
     [merchantId, merchantCustomerId],
   );
-  const hydrateSnapshot = useCallback(
-    (snapshot: MiniappSnapshot) => {
-      setBal(typeof snapshot.balance === "number" ? snapshot.balance : null);
-      setLevelInfo(snapshot.levelInfo ?? null);
-      if (typeof snapshot.cashbackPercent === "number") {
-        setCashbackPercent(snapshot.cashbackPercent);
+  const hydrateSnapshot = useCallback((snapshot: MiniappSnapshot) => {
+    setBal(typeof snapshot.balance === "number" ? snapshot.balance : null);
+    setLevelInfo(snapshot.levelInfo ?? null);
+    setCashbackPercent(
+      typeof snapshot.cashbackPercent === "number" ? snapshot.cashbackPercent : null,
+    );
+    const txList = Array.isArray(snapshot.transactions) ? snapshot.transactions : [];
+    setTx(txList);
+    setHistoryReady(txList.length > 0);
+    setNextBefore(snapshot.nextBefore ?? null);
+    setPromotions(Array.isArray(snapshot.promotions) ? snapshot.promotions : []);
+    if (snapshot.referral) {
+      const enabled = Boolean(snapshot.referral.enabled && snapshot.referral.info);
+      setReferralEnabled(enabled);
+      setReferralInfo(snapshot.referral.info ?? null);
+      if (typeof snapshot.referral.inviteCode === "string") {
+        setInviteCode(snapshot.referral.inviteCode);
       }
-      if (Array.isArray(snapshot.transactions)) {
-        setTx(snapshot.transactions);
-        setHistoryReady(true);
-      } else {
-        setTx([]);
-      }
-      setNextBefore(snapshot.nextBefore ?? null);
-      if (Array.isArray(snapshot.promotions)) {
-        setPromotions(snapshot.promotions);
-      } else {
-        setPromotions([]);
-      }
-      if (snapshot.referral) {
-        setReferralEnabled(Boolean(snapshot.referral.enabled && snapshot.referral.info));
-        setReferralInfo(snapshot.referral.info ?? null);
-        if (snapshot.referral.inviteCode) {
-          setInviteCode(snapshot.referral.inviteCode);
-        }
-        setInviteApplied(Boolean(snapshot.referral.inviteApplied));
-        setReferralResolved(true);
-      } else {
-        setReferralEnabled(false);
-        setReferralInfo(null);
-        setReferralResolved(false);
-      }
-      if (!telegramUser && snapshot.telegramProfile) {
-        setTelegramUser(snapshot.telegramProfile);
-      }
-      setPromotionsLoading(false);
-    },
-    [telegramUser],
-  );
+      setInviteApplied(Boolean(snapshot.referral.inviteApplied));
+      setReferralResolved(Boolean(snapshot.referral.info));
+    } else {
+      setReferralEnabled(false);
+      setReferralInfo(null);
+      setReferralResolved(false);
+    }
+    if (snapshot.telegramProfile) {
+      setTelegramUser(snapshot.telegramProfile);
+    }
+    setPromotionsLoading(false);
+  }, []);
 
   useEffect(() => {
     const tgUser = getTelegramUser();
@@ -545,17 +545,31 @@ const applyServerProfile = useCallback(
       setPromotions([]);
       setReferralInfo(null);
       setReferralEnabled(false);
+      setReferralResolved(false);
       setInviteCode("");
       setInviteApplied(false);
       return;
     }
     const snapshot = loadSnapshot(merchantId, merchantCustomerId);
     if (snapshot) {
+      const prevTs = snapshotRef.current?.cachedAt;
       snapshotRef.current = snapshot;
-      hydrateSnapshot(snapshot);
-    } else {
-      snapshotRef.current = null;
+      if (snapshot.cachedAt !== prevTs) {
+        hydrateSnapshot(snapshot);
+      }
+    } else if (!snapshotRef.current) {
+      setBal(null);
+      setLevelInfo(null);
+      setCashbackPercent(null);
+      setTx([]);
       setHistoryReady(false);
+      setNextBefore(null);
+      setPromotions([]);
+      setReferralInfo(null);
+      setReferralEnabled(false);
+      setReferralResolved(false);
+      setInviteCode("");
+      setInviteApplied(false);
     }
   }, [merchantId, merchantCustomerId, hydrateSnapshot]);
   useEffect(() => {
@@ -569,10 +583,9 @@ const applyServerProfile = useCallback(
     setProfileCompleted(teleOnboarded);
   }, [teleOnboarded]);
   useEffect(() => {
-    if (merchantCustomerId) return;
-    const stored = readStoredMerchantCustomerId(merchantId);
-    if (stored) setMerchantCustomerId(stored);
-  }, [merchantId, merchantCustomerId]);
+    if (merchantCustomerId || !storedMerchantCustomerId) return;
+    setMerchantCustomerId(storedMerchantCustomerId);
+  }, [merchantCustomerId, storedMerchantCustomerId]);
 
   // Синхронизация локальных селектов даты с profileForm.birthDate
   useEffect(() => {
@@ -1650,9 +1663,7 @@ const applyServerProfile = useCallback(
     return "Вы";
   }, [profileForm.name, telegramUser]);
 
-  const profilePage =
-    teleOnboarded === false ||
-    (teleOnboarded == null && !merchantCustomerId && !profileCompleted);
+  const profilePage = teleOnboarded === false;
 
   // Render message with clickable {link} and {code} placeholders
   const renderReferralMessage = (
