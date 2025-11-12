@@ -1,10 +1,10 @@
 "use client";
 
 import Image from "next/image";
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import dynamic from "next/dynamic";
+import { FormEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import FakeQr from "../components/FakeQr";
 import QrCanvas from "../components/QrCanvas";
-import Spinner from "../components/Spinner";
 import {
   balance,
   bootstrap,
@@ -103,6 +103,9 @@ const genderOptions: Array<{ value: "male" | "female"; label: string }> = [
 const profileStorageKey = (merchantId: string) => `miniapp.profile.v2:${merchantId}`;
 const profilePendingKey = (merchantId: string) => `miniapp.profile.pending.v1:${merchantId}`;
 const localCustomerKey = (merchantId: string) => `miniapp.merchantCustomerId.v1:${merchantId}`;
+const onboardKey = (merchantId: string) => `miniapp.onboarded.v1:${merchantId}`;
+
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 function readStoredMerchantCustomerId(merchantId?: string | null): string | null {
   if (!merchantId || typeof window === "undefined") return null;
@@ -115,6 +118,37 @@ function readStoredMerchantCustomerId(merchantId?: string | null): string | null
     // ignore storage issues
   }
   return null;
+}
+
+function readStoredProfile(merchantId?: string | null): {
+  form: { name: string; gender: "male" | "female" | ""; birthDate: string };
+  completed: boolean;
+} {
+  const fallback = { name: "", gender: "", birthDate: "" } as const;
+  if (typeof window === "undefined" || !merchantId) {
+    return { form: { ...fallback }, completed: false };
+  }
+  try {
+    const saved = localStorage.getItem(profileStorageKey(merchantId));
+    if (!saved) return { form: { ...fallback }, completed: false };
+    const parsed = JSON.parse(saved) as { name?: string; gender?: "male" | "female"; birthDate?: string };
+    const name = typeof parsed?.name === "string" ? parsed.name : "";
+    const gender = parsed?.gender === "male" || parsed?.gender === "female" ? parsed.gender : "";
+    const birthDate = typeof parsed?.birthDate === "string" ? parsed.birthDate : "";
+    const completed = Boolean(name && gender && birthDate);
+    return { form: { name, gender, birthDate }, completed };
+  } catch {
+    return { form: { ...fallback }, completed: false };
+  }
+}
+
+function readStoredOnboardFlag(merchantId?: string | null): boolean {
+  if (!merchantId || typeof window === "undefined") return false;
+  try {
+    return localStorage.getItem(onboardKey(merchantId)) === "1";
+  } catch {
+    return false;
+  }
 }
 
 function pickCashbackPercent(levelInfo: LevelInfo | null, levelCatalog: MechanicsLevel[]): number | null {
@@ -290,7 +324,7 @@ function formatAmount(amount: number): string {
   return `${sign}${amount.toLocaleString("ru-RU", { maximumFractionDigits: 2 })}`;
 }
 
-export default function Page() {
+function MiniappPage() {
   const auth = useMiniappAuthContext();
   const merchantId = auth.merchantId;
   const setMerchantId = auth.setMerchantId;
@@ -301,6 +335,7 @@ export default function Page() {
   const setAuthTeleHasPhone = auth.setTeleHasPhone;
   const initData = auth.initData;
   const authThemeTtl = auth.theme?.ttl;
+  const storedProfile = useMemo(() => readStoredProfile(merchantId), [merchantId]);
   const storedMerchantCustomerId = useMemo(
     () => readStoredMerchantCustomerId(merchantId),
     [merchantId],
@@ -321,8 +356,12 @@ export default function Page() {
   const [toast, setToast] = useState<{ msg: string; type?: "info" | "error" | "success" } | null>(null);
   const [levelInfo, setLevelInfo] = useState<LevelInfo | null>(() => initialSnapshot?.levelInfo ?? null);
   const [levelCatalog, setLevelCatalog] = useState<MechanicsLevel[]>([]);
-  const [cashbackPercent, setCashbackPercent] = useState<number | null>(() => initialSnapshot?.cashbackPercent ?? null);
-  const [telegramUser, setTelegramUser] = useState<TelegramUser | null>(() => initialSnapshot?.telegramProfile ?? null);
+const [cashbackPercent, setCashbackPercent] = useState<number | null>(() => initialSnapshot?.cashbackPercent ?? null);
+const [telegramUser, setTelegramUser] = useState<TelegramUser | null>(() => {
+  const tg = getTelegramUser();
+  if (tg) return tg;
+  return initialSnapshot?.telegramProfile ?? null;
+});
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
   const [phone, setPhone] = useState<string | null>(null);
   const [needPhoneStep, setNeedPhoneStep] = useState<boolean>(false);
@@ -334,17 +373,16 @@ const [profileForm, setProfileForm] = useState<{
   name: string;
   gender: "male" | "female" | "";
   birthDate: string;
-}>({
-  name: "",
-  gender: "",
-  birthDate: "",
-});
-const [, setProfileCompleted] = useState<boolean>(true);
+}>(() => storedProfile.form);
+const [, setProfileCompleted] = useState<boolean>(() => storedProfile.completed);
+const [localOnboarded, setLocalOnboarded] = useState<boolean>(() => readStoredOnboardFlag(merchantId) || storedProfile.completed);
 const [profileTouched, setProfileTouched] = useState<boolean>(false);
 const [profileSaving, setProfileSaving] = useState<boolean>(false);
 const pendingProfileSync = useRef<boolean>(false);
 const profilePrefetchedRef = useRef<boolean>(false);
 const snapshotRef = useRef<MiniappSnapshot | null>(initialSnapshot);
+const levelCatalogRef = useRef<MechanicsLevel[]>([]);
+const levelInfoRef = useRef<LevelInfo | null>(initialSnapshot?.levelInfo ?? null);
   const [birthYear, setBirthYear] = useState<string>("");
   const [birthMonth, setBirthMonth] = useState<string>("");
   const [birthDay, setBirthDay] = useState<string>("");
@@ -383,6 +421,14 @@ const days = useMemo(
   [daysInSelectedMonth],
 );
 
+  useEffect(() => {
+    levelCatalogRef.current = levelCatalog;
+  }, [levelCatalog]);
+
+  useEffect(() => {
+    levelInfoRef.current = levelInfo;
+  }, [levelInfo]);
+
 const applyServerProfile = useCallback(
   (profile: CustomerProfile | null) => {
     const name = profile?.name || "";
@@ -400,6 +446,12 @@ const applyServerProfile = useCallback(
       try {
         localStorage.removeItem(pendingKey);
       } catch {}
+      if (valid) {
+        try {
+          localStorage.setItem(onboardKey(merchantId), "1");
+        } catch {}
+        setLocalOnboarded(true);
+      }
     }
   },
   [merchantId],
@@ -445,7 +497,6 @@ const applyServerProfile = useCallback(
   const [promotions, setPromotions] = useState<PromotionItem[]>(() => initialSnapshot?.promotions ?? []);
   const [promotionsLoading, setPromotionsLoading] = useState<boolean>(false);
   const [inviteSheetOpen, setInviteSheetOpen] = useState<boolean>(false);
-  const [historyReady, setHistoryReady] = useState<boolean>(() => (initialSnapshot?.transactions?.length ?? 0) > 0);
   // QR modal state
   const [qrOpen, setQrOpen] = useState<boolean>(false);
   const [qrToken, setQrToken] = useState<string>("");
@@ -468,6 +519,33 @@ const applyServerProfile = useCallback(
     },
     [merchantId, merchantCustomerId],
   );
+  const updateCashbackPercent = useCallback(
+    (info: LevelInfo | null, catalog: MechanicsLevel[]) => {
+      const value = pickCashbackPercent(info, catalog);
+      if (typeof value === "number") {
+        setCashbackPercent(value);
+        persistSnapshot({ cashbackPercent: value });
+      } else if (!info) {
+        setCashbackPercent(null);
+      }
+    },
+    [persistSnapshot],
+  );
+  const resetSnapshotState = useCallback(() => {
+    snapshotRef.current = null;
+    setBal(null);
+    setLevelInfo(null);
+    setCashbackPercent(null);
+    setTx([]);
+    setNextBefore(null);
+    setPromotions([]);
+    setReferralInfo(null);
+    setReferralEnabled(false);
+    setReferralResolved(false);
+    setInviteCode("");
+    setInviteApplied(false);
+  }, []);
+
   const hydrateSnapshot = useCallback((snapshot: MiniappSnapshot) => {
     setBal(typeof snapshot.balance === "number" ? snapshot.balance : null);
     setLevelInfo(snapshot.levelInfo ?? null);
@@ -476,9 +554,9 @@ const applyServerProfile = useCallback(
     );
     const txList = Array.isArray(snapshot.transactions) ? snapshot.transactions : [];
     setTx(txList);
-    setHistoryReady(txList.length > 0);
     setNextBefore(snapshot.nextBefore ?? null);
-    setPromotions(Array.isArray(snapshot.promotions) ? snapshot.promotions : []);
+    const promos = Array.isArray(snapshot.promotions) ? snapshot.promotions : [];
+    setPromotions(promos);
     if (snapshot.referral) {
       const enabled = Boolean(snapshot.referral.enabled && snapshot.referral.info);
       setReferralEnabled(enabled);
@@ -499,7 +577,7 @@ const applyServerProfile = useCallback(
     setPromotionsLoading(false);
   }, []);
 
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     const tgUser = getTelegramUser();
     if (tgUser) {
       setTelegramUser(tgUser);
@@ -524,54 +602,34 @@ const applyServerProfile = useCallback(
         const gender = parsed.gender || "";
         const birthDate = parsed.birthDate || "";
         setProfileForm({ name, gender, birthDate });
-        const valid = Boolean(name && (gender === "male" || gender === "female") && birthDate);
-        setProfileCompleted(valid);
-      } else {
-        setProfileCompleted(false);
       }
     } catch {
-      setProfileCompleted(false);
+      // ignore
     }
   }, [merchantId]);
-  useEffect(() => {
-    if (!merchantId || !merchantCustomerId) {
-      snapshotRef.current = null;
-      setBal(null);
-      setLevelInfo(null);
-      setCashbackPercent(null);
-      setTx([]);
-      setHistoryReady(false);
-      setNextBefore(null);
-      setPromotions([]);
-      setReferralInfo(null);
-      setReferralEnabled(false);
-      setReferralResolved(false);
-      setInviteCode("");
-      setInviteApplied(false);
+  useIsomorphicLayoutEffect(() => {
+    if (!merchantId) {
+      resetSnapshotState();
       return;
     }
-    const snapshot = loadSnapshot(merchantId, merchantCustomerId);
-    if (snapshot) {
-      const prevTs = snapshotRef.current?.cachedAt;
-      snapshotRef.current = snapshot;
-      if (snapshot.cachedAt !== prevTs) {
-        hydrateSnapshot(snapshot);
-      }
-    } else if (!snapshotRef.current) {
-      setBal(null);
-      setLevelInfo(null);
-      setCashbackPercent(null);
-      setTx([]);
-      setHistoryReady(false);
-      setNextBefore(null);
-      setPromotions([]);
-      setReferralInfo(null);
-      setReferralEnabled(false);
-      setReferralResolved(false);
-      setInviteCode("");
-      setInviteApplied(false);
+    const effectiveCustomerId = merchantCustomerId || storedMerchantCustomerId;
+    if (!effectiveCustomerId) {
+      resetSnapshotState();
+      return;
     }
-  }, [merchantId, merchantCustomerId, hydrateSnapshot]);
+    const snapshot = loadSnapshot(merchantId, effectiveCustomerId);
+    if (!snapshot) {
+      if (!snapshotRef.current) {
+        resetSnapshotState();
+      }
+      return;
+    }
+    const prevTs = snapshotRef.current?.cachedAt;
+    snapshotRef.current = snapshot;
+    if (!prevTs || snapshot.cachedAt !== prevTs) {
+      hydrateSnapshot(snapshot);
+    }
+  }, [merchantId, merchantCustomerId, storedMerchantCustomerId, hydrateSnapshot, resetSnapshotState]);
   useEffect(() => {
     if (!merchantId || !merchantCustomerId) return;
     if (!telegramUser) return;
@@ -581,8 +639,14 @@ const applyServerProfile = useCallback(
   useEffect(() => {
     if (teleOnboarded === null) return;
     setProfileCompleted(teleOnboarded);
-  }, [teleOnboarded]);
-  useEffect(() => {
+    if (merchantId && teleOnboarded) {
+      try {
+        localStorage.setItem(onboardKey(merchantId), "1");
+      } catch {}
+      setLocalOnboarded(true);
+    }
+  }, [teleOnboarded, merchantId]);
+  useIsomorphicLayoutEffect(() => {
     if (merchantCustomerId || !storedMerchantCustomerId) return;
     setMerchantCustomerId(storedMerchantCustomerId);
   }, [merchantCustomerId, storedMerchantCustomerId]);
@@ -605,6 +669,17 @@ const applyServerProfile = useCallback(
     if (!merchantId || !merchantCustomerId) return;
     persistSnapshot({ referral: { inviteCode, inviteApplied } });
   }, [merchantId, merchantCustomerId, inviteCode, inviteApplied, persistSnapshot]);
+
+  useEffect(() => {
+    if (!merchantCustomerId) return;
+    updateCashbackPercent(levelInfo, levelCatalog);
+  }, [merchantCustomerId, levelInfo, levelCatalog, updateCashbackPercent]);
+
+  useEffect(() => {
+    if (localOnboarded && teleOnboarded === false) {
+      setAuthTeleOnboarded(true);
+    }
+  }, [localOnboarded, teleOnboarded, setAuthTeleOnboarded]);
 
   // Автоподстановка пригласительного кода из Telegram start_param/startapp (payload.referralCode)
   useEffect(() => {
@@ -716,6 +791,10 @@ const applyServerProfile = useCallback(
         setProfileForm({ name, gender, birthDate });
         setProfileCompleted(true);
         setAuthTeleOnboarded(true);
+        setLocalOnboarded(true);
+        try {
+          localStorage.setItem(onboardKey(merchantId), "1");
+        } catch {}
       } catch (error) {
         setToast({ msg: `Не удалось синхронизировать профиль: ${resolveErrorMessage(error)}`, type: "error" });
       } finally {
@@ -727,7 +806,7 @@ const applyServerProfile = useCallback(
   useEffect(() => {
     setLoading(auth.loading);
     setError(auth.error);
-    if (!auth.loading) {
+    if (!auth.loading && auth.merchantCustomerId) {
       setMerchantCustomerId(auth.merchantCustomerId);
     }
   }, [auth.loading, auth.error, auth.merchantCustomerId]);
@@ -978,7 +1057,7 @@ const applyServerProfile = useCallback(
         setToast({ msg: "Не удалось обновить историю", type: "error" });
       }
     } finally {
-      setHistoryReady(true);
+      setTx(mappedTransactions);
     }
   }, [merchantCustomerId, merchantId, retry, mapTransactions, persistSnapshot]);
 
@@ -1012,14 +1091,14 @@ const applyServerProfile = useCallback(
     try {
       const cfg = await retry(() => mechanicsLevels(merchantId));
       if (Array.isArray(cfg?.levels)) {
-        setLevelCatalog(
-          cfg.levels.filter((lvl: MechanicsLevel) => lvl && typeof lvl === "object") as MechanicsLevel[],
-        );
+        const normalized = cfg.levels.filter((lvl: MechanicsLevel) => lvl && typeof lvl === "object") as MechanicsLevel[];
+        setLevelCatalog(normalized);
+        updateCashbackPercent(levelInfoRef.current, normalized);
       }
     } catch {
       setLevelCatalog([]);
     }
-  }, [merchantId, retry]);
+  }, [merchantId, retry, updateCashbackPercent]);
 
   const loadBootstrap = useCallback(async () => {
     if (!merchantId || !merchantCustomerId) return false;
@@ -1036,15 +1115,30 @@ const applyServerProfile = useCallback(
         setBal(data.balance.balance);
         persistSnapshot({ balance: data.balance.balance });
       }
+      let effectiveCatalog = levelCatalogRef.current;
+      if (!effectiveCatalog.length) {
+        try {
+          const cfg = await retry(() => mechanicsLevels(merchantId));
+          if (Array.isArray(cfg?.levels)) {
+            effectiveCatalog = cfg.levels.filter((lvl: MechanicsLevel) => lvl && typeof lvl === "object") as MechanicsLevel[];
+            setLevelCatalog(effectiveCatalog);
+          } else {
+            effectiveCatalog = [];
+          }
+        } catch {
+          effectiveCatalog = [];
+        }
+      }
       if (data.levels) {
         setLevelInfo(data.levels);
         persistSnapshot({ levelInfo: data.levels });
+        updateCashbackPercent(data.levels, effectiveCatalog);
       }
       const mappedTransactions = data.transactions
         ? mapTransactions(Array.isArray(data.transactions.items) ? data.transactions.items : [])
         : [];
       setTx(mappedTransactions);
-      setHistoryReady(true);
+      setTx(mappedTransactions);
       setNextBefore(data.transactions?.nextBefore || null);
       if (Array.isArray(data.promotions)) {
         setPromotions(data.promotions);
@@ -1069,7 +1163,16 @@ const applyServerProfile = useCallback(
       setToast({ msg: `Не удалось загрузить данные: ${message}`, type: "error" });
       return false;
     }
-  }, [merchantId, merchantCustomerId, applyServerProfile, mapTransactions, setToast, persistSnapshot]);
+  }, [
+    merchantId,
+    merchantCustomerId,
+    applyServerProfile,
+    mapTransactions,
+    setToast,
+    persistSnapshot,
+    retry,
+    updateCashbackPercent,
+  ]);
 
   const loadPromotions = useCallback(async () => {
     if (!merchantId || !merchantCustomerId) {
@@ -1083,7 +1186,6 @@ const applyServerProfile = useCallback(
       setPromotions(normalized);
       persistSnapshot({ promotions: normalized, promotionsUpdatedAt: Date.now() });
     } catch (error) {
-      setPromotions([]);
       setToast({ msg: `Не удалось загрузить акции: ${resolveErrorMessage(error)}`, type: "error" });
     } finally {
       setPromotionsLoading(false);
@@ -1180,14 +1282,8 @@ const applyServerProfile = useCallback(
       setCashbackPercent(null);
       return;
     }
-    const value = pickCashbackPercent(levelInfo, levelCatalog);
-    if (typeof value === "number") {
-      setCashbackPercent(value);
-      persistSnapshot({ cashbackPercent: value });
-    } else if (!levelInfo) {
-      setCashbackPercent(null);
-    }
-  }, [merchantCustomerId, levelInfo, levelCatalog, persistSnapshot]);
+    updateCashbackPercent(levelInfo, levelCatalog);
+  }, [merchantCustomerId, levelInfo, levelCatalog, updateCashbackPercent]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -1234,11 +1330,9 @@ const applyServerProfile = useCallback(
   );
 
   useEffect(() => {
-    console.log('referral effect running, auth.loading:', auth.loading, 'auth.merchantCustomerId:', auth.merchantCustomerId, 'merchantCustomerId:', merchantCustomerId);
     if (auth.loading) return;
     const sanitizeId = (v: string | null | undefined) => (typeof v === "string" && v !== "undefined" && v.trim() ? v : null);
     const mc = sanitizeId(auth.merchantCustomerId) || sanitizeId(merchantCustomerId);
-    console.log('mc calculated:', mc);
     if (!mc || !merchantId) {
       setReferralEnabled(false);
       setReferralInfo(null);
@@ -1663,7 +1757,7 @@ const applyServerProfile = useCallback(
     return "Вы";
   }, [profileForm.name, telegramUser]);
 
-  const profilePage = teleOnboarded === false;
+  const profilePage = teleOnboarded === false && !localOnboarded;
 
   // Render message with clickable {link} and {code} placeholders
   const renderReferralMessage = (
@@ -1718,12 +1812,7 @@ const applyServerProfile = useCallback(
 
   const phoneButtonLabel = useMemo(() => {
     if (phoneConfirmLoading) {
-      return (
-        <span className={styles.profilePhoneLoadingLabel}>
-          <span className={styles.profilePhoneSpinner} aria-hidden="true" />
-          Готово
-        </span>
-      );
+      return "Сохраняем…";
     }
     if (phoneShareStage === "confirm") {
       return (
@@ -1743,7 +1832,7 @@ const applyServerProfile = useCallback(
     <div className={styles.profileContainer}>
           {needPhoneStep ? (
             <div className={`${styles.profileCard} ${inviteFieldVisible ? styles.profileCardExtended : styles.profileCardCompact}`}>
-              <div className={`${styles.appear} ${styles.delay0}`}>
+              <div>
                 <div className={styles.profileTitle}>Пожалуйста, привяжите ваш номер телефона.</div>
                 <div className={styles.profileSubtitle}>
                   Без него мы не сможем зарегистрировать вас в программе лояльности.
@@ -1753,14 +1842,14 @@ const applyServerProfile = useCallback(
               </div>
               <button
                 type="button"
-                className={`${phoneShareStage === "confirm" ? styles.profileSubmitSuccess : styles.profileSubmit} ${styles.appear} ${inviteFieldVisible ? styles.delay5 : styles.delay4}`}
+                className={phoneShareStage === "confirm" ? styles.profileSubmitSuccess : styles.profileSubmit}
                 onClick={phoneButtonClick}
                 disabled={phoneButtonDisabled}
               >
                 {phoneButtonLabel}
               </button>
               {phoneShareError && (
-                <div className={`${styles.profileErrorMessage} ${styles.appear} ${inviteFieldVisible ? styles.delay5 : styles.delay4}`}>
+                <div className={styles.profileErrorMessage}>
                   {phoneShareError}
                 </div>
               )}
@@ -1772,13 +1861,13 @@ const applyServerProfile = useCallback(
               }`}
               onSubmit={handleProfileSubmit}
             >
-              <div className={`${styles.appear} ${styles.delay0}`}>
+              <div>
                 <div className={styles.profileTitle}>Расскажите о себе</div>
                 <div className={styles.profileSubtitle}>
                   Эта информация поможет нам подобрать акции лично для вас
                 </div>
               </div>
-              <div className={`${styles.profileField} ${styles.appear} ${styles.delay1}`}>
+              <div className={styles.profileField}>
                 <label htmlFor="name">Имя</label>
                 <input
                   id="name"
@@ -1788,7 +1877,7 @@ const applyServerProfile = useCallback(
                   className={profileTouched && !profileForm.name ? styles.inputError : undefined}
                 />
               </div>
-              <div className={`${styles.profileField} ${styles.appear} ${styles.delay2}`}>
+              <div className={styles.profileField}>
                 <span>Пол</span>
                 <div
                   className={`${styles.genderRow} ${
@@ -1809,7 +1898,7 @@ const applyServerProfile = useCallback(
                   ))}
                 </div>
               </div>
-              <div className={`${styles.profileField} ${styles.appear} ${styles.delay3}`}>
+              <div className={styles.profileField}>
                 <label htmlFor="birthRow">Дата рождения</label>
                 <div
                   id="birthRow"
@@ -1873,7 +1962,7 @@ const applyServerProfile = useCallback(
                 </div>
               </div>
               {inviteFieldVisible && (
-                <div className={`${styles.profileField} ${styles.appear} ${styles.delay4}`}>
+                <div className={styles.profileField}>
                   <label htmlFor="invite">Пригласительный код</label>
                   <input
                     id="invite"
@@ -1891,7 +1980,7 @@ const applyServerProfile = useCallback(
               )}
               <button
                 type="submit"
-                className={`${styles.profileSubmit} ${styles.appear} ${referralEnabled ? styles.delay5 : styles.delay4}`}
+                className={styles.profileSubmit}
                 disabled={profileSaving}
               >
                 Сохранить
@@ -1903,7 +1992,7 @@ const applyServerProfile = useCallback(
 
   const dashboardContent = (
     <>
-          <header className={`${styles.header} ${styles.appear} ${styles.delay0}`}>
+          <header className={`${styles.header}`}>
             <div className={styles.userBlock}>
               <div className={styles.avatarWrap}>
                 {telegramUser?.photoUrl ? (
@@ -1953,7 +2042,7 @@ const applyServerProfile = useCallback(
 
           {/* Инфобар с кодом можно вернуть при необходимости */}
 
-          <section className={`${styles.card} ${styles.appear} ${styles.delay1}`}>
+          <section className={`${styles.card}`}>
             <button type="button" className={styles.qrMini} aria-label="Открыть QR" onClick={() => setQrOpen(true)}>
               <div className={styles.qrWrapper}>
                 <FakeQr />
@@ -1963,36 +2052,22 @@ const applyServerProfile = useCallback(
             <div className={styles.cardContent}>
               <div className={styles.cardRow}>
                 <span className={styles.cardLabel}>Баланс</span>
-                <span className={styles.cardValue}>
-                  {bal != null ? bal.toLocaleString("ru-RU") : (
-                    <span className={`${styles.skeleton} ${styles.inlineSkeleton}`} />
-                  )}
-                </span>
+                <span className={styles.cardValue}>{bal != null ? bal.toLocaleString("ru-RU") : "—"}</span>
               </div>
               <div className={styles.cardRow}>
                 <span className={styles.cardLabel}>Уровень</span>
-                <span className={styles.cardValue}>
-                  {levelInfo?.current?.name ? (
-                    levelInfo.current.name
-                  ) : (
-                    <span className={`${styles.skeleton} ${styles.inlineSkeleton}`} />
-                  )}
-                </span>
+                <span className={styles.cardValue}>{levelInfo?.current?.name || "—"}</span>
               </div>
               <div className={styles.cardRow}>
                 <span className={styles.cardLabel}>Кэшбэк</span>
-                <span className={styles.cardValue}>
-                  {typeof cashbackPercent === "number" ? `${cashbackPercent}%` : (
-                    <span className={`${styles.skeleton} ${styles.inlineSkeleton}`} />
-                  )}
-                </span>
+                <span className={styles.cardValue}>{typeof cashbackPercent === "number" ? `${cashbackPercent}%` : "—"}</span>
               </div>
             </div>
           </section>
 
           
 
-          <section className={`${styles.actionsRow} ${styles.appear} ${styles.delay3}`}>
+          <section className={`${styles.actionsRow}`}>
             <form className={styles.promoInputBlock} onSubmit={handlePromoActivate}>
               <input
                 className={styles.promoInput}
@@ -2012,16 +2087,14 @@ const applyServerProfile = useCallback(
             </form>
           </section>
 
-          <section className={`${styles.actionsPair} ${styles.appear} ${styles.delay3}`}>
+          <section className={`${styles.actionsPair}`}>
             <button
               type="button"
               className={styles.promotionsButton}
               onClick={() => { setPromotionsOpen(true); if (!promotions.length) void loadPromotions(); }}
             >
               <span>Акции</span>
-              <span className={styles.promotionsBadge}>
-                {promotionsLoading ? <span className={styles.promotionsSpinner} aria-label="Обновляем акции" /> : availablePromotions}
-              </span>
+              <span className={styles.promotionsBadge}>{availablePromotions}</span>
             </button>
             {referralEnabled && referralInfo && (
               <button
@@ -2041,22 +2114,9 @@ const applyServerProfile = useCallback(
             )}
           </section>
 
-          <section className={`${styles.historySection} ${styles.appear} ${styles.delay4}`}>
+          <section className={`${styles.historySection}`}>
             <div className={styles.historyHeader}>История</div>
-            {!historyReady ? (
-              <ul className={styles.historySkeletonList} aria-hidden="true">
-                {Array.from({ length: 3 }).map((_, idx) => (
-                  <li key={`history-skeleton-${idx}`} className={styles.historySkeletonRow}>
-                    <span className={`${styles.skeleton} ${styles.historySkeletonIcon}`} />
-                    <div className={styles.historySkeletonBody}>
-                      <span className={`${styles.skeleton} ${styles.historySkeletonLine}`} />
-                      <span className={`${styles.skeleton} ${styles.historySkeletonLine}`} />
-                    </div>
-                    <span className={`${styles.skeleton} ${styles.historySkeletonAmount}`} />
-                  </li>
-                ))}
-              </ul>
-            ) : tx.length === 0 ? (
+            {tx.length === 0 ? (
               <div className={styles.emptyState}>Операций пока нет</div>
             ) : (
               <ul className={styles.historyList}>
@@ -2134,13 +2194,13 @@ const applyServerProfile = useCallback(
           </section>
 
           {status && (
-            <div className={`${styles.statusBar} ${styles.appear} ${styles.delay5}`}>
+            <div className={`${styles.statusBar}`}>
               {status}
             </div>
           )}
 
           {DEV_UI && (
-            <section className={`${styles.devPanel} ${styles.appear} ${styles.delay5}`}>
+            <section className={`${styles.devPanel}`}>
               <div className={styles.devRow}>
                 <label>
                   Мерчант
@@ -2192,7 +2252,7 @@ const applyServerProfile = useCallback(
                     )}
                     {(qrLoading || qrRefreshing) && (
                       <div className={qrStyles.qrOverlay}>
-                        <Spinner />
+                        <span className={qrStyles.qrOverlayText}>Обновляем QR…</span>
                       </div>
                     )}
                   </div>
@@ -2306,9 +2366,7 @@ const applyServerProfile = useCallback(
             onClick={(e) => e.stopPropagation()}
           >
             <div className={styles.sheetHeader}>Акции</div>
-            {promotionsLoading ? (
-              <div className={styles.emptyState}>Загрузка…</div>
-            ) : promotions.length === 0 ? (
+            {promotions.length === 0 ? (
               <div className={styles.emptyState}>Доступных акций нет</div>
             ) : (
               <ul className={styles.historyList}>
@@ -2386,8 +2444,10 @@ const applyServerProfile = useCallback(
   const mainContent = profilePage ? profileContent : dashboardContent;
 
   return (
-    <div className={styles.page}>
+    <div className={styles.page} suppressHydrationWarning>
       {mainContent}
     </div>
   );
 }
+
+export default dynamic(() => Promise.resolve(MiniappPage), { ssr: false });

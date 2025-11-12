@@ -107,6 +107,13 @@
   place-items: center;
 }
 
+.qrOverlayText {
+  font-size: clamp(13px, 3.4vw, 15px);
+  font-weight: 600;
+  color: #ffffff;
+  text-align: center;
+}
+
 .qrFooter {
   display: flex;
   align-items: center;
@@ -308,4 +315,3 @@
     transform: translateY(28px);
   }
 }
-

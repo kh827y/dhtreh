@@ -229,32 +229,6 @@
   box-shadow: 0 12px 24px rgba(34, 197, 94, 0.26);
 }
 
-.profilePhoneLoadingLabel {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  font-weight: 600;
-}
-
-.profilePhoneSpinner {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.4);
-  border-top-color: #ffffff;
-  animation: profileSpinner 0.8s linear infinite;
-}
-
-@keyframes profileSpinner {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 .profilePhoneSuccessLabel {
   display: inline-flex;
   align-items: center;
@@ -688,8 +662,6 @@
   background: #f8f8ff;
   border-radius: 18px;
   padding: 14px 16px;
-  animation: itemAppear 0.45s ease forwards;
-  opacity: 0;
   border-left: 4px solid transparent;
 }
 
@@ -895,18 +867,6 @@
   border: 1px solid rgba(120, 120, 180, 0.3);
 }
 
-/* Skeletons */
-.skeleton {
-  animation: skeletonPulse 1.2s ease-in-out infinite;
-  background: linear-gradient(90deg, rgba(0,0,0,0.06), rgba(0,0,0,0.12), rgba(0,0,0,0.06));
-  background-size: 200% 100%;
-}
-
-@keyframes skeletonPulse {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-
 @keyframes backdropFadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -915,73 +875,6 @@
 @keyframes backdropFadeOut {
   from { opacity: 1; }
   to { opacity: 0; }
-}
-
-.skeletonBlock { border-radius: 16px; width: 100%; height: 56px; }
-.skeletonSmall { border-radius: 12px; width: 100%; height: 40px; }
-.skeletonCard { border-radius: 24px; height: 120px; }
-.skeletonActions { display: flex; gap: 12px; }
-.skeletonActions .skeletonBtn { flex: 1; height: 44px; border-radius: 18px; }
-.inlineSkeleton {
-  display: inline-block;
-  width: 64px;
-  height: 18px;
-  border-radius: 999px;
-}
-
-.historySkeletonList {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.historySkeletonRow {
-  display: grid;
-  grid-template-columns: 42px 1fr 60px;
-  align-items: center;
-  gap: 12px;
-}
-
-.historySkeletonIcon {
-  width: 42px;
-  height: 42px;
-  border-radius: 14px;
-}
-
-.historySkeletonBody {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.historySkeletonLine {
-  height: 14px;
-  border-radius: 999px;
-}
-
-.historySkeletonAmount {
-  width: 60px;
-  height: 16px;
-  border-radius: 999px;
-  justify-self: flex-end;
-}
-
-.promotionsSpinner {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.4);
-  border-top-color: #ffffff;
-  animation: spinBadge 0.8s linear infinite;
-  display: inline-block;
-}
-
-@keyframes spinBadge {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
 }
 
 .error {
@@ -1325,39 +1218,6 @@
   box-shadow: 0 12px 22px rgba(245, 158, 11, 0.28);
 }
 
-.appear {
-  opacity: 0;
-  animation: rise 0.6s ease forwards;
-}
-
-.delay0 { animation-delay: 0s; }
-.delay1 { animation-delay: 0.1s; }
-.delay2 { animation-delay: 0.2s; }
-.delay3 { animation-delay: 0.3s; }
-.delay4 { animation-delay: 0.4s; }
-.delay5 { animation-delay: 0.5s; }
-
-@keyframes rise {
-  from {
-    opacity: 0;
-    transform: translateY(-16px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes itemAppear {
-  from {
-    opacity: 0;
-    transform: translateY(-6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
 
 @keyframes sheetEnter {
   from {
