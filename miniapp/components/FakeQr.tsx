@@ -5,10 +5,12 @@ export default function FakeQr({ size = 96 }: { size?: number }) {
   return (
     <div
       style={{
-        width: dimension,
-        height: dimension,
+        width: "80%",
+        height: "80%",
+        maxWidth: dimension,
+        maxHeight: dimension,
         background: "#ffffff",
-        borderRadius: 16,
+        borderRadius: 10,
         display: "grid",
         placeItems: "center",
         boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.06)",

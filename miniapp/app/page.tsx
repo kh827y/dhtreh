@@ -346,7 +346,6 @@ function MiniappPage() {
     if (!merchantId || !storedMerchantCustomerId) return null;
     return loadSnapshot(merchantId, storedMerchantCustomerId);
   }, [merchantId, storedMerchantCustomerId]);
-  const [status, setStatus] = useState<string>("");
   const [bal, setBal] = useState<number | null>(() => initialSnapshot?.balance ?? null);
   const [tx, setTx] = useState<TransactionItem[]>(() => initialSnapshot?.transactions ?? []);
   const [nextBefore, setNextBefore] = useState<string | null>(() => initialSnapshot?.nextBefore ?? null);
@@ -509,7 +508,6 @@ const applyServerProfile = useCallback(
   const inviteSheetPresence = useDelayedRender(inviteSheetOpen, 280);
   const promotionsSheetPresence = useDelayedRender(promotionsOpen, 280);
   const settingsSheetPresence = useDelayedRender(settingsOpen, 280);
-  const qrPresence = useDelayedRender(qrOpen, 320);
   const persistSnapshot = useCallback(
     (patch: SnapshotPatch) => {
       if (!merchantId || !merchantCustomerId) return;
@@ -950,19 +948,15 @@ const applyServerProfile = useCallback(
   const loadBalance = useCallback(async (opts?: { silent?: boolean }) => {
     const silent = opts?.silent ?? false;
     if (!merchantCustomerId) {
-      if (!silent) setStatus("Нет идентификатора клиента");
       return;
     }
     try {
       const r = await retry(() => balance(merchantId, merchantCustomerId));
       setBal(r.balance);
       persistSnapshot({ balance: r.balance });
-      if (!silent) setStatus("Баланс обновлён");
     } catch (error) {
-      const message = resolveErrorMessage(error);
       if (!silent) {
-        setStatus(`Ошибка баланса: ${message}`);
-        setToast({ msg: "Не удалось обновить баланс", type: "error" });
+        setToast({ msg: `Не удалось обновить баланс: ${resolveErrorMessage(error)}`, type: "error" });
       }
     }
   }, [merchantCustomerId, merchantId, retry, persistSnapshot]);
@@ -1040,7 +1034,6 @@ const applyServerProfile = useCallback(
   const loadTx = useCallback(async (opts?: { silent?: boolean }) => {
     const silent = opts?.silent ?? false;
     if (!merchantCustomerId) {
-      if (!silent) setStatus("Нет идентификатора клиента");
       return;
     }
     try {
@@ -1049,12 +1042,9 @@ const applyServerProfile = useCallback(
       setTx(mapped);
       setNextBefore(r.nextBefore || null);
       persistSnapshot({ transactions: mapped.slice(0, 20), nextBefore: r.nextBefore || null });
-      if (!silent) setStatus("История обновлена");
     } catch (error) {
-      const message = resolveErrorMessage(error);
       if (!silent) {
-        setStatus(`Ошибка истории: ${message}`);
-        setToast({ msg: "Не удалось обновить историю", type: "error" });
+        setToast({ msg: `Не удалось обновить историю: ${resolveErrorMessage(error)}`, type: "error" });
       }
     } finally {
       setTx(mappedTransactions);
@@ -1068,8 +1058,7 @@ const applyServerProfile = useCallback(
       setTx((prev) => [...prev, ...mapTransactions(r.items)]);
       setNextBefore(r.nextBefore || null);
     } catch (error) {
-      const message = resolveErrorMessage(error);
-      setStatus(`Ошибка подгрузки: ${message}`);
+      setToast({ msg: `Не удалось загрузить ещё: ${resolveErrorMessage(error)}`, type: "error" });
     }
   }, [merchantId, merchantCustomerId, nextBefore, mapTransactions]);
 
@@ -1080,8 +1069,7 @@ const applyServerProfile = useCallback(
       setLevelInfo(info);
       persistSnapshot({ levelInfo: info });
     } catch (error) {
-      const message = resolveErrorMessage(error);
-      setStatus(`Не удалось обновить уровень: ${message}`);
+      setToast({ msg: `Не удалось обновить уровень: ${resolveErrorMessage(error)}`, type: "error" });
     }
   }, [merchantCustomerId, merchantId, retry, persistSnapshot]);
 
@@ -1156,7 +1144,6 @@ const applyServerProfile = useCallback(
         });
       }
       setPromotionsLoading(false);
-      setStatus("Данные обновлены");
       return true;
     } catch (error) {
       const message = resolveErrorMessage(error);
@@ -1338,7 +1325,6 @@ const applyServerProfile = useCallback(
       setReferralInfo(null);
       setReferralResolved(false);
       persistSnapshot({ referral: { enabled: false, info: null } });
-      setStatus("Реферальная: нет идентификатора клиента");
       try {
         const key = merchantId ? `miniapp.merchantCustomerId.v1:${merchantId}` : "";
         if (key) {
@@ -1358,7 +1344,6 @@ const applyServerProfile = useCallback(
       setReferralEnabled(false);
       setReferralInfo(null);
     }
-    setStatus("Реферальная: проверяем состояние...");
     referralLink(mc, merchantId)
       .then((data) => {
         if (cancelled) return;
@@ -1376,14 +1361,12 @@ const applyServerProfile = useCallback(
         setReferralInfo(info);
         setReferralEnabled(true);
         persistSnapshot({ referral: { enabled: true, info } });
-        setStatus("Реферальная: активна");
       })
       .catch(() => {
         if (!cancelled) {
           setReferralInfo(null);
           setReferralEnabled(false);
           persistSnapshot({ referral: { enabled: false, info: null } });
-          setStatus("Реферальная: выключена");
         }
       })
       .finally(() => {
@@ -2193,12 +2176,6 @@ const applyServerProfile = useCallback(
             )}
           </section>
 
-          {status && (
-            <div className={`${styles.statusBar}`}>
-              {status}
-            </div>
-          )}
-
           {DEV_UI && (
             <section className={`${styles.devPanel}`}>
               <div className={styles.devRow}>
@@ -2235,12 +2212,8 @@ const applyServerProfile = useCallback(
             </section>
           )}
 
-          {qrPresence.shouldRender && (
-            <div
-              className={`${qrStyles.page} ${qrStyles.pageOverlay} ${
-                qrPresence.status === "entered" ? qrStyles.pageEntering : qrStyles.pageLeaving
-              }`}
-            >
+          {qrOpen && (
+            <div className={`${qrStyles.page} ${qrStyles.pageOverlay}`}>
               <div className={qrStyles.modalBody}>
                 <section className={qrStyles.qrSection}>
                   <div className={qrStyles.qrHeader}>Покажите QR-код на кассе</div>

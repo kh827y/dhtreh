@@ -17,9 +17,6 @@
   position: fixed;
   inset: 0;
   z-index: 1000;
-  animation-duration: 0.32s;
-  animation-fill-mode: forwards;
-  will-change: transform, opacity;
   background: #ffffff;
   overflow: hidden;
 }
@@ -37,14 +34,6 @@
   align-items: start;
   align-content: start;
   grid-auto-rows: max-content;
-}
-
-.pageEntering {
-  animation-name: pageEnter;
-}
-
-.pageLeaving {
-  animation-name: pageLeave;
 }
 
 /* Global interaction polish */
@@ -291,27 +280,5 @@
 
   .refreshButton {
     width: 100%;
-  }
-}
-
-@keyframes pageEnter {
-  from {
-    opacity: 0;
-    transform: translateY(18px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes pageLeave {
-  from {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  to {
-    opacity: 0;
-    transform: translateY(28px);
   }
 }
