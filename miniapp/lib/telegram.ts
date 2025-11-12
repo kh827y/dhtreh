@@ -10,8 +10,8 @@ export type TelegramWebApp = {
   ready?: () => void;
   expand?: () => void;
   requestPhoneNumber?: () => Promise<unknown>;
-  requestContact?: (cb?: (payload: any) => void) => Promise<any> | void;
-  requestPhoneAccess?: (cb?: (status: any) => void) => Promise<any> | void;
+  requestContact?: (cb?: (payload: unknown) => void) => Promise<unknown> | void;
+  requestPhoneAccess?: (cb?: (status: unknown) => void) => Promise<unknown> | void;
   openTelegramLink?: (url: string) => void;
   BackButton?: TelegramBackButton;
   onEvent?: (event: string, cb: () => void) => void;

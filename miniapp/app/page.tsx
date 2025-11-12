@@ -35,6 +35,13 @@ import { getTransactionMeta, type TransactionKind } from "../lib/transactionMeta
 import { subscribeToLoyaltyEvents } from "../lib/loyaltyEvents";
 import { type TransactionItem } from "../lib/reviewUtils";
 import { getTelegramWebApp } from "../lib/telegram";
+import {
+  applySnapshotPatch,
+  loadSnapshot,
+  saveSnapshot,
+  type MiniappSnapshot,
+  type SnapshotPatch,
+} from "../lib/snapshot";
 import styles from "./page.module.css";
 import qrStyles from "./qr/page.module.css";
 
@@ -95,6 +102,31 @@ const genderOptions: Array<{ value: "male" | "female"; label: string }> = [
 
 const profileStorageKey = (merchantId: string) => `miniapp.profile.v2:${merchantId}`;
 const profilePendingKey = (merchantId: string) => `miniapp.profile.pending.v1:${merchantId}`;
+const localCustomerKey = (merchantId: string) => `miniapp.merchantCustomerId.v1:${merchantId}`;
+
+function readStoredMerchantCustomerId(merchantId?: string | null): string | null {
+  if (!merchantId || typeof window === "undefined") return null;
+  try {
+    const stored = localStorage.getItem(localCustomerKey(merchantId));
+    if (stored && stored !== "undefined" && stored.trim()) {
+      return stored.trim();
+    }
+  } catch {
+    // ignore storage issues
+  }
+  return null;
+}
+
+function pickCashbackPercent(levelInfo: LevelInfo | null, levelCatalog: MechanicsLevel[]): number | null {
+  const currentName = levelInfo?.current?.name;
+  if (!currentName) return null;
+  const entry = levelCatalog.find((lvl) => (lvl?.name || "").toLowerCase() === currentName.toLowerCase());
+  if (!entry) return null;
+  if (typeof entry.cashbackPercent === "number") return entry.cashbackPercent;
+  if (entry.benefits && typeof entry.benefits.cashbackPercent === "number") return entry.benefits.cashbackPercent;
+  if (typeof entry.rewardPercent === "number") return entry.rewardPercent;
+  return null;
+}
 
 const HISTORY_ICONS: Record<TransactionKind, ReactNode> = {
   earn: (
@@ -258,35 +290,6 @@ function formatAmount(amount: number): string {
   return `${sign}${amount.toLocaleString("ru-RU", { maximumFractionDigits: 2 })}`;
 }
 
-function escapeRegExp(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function buildReferralMessage(
-  template: string,
-  context: {
-    merchantName: string;
-    bonusAmount: number; // семантика зависит от контекста: для share — награда другу; для шторки — награда приглашающему
-    code: string;
-    link: string;
-  },
-): string {
-  const baseTemplate = template?.trim() ||
-    "Расскажите друзьям о нашей программе и получите бонус. Делитесь ссылкой {link} или пригласительным кодом {code}.";
-  const replacements: Record<string, string> = {
-    "{businessname}": context.merchantName || "",
-    "{bonusamount}": context.bonusAmount > 0 ? String(Math.round(context.bonusAmount)) : "",
-    "{code}": context.code,
-    "{link}": context.link,
-  };
-  let message = baseTemplate;
-  for (const [placeholder, value] of Object.entries(replacements)) {
-    const regex = new RegExp(escapeRegExp(placeholder), "gi");
-    message = message.replace(regex, value);
-  }
-  return message.trim();
-}
-
 export default function Page() {
   const auth = useMiniappAuthContext();
   const merchantId = auth.merchantId;
@@ -297,7 +300,10 @@ export default function Page() {
   const teleHasPhone = auth.teleHasPhone;
   const setAuthTeleHasPhone = auth.setTeleHasPhone;
   const initData = auth.initData;
-  const [merchantCustomerId, setMerchantCustomerId] = useState<string | null>(null);
+  const authThemeTtl = auth.theme?.ttl;
+  const [merchantCustomerId, setMerchantCustomerId] = useState<string | null>(() =>
+    readStoredMerchantCustomerId(auth.merchantId),
+  );
   const [status, setStatus] = useState<string>("");
   const [bal, setBal] = useState<number | null>(null);
   const [tx, setTx] = useState<TransactionItem[]>([]);
@@ -308,6 +314,7 @@ export default function Page() {
   const [toast, setToast] = useState<{ msg: string; type?: "info" | "error" | "success" } | null>(null);
   const [levelInfo, setLevelInfo] = useState<LevelInfo | null>(null);
   const [levelCatalog, setLevelCatalog] = useState<MechanicsLevel[]>([]);
+  const [cashbackPercent, setCashbackPercent] = useState<number | null>(null);
   const [telegramUser, setTelegramUser] = useState<TelegramUser | null>(null);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
   const [phone, setPhone] = useState<string | null>(null);
@@ -330,6 +337,7 @@ const [profileTouched, setProfileTouched] = useState<boolean>(false);
 const [profileSaving, setProfileSaving] = useState<boolean>(false);
 const pendingProfileSync = useRef<boolean>(false);
 const profilePrefetchedRef = useRef<boolean>(false);
+const snapshotRef = useRef<MiniappSnapshot | null>(null);
   const [birthYear, setBirthYear] = useState<string>("");
   const [birthMonth, setBirthMonth] = useState<string>("");
   const [birthDay, setBirthDay] = useState<string>("");
@@ -427,12 +435,8 @@ const applyServerProfile = useCallback(
   const [promotionsOpen, setPromotionsOpen] = useState<boolean>(false);
   const [promotions, setPromotions] = useState<PromotionItem[]>([]);
   const [promotionsLoading, setPromotionsLoading] = useState<boolean>(false);
-  const [promotionsResolved, setPromotionsResolved] = useState<boolean>(false);
   const [inviteSheetOpen, setInviteSheetOpen] = useState<boolean>(false);
-  const [balanceResolved, setBalanceResolved] = useState<boolean>(false);
-  const [levelsResolved, setLevelsResolved] = useState<boolean>(false);
-  const [localProfileResolved, setLocalProfileResolved] = useState<boolean>(false);
-  const [profileResolved, setProfileResolved] = useState<boolean>(false);
+  const [historyReady, setHistoryReady] = useState<boolean>(false);
   // QR modal state
   const [qrOpen, setQrOpen] = useState<boolean>(false);
   const [qrToken, setQrToken] = useState<string>("");
@@ -446,6 +450,54 @@ const applyServerProfile = useCallback(
   const promotionsSheetPresence = useDelayedRender(promotionsOpen, 280);
   const settingsSheetPresence = useDelayedRender(settingsOpen, 280);
   const qrPresence = useDelayedRender(qrOpen, 320);
+  const persistSnapshot = useCallback(
+    (patch: SnapshotPatch) => {
+      if (!merchantId || !merchantCustomerId) return;
+      const next = applySnapshotPatch(snapshotRef.current, patch, merchantId, merchantCustomerId);
+      snapshotRef.current = next;
+      saveSnapshot(next);
+    },
+    [merchantId, merchantCustomerId],
+  );
+  const hydrateSnapshot = useCallback(
+    (snapshot: MiniappSnapshot) => {
+      setBal(typeof snapshot.balance === "number" ? snapshot.balance : null);
+      setLevelInfo(snapshot.levelInfo ?? null);
+      if (typeof snapshot.cashbackPercent === "number") {
+        setCashbackPercent(snapshot.cashbackPercent);
+      }
+      if (Array.isArray(snapshot.transactions)) {
+        setTx(snapshot.transactions);
+        setHistoryReady(true);
+      } else {
+        setTx([]);
+      }
+      setNextBefore(snapshot.nextBefore ?? null);
+      if (Array.isArray(snapshot.promotions)) {
+        setPromotions(snapshot.promotions);
+      } else {
+        setPromotions([]);
+      }
+      if (snapshot.referral) {
+        setReferralEnabled(Boolean(snapshot.referral.enabled && snapshot.referral.info));
+        setReferralInfo(snapshot.referral.info ?? null);
+        if (snapshot.referral.inviteCode) {
+          setInviteCode(snapshot.referral.inviteCode);
+        }
+        setInviteApplied(Boolean(snapshot.referral.inviteApplied));
+        setReferralResolved(true);
+      } else {
+        setReferralEnabled(false);
+        setReferralInfo(null);
+        setReferralResolved(false);
+      }
+      if (!telegramUser && snapshot.telegramProfile) {
+        setTelegramUser(snapshot.telegramProfile);
+      }
+      setPromotionsLoading(false);
+    },
+    [telegramUser],
+  );
 
   useEffect(() => {
     const tgUser = getTelegramUser();
@@ -480,13 +532,47 @@ const applyServerProfile = useCallback(
     } catch {
       setProfileCompleted(false);
     }
-    setLocalProfileResolved(true);
   }, [merchantId]);
+  useEffect(() => {
+    if (!merchantId || !merchantCustomerId) {
+      snapshotRef.current = null;
+      setBal(null);
+      setLevelInfo(null);
+      setCashbackPercent(null);
+      setTx([]);
+      setHistoryReady(false);
+      setNextBefore(null);
+      setPromotions([]);
+      setReferralInfo(null);
+      setReferralEnabled(false);
+      setInviteCode("");
+      setInviteApplied(false);
+      return;
+    }
+    const snapshot = loadSnapshot(merchantId, merchantCustomerId);
+    if (snapshot) {
+      snapshotRef.current = snapshot;
+      hydrateSnapshot(snapshot);
+    } else {
+      snapshotRef.current = null;
+      setHistoryReady(false);
+    }
+  }, [merchantId, merchantCustomerId, hydrateSnapshot]);
+  useEffect(() => {
+    if (!merchantId || !merchantCustomerId) return;
+    if (!telegramUser) return;
+    persistSnapshot({ telegramProfile: telegramUser });
+  }, [merchantId, merchantCustomerId, telegramUser, persistSnapshot]);
 
   useEffect(() => {
     if (teleOnboarded === null) return;
     setProfileCompleted(teleOnboarded);
   }, [teleOnboarded]);
+  useEffect(() => {
+    if (merchantCustomerId) return;
+    const stored = readStoredMerchantCustomerId(merchantId);
+    if (stored) setMerchantCustomerId(stored);
+  }, [merchantId, merchantCustomerId]);
 
   // Синхронизация локальных селектов даты с profileForm.birthDate
   useEffect(() => {
@@ -502,6 +588,10 @@ const applyServerProfile = useCallback(
       setBirthDay("");
     }
   }, [profileForm.birthDate]);
+  useEffect(() => {
+    if (!merchantId || !merchantCustomerId) return;
+    persistSnapshot({ referral: { inviteCode, inviteApplied } });
+  }, [merchantId, merchantCustomerId, inviteCode, inviteApplied, persistSnapshot]);
 
   // Автоподстановка пригласительного кода из Telegram start_param/startapp (payload.referralCode)
   useEffect(() => {
@@ -557,16 +647,13 @@ const applyServerProfile = useCallback(
   useEffect(() => {
     if (!merchantId || !merchantCustomerId) return;
     if (teleOnboarded === false) {
-      setProfileResolved(true);
       return;
     }
     if (profilePrefetchedRef.current) {
       profilePrefetchedRef.current = false;
-      setProfileResolved(true);
       return;
     }
     let cancelled = false;
-    setProfileResolved(false);
     (async () => {
       try {
         const p = await profileGet(merchantId, merchantCustomerId);
@@ -574,8 +661,6 @@ const applyServerProfile = useCallback(
         applyServerProfile(p);
       } catch {
         // сервер мог не иметь профиля — оставим локальные данные/валидацию
-      } finally {
-        if (!cancelled) setProfileResolved(true);
       }
     })();
     return () => { cancelled = true; };
@@ -650,11 +735,10 @@ const applyServerProfile = useCallback(
   // ===== QR modal logic =====
   const qrEffectiveTtl = useMemo(() => {
     // theme.ttl может прийти из бэкенда публичных настроек; fallback — env
-    const themeTtl = (auth as any)?.theme?.ttl;
-    if (typeof themeTtl === "number" && Number.isFinite(themeTtl)) return themeTtl;
+    if (typeof authThemeTtl === "number" && Number.isFinite(authThemeTtl)) return authThemeTtl;
     const fallback = Number(process.env.NEXT_PUBLIC_QR_TTL || "60");
     return Number.isFinite(fallback) ? fallback : 60;
-  }, [(auth as any)?.theme?.ttl]);
+  }, [authThemeTtl]);
 
   const refreshQr = useCallback(async () => {
     if (!merchantCustomerId) return;
@@ -750,17 +834,6 @@ const applyServerProfile = useCallback(
     };
   }, [qrOpen, refreshQr, updateQrSize]);
 
-  const qrCashbackPercent = useMemo(() => {
-    const currentName = levelInfo?.current?.name;
-    if (!currentName) return null;
-    const entry = levelCatalog.find((lvl) => (lvl?.name || "").toLowerCase() === currentName.toLowerCase());
-    if (!entry) return null;
-    if (typeof entry.cashbackPercent === "number") return entry.cashbackPercent;
-    if (entry.benefits && typeof entry.benefits.cashbackPercent === "number") return entry.benefits.cashbackPercent;
-    if (typeof entry.rewardPercent === "number") return entry.rewardPercent;
-    return null;
-  }, [levelInfo, levelCatalog]);
-
   const qrProgressData = useMemo(() => {
     const fallbackPercent = 0;
     const fallback = { percent: fallbackPercent, current: 0, threshold: 0 };
@@ -791,6 +864,7 @@ const applyServerProfile = useCallback(
     try {
       const r = await retry(() => balance(merchantId, merchantCustomerId));
       setBal(r.balance);
+      persistSnapshot({ balance: r.balance });
       if (!silent) setStatus("Баланс обновлён");
     } catch (error) {
       const message = resolveErrorMessage(error);
@@ -798,10 +872,8 @@ const applyServerProfile = useCallback(
         setStatus(`Ошибка баланса: ${message}`);
         setToast({ msg: "Не удалось обновить баланс", type: "error" });
       }
-    } finally {
-      setBalanceResolved(true);
     }
-  }, [merchantCustomerId, merchantId, retry]);
+  }, [merchantCustomerId, merchantId, retry, persistSnapshot]);
 
   const mapTransactions = useCallback(
     (
@@ -881,8 +953,10 @@ const applyServerProfile = useCallback(
     }
     try {
       const r = await retry(() => transactions(merchantId, merchantCustomerId, 20));
-      setTx(mapTransactions(r.items));
+      const mapped = mapTransactions(r.items);
+      setTx(mapped);
       setNextBefore(r.nextBefore || null);
+      persistSnapshot({ transactions: mapped.slice(0, 20), nextBefore: r.nextBefore || null });
       if (!silent) setStatus("История обновлена");
     } catch (error) {
       const message = resolveErrorMessage(error);
@@ -890,8 +964,10 @@ const applyServerProfile = useCallback(
         setStatus(`Ошибка истории: ${message}`);
         setToast({ msg: "Не удалось обновить историю", type: "error" });
       }
+    } finally {
+      setHistoryReady(true);
     }
-  }, [merchantCustomerId, merchantId, retry, mapTransactions]);
+  }, [merchantCustomerId, merchantId, retry, mapTransactions, persistSnapshot]);
 
   const loadMore = useCallback(async () => {
     if (!merchantCustomerId || !nextBefore) return;
@@ -910,13 +986,12 @@ const applyServerProfile = useCallback(
     try {
       const info = await retry(() => levels(merchantId, merchantCustomerId));
       setLevelInfo(info);
+      persistSnapshot({ levelInfo: info });
     } catch (error) {
       const message = resolveErrorMessage(error);
       setStatus(`Не удалось обновить уровень: ${message}`);
-    } finally {
-      setLevelsResolved(true);
     }
-  }, [merchantCustomerId, merchantId, retry]);
+  }, [merchantCustomerId, merchantId, retry, persistSnapshot]);
 
 
   const loadLevelCatalog = useCallback(async () => {
@@ -940,34 +1015,39 @@ const applyServerProfile = useCallback(
       if (data.profile) {
         applyServerProfile(data.profile);
         profilePrefetchedRef.current = true;
-        setProfileResolved(true);
-      } else {
-        setProfileResolved(true);
       }
       if (data.consent) {
         setConsent(Boolean(data.consent.granted));
       }
       if (data.balance && typeof data.balance.balance === "number") {
         setBal(data.balance.balance);
+        persistSnapshot({ balance: data.balance.balance });
       }
-      setBalanceResolved(true);
       if (data.levels) {
         setLevelInfo(data.levels);
+        persistSnapshot({ levelInfo: data.levels });
       }
-      setLevelsResolved(true);
-      if (data.transactions) {
-        setTx(mapTransactions(Array.isArray(data.transactions.items) ? data.transactions.items : []));
-        setNextBefore(data.transactions.nextBefore || null);
-      } else {
-        setTx([]);
-        setNextBefore(null);
-      }
+      const mappedTransactions = data.transactions
+        ? mapTransactions(Array.isArray(data.transactions.items) ? data.transactions.items : [])
+        : [];
+      setTx(mappedTransactions);
+      setHistoryReady(true);
+      setNextBefore(data.transactions?.nextBefore || null);
       if (Array.isArray(data.promotions)) {
         setPromotions(data.promotions);
+        persistSnapshot({
+          promotions: data.promotions,
+          transactions: mappedTransactions.slice(0, 20),
+          nextBefore: data.transactions?.nextBefore || null,
+        });
       } else {
         setPromotions([]);
+        persistSnapshot({
+          transactions: mappedTransactions.slice(0, 20),
+          nextBefore: data.transactions?.nextBefore || null,
+          promotions: [],
+        });
       }
-      setPromotionsResolved(true);
       setPromotionsLoading(false);
       setStatus("Данные обновлены");
       return true;
@@ -976,7 +1056,7 @@ const applyServerProfile = useCallback(
       setToast({ msg: `Не удалось загрузить данные: ${message}`, type: "error" });
       return false;
     }
-  }, [merchantId, merchantCustomerId, applyServerProfile, mapTransactions, setToast]);
+  }, [merchantId, merchantCustomerId, applyServerProfile, mapTransactions, setToast, persistSnapshot]);
 
   const loadPromotions = useCallback(async () => {
     if (!merchantId || !merchantCustomerId) {
@@ -986,15 +1066,16 @@ const applyServerProfile = useCallback(
     try {
       setPromotionsLoading(true);
       const list = await promotionsList(merchantId, merchantCustomerId);
-      setPromotions(Array.isArray(list) ? list : []);
+      const normalized = Array.isArray(list) ? list : [];
+      setPromotions(normalized);
+      persistSnapshot({ promotions: normalized, promotionsUpdatedAt: Date.now() });
     } catch (error) {
       setPromotions([]);
       setToast({ msg: `Не удалось загрузить акции: ${resolveErrorMessage(error)}`, type: "error" });
     } finally {
       setPromotionsLoading(false);
-      setPromotionsResolved(true);
     }
-  }, [merchantId, merchantCustomerId]);
+  }, [merchantId, merchantCustomerId, persistSnapshot]);
 
 
   const refreshHistory = useCallback(() => {
@@ -1074,15 +1155,29 @@ const applyServerProfile = useCallback(
     } catch {
       // ignore
     }
-  }, [merchantCustomerId, merchantId, referralReloadTick]);
+  }, [merchantCustomerId, merchantId]);
 
   const authLoading = auth.loading;
   useEffect(() => {
     if (authLoading) return;
     loadLevelCatalog();
   }, [authLoading, loadLevelCatalog]);
+  useEffect(() => {
+    if (!merchantCustomerId) {
+      setCashbackPercent(null);
+      return;
+    }
+    const value = pickCashbackPercent(levelInfo, levelCatalog);
+    if (typeof value === "number") {
+      setCashbackPercent(value);
+      persistSnapshot({ cashbackPercent: value });
+    } else if (!levelInfo) {
+      setCashbackPercent(null);
+    }
+  }, [merchantCustomerId, levelInfo, levelCatalog, persistSnapshot]);
 
   useEffect(() => {
+    if (authLoading) return;
     if (!merchantCustomerId) return;
     let cancelled = false;
     (async () => {
@@ -1098,7 +1193,7 @@ const applyServerProfile = useCallback(
     return () => {
       cancelled = true;
     };
-  }, [merchantCustomerId, loadBootstrap, syncConsent, loadBalance, loadTx, loadLevels, loadPromotions]);
+  }, [authLoading, merchantCustomerId, loadBootstrap, syncConsent, loadBalance, loadTx, loadLevels, loadPromotions]);
 
   const handlePromotionClaim = useCallback(
     async (promotionId: string) => {
@@ -1135,6 +1230,7 @@ const applyServerProfile = useCallback(
       setReferralEnabled(false);
       setReferralInfo(null);
       setReferralResolved(false);
+      persistSnapshot({ referral: { enabled: false, info: null } });
       setStatus("Реферальная: нет идентификатора клиента");
       try {
         const key = merchantId ? `miniapp.merchantCustomerId.v1:${merchantId}` : "";
@@ -1149,33 +1245,37 @@ const applyServerProfile = useCallback(
     }
     let cancelled = false;
     setReferralLoading(true);
-    setReferralResolved(false);
-    setReferralEnabled(false);
-    setReferralInfo(null);
-    setInviteApplied(false);
-    setInviteCode("");
+    const hasCachedReferral = Boolean(snapshotRef.current?.referral?.info);
+    if (!hasCachedReferral) {
+      setReferralResolved(false);
+      setReferralEnabled(false);
+      setReferralInfo(null);
+    }
     setStatus("Реферальная: проверяем состояние...");
     referralLink(mc, merchantId)
       .then((data) => {
         if (cancelled) return;
-        setReferralInfo({
+        const info = {
           code: data.code,
           link: data.link,
           messageTemplate: data.program?.messageTemplate ?? "",
           placeholders: Array.isArray(data.program?.placeholders) ? data.program.placeholders : [],
           merchantName: data.program?.merchantName ?? "",
           friendReward: typeof data.program?.refereeReward === "number" ? data.program.refereeReward : 0,
-          inviterReward: typeof (data.program as any)?.referrerReward === "number" ? (data.program as any).referrerReward : 0,
+          inviterReward: typeof data.program?.referrerReward === "number" ? data.program.referrerReward : 0,
           shareMessageTemplate:
             typeof data.program?.shareMessageTemplate === 'string' ? data.program.shareMessageTemplate : undefined,
-        });
+        };
+        setReferralInfo(info);
         setReferralEnabled(true);
+        persistSnapshot({ referral: { enabled: true, info } });
         setStatus("Реферальная: активна");
       })
       .catch(() => {
         if (!cancelled) {
           setReferralInfo(null);
           setReferralEnabled(false);
+          persistSnapshot({ referral: { enabled: false, info: null } });
           setStatus("Реферальная: выключена");
         }
       })
@@ -1188,7 +1288,7 @@ const applyServerProfile = useCallback(
     return () => {
       cancelled = true;
     };
-  }, [auth.loading, auth.merchantCustomerId, merchantCustomerId, merchantId, referralReloadTick]);
+  }, [auth.loading, auth.merchantCustomerId, merchantCustomerId, merchantId, referralReloadTick, persistSnapshot]);
 
   const toggleConsent = useCallback(async () => {
     if (!merchantCustomerId) return;
@@ -1550,32 +1650,9 @@ const applyServerProfile = useCallback(
     return "Вы";
   }, [profileForm.name, telegramUser]);
 
-  const screenLoading = useMemo(() => {
-    if (auth.loading) return true;
-    if (!merchantCustomerId) return !localProfileResolved;
-    if (!profileCompleted) return false;
-    const profileGate = teleOnboarded == null ? profileResolved : true;
-    return !(
-      balanceResolved &&
-      levelsResolved &&
-      promotionsResolved &&
-      referralResolved &&
-      profileGate
-    );
-  }, [
-    auth.loading,
-    merchantCustomerId,
-    profileCompleted,
-    teleOnboarded,
-    balanceResolved,
-    levelsResolved,
-    promotionsResolved,
-    referralResolved,
-    profileResolved,
-    localProfileResolved,
-  ]);
-
-  const profilePage = !screenLoading && (!merchantCustomerId || !profileCompleted);
+  const profilePage =
+    teleOnboarded === false ||
+    (teleOnboarded == null && !merchantCustomerId && !profileCompleted);
 
   // Render message with clickable {link} and {code} placeholders
   const renderReferralMessage = (
@@ -1650,24 +1727,6 @@ const applyServerProfile = useCallback(
 
   const phoneButtonClick = phoneShareStage === "confirm" ? handleConfirmPhone : handleRequestPhone;
   const phoneButtonDisabled = profileSaving || phoneShareLoading;
-
-  if (screenLoading) {
-    return (
-      <div className={styles.page}>
-        <div className={`${styles.skeleton} ${styles.skeletonCard}`} />
-        <div className={`${styles.skeleton} ${styles.skeletonBlock}`} />
-        <div className={`${styles.skeletonActions}`}>
-          <div className={`${styles.skeleton} ${styles.skeletonBtn}`} />
-          <div className={`${styles.skeleton} ${styles.skeletonBtn}`} />
-        </div>
-        <div className={styles.historySection}>
-          <div className={`${styles.skeleton} ${styles.skeletonSmall}`} />
-          <div className={`${styles.skeleton} ${styles.skeletonSmall}`} />
-          <div className={`${styles.skeleton} ${styles.skeletonSmall}`} />
-        </div>
-      </div>
-    );
-  }
 
   const profileContent = (
     <div className={styles.profileContainer}>
@@ -1893,16 +1952,28 @@ const applyServerProfile = useCallback(
             <div className={styles.cardContent}>
               <div className={styles.cardRow}>
                 <span className={styles.cardLabel}>Баланс</span>
-                <span className={styles.cardValue}>{bal != null ? bal.toLocaleString("ru-RU") : "—"}</span>
+                <span className={styles.cardValue}>
+                  {bal != null ? bal.toLocaleString("ru-RU") : (
+                    <span className={`${styles.skeleton} ${styles.inlineSkeleton}`} />
+                  )}
+                </span>
               </div>
               <div className={styles.cardRow}>
                 <span className={styles.cardLabel}>Уровень</span>
-                <span className={styles.cardValue}>{levelInfo?.current?.name || "—"}</span>
+                <span className={styles.cardValue}>
+                  {levelInfo?.current?.name ? (
+                    levelInfo.current.name
+                  ) : (
+                    <span className={`${styles.skeleton} ${styles.inlineSkeleton}`} />
+                  )}
+                </span>
               </div>
               <div className={styles.cardRow}>
                 <span className={styles.cardLabel}>Кэшбэк</span>
                 <span className={styles.cardValue}>
-                  {typeof qrCashbackPercent === "number" ? `${qrCashbackPercent}%` : "—"}
+                  {typeof cashbackPercent === "number" ? `${cashbackPercent}%` : (
+                    <span className={`${styles.skeleton} ${styles.inlineSkeleton}`} />
+                  )}
                 </span>
               </div>
             </div>
@@ -1937,7 +2008,9 @@ const applyServerProfile = useCallback(
               onClick={() => { setPromotionsOpen(true); if (!promotions.length) void loadPromotions(); }}
             >
               <span>Акции</span>
-              <span className={styles.promotionsBadge}>{availablePromotions}</span>
+              <span className={styles.promotionsBadge}>
+                {promotionsLoading ? <span className={styles.promotionsSpinner} aria-label="Обновляем акции" /> : availablePromotions}
+              </span>
             </button>
             {referralEnabled && referralInfo && (
               <button
@@ -1959,7 +2032,20 @@ const applyServerProfile = useCallback(
 
           <section className={`${styles.historySection} ${styles.appear} ${styles.delay4}`}>
             <div className={styles.historyHeader}>История</div>
-            {tx.length === 0 ? (
+            {!historyReady ? (
+              <ul className={styles.historySkeletonList} aria-hidden="true">
+                {Array.from({ length: 3 }).map((_, idx) => (
+                  <li key={`history-skeleton-${idx}`} className={styles.historySkeletonRow}>
+                    <span className={`${styles.skeleton} ${styles.historySkeletonIcon}`} />
+                    <div className={styles.historySkeletonBody}>
+                      <span className={`${styles.skeleton} ${styles.historySkeletonLine}`} />
+                      <span className={`${styles.skeleton} ${styles.historySkeletonLine}`} />
+                    </div>
+                    <span className={`${styles.skeleton} ${styles.historySkeletonAmount}`} />
+                  </li>
+                ))}
+              </ul>
+            ) : tx.length === 0 ? (
               <div className={styles.emptyState}>Операций пока нет</div>
             ) : (
               <ul className={styles.historyList}>
@@ -2126,7 +2212,7 @@ const applyServerProfile = useCallback(
                     <div className={qrStyles.infoLabel}>Уровень</div>
                     <div className={qrStyles.infoValue}>{levelInfo?.current?.name || "—"}</div>
                     <div className={qrStyles.infoCaption}>
-                      Кэшбэк {typeof qrCashbackPercent === "number" ? `${qrCashbackPercent}%` : "—%"}
+                      Кэшбэк {typeof cashbackPercent === "number" ? `${cashbackPercent}%` : "—%"}
                     </div>
                   </div>
                 </section>
@@ -2166,7 +2252,7 @@ const applyServerProfile = useCallback(
             <div className={styles.sheetText}>
               {renderReferralMessage(referralInfo.messageTemplate, {
                 merchantName: referralInfo.merchantName,
-                bonusAmount: (referralInfo as any).inviterReward || 0,
+                bonusAmount: referralInfo.inviterReward || 0,
                 code: referralInfo.code,
                 link: referralInfo.link,
               })}

@@ -385,7 +385,6 @@ export function FeedbackManager() {
       const eventMerchant = data.merchantId ? String(data.merchantId) : "";
       if (eventMerchant && eventMerchant !== merchantId) return;
       const eventMc = data.merchantCustomerId ? String(data.merchantCustomerId) : "";
-      const eventCustomer = data.customerId ? String(data.customerId) : "";
       if (eventMc && eventMc !== merchantCustomerId) return;
       // Back-compat: if merchantCustomerId not provided in event, we cannot reliably compare against global customerId; skip filter
       const typeRaw = data.type ?? data.eventType;
