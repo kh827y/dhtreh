@@ -1740,6 +1740,7 @@ const applyServerProfile = useCallback(
     return "Вы";
   }, [profileForm.name, telegramUser]);
 
+  const onboardingStatusPending = teleOnboarded === null && !localOnboarded;
   const profilePage = teleOnboarded === false && !localOnboarded;
 
   // Render message with clickable {link} and {code} placeholders
@@ -2418,7 +2419,7 @@ const applyServerProfile = useCallback(
 
   return (
     <div className={styles.page} suppressHydrationWarning>
-      {mainContent}
+      {onboardingStatusPending ? null : mainContent}
     </div>
   );
 }
