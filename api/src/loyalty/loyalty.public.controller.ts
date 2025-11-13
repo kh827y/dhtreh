@@ -6,12 +6,14 @@ import {
   Post,
   BadRequestException,
   UseGuards,
+  Query,
 } from '@nestjs/common';
 import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { PrismaService } from '../prisma.service';
 import { LoyaltyService } from './loyalty.service';
 import { TelegramMiniappGuard } from '../guards/telegram-miniapp.guard';
+import { LoyaltyEventsService } from './loyalty-events.service';
 
 @ApiTags('loyalty-public')
 @Controller('loyalty')
@@ -19,6 +21,7 @@ export class LoyaltyPublicController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly loyalty: LoyaltyService,
+    private readonly events: LoyaltyEventsService,
   ) {}
 
   // Публичный каталог уровней для миниаппы
@@ -111,5 +114,27 @@ export class LoyaltyPublicController {
       outletId,
       staffId,
     });
+  }
+
+  @UseGuards(TelegramMiniappGuard)
+  @Get('events/poll')
+  @Throttle({ default: { limit: 120, ttl: 60_000 } })
+  async pollEvents(
+    @Query('merchantId') merchantId?: string,
+    @Query('merchantCustomerId') merchantCustomerId?: string,
+  ) {
+    const sanitizedMerchantId = (merchantId || '').trim();
+    const sanitizedMerchantCustomerId = (merchantCustomerId || '').trim();
+    if (!sanitizedMerchantId) {
+      throw new BadRequestException('merchantId is required');
+    }
+    if (!sanitizedMerchantCustomerId) {
+      throw new BadRequestException('merchantCustomerId is required');
+    }
+    const event = await this.events.waitForCustomerEvent(
+      sanitizedMerchantId,
+      sanitizedMerchantCustomerId,
+    );
+    return { event };
   }
 }

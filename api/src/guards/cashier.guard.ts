@@ -12,22 +12,21 @@ import {
 export class CashierGuard implements CanActivate {
   constructor(private prisma: PrismaService) {}
 
-  private readonly telegramProtectedPaths: Array<
-    string | { prefix: string }
-  > = [
-    '/loyalty/profile',
-    '/loyalty/profile/phone-status',
-    '/loyalty/consent',
-    '/loyalty/promotions',
-    '/loyalty/promotions/claim',
-    '/loyalty/promocodes/apply',
-    '/loyalty/reviews',
-    '/loyalty/qr',
-    '/loyalty/transactions',
-    { prefix: '/loyalty/balance/' },
-    { prefix: '/loyalty/outlets/' },
-    { prefix: '/loyalty/staff/' },
-  ];
+  private readonly telegramProtectedPaths: Array<string | { prefix: string }> =
+    [
+      '/loyalty/profile',
+      '/loyalty/profile/phone-status',
+      '/loyalty/consent',
+      '/loyalty/promotions',
+      '/loyalty/promotions/claim',
+      '/loyalty/promocodes/apply',
+      '/loyalty/reviews',
+      '/loyalty/qr',
+      '/loyalty/transactions',
+      { prefix: '/loyalty/balance/' },
+      { prefix: '/loyalty/outlets/' },
+      { prefix: '/loyalty/staff/' },
+    ];
 
   private requiresTelegramCustomer(path: string): boolean {
     return this.telegramProtectedPaths.some((entry) => {

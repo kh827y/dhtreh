@@ -2399,9 +2399,8 @@ export class LoyaltyController {
       if (!merchantCustomerId) {
         throw new BadRequestException('Failed to create merchant customer');
       }
-      const flags = await this.fetchMerchantCustomerProfileFlags(
-        merchantCustomerId,
-      );
+      const flags =
+        await this.fetchMerchantCustomerProfileFlags(merchantCustomerId);
       return { ok: true, merchantCustomerId, ...flags };
     }
 
@@ -2685,7 +2684,10 @@ export class LoyaltyController {
       ]);
     return {
       profile: this.toProfileDto(customer, merchantCustomer),
-      consent: { granted: !!consent, consentAt: consent?.consentAt?.toISOString() ?? null },
+      consent: {
+        granted: !!consent,
+        consentAt: consent?.consentAt?.toISOString() ?? null,
+      },
       balance: balanceResp,
       levels: levelsResp,
       transactions: transactionsResp,

@@ -328,47 +328,50 @@ export class PortalCustomersService {
       1,
     );
 
-    const [
-      pendingHolds,
-      pendingLots,
-      currentMonth,
-      previousMonth,
-      overall,
-    ] = await Promise.all([
-      this.prisma.hold.groupBy({
-        by: ['customerId'],
-        where: {
+    const [pendingHolds, pendingLots, currentMonth, previousMonth, overall] =
+      await Promise.all([
+        this.prisma.hold.groupBy({
+          by: ['customerId'],
+          where: {
+            merchantId,
+            customerId: { in: customerIds },
+            status: HoldStatus.PENDING,
+            mode: HoldMode.EARN,
+          },
+          _sum: { earnPoints: true },
+        }),
+        this.prisma.earnLot.groupBy({
+          by: ['customerId'],
+          where: {
+            merchantId,
+            customerId: { in: customerIds },
+            status: 'PENDING',
+          },
+          _sum: { points: true, consumedPoints: true },
+        }),
+        fetchReceiptAggregates(this.prisma, {
           merchantId,
-          customerId: { in: customerIds },
-          status: HoldStatus.PENDING,
-          mode: HoldMode.EARN,
-        },
-        _sum: { earnPoints: true },
-      }),
-      this.prisma.earnLot.groupBy({
-        by: ['customerId'],
-        where: {
+          customerIds,
+          period: {
+            from: currentMonthStart,
+            to: nextMonthStart,
+            inclusiveEnd: false,
+          },
+        }),
+        fetchReceiptAggregates(this.prisma, {
           merchantId,
-          customerId: { in: customerIds },
-          status: 'PENDING',
-        },
-        _sum: { points: true, consumedPoints: true },
-      }),
-      fetchReceiptAggregates(this.prisma, {
-        merchantId,
-        customerIds,
-        period: { from: currentMonthStart, to: nextMonthStart, inclusiveEnd: false },
-      }),
-      fetchReceiptAggregates(this.prisma, {
-        merchantId,
-        customerIds,
-        period: { from: previousMonthStart, to: currentMonthStart, inclusiveEnd: false },
-      }),
-      fetchReceiptAggregates(this.prisma, {
-        merchantId,
-        customerIds,
-      }),
-    ]);
+          customerIds,
+          period: {
+            from: previousMonthStart,
+            to: currentMonthStart,
+            inclusiveEnd: false,
+          },
+        }),
+        fetchReceiptAggregates(this.prisma, {
+          merchantId,
+          customerIds,
+        }),
+      ]);
 
     for (const row of pendingHolds) {
       const value = Math.max(0, Number(row._sum?.earnPoints ?? 0));

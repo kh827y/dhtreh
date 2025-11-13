@@ -706,8 +706,7 @@ export class OperationsLogService {
           createdAt: transaction.createdAt.toISOString(),
         },
       ],
-      canCancel:
-        !transaction.canceledAt && transaction.type !== TxnType.REFUND,
+      canCancel: !transaction.canceledAt && transaction.type !== TxnType.REFUND,
     };
   }
 

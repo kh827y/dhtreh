@@ -1080,13 +1080,14 @@ const applyServerProfile = useCallback(
     []
   );
 
-  const loadTx = useCallback(async (opts?: { silent?: boolean }) => {
+  const loadTx = useCallback(async (opts?: { silent?: boolean; fresh?: boolean }) => {
     const silent = opts?.silent ?? false;
+    const fresh = opts?.fresh ?? false;
     if (!merchantCustomerId) {
       return;
     }
     try {
-      const r = await retry(() => transactions(merchantId, merchantCustomerId, 20));
+      const r = await retry(() => transactions(merchantId, merchantCustomerId, 20, undefined, { fresh }));
       const mapped = mapTransactions(r.items);
       setTx(mapped);
       setTransactionsResolved(true);
@@ -1110,17 +1111,23 @@ const applyServerProfile = useCallback(
     }
   }, [merchantId, merchantCustomerId, nextBefore, mapTransactions]);
 
-  const loadLevels = useCallback(async () => {
-    if (!merchantCustomerId) return;
-    try {
-      const info = await retry(() => levels(merchantId, merchantCustomerId));
-      setLevelInfo(info);
-      setLevelsResolved(true);
-      persistSnapshot({ levelInfo: info });
-    } catch (error) {
-      setToast({ msg: `Не удалось обновить уровень: ${resolveErrorMessage(error)}`, type: "error" });
-    }
-  }, [merchantCustomerId, merchantId, retry, persistSnapshot]);
+  const loadLevels = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!merchantCustomerId) return;
+      try {
+        const info = await retry(() => levels(merchantId, merchantCustomerId));
+        setLevelInfo(info);
+        setLevelsResolved(true);
+        persistSnapshot({ levelInfo: info });
+        updateCashbackPercent(info, levelCatalogRef.current);
+      } catch (error) {
+        if (!opts?.silent) {
+          setToast({ msg: `Не удалось обновить уровень: ${resolveErrorMessage(error)}`, type: "error" });
+        }
+      }
+    },
+    [merchantCustomerId, merchantId, retry, persistSnapshot, updateCashbackPercent],
+  );
 
 
   const loadLevelCatalog = useCallback(async () => {
@@ -1237,12 +1244,12 @@ const applyServerProfile = useCallback(
   }, [merchantId, merchantCustomerId, persistSnapshot]);
 
 
-  const refreshHistory = useCallback(() => {
+  const refreshPointsSnapshot = useCallback(() => {
     if (!merchantCustomerId) return;
     const tasks: Array<Promise<unknown>> = [
       loadBalance({ silent: true }),
-      loadTx({ silent: true }),
-      loadLevels(),
+      loadTx({ silent: true, fresh: true }),
+      loadLevels({ silent: true }),
     ];
     void Promise.allSettled(tasks);
   }, [merchantCustomerId, loadBalance, loadTx, loadLevels]);
@@ -1255,47 +1262,36 @@ const applyServerProfile = useCallback(
       if (eventMerchant && eventMerchant !== merchantId) return;
       const eventMc = data.merchantCustomerId ? String(data.merchantCustomerId) : "";
       if (eventMc && merchantCustomerId && eventMc !== merchantCustomerId) return;
-      const typeRaw = data.type ?? data.eventType;
-      if (typeRaw) {
-        const eventType = String(typeRaw).toLowerCase();
-        if (
-          !eventType.includes("commit") &&
-          !eventType.includes("redeem") &&
-          !eventType.includes("earn")
-        ) {
-          return;
-        }
-      }
-      refreshHistory();
+      const declaredType = typeof data.eventType === "string" ? data.eventType.toLowerCase() : "";
+      const txnTypeRaw = data.transactionType ?? data.type ?? data.eventType;
+      const txnType = typeof txnTypeRaw === "string" ? txnTypeRaw.toLowerCase() : "";
+      const matches =
+        declaredType === "loyalty.transaction" ||
+        txnType.includes("purchase") ||
+        txnType.includes("earn") ||
+        txnType.includes("redeem") ||
+        txnType.includes("commit");
+      if (!matches) return;
+      refreshPointsSnapshot();
     },
-    [merchantId, merchantCustomerId, refreshHistory],
+    [merchantId, merchantCustomerId, refreshPointsSnapshot],
   );
 
   useEffect(() => {
-    if (!merchantId || !merchantCustomerId) return;
-    const unsubscribe = subscribeToLoyaltyEvents(handleExternalEvent);
+    const unsubscribe = subscribeToLoyaltyEvents(handleExternalEvent, {
+      merchantId,
+      merchantCustomerId,
+    });
     return () => {
       unsubscribe();
     };
   }, [merchantId, merchantCustomerId, handleExternalEvent]);
 
   useEffect(() => {
-    if (typeof window === "undefined" || typeof document === "undefined") return;
-    if (!merchantCustomerId) return;
-    const interval = window.setInterval(() => {
-      if (document.visibilityState && document.visibilityState !== "visible") return;
-      refreshHistory();
-    }, 20000);
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [merchantCustomerId, refreshHistory]);
-
-  useEffect(() => {
     if (typeof document === "undefined") return;
     const onVisibility = () => {
       if (document.visibilityState === "visible") {
-        refreshHistory();
+        refreshPointsSnapshot();
         // Обновить статус реферальной программы при возврате в приложение
         setReferralReloadTick((v) => v + 1);
       }
@@ -1304,7 +1300,7 @@ const applyServerProfile = useCallback(
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [refreshHistory]);
+  }, [refreshPointsSnapshot]);
 
   const syncConsent = useCallback(async () => {
     if (!merchantCustomerId) return;
@@ -1338,7 +1334,7 @@ const applyServerProfile = useCallback(
       if (!ok && !cancelled) {
         syncConsent();
         loadBalance();
-        loadTx();
+        loadTx({ fresh: true });
         loadLevels();
         loadPromotions();
       }
@@ -1363,7 +1359,7 @@ const applyServerProfile = useCallback(
             ? `Начислено ${resp.pointsIssued} баллов`
             : "Получено";
         setToast({ msg: message, type: "success" });
-        await Promise.allSettled([loadBalance(), loadTx(), loadLevels(), loadPromotions()]);
+        await Promise.allSettled([loadBalance(), loadTx({ fresh: true }), loadLevels(), loadPromotions()]);
       } catch (error) {
         setToast({ msg: resolveErrorMessage(error), type: "error" });
       } finally {
@@ -1757,7 +1753,7 @@ const applyServerProfile = useCallback(
           const successMessage = result.message || 'Промокод применён';
           setToast({ msg: successMessage, type: 'success' });
           setPromoCode('');
-          await Promise.allSettled([loadBalance(), loadTx(), loadLevels()]);
+          await Promise.allSettled([loadBalance(), loadTx({ fresh: true }), loadLevels()]);
         } else {
           setToast({ msg: 'Промокод не подошёл', type: 'error' });
         }
@@ -2470,7 +2466,7 @@ const applyServerProfile = useCallback(
             <button className={styles.sheetButton} onClick={() => loadBalance()}>
               Обновить баланс
             </button>
-            <button className={styles.sheetButton} onClick={() => loadTx()}>
+            <button className={styles.sheetButton} onClick={() => loadTx({ fresh: true })}>
               Обновить историю
             </button>
             <button

@@ -573,6 +573,26 @@ model EventOutbox {
   @@index([merchantId, createdAt])
 }
 
+model LoyaltyRealtimeEvent {
+  id                  String   @id @default(cuid())
+  merchantId          String
+  customerId          String
+  merchantCustomerId  String?
+  transactionId       String?
+  transactionType     String?
+  amount              Int?
+  eventType           String
+  payload             Json?
+  emittedAt           DateTime @default(now())
+  deliveredAt         DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([merchantId, merchantCustomerId, deliveredAt])
+  @@index([merchantId, customerId, deliveredAt])
+  @@index([deliveredAt])
+}
+
 model AutoReturnAttempt {
   id                String    @id @default(cuid())
   merchantId        String

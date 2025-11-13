@@ -857,7 +857,10 @@ export class ReferralService {
       placeholders: this.normalizePlaceholders(program.placeholders),
       merchantName: program.merchant?.name || '',
       shareMessageTemplate: this.normalizeShareMessage(program.shareButtonText),
-      minPurchaseAmount: Math.max(0, Math.round(program.minPurchaseAmount ?? 0)),
+      minPurchaseAmount: Math.max(
+        0,
+        Math.round(program.minPurchaseAmount ?? 0),
+      ),
     };
   }
 
@@ -889,15 +892,15 @@ export class ReferralService {
         multiLevel: false,
         rewardValue: 300,
         levels: this.normalizeLevels([], false, 'FIXED', 300),
-      friendReward: 0,
-      stackWithRegistration: false,
-      message: this.normalizeMessageTemplate(null),
-      placeholders: this.normalizePlaceholders(null),
-      merchantName: '',
-      shareMessageTemplate: this.normalizeShareMessage(null),
-      minPurchaseAmount: 0,
-    };
-  }
+        friendReward: 0,
+        stackWithRegistration: false,
+        message: this.normalizeMessageTemplate(null),
+        placeholders: this.normalizePlaceholders(null),
+        merchantName: '',
+        shareMessageTemplate: this.normalizeShareMessage(null),
+        minPurchaseAmount: 0,
+      };
+    }
 
     return this.mapProgramToSettings(program);
   }

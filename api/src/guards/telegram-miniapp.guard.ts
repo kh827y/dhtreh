@@ -69,11 +69,12 @@ export class TelegramMiniappGuard implements CanActivate {
     const candidates = this.collectMerchantCustomerCandidates(req);
     for (const id of candidates) {
       try {
-        const record = await (this.prisma as any)?.merchantCustomer
-          ?.findUnique?.({
-            where: { id },
-            select: { merchantId: true },
-          });
+        const record = await (
+          this.prisma as any
+        )?.merchantCustomer?.findUnique?.({
+          where: { id },
+          select: { merchantId: true },
+        });
         if (record?.merchantId) return record.merchantId;
       } catch {}
     }

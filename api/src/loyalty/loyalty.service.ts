@@ -437,7 +437,9 @@ export class LoyaltyService {
       orderBy: { completedAt: 'desc' },
     });
     if (!referral) return;
-    const trigger = String(referral.program?.rewardTrigger || 'first').toLowerCase();
+    const trigger = String(
+      referral.program?.rewardTrigger || 'first',
+    ).toLowerCase();
     if (trigger === 'all') {
       return;
     }

@@ -156,7 +156,8 @@ export class AnalyticsAggregatorWorker {
         visits: r.visits || 0,
         totalSpent: r.totalSpent || 0,
         lastOrderAt: r.lastPurchaseAt || undefined,
-        firstSeenAt: firstSeenMap.get(r.customerId) ?? r.firstPurchaseAt ?? undefined,
+        firstSeenAt:
+          firstSeenMap.get(r.customerId) ?? r.firstPurchaseAt ?? undefined,
       });
     }
 

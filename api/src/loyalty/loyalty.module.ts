@@ -17,6 +17,7 @@ import { ReviewModule } from '../reviews/review.module';
 import { TelegramModule } from '../telegram/telegram.module';
 import { StaffMotivationEngine } from '../staff-motivation/staff-motivation.engine';
 import { LevelsModule } from '../levels/levels.module';
+import { LoyaltyEventsService } from './loyalty-events.service';
 
 @Module({
   imports: [
@@ -38,8 +39,9 @@ import { LevelsModule } from '../levels/levels.module';
     SubscriptionGuard,
     AntiFraudGuard,
     StaffMotivationEngine,
+    LoyaltyEventsService,
   ],
   controllers: [LoyaltyController, LoyaltyPublicController],
-  exports: [LoyaltyService],
+  exports: [LoyaltyService, LoyaltyEventsService],
 })
 export class LoyaltyModule {}

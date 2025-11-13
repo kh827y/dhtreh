@@ -63,6 +63,18 @@ export type ReferralLinkResp = {
   };
 };
 
+export type LoyaltyRealtimeEvent = {
+  id: string;
+  merchantId: string;
+  customerId: string;
+  merchantCustomerId?: string | null;
+  transactionId?: string | null;
+  transactionType?: string | null;
+  amount?: number | null;
+  eventType: string;
+  emittedAt: string;
+};
+
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/$/, '');
 let telegramInitDataAuth: string | null = null;
 
@@ -108,8 +120,10 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
   if (!headers.Authorization && telegramInitDataAuth) {
     headers.Authorization = `tma ${telegramInitDataAuth}`;
   }
+  const { cache, ...rest } = init || {};
   const res = await fetch(API_BASE + path, {
-    ...init,
+    cache: cache ?? 'no-store',
+    ...rest,
     headers,
   });
   if (!res.ok) {
@@ -318,6 +332,7 @@ export async function transactions(
   merchantCustomerId: string,
   limit = 20,
   before?: string,
+  opts?: { fresh?: boolean },
 ): Promise<TransactionsResp> {
   const qs = new URLSearchParams({
     merchantId,
@@ -325,7 +340,11 @@ export async function transactions(
     limit: String(limit),
     ...(before ? { before } : {}),
   });
-  return httpDedup(`/loyalty/transactions?${qs.toString()}`, undefined, 1500);
+  const path = `/loyalty/transactions?${qs.toString()}${opts?.fresh ? `&_=${Date.now()}` : ''}`;
+  if (opts?.fresh) {
+    return http(path);
+  }
+  return httpDedup(path, undefined, 1500);
 }
 
 export async function grantRegistrationBonus(
@@ -396,6 +415,15 @@ export async function referralActivate(
     method: 'POST',
     body: JSON.stringify({ code, merchantCustomerId }),
   });
+}
+
+export async function pollLoyaltyEvents(
+  merchantId: string,
+  merchantCustomerId: string,
+  signal?: AbortSignal,
+): Promise<{ event: LoyaltyRealtimeEvent | null }> {
+  const qs = new URLSearchParams({ merchantId, merchantCustomerId });
+  return http(`/loyalty/events/poll?${qs.toString()}`, { signal });
 }
 
 export async function promoCodeApply(

@@ -118,13 +118,14 @@ export function FeedbackManager() {
   const [dismissedTransactions, setDismissedTransactions] = useState<string[]>([]);
   const [dismissedReady, setDismissedReady] = useState(false);
   const feedbackPresence = useDelayedRender(feedbackOpen, 320);
+  const [preferredTxId, setPreferredTxId] = useState<string | null>(null);
 
   const dismissedTxSet = useMemo(() => new Set(dismissedTransactions), [dismissedTransactions]);
 
-  const loadTransactions = useCallback(async () => {
+  const loadTransactions = useCallback(async (opts?: { fresh?: boolean }) => {
     if (!merchantId || !merchantCustomerId) return;
     try {
-      const response = await transactions(merchantId, merchantCustomerId, 20);
+      const response = await transactions(merchantId, merchantCustomerId, 20, undefined, { fresh: opts?.fresh });
       setTransactionsList(mapTransactions(response.items as TransactionItem[]));
     } catch (error) {
       setToast({ msg: `Не удалось обновить историю: ${resolveErrorMessage(error)}`, type: "error" });
@@ -197,25 +198,37 @@ export function FeedbackManager() {
   useEffect(() => {
     if (!dismissedReady) return;
     if (feedbackOpen) return;
-    const latest = transactionsList.reduce<{ item: TransactionItem | null; ts: number }>(
-      (acc, item) => {
-        const ts = parseDateMs(item.createdAt) ?? 0;
-        return ts > acc.ts ? { item, ts } : acc;
-      },
-      { item: null, ts: 0 },
-    ).item;
-    const candidate = latest && isEligiblePurchaseTx(latest) ? latest : null;
+    let candidate: TransactionItem | null = null;
+    if (preferredTxId) {
+      const preferred = transactionsList.find((item) => item.id === preferredTxId) ?? null;
+      if (preferred && isEligiblePurchaseTx(preferred)) {
+        candidate = preferred;
+      }
+    }
+    if (!candidate) {
+      const latest = transactionsList.reduce<{ item: TransactionItem | null; ts: number }>(
+        (acc, item) => {
+          const ts = parseDateMs(item.createdAt) ?? 0;
+          return ts > acc.ts ? { item, ts } : acc;
+        },
+        { item: null, ts: 0 },
+      ).item;
+      if (latest && isEligiblePurchaseTx(latest)) {
+        candidate = latest;
+      }
+    }
     if (candidate) {
+      setPreferredTxId(null);
       setFeedbackTxId(candidate.id);
       setFeedbackRating(0);
       setFeedbackComment("");
       setFeedbackStage("form");
       setSharePrompt(null);
       setFeedbackOpen(true);
-    } else {
+    } else if (!transactionsList.length) {
       setFeedbackTxId(null);
     }
-  }, [transactionsList, dismissedReady, feedbackOpen, isEligiblePurchaseTx]);
+  }, [transactionsList, dismissedReady, feedbackOpen, isEligiblePurchaseTx, preferredTxId]);
 
   const activeTransaction = useMemo(() => {
     if (!feedbackTxId) return null;
@@ -378,7 +391,6 @@ export function FeedbackManager() {
   );
 
   useEffect(() => {
-    if (!merchantId || !merchantCustomerId) return;
     const unsubscribe = subscribeToLoyaltyEvents((payload) => {
       if (!payload || typeof payload !== "object") return;
       const data = payload as Record<string, unknown>;
@@ -386,42 +398,42 @@ export function FeedbackManager() {
       if (eventMerchant && eventMerchant !== merchantId) return;
       const eventMc = data.merchantCustomerId ? String(data.merchantCustomerId) : "";
       if (eventMc && eventMc !== merchantCustomerId) return;
-      // Back-compat: if merchantCustomerId not provided in event, we cannot reliably compare against global customerId; skip filter
       const typeRaw = data.type ?? data.eventType;
-      if (typeRaw) {
-        const eventType = String(typeRaw).toLowerCase();
-        if (
-          !eventType.includes("commit") &&
-          !eventType.includes("redeem") &&
-          !eventType.includes("earn")
-        ) {
-          return;
-        }
+      const eventType = typeof typeRaw === "string" ? typeRaw.toLowerCase() : "";
+      const blocked = ["refund", "return", "adjust", "complimentary", "referral", "burn"];
+      if (!eventType) return;
+      if (blocked.some((token) => eventType.includes(token))) return;
+      if (
+        !eventType.includes("purchase") &&
+        !eventType.includes("earn") &&
+        !eventType.includes("redeem") &&
+        !eventType.includes("commit")
+      ) {
+        return;
       }
-      void loadTransactions();
-    });
+      const txId =
+        typeof data.transactionId === "string"
+          ? data.transactionId
+          : typeof data.id === "string"
+            ? data.id
+            : null;
+      if (txId) {
+        setPreferredTxId(txId);
+      } else {
+        setPreferredTxId(null);
+      }
+      void loadTransactions({ fresh: true });
+    }, merchantId && merchantCustomerId ? { merchantId, merchantCustomerId } : undefined);
     return () => {
       unsubscribe();
     };
   }, [merchantId, merchantCustomerId, loadTransactions]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!merchantCustomerId) return;
-    const interval = window.setInterval(() => {
-      if (document.visibilityState && document.visibilityState !== "visible") return;
-      void loadTransactions();
-    }, 20000);
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [merchantCustomerId, loadTransactions]);
-
-  useEffect(() => {
     if (typeof document === "undefined") return;
     const onVisibility = () => {
       if (document.visibilityState === "visible") {
-        void loadTransactions();
+        void loadTransactions({ fresh: true });
       }
     };
     document.addEventListener("visibilitychange", onVisibility);
