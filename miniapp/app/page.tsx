@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { FormEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import FakeQr from "../components/FakeQr";
 import QrCanvas from "../components/QrCanvas";
+import { RegistrationGate } from "../components/RegistrationGate";
 import {
   balance,
   bootstrap,
@@ -347,13 +348,18 @@ function MiniappPage() {
     return loadSnapshot(merchantId, storedMerchantCustomerId);
   }, [merchantId, storedMerchantCustomerId]);
   const [bal, setBal] = useState<number | null>(() => initialSnapshot?.balance ?? null);
+  const [balanceResolved, setBalanceResolved] = useState<boolean>(() => typeof initialSnapshot?.balance === "number");
   const [tx, setTx] = useState<TransactionItem[]>(() => initialSnapshot?.transactions ?? []);
+  const [transactionsResolved, setTransactionsResolved] = useState<boolean>(() =>
+    Boolean(initialSnapshot?.transactions && initialSnapshot.transactions.length > 0),
+  );
   const [nextBefore, setNextBefore] = useState<string | null>(() => initialSnapshot?.nextBefore ?? null);
   const [consent, setConsent] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>("");
   const [toast, setToast] = useState<{ msg: string; type?: "info" | "error" | "success" } | null>(null);
   const [levelInfo, setLevelInfo] = useState<LevelInfo | null>(() => initialSnapshot?.levelInfo ?? null);
+  const [levelsResolved, setLevelsResolved] = useState<boolean>(() => Boolean(initialSnapshot?.levelInfo));
   const [levelCatalog, setLevelCatalog] = useState<MechanicsLevel[]>([]);
 const [cashbackPercent, setCashbackPercent] = useState<number | null>(() => initialSnapshot?.cashbackPercent ?? null);
 const [telegramUser, setTelegramUser] = useState<TelegramUser | null>(() => {
@@ -384,7 +390,7 @@ const levelCatalogRef = useRef<MechanicsLevel[]>([]);
 const levelInfoRef = useRef<LevelInfo | null>(initialSnapshot?.levelInfo ?? null);
   const [birthYear, setBirthYear] = useState<string>("");
   const [birthMonth, setBirthMonth] = useState<string>("");
-  const [birthDay, setBirthDay] = useState<string>("");
+const [birthDay, setBirthDay] = useState<string>("");
   const currentYear = useMemo(() => new Date().getFullYear(), []);
   const years = useMemo(() => {
     const ylist: string[] = [];
@@ -419,6 +425,10 @@ const days = useMemo(
   () => Array.from({ length: daysInSelectedMonth }, (_, i) => String(i + 1).padStart(2, "0")),
   [daysInSelectedMonth],
 );
+
+  useEffect(() => {
+    setLocalOnboarded(readStoredOnboardFlag(merchantId) || storedProfile.completed);
+  }, [merchantId, storedProfile.completed]);
 
   useEffect(() => {
     levelCatalogRef.current = levelCatalog;
@@ -495,6 +505,8 @@ const applyServerProfile = useCallback(
   const [promotionsOpen, setPromotionsOpen] = useState<boolean>(false);
   const [promotions, setPromotions] = useState<PromotionItem[]>(() => initialSnapshot?.promotions ?? []);
   const [promotionsLoading, setPromotionsLoading] = useState<boolean>(false);
+  const [promotionsResolved, setPromotionsResolved] = useState<boolean>(false);
+  const [promotionsBadgeReady, setPromotionsBadgeReady] = useState<boolean>(false);
   const [inviteSheetOpen, setInviteSheetOpen] = useState<boolean>(false);
   // QR modal state
   const [qrOpen, setQrOpen] = useState<boolean>(false);
@@ -532,11 +544,16 @@ const applyServerProfile = useCallback(
   const resetSnapshotState = useCallback(() => {
     snapshotRef.current = null;
     setBal(null);
+    setBalanceResolved(false);
     setLevelInfo(null);
+    setLevelsResolved(false);
     setCashbackPercent(null);
     setTx([]);
+    setTransactionsResolved(false);
     setNextBefore(null);
     setPromotions([]);
+    setPromotionsResolved(false);
+    setPromotionsBadgeReady(false);
     setReferralInfo(null);
     setReferralEnabled(false);
     setReferralResolved(false);
@@ -546,12 +563,15 @@ const applyServerProfile = useCallback(
 
   const hydrateSnapshot = useCallback((snapshot: MiniappSnapshot) => {
     setBal(typeof snapshot.balance === "number" ? snapshot.balance : null);
+    setBalanceResolved(typeof snapshot.balance === "number");
     setLevelInfo(snapshot.levelInfo ?? null);
+    setLevelsResolved(Boolean(snapshot.levelInfo));
     setCashbackPercent(
       typeof snapshot.cashbackPercent === "number" ? snapshot.cashbackPercent : null,
     );
     const txList = Array.isArray(snapshot.transactions) ? snapshot.transactions : [];
     setTx(txList);
+    setTransactionsResolved(txList.length > 0);
     setNextBefore(snapshot.nextBefore ?? null);
     const promos = Array.isArray(snapshot.promotions) ? snapshot.promotions : [];
     setPromotions(promos);
@@ -637,17 +657,45 @@ const applyServerProfile = useCallback(
   useEffect(() => {
     if (teleOnboarded === null) return;
     setProfileCompleted(teleOnboarded);
-    if (merchantId && teleOnboarded) {
+    if (!merchantId) return;
+    if (teleOnboarded) {
       try {
         localStorage.setItem(onboardKey(merchantId), "1");
       } catch {}
       setLocalOnboarded(true);
+    } else {
+      setLocalOnboarded(false);
+      try {
+        localStorage.removeItem(onboardKey(merchantId));
+      } catch {}
     }
   }, [teleOnboarded, merchantId]);
+
+  useEffect(() => {
+    if (!promotionsResolved) {
+      setPromotionsBadgeReady(false);
+      return;
+    }
+    if (typeof window === "undefined") {
+      setPromotionsBadgeReady(true);
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      setPromotionsBadgeReady(true);
+    }, 150);
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [promotionsResolved]);
   useIsomorphicLayoutEffect(() => {
     if (merchantCustomerId || !storedMerchantCustomerId) return;
     setMerchantCustomerId(storedMerchantCustomerId);
   }, [merchantCustomerId, storedMerchantCustomerId]);
+
+  useEffect(() => {
+    setPromotionsResolved(false);
+    setPromotionsBadgeReady(false);
+  }, [merchantCustomerId]);
 
   // Синхронизация локальных селектов даты с profileForm.birthDate
   useEffect(() => {
@@ -953,6 +1001,7 @@ const applyServerProfile = useCallback(
     try {
       const r = await retry(() => balance(merchantId, merchantCustomerId));
       setBal(r.balance);
+      setBalanceResolved(true);
       persistSnapshot({ balance: r.balance });
     } catch (error) {
       if (!silent) {
@@ -1040,14 +1089,13 @@ const applyServerProfile = useCallback(
       const r = await retry(() => transactions(merchantId, merchantCustomerId, 20));
       const mapped = mapTransactions(r.items);
       setTx(mapped);
+      setTransactionsResolved(true);
       setNextBefore(r.nextBefore || null);
       persistSnapshot({ transactions: mapped.slice(0, 20), nextBefore: r.nextBefore || null });
     } catch (error) {
       if (!silent) {
         setToast({ msg: `Не удалось обновить историю: ${resolveErrorMessage(error)}`, type: "error" });
       }
-    } finally {
-      setTx(mappedTransactions);
     }
   }, [merchantCustomerId, merchantId, retry, mapTransactions, persistSnapshot]);
 
@@ -1067,6 +1115,7 @@ const applyServerProfile = useCallback(
     try {
       const info = await retry(() => levels(merchantId, merchantCustomerId));
       setLevelInfo(info);
+      setLevelsResolved(true);
       persistSnapshot({ levelInfo: info });
     } catch (error) {
       setToast({ msg: `Не удалось обновить уровень: ${resolveErrorMessage(error)}`, type: "error" });
@@ -1101,7 +1150,10 @@ const applyServerProfile = useCallback(
       }
       if (data.balance && typeof data.balance.balance === "number") {
         setBal(data.balance.balance);
+        setBalanceResolved(true);
         persistSnapshot({ balance: data.balance.balance });
+      } else {
+        setBalanceResolved(true);
       }
       let effectiveCatalog = levelCatalogRef.current;
       if (!effectiveCatalog.length) {
@@ -1119,6 +1171,7 @@ const applyServerProfile = useCallback(
       }
       if (data.levels) {
         setLevelInfo(data.levels);
+        setLevelsResolved(true);
         persistSnapshot({ levelInfo: data.levels });
         updateCashbackPercent(data.levels, effectiveCatalog);
       }
@@ -1126,7 +1179,7 @@ const applyServerProfile = useCallback(
         ? mapTransactions(Array.isArray(data.transactions.items) ? data.transactions.items : [])
         : [];
       setTx(mappedTransactions);
-      setTx(mappedTransactions);
+      setTransactionsResolved(true);
       setNextBefore(data.transactions?.nextBefore || null);
       if (Array.isArray(data.promotions)) {
         setPromotions(data.promotions);
@@ -1143,6 +1196,7 @@ const applyServerProfile = useCallback(
           promotions: [],
         });
       }
+      setPromotionsResolved(true);
       setPromotionsLoading(false);
       return true;
     } catch (error) {
@@ -1164,6 +1218,8 @@ const applyServerProfile = useCallback(
   const loadPromotions = useCallback(async () => {
     if (!merchantId || !merchantCustomerId) {
       setPromotions([]);
+      setPromotionsResolved(false);
+      setPromotionsBadgeReady(false);
       return;
     }
     try {
@@ -1172,6 +1228,7 @@ const applyServerProfile = useCallback(
       const normalized = Array.isArray(list) ? list : [];
       setPromotions(normalized);
       persistSnapshot({ promotions: normalized, promotionsUpdatedAt: Date.now() });
+      setPromotionsResolved(true);
     } catch (error) {
       setToast({ msg: `Не удалось загрузить акции: ${resolveErrorMessage(error)}`, type: "error" });
     } finally {
@@ -1306,14 +1363,14 @@ const applyServerProfile = useCallback(
             ? `Начислено ${resp.pointsIssued} баллов`
             : "Получено";
         setToast({ msg: message, type: "success" });
-        await Promise.allSettled([loadBalance(), loadTx(), loadPromotions()]);
+        await Promise.allSettled([loadBalance(), loadTx(), loadLevels(), loadPromotions()]);
       } catch (error) {
         setToast({ msg: resolveErrorMessage(error), type: "error" });
       } finally {
         setPromotionsLoading(false);
       }
     },
-    [merchantId, merchantCustomerId, loadBalance, loadTx, loadPromotions]
+    [merchantId, merchantCustomerId, loadBalance, loadTx, loadLevels, loadPromotions]
   );
 
   useEffect(() => {
@@ -1700,7 +1757,7 @@ const applyServerProfile = useCallback(
           const successMessage = result.message || 'Промокод применён';
           setToast({ msg: successMessage, type: 'success' });
           setPromoCode('');
-          await Promise.allSettled([loadBalance(), loadTx()]);
+          await Promise.allSettled([loadBalance(), loadTx(), loadLevels()]);
         } else {
           setToast({ msg: 'Промокод не подошёл', type: 'error' });
         }
@@ -1710,7 +1767,7 @@ const applyServerProfile = useCallback(
         setPromoLoading(false);
       }
     },
-    [promoCode, merchantId, merchantCustomerId, loadBalance, loadTx]
+    [promoCode, merchantId, merchantCustomerId, loadBalance, loadTx, loadLevels]
   );
 
   const handleInviteFriend = useCallback(async () => {
@@ -1739,9 +1796,6 @@ const applyServerProfile = useCallback(
     }
     return "Вы";
   }, [profileForm.name, telegramUser]);
-
-  const onboardingStatusPending = teleOnboarded === null && !localOnboarded;
-  const profilePage = teleOnboarded === false && !localOnboarded;
 
   // Render message with clickable {link} and {code} placeholders
   const renderReferralMessage = (
@@ -2036,15 +2090,29 @@ const applyServerProfile = useCallback(
             <div className={styles.cardContent}>
               <div className={styles.cardRow}>
                 <span className={styles.cardLabel}>Баланс</span>
-                <span className={styles.cardValue}>{bal != null ? bal.toLocaleString("ru-RU") : "—"}</span>
+                <span className={styles.cardValue}>
+                  {balanceResolved ? (
+                    bal != null ? bal.toLocaleString("ru-RU") : "—"
+                  ) : (
+                    <span className={styles.skeletonText} />
+                  )}
+                </span>
               </div>
               <div className={styles.cardRow}>
                 <span className={styles.cardLabel}>Уровень</span>
-                <span className={styles.cardValue}>{levelInfo?.current?.name || "—"}</span>
+                <span className={styles.cardValue}>
+                  {levelsResolved ? levelInfo?.current?.name || "—" : <span className={styles.skeletonText} />}
+                </span>
               </div>
               <div className={styles.cardRow}>
                 <span className={styles.cardLabel}>Кэшбэк</span>
-                <span className={styles.cardValue}>{typeof cashbackPercent === "number" ? `${cashbackPercent}%` : "—"}</span>
+                <span className={styles.cardValue}>
+                  {levelsResolved ? (
+                    typeof cashbackPercent === "number" ? `${cashbackPercent}%` : "—"
+                  ) : (
+                    <span className={styles.skeletonText} />
+                  )}
+                </span>
               </div>
             </div>
           </section>
@@ -2078,7 +2146,14 @@ const applyServerProfile = useCallback(
               onClick={() => { setPromotionsOpen(true); if (!promotions.length) void loadPromotions(); }}
             >
               <span>Акции</span>
-              <span className={styles.promotionsBadge}>{availablePromotions}</span>
+              <span
+                className={`${styles.promotionsBadge} ${
+                  promotionsBadgeReady ? styles.promotionsBadgeReady : styles.promotionsBadgeLoading
+                }`}
+                aria-live="polite"
+              >
+                {promotionsBadgeReady ? availablePromotions : ""}
+              </span>
             </button>
             {referralEnabled && referralInfo && (
               <button
@@ -2100,7 +2175,13 @@ const applyServerProfile = useCallback(
 
           <section className={`${styles.historySection}`}>
             <div className={styles.historyHeader}>История</div>
-            {tx.length === 0 ? (
+            {!transactionsResolved && tx.length === 0 ? (
+              <div className={styles.historySkeleton} aria-hidden="true">
+                {[0, 1, 2].map((row) => (
+                  <div key={row} className={styles.historySkeletonRow} />
+                ))}
+              </div>
+            ) : tx.length === 0 ? (
               <div className={styles.emptyState}>Операций пока нет</div>
             ) : (
               <ul className={styles.historyList}>
@@ -2322,10 +2403,6 @@ const applyServerProfile = useCallback(
         </div>
       )}
 
-      {error && !loading && <div className={styles.error}>{error}</div>}
-
-      {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
-
       {promotionsSheetPresence.shouldRender && (
         <div
           className={`${styles.modalBackdrop} ${
@@ -2372,10 +2449,6 @@ const applyServerProfile = useCallback(
         </div>
       )}
 
-      {error && !loading && <div className={styles.error}>{error}</div>}
-
-      {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
-
       {settingsSheetPresence.shouldRender && (
         <div
           className={`${styles.modalBackdrop} ${
@@ -2415,11 +2488,25 @@ const applyServerProfile = useCallback(
     </>
   );
 
-  const mainContent = profilePage ? profileContent : dashboardContent;
+  const splashView = (
+    <div className={styles.splashScreen}>
+      <div className={styles.splashSpinner} aria-hidden="true" />
+      <div>Загружаем приложение…</div>
+    </div>
+  );
 
   return (
     <div className={styles.page} suppressHydrationWarning>
-      {onboardingStatusPending ? null : mainContent}
+      <RegistrationGate
+        status={auth.status}
+        teleOnboarded={teleOnboarded}
+        localOnboarded={localOnboarded}
+        onboardingView={profileContent}
+        dashboardView={dashboardContent}
+        splashView={splashView}
+      />
+      {error && !loading && <div className={styles.error}>{error}</div>}
+      {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   );
 }

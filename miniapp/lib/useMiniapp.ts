@@ -1,6 +1,14 @@
 "use client";
 import { useEffect, useState } from 'react';
-import { teleauth, publicSettings, ReviewsShareSettings, grantRegistrationBonus, setTelegramAuthInitData } from './api';
+import {
+  teleauth,
+  publicSettings,
+  ReviewsShareSettings,
+  grantRegistrationBonus,
+  setTelegramAuthInitData,
+} from './api';
+
+export type AuthStatus = 'idle' | 'authenticating' | 'authenticated' | 'failed';
 
 export function getInitData(): string | null {
   try {
@@ -93,12 +101,14 @@ export function useMiniappAuth(defaultMerchant: string) {
   const [error, setError] = useState<string>('');
   const [theme, setTheme] = useState<{ primary?: string|null; bg?: string|null; logo?: string|null; ttl?: number }>({});
   const [shareSettings, setShareSettings] = useState<ReviewsShareSettings>(null);
+  const [status, setStatus] = useState<AuthStatus>('idle');
   const [teleOnboarded, setTeleOnboarded] = useState<boolean | null>(null);
   const [teleHasPhone, setTeleHasPhone] = useState<boolean | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      setStatus('authenticating');
       setLoading(true);
       setError('');
       setTeleOnboarded(null);
@@ -117,11 +127,13 @@ export function useMiniappAuth(defaultMerchant: string) {
         setMerchantId(defaultMerchant);
       if (!fallbackMerchant) {
         setError('Не удалось определить мерчанта');
+        setStatus('failed');
         setLoading(false);
         return;
       }
       if (!isValidInitData(resolvedInitData)) {
         setError('Откройте миниаппу внутри Telegram');
+        setStatus('failed');
         setLoading(false);
         return;
       }
@@ -206,9 +218,11 @@ export function useMiniappAuth(defaultMerchant: string) {
           }
         } catch {}
         setError('');
+        setStatus('authenticated');
       } catch (error) {
         if (cancelled) return;
         setError(error instanceof Error ? error.message : String(error));
+        setStatus('failed');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -247,5 +261,6 @@ export function useMiniappAuth(defaultMerchant: string) {
     theme,
     shareSettings,
     initData,
+    status,
   } as const;
 }
