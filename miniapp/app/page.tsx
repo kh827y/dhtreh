@@ -64,19 +64,6 @@ const TIME_ICON = (
   </svg>
 );
 
-const CHECK_ICON = (
-  <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-    <path
-      d="M7.5 10.5L9.5 12.5L13 9"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <circle cx="10" cy="10" r="7.2" stroke="currentColor" strokeWidth="1.4" />
-  </svg>
-);
-
 const PHONE_NOT_LINKED_MESSAGE = "Вы не привязали номер, попробуйте еще раз";
 
 const REFUND_REFERENCE_FORMAT: Intl.DateTimeFormatOptions = {
@@ -105,6 +92,14 @@ const profileStorageKey = (merchantId: string) => `miniapp.profile.v2:${merchant
 const profilePendingKey = (merchantId: string) => `miniapp.profile.pending.v1:${merchantId}`;
 const localCustomerKey = (merchantId: string) => `miniapp.merchantCustomerId.v1:${merchantId}`;
 const onboardKey = (merchantId: string) => `miniapp.onboarded.v1:${merchantId}`;
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => {
+    if (typeof window !== "undefined" && typeof window.setTimeout === "function") {
+      window.setTimeout(resolve, ms);
+      return;
+    }
+    setTimeout(resolve, ms);
+  });
 
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
@@ -371,8 +366,7 @@ const [telegramUser, setTelegramUser] = useState<TelegramUser | null>(() => {
   const [phone, setPhone] = useState<string | null>(null);
   const [needPhoneStep, setNeedPhoneStep] = useState<boolean>(false);
   const [pendingMerchantCustomerIdForPhone, setPendingMerchantCustomerIdForPhone] = useState<string | null>(null);
-  const [phoneShareStage, setPhoneShareStage] = useState<"idle" | "confirm">("idle");
-  const [phoneShareLoading, setPhoneShareLoading] = useState<boolean>(false);
+  const [phoneShareStage, setPhoneShareStage] = useState<"idle" | "waiting" | "saving">("idle");
   const [phoneShareError, setPhoneShareError] = useState<string | null>(null);
 const [profileForm, setProfileForm] = useState<{
   name: string;
@@ -500,7 +494,6 @@ const applyServerProfile = useCallback(
   const [promotions, setPromotions] = useState<PromotionItem[]>(() => initialSnapshot?.promotions ?? []);
   const [promotionsLoading, setPromotionsLoading] = useState<boolean>(false);
   const [promotionsResolved, setPromotionsResolved] = useState<boolean>(false);
-  const [promotionsBadgeReady, setPromotionsBadgeReady] = useState<boolean>(false);
   const [inviteSheetOpen, setInviteSheetOpen] = useState<boolean>(false);
   // QR modal state
   const [qrOpen, setQrOpen] = useState<boolean>(false);
@@ -547,7 +540,6 @@ const applyServerProfile = useCallback(
     setNextBefore(null);
     setPromotions([]);
     setPromotionsResolved(false);
-    setPromotionsBadgeReady(false);
     setReferralInfo(null);
     setReferralEnabled(false);
     setReferralResolved(false);
@@ -593,10 +585,6 @@ const applyServerProfile = useCallback(
     const tgUser = getTelegramUser();
     if (tgUser) {
       setTelegramUser(tgUser);
-      setProfileForm((prev) => ({
-        ...prev,
-        name: prev.name || [tgUser.firstName, tgUser.lastName].filter(Boolean).join(" "),
-      }));
     }
     const tg = getTelegramWebApp();
     try {
@@ -665,22 +653,6 @@ const applyServerProfile = useCallback(
     }
   }, [teleOnboarded, merchantId]);
 
-  useEffect(() => {
-    if (!promotionsResolved) {
-      setPromotionsBadgeReady(false);
-      return;
-    }
-    if (typeof window === "undefined") {
-      setPromotionsBadgeReady(true);
-      return;
-    }
-    const timeout = window.setTimeout(() => {
-      setPromotionsBadgeReady(true);
-    }, 150);
-    return () => {
-      window.clearTimeout(timeout);
-    };
-  }, [promotionsResolved]);
   useIsomorphicLayoutEffect(() => {
     if (merchantCustomerId || !storedMerchantCustomerId) return;
     setMerchantCustomerId(storedMerchantCustomerId);
@@ -688,7 +660,6 @@ const applyServerProfile = useCallback(
 
   useEffect(() => {
     setPromotionsResolved(false);
-    setPromotionsBadgeReady(false);
   }, [merchantCustomerId]);
 
   // Синхронизация локальных селектов даты с profileForm.birthDate
@@ -1220,7 +1191,6 @@ const applyServerProfile = useCallback(
     if (!merchantId || !merchantCustomerId) {
       setPromotions([]);
       setPromotionsResolved(false);
-      setPromotionsBadgeReady(false);
       return;
     }
     try {
@@ -1439,6 +1409,135 @@ const applyServerProfile = useCallback(
     }
   }, [merchantId, merchantCustomerId, consent]);
 
+  const finalizePhoneShare = useCallback(
+    async (options?: { capturedPhone?: string | null; waitServerSync?: boolean }) => {
+      if (!merchantId) return false;
+      const { capturedPhone = null, waitServerSync = false } = options ?? {};
+      const effectiveMerchantCustomerId = pendingMerchantCustomerIdForPhone || merchantCustomerId;
+      if (!effectiveMerchantCustomerId) {
+        setToast({ msg: "Не удалось определить клиента", type: "error" });
+        setPhoneShareStage("idle");
+        return false;
+      }
+      const genderValid = profileForm.gender === "male" || profileForm.gender === "female";
+      if (!profileForm.name || !genderValid || !profileForm.birthDate) {
+        setToast({ msg: "Заполните профиль перед подтверждением", type: "error" });
+        setPhoneShareStage("idle");
+        return false;
+      }
+      const key = profileStorageKey(merchantId);
+      const pendingKey = profilePendingKey(merchantId);
+      setPhoneShareError(null);
+      setPhoneShareStage("saving");
+      setProfileSaving(true);
+      try {
+        let serverHasPhone = teleHasPhone === true;
+        let statusError: unknown = null;
+        const refreshPhoneStatus = async () => {
+          try {
+            const status = await profilePhoneStatus(merchantId, effectiveMerchantCustomerId);
+            serverHasPhone = Boolean(status?.hasPhone);
+            statusError = null;
+          } catch (statusErr) {
+            serverHasPhone = false;
+            statusError = statusErr;
+          }
+        };
+        if (!serverHasPhone) {
+          await refreshPhoneStatus();
+        }
+        if (!serverHasPhone && waitServerSync) {
+          for (let attempt = 0; attempt < 5 && !serverHasPhone; attempt += 1) {
+            await sleep(600 + attempt * 400);
+            await refreshPhoneStatus();
+          }
+        }
+        const normalizedPhone =
+          typeof capturedPhone === "string" && capturedPhone.trim()
+            ? capturedPhone.trim()
+            : typeof phone === "string" && phone.trim()
+            ? phone.trim()
+            : "";
+        if (!serverHasPhone && !normalizedPhone) {
+          if (statusError) {
+            // статус мог не успеть обновиться, покажем пользователю понятное сообщение
+          }
+          setToast({ msg: PHONE_NOT_LINKED_MESSAGE, type: "error" });
+          setPhoneShareError(PHONE_NOT_LINKED_MESSAGE);
+          setPhoneShareStage("idle");
+          return false;
+        }
+        const payload = {
+          name: profileForm.name.trim(),
+          gender: profileForm.gender as "male" | "female",
+          birthDate: profileForm.birthDate,
+          ...(normalizedPhone ? { phone: normalizedPhone } : {}),
+        };
+        await profileSave(merchantId, effectiveMerchantCustomerId, payload);
+        try {
+          localStorage.setItem(
+            key,
+            JSON.stringify({ name: payload.name, gender: payload.gender, birthDate: payload.birthDate }),
+          );
+        } catch {
+          // ignore
+        }
+        try {
+          localStorage.removeItem(pendingKey);
+        } catch {
+          // ignore
+        }
+        setMerchantCustomerId(effectiveMerchantCustomerId);
+        setAuthMerchantCustomerId(effectiveMerchantCustomerId);
+        setAuthTeleHasPhone(true);
+        setAuthTeleOnboarded(true);
+        setProfileCompleted(true);
+        setNeedPhoneStep(false);
+        setPendingMerchantCustomerIdForPhone(null);
+        setPhoneShareStage("idle");
+        setPhoneShareError(null);
+        setToast({ msg: "Профиль сохранён", type: "success" });
+        return true;
+      } catch (error) {
+        const message = resolveErrorMessage(error);
+        const lowered = message.toLowerCase();
+        const phoneMissing =
+          lowered.includes("без номера") ||
+          lowered.includes("не привязали номер") ||
+          lowered.includes("номер обязателен") ||
+          lowered.includes("phone_required") ||
+          lowered.includes("phone is required");
+        if (phoneMissing) {
+          setPhoneShareError(PHONE_NOT_LINKED_MESSAGE);
+        }
+        setToast({
+          msg: phoneMissing ? PHONE_NOT_LINKED_MESSAGE : `Не удалось сохранить профиль: ${message}`,
+          type: "error",
+        });
+        setPhoneShareStage("idle");
+        return false;
+      } finally {
+        setProfileSaving(false);
+      }
+    },
+    [
+      merchantId,
+      pendingMerchantCustomerIdForPhone,
+      merchantCustomerId,
+      profileForm,
+      phone,
+      setToast,
+      teleHasPhone,
+      setMerchantCustomerId,
+      setAuthMerchantCustomerId,
+      setAuthTeleHasPhone,
+      setAuthTeleOnboarded,
+      setProfileCompleted,
+      setNeedPhoneStep,
+      setPendingMerchantCustomerIdForPhone,
+    ],
+  );
+
   const handleRequestPhone = useCallback(async () => {
     if (!merchantId) return;
     if (phoneShareStage !== "idle") return;
@@ -1451,7 +1550,7 @@ const applyServerProfile = useCallback(
     }
     setPhoneShareError(null);
     setPhone(null);
-    setPhoneShareLoading(true);
+    setPhoneShareStage("waiting");
     const normalize = (raw: unknown): string | null => {
       if (!raw) return null;
       const take = (s: string) => {
@@ -1480,151 +1579,110 @@ const applyServerProfile = useCallback(
     };
     let promptTriggered = false;
     let phoneCaptured = false;
+    let shareConfirmed = false;
+    let capturedPhone: string | null = null;
     const markPhone = (value: string | null) => {
-      if (!value) return;
+      if (!value) return false;
       phoneCaptured = true;
+      shareConfirmed = true;
+      capturedPhone = value;
       setPhone(value);
       setToast({ msg: "Номер получен", type: "success" });
+      return true;
+    };
+    const detectShareConfirmation = (payload: unknown): boolean => {
+      if (payload == null) return false;
+      if (typeof payload === "boolean") return payload;
+      if (typeof payload === "number") return Number.isFinite(payload) && payload > 0;
+      if (typeof payload === "string") {
+        const lowered = payload.trim().toLowerCase();
+        if (!lowered) return false;
+        return ["ok", "true", "sent", "accepted", "shared", "success", "done"].includes(lowered);
+      }
+      if (typeof payload === "object") {
+        const record = payload as Record<string, unknown>;
+        if (typeof record.phone_number === "string" || typeof record.phone === "string" || typeof record.value === "string") {
+          return true;
+        }
+        if (typeof record.status === "string") {
+          const lowered = record.status.toLowerCase();
+          if (["sent", "accepted", "applied", "shared", "success", "ok"].includes(lowered)) {
+            return true;
+          }
+        }
+        if (typeof record.ok === "boolean" && record.ok) return true;
+        if (typeof record.confirmed === "boolean" && record.confirmed) return true;
+        if (typeof record.shared === "boolean" && record.shared) return true;
+        if (typeof record.result !== "undefined") {
+          return detectShareConfirmation(record.result);
+        }
+      }
+      return false;
     };
     try {
       if (canRequestPhone) {
         promptTriggered = true;
         const res = await tg.requestPhoneNumber();
-        markPhone(normalize(res));
+        const normalized = normalize(res);
+        if (!markPhone(normalized) && detectShareConfirmation(res)) {
+          shareConfirmed = true;
+        }
       }
       if (!phoneCaptured && canRequestContact) {
         promptTriggered = true;
         await new Promise<void>((resolve) => {
+          let settled = false;
+          const finish = () => {
+            if (settled) return;
+            settled = true;
+            resolve();
+          };
+          const timeout = window.setTimeout(() => {
+            finish();
+          }, 5000);
           try {
             tg.requestContact?.((payload: unknown) => {
               const normalized = normalize(payload);
-              markPhone(normalized);
-              if (!normalized) {
-                setToast({ msg: "Не удалось распознать номер", type: "error" });
+              if (!markPhone(normalized) && detectShareConfirmation(payload)) {
+                shareConfirmed = true;
               }
-              resolve();
+              clearTimeout(timeout);
+              finish();
             });
           } catch {
-            resolve();
+            clearTimeout(timeout);
+            finish();
           }
         });
       }
-      if (!phoneCaptured && promptTriggered) {
-        setToast({ msg: "Номер не был предоставлен — подтвердите или попробуйте ещё раз", type: "info" });
+      if (phoneCaptured && capturedPhone) {
+        await finalizePhoneShare({ capturedPhone });
+        return;
+      }
+      if (shareConfirmed) {
+        await finalizePhoneShare({ waitServerSync: true });
+        return;
       }
       if (!promptTriggered) {
         setToast({ msg: "Не удалось открыть запрос номера", type: "error" });
+        setPhoneShareStage("idle");
+        return;
       }
+      setPhoneShareError(PHONE_NOT_LINKED_MESSAGE);
     } catch (err) {
       const msg = resolveErrorMessage(err);
       const lowered = msg.toLowerCase();
       if (lowered.includes("denied") || lowered.includes("cancel")) {
-        setToast({ msg: "Вы отменили запрос номера", type: "info" });
+        setPhoneShareError(PHONE_NOT_LINKED_MESSAGE);
       } else {
         setToast({ msg: `Не удалось запросить номер: ${msg}`, type: "error" });
       }
     } finally {
-      if (promptTriggered) {
-        setPhoneShareStage("confirm");
-      }
-      setPhoneShareLoading(false);
-    }
-  }, [merchantId, phoneShareStage, setToast]);
-
-  const handleConfirmPhone = useCallback(async () => {
-    if (!merchantId) return;
-    if (phoneShareStage !== "confirm") return;
-    setPhoneShareError(null);
-    const effectiveMerchantCustomerId = pendingMerchantCustomerIdForPhone || merchantCustomerId;
-    if (!effectiveMerchantCustomerId) {
-      setToast({ msg: "Не удалось определить клиента", type: "error" });
-      setPhoneShareStage("idle");
-      return;
-    }
-    const genderValid = profileForm.gender === "male" || profileForm.gender === "female";
-    if (!profileForm.name || !genderValid || !profileForm.birthDate) {
-      setToast({ msg: "Заполните профиль перед подтверждением", type: "error" });
-      setPhoneShareStage("idle");
-      return;
-    }
-    const key = profileStorageKey(merchantId);
-    const pendingKey = profilePendingKey(merchantId);
-    setPhoneShareLoading(true);
-    setProfileSaving(true);
-    try {
-      let serverHasPhone = teleHasPhone === true;
-      let statusError: unknown = null;
-      if (!serverHasPhone) {
-        try {
-          const status = await profilePhoneStatus(merchantId, effectiveMerchantCustomerId);
-          serverHasPhone = Boolean(status?.hasPhone);
-        } catch (statusErr) {
-          statusError = statusErr;
-        }
-      }
-      const normalizedPhone = typeof phone === "string" ? phone.trim() : "";
-      if (!serverHasPhone && !normalizedPhone) {
-        if (statusError) {
-          // статус мог не успеть обновиться, покажем пользователю понятное сообщение
-        }
-        setToast({ msg: PHONE_NOT_LINKED_MESSAGE, type: "error" });
-        setPhoneShareError(PHONE_NOT_LINKED_MESSAGE);
+      if (!phoneCaptured && !shareConfirmed) {
         setPhoneShareStage("idle");
-        return;
       }
-      const payload = {
-        name: profileForm.name.trim(),
-        gender: profileForm.gender as "male" | "female",
-        birthDate: profileForm.birthDate,
-        ...(normalizedPhone ? { phone: normalizedPhone } : {}),
-      };
-      await profileSave(merchantId, effectiveMerchantCustomerId, payload);
-      try { localStorage.setItem(key, JSON.stringify({ name: payload.name, gender: payload.gender, birthDate: payload.birthDate })); } catch {}
-      try { localStorage.removeItem(pendingKey); } catch {}
-      setMerchantCustomerId(effectiveMerchantCustomerId);
-      setAuthMerchantCustomerId(effectiveMerchantCustomerId);
-      setAuthTeleHasPhone(true);
-      setAuthTeleOnboarded(true);
-      setProfileCompleted(true);
-      setNeedPhoneStep(false);
-      setPendingMerchantCustomerIdForPhone(null);
-      setPhoneShareStage("idle");
-      setPhoneShareError(null);
-      setToast({ msg: "Профиль сохранён", type: "success" });
-    } catch (error) {
-      const message = resolveErrorMessage(error);
-      const lowered = message.toLowerCase();
-      const phoneMissing =
-        lowered.includes("без номера") ||
-        lowered.includes("не привязали номер") ||
-        lowered.includes("номер обязателен") ||
-        lowered.includes("phone_required") ||
-        lowered.includes("phone is required");
-      if (phoneMissing) {
-        setPhoneShareError(PHONE_NOT_LINKED_MESSAGE);
-      }
-      setToast({
-        msg: phoneMissing ? PHONE_NOT_LINKED_MESSAGE : `Не удалось сохранить профиль: ${message}`,
-        type: "error",
-      });
-      setPhoneShareStage("idle");
-    } finally {
-      setPhoneShareLoading(false);
-      setProfileSaving(false);
     }
-  }, [
-    merchantId,
-    phoneShareStage,
-    pendingMerchantCustomerIdForPhone,
-    merchantCustomerId,
-    profileForm,
-    phone,
-    setToast,
-    setAuthMerchantCustomerId,
-    teleHasPhone,
-    setAuthTeleHasPhone,
-    setAuthTeleOnboarded,
-  ]);
+  }, [merchantId, phoneShareStage, setToast, finalizePhoneShare]);
 
   const handleProfileSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -1677,7 +1735,6 @@ const applyServerProfile = useCallback(
           await referralActivate(inviteCode.trim(), effectiveMerchantCustomerId);
           setInviteApplied(true);
           setInviteCode("");
-          setToast({ msg: "Пригласительный код активирован", type: "success" });
         } catch (err) {
           const description = resolveErrorMessage(err);
           const isInvalid = /400\s+Bad\s+Request/i.test(description) || /Недействитель|expired|invalid/i.test(description);
@@ -1839,25 +1896,18 @@ const applyServerProfile = useCallback(
   const onboardingBlocked = mustCompleteOnboarding && !referralResolved;
   const gateTeleOnboarded = onboardingBlocked ? null : teleOnboarded;
 
-  const phoneConfirmLoading = phoneShareStage === "confirm" && (profileSaving || phoneShareLoading);
-
   const phoneButtonLabel = useMemo(() => {
-    if (phoneConfirmLoading) {
+    if (phoneShareStage === "saving" || profileSaving) {
       return "Сохраняем…";
     }
-    if (phoneShareStage === "confirm") {
-      return (
-        <span className={styles.profilePhoneSuccessLabel}>
-          <span className={styles.profilePhoneSuccessIcon}>{CHECK_ICON}</span>
-          Готово
-        </span>
-      );
+    if (phoneShareStage === "waiting") {
+      return "Ожидаем подтверждения…";
     }
     return "Поделиться номером";
-  }, [phoneConfirmLoading, phoneShareStage]);
+  }, [phoneShareStage, profileSaving]);
 
-  const phoneButtonClick = phoneShareStage === "confirm" ? handleConfirmPhone : handleRequestPhone;
-  const phoneButtonDisabled = profileSaving || phoneShareLoading;
+  const phoneButtonClick = handleRequestPhone;
+  const phoneButtonDisabled = phoneShareStage !== "idle" || profileSaving;
 
   const profileContent = (
     <div className={styles.profileContainer}>
@@ -1873,7 +1923,7 @@ const applyServerProfile = useCallback(
               </div>
               <button
                 type="button"
-                className={phoneShareStage === "confirm" ? styles.profileSubmitSuccess : styles.profileSubmit}
+                className={styles.profileSubmit}
                 onClick={phoneButtonClick}
                 disabled={phoneButtonDisabled}
               >
@@ -2141,11 +2191,11 @@ const applyServerProfile = useCallback(
               <span>Акции</span>
               <span
                 className={`${styles.promotionsBadge} ${
-                  promotionsBadgeReady ? styles.promotionsBadgeReady : styles.promotionsBadgeLoading
+                  promotionsResolved ? "" : styles.promotionsBadgeSkeleton
                 }`}
                 aria-live="polite"
               >
-                {promotionsBadgeReady ? availablePromotions : ""}
+                {promotionsResolved ? availablePromotions : ""}
               </span>
             </button>
             {referralEnabled && referralInfo && (
