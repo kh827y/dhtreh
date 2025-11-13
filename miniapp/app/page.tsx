@@ -380,7 +380,7 @@ const [profileForm, setProfileForm] = useState<{
   birthDate: string;
 }>(() => storedProfile.form);
 const [, setProfileCompleted] = useState<boolean>(() => storedProfile.completed);
-const [localOnboarded, setLocalOnboarded] = useState<boolean>(() => readStoredOnboardFlag(merchantId) || storedProfile.completed);
+const [localOnboarded, setLocalOnboarded] = useState<boolean>(() => readStoredOnboardFlag(merchantId));
 const [profileTouched, setProfileTouched] = useState<boolean>(false);
 const [profileSaving, setProfileSaving] = useState<boolean>(false);
 const pendingProfileSync = useRef<boolean>(false);
@@ -427,8 +427,8 @@ const days = useMemo(
 );
 
   useEffect(() => {
-    setLocalOnboarded(readStoredOnboardFlag(merchantId) || storedProfile.completed);
-  }, [merchantId, storedProfile.completed]);
+    setLocalOnboarded(readStoredOnboardFlag(merchantId));
+  }, [merchantId]);
 
   useEffect(() => {
     levelCatalogRef.current = levelCatalog;
@@ -446,25 +446,19 @@ const applyServerProfile = useCallback(
     setProfileForm({ name, gender, birthDate });
     const valid = Boolean(name && gender && birthDate);
     setProfileCompleted(valid);
-    if (merchantId) {
-      const key = profileStorageKey(merchantId);
-      const pendingKey = profilePendingKey(merchantId);
-      try {
-        localStorage.setItem(key, JSON.stringify({ name, gender, birthDate }));
-      } catch {}
-      try {
-        localStorage.removeItem(pendingKey);
-      } catch {}
-      if (valid) {
+      if (merchantId) {
+        const key = profileStorageKey(merchantId);
+        const pendingKey = profilePendingKey(merchantId);
         try {
-          localStorage.setItem(onboardKey(merchantId), "1");
+          localStorage.setItem(key, JSON.stringify({ name, gender, birthDate }));
         } catch {}
-        setLocalOnboarded(true);
+        try {
+          localStorage.removeItem(pendingKey);
+        } catch {}
       }
-    }
-  },
-  [merchantId],
-);
+    },
+    [merchantId],
+  );
 
 
 

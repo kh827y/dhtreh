@@ -79,6 +79,9 @@ type MerchantCustomerWithCustomer = {
   phone: string | null;
   email: string | null;
   name: string | null;
+  profileGender: string | null;
+  profileBirthDate: Date | null;
+  profileCompletedAt: Date | null;
   customer: Customer | null;
 };
 
@@ -351,9 +354,12 @@ export class LoyaltyController {
         merchantId,
         customerId,
         tgId: customer.tgId ?? null,
-        phone: customer.phone ?? null,
+        phone: null,
         email: customer.email ?? null,
-        name: customer.name ?? null,
+        name: null,
+        profileGender: null,
+        profileBirthDate: null,
+        profileCompletedAt: null,
       },
       include: { customer: true },
     });
@@ -366,14 +372,15 @@ export class LoyaltyController {
     merchantCustomer: MerchantCustomerWithCustomer,
   ): CustomerProfileDto {
     const gender =
-      customer.gender === 'male' || customer.gender === 'female'
-        ? customer.gender
+      merchantCustomer.profileGender === 'male' ||
+      merchantCustomer.profileGender === 'female'
+        ? merchantCustomer.profileGender
         : null;
-    const birthDate = customer.birthday
-      ? customer.birthday.toISOString().slice(0, 10)
+    const birthDate = merchantCustomer.profileBirthDate
+      ? merchantCustomer.profileBirthDate.toISOString().slice(0, 10)
       : null;
     return {
-      name: customer.name ?? merchantCustomer.name ?? null,
+      name: merchantCustomer.name ?? null,
       gender,
       birthDate,
     } satisfies CustomerProfileDto;
@@ -450,6 +457,7 @@ export class LoyaltyController {
     phone?: string | null;
     gender?: string | null;
     birthday?: Date | null;
+    profileCompletedAt?: Date | null;
   }) {
     const hasPhone =
       typeof data.phone === 'string' && data.phone.trim().length > 0;
@@ -458,9 +466,15 @@ export class LoyaltyController {
     const hasBirthDate =
       data.birthday instanceof Date && !Number.isNaN(data.birthday.getTime());
     const genderOk = data.gender === 'male' || data.gender === 'female';
+    const completionOk =
+      data.profileCompletedAt === undefined
+        ? true
+        : data.profileCompletedAt instanceof Date &&
+          !Number.isNaN(data.profileCompletedAt.getTime());
     return {
       hasPhone,
-      onboarded: hasPhone && hasName && hasBirthDate && genderOk,
+      onboarded:
+        hasPhone && hasName && hasBirthDate && genderOk && completionOk,
     };
   }
 
@@ -473,22 +487,18 @@ export class LoyaltyController {
         select: {
           phone: true,
           name: true,
-          customer: {
-            select: {
-              name: true,
-              phone: true,
-              gender: true,
-              birthday: true,
-            },
-          },
+          profileGender: true,
+          profileBirthDate: true,
+          profileCompletedAt: true,
         },
       });
       if (!mc) return { hasPhone: false, onboarded: false };
       return this.computeProfileFlags({
-        name: mc.customer?.name ?? mc.name,
-        phone: mc.phone ?? mc.customer?.phone,
-        gender: mc.customer?.gender ?? null,
-        birthday: mc.customer?.birthday ?? null,
+        name: mc.name ?? null,
+        phone: mc.phone ?? null,
+        gender: mc.profileGender ?? null,
+        birthday: mc.profileBirthDate ?? null,
+        profileCompletedAt: mc.profileCompletedAt ?? null,
       });
     } catch {
       return { hasPhone: false, onboarded: false };
@@ -2457,12 +2467,11 @@ export class LoyaltyController {
     @Query('merchantId') merchantId: string,
     @Query('merchantCustomerId') merchantCustomerId: string,
   ) {
-    const { merchantCustomer, customer } = await this.resolveMerchantContext(
+    const { merchantCustomer } = await this.resolveMerchantContext(
       merchantId,
       merchantCustomerId,
     );
-    const rawPhone =
-      (merchantCustomer?.phone ?? null) || (customer?.phone ?? null);
+    const rawPhone = merchantCustomer?.phone ?? null;
     const hasPhone = typeof rawPhone === 'string' && rawPhone.trim().length > 0;
     return { hasPhone } satisfies CustomerPhoneStatusDto;
   }
@@ -2525,6 +2534,7 @@ export class LoyaltyController {
     }
 
     let updatedCustomer: Customer = customer;
+    const completionMark = new Date();
     try {
       await this.prisma.$transaction(async (tx) => {
         updatedCustomer = await tx.customer.update({
@@ -2539,7 +2549,12 @@ export class LoyaltyController {
           await txAny.merchantCustomer.update({
             where: { id: merchantCustomer.id },
             data: Object.assign(
-              { name },
+              {
+                name,
+                profileGender: gender,
+                profileBirthDate: parsed,
+                profileCompletedAt: completionMark,
+              },
               phoneNormalized ? { phone: phoneNormalized } : {},
             ),
           });
@@ -2553,16 +2568,16 @@ export class LoyaltyController {
       }
       throw e;
     }
-    return {
-      name: updatedCustomer.name ?? name ?? null,
-      gender:
-        updatedCustomer.gender === 'male' || updatedCustomer.gender === 'female'
-          ? updatedCustomer.gender
-          : null,
-      birthDate: updatedCustomer.birthday
-        ? updatedCustomer.birthday.toISOString().slice(0, 10)
-        : null,
-    } satisfies CustomerProfileDto;
+    const nextMerchantCustomer: MerchantCustomerWithCustomer = {
+      ...merchantCustomer,
+      name,
+      phone: phoneNormalized ? phoneNormalized : merchantCustomer.phone,
+      profileGender: gender,
+      profileBirthDate: parsed,
+      profileCompletedAt: completionMark,
+      customer: updatedCustomer,
+    };
+    return this.toProfileDto(updatedCustomer, nextMerchantCustomer);
   }
 
   @Get('transactions')
