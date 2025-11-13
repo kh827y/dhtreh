@@ -398,30 +398,47 @@ export function FeedbackManager() {
       if (eventMerchant && eventMerchant !== merchantId) return;
       const eventMc = data.merchantCustomerId ? String(data.merchantCustomerId) : "";
       if (eventMc && eventMc !== merchantCustomerId) return;
-      const typeRaw = data.type ?? data.eventType;
-      const eventType = typeof typeRaw === "string" ? typeRaw.toLowerCase() : "";
-      const blocked = ["refund", "return", "adjust", "complimentary", "referral", "burn"];
-      if (!eventType) return;
-      if (blocked.some((token) => eventType.includes(token))) return;
-      if (
-        !eventType.includes("purchase") &&
-        !eventType.includes("earn") &&
-        !eventType.includes("redeem") &&
-        !eventType.includes("commit")
-      ) {
+
+      const transactionTypeRaw = typeof data.transactionType === "string" ? data.transactionType : null;
+      const fallbackType = typeof data.type === "string" ? data.type : null;
+      const declaredType = typeof data.eventType === "string" ? data.eventType : null;
+      const tokens = [transactionTypeRaw, fallbackType, declaredType]
+        .filter((token): token is string => typeof token === "string" && token.length > 0)
+        .map((token) => token.toLowerCase());
+      if (!tokens.length) return;
+
+      const blockedTokens = [
+        "refund",
+        "return",
+        "adjust",
+        "complimentary",
+        "referral",
+        "burn",
+        "bonus",
+        "gift",
+        "promo",
+        "campaign",
+        "birthday",
+      ];
+      if (tokens.some((token) => blockedTokens.some((blocked) => token.includes(blocked)))) {
         return;
       }
+
+      // Реагируем только на начисления/списания по покупке (transactionType EARN/REDEEM/COMMIT или явные purchase-хинты).
+      const allowedKinds = ["earn", "redeem", "commit"];
+      const hintedPurchase = tokens.some((token) => token.includes("purchase") || token.includes("order"));
+      const isLoyaltyKind = tokens.some((token) => allowedKinds.some((allowed) => token.includes(allowed)));
+      if (!hintedPurchase && !isLoyaltyKind) {
+        return;
+      }
+
       const txId =
         typeof data.transactionId === "string"
           ? data.transactionId
           : typeof data.id === "string"
             ? data.id
             : null;
-      if (txId) {
-        setPreferredTxId(txId);
-      } else {
-        setPreferredTxId(null);
-      }
+      setPreferredTxId(txId || null);
       void loadTransactions({ fresh: true });
     }, merchantId && merchantCustomerId ? { merchantId, merchantCustomerId } : undefined);
     return () => {
