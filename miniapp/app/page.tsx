@@ -1835,6 +1835,9 @@ const applyServerProfile = useCallback(
   };
 
   const inviteFieldVisible = referralResolved && referralEnabled;
+  const mustCompleteOnboarding = teleOnboarded === false && !localOnboarded;
+  const onboardingBlocked = mustCompleteOnboarding && !referralResolved;
+  const gateTeleOnboarded = onboardingBlocked ? null : teleOnboarded;
 
   const phoneConfirmLoading = phoneShareStage === "confirm" && (profileSaving || phoneShareLoading);
 
@@ -2489,7 +2492,7 @@ const applyServerProfile = useCallback(
     <div className={styles.page} suppressHydrationWarning>
       <RegistrationGate
         status={auth.status}
-        teleOnboarded={teleOnboarded}
+        teleOnboarded={gateTeleOnboarded}
         localOnboarded={localOnboarded}
         onboardingView={profileContent}
         dashboardView={dashboardContent}
