@@ -74,6 +74,13 @@ const REFUND_REFERENCE_FORMAT: Intl.DateTimeFormatOptions = {
   minute: "2-digit",
 };
 
+const REFERRAL_MESSAGE_FALLBACK =
+  "Расскажите друзьям о нашей программе и получите бонус. Делитесь ссылкой {link} или пригласительным кодом {code}.";
+const REFERRAL_SHARE_FALLBACK =
+  "Переходите по ссылке {link} и получите {bonusamount} бонусов на баланс в программе лояльности {businessname}.";
+const REFERRAL_PLACEHOLDER_REGEX = /\{businessname\}|\{bonusamount\}|\{code\}|\{link\}/gi;
+const TELEGRAM_SHARE_URL = "https://t.me/share/url";
+
 type MechanicsLevel = {
   id?: string;
   name?: string;
@@ -81,6 +88,13 @@ type MechanicsLevel = {
   cashbackPercent?: number | null;
   benefits?: { cashbackPercent?: number | null; [key: string]: unknown } | null;
   rewardPercent?: number | null;
+};
+
+type ReferralTemplateContext = {
+  merchantName: string;
+  bonusAmount: number;
+  code: string;
+  link: string;
 };
 
 const genderOptions: Array<{ value: "male" | "female"; label: string }> = [
@@ -102,6 +116,40 @@ const sleep = (ms: number) =>
   });
 
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
+const normalizeReferralTemplate = (template: string | null | undefined, fallback: string): string => {
+  if (typeof template === "string") {
+    const trimmed = template.trim();
+    if (trimmed) return trimmed;
+  }
+  return fallback;
+};
+
+const applyReferralPlaceholders = (template: string, ctx: ReferralTemplateContext): string => {
+  return template.replace(REFERRAL_PLACEHOLDER_REGEX, (match) => {
+    const token = match.toLowerCase();
+    if (token === "{businessname}") {
+      return ctx.merchantName || "";
+    }
+    if (token === "{bonusamount}") {
+      return ctx.bonusAmount > 0 && Number.isFinite(ctx.bonusAmount) ? String(Math.round(ctx.bonusAmount)) : "";
+    }
+    if (token === "{code}") {
+      return ctx.code || "";
+    }
+    if (token === "{link}") {
+      return ctx.link || "";
+    }
+    return "";
+  });
+};
+
+const buildTelegramShareUrl = (text: string): string => {
+  const params = new URLSearchParams();
+  if (text) params.set("text", text);
+  const query = params.toString();
+  return query ? `${TELEGRAM_SHARE_URL}?${query}` : TELEGRAM_SHARE_URL;
+};
 
 function readStoredMerchantCustomerId(merchantId?: string | null): string | null {
   if (!merchantId || typeof window === "undefined") return null;
@@ -1496,7 +1544,6 @@ const applyServerProfile = useCallback(
         setPendingMerchantCustomerIdForPhone(null);
         setPhoneShareStage("idle");
         setPhoneShareError(null);
-        setToast({ msg: "Профиль сохранён", type: "success" });
         return true;
       } catch (error) {
         const message = resolveErrorMessage(error);
@@ -1817,19 +1864,29 @@ const applyServerProfile = useCallback(
     [promoCode, merchantId, merchantCustomerId, loadBalance, loadTx, loadLevels]
   );
 
-  const handleInviteFriend = useCallback(async () => {
+  const handleInviteFriend = useCallback(() => {
     if (!referralInfo) return;
+    const ctx: ReferralTemplateContext = {
+      merchantName: referralInfo.merchantName,
+      bonusAmount: referralInfo.inviterReward || 0,
+      code: referralInfo.code,
+      link: referralInfo.link || "",
+    };
+    const shareTemplate = normalizeReferralTemplate(referralInfo.shareMessageTemplate, REFERRAL_SHARE_FALLBACK);
+    const shareText = applyReferralPlaceholders(shareTemplate, ctx).trim();
+    const shareUrl = buildTelegramShareUrl(shareText);
     const tg = getTelegramWebApp();
-    const link = referralInfo.link || '';
-    if (tg?.openTelegramLink && link) {
-      tg.openTelegramLink(link);
+    if (tg?.openTelegramLink) {
+      tg.openTelegramLink(shareUrl);
       return;
     }
     try {
-      if (typeof window !== 'undefined' && link) {
-        window.open(link, '_blank', 'noopener,noreferrer');
+      if (typeof window !== "undefined") {
+        window.open(shareUrl, "_blank", "noopener,noreferrer");
       }
-    } catch {}
+    } catch {
+      // ignore window open issues
+    }
   }, [referralInfo]);
 
   const displayName = useMemo(() => {
@@ -1845,13 +1902,8 @@ const applyServerProfile = useCallback(
   }, [profileForm.name, telegramUser]);
 
   // Render message with clickable {link} and {code} placeholders
-  const renderReferralMessage = (
-    template: string,
-    ctx: { merchantName: string; bonusAmount: number; code: string; link: string },
-  ) => {
-    const fallback =
-      "Расскажите друзьям о нашей программе и получите бонус. Делитесь ссылкой {link} или пригласительным кодом {code}.";
-    const tpl = (template && template.trim()) ? template : fallback;
+  const renderReferralMessage = (template: string, ctx: ReferralTemplateContext) => {
+    const tpl = normalizeReferralTemplate(template, REFERRAL_MESSAGE_FALLBACK);
     const regex = /\{businessname\}|\{bonusamount\}|\{code\}|\{link\}/gi;
     const matches = tpl.match(regex) || [];
     const parts = tpl.split(regex);
