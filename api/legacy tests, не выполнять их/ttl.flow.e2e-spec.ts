@@ -1,6 +1,6 @@
-import { EarnActivationWorker } from './../src/earn-activation.worker';
-import { PointsTtlWorker } from './../src/points-ttl.worker';
-import { PointsBurnWorker } from './../src/points-burn.worker';
+import { EarnActivationWorker } from '../src/earn-activation.worker';
+import { PointsTtlWorker } from '../src/points-ttl.worker';
+import { PointsBurnWorker } from '../src/points-burn.worker';
 
 describe('TTL full flow (lots + PENDING -> activation -> preview -> burn)', () => {
   const now = Date.now();

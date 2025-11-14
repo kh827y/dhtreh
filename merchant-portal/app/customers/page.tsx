@@ -32,8 +32,9 @@ const initialFilters: Filters = {
   age: "",
 };
 
-// Список групп будет получен из данных (см. ниже)
 const PAGE_SIZE = 8;
+
+type LevelOption = { id: string; name: string; isInitial?: boolean };
 
 export default function CustomersPage() {
   const router = useRouter();
@@ -42,6 +43,7 @@ export default function CustomersPage() {
   const [page, setPage] = React.useState(1);
   const [toast, setToast] = React.useState<string | null>(null);
   const [modalState, setModalState] = React.useState<{ mode: "create" | "edit"; customer?: CustomerRecord } | null>(null);
+  const [levelsCatalog, setLevelsCatalog] = React.useState<LevelOption[]>([]);
 
   // Хелпер для запросов к локальному прокси /api/customers
   async function api<T = any>(url: string, init?: RequestInit): Promise<T> {
@@ -80,6 +82,47 @@ export default function CustomersPage() {
         if (!aborted) setCustomers(Array.isArray(data) ? data.map(normalizeCustomer) : []);
       } catch (e) {
         console.error(e);
+      }
+    })();
+    return () => {
+      aborted = true;
+    };
+  }, []);
+
+  React.useEffect(() => {
+    let aborted = false;
+    (async () => {
+      try {
+        const payload = await api<any>("/api/portal/loyalty/tiers");
+        const source: any[] = Array.isArray(payload?.items)
+          ? payload.items
+          : Array.isArray(payload)
+            ? payload
+            : [];
+        const normalized = source
+          .map((row) => ({
+            id: typeof row?.id === "string" ? row.id : row?.id != null ? String(row.id) : "",
+            name: typeof row?.name === "string" ? row.name : "",
+            isInitial: Boolean(row?.isInitial),
+            isHidden: Boolean(row?.isHidden),
+            threshold: Number(row?.thresholdAmount ?? 0) || 0,
+          }))
+          .filter((item) => item.id && item.name)
+          .sort((a, b) => {
+            if (a.threshold === b.threshold) {
+              return a.name.localeCompare(b.name);
+            }
+            return a.threshold - b.threshold;
+          })
+          .map((item) => ({
+            id: item.id,
+            name: item.isHidden ? `${item.name} (скрытый)` : item.name,
+            isInitial: item.isInitial,
+          }));
+        if (!aborted) setLevelsCatalog(normalized);
+      } catch (error) {
+        console.error(error);
+        if (!aborted) setLevelsCatalog([]);
       }
     })();
     return () => {
@@ -146,11 +189,10 @@ export default function CustomersPage() {
     () => customers.map((customer) => customer.phone || customer.login),
     [customers],
   );
-  const groupsCatalog = React.useMemo(() => {
-    const defaults = ["Постоянные", "Стандарт", "Новые", "VIP", "Сонные"];
-    const dynamic = customers.map((c) => c.group).filter((group): group is string => Boolean(group));
-    return Array.from(new Set([...defaults, ...dynamic]));
-  }, [customers]);
+  const defaultLevelId = React.useMemo(() => {
+    const initial = levelsCatalog.find((lvl) => lvl.isInitial);
+    return initial?.id ?? levelsCatalog[0]?.id ?? null;
+  }, [levelsCatalog]);
 
   function openCreateModal() {
     setModalState({ mode: "create" });
@@ -181,17 +223,17 @@ export default function CustomersPage() {
   async function handleModalSubmit(payload: CustomerFormPayload) {
     if (!modalState) return;
 
+    const trimmedName = payload.firstName.trim();
     const baseBody = {
       phone: payload.login.trim(),
       email: payload.email.trim() || undefined,
-      firstName: payload.firstName.trim() || undefined,
-      lastName: payload.lastName.trim() || undefined,
-      name: [payload.firstName.trim(), payload.lastName.trim()].filter(Boolean).join(" ").trim() || undefined,
+      firstName: trimmedName || undefined,
+      name: trimmedName || undefined,
       birthday: payload.birthday || undefined,
       gender: payload.gender,
       tags: parseTags(payload.tags),
       comment: payload.comment.trim() || undefined,
-      accrualsBlocked: payload.blockAccruals,
+      levelId: payload.levelId || undefined,
     };
 
     if (modalState.mode === "create") {
@@ -440,9 +482,13 @@ export default function CustomersPage() {
       <CustomerFormModal
         open={Boolean(modalState)}
         mode={modalState?.mode ?? "create"}
-        initialValues={modalState?.customer ? mapCustomerToForm(modalState.customer) : { group: groupsCatalog[0] ?? "Стандарт" }}
+        initialValues={
+          modalState?.customer
+            ? mapCustomerToForm(modalState.customer)
+            : { levelId: defaultLevelId }
+        }
         loginToIgnore={modalState?.customer?.login}
-        groups={groupsCatalog}
+        levels={levelsCatalog}
         onClose={() => setModalState(null)}
         onSubmit={handleModalSubmit}
         existingLogins={existingLogins}
@@ -480,15 +526,14 @@ function formatCurrency(value: number): string {
 }
 
 function mapCustomerToForm(customer: CustomerRecord): Partial<CustomerFormPayload> {
+  const birthdayValue = customer.birthday ? customer.birthday.slice(0, 10) : "";
   return {
     login: customer.phone || customer.login,
     email: customer.email ?? "",
-    firstName: customer.firstName ?? "",
-    lastName: customer.lastName ?? "",
+    firstName: getFullName(customer) || "",
     tags: customer.tags.join(", "),
-    birthday: customer.birthday ?? "",
-    group: customer.group ?? "Стандарт",
-    blockAccruals: customer.blocked,
+    birthday: birthdayValue,
+    levelId: customer.levelId ?? null,
     gender: customer.gender,
     comment: customer.comment ?? "",
   };

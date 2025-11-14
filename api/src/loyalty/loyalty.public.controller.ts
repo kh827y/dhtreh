@@ -14,6 +14,10 @@ import { PrismaService } from '../prisma.service';
 import { LoyaltyService } from './loyalty.service';
 import { TelegramMiniappGuard } from '../guards/telegram-miniapp.guard';
 import { LoyaltyEventsService } from './loyalty-events.service';
+import {
+  ensureBaseTier,
+  toLevelRule,
+} from './tier-defaults.util';
 
 @ApiTags('loyalty-public')
 @Controller('loyalty')
@@ -40,28 +44,24 @@ export class LoyaltyPublicController {
     },
   })
   async mechanicsLevels(@Param('merchantId') merchantId: string) {
+    await ensureBaseTier(this.prisma, merchantId).catch(() => null);
     const tiers = await this.prisma.loyaltyTier.findMany({
-      where: { merchantId },
+      where: { merchantId, isHidden: false },
       orderBy: [{ thresholdAmount: 'asc' }, { createdAt: 'asc' }],
     });
     const levels = tiers.map((t: any) => {
+      const rule = toLevelRule(t);
       const bps =
-        typeof t.earnRateBps === 'number' ? Math.round(t.earnRateBps) : null;
+        typeof rule.earnRateBps === 'number' ? rule.earnRateBps : null;
       const percent = bps != null ? bps / 100 : null;
-      const threshold = Number(t?.thresholdAmount ?? 0) || 0;
-      const meta = t?.metadata ?? null;
-      const minPaymentAmount =
-        meta && typeof meta === 'object'
-          ? Number(meta.minPaymentAmount ?? meta.minPayment ?? 0) || 0
-          : null;
       return {
         id: t.id,
         name: t.name,
-        threshold,
+        threshold: rule.threshold,
         cashbackPercent: percent,
         benefits: { cashbackPercent: percent },
         rewardPercent: percent,
-        minPaymentAmount: minPaymentAmount,
+        minPaymentAmount: rule.minPaymentAmount ?? null,
       };
     });
     return { merchantId, levels };

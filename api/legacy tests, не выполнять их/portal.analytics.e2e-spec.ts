@@ -20,10 +20,10 @@ jest.mock('@prisma/client', () => {
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { AppModule } from './../src/app.module';
-import { getJose } from './../src/loyalty/token.util';
-import { AnalyticsService } from './../src/analytics/analytics.service';
-import { PrismaService } from './../src/prisma.service';
+import { AppModule } from '../src/app.module';
+import { getJose } from '../src/loyalty/token.util';
+import { AnalyticsService } from '../src/analytics/analytics.service';
+import { PrismaService } from '../src/prisma.service';
 
 /**
  * Smoke-тест портальных аналитических эндпоинтов через PortalGuard

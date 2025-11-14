@@ -15,6 +15,7 @@ import {
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
 import { CommunicationsService } from '../communications/communications.service';
+import { ensureBaseTier } from '../loyalty/tier-defaults.util';
 
 export interface TierPayload {
   name: string;
@@ -45,6 +46,22 @@ export interface TierDto {
   customersCount: number;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface TierMemberDto {
+  merchantCustomerId: string | null;
+  customerId: string;
+  name: string | null;
+  phone: string | null;
+  assignedAt: string;
+  source: string | null;
+}
+
+export interface TierMembersResponse {
+  tierId: string;
+  total: number;
+  items: TierMemberDto[];
+  nextCursor: string | null;
 }
 
 export interface MechanicPayload {
@@ -359,6 +376,7 @@ export class LoyaltyProgramService {
   }
 
   async listTiers(merchantId: string): Promise<TierDto[]> {
+    await ensureBaseTier(this.prisma, merchantId).catch(() => null);
     const tiers = await this.prisma.loyaltyTier.findMany({
       where: { merchantId },
       orderBy: [{ thresholdAmount: 'asc' }, { createdAt: 'asc' }],
@@ -390,6 +408,7 @@ export class LoyaltyProgramService {
   }
 
   async getTier(merchantId: string, tierId: string): Promise<TierDto> {
+    await ensureBaseTier(this.prisma, merchantId).catch(() => null);
     const tier = await this.prisma.loyaltyTier.findFirst({
       where: { merchantId, id: tierId },
     });
@@ -402,6 +421,63 @@ export class LoyaltyProgramService {
       },
     });
     return this.mapTier(tier, customersCount);
+  }
+
+  async listTierCustomers(
+    merchantId: string,
+    tierId: string,
+    params?: { limit?: number; cursor?: string },
+  ): Promise<TierMembersResponse> {
+    const tier = await this.prisma.loyaltyTier.findFirst({
+      where: { merchantId, id: tierId },
+    });
+    if (!tier) throw new NotFoundException('Уровень не найден');
+
+    const limit = Math.min(Math.max(params?.limit ?? 50, 1), 200);
+    const cursor =
+      params?.cursor && params.cursor.trim()
+        ? { id: params.cursor.trim() }
+        : undefined;
+    const activeWhere = {
+      merchantId,
+      tierId,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+    };
+    const assignments = await this.prisma.loyaltyTierAssignment.findMany({
+      where: activeWhere,
+      orderBy: [{ assignedAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+      ...(cursor ? { skip: 1, cursor } : {}),
+    });
+    const customerIds = Array.from(
+      new Set(assignments.map((row) => row.customerId)),
+    );
+    const merchantCustomers = customerIds.length
+      ? await this.prisma.merchantCustomer.findMany({
+          where: { merchantId, customerId: { in: customerIds } },
+          select: { id: true, customerId: true, name: true, phone: true },
+        })
+      : [];
+    const mcMap = new Map(
+      merchantCustomers.map((mc) => [mc.customerId, mc]),
+    );
+    const items: TierMemberDto[] = assignments.slice(0, limit).map((row) => {
+      const profile = mcMap.get(row.customerId);
+      return {
+        merchantCustomerId: profile?.id ?? null,
+        customerId: row.customerId,
+        name: profile?.name ?? null,
+        phone: profile?.phone ?? null,
+        assignedAt: row.assignedAt.toISOString(),
+        source: row.source ?? null,
+      };
+    });
+    const total = await this.prisma.loyaltyTierAssignment.count({
+      where: activeWhere,
+    });
+    const nextCursor =
+      assignments.length > limit ? assignments[limit].id : null;
+    return { tierId, total, items, nextCursor };
   }
 
   async createTier(merchantId: string, payload: TierPayload): Promise<TierDto> {

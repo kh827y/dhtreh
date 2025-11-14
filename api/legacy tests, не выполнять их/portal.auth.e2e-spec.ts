@@ -1,9 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { AppModule } from './../src/app.module';
-import { PrismaService } from './../src/prisma.service';
-import { hashPassword } from './../src/password.util';
+import { AppModule } from '../src/app.module';
+import { PrismaService } from '../src/prisma.service';
+import { hashPassword } from '../src/password.util';
 
 // e2e for PortalAuth: login (no TOTP), login (with TOTP), invalid creds, /portal/auth/me, impersonation
 

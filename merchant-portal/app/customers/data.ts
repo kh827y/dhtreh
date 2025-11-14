@@ -83,6 +83,7 @@ export type CustomerRecord = {
   registeredAt: string | null;
   comment: string | null;
   blocked: boolean;
+  redeemBlocked: boolean;
   referrer?: CustomerReferrer | null;
   invite?: CustomerInvite | null;
   transactions: CustomerTransaction[];

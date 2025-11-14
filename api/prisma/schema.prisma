@@ -430,6 +430,7 @@ model MerchantCustomer {
   profileCompletedAt DateTime?
   comment         String?
   accrualsBlocked Boolean  @default(false)
+  redemptionsBlocked Boolean @default(false)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

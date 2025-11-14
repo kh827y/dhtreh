@@ -1,11 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { AppModule } from './../src/app.module';
-import { PrismaService } from './../src/prisma.service';
+import { AppModule } from '../src/app.module';
+import { PrismaService } from '../src/prisma.service';
 import { PromoCodeStatus } from '@prisma/client';
-import { PortalGuard } from './../src/portal-auth/portal.guard';
-import { MetricsService } from './../src/metrics.service';
+import { PortalGuard } from '../src/portal-auth/portal.guard';
+import { MetricsService } from '../src/metrics.service';
 
 type PromoCodeRow = {
   id: string;

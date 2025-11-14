@@ -8,15 +8,11 @@ const { X } = Icons;
 
 export type CustomerFormPayload = {
   login: string;
-  password: string;
-  confirmPassword: string;
   email: string;
   firstName: string;
-  lastName: string;
   tags: string;
   birthday: string;
-  group: string;
-  blockAccruals: boolean;
+  levelId: string | null;
   gender: Gender;
   comment: string;
 };
@@ -26,7 +22,7 @@ type CustomerFormModalProps = {
   mode: "create" | "edit";
   initialValues?: Partial<CustomerFormPayload>;
   loginToIgnore?: string;
-  groups: string[];
+  levels: Array<{ id: string; name: string; isInitial?: boolean }>;
   onClose: () => void;
   onSubmit: (values: CustomerFormPayload) => Promise<void> | void;
   existingLogins: string[];
@@ -36,15 +32,11 @@ type FormErrors = Partial<Record<keyof CustomerFormPayload, string>>;
 
 const defaultValues: CustomerFormPayload = {
   login: "",
-  password: "",
-  confirmPassword: "",
   email: "",
   firstName: "",
-  lastName: "",
   tags: "",
   birthday: "",
-  group: "Стандарт",
-  blockAccruals: false,
+  levelId: null,
   gender: "unknown",
   comment: "",
 };
@@ -54,7 +46,7 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
   mode,
   initialValues,
   loginToIgnore,
-  groups,
+  levels,
   onClose,
   onSubmit,
   existingLogins,
@@ -66,11 +58,16 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
 
   React.useEffect(() => {
     if (open) {
-      setForm({ ...defaultValues, ...(initialValues ?? {}) });
+      const preferredLevel =
+        initialValues?.levelId ??
+        levels.find((lvl) => lvl.isInitial)?.id ??
+        levels[0]?.id ??
+        null;
+      setForm({ ...defaultValues, ...(initialValues ?? {}), levelId: preferredLevel ?? null });
       setErrors({});
       setSubmitError(null);
     }
-  }, [open, initialValues]);
+  }, [open, initialValues, levels]);
 
   if (!open) return null;
 
@@ -101,10 +98,8 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
       }
     }
 
-    if (form.password || form.confirmPassword) {
-      if (form.password !== form.confirmPassword) {
-        nextErrors.confirmPassword = "Пароли не совпадают";
-      }
+    if (!form.levelId) {
+      nextErrors.levelId = "Выберите уровень";
     }
 
     setErrors(nextErrors);
@@ -132,13 +127,8 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
     <div style={overlayStyle}>
       <form onSubmit={handleSubmit} style={modalStyle} role="dialog" aria-modal="true">
         <div style={modalHeaderStyle}>
-          <div style={{ display: "grid", gap: 4 }}>
-            <div style={{ fontSize: 18, fontWeight: 700 }}>
-              {mode === "create" ? "Добавить клиента" : "Редактировать клиента"}
-            </div>
-            <div style={{ fontSize: 12, opacity: 0.65 }}>
-              Пароль или пин-код можно оставить пустым при редактировании — текущие данные сохранятся.
-            </div>
+          <div style={{ fontSize: 18, fontWeight: 700 }}>
+            {mode === "create" ? "Добавить клиента" : "Редактировать клиента"}
           </div>
           <button type="button" onClick={onClose} style={closeButtonStyle} aria-label="Закрыть">
             <X size={16} />
@@ -156,31 +146,6 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
             {errors.login && <ErrorText>{errors.login}</ErrorText>}
           </label>
 
-          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
-            <label style={fieldStyle}>
-              <span style={labelStyle}>Пароль или пин-код</span>
-              <input
-                style={inputStyle}
-                type="password"
-                value={form.password}
-                onChange={(event) => update("password", event.target.value)}
-                placeholder="Введите пароль"
-              />
-              {errors.password && <ErrorText>{errors.password}</ErrorText>}
-            </label>
-            <label style={fieldStyle}>
-              <span style={labelStyle}>Повторите пароль или пин-код</span>
-              <input
-                style={inputStyle}
-                type="password"
-                value={form.confirmPassword}
-                onChange={(event) => update("confirmPassword", event.target.value)}
-                placeholder="Повторите пароль"
-              />
-              {errors.confirmPassword && <ErrorText>{errors.confirmPassword}</ErrorText>}
-            </label>
-          </div>
-
           <label style={fieldStyle}>
             <span style={labelStyle}>Email</span>
             <input
@@ -193,26 +158,15 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
             {errors.email && <ErrorText>{errors.email}</ErrorText>}
           </label>
 
-          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
-            <label style={fieldStyle}>
-              <span style={labelStyle}>Имя</span>
-              <input
-                style={inputStyle}
-                value={form.firstName}
-                onChange={(event) => update("firstName", event.target.value)}
-                placeholder="Имя"
-              />
-            </label>
-            <label style={fieldStyle}>
-              <span style={labelStyle}>Фамилия</span>
-              <input
-                style={inputStyle}
-                value={form.lastName}
-                onChange={(event) => update("lastName", event.target.value)}
-                placeholder="Фамилия"
-              />
-            </label>
-          </div>
+          <label style={fieldStyle}>
+            <span style={labelStyle}>Имя клиента</span>
+            <input
+              style={inputStyle}
+              value={form.firstName}
+              onChange={(event) => update("firstName", event.target.value)}
+              placeholder="Например, Иван Иванов"
+            />
+          </label>
 
           <label style={fieldStyle}>
             <span style={labelStyle}>Теги</span>
@@ -239,29 +193,23 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
               {errors.birthday && <ErrorText>{errors.birthday}</ErrorText>}
             </label>
             <label style={fieldStyle}>
-              <span style={labelStyle}>Группа клиентов</span>
+              <span style={labelStyle}>Уровень клиента</span>
               <select
                 style={inputStyle}
-                value={form.group}
-                onChange={(event) => update("group", event.target.value)}
+                value={form.levelId ?? ""}
+                onChange={(event) => update("levelId", event.target.value || null)}
+                disabled={!levels.length}
               >
-                {groups.map((group) => (
-                  <option key={group} value={group}>
-                    {group}
+                {levels.length === 0 && <option value="">Нет доступных уровней</option>}
+                {levels.map((level) => (
+                  <option key={level.id} value={level.id}>
+                    {level.name}
                   </option>
                 ))}
               </select>
+              {errors.levelId && <ErrorText>{errors.levelId}</ErrorText>}
             </label>
           </div>
-
-          <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <input
-              type="checkbox"
-              checked={form.blockAccruals}
-              onChange={(event) => update("blockAccruals", event.target.checked)}
-            />
-            <span>Блокировать начисления</span>
-          </label>
 
           <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
             <label style={fieldStyle}>

@@ -22,6 +22,10 @@ export class LevelsController {
           properties: {
             name: { type: 'string' },
             threshold: { type: 'number' },
+            earnRateBps: { type: 'number', nullable: true },
+            redeemRateBps: { type: 'number', nullable: true },
+            minPaymentAmount: { type: 'number', nullable: true },
+            isHidden: { type: 'boolean', nullable: true },
           },
         },
         next: {
@@ -30,6 +34,10 @@ export class LevelsController {
           properties: {
             name: { type: 'string' },
             threshold: { type: 'number' },
+            earnRateBps: { type: 'number', nullable: true },
+            redeemRateBps: { type: 'number', nullable: true },
+            minPaymentAmount: { type: 'number', nullable: true },
+            isHidden: { type: 'boolean', nullable: true },
           },
         },
         progressToNext: { type: 'number' },

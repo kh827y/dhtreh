@@ -2,14 +2,14 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { ConfigModule } from '@nestjs/config';
-import { PrismaService } from './../src/prisma.service';
-import { MetricsService } from './../src/metrics.service';
-import { AnalyticsService } from './../src/analytics/analytics.service';
-import { PushService } from './../src/notifications/push/push.service';
-import { EmailService } from './../src/notifications/email/email.service';
-import { getJose } from './../src/loyalty/token.util';
-import { LoyaltyProgramModule } from './../src/loyalty-program/loyalty-program.module';
-import { NotificationsModule } from './../src/notifications/notifications.module';
+import { PrismaService } from '../src/prisma.service';
+import { MetricsService } from '../src/metrics.service';
+import { AnalyticsService } from '../src/analytics/analytics.service';
+import { PushService } from '../src/notifications/push/push.service';
+import { EmailService } from '../src/notifications/email/email.service';
+import { getJose } from '../src/loyalty/token.util';
+import { LoyaltyProgramModule } from '../src/loyalty-program/loyalty-program.module';
+import { NotificationsModule } from '../src/notifications/notifications.module';
 jest.mock('@prisma/client', () => {
   const makeEnum = (values: string[]) =>
     values.reduce(

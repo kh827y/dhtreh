@@ -3,6 +3,14 @@ import { LevelsService } from '../levels/levels.service';
 
 function mkPrisma(overrides: any = {}) {
   const base: any = {
+    merchantCustomer: {
+      findUnique: jest.fn(async () => ({
+        id: 'MC1',
+        merchantId: 'M1',
+        customerId: 'C1',
+      })),
+      findMany: jest.fn(async () => []),
+    },
     customer: {
       findUnique: jest.fn(async () => null),
       create: jest.fn(async (args: any) => ({ id: args?.data?.id || 'C1' })),
@@ -35,6 +43,37 @@ function mkPrisma(overrides: any = {}) {
       // Customer earned total 600 within period -> Silver
       findMany: jest.fn(async () => [{ amount: 300 }, { amount: 300 }]),
     },
+    loyaltyTier: {
+      findMany: jest.fn(async () => []),
+      findUnique: jest.fn(async () => null),
+      findFirst: jest.fn(async (params?: any) =>
+        params?.where?.isInitial
+          ? {
+              id: 'tier-base',
+              merchantId: params.where.merchantId ?? 'M1',
+              name: 'Base',
+              thresholdAmount: 0,
+              earnRateBps: 500,
+              redeemRateBps: 5000,
+              metadata: { minPaymentAmount: 0 },
+              isHidden: false,
+            }
+          : null,
+      ),
+      aggregate: jest.fn(async () => ({ _min: { order: null } })),
+      create: jest.fn(async (args: any) => ({
+        id: 'tier-created',
+        ...(args?.data ?? {}),
+      })),
+    },
+    loyaltyTierAssignment: {
+      findFirst: jest.fn(async () => null),
+      findMany: jest.fn(async () => []),
+      count: jest.fn(async () => 0),
+      groupBy: jest.fn(async () => []),
+      create: jest.fn(async () => ({})),
+      update: jest.fn(async () => ({})),
+    },
     hold: {
       findUnique: jest.fn(async () => null),
       create: jest.fn(async (args: any) => ({ id: 'H1', ...args?.data })),
@@ -46,6 +85,32 @@ function mkPrisma(overrides: any = {}) {
     $transaction: jest.fn(async (fn: any) => fn(base)),
   };
   return Object.assign(base, overrides);
+}
+
+function mockAssignedTier(
+  prisma: ReturnType<typeof mkPrisma>,
+  tier: Partial<{ earnRateBps: number; redeemRateBps: number }>,
+) {
+  prisma.loyaltyTierAssignment.findFirst = jest
+    .fn()
+    .mockResolvedValue({
+      id: 'assign-tier',
+      merchantId: 'M1',
+      customerId: 'C1',
+      tierId: 'tier-silver',
+      assignedAt: new Date(),
+      expiresAt: null,
+    });
+  prisma.loyaltyTier.findUnique = jest.fn(async () => ({
+    id: 'tier-silver',
+    merchantId: 'M1',
+    name: 'Silver',
+    thresholdAmount: 500,
+    earnRateBps: tier.earnRateBps ?? 500,
+    redeemRateBps: tier.redeemRateBps ?? 5000,
+    metadata: { minPaymentAmount: 0 },
+    isHidden: false,
+  }));
 }
 
 const metrics = {
@@ -81,6 +146,7 @@ beforeEach(() => {
 describe('LoyaltyService.quote with level benefits (Wave 2)', () => {
   it('applies earnBps bonus by current level', async () => {
     const prisma = mkPrisma();
+    mockAssignedTier(prisma, { earnRateBps: 700 });
     const staffMotivation = mkStaffMotivation();
     const svc = new LoyaltyService(
       prisma,
@@ -143,6 +209,7 @@ describe('LoyaltyService.quote with level benefits (Wave 2)', () => {
         })),
       },
     });
+    mockAssignedTier(prisma, { earnRateBps: 500, redeemRateBps: 6000 });
     const staffMotivation = mkStaffMotivation();
     const svc = new LoyaltyService(
       prisma,
@@ -219,5 +286,59 @@ describe('LevelsService.getLevel', () => {
     expect(res.next).toBeNull();
     expect(res.progressToNext).toBe(0);
     expect(res.value).toBe(1100);
+  });
+});
+
+describe('LoyaltyService tier promotion helper', () => {
+  it('promotes customer via upsert when progress reaches next threshold', async () => {
+    const prisma = mkPrisma();
+    const staffMotivation = mkStaffMotivation();
+    const svc = new LoyaltyService(
+      prisma,
+      metrics,
+      promoCodes,
+      undefined as any,
+      staffMotivation,
+    );
+    const tx = {
+      loyaltyTier: {
+        findMany: jest.fn(async () => [
+          { id: 'tier-base', thresholdAmount: 0, isHidden: false },
+          { id: 'tier-silver', thresholdAmount: 1000, isHidden: false },
+        ]),
+      },
+      loyaltyTierAssignment: {
+        findFirst: jest.fn(async () => ({
+          id: 'assign-1',
+          merchantId: 'M1',
+          customerId: 'C1',
+          tierId: 'tier-base',
+          tier: { id: 'tier-base', thresholdAmount: 0, isHidden: false },
+        })),
+        upsert: jest.fn(async () => ({})),
+      },
+      eventOutbox: {
+        create: jest.fn(async () => ({})),
+      },
+    } as any;
+
+    await (svc as any).promoteTierIfEligible(tx, {
+      merchantId: 'M1',
+      customerId: 'C1',
+      progress: 1500,
+    });
+
+    expect(tx.loyaltyTierAssignment.upsert).toHaveBeenCalledTimes(1);
+    expect(tx.loyaltyTierAssignment.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          merchantId: 'M1',
+          customerId: 'C1',
+          tierId: 'tier-silver',
+        }),
+        update: expect.objectContaining({ tierId: 'tier-silver' }),
+      }),
+    );
+    expect(tx.eventOutbox.create).toHaveBeenCalledTimes(1);
   });
 });

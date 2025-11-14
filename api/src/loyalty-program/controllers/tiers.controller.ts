@@ -8,6 +8,7 @@ import {
   Put,
   Req,
   UseGuards,
+  Query,
 } from '@nestjs/common';
 import { PortalGuard } from '../../portal-auth/portal.guard';
 import { LoyaltyProgramService } from '../loyalty-program.service';
@@ -49,5 +50,21 @@ export class TiersController {
   @Delete(':tierId')
   remove(@Req() req: any, @Param('tierId') tierId: string) {
     return this.service.deleteTier(this.merchantId(req), tierId);
+  }
+
+  @Get(':tierId/customers')
+  members(
+    @Req() req: any,
+    @Param('tierId') tierId: string,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    const parsed = limit
+      ? Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200)
+      : undefined;
+    return this.service.listTierCustomers(this.merchantId(req), tierId, {
+      limit: parsed,
+      cursor: cursor?.trim() || undefined,
+    });
   }
 }

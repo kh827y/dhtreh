@@ -101,6 +101,7 @@ export type PortalCustomerDto = {
   createdAt: string | null;
   comment: string | null;
   accrualsBlocked: boolean;
+  redemptionsBlocked?: boolean;
   levelId?: string | null;
   levelName?: string | null;
   referrer?: PortalCustomerReferrerDto | null;
@@ -141,6 +142,7 @@ const customerBaseSelect = (merchantId: string) =>
         name: true,
         comment: true,
         accrualsBlocked: true,
+        redemptionsBlocked: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -515,6 +517,7 @@ export class PortalCustomersService {
       createdAt: registeredAt,
       comment: profile?.comment ?? null,
       accrualsBlocked: Boolean(profile?.accrualsBlocked),
+      redemptionsBlocked: Boolean(profile?.redemptionsBlocked),
       levelId,
       levelName,
     };
@@ -753,6 +756,7 @@ export class PortalCustomersService {
     metadata: Record<string, any> | null;
     promoUsage?: { code: string | null; name: string | null } | null;
     accrualsBlocked: boolean;
+    redemptionsBlocked: boolean;
   }): {
     details: string;
     kind: string;
@@ -872,6 +876,7 @@ export class PortalCustomersService {
     metadata: Record<string, any> | null;
     promoUsage?: { code: string | null; name: string | null } | null;
     accrualsBlocked: boolean;
+    redemptionsBlocked: boolean;
   }): {
     details: string;
     kind: string;
@@ -895,6 +900,11 @@ export class PortalCustomersService {
     if (params.tx.type === 'EARN' && params.accrualsBlocked) {
       details = 'Начисление заблокировано администратором';
       kind = 'EARN_BLOCKED';
+      return { details, kind, note, purchaseAmount };
+    }
+    if (params.tx.type === 'REDEEM' && params.redemptionsBlocked) {
+      details = 'Списание заблокировано администратором';
+      kind = 'REDEEM_BLOCKED';
       return { details, kind, note, purchaseAmount };
     }
 
@@ -1428,6 +1438,7 @@ export class PortalCustomersService {
         metadata,
         promoUsage,
         accrualsBlocked: Boolean(baseDto.accrualsBlocked),
+        redemptionsBlocked: Boolean(baseDto.redemptionsBlocked),
       });
 
       const purchaseAmount = descriptor.purchaseAmount;
@@ -1561,6 +1572,7 @@ export class PortalCustomersService {
         'Количество начисляемых баллов должно быть больше 0',
       );
     }
+    await this.ensureOperationAllowed(merchantId, customerId, 'earn');
     const appliedPoints = points;
 
     const orderId = `manual_accrual:${randomUUID()}`;
@@ -1673,6 +1685,7 @@ export class PortalCustomersService {
       );
     }
     const redeemPoints = points;
+    await this.ensureOperationAllowed(merchantId, customerId, 'redeem');
 
     const orderId = `manual_redeem:${randomUUID()}`;
     const metadata = {
@@ -1755,6 +1768,7 @@ export class PortalCustomersService {
     if (!points || points <= 0) {
       throw new BadRequestException('Количество баллов должно быть больше 0');
     }
+    await this.ensureOperationAllowed(merchantId, customerId, 'earn');
     const bonusPoints = points;
 
     const expiresInDays =
@@ -1916,8 +1930,17 @@ export class PortalCustomersService {
         name: fullName ?? null,
         comment: dto.comment?.trim?.() || null,
         accrualsBlocked: Boolean(dto.accrualsBlocked),
+        redemptionsBlocked: Boolean(dto.redemptionsBlocked),
       },
     });
+
+    const levelId =
+      typeof dto.levelId === 'string' && dto.levelId.trim()
+        ? dto.levelId.trim()
+        : null;
+    if (levelId) {
+      await this.applyTierAssignment(merchantId, customer.id, levelId);
+    }
 
     try {
       await this.audiences.evaluateCustomerSegments(merchantId, customer.id);
@@ -2042,6 +2065,11 @@ export class PortalCustomersService {
       merchantUpdate.accrualsBlocked = blocked;
       merchantCreate.accrualsBlocked = blocked;
     }
+    if (dto.redemptionsBlocked !== undefined) {
+      const blocked = Boolean(dto.redemptionsBlocked);
+      merchantUpdate.redemptionsBlocked = blocked;
+      merchantCreate.redemptionsBlocked = blocked;
+    }
 
     if (Object.keys(merchantUpdate).length > 0) {
       await prismaAny?.merchantCustomer?.upsert?.({
@@ -2051,6 +2079,16 @@ export class PortalCustomersService {
         update: merchantUpdate,
         create: merchantCreate,
       });
+    }
+
+    if (dto.levelId !== undefined) {
+      const sanitized =
+        typeof dto.levelId === 'string' && dto.levelId.trim()
+          ? dto.levelId.trim()
+          : null;
+      if (sanitized) {
+        await this.applyTierAssignment(merchantId, customerId, sanitized);
+      }
     }
 
     try {
@@ -2064,6 +2102,58 @@ export class PortalCustomersService {
     await this.ensureWallet(merchantId, customerId);
 
     return this.get(merchantId, customerId);
+  }
+
+  private async applyTierAssignment(
+    merchantId: string,
+    customerId: string,
+    tierId?: string | null,
+  ) {
+    if (!tierId) return;
+    const tier = await this.prisma.loyaltyTier.findFirst({
+      where: { merchantId, id: tierId },
+    });
+    if (!tier) throw new BadRequestException('Уровень не найден');
+    const assignedAt = new Date();
+    await this.prisma.loyaltyTierAssignment.upsert({
+      where: { merchantId_customerId: { merchantId, customerId } },
+      update: {
+        tierId: tier.id,
+        assignedAt,
+        expiresAt: null,
+        source: 'manual',
+      },
+      create: {
+        merchantId,
+        customerId,
+        tierId: tier.id,
+        assignedAt,
+        expiresAt: null,
+        source: 'manual',
+      },
+    });
+  }
+
+  private async ensureOperationAllowed(
+    merchantId: string,
+    customerId: string,
+    mode: 'earn' | 'redeem',
+  ) {
+    const profile = await this.prisma.merchantCustomer.findUnique({
+      where: { merchantId_customerId: { merchantId, customerId } },
+      select: { accrualsBlocked: true, redemptionsBlocked: true },
+    });
+    if (!profile) return;
+    if (mode === 'earn' && profile.accrualsBlocked) {
+      throw new BadRequestException(
+        'Начисления заблокированы администратором',
+      );
+    }
+    if (mode === 'redeem' && profile.redemptionsBlocked) {
+      throw new BadRequestException(
+        'Списания заблокированы администратором',
+      );
+    }
   }
 
   async remove(merchantId: string, customerId: string) {

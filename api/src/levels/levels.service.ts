@@ -6,6 +6,7 @@ import {
   parseLevelsConfig,
   type LevelRule,
 } from '../loyalty/levels.util';
+import { ensureBaseTier, toLevelRule } from '../loyalty/tier-defaults.util';
 
 @Injectable()
 export class LevelsService {
@@ -31,20 +32,22 @@ export class LevelsService {
       where: { merchantId },
     });
     const base = parseLevelsConfig(s);
+    await ensureBaseTier(this.prisma, merchantId).catch(() => null);
     // Заменяем список уровней на портал-управляемые LoyaltyTier, если они существуют
-    let levels = base.levels;
+    let tiers: any[] = [];
     try {
-      const tiers = await (this.prisma as any).loyaltyTier.findMany({
+      tiers = await (this.prisma as any).loyaltyTier.findMany({
         where: { merchantId },
         orderBy: [{ thresholdAmount: 'asc' }, { createdAt: 'asc' }],
       });
-      if (Array.isArray(tiers) && tiers.length) {
-        levels = tiers.map((t: any) => ({
-          name: String(t?.name || ''),
-          threshold: Math.max(0, Number(t?.thresholdAmount ?? 0) || 0),
-        }));
-      }
     } catch {}
+    const visibleLevels =
+      tiers.length > 0
+        ? tiers
+            .filter((tier) => !tier?.isHidden)
+            .map((tier) => toLevelRule(tier))
+        : base.levels;
+    const levels = visibleLevels.length ? visibleLevels : base.levels;
     const cfg = { periodDays: base.periodDays, metric: base.metric, levels };
     const mc = await (this.prisma as any).merchantCustomer?.findUnique?.({
       where: { id: merchantCustomerId },
@@ -54,6 +57,20 @@ export class LevelsService {
       throw new Error('merchant customer not found');
     const customerId = mc.customerId;
 
+    const assignment = await (this.prisma as any).loyaltyTierAssignment
+      ?.findFirst?.({
+        where: {
+          merchantId,
+          customerId,
+          OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+        },
+        orderBy: { assignedAt: 'desc' },
+        include: {
+          tier: true,
+        },
+      })
+      .catch(() => null);
+
     const { value, current, next, progressToNext } = await computeLevelState({
       prisma: this.prisma,
       metrics: this.metrics,
@@ -61,15 +78,44 @@ export class LevelsService {
       merchantCustomerId,
       config: cfg,
     });
+    let effectiveCurrent = current;
+    let effectiveNext = next;
+    let effectiveProgress = progressToNext;
+
+    if (assignment?.tier) {
+      const assignedRule = toLevelRule(assignment.tier);
+      effectiveCurrent = assignedRule;
+      if (assignedRule.isHidden) {
+        effectiveNext = null;
+        effectiveProgress = 0;
+      } else {
+        const ordered = levels;
+        const idx = ordered.findIndex(
+          (lvl) =>
+            lvl.name.toLowerCase().trim() ===
+            assignedRule.name.toLowerCase().trim(),
+        );
+        if (idx >= 0) {
+          effectiveNext = ordered[idx + 1] ?? null;
+        } else {
+          effectiveNext =
+            ordered.find((lvl) => lvl.threshold > assignedRule.threshold) ??
+            null;
+        }
+        effectiveProgress = effectiveNext
+          ? Math.max(0, effectiveNext.threshold - value)
+          : 0;
+      }
+    }
     return {
       merchantId,
       merchantCustomerId,
       metric: cfg.metric,
       periodDays: cfg.periodDays,
       value,
-      current,
-      next,
-      progressToNext,
+      current: effectiveCurrent,
+      next: effectiveNext,
+      progressToNext: effectiveProgress,
     };
   }
 }

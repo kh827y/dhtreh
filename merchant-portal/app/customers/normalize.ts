@@ -294,6 +294,9 @@ export function normalizeCustomer(input: any): CustomerRecord {
     registeredAt,
     comment: toStringOrNull(input?.comment),
     blocked: Boolean(input?.accrualsBlocked ?? input?.blocked),
+    redeemBlocked: Boolean(
+      (input as any)?.redemptionsBlocked ?? (input as any)?.redeemBlocked,
+    ),
     referrer: normalizeReferrer(input?.referrer),
     invite: normalizeInvite(input?.invite ?? { inviteCode: input?.inviteCode, inviteLink: input?.inviteLink }),
     transactions,

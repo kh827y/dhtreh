@@ -3,6 +3,7 @@
 import React, { use } from "react";
 import { Button, Card, CardBody, Skeleton } from "@loyalty/ui";
 import { useRouter } from "next/navigation";
+import { TierMembersModal } from "../../../../../components/TierMembersModal";
 
 type TierDetail = {
   id: string;
@@ -50,6 +51,7 @@ export default function LevelDetailPage({ params }: { params: Promise<{ levelId:
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState("");
   const [deleting, setDeleting] = React.useState(false);
+  const [membersOpen, setMembersOpen] = React.useState(false);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -118,6 +120,7 @@ export default function LevelDetailPage({ params }: { params: Promise<{ levelId:
         </div>
         <div style={{ display: "flex", gap: 12 }}>
           <Button variant="secondary" onClick={load} disabled={loading}>Обновить</Button>
+          <Button variant="secondary" onClick={() => setMembersOpen(true)} disabled={!tier}>Состав</Button>
           <Button variant="primary" onClick={() => router.push(`/loyalty/mechanics/levels/${levelId}/edit`)} disabled={!tier}>Редактировать</Button>
           <Button
             variant="danger"
@@ -165,6 +168,20 @@ export default function LevelDetailPage({ params }: { params: Promise<{ levelId:
       </Card>
 
       <Button variant="secondary" onClick={() => router.push('/loyalty/mechanics/levels')}>Вернуться к списку</Button>
+
+      <TierMembersModal
+        tier={
+          tier
+            ? {
+                id: tier.id,
+                name: tier.name,
+                customersCount: tier.customersCount,
+              }
+            : null
+        }
+        open={membersOpen && Boolean(tier)}
+        onClose={() => setMembersOpen(false)}
+      />
     </div>
   );
 }

@@ -577,6 +577,9 @@ Response 200 (EARN):
   - `transactions` — количество операций за период.
 - Текущий уровень определяется максимальным `threshold`, не превышающим накопленное значение.
 - Бонусы уровня добавляются к базовым ставкам мерчанта/правил: `earnBps += earnBpsBonusByLevel[current]`, `redeemLimitBps += redeemLimitBpsBonusByLevel[current]`.
+- При первом обращении к уровням создаётся базовый `LoyaltyTier` (`Base`), если он отсутствует. Параметры: `threshold=0`, `earnRateBps=300`, `redeemRateBps=5000`, `minPaymentAmount=0`, `isInitial=true`, `isHidden=false`.
+- Скрытые уровни (`isHidden=true`) не учитываются в автоматическом повышении и не отображаются в мини‑аппе до ручного назначения (админом или промокодом).
+- На странице `/loyalty/mechanics/levels` добавлена кнопка «Состав», которая запрашивает `GET /portal/loyalty/tiers/{tierId}/customers` и показывает клиентов уровня.
 
 Конфигурацию можно редактировать в админке на странице настроек мерчанта (редакторы `Levels config` и `Level benefits`).
 
@@ -592,13 +595,38 @@ Response 200:
   "metric": "earn",
   "periodDays": 365,
   "value": 750,
-  "current": { "name": "Silver", "threshold": 500 },
-  "next": { "name": "Gold", "threshold": 1000 },
+  "current": { "name": "Silver", "threshold": 500, "earnRateBps": 700, "redeemRateBps": 4000, "minPaymentAmount": 0 },
+  "next": { "name": "Gold", "threshold": 1000, "earnRateBps": 900 },
   "progressToNext": 0.5
 }
 ```
 
 Примечание: бонусы уровня автоматически применяются при расчёте `POST /loyalty/quote`.
+
+### Состав уровня
+
+```http
+GET /portal/loyalty/tiers/{tierId}/customers?limit=100&cursor=...
+
+Response 200:
+{
+  "tierId": "tier_vip",
+  "total": 12,
+  "items": [
+    {
+      "merchantCustomerId": "mc_123",
+      "customerId": "cust_1",
+      "name": "Иван Иванов",
+      "phone": "+79991112233",
+      "assignedAt": "2025-11-14T08:35:00.000Z",
+      "source": "auto"
+    }
+  ],
+  "nextCursor": "cursor-id"
+}
+```
+
+Список возвращает только активные назначения (без `expiresAt`). В портале используется в модальном окне «Состав».
 
 ### Примеры конфигурации уровней
 
@@ -1596,7 +1624,7 @@ const result = await client.commit({
 #### GET /portal/customers
 - Параметры: `search` (телефон, email или ФИО), `limit` (1–200, по умолчанию 50), `offset`, `segmentId`, `registeredOnly` (по умолчанию `true`). Чтобы увидеть «сырых» клиентов без телефона/пола/даты рождения, передайте `registeredOnly=0`.
 - По умолчанию сервер возвращает только тех клиентов, у кого заполнены имя, пол (`male|female`), дата рождения и телефон (в `MerchantCustomer` или `Customer`).
-- Ответ: массив объектов с полями `id`, `phone`, `email`, `firstName`, `lastName`, `gender`, `birthday`, `tags[]`, `balance`, `pendingBalance`, `visits`, `visitFrequencyDays`, `daysSinceLastVisit`, `averageCheck`, `spendPreviousMonth`, `spendCurrentMonth`, `spendTotal`, `registeredAt`, `comment`, `accrualsBlocked`, `levelName`.
+- Ответ: массив объектов с полями `id`, `phone`, `email`, `firstName`, `lastName`, `gender`, `birthday`, `tags[]`, `balance`, `pendingBalance`, `visits`, `visitFrequencyDays`, `daysSinceLastVisit`, `averageCheck`, `spendPreviousMonth`, `spendCurrentMonth`, `spendTotal`, `registeredAt`, `comment`, `accrualsBlocked`, `redemptionsBlocked`, `levelId`, `levelName`.
 
 #### GET /portal/customers/{customerId}
 Возвращает все поля из списка плюс расширенные блоки:
@@ -1617,21 +1645,24 @@ Content-Type: application/json
 {
   "phone": "+79991234567",
   "email": "user@example.com",
-  "firstName": "Иван",
-  "lastName": "Петров",
+  "firstName": "Иван Петров",
   "name": "Иван Петров",
   "birthday": "1992-05-12",
   "gender": "male",
   "tags": ["vip", "кофе"],
   "comment": "Любит сезонные десерты",
-  "accrualsBlocked": false
+  "accrualsBlocked": false,
+  "redemptionsBlocked": false,
+  "levelId": "tier_vip"
 }
 
 Response 200: объект клиента, как в GET /portal/customers/{id}
 ```
 
+Если указать `levelId`, клиент сразу получает выбранный уровень (`loyaltyTier.id` из `/portal/loyalty/tiers`). Флаги `accrualsBlocked` и `redemptionsBlocked` управляют ручными начислениями/списаниями (miniapp отображает статус, портал запрещает действия и помечает операции как заблокированные).
+
 #### PUT /portal/customers/{customerId}
-Тот же payload, что и при создании. Поля не переданные в теле — без изменений.
+Тот же payload, что и при создании. Поля, не переданные в теле — без изменений. Можно сменить уровень (`levelId`) или заблокировать начисления/списания, передав соответствующие флаги.
 
 #### DELETE /portal/customers/{customerId}
 Удаляет кошелёк мерчанта (если нет чеков/транзакций), возвращает `{ "ok": true }`.

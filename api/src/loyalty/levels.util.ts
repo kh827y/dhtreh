@@ -1,7 +1,14 @@
 import type { MetricsService } from '../metrics.service';
 import type { PrismaService } from '../prisma.service';
 
-export type LevelRule = { name: string; threshold: number };
+export type LevelRule = {
+  name: string;
+  threshold: number;
+  earnRateBps?: number | null;
+  redeemRateBps?: number | null;
+  minPaymentAmount?: number | null;
+  isHidden?: boolean;
+};
 export type LevelsConfig = {
   periodDays: number;
   metric: 'earn' | 'redeem' | 'transactions';

@@ -1,4 +1,4 @@
-import { PointsBurnWorker } from './../src/points-burn.worker';
+import { PointsBurnWorker } from '../src/points-burn.worker';
 
 describe('TTL FIFO burn with multiple ACTIVE lots (e2e-like, mock Prisma)', () => {
   const now = Date.now();

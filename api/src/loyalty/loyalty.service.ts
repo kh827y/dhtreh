@@ -15,6 +15,7 @@ import {
 } from '../promocodes/promocodes.service';
 import { Mode, QuoteDto } from './dto';
 import { parseLevelsConfig } from './levels.util';
+import { ensureBaseTier } from './tier-defaults.util';
 import {
   StaffMotivationEngine,
   type StaffMotivationSettingsNormalized,
@@ -1234,6 +1235,7 @@ export class LoyaltyService {
         create: { id: dto.merchantId, name: dto.merchantId },
       });
     } catch {}
+    await ensureBaseTier(this.prisma, dto.merchantId).catch(() => null);
     const {
       redeemCooldownSec,
       earnCooldownSec,
@@ -2422,70 +2424,11 @@ export class LoyaltyService {
               Math.round(Number(agg?._sum?.total ?? 0)) || 0,
             );
           }
-          // список уровней и текущая привязка
-          const tiers = await tx.loyaltyTier.findMany({
-            where: { merchantId: hold.merchantId },
-            orderBy: [{ thresholdAmount: 'asc' }, { createdAt: 'asc' }],
+          await this.promoteTierIfEligible(tx, {
+            merchantId: hold.merchantId,
+            customerId: hold.customerId,
+            progress,
           });
-          if (tiers.length) {
-            const target =
-              tiers
-                .filter((t: any) => Number(t.thresholdAmount ?? 0) <= progress)
-                .pop() || null;
-            if (target) {
-              const currentAssign = await tx.loyaltyTierAssignment.findFirst({
-                where: {
-                  merchantId: hold.merchantId,
-                  customerId: hold.customerId,
-                  OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-                },
-                orderBy: { assignedAt: 'desc' },
-              });
-              let currentTier: any = null;
-              if (currentAssign)
-                currentTier =
-                  tiers.find((t: any) => t.id === currentAssign.tierId) || null;
-              const curTh = currentTier
-                ? Number(currentTier.thresholdAmount ?? 0)
-                : -1;
-              const tgtTh = Number(target.thresholdAmount ?? 0);
-              // повышаем только вверх (без понижения)
-              if (tgtTh > curTh) {
-                if (currentAssign) {
-                  try {
-                    await tx.loyaltyTierAssignment.update({
-                      where: { id: currentAssign.id },
-                      data: { expiresAt: new Date() },
-                    });
-                  } catch {}
-                }
-                await tx.loyaltyTierAssignment.create({
-                  data: {
-                    merchantId: hold.merchantId,
-                    customerId: hold.customerId,
-                    tierId: target.id,
-                    assignedAt: new Date(),
-                    expiresAt: null,
-                  },
-                });
-                // событие о повышении уровня
-                try {
-                  await tx.eventOutbox.create({
-                    data: {
-                      merchantId: hold.merchantId,
-                      eventType: 'loyalty.tier.promoted',
-                      payload: {
-                        merchantId: hold.merchantId,
-                        customerId: hold.customerId,
-                        tierId: target.id,
-                        at: new Date().toISOString(),
-                      },
-                    },
-                  });
-                } catch {}
-              }
-            }
-          }
         } catch {}
         return {
           ok: true,
@@ -3072,5 +3015,72 @@ export class LoyaltyService {
     });
     console.log('merchantCustomer:', merchantCustomer);
     return { merchantCustomerId: merchantCustomer.id };
+  }
+
+  private async promoteTierIfEligible(
+    tx: any,
+    params: { merchantId: string; customerId: string; progress: number },
+  ) {
+    const tiers = await tx.loyaltyTier.findMany({
+      where: { merchantId: params.merchantId },
+      orderBy: [{ thresholdAmount: 'asc' }, { createdAt: 'asc' }],
+    });
+    if (!tiers.length) return;
+    const visibleTiers = tiers.filter((tier: any) => !tier?.isHidden);
+    const target =
+      visibleTiers
+        .filter(
+          (tier: any) => Number(tier.thresholdAmount ?? 0) <= params.progress,
+        )
+        .pop() || null;
+    if (!target) return;
+    const currentAssign = await tx.loyaltyTierAssignment.findFirst({
+      where: {
+        merchantId: params.merchantId,
+        customerId: params.customerId,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
+      orderBy: { assignedAt: 'desc' },
+      include: { tier: true },
+    });
+    if (currentAssign?.tier?.isHidden) return;
+    if (currentAssign?.tierId === target.id) return;
+    const assignedAt = new Date();
+    await tx.loyaltyTierAssignment.upsert({
+      where: {
+        merchantId_customerId: {
+          merchantId: params.merchantId,
+          customerId: params.customerId,
+        },
+      },
+      update: {
+        tierId: target.id,
+        assignedAt,
+        expiresAt: null,
+        source: 'auto',
+      },
+      create: {
+        merchantId: params.merchantId,
+        customerId: params.customerId,
+        tierId: target.id,
+        assignedAt,
+        expiresAt: null,
+        source: 'auto',
+      },
+    });
+    try {
+      await tx.eventOutbox.create({
+        data: {
+          merchantId: params.merchantId,
+          eventType: 'loyalty.tier.promoted',
+          payload: {
+            merchantId: params.merchantId,
+            customerId: params.customerId,
+            tierId: target.id,
+            at: assignedAt.toISOString(),
+          },
+        },
+      });
+    } catch {}
   }
 }

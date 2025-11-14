@@ -657,6 +657,8 @@ export class PortalController {
       tags?: string[];
       comment?: string;
       accrualsBlocked?: boolean;
+      redemptionsBlocked?: boolean;
+      levelId?: string | null;
     },
   ) {
     return this.customersService.create(this.getMerchantId(req), body || {});
@@ -679,6 +681,8 @@ export class PortalController {
       tags?: string[];
       comment?: string;
       accrualsBlocked?: boolean;
+      redemptionsBlocked?: boolean;
+      levelId?: string | null;
     },
   ) {
     return this.customersService.update(

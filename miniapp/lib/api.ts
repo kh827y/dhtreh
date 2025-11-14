@@ -23,14 +23,23 @@ export type TransactionsResp = {
   }>;
   nextBefore?: string | null;
 };
+export type LevelRuleResp = {
+  name: string;
+  threshold: number;
+  earnRateBps?: number | null;
+  redeemRateBps?: number | null;
+  minPaymentAmount?: number | null;
+  isHidden?: boolean | null;
+};
+
 export type LevelsResp = {
   merchantId: string;
   merchantCustomerId: string;
   metric: 'earn'|'redeem'|'transactions';
   periodDays: number;
   value: number;
-  current: { name: string; threshold: number };
-  next: { name: string; threshold: number } | null;
+  current: LevelRuleResp;
+  next: LevelRuleResp | null;
   progressToNext: number;
 };
 export type MechanicsLevelsResp = {
@@ -39,6 +48,7 @@ export type MechanicsLevelsResp = {
     id?: string;
     name?: string;
     threshold?: number;
+    minPaymentAmount?: number | null;
     cashbackPercent?: number | null;
     benefits?: { cashbackPercent?: number | null } | null;
     rewardPercent?: number | null;

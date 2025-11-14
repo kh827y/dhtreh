@@ -3,6 +3,7 @@
 import React from "react";
 import { Button, Card, CardBody, Skeleton } from "@loyalty/ui";
 import { useRouter } from "next/navigation";
+import { TierMembersModal } from "../../../../components/TierMembersModal";
 
 type TierRow = {
   id: string;
@@ -31,6 +32,7 @@ export default function LevelsPage() {
   const [levels, setLevels] = React.useState<TierRow[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState("");
+  const [membersTier, setMembersTier] = React.useState<TierRow | null>(null);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -68,6 +70,15 @@ export default function LevelsPage() {
   React.useEffect(() => {
     load();
   }, [load]);
+
+  const openMembersModal = React.useCallback((tier: TierRow, event?: React.MouseEvent) => {
+    event?.stopPropagation();
+    setMembersTier(tier);
+  }, []);
+
+  const closeMembersModal = React.useCallback(() => {
+    setMembersTier(null);
+  }, []);
 
   const total = levels.length;
   const from = total > 0 ? 1 : 0;
@@ -139,13 +150,7 @@ export default function LevelsPage() {
                   <td style={{ padding: "12px 8px" }}>{level.isInitial ? "Да" : "Нет"}</td>
                   <td style={{ padding: "12px 8px" }}>{level.isHidden ? "Да" : "Нет"}</td>
                   <td style={{ padding: "12px 8px" }}>{level.customersCount.toLocaleString("ru-RU")}</td>
-                  <td
-                    style={{ padding: "12px 8px" }}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      router.push(`/loyalty/mechanics/levels/${level.id}/edit`);
-                    }}
-                  >
+                  <td style={{ padding: "12px 8px", display: "flex", gap: 8 }}>
                     <button
                       type="button"
                       style={{
@@ -154,6 +159,23 @@ export default function LevelsPage() {
                         color: "var(--brand-primary)",
                         cursor: "pointer",
                         fontSize: 13,
+                      }}
+                      onClick={(event) => openMembersModal(level, event)}
+                    >
+                      👥 Состав
+                    </button>
+                    <button
+                      type="button"
+                      style={{
+                        border: "none",
+                        background: "transparent",
+                        color: "var(--brand-primary)",
+                        cursor: "pointer",
+                        fontSize: 13,
+                      }}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        router.push(`/loyalty/mechanics/levels/${level.id}/edit`);
                       }}
                     >
                       ✏️ Редактировать
@@ -175,6 +197,20 @@ export default function LevelsPage() {
       <div style={{ fontSize: 12, opacity: 0.65 }}>
         Показаны записи {from} — {to} из {total}
       </div>
+
+      <TierMembersModal
+        tier={
+          membersTier
+            ? {
+                id: membersTier.id,
+                name: membersTier.name,
+                customersCount: membersTier.customersCount,
+              }
+            : null
+        }
+        open={Boolean(membersTier)}
+        onClose={closeMembersModal}
+      />
     </div>
   );
 }

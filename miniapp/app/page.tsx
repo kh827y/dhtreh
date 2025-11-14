@@ -196,6 +196,13 @@ function readStoredOnboardFlag(merchantId?: string | null): boolean {
 }
 
 function pickCashbackPercent(levelInfo: LevelInfo | null, levelCatalog: MechanicsLevel[]): number | null {
+  if (
+    levelInfo?.current &&
+    typeof levelInfo.current.earnRateBps === "number" &&
+    Number.isFinite(levelInfo.current.earnRateBps)
+  ) {
+    return Math.round((levelInfo.current.earnRateBps / 100) * 100) / 100;
+  }
   const currentName = levelInfo?.current?.name;
   if (!currentName) return null;
   const entry = levelCatalog.find((lvl) => (lvl?.name || "").toLowerCase() === currentName.toLowerCase());

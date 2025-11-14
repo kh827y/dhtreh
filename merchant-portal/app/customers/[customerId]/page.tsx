@@ -44,6 +44,8 @@ type ComplimentaryErrors = Partial<Record<keyof ComplimentaryForm, string>> & {
   expiresIn?: string;
 };
 
+type LevelOption = { id: string; name: string; isInitial?: boolean };
+
 const TABLE_PAGE_SIZE = 7;
 
 export default function CustomerCardPage() {
@@ -63,6 +65,10 @@ export default function CustomerCardPage() {
   const [transactionsPageIndex, setTransactionsPageIndex] = React.useState(0);
   const [reviewsPageIndex, setReviewsPageIndex] = React.useState(0);
   const [invitedPageIndex, setInvitedPageIndex] = React.useState(0);
+  const [levels, setLevels] = React.useState<LevelOption[]>([]);
+  const [blockMenuOpen, setBlockMenuOpen] = React.useState(false);
+  const [blockMode, setBlockMode] = React.useState<"earn" | "all">("earn");
+  const [blockSubmitting, setBlockSubmitting] = React.useState(false);
 
   // Хелпер для запросов к локальному прокси /api/customers
   async function api<T = any>(url: string, init?: RequestInit): Promise<T> {
@@ -178,16 +184,51 @@ export default function CustomerCardPage() {
   }, []);
 
   React.useEffect(() => {
+    let aborted = false;
+    (async () => {
+      try {
+        const payload = await api<any>("/api/portal/loyalty/tiers");
+        const source: any[] = Array.isArray(payload?.items)
+          ? payload.items
+          : Array.isArray(payload)
+            ? payload
+            : [];
+        const normalized = source
+          .map((row) => ({
+            id: typeof row?.id === "string" ? row.id : row?.id != null ? String(row.id) : "",
+            name: typeof row?.name === "string" ? row.name : "",
+            isInitial: Boolean(row?.isInitial),
+            isHidden: Boolean(row?.isHidden),
+            threshold: Number(row?.thresholdAmount ?? 0) || 0,
+          }))
+          .filter((item) => item.id && item.name)
+          .sort((a, b) => {
+            if (a.threshold === b.threshold) {
+              return a.name.localeCompare(b.name);
+            }
+            return a.threshold - b.threshold;
+          })
+          .map((item) => ({
+            id: item.id,
+            name: item.isHidden ? `${item.name} (скрытый)` : item.name,
+            isInitial: item.isInitial,
+          }));
+        if (!aborted) setLevels(normalized);
+      } catch (error) {
+        console.error(error);
+        if (!aborted) setLevels([]);
+      }
+    })();
+    return () => {
+      aborted = true;
+    };
+  }, []);
+
+  React.useEffect(() => {
     if (!toast) return;
     const timeout = window.setTimeout(() => setToast(null), 4000);
     return () => window.clearTimeout(timeout);
   }, [toast]);
-
-  // Всегда вызываем хук, чтобы не нарушать порядок хуков между рендерами
-  const groups = React.useMemo(() => {
-    const base = ["Постоянные", "Стандарт", "VIP", "Новые", "Сонные"];
-    return Array.from(new Set([customer?.group, ...base].filter(Boolean) as string[]));
-  }, [customer?.group]);
 
   React.useEffect(() => {
     setExpiryPageIndex(0);
@@ -288,6 +329,57 @@ export default function CustomerCardPage() {
     void reloadCustomer();
   }
 
+  const blockStatus = customer?.redeemBlocked ? "all" : customer?.blocked ? "earn" : "none";
+
+  function toggleBlockMenu() {
+    if (!customer) return;
+    setBlockMode(customer.redeemBlocked ? "all" : "earn");
+    setBlockMenuOpen((prev) => !prev);
+  }
+
+  async function handleBlockConfirm(mode: "earn" | "all") {
+    if (!customer) return;
+    try {
+      setBlockSubmitting(true);
+      const payload = {
+        accrualsBlocked: true,
+        redemptionsBlocked: mode === "all",
+      };
+      const saved = await api<any>(`/api/customers/${encodeURIComponent(customer.id)}`, {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+      const normalized = normalizeCustomer(saved ?? { ...customer, ...payload });
+      setCustomer(normalized);
+      setToast(mode === "all" ? "Заблокированы начисления и списания" : "Заблокированы только начисления");
+      setBlockMenuOpen(false);
+    } catch (error: any) {
+      setToast(error?.message || "Не удалось обновить блокировку");
+    } finally {
+      setBlockSubmitting(false);
+    }
+  }
+
+  async function handleUnblockCustomer() {
+    if (!customer) return;
+    try {
+      setBlockSubmitting(true);
+      const payload = { accrualsBlocked: false, redemptionsBlocked: false };
+      const saved = await api<any>(`/api/customers/${encodeURIComponent(customer.id)}`, {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+      const normalized = normalizeCustomer(saved ?? { ...customer, ...payload });
+      setCustomer(normalized);
+      setToast("Блокировка снята");
+      setBlockMenuOpen(false);
+    } catch (error: any) {
+      setToast(error?.message || "Не удалось снять блокировку");
+    } finally {
+      setBlockSubmitting(false);
+    }
+  }
+
   async function handleCancelTransaction(operation: CustomerTransaction) {
     if (operation.kind === "REFUND") {
       setToast("Возвраты нельзя отменить");
@@ -315,17 +407,17 @@ export default function CustomerCardPage() {
 
   async function handleEditSubmit(payload: CustomerFormPayload) {
     if (!customer) return;
+    const trimmedName = payload.firstName.trim();
     const baseBody = {
       phone: payload.login.trim(),
       email: payload.email.trim() || undefined,
-      firstName: payload.firstName.trim() || undefined,
-      lastName: payload.lastName.trim() || undefined,
-      name: [payload.firstName.trim(), payload.lastName.trim()].filter(Boolean).join(" ").trim() || undefined,
+      firstName: trimmedName || undefined,
+      name: trimmedName || undefined,
       birthday: payload.birthday || undefined,
       gender: payload.gender,
       tags: parseTags(payload.tags),
       comment: payload.comment.trim() || undefined,
-      accrualsBlocked: payload.blockAccruals,
+      levelId: payload.levelId || undefined,
     };
     try {
       const saved = await api<any>(`/api/customers/${encodeURIComponent(customer.id)}`, {
@@ -364,16 +456,76 @@ export default function CustomerCardPage() {
           <Button variant="secondary" leftIcon={<Edit3 size={16} />} onClick={() => setEditOpen(true)}>
             Редактировать
           </Button>
-          <Button variant="secondary" leftIcon={<PlusCircle size={16} />} onClick={() => setAccrueOpen(true)}>
+          <div style={{ position: "relative" }}>
+            <Button
+              variant={blockStatus === "none" ? "danger" : "secondary"}
+              leftIcon={<XCircle size={16} />}
+              onClick={() => {
+                if (blockStatus === "none") toggleBlockMenu();
+                else void handleUnblockCustomer();
+              }}
+              disabled={blockSubmitting}
+            >
+              {blockStatus === "none" ? "Заблокировать клиента" : "Разблокировать клиента"}
+            </Button>
+            {blockMenuOpen && blockStatus === "none" && (
+              <div style={menuWrapperStyle}>
+                <div style={menuCardStyle}>
+                  <div style={{ fontSize: 14, marginBottom: 8 }}>Что хотите заблокировать?</div>
+                  <label style={menuItemStyle}>
+                    <input
+                      type="radio"
+                      checked={blockMode === "earn"}
+                      onChange={() => setBlockMode("earn")}
+                      disabled={blockSubmitting}
+                    />
+                    <span>Только начисления</span>
+                  </label>
+                  <label style={menuItemStyle}>
+                    <input
+                      type="radio"
+                      checked={blockMode === "all"}
+                      onChange={() => setBlockMode("all")}
+                      disabled={blockSubmitting}
+                    />
+                    <span>Начисления и списания</span>
+                  </label>
+                  <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                    <Button variant="secondary" size="sm" onClick={() => setBlockMenuOpen(false)} disabled={blockSubmitting}>
+                      Отмена
+                    </Button>
+                    <Button variant="primary" size="sm" onClick={() => handleBlockConfirm(blockMode)} disabled={blockSubmitting}>
+                      {blockSubmitting ? "Сохраняем…" : "Подтвердить"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          <Button
+            variant="secondary"
+            leftIcon={<PlusCircle size={16} />}
+            onClick={() => setAccrueOpen(true)}
+            disabled={customer.blocked}
+            title={customer.blocked ? "Начисления недоступны: клиент заблокирован" : undefined}
+          >
             Начислить баллы
           </Button>
-          <Button variant="secondary" leftIcon={<MinusCircle size={16} />} onClick={() => setRedeemOpen(true)}>
+          <Button
+            variant="secondary"
+            leftIcon={<MinusCircle size={16} />}
+            onClick={() => setRedeemOpen(true)}
+            disabled={customer.redeemBlocked}
+            title={customer.redeemBlocked ? "Списания недоступны: клиент заблокирован" : undefined}
+          >
             Списать баллы
           </Button>
           <Button
             variant="primary"
             leftIcon={<Gift size={16} />}
             onClick={() => setComplimentaryOpen(true)}
+            disabled={customer.blocked}
+            title={customer.blocked ? "Начисления недоступны: клиент заблокирован" : undefined}
           >
             Начислить комплиментарные баллы
           </Button>
@@ -697,7 +849,7 @@ export default function CustomerCardPage() {
         mode="edit"
         initialValues={mapCustomerToForm(customer)}
         loginToIgnore={customer.login}
-        groups={groups}
+        levels={levels}
         onClose={() => setEditOpen(false)}
         onSubmit={handleEditSubmit}
         existingLogins={existingLogins}
@@ -760,7 +912,10 @@ function buildProfileRows(customer: CustomerRecord) {
     { label: "Теги", value: customer.tags.length ? customer.tags.join(", ") : "—" },
     { label: "Дата регистрации", value: formatDateTime(customer.registeredAt) },
     { label: "Комментарий к пользователю", value: customer.comment || "—" },
-    { label: "Блокировка начислений", value: customer.blocked ? "Да" : "Нет" },
+    {
+      label: "Статус блокировки",
+      value: customer.redeemBlocked ? "Начисления и списания" : customer.blocked ? "Только начисления" : "Нет",
+    },
     { label: "Пригласивший", value: referrerValue },
   ];
 }
@@ -824,6 +979,31 @@ const paginationWrapperStyle: React.CSSProperties = {
   marginTop: 12,
   flexWrap: "wrap",
   gap: 8,
+};
+
+const menuWrapperStyle: React.CSSProperties = {
+  position: "absolute",
+  marginTop: 8,
+  right: 0,
+  zIndex: 60,
+};
+
+const menuCardStyle: React.CSSProperties = {
+  width: 280,
+  borderRadius: 16,
+  border: "1px solid rgba(148,163,184,0.2)",
+  background: "rgba(12,16,26,0.98)",
+  boxShadow: "0 20px 60px rgba(2,6,23,0.45)",
+  padding: 16,
+  display: "grid",
+  gap: 8,
+};
+
+const menuItemStyle: React.CSSProperties = {
+  display: "flex",
+  gap: 10,
+  alignItems: "center",
+  fontSize: 14,
 };
 
 const tableStyle: React.CSSProperties = {
@@ -919,15 +1099,14 @@ function formatDateTime(value?: string): string {
 }
 
 function mapCustomerToForm(customer: CustomerRecord): Partial<CustomerFormPayload> {
+  const birthdayValue = customer.birthday ? customer.birthday.slice(0, 10) : "";
   return {
     login: customer.login,
     email: customer.email ?? "",
-    firstName: customer.firstName ?? "",
-    lastName: customer.lastName ?? "",
+    firstName: getFullName(customer) || "",
     tags: customer.tags.join(", "),
-    birthday: customer.birthday ?? "",
-    group: customer.group ?? "Стандарт",
-    blockAccruals: customer.blocked,
+    birthday: birthdayValue,
+    levelId: customer.levelId ?? null,
     gender: customer.gender,
     comment: customer.comment ?? "",
   };

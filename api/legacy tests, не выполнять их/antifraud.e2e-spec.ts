@@ -1,8 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { AppModule } from './../src/app.module';
-import { PrismaService } from './../src/prisma.service';
+import { AppModule } from '../src/app.module';
+import { PrismaService } from '../src/prisma.service';
 
 // Local in-memory state for mocking Prisma in tests
 type Txn = {

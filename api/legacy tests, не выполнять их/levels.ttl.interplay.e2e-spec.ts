@@ -1,9 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { AppModule } from './../src/app.module';
-import { PrismaService } from './../src/prisma.service';
-import { EarnActivationWorker } from './../src/earn-activation.worker';
+import { AppModule } from '../src/app.module';
+import { PrismaService } from '../src/prisma.service';
+import { EarnActivationWorker } from '../src/earn-activation.worker';
 
 /**
  * Levels x TTL interplay: metric=earn over period; activation of PENDING lot should
