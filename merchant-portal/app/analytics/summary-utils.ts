@@ -71,6 +71,14 @@ export function buildChartOption(timeline: SummaryTimelinePoint[]) {
   const registrations = timeline.map((point) => point.registrations);
   const salesCount = timeline.map((point) => point.salesCount);
   const salesAmount = timeline.map((point) => point.salesAmount);
+  const scaleMax = (values: number[], ratio: number) => {
+    const max = Math.max(...values, 0);
+    if (max <= 0) return undefined;
+    return Math.max(1, Math.ceil(max / ratio));
+  };
+  const registrationsMax = scaleMax(registrations, 0.4);
+  const salesCountMax = scaleMax(salesCount, 0.7);
+  const salesAmountMax = scaleMax(salesAmount, 1);
 
   return {
     tooltip: { trigger: "axis" },
@@ -93,6 +101,8 @@ export function buildChartOption(timeline: SummaryTimelinePoint[]) {
         axisLabel: { show: false },
         splitLine: { show: false },
         axisLine: { lineStyle: { color: "rgba(148,163,184,0.4)" } },
+        min: 0,
+        max: registrationsMax,
       },
       {
         type: "value",
@@ -100,6 +110,8 @@ export function buildChartOption(timeline: SummaryTimelinePoint[]) {
         axisLabel: { show: false },
         splitLine: { show: false },
         axisLine: { lineStyle: { color: "rgba(148,163,184,0.4)" } },
+        min: 0,
+        max: salesCountMax,
       },
       {
         type: "value",
@@ -108,6 +120,8 @@ export function buildChartOption(timeline: SummaryTimelinePoint[]) {
         axisLabel: { show: false },
         splitLine: { show: false },
         axisLine: { lineStyle: { color: "rgba(148,163,184,0.4)" } },
+        min: 0,
+        max: salesAmountMax,
       },
     ],
     series: [
@@ -125,11 +139,14 @@ export function buildChartOption(timeline: SummaryTimelinePoint[]) {
       },
       {
         name: "Продажи",
-        type: "bar",
+        type: "line",
         yAxisIndex: 1,
         data: salesCount,
-        barMaxWidth: 18,
-        itemStyle: { color: "rgba(94,234,212,0.65)" },
+        smooth: true,
+        symbol: "circle",
+        lineStyle: { width: 2, color: "rgba(94,234,212,0.9)" },
+        itemStyle: { color: "rgba(94,234,212,0.9)" },
+        areaStyle: { opacity: 0.12, color: "rgba(94,234,212,0.6)" },
         label: { show: false },
       },
       {

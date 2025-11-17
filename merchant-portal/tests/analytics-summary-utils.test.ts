@@ -60,6 +60,7 @@ describe("analytics summary utils", () => {
     assert.equal(series[0].yAxisIndex, 0);
     assert.equal(series[1].yAxisIndex, 1);
     assert.equal(series[2].yAxisIndex, 2);
+    assert.equal(series[1].type, "line");
     series.forEach((item: any) => assert.equal(item.label?.show, false));
     assert.deepEqual((option as any).xAxis.data, ["01.11", "02.11"]);
     (option as any).yAxis.forEach((axis: any) => {
@@ -67,6 +68,10 @@ describe("analytics summary utils", () => {
       assert.equal(axis.splitLine?.show, false);
       assert.equal(axis.name, undefined);
     });
+    // Проверяем индивидуальное масштабирование: регистрации на 40%, продажи на 70%, сумма на 100%
+    assert.equal((option as any).yAxis[0].max, 5); // 2 / 0.4 => 5
+    assert.equal((option as any).yAxis[1].max, 5); // 3 / 0.7 => 4.3 => 5
+    assert.equal((option as any).yAxis[2].max, 5000); // 5000 / 1 => 5000
   });
 
   it("formats day labels", () => {
