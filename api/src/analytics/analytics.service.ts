@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { ConfigService } from '@nestjs/config';
-import { Prisma, PromotionStatus } from '@prisma/client';
+import { Prisma, PromotionStatus, TxnType } from '@prisma/client';
 import {
   DEFAULT_TIMEZONE_CODE,
   RussiaTimezone,
@@ -1940,23 +1940,15 @@ export class AnalyticsService {
       purchaseWindowDays: number;
     };
     summary: {
-      invitations: number;
-      purchasers: number;
-      conversion: number;
-      pointsIssued: number;
-      revenue: number;
-      firstPurchaseRevenue: number;
+      greetings: number;
+      giftPurchasers: number;
+      revenueNet: number;
       averageCheck: number;
-      customersWithPurchases: number;
+      giftPointsSpent: number;
+      receiptsWithGifts: number;
     };
-    demographics: {
-      gender: Array<{ group: string; invitations: number; purchases: number }>;
-      age: Array<{ bucket: string; invitations: number; purchases: number }>;
-    };
-    trends: {
-      timeline: Array<{ date: string; invitations: number; purchases: number }>;
-      revenue: Array<{ date: string; total: number; firstPurchases: number }>;
-    };
+    timeline: Array<{ date: string; greetings: number; purchases: number }>;
+    revenue: Array<{ date: string; revenue: number }>;
   }> {
     const settings = await this.prisma.merchantSettings.findUnique({
       where: { merchantId },
@@ -1994,308 +1986,323 @@ export class AnalyticsService {
       Math.floor(Number(birthday?.giftTtlDays ?? birthday?.giftTtl ?? 0) || 0),
     );
     const purchaseWindowDays = Math.max(7, daysBefore + 7);
+    const basePeriod = {
+      period: {
+        from: period.from.toISOString(),
+        to: period.to.toISOString(),
+        type: period.type,
+        daysBefore,
+        onlyBuyers,
+        giftPoints,
+        giftTtlDays,
+        purchaseWindowDays,
+      },
+    };
 
     const empty = {
-      period: {
-        from: period.from.toISOString(),
-        to: period.to.toISOString(),
-        type: period.type,
-        daysBefore,
-        onlyBuyers,
-        giftPoints,
-        giftTtlDays,
-        purchaseWindowDays,
-      },
+      ...basePeriod,
       summary: {
-        invitations: 0,
-        purchasers: 0,
-        conversion: 0,
-        pointsIssued: 0,
-        revenue: 0,
-        firstPurchaseRevenue: 0,
+        greetings: 0,
+        giftPurchasers: 0,
+        revenueNet: 0,
         averageCheck: 0,
-        customersWithPurchases: 0,
+        giftPointsSpent: 0,
+        receiptsWithGifts: 0,
       },
-      demographics: {
-        gender: [],
-        age: [],
-      },
-      trends: {
-        timeline: [],
-        revenue: [],
-      },
+      timeline: [],
+      revenue: [],
     };
 
-    const customers = await this.prisma.customer.findMany({
-      where: { birthday: { not: null }, wallets: { some: { merchantId } } },
-      select: { id: true, birthday: true, gender: true },
-    });
+    const dateKey = (value: Date) => value.toISOString().slice(0, 10);
 
-    if (!customers.length) {
-      return empty;
-    }
+    const refundOrderIds = new Set(
+      (
+        await this.prisma.transaction.findMany({
+          where: {
+            merchantId,
+            type: TxnType.REFUND,
+            canceledAt: null,
+            orderId: { not: null },
+            createdAt: { lte: period.to },
+          },
+          select: { orderId: true },
+        })
+      )
+        .map((row) => row.orderId)
+        .filter((id): id is string => Boolean(id)),
+    );
 
-    let statsMap: Map<string, { visits: number; totalSpent: number }> | null =
-      null;
-    if (onlyBuyers) {
-      const stats = await this.prisma.customerStats.findMany({
-        where: { merchantId, customerId: { in: customers.map((c) => c.id) } },
-        select: { customerId: true, visits: true, totalSpent: true },
+    let outletCustomers: Set<string> | null = null;
+    if (outletId && outletId !== 'all') {
+      const outletReceipts = await this.prisma.receipt.findMany({
+        where: {
+          merchantId,
+          outletId,
+          createdAt: { lte: period.to },
+          canceledAt: null,
+        },
+        select: { customerId: true },
       });
-      statsMap = new Map(
-        stats.map((item) => [
-          item.customerId,
-          { visits: item.visits, totalSpent: item.totalSpent },
-        ]),
+      outletCustomers = new Set(
+        outletReceipts
+          .map((row) => row.customerId)
+          .filter((id): id is string => Boolean(id)),
       );
     }
 
-    const msInDay = 24 * 60 * 60 * 1000;
-    const from = new Date(period.from);
-    from.setHours(0, 0, 0, 0);
-    const to = new Date(period.to);
-    to.setHours(0, 0, 0, 0);
-    const years: number[] = [];
-    for (let y = from.getFullYear() - 1; y <= to.getFullYear() + 1; y += 1) {
-      years.push(y);
-    }
-
-    type Event = {
-      customerId: string;
-      sendDate: Date;
-      birthdayDate: Date;
-      age: number;
-      gender: string;
-    };
-    const events: Event[] = [];
-
-    for (const customer of customers) {
-      if (!customer.birthday) continue;
-      if (onlyBuyers) {
-        const stat = statsMap?.get(customer.id);
-        if (!stat || ((stat.visits ?? 0) <= 0 && (stat.totalSpent ?? 0) <= 0)) {
-          continue;
-        }
-      }
-
-      const birthDate = new Date(customer.birthday);
-      const birthMonth = birthDate.getMonth();
-      const birthDay = birthDate.getDate();
-      const birthYear = birthDate.getFullYear();
-
-      for (const year of years) {
-        const actual = new Date(year, birthMonth, birthDay);
-        actual.setHours(0, 0, 0, 0);
-        const sendDate = new Date(actual);
-        sendDate.setDate(sendDate.getDate() - daysBefore);
-        sendDate.setHours(0, 0, 0, 0);
-
-        if (sendDate < from || sendDate > to) {
-          continue;
-        }
-
-        const age = actual.getFullYear() - birthYear;
-        const gender =
-          typeof customer.gender === 'string' && customer.gender
-            ? customer.gender.toUpperCase()
-            : 'UNKNOWN';
-
-        events.push({
-          customerId: customer.id,
-          sendDate,
-          birthdayDate: actual,
-          age,
-          gender,
-        });
-      }
-    }
-
-    if (!events.length) {
-      return empty;
-    }
-
-    const customerIds = Array.from(new Set(events.map((e) => e.customerId)));
-    const earliestBirthday = new Date(
-      Math.min(...events.map((e) => e.birthdayDate.getTime())),
+    const greetingsRaw = await this.prisma.birthdayGreeting.findMany({
+      where: {
+        merchantId,
+        sendDate: { gte: period.from, lte: period.to },
+      },
+      select: { customerId: true, sendDate: true },
+    });
+    const greetings = greetingsRaw.filter(
+      (row) => !outletCustomers || outletCustomers.has(row.customerId),
     );
-    const latestBirthday = new Date(
-      Math.max(...events.map((e) => e.birthdayDate.getTime())),
-    );
-    const receiptFrom = new Date(earliestBirthday.getTime() - msInDay);
-    const receiptTo = new Date(
-      latestBirthday.getTime() + purchaseWindowDays * msInDay,
+    const greetingCustomers = new Set(
+      greetings.map((row) => row.customerId).filter(Boolean),
     );
 
-    const receiptWhere: any = {
+    const receiptFilter: any = {
       merchantId,
-      customerId: { in: customerIds },
-      createdAt: { gte: receiptFrom, lte: receiptTo },
+      createdAt: { gte: period.from, lte: period.to },
+      redeemApplied: { gt: 0 },
+      canceledAt: null,
     };
     if (outletId && outletId !== 'all') {
-      receiptWhere.outletId = outletId;
+      receiptFilter.outletId = outletId;
     }
 
-    const receipts = await this.prisma.receipt.findMany({
-      where: receiptWhere,
-      select: { customerId: true, createdAt: true, total: true },
-      orderBy: { createdAt: 'asc' },
+    const targetReceiptsRaw = await this.prisma.receipt.findMany({
+      where: receiptFilter,
+      select: {
+        id: true,
+        customerId: true,
+        orderId: true,
+        total: true,
+        redeemApplied: true,
+        createdAt: true,
+        outletId: true,
+      },
+    });
+    const targetReceipts = targetReceiptsRaw.filter(
+      (row) =>
+        row.customerId &&
+        (!row.orderId || !refundOrderIds.has(row.orderId as string)),
+    );
+    const targetCustomerIds = new Set(
+      targetReceipts.map((row) => row.customerId as string),
+    );
+
+    const relevantCustomers = new Set<string>([
+      ...greetingCustomers,
+      ...targetCustomerIds,
+    ]);
+    if (relevantCustomers.size === 0) {
+      return empty;
+    }
+
+    const giftSources = await this.prisma.birthdayGreeting.findMany({
+      where: {
+        merchantId,
+        customerId: { in: Array.from(relevantCustomers) },
+        giftPoints: { gt: 0 },
+        sendDate: { lte: period.to },
+      },
+      select: {
+        customerId: true,
+        giftPoints: true,
+        giftExpiresAt: true,
+        sendDate: true,
+      },
     });
 
-    const receiptsByCustomer = new Map<
-      string,
-      Array<{ createdAt: Date; total: number }>
-    >();
-    for (const receipt of receipts) {
-      if (!receiptsByCustomer.has(receipt.customerId)) {
-        receiptsByCustomer.set(receipt.customerId, []);
-      }
-      receiptsByCustomer
-        .get(receipt.customerId)!
-        .push({ createdAt: new Date(receipt.createdAt), total: receipt.total });
+    let historyFrom = new Date(period.from);
+    if (giftSources.length > 0) {
+      const earliestGift = Math.min(
+        ...giftSources.map((item) => item.sendDate.getTime()),
+      );
+      historyFrom = new Date(
+        Math.min(historyFrom.getTime(), earliestGift || historyFrom.getTime()),
+      );
+      historyFrom.setHours(0, 0, 0, 0);
     }
 
-    const attemptsMap = new Map<
-      string,
-      { invitations: number; purchases: number }
-    >();
-    const revenueMap = new Map<
-      string,
-      { total: number; firstPurchases: number }
-    >();
-    const genderMap = new Map<
-      string,
-      { invitations: number; purchases: number }
-    >();
-    const ageMap = new Map<
-      string,
-      { invitations: number; purchases: number }
-    >();
+    const customerIds = Array.from(relevantCustomers);
+    const receiptsForConsumptionRaw =
+      customerIds.length === 0
+        ? []
+        : await this.prisma.receipt.findMany({
+            where: {
+              merchantId,
+              customerId: { in: customerIds },
+              redeemApplied: { gt: 0 },
+              createdAt: { gte: historyFrom, lte: period.to },
+              canceledAt: null,
+            },
+            select: {
+              id: true,
+              customerId: true,
+              orderId: true,
+              total: true,
+              redeemApplied: true,
+              createdAt: true,
+              outletId: true,
+            },
+          });
 
-    const customersWithPurchases = new Set<string>();
-    let purchasers = 0;
-    let totalRevenue = 0;
-    let firstPurchaseRevenue = 0;
-    let totalReceiptsCount = 0;
-
-    const ageBucket = (age: number) => {
-      if (age < 20) return 'До 20';
-      if (age < 30) return '20–29';
-      if (age < 40) return '30–39';
-      if (age < 50) return '40–49';
-      if (age < 60) return '50–59';
-      return '60+';
-    };
-
-    const genderLabel = (gender: string) => {
-      if (gender === 'MALE') return 'Мужчины';
-      if (gender === 'FEMALE') return 'Женщины';
-      return 'Не указано';
-    };
-
-    for (const event of events) {
-      const key = event.sendDate.toISOString().slice(0, 10);
-      const attempt = attemptsMap.get(key) ?? { invitations: 0, purchases: 0 };
-      attempt.invitations += 1;
-
-      const revenueEntry = revenueMap.get(key) ?? {
-        total: 0,
-        firstPurchases: 0,
-      };
-
-      const customerReceipts = receiptsByCustomer.get(event.customerId) ?? [];
-      const windowEnd = new Date(
-        event.birthdayDate.getTime() + purchaseWindowDays * msInDay,
-      );
-      const relevant = customerReceipts.filter(
-        (r) => r.createdAt >= event.birthdayDate && r.createdAt <= windowEnd,
-      );
-
-      const converted = relevant.length > 0;
-      if (converted) {
-        attempt.purchases += 1;
-        purchasers += 1;
-        customersWithPurchases.add(event.customerId);
-
-        const first = relevant[0];
-        const revenueSum = relevant.reduce((sum, r) => sum + (r.total || 0), 0);
-        revenueEntry.total += revenueSum;
-        revenueEntry.firstPurchases += first.total || 0;
-
-        totalRevenue += revenueSum;
-        firstPurchaseRevenue += first.total || 0;
-        totalReceiptsCount += relevant.length;
-      }
-
-      attemptsMap.set(key, attempt);
-      revenueMap.set(key, revenueEntry);
-
-      const gEntry = genderMap.get(genderLabel(event.gender)) ?? {
-        invitations: 0,
-        purchases: 0,
-      };
-      gEntry.invitations += 1;
-      if (converted) gEntry.purchases += 1;
-      genderMap.set(genderLabel(event.gender), gEntry);
-
-      const aEntry = ageMap.get(ageBucket(event.age)) ?? {
-        invitations: 0,
-        purchases: 0,
-      };
-      aEntry.invitations += 1;
-      if (converted) aEntry.purchases += 1;
-      ageMap.set(ageBucket(event.age), aEntry);
-    }
-
-    const timeline = Array.from(attemptsMap.entries())
-      .map(([date, value]) => ({ date, ...value }))
-      .sort((a, b) => a.date.localeCompare(b.date));
-    const revenueTimeline = Array.from(revenueMap.entries())
-      .map(([date, value]) => ({ date, ...value }))
-      .sort((a, b) => a.date.localeCompare(b.date));
-
-    const genderStats = Array.from(genderMap.entries()).map(
-      ([group, value]) => ({ group, ...value }),
+    const receiptsForConsumption = receiptsForConsumptionRaw.filter(
+      (row) =>
+        row.customerId &&
+        (!row.orderId || !refundOrderIds.has(row.orderId as string)),
     );
-    const ageStats = Array.from(ageMap.entries()).map(([bucket, value]) => ({
-      bucket,
-      ...value,
-    }));
+
+    type GiftLot = {
+      points: number;
+      expiresAt: Date | null;
+      sendDate: Date;
+    };
+    type ReceiptInfo = {
+      id: string;
+      customerId: string;
+      createdAt: Date;
+      total: number;
+      redeemApplied: number;
+    };
+
+    const lotsByCustomer = new Map<string, GiftLot[]>();
+    for (const source of giftSources) {
+      if (!source.customerId) continue;
+      if (!lotsByCustomer.has(source.customerId)) {
+        lotsByCustomer.set(source.customerId, []);
+      }
+      lotsByCustomer.get(source.customerId)!.push({
+        points: Math.max(0, source.giftPoints || 0),
+        expiresAt: source.giftExpiresAt ? new Date(source.giftExpiresAt) : null,
+        sendDate: new Date(source.sendDate),
+      });
+    }
+
+    const receiptsByCustomer = new Map<string, ReceiptInfo[]>();
+    for (const receipt of receiptsForConsumption) {
+      const customerId = receipt.customerId as string;
+      if (!receiptsByCustomer.has(customerId)) {
+        receiptsByCustomer.set(customerId, []);
+      }
+      receiptsByCustomer.get(customerId)!.push({
+        id: receipt.id,
+        customerId,
+        createdAt: new Date(receipt.createdAt),
+        total: Number(receipt.total ?? 0),
+        redeemApplied: Math.max(0, Number(receipt.redeemApplied ?? 0)),
+      });
+    }
+
+    const giftSpentByReceipt = new Map<string, number>();
+    for (const [customerId, items] of receiptsByCustomer.entries()) {
+      const lots = (lotsByCustomer.get(customerId) ?? []).slice();
+      items.sort(
+        (a, b) =>
+          a.createdAt.getTime() - b.createdAt.getTime() ||
+          a.id.localeCompare(b.id),
+      );
+
+      if (!lots.length) {
+        for (const receipt of items) {
+          giftSpentByReceipt.set(receipt.id, 0);
+        }
+        continue;
+      }
+
+      lots.sort((a, b) => a.sendDate.getTime() - b.sendDate.getTime());
+      const remaining = lots.map((lot) => lot.points);
+
+      for (const receipt of items) {
+        let toSpend = receipt.redeemApplied;
+        let spent = 0;
+
+        for (let i = 0; i < lots.length && toSpend > 0; i += 1) {
+          const lot = lots[i];
+          const expiresAt = lot.expiresAt;
+          if (expiresAt && expiresAt.getTime() < receipt.createdAt.getTime()) {
+            continue;
+          }
+          const available = Math.max(0, remaining[i] ?? 0);
+          if (available <= 0) continue;
+          const take = Math.min(available, toSpend);
+          remaining[i] = available - take;
+          spent += take;
+          toSpend -= take;
+        }
+
+        giftSpentByReceipt.set(receipt.id, spent);
+      }
+    }
+
+    const greetingsPerBucket = new Map<string, Set<string>>();
+    for (const greeting of greetings) {
+      const key = dateKey(new Date(greeting.sendDate));
+      const list = greetingsPerBucket.get(key) ?? new Set<string>();
+      if (greeting.customerId) list.add(greeting.customerId);
+      greetingsPerBucket.set(key, list);
+    }
+
+    const purchasesPerBucket = new Map<string, Set<string>>();
+    const revenuePerBucket = new Map<string, number>();
+    const buyers = new Set<string>();
+    let revenueNet = 0;
+    let pointsSpent = 0;
+    let grossSum = 0;
+    let giftReceiptCount = 0;
+
+    for (const receipt of targetReceipts) {
+      const giftSpent = giftSpentByReceipt.get(receipt.id) ?? 0;
+      if (giftSpent <= 0) continue;
+
+      const net = Math.max(0, Number(receipt.total ?? 0) - giftSpent);
+      const bucket = dateKey(new Date(receipt.createdAt));
+      const set = purchasesPerBucket.get(bucket) ?? new Set<string>();
+      if (receipt.customerId) set.add(receipt.customerId as string);
+      purchasesPerBucket.set(bucket, set);
+      revenuePerBucket.set(bucket, (revenuePerBucket.get(bucket) ?? 0) + net);
+
+      buyers.add(receipt.customerId as string);
+      revenueNet += net;
+      pointsSpent += giftSpent;
+      grossSum += Number(receipt.total ?? 0);
+      giftReceiptCount += 1;
+    }
+
+    const timelineKeys = new Set<string>([
+      ...greetingsPerBucket.keys(),
+      ...purchasesPerBucket.keys(),
+    ]);
+    const timeline = Array.from(timelineKeys)
+      .map((key) => ({
+        date: key,
+        greetings: greetingsPerBucket.get(key)?.size ?? 0,
+        purchases: purchasesPerBucket.get(key)?.size ?? 0,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    const revenueTimeline = Array.from(revenuePerBucket.entries())
+      .map(([date, revenue]) => ({ date, revenue }))
+      .sort((a, b) => a.date.localeCompare(b.date));
 
     return {
-      period: {
-        from: period.from.toISOString(),
-        to: period.to.toISOString(),
-        type: period.type,
-        daysBefore,
-        onlyBuyers,
-        giftPoints,
-        giftTtlDays,
-        purchaseWindowDays,
-      },
+      ...basePeriod,
       summary: {
-        invitations: events.length,
-        purchasers,
-        conversion:
-          events.length > 0
-            ? Math.round((purchasers / events.length) * 1000) / 10
-            : 0,
-        pointsIssued: giftPoints > 0 ? giftPoints * events.length : 0,
-        revenue: totalRevenue,
-        firstPurchaseRevenue,
+        greetings: greetingCustomers.size,
+        giftPurchasers: buyers.size,
+        revenueNet: Math.round(revenueNet),
         averageCheck:
-          totalReceiptsCount > 0
-            ? Math.round(totalRevenue / totalReceiptsCount)
-            : 0,
-        customersWithPurchases: customersWithPurchases.size,
+          giftReceiptCount > 0 ? Math.round(grossSum / giftReceiptCount) : 0,
+        giftPointsSpent: Math.round(pointsSpent),
+        receiptsWithGifts: giftReceiptCount,
       },
-      demographics: {
-        gender: genderStats,
-        age: ageStats,
-      },
-      trends: {
-        timeline,
-        revenue: revenueTimeline,
-      },
+      timeline,
+      revenue: revenueTimeline,
     };
   }
 

@@ -1844,6 +1844,7 @@ Response 200: объект клиента, как в GET /portal/customers/{id}
   - `birthday_greetings_created_total{merchantId}` — созданные поздравления;
   - `birthday_points_issued_total{merchantId}` — сумма подаренных баллов;
   - `birthday_push_sent_total{merchantId}` / `birthday_push_failed_total{merchantId,reason}` — успешные и неуспешные рассылки.
+- Аналитика портала `/portal/analytics/birthday-mechanic`: принимает `period` либо `from`+`to` и (опционально) `outletId`; отдаёт сводку `summary{greetings,giftPurchasers,revenueNet,averageCheck,giftPointsSpent,receiptsWithGifts}`, `timeline[]` (дата, greetings, purchases) и `revenue[]` (дата, revenue — выручка с вычетом потраченных подарочных баллов). Группировка по дням/неделям/месяцам выполняется на фронтенде.
 
 ## Поддержка
 
