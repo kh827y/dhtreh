@@ -2729,6 +2729,53 @@ export class LoyaltyService {
       },
     });
 
+    // Отмеченные закрытые окна отзыва (кросс-девайс подавление показа)
+    const reviewDismissedByTxId = new Map<string, string>();
+    const txIds = txItems.map((item) => item.id).filter(Boolean);
+    if (txIds.length > 0) {
+      try {
+        const records =
+          (await (this.prisma as any)?.loyaltyRealtimeEvent?.findMany?.({
+            where: {
+              merchantId,
+              customerId,
+              transactionId: { in: txIds },
+              eventType: 'loyalty.review.dismissed',
+            },
+            select: {
+              transactionId: true,
+              emittedAt: true,
+              createdAt: true,
+              updatedAt: true,
+              payload: true,
+            },
+          })) || [];
+        const normalizeDate = (value: any): string | null => {
+          if (value instanceof Date) return value.toISOString();
+          if (typeof value === 'string' && value.trim()) {
+            const parsed = new Date(value);
+            if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+          }
+          return null;
+        };
+        for (const record of records) {
+          if (!record?.transactionId) continue;
+          const payload =
+            record && typeof record.payload === 'object' ? record.payload : null;
+          const ts =
+            normalizeDate(payload?.dismissedAt) ||
+            normalizeDate(record.emittedAt) ||
+            normalizeDate(record.updatedAt) ||
+            normalizeDate(record.createdAt);
+          if (!ts) continue;
+          const existing = reviewDismissedByTxId.get(record.transactionId);
+          if (!existing || ts > existing) {
+            reviewDismissedByTxId.set(record.transactionId, ts);
+          }
+        }
+      } catch {}
+    }
+
     // 2) «Отложенные начисления» (EarnLot.status = PENDING)
     const whereLots: any = { merchantId, customerId, status: 'PENDING' };
     if (before) whereLots.createdAt = { lt: before };
@@ -2885,6 +2932,7 @@ export class LoyaltyService {
         reviewCreatedAt: entity.reviews?.[0]?.createdAt
           ? entity.reviews[0].createdAt.toISOString()
           : null,
+        reviewDismissedAt: reviewDismissedByTxId.get(entity.id) ?? null,
         pending: undefined,
         maturesAt: undefined,
         daysUntilMature: undefined,
@@ -2932,6 +2980,7 @@ export class LoyaltyService {
         comment: null,
         canceledAt: null,
         relatedOperationAt: null,
+        reviewDismissedAt: null,
       };
     });
 

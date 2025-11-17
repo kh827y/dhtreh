@@ -1178,6 +1178,98 @@ export class LoyaltyController {
     } as const;
   }
 
+  @Post('reviews/dismiss')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  async dismissReviewPrompt(
+    @Body()
+    body: {
+      merchantId?: string;
+      merchantCustomerId?: string;
+      transactionId?: string;
+    },
+  ) {
+    const merchantId =
+      typeof body?.merchantId === 'string' ? body.merchantId.trim() : '';
+    const merchantCustomerId =
+      typeof body?.merchantCustomerId === 'string'
+        ? body.merchantCustomerId.trim()
+        : '';
+    const transactionId =
+      typeof body?.transactionId === 'string'
+        ? body.transactionId.trim()
+        : '';
+    if (!merchantId) throw new BadRequestException('merchantId is required');
+    if (!merchantCustomerId)
+      throw new BadRequestException('merchantCustomerId is required');
+    if (!transactionId)
+      throw new BadRequestException('transactionId is required');
+
+    const { customer, merchantCustomer } = await this.resolveMerchantContext(
+      merchantId,
+      merchantCustomerId,
+    );
+    const tx = await this.prisma.transaction.findFirst({
+      where: { id: transactionId, merchantId, customerId: customer.id },
+      select: { id: true, type: true, amount: true },
+    });
+    if (!tx) throw new BadRequestException('transaction not found');
+
+    const dismissedAt = new Date();
+    const payload = { dismissedAt: dismissedAt.toISOString() };
+    const eventId = `review_dismissed:${tx.id}`;
+
+    await this.prisma.loyaltyRealtimeEvent.upsert({
+      where: { id: eventId },
+      update: {
+        merchantId,
+        customerId: customer.id,
+        merchantCustomerId: merchantCustomer.id,
+        transactionId: tx.id,
+        transactionType: tx.type,
+        amount: tx.amount,
+        eventType: 'loyalty.review.dismissed',
+        payload,
+        emittedAt: dismissedAt,
+        deliveredAt: null,
+      },
+      create: {
+        id: eventId,
+        merchantId,
+        customerId: customer.id,
+        merchantCustomerId: merchantCustomer.id,
+        transactionId: tx.id,
+        transactionType: tx.type,
+        amount: tx.amount,
+        eventType: 'loyalty.review.dismissed',
+        payload,
+        emittedAt: dismissedAt,
+        deliveredAt: null,
+      },
+    });
+
+    try {
+      const message = JSON.stringify({
+        id: eventId,
+        merchantId,
+        customerId: customer.id,
+        merchantCustomerId: merchantCustomer.id,
+        transactionId: tx.id,
+        transactionType: tx.type,
+        amount: tx.amount,
+        eventType: 'loyalty.review.dismissed',
+        emittedAt: payload.dismissedAt,
+      });
+      const prismaAny = this.prisma as any;
+      if (prismaAny?.$executeRaw) {
+        await prismaAny.$executeRaw`
+          SELECT pg_notify('loyalty_realtime_events', ${message}::text)
+        `;
+      }
+    } catch {}
+
+    return { ok: true, dismissedAt: payload.dismissedAt };
+  }
+
   // ===== Cashier Auth (public) =====
   @Post('cashier/login')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })

@@ -11,15 +11,16 @@ export type TransactionsResp = {
     outletId?: string | null;
     staffId?: string | null;
     reviewId?: string | null;
-  reviewRating?: number | null;
-  reviewCreatedAt?: string | null;
-  pending?: boolean;
-  maturesAt?: string | null;
-  daysUntilMature?: number | null;
-  source?: string | null;
-  comment?: string | null;
-  canceledAt?: string | null;
-  relatedOperationAt?: string | null;
+    reviewRating?: number | null;
+    reviewCreatedAt?: string | null;
+    reviewDismissedAt?: string | null;
+    pending?: boolean;
+    maturesAt?: string | null;
+    daysUntilMature?: number | null;
+    source?: string | null;
+    comment?: string | null;
+    canceledAt?: string | null;
+    relatedOperationAt?: string | null;
   }>;
   nextBefore?: string | null;
 };
@@ -434,6 +435,17 @@ export async function pollLoyaltyEvents(
 ): Promise<{ event: LoyaltyRealtimeEvent | null }> {
   const qs = new URLSearchParams({ merchantId, merchantCustomerId });
   return http(`/loyalty/events/poll?${qs.toString()}`, { signal });
+}
+
+export async function dismissReviewPrompt(
+  merchantId: string,
+  merchantCustomerId: string,
+  transactionId: string,
+): Promise<{ ok: boolean; dismissedAt: string }> {
+  return http('/loyalty/reviews/dismiss', {
+    method: 'POST',
+    body: JSON.stringify({ merchantId, merchantCustomerId, transactionId }),
+  });
 }
 
 export async function promoCodeApply(

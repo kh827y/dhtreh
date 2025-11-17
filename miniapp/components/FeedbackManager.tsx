@@ -6,6 +6,7 @@ import styles from "../app/page.module.css";
 import {
   submitReview,
   transactions,
+  dismissReviewPrompt,
   type ReviewsShareSettings,
   type SubmitReviewShareOption,
 } from "../lib/api";
@@ -73,6 +74,7 @@ function mapTransactions(
       reviewId: item.reviewId ?? null,
       reviewRating: typeof item.reviewRating === "number" ? item.reviewRating : null,
       reviewCreatedAt: item.reviewCreatedAt ?? null,
+      reviewDismissedAt: item.reviewDismissedAt ?? null,
       source:
         typeof item.source === "string" && item.source.trim().length > 0
           ? item.source.trim()
@@ -132,6 +134,18 @@ export function FeedbackManager() {
     }
   }, [merchantId, merchantCustomerId]);
 
+  const persistDismissedTransaction = useCallback(
+    async (transactionId: string) => {
+      if (!transactionId || !merchantId || !merchantCustomerId) return;
+      try {
+        await dismissReviewPrompt(merchantId, merchantCustomerId, transactionId);
+      } catch {
+        // игнорируем сбои сохранения скрытия, это не должно блокировать UI
+      }
+    },
+    [merchantId, merchantCustomerId],
+  );
+
   useEffect(() => {
     if (!merchantCustomerId) return;
     void loadTransactions();
@@ -181,6 +195,25 @@ export function FeedbackManager() {
     });
   }, [transactionsList, dismissedReady]);
 
+  useEffect(() => {
+    if (!dismissedReady) return;
+    const remotelyDismissed = transactionsList
+      .filter((item) => item.reviewDismissedAt)
+      .map((item) => item.id);
+    if (!remotelyDismissed.length) return;
+    setDismissedTransactions((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      for (const id of remotelyDismissed) {
+        if (!next.has(id)) {
+          next.add(id);
+          changed = true;
+        }
+      }
+      return changed ? Array.from(next) : prev;
+    });
+  }, [transactionsList, dismissedReady]);
+
   const isEligiblePurchaseTx = useCallback(
     (item: TransactionItem): boolean => {
       const createdAtMs = parseDateMs(item.createdAt);
@@ -189,6 +222,7 @@ export function FeedbackManager() {
       if (!isPurchaseTransaction(item.type, item.orderId)) return false;
       if (!item.outletId && !item.staffId) return false;
       if (item.reviewId) return false;
+      if (item.reviewDismissedAt) return false;
       if (dismissedTxSet.has(item.id)) return false;
       return true;
     },
@@ -276,10 +310,17 @@ export function FeedbackManager() {
 
   const handleFeedbackClose = useCallback(() => {
     if (feedbackTxId) {
+      const dismissedAt = new Date().toISOString();
       setDismissedTransactions((prev) => (prev.includes(feedbackTxId) ? prev : [...prev, feedbackTxId]));
+      setTransactionsList((prev) =>
+        prev.map((item) =>
+          item.id === feedbackTxId && !item.reviewDismissedAt ? { ...item, reviewDismissedAt: dismissedAt } : item,
+        ),
+      );
+      void persistDismissedTransaction(feedbackTxId);
     }
     resetFeedbackState();
-  }, [feedbackTxId, resetFeedbackState]);
+  }, [feedbackTxId, resetFeedbackState, persistDismissedTransaction]);
 
   const handleFeedbackSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {

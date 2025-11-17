@@ -275,6 +275,13 @@ export class TransactionItemDto {
   })
   reviewCreatedAt?: string | null;
   @ApiPropertyOptional({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description: 'Когда пользователь закрыл окно отзыва без оценки',
+  })
+  reviewDismissedAt?: string | null;
+  @ApiPropertyOptional({
     description: 'Флаг отложенного начисления (на удержании)',
   })
   pending?: boolean;

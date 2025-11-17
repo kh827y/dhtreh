@@ -9,6 +9,7 @@ export type TransactionItem = {
   reviewId: string | null;
   reviewRating: number | null;
   reviewCreatedAt: string | null;
+  reviewDismissedAt?: string | null;
   pending?: boolean;
   maturesAt?: string | null;
   daysUntilMature?: number | null;
