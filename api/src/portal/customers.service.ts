@@ -1934,6 +1934,26 @@ export class PortalCustomersService {
       },
     });
 
+    const requestedLevelId =
+      typeof dto.levelId === 'string' && dto.levelId.trim()
+        ? dto.levelId.trim()
+        : null;
+    if (requestedLevelId) {
+      await this.applyTierAssignment(merchantId, customer.id, requestedLevelId);
+    } else {
+      const initialTier = await this.prisma.loyaltyTier.findFirst({
+        where: { merchantId },
+        orderBy: [
+          { isInitial: 'desc' },
+          { thresholdAmount: 'asc' },
+          { createdAt: 'asc' },
+        ],
+      });
+      if (initialTier) {
+        await this.applyTierAssignment(merchantId, customer.id, initialTier.id);
+      }
+    }
+
     const levelId =
       typeof dto.levelId === 'string' && dto.levelId.trim()
         ? dto.levelId.trim()
