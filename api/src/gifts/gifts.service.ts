@@ -166,7 +166,7 @@ export class GiftsService {
       await this.prisma.merchant.upsert({
         where: { id: merchantId },
         update: {},
-        create: { id: merchantId, name: merchantId },
+        create: { id: merchantId, name: merchantId, initialName: merchantId },
       });
     } catch {}
   }

@@ -12,7 +12,6 @@ import { pgAdvisoryUnlock, pgTryAdvisoryLock } from './pg-lock.util';
 
 type ReminderConfig = {
   merchantId: string;
-  merchantName: string | null;
   ttlDays: number;
   daysBefore: number;
   template: string;
@@ -109,7 +108,6 @@ export class PointsTtlReminderWorker implements OnModuleInit, OnModuleDestroy {
       where: { archivedAt: null, telegramBotEnabled: true },
       select: {
         id: true,
-        name: true,
         telegramBotEnabled: true,
         settings: {
           select: { pointsTtlDays: true, rulesJson: true },
@@ -147,7 +145,6 @@ export class PointsTtlReminderWorker implements OnModuleInit, OnModuleDestroy {
           : DEFAULT_TEMPLATE;
       result.push({
         merchantId: merchant.id,
-        merchantName: merchant.name,
         ttlDays,
         daysBefore,
         template,

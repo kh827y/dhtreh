@@ -30,6 +30,7 @@ describe('Loyalty Flow E2E', () => {
       data: {
         id: TEST_MERCHANT_ID,
         name: 'Test Merchant',
+        initialName: 'Test Merchant',
         settings: {
           create: {
             earnBps: 500, // 5%

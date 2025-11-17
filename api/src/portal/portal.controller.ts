@@ -26,6 +26,7 @@ import {
   MerchantSettingsRespDto,
   ReceiptDto,
   UpdateMerchantSettingsDto,
+  UpdateMerchantNameDto,
   UpdateOutletPosDto,
   UpdateOutletStatusDto,
   UpdateTimezoneDto,
@@ -1733,6 +1734,43 @@ export class PortalController {
       dto.requireStaffKey,
       dto,
     );
+  }
+
+  @Get('settings/name')
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        initialName: { type: 'string' },
+      },
+    },
+  })
+  async getMerchantName(@Req() req: any) {
+    return this.service.getMerchantName(this.getMerchantId(req));
+  }
+
+  @Put('settings/name')
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        ok: { type: 'boolean' },
+        name: { type: 'string' },
+        initialName: { type: 'string' },
+      },
+    },
+  })
+  @ApiBadRequestResponse({ type: ErrorDto })
+  async updateMerchantName(
+    @Req() req: any,
+    @Body() dto: UpdateMerchantNameDto,
+  ) {
+    const payload = await this.service.updateMerchantName(
+      this.getMerchantId(req),
+      dto.name,
+    );
+    return { ok: true, ...payload };
   }
 
   @Get('settings/timezone')

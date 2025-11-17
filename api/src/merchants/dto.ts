@@ -7,6 +7,7 @@ import {
   IsString,
   Max,
   Min,
+  Length,
 } from 'class-validator';
 import { DeviceType, StaffRole } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -392,6 +393,17 @@ export class TokenRespDto {
 }
 export class OkDto {
   @ApiProperty() ok!: boolean;
+}
+
+export class UpdateMerchantNameDto {
+  @ApiProperty({
+    description: 'Новое название компании в портале мерчанта',
+    minLength: 2,
+    maxLength: 120,
+  })
+  @IsString()
+  @Length(2, 120)
+  name!: string;
 }
 
 export class UpdateTimezoneDto {

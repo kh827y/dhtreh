@@ -477,7 +477,7 @@ export class MerchantsService {
     await this.prisma.merchant.upsert({
       where: { id: merchantId },
       update: {},
-      create: { id: merchantId, name: merchantId },
+      create: { id: merchantId, name: merchantId, initialName: merchantId },
     });
 
     const updated = await this.prisma.merchantSettings.upsert({
@@ -1264,7 +1264,7 @@ export class MerchantsService {
     await this.prisma.merchant.upsert({
       where: { id: merchantId },
       update: {},
-      create: { id: merchantId, name: merchantId },
+      create: { id: merchantId, name: merchantId, initialName: merchantId },
     });
   }
 
@@ -2085,6 +2085,7 @@ export class MerchantsService {
       select: {
         id: true,
         name: true,
+        initialName: true,
         createdAt: true,
         portalLoginEnabled: true,
         portalTotpEnabled: true,
@@ -2121,6 +2122,7 @@ export class MerchantsService {
     const m = await (this.prisma.merchant as any).create({
       data: {
         name: name.trim(),
+        initialName: name.trim(),
         portalEmail: em,
         portalPasswordHash: pwd,
         cashierLogin: uniqueSlug,
@@ -2146,7 +2148,12 @@ export class MerchantsService {
         });
       } catch {}
     }
-    return { id: m.id, name: m.name, email: m.portalEmail } as any;
+    return {
+      id: m.id,
+      name: m.name,
+      initialName: m.initialName,
+      email: m.portalEmail,
+    } as any;
   }
 
   private randomPin4(): string {
@@ -2174,7 +2181,47 @@ export class MerchantsService {
       where: { id },
       data,
     });
-    return { id: res.id, name: res.name, email: res.portalEmail } as any;
+    return {
+      id: res.id,
+      name: res.name,
+      initialName: res.initialName,
+      email: res.portalEmail,
+    } as any;
+  }
+
+  async getMerchantName(merchantId: string) {
+    const merchant = await this.prisma.merchant.findUnique({
+      where: { id: merchantId },
+      select: { name: true, initialName: true },
+    });
+    if (!merchant) throw new NotFoundException('Merchant not found');
+    return { name: merchant.name, initialName: merchant.initialName };
+  }
+
+  async updateMerchantName(merchantId: string, rawName: string) {
+    const nextName = String(rawName || '').trim();
+    if (!nextName)
+      throw new BadRequestException('Название не может быть пустым');
+    if (nextName.length > 120)
+      throw new BadRequestException(
+        'Название должно быть короче 120 символов',
+      );
+
+    const current = await this.prisma.merchant.findUnique({
+      where: { id: merchantId },
+      select: { initialName: true },
+    });
+    if (!current) throw new NotFoundException('Merchant not found');
+
+    const updated = await (this.prisma.merchant as any).update({
+      where: { id: merchantId },
+      data: {
+        name: nextName,
+        ...(current.initialName ? {} : { initialName: nextName }),
+      },
+      select: { name: true, initialName: true },
+    });
+    return updated;
   }
 
   async deleteMerchant(id: string) {

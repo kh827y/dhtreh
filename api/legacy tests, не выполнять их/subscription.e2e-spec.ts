@@ -48,6 +48,7 @@ describe('Subscription Controller (e2e)', () => {
       data: {
         id: TEST_MERCHANT_ID,
         name: 'Test Subscription Merchant',
+        initialName: 'Test Subscription Merchant',
         settings: {
           create: {
             earnBps: 500,

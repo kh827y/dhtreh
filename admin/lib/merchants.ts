@@ -9,6 +9,7 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
 export type MerchantRow = {
   id: string;
   name: string;
+  initialName: string;
   createdAt: string;
   portalLoginEnabled?: boolean;
   portalTotpEnabled?: boolean;
@@ -25,6 +26,7 @@ export async function listMerchants(): Promise<MerchantRow[]> {
   return rows.map((row) => ({
     id: row.id,
     name: row.name,
+    initialName: row.initialName || row.name,
     createdAt: row.createdAt,
     portalLoginEnabled: row.portalLoginEnabled,
     portalTotpEnabled: row.portalTotpEnabled,

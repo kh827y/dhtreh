@@ -1744,6 +1744,8 @@ Response 200: объект клиента, как в GET /portal/customers/{id}
 - POST `/portal/settings/telegram-notify/subscribers/{id}/deactivate` → `{ ok: true }`
 - GET `/portal/settings/telegram-notify/preferences` → `{ notifyOrders: boolean, notifyReviews: boolean, notifyDailyDigest: boolean, notifyFraud: boolean }`
 - POST `/portal/settings/telegram-notify/preferences` → принимает частичное тело с любыми сочетаниями `notifyOrders`, `notifyReviews`, `notifyDailyDigest`, `notifyFraud` (boolean) и возвращает актуальные настройки.
+- GET `/portal/settings/name` → `{ name, initialName }`, где `initialName` — исходное название из админки.
+- PUT `/portal/settings/name` → тело `{ name: "Новая сеть кофеен" }`, ответ `{ ok: true, name, initialName }`. В админ-панели сохраняется исходное название с пометкой о переименовании.
 - GET `/portal/settings/timezone` → `{ timezone, options[] }`, где `timezone` и каждый элемент `options` содержит поля `code` (`МСК±N`), `label`, `city`, `description`, `mskOffset`, `utcOffsetMinutes`, `iana`. Используется порталом и аналитикой как единый источник часового пояса.
 - PUT `/portal/settings/timezone` → тело `{ code: "MSK+4" }`, ответ `{ ok: true, timezone, options[] }`.
 

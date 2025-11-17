@@ -29,7 +29,9 @@ describe('Evotor integration (e2e)', () => {
     const integrationId = 'INT-EVO-1';
     // ensure merchant exists
     try {
-      await prisma.merchant.create({ data: { id: merchantId, name: 'Shop' } });
+      await prisma.merchant.create({
+        data: { id: merchantId, name: 'Shop', initialName: 'Shop' },
+      });
     } catch {}
     // cleanup from previous runs (idempotent)
     try {
@@ -98,7 +100,9 @@ describe('Evotor integration (e2e)', () => {
     const merchantId = 'M-evotor2';
     const integrationId = 'INT-EVO-ERR';
     try {
-      await prisma.merchant.create({ data: { id: merchantId, name: 'Shop2' } });
+      await prisma.merchant.create({
+        data: { id: merchantId, name: 'Shop2', initialName: 'Shop2' },
+      });
     } catch {}
     try {
       await (prisma as any).syncLog.deleteMany({ where: { integrationId } });

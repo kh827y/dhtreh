@@ -212,6 +212,7 @@ enum LedgerAccount {
 model Merchant {
   id                          String                       @id @default(cuid())
   name                        String
+  initialName                 String
   telegramWebhookSecret       String?
   telegramBotEnabled          Boolean                      @default(false)
   telegramBotToken            String?

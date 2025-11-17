@@ -176,8 +176,14 @@ function RowEditor({ row, onSave, onDelete, onUpdateSettings }: {
   }
   return (
     <div style={{ display:'grid', gap:6 }}>
-      <div style={{ display:'grid' }}>
+      <div style={{ display:'grid', gap:4 }}>
         <span style={{ opacity:.7, fontSize:12 }}>{row.id}</span>
+        <span style={{ fontSize:13, opacity:.85 }}>
+          {row.initialName}
+          {row.initialName !== row.name && (
+            <span style={{ color:'#d97706' }}> (мерчант переименовал в «{row.name}»)</span>
+          )}
+        </span>
       </div>
       <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
         <input value={name} onChange={e=>setName(e.target.value)} style={{ padding:6 }} />

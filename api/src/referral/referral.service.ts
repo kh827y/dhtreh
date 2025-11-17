@@ -642,11 +642,7 @@ export class ReferralService {
   // Вспомогательные методы
 
   private async generateReferralCode(merchantId: string): Promise<string> {
-    const merchant = await this.prisma.merchant.findUnique({
-      where: { id: merchantId },
-    });
-
-    const prefix = merchant?.name.substring(0, 3).toUpperCase() || 'REF';
+    const prefix = crypto.randomBytes(3).toString('hex').toUpperCase();
     let code: string;
     let isUnique = false;
 

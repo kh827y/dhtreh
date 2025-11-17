@@ -71,6 +71,7 @@ export class MerchantsController {
         properties: {
           id: { type: 'string' },
           name: { type: 'string' },
+          initialName: { type: 'string' },
           createdAt: { type: 'string' },
           portalEmail: { type: 'string', nullable: true },
           portalLoginEnabled: { type: 'boolean' },
@@ -89,6 +90,7 @@ export class MerchantsController {
       properties: {
         id: { type: 'string' },
         name: { type: 'string' },
+        initialName: { type: 'string' },
         email: { type: 'string' },
       },
     },
@@ -120,6 +122,7 @@ export class MerchantsController {
       properties: {
         id: { type: 'string' },
         name: { type: 'string' },
+        initialName: { type: 'string' },
         email: { type: 'string', nullable: true },
       },
     },

@@ -55,7 +55,7 @@ export class LoyaltyService {
       await this.prisma.merchant.upsert({
         where: { id: merchantId },
         update: {},
-        create: { id: merchantId, name: merchantId },
+        create: { id: merchantId, name: merchantId, initialName: merchantId },
       });
     } catch {}
 
@@ -737,7 +737,7 @@ export class LoyaltyService {
       await this.prisma.merchant.upsert({
         where: { id: merchantId },
         update: {},
-        create: { id: merchantId, name: merchantId },
+        create: { id: merchantId, name: merchantId, initialName: merchantId },
       });
     } catch {}
 
@@ -1232,7 +1232,7 @@ export class LoyaltyService {
       await this.prisma.merchant.upsert({
         where: { id: dto.merchantId },
         update: {},
-        create: { id: dto.merchantId, name: dto.merchantId },
+        create: { id: dto.merchantId, name: dto.merchantId, initialName: dto.merchantId },
       });
     } catch {}
     await ensureBaseTier(this.prisma, dto.merchantId).catch(() => null);
@@ -1509,7 +1509,7 @@ export class LoyaltyService {
           await tx.merchant.upsert({
             where: { id: dto.merchantId },
             update: {},
-            create: { id: dto.merchantId, name: dto.merchantId },
+            create: { id: dto.merchantId, name: dto.merchantId, initialName: dto.merchantId },
           });
         } catch {}
         let wallet = await tx.wallet.findFirst({
@@ -1703,7 +1703,11 @@ export class LoyaltyService {
         await tx.merchant.upsert({
           where: { id: dto.merchantId },
           update: {},
-          create: { id: dto.merchantId, name: dto.merchantId },
+          create: {
+            id: dto.merchantId,
+            name: dto.merchantId,
+            initialName: dto.merchantId,
+          },
         });
       } catch {}
       let wallet = await tx.wallet.findFirst({

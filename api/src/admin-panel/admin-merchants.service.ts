@@ -15,6 +15,7 @@ interface MerchantFilters {
 export interface AdminMerchantListItem {
   id: string;
   name: string;
+  initialName: string;
   createdAt: Date;
   archivedAt: Date | null;
   portalEmail: string | null;
@@ -86,6 +87,7 @@ export class AdminMerchantsService {
     return merchants.map((merchant) => ({
       id: merchant.id,
       name: merchant.name,
+      initialName: merchant.initialName,
       createdAt: merchant.createdAt,
       archivedAt: merchant.archivedAt ?? null,
       portalEmail: merchant.portalEmail ?? null,
@@ -120,6 +122,7 @@ export class AdminMerchantsService {
     return {
       id: merchant.id,
       name: merchant.name,
+      initialName: merchant.initialName,
       createdAt: merchant.createdAt,
       archivedAt: merchant.archivedAt ?? null,
       portalEmail: merchant.portalEmail ?? null,
@@ -249,6 +252,7 @@ export class AdminMerchantsService {
       const merchant = await tx.merchant.create({
         data: {
           name: payload.name!.trim(),
+          initialName: payload.name!.trim(),
           portalEmail: payload.portalEmail?.trim().toLowerCase() ?? null,
           portalPasswordHash: payload.portalPassword
             ? await hashPassword(payload.portalPassword)
