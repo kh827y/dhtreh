@@ -4,6 +4,7 @@ import React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Card, CardBody, Skeleton, Chart } from "@loyalty/ui";
 import Toggle from "../../../../components/Toggle";
+import { ChartGroup, formatBucketLabel, groupAttemptsTimeline, groupRevenueTimeline, groupRfmReturnsTimeline } from "./stats-utils";
 
 const quickRanges = [
   { label: "Вчера", value: "day" },
@@ -18,7 +19,7 @@ type QuickRange = (typeof quickRanges)[number];
 type OutletOption = { value: string; label: string };
 
 type AutoReturnStats = {
-  period: { from: string; to: string; type: string; thresholdDays: number; giftPoints: number };
+  period: { from: string; to: string; type: string; thresholdDays: number; giftPoints: number; giftTtlDays: number; giftBurnEnabled: boolean };
   summary: {
     invitations: number;
     returned: number;
@@ -37,6 +38,7 @@ type AutoReturnStats = {
   trends: {
     attempts: Array<{ date: string; invitations: number; returns: number }>;
     revenue: Array<{ date: string; total: number; firstPurchases: number }>;
+    rfmReturns: Array<{ date: string; segment: string; returned: number }>;
   };
 };
 
@@ -364,12 +366,14 @@ function StatisticsTab() {
   ]);
   const [selectedOutlet, setSelectedOutlet] = React.useState<OutletOption>(outlets[0]);
   const [range, setRange] = React.useState<QuickRange>(quickRanges[2]);
-  const [customFrom, setCustomFrom] = React.useState("");
-  const [customTo, setCustomTo] = React.useState("");
+  const [customRangeDraft, setCustomRangeDraft] = React.useState<{ from: string; to: string }>({ from: "", to: "" });
   const [appliedCustom, setAppliedCustom] = React.useState<{ from: string; to: string } | null>(null);
   const [stats, setStats] = React.useState<AutoReturnStats | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState("");
+  const [timelineGroup, setTimelineGroup] = React.useState<ChartGroup>("day");
+  const [rfmGroup, setRfmGroup] = React.useState<ChartGroup>("day");
+  const [revenueGroup, setRevenueGroup] = React.useState<ChartGroup>("day");
 
   React.useEffect(() => {
     let cancelled = false;
@@ -424,190 +428,314 @@ function StatisticsTab() {
     } finally {
       setLoading(false);
     }
-  }, [appliedCustom, range, selectedOutlet]);
+  }, [appliedCustom, range.value, selectedOutlet.value]);
 
   React.useEffect(() => {
     loadStats();
   }, [loadStats]);
 
+  const summaryItems = React.useMemo(() => {
+    if (!stats) return [];
+    return [
+      {
+        title: "Выслано приглашений",
+        description: "Отправлено Push-уведомлений",
+        value: formatNumber(stats.summary.invitations),
+      },
+      {
+        title: "Вернулось",
+        description: "Совершивших покупку после приглашения",
+        value: formatNumber(stats.summary.returned),
+      },
+      {
+        title: "Конверсия в покупку",
+        description: "Процент клиентов, которые совершили покупку после приглашения",
+        value: formatPercent(stats.summary.conversion),
+      },
+      {
+        title: "Затраты на баллы",
+        description: "Подарочных баллов было потрачено",
+        value: formatNumber(stats.summary.pointsCost),
+      },
+      {
+        title: "Выручка первых покупок",
+        description: "За вычетом потраченных баллов",
+        value: formatCurrency(stats.summary.firstPurchaseRevenue),
+      },
+    ];
+  }, [stats]);
+
+  const distanceItems = React.useMemo(() => {
+    if (!stats) return [];
+    return [
+      {
+        title: "Клиентов",
+        description: "Совершивших покупку после возврата",
+        value: formatNumber(stats.distance.customers),
+      },
+      {
+        title: "Покупок после возврата",
+        description: "Среднее количество покупок после возврата на клиента",
+        value: formatDecimal(stats.distance.purchasesPerCustomer),
+      },
+      {
+        title: "Средний чек",
+        description: "Средняя сумма всех покупок вернувшихся клиентов",
+        value: formatCurrency(stats.distance.averageCheck),
+      },
+      {
+        title: "Количество покупок",
+        description: "Совершено вернувшимися клиентами за период",
+        value: formatNumber(stats.distance.purchasesCount),
+      },
+      {
+        title: "Сумма покупок",
+        description: "Возвращенных клиентов за период",
+        value: formatCurrency(stats.distance.totalAmount),
+      },
+    ];
+  }, [stats]);
+
+  const attemptsData = React.useMemo(
+    () => groupAttemptsTimeline(stats?.trends.attempts ?? [], timelineGroup),
+    [stats?.trends.attempts, timelineGroup],
+  );
+  const rfmData = React.useMemo(
+    () => groupRfmReturnsTimeline(stats?.trends.rfmReturns ?? [], rfmGroup),
+    [stats?.trends.rfmReturns, rfmGroup],
+  );
+  const revenueData = React.useMemo(
+    () => groupRevenueTimeline(stats?.trends.revenue ?? [], revenueGroup),
+    [stats?.trends.revenue, revenueGroup],
+  );
+
+  const rfmSegments = React.useMemo(() => {
+    const set = new Set<string>();
+    (stats?.rfm ?? []).forEach(row => set.add(row.segment));
+    rfmData.forEach(row => set.add(row.segment));
+    return Array.from(set);
+  }, [rfmData, stats?.rfm]);
+
   const attemptsOption = React.useMemo(() => {
-    if (!stats) return null;
-    const categories = stats.trends.attempts.map(item => item.date);
-    const invites = stats.trends.attempts.map(item => item.invitations);
-    const returns = stats.trends.attempts.map(item => item.returns);
+    if (!attemptsData.length) return null;
+    const categories = attemptsData.map(item => item.bucket);
+    const invites = attemptsData.map(item => item.invitations);
+    const returns = attemptsData.map(item => item.returns);
     return {
       tooltip: { trigger: "axis" },
-      legend: { data: ["Приглашения", "Возвраты"] },
+      legend: { data: ["Попыток возврата", "Вернулись"] },
       grid: { left: 28, right: 16, top: 30, bottom: 40 },
-      xAxis: { type: "category", data: categories },
+      xAxis: {
+        type: "category",
+        data: categories,
+        axisLabel: { formatter: (value: string) => formatBucketLabel(value, timelineGroup) },
+      },
       yAxis: { type: "value" },
       series: [
-        { name: "Приглашения", type: "line", data: invites, smooth: true },
-        { name: "Возвраты", type: "line", data: returns, smooth: true },
+        { name: "Попыток возврата", type: "line", data: invites, smooth: true },
+        { name: "Вернулись", type: "line", data: returns, smooth: true },
       ],
     } as const;
-  }, [stats]);
+  }, [attemptsData, timelineGroup]);
 
   const rfmOption = React.useMemo(() => {
-    if (!stats) return null;
-    const categories = stats.rfm.map(item => item.segment);
-    const values = stats.rfm.map(item => item.returned);
+    if (!rfmData.length || !rfmSegments.length) return null;
+    const categories = Array.from(new Set(rfmData.map(item => item.bucket))).sort((a, b) => a.localeCompare(b));
+    const values = new Map<string, number>();
+    for (const row of rfmData) {
+      values.set(`${row.bucket}|${row.segment}`, (values.get(`${row.bucket}|${row.segment}`) ?? 0) + row.returned);
+    }
+    const series = rfmSegments.map(segment => ({
+      name: segment,
+      type: "bar",
+      stack: "returns",
+      data: categories.map(bucket => values.get(`${bucket}|${segment}`) ?? 0),
+    }));
     return {
       tooltip: { trigger: "axis" },
-      grid: { left: 40, right: 16, top: 30, bottom: 80 },
-      xAxis: { type: "category", data: categories, axisLabel: { interval: 0, rotate: 20 } },
+      legend: { data: rfmSegments },
+      grid: { left: 40, right: 16, top: 30, bottom: 60 },
+      xAxis: {
+        type: "category",
+        data: categories,
+        axisLabel: { interval: 0, rotate: 20, formatter: (value: string) => formatBucketLabel(value, rfmGroup) },
+      },
       yAxis: { type: "value" },
-      series: [
-        { name: "Вернувшиеся", type: "bar", data: values, itemStyle: { borderRadius: 6, color: "#34d399" } },
-      ],
+      series,
     } as const;
-  }, [stats]);
+  }, [rfmData, rfmGroup, rfmSegments]);
 
   const revenueOption = React.useMemo(() => {
-    if (!stats) return null;
-    const categories = stats.trends.revenue.map(item => item.date);
-    const totals = stats.trends.revenue.map(item => item.total);
-    const firsts = stats.trends.revenue.map(item => item.firstPurchases);
+    if (!revenueData.length) return null;
+    const categories = revenueData.map(item => item.bucket);
+    const totals = revenueData.map(item => Math.max(0, Math.round(item.total / 100)));
+    const firsts = revenueData.map(item => Math.max(0, Math.round(item.firstPurchases / 100)));
     return {
       tooltip: { trigger: "axis" },
-      legend: { data: ["Все покупки", "Первые покупки"] },
+      legend: { data: ["Выручка всех вернувшихся клиентов", "Выручка первых покупок"] },
       grid: { left: 32, right: 16, top: 30, bottom: 40 },
-      xAxis: { type: "category", data: categories },
-      yAxis: { type: "value" },
+      xAxis: {
+        type: "category",
+        data: categories,
+        axisLabel: { formatter: (value: string) => formatBucketLabel(value, revenueGroup) },
+      },
+      yAxis: { type: "value", axisLabel: { formatter: (val: number) => `${val} ₽` } },
       series: [
-        { name: "Все покупки", type: "line", data: totals, smooth: true, areaStyle: {} },
-        { name: "Первые покупки", type: "line", data: firsts, smooth: true },
+        { name: "Выручка всех вернувшихся клиентов", type: "line", data: totals, smooth: true, areaStyle: {} },
+        { name: "Выручка первых покупок", type: "line", data: firsts, smooth: true },
       ],
     } as const;
-  }, [stats]);
+  }, [revenueData, revenueGroup]);
 
-  const summaryItems = [
-    { label: "Выслано приглашений", value: stats ? formatNumber(stats.summary.invitations) : "—" },
-    { label: "Вернулось", value: stats ? formatNumber(stats.summary.returned) : "—" },
-    {
-      label: "Конверсия в покупку",
-      value: stats ? `${stats.summary.conversion.toLocaleString("ru-RU", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%` : "—",
-    },
-    { label: "Затраты на баллы", value: stats ? formatNumber(stats.summary.pointsCost) : "—" },
-    { label: "Выручка первых покупок", value: stats ? formatNumber(stats.summary.firstPurchaseRevenue) : "—" },
-  ];
+  const canApplyCustom =
+    Boolean(customRangeDraft.from) &&
+    Boolean(customRangeDraft.to) &&
+    !Number.isNaN(new Date(customRangeDraft.from).getTime()) &&
+    !Number.isNaN(new Date(customRangeDraft.to).getTime()) &&
+    customRangeDraft.from <= customRangeDraft.to;
 
-  const distanceItems = [
-    { label: "Клиентов", value: stats ? formatNumber(stats.distance.customers) : "—" },
-    {
-      label: "Покупок на клиента",
-      value: stats
-        ? stats.distance.purchasesPerCustomer.toLocaleString("ru-RU", { minimumFractionDigits: 1, maximumFractionDigits: 1 })
-        : "—",
-    },
-    { label: "Количество покупок", value: stats ? formatNumber(stats.distance.purchasesCount) : "—" },
-    { label: "Сумма покупок", value: stats ? formatNumber(stats.distance.totalAmount) : "—" },
-    {
-      label: "Средний чек",
-      value: stats
-        ? stats.distance.averageCheck.toLocaleString("ru-RU", { minimumFractionDigits: 1, maximumFractionDigits: 1 })
-        : "—",
-    },
-  ];
+  const applyCustomRange = React.useCallback(() => {
+    if (!canApplyCustom) return;
+    setAppliedCustom({ ...customRangeDraft });
+  }, [canApplyCustom, customRangeDraft]);
+
+  const resetCustomRange = React.useCallback(() => {
+    setCustomRangeDraft({ from: "", to: "" });
+    setAppliedCustom(null);
+  }, []);
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
       <Card>
         <CardBody style={{ display: "grid", gap: 12 }}>
-          <div style={{ fontSize: 16, fontWeight: 600 }}>Фильтры</div>
-          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-            <label style={{ display: "grid", gap: 6 }}>
-              <span>Торговая точка</span>
-              <select
-                value={selectedOutlet.value}
-                onChange={event => {
-                  const value = event.target.value;
-                  const option = outlets.find(item => item.value === value) ?? outlets[0];
-                  setSelectedOutlet(option);
-                }}
-                style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(148,163,184,0.35)", background: "rgba(15,23,42,0.6)", color: "#e2e8f0" }}
-              >
-                {outlets.map(item => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", alignItems: "center" }}>
+            <select
+              value={selectedOutlet.value}
+              onChange={event => {
+                const value = event.target.value;
+                const option = outlets.find(item => item.value === value) ?? outlets[0];
+                setSelectedOutlet(option);
+              }}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid rgba(148,163,184,0.35)",
+                background: "rgba(15,23,42,0.6)",
+                color: "#e2e8f0",
+              }}
+            >
+              {outlets.map(item => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
 
-            <label style={{ display: "grid", gap: 6 }}>
-              <span>Быстрый период</span>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {quickRanges.map(item => (
-                  <button
-                    type="button"
-                    key={item.value}
-                    onClick={() => {
-                      setRange(item);
-                      setAppliedCustom(null);
-                    }}
-                    style={{
-                      padding: "6px 14px",
-                      borderRadius: 999,
-                      border: range.value === item.value && !appliedCustom ? "1px solid transparent" : "1px solid rgba(148,163,184,0.35)",
-                      background: range.value === item.value && !appliedCustom ? "var(--brand-primary)" : "rgba(15,23,42,0.6)",
-                      color: "#e2e8f0",
-                      cursor: "pointer",
-                    }}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            </label>
-
-            <label style={{ display: "grid", gap: 6 }}>
-              <span>Произвольный интервал</span>
-              <div style={{ display: "grid", gap: 8 }}>
-                <input
-                  type="date"
-                  value={customFrom}
-                  onChange={event => setCustomFrom(event.target.value)}
-                  style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(148,163,184,0.35)", background: "rgba(15,23,42,0.6)", color: "#e2e8f0" }}
-                />
-                <input
-                  type="date"
-                  value={customTo}
-                  onChange={event => setCustomTo(event.target.value)}
-                  style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(148,163,184,0.35)", background: "rgba(15,23,42,0.6)", color: "#e2e8f0" }}
-                />
-                <Button
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {quickRanges.map(item => (
+                <button
                   type="button"
-                  variant="secondary"
+                  key={item.value}
                   onClick={() => {
-                    if (customFrom && customTo && customFrom <= customTo) {
-                      setAppliedCustom({ from: customFrom, to: customTo });
-                    }
+                    setRange(item);
+                    setAppliedCustom(null);
+                  }}
+                  style={{
+                    padding: "6px 14px",
+                    borderRadius: 999,
+                    border:
+                      range.value === item.value && !appliedCustom
+                        ? "1px solid transparent"
+                        : "1px solid rgba(148,163,184,0.35)",
+                    background:
+                      range.value === item.value && !appliedCustom
+                        ? "var(--brand-primary)"
+                        : "rgba(15,23,42,0.6)",
+                    color: "#e2e8f0",
+                    cursor: "pointer",
                   }}
                 >
-                  Применить
-                </Button>
-              </div>
-            </label>
-          </div>
-          {appliedCustom && (
-            <div style={{ fontSize: 12, opacity: 0.7 }}>
-              Выбран интервал с {appliedCustom.from} по {appliedCustom.to}. Чтобы вернуться к быстрым периодам, выберите диапазон выше.
+                  {item.label}
+                </button>
+              ))}
             </div>
-          )}
+
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 6,
+                  alignItems: "center",
+                  padding: "8px 10px",
+                  borderRadius: 10,
+                  border: "1px solid rgba(148,163,184,0.35)",
+                  background: "rgba(15,23,42,0.6)",
+                  color: "#e2e8f0",
+                  flex: 1,
+                  minWidth: 220,
+                }}
+              >
+                <input
+                  type="date"
+                  value={customRangeDraft.from}
+                  onChange={event =>
+                    setCustomRangeDraft(prev => ({
+                      ...prev,
+                      from: event.target.value,
+                      to: prev.to && event.target.value && prev.to < event.target.value ? event.target.value : prev.to,
+                    }))
+                  }
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    color: "#e2e8f0",
+                    padding: "6px 4px",
+                    flex: 1,
+                  }}
+                />
+                <span style={{ opacity: 0.6 }}>—</span>
+                <input
+                  type="date"
+                  value={customRangeDraft.to}
+                  onChange={event =>
+                    setCustomRangeDraft(prev => ({
+                      ...prev,
+                      to: event.target.value,
+                      from: prev.from && event.target.value && event.target.value < prev.from ? event.target.value : prev.from,
+                    }))
+                  }
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    color: "#e2e8f0",
+                    padding: "6px 4px",
+                    flex: 1,
+                  }}
+                />
+              </div>
+              <Button type="button" variant="secondary" onClick={applyCustomRange} disabled={!canApplyCustom || loading}>
+                Применить
+              </Button>
+              {appliedCustom && (
+                <Button type="button" variant="secondary" onClick={resetCustomRange} disabled={loading}>
+                  Сбросить
+                </Button>
+              )}
+            </div>
+          </div>
         </CardBody>
       </Card>
 
       <Card>
         <CardBody style={{ display: "grid", gap: 12 }}>
-          <div style={{ fontSize: 16, fontWeight: 600 }}>KPI «В момент возврата»</div>
+          <div style={{ fontSize: 16, fontWeight: 600 }}>В момент возврата</div>
           <KpiGrid items={summaryItems} loading={loading} />
         </CardBody>
       </Card>
 
       <Card>
         <CardBody style={{ display: "grid", gap: 12 }}>
-          <div style={{ fontSize: 16, fontWeight: 600 }}>KPI «На дистанции»</div>
+          <div style={{ fontSize: 16, fontWeight: 600 }}>На дистанции</div>
           <KpiGrid items={distanceItems} loading={loading} />
         </CardBody>
       </Card>
@@ -617,7 +745,7 @@ function StatisticsTab() {
           <div style={{ fontSize: 16, fontWeight: 600 }}>По RFM-группам</div>
           {loading ? (
             <Skeleton height={200} />
-          ) : (
+          ) : stats?.rfm.length ? (
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ textAlign: "left", fontSize: 12, opacity: 0.7 }}>
@@ -634,56 +762,68 @@ function StatisticsTab() {
                     <td style={{ padding: "10px 8px" }}>{formatNumber(row.returned)}</td>
                   </tr>
                 ))}
-                {!stats && (
-                  <tr>
-                    <td colSpan={3} style={{ padding: "10px 8px", opacity: 0.7 }}>
-                      Нет данных
-                    </td>
-                  </tr>
-                )}
               </tbody>
             </table>
+          ) : (
+            <Placeholder>Нет данных</Placeholder>
           )}
         </CardBody>
       </Card>
 
       <Card>
         <CardBody style={{ display: "grid", gap: 18 }}>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 600 }}>Возвраты и покупки</div>
-            <div style={{ fontSize: 12, opacity: 0.7 }}>Сравнение попыток возврата и успешных покупок</div>
-            {loading ? (
-              <Skeleton height={240} />
-            ) : attemptsOption && stats ? (
-              <Chart option={attemptsOption as any} height={240} />
-            ) : (
-              <Placeholder>Нет данных</Placeholder>
-            )}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 600 }}>Возвраты и покупки</div>
+              <div style={{ fontSize: 12, opacity: 0.7 }}>Попытки возврата и первые покупки</div>
+            </div>
+            <GroupChips value={timelineGroup} onChange={setTimelineGroup} />
           </div>
+          {loading ? (
+            <Skeleton height={240} />
+          ) : attemptsOption && attemptsData.length ? (
+            <Chart option={attemptsOption as any} height={240} />
+          ) : (
+            <Placeholder>Нет данных</Placeholder>
+          )}
+        </CardBody>
+      </Card>
 
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 600 }}>Вернувшиеся по RFM группам</div>
-            <div style={{ fontSize: 12, opacity: 0.7 }}>Распределение вернувшихся клиентов по сегментам</div>
-            {loading ? (
-              <Skeleton height={240} />
-            ) : rfmOption && stats ? (
-              <Chart option={rfmOption as any} height={240} />
-            ) : (
-              <Placeholder>Нет данных</Placeholder>
-            )}
+      <Card>
+        <CardBody style={{ display: "grid", gap: 18 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 600 }}>Вернувшиеся по RFM группам</div>
+              <div style={{ fontSize: 12, opacity: 0.7 }}>По дням, неделям или месяцам</div>
+            </div>
+            <GroupChips value={rfmGroup} onChange={setRfmGroup} />
           </div>
+          {loading ? (
+            <Skeleton height={240} />
+          ) : rfmOption && rfmData.length ? (
+            <Chart option={rfmOption as any} height={240} />
+          ) : (
+            <Placeholder>Нет данных</Placeholder>
+          )}
+        </CardBody>
+      </Card>
 
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 600 }}>Общая выручка</div>
-            <div style={{ fontSize: 12, opacity: 0.7 }}>Выручка всех вернувшихся vs. первые покупки</div>
-            {loading ? (
-              <Skeleton height={240} />
-            ) : revenueOption && stats ? (
-              <Chart option={revenueOption as any} height={240} />
-            ) : (
-              <Placeholder>Нет данных</Placeholder>
-            )}
+      <Card>
+        <CardBody style={{ display: "grid", gap: 18 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 600 }}>Общая выручка</div>
+              <div style={{ fontSize: 12, opacity: 0.7 }}>Выручка всех вернувшихся клиентов и первых покупок</div>
+            </div>
+            <GroupChips value={revenueGroup} onChange={setRevenueGroup} />
           </div>
+          {loading ? (
+            <Skeleton height={240} />
+          ) : revenueOption && revenueData.length ? (
+            <Chart option={revenueOption as any} height={240} />
+          ) : (
+            <Placeholder>Нет данных</Placeholder>
+          )}
         </CardBody>
       </Card>
 
@@ -717,19 +857,57 @@ function TabButton({ active, children, onClick }: { active: boolean; children: R
   );
 }
 
-function KpiGrid({ items, loading }: { items: { label: string; value: string }[]; loading: boolean }) {
+function GroupChips({ value, onChange }: { value: ChartGroup; onChange: (value: ChartGroup) => void }) {
+  const items: { value: ChartGroup; label: string }[] = [
+    { value: "day", label: "По дням" },
+    { value: "week", label: "По неделям" },
+    { value: "month", label: "По месяцам" },
+  ];
+  return (
+    <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}>
+      <span style={{ opacity: 0.75 }}>Детализация:</span>
+      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+        {items.map(item => (
+          <button
+            key={item.value}
+            type="button"
+            onClick={() => onChange(item.value)}
+            style={{
+              padding: "6px 12px",
+              borderRadius: 999,
+              border: value === item.value ? "1px solid transparent" : "1px solid rgba(148,163,184,0.35)",
+              background: value === item.value ? "var(--brand-primary)" : "rgba(15,23,42,0.6)",
+              color: "#e2e8f0",
+              cursor: "pointer",
+            }}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function KpiGrid({ items, loading }: { items: { title: string; description: string; value: string }[]; loading: boolean }) {
   if (loading) {
     return <Skeleton height={160} />;
   }
+  if (!items.length) {
+    return <Placeholder>Нет данных</Placeholder>;
+  }
   return (
-    <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
+    <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
       {items.map(item => (
         <div
-          key={item.label}
+          key={item.title}
           style={{ padding: "12px 16px", borderRadius: 12, background: "rgba(148,163,184,0.08)", display: "grid", gap: 6 }}
         >
-          <span style={{ fontSize: 12, opacity: 0.7 }}>{item.label}</span>
-          <span style={{ fontSize: 18, fontWeight: 600 }}>{item.value}</span>
+          <div style={{ display: "grid", gap: 2 }}>
+            <span style={{ fontSize: 12, opacity: 0.75 }}>{item.title}</span>
+            <span style={{ fontSize: 12, opacity: 0.6 }}>{item.description}</span>
+          </div>
+          <span style={{ fontSize: 18, fontWeight: 700 }}>{item.value}</span>
         </div>
       ))}
     </div>
@@ -746,6 +924,8 @@ const Placeholder: React.FC<{ children: React.ReactNode }> = ({ children }) => (
       placeItems: "center",
       opacity: 0.6,
       fontSize: 12,
+      padding: 16,
+      textAlign: "center",
     }}
   >
     {children}
@@ -754,4 +934,19 @@ const Placeholder: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 
 function formatNumber(value: number) {
   return Number.isFinite(value) ? value.toLocaleString("ru-RU") : "0";
+}
+
+function formatPercent(value: number) {
+  if (!Number.isFinite(value)) return "0%";
+  return `${value.toLocaleString("ru-RU", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+}
+
+function formatDecimal(value: number) {
+  if (!Number.isFinite(value)) return "0";
+  return value.toLocaleString("ru-RU", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+
+function formatCurrency(value: number) {
+  if (!Number.isFinite(value)) return "0 ₽";
+  return `${formatNumber(Math.round(value / 100))} ₽`;
 }

@@ -1667,6 +1667,8 @@ export class AnalyticsService {
       type: DashboardPeriod['type'];
       thresholdDays: number;
       giftPoints: number;
+      giftTtlDays: number;
+      giftBurnEnabled: boolean;
     };
     summary: {
       invitations: number;
@@ -1686,6 +1688,7 @@ export class AnalyticsService {
     trends: {
       attempts: Array<{ date: string; invitations: number; returns: number }>;
       revenue: Array<{ date: string; total: number; firstPurchases: number }>;
+      rfmReturns: Array<{ date: string; segment: string; returned: number }>;
     };
   }> {
     const settings = await this.prisma.merchantSettings.findUnique({
@@ -1715,137 +1718,313 @@ export class AnalyticsService {
       0,
       Math.floor(Number(autoReturn?.giftPoints ?? 0) || 0),
     );
+    const giftBurnEnabled = Boolean(
+      autoReturn?.giftBurnEnabled ??
+        (Number(autoReturn?.giftTtlDays ?? 0) || 0) > 0,
+    );
+    const giftTtlDays = giftBurnEnabled
+      ? Math.max(
+          0,
+          Math.floor(Number(autoReturn?.giftTtlDays ?? 0) || 0),
+        )
+      : 0;
 
     const from = new Date(period.from);
     const to = new Date(period.to);
     const msInDay = 24 * 60 * 60 * 1000;
-    const thresholdMs = thresholdDays * msInDay;
 
-    const receiptWhereBase: any = {
+    const refundOrderIds = new Set(
+      (
+        await this.prisma.transaction.findMany({
+          where: {
+            merchantId,
+            type: TxnType.REFUND,
+            canceledAt: null,
+            orderId: { not: null },
+            createdAt: { lte: to },
+          },
+          select: { orderId: true },
+        })
+      )
+        .map((row) => row.orderId)
+        .filter((id): id is string => Boolean(id)),
+    );
+
+    let outletCustomers: Set<string> | null = null;
+    if (outletId && outletId !== 'all') {
+      const outletReceipts = await this.prisma.receipt.findMany({
+        where: {
+          merchantId,
+          outletId,
+          createdAt: { lte: to },
+          canceledAt: null,
+        },
+        select: { customerId: true },
+      });
+      outletCustomers = new Set(
+        outletReceipts
+          .map((row) => row.customerId)
+          .filter((id): id is string => Boolean(id)),
+      );
+    }
+
+    const attemptsRaw = await this.prisma.autoReturnAttempt.findMany({
+      where: {
+        merchantId,
+        invitedAt: { gte: from, lte: to },
+        status: { not: 'CANCELED' },
+      },
+      select: {
+        id: true,
+        customerId: true,
+        invitedAt: true,
+        status: true,
+        giftPoints: true,
+        giftExpiresAt: true,
+        lastPurchaseAt: true,
+      },
+    });
+
+    type AttemptInfo = {
+      id: string;
+      customerId: string;
+      invitedAt: Date;
+      giftPoints: number;
+      expiresAt: Date | null;
+    };
+
+    const attemptsByCustomer = new Map<string, AttemptInfo>();
+    for (const attempt of attemptsRaw) {
+      if (!attempt.customerId) continue;
+      if (attempt.status === 'FAILED') continue;
+      if (outletCustomers && !outletCustomers.has(attempt.customerId)) continue;
+      const giftPointsValue = Math.max(0, Number(attempt.giftPoints ?? 0));
+      const expiresAt =
+        giftBurnEnabled && giftPointsValue > 0
+          ? attempt.giftExpiresAt
+            ? new Date(attempt.giftExpiresAt)
+            : new Date(
+                attempt.invitedAt.getTime() + giftTtlDays * msInDay,
+              )
+          : null;
+      const existing = attemptsByCustomer.get(attempt.customerId);
+      if (
+        !existing ||
+        attempt.invitedAt.getTime() < existing.invitedAt.getTime()
+      ) {
+        attemptsByCustomer.set(attempt.customerId, {
+          id: attempt.id,
+          customerId: attempt.customerId,
+          invitedAt: new Date(attempt.invitedAt),
+          giftPoints: giftPointsValue,
+          expiresAt,
+        });
+      }
+    }
+
+    const attempts = Array.from(attemptsByCustomer.values());
+    if (!attempts.length) {
+      return {
+        period: {
+          from: from.toISOString(),
+          to: to.toISOString(),
+          type: period.type,
+          thresholdDays,
+          giftPoints,
+          giftTtlDays,
+          giftBurnEnabled,
+        },
+        summary: {
+          invitations: 0,
+          returned: 0,
+          conversion: 0,
+          pointsCost: 0,
+          firstPurchaseRevenue: 0,
+        },
+        distance: {
+          customers: 0,
+          purchasesPerCustomer: 0,
+          purchasesCount: 0,
+          totalAmount: 0,
+          averageCheck: 0,
+        },
+        rfm: [],
+        trends: { attempts: [], revenue: [], rfmReturns: [] },
+      };
+    }
+
+    const customerIds = attempts.map((item) => item.customerId);
+    const statsRows =
+      customerIds.length === 0
+        ? []
+        : await this.prisma.customerStats.findMany({
+            where: { merchantId, customerId: { in: customerIds } },
+            select: { customerId: true, rfmClass: true },
+          });
+    const rfmByCustomer = new Map<string, string>();
+    for (const row of statsRows) {
+      const label =
+        typeof row.rfmClass === 'string' && row.rfmClass.trim().length
+          ? row.rfmClass.trim()
+          : 'Не рассчитано';
+      rfmByCustomer.set(row.customerId, label);
+    }
+
+    const receiptWhere: any = {
       merchantId,
+      customerId: { in: customerIds },
+      createdAt: { gte: from, lte: to },
+      canceledAt: null,
     };
     if (outletId && outletId !== 'all') {
-      receiptWhereBase.outletId = outletId;
+      receiptWhere.outletId = outletId;
     }
 
-    const receiptsInPeriod = await this.prisma.receipt.findMany({
-      where: {
-        ...receiptWhereBase,
-        createdAt: { gte: from, lte: to },
+    const receiptsRaw = await this.prisma.receipt.findMany({
+      where: receiptWhere,
+      select: {
+        id: true,
+        customerId: true,
+        createdAt: true,
+        total: true,
+        redeemApplied: true,
+        orderId: true,
       },
-      select: { customerId: true, total: true, createdAt: true },
-      orderBy: { createdAt: 'asc' },
     });
 
-    const lastReceiptBefore = await this.prisma.receipt.groupBy({
-      by: ['customerId'],
-      where: {
-        ...receiptWhereBase,
-        createdAt: { lt: from },
-      },
-      _max: { createdAt: true },
+    const receipts = receiptsRaw.filter((row) => {
+      if (!row.customerId) return false;
+      if (row.orderId && refundOrderIds.has(row.orderId)) return false;
+      return true;
     });
 
-    const eligible = new Map<
+    const receiptsByCustomer = new Map<
       string,
-      {
-        lastBefore: Date;
-        inviteDate: Date;
-        receipts: Array<{ date: Date; total: number }>;
-      }
+      Array<{
+        id: string;
+        createdAt: Date;
+        total: number;
+        redeemApplied: number;
+      }>
     >();
-
-    const cutoff = new Date(from.getTime() - thresholdMs);
-    for (const item of lastReceiptBefore) {
-      const customerId = item.customerId;
-      const last = item._max.createdAt;
-      if (!customerId || !last) continue;
-      if (last > cutoff) continue;
-      let inviteDate = new Date(last.getTime() + thresholdMs);
-      if (inviteDate < from) inviteDate = new Date(from);
-      if (inviteDate > to) continue;
-      eligible.set(customerId, { lastBefore: last, inviteDate, receipts: [] });
+    for (const receipt of receipts) {
+      const customerId = receipt.customerId as string;
+      const arr = receiptsByCustomer.get(customerId) ?? [];
+      arr.push({
+        id: receipt.id,
+        createdAt: new Date(receipt.createdAt),
+        total: Number(receipt.total ?? 0),
+        redeemApplied: Math.max(0, Number(receipt.redeemApplied ?? 0)),
+      });
+      receiptsByCustomer.set(customerId, arr);
     }
-
-    for (const receipt of receiptsInPeriod) {
-      const record = eligible.get(receipt.customerId);
-      if (!record) continue;
-      record.receipts.push({ date: receipt.createdAt, total: receipt.total });
-    }
-
-    const segments = [
-      { label: 'Недавние (<92 дней)', min: 0, max: 91 },
-      { label: 'Умеренные (92–184)', min: 92, max: 183 },
-      { label: 'Засыпающие (184–276)', min: 184, max: 275 },
-      { label: 'Спящие (276–368)', min: 276, max: 367 },
-      { label: 'Потерянные (>368)', min: 368, max: Number.POSITIVE_INFINITY },
-    ];
-
-    const segmentCounters = new Map<
-      string,
-      { invitations: number; returned: number }
-    >();
-    for (const seg of segments) {
-      segmentCounters.set(seg.label, { invitations: 0, returned: 0 });
+    for (const arr of receiptsByCustomer.values()) {
+      arr.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
     }
 
     const invitesByDay = new Map<string, number>();
     const returnsByDay = new Map<string, number>();
     const revenueByDay = new Map<string, number>();
     const firstRevenueByDay = new Map<string, number>();
+    const rfmTimeline = new Map<string, number>(); // key: `${date}|${segment}`
+    const rfmCounters = new Map<
+      string,
+      { invitations: number; returned: number }
+    >();
 
     let invitations = 0;
     let returned = 0;
+    let pointsCost = 0;
     let firstPurchaseRevenue = 0;
-    let totalPurchases = 0;
-    let totalAmount = 0;
+    let repeatCustomers = 0;
+    let purchasesAfterReturn = 0;
+    let amountAfterReturn = 0;
 
-    for (const [customerId, record] of eligible.entries()) {
-      invitations++;
-      const inviteKey = record.inviteDate.toISOString().slice(0, 10);
-      invitesByDay.set(inviteKey, (invitesByDay.get(inviteKey) ?? 0) + 1);
+    const dateKey = (value: Date) => value.toISOString().slice(0, 10);
 
-      record.receipts.sort((a, b) => a.date.getTime() - b.date.getTime());
-      const first = record.receipts[0];
-      const hasReturned = Boolean(
-        first && first.date >= record.inviteDate && first.date <= to,
-      );
+    for (const attempt of attempts) {
+      const customerId = attempt.customerId;
+      const segment = rfmByCustomer.get(customerId) ?? 'Не рассчитано';
+      if (!rfmCounters.has(segment)) {
+        rfmCounters.set(segment, { invitations: 0, returned: 0 });
+      }
+      rfmCounters.get(segment)!.invitations += 1;
 
-      const inactivityDays = Math.floor(
-        (from.getTime() - record.lastBefore.getTime()) / msInDay,
-      );
-      const segment = segments.find(
-        (seg) => inactivityDays >= seg.min && inactivityDays <= seg.max,
-      );
-      if (segment) {
-        const bucket = segmentCounters.get(segment.label)!;
-        bucket.invitations += 1;
-        if (hasReturned) bucket.returned += 1;
+      invitations += 1;
+      const inviteBucket = dateKey(attempt.invitedAt);
+      invitesByDay.set(inviteBucket, (invitesByDay.get(inviteBucket) ?? 0) + 1);
+
+      const customerReceipts =
+        receiptsByCustomer.get(customerId)?.filter(
+          (receipt) => receipt.createdAt >= attempt.invitedAt,
+        ) ?? [];
+      if (!customerReceipts.length) continue;
+
+      const giftSpentByReceipt = new Map<string, number>();
+      let availableGift = Math.max(0, attempt.giftPoints);
+      const burnActive = giftBurnEnabled && attempt.giftPoints > 0;
+      const expireAt = burnActive ? attempt.expiresAt : null;
+
+      for (const receipt of customerReceipts) {
+        let spent = 0;
+        if (
+          availableGift > 0 &&
+          (!burnActive ||
+            !expireAt ||
+            receipt.createdAt.getTime() <= expireAt.getTime())
+        ) {
+          spent = Math.min(availableGift, receipt.redeemApplied);
+          availableGift -= spent;
+        }
+        giftSpentByReceipt.set(receipt.id, spent);
+        pointsCost += spent;
       }
 
-      if (!hasReturned) {
-        continue;
+      const firstReceipt = customerReceipts[0];
+      if (!firstReceipt) continue;
+      const giftSpentFirst = giftSpentByReceipt.get(firstReceipt.id) ?? 0;
+      const isExpired =
+        burnActive &&
+        expireAt &&
+        firstReceipt.createdAt.getTime() > expireAt.getTime();
+      if (isExpired) continue;
+
+      returned += 1;
+      rfmCounters.get(segment)!.returned += 1;
+
+      const firstBucket = dateKey(firstReceipt.createdAt);
+      returnsByDay.set(firstBucket, (returnsByDay.get(firstBucket) ?? 0) + 1);
+      rfmTimeline.set(
+        `${firstBucket}|${segment}`,
+        (rfmTimeline.get(`${firstBucket}|${segment}`) ?? 0) + 1,
+      );
+
+      const firstNet = Math.max(0, firstReceipt.total - giftSpentFirst);
+      firstPurchaseRevenue += firstNet;
+      firstRevenueByDay.set(
+        firstBucket,
+        (firstRevenueByDay.get(firstBucket) ?? 0) + firstNet,
+      );
+
+      for (const receipt of customerReceipts) {
+        const spent = giftSpentByReceipt.get(receipt.id) ?? 0;
+        const net = Math.max(0, receipt.total - spent);
+        const bucket = dateKey(receipt.createdAt);
+        revenueByDay.set(bucket, (revenueByDay.get(bucket) ?? 0) + net);
       }
 
-      returned++;
-      if (first) {
-        firstPurchaseRevenue += first.total;
-        const firstKey = first.date.toISOString().slice(0, 10);
-        returnsByDay.set(firstKey, (returnsByDay.get(firstKey) ?? 0) + 1);
-        firstRevenueByDay.set(
-          firstKey,
-          (firstRevenueByDay.get(firstKey) ?? 0) + first.total,
+      const afterFirst = customerReceipts.filter(
+        (receipt) =>
+          receipt.createdAt.getTime() > firstReceipt.createdAt.getTime(),
+      );
+      if (afterFirst.length > 0) {
+        repeatCustomers += 1;
+        purchasesAfterReturn += afterFirst.length;
+        amountAfterReturn += afterFirst.reduce(
+          (sum, receipt) => sum + receipt.total,
+          0,
         );
       }
-
-      let customerAmount = 0;
-      for (const [index, item] of record.receipts.entries()) {
-        customerAmount += item.total;
-        const key = item.date.toISOString().slice(0, 10);
-        revenueByDay.set(key, (revenueByDay.get(key) ?? 0) + item.total);
-      }
-      totalAmount += customerAmount;
-      totalPurchases += record.receipts.length;
     }
 
     const daysCount = Math.max(
@@ -1862,9 +2041,9 @@ export class AnalyticsService {
       total: number;
       firstPurchases: number;
     }> = [];
-    for (let i = 0; i < daysCount; i++) {
+    for (let i = 0; i < daysCount; i += 1) {
       const current = new Date(from.getTime() + i * msInDay);
-      const key = current.toISOString().slice(0, 10);
+      const key = dateKey(current);
       attemptsTrend.push({
         date: key,
         invitations: invitesByDay.get(key) ?? 0,
@@ -1877,34 +2056,53 @@ export class AnalyticsService {
       });
     }
 
+    const rfmReturns = Array.from(rfmTimeline.entries())
+      .map(([key, count]) => {
+        const [date, ...segmentParts] = key.split('|');
+        return { date, segment: segmentParts.join('|'), returned: count ?? 0 };
+      })
+      .sort(
+        (a, b) =>
+          a.date.localeCompare(b.date) ||
+          a.segment.localeCompare(b.segment),
+      );
+
     const conversion = invitations > 0 ? (returned / invitations) * 100 : 0;
-    const purchasesPerCustomer = returned > 0 ? totalPurchases / returned : 0;
-    const averageCheck = totalPurchases > 0 ? totalAmount / totalPurchases : 0;
+    const purchasesPerCustomer =
+      returned > 0 ? purchasesAfterReturn / returned : 0;
+    const averageCheck =
+      purchasesAfterReturn > 0
+        ? Math.round(amountAfterReturn / purchasesAfterReturn)
+        : 0;
 
     const summary = {
       invitations,
       returned,
       conversion: Math.round(conversion * 10) / 10,
-      pointsCost: giftPoints * returned,
-      firstPurchaseRevenue,
+      pointsCost: Math.round(pointsCost),
+      firstPurchaseRevenue: Math.round(firstPurchaseRevenue),
     };
 
     const distance = {
-      customers: returned,
-      purchasesPerCustomer: Math.round(purchasesPerCustomer * 10) / 10,
-      purchasesCount: totalPurchases,
-      totalAmount,
-      averageCheck: Math.round(averageCheck * 10) / 10,
+      customers: repeatCustomers,
+      purchasesPerCustomer:
+        Math.round(Math.max(0, purchasesPerCustomer) * 10) / 10,
+      purchasesCount: purchasesAfterReturn,
+      totalAmount: Math.round(amountAfterReturn),
+      averageCheck,
     };
 
-    const rfm = segments.map((seg) => {
-      const bucket = segmentCounters.get(seg.label)!;
-      return {
-        segment: seg.label,
-        invitations: bucket.invitations,
-        returned: bucket.returned,
-      };
-    });
+    const rfm = Array.from(rfmCounters.entries())
+      .map(([segment, counters]) => ({
+        segment,
+        invitations: counters.invitations,
+        returned: counters.returned,
+      }))
+      .sort(
+        (a, b) =>
+          (b.invitations ?? 0) - (a.invitations ?? 0) ||
+          a.segment.localeCompare(b.segment),
+      );
 
     return {
       period: {
@@ -1913,6 +2111,8 @@ export class AnalyticsService {
         type: period.type,
         thresholdDays,
         giftPoints,
+        giftTtlDays,
+        giftBurnEnabled,
       },
       summary,
       distance,
@@ -1920,6 +2120,7 @@ export class AnalyticsService {
       trends: {
         attempts: attemptsTrend,
         revenue: revenueTrend,
+        rfmReturns,
       },
     };
   }

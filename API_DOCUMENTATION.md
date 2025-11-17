@@ -1821,6 +1821,7 @@ Response 200: объект клиента, как в GET /portal/customers/{id}
 - При включённой опции «Подарить баллы» воркер начисляет транзакцию `TxnType.CAMPAIGN`, обновляет баланс кошелька и, если активирован `EARN_LOTS_FEATURE`, создаёт `EarnLot` c `expiresAt = invitedAt + giftTtlDays`.
 - Повторная попытка запускается через `repeat.days`, если после предыдущей отправки не было чека. Каждая повторная отправка повторно начисляет подарочные баллы.
 - Push-уведомления отправляются через `PushService` (Telegram Mini App). В статусы попыток входят `PENDING`, `SENT`, `RETURNED`, `EXPIRED`, `FAILED`, `CANCELED`. Их можно использовать для аналитики и построения отчётов.
+- Аналитика портала `/portal/analytics/auto-return`: принимает `period` либо `from`+`to` и (опционально) `outletId`; отдаёт `summary{invitations,returned,conversion,pointsCost,firstPurchaseRevenue}`, `distance{customers,purchasesPerCustomer,purchasesCount,totalAmount,averageCheck}`, таблицу `rfm[]` (реальные группы из `CustomerStats.rfmClass`) и `trends{attempts[],revenue[],rfmReturns[]}`. Тренды содержат значения по датам приглашений/первых чеков/выручки, а группировку по дням/неделям/месяцам выполняет фронт.
 
 ### Поздравления с днём рождения (Birthday)
 
