@@ -2086,19 +2086,18 @@ export class AnalyticsService {
         outletId: true,
       },
     });
-    const targetReceipts = targetReceiptsRaw.filter(
-      (row) =>
-        row.customerId &&
-        (!row.orderId || !refundOrderIds.has(row.orderId as string)),
-    );
+    const targetReceipts = targetReceiptsRaw.filter((row) => {
+      const customerId = row.customerId as string | null;
+      if (!customerId) return false;
+      if (!greetingCustomers.has(customerId)) return false;
+      if (row.orderId && refundOrderIds.has(row.orderId as string)) return false;
+      return true;
+    });
     const targetCustomerIds = new Set(
       targetReceipts.map((row) => row.customerId as string),
     );
 
-    const relevantCustomers = new Set<string>([
-      ...greetingCustomers,
-      ...targetCustomerIds,
-    ]);
+    const relevantCustomers = new Set<string>(greetingCustomers);
     if (relevantCustomers.size === 0) {
       return empty;
     }
@@ -2108,7 +2107,7 @@ export class AnalyticsService {
         merchantId,
         customerId: { in: Array.from(relevantCustomers) },
         giftPoints: { gt: 0 },
-        sendDate: { lte: period.to },
+        sendDate: { gte: period.from, lte: period.to },
       },
       select: {
         customerId: true,
@@ -2118,16 +2117,8 @@ export class AnalyticsService {
       },
     });
 
-    let historyFrom = new Date(period.from);
-    if (giftSources.length > 0) {
-      const earliestGift = Math.min(
-        ...giftSources.map((item) => item.sendDate.getTime()),
-      );
-      historyFrom = new Date(
-        Math.min(historyFrom.getTime(), earliestGift || historyFrom.getTime()),
-      );
-      historyFrom.setHours(0, 0, 0, 0);
-    }
+    const historyFrom = new Date(period.from);
+    historyFrom.setHours(0, 0, 0, 0);
 
     const customerIds = Array.from(relevantCustomers);
     const receiptsForConsumptionRaw =
@@ -2152,11 +2143,13 @@ export class AnalyticsService {
             },
           });
 
-    const receiptsForConsumption = receiptsForConsumptionRaw.filter(
-      (row) =>
-        row.customerId &&
-        (!row.orderId || !refundOrderIds.has(row.orderId as string)),
-    );
+    const receiptsForConsumption = receiptsForConsumptionRaw.filter((row) => {
+      const customerId = row.customerId as string | null;
+      if (!customerId) return false;
+      if (!greetingCustomers.has(customerId)) return false;
+      if (row.orderId && refundOrderIds.has(row.orderId as string)) return false;
+      return true;
+    });
 
     type GiftLot = {
       points: number;
