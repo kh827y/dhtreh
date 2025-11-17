@@ -18,12 +18,30 @@ export interface DashboardPeriod {
 
 export type TimeGrouping = 'day' | 'week' | 'month';
 
-export interface DashboardMetrics {
-  revenue: RevenueMetrics;
-  customers: CustomerMetrics;
-  loyalty: LoyaltyMetrics;
-  campaigns: CampaignMetrics;
-  operations: OperationalMetrics;
+export interface DashboardSummary {
+  period: {
+    from: string;
+    to: string;
+    type: DashboardPeriod['type'];
+  };
+  metrics: SummaryMetrics;
+  timeline: SummaryTimelinePoint[];
+}
+
+export interface SummaryMetrics {
+  salesAmount: number;
+  averageCheck: number;
+  newCustomers: number;
+  activeCustomers: number;
+  averagePurchasesPerCustomer: number;
+  visitFrequencyDays: number | null;
+}
+
+export interface SummaryTimelinePoint {
+  date: string;
+  registrations: number;
+  salesCount: number;
+  salesAmount: number;
 }
 
 export interface RevenueMetrics {
@@ -292,18 +310,84 @@ export class AnalyticsService {
     merchantId: string,
     period: DashboardPeriod,
     timezone?: string | RussiaTimezone,
-  ): Promise<DashboardMetrics> {
+  ): Promise<DashboardSummary> {
     const tz = await this.getTimezoneInfo(merchantId, timezone);
-    const [revenue, customers, loyalty, campaigns, operations] =
+
+    const [salesAggregates, dailySales, registrationsByDay, visitFrequency] =
       await Promise.all([
-        this.getRevenueMetrics(merchantId, period, undefined, tz),
-        this.getCustomerMetrics(merchantId, period),
-        this.getLoyaltyMetrics(merchantId, period, undefined, tz),
-        this.getCampaignMetrics(merchantId, period),
-        this.getOperationalMetrics(merchantId, period, tz),
+        this.prisma.$queryRaw<
+          Array<{
+            revenue: Prisma.Decimal | number | null;
+            orders: bigint | number | null;
+            buyers: bigint | number | null;
+          }>
+        >(Prisma.sql`
+          SELECT
+            COALESCE(SUM(r."total"), 0)::numeric AS revenue,
+            COUNT(*)::bigint AS orders,
+            COUNT(DISTINCT r."customerId")::bigint AS buyers
+          FROM "Receipt" r
+          WHERE r."merchantId" = ${merchantId}
+            AND r."createdAt" >= ${period.from}
+            AND r."createdAt" <= ${period.to}
+            AND r."canceledAt" IS NULL
+            AND NOT EXISTS (
+              SELECT 1
+              FROM "Transaction" refund
+              WHERE refund."merchantId" = r."merchantId"
+                AND refund."orderId" = r."orderId"
+                AND refund."type" = 'REFUND'
+                AND refund."canceledAt" IS NULL
+            )
+        `),
+        this.getDailyRevenue(merchantId, period, 'day', tz),
+        this.getRegistrationsByDay(merchantId, period, tz),
+        this.calculateVisitFrequencyDays(merchantId, period, tz),
       ]);
 
-    return { revenue, customers, loyalty, campaigns, operations };
+    const totalSales = Math.max(
+      0,
+      Math.round(Number(salesAggregates?.[0]?.revenue ?? 0)),
+    );
+    const orders = Math.max(
+      0,
+      Math.round(Number(salesAggregates?.[0]?.orders ?? 0)),
+    );
+    const buyers = Math.max(
+      0,
+      Math.round(Number(salesAggregates?.[0]?.buyers ?? 0)),
+    );
+    const averageCheck = orders > 0 ? Math.round(totalSales / orders) : 0;
+    const averagePurchasesPerCustomer =
+      buyers > 0 ? Math.round(((orders / buyers) || 0) * 10) / 10 : 0;
+    let newCustomers = 0;
+    for (const value of registrationsByDay.values()) {
+      newCustomers += value;
+    }
+
+    const timeline = dailySales.map((item) => ({
+      date: item.date,
+      registrations: registrationsByDay.get(item.date) ?? 0,
+      salesCount: item.transactions,
+      salesAmount: item.revenue,
+    }));
+
+    return {
+      period: {
+        from: period.from.toISOString(),
+        to: period.to.toISOString(),
+        type: period.type,
+      },
+      metrics: {
+        salesAmount: totalSales,
+        averageCheck,
+        newCustomers,
+        activeCustomers: buyers,
+        averagePurchasesPerCustomer,
+        visitFrequencyDays: visitFrequency,
+      },
+      timeline,
+    };
   }
 
   /**
@@ -2694,6 +2778,83 @@ export class AnalyticsService {
     }
 
     return result;
+  }
+
+  private async getRegistrationsByDay(
+    merchantId: string,
+    period: DashboardPeriod,
+    timezone: RussiaTimezone,
+  ): Promise<Map<string, number>> {
+    const offsetInterval =
+      Prisma.sql`${timezone.utcOffsetMinutes} * interval '1 minute'`;
+    const rows = await this.prisma.$queryRaw<
+      Array<{ bucket: Date; registrations: Prisma.Decimal | bigint | number | null }>
+    >(Prisma.sql`
+      SELECT
+        date_trunc('day', w."createdAt" + ${offsetInterval}) - ${offsetInterval} AS bucket,
+        COUNT(*)::bigint AS registrations
+      FROM "Wallet" w
+      WHERE w."merchantId" = ${merchantId}
+        AND w."createdAt" >= ${period.from}
+        AND w."createdAt" <= ${period.to}
+      GROUP BY 1
+      ORDER BY 1
+    `);
+
+    const map = new Map<string, number>();
+    for (const row of rows) {
+      const label = this.formatDateLabel(new Date(row.bucket), timezone);
+      map.set(label, Math.max(0, Math.round(Number(row.registrations ?? 0))));
+    }
+    return map;
+  }
+
+  private async calculateVisitFrequencyDays(
+    merchantId: string,
+    period: DashboardPeriod,
+    timezone: RussiaTimezone,
+  ): Promise<number | null> {
+    const [row] = await this.prisma.$queryRaw<
+      Array<{ avgDays: Prisma.Decimal | number | null }>
+    >(Prisma.sql`
+      WITH purchases AS (
+        SELECT
+          r."customerId" AS customer_id,
+          (r."createdAt" AT TIME ZONE ${timezone.iana})::date AS local_date
+        FROM "Receipt" r
+        WHERE r."merchantId" = ${merchantId}
+          AND r."createdAt" >= ${period.from}
+          AND r."createdAt" <= ${period.to}
+          AND r."canceledAt" IS NULL
+          AND NOT EXISTS (
+            SELECT 1
+            FROM "Transaction" refund
+            WHERE refund."merchantId" = r."merchantId"
+              AND refund."orderId" = r."orderId"
+              AND refund."type" = 'REFUND'
+              AND refund."canceledAt" IS NULL
+          )
+      ),
+      ordered AS (
+        SELECT
+          customer_id,
+          local_date,
+          LAG(local_date) OVER (PARTITION BY customer_id ORDER BY local_date) AS prev_date
+        FROM purchases
+      ),
+      diffs AS (
+        SELECT EXTRACT(EPOCH FROM (local_date - prev_date) * interval '1 day') / 86400.0 AS diff_days
+        FROM ordered
+        WHERE prev_date IS NOT NULL
+      )
+      SELECT AVG(diff_days) AS "avgDays"
+      FROM diffs
+    `);
+
+    if (!row || row.avgDays == null) return null;
+    const days = Number(row.avgDays);
+    if (!Number.isFinite(days) || days < 0) return null;
+    return Math.round(days * 10) / 10;
   }
 
   private async getPointsSeries(

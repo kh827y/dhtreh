@@ -251,6 +251,11 @@ Merchant Portal использует отдельный JWT, выдаваемы�
 
 #### Portal proxy
 
+- `GET /portal/analytics/dashboard` — принимает `period=yesterday|day|week|month|quarter|year` либо пару `from` / `to` (ISO‑даты `YYYY-MM-DD`, границы нормализуются в таймзоне мерчанта). Возвращает:
+  - `period`: `{ from, to, type }` (ISO‑строки).
+  - `metrics`: `salesAmount`, `averageCheck`, `newCustomers`, `activeCustomers`, `averagePurchasesPerCustomer`, `visitFrequencyDays` (средний интервал между покупками в днях) — все суммы строятся по `Receipt.total`.
+  - `timeline[]`: для каждой даты (`YYYY-MM-DD` с учётом таймзоны мерчанта) поля `registrations` (новые кошельки), `salesCount` (чеков), `salesAmount` (сумма продаж). Интервалы без операций заполняются нулями.
+  - Возвраты/отмены исключены: учитываются только чеки без `canceledAt`, по которым нет активных `Transaction` c `type=REFUND` и `canceledAt IS NULL`.
 - `GET /portal/analytics/time/recency` — принимает те же query-параметры, что и основной эндпоинт, использует merchantId из сессии.
 - `GET /portal/analytics/time/activity` — параметры `period` / `from` / `to`, выдаёт данные для дашборда `/analytics/time`.
 - `GET /portal/analytics/portrait` — параметры `period` / `from` / `to` / `segmentId`, возвращает `gender[]`, `age[]`, `sexAge[]`, где `transactions` равны количеству чеков, а `revenue` и `averageCheck` строятся по `Receipt.total` (фактической сумме продажи).
