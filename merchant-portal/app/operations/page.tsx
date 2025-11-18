@@ -186,13 +186,13 @@ export default function OperationsPage() {
   const [outletFilter, setOutletFilter] = React.useState("all");
   const [typeFilter, setTypeFilter] = React.useState<"ALL" | OperationKind>("ALL");
   const [directionFilter, setDirectionFilter] = React.useState("both");
-  const [carrierFilter, setCarrierFilter] = React.useState("all");
   const [search, setSearch] = React.useState("");
   const [page, setPage] = React.useState(1);
   const [preview, setPreview] = React.useState<Operation | null>(null);
   const [items, setItems] = React.useState<Operation[]>([]);
   const [total, setTotal] = React.useState(0);
   const [hoveredRowId, setHoveredRowId] = React.useState<string | null>(null);
+  const [refundedOrderIds, setRefundedOrderIds] = React.useState<Set<string>>(new Set());
   const timezone = useTimezone();
   const dateFormatter = React.useMemo(
     () => new Intl.DateTimeFormat("ru-RU", { timeZone: timezone.iana }),
@@ -260,12 +260,6 @@ export default function OperationsPage() {
       qs.set("direction", dir);
       if (search.trim()) qs.set("receiptNumber", search.trim());
       if (typeFilter !== "ALL") qs.set("operationType", typeFilter);
-      // Переносим фильтр носителя (если нужен)
-      if (carrierFilter !== "all") {
-        const carrierMap: Record<string, string> = { phone: "PHONE", app: "APP", wallet: "WALLET", card: "CARD" };
-        const c = carrierMap[carrierFilter] || carrierFilter.toUpperCase();
-        qs.set("carrier", c);
-      }
       const pageSize = PAGE_SIZE;
       qs.set("limit", String(pageSize));
       qs.set("offset", String((page - 1) * pageSize));
@@ -275,9 +269,37 @@ export default function OperationsPage() {
       if (!res.ok) throw new Error(txt || res.statusText);
       const data = txt ? JSON.parse(txt) : { total: 0, items: [] };
       const mapped: Operation[] = Array.isArray(data.items) ? data.items.map(mapOperationFromDto) : [];
+      const directRefunds = new Set<string>();
+      for (const op of mapped) {
+        const key = (op.orderId || "").trim();
+        if (key && op.kind === "REFUND") {
+          directRefunds.add(key);
+        }
+      }
+
+      let refundIds = directRefunds;
+      if (typeFilter === "PURCHASE") {
+        const refundQs = new URLSearchParams(qs);
+        refundQs.set("operationType", "REFUND");
+        refundQs.set("offset", "0");
+        refundQs.set("limit", "200");
+        const refundRes = await fetch(`/api/operations/log?${refundQs.toString()}`, { cache: "no-store" });
+        const refundTxt = await refundRes.text();
+        if (!refundRes.ok) throw new Error(refundTxt || refundRes.statusText);
+        const refundData = refundTxt ? JSON.parse(refundTxt) : { items: [] };
+        const refundItems: Operation[] = Array.isArray(refundData.items) ? refundData.items.map(mapOperationFromDto) : [];
+        for (const op of refundItems) {
+          const key = (op.orderId || "").trim();
+          if (key && op.kind === "REFUND") {
+            refundIds.add(key);
+          }
+        }
+      }
+
       if (!aborted) {
         setItems(mapped);
         setTotal(Number(data.total || mapped.length));
+        setRefundedOrderIds(refundIds);
       }
     }
     load().catch((e) => {
@@ -285,14 +307,15 @@ export default function OperationsPage() {
       if (!aborted) {
         setItems([]);
         setTotal(0);
+        setRefundedOrderIds(new Set());
       }
     });
     return () => { aborted = true; };
-  }, [dateFrom, dateTo, typeFilter, directionFilter, outletFilter, managerFilter, carrierFilter, search, page]);
+  }, [dateFrom, dateTo, typeFilter, directionFilter, outletFilter, managerFilter, search, page]);
 
   React.useEffect(() => {
     setPage(1);
-  }, [dateFrom, dateTo, typeFilter, directionFilter, outletFilter, managerFilter, carrierFilter, search]);
+  }, [dateFrom, dateTo, typeFilter, directionFilter, outletFilter, managerFilter, search]);
 
   const pageSize = PAGE_SIZE;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -367,20 +390,11 @@ export default function OperationsPage() {
                 ))}
               </select>
             </FilterBlock>
-            <FilterBlock label="Списания и начисления">
+           <FilterBlock label="Списания и начисления">
               <select value={directionFilter} onChange={(event) => setDirectionFilter(event.target.value)} style={selectStyle}>
                 <option value="both">Списания и начисления</option>
                 <option value="earn">Только начисления</option>
                 <option value="spend">Только списания</option>
-              </select>
-            </FilterBlock>
-            <FilterBlock label="Все носители">
-              <select value={carrierFilter} onChange={(event) => setCarrierFilter(event.target.value)} style={selectStyle}>
-                <option value="all">Все носители</option>
-                <option value="card">Пластиковая карта</option>
-                <option value="app">Мобильное приложение</option>
-                <option value="wallet">Цифровая карта Wallet</option>
-                <option value="phone">Номер телефона</option>
               </select>
             </FilterBlock>
             <FilterBlock label="Поиск по номеру чека">
@@ -402,7 +416,16 @@ export default function OperationsPage() {
         <CardHeader title="Список операций" />
         <CardBody style={{ display: "grid", gap: 0 }}>
           {pageItems.map((operation) => {
-            const isCanceled = Boolean(operation.canceledAt);
+            const isRefundOperation = operation.kind === "REFUND";
+            const orderKey = (operation.orderId || "").trim();
+            const isRefundedOrigin = !isRefundOperation && Boolean(orderKey) && refundedOrderIds.has(orderKey);
+            const isCanceled = !isRefundOperation && Boolean(operation.canceledAt);
+            const statusText = isCanceled
+              ? "Операция отменена администратором"
+              : isRefundedOrigin
+                ? "Возврат оформлен"
+                : "";
+            const statusColor = isCanceled || isRefundedOrigin ? "#94a3b8" : "inherit";
             const ratingValue = operation.rating ?? 0;
             const hasOutlet = Boolean(operation.outlet?.name);
             const hasManager = Boolean(operation.manager?.name);
@@ -436,6 +459,7 @@ export default function OperationsPage() {
                 style={{
                   ...rowStyle,
                   background: isHovered ? "rgba(148,163,184,0.08)" : "transparent",
+                  opacity: isCanceled || isRefundedOrigin ? 0.55 : 1,
                   color: "inherit",
                 }}
               >
@@ -465,8 +489,8 @@ export default function OperationsPage() {
                   <div style={ratingCellStyle}>
                     <StarRating rating={ratingValue} size={18} />
                   </div>
-                  <div style={{ ...statusCellStyle, color: isCanceled ? "#f87171" : "inherit" }}>
-                    {isCanceled ? "Операция отменена администратором" : ""}
+                  <div style={{ ...statusCellStyle, color: statusColor }}>
+                    {statusText}
                   </div>
                   <div style={pointsCellStyle}>
                     <span style={cellLabelStyle}>Начислено</span>
@@ -553,14 +577,6 @@ export default function OperationsPage() {
                 }
               />
               <InfoRow label="Менеджер" value={preview.manager.name || '—'} />
-              <InfoRow
-                label="Носитель (способ предъявления)"
-                value={
-                  preview.carrier
-                    ? `${preview.carrier.name} • ${preview.carrier.code}`
-                    : '—'
-                }
-              />
               <div style={{ border: "1px solid rgba(148,163,184,0.16)", borderRadius: 14, padding: 16, display: "grid", gap: 10 }}>
                 <div style={{ fontWeight: 600 }}>Бонусные баллы</div>
                 <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>

@@ -69,6 +69,10 @@ export default function CustomerCardPage() {
   const [blockMenuOpen, setBlockMenuOpen] = React.useState(false);
   const [blockMode, setBlockMode] = React.useState<"earn" | "all">("earn");
   const [blockSubmitting, setBlockSubmitting] = React.useState(false);
+  const refundContext = React.useMemo(
+    () => buildRefundContext(customer?.transactions ?? []),
+    [customer?.transactions],
+  );
 
   // Хелпер для запросов к локальному прокси /api/customers
   async function api<T = any>(url: string, init?: RequestInit): Promise<T> {
@@ -611,32 +615,46 @@ export default function CustomerCardPage() {
                   <tbody>
                     {transactionsPageItems.map((operation, index) => {
                       const isBlockedAccrual = operation.type === "EARN" && operation.blockedAccrual;
-                      const isCanceled = Boolean(operation.canceledAt);
-                      const canCancel = !isCanceled && operation.kind !== "REFUND";
+                      const receiptKey = getReceiptKey(operation);
+                      const refundInfo = receiptKey ? refundContext.get(receiptKey) : undefined;
+                      const isRefundOperation = operation.type?.toUpperCase?.() === "REFUND";
+                      const isRefundedOrigin =
+                        !isRefundOperation && Boolean(refundInfo?.refundEvents.length);
+                      const isCanceled = !isRefundOperation && Boolean(operation.canceledAt);
+                      const canCancel =
+                        !isCanceled && !isRefundOperation && !isRefundedOrigin && operation.kind !== "REFUND";
                       const isComplimentary = operation.kind === "COMPLIMENTARY";
                       const changePrefix =
                         operation.change > 0 ? "+" : operation.change < 0 ? "−" : "";
-                      const changeColor = isCanceled
+                      const changeColor = isCanceled || isRefundedOrigin
                         ? "rgba(148,163,184,0.75)"
                         : operation.change > 0 && !isBlockedAccrual
                           ? "#4ade80"
                           : "#f87171";
-                      const detailsColor = isCanceled
+                      const detailsColor = isCanceled || isRefundedOrigin
                         ? "#94a3b8"
                         : isComplimentary
                           ? "#f472b6"
                           : "inherit";
-                    return (
-                      <tr
-                        key={operation.id}
-                        style={{
-                          ...rowStyle,
-                          opacity: isCanceled ? 0.6 : isBlockedAccrual ? 0.85 : 1,
-                          background: isComplimentary
-                            ? "rgba(244,114,182,0.08)"
-                            : rowStyle.background,
-                        }}
-                      >
+                      const baseDetails = stripAdminCanceledPrefix(operation.details);
+                      const detailsText = isRefundOperation
+                        ? formatRefundDetails(operation, refundInfo)
+                        : isCanceled
+                          ? `Отменено администратором: ${baseDetails}`
+                          : isRefundedOrigin
+                            ? `Возврат: ${operation.details}`
+                            : operation.details;
+                      return (
+                        <tr
+                          key={operation.id}
+                          style={{
+                            ...rowStyle,
+                            opacity: isCanceled || isRefundedOrigin ? 0.6 : isBlockedAccrual ? 0.85 : 1,
+                            background: isComplimentary
+                              ? "rgba(244,114,182,0.08)"
+                              : rowStyle.background,
+                          }}
+                        >
                         <td style={cellStyle}>{transactionsStartIndex + index + 1}</td>
                         <td style={cellStyle}>{formatCurrency(operation.purchaseAmount)}</td>
                         <td style={{ ...cellStyle, color: changeColor, fontWeight: 600 }}>
@@ -650,12 +668,12 @@ export default function CustomerCardPage() {
                                 <Gift size={14} />
                               </span>
                             )}
-                            <span style={{ color: detailsColor, fontWeight: isCanceled ? 600 : 500 }}>
-                              {operation.details}
+                            <span style={{ color: detailsColor, fontWeight: isCanceled || isRefundedOrigin ? 600 : 500 }}>
+                              {detailsText}
                             </span>
                           </div>
                           {operation.note && (
-                            <div style={{ fontSize: 12, opacity: isCanceled ? 0.6 : 0.75, marginTop: 4 }}>
+                            <div style={{ fontSize: 12, opacity: isCanceled || isRefundedOrigin ? 0.6 : 0.75, marginTop: 4 }}>
                               {operation.note}
                             </div>
                           )}
@@ -1065,6 +1083,66 @@ const cancelButtonStyle: React.CSSProperties = {
   cursor: "pointer",
   transition: "background 0.2s ease",
 };
+
+type RefundEvent = { datetime: string; admin: boolean };
+type RefundContext = {
+  receiptNumber: string | null;
+  purchaseDatetime: string | null;
+  refundEvents: RefundEvent[];
+};
+
+function getReceiptKey(operation: CustomerTransaction): string | null {
+  if (operation.receiptId) return operation.receiptId;
+  if (operation.receiptNumber) return `receipt:${operation.receiptNumber}`;
+  return null;
+}
+
+function buildRefundContext(transactions: CustomerTransaction[]): Map<string, RefundContext> {
+  const map = new Map<string, RefundContext>();
+  for (const tx of transactions) {
+    const key = getReceiptKey(tx);
+    if (!key) continue;
+    const txType = (tx.type || "").toString().toUpperCase();
+    const current = map.get(key) ?? {
+      receiptNumber: tx.receiptNumber ?? null,
+      purchaseDatetime: null,
+      refundEvents: [],
+    };
+    if (!current.receiptNumber && tx.receiptNumber) {
+      current.receiptNumber = tx.receiptNumber;
+    }
+    if (txType !== "REFUND" && tx.datetime) {
+      const nextDate = new Date(tx.datetime);
+      if (!Number.isNaN(nextDate.getTime())) {
+        const currentDate = current.purchaseDatetime ? new Date(current.purchaseDatetime) : null;
+        if (!currentDate || nextDate < currentDate) {
+          current.purchaseDatetime = tx.datetime;
+        }
+      }
+    }
+    if (txType === "REFUND") {
+      current.refundEvents.push({ datetime: tx.datetime, admin: tx.kind === "CANCELED" });
+    }
+    map.set(key, current);
+  }
+  return map;
+}
+
+function formatRefundDetails(operation: CustomerTransaction, context?: RefundContext): string {
+  const receiptLabel =
+    (context?.receiptNumber && context.receiptNumber.trim()) ||
+    (operation.receiptId ? operation.receiptId.slice(-6) : "") ||
+    (operation.id ? operation.id.slice(-6) : "") ||
+    "—";
+  const dateLabel = formatDateTime(context?.purchaseDatetime || operation.datetime);
+  const adminSuffix = operation.kind === "CANCELED" ? " - совершён администратором" : "";
+  return `Возврат покупки #${receiptLabel} (${dateLabel})${adminSuffix}`;
+}
+
+function stripAdminCanceledPrefix(details: string): string {
+  const value = details || "";
+  return value.replace(/^Операция отменена:\s*/i, "").replace(/^Отменено администратором:\s*/i, "").trim();
+}
 
 function formatCurrency(value?: number | null): string {
   if (value == null || Number.isNaN(Number(value))) return "—";
