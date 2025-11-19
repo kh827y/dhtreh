@@ -48,6 +48,7 @@ function normalizeTransaction(input: any): CustomerTransaction {
   return {
     id: String(input?.id ?? ""),
     type: String(input?.type ?? "UNKNOWN"),
+    orderId: toStringOrNull(input?.orderId),
     purchaseAmount: toNumber(input?.purchaseAmount),
     change: toNumber(input?.change),
     details: toStringOrNull(input?.details) ?? "Операция с баллами",
@@ -78,6 +79,8 @@ function normalizeTransaction(input: any): CustomerTransaction {
         : null,
     note: toStringOrNull(input?.note),
     kind: toStringOrNull(input?.kind),
+    earnAmount: toOptionalNumber(input?.earnAmount),
+    redeemAmount: toOptionalNumber(input?.redeemAmount),
   };
 }
 

@@ -70,10 +70,23 @@ export class OperationsLogService {
     private readonly loyalty: LoyaltyService,
   ) {}
 
+  private normalizeFlag(input: any): boolean {
+    if (typeof input === 'string') {
+      const normalized = input.trim().toLowerCase();
+      if (['false', '0', 'no', 'off'].includes(normalized)) return false;
+      if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
+    }
+    if (typeof input === 'number') {
+      return input !== 0;
+    }
+    return Boolean(input);
+  }
+
   async list(
     merchantId: string,
     filters: OperationsLogFilters,
   ): Promise<OperationsLogListDto> {
+    const allowSameReceipt = await this.isAllowSameReceipt(merchantId);
     const limit = Math.min(Math.max(filters.limit ?? 25, 1), 200);
     const offset = Math.max(filters.offset ?? 0, 0);
 
@@ -110,7 +123,11 @@ export class OperationsLogService {
               canceledBy: true,
             },
           })
-        : Promise.resolve([]),
+        : Promise.resolve(
+            [] as Prisma.ReceiptGetPayload<{
+              include: { customer: true; staff: true; outlet: true; canceledBy: true };
+            }>[],
+          ),
       includeTransactions
         ? this.prisma.transaction.findMany({
             where: transactionWhere,
@@ -131,7 +148,24 @@ export class OperationsLogService {
               },
             },
           })
-        : Promise.resolve([]),
+        : Promise.resolve(
+            [] as Prisma.TransactionGetPayload<{
+              include: {
+                customer: true;
+                staff: true;
+                outlet: true;
+                canceledBy: {
+                  select: {
+                    id: true;
+                    firstName: true;
+                    lastName: true;
+                    login: true;
+                    email: true;
+                  };
+                };
+              };
+            }>[],
+          ),
     ]);
 
     const ratingOrderIds = Array.from(
@@ -151,20 +185,86 @@ export class OperationsLogService {
         this.mapReceipt(receipt, ratings.get(receipt.orderId ?? '') ?? null),
       ),
       ...transactions
+        .filter((tx) => {
+          if (!allowSameReceipt) return true;
+          const orderId =
+            typeof tx.orderId === 'string' && tx.orderId.trim()
+              ? tx.orderId.trim()
+              : null;
+          if (
+            orderId &&
+            receipts.find((r) => r.orderId === orderId) &&
+            (tx.type === TxnType.EARN || tx.type === TxnType.REDEEM)
+          ) {
+            return false;
+          }
+          return true;
+        })
         .map((tx) =>
           this.mapTransaction(tx, ratings.get(tx.orderId ?? '') ?? null),
         )
         .filter((item): item is OperationsLogItemDto => item !== null),
     ];
 
-    items.sort(
+    let normalizedItems = items;
+    if (allowSameReceipt) {
+      const refundGrouped = new Map<
+        string,
+        {
+          earn: number;
+          redeem: number;
+          base: OperationsLogItemDto;
+          latest: string;
+        }
+      >();
+      const nonRefund: OperationsLogItemDto[] = [];
+
+      for (const item of items) {
+        if (item.kind === 'REFUND' && item.orderId) {
+          const key = item.orderId;
+          const current = refundGrouped.get(key) ?? {
+            earn: 0,
+            redeem: 0,
+            base: item,
+            latest: item.occurredAt,
+          };
+          current.earn += Math.max(0, item.earn?.amount ?? 0);
+          current.redeem += Math.max(0, item.redeem?.amount ?? 0);
+          if (
+            !current.latest ||
+            new Date(item.occurredAt).getTime() >
+              new Date(current.latest).getTime()
+          ) {
+            current.latest = item.occurredAt;
+            current.base = { ...item };
+          }
+          refundGrouped.set(key, current);
+        } else {
+          nonRefund.push(item);
+        }
+      }
+
+      const mergedRefunds = Array.from(refundGrouped.values()).map(
+        (group) => ({
+          ...group.base,
+          occurredAt: group.latest,
+          earn: { amount: group.earn, source: group.earn > 0 ? group.base.details : null },
+          redeem: { amount: group.redeem, source: group.redeem > 0 ? group.base.details : null },
+          change: group.earn - group.redeem,
+        }),
+      );
+
+      normalizedItems = [...nonRefund, ...mergedRefunds];
+    }
+
+    normalizedItems.sort(
       (a, b) =>
         new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime(),
     );
 
     return {
-      total: receiptCount + transactionCount,
-      items: items.slice(offset, offset + limit),
+      total: normalizedItems.length,
+      items: normalizedItems.slice(offset, offset + limit),
     };
   }
 
@@ -319,6 +419,12 @@ export class OperationsLogService {
           break;
         case 'ADJUST':
           andConditions.push({ type: TxnType.ADJUST, amount: { gte: 0 } });
+          break;
+        case 'PROMOCODE':
+          andConditions.push({
+            type: TxnType.EARN,
+            metadata: { path: ['source'], equals: 'PROMOCODE' },
+          });
           break;
         case 'EARN':
           andConditions.push({ type: TxnType.EARN });
@@ -509,6 +615,17 @@ export class OperationsLogService {
     let details = 'Операция с баллами';
     let kind = 'OTHER';
     let note: string | null = null;
+
+    if (source === 'PROMOCODE') {
+      details = 'Начисление по промокоду';
+      kind = 'PROMOCODE';
+      const code =
+        typeof metadata?.code === 'string' && metadata.code.trim()
+          ? metadata.code.trim()
+          : null;
+      note = code ? `Промокод ${code}` : this.extractComment(metadata);
+      return { details, kind, note, purchaseAmount };
+    }
 
     if (tx.type === TxnType.REFERRAL) {
       if (source === 'REFERRAL_ROLLBACK') {
@@ -1140,5 +1257,33 @@ export class OperationsLogService {
       };
     }
     return null;
+  }
+
+  private async isAllowSameReceipt(merchantId: string): Promise<boolean> {
+    let allowSame = true;
+    try {
+      const ms = await this.prisma.merchantSettings.findUnique({
+        where: { merchantId },
+        select: { rulesJson: true },
+      });
+      const rules =
+        ms?.rulesJson && typeof ms.rulesJson === 'object'
+          ? (ms.rulesJson as Record<string, any>)
+          : null;
+      if (rules && Object.prototype.hasOwnProperty.call(rules, 'allowSameReceipt')) {
+        allowSame = this.normalizeFlag((rules as any).allowSameReceipt);
+      } else if (
+        rules &&
+        Object.prototype.hasOwnProperty.call(rules, 'allowEarnRedeemSameReceipt')
+      ) {
+        allowSame = this.normalizeFlag((rules as any).allowEarnRedeemSameReceipt);
+      } else if (
+        rules &&
+        Object.prototype.hasOwnProperty.call(rules, 'disallowEarnRedeemSameReceipt')
+      ) {
+        allowSame = !this.normalizeFlag((rules as any).disallowEarnRedeemSameReceipt);
+      }
+    } catch {}
+    return allowSame;
   }
 }

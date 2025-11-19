@@ -843,6 +843,11 @@ export class LoyaltyService {
           orderId: null,
           outletId: null,
           staffId: null,
+          metadata: {
+            source: 'PROMOCODE',
+            promoCodeId: result.promoCode.id,
+            code: result.promoCode.code ?? null,
+          } as any,
         },
       });
 

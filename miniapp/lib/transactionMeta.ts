@@ -15,6 +15,9 @@ export type TransactionMeta = { title: string; kind: TransactionKind };
 export function getTransactionMeta(type: string, source?: string | null): TransactionMeta {
   const sourceUpper =
     typeof source === "string" && source.trim().length > 0 ? source.trim().toUpperCase() : null;
+  if (sourceUpper === "PROMOCODE") {
+    return { title: "Промокод", kind: "promo" };
+  }
   if (sourceUpper === "COMPLIMENTARY") {
     return { title: "Начислено администратором", kind: "complimentary" };
   }

@@ -22,6 +22,7 @@ export type CustomerExpiry = {
 export type CustomerTransaction = {
   id: string;
   type: string;
+  orderId?: string | null;
   purchaseAmount: number;
   change: number;
   details: string;
@@ -41,6 +42,8 @@ export type CustomerTransaction = {
   canceledBy?: { id: string; name: string | null } | null;
   note?: string | null;
   kind?: string | null;
+  earnAmount?: number | null;
+  redeemAmount?: number | null;
 };
 
 export type CustomerReview = {

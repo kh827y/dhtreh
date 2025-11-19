@@ -40,6 +40,7 @@ export type PortalCustomerExpiryDto = {
 export type PortalCustomerTransactionDto = {
   id: string;
   type: string;
+  orderId?: string | null;
   change: number;
   purchaseAmount: number;
   datetime: string;
@@ -59,6 +60,8 @@ export type PortalCustomerTransactionDto = {
   canceledBy?: { id: string; name: string | null } | null;
   note?: string | null;
   kind?: string | null;
+  earnAmount?: number | null;
+  redeemAmount?: number | null;
 };
 
 export type PortalCustomerReviewDto = {
@@ -208,6 +211,18 @@ export class PortalCustomersService {
     private readonly prisma: PrismaService,
     private readonly audiences: CustomerAudiencesService,
   ) {}
+
+  private normalizeFlag(input: any): boolean {
+    if (typeof input === 'string') {
+      const normalized = input.trim().toLowerCase();
+      if (['false', '0', 'no', 'off'].includes(normalized)) return false;
+      if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
+    }
+    if (typeof input === 'number') {
+      return input !== 0;
+    }
+    return Boolean(input);
+  }
 
   private sanitizeTags(input: unknown): string[] {
     if (!Array.isArray(input)) return [];
@@ -964,6 +979,16 @@ export class PortalCustomersService {
       return { details, kind, note, purchaseAmount };
     }
 
+    if (source === 'PROMOCODE') {
+      details = 'Баллы по промокоду';
+      kind = 'PROMOCODE';
+      if (typeof params.metadata?.code === 'string') {
+        const trimmed = params.metadata.code.trim();
+        if (trimmed) note = `Промокод ${trimmed}`;
+      }
+      return { details, kind, note, purchaseAmount };
+    }
+
     if (source === 'COMPLIMENTARY') {
       details = 'Комплиментарные баллы';
       kind = 'COMPLIMENTARY';
@@ -1017,6 +1042,39 @@ export class PortalCustomersService {
       hour: '2-digit',
       minute: '2-digit',
     }).format(date);
+  }
+
+  private async isAllowSameReceipt(merchantId: string): Promise<boolean> {
+    let allowSame = true;
+    try {
+      const settings = await this.prisma.merchantSettings.findUnique({
+        where: { merchantId },
+        select: { rulesJson: true },
+      });
+      const rules =
+        settings?.rulesJson && typeof settings.rulesJson === 'object'
+          ? (settings.rulesJson as Record<string, any>)
+          : null;
+      if (rules && Object.prototype.hasOwnProperty.call(rules, 'allowSameReceipt')) {
+        allowSame = this.normalizeFlag((rules as any).allowSameReceipt);
+      } else if (
+        rules &&
+        Object.prototype.hasOwnProperty.call(rules, 'allowEarnRedeemSameReceipt')
+      ) {
+        allowSame = this.normalizeFlag((rules as any).allowEarnRedeemSameReceipt);
+      } else if (
+        rules &&
+        Object.prototype.hasOwnProperty.call(
+          rules,
+          'disallowEarnRedeemSameReceipt',
+        )
+      ) {
+        allowSame = !this.normalizeFlag(
+          (rules as any).disallowEarnRedeemSameReceipt,
+        );
+      }
+    } catch {}
+    return allowSame;
   }
 
   private async resolveEarnRateBps(
@@ -1422,7 +1480,11 @@ export class PortalCustomersService {
       .filter((item): item is PortalCustomerExpiryDto => item !== null)
       .filter((item) => item.expiresAt !== null);
 
-    baseDto.transactions = transactions.map((tx) => {
+    const allowSameReceipt = await this.isAllowSameReceipt(merchantId);
+    const mappedTransactions: PortalCustomerTransactionDto[] = [];
+    const refundGroups = new Map<string, { items: PortalCustomerTransactionDto[] }>();
+
+    for (const tx of transactions) {
       const orderId = tx.orderId ?? null;
       const receipt = orderId ? (receiptMap.get(orderId) ?? null) : null;
       const review = orderId ? (reviewByOrderId.get(orderId) ?? null) : null;
@@ -1480,9 +1542,10 @@ export class PortalCustomersService {
         ? this.formatStaffName(tx.canceledBy)
         : null;
 
-      return {
+      const dto: PortalCustomerTransactionDto = {
         id: tx.id,
         type: tx.type,
+        orderId,
         change,
         purchaseAmount,
         datetime: tx.createdAt.toISOString(),
@@ -1520,7 +1583,189 @@ export class PortalCustomersService {
         note: descriptor.note ?? null,
         kind: descriptor.kind,
       };
-    });
+
+      if (allowSameReceipt) {
+        const isPurchaseTx =
+          orderId &&
+          (tx.type === 'EARN' || tx.type === 'REDEEM') &&
+          ['PURCHASE_EARN', 'PURCHASE_REDEEM', 'PROMOCODE'].includes(
+            descriptor.kind,
+          );
+        const hasReceipt = Boolean(orderId && receiptMap.has(orderId));
+        if (isPurchaseTx && hasReceipt) continue;
+        if (tx.type === 'REFUND' && orderId) {
+          const back = refundGroups.get(orderId) ?? { items: [] };
+          back.items.push(dto);
+          refundGroups.set(orderId, back);
+          continue;
+        }
+      }
+
+      mappedTransactions.push(dto);
+    }
+
+    if (allowSameReceipt) {
+      const purchaseEntries = receipts.map((receipt) => {
+        const orderId = receipt.orderId ?? null;
+        const review = orderId ? reviewByOrderId.get(orderId) ?? null : null;
+        const redeemApplied = Math.max(
+          0,
+          Math.floor(Number(receipt.redeemApplied ?? 0)),
+        );
+        const earnApplied = Math.max(
+          0,
+          Math.floor(Number(receipt.earnApplied ?? 0)),
+        );
+        const manager = receipt.staff
+          ? this.formatStaffName(receipt.staff)
+          : null;
+        const outletName =
+          receipt.outlet?.name ?? receipt.outlet?.code ?? null;
+
+        return {
+          id: receipt.id,
+          type: 'PURCHASE',
+          orderId,
+          change: earnApplied - redeemApplied,
+          purchaseAmount: Number(receipt.total ?? 0),
+          datetime: receipt.createdAt.toISOString(),
+          details: 'Покупка',
+          outlet: outletName,
+          rating: review?.rating ?? null,
+          receiptNumber: receipt.receiptNumber ?? null,
+          manager,
+          carrier: outletName,
+          carrierCode: receipt.outlet?.code ?? null,
+          toPay: Math.max(0, Number(receipt.total ?? 0) - redeemApplied),
+          paidByPoints: redeemApplied,
+          total: Number(receipt.total ?? 0),
+          blockedAccrual: false,
+          receiptId: receipt.id,
+          canceledAt: receipt.canceledAt
+            ? receipt.canceledAt.toISOString()
+            : null,
+          canceledBy: receipt.canceledBy
+            ? {
+                id: receipt.canceledBy.id,
+                name: this.formatStaffName(receipt.canceledBy),
+              }
+            : null,
+          note: null,
+          kind: 'PURCHASE',
+          earnAmount: earnApplied,
+          redeemAmount: redeemApplied,
+        };
+      });
+
+      const refundEntries = Array.from(refundGroups.entries()).map(
+        ([orderId, group]) => {
+          let redeem = 0;
+          let earn = 0;
+          let datetime = '';
+          let outlet = group.items.find((item) => item.outlet)?.outlet ?? null;
+          let manager =
+            group.items.find((item) => item.manager)?.manager ?? null;
+          let receiptNumber =
+            group.items.find((item) => item.receiptNumber)?.receiptNumber ??
+            null;
+          let receiptId =
+            group.items.find((item) => item.receiptId)?.receiptId ?? null;
+          let canceledAt =
+            group.items.find((item) => item.canceledAt)?.canceledAt ?? null;
+          let canceledBy =
+            group.items.find((item) => item.canceledBy)?.canceledBy ?? null;
+          let purchaseAmount =
+            group.items.find((item) => item.purchaseAmount != null)
+              ?.purchaseAmount ?? 0;
+          let rating =
+            group.items.find((item) => item.rating != null)?.rating ?? null;
+          let total =
+            group.items.find((item) => item.total != null)?.total ?? null;
+
+          for (const item of group.items) {
+            const amount = Number(item.change ?? 0);
+            if (amount > 0) redeem += amount;
+            else if (amount < 0) earn += Math.abs(amount);
+            if (item.datetime && item.datetime > datetime) {
+              datetime = item.datetime;
+            }
+            if (!outlet && item.outlet) outlet = item.outlet;
+            if (!manager && item.manager) manager = item.manager;
+            if (!receiptNumber && item.receiptNumber)
+              receiptNumber = item.receiptNumber;
+            if (!receiptId && item.receiptId) receiptId = item.receiptId;
+            if (!canceledAt && item.canceledAt) canceledAt = item.canceledAt;
+            if (!canceledBy && item.canceledBy) canceledBy = item.canceledBy;
+            if (!rating && item.rating != null) rating = item.rating;
+            if (total == null && item.total != null) total = item.total;
+            if (!purchaseAmount && item.purchaseAmount)
+              purchaseAmount = item.purchaseAmount;
+          }
+
+          const receipt = orderId ? receiptMap.get(orderId) ?? null : null;
+          if (receipt) {
+            receiptNumber = receipt.receiptNumber ?? receiptNumber;
+            receiptId = receipt.id ?? receiptId;
+            purchaseAmount =
+              purchaseAmount || Number(receipt.total ?? 0) || purchaseAmount;
+            total = total ?? Number(receipt.total ?? 0);
+            if (!outlet) outlet = receipt.outlet?.name ?? receipt.outlet?.code ?? null;
+            if (!manager) manager = receipt.staff ? this.formatStaffName(receipt.staff) : null;
+            if (!canceledAt && receipt.canceledAt)
+              canceledAt = receipt.canceledAt.toISOString();
+            if (!canceledBy && receipt.canceledBy) {
+              canceledBy = {
+                id: receipt.canceledBy.id,
+                name: this.formatStaffName(receipt.canceledBy),
+              };
+            }
+          }
+          if (!rating && orderId) {
+            rating = reviewByOrderId.get(orderId)?.rating ?? null;
+          }
+
+          const baseDetails =
+            group.items.find((item) => item.details)?.details ??
+            'Возврат покупки';
+
+          return {
+            id: group.items[0]?.id ?? `refund:${orderId || 'unknown'}`,
+            type: 'REFUND',
+            orderId,
+            change: redeem - earn,
+            purchaseAmount: purchaseAmount ?? 0,
+            datetime: datetime || new Date().toISOString(),
+            details: baseDetails,
+            outlet,
+            rating,
+            receiptNumber,
+            manager,
+            carrier: outlet,
+            carrierCode: null,
+            toPay: null,
+            paidByPoints: null,
+            total,
+            blockedAccrual: false,
+        receiptId,
+        canceledAt,
+        canceledBy,
+        note: null,
+        kind: 'REFUND',
+        earnAmount: redeem,
+        redeemAmount: earn,
+      };
+    },
+      );
+
+      mappedTransactions.push(...purchaseEntries, ...refundEntries);
+    }
+
+    mappedTransactions.sort(
+      (a, b) =>
+        new Date(b.datetime).getTime() - new Date(a.datetime).getTime(),
+    );
+
+    baseDto.transactions = mappedTransactions;
 
     baseDto.reviews = reviews.map((review) => ({
       id: review.id,

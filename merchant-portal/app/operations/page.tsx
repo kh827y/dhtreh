@@ -17,6 +17,7 @@ type OperationKind =
   | "REFERRAL_ROLLBACK"
   | "REFUND"
   | "BURN"
+  | "PROMOCODE"
   | "ADJUST"
   | "EARN"
   | "REDEEM"
@@ -64,6 +65,7 @@ const operationKindLabels: Record<OperationKind, string> = {
   REFERRAL_ROLLBACK: "Возврат реферала",
   REFUND: "Возврат покупки",
   BURN: "Сгорание баллов",
+  PROMOCODE: "Промокод",
   ADJUST: "Корректировка",
   EARN: "Начисление",
   REDEEM: "Списание",
@@ -83,6 +85,7 @@ const kindFilterOptions: Array<{ value: OperationKind; label: string }> = [
   { value: "REFERRAL", label: operationKindLabels.REFERRAL },
   { value: "REFERRAL_ROLLBACK", label: operationKindLabels.REFERRAL_ROLLBACK },
   { value: "BURN", label: operationKindLabels.BURN },
+  { value: "PROMOCODE", label: operationKindLabels.PROMOCODE },
   { value: "CAMPAIGN", label: operationKindLabels.CAMPAIGN },
 ];
 
@@ -420,6 +423,7 @@ export default function OperationsPage() {
             const orderKey = (operation.orderId || "").trim();
             const isRefundedOrigin = !isRefundOperation && Boolean(orderKey) && refundedOrderIds.has(orderKey);
             const isCanceled = !isRefundOperation && Boolean(operation.canceledAt);
+            const isPromocode = operation.kind === "PROMOCODE";
             const statusText = isCanceled
               ? "Операция отменена администратором"
               : isRefundedOrigin
@@ -504,7 +508,15 @@ export default function OperationsPage() {
                   </div>
                   <div style={summaryCellStyle}>
                     {summaryLabel && <span style={cellLabelStyle}>{summaryLabel}</span>}
-                    <span style={{ fontWeight: isPurchaseOperation && operation.total > 0 ? 600 : 400 }}>
+                    <span
+                      style={{
+                        fontWeight: isPurchaseOperation && operation.total > 0 ? 600 : 400,
+                        background: isPromocode ? "rgba(250,204,21,0.14)" : undefined,
+                        color: isPromocode ? "#854d0e" : undefined,
+                        padding: isPromocode ? "4px 10px" : undefined,
+                        borderRadius: isPromocode ? 999 : undefined,
+                      }}
+                    >
                       {summaryValue}
                     </span>
                   </div>

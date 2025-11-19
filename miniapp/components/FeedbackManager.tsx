@@ -59,6 +59,8 @@ function mapTransactions(
     reviewCreatedAt?: string | null;
     source?: string | null;
     canceledAt?: string | null;
+    earnAmount?: number | null;
+    redeemAmount?: number | null;
   }>,
 ): TransactionItem[] {
   const mapped = items
@@ -83,8 +85,47 @@ function mapTransactions(
         typeof item.canceledAt === "string" && item.canceledAt.trim().length > 0
           ? item.canceledAt.trim()
           : null,
+      earnAmount:
+        typeof item.earnAmount === "number" && Number.isFinite(item.earnAmount)
+          ? item.earnAmount
+          : null,
+      redeemAmount:
+        typeof item.redeemAmount === "number" && Number.isFinite(item.redeemAmount)
+          ? item.redeemAmount
+          : null,
     }));
-  return mapped.filter((item) => !item.canceledAt);
+  const grouped: TransactionItem[] = [];
+  const refundGroups = new Map<string, { restore: number; revoke: number; base: TransactionItem }>();
+
+  for (const item of mapped) {
+    const typeUpper = (item.type || "").toUpperCase();
+    if (typeUpper === "REFUND" && item.orderId) {
+      const key = `${item.orderId}:${item.relatedOperationAt ?? ""}`;
+      const current = refundGroups.get(key) ?? { restore: 0, revoke: 0, base: item };
+      const amt = Number(item.amount ?? 0);
+      if (amt > 0) current.restore += amt;
+      else if (amt < 0) current.revoke += Math.abs(amt);
+      if (new Date(item.createdAt).getTime() > new Date(current.base.createdAt).getTime()) {
+        current.base = item;
+      }
+      refundGroups.set(key, current);
+      continue;
+    }
+    grouped.push(item);
+  }
+
+  for (const [, group] of refundGroups) {
+    grouped.push({
+      ...group.base,
+      amount: group.restore - group.revoke,
+      earnAmount: group.restore > 0 ? group.restore : null,
+      redeemAmount: group.revoke > 0 ? group.revoke : null,
+    });
+  }
+
+  grouped.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  return grouped.filter((item) => !item.canceledAt);
 }
 
 function computeShareOptions(share: ReviewsShareSettings, activeOutletId: string | null) {

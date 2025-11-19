@@ -1039,18 +1039,20 @@ const applyServerProfile = useCallback(
         createdAt: string;
         orderId?: string | null;
         outletId?: string | null;
-        staffId?: string | null;
-        reviewId?: string | null;
-        reviewRating?: number | null;
-        reviewCreatedAt?: string | null;
-        pending?: boolean;
-        maturesAt?: string | null;
-        daysUntilMature?: number | null;
-      }>,
-    ) => {
-      const mapped = items
-        .filter((i) => i && typeof i === "object")
-        .map((i) => ({
+          staffId?: string | null;
+          reviewId?: string | null;
+          reviewRating?: number | null;
+          reviewCreatedAt?: string | null;
+          pending?: boolean;
+          maturesAt?: string | null;
+          daysUntilMature?: number | null;
+          earnAmount?: number | null;
+          redeemAmount?: number | null;
+        }>,
+      ) => {
+        const mapped = items
+          .filter((i) => i && typeof i === "object")
+          .map((i) => ({
           id: i.id,
           type: i.type,
           amount: i.amount,
@@ -1062,26 +1064,72 @@ const applyServerProfile = useCallback(
           reviewRating: typeof i.reviewRating === "number" ? i.reviewRating : null,
           reviewCreatedAt: i.reviewCreatedAt ?? null,
           pending: Boolean(i.pending),
-          maturesAt: i.maturesAt ?? null,
-          daysUntilMature: typeof i.daysUntilMature === "number" ? i.daysUntilMature : null,
-          source:
-            typeof i.source === "string" && i.source.trim().length > 0
-              ? i.source.trim()
-              : null,
-          comment:
-            typeof i.comment === "string" && i.comment.trim().length > 0
-              ? i.comment.trim()
-              : null,
-          canceledAt:
-            typeof i.canceledAt === "string" && i.canceledAt.trim().length > 0
-              ? i.canceledAt.trim()
-              : null,
-          relatedOperationAt:
-            typeof i.relatedOperationAt === "string" && i.relatedOperationAt.trim().length > 0
-              ? i.relatedOperationAt.trim()
-              : null,
-        }));
-      return mapped.filter((item) => {
+            maturesAt: i.maturesAt ?? null,
+            daysUntilMature: typeof i.daysUntilMature === "number" ? i.daysUntilMature : null,
+            source:
+              typeof i.source === "string" && i.source.trim().length > 0
+                ? i.source.trim()
+                : null,
+            comment:
+              typeof i.comment === "string" && i.comment.trim().length > 0
+                ? i.comment.trim()
+                : null,
+            canceledAt:
+              typeof i.canceledAt === "string" && i.canceledAt.trim().length > 0
+                ? i.canceledAt.trim()
+                : null,
+            relatedOperationAt:
+              typeof i.relatedOperationAt === "string" && i.relatedOperationAt.trim().length > 0
+                ? i.relatedOperationAt.trim()
+                : null,
+            earnAmount:
+              typeof i.earnAmount === "number" && Number.isFinite(i.earnAmount) ? i.earnAmount : null,
+            redeemAmount:
+              typeof i.redeemAmount === "number" && Number.isFinite(i.redeemAmount) ? i.redeemAmount : null,
+          }));
+      const grouped: TransactionItem[] = [];
+      const refundGroups = new Map<
+        string,
+        { restore: number; revoke: number; base: TransactionItem }
+      >();
+
+      for (const item of mapped) {
+        const typeUpper = (item.type || "").toUpperCase();
+        if (typeUpper === "REFUND" && item.orderId) {
+          const key = `${item.orderId}:${item.relatedOperationAt ?? ""}`;
+          const current = refundGroups.get(key) ?? {
+            restore: 0,
+            revoke: 0,
+            base: item,
+          };
+          const amt = Number(item.amount ?? 0);
+          if (amt > 0) current.restore += amt;
+          else if (amt < 0) current.revoke += Math.abs(amt);
+          if (
+            !current.base ||
+            new Date(item.createdAt).getTime() >
+              new Date(current.base.createdAt).getTime()
+          ) {
+            current.base = item;
+          }
+          refundGroups.set(key, current);
+          continue;
+        }
+        grouped.push(item);
+      }
+
+      for (const [, group] of refundGroups) {
+        grouped.push({
+          ...group.base,
+          amount: group.restore - group.revoke,
+          earnAmount: group.restore > 0 ? group.restore : null,
+          redeemAmount: group.revoke > 0 ? group.revoke : null,
+        });
+      }
+
+      grouped.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      return grouped.filter((item) => {
         if (!item.canceledAt) return true;
         const typeUpper = (item.type || "").toUpperCase();
         const sourceUpper = (item.source || "").toUpperCase();
@@ -2292,6 +2340,10 @@ const applyServerProfile = useCallback(
                   const typeUpper = String(item.type).toUpperCase();
                   const isPending = Boolean(item.pending) && (typeUpper === "EARN" || typeUpper === "REGISTRATION");
                   const isComplimentary = meta.kind === "complimentary";
+                  const earnAmount = item.earnAmount != null ? Math.max(0, Number(item.earnAmount)) : null;
+                  const redeemAmount = item.redeemAmount != null ? Math.max(0, Number(item.redeemAmount)) : null;
+                  const hasSplitAmount =
+                    (earnAmount != null && earnAmount > 0) || (redeemAmount != null && redeemAmount > 0);
                   let title: string;
                   if (isPending) {
                     title =
@@ -2347,7 +2399,24 @@ const applyServerProfile = useCallback(
                           {new Date(item.createdAt).toLocaleString('ru-RU')}
                         </div>
                       </div>
-                      <div className={styles.historyAmount}>{formatAmount(item.amount)}</div>
+                      <div className={styles.historyAmount}>
+                        {hasSplitAmount ? (
+                          <div className={styles.historyAmountSplit}>
+                            {earnAmount != null && earnAmount > 0 && (
+                              <span className={`${styles.historyPill} ${styles.historyPillPlus}`}>
+                                {formatAmount(earnAmount)}
+                              </span>
+                            )}
+                            {redeemAmount != null && redeemAmount > 0 && (
+                              <span className={`${styles.historyPill} ${styles.historyPillMinus}`}>
+                                {formatAmount(-redeemAmount)}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          formatAmount(item.amount)
+                        )}
+                      </div>
                     </li>
                   );
                 })}

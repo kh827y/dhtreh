@@ -624,6 +624,12 @@ export default function CustomerCardPage() {
                       const canCancel =
                         !isCanceled && !isRefundOperation && !isRefundedOrigin && operation.kind !== "REFUND";
                       const isComplimentary = operation.kind === "COMPLIMENTARY";
+                      const isPromocode = operation.kind === "PROMOCODE";
+                      const combinedEarn = operation.earnAmount != null ? Math.max(0, Number(operation.earnAmount)) : null;
+                      const combinedRedeem = operation.redeemAmount != null ? Math.max(0, Number(operation.redeemAmount)) : null;
+                      const hasBreakdown =
+                        (combinedEarn != null && combinedEarn > 0) ||
+                        (combinedRedeem != null && combinedRedeem > 0);
                       const changePrefix =
                         operation.change > 0 ? "+" : operation.change < 0 ? "−" : "";
                       const changeColor = isCanceled || isRefundedOrigin
@@ -631,19 +637,32 @@ export default function CustomerCardPage() {
                         : operation.change > 0 && !isBlockedAccrual
                           ? "#4ade80"
                           : "#f87171";
+                      const pillBackground = isCanceled || isRefundedOrigin
+                        ? "rgba(148,163,184,0.18)"
+                        : operation.change > 0
+                          ? "rgba(22,163,74,0.12)"
+                          : operation.change < 0
+                            ? "rgba(220,38,38,0.12)"
+                            : "rgba(148,163,184,0.12)";
                       const detailsColor = isCanceled || isRefundedOrigin
                         ? "#94a3b8"
                         : isComplimentary
                           ? "#f472b6"
-                          : "inherit";
+                          : isPromocode
+                            ? "#eab308"
+                            : "inherit";
                       const baseDetails = stripAdminCanceledPrefix(operation.details);
+                      const isCombinedPurchase =
+                        operation.kind === "PURCHASE" && (combinedEarn || combinedRedeem);
                       const detailsText = isRefundOperation
                         ? formatRefundDetails(operation, refundInfo)
                         : isCanceled
                           ? `Отменено администратором: ${baseDetails}`
                           : isRefundedOrigin
                             ? `Возврат: ${operation.details}`
-                            : operation.details;
+                            : isCombinedPurchase
+                              ? "Покупка"
+                              : operation.details;
                       return (
                         <tr
                           key={operation.id}
@@ -652,20 +671,44 @@ export default function CustomerCardPage() {
                             opacity: isCanceled || isRefundedOrigin ? 0.6 : isBlockedAccrual ? 0.85 : 1,
                             background: isComplimentary
                               ? "rgba(244,114,182,0.08)"
+                              : isPromocode
+                                ? "rgba(250,204,21,0.12)"
                               : rowStyle.background,
                           }}
                         >
                         <td style={cellStyle}>{transactionsStartIndex + index + 1}</td>
                         <td style={cellStyle}>{formatCurrency(operation.purchaseAmount)}</td>
-                        <td style={{ ...cellStyle, color: changeColor, fontWeight: 600 }}>
-                          {changePrefix}
-                          {formatPoints(Math.abs(operation.change))}
+                        <td style={{ ...cellStyle, fontWeight: 600 }}>
+                          {hasBreakdown ? (
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                              {combinedEarn != null && combinedEarn > 0 && (
+                                <span style={{ ...amountPillStyle, color: "#16a34a", background: "rgba(22,163,74,0.12)" }}>
+                                  +{formatPoints(combinedEarn)}
+                                </span>
+                              )}
+                              {combinedRedeem != null && combinedRedeem > 0 && (
+                                <span style={{ ...amountPillStyle, color: "#dc2626", background: "rgba(220,38,38,0.12)" }}>
+                                  −{formatPoints(combinedRedeem)}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span style={{ ...amountPillStyle, color: changeColor, background: pillBackground }}>
+                              {changePrefix}
+                              {formatPoints(Math.abs(operation.change))}
+                            </span>
+                          )}
                         </td>
                         <td style={{ ...cellStyle, verticalAlign: "top" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            {isComplimentary && (
-                              <span style={{ color: "#f472b6", display: "flex" }}>
-                                <Gift size={14} />
+                            {(isComplimentary || isPromocode) && (
+                              <span
+                                style={{
+                                  color: isComplimentary ? "#f472b6" : "#eab308",
+                                  display: "flex",
+                                }}
+                              >
+                                {isPromocode ? <PlusCircle size={14} /> : <Gift size={14} />}
                               </span>
                             )}
                             <span style={{ color: detailsColor, fontWeight: isCanceled || isRefundedOrigin ? 600 : 500 }}>
@@ -1045,6 +1088,16 @@ const cellStyle: React.CSSProperties = {
   fontSize: 14,
 };
 
+const amountPillStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "6px 10px",
+  borderRadius: 999,
+  border: "1px solid transparent",
+  minWidth: 0,
+};
+
 const rowStyle: React.CSSProperties = {
   borderBottom: "1px solid rgba(148,163,184,0.1)",
 };
@@ -1094,6 +1147,7 @@ type RefundContext = {
 function getReceiptKey(operation: CustomerTransaction): string | null {
   if (operation.receiptId) return operation.receiptId;
   if (operation.receiptNumber) return `receipt:${operation.receiptNumber}`;
+  if (operation.orderId) return `order:${operation.orderId}`;
   return null;
 }
 
@@ -1131,6 +1185,7 @@ function buildRefundContext(transactions: CustomerTransaction[]): Map<string, Re
 function formatRefundDetails(operation: CustomerTransaction, context?: RefundContext): string {
   const receiptLabel =
     (context?.receiptNumber && context.receiptNumber.trim()) ||
+    (operation.orderId ? operation.orderId : "") ||
     (operation.receiptId ? operation.receiptId.slice(-6) : "") ||
     (operation.id ? operation.id.slice(-6) : "") ||
     "—";

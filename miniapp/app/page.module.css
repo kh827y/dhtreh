@@ -700,8 +700,8 @@
 }
 
 .historyTone_promo {
-  background: linear-gradient(135deg, rgba(129, 140, 248, 0.22), rgba(99, 102, 241, 0.08));
-  border-left-color: #6366f1;
+  background: linear-gradient(135deg, rgba(250, 204, 21, 0.24), rgba(251, 214, 54, 0.08));
+  border-left-color: #eab308;
 }
 
 .historyTone_refund {
@@ -836,9 +836,9 @@
 }
 
 .historyIcon_promo {
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
-  color: #ffffff;
-  box-shadow: 0 12px 26px rgba(99, 102, 241, 0.32);
+  background: linear-gradient(135deg, #facc15, #eab308);
+  color: #1f1f33;
+  box-shadow: 0 12px 24px rgba(234, 179, 8, 0.32);
 }
 
 .historyIcon_refund {
@@ -898,6 +898,30 @@
   font-weight: 700;
   font-size: 15px;
   color: #1f1f33;
+}
+
+.historyAmountSplit {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.historyPill {
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.historyPillPlus {
+  background: rgba(22, 163, 74, 0.14);
+  color: #15803d;
+}
+
+.historyPillMinus {
+  background: rgba(239, 68, 68, 0.14);
+  color: #b91c1c;
 }
 
 .loadMore {

@@ -21,6 +21,8 @@ export type TransactionsResp = {
     comment?: string | null;
     canceledAt?: string | null;
     relatedOperationAt?: string | null;
+    earnAmount?: number | null;
+    redeemAmount?: number | null;
   }>;
   nextBefore?: string | null;
 };

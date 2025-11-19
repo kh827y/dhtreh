@@ -17,6 +17,8 @@ export type TransactionItem = {
   comment?: string | null;
   canceledAt?: string | null;
   relatedOperationAt?: string | null;
+  earnAmount?: number | null;
+  redeemAmount?: number | null;
 };
 
 export const REVIEW_LOOKBACK_MS = 72 * 60 * 60 * 1000;
