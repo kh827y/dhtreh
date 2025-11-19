@@ -14,8 +14,13 @@ import {
   type PromoCodeApplyResult,
 } from '../promocodes/promocodes.service';
 import { Mode, QuoteDto } from './dto';
-import { parseLevelsConfig } from './levels.util';
-import { ensureBaseTier } from './tier-defaults.util';
+import {
+  computeLevelState,
+  DEFAULT_LEVELS_METRIC,
+  DEFAULT_LEVELS_PERIOD_DAYS,
+  type LevelRule,
+} from './levels.util';
+import { ensureBaseTier, toLevelRule } from './tier-defaults.util';
 import {
   StaffMotivationEngine,
   type StaffMotivationSettingsNormalized,
@@ -2387,51 +2392,9 @@ export class LoyaltyService {
         } catch {}
         // ===== Автоповышение уровня по порогу (portal-managed tiers) =====
         try {
-          // период для расчёта прогресса
-          let periodDays = 365;
-          try {
-            const ms = await tx.merchantSettings.findUnique({
-              where: { merchantId: hold.merchantId },
-            });
-            periodDays = parseLevelsConfig(ms).periodDays || 365;
-          } catch {}
-          const since = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000);
-          // считаем прогресс по покупкам/чекам (как в levels.util):
-          // если метрика в настройках = transactions — считаем количество чеков; иначе — сумму total
-          let metric: 'earn' | 'redeem' | 'transactions' = 'earn';
-          try {
-            const ms2 = await tx.merchantSettings.findUnique({
-              where: { merchantId: hold.merchantId },
-            });
-            metric = parseLevelsConfig(ms2).metric;
-          } catch {}
-          let progress = 0;
-          if (metric === 'transactions') {
-            progress = await tx.receipt.count({
-              where: {
-                merchantId: hold.merchantId,
-                customerId: hold.customerId,
-                createdAt: { gte: since },
-              },
-            });
-          } else {
-            const agg: any = await (tx as any).receipt.aggregate({
-              _sum: { total: true },
-              where: {
-                merchantId: hold.merchantId,
-                customerId: hold.customerId,
-                createdAt: { gte: since },
-              },
-            });
-            progress = Math.max(
-              0,
-              Math.round(Number(agg?._sum?.total ?? 0)) || 0,
-            );
-          }
-          await this.promoteTierIfEligible(tx, {
+          await this.recomputeTierProgress(tx, {
             merchantId: hold.merchantId,
             customerId: hold.customerId,
-            progress,
           });
         } catch {}
         return {
@@ -2525,6 +2488,13 @@ export class LoyaltyService {
 
     const pointsToRestore = Math.round(receipt.redeemApplied * share);
     const pointsToRevoke = Math.round(receipt.earnApplied * share);
+    const refundMeta = {
+      share,
+      refundTotal,
+      refundEligibleTotal: refundEligibleTotal ?? null,
+      receiptId: receipt.id,
+    } as Prisma.JsonObject;
+    const isFullRefund = share >= 0.999;
 
     const wallet = await this.prisma.wallet.findFirst({
       where: {
@@ -2556,6 +2526,7 @@ export class LoyaltyService {
             orderId,
             outletId: receipt.outletId,
             staffId: receipt.staffId,
+            metadata: refundMeta,
           },
         });
         if (process.env.EARN_LOTS_FEATURE === '1') {
@@ -2601,6 +2572,7 @@ export class LoyaltyService {
             orderId,
             outletId: receipt.outletId,
             staffId: receipt.staffId,
+            metadata: refundMeta,
           },
         });
         if (process.env.EARN_LOTS_FEATURE === '1') {
@@ -2651,6 +2623,14 @@ export class LoyaltyService {
           share,
         });
       } catch {}
+      if (isFullRefund) {
+        try {
+          await tx.receipt.update({
+            where: { id: receipt.id },
+            data: { canceledAt: new Date() },
+          });
+        } catch {}
+      }
       await tx.eventOutbox.create({
         data: {
           merchantId,
@@ -2670,6 +2650,12 @@ export class LoyaltyService {
           } as any,
         },
       });
+      try {
+        await this.recomputeTierProgress(tx, {
+          merchantId,
+          customerId: receipt.customerId,
+        });
+      } catch {}
       const context = await this.ensureMerchantCustomerContext(
         merchantId,
         receipt.customerId,
@@ -3070,22 +3056,71 @@ export class LoyaltyService {
     return { merchantCustomerId: merchantCustomer.id };
   }
 
-  private async promoteTierIfEligible(
+  private async recomputeTierProgress(
     tx: any,
-    params: { merchantId: string; customerId: string; progress: number },
+    params: { merchantId: string; customerId: string },
   ) {
+    const periodDays = DEFAULT_LEVELS_PERIOD_DAYS;
+    const metric: 'earn' | 'redeem' | 'transactions' = DEFAULT_LEVELS_METRIC;
     const tiers = await tx.loyaltyTier.findMany({
       where: { merchantId: params.merchantId },
       orderBy: [{ thresholdAmount: 'asc' }, { createdAt: 'asc' }],
     });
+    const visibleTiers = tiers.filter((tier: any) => !tier?.isHidden);
+    if (!visibleTiers.length) return;
+    const levelRules = visibleTiers.map((tier: any) => toLevelRule(tier));
+    const { value } = await computeLevelState({
+      prisma: tx,
+      merchantId: params.merchantId,
+      customerId: params.customerId,
+      config: {
+        periodDays,
+        metric,
+        levels: levelRules,
+      },
+      includeCanceled: false,
+      includeRefunds: true,
+    });
+    await this.promoteTierIfEligible(tx, {
+      merchantId: params.merchantId,
+      customerId: params.customerId,
+      progress: value,
+      levelRules,
+      tiers: visibleTiers,
+    });
+  }
+
+  private async promoteTierIfEligible(
+    tx: any,
+    params: {
+      merchantId: string;
+      customerId: string;
+      progress: number;
+      levelRules?: LevelRule[];
+      tiers?: Array<any>;
+    },
+  ) {
+    const tiers =
+      params.tiers ??
+      (await tx.loyaltyTier.findMany({
+        where: { merchantId: params.merchantId },
+        orderBy: [{ thresholdAmount: 'asc' }, { createdAt: 'asc' }],
+      }));
     if (!tiers.length) return;
     const visibleTiers = tiers.filter((tier: any) => !tier?.isHidden);
+    if (!visibleTiers.length) return;
+    const levelRules =
+      params.levelRules ?? visibleTiers.map((tier: any) => toLevelRule(tier));
+    const targetIndex = (() => {
+      let idx = -1;
+      for (let i = 0; i < levelRules.length; i += 1) {
+        if (params.progress >= levelRules[i].threshold) idx = i;
+        else break;
+      }
+      return idx;
+    })();
     const target =
-      visibleTiers
-        .filter(
-          (tier: any) => Number(tier.thresholdAmount ?? 0) <= params.progress,
-        )
-        .pop() || null;
+      targetIndex >= 0 ? visibleTiers[targetIndex] ?? null : null;
     if (!target) return;
     const currentAssign = await tx.loyaltyTierAssignment.findFirst({
       where: {

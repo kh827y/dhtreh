@@ -123,14 +123,24 @@ export default function PromocodesPage() {
     if (levels.length || levelsLoading) return;
     setLevelsLoading(true);
     try {
-      const res = await fetch('/api/portal/settings');
+      const res = await fetch("/api/portal/loyalty/tiers");
       const data = await res.json();
       if (res.ok) {
-        const cfg = data?.rulesJson?.levelsCfg;
-        const lv: LevelOption[] = Array.isArray(cfg?.levels)
-          ? cfg.levels.map((lvl: any) => ({ id: String(lvl.name || ''), name: String(lvl.name || '') }))
-          : [];
+        const source: any[] = Array.isArray(data?.items)
+          ? data.items
+          : Array.isArray(data)
+            ? data
+            : [];
+        const lv: LevelOption[] = source
+          .filter((row) => row && !row.isHidden)
+          .map((row) => ({
+            id: String(row.id || ""),
+            name: String(row.name || ""),
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name));
         setLevels(lv);
+      } else {
+        setLevels([]);
       }
     } catch {
       setLevels([]);

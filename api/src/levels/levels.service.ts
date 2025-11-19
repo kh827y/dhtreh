@@ -3,7 +3,8 @@ import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
 import {
   computeLevelState,
-  parseLevelsConfig,
+  DEFAULT_LEVELS_METRIC,
+  DEFAULT_LEVELS_PERIOD_DAYS,
   type LevelRule,
 } from '../loyalty/levels.util';
 import { ensureBaseTier, toLevelRule } from '../loyalty/tier-defaults.util';
@@ -28,12 +29,7 @@ export class LevelsService {
     next: LevelRule | null;
     progressToNext: number;
   }> {
-    const s = await this.prisma.merchantSettings.findUnique({
-      where: { merchantId },
-    });
-    const base = parseLevelsConfig(s);
     await ensureBaseTier(this.prisma, merchantId).catch(() => null);
-    // Заменяем список уровней на портал-управляемые LoyaltyTier, если они существуют
     let tiers: any[] = [];
     try {
       tiers = await (this.prisma as any).loyaltyTier.findMany({
@@ -41,14 +37,18 @@ export class LevelsService {
         orderBy: [{ thresholdAmount: 'asc' }, { createdAt: 'asc' }],
       });
     } catch {}
-    const visibleLevels =
-      tiers.length > 0
-        ? tiers
-            .filter((tier) => !tier?.isHidden)
-            .map((tier) => toLevelRule(tier))
-        : base.levels;
-    const levels = visibleLevels.length ? visibleLevels : base.levels;
-    const cfg = { periodDays: base.periodDays, metric: base.metric, levels };
+    const visibleLevels = tiers
+      .filter((tier) => !tier?.isHidden)
+      .map((tier) => toLevelRule(tier));
+    const levels: LevelRule[] =
+      visibleLevels.length > 0
+        ? visibleLevels
+        : [{ name: 'Base', threshold: 0 }];
+    const cfg = {
+      periodDays: DEFAULT_LEVELS_PERIOD_DAYS,
+      metric: DEFAULT_LEVELS_METRIC,
+      levels,
+    };
     const mc = await (this.prisma as any).merchantCustomer?.findUnique?.({
       where: { id: merchantCustomerId },
       select: { customerId: true, merchantId: true },
@@ -77,6 +77,7 @@ export class LevelsService {
       merchantId,
       merchantCustomerId,
       config: cfg,
+      includeRefunds: true,
     });
     let effectiveCurrent = current;
     let effectiveNext = next;

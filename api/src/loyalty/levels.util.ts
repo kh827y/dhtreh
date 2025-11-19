@@ -15,6 +15,9 @@ export type LevelsConfig = {
   levels: LevelRule[];
 };
 
+export const DEFAULT_LEVELS_PERIOD_DAYS = 365;
+export const DEFAULT_LEVELS_METRIC: LevelsConfig['metric'] = 'earn';
+
 export type LevelsMetrics =
   | Pick<MetricsService, 'inc'>
   | { inc?: (metric: string, labels?: Record<string, string>) => unknown };
@@ -23,55 +26,31 @@ export type LevelsPrisma =
   | {
       transaction: {
         count: (args: any) => Promise<number>;
-        findMany: (args: any) => Promise<Array<{ amount?: number }>>;
+        findMany: (
+          args: any,
+        ) => Promise<
+          Array<{
+            amount?: number;
+            orderId?: string | null;
+            metadata?: unknown;
+            canceledAt?: Date | null;
+          }>
+        >;
       };
       receipt: {
         count: (args: any) => Promise<number>;
         findMany: (
           args: any,
-        ) => Promise<Array<{ total?: number; eligibleTotal?: number }>>;
+        ) => Promise<
+          Array<{
+            total?: number;
+            eligibleTotal?: number;
+            canceledAt?: Date | null;
+            orderId?: string;
+          }>
+        >;
       };
     };
-
-const DEFAULT_CONFIG: LevelsConfig = {
-  periodDays: 365,
-  metric: 'earn',
-  levels: [{ name: 'Base', threshold: 0 }],
-};
-
-export function parseLevelsConfig(source: unknown): LevelsConfig {
-  try {
-    const root =
-      source && typeof source === 'object'
-        ? (source as Record<string, any>)
-        : {};
-    const cfg = root?.levelsCfg ?? root?.rulesJson?.levelsCfg ?? null;
-    const rawLevels = Array.isArray(cfg?.levels)
-      ? cfg.levels
-      : DEFAULT_CONFIG.levels;
-    const normalized = rawLevels
-      .filter(
-        (item: any) =>
-          item && typeof item === 'object' && typeof item.name === 'string',
-      )
-      .map((item: any) => ({
-        name: String(item.name),
-        threshold: Math.max(0, Number(item.threshold ?? 0) || 0),
-      }));
-    const levels = normalized.length
-      ? [...normalized].sort((a, b) => a.threshold - b.threshold)
-      : DEFAULT_CONFIG.levels;
-    const periodDays =
-      Number(cfg?.periodDays ?? DEFAULT_CONFIG.periodDays) ||
-      DEFAULT_CONFIG.periodDays;
-    const metric = cfg?.metric;
-    const resolvedMetric: LevelsConfig['metric'] =
-      metric === 'redeem' || metric === 'transactions' ? metric : 'earn';
-    return { periodDays, metric: resolvedMetric, levels };
-  } catch {
-    return DEFAULT_CONFIG;
-  }
-}
 
 export async function computeLevelState(args: {
   prisma: LevelsPrisma;
@@ -81,11 +60,14 @@ export async function computeLevelState(args: {
   customerId?: string | null;
   config: LevelsConfig;
   now?: number | Date;
+  includeCanceled?: boolean;
+  includeRefunds?: boolean;
 }): Promise<{
   value: number;
   current: LevelRule;
   next: LevelRule | null;
   progressToNext: number;
+  refundsCount?: number;
 }> {
   const { prisma, metrics, merchantId, config } = args;
   const nowTs =
@@ -117,20 +99,90 @@ export async function computeLevelState(args: {
   // - Для metric === 'transactions' считаем количество чеков за период.
   // - Для остальных метрик считаем сумму покупок: используем сумму total (или eligibleTotal при необходимости).
   let value = 0;
+  let refundsCount = 0;
   if (prismaAny?.receipt) {
     if (config.metric === 'transactions') {
       value = await prismaAny.receipt.count({
-        where: { merchantId, customerId, createdAt: { gte: since } },
+        where: {
+          merchantId,
+          customerId,
+          createdAt: { gte: since },
+          ...(args.includeCanceled ? {} : { canceledAt: null }),
+        },
       });
     } else {
       const receipts = await prismaAny.receipt.findMany({
-        where: { merchantId, customerId, createdAt: { gte: since } },
-        select: { total: true, eligibleTotal: true },
+        where: {
+          merchantId,
+          customerId,
+          createdAt: { gte: since },
+          ...(args.includeCanceled ? {} : { canceledAt: null }),
+        },
+        select: { total: true, eligibleTotal: true, canceledAt: true, orderId: true },
       });
+      const receiptTotals = new Map<string, number>();
+      const canceledOrders = new Set<string>();
+      const refundedByOrder = new Map<string, number>();
       for (const r of receipts) {
         // Используем общий чек (total) как сумму покупок; при желании можно переключиться на eligibleTotal
         const sum = Number(r?.total ?? 0);
+        const orderId =
+          r?.orderId && typeof r.orderId === 'string' ? r.orderId : null;
+        if (orderId && Number.isFinite(sum)) {
+          if (!receiptTotals.has(orderId)) {
+            receiptTotals.set(orderId, Math.max(0, Math.round(sum)));
+          }
+        }
         if (Number.isFinite(sum) && sum > 0) value += Math.round(sum);
+        if (args.includeRefunds && r?.canceledAt) {
+          value -= Math.max(0, Math.round(sum));
+          refundsCount += 1;
+          if (orderId) canceledOrders.add(orderId);
+        }
+      }
+      if (args.includeRefunds && receiptTotals.size > 0 && prismaAny?.transaction) {
+        const refunds = await prismaAny.transaction.findMany({
+          where: {
+            merchantId,
+            customerId,
+            type: 'REFUND',
+            canceledAt: null,
+            createdAt: { gte: since },
+          },
+          select: { orderId: true, metadata: true },
+        });
+        for (const refund of refunds) {
+          const orderId =
+            refund?.orderId && typeof refund.orderId === 'string'
+              ? refund.orderId
+              : null;
+          if (!orderId || canceledOrders.has(orderId)) continue;
+          const total = receiptTotals.get(orderId);
+          if (total == null) continue;
+          const meta =
+            refund && typeof refund.metadata === 'object' && refund.metadata
+              ? (refund.metadata as Record<string, any>)
+              : null;
+          let share = 1;
+          const rawShare = Number((meta as any)?.share ?? (meta as any)?.refundShare);
+          if (Number.isFinite(rawShare) && rawShare > 0 && rawShare <= 1) {
+            share = rawShare;
+          } else if ((meta as any)?.refundTotal != null && total > 0) {
+            const rt = Number((meta as any).refundTotal);
+            if (Number.isFinite(rt) && rt >= 0) {
+              share = Math.min(1, Math.max(0, rt / total));
+            }
+          }
+          const refunded = Math.max(0, Math.round(total * share));
+          const alreadyRefunded = refundedByOrder.get(orderId) ?? 0;
+          const remaining = Math.max(0, total - alreadyRefunded);
+          const applied = Math.min(remaining, refunded);
+          if (applied > 0) {
+            refundedByOrder.set(orderId, alreadyRefunded + applied);
+            value -= applied;
+            refundsCount += 1;
+          }
+        }
       }
     }
   } else {
@@ -150,6 +202,7 @@ export async function computeLevelState(args: {
     }
   }
 
+  if (value < 0) value = 0;
   let current = config.levels[0];
   let next: LevelRule | null = null;
   for (const lvl of config.levels) {
@@ -164,22 +217,13 @@ export async function computeLevelState(args: {
   try {
     metrics?.inc?.('levels_evaluations_total', { metric: config.metric });
   } catch {}
-  return { value, current, next, progressToNext };
+  return { value, current, next, progressToNext, refundsCount };
 }
 
+// Legacy helper — оставлен для обратной совместимости, но bonuses не применяются.
 export function resolveLevelBenefits(
-  source: unknown,
-  levelName: string,
+  _source: unknown,
+  _levelName: string,
 ): { earnBpsBonus: number; redeemLimitBpsBonus: number } {
-  const root =
-    source && typeof source === 'object' ? (source as Record<string, any>) : {};
-  const benefits = root?.levelBenefits ?? root?.rulesJson?.levelBenefits ?? {};
-  const earnMap = benefits?.earnBpsBonusByLevel ?? {};
-  const redeemMap = benefits?.redeemLimitBpsBonusByLevel ?? {};
-  const earnBpsBonus = Math.max(0, Number(earnMap?.[levelName] ?? 0) || 0);
-  const redeemLimitBpsBonus = Math.max(
-    0,
-    Number(redeemMap?.[levelName] ?? 0) || 0,
-  );
-  return { earnBpsBonus, redeemLimitBpsBonus };
+  return { earnBpsBonus: 0, redeemLimitBpsBonus: 0 };
 }

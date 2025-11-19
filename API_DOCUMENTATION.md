@@ -570,46 +570,15 @@ Response 200 (EARN):
 
 - Дневной лимит: если у мерчанта задан `earnDailyCap`, к расчёту применяется остаток за последние 24 часа — `dailyEarnLeft = max(0, earnDailyCap - sum(recent EARN))`. Итоговое начисление равно `min(pointsByBps, dailyEarnLeft)`.
 
-## Уровни и бонусы
+## Уровни (Loyalty Tiers)
 
-Поддерживаются уровни клиента (levels) с бонусами к базовым ставкам начисления/списания.
+Уровни управляются через `LoyaltyTier` в портале (`/loyalty/mechanics/levels`). Настройки `levelsCfg/levelBenefits` более не используются.
 
-- Конфигурация хранится в `MerchantSettings.rulesJson` в виде объекта со следующей структурой:
-
-```json
-{
-  "rules": [
-    { "if": { "channelIn": ["VIRTUAL"], "weekdayIn": [1,2,3,4,5] }, "then": { "earnBps": 600 } }
-  ],
-  "levelsCfg": {
-    "periodDays": 365,
-    "metric": "earn",        // earn | redeem | transactions
-    "levels": [
-      { "name": "Base",   "threshold": 0 },
-      { "name": "Silver", "threshold": 500 },
-      { "name": "Gold",   "threshold": 1000 }
-    ]
-  },
-  "levelBenefits": {
-    "earnBpsBonusByLevel": { "Base": 0, "Silver": 200, "Gold": 400 },
-    "redeemLimitBpsBonusByLevel": { "Base": 0, "Silver": 1000, "Gold": 2000 }
-  }
-}
-```
-
-Пояснения:
-
-- `levelsCfg.metric` и `periodDays` определяют, как считается текущий уровень:
-  - `earn` — сумма начислений за период.
-  - `redeem` — сумма списаний за период (по модулю).
-  - `transactions` — количество операций за период.
-- Текущий уровень определяется максимальным `threshold`, не превышающим накопленное значение.
-- Бонусы уровня добавляются к базовым ставкам мерчанта/правил: `earnBps += earnBpsBonusByLevel[current]`, `redeemLimitBps += redeemLimitBpsBonusByLevel[current]`.
-- При первом обращении к уровням создаётся базовый `LoyaltyTier` (`Base`), если он отсутствует. Параметры: `threshold=0`, `earnRateBps=300`, `redeemRateBps=5000`, `minPaymentAmount=0`, `isInitial=true`, `isHidden=false`.
-- Скрытые уровни (`isHidden=true`) не учитываются в автоматическом повышении и не отображаются в мини‑аппе до ручного назначения (админом или промокодом).
-- На странице `/loyalty/mechanics/levels` добавлена кнопка «Состав», которая запрашивает `GET /portal/loyalty/tiers/{tierId}/customers` и показывает клиентов уровня.
-
-Конфигурацию можно редактировать в админке на странице настроек мерчанта (редакторы `Levels config` и `Level benefits`).
+- Расчёт прогресса: сумма чеков за 365 дней (`metric=earn`). Если уровни отсутствуют, автоматически создаётся `Base` (`earnRateBps=300`, `redeemRateBps=5000`, `minPaymentAmount=0`, `isInitial=true`).
+- Скрытые уровни (`isHidden`) не участвуют в авто‑повышении и не отображаются в мини‑аппе до ручного назначения (админ/промокод).
+- Каталог уровней для миниаппы: `GET /loyalty/mechanics/levels/:merchantId` — отдаёт только видимые уровни.
+- Прогресс/текущий уровень: `GET /levels/:merchantId/:customerId`.
+- Возвраты/отмены уменьшают прогресс: полный возврат помечает чек отменённым, частичный использует `TxnType.REFUND.share`/`refundTotal` для пропорционального вычитания; при падении ниже порога уровень понижается.
 
 ### Получение текущего уровня клиента
 
@@ -629,7 +598,7 @@ Response 200:
 }
 ```
 
-Примечание: бонусы уровня автоматически применяются при расчёте `POST /loyalty/quote`.
+Примечание: ставки начисления/списания берутся из назначенного `LoyaltyTier` (или стартового).
 
 ### Состав уровня
 
@@ -656,47 +625,10 @@ Response 200:
 
 Список возвращает только активные назначения (без `expiresAt`). В портале используется в модальном окне «Состав».
 
-### Примеры конфигурации уровней
+### Примеры использования уровней
 
-1) Базовая трёхуровневая схема
-
-```json
-{
-  "levelsCfg": {
-    "periodDays": 365,
-    "metric": "earn",
-    "levels": [
-      { "name": "Base",   "threshold": 0 },
-      { "name": "Silver", "threshold": 500 },
-      { "name": "Gold",   "threshold": 1000 }
-    ]
-  },
-  "levelBenefits": {
-    "earnBpsBonusByLevel": { "Base": 0, "Silver": 200, "Gold": 400 },
-    "redeemLimitBpsBonusByLevel": { "Base": 0, "Silver": 1000, "Gold": 2000 }
-  }
-}
-```
-
-2) По количеству транзакций за 90 дней
-
-```json
-{
-  "levelsCfg": {
-    "periodDays": 90,
-    "metric": "transactions",
-    "levels": [
-      { "name": "New",     "threshold": 0 },
-      { "name": "Regular", "threshold": 5 },
-      { "name": "VIP",     "threshold": 15 }
-    ]
-  },
-  "levelBenefits": {
-    "earnBpsBonusByLevel": { "New": 0, "Regular": 100, "VIP": 300 },
-    "redeemLimitBpsBonusByLevel": { "New": 0, "Regular": 500, "VIP": 2000 }
-  }
-}
-```
+- Список уровней в портале: `GET /portal/loyalty/tiers` возвращает `thresholdAmount`, ставки `earnRateBps/redeemRateBps`, флаг `isHidden`, состав (`/portal/loyalty/tiers/{tierId}/customers`).
+- Клиентский прогресс: `GET /levels/{merchantId}/{customerId}` — сумма чеков за 365 дней против `thresholdAmount`.
 
 ## TTL/Сгорание баллов
 

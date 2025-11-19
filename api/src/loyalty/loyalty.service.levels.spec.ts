@@ -20,22 +20,7 @@ function mkPrisma(overrides: any = {}) {
       findUnique: jest.fn(async () => ({
         merchantId: 'M1',
         updatedAt: new Date(),
-        // Levels config: Silver at 500, Gold at 1000; metric by EARN sum
-        rulesJson: {
-          levelsCfg: {
-            periodDays: 365,
-            metric: 'earn',
-            levels: [
-              { name: 'Base', threshold: 0 },
-              { name: 'Silver', threshold: 500 },
-              { name: 'Gold', threshold: 1000 },
-            ],
-          },
-          levelBenefits: {
-            earnBpsBonusByLevel: { Base: 0, Silver: 200, Gold: 400 },
-            redeemLimitBpsBonusByLevel: { Base: 0, Silver: 0, Gold: 0 },
-          },
-        },
+        rulesJson: {},
       })),
     },
     transaction: {
@@ -73,6 +58,11 @@ function mkPrisma(overrides: any = {}) {
       groupBy: jest.fn(async () => []),
       create: jest.fn(async () => ({})),
       update: jest.fn(async () => ({})),
+    },
+    receipt: {
+      count: jest.fn(async () => 0),
+      findMany: jest.fn(async () => []),
+      aggregate: jest.fn(async () => ({ _sum: { total: 0 } })),
     },
     hold: {
       findUnique: jest.fn(async () => null),
@@ -168,37 +158,16 @@ describe('LoyaltyService.quote with level benefits (Wave 2)', () => {
       undefined,
     );
 
-    // Base earnBps=500 (default) + Silver bonus 200 = 700 bps -> 7% of 1000 = 70 points
+    // earnRateBps берётся из назначенного tier (700 bps) -> 7% от 1000 = 70 баллов
     expect(res.pointsToEarn).toBe(70);
     expect(res.canEarn).toBe(true);
   });
 
-  it('increases redeem cap with redeemLimitBps bonus by current level', async () => {
+  it('uses redeemLimitBps from loyalty tier for cap', async () => {
     const prisma = mkPrisma({
-      merchantSettings: {
-        findUnique: jest.fn(async () => ({
-          merchantId: 'M1',
-          updatedAt: new Date(),
-          rulesJson: {
-            levelsCfg: {
-              periodDays: 365,
-              metric: 'earn',
-              levels: [
-                { name: 'Base', threshold: 0 },
-                { name: 'Silver', threshold: 500 },
-                { name: 'Gold', threshold: 1000 },
-              ],
-            },
-            levelBenefits: {
-              earnBpsBonusByLevel: { Base: 0, Silver: 0, Gold: 0 },
-              redeemLimitBpsBonusByLevel: { Base: 0, Silver: 1000, Gold: 2000 },
-            },
-          },
-        })),
-      },
       transaction: {
         count: jest.fn(async () => 0),
-        // ensure Silver level (600 earned)
+        // ensure Silver level (600 earned) for legacy path
         findMany: jest.fn(async () => [{ amount: 300 }, { amount: 300 }]),
       },
       wallet: {
@@ -238,44 +207,44 @@ describe('LoyaltyService.quote with level benefits (Wave 2)', () => {
 });
 
 describe('LevelsService.getLevel', () => {
-  it('uses shared helper to compute progress by transactions metric', async () => {
+  it('computes progress by receipts sum using portal tiers', async () => {
     const prisma = mkPrisma({
-      merchantSettings: {
-        findUnique: jest.fn(async () => ({
-          merchantId: 'M1',
-          rulesJson: {
-            levelsCfg: {
-              metric: 'transactions',
-              periodDays: 30,
-              levels: [
-                { name: 'Base', threshold: 0 },
-                { name: 'Fan', threshold: 5 },
-              ],
-            },
-          },
-        })),
+      loyaltyTier: {
+        findMany: jest.fn(async () => [
+          { id: 'tier-base', name: 'Base', thresholdAmount: 0, isHidden: false },
+          { id: 'tier-silver', name: 'Silver', thresholdAmount: 500, isHidden: false },
+        ]),
       },
-      transaction: {
-        count: jest.fn(async () => 3),
-        findMany: jest.fn(async () => []),
+      receipt: {
+        findMany: jest.fn(async () => [
+          { total: 200 },
+          { total: 100 },
+        ]),
+        count: jest.fn(async () => 0),
       },
     });
     const svc = new LevelsService(prisma, metrics);
 
     const res = await svc.getLevel('M1', 'C1');
 
-    expect(prisma.transaction.count).toHaveBeenCalled();
+    expect(prisma.receipt.findMany).toHaveBeenCalled();
     expect(res.current.name).toBe('Base');
-    expect(res.next?.name).toBe('Fan');
-    expect(res.progressToNext).toBe(2);
-    expect(res.metric).toBe('transactions');
+    expect(res.next?.name).toBe('Silver');
+    expect(res.progressToNext).toBe(200);
+    expect(res.metric).toBe('earn');
   });
 
-  it('returns top level when threshold reached via earn sum', async () => {
+  it('returns top visible level when threshold reached', async () => {
     const prisma = mkPrisma({
-      transaction: {
+      loyaltyTier: {
+        findMany: jest.fn(async () => [
+          { id: 'tier-base', name: 'Base', thresholdAmount: 0, isHidden: false },
+          { id: 'tier-gold', name: 'Gold', thresholdAmount: 1000, isHidden: false },
+        ]),
+      },
+      receipt: {
+        findMany: jest.fn(async () => [{ total: 600 }, { total: 500 }]),
         count: jest.fn(async () => 0),
-        findMany: jest.fn(async () => [{ amount: 600 }, { amount: 500 }]),
       },
     });
     const svc = new LevelsService(prisma, metrics);
