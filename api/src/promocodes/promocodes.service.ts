@@ -201,7 +201,7 @@ export class PromoCodesService {
         where: {
           merchantId,
           activeUntil: { lt: now },
-          status: { in: [PromoCodeStatus.ACTIVE, PromoCodeStatus.PAUSED] },
+          status: PromoCodeStatus.ACTIVE,
         },
         data: {
           status: PromoCodeStatus.ARCHIVED,
@@ -212,11 +212,7 @@ export class PromoCodesService {
     if (status) {
       if (status === PromoCodeStatus.ARCHIVED) {
         where.status = {
-          in: [
-            PromoCodeStatus.ARCHIVED,
-            PromoCodeStatus.EXPIRED,
-            PromoCodeStatus.PAUSED,
-          ],
+          in: [PromoCodeStatus.ARCHIVED, PromoCodeStatus.EXPIRED],
         } as any;
       } else {
         where.status = status;
@@ -320,7 +316,6 @@ export class PromoCodesService {
       const archivedLike =
         existing.status === PromoCodeStatus.ARCHIVED ||
         existing.status === PromoCodeStatus.EXPIRED ||
-        existing.status === PromoCodeStatus.PAUSED ||
         expired;
       if (archivedLike || overwrite) {
         const updated = await this.prisma.promoCode.update({
