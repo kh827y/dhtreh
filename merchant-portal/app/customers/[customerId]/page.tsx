@@ -15,6 +15,88 @@ import { CustomerFormModal, type CustomerFormPayload } from "../customer-form-mo
 
 const { Edit3, PlusCircle, MinusCircle, Gift, X, XCircle, ChevronLeft, ChevronRight } = Icons;
 
+const CUSTOMER_HISTORY_ICONS: Record<string, React.ReactNode> = {
+  campaign: (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path
+        d="M10 2.5L11.9021 7.17297L16.9021 7.52786L12.9511 10.827L14.1803 15.7221L10 13.0153L5.81966 15.7221L7.04894 10.827L3.09789 7.52786L8.09789 7.17297L10 2.5Z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+    </svg>
+  ),
+  promo: (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M15 6C15 6.55228 14.5523 7 14 7C13.4477 7 13 6.55228 13 6L3 6L3 7.99947C4.24101 8.93039 5 10.3995 5 12C5 13.6005 4.24101 15.0696 3 16.0005L3 18L13 18C13 17.4477 13.4477 17 14 17C14.5523 17 15 17.4477 15 18L21 18L21 16.0005C19.759 15.0696 19 13.6005 19 12C19 10.3995 19.759 8.93039 21 7.99947L21 6L15 6ZM23 18C23 19.1046 22.1046 20 21 20L3 20C1.89543 20 1 19.1046 1 18L1 14.8881L1.49927 14.5993C2.42113 14.066 3 13.084 3 12C3 10.916 2.42113 9.934 1.49927 9.40073L1 9.11192L1 6C1 4.89543 1.89543 4 3 4L21 4C22.1046 4 23 4.89543 23 6L23 9.11192L22.5007 9.40073C21.5789 9.934 21 10.916 21 12C21 13.084 21.5789 14.066 22.5007 14.5993L23 14.8881L23 18ZM14 16C13.4477 16 13 15.5523 13 15C13 14.4477 13.4477 14 14 14C14.5523 14 15 14.4477 15 15C15 15.5523 14.5523 16 14 16ZM14 13C13.4477 13 13 12.5523 13 12C13 11.4477 13.4477 11 14 11C14.5523 11 15 11.4477 15 12C15 12.5523 14.5523 13 14 13ZM14 10C13.4477 10 13 9.55228 13 9C13 8.44772 13.4477 8 14 8C14.5523 8 15 8.44772 15 9C15 9.55228 14.5523 10 14 10Z"
+      />
+    </svg>
+  ),
+  refund: (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <path
+        d="M21 12C21 16.9706 16.9706 21 12 21C9.69494 21 7.59227 20.1334 6 18.7083L3 16M3 12C3 7.02944 7.02944 3 12 3C14.3051 3 16.4077 3.86656 18 5.29168L21 8M3 21V16M3 16H8M21 3V8M21 8H16"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  ),
+  referral: (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <circle cx="10" cy="7" r="3" stroke="currentColor" strokeWidth="1.6" />
+      <path
+        d="M4.5 16C4.8 13 7 12 10 12C13 12 15.2 13 15.5 16"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  ),
+  burn: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M18.122 17.645a7.185 7.185 0 0 1-2.656 2.495 7.06 7.06 0 0 1-3.52.853 6.617 6.617 0 0 1-3.306-.718 6.73 6.73 0 0 1-2.54-2.266c-2.672-4.57.287-8.846.887-9.668A4.448 4.448 0 0 0 8.07 6.31 4.49 4.49 0 0 0 7.997 4c1.284.965 6.43 3.258 5.525 10.631 1.496-1.136 2.7-3.046 2.846-6.216 1.43 1.061 3.985 5.462 1.754 9.23Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  ),
+  complimentary: (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="18"
+      height="18"
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M3 2.5a2.5 2.5 0 0 1 5 0 2.5 2.5 0 0 1 5 0v.006c0 .07 0 .27-.038.494H15a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1v7.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 14.5V7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h2.038A2.968 2.968 0 0 1 3 2.506V2.5zm1.068.5H7v-.5a1.5 1.5 0 1 0-3 0c0 .085.002.274.045.43a.522.522 0 0 0 .023.07zM9 3h2.932a.56.56 0 0 0 .023-.07c.043-.156.045-.345.045-.43a1.5 1.5 0 0 0-3 0V3zM1 4v2h6V4H1zm8 0v2h6V4H9zm5 3H9v8h4.5a.5.5 0 0 0 .5-.5V7zm-7 8V7H2v7.5a.5.5 0 0 0 .5.5H7z" />
+    </svg>
+  ),
+};
+
 type OutletOption = {
   id: string;
   name: string;
@@ -625,6 +707,10 @@ export default function CustomerCardPage() {
                         !isCanceled && !isRefundOperation && !isRefundedOrigin && operation.kind !== "REFUND";
                       const isComplimentary = operation.kind === "COMPLIMENTARY";
                       const isPromocode = operation.kind === "PROMOCODE";
+                      const isCampaign = operation.kind === "CAMPAIGN";
+                      const isBurn = operation.kind === "BURN";
+                      const isReferral = operation.kind === "REFERRAL";
+                      const isReferralRollback = operation.kind === "REFERRAL_ROLLBACK";
                       const combinedEarn = operation.earnAmount != null ? Math.max(0, Number(operation.earnAmount)) : null;
                       const combinedRedeem = operation.redeemAmount != null ? Math.max(0, Number(operation.redeemAmount)) : null;
                       const hasBreakdown =
@@ -632,24 +718,27 @@ export default function CustomerCardPage() {
                         (combinedRedeem != null && combinedRedeem > 0);
                       const changePrefix =
                         operation.change > 0 ? "+" : operation.change < 0 ? "−" : "";
-                      const changeColor = isCanceled || isRefundedOrigin
-                        ? "rgba(148,163,184,0.75)"
+                      const isGrayPoints = isCanceled || isRefundedOrigin;
+                      const changeColor = isGrayPoints
+                        ? "rgba(148,163,184,0.9)"
                         : operation.change > 0 && !isBlockedAccrual
                           ? "#4ade80"
-                          : "#f87171";
-                      const pillBackground = isCanceled || isRefundedOrigin
-                        ? "rgba(148,163,184,0.18)"
+                          : operation.change < 0
+                            ? "#f97373"
+                            : "rgba(148,163,184,0.9)";
+                      const pillBackground = isGrayPoints
+                        ? "rgba(148,163,184,0.16)"
                         : operation.change > 0
                           ? "rgba(22,163,74,0.12)"
                           : operation.change < 0
-                            ? "rgba(220,38,38,0.12)"
+                            ? "rgba(248,113,113,0.12)"
                             : "rgba(148,163,184,0.12)";
                       const detailsColor = isCanceled || isRefundedOrigin
                         ? "#94a3b8"
                         : isComplimentary
                           ? "#f472b6"
                           : isPromocode
-                            ? "#eab308"
+                            ? "#facc15"
                             : "inherit";
                       const baseDetails = stripAdminCanceledPrefix(operation.details);
                       const isCombinedPurchase =
@@ -663,6 +752,93 @@ export default function CustomerCardPage() {
                             : isCombinedPurchase
                               ? "Покупка"
                               : operation.details;
+                      const isReferralLike = isReferral || isReferralRollback;
+                      const isRefundAdmin = isRefundOperation && operation.kind === "CANCELED";
+                      let headerText: string | null = null;
+                      let headerColor = detailsColor;
+                      let subtitleMain: string | null = null;
+                      let subtitleExtra: string | null = null;
+
+                      if (isPromocode) {
+                        headerText = "Баллы по промокоду";
+                        headerColor = isCanceled || isRefundedOrigin ? "#94a3b8" : "#facc15";
+                        if (operation.note) {
+                          subtitleMain = operation.note;
+                        }
+                      } else if (isCampaign) {
+                        headerText = "Баллы по акции";
+                        headerColor = isCanceled || isRefundedOrigin ? "#94a3b8" : "#f97316";
+                        if (operation.note && operation.note.trim()) {
+                          subtitleMain = `Акция "${operation.note.trim()}"`;
+                        } else if (detailsText && detailsText !== headerText) {
+                          subtitleMain = detailsText;
+                        }
+                      } else if (isComplimentary) {
+                        headerText = "Комплиментарные баллы";
+                        headerColor = isCanceled || isRefundedOrigin ? "#94a3b8" : "#f472b6";
+                        if (operation.note && operation.note.trim()) {
+                          subtitleMain = operation.note.trim();
+                        }
+                      } else if (isRefundOperation) {
+                        headerText = "Возврат покупки";
+                        headerColor = isRefundAdmin ? "#94a3b8" : "#0ea5e9";
+                        const adminMarker = " - совершён администратором";
+                        const raw = (detailsText || "").trim();
+                        const hasAdminMarker = raw.includes(adminMarker);
+                        const baseRefund = hasAdminMarker ? raw.replace(adminMarker, "").trim() : raw;
+                        const prefix = "Возврат покупки";
+                        let rest = baseRefund;
+                        if (baseRefund.startsWith(prefix)) {
+                          rest = baseRefund.slice(prefix.length).trim();
+                        }
+                        if (rest) {
+                          subtitleMain = rest;
+                        }
+                        if (hasAdminMarker || isRefundAdmin) {
+                          subtitleExtra = "Возврат покупки - совершён администратором";
+                        }
+                      } else if (isReferralLike) {
+                        headerText = isReferral ? "Реферальное начисление" : "Возврат реферала";
+                        headerColor = isCanceled || isRefundedOrigin ? "#94a3b8" : "#7a5af8";
+
+                        const hasLinkedReferral = Boolean(operation.referralCustomerId);
+                        const referralLabelBase =
+                          operation.referralCustomerName ||
+                          operation.referralCustomerPhone ||
+                          operation.referralCustomerId ||
+                          null;
+
+                        if (hasLinkedReferral && referralLabelBase) {
+                          subtitleMain = referralLabelBase;
+                        } else if (customer.referrer && isReferral) {
+                          subtitleMain = "Баллы по реферальной программе";
+                        } else if (!customer.referrer && isReferral) {
+                          subtitleMain = "Баллы за регистрацию по реферальной программе";
+                        }
+                      } else if (isBurn) {
+                        headerText = "Сгорание баллов";
+                        headerColor = isCanceled || isRefundedOrigin ? "#94a3b8" : "#ef4444";
+                      }
+
+                      if (!isRefundOperation && isCanceled) {
+                        headerText = detailsText;
+                        headerColor = "#94a3b8";
+                      }
+
+                      const subtitleColor =
+                        isCanceled || isRefundedOrigin || isRefundAdmin
+                          ? "rgba(148,163,184,0.9)"
+                          : "#6b7280";
+                      const showNewHeader =
+                        isPromocode || isCampaign || isRefundOperation || isReferralLike || isBurn || isComplimentary;
+                      const showStandaloneNote =
+                        Boolean(operation.note) &&
+                        !isPromocode &&
+                        !isRefundOperation &&
+                        !isReferralLike &&
+                        !isBurn &&
+                        !isCampaign &&
+                        !isComplimentary;
                       return (
                         <tr
                           key={operation.id}
@@ -673,7 +849,15 @@ export default function CustomerCardPage() {
                               ? "rgba(244,114,182,0.08)"
                               : isPromocode
                                 ? "rgba(250,204,21,0.12)"
-                              : rowStyle.background,
+                                : isCampaign
+                                  ? "rgba(249,115,22,0.10)"
+                                  : isRefundOperation
+                                    ? "rgba(14,165,233,0.12)"
+                                    : isReferral || isReferralRollback
+                                      ? "rgba(122,90,248,0.10)"
+                                      : isBurn
+                                        ? "rgba(248,113,113,0.10)"
+                                        : rowStyle.background,
                           }}
                         >
                         <td style={cellStyle}>{transactionsStartIndex + index + 1}</td>
@@ -682,12 +866,28 @@ export default function CustomerCardPage() {
                           {hasBreakdown ? (
                             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                               {combinedEarn != null && combinedEarn > 0 && (
-                                <span style={{ ...amountPillStyle, color: "#16a34a", background: "rgba(22,163,74,0.12)" }}>
+                                <span
+                                  style={{
+                                    ...amountPillStyle,
+                                    color: isGrayPoints ? "rgba(148,163,184,0.9)" : "#4ade80",
+                                    background: isGrayPoints
+                                      ? "rgba(148,163,184,0.16)"
+                                      : "rgba(22,163,74,0.12)",
+                                  }}
+                                >
                                   +{formatPoints(combinedEarn)}
                                 </span>
                               )}
                               {combinedRedeem != null && combinedRedeem > 0 && (
-                                <span style={{ ...amountPillStyle, color: "#dc2626", background: "rgba(220,38,38,0.12)" }}>
+                                <span
+                                  style={{
+                                    ...amountPillStyle,
+                                    color: isGrayPoints ? "rgba(148,163,184,0.9)" : "#f97373",
+                                    background: isGrayPoints
+                                      ? "rgba(148,163,184,0.16)"
+                                      : "rgba(248,113,113,0.12)",
+                                  }}
+                                >
                                   −{formatPoints(combinedRedeem)}
                                 </span>
                               )}
@@ -699,32 +899,108 @@ export default function CustomerCardPage() {
                             </span>
                           )}
                         </td>
-                        <td style={{ ...cellStyle, verticalAlign: "top" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            {(isComplimentary || isPromocode) && (
-                              <span
+                        <td style={{ ...cellStyle, verticalAlign: subtitleMain || subtitleExtra ? "top" : "middle" }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4, justifyContent: subtitleMain || subtitleExtra ? "flex-start" : "center" }}>
+                            {showNewHeader ? (
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 20 }}>
+                                {isComplimentary && (
+                                  <span style={{ color: headerColor, display: "flex" }}>
+                                    {CUSTOMER_HISTORY_ICONS.complimentary}
+                                  </span>
+                                )}
+                                {isPromocode && (
+                                  <span style={{ color: headerColor, display: "flex" }}>
+                                    {CUSTOMER_HISTORY_ICONS.promo}
+                                  </span>
+                                )}
+                                {isCampaign && (
+                                  <span style={{ color: headerColor, display: "flex" }}>
+                                    {CUSTOMER_HISTORY_ICONS.campaign}
+                                  </span>
+                                )}
+                                {isRefundOperation && (
+                                  <span style={{ color: headerColor, display: "flex" }}>
+                                    {CUSTOMER_HISTORY_ICONS.refund}
+                                  </span>
+                                )}
+                                {isReferralLike && (
+                                  <span style={{ color: headerColor, display: "flex" }}>
+                                    {CUSTOMER_HISTORY_ICONS.referral}
+                                  </span>
+                                )}
+                                {isBurn && (
+                                  <span style={{ color: headerColor, display: "flex" }}>
+                                    {CUSTOMER_HISTORY_ICONS.burn}
+                                  </span>
+                                )}
+                                <span
+                                  style={{
+                                    color: headerColor,
+                                    fontWeight: isCanceled || isRefundedOrigin || isRefundAdmin ? 600 : 600,
+                                  }}
+                                >
+                                  {headerText || detailsText}
+                                </span>
+                              </div>
+                            ) : (
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                {(isComplimentary || isPromocode) && (
+                                  <span
+                                    style={{
+                                      color: isComplimentary ? "#f472b6" : "#facc15",
+                                      display: "flex",
+                                    }}
+                                  >
+                                    {isPromocode ? CUSTOMER_HISTORY_ICONS.promo : <Gift size={14} />}
+                                  </span>
+                                )}
+                                <span
+                                  style={{
+                                    color: detailsColor,
+                                    fontWeight: isCanceled || isRefundedOrigin ? 600 : 500,
+                                  }}
+                                >
+                                  {detailsText}
+                                </span>
+                              </div>
+                            )}
+                            {subtitleMain && (
+                              <div style={{ fontSize: 12, color: subtitleColor, marginTop: 2 }}>
+                                {isReferralLike && operation.referralCustomerId ? (
+                                  <Link
+                                    href={`/customers/${encodeURIComponent(operation.referralCustomerId)}`}
+                                    style={{ color: "inherit", textDecoration: "none" }}
+                                  >
+                                    <span>Реферал: </span>
+                                    <span style={{ textDecoration: "underline" }}>{subtitleMain}</span>
+                                  </Link>
+                                ) : (
+                                  subtitleMain
+                                )}
+                              </div>
+                            )}
+                            {subtitleExtra && (
+                              <div style={{ fontSize: 12, color: subtitleColor, marginTop: 2 }}>
+                                {subtitleExtra}
+                              </div>
+                            )}
+                            {operation.note && showStandaloneNote && (
+                              <div
                                 style={{
-                                  color: isComplimentary ? "#f472b6" : "#eab308",
-                                  display: "flex",
+                                  fontSize: 12,
+                                  opacity: isCanceled || isRefundedOrigin ? 0.6 : 0.75,
+                                  marginTop: 4,
                                 }}
                               >
-                                {isPromocode ? <PlusCircle size={14} /> : <Gift size={14} />}
-                              </span>
+                                {operation.note}
+                              </div>
                             )}
-                            <span style={{ color: detailsColor, fontWeight: isCanceled || isRefundedOrigin ? 600 : 500 }}>
-                              {detailsText}
-                            </span>
+                            {operation.canceledAt && operation.canceledBy?.name && (
+                              <div style={{ fontSize: 11, opacity: 0.6, marginTop: 4 }}>
+                                Отменил: {operation.canceledBy.name}
+                              </div>
+                            )}
                           </div>
-                          {operation.note && (
-                            <div style={{ fontSize: 12, opacity: isCanceled || isRefundedOrigin ? 0.6 : 0.75, marginTop: 4 }}>
-                              {operation.note}
-                            </div>
-                          )}
-                          {operation.canceledAt && operation.canceledBy?.name && (
-                            <div style={{ fontSize: 11, opacity: 0.6, marginTop: 4 }}>
-                              Отменил: {operation.canceledBy.name}
-                            </div>
-                          )}
                         </td>
                         <td style={cellStyle}>{formatDateTime(operation.datetime)}</td>
                         <td style={cellStyle}>{operation.outlet || "—"}</td>

@@ -653,6 +653,12 @@ export class LoyaltyController {
           orderId: null,
           outletId,
           staffId,
+          metadata: {
+            source: 'PROMOTION',
+            promotionId,
+            promotionName: promo.name ?? null,
+            comment: promo.name ?? null,
+          },
         },
       });
 

@@ -44,6 +44,9 @@ export type CustomerTransaction = {
   kind?: string | null;
   earnAmount?: number | null;
   redeemAmount?: number | null;
+  referralCustomerId?: string | null;
+  referralCustomerName?: string | null;
+  referralCustomerPhone?: string | null;
 };
 
 export type CustomerReview = {

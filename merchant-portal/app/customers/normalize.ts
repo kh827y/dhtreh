@@ -81,6 +81,9 @@ function normalizeTransaction(input: any): CustomerTransaction {
     kind: toStringOrNull(input?.kind),
     earnAmount: toOptionalNumber(input?.earnAmount),
     redeemAmount: toOptionalNumber(input?.redeemAmount),
+    referralCustomerId: toStringOrNull(input?.referralCustomerId),
+    referralCustomerName: toStringOrNull(input?.referralCustomerName),
+    referralCustomerPhone: toStringOrNull(input?.referralCustomerPhone),
   };
 }
 

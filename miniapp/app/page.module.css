@@ -690,8 +690,8 @@
 }
 
 .historyTone_campaign {
-  background: linear-gradient(135deg, rgba(251, 191, 36, 0.2), rgba(249, 115, 22, 0.05));
-  border-left-color: #f59e0b;
+  background: linear-gradient(135deg, rgba(251, 146, 60, 0.22), rgba(249, 115, 22, 0.06));
+  border-left-color: #f97316;
 }
 
 .historyTone_complimentary {
@@ -700,8 +700,8 @@
 }
 
 .historyTone_promo {
-  background: linear-gradient(135deg, rgba(250, 204, 21, 0.24), rgba(251, 214, 54, 0.08));
-  border-left-color: #eab308;
+  background: linear-gradient(135deg, rgba(254, 240, 138, 0.26), rgba(250, 204, 21, 0.08));
+  border-left-color: #facc15;
 }
 
 .historyTone_refund {
@@ -824,7 +824,7 @@
 }
 
 .historyIcon_campaign {
-  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  background: linear-gradient(135deg, #fb923c, #f97316);
   color: #ffffff;
   box-shadow: 0 12px 26px rgba(245, 158, 11, 0.32);
 }
@@ -836,8 +836,8 @@
 }
 
 .historyIcon_promo {
-  background: linear-gradient(135deg, #facc15, #eab308);
-  color: #1f1f33;
+  background: linear-gradient(135deg, #fef08a, #facc15);
+  color: #ffffff;
   box-shadow: 0 12px 24px rgba(234, 179, 8, 0.32);
 }
 

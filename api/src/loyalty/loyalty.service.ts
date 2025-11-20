@@ -352,6 +352,14 @@ export class LoyaltyService {
         where: { id: wallet.id },
         data: { balance: (fresh?.balance ?? 0) - amount },
       });
+      const rewardMeta: any = (reward as any)?.metadata;
+      let rollbackBuyerId: string | null = null;
+      if (rewardMeta && typeof rewardMeta === 'object' && !Array.isArray(rewardMeta)) {
+        const rawBuyerId = (rewardMeta as any).buyerId;
+        if (rawBuyerId !== undefined && rawBuyerId !== null && String(rawBuyerId).trim() !== '') {
+          rollbackBuyerId = String(rawBuyerId).trim();
+        }
+      }
       await tx.transaction.create({
         data: {
           customerId: reward.customerId,
@@ -366,6 +374,7 @@ export class LoyaltyService {
             originalOrderId: reward.orderId ?? null,
             originalTransactionId: reward.id,
             receiptId: params.receipt.id,
+            buyerId: rollbackBuyerId,
           } as Prisma.JsonObject,
         },
       });

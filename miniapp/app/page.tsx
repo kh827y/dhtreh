@@ -273,34 +273,30 @@ const HISTORY_ICONS: Record<TransactionKind, ReactNode> = {
     </svg>
   ),
   promo: (
-    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
       <path
-        d="M6 4H14C15.1046 4 16 4.89543 16 6V8.5C16 9.32843 15.3284 10 14.5 10C15.3284 10 16 10.6716 16 11.5V14C16 15.1046 15.1046 16 14 16H6C4.89543 16 4 15.1046 4 14V11.5C4 10.6716 4.67157 10 5.5 10C4.67157 10 4 9.32843 4 8.5V6C4 4.89543 4.89543 4 6 4Z"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinejoin="round"
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M15 6C15 6.55228 14.5523 7 14 7C13.4477 7 13 6.55228 13 6L3 6L3 7.99947C4.24101 8.93039 5 10.3995 5 12C5 13.6005 4.24101 15.0696 3 16.0005L3 18L13 18C13 17.4477 13.4477 17 14 17C14.5523 17 15 17.4477 15 18L21 18L21 16.0005C19.759 15.0696 19 13.6005 19 12C19 10.3995 19.759 8.93039 21 7.99947L21 6L15 6ZM23 18C23 19.1046 22.1046 20 21 20L3 20C1.89543 20 1 19.1046 1 18L1 14.8881L1.49927 14.5993C2.42113 14.066 3 13.084 3 12C3 10.916 2.42113 9.934 1.49927 9.40073L1 9.11192L1 6C1 4.89543 1.89543 4 3 4L21 4C22.1046 4 23 4.89543 23 6L23 9.11192L22.5007 9.40073C21.5789 9.934 21 10.916 21 12C21 13.084 21.5789 14.066 22.5007 14.5993L23 14.8881L23 18ZM14 16C13.4477 16 13 15.5523 13 15C13 14.4477 13.4477 14 14 14C14.5523 14 15 14.4477 15 15C15 15.5523 14.5523 16 14 16ZM14 13C13.4477 13 13 12.5523 13 12C13 11.4477 13.4477 11 14 11C14.5523 11 15 11.4477 15 12C15 12.5523 14.5523 13 14 13ZM14 10C13.4477 10 13 9.55228 13 9C13 8.44772 13.4477 8 14 8C14.5523 8 15 8.44772 15 9C15 9.55228 14.5523 10 14 10Z"
       />
-      <path d="M8 7H12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-      <path d="M8 13H12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-      <path d="M8 10H12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
     </svg>
   ),
   refund: (
-    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
       <path
-        d="M5 11C5 14.3137 7.68629 17 11 17C13.4853 17 15.6406 15.4926 16.5565 13.2792"
+        d="M21 12C21 16.9706 16.9706 21 12 21C9.69494 21 7.59227 20.1334 6 18.7083L3 16M3 12C3 7.02944 7.02944 3 12 3C14.3051 3 16.4077 3.86656 18 5.29168L21 8M3 21V16M3 16H8M21 3V8M21 8H16"
         stroke="currentColor"
-        strokeWidth="1.6"
+        strokeWidth="2"
         strokeLinecap="round"
+        strokeLinejoin="round"
       />
-      <path
-        d="M15 9C15 5.68629 12.3137 3 9 3C6.51472 3 4.35939 4.50736 3.44354 6.72081"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-      />
-      <path d="M4 4V7H7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M16 16V13H13" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
   adjust: (

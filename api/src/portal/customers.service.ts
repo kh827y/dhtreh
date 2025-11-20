@@ -62,6 +62,9 @@ export type PortalCustomerTransactionDto = {
   kind?: string | null;
   earnAmount?: number | null;
   redeemAmount?: number | null;
+  referralCustomerId?: string | null;
+  referralCustomerName?: string | null;
+  referralCustomerPhone?: string | null;
 };
 
 export type PortalCustomerReviewDto = {
@@ -930,8 +933,13 @@ export class PortalCustomersService {
     }
 
     if (params.tx.type === 'REFERRAL') {
-      details = 'Реферальное начисление';
-      kind = 'REFERRAL';
+      if (source === 'REFERRAL_ROLLBACK') {
+        details = 'Возврат реферала';
+        kind = 'REFERRAL_ROLLBACK';
+      } else {
+        details = 'Реферальное начисление';
+        kind = 'REFERRAL';
+      }
       return { details, kind, note, purchaseAmount };
     }
 
@@ -1016,6 +1024,10 @@ export class PortalCustomersService {
       } else {
         details = 'Баллы по акции';
         kind = 'CAMPAIGN';
+        if (typeof params.metadata?.comment === 'string') {
+          const trimmed = params.metadata.comment.trim();
+          if (trimmed) note = trimmed;
+        }
       }
       return { details, kind, note, purchaseAmount };
     }
@@ -1542,6 +1554,23 @@ export class PortalCustomersService {
         ? this.formatStaffName(tx.canceledBy)
         : null;
 
+      let referralCustomerId: string | null = null;
+      let referralCustomerName: string | null = null;
+      let referralCustomerPhone: string | null = null;
+
+      if (
+        (descriptor.kind === 'REFERRAL' || descriptor.kind === 'REFERRAL_ROLLBACK') &&
+        metadata?.buyerId
+      ) {
+        const buyerId = String(metadata.buyerId).trim();
+        if (buyerId) {
+          referralCustomerId = buyerId;
+          const invitedMatch = invited.find((row) => row.id === buyerId) ?? null;
+          referralCustomerName = invitedMatch?.name ?? null;
+          referralCustomerPhone = invitedMatch?.phone ?? null;
+        }
+      }
+
       const dto: PortalCustomerTransactionDto = {
         id: tx.id,
         type: tx.type,
@@ -1582,6 +1611,9 @@ export class PortalCustomersService {
             : null,
         note: descriptor.note ?? null,
         kind: descriptor.kind,
+        referralCustomerId,
+        referralCustomerName,
+        referralCustomerPhone,
       };
 
       if (allowSameReceipt) {
