@@ -18,6 +18,11 @@ export async function PUT(req: NextRequest, { params }: { params: { promoCodeId:
     levelEnabled: body?.levelEnabled !== undefined ? !!body.levelEnabled : undefined,
     levelId: body?.levelId ? String(body.levelId) : undefined,
     usageLimit: body?.usageLimit ? String(body.usageLimit) : undefined,
+    usageLimitValue:
+      body?.usageLimitValue !== undefined ? Number(body.usageLimitValue) : undefined,
+    levelExpireDays:
+      body?.levelExpireDays !== undefined ? Number(body.levelExpireDays) : undefined,
+    overwrite: body?.overwrite === true ? true : undefined,
     usagePeriodEnabled: body?.usagePeriodEnabled !== undefined ? !!body.usagePeriodEnabled : undefined,
     usagePeriodDays: body?.usagePeriodDays !== undefined ? Number(body.usagePeriodDays) : undefined,
     recentVisitEnabled: body?.recentVisitEnabled !== undefined ? !!body.recentVisitEnabled : undefined,

@@ -865,13 +865,10 @@ GET /loyalty/events/poll?merchantId={merchantId}&merchantCustomerId={merchantCus
 > Legacy ваучеры больше не поддерживаются: таблицы `Voucher*` удалены, внешних интеграций и отчётов на них не осталось.
 
 - `GET /portal/promocodes?status=ACTIVE|ARCHIVE` — список с метриками.
-- `POST /portal/promocodes/issue` — создание промокода (см. `PortalPromoCodePayload`).
+- `POST /portal/promocodes/issue` — создание промокода (см. `PortalPromoCodePayload`, поле `usageLimitValue` задаёт количество клиентов, которые смогут применить код при `usageLimit=once_total`, `levelExpireDays` — срок действия присвоенного уровня в днях, `0` — бессрочно).
 - `PUT /portal/promocodes/:promoCodeId` — обновление.
 - `POST /portal/promocodes/deactivate` / `POST /portal/promocodes/activate` — смена статуса.
-- `GET /portal/loyalty/promocodes?status=ACTIVE|ARCHIVE|ALL` — доступ к «сырым» полям `PromoCode` (включая метрики) для страницы лояльности.
-- `POST /portal/loyalty/promocodes` — создание через `LoyaltyPromoCodePayload` (код, сегмент, уровни, лимиты, autoArchive).
-- `PUT /portal/loyalty/promocodes/:id` / `POST /portal/loyalty/promocodes/:id/status` / `POST /portal/loyalty/promocodes/bulk/status` — управление состояниями и массовое архивирование.
-- `POST /loyalty/promocodes/apply` — активация промокода клиентом (мини-аппа) с начислением баллов и TTL.`
+- `POST /loyalty/promocodes/apply` — активация промокода клиентом (мини-аппа) с начислением баллов и TTL.
 
 В API лояльности промокод передаётся полем `promoCode` в `POST /loyalty/quote` и `POST /loyalty/commit`. При применении начисляются дополнительные баллы, TTL и уровень согласно настройкам.
 

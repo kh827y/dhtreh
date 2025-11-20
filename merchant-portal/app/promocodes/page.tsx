@@ -2,7 +2,7 @@
 import React from "react";
 import { Card, CardHeader, CardBody, Button, Skeleton } from "@loyalty/ui";
 import Toggle from "../../components/Toggle";
-import { Eye, Pencil, Archive, RotateCcw } from "lucide-react";
+import { Pencil, Archive, RotateCcw } from "lucide-react";
 
 type PromocodeRow = {
   id: string;
@@ -15,6 +15,9 @@ type PromocodeRow = {
   validFrom?: string | null;
   validUntil?: string | null;
   totalUsed?: number;
+  usageLimitType?: string;
+  usageLimitValue?: number | null;
+  perCustomerLimit?: number | null;
   metadata?: Record<string, any> | null;
 };
 
@@ -30,6 +33,9 @@ type FormState = {
   levelEnabled: boolean;
   levelId: string;
   usageLimit: 'none' | 'once_total' | 'once_per_customer';
+  usageLimitSelection: 'none' | 'per_customer' | 'limited';
+  usageLimitValue: string;
+  levelExpireDays: string;
   usagePeriodEnabled: boolean;
   usagePeriodDays: string;
   recentVisitEnabled: boolean;
@@ -48,6 +54,9 @@ const initialForm: FormState = {
   levelEnabled: false,
   levelId: "",
   usageLimit: "none",
+  usageLimitSelection: "none",
+  usageLimitValue: "1",
+  levelExpireDays: "0",
   usagePeriodEnabled: false,
   usagePeriodDays: "",
   recentVisitEnabled: false,
@@ -72,7 +81,7 @@ function formatRange(from?: string | null, to?: string | null) {
   return `до ${formatDate(to)}`;
 }
 
-function staffName(meta?: Record<string, any> | null, levels?: LevelOption[]) {
+function levelName(meta?: Record<string, any> | null, levels?: LevelOption[]) {
   if (!meta?.level || !meta.level.enabled) return "—";
   const target = String(meta.level.target || "");
   const found = levels?.find((lvl) => lvl.id === target);
@@ -84,7 +93,7 @@ export default function PromocodesPage() {
   const [loading, setLoading] = React.useState(true);
   const [items, setItems] = React.useState<PromocodeRow[]>([]);
   const [error, setError] = React.useState('');
-  const [modalMode, setModalMode] = React.useState<'create' | 'edit' | 'view' | null>(null);
+  const [modalMode, setModalMode] = React.useState<'create' | 'edit' | null>(null);
   const [form, setForm] = React.useState<FormState>(initialForm);
   const [editing, setEditing] = React.useState<PromocodeRow | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
@@ -92,11 +101,12 @@ export default function PromocodesPage() {
   const [levelsLoading, setLevelsLoading] = React.useState(false);
   const [formError, setFormError] = React.useState('');
 
-  const summaryText = React.useMemo(() => {
-    const total = items.length;
-    if (!total) return 'Показаны записи 0-0 из 0';
-    return `Показаны записи 1-${total} из ${total}`;
-  }, [items]);
+const summaryText = React.useMemo(() => {
+  const total = items.length;
+  if (!total) return 'Показаны записи 0-0 из 0';
+  return `Показаны записи 1-${total} из ${total}`;
+}, [items]);
+const usageLimitSelection = form.usageLimitSelection;
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -117,8 +127,6 @@ export default function PromocodesPage() {
     }
   }, [tab]);
 
-  React.useEffect(() => { load(); }, [load]);
-
   const ensureLevels = React.useCallback(async () => {
     if (levels.length || levelsLoading) return;
     setLevelsLoading(true);
@@ -132,10 +140,10 @@ export default function PromocodesPage() {
             ? data
             : [];
         const lv: LevelOption[] = source
-          .filter((row) => row && !row.isHidden)
+          .filter((row) => row)
           .map((row) => ({
             id: String(row.id || ""),
-            name: String(row.name || ""),
+            name: row.isHidden ? `${String(row.name || "")} (скрытый)` : String(row.name || ""),
           }))
           .sort((a, b) => a.name.localeCompare(b.name));
         setLevels(lv);
@@ -149,19 +157,14 @@ export default function PromocodesPage() {
     }
   }, [levels.length, levelsLoading]);
 
+  React.useEffect(() => { load(); }, [load]);
+  React.useEffect(() => { ensureLevels(); }, [ensureLevels]);
+
   const openCreate = () => {
     setForm(initialForm);
     setFormError('');
     setEditing(null);
     setModalMode('create');
-    ensureLevels();
-  };
-
-  const openView = (row: PromocodeRow) => {
-    setEditing(row);
-    setFormError('');
-    setForm(mapRowToForm(row));
-    setModalMode('view');
     ensureLevels();
   };
 
@@ -221,14 +224,22 @@ export default function PromocodesPage() {
       setFormError('Выберите уровень');
       return;
     }
+    if (form.levelEnabled && Number(form.levelExpireDays || 0) < 0) {
+      setFormError('Срок действия уровня не может быть отрицательным');
+      return;
+    }
     if (form.usagePeriodEnabled && Number(form.usagePeriodDays || 0) <= 0) {
       setFormError('Укажите период использования в днях');
       return;
     }
+    if (form.usageLimit === 'once_total' && Number(form.usageLimitValue || 0) <= 0) {
+      setFormError('Укажите лимит применений промокода');
+      return;
+    }
     setSubmitting(true);
     setFormError('');
-    const payload = buildPayload(form);
-    try {
+    const submitOnce = async (overwrite = false) => {
+      const payload = { ...buildPayload(form), ...(overwrite ? { overwrite: true } : {}) };
       if (modalMode === 'create') {
         const res = await fetch('/api/portal/promocodes/issue', {
           method: 'POST',
@@ -244,10 +255,34 @@ export default function PromocodesPage() {
         });
         if (!res.ok) throw new Error(await res.text());
       }
+    };
+
+    try {
+      await submitOnce(false);
       closeModal();
       await load();
     } catch (e: any) {
-      setFormError(String(e?.message || e));
+      const msg = String(e?.message || e);
+      const duplicate =
+        msg.includes('Промокод с таким названием уже существует') ||
+        msg.toLowerCase().includes('unique constraint');
+      if (duplicate) {
+        const confirmOverwrite = window.confirm('Промокод с таким названием уже существует, хотите перезаписать?');
+        if (confirmOverwrite) {
+          try {
+            await submitOnce(true);
+            closeModal();
+            await load();
+            return;
+          } catch (err: any) {
+            setFormError(String(err?.message || err));
+          }
+        } else {
+          setFormError('Промокод с таким названием уже существует');
+        }
+      } else {
+        setFormError(msg);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -256,9 +291,6 @@ export default function PromocodesPage() {
   const renderActions = (row: PromocodeRow) => {
     return (
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-        <button className="btn btn-ghost" title="Просмотр" onClick={() => openView(row)}>
-          <Eye size={16} />
-        </button>
         <button className="btn btn-ghost" title="Редактировать" onClick={() => openEdit(row)}>
           <Pencil size={16} />
         </button>
@@ -291,7 +323,7 @@ export default function PromocodesPage() {
           <div>Промокод</div>
           <div>Описание</div>
           <div>Начислить баллов</div>
-          <div>Присвоить группу</div>
+          <div>Присвоить уровень</div>
           <div>Срок действия</div>
           <div>Использован раз</div>
         </div>
@@ -317,7 +349,7 @@ export default function PromocodesPage() {
             <div style={{ fontSize: 13, opacity: 0.8 }}>
               {row.metadata?.awardPoints === false || row.value <= 0 ? '—' : row.value}
             </div>
-            <div style={{ fontSize: 13, opacity: 0.8 }}>{staffName(row.metadata, levels) || '—'}</div>
+            <div style={{ fontSize: 13, opacity: 0.8 }}>{levelName(row.metadata, levels) || '—'}</div>
             <div style={{ fontSize: 13, opacity: 0.8 }}>{formatRange(row.validFrom, row.validUntil)}</div>
             <div style={{ fontSize: 13, opacity: 0.8 }}>{typeof row.totalUsed === 'number' ? row.totalUsed : '—'}</div>
             <div style={{ gridColumn: '1 / -1' }}>{renderActions(row)}</div>
@@ -389,7 +421,7 @@ export default function PromocodesPage() {
                   <input
                     value={form.code}
                     onChange={(e) => setForm((prev) => ({ ...prev, code: e.target.value.toUpperCase() }))}
-                    disabled={modalMode === 'view'}
+                    disabled={false}
                     style={{ padding: 10, borderRadius: 8 }}
                     placeholder="Например, BONUS100"
                   />
@@ -399,7 +431,7 @@ export default function PromocodesPage() {
                   <input
                     value={form.description}
                     onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
-                    disabled={modalMode === 'view'}
+                    disabled={false}
                     style={{ padding: 10, borderRadius: 8 }}
                     placeholder="Видите только вы"
                   />
@@ -413,7 +445,7 @@ export default function PromocodesPage() {
                     checked={form.awardPoints}
                     onChange={(value) => setForm((prev) => ({ ...prev, awardPoints: value }))}
                     label={form.awardPoints ? 'Включено' : 'Выключено'}
-                    disabled={modalMode === 'view'}
+                    disabled={false}
                   />
                 </div>
                 {form.awardPoints && (
@@ -422,7 +454,7 @@ export default function PromocodesPage() {
                     <input
                       value={form.points}
                       onChange={(e) => setForm((prev) => ({ ...prev, points: e.target.value.replace(/[^0-9]/g, '') }))}
-                      disabled={modalMode === 'view'}
+                      disabled={false}
                       inputMode="numeric"
                       style={{ padding: 10, borderRadius: 8 }}
                     />
@@ -437,7 +469,7 @@ export default function PromocodesPage() {
                     checked={form.burnEnabled}
                     onChange={(value) => setForm((prev) => ({ ...prev, burnEnabled: value, burnDays: value ? (prev.burnDays || '30') : '' }))}
                     label={form.burnEnabled ? 'Включено' : 'Выключено'}
-                    disabled={modalMode === 'view'}
+                    disabled={false}
                   />
                 </div>
                 {form.burnEnabled && (
@@ -446,7 +478,7 @@ export default function PromocodesPage() {
                     <input
                       value={form.burnDays}
                       onChange={(e) => setForm((prev) => ({ ...prev, burnDays: e.target.value.replace(/[^0-9]/g, '') }))}
-                      disabled={modalMode === 'view'}
+                      disabled={false}
                       inputMode="numeric"
                       style={{ padding: 10, borderRadius: 8 }}
                     />
@@ -461,49 +493,114 @@ export default function PromocodesPage() {
                     checked={form.levelEnabled}
                     onChange={(value) => setForm((prev) => ({ ...prev, levelEnabled: value }))}
                     label={form.levelEnabled ? 'Включено' : 'Выключено'}
-                    disabled={modalMode === 'view'}
+                    disabled={false}
                   />
                 </div>
                 {form.levelEnabled && (
-                  <div style={{ display: 'grid', gap: 6 }}>
-                    <label style={{ fontSize: 13, opacity: 0.8 }}>Выберите уровень</label>
-                    <select
-                      value={form.levelId}
-                      onChange={(e) => setForm((prev) => ({ ...prev, levelId: e.target.value }))}
-                      disabled={modalMode === 'view' || levelsLoading}
-                      style={{ padding: 10, borderRadius: 8 }}
-                    >
-                      <option value="">— выберите —</option>
-                      {levels.map((lvl) => (
-                        <option key={lvl.id} value={lvl.id}>{lvl.name}</option>
-                      ))}
-                    </select>
+                  <div style={{ display: 'grid', gap: 12 }}>
+                    <div style={{ display: 'grid', gap: 6 }}>
+                      <label style={{ fontSize: 13, opacity: 0.8 }}>Выберите уровень</label>
+                      <select
+                        value={form.levelId}
+                        onChange={(e) => setForm((prev) => ({ ...prev, levelId: e.target.value }))}
+                        disabled={levelsLoading}
+                        style={{ padding: 10, borderRadius: 8 }}
+                      >
+                        <option value="">— выберите —</option>
+                        {levels.map((lvl) => (
+                          <option key={lvl.id} value={lvl.id}>{lvl.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div style={{ display: 'grid', gap: 6 }}>
+                      <label style={{ fontSize: 13, opacity: 0.8 }}>Срок действия уровня (дней)</label>
+                      <input
+                        value={form.levelExpireDays}
+                        onChange={(e) => setForm((prev) => ({ ...prev, levelExpireDays: e.target.value.replace(/[^0-9]/g, '') }))}
+                        disabled={false}
+                        inputMode="numeric"
+                        style={{ padding: 10, borderRadius: 8 }}
+                        placeholder="0 — бессрочно"
+                      />
+                      <div style={{ fontSize: 12, opacity: 0.6 }}>0 — бессрочно, при истечении назначаем уровень по сумме покупок.</div>
+                    </div>
                   </div>
                 )}
               </div>
 
-              <div style={{ display: 'grid', gap: 12 }}>
+                <div style={{ display: 'grid', gap: 12 }}>
                 <label style={{ fontSize: 13, opacity: 0.8 }}>Ограничения на количество использований</label>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {[
-                    { value: 'none', label: 'Без ограничений' },
-                    { value: 'once_total', label: 'Одно использование всем клиентам' },
-                    { value: 'once_per_customer', label: 'Одно использование одному клиенту' },
-                  ].map((opt) => (
-                    <button
-                      key={opt.value}
-                      className="btn"
-                      style={{
-                        background: form.usageLimit === opt.value ? 'var(--brand-primary)' : 'rgba(255,255,255,.08)',
-                        color: form.usageLimit === opt.value ? '#0b0f19' : '#fff',
-                      }}
-                      disabled={modalMode === 'view'}
-                      onClick={() => setForm((prev) => ({ ...prev, usageLimit: opt.value as FormState['usageLimit'] }))}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
+                  <button
+                    className="btn"
+                    style={{
+                      background: usageLimitSelection === 'none' ? 'var(--brand-primary)' : 'rgba(255,255,255,.08)',
+                      color: usageLimitSelection === 'none' ? '#0b0f19' : '#fff',
+                    }}
+                    disabled={false}
+                    onClick={() => setForm((prev) => ({ ...prev, usageLimit: 'none', usageLimitSelection: 'none', usageLimitValue: '1' }))}
+                  >
+                    Без ограничений
+                  </button>
+                  <button
+                    className="btn"
+                    style={{
+                      background: usageLimitSelection === 'per_customer' ? 'var(--brand-primary)' : 'rgba(255,255,255,.08)',
+                      color: usageLimitSelection === 'per_customer' ? '#0b0f19' : '#fff',
+                    }}
+                    disabled={false}
+                    onClick={() =>
+                      setForm((prev) => ({
+                        ...prev,
+                        usageLimit: 'once_per_customer',
+                        usageLimitSelection: 'per_customer',
+                        usageLimitValue: '1',
+                      }))
+                    }
+                  >
+                    Одно использование каждому клиенту
+                  </button>
+                  <button
+                    className="btn"
+                    style={{
+                      background: usageLimitSelection === 'limited' ? 'var(--brand-primary)' : 'rgba(255,255,255,.08)',
+                      color: usageLimitSelection === 'limited' ? '#0b0f19' : '#fff',
+                    }}
+                    disabled={false}
+                    onClick={() =>
+                      setForm((prev) => ({
+                        ...prev,
+                        usageLimit: 'once_total',
+                        usageLimitSelection: 'limited',
+                        usageLimitValue: Number(prev.usageLimitValue || 0) > 1 ? prev.usageLimitValue : '10',
+                      }))
+                    }
+                  >
+                    Одно использование N клиентам
+                  </button>
                 </div>
+                {usageLimitSelection === 'limited' && (
+                  <div style={{ display: 'grid', gap: 6, maxWidth: 260 }}>
+                    <label style={{ fontSize: 13, opacity: 0.8 }}>Сколько клиентов могут применить промокод?</label>
+                    <input
+                      value={form.usageLimitValue}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          usageLimitValue: e.target.value.replace(/[^0-9]/g, ''),
+                        }))
+                      }
+                      disabled={false}
+                      inputMode="numeric"
+                      style={{ padding: 10, borderRadius: 8 }}
+                    />
+                  </div>
+                )}
+                {usageLimitSelection === 'per_customer' && (
+                  <div style={{ fontSize: 12, opacity: 0.7 }}>
+                    Каждый клиент может активировать промокод один раз.
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
@@ -518,7 +615,7 @@ export default function PromocodesPage() {
                     checked={form.usagePeriodEnabled}
                     onChange={(value) => setForm((prev) => ({ ...prev, usagePeriodEnabled: value, usagePeriodDays: value ? (prev.usagePeriodDays || '7') : '' }))}
                     label={form.usagePeriodEnabled ? 'Включено' : 'Выключено'}
-                    disabled={modalMode === 'view'}
+                    disabled={false}
                   />
                 </div>
                 {form.usagePeriodEnabled && (
@@ -527,7 +624,7 @@ export default function PromocodesPage() {
                     <input
                       value={form.usagePeriodDays}
                       onChange={(e) => setForm((prev) => ({ ...prev, usagePeriodDays: e.target.value.replace(/[^0-9]/g, '') }))}
-                      disabled={modalMode === 'view'}
+                      disabled={false}
                       inputMode="numeric"
                       style={{ padding: 10, borderRadius: 8 }}
                     />
@@ -542,7 +639,7 @@ export default function PromocodesPage() {
                     checked={form.recentVisitEnabled}
                     onChange={(value) => setForm((prev) => ({ ...prev, recentVisitEnabled: value, recentVisitHours: value ? prev.recentVisitHours || '0' : '0' }))}
                     label={form.recentVisitEnabled ? 'Включено' : 'Выключено'}
-                    disabled={modalMode === 'view'}
+                    disabled={false}
                   />
                 </div>
                 {form.recentVisitEnabled && (
@@ -551,7 +648,7 @@ export default function PromocodesPage() {
                     <input
                       value={form.recentVisitHours}
                       onChange={(e) => setForm((prev) => ({ ...prev, recentVisitHours: e.target.value.replace(/[^0-9]/g, '') }))}
-                      disabled={modalMode === 'view'}
+                      disabled={false}
                       inputMode="numeric"
                       style={{ padding: 10, borderRadius: 8 }}
                     />
@@ -565,14 +662,14 @@ export default function PromocodesPage() {
                   label="Дата начала"
                   value={form.validFrom}
                   onChange={(value) => setForm((prev) => ({ ...prev, validFrom: value }))}
-                  disabled={modalMode === 'view'}
+                  disabled={false}
                   defaultLabel="Сразу"
                 />
                 <DateSelector
                   label="Дата завершения"
                   value={form.validUntil}
                   onChange={(value) => setForm((prev) => ({ ...prev, validUntil: value }))}
-                  disabled={modalMode === 'view'}
+                  disabled={false}
                   defaultLabel="Бессрочно"
                 />
               </div>
@@ -603,11 +700,38 @@ function mapRowToForm(row: PromocodeRow): FormState {
   const burnDays = burnEnabled ? String(meta?.burn?.days ?? '') : '';
   const levelEnabled = !!meta?.level?.enabled;
   const levelId = levelEnabled ? String(meta?.level?.target ?? '') : '';
-  const usageLimit = (meta?.usageLimit as FormState['usageLimit']) || 'none';
-  const usagePeriodEnabled = !!meta?.usagePeriod?.enabled;
-  const usagePeriodDays = usagePeriodEnabled ? String(meta?.usagePeriod?.days ?? '') : '';
-  const recentVisitEnabled = !!meta?.requireRecentVisit?.enabled;
-  const recentVisitHours = String(meta?.requireRecentVisit?.hours ?? 0);
+  const usageLimit = (meta?.usageLimit as FormState['usageLimit']) || (row.usageLimitType === 'ONCE_TOTAL' ? 'once_total' : row.usageLimitType === 'ONCE_PER_CUSTOMER' ? 'once_per_customer' : 'none');
+  const rawUsageLimitValue = row.usageLimitValue ?? meta?.usageLimitValue;
+  const usageLimitValue =
+    usageLimit === 'once_total'
+      ? String(
+          Number.isFinite(Number(rawUsageLimitValue))
+            ? Math.max(1, Number(rawUsageLimitValue))
+            : 1,
+        )
+      : '1';
+  const usageLimitSelection: FormState['usageLimitSelection'] =
+    usageLimit === 'none'
+      ? 'none'
+      : usageLimit === 'once_per_customer'
+        ? 'per_customer'
+        : 'limited';
+  const levelExpireDays = levelEnabled
+    ? String(
+        Number.isFinite(Number(meta?.level?.expiresInDays))
+          ? Math.max(0, Number(meta?.level?.expiresInDays))
+          : 0,
+      )
+    : '0';
+  const usagePeriodEnabled = meta?.usagePeriod?.enabled ?? !!row.cooldownDays;
+  const usagePeriodDays = usagePeriodEnabled
+    ? String(meta?.usagePeriod?.days ?? row.cooldownDays ?? '')
+    : '';
+  const recentVisitEnabled =
+    meta?.requireRecentVisit?.enabled ?? !!row.requireVisit;
+  const recentVisitHours = String(
+    meta?.requireRecentVisit?.hours ?? row.visitLookbackHours ?? 0,
+  );
   return {
     code: row.code || row.name || '',
     description: row.description || '',
@@ -618,6 +742,9 @@ function mapRowToForm(row: PromocodeRow): FormState {
     levelEnabled,
     levelId,
     usageLimit,
+    usageLimitSelection,
+    usageLimitValue,
+    levelExpireDays,
     usagePeriodEnabled,
     usagePeriodDays,
     recentVisitEnabled,
@@ -637,7 +764,15 @@ function buildPayload(state: FormState) {
     burnDays: state.burnEnabled ? Number(state.burnDays || 0) : undefined,
     levelEnabled: state.levelEnabled,
     levelId: state.levelEnabled ? state.levelId : undefined,
+    levelExpireDays:
+      state.levelEnabled && Number(state.levelExpireDays || 0) > 0
+        ? Number(state.levelExpireDays || 0)
+        : undefined,
     usageLimit: state.usageLimit,
+    usageLimitValue:
+      state.usageLimit === 'once_total'
+        ? Math.max(1, Number(state.usageLimitValue || 1))
+        : undefined,
     usagePeriodEnabled: state.usagePeriodEnabled,
     usagePeriodDays: state.usagePeriodEnabled ? Number(state.usagePeriodDays || 0) : undefined,
     recentVisitEnabled: state.recentVisitEnabled,

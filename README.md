@@ -290,13 +290,10 @@ POINTS_TTL_REMINDER=1
 
 - Эндпоинты портала:
   - `GET /portal/promocodes?status=ACTIVE|ARCHIVE` — список последних промокодов с метриками.
-  - `POST /portal/promocodes/issue` — создание промокода. Тело соответствует `PortalPromoCodePayload` (код, описание, баллы, TTL, ограничения, период действия и т.д.). Возвращает `{ ok: true, promoCodeId }`.
+  - `POST /portal/promocodes/issue` — создание промокода. Тело соответствует `PortalPromoCodePayload` (код, описание, баллы, TTL, ограничения, период действия и т.д.; `usageLimitValue` задаёт, сколько клиентов могут применить код при `usageLimit=once_total`; `levelExpireDays` задаёт срок действия присвоенного уровня, 0 — бессрочно). Возвращает `{ ok: true, promoCodeId }`.
   - `POST /portal/promocodes/deactivate` — `{ promoCodeId }` переводит промокод в архив (паузит использование).
   - `POST /portal/promocodes/activate` — `{ promoCodeId }` повторно активирует промокод.
   - `PUT /portal/promocodes/:promoCodeId` — обновляет настройки существующего промокода.
-  - `GET /portal/loyalty/promocodes?status=ACTIVE|ARCHIVE|ALL` — список промокодов с «сырыми» полями для страницы лояльности.
-  - `POST /portal/loyalty/promocodes` — создание промокода через `LoyaltyPromoCodePayload` (сегменты, уровни, лимиты, autoArchive).
-- `PUT /portal/loyalty/promocodes/:id` / `POST /portal/loyalty/promocodes/:id/status` / `POST /portal/loyalty/promocodes/bulk/status` — управление статусами/метаданными через тот же сервис `PromoCodesService`.
 - `POST /loyalty/promocodes/apply` — активация промокода клиентом (мини-аппа); возвращает начисленные баллы, срок действия бонуса и новый баланс.`
 
 Промокод применяется при `POST /loyalty/quote|commit`, если передан `promoCode`.

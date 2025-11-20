@@ -140,8 +140,23 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
     headers,
   });
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`${res.status} ${res.statusText}: ${text}`);
+    const raw = await res.text().catch(() => '');
+    let message = raw;
+    try {
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (parsed && typeof parsed === 'object') {
+        if (typeof parsed.message === 'string') message = parsed.message;
+        else if (Array.isArray(parsed.message) && parsed.message[0]) {
+          message = String(parsed.message[0]);
+        } else if (typeof parsed.error === 'string') {
+          message = parsed.error;
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    if (!message) message = res.statusText || 'Request failed';
+    throw new Error(message);
   }
   return (await res.json()) as T;
 }

@@ -812,10 +812,13 @@ export class LoyaltyService {
         });
       }
 
-      const promo = await this.promoCodes.findActiveByCode(merchantId, code);
-      if (!promo) {
-        throw new BadRequestException('Промокод недоступен');
-      }
+      // Если старое назначение уровня истекло, пересчитываем актуальный уровень по сумме покупок
+      await this.refreshTierAssignmentIfExpired(tx, merchantId, customerId);
+
+      const promo = await this.promoCodes.requireActiveByCode(
+        merchantId,
+        code,
+      );
 
       const result = await this.promoCodes.apply(tx, {
         promoCodeId: promo.id,
@@ -905,12 +908,17 @@ export class LoyaltyService {
         }
       }
 
-      const messageParts: string[] = [];
-      if (points > 0) messageParts.push(`Начислено ${points} баллов`);
-      if (promoExpireDays)
-        messageParts.push(`Бонус активен ${promoExpireDays} дн.`);
-      if (result.promoCode.assignTierId) messageParts.push('Уровень обновлён');
-      const message = messageParts.join('. ');
+      const tierName = result.assignedTier?.name ?? null;
+      let message: string;
+      if (points > 0 && tierName) {
+        message = `Вы получили ${points} баллов и "${tierName}" уровень!`;
+      } else if (points > 0) {
+        message = `Вы получили ${points} баллов!`;
+      } else if (tierName) {
+        message = `Вы получили "${tierName}" уровень!`;
+      } else {
+        message = 'Промокод активирован';
+      }
 
       return {
         ok: true,
@@ -920,7 +928,8 @@ export class LoyaltyService {
         pointsExpireInDays: promoExpireDays,
         pointsExpireAt: expiresAt ? expiresAt.toISOString() : null,
         balance,
-        tierAssigned: result.promoCode.assignTierId ?? null,
+        tierAssigned: result.assignedTier?.id ?? result.promoCode.assignTierId ?? null,
+        tierAssignedName: result.assignedTier?.name ?? null,
         message: message || 'Промокод активирован',
       };
     });
@@ -3068,6 +3077,23 @@ export class LoyaltyService {
     });
     console.log('merchantCustomer:', merchantCustomer);
     return { merchantCustomerId: merchantCustomer.id };
+  }
+
+  private async refreshTierAssignmentIfExpired(
+    tx: any,
+    merchantId: string,
+    customerId: string,
+  ) {
+    const expired = await tx.loyaltyTierAssignment.findFirst({
+      where: {
+        merchantId,
+        customerId,
+        expiresAt: { lte: new Date() },
+      },
+    });
+    if (expired) {
+      await this.recomputeTierProgress(tx, { merchantId, customerId });
+    }
   }
 
   private async recomputeTierProgress(

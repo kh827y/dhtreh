@@ -1907,7 +1907,7 @@ const applyServerProfile = useCallback(
           setToast({ msg: 'Промокод не подошёл', type: 'error' });
         }
       } catch (error) {
-        setToast({ msg: `Не удалось активировать: ${resolveErrorMessage(error)}`, type: 'error' });
+        setToast({ msg: resolveErrorMessage(error), type: 'error' });
       } finally {
         setPromoLoading(false);
       }
