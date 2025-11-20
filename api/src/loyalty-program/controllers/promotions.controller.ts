@@ -1,5 +1,6 @@
 import {
   Body,
+  BadRequestException,
   Controller,
   Get,
   Param,
@@ -36,27 +37,12 @@ function mapStatusToPromotion(status?: string | null): PromotionStatus {
   }
 }
 
-function mapRewardType(type?: string | null): PromotionRewardType {
-  switch ((type || '').toUpperCase()) {
-    case 'POINTS':
-      return PromotionRewardType.POINTS;
-    case 'PERCENT':
-      return PromotionRewardType.DISCOUNT;
-    case 'FIXED':
-      return PromotionRewardType.CASHBACK;
-    case 'LEVEL_UP':
-      return PromotionRewardType.LEVEL_UP;
-    default:
-      return PromotionRewardType.CUSTOM;
-  }
-}
-
 function ensureNumber(value: any, fallback = 0): number {
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
 }
 
-function buildMetadata(body: LegacyCampaignPayload) {
+function buildMetadata(body: LegacyCampaignPayload, reward: any) {
   const rawMeta =
     body?.metadata && typeof body.metadata === 'object'
       ? (body.metadata as Record<string, any>)
@@ -75,7 +61,7 @@ function buildMetadata(body: LegacyCampaignPayload) {
       endDate: body.endDate ?? null,
       targetSegmentId: body.targetSegmentId ?? null,
       rules: body.rules ?? {},
-      reward: body.reward ?? {},
+      reward: reward ?? {},
       budget: body.budget ?? null,
       maxUsagePerCustomer: body.maxUsagePerCustomer ?? null,
       maxUsageTotal: body.maxUsageTotal ?? null,
@@ -89,7 +75,39 @@ function legacyPayloadToPromotion(
   body: LegacyCampaignPayload,
 ): PromotionPayload {
   const reward = body.reward ?? { type: 'POINTS', value: 0 };
+  const rewardType = String(reward.type || 'POINTS').toUpperCase();
+  if (rewardType !== 'POINTS') {
+    throw new BadRequestException(
+      'Поддерживаются только акции с начислением баллов (reward.type = POINTS)',
+    );
+  }
   const rewardValue = ensureNumber(reward.value, 0);
+  if (!Number.isFinite(rewardValue) || rewardValue <= 0) {
+    throw new BadRequestException('Укажите количество баллов для акции');
+  }
+  const rewardMeta =
+    reward && typeof (reward as any).metadata === 'object'
+      ? ((reward as any).metadata as Record<string, any>)
+      : {};
+  const pointsExpire = Boolean(rewardMeta.pointsExpire);
+  const pointsExpireDaysRaw = rewardMeta.pointsExpireDays;
+  const pointsExpireDays =
+    pointsExpire && Number.isFinite(Number(pointsExpireDaysRaw))
+      ? Math.max(1, Math.trunc(Number(pointsExpireDaysRaw)))
+      : null;
+  const normalizedRewardMetadata = {
+    ...reward,
+    type: 'POINTS',
+    value: rewardValue,
+    metadata: {
+      ...rewardMeta,
+      pointsExpire,
+      pointsExpireDays,
+    },
+    pointsExpire,
+    pointsExpireDays,
+    legacyType: 'POINTS',
+  };
   const reminderRaw = body.metadata?.reminderOffsetHours;
   const reminderOffsetHours =
     reminderRaw === undefined || reminderRaw === null
@@ -101,10 +119,10 @@ function legacyPayloadToPromotion(
     segmentId: body.targetSegmentId ?? null,
     targetTierId: null,
     status: mapStatusToPromotion(body.status),
-    rewardType: mapRewardType(reward.type),
+    rewardType: PromotionRewardType.POINTS,
     rewardValue,
-    rewardMetadata: { ...reward, legacyType: reward.type },
-    pointsExpireInDays: (reward as any)?.metadata?.pointsExpireDays ?? null,
+    rewardMetadata: normalizedRewardMetadata,
+    pointsExpireInDays: pointsExpire ? pointsExpireDays : null,
     pushOnStart: Boolean(
       body.metadata?.pushOnStart ?? body.notificationChannels?.includes('PUSH'),
     ),
@@ -113,7 +131,7 @@ function legacyPayloadToPromotion(
     autoLaunch: Boolean(body.metadata?.autoLaunch),
     startAt: body.startDate ?? null,
     endAt: body.endDate ?? null,
-    metadata: buildMetadata(body),
+    metadata: buildMetadata(body, normalizedRewardMetadata),
     actorId: body.metadata?.actorId ?? undefined,
   } satisfies PromotionPayload;
 }

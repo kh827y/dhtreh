@@ -121,6 +121,13 @@ export class LoyaltyProgramService {
     return Math.round(parsed * 100);
   }
 
+  private normalizePointsTtl(days?: number | null): number | null {
+    if (days === undefined || days === null) return null;
+    const parsed = Number(days);
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+    return Math.max(1, Math.trunc(parsed));
+  }
+
   // ===== Notifications scheduling =====
   private normalizeFuture(date: Date | null | undefined): Date | null {
     if (!date) return null;
@@ -842,7 +849,11 @@ export class LoyaltyProgramService {
   }
 
   async listPromotions(merchantId: string, status?: PromotionStatus | 'ALL') {
-    const where: Prisma.LoyaltyPromotionWhereInput = { merchantId };
+    const where: Prisma.LoyaltyPromotionWhereInput = {
+      merchantId,
+      rewardType: PromotionRewardType.POINTS,
+      rewardValue: { gt: 0 },
+    };
     if (status && status !== 'ALL') {
       where.status = status;
     }
@@ -877,6 +888,19 @@ export class LoyaltyProgramService {
   async createPromotion(merchantId: string, payload: PromotionPayload) {
     if (!payload.name?.trim())
       throw new BadRequestException('Название акции обязательно');
+    const rewardType = payload.rewardType ?? PromotionRewardType.POINTS;
+    if (rewardType !== PromotionRewardType.POINTS) {
+      throw new BadRequestException(
+        'Поддерживаются только акции с начислением баллов',
+      );
+    }
+    const rewardValue = Number(payload.rewardValue ?? 0);
+    if (!Number.isFinite(rewardValue) || rewardValue <= 0) {
+      throw new BadRequestException('Укажите количество баллов');
+    }
+    const pointsExpireInDays = this.normalizePointsTtl(
+      payload.pointsExpireInDays,
+    );
 
     const promotion = await this.prisma.loyaltyPromotion.create({
       data: {
@@ -886,10 +910,10 @@ export class LoyaltyProgramService {
         segmentId: payload.segmentId ?? null,
         targetTierId: payload.targetTierId ?? null,
         status: payload.status ?? PromotionStatus.DRAFT,
-        rewardType: payload.rewardType,
-        rewardValue: payload.rewardValue ?? null,
+        rewardType: rewardType,
+        rewardValue,
         rewardMetadata: payload.rewardMetadata ?? null,
-        pointsExpireInDays: payload.pointsExpireInDays ?? null,
+        pointsExpireInDays,
         pushTemplateStartId: payload.pushTemplateStartId ?? null,
         pushTemplateReminderId: payload.pushTemplateReminderId ?? null,
         pushOnStart: payload.pushOnStart ?? false,
@@ -934,9 +958,30 @@ export class LoyaltyProgramService {
     payload: PromotionPayload,
   ) {
     const promotion = await this.prisma.loyaltyPromotion.findFirst({
-      where: { merchantId, id: promotionId },
+      where: {
+        merchantId,
+        id: promotionId,
+        rewardType: PromotionRewardType.POINTS,
+        rewardValue: { gt: 0 },
+      },
     });
     if (!promotion) throw new NotFoundException('Акция не найдена');
+    const rewardType =
+      payload.rewardType ?? promotion.rewardType ?? PromotionRewardType.POINTS;
+    if (rewardType !== PromotionRewardType.POINTS) {
+      throw new BadRequestException(
+        'Поддерживаются только акции с начислением баллов',
+      );
+    }
+    const rewardValue = Number(
+      payload.rewardValue ?? promotion.rewardValue ?? 0,
+    );
+    if (!Number.isFinite(rewardValue) || rewardValue <= 0) {
+      throw new BadRequestException('Укажите количество баллов');
+    }
+    const pointsExpireInDays = this.normalizePointsTtl(
+      payload.pointsExpireInDays ?? promotion.pointsExpireInDays,
+    );
 
     const updated = await this.prisma.loyaltyPromotion.update({
       where: { id: promotionId },
@@ -946,11 +991,10 @@ export class LoyaltyProgramService {
         segmentId: payload.segmentId ?? promotion.segmentId,
         targetTierId: payload.targetTierId ?? promotion.targetTierId,
         status: payload.status ?? promotion.status,
-        rewardType: payload.rewardType ?? promotion.rewardType,
-        rewardValue: payload.rewardValue ?? promotion.rewardValue,
+        rewardType,
+        rewardValue,
         rewardMetadata: payload.rewardMetadata ?? promotion.rewardMetadata,
-        pointsExpireInDays:
-          payload.pointsExpireInDays ?? promotion.pointsExpireInDays,
+        pointsExpireInDays,
         pushTemplateStartId:
           payload.pushTemplateStartId ?? promotion.pushTemplateStartId,
         pushTemplateReminderId:
@@ -988,7 +1032,12 @@ export class LoyaltyProgramService {
 
   async getPromotion(merchantId: string, promotionId: string) {
     const promotion = await this.prisma.loyaltyPromotion.findFirst({
-      where: { merchantId, id: promotionId },
+      where: {
+        merchantId,
+        id: promotionId,
+        rewardType: PromotionRewardType.POINTS,
+        rewardValue: { gt: 0 },
+      },
       include: {
         metrics: true,
         audience: {
@@ -1016,7 +1065,12 @@ export class LoyaltyProgramService {
     actorId?: string,
   ) {
     const promotion = await this.prisma.loyaltyPromotion.findFirst({
-      where: { merchantId, id: promotionId },
+      where: {
+        merchantId,
+        id: promotionId,
+        rewardType: PromotionRewardType.POINTS,
+        rewardValue: { gt: 0 },
+      },
     });
     if (!promotion) throw new NotFoundException('Акция не найдена');
 
@@ -1060,7 +1114,12 @@ export class LoyaltyProgramService {
     const results = await this.prisma.$transaction(
       promotionIds.map((id) =>
         this.prisma.loyaltyPromotion.updateMany({
-          where: { id, merchantId },
+          where: {
+            id,
+            merchantId,
+            rewardType: PromotionRewardType.POINTS,
+            rewardValue: { gt: 0 },
+          },
           data: {
             status,
             updatedById: actorId ?? undefined,

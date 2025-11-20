@@ -10,7 +10,6 @@ import { GiftsModule } from '../gifts/gifts.module';
 import { PortalCatalogService } from './catalog.service';
 import { PortalCustomersService } from './customers.service';
 import { StaffMotivationService } from './services/staff-motivation.service';
-import { ActionsService } from './services/actions.service';
 import { OperationsLogService } from './services/operations-log.service';
 import { TelegramModule } from '../telegram/telegram.module';
 import { PortalTelegramIntegrationService } from './services/telegram-integration.service';
@@ -40,7 +39,6 @@ import { CustomerAudiencesModule } from '../customer-audiences/customer-audience
     PortalGuard,
     PortalCatalogService,
     StaffMotivationService,
-    ActionsService,
     OperationsLogService,
     PortalCustomersService,
     PortalTelegramIntegrationService,

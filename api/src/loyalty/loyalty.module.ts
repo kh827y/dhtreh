@@ -10,7 +10,6 @@ import { SubscriptionModule } from '../subscription/subscription.module';
 import { SubscriptionGuard } from '../guards/subscription.guard';
 import { AntiFraudGuard } from '../guards/antifraud.guard';
 import { AntifraudModule } from '../antifraud/antifraud.module';
-import { PromosModule } from '../promos/promos.module';
 import { PromoCodesModule } from '../promocodes/promocodes.module';
 import { MerchantsModule } from '../merchants/merchants.module';
 import { ReviewModule } from '../reviews/review.module';
@@ -25,7 +24,6 @@ import { LoyaltyEventsService } from './loyalty-events.service';
     MetricsModule,
     SubscriptionModule,
     AntifraudModule,
-    PromosModule,
     PromoCodesModule,
     MerchantsModule,
     TelegramModule,

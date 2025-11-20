@@ -671,15 +671,48 @@ export class CustomerAudiencesService {
     }
   }
 
+  private async getAllCustomersCount(merchantId: string): Promise<number> {
+    try {
+      return await this.prisma.merchantCustomer.count({ where: { merchantId } });
+    } catch (err) {
+      this.logger.warn(
+        `Failed to count all customers for merchant ${merchantId}: ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+      return 0;
+    }
+  }
+
   private async ensureDefaultAudience(merchantId: string) {
+    const total = await this.getAllCustomersCount(merchantId);
+    const now = new Date();
     const existing = await this.prisma.customerSegment.findFirst({
       where: { merchantId, systemKey: ALL_CUSTOMERS_SEGMENT_KEY },
     });
-    if (existing) return existing;
-    const total = await this.prisma.customerStats.count({
-      where: { merchantId },
-    });
-    const now = new Date();
+    const metricsSnapshot = {
+      calculatedAt: now.toISOString(),
+      estimatedCustomers: total,
+    } as Prisma.JsonObject;
+    if (existing) {
+      try {
+        return await this.prisma.customerSegment.update({
+          where: { id: existing.id },
+          data: {
+            customerCount: total,
+            lastEvaluatedAt: now,
+            metricsSnapshot,
+          },
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Failed to refresh system audience ${existing.id}: ${
+            err instanceof Error ? err.message : err
+          }`,
+        );
+      }
+      return existing;
+    }
     return this.prisma.customerSegment.create({
       data: {
         merchantId,
@@ -688,10 +721,7 @@ export class CustomerAudiencesService {
         type: 'SYSTEM',
         rules: { kind: 'all' } as Prisma.JsonObject,
         filters: Prisma.JsonNull,
-        metricsSnapshot: {
-          calculatedAt: now.toISOString(),
-          estimatedCustomers: total,
-        } as Prisma.JsonObject,
+        metricsSnapshot,
         customerCount: total,
         isActive: true,
         tags: [],
@@ -699,6 +729,7 @@ export class CustomerAudiencesService {
         source: 'system',
         systemKey: ALL_CUSTOMERS_SEGMENT_KEY,
         isSystem: true,
+        lastEvaluatedAt: now,
       },
     });
   }
@@ -1196,6 +1227,33 @@ export class CustomerAudiencesService {
       where: { merchantId, id: segmentId },
     });
     if (!segment) throw new NotFoundException('Сегмент не найден');
+    if (isSystemAllAudience(segment)) {
+      const total = await this.getAllCustomersCount(merchantId);
+      const now = new Date();
+      const updated = await this.prisma.customerSegment.update({
+        where: { id: segment.id },
+        data: {
+          customerCount: total,
+          lastEvaluatedAt: now,
+          metricsSnapshot: {
+            calculatedAt: now.toISOString(),
+            estimatedCustomers: total,
+          } as Prisma.JsonObject,
+        },
+      });
+      try {
+        this.logger.log(
+          JSON.stringify({
+            event: 'portal.audiences.refresh',
+            merchantId,
+            segmentId,
+            customerCount: updated.customerCount,
+          }),
+        );
+        this.metrics.inc('portal_audience_refresh_total');
+      } catch {}
+      return updated;
+    }
     await this.recalculateSegmentMembership(merchantId, segment);
     const updated = await this.prisma.customerSegment.findFirst({
       where: { id: segmentId },

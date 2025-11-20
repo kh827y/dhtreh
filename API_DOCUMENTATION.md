@@ -676,14 +676,13 @@ Response 200:
 Последовательность в расчёте `POST /loyalty/quote`:
 
 1) Промокод (если указан `promoCode`) — уменьшает `eligibleTotal` и `total`.
-2) Промо‑правила (`rulesJson.promos`) — применяются к уменьшенному `eligibleTotal`.
-3) Базовые правила начисления/лимитов (`rulesJson.rules` или базовые ставки мерчанта).
-4) Бонусы уровня (Levels) — добавляются поверх базовых ставок: `earnBps += levelEarnBonus`, `redeemLimitBps += levelRedeemBonus`.
+2) Базовые правила начисления/лимитов (`rulesJson.rules` или базовые ставки мерчанта).
+3) Бонусы уровня (Levels) — добавляются поверх базовых ставок: `earnBps += levelEarnBonus`, `redeemLimitBps += levelRedeemBonus`.
 
 Итоговые формулы (упрощённо):
 
 ```text
-eligible' = eligibleTotal - promoDiscount(eligibleTotal)
+eligible' = eligibleTotal
 earnPoints = floor( eligible' * (earnBps_base + earnBps_bonus(level)) / 10000 )
 redeemCap  = floor( eligible' * (redeemBps_base + redeemBps_bonus(level)) / 10000 )
 ```
@@ -692,14 +691,14 @@ redeemCap  = floor( eligible' * (redeemBps_base + redeemBps_bonus(level)) / 1000
 
 - База мерчанта: `earnBps=500` (5%), `redeemLimitBps=5000` (50%).
 - Уровень клиента: Silver (`earnBpsBonus=+200`, `redeemLimitBpsBonus=+1000`).
-- Промокод 10% и промо −50 на чек 1000.
+- Промокод 10% на чек 1000.
 
 Расчёт:
 
 ```
-eligible: 1000 → promo -50 = 950
-EARN: 850 * (500+200)/10000 = floor(850 * 0.07) = 59 баллов
-REDEEM cap: 850 * (5000+1000)/10000 = floor(850 * 0.6) = 510
+eligible: 1000 → promoCode −10% = 900
+EARN: 900 * (500+200)/10000 = floor(900 * 0.07) = 63 балла
+REDEEM cap: 900 * (5000+1000)/10000 = floor(900 * 0.6) = 540
 ```
 
 #### 3. Подтверждение операции (Commit)

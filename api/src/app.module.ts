@@ -31,7 +31,6 @@ import { EarnActivationWorker } from './earn-activation.worker';
 import { GiftsModule } from './gifts/gifts.module';
 import { ReferralModule } from './referral/referral.module';
 import { LevelsModule } from './levels/levels.module';
-import { PromosModule } from './promos/promos.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PortalAuthModule } from './portal-auth/portal-auth.module';
 import { PortalModule } from './portal/portal.module';
@@ -95,7 +94,6 @@ try {
     CrmModule,
     GiftsModule,
     LevelsModule,
-    PromosModule,
     NotificationsModule,
     ReferralModule,
     PortalAuthModule,

@@ -72,12 +72,6 @@ import {
   type UpdateStaffMotivationPayload,
 } from './services/staff-motivation.service';
 import {
-  ActionsService,
-  type ActionsTab,
-  type CreateProductBonusActionPayload,
-  type UpdateActionStatusPayload,
-} from './services/actions.service';
-import {
   OperationsLogService,
   type OperationsLogFilters,
 } from './services/operations-log.service';
@@ -110,7 +104,6 @@ export class PortalController {
     private readonly gifts: GiftsService,
     private readonly communications: CommunicationsService,
     private readonly staffMotivation: StaffMotivationService,
-    private readonly actions: ActionsService,
     private readonly operations: OperationsLogService,
     private readonly customersService: PortalCustomersService,
     private readonly telegramIntegration: PortalTelegramIntegrationService,
@@ -278,11 +271,6 @@ export class PortalController {
       return { kind: 'STAFF', staffId: String(req.portalStaffId) };
     }
     return { kind: 'MERCHANT' };
-  }
-
-  private normalizeActionsTab(tab?: string): ActionsTab {
-    const upper = String(tab || '').toUpperCase() as ActionsTab;
-    return upper === 'UPCOMING' || upper === 'PAST' ? upper : 'CURRENT';
   }
 
   private normalizeDirection(
@@ -1090,95 +1078,6 @@ export class PortalController {
           ? null
           : Number(body.customDays),
     });
-  }
-
-  // ===== Loyalty actions =====
-  @Get('actions')
-  @ApiOkResponse({
-    schema: {
-      type: 'object',
-      properties: {
-        total: { type: 'number' },
-        items: {
-          type: 'array',
-          items: { type: 'object', additionalProperties: true },
-        },
-      },
-    },
-  })
-  listActions(
-    @Req() req: any,
-    @Query('tab') tab?: string,
-    @Query('search') search?: string,
-  ) {
-    return this.actions.list(
-      this.getMerchantId(req),
-      this.normalizeActionsTab(tab),
-      search || undefined,
-    );
-  }
-
-  @Get('actions/:campaignId')
-  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
-  getAction(@Req() req: any, @Param('campaignId') campaignId: string) {
-    return this.actions.getById(this.getMerchantId(req), campaignId);
-  }
-
-  @Post('actions/product-bonus')
-  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
-  createProductBonusAction(@Req() req: any, @Body() body: any) {
-    const payload: CreateProductBonusActionPayload = {
-      name: String(body?.name ?? ''),
-      productIds: Array.isArray(body?.productIds)
-        ? body.productIds.map((id: any) => String(id))
-        : [],
-      rule: {
-        mode: body?.rule?.mode ?? 'FIXED',
-        value: Number(body?.rule?.value ?? 0),
-      },
-      audienceId: body?.audienceId ?? undefined,
-      audienceName: body?.audienceName ?? undefined,
-      usageLimit: (body?.usageLimit ??
-        'UNLIMITED') as CreateProductBonusActionPayload['usageLimit'],
-      usageLimitValue:
-        body?.usageLimitValue === undefined
-          ? undefined
-          : Number(body.usageLimitValue),
-      schedule: {
-        startEnabled: !!body?.schedule?.startEnabled,
-        startDate: body?.schedule?.startDate ?? body?.startDate,
-        endEnabled: !!body?.schedule?.endEnabled,
-        endDate: body?.schedule?.endDate ?? body?.endDate,
-      },
-      enabled: !!body?.enabled,
-    };
-
-    return this.actions.createProductBonus(this.getMerchantId(req), payload);
-  }
-
-  @Post('actions/:campaignId/status')
-  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
-  updateActionStatus(
-    @Req() req: any,
-    @Param('campaignId') campaignId: string,
-    @Body() body: UpdateActionStatusPayload,
-  ) {
-    const action = body?.action === 'PAUSE' ? 'PAUSE' : 'RESUME';
-    return this.actions.updateStatus(this.getMerchantId(req), campaignId, {
-      action,
-    });
-  }
-
-  @Post('actions/:campaignId/archive')
-  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
-  archiveAction(@Req() req: any, @Param('campaignId') campaignId: string) {
-    return this.actions.archive(this.getMerchantId(req), campaignId);
-  }
-
-  @Post('actions/:campaignId/duplicate')
-  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
-  duplicateAction(@Req() req: any, @Param('campaignId') campaignId: string) {
-    return this.actions.duplicate(this.getMerchantId(req), campaignId);
   }
 
   @Get('referrals/program')

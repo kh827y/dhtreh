@@ -58,7 +58,6 @@ import type { Request, Response } from 'express';
 import { createHmac } from 'crypto';
 import { verifyBridgeSignature as verifyBridgeSigUtil } from './bridge.util';
 import { validateTelegramInitData } from './telegram.util';
-import { PromosService } from '../promos/promos.service';
 import { PromoCodesService } from '../promocodes/promocodes.service';
 import { ReviewService } from '../reviews/review.service';
 import { LevelsService } from '../levels/levels.service';
@@ -99,7 +98,6 @@ export class LoyaltyController {
     private readonly service: LoyaltyService,
     private readonly prisma: PrismaService,
     private readonly metrics: MetricsService,
-    private readonly promos: PromosService,
     private readonly promoCodes: PromoCodesService,
     private readonly merchants: MerchantsService,
     private readonly reviews: ReviewService,
@@ -400,6 +398,8 @@ export class LoyaltyController {
     const promos = await this.prisma.loyaltyPromotion.findMany({
       where: {
         merchantId,
+        rewardType: PromotionRewardType.POINTS,
+        rewardValue: { gt: 0 },
         status: { in: ['ACTIVE', 'SCHEDULED'] as any },
         AND: [
           {
@@ -1881,23 +1881,9 @@ export class LoyaltyController {
         else if (alt && verifyBridgeSigUtil(sig, bodyForSig, alt)) ok = true;
         if (!ok) throw new UnauthorizedException('Invalid bridge signature');
       }
-      // Применение ваучера/промо: сначала уменьшаем сумму eligible/total, затем рассчитываем quote
-      let adjTotal = Math.max(0, Math.floor(dto.total));
-      let adjEligible = Math.max(0, Math.floor(dto.eligibleTotal));
-      try {
-        // Промо
-        const pr = await this.promos.preview(
-          dto.merchantId,
-          customer.id,
-          adjEligible,
-          dto.category,
-        );
-        if (pr?.canApply && pr.discount > 0) {
-          const d = Math.min(adjEligible, Math.max(0, Math.floor(pr.discount)));
-          adjEligible = Math.max(0, adjEligible - d);
-          adjTotal = Math.max(0, adjTotal - d);
-        }
-      } catch {}
+      // Расчёт quote без внешних промо-скидок (используем исходные суммы)
+      const adjTotal = Math.max(0, Math.floor(dto.total));
+      const adjEligible = Math.max(0, Math.floor(dto.eligibleTotal));
       const normalizedOutletId = dto.outletId ?? outlet?.id ?? undefined;
       const data = await this.service.quote(
         {
