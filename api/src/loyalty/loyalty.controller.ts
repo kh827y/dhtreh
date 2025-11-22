@@ -89,6 +89,8 @@ type MerchantContext = {
   customer: Customer;
 };
 
+const ALL_CUSTOMERS_SEGMENT_KEY = 'all-customers';
+
 @Controller('loyalty')
 @UseGuards(CashierGuard)
 @ApiTags('loyalty')
@@ -177,6 +179,28 @@ export class LoyaltyController {
       cleaned = '7' + cleaned;
     if (cleaned.length !== 11) throw new BadRequestException('invalid phone');
     return '+' + cleaned;
+  }
+
+  private resolvePromotionExpireDays(promo: {
+    pointsExpireInDays: number | null;
+    rewardMetadata?: any;
+    endAt?: Date | null;
+  }): number | null {
+    const explicit = Number(promo.pointsExpireInDays);
+    if (Number.isFinite(explicit) && explicit > 0) return Math.max(1, Math.trunc(explicit));
+    const meta =
+      promo.rewardMetadata && typeof promo.rewardMetadata === 'object'
+        ? (promo.rewardMetadata as Record<string, any>)
+        : null;
+    const shouldExpire = Boolean(meta?.pointsExpire ?? meta?.metadata?.pointsExpire ?? meta?.pointsExpireAfterEnd);
+    if (!shouldExpire) return null;
+    if (promo.endAt instanceof Date) {
+      const diffMs = promo.endAt.getTime() - Date.now();
+      const days = Math.ceil(diffMs / 86_400_000);
+      if (!Number.isFinite(days)) return null;
+      return Math.max(1, days);
+    }
+    return null;
   }
 
   // Проверка, что merchantCustomer принадлежит merchant и существует глобальная запись
@@ -403,21 +427,24 @@ export class LoyaltyController {
         status: { in: ['ACTIVE', 'SCHEDULED'] as any },
         AND: [
           {
-            OR: [
-              { startAt: null },
-              { startAt: { lte: now } },
-              { status: 'SCHEDULED' as any },
-            ],
-          },
-          { OR: [{ endAt: null }, { endAt: { gte: now } }] },
+        OR: [
+          { startAt: null },
+          { startAt: { lte: now } },
+          { status: 'SCHEDULED' as any },
+        ],
+      },
+      { OR: [{ endAt: null }, { endAt: { gte: now } }] },
+      {
+        OR: [
+          { segmentId: null },
+          { audience: { systemKey: 'all-customers' } },
+          { audience: { rules: { path: ['kind'], equals: 'all' } } },
+          { audience: { isSystem: true, rules: { path: ['kind'], equals: 'all' } } },
           {
-            OR: [
-              { segmentId: null },
-              {
-                audience: {
-                  customers: { some: { customerId } },
-                },
-              },
+            audience: {
+              customers: { some: { customerId } },
+            },
+          },
             ],
           },
         ],
@@ -604,10 +631,25 @@ export class LoyaltyController {
 
       // audience check
       if (promo.segmentId) {
-        const inSeg = await tx.segmentCustomer.findFirst({
-          where: { segmentId: promo.segmentId, customerId },
+        const audience = await tx.customerSegment.findUnique({
+          where: { id: promo.segmentId },
+          select: { systemKey: true, isSystem: true, rules: true },
         });
-        if (!inSeg) throw new BadRequestException('not eligible for promotion');
+        const rules =
+          audience && audience.rules && typeof audience.rules === 'object'
+            ? (audience.rules as Record<string, any>)
+            : {};
+        const isAllAudience =
+          audience?.systemKey === ALL_CUSTOMERS_SEGMENT_KEY ||
+          (audience?.isSystem && rules?.kind === 'all') ||
+          rules?.kind === 'all';
+        if (!isAllAudience) {
+          const inSeg = await tx.segmentCustomer.findFirst({
+            where: { segmentId: promo.segmentId, customerId },
+          });
+          if (!inSeg)
+            throw new BadRequestException('not eligible for promotion');
+        }
       }
 
       // idempotency: if already participated — return alreadyClaimed
@@ -687,7 +729,7 @@ export class LoyaltyController {
       }
 
       // Earn lot (optional)
-      const expireDays = promo.pointsExpireInDays ?? null;
+      const expireDays = this.resolvePromotionExpireDays(promo);
       if (process.env.EARN_LOTS_FEATURE === '1') {
         const earnLot = (tx as any)?.earnLot ?? (this.prisma as any)?.earnLot;
         if (earnLot?.create) {

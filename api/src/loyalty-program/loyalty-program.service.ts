@@ -871,6 +871,25 @@ export class LoyaltyProgramService {
       },
     });
 
+    const revenueMap = await this.computePromotionRedeemRevenue(
+      merchantId,
+      promotions.map((p) => p.id),
+    );
+    promotions.forEach((promotion) => {
+      const revenue = revenueMap.get(promotion.id);
+      if (!revenue) return;
+      const charts = {
+        ...((promotion as any).metrics?.charts ?? {}),
+        revenueSeries: revenue.series,
+      };
+      (promotion as any).metrics = {
+        ...(promotion as any).metrics,
+        revenueGenerated: revenue.netTotal,
+        revenueRedeemed: revenue.redeemedTotal,
+        charts,
+      };
+    });
+
     try {
       this.logger.log(
         JSON.stringify({
@@ -883,6 +902,160 @@ export class LoyaltyProgramService {
       this.metrics.inc('portal_loyalty_promotions_list_total');
     } catch {}
     return promotions;
+  }
+
+  private async computePromotionRedeemRevenue(
+    merchantId: string,
+    promotionIds: string[],
+  ): Promise<
+    Map<string, { series: number[]; netTotal: number; redeemedTotal: number }>
+  > {
+    const ids = promotionIds.filter(Boolean);
+    const result = new Map<
+      string,
+      { series: number[]; netTotal: number; redeemedTotal: number }
+    >();
+    if (!ids.length) return result;
+
+    const participants = await this.prisma.promotionParticipant.findMany({
+      where: { merchantId, promotionId: { in: ids } },
+      select: {
+        promotionId: true,
+        customerId: true,
+        joinedAt: true,
+        pointsIssued: true,
+      },
+      orderBy: [{ customerId: 'asc' }, { joinedAt: 'asc' }],
+    });
+    if (!participants.length) return result;
+
+    const participantsByCustomer = new Map<
+      string,
+      Array<{
+        promotionId: string;
+        joinedAt: Date;
+        remaining: number;
+      }>
+    >();
+    let globalMin = participants[0].joinedAt;
+    participants.forEach((p) => {
+      if (p.joinedAt < globalMin) globalMin = p.joinedAt;
+      const list = participantsByCustomer.get(p.customerId) ?? [];
+      list.push({
+        promotionId: p.promotionId,
+        joinedAt: p.joinedAt,
+        remaining: Math.max(0, Number(p.pointsIssued ?? 0)),
+      });
+      participantsByCustomer.set(p.customerId, list);
+    });
+    participantsByCustomer.forEach((list) =>
+      list.sort((a, b) => a.joinedAt.getTime() - b.joinedAt.getTime()),
+    );
+
+    const customerIds = Array.from(participantsByCustomer.keys());
+    const receipts = await this.prisma.receipt.findMany({
+      where: {
+        merchantId,
+        customerId: { in: customerIds },
+        canceledAt: null,
+        redeemApplied: { gt: 0 },
+        createdAt: { gte: globalMin },
+      },
+      select: {
+        customerId: true,
+        createdAt: true,
+        redeemApplied: true,
+        total: true,
+      },
+      orderBy: [{ customerId: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    const receiptsByCustomer = new Map<string, typeof receipts>();
+    receipts.forEach((r) => {
+      const list = receiptsByCustomer.get(r.customerId) ?? [];
+      list.push(r);
+      receiptsByCustomer.set(r.customerId, list);
+    });
+
+    const buckets = new Map<
+      string,
+      {
+        byDay: Map<string, { net: number; redeemed: number }>;
+        netTotal: number;
+        redeemedTotal: number;
+      }
+    >();
+
+    participantsByCustomer.forEach((customerPromos, customerId) => {
+      const customerReceipts = receiptsByCustomer
+        .get(customerId)
+        ?.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+      if (!customerReceipts?.length) return;
+
+      customerReceipts.forEach((receipt) => {
+        const totalRedeem = Math.max(0, Number(receipt.redeemApplied ?? 0));
+        if (!totalRedeem) return;
+        const cashPart = Math.max(
+          0,
+          Number(receipt.total ?? 0) - totalRedeem,
+        );
+
+        const allocations: Array<{ promo: typeof customerPromos[number]; amount: number }> = [];
+        let redeemLeft = totalRedeem;
+        for (const promo of customerPromos) {
+          if (promo.joinedAt > receipt.createdAt) break;
+          if (promo.remaining <= 0) continue;
+          if (redeemLeft <= 0) break;
+          const allocated = Math.min(promo.remaining, redeemLeft);
+          promo.remaining -= allocated;
+          redeemLeft -= allocated;
+          allocations.push({ promo, amount: allocated });
+        }
+
+        const promoRedeemTotal = allocations.reduce(
+          (acc, cur) => acc + cur.amount,
+          0,
+        );
+        if (!promoRedeemTotal) return;
+
+        allocations.forEach(({ promo, amount }) => {
+          const share = amount / promoRedeemTotal;
+          const netPart = cashPart * share;
+          const dayKey = receipt.createdAt.toISOString().slice(0, 10);
+          if (!buckets.has(promo.promotionId)) {
+            buckets.set(promo.promotionId, {
+              byDay: new Map(),
+              netTotal: 0,
+              redeemedTotal: 0,
+            });
+          }
+          const bucket = buckets.get(promo.promotionId)!;
+          const dayBucket = bucket.byDay.get(dayKey) ?? {
+            net: 0,
+            redeemed: 0,
+          };
+          dayBucket.net += netPart;
+          dayBucket.redeemed += amount;
+          bucket.byDay.set(dayKey, dayBucket);
+          bucket.netTotal += netPart;
+          bucket.redeemedTotal += amount;
+        });
+      });
+    });
+
+    buckets.forEach((value, promoId) => {
+      const days = Array.from(value.byDay.keys()).sort();
+      const series = days.map((day) =>
+        Math.round(value.byDay.get(day)?.net ?? 0),
+      );
+      result.set(promoId, {
+        series,
+        netTotal: Math.round(value.netTotal),
+        redeemedTotal: Math.round(value.redeemedTotal),
+      });
+    });
+
+    return result;
   }
 
   async createPromotion(merchantId: string, payload: PromotionPayload) {
@@ -1055,6 +1228,21 @@ export class LoyaltyProgramService {
       },
     });
     if (!promotion) throw new NotFoundException('Акция не найдена');
+    const revenue = (await this.computePromotionRedeemRevenue(merchantId, [promotionId])).get(
+      promotionId,
+    );
+    if (revenue) {
+      const charts = {
+        ...((promotion as any).metrics?.charts ?? {}),
+        revenueSeries: revenue.series,
+      };
+      (promotion as any).metrics = {
+        ...(promotion as any).metrics,
+        revenueGenerated: revenue.netTotal,
+        revenueRedeemed: revenue.redeemedTotal,
+        charts,
+      };
+    }
     return promotion;
   }
 
