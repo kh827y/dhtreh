@@ -1,9 +1,8 @@
 "use client";
 
 import React from "react";
-import { Card, CardHeader, CardBody, Button, Skeleton } from "@loyalty/ui";
+import { Card, CardHeader, CardBody, Button, Skeleton, Chart } from "@loyalty/ui";
 import Toggle from "../../../components/Toggle";
-import Sparkline from "../../../components/Sparkline";
 import TagSelect from "../../../components/TagSelect";
 import { Calendar, Users2, PlusCircle, X, RefreshCw, Bell, Flame } from "lucide-react";
 
@@ -41,6 +40,7 @@ type Campaign = {
   totalAudience: number; // всего в аудитории
   usedCount: number; // активировали/получили бонус
   revenueSeries: number[];
+  revenueDates?: string[];
   revenueNet: number;
   launched: boolean;
   createdAt: string;
@@ -137,6 +137,10 @@ function safeNumber(value: any): number {
   return Number.isFinite(num) ? num : 0;
 }
 
+function formatMoney(value: number) {
+  return value.toLocaleString("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 });
+}
+
 function computeTab(action: Campaign, now = new Date()): "UPCOMING" | "ACTIVE" | "PAST" {
   const status = normalizeStatus(action.status);
   const start = action.startDate ? new Date(action.startDate) : null;
@@ -149,7 +153,9 @@ function computeTab(action: Campaign, now = new Date()): "UPCOMING" | "ACTIVE" |
   return status === "ACTIVE" ? "ACTIVE" : "UPCOMING";
 }
 
-function deriveRevenueSeries(metrics: any): number[] {
+type RevenueData = { series: number[]; dates: string[] | null };
+
+function deriveRevenueSeries(metrics: any): RevenueData {
   const charts = metrics && typeof metrics === "object" ? (metrics.charts as Record<string, any>) ?? {} : {};
   const candidates = [
     charts.revenueNet,
@@ -163,6 +169,10 @@ function deriveRevenueSeries(metrics: any): number[] {
     charts.revenueSeries,
   ].find((value) => Array.isArray(value)) as number[] | undefined;
   const rawSeries = Array.isArray(candidates) ? candidates : [];
+  const dates =
+    Array.isArray(charts.revenueDates) && charts.revenueDates.length === rawSeries.length
+      ? charts.revenueDates
+      : null;
   const sanitized = rawSeries
     .map((value) => safeNumber(value))
     .filter((value) => Number.isFinite(value) && value >= 0);
@@ -171,10 +181,13 @@ function deriveRevenueSeries(metrics: any): number[] {
     const totalRevenue = sanitized.reduce((acc, value) => acc + value, 0);
     const totalPoints = safeNumber(metrics.pointsRedeemed);
     if (totalRevenue > 0) {
-      return sanitized.map((value) => Math.max(0, value - (totalPoints * (value / totalRevenue))));
+      return {
+        series: sanitized.map((value) => Math.max(0, value - (totalPoints * (value / totalRevenue)))),
+        dates,
+      };
     }
   }
-  return sanitized;
+  return { series: sanitized, dates };
 }
 
 function deriveAudienceSize(segment: any, analytics: any): number {
@@ -190,6 +203,36 @@ function deriveAudienceSize(segment: any, analytics: any): number {
   return audienceFromAnalytics;
 }
 
+type RevenuePoint = { date: Date; value: number };
+const DAY_MS = 86_400_000;
+const WINDOW_DAYS = 7;
+const MAX_LOOKBACK_DAYS = 365;
+
+function parseDate(value: string): Date | null {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+}
+
+function buildRevenuePoints(series: number[], dates?: string[]): RevenuePoint[] {
+  const hasDates = Array.isArray(dates) && dates.length === series.length;
+  const today = new Date();
+  return series
+    .map((value, index) => {
+      const date = hasDates
+        ? parseDate(dates![index]!)
+        : new Date(today.getTime() - (series.length - 1 - index) * DAY_MS);
+      if (!date) return null;
+      return { date, value: Math.max(0, safeNumber(value)) };
+    })
+    .filter((item): item is RevenuePoint => Boolean(item) && Number.isFinite(item.value) && item.value >= 0);
+}
+
+function formatShortDate(value: Date | null) {
+  if (!value || Number.isNaN(value.getTime())) return "—";
+  return value.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
+}
+
 export default function ActionsEarnPage() {
   const [tab, setTab] = React.useState<typeof tabs[number]["id"]>("ACTIVE");
   const [campaigns, setCampaigns] = React.useState<Campaign[]>([]);
@@ -202,6 +245,7 @@ export default function ActionsEarnPage() {
   const [audLoading, setAudLoading] = React.useState(false);
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const now = React.useMemo(() => new Date(), []);
+  const [chartWindow, setChartWindow] = React.useState<Record<string, number>>({});
 
   const loadAudiences = React.useCallback(async () => {
     setAudLoading(true);
@@ -267,7 +311,7 @@ export default function ActionsEarnPage() {
               pushReminderMessage: item.metadata?.pushReminderMessage || "",
             };
             const metrics = item.analytics?.metrics ?? item.analytics ?? item.metrics ?? {};
-            const revenueSeries = deriveRevenueSeries(metrics);
+            const revenueData = deriveRevenueSeries(metrics);
             const netRevenue = Math.max(
               0,
               safeNumber(metrics.revenueRedeemed ?? metrics.revenueGenerated) -
@@ -300,7 +344,8 @@ export default function ActionsEarnPage() {
               segmentName: name,
               totalAudience,
               usedCount,
-              revenueSeries: revenueSeries.length ? revenueSeries : netRevenue > 0 ? [netRevenue] : [],
+              revenueSeries: revenueData.series.length ? revenueData.series : netRevenue > 0 ? [netRevenue] : [],
+              revenueDates: revenueData.dates ?? undefined,
               revenueNet: netRevenue,
               launched: status === "ACTIVE" || status === "PAUSED" || status === "SCHEDULED",
               createdAt: item.createdAt || new Date().toISOString(),
@@ -453,12 +498,6 @@ export default function ActionsEarnPage() {
     const ignored = Math.max(0, total - used);
     const usedShare = total ? Math.round((used / total) * 100) : 0;
     const ignoredShare = total ? Math.round((ignored / total) * 100) : 0;
-    const revLast =
-      campaign.revenueSeries && campaign.revenueSeries.length > 0
-        ? Number(campaign.revenueSeries[campaign.revenueSeries.length - 1]) || 0
-        : 0;
-    const sumRev = campaign.revenueSeries?.reduce((a, b) => a + b, 0) || campaign.revenueNet || 0;
-    const showRevStats = revLast > 0 || sumRev > 0;
     const tabId = computeTab(campaign, now);
 
     return (
@@ -466,7 +505,7 @@ export default function ActionsEarnPage() {
         key={campaign.id}
         role="button"
         tabIndex={0}
-        onClickCapture={() => handleOpenEdit(campaign)}
+        onClick={() => handleOpenEdit(campaign)}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
@@ -475,80 +514,108 @@ export default function ActionsEarnPage() {
         }}
         style={{ cursor: "pointer" }}
       >
-        <Card style={{ position: "relative", overflow: "hidden" }}>
-          <CardHeader
-            title={campaign.name}
-            subtitle={`${tabs.find((t) => t.id === tabId)?.label ?? ""} • ${campaign.segmentName}`}
-          />
-          <CardBody>
+        <Card style={{ position: "relative", borderRadius: 0, margin: 0 }}>
+          <CardBody style={{ padding: 12 }}>
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "1.1fr 1fr 1.2fr",
-                gap: 20,
+                gridTemplateColumns: "minmax(260px,1.2fr) minmax(320px,1.6fr)",
+                gap: 16,
                 alignItems: "stretch",
               }}
             >
-              <div style={{ display: "grid", gap: 10 }}>
-                {campaign.description && (
-                  <div style={{ fontSize: 13.5, lineHeight: 1.6 }}>{campaign.description}</div>
-                )}
-                <div style={{ display: "grid", gap: 8 }}>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
-                    <Calendar size={16} />
-                    <span>{formatRange(campaign.startDate, campaign.endDate)}</span>
-                  </div>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
-                    <Users2 size={16} />
-                    <span>Аудитория: {campaign.segmentName || "—"}</span>
-                  </div>
-                  {campaign.reward.awardPoints ? (
-                    <div style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13 }}>
-                      <Flame size={16} />
-                      <span>{campaign.reward.points} баллов</span>
-                      {campaign.reward.pointsExpire && (
-                        <span style={{ opacity: 0.6 }}>сгорают после окончания</span>
-                      )}
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: 13, opacity: 0.7 }}>Без начисления баллов</div>
-                  )}
-                </div>
-              </div>
-
               <div
                 style={{
                   display: "grid",
                   gap: 10,
                   padding: 12,
-                  border: "1px solid rgba(148,163,184,0.18)",
                   borderRadius: 12,
-                  background: "rgba(148,163,184,0.08)",
+                  background: "rgba(148,163,184,0.06)",
                 }}
               >
+                <div style={{ display: "grid", gap: 4 }}>
+                  <div style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.25 }}>
+                    {campaign.name}
+                  </div>
+                  {campaign.description && (
+                    <div style={{ fontSize: 13, lineHeight: 1.35, opacity: 0.9 }}>
+                      {campaign.description}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: "grid", gap: 6, fontSize: 13 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 10,
+                      alignItems: "center",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <Calendar size={16} />
+                      <span>{formatRange(campaign.startDate, campaign.endDate)}</span>
+                    </div>
+                    {campaign.reward.awardPoints && (
+                      <div
+                        style={{
+                          display: "inline-flex",
+                          gap: 6,
+                          alignItems: "center",
+                          padding: "2px 8px",
+                          borderRadius: 999,
+                          background: "rgba(79,70,229,0.12)",
+                        }}
+                      >
+                        <Flame size={14} />
+                        <span>{campaign.reward.points} баллов</span>
+                        {campaign.reward.pointsExpire && (
+                          <span style={{ opacity: 0.7, fontSize: 12 }}>до окончания акции</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <Users2 size={16} />
+                    <span>
+                      Аудитория: <span style={{ fontWeight: 500 }}>{campaign.segmentName || "—"}</span>
+                    </span>
+                  </div>
+                </div>
+
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "auto auto",
-                    gap: 12,
-                    alignItems: "baseline",
+                    gridTemplateColumns: "repeat(3,minmax(0,1fr))",
+                    gap: 10,
+                    fontSize: 12,
+                    marginTop: 4,
                   }}
                 >
-                  <span style={{ fontSize: 13 }}>Вся аудитория</span>
-                  <strong style={{ fontSize: 13 }}>
-                    {total ? total.toLocaleString("ru-RU") : "—"}
-                  </strong>
-                  <span style={{ fontSize: 13 }}>Воспользовались</span>
-                  <strong style={{ fontSize: 13 }}>
-                    {used.toLocaleString("ru-RU")} {total ? `(${usedShare}%)` : ""}
-                  </strong>
-                  <span style={{ fontSize: 13 }}>Проигнорировали</span>
-                  <strong style={{ fontSize: 13 }}>
-                    {ignored.toLocaleString("ru-RU")} {total ? `(${ignoredShare}%)` : ""}
-                  </strong>
+                  <div style={{ display: "grid", gap: 4 }}>
+                    <span style={{ opacity: 0.7 }}>Вся аудитория</span>
+                    <strong style={{ fontSize: 13 }}>
+                      {total ? total.toLocaleString("ru-RU") : "—"}
+                    </strong>
+                  </div>
+                  <div style={{ display: "grid", gap: 4 }}>
+                    <span style={{ opacity: 0.7 }}>Воспользовались</span>
+                    <strong style={{ fontSize: 13 }}>
+                      {used.toLocaleString("ru-RU")} {total ? `(${usedShare}%)` : ""}
+                    </strong>
+                  </div>
+                  <div style={{ display: "grid", gap: 4 }}>
+                    <span style={{ opacity: 0.7 }}>Проигнорировали</span>
+                    <strong style={{ fontSize: 13 }}>
+                      {ignored.toLocaleString("ru-RU")} {total ? `(${ignoredShare}%)` : ""}
+                    </strong>
+                  </div>
                 </div>
+
                 <div
                   style={{
+                    marginTop: 6,
                     height: 8,
                     borderRadius: 6,
                     background: "rgba(148,163,184,0.25)",
@@ -565,17 +632,20 @@ export default function ActionsEarnPage() {
                 </div>
               </div>
 
-              <div style={{ display: "flex", alignItems: "center", gap: 16, justifyContent: "flex-end" }}>
-                <Sparkline data={campaign.revenueSeries} width={360} height={96} />
-                {showRevStats && (
-                  <div style={{ display: "grid", gap: 2, fontSize: 12, textAlign: "right" }}>
-                    <div style={{ opacity: 0.7 }}>Последний период</div>
-                    <div style={{ fontWeight: 600 }}>{revLast.toLocaleString("ru-RU")} ₽</div>
-                    <div style={{ opacity: 0.7 }}>
-                      Σ {(sumRev || 0).toLocaleString("ru-RU")} ₽
-                    </div>
-                  </div>
-                )}
+              <div
+                style={{
+                  padding: "12px 12px 8px",
+                  borderRadius: 12,
+                  background: "rgba(148,163,184,0.06)",
+                }}
+              >
+                <RevenueChart
+                  campaignId={campaign.id}
+                  dates={campaign.revenueDates}
+                  series={campaign.revenueSeries}
+                  chartWindow={chartWindow}
+                  setChartWindow={setChartWindow}
+                />
               </div>
             </div>
           </CardBody>
@@ -619,12 +689,12 @@ export default function ActionsEarnPage() {
       {error && <div style={{ color: "#f87171", fontSize: 13 }}>{error}</div>}
 
       <Card>
-        <CardHeader title={`${tabs.find((t) => t.id === tab)?.label}`} subtitle={`${filtered.length} акция(ий)`} />
+        <CardHeader title={`${tabs.find((t) => t.id === tab)?.label}`} />
         <CardBody>
           {loading ? (
             <Skeleton height={240} />
           ) : filtered.length ? (
-            <div style={{ display: "grid", gap: 16, gridTemplateColumns: "1fr" }}>
+            <div style={{ display: "grid", gap: 0, gridTemplateColumns: "1fr" }}>
               {filtered.map(renderCard)}
             </div>
           ) : (
@@ -935,3 +1005,152 @@ const NotificationEditor: React.FC<NotificationEditorProps> = ({
     )}
   </div>
 );
+
+type RevenueChartProps = {
+  campaignId: string;
+  dates?: string[];
+  series: number[];
+  chartWindow: Record<string, number>;
+  setChartWindow: React.Dispatch<React.SetStateAction<Record<string, number>>>;
+};
+
+const REVENUE_LINE_COLOR = "#ffffff";
+
+const RevenueChart: React.FC<RevenueChartProps> = ({
+  campaignId,
+  dates,
+  series,
+  chartWindow,
+  setChartWindow,
+}) => {
+  const points = React.useMemo(() => buildRevenuePoints(series, dates), [series, dates]);
+  if (!points.length) {
+    return <div style={{ fontSize: 12, opacity: 0.6 }}>Нет данных по выручке</div>;
+  }
+
+  const lastDate = points[points.length - 1].date;
+  const earliestDate = new Date(lastDate.getTime() - MAX_LOOKBACK_DAYS * DAY_MS);
+  let earliestIdx = points.findIndex((p) => p.date >= earliestDate);
+  if (earliestIdx === -1) earliestIdx = 0;
+  const maxStart = Math.max(earliestIdx, points.length - WINDOW_DAYS);
+  const storedStart = chartWindow[campaignId];
+  const start = Math.min(
+    Math.max(earliestIdx, storedStart ?? maxStart),
+    Math.max(earliestIdx, points.length - WINDOW_DAYS),
+  );
+  const windowPoints = points.slice(start, start + WINDOW_DAYS);
+  const windowSum = windowPoints.reduce((acc, p) => acc + p.value, 0);
+  const totalSum = points.reduce((acc, p) => acc + p.value, 0);
+
+  const canPrev = start > earliestIdx;
+  const canNext = start + WINDOW_DAYS < points.length;
+  const shiftWindow = (delta: number) => {
+    setChartWindow((prev) => {
+      const base = prev[campaignId] ?? start;
+      const next = Math.min(
+        Math.max(earliestIdx, base + delta),
+        Math.max(earliestIdx, points.length - WINDOW_DAYS),
+      );
+      return { ...prev, [campaignId]: next };
+    });
+  };
+
+  const categories = React.useMemo(
+    () => windowPoints.map((p) => formatShortDate(p.date)),
+    [windowPoints],
+  );
+  const option = React.useMemo(
+    () => ({
+      color: [REVENUE_LINE_COLOR],
+      tooltip: {
+        trigger: "axis",
+        axisPointer: { type: "line" },
+        valueFormatter: (value: number) => formatMoney(Math.round(value || 0)),
+      },
+      grid: { left: 64, right: 16, top: 8, bottom: 4, containLabel: true },
+      xAxis: {
+        type: "category",
+        data: categories,
+        boundaryGap: false,
+        axisLine: { lineStyle: { color: "rgba(148,163,184,0.6)" } },
+        axisLabel: { color: "rgba(226,232,240,0.9)", fontSize: 11, margin: 4 },
+      },
+      yAxis: {
+        type: "value",
+        axisLine: { show: false },
+        splitLine: { lineStyle: { color: "rgba(148,163,184,0.25)" } },
+        axisLabel: {
+          color: "rgba(226,232,240,0.9)",
+          formatter: (v: number) => formatMoney(Math.round(Number(v) || 0)),
+        },
+      },
+      series: [
+        {
+          name: "Выручка",
+          type: "line",
+          smooth: true,
+          showSymbol: true,
+          symbol: "circle",
+          symbolSize: 5,
+          lineStyle: { width: 2, color: REVENUE_LINE_COLOR },
+          itemStyle: { color: REVENUE_LINE_COLOR },
+          areaStyle: { opacity: 0.18, color: "rgba(255,255,255,0.18)" },
+          data: windowPoints.map((p) => Math.round(p.value)),
+        },
+      ],
+    }),
+    [categories, windowPoints],
+  );
+
+  return (
+    <div style={{ display: "grid", gap: 4 }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 8,
+          fontSize: 12,
+          marginTop: -8,
+        }}
+      >
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <span style={{ opacity: 0.7 }}>За неделю:</span>
+            <strong>{formatMoney(Math.round(windowSum))}</strong>
+          </div>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <span style={{ opacity: 0.7 }}>За все время:</span>
+            <strong>{formatMoney(Math.round(totalSum))}</strong>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button
+            className="btn btn-ghost"
+            disabled={!canPrev}
+            onClick={() => shiftWindow(-WINDOW_DAYS)}
+            style={{ padding: "8px 12px", minWidth: "auto", fontSize: 16, lineHeight: 1 }}
+          >
+            ←
+          </button>
+          <button
+            className="btn btn-ghost"
+            disabled={!canNext}
+            onClick={() => shiftWindow(WINDOW_DAYS)}
+            style={{ padding: "8px 12px", minWidth: "auto", fontSize: 16, lineHeight: 1 }}
+          >
+            →
+          </button>
+        </div>
+      </div>
+
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ width: "100%" }}
+      >
+        <Chart height={180} option={option} />
+      </div>
+    </div>
+  );
+};

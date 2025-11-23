@@ -881,6 +881,7 @@ export class LoyaltyProgramService {
       const charts = {
         ...((promotion as any).metrics?.charts ?? {}),
         revenueSeries: revenue.series,
+        revenueDates: revenue.dates,
       };
       (promotion as any).metrics = {
         ...(promotion as any).metrics,
@@ -908,12 +909,15 @@ export class LoyaltyProgramService {
     merchantId: string,
     promotionIds: string[],
   ): Promise<
-    Map<string, { series: number[]; netTotal: number; redeemedTotal: number }>
+    Map<
+      string,
+      { series: number[]; dates: string[]; netTotal: number; redeemedTotal: number }
+    >
   > {
     const ids = promotionIds.filter(Boolean);
     const result = new Map<
       string,
-      { series: number[]; netTotal: number; redeemedTotal: number }
+      { series: number[]; dates: string[]; netTotal: number; redeemedTotal: number }
     >();
     if (!ids.length) return result;
 
@@ -1050,6 +1054,7 @@ export class LoyaltyProgramService {
       );
       result.set(promoId, {
         series,
+        dates: days,
         netTotal: Math.round(value.netTotal),
         redeemedTotal: Math.round(value.redeemedTotal),
       });
@@ -1235,6 +1240,7 @@ export class LoyaltyProgramService {
       const charts = {
         ...((promotion as any).metrics?.charts ?? {}),
         revenueSeries: revenue.series,
+        revenueDates: revenue.dates,
       };
       (promotion as any).metrics = {
         ...(promotion as any).metrics,
