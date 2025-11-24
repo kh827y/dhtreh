@@ -673,7 +673,9 @@ export class CustomerAudiencesService {
 
   private async getAllCustomersCount(merchantId: string): Promise<number> {
     try {
-      return await this.prisma.merchantCustomer.count({ where: { merchantId } });
+      return await this.prisma.merchantCustomer.count({
+        where: { merchantId },
+      });
     } catch (err) {
       this.logger.warn(
         `Failed to count all customers for merchant ${merchantId}: ${

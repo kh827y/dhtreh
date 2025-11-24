@@ -5,7 +5,7 @@ export const runtime = 'nodejs';
 const API_BASE = (process.env.API_BASE || '').replace(/\/$/, '');
 const ADMIN_KEY = process.env.ADMIN_KEY || '';
 const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || '';
-const ADMIN_UI_PASSWORD = process.env.ADMIN_UI_ADMIN_PASSWORD || process.env.ADMIN_UI_PASSWORD || '';
+const ADMIN_UI_PASSWORD = process.env.ADMIN_UI_PASSWORD || process.env.ADMIN_UI_ADMIN_PASSWORD || '';
 
 async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }> | { path: string[] } }) {
   if (!API_BASE) return new Response('API_BASE not configured', { status: 500 });
@@ -30,11 +30,7 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   const headers: Record<string, string> = {};
   req.headers.forEach((v: string, k: string) => { if (!/^host$/i.test(k)) headers[k] = v; });
   headers['x-admin-key'] = ADMIN_KEY;
-  // RBAC: только ADMIN может выполнять изменяющие методы
   const sess = getSession(req);
-  if (sess?.role === 'MERCHANT' && !/^(GET|HEAD|OPTIONS)$/i.test(method)) {
-    return new NextResponse('Forbidden for role MERCHANT', { status: 403 });
-  }
   // Audit hint via header (для логов API)
   try {
     const ip = (req.headers.get('x-forwarded-for') || req.ip || '').split(',')[0].trim();

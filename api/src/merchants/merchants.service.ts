@@ -2203,9 +2203,7 @@ export class MerchantsService {
     if (!nextName)
       throw new BadRequestException('Название не может быть пустым');
     if (nextName.length > 120)
-      throw new BadRequestException(
-        'Название должно быть короче 120 символов',
-      );
+      throw new BadRequestException('Название должно быть короче 120 символов');
 
     const current = await this.prisma.merchant.findUnique({
       where: { id: merchantId },

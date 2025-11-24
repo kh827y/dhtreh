@@ -187,12 +187,17 @@ export class LoyaltyController {
     endAt?: Date | null;
   }): number | null {
     const explicit = Number(promo.pointsExpireInDays);
-    if (Number.isFinite(explicit) && explicit > 0) return Math.max(1, Math.trunc(explicit));
+    if (Number.isFinite(explicit) && explicit > 0)
+      return Math.max(1, Math.trunc(explicit));
     const meta =
       promo.rewardMetadata && typeof promo.rewardMetadata === 'object'
         ? (promo.rewardMetadata as Record<string, any>)
         : null;
-    const shouldExpire = Boolean(meta?.pointsExpire ?? meta?.metadata?.pointsExpire ?? meta?.pointsExpireAfterEnd);
+    const shouldExpire = Boolean(
+      meta?.pointsExpire ??
+        meta?.metadata?.pointsExpire ??
+        meta?.pointsExpireAfterEnd,
+    );
     if (!shouldExpire) return null;
     if (promo.endAt instanceof Date) {
       const diffMs = promo.endAt.getTime() - Date.now();
@@ -427,24 +432,29 @@ export class LoyaltyController {
         status: { in: ['ACTIVE', 'SCHEDULED'] as any },
         AND: [
           {
-        OR: [
-          { startAt: null },
-          { startAt: { lte: now } },
-          { status: 'SCHEDULED' as any },
-        ],
-      },
-      { OR: [{ endAt: null }, { endAt: { gte: now } }] },
-      {
-        OR: [
-          { segmentId: null },
-          { audience: { systemKey: 'all-customers' } },
-          { audience: { rules: { path: ['kind'], equals: 'all' } } },
-          { audience: { isSystem: true, rules: { path: ['kind'], equals: 'all' } } },
-          {
-            audience: {
-              customers: { some: { customerId } },
-            },
+            OR: [
+              { startAt: null },
+              { startAt: { lte: now } },
+              { status: 'SCHEDULED' as any },
+            ],
           },
+          { OR: [{ endAt: null }, { endAt: { gte: now } }] },
+          {
+            OR: [
+              { segmentId: null },
+              { audience: { systemKey: 'all-customers' } },
+              { audience: { rules: { path: ['kind'], equals: 'all' } } },
+              {
+                audience: {
+                  isSystem: true,
+                  rules: { path: ['kind'], equals: 'all' },
+                },
+              },
+              {
+                audience: {
+                  customers: { some: { customerId } },
+                },
+              },
             ],
           },
         ],
@@ -1243,9 +1253,7 @@ export class LoyaltyController {
         ? body.merchantCustomerId.trim()
         : '';
     const transactionId =
-      typeof body?.transactionId === 'string'
-        ? body.transactionId.trim()
-        : '';
+      typeof body?.transactionId === 'string' ? body.transactionId.trim() : '';
     if (!merchantId) throw new BadRequestException('merchantId is required');
     if (!merchantCustomerId)
       throw new BadRequestException('merchantCustomerId is required');

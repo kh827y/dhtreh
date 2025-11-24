@@ -14,10 +14,7 @@ import { PrismaService } from '../prisma.service';
 import { LoyaltyService } from './loyalty.service';
 import { TelegramMiniappGuard } from '../guards/telegram-miniapp.guard';
 import { LoyaltyEventsService } from './loyalty-events.service';
-import {
-  ensureBaseTier,
-  toLevelRule,
-} from './tier-defaults.util';
+import { ensureBaseTier, toLevelRule } from './tier-defaults.util';
 
 @ApiTags('loyalty-public')
 @Controller('loyalty')

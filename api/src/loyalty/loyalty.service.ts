@@ -352,11 +352,19 @@ export class LoyaltyService {
         where: { id: wallet.id },
         data: { balance: (fresh?.balance ?? 0) - amount },
       });
-      const rewardMeta: any = (reward as any)?.metadata;
+      const rewardMeta: any = reward?.metadata;
       let rollbackBuyerId: string | null = null;
-      if (rewardMeta && typeof rewardMeta === 'object' && !Array.isArray(rewardMeta)) {
-        const rawBuyerId = (rewardMeta as any).buyerId;
-        if (rawBuyerId !== undefined && rawBuyerId !== null && String(rawBuyerId).trim() !== '') {
+      if (
+        rewardMeta &&
+        typeof rewardMeta === 'object' &&
+        !Array.isArray(rewardMeta)
+      ) {
+        const rawBuyerId = rewardMeta.buyerId;
+        if (
+          rawBuyerId !== undefined &&
+          rawBuyerId !== null &&
+          String(rawBuyerId).trim() !== ''
+        ) {
           rollbackBuyerId = String(rawBuyerId).trim();
         }
       }
@@ -815,10 +823,7 @@ export class LoyaltyService {
       // Если старое назначение уровня истекло, пересчитываем актуальный уровень по сумме покупок
       await this.refreshTierAssignmentIfExpired(tx, merchantId, customerId);
 
-      const promo = await this.promoCodes.requireActiveByCode(
-        merchantId,
-        code,
-      );
+      const promo = await this.promoCodes.requireActiveByCode(merchantId, code);
 
       const result = await this.promoCodes.apply(tx, {
         promoCodeId: promo.id,
@@ -928,7 +933,8 @@ export class LoyaltyService {
         pointsExpireInDays: promoExpireDays,
         pointsExpireAt: expiresAt ? expiresAt.toISOString() : null,
         balance,
-        tierAssigned: result.assignedTier?.id ?? result.promoCode.assignTierId ?? null,
+        tierAssigned:
+          result.assignedTier?.id ?? result.promoCode.assignTierId ?? null,
         tierAssignedName: result.assignedTier?.name ?? null,
         message: message || 'Промокод активирован',
       };
@@ -1260,7 +1266,11 @@ export class LoyaltyService {
       await this.prisma.merchant.upsert({
         where: { id: dto.merchantId },
         update: {},
-        create: { id: dto.merchantId, name: dto.merchantId, initialName: dto.merchantId },
+        create: {
+          id: dto.merchantId,
+          name: dto.merchantId,
+          initialName: dto.merchantId,
+        },
       });
     } catch {}
     await ensureBaseTier(this.prisma, dto.merchantId).catch(() => null);
@@ -1537,7 +1547,11 @@ export class LoyaltyService {
           await tx.merchant.upsert({
             where: { id: dto.merchantId },
             update: {},
-            create: { id: dto.merchantId, name: dto.merchantId, initialName: dto.merchantId },
+            create: {
+              id: dto.merchantId,
+              name: dto.merchantId,
+              initialName: dto.merchantId,
+            },
           });
         } catch {}
         let wallet = await tx.wallet.findFirst({
@@ -2770,7 +2784,9 @@ export class LoyaltyService {
         for (const record of records) {
           if (!record?.transactionId) continue;
           const payload =
-            record && typeof record.payload === 'object' ? record.payload : null;
+            record && typeof record.payload === 'object'
+              ? record.payload
+              : null;
           const ts =
             normalizeDate(payload?.dismissedAt) ||
             normalizeDate(record.emittedAt) ||
@@ -3160,7 +3176,7 @@ export class LoyaltyService {
       return idx;
     })();
     const target =
-      targetIndex >= 0 ? visibleTiers[targetIndex] ?? null : null;
+      targetIndex >= 0 ? (visibleTiers[targetIndex] ?? null) : null;
     if (!target) return;
     const currentAssign = await tx.loyaltyTierAssignment.findFirst({
       where: {

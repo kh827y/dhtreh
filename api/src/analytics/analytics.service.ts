@@ -359,7 +359,7 @@ export class AnalyticsService {
     );
     const averageCheck = orders > 0 ? Math.round(totalSales / orders) : 0;
     const averagePurchasesPerCustomer =
-      buyers > 0 ? Math.round(((orders / buyers) || 0) * 10) / 10 : 0;
+      buyers > 0 ? Math.round((orders / buyers || 0) * 10) / 10 : 0;
     let newCustomers = 0;
     for (const value of registrationsByDay.values()) {
       newCustomers += value;
@@ -1807,10 +1807,7 @@ export class AnalyticsService {
         (Number(autoReturn?.giftTtlDays ?? 0) || 0) > 0,
     );
     const giftTtlDays = giftBurnEnabled
-      ? Math.max(
-          0,
-          Math.floor(Number(autoReturn?.giftTtlDays ?? 0) || 0),
-        )
+      ? Math.max(0, Math.floor(Number(autoReturn?.giftTtlDays ?? 0) || 0))
       : 0;
 
     const from = new Date(period.from);
@@ -1887,9 +1884,7 @@ export class AnalyticsService {
         giftBurnEnabled && giftPointsValue > 0
           ? attempt.giftExpiresAt
             ? new Date(attempt.giftExpiresAt)
-            : new Date(
-                attempt.invitedAt.getTime() + giftTtlDays * msInDay,
-              )
+            : new Date(attempt.invitedAt.getTime() + giftTtlDays * msInDay)
           : null;
       const existing = attemptsByCustomer.get(attempt.customerId);
       if (
@@ -1992,7 +1987,7 @@ export class AnalyticsService {
       }>
     >();
     for (const receipt of receipts) {
-      const customerId = receipt.customerId as string;
+      const customerId = receipt.customerId;
       const arr = receiptsByCustomer.get(customerId) ?? [];
       arr.push({
         id: receipt.id,
@@ -2039,9 +2034,9 @@ export class AnalyticsService {
       invitesByDay.set(inviteBucket, (invitesByDay.get(inviteBucket) ?? 0) + 1);
 
       const customerReceipts =
-        receiptsByCustomer.get(customerId)?.filter(
-          (receipt) => receipt.createdAt >= attempt.invitedAt,
-        ) ?? [];
+        receiptsByCustomer
+          .get(customerId)
+          ?.filter((receipt) => receipt.createdAt >= attempt.invitedAt) ?? [];
       if (!customerReceipts.length) continue;
 
       const giftSpentByReceipt = new Map<string, number>();
@@ -2147,8 +2142,7 @@ export class AnalyticsService {
       })
       .sort(
         (a, b) =>
-          a.date.localeCompare(b.date) ||
-          a.segment.localeCompare(b.segment),
+          a.date.localeCompare(b.date) || a.segment.localeCompare(b.segment),
       );
 
     const conversion = invitations > 0 ? (returned / invitations) * 100 : 0;
@@ -2375,11 +2369,11 @@ export class AnalyticsService {
       const customerId = row.customerId as string | null;
       if (!customerId) return false;
       if (!greetingCustomers.has(customerId)) return false;
-      if (row.orderId && refundOrderIds.has(row.orderId as string)) return false;
+      if (row.orderId && refundOrderIds.has(row.orderId)) return false;
       return true;
     });
     const targetCustomerIds = new Set(
-      targetReceipts.map((row) => row.customerId as string),
+      targetReceipts.map((row) => row.customerId),
     );
 
     const relevantCustomers = new Set<string>(greetingCustomers);
@@ -2432,7 +2426,7 @@ export class AnalyticsService {
       const customerId = row.customerId as string | null;
       if (!customerId) return false;
       if (!greetingCustomers.has(customerId)) return false;
-      if (row.orderId && refundOrderIds.has(row.orderId as string)) return false;
+      if (row.orderId && refundOrderIds.has(row.orderId)) return false;
       return true;
     });
 
@@ -2464,7 +2458,7 @@ export class AnalyticsService {
 
     const receiptsByCustomer = new Map<string, ReceiptInfo[]>();
     for (const receipt of receiptsForConsumption) {
-      const customerId = receipt.customerId as string;
+      const customerId = receipt.customerId;
       if (!receiptsByCustomer.has(customerId)) {
         receiptsByCustomer.set(customerId, []);
       }
@@ -2541,11 +2535,11 @@ export class AnalyticsService {
       const net = Math.max(0, Number(receipt.total ?? 0) - giftSpent);
       const bucket = dateKey(new Date(receipt.createdAt));
       const set = purchasesPerBucket.get(bucket) ?? new Set<string>();
-      if (receipt.customerId) set.add(receipt.customerId as string);
+      if (receipt.customerId) set.add(receipt.customerId);
       purchasesPerBucket.set(bucket, set);
       revenuePerBucket.set(bucket, (revenuePerBucket.get(bucket) ?? 0) + net);
 
-      buyers.add(receipt.customerId as string);
+      buyers.add(receipt.customerId);
       revenueNet += net;
       pointsSpent += giftSpent;
       grossSum += Number(receipt.total ?? 0);
@@ -2785,10 +2779,12 @@ export class AnalyticsService {
     period: DashboardPeriod,
     timezone: RussiaTimezone,
   ): Promise<Map<string, number>> {
-    const offsetInterval =
-      Prisma.sql`${timezone.utcOffsetMinutes} * interval '1 minute'`;
+    const offsetInterval = Prisma.sql`${timezone.utcOffsetMinutes} * interval '1 minute'`;
     const rows = await this.prisma.$queryRaw<
-      Array<{ bucket: Date; registrations: Prisma.Decimal | bigint | number | null }>
+      Array<{
+        bucket: Date;
+        registrations: Prisma.Decimal | bigint | number | null;
+      }>
     >(Prisma.sql`
       SELECT
         date_trunc('day', w."createdAt" + ${offsetInterval}) - ${offsetInterval} AS bucket,

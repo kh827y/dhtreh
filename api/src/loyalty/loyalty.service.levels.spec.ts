@@ -81,16 +81,14 @@ function mockAssignedTier(
   prisma: ReturnType<typeof mkPrisma>,
   tier: Partial<{ earnRateBps: number; redeemRateBps: number }>,
 ) {
-  prisma.loyaltyTierAssignment.findFirst = jest
-    .fn()
-    .mockResolvedValue({
-      id: 'assign-tier',
-      merchantId: 'M1',
-      customerId: 'C1',
-      tierId: 'tier-silver',
-      assignedAt: new Date(),
-      expiresAt: null,
-    });
+  prisma.loyaltyTierAssignment.findFirst = jest.fn().mockResolvedValue({
+    id: 'assign-tier',
+    merchantId: 'M1',
+    customerId: 'C1',
+    tierId: 'tier-silver',
+    assignedAt: new Date(),
+    expiresAt: null,
+  });
   prisma.loyaltyTier.findUnique = jest.fn(async () => ({
     id: 'tier-silver',
     merchantId: 'M1',
@@ -211,15 +209,22 @@ describe('LevelsService.getLevel', () => {
     const prisma = mkPrisma({
       loyaltyTier: {
         findMany: jest.fn(async () => [
-          { id: 'tier-base', name: 'Base', thresholdAmount: 0, isHidden: false },
-          { id: 'tier-silver', name: 'Silver', thresholdAmount: 500, isHidden: false },
+          {
+            id: 'tier-base',
+            name: 'Base',
+            thresholdAmount: 0,
+            isHidden: false,
+          },
+          {
+            id: 'tier-silver',
+            name: 'Silver',
+            thresholdAmount: 500,
+            isHidden: false,
+          },
         ]),
       },
       receipt: {
-        findMany: jest.fn(async () => [
-          { total: 200 },
-          { total: 100 },
-        ]),
+        findMany: jest.fn(async () => [{ total: 200 }, { total: 100 }]),
         count: jest.fn(async () => 0),
       },
     });
@@ -238,8 +243,18 @@ describe('LevelsService.getLevel', () => {
     const prisma = mkPrisma({
       loyaltyTier: {
         findMany: jest.fn(async () => [
-          { id: 'tier-base', name: 'Base', thresholdAmount: 0, isHidden: false },
-          { id: 'tier-gold', name: 'Gold', thresholdAmount: 1000, isHidden: false },
+          {
+            id: 'tier-base',
+            name: 'Base',
+            thresholdAmount: 0,
+            isHidden: false,
+          },
+          {
+            id: 'tier-gold',
+            name: 'Gold',
+            thresholdAmount: 1000,
+            isHidden: false,
+          },
         ]),
       },
       receipt: {

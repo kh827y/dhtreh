@@ -10,11 +10,7 @@ import { RedeemLimitsController } from './controllers/redeem-limits.controller';
 import { CommunicationsModule } from '../communications/communications.module';
 
 @Module({
-  imports: [
-    PrismaModule,
-    MetricsModule,
-    CommunicationsModule,
-  ],
+  imports: [PrismaModule, MetricsModule, CommunicationsModule],
   providers: [LoyaltyProgramService],
   controllers: [
     MechanicsController,

@@ -1,5 +1,12 @@
 # Planning Mode — Long Run (2025-09-15)
 
+## Хотфикс 2025-12-XX — Admin cleanup
+- [x] Admin: удалены legacy-страницы онбординга, notifications, transactions и тест правил, а также фронтовый клиент подписок/платежей и устаревший `admin/lib/notifications.ts`.
+- [x] Admin: навигация и главная страница приведены к целевому набору разделов (мерчанты, outbox, TTL, антифрод, статус API, документация, экспорт, подпись).
+- [x] Admin: аутентификация упрощена до одной роли ADMIN (пароль + опциональный TOTP), manager/merchant-пароль убран.
+- [x] Admin: клиент к API использует только реальный `NEXT_PUBLIC_API_KEY` без `test-key`, примеры prod-окружения обновлены (.env.production.example, infra/env-examples/admin.env.example).
+- [x] Admin docs: обновлены страницы деплоя и наблюдаемости под актуальные ENV/метрики (ADMIN_UI_PASSWORD, NEXT_PUBLIC_API_KEY/NEXT_PUBLIC_API_BASE, loyalty_errors_total, loyalty_request_duration_seconds_bucket и др.).
+
 ## Хотфикс 2025-12-XX — Акции с начислением баллов (очистка)
 - [x] Удалены legacy product/bonus экраны и API `/portal/actions`, в портале осталась заглушка `/loyalty/actions` с переходом в «Акции с начислением баллов».
 - [x] Promotions API принимает только POINTS-акции с положительным вознаграждением, списки/статусы/миниаппа отфильтровывают остальные типы.

@@ -125,7 +125,12 @@ export class OperationsLogService {
           })
         : Promise.resolve(
             [] as Prisma.ReceiptGetPayload<{
-              include: { customer: true; staff: true; outlet: true; canceledBy: true };
+              include: {
+                customer: true;
+                staff: true;
+                outlet: true;
+                canceledBy: true;
+              };
             }>[],
           ),
       includeTransactions
@@ -244,15 +249,19 @@ export class OperationsLogService {
         }
       }
 
-      const mergedRefunds = Array.from(refundGrouped.values()).map(
-        (group) => ({
-          ...group.base,
-          occurredAt: group.latest,
-          earn: { amount: group.earn, source: group.earn > 0 ? group.base.details : null },
-          redeem: { amount: group.redeem, source: group.redeem > 0 ? group.base.details : null },
-          change: group.earn - group.redeem,
-        }),
-      );
+      const mergedRefunds = Array.from(refundGrouped.values()).map((group) => ({
+        ...group.base,
+        occurredAt: group.latest,
+        earn: {
+          amount: group.earn,
+          source: group.earn > 0 ? group.base.details : null,
+        },
+        redeem: {
+          amount: group.redeem,
+          source: group.redeem > 0 ? group.base.details : null,
+        },
+        change: group.earn - group.redeem,
+      }));
 
       normalizedItems = [...nonRefund, ...mergedRefunds];
     }
@@ -1270,18 +1279,31 @@ export class OperationsLogService {
         ms?.rulesJson && typeof ms.rulesJson === 'object'
           ? (ms.rulesJson as Record<string, any>)
           : null;
-      if (rules && Object.prototype.hasOwnProperty.call(rules, 'allowSameReceipt')) {
+      if (
+        rules &&
+        Object.prototype.hasOwnProperty.call(rules, 'allowSameReceipt')
+      ) {
         allowSame = this.normalizeFlag((rules as any).allowSameReceipt);
       } else if (
         rules &&
-        Object.prototype.hasOwnProperty.call(rules, 'allowEarnRedeemSameReceipt')
+        Object.prototype.hasOwnProperty.call(
+          rules,
+          'allowEarnRedeemSameReceipt',
+        )
       ) {
-        allowSame = this.normalizeFlag((rules as any).allowEarnRedeemSameReceipt);
+        allowSame = this.normalizeFlag(
+          (rules as any).allowEarnRedeemSameReceipt,
+        );
       } else if (
         rules &&
-        Object.prototype.hasOwnProperty.call(rules, 'disallowEarnRedeemSameReceipt')
+        Object.prototype.hasOwnProperty.call(
+          rules,
+          'disallowEarnRedeemSameReceipt',
+        )
       ) {
-        allowSame = !this.normalizeFlag((rules as any).disallowEarnRedeemSameReceipt);
+        allowSame = !this.normalizeFlag(
+          (rules as any).disallowEarnRedeemSameReceipt,
+        );
       }
     } catch {}
     return allowSame;

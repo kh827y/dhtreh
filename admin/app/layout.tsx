@@ -35,6 +35,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <nav style={{ display: 'grid', gap: 8 }}>
               <a href="/" style={{ color: '#89b4fa' }}>Главная</a>
               <a href="/merchants" style={{ color: '#89b4fa' }}>Мерчанты</a>
+              <a href="/settings" style={{ color: '#89b4fa' }}>Настройки мерчанта</a>
               <OutboxLink merchantId={merchantId} />
               <a href="/outbox/monitor" style={{ color: '#89b4fa' }}>Outbox Monitor</a>
               <a href="/telegram_notifications" style={{ color: '#89b4fa' }}>Telegram уведомления</a>
@@ -48,7 +49,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <div style={{ marginTop: 8, opacity: 0.8, fontSize: 12, textTransform: 'uppercase' }}>Инструменты</div>
               <a href="/exports" style={{ color: '#89b4fa' }}>Экспорт</a>
               <a href="/tools/signature" style={{ color: '#89b4fa' }}>Подпись</a>
-              <a href="/rules/test" style={{ color: '#89b4fa' }}>Правила (тест)</a>
               <a href="/antifraud" style={{ color: '#89b4fa' }}>Антифрод</a>
               <a href="/status" style={{ color: '#89b4fa' }}>Статус API</a>
               <a href="/audit" style={{ color: '#89b4fa' }}>Аудит</a>

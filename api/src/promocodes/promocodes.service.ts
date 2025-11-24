@@ -513,14 +513,12 @@ export class PromoCodesService {
       expiresAt: Date | null;
     } | null = null;
     let tierExpiresAt: Date | null = null;
-    let targetTier:
-      | {
-          id: string;
-          name: string | null;
-          isHidden: boolean;
-          thresholdAmount: number | null;
-        }
-      | null = null;
+    let targetTier: {
+      id: string;
+      name: string | null;
+      isHidden: boolean;
+      thresholdAmount: number | null;
+    } | null = null;
 
     if (promo.assignTierId) {
       targetTier = await tx.loyaltyTier.findUnique({

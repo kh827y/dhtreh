@@ -26,9 +26,7 @@ export type LevelsPrisma =
   | {
       transaction: {
         count: (args: any) => Promise<number>;
-        findMany: (
-          args: any,
-        ) => Promise<
+        findMany: (args: any) => Promise<
           Array<{
             amount?: number;
             orderId?: string | null;
@@ -39,9 +37,7 @@ export type LevelsPrisma =
       };
       receipt: {
         count: (args: any) => Promise<number>;
-        findMany: (
-          args: any,
-        ) => Promise<
+        findMany: (args: any) => Promise<
           Array<{
             total?: number;
             eligibleTotal?: number;
@@ -118,7 +114,12 @@ export async function computeLevelState(args: {
           createdAt: { gte: since },
           ...(args.includeCanceled ? {} : { canceledAt: null }),
         },
-        select: { total: true, eligibleTotal: true, canceledAt: true, orderId: true },
+        select: {
+          total: true,
+          eligibleTotal: true,
+          canceledAt: true,
+          orderId: true,
+        },
       });
       const receiptTotals = new Map<string, number>();
       const canceledOrders = new Set<string>();
@@ -140,7 +141,11 @@ export async function computeLevelState(args: {
           if (orderId) canceledOrders.add(orderId);
         }
       }
-      if (args.includeRefunds && receiptTotals.size > 0 && prismaAny?.transaction) {
+      if (
+        args.includeRefunds &&
+        receiptTotals.size > 0 &&
+        prismaAny?.transaction
+      ) {
         const refunds = await prismaAny.transaction.findMany({
           where: {
             merchantId,
@@ -164,7 +169,9 @@ export async function computeLevelState(args: {
               ? (refund.metadata as Record<string, any>)
               : null;
           let share = 1;
-          const rawShare = Number((meta as any)?.share ?? (meta as any)?.refundShare);
+          const rawShare = Number(
+            (meta as any)?.share ?? (meta as any)?.refundShare,
+          );
           if (Number.isFinite(rawShare) && rawShare > 0 && rawShare <= 1) {
             share = rawShare;
           } else if ((meta as any)?.refundTotal != null && total > 0) {

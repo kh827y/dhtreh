@@ -25,7 +25,9 @@ describe('AnalyticsService.getBirthdayMechanicMetrics', () => {
 
   it('считает поздравления, покупки по подарочным баллам и чистую выручку', async () => {
     prisma.merchantSettings.findUnique.mockResolvedValue({
-      rulesJson: { birthday: { daysBefore: 5, giftPoints: 400, giftTtlDays: 10 } },
+      rulesJson: {
+        birthday: { daysBefore: 5, giftPoints: 400, giftTtlDays: 10 },
+      },
     });
 
     prisma.transaction.findMany.mockResolvedValue([{ orderId: 'ref-order' }]);
@@ -87,8 +89,6 @@ describe('AnalyticsService.getBirthdayMechanicMetrics', () => {
       { date: '2025-11-03', greetings: 0, purchases: 1 },
       { date: '2025-11-04', greetings: 1, purchases: 0 },
     ]);
-    expect(result.revenue).toEqual([
-      { date: '2025-11-03', revenue: 1800 },
-    ]);
+    expect(result.revenue).toEqual([{ date: '2025-11-03', revenue: 1800 }]);
   });
 });

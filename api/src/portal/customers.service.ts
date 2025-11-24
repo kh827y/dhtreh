@@ -1067,13 +1067,21 @@ export class PortalCustomersService {
         settings?.rulesJson && typeof settings.rulesJson === 'object'
           ? (settings.rulesJson as Record<string, any>)
           : null;
-      if (rules && Object.prototype.hasOwnProperty.call(rules, 'allowSameReceipt')) {
+      if (
+        rules &&
+        Object.prototype.hasOwnProperty.call(rules, 'allowSameReceipt')
+      ) {
         allowSame = this.normalizeFlag((rules as any).allowSameReceipt);
       } else if (
         rules &&
-        Object.prototype.hasOwnProperty.call(rules, 'allowEarnRedeemSameReceipt')
+        Object.prototype.hasOwnProperty.call(
+          rules,
+          'allowEarnRedeemSameReceipt',
+        )
       ) {
-        allowSame = this.normalizeFlag((rules as any).allowEarnRedeemSameReceipt);
+        allowSame = this.normalizeFlag(
+          (rules as any).allowEarnRedeemSameReceipt,
+        );
       } else if (
         rules &&
         Object.prototype.hasOwnProperty.call(
@@ -1494,7 +1502,10 @@ export class PortalCustomersService {
 
     const allowSameReceipt = await this.isAllowSameReceipt(merchantId);
     const mappedTransactions: PortalCustomerTransactionDto[] = [];
-    const refundGroups = new Map<string, { items: PortalCustomerTransactionDto[] }>();
+    const refundGroups = new Map<
+      string,
+      { items: PortalCustomerTransactionDto[] }
+    >();
 
     for (const tx of transactions) {
       const orderId = tx.orderId ?? null;
@@ -1559,13 +1570,15 @@ export class PortalCustomersService {
       let referralCustomerPhone: string | null = null;
 
       if (
-        (descriptor.kind === 'REFERRAL' || descriptor.kind === 'REFERRAL_ROLLBACK') &&
+        (descriptor.kind === 'REFERRAL' ||
+          descriptor.kind === 'REFERRAL_ROLLBACK') &&
         metadata?.buyerId
       ) {
         const buyerId = String(metadata.buyerId).trim();
         if (buyerId) {
           referralCustomerId = buyerId;
-          const invitedMatch = invited.find((row) => row.id === buyerId) ?? null;
+          const invitedMatch =
+            invited.find((row) => row.id === buyerId) ?? null;
           referralCustomerName = invitedMatch?.name ?? null;
           referralCustomerPhone = invitedMatch?.phone ?? null;
         }
@@ -1639,7 +1652,7 @@ export class PortalCustomersService {
     if (allowSameReceipt) {
       const purchaseEntries = receipts.map((receipt) => {
         const orderId = receipt.orderId ?? null;
-        const review = orderId ? reviewByOrderId.get(orderId) ?? null : null;
+        const review = orderId ? (reviewByOrderId.get(orderId) ?? null) : null;
         const redeemApplied = Math.max(
           0,
           Math.floor(Number(receipt.redeemApplied ?? 0)),
@@ -1651,8 +1664,7 @@ export class PortalCustomersService {
         const manager = receipt.staff
           ? this.formatStaffName(receipt.staff)
           : null;
-        const outletName =
-          receipt.outlet?.name ?? receipt.outlet?.code ?? null;
+        const outletName = receipt.outlet?.name ?? receipt.outlet?.code ?? null;
 
         return {
           id: receipt.id,
@@ -1734,15 +1746,19 @@ export class PortalCustomersService {
               purchaseAmount = item.purchaseAmount;
           }
 
-          const receipt = orderId ? receiptMap.get(orderId) ?? null : null;
+          const receipt = orderId ? (receiptMap.get(orderId) ?? null) : null;
           if (receipt) {
             receiptNumber = receipt.receiptNumber ?? receiptNumber;
             receiptId = receipt.id ?? receiptId;
             purchaseAmount =
               purchaseAmount || Number(receipt.total ?? 0) || purchaseAmount;
             total = total ?? Number(receipt.total ?? 0);
-            if (!outlet) outlet = receipt.outlet?.name ?? receipt.outlet?.code ?? null;
-            if (!manager) manager = receipt.staff ? this.formatStaffName(receipt.staff) : null;
+            if (!outlet)
+              outlet = receipt.outlet?.name ?? receipt.outlet?.code ?? null;
+            if (!manager)
+              manager = receipt.staff
+                ? this.formatStaffName(receipt.staff)
+                : null;
             if (!canceledAt && receipt.canceledAt)
               canceledAt = receipt.canceledAt.toISOString();
             if (!canceledBy && receipt.canceledBy) {
@@ -1778,23 +1794,22 @@ export class PortalCustomersService {
             paidByPoints: null,
             total,
             blockedAccrual: false,
-        receiptId,
-        canceledAt,
-        canceledBy,
-        note: null,
-        kind: 'REFUND',
-        earnAmount: redeem,
-        redeemAmount: earn,
-      };
-    },
+            receiptId,
+            canceledAt,
+            canceledBy,
+            note: null,
+            kind: 'REFUND',
+            earnAmount: redeem,
+            redeemAmount: earn,
+          };
+        },
       );
 
       mappedTransactions.push(...purchaseEntries, ...refundEntries);
     }
 
     mappedTransactions.sort(
-      (a, b) =>
-        new Date(b.datetime).getTime() - new Date(a.datetime).getTime(),
+      (a, b) => new Date(b.datetime).getTime() - new Date(a.datetime).getTime(),
     );
 
     baseDto.transactions = mappedTransactions;
@@ -2442,14 +2457,10 @@ export class PortalCustomersService {
     });
     if (!profile) return;
     if (mode === 'earn' && profile.accrualsBlocked) {
-      throw new BadRequestException(
-        'Начисления заблокированы администратором',
-      );
+      throw new BadRequestException('Начисления заблокированы администратором');
     }
     if (mode === 'redeem' && profile.redemptionsBlocked) {
-      throw new BadRequestException(
-        'Списания заблокированы администратором',
-      );
+      throw new BadRequestException('Списания заблокированы администратором');
     }
   }
 

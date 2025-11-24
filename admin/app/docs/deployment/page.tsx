@@ -28,6 +28,8 @@ docker run -d --name bridge -p 18080:18080 \
       <pre style={{ whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{`docker build -t loyalty-admin ./admin
 docker run -d --name admin -p 3001:3001 \
   -e API_BASE=http://api:3000 \
+  -e NEXT_PUBLIC_API_BASE=http://api:3000 \
+  -e NEXT_PUBLIC_API_KEY=... \
   -e ADMIN_KEY=... \
   -e ADMIN_UI_PASSWORD=... \
   -e ADMIN_SESSION_SECRET=change_me_long_random \

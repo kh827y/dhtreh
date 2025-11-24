@@ -465,9 +465,7 @@ export class LoyaltyProgramService {
           select: { id: true, customerId: true, name: true, phone: true },
         })
       : [];
-    const mcMap = new Map(
-      merchantCustomers.map((mc) => [mc.customerId, mc]),
-    );
+    const mcMap = new Map(merchantCustomers.map((mc) => [mc.customerId, mc]));
     const items: TierMemberDto[] = assignments.slice(0, limit).map((row) => {
       const profile = mcMap.get(row.customerId);
       return {
@@ -911,13 +909,23 @@ export class LoyaltyProgramService {
   ): Promise<
     Map<
       string,
-      { series: number[]; dates: string[]; netTotal: number; redeemedTotal: number }
+      {
+        series: number[];
+        dates: string[];
+        netTotal: number;
+        redeemedTotal: number;
+      }
     >
   > {
     const ids = promotionIds.filter(Boolean);
     const result = new Map<
       string,
-      { series: number[]; dates: string[]; netTotal: number; redeemedTotal: number }
+      {
+        series: number[];
+        dates: string[];
+        netTotal: number;
+        redeemedTotal: number;
+      }
     >();
     if (!ids.length) return result;
 
@@ -999,12 +1007,12 @@ export class LoyaltyProgramService {
       customerReceipts.forEach((receipt) => {
         const totalRedeem = Math.max(0, Number(receipt.redeemApplied ?? 0));
         if (!totalRedeem) return;
-        const cashPart = Math.max(
-          0,
-          Number(receipt.total ?? 0) - totalRedeem,
-        );
+        const cashPart = Math.max(0, Number(receipt.total ?? 0) - totalRedeem);
 
-        const allocations: Array<{ promo: typeof customerPromos[number]; amount: number }> = [];
+        const allocations: Array<{
+          promo: (typeof customerPromos)[number];
+          amount: number;
+        }> = [];
         let redeemLeft = totalRedeem;
         for (const promo of customerPromos) {
           if (promo.joinedAt > receipt.createdAt) break;
@@ -1233,9 +1241,9 @@ export class LoyaltyProgramService {
       },
     });
     if (!promotion) throw new NotFoundException('Акция не найдена');
-    const revenue = (await this.computePromotionRedeemRevenue(merchantId, [promotionId])).get(
-      promotionId,
-    );
+    const revenue = (
+      await this.computePromotionRedeemRevenue(merchantId, [promotionId])
+    ).get(promotionId);
     if (revenue) {
       const charts = {
         ...((promotion as any).metrics?.charts ?? {}),
