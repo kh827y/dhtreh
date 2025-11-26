@@ -303,13 +303,14 @@ export class PortalReviewsService {
         : undefined;
       const comment =
         typeof review.comment === 'string' ? review.comment.trim() : '';
+      const hasStaff = Boolean(receipt?.staffId);
       let deviceId: string | null = null;
-      if (receipt?.device?.code) {
-        deviceId = receipt.device.code;
-      } else if (receipt?.outlet) {
-        const code = (receipt.outlet.code ?? '').toString().trim();
-        const externalId = (receipt.outlet.externalId ?? '').toString().trim();
-        deviceId = code || externalId || receipt.outlet.id || null;
+      if (!hasStaff) {
+        if (receipt?.device?.code) {
+          deviceId = receipt.device.code;
+        } else if (receipt?.device?.id) {
+          deviceId = receipt.device.id;
+        }
       }
       return {
         id: review.id,

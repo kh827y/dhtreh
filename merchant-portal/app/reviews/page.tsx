@@ -124,8 +124,9 @@ export default function ReviewsPage() {
                   (item.customer?.email && item.customer.email.trim()) ||
                   "—";
                 const rawDeviceId = typeof item.deviceId === "string" ? item.deviceId.trim() : "";
-                const device = rawDeviceId || "—";
-                const staffName = (item.staff?.name || "").trim() || "—";
+                const staffNameRaw = (item.staff?.name || "").trim();
+                const staffName = staffNameRaw || "—";
+                const device = staffNameRaw ? "—" : rawDeviceId || "—";
                 const outletName = (item.outlet?.name || "").trim() || "—";
                 const comment = typeof item.comment === "string" ? item.comment.trim() : "";
                 return {

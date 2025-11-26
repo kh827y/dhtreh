@@ -214,7 +214,7 @@ export class LoyaltyService {
             where: { id: w.id },
             data: { balance: (fresh?.balance ?? 0) + points },
           });
-          await tx.transaction.create({
+          const rewardTx = await tx.transaction.create({
             data: {
               customerId: current.referrerId,
               merchantId: ctx.merchantId,
@@ -397,7 +397,7 @@ export class LoyaltyService {
           rollbackBuyerId = String(rawBuyerId).trim();
         }
       }
-      await tx.transaction.create({
+      const rollbackTx = await tx.transaction.create({
         data: {
           customerId: reward.customerId,
           merchantId: params.merchantId,
@@ -686,7 +686,7 @@ export class LoyaltyService {
         const balance = (freshW?.balance ?? 0) + points;
         await tx.wallet.update({ where: { id: wallet.id }, data: { balance } });
 
-        await tx.transaction.create({
+        const earnTx = await tx.transaction.create({
           data: {
             merchantId,
             customerId,
@@ -880,7 +880,7 @@ export class LoyaltyService {
         await tx.wallet.update({ where: { id: wallet.id }, data: { balance } });
       }
 
-      await tx.transaction.create({
+      const promoTx = await tx.transaction.create({
         data: {
           customerId,
           merchantId,
@@ -1956,7 +1956,7 @@ export class LoyaltyService {
             where: { id: wallet.id },
             data: { balance: fresh!.balance - amount },
           });
-          await tx.transaction.create({
+          const redeemTx = await tx.transaction.create({
             data: {
               customerId: hold.customerId,
               merchantId: hold.merchantId,
@@ -2243,7 +2243,7 @@ export class LoyaltyService {
                 data: { balance: fresh!.balance + appliedEarn },
               });
             }
-            await tx.transaction.create({
+            const earnTx = await tx.transaction.create({
               data: {
                 customerId: hold.customerId,
                 merchantId: hold.merchantId,
@@ -2595,7 +2595,7 @@ export class LoyaltyService {
     });
     if (!wallet) throw new BadRequestException('Wallet not found');
 
-    const context = await this.ensureMerchantCustomerContext(
+    const merchantContext = await this.ensureMerchantCustomerContext(
       merchantId,
       receipt.customerId,
     );
@@ -2607,7 +2607,7 @@ export class LoyaltyService {
           where: { id: wallet.id },
           data: { balance: fresh!.balance + pointsToRestore },
         });
-        await tx.transaction.create({
+        const restoreTx = await tx.transaction.create({
           data: {
             customerId: receipt.customerId,
             merchantId,
@@ -2655,7 +2655,7 @@ export class LoyaltyService {
           where: { id: wallet.id },
           data: { balance: fresh!.balance - pointsToRevoke },
         });
-        await tx.transaction.create({
+        const revokeTx = await tx.transaction.create({
           data: {
             customerId: receipt.customerId,
             merchantId,
@@ -2751,16 +2751,12 @@ export class LoyaltyService {
           customerId: receipt.customerId,
         });
       } catch {}
-      const context = await this.ensureMerchantCustomerContext(
-        merchantId,
-        receipt.customerId,
-      );
       return {
         ok: true,
         share,
         pointsRestored: pointsToRestore,
         pointsRevoked: pointsToRevoke,
-        merchantCustomerId: context.merchantCustomerId,
+        merchantCustomerId: merchantContext.merchantCustomerId,
       };
     });
   }
