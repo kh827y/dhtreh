@@ -406,6 +406,9 @@ export class CashierGuard implements CanActivate {
       req?.route?.path || req?.path || req?.originalUrl || '';
     const normalizedPath = this.normalizePath(path || '');
     const key = (req.headers['x-staff-key'] as string | undefined) || '';
+    const hasBridgeSignature =
+      typeof req.headers['x-bridge-signature'] === 'string' &&
+      req.headers['x-bridge-signature'].length > 0;
     // whitelist публичных GET маршрутов (всегда разрешены): balance, settings, transactions, публичные списки
     const isPublicGet =
       method === 'GET' && path.startsWith('/loyalty/settings/');
@@ -443,14 +446,12 @@ export class CashierGuard implements CanActivate {
       }
     }
 
-    let requireStaffKey = false;
     let merchantSettings: any = null;
     if (merchantIdFromRequest) {
       try {
         merchantSettings = await this.prisma.merchantSettings.findUnique({
           where: { merchantId: merchantIdFromRequest },
         });
-        requireStaffKey = Boolean(merchantSettings?.requireStaffKey);
       } catch {}
     }
 
@@ -501,39 +502,40 @@ export class CashierGuard implements CanActivate {
         req.cashierSession = sessionContext;
         return true;
       }
-      if (!requireStaffKey) {
-        if (requiresTelegramCustomer && !teleauthContext) return false;
-        if (requiresTelegramCustomer && teleauthContext) {
-          const requestedMerchantCustomerId =
-            this.extractMerchantCustomerId(req);
-          if (
-            requestedMerchantCustomerId &&
-            requestedMerchantCustomerId !== teleauthContext.merchantCustomerId
-          ) {
-            return false;
-          }
-        }
-        return true;
-      }
-      if (teleauthContext) return true;
-      if (
+      const qrWithInitData =
         normalizedPath === '/loyalty/qr' &&
         typeof body?.merchantId === 'string' &&
         typeof body?.initData === 'string' &&
-        body.initData.trim()
-      ) {
-        return true;
+        body.initData.trim();
+      if (qrWithInitData) return true;
+
+      if (requiresTelegramCustomer && !teleauthContext) return false;
+      if (requiresTelegramCustomer && teleauthContext) {
+        const requestedMerchantCustomerId =
+          this.extractMerchantCustomerId(req);
+        if (
+          requestedMerchantCustomerId &&
+          requestedMerchantCustomerId !== teleauthContext.merchantCustomerId
+        ) {
+          return false;
+        }
       }
-      const { ok } = await this.validateBridgeSignature(
-        normalizedPath,
-        req,
-        merchantIdFromRequest,
-        merchantSettings,
-      );
-      if (ok) {
-        return true;
+
+      if (hasBridgeSignature) {
+        const { ok } = await this.validateBridgeSignature(
+          normalizedPath,
+          req,
+          merchantIdFromRequest,
+          merchantSettings,
+        );
+        if (!ok) return false;
       }
-      return false;
+
+      if (!sessionContext && !teleauthContext && !hasBridgeSignature) {
+        return Boolean(merchantIdFromRequest);
+      }
+
+      return true;
     }
     const hash = crypto.createHash('sha256').update(key, 'utf8').digest('hex');
     let merchantIdForStaff = merchantIdFromRequest;

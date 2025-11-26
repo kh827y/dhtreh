@@ -21,6 +21,8 @@ const TIMEZONES = [
   "UTC+07:00 Новосибирск",
 ];
 
+const DEVICE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{1,63}$/;
+
 const createDefaultSchedule = (): DaySchedule[] => [
   { id: "mon", label: "Пн", enabled: true, from: "10:00", to: "22:00" },
   { id: "tue", label: "Вт", enabled: true, from: "10:00", to: "22:00" },
@@ -52,7 +54,8 @@ export default function CreateOutletPage() {
   const [schedule, setSchedule] = React.useState<DaySchedule[]>(createDefaultSchedule);
   const [scheduleMessage, setScheduleMessage] = React.useState("");
 
-  const [externalId, setExternalId] = React.useState("BR-0001");
+  const [devices, setDevices] = React.useState<Array<{ code: string }>>([]);
+  const [deviceErrors, setDeviceErrors] = React.useState<Record<string, string>>({});
   const [integrationsMessage, setIntegrationsMessage] = React.useState("");
 
   React.useEffect(() => {
@@ -76,6 +79,28 @@ export default function CreateOutletPage() {
 
   const toggleDay = (id: string, enabled: boolean) => {
     setSchedule((prev) => prev.map((day) => (day.id === id ? { ...day, enabled } : day)));
+  };
+
+  const addDeviceRow = () => {
+    if (devices.length >= 50) {
+      setIntegrationsMessage("Можно добавить не более 50 устройств");
+      return;
+    }
+    setDevices((prev) => [...prev, { code: "" }]);
+  };
+
+  const updateDeviceCode = (index: number, code: string) => {
+    setDevices((prev) => prev.map((item, idx) => (idx === index ? { ...item, code } : item)));
+    setDeviceErrors((prev) => {
+      const next = { ...prev };
+      delete next[`d${index}`];
+      return next;
+    });
+  };
+
+  const removeDevice = (index: number) => {
+    setDevices((prev) => prev.filter((_, idx) => idx !== index));
+    setDeviceErrors({});
   };
 
   const handleSaveBasic = () => {
@@ -103,13 +128,39 @@ export default function CreateOutletPage() {
     return true;
   };
 
-  const handleSaveIntegrations = () => {
-    if (!externalId.trim()) {
-      setIntegrationsMessage("Укажите внешний идентификатор");
-      return false;
+  const validateDevices = (): Array<{ code: string }> | null => {
+    if (devices.length > 50) {
+      setIntegrationsMessage("Можно добавить не более 50 устройств");
+      return null;
     }
+    const errors: Record<string, string> = {};
+    const normalized = devices.map((item) => ({ code: item.code.trim() }));
+    const seen = new Set<string>();
+    normalized.forEach((device, index) => {
+      const key = `d${index}`;
+      if (!device.code) {
+        errors[key] = "Введите идентификатор устройства";
+        return;
+      }
+      if (!DEVICE_ID_PATTERN.test(device.code)) {
+        errors[key] = "Допустимы латинские буквы, цифры, точки, дефисы и подчёркивания (2–64 символа)";
+        return;
+      }
+      const normalizedKey = device.code.toLowerCase();
+      if (seen.has(normalizedKey)) {
+        errors[key] = "Идентификатор должен быть уникальным";
+        return;
+      }
+      seen.add(normalizedKey);
+    });
+    setDeviceErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      setIntegrationsMessage("Исправьте идентификаторы устройств");
+      return null;
+    }
+    setDeviceErrors({});
     setIntegrationsMessage("");
-    return true;
+    return normalized.filter((device) => device.code.length > 0);
   };
 
   const submitCreate = async () => {
@@ -117,8 +168,11 @@ export default function CreateOutletPage() {
     if (!okBasic) return;
     const okSchedule = handleSaveSchedule();
     if (!okSchedule) return;
-    const okIntegr = handleSaveIntegrations();
-    if (!okIntegr) return;
+    const normalizedDevices = validateDevices();
+    if (normalizedDevices === null) {
+      setTab("INTEGRATIONS");
+      return;
+    }
 
     // Build payload
     const adminList = adminEmails
@@ -135,8 +189,10 @@ export default function CreateOutletPage() {
       address: address.trim(),
       adminEmails: adminList,
       timezone,
-      externalId: externalId.trim(),
     };
+    if (normalizedDevices.length) {
+      payload.devices = normalizedDevices;
+    }
     if (showSchedule) {
       payload.schedule = {
         mode: mode === '24/7' ? '24_7' : 'CUSTOM',
@@ -163,11 +219,11 @@ export default function CreateOutletPage() {
           msg = json?.message || json?.error || text;
         } catch {}
         const msgStr = String(msg || 'Не удалось создать торговую точку');
-        if (msgStr.toLowerCase().includes('externalid')) {
-          const friendly = 'Точка с таким внешним ID уже существует. Укажите уникальный внешний ID.';
-          setIntegrationsMessage(friendly);
+        const lower = msgStr.toLowerCase();
+        if (lower.includes('устрой') || lower.includes('device')) {
+          setIntegrationsMessage(msgStr);
           setTab('INTEGRATIONS');
-          setToast(friendly);
+          setToast(msgStr);
           return;
         }
         setToast(msgStr);
@@ -366,23 +422,54 @@ export default function CreateOutletPage() {
 
       {tab === "INTEGRATIONS" && (
         <Card>
-          <CardHeader title="Интеграции" subtitle="Внешний идентификатор для POS/кассы" />
+          <CardHeader title="Интеграции" subtitle="Устройства для подключения POS и плагинов" />
           <CardBody style={{ display: "grid", gap: 16 }}>
-            <label style={{ display: "grid", gap: 6, maxWidth: 320 }}>
-              <span style={{ fontSize: 12, opacity: 0.7 }}>Внешний ID / BranchID / IDBranch *</span>
-              <input
-                value={externalId}
-                onChange={(event) => setExternalId(event.target.value)}
-                placeholder="Например, BRANCH-001"
-                style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
-              />
-            </label>
-
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-              <Button variant="ghost" onClick={() => router.push("/outlets")}>Отменить</Button>
-              <Button variant="primary" onClick={submitCreate}>Создать точку</Button>
+            <div className="glass" style={{ padding: 16, borderRadius: 12, display: "grid", gap: 6 }}>
+              <div style={{ fontWeight: 600 }}>Устройства</div>
+              <div style={{ fontSize: 12, opacity: 0.8 }}>
+                Установите произвольный идентификатор устройства. Он будет использоваться для подключения к устройству,
+                а также в аналитике, журнале операций и тд.
+              </div>
             </div>
-            {integrationsMessage && <div style={{ color: integrationsMessage.includes("сохранены") ? "#4ade80" : "#f87171" }}>{integrationsMessage}</div>}
+
+            <div style={{ display: "grid", gap: 12 }}>
+              {devices.map((device, index) => {
+                const key = `d${index}`;
+                const error = deviceErrors[key];
+                return (
+                  <div key={key} className="glass" style={{ padding: 12, borderRadius: 12, display: "grid", gap: 10 }}>
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={{ fontSize: 12, opacity: 0.7 }}>Идентификатор устройства</span>
+                      <input
+                        value={device.code}
+                        onChange={(event) => updateDeviceCode(index, event.target.value)}
+                        placeholder="POS-001"
+                        maxLength={64}
+                        style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
+                      />
+                    </label>
+                    {error && <div style={{ color: "#f87171", fontSize: 12 }}>{error}</div>}
+                    <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                      <Button variant="ghost" onClick={() => removeDevice(index)}>Удалить</Button>
+                    </div>
+                  </div>
+                );
+              })}
+              {devices.length < 50 && (
+                <Button variant="ghost" onClick={addDeviceRow}>
+                  Добавить устройство
+                </Button>
+              )}
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <div style={{ fontSize: 12, opacity: 0.7 }}>Допустимы латиница, цифры, точки, дефисы и подчёркивания. До 50 устройств на точку.</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Button variant="ghost" onClick={() => router.push("/outlets")}>Отменить</Button>
+                <Button variant="primary" onClick={submitCreate}>Создать точку</Button>
+              </div>
+            </div>
+            {integrationsMessage && <div style={{ color: "#f87171" }}>{integrationsMessage}</div>}
           </CardBody>
         </Card>
       )}

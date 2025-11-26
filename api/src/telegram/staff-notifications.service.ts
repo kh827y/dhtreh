@@ -42,6 +42,7 @@ export type StaffNotificationPayload =
       customerId?: string | null;
       outletId?: string | null;
       staffId?: string | null;
+      deviceId?: string | null;
       operation?: string | null;
       amount?: number | null;
       count?: number | null;

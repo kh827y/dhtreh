@@ -203,6 +203,7 @@ export class PortalReviewsService {
           outletId: string | null;
           outlet: { id: string; name: string | null; code: string | null; externalId: string | null } | null;
           staffId: string | null;
+          device: { id: string; code: string | null } | null;
           staff: {
             id: string;
             firstName: string | null;
@@ -218,11 +219,22 @@ export class PortalReviewsService {
       },
       include: {
         outlet: { select: { id: true, name: true, code: true, externalId: true } },
+        device: { select: { id: true, code: true } },
         staff: { select: { id: true, firstName: true, lastName: true } },
       },
     });
 
-    return new Map(receipts.map((receipt) => [receipt.orderId, receipt]));
+    return new Map(
+      receipts.map((receipt) => [
+        receipt.orderId,
+        {
+          ...receipt,
+          device: receipt.device
+            ? { id: receipt.device.id, code: receipt.device.code ?? null }
+            : null,
+        },
+      ]),
+    );
   }
 
   async list(
@@ -292,7 +304,9 @@ export class PortalReviewsService {
       const comment =
         typeof review.comment === 'string' ? review.comment.trim() : '';
       let deviceId: string | null = null;
-      if (receipt?.outlet) {
+      if (receipt?.device?.code) {
+        deviceId = receipt.device.code;
+      } else if (receipt?.outlet) {
         const code = (receipt.outlet.code ?? '').toString().trim();
         const externalId = (receipt.outlet.externalId ?? '').toString().trim();
         deviceId = code || externalId || receipt.outlet.id || null;

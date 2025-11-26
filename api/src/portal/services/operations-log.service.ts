@@ -3,7 +3,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, Transaction, TxnType, WalletType } from '@prisma/client';
+import {
+  Prisma,
+  StaffStatus,
+  Transaction,
+  TxnType,
+  WalletType,
+} from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { LoyaltyService } from '../../loyalty/loyalty.service';
 import { planRevoke, planUnconsume } from '../../loyalty/lots.util';
@@ -12,7 +18,9 @@ export interface OperationsLogFilters {
   from?: string | Date;
   to?: string | Date;
   staffId?: string;
+  staffStatus?: 'all' | 'current' | 'former';
   outletId?: string;
+  deviceId?: string;
   operationType?: string;
   direction?: 'ALL' | 'EARN' | 'REDEEM';
   carrier?: string;
@@ -27,6 +35,7 @@ export interface OperationsLogItemDto {
   outlet?: { id: string; name: string | null } | null;
   customer: { id: string; name: string | null; phone: string | null };
   staff?: { id: string; name: string | null; status: string } | null;
+  device?: { id: string; code: string } | null;
   rating?: number | null;
   redeem: { amount: number; source?: string | null };
   earn: { amount: number; source?: string | null };
@@ -87,11 +96,20 @@ export class OperationsLogService {
     filters: OperationsLogFilters,
   ): Promise<OperationsLogListDto> {
     const allowSameReceipt = await this.isAllowSameReceipt(merchantId);
+    const staffStatuses = this.normalizeStaffStatuses(filters.staffStatus);
     const limit = Math.min(Math.max(filters.limit ?? 25, 1), 200);
     const offset = Math.max(filters.offset ?? 0, 0);
 
-    const receiptWhere = this.buildReceiptWhere(merchantId, filters);
-    const transactionWhere = this.buildTransactionWhere(merchantId, filters);
+    const receiptWhere = this.buildReceiptWhere(
+      merchantId,
+      filters,
+      staffStatuses,
+    );
+    const transactionWhere = this.buildTransactionWhere(
+      merchantId,
+      filters,
+      staffStatuses,
+    );
 
     const operationType = filters.operationType
       ? String(filters.operationType).toUpperCase()
@@ -120,6 +138,7 @@ export class OperationsLogService {
               customer: true,
               staff: true,
               outlet: true,
+              device: true,
               canceledBy: true,
             },
           })
@@ -129,6 +148,7 @@ export class OperationsLogService {
                 customer: true;
                 staff: true;
                 outlet: true;
+                device: true;
                 canceledBy: true;
               };
             }>[],
@@ -142,6 +162,7 @@ export class OperationsLogService {
               customer: true,
               staff: true,
               outlet: true,
+              device: true,
               canceledBy: {
                 select: {
                   id: true,
@@ -159,6 +180,7 @@ export class OperationsLogService {
                 customer: true;
                 staff: true;
                 outlet: true;
+                device: true;
                 canceledBy: {
                   select: {
                     id: true;
@@ -280,6 +302,7 @@ export class OperationsLogService {
   private buildReceiptWhere(
     merchantId: string,
     filters: OperationsLogFilters,
+    staffStatuses: StaffStatus[] | null,
   ): Prisma.ReceiptWhereInput {
     const where: Prisma.ReceiptWhereInput = { merchantId };
 
@@ -293,6 +316,10 @@ export class OperationsLogService {
 
     if (filters.staffId) {
       where.staffId = filters.staffId;
+    }
+
+    if (filters.deviceId) {
+      where.deviceId = filters.deviceId;
     }
 
     if (filters.outletId) {
@@ -313,12 +340,31 @@ export class OperationsLogService {
       where.redeemApplied = { gt: 0 };
     }
 
+    if (staffStatuses && staffStatuses.length) {
+      const and: Prisma.ReceiptWhereInput[] = [];
+      if (where.AND) {
+        and.push(...(Array.isArray(where.AND) ? where.AND : [where.AND]));
+      }
+      and.push(
+        filters.staffId
+          ? { staff: { status: { in: staffStatuses } } }
+          : {
+              OR: [
+                { staff: { status: { in: staffStatuses } } },
+                { staffId: null },
+              ],
+            },
+      );
+      where.AND = and;
+    }
+
     return where;
   }
 
   private buildTransactionWhere(
     merchantId: string,
     filters: OperationsLogFilters,
+    staffStatuses: StaffStatus[] | null,
   ): Prisma.TransactionWhereInput {
     const where: Prisma.TransactionWhereInput = { merchantId };
     const kind = filters.operationType
@@ -335,6 +381,10 @@ export class OperationsLogService {
 
     if (filters.staffId) {
       where.staffId = filters.staffId;
+    }
+
+    if (filters.deviceId) {
+      where.deviceId = filters.deviceId;
     }
 
     if (filters.outletId) {
@@ -371,6 +421,8 @@ export class OperationsLogService {
       { type: TxnType.REFERRAL },
       { type: TxnType.REFUND },
       { type: TxnType.ADJUST },
+      { type: TxnType.EARN },
+      { type: TxnType.REDEEM },
       manualRedeem,
       registrationEarn,
     ];
@@ -495,6 +547,24 @@ export class OperationsLogService {
 
     where.OR = baseOr;
 
+    if (staffStatuses && staffStatuses.length) {
+      const and: Prisma.TransactionWhereInput[] = [];
+      if (where.AND) {
+        and.push(...(Array.isArray(where.AND) ? where.AND : [where.AND]));
+      }
+      and.push(
+        filters.staffId
+          ? { staff: { status: { in: staffStatuses } } }
+          : {
+              OR: [
+                { staff: { status: { in: staffStatuses } } },
+                { staffId: null },
+              ],
+            },
+      );
+      where.AND = and;
+    }
+
     return where;
   }
 
@@ -504,6 +574,7 @@ export class OperationsLogService {
         customer: true;
         staff: true;
         outlet: true;
+        device: true;
         canceledBy: {
           select: {
             id: true;
@@ -569,6 +640,9 @@ export class OperationsLogService {
       staff: tx.staff
         ? { id: tx.staff.id, name: staffName, status: tx.staff.status }
         : null,
+      device: tx.device
+        ? { id: tx.device.id, code: tx.device.code }
+        : null,
       rating,
       redeem: {
         amount: redeemAmount,
@@ -585,13 +659,19 @@ export class OperationsLogService {
       kind: descriptor.kind,
       details: descriptor.details,
       note: descriptor.note ?? null,
-      carrier: outlet
+      carrier: tx.device
         ? {
-            type: 'OUTLET',
-            code: tx.outlet?.code ?? tx.outlet?.id ?? null,
-            label: outlet.name,
+            type: 'DEVICE',
+            code: tx.device.code,
+            label: tx.device.code,
           }
-        : null,
+        : outlet
+          ? {
+              type: 'OUTLET',
+              code: tx.outlet?.code ?? tx.outlet?.id ?? null,
+              label: outlet.name,
+            }
+          : null,
       canceledAt: tx.canceledAt ? tx.canceledAt.toISOString() : null,
       canceledBy: tx.canceledBy
         ? {
@@ -752,6 +832,7 @@ export class OperationsLogService {
         customer: true,
         staff: true,
         outlet: true,
+        device: true,
         canceledBy: true,
       },
     });
@@ -792,6 +873,7 @@ export class OperationsLogService {
         customer: true,
         staff: true,
         outlet: true,
+        device: true,
         canceledBy: {
           select: {
             id: true,
@@ -847,6 +929,7 @@ export class OperationsLogService {
         customer: true,
         staff: true,
         outlet: true,
+        device: true,
         canceledBy: true,
       },
     });
@@ -861,7 +944,13 @@ export class OperationsLogService {
   private async cancelReceiptInternal(
     merchantId: string,
     receipt: Prisma.ReceiptGetPayload<{
-      include: { customer: true; staff: true; outlet: true; canceledBy: true };
+      include: {
+        customer: true;
+        staff: true;
+        outlet: true;
+        device: true;
+        canceledBy: true;
+      };
     }>,
     staffId?: string | null,
   ): Promise<OperationsLogItemDto> {
@@ -897,6 +986,7 @@ export class OperationsLogService {
         customer: true,
         staff: true,
         outlet: true,
+        device: true,
         canceledBy: true,
       },
     });
@@ -920,6 +1010,7 @@ export class OperationsLogService {
         customer: true,
         staff: true,
         outlet: true,
+        device: true,
         canceledBy: {
           select: {
             id: true,
@@ -1019,6 +1110,7 @@ export class OperationsLogService {
         customer: true,
         staff: true,
         outlet: true,
+        device: true,
         canceledBy: {
           select: {
             id: true,
@@ -1180,7 +1272,13 @@ export class OperationsLogService {
 
   private mapReceipt(
     receipt: Prisma.ReceiptGetPayload<{
-      include: { customer: true; staff: true; outlet: true; canceledBy: true };
+      include: {
+        customer: true;
+        staff: true;
+        outlet: true;
+        device: true;
+        canceledBy: true;
+      };
     }>,
     rating: number | null,
   ): OperationsLogItemDto {
@@ -1218,6 +1316,9 @@ export class OperationsLogService {
             status: receipt.staff.status,
           }
         : null,
+      device: receipt.device
+        ? { id: receipt.device.id, code: receipt.device.code }
+        : null,
       rating,
       redeem: {
         amount: receipt.redeemApplied,
@@ -1247,9 +1348,20 @@ export class OperationsLogService {
 
   private buildCarrier(
     receipt: Prisma.ReceiptGetPayload<{
-      include: { customer: true; outlet: true; canceledBy: true };
+      include: { customer: true; outlet: true; device: true; canceledBy: true };
     }>,
   ): OperationsLogItemDto['carrier'] {
+    const devCode =
+      (receipt as any)?.device && (receipt as any).device?.code
+        ? String((receipt as any).device.code)
+        : null;
+    if (devCode) {
+      return {
+        type: 'DEVICE',
+        code: devCode,
+        label: devCode,
+      };
+    }
     if (receipt.outlet) {
       const posType = (receipt.outlet.posType as string | null) ?? null;
       return {
@@ -1264,6 +1376,24 @@ export class OperationsLogService {
         type: 'PHONE',
         code: receipt.customer.phone,
       };
+    }
+    return null;
+  }
+
+  private normalizeStaffStatuses(
+    scope?: OperationsLogFilters['staffStatus'],
+  ): StaffStatus[] | null {
+    const normalized =
+      typeof scope === 'string' ? scope.trim().toLowerCase() : '';
+    if (normalized === 'current' || normalized === 'active') {
+      return [
+        StaffStatus.ACTIVE,
+        StaffStatus.PENDING,
+        StaffStatus.SUSPENDED,
+      ];
+    }
+    if (normalized === 'former' || normalized === 'fired') {
+      return [StaffStatus.FIRED, StaffStatus.ARCHIVED];
     }
     return null;
   }

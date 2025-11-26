@@ -29,7 +29,7 @@ type Operation = {
   datetime: string;
   outlet: { id: string; name: string | null };
   client: { id: string; name: string };
-  manager: { id: string; name: string | null };
+  manager: { id: string; name: string | null } | null;
   device: string | null;
   rating: number | null;
   spent: number;
@@ -49,6 +49,9 @@ type Operation = {
   canceledAt: string | null;
   canceledBy?: { id: string; name: string | null } | null;
 };
+
+type SelectOption = { value: string; label: string; status?: string };
+type DeviceOption = { value: string; label: string; outletId?: string };
 
 const { Search, ChevronLeft, ChevronRight, X } = Icons;
 
@@ -113,16 +116,28 @@ function mapOperationFromDto(item: any): Operation {
   const isDeviceCarrier =
     carrierType === 'SMART' ||
     carrierType === 'PC_POS' ||
-    carrierType === 'OUTLET';
+    carrierType === 'OUTLET' ||
+    carrierType === 'DEVICE';
+  const deviceFromPayload =
+    typeof item?.device?.code === 'string' ? item.device.code.trim() : '';
   const deviceId =
-    isDeviceCarrier && carrierCode.trim() ? carrierCode.trim() : '';
+    deviceFromPayload ||
+    (isDeviceCarrier && carrierCode.trim() ? carrierCode.trim() : '');
   const receipt = String(item?.receiptNumber || item?.orderId || item?.id || '');
   const earnedAmount = Number(item?.earn?.amount ?? 0);
   const spentAmount = Number(item?.redeem?.amount ?? 0);
   const totalAmount = Number(item?.totalAmount ?? 0);
   const customerName = String(item?.customer?.name || item?.customer?.phone || 'Клиент');
-  const managerId = String(item?.staff?.id || '');
-  const managerName = item?.staff?.name != null ? String(item.staff.name) : null;
+  const managerId = typeof item?.staff?.id === 'string' ? item.staff.id.trim() : '';
+  const managerNameRaw = item?.staff?.name != null ? String(item.staff.name).trim() : '';
+  const managerName = managerNameRaw || managerId || null;
+  const manager =
+    managerId || managerNameRaw
+      ? {
+          id: managerId || managerNameRaw || '',
+          name: managerName,
+        }
+      : null;
   const canceledAt = item?.canceledAt ? String(item.canceledAt) : null;
   const canceledByName =
     item?.canceledBy?.name ||
@@ -162,7 +177,7 @@ function mapOperationFromDto(item: any): Operation {
             : null,
     },
     client: { id: String(item?.customer?.id || ''), name: customerName },
-    manager: { id: managerId, name: managerName },
+    manager,
     device: deviceId || null,
     rating: item?.rating != null ? Number(item.rating) : null,
     spent: Math.max(0, spentAmount),
@@ -195,6 +210,7 @@ export default function OperationsPage() {
   const [staffScope, setStaffScope] = React.useState("all");
   const [managerFilter, setManagerFilter] = React.useState("all");
   const [outletFilter, setOutletFilter] = React.useState("all");
+  const [deviceFilter, setDeviceFilter] = React.useState("all");
   const [typeFilter, setTypeFilter] = React.useState<"ALL" | OperationKind>("ALL");
   const [directionFilter, setDirectionFilter] = React.useState("both");
   const [search, setSearch] = React.useState("");
@@ -204,6 +220,9 @@ export default function OperationsPage() {
   const [total, setTotal] = React.useState(0);
   const [hoveredRowId, setHoveredRowId] = React.useState<string | null>(null);
   const [refundedOrderIds, setRefundedOrderIds] = React.useState<Set<string>>(new Set());
+  const [staffOptions, setStaffOptions] = React.useState<SelectOption[]>([]);
+  const [outletOptions, setOutletOptions] = React.useState<SelectOption[]>([]);
+  const [deviceOptions, setDeviceOptions] = React.useState<DeviceOption[]>([]);
   const timezone = useTimezone();
   const dateFormatter = React.useMemo(
     () => new Intl.DateTimeFormat("ru-RU", { timeZone: timezone.iana }),
@@ -220,6 +239,43 @@ export default function OperationsPage() {
   );
   const formatDate = React.useCallback((value: string) => dateFormatter.format(new Date(value)), [dateFormatter]);
   const formatTime = React.useCallback((value: string) => timeFormatter.format(new Date(value)), [timeFormatter]);
+  const staffSelectOptions = React.useMemo(() => {
+    const activeStatuses = new Set(["ACTIVE", "PENDING", "SUSPENDED"]);
+    const formerStatuses = new Set(["FIRED", "ARCHIVED"]);
+    const filtered =
+      staffScope === "current"
+        ? staffOptions.filter((opt) => activeStatuses.has((opt.status || "").toUpperCase()))
+        : staffScope === "former"
+          ? staffOptions.filter((opt) => formerStatuses.has((opt.status || "").toUpperCase()))
+          : staffOptions;
+    return [{ value: "all", label: "Все сотрудники" }, ...filtered];
+  }, [staffOptions, staffScope]);
+  const outletSelectOptions = React.useMemo(
+    () => [{ value: "all", label: "Все торговые точки" }, ...outletOptions],
+    [outletOptions],
+  );
+  const deviceSelectOptions = React.useMemo(
+    () => [{ value: "all", label: "Все устройства" }, ...deviceOptions],
+    [deviceOptions],
+  );
+  React.useEffect(() => {
+    if (managerFilter === "all") return;
+    if (!staffSelectOptions.some((opt) => opt.value === managerFilter)) {
+      setManagerFilter("all");
+    }
+  }, [managerFilter, staffSelectOptions]);
+  React.useEffect(() => {
+    if (outletFilter === "all") return;
+    if (!outletSelectOptions.some((opt) => opt.value === outletFilter)) {
+      setOutletFilter("all");
+    }
+  }, [outletFilter, outletSelectOptions]);
+  React.useEffect(() => {
+    if (deviceFilter === "all") return;
+    if (!deviceSelectOptions.some((opt) => opt.value === deviceFilter)) {
+      setDeviceFilter("all");
+    }
+  }, [deviceFilter, deviceSelectOptions]);
 
   async function cancelOperation(operation: Operation) {
     if (!operation?.id) return;
@@ -257,6 +313,93 @@ export default function OperationsPage() {
     }
   }
 
+  React.useEffect(() => {
+    let aborted = false;
+    async function loadFilterOptions() {
+      try {
+        const staffQs = new URLSearchParams();
+        staffQs.set("page", "1");
+        staffQs.set("pageSize", "200");
+        staffQs.set("status", "ALL");
+        const [staffRes, outletsRes] = await Promise.all([
+          fetch(`/api/portal/staff?${staffQs.toString()}`, { cache: "no-store" }),
+          fetch(`/api/portal/outlets?status=all`, { cache: "no-store" }),
+        ]);
+        if (!staffRes.ok) throw new Error(await staffRes.text());
+        if (!outletsRes.ok) throw new Error(await outletsRes.text());
+        const staffData = await staffRes.json();
+        const outletsData = await outletsRes.json();
+        if (aborted) return;
+
+        const staffItemsRaw: any[] = Array.isArray(staffData?.items)
+          ? staffData.items
+          : Array.isArray(staffData)
+            ? staffData
+            : [];
+        const normalizedStaff: SelectOption[] = staffItemsRaw
+          .map((item) => {
+            const id = typeof item?.id === "string" ? item.id.trim() : "";
+            const status = String(item?.status || "").toUpperCase();
+            const nameParts = [item?.firstName, item?.lastName]
+              .map((part) => (typeof part === "string" ? part.trim() : ""))
+              .filter(Boolean);
+            const fallback = String(item?.login || item?.email || item?.phone || id).trim();
+            const label = (nameParts.join(" ") || fallback || id).trim();
+            if (!id || !label) return null;
+            return { value: id, label, status };
+          })
+          .filter((item): item is SelectOption => Boolean(item));
+        setStaffOptions(normalizedStaff);
+
+        const outletItemsRaw: any[] = Array.isArray(outletsData?.items)
+          ? outletsData.items
+          : Array.isArray(outletsData)
+            ? outletsData
+            : [];
+        const outletNameMap = new Map<string, string>();
+        const normalizedOutlets: SelectOption[] = outletItemsRaw
+          .map((o) => {
+            const id = typeof o?.id === "string" ? o.id.trim() : "";
+            if (!id) return null;
+            const name =
+              (typeof o?.name === "string" ? o.name.trim() : "") ||
+              (typeof o?.code === "string" ? o.code.trim() : "") ||
+              id;
+            outletNameMap.set(id, name);
+            return { value: id, label: name };
+          })
+          .filter((item): item is SelectOption => Boolean(item));
+        setOutletOptions(normalizedOutlets);
+
+        const deviceMap = new Map<string, DeviceOption>();
+        for (const outlet of outletItemsRaw) {
+          const outletId = typeof outlet?.id === "string" ? outlet.id.trim() : "";
+          const outletName = outletNameMap.get(outletId) || "";
+          const devices = Array.isArray(outlet?.devices) ? outlet.devices : [];
+          for (const device of devices) {
+            const code = typeof device?.code === "string" ? device.code.trim() : "";
+            const id = typeof device?.id === "string" ? device.id.trim() : "";
+            if (!id || deviceMap.has(id)) continue;
+            if (!code) continue;
+            const label = outletName ? `${code} — ${outletName}` : code;
+            deviceMap.set(id, { value: id, label, outletId: outletId || undefined });
+          }
+        }
+        setDeviceOptions(Array.from(deviceMap.values()));
+      } catch (error) {
+        console.error(error);
+        if (aborted) return;
+        setStaffOptions([]);
+        setOutletOptions([]);
+        setDeviceOptions([]);
+      }
+    }
+    loadFilterOptions();
+    return () => {
+      aborted = true;
+    };
+  }, []);
+
   // Подтягиваем реальные данные из БД через API-прокси
   React.useEffect(() => {
     let aborted = false;
@@ -265,7 +408,10 @@ export default function OperationsPage() {
       if (dateFrom) qs.set("from", dateFrom);
       if (dateTo) qs.set("to", dateTo);
       if (managerFilter !== "all") qs.set("staffId", managerFilter);
+      if (staffScope === "current") qs.set("staffStatus", "current");
+      if (staffScope === "former") qs.set("staffStatus", "former");
       if (outletFilter !== "all") qs.set("outletId", outletFilter);
+      if (deviceFilter !== "all") qs.set("deviceId", deviceFilter);
       // Направление: both -> ALL, earn -> EARN, spend -> REDEEM
       const dir = directionFilter === "earn" ? "EARN" : directionFilter === "spend" ? "REDEEM" : "ALL";
       qs.set("direction", dir);
@@ -322,15 +468,22 @@ export default function OperationsPage() {
       }
     });
     return () => { aborted = true; };
-  }, [dateFrom, dateTo, typeFilter, directionFilter, outletFilter, managerFilter, search, page]);
+  }, [dateFrom, dateTo, typeFilter, directionFilter, outletFilter, managerFilter, search, page, staffScope, deviceFilter]);
 
   React.useEffect(() => {
     setPage(1);
-  }, [dateFrom, dateTo, typeFilter, directionFilter, outletFilter, managerFilter, search]);
+  }, [dateFrom, dateTo, typeFilter, directionFilter, outletFilter, managerFilter, search, staffScope, deviceFilter]);
 
   const pageSize = PAGE_SIZE;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const pageItems = items;
+  const previewActorLabel = preview ? (preview.manager ? "Сотрудник" : "Устройство") : "";
+  const previewActorValue = preview
+    ? (preview.manager?.name?.trim() ||
+        preview.manager?.id?.trim() ||
+        (preview.device || "").trim() ||
+        "—")
+    : "";
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
@@ -374,21 +527,31 @@ export default function OperationsPage() {
                 <option value="former">Только бывшие</option>
               </select>
             </FilterBlock>
-            <FilterBlock label="Все менеджеры">
+            <FilterBlock label="Имя сотрудника">
               <select value={managerFilter} onChange={(event) => setManagerFilter(event.target.value)} style={selectStyle}>
-                <option value="all">Все менеджеры</option>
-                <option value="staff-4">Алексей</option>
-                <option value="staff-6">Мария</option>
-                <option value="staff-8">Ирина</option>
-                <option value="staff-9">Сергей</option>
+                {staffSelectOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
             </FilterBlock>
-            <FilterBlock label="Все торговые точки">
+            <FilterBlock label="Устройство">
+              <select value={deviceFilter} onChange={(event) => setDeviceFilter(event.target.value)} style={selectStyle}>
+                {deviceSelectOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </FilterBlock>
+            <FilterBlock label="Торговые точки">
               <select value={outletFilter} onChange={(event) => setOutletFilter(event.target.value)} style={selectStyle}>
-                <option value="all">Все торговые точки</option>
-                <option value="out-1">Кофейня на Лиговском</option>
-                <option value="out-2">Метро Чкаловская</option>
-                <option value="out-3">Pop-up в БЦ</option>
+                {outletSelectOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
             </FilterBlock>
             <FilterBlock label="Тип операции">
@@ -444,7 +607,12 @@ export default function OperationsPage() {
             const statusColor = isCanceled || isRefundedOrigin ? "#94a3b8" : "inherit";
             const ratingValue = operation.rating ?? 0;
             const hasOutlet = Boolean(operation.outlet?.name);
-            const deviceLabel = operation.device || '—';
+            const performerFromManager =
+              (operation.manager?.name || "").trim() ||
+              (operation.manager?.id || "").trim();
+            const performerFromDevice = (operation.device || "").trim();
+            const performerValue = performerFromManager || performerFromDevice || "—";
+            const performerLabel = operation.manager ? "Сотрудник" : "Устройство";
             const isPurchaseOperation = purchaseSummaryKinds.includes(operation.kind);
             const summaryLabel = isPurchaseOperation ? "Сумма покупки" : null;
             const summaryValue =
@@ -500,7 +668,9 @@ export default function OperationsPage() {
                         <span>{operation.client.name}</span>
                       )}
                     </span>
-                    <span>Устройство: {deviceLabel}</span>
+                    <span>
+                      {performerLabel}: {performerValue}
+                    </span>
                   </div>
                   <div style={ratingCellStyle}>
                     <StarRating rating={ratingValue} size={18} />
@@ -600,7 +770,7 @@ export default function OperationsPage() {
                   </a>
                 }
               />
-              <InfoRow label="Устройство" value={preview.device || '—'} />
+              <InfoRow label={previewActorLabel || "Устройство"} value={previewActorValue || "—"} />
               <div style={{ border: "1px solid rgba(148,163,184,0.16)", borderRadius: 14, padding: 16, display: "grid", gap: 10 }}>
                 <div style={{ fontWeight: 600 }}>Бонусные баллы</div>
                 <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>

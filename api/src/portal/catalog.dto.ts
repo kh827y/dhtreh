@@ -17,6 +17,8 @@ import {
   ValidateNested,
 } from 'class-validator';
 
+const DEVICE_CODE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{1,63}$/;
+
 export class CategoryDto {
   @ApiProperty() id!: string;
   @ApiProperty() name!: string;
@@ -341,6 +343,26 @@ export class OutletScheduleDayDto {
   to?: string;
 }
 
+export class CreatePortalDeviceDto {
+  @ApiProperty({
+    description: 'Идентификатор устройства (латиница/цифры/._-)',
+    minLength: 2,
+    maxLength: 64,
+  })
+  @IsString()
+  @Matches(DEVICE_CODE_PATTERN)
+  code!: string;
+}
+
+export class PortalDeviceDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() code!: string;
+  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
+  archivedAt?: Date | null;
+  @ApiProperty() createdAt!: Date;
+  @ApiProperty() updatedAt!: Date;
+}
+
 export class OutletScheduleDto {
   @ApiProperty({ enum: ['24_7', 'CUSTOM'] })
   @IsIn(['24_7', 'CUSTOM'])
@@ -395,7 +417,16 @@ export class CreatePortalOutletDto {
   @ValidateNested()
   @Type(() => OutletScheduleDto)
   schedule?: OutletScheduleDto;
-  @ApiProperty() @IsString() externalId!: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  externalId?: string;
+  @ApiPropertyOptional({ type: () => [CreatePortalDeviceDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreatePortalDeviceDto)
+  devices?: CreatePortalDeviceDto[];
   @ApiPropertyOptional({
     description: 'Ссылки на карточки отзывов по площадкам',
     type: 'object',
@@ -432,7 +463,9 @@ export class PortalOutletDto {
   @ApiPropertyOptional() latitude?: number | null;
   @ApiPropertyOptional() longitude?: number | null;
   @ApiProperty() manualLocation!: boolean;
-  @ApiProperty() externalId!: string | null;
+  @ApiPropertyOptional() externalId?: string | null;
+  @ApiProperty({ type: () => [PortalDeviceDto] })
+  devices!: PortalDeviceDto[];
   @ApiPropertyOptional({
     description: 'Ссылки на карточки отзывов по площадкам',
     type: 'object',

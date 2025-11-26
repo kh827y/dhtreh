@@ -79,10 +79,11 @@ API управления секретами/статусами точек:
 - Обновление POS-статуса: `PUT /merchants/:id/outlets/:outletId/pos` (поля `posType`, `posLastSeenAt`).
 - Переключение точки (ACTIVE/INACTIVE): `PUT /merchants/:id/outlets/:outletId/status`.
 
-> POS Bridge теперь опирается только на `outletId` + `bridgeSecret`: таблица `Device` удалена, а `deviceId` больше не хранится в моделях.
-> DTO и SDK сотрудников очищены от `allowedDeviceId`: ограничения задаются только через `allowedOutletId`, все публичные схемы и Postman обновлены.
+> POS Bridge и API теперь работают с устройствами `Device`, привязанными к `Outlet`: идентификатор устройства передаётся в операции и антифрод, наряду с `outletId` и `bridgeSecret`.
+> DTO портала возвращают список устройств точки, журналы/отзывы показывают код устройства; ограничения сотрудников по-прежнему задаются через `allowedOutletId`.
+> Антифрод по точкам и устройствам настраивается через ENV `AF_LIMIT_OUTLET/AF_WINDOW_OUTLET_SEC/AF_DAILY_CAP_OUTLET/AF_WEEKLY_CAP_OUTLET` и `AF_LIMIT_DEVICE/AF_WINDOW_DEVICE_SEC/AF_DAILY_CAP_DEVICE/AF_WEEKLY_CAP_DEVICE` (outlet — общий лимит для всех устройств/сотрудников точки, device — персональный лимит устройства).
 
-> Миграция `20251201090000_remove_device_table` добирает остаточные `bridgeSecret`/`lastSeen`, переносит ограничения сотрудников на точки и удаляет все поля `deviceId`. Ранее миграция `20251025120000_device_pos_fields` перенесла первичные данные из `Device` в `Outlet`.
+> Миграция `20251210120000_device_restore` создаёт таблицу `Device` и поля `deviceId` в операциях/чеков/лотах, коды устройств уникальны на мерчанте и каскадно привязаны к точкам.
 
 ## Проверка E2E (понятно и по шагам)
 

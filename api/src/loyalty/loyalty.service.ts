@@ -35,6 +35,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { randomUUID } from 'crypto';
+import { normalizeDeviceCode } from '../devices/device.util';
 
 type QrMeta = { jti: string; iat: number; exp: number } | undefined;
 
@@ -85,6 +86,31 @@ export class LoyaltyService {
     });
   }
 
+  private async resolveDeviceContext(
+    merchantId: string,
+    rawDeviceId?: string | null,
+    outletId?: string | null,
+  ): Promise<{ id: string; code: string; outletId: string } | null> {
+    if (!rawDeviceId) return null;
+    const { code, normalized } = normalizeDeviceCode(String(rawDeviceId || ''));
+    const device = await this.prisma.device.findFirst({
+      where: {
+        merchantId,
+        codeNormalized: normalized,
+        archivedAt: null,
+      },
+    });
+    if (!device) {
+      throw new BadRequestException('Устройство не найдено или удалено');
+    }
+    if (outletId && device.outletId !== outletId) {
+      throw new BadRequestException(
+        'Устройство привязано к другой торговой точке',
+      );
+    }
+    return { id: device.id, code, outletId: device.outletId };
+  }
+
   // ===== Referral rewards awarding =====
   private async applyReferralRewards(
     tx: any,
@@ -96,6 +122,7 @@ export class LoyaltyService {
       orderId: string;
       outletId: string | null;
       staffId: string | null;
+      deviceId: string | null;
     },
   ) {
     // Активная программа рефералов
@@ -196,6 +223,7 @@ export class LoyaltyService {
               orderId: `referral_reward_${ctx.receiptId}_L${level}`,
               outletId: ctx.outletId,
               staffId: ctx.staffId,
+              deviceId: ctx.deviceId ?? null,
               metadata: {
                 source: 'REFERRAL_BONUS',
                 referralLevel: level,
@@ -215,6 +243,7 @@ export class LoyaltyService {
                 orderId: ctx.orderId,
                 outletId: ctx.outletId ?? null,
                 staffId: ctx.staffId ?? null,
+                deviceId: ctx.deviceId ?? null,
                 meta: { mode: 'REFERRAL', level },
               },
             });
@@ -1286,11 +1315,21 @@ export class LoyaltyService {
       ? Boolean((rulesConfig as any).allowEarnRedeemSameReceipt)
       : !(rulesConfig as any).disallowEarnRedeemSameReceipt;
 
+    let effectiveOutletId = dto.outletId ?? null;
+    const deviceCtx = await this.resolveDeviceContext(
+      dto.merchantId,
+      dto.deviceId ?? null,
+      effectiveOutletId,
+    );
+    if (deviceCtx && !effectiveOutletId) {
+      effectiveOutletId = deviceCtx.outletId;
+    }
     const outletCtx = await this.resolveOutletContext(dto.merchantId, {
-      outletId: dto.outletId ?? null,
+      outletId: effectiveOutletId,
     });
     const channel = outletCtx.channel;
-    const effectiveOutletId = outletCtx.outletId ?? null;
+    effectiveOutletId = outletCtx.outletId ?? effectiveOutletId ?? null;
+    const resolvedDeviceId = deviceCtx?.id ?? null;
 
     // Нормализуем суммы (защита от отрицательных/NaN)
     const sanitizedTotal = Math.max(
@@ -1624,6 +1663,7 @@ export class LoyaltyService {
             status: HoldStatus.PENDING,
             outletId: effectiveOutletId,
             staffId: dto.staffId ?? null,
+            deviceId: resolvedDeviceId,
           },
         });
 
@@ -1782,6 +1822,7 @@ export class LoyaltyService {
           status: HoldStatus.PENDING,
           outletId: effectiveOutletId,
           staffId: dto.staffId ?? null,
+          deviceId: resolvedDeviceId,
         },
       });
 
@@ -1924,6 +1965,7 @@ export class LoyaltyService {
               orderId,
               outletId: hold.outletId,
               staffId: hold.staffId,
+              deviceId: hold.deviceId ?? null,
             },
           });
           // Earn lots consumption (optional)
@@ -1948,6 +1990,7 @@ export class LoyaltyService {
                 orderId,
                 outletId: hold.outletId ?? null,
                 staffId: hold.staffId ?? null,
+                deviceId: hold.deviceId ?? null,
                 meta: { mode: 'REDEEM' },
               },
             });
@@ -2104,6 +2147,7 @@ export class LoyaltyService {
                       receiptId: null,
                       outletId: hold.outletId ?? null,
                       staffId: hold.staffId ?? null,
+                      deviceId: hold.deviceId ?? null,
                       status: 'PENDING',
                     },
                   });
@@ -2128,6 +2172,7 @@ export class LoyaltyService {
                       receiptId: null,
                       outletId: hold.outletId ?? null,
                       staffId: hold.staffId ?? null,
+                      deviceId: hold.deviceId ?? null,
                       status: 'PENDING',
                     },
                   });
@@ -2152,6 +2197,7 @@ export class LoyaltyService {
                       receiptId: null,
                       outletId: hold.outletId ?? null,
                       staffId: hold.staffId ?? null,
+                      deviceId: hold.deviceId ?? null,
                       status: 'PENDING',
                     },
                   });
@@ -2173,6 +2219,7 @@ export class LoyaltyService {
                   ).toISOString(),
                   outletId: hold.outletId ?? null,
                   staffId: hold.staffId ?? null,
+                  deviceId: hold.deviceId ?? null,
                   promoCode:
                     promoResult && opts?.promoCode
                       ? {
@@ -2205,6 +2252,7 @@ export class LoyaltyService {
                 orderId,
                 outletId: hold.outletId,
                 staffId: hold.staffId,
+                deviceId: hold.deviceId ?? null,
               },
             });
             // Ledger mirror (optional)
@@ -2219,6 +2267,7 @@ export class LoyaltyService {
                   orderId,
                   outletId: hold.outletId ?? null,
                   staffId: hold.staffId ?? null,
+                  deviceId: hold.deviceId ?? null,
                   meta: { mode: 'EARN' },
                 },
               });
@@ -2255,6 +2304,7 @@ export class LoyaltyService {
                       receiptId: null,
                       outletId: hold.outletId ?? null,
                       staffId: hold.staffId ?? null,
+                      deviceId: hold.deviceId ?? null,
                       status: 'ACTIVE',
                     },
                   });
@@ -2278,6 +2328,7 @@ export class LoyaltyService {
                       receiptId: null,
                       outletId: hold.outletId ?? null,
                       staffId: hold.staffId ?? null,
+                      deviceId: hold.deviceId ?? null,
                       status: 'ACTIVE',
                     },
                   });
@@ -2301,6 +2352,7 @@ export class LoyaltyService {
                       receiptId: null,
                       outletId: hold.outletId ?? null,
                       staffId: hold.staffId ?? null,
+                      deviceId: hold.deviceId ?? null,
                       status: 'ACTIVE',
                     },
                   });
@@ -2331,6 +2383,7 @@ export class LoyaltyService {
             earnApplied: appliedEarn,
             outletId: hold.outletId ?? null,
             staffId: hold.staffId ?? null,
+            deviceId: hold.deviceId ?? null,
           },
         });
 
@@ -2369,6 +2422,7 @@ export class LoyaltyService {
             orderId,
             outletId: hold.outletId ?? null,
             staffId: hold.staffId ?? null,
+            deviceId: hold.deviceId ?? null,
           });
         } catch {}
         // обновим lastSeen у торговой точки/устройства
@@ -2498,11 +2552,20 @@ export class LoyaltyService {
     refundTotal: number,
     refundEligibleTotal?: number,
     requestId?: string,
+    deviceId?: string,
   ) {
     const receipt = await this.prisma.receipt.findUnique({
       where: { merchantId_orderId: { merchantId, orderId } },
     });
     if (!receipt) throw new BadRequestException('Receipt not found');
+
+    const deviceCtx = await this.resolveDeviceContext(
+      merchantId,
+      deviceId ?? null,
+      receipt.outletId ?? null,
+    );
+    const refundOutletId = receipt.outletId ?? deviceCtx?.outletId ?? null;
+    const refundDeviceId = deviceCtx?.id ?? receipt.deviceId ?? null;
 
     const eligible =
       receipt.eligibleTotal > 0 ? receipt.eligibleTotal : receipt.total;
@@ -2551,8 +2614,9 @@ export class LoyaltyService {
             type: TxnType.REFUND,
             amount: pointsToRestore,
             orderId,
-            outletId: receipt.outletId,
+            outletId: refundOutletId,
             staffId: receipt.staffId,
+            deviceId: refundDeviceId,
             metadata: refundMeta,
           },
         });
@@ -2574,8 +2638,9 @@ export class LoyaltyService {
               credit: LedgerAccount.CUSTOMER_BALANCE,
               amount: pointsToRestore,
               orderId,
-              outletId: receipt.outletId ?? null,
+              outletId: refundOutletId,
               staffId: receipt.staffId ?? null,
+              deviceId: refundDeviceId,
               meta: { mode: 'REFUND', kind: 'restore' },
             },
           });
@@ -2597,8 +2662,9 @@ export class LoyaltyService {
             type: TxnType.REFUND,
             amount: -pointsToRevoke,
             orderId,
-            outletId: receipt.outletId,
+            outletId: refundOutletId,
             staffId: receipt.staffId,
+            deviceId: refundDeviceId,
             metadata: refundMeta,
           },
         });
@@ -2620,8 +2686,9 @@ export class LoyaltyService {
               credit: LedgerAccount.MERCHANT_LIABILITY,
               amount: pointsToRevoke,
               orderId,
-              outletId: receipt.outletId ?? null,
+              outletId: refundOutletId,
               staffId: receipt.staffId ?? null,
+              deviceId: refundDeviceId,
               meta: { mode: 'REFUND', kind: 'revoke' },
             },
           });
@@ -2633,14 +2700,14 @@ export class LoyaltyService {
       if (Math.abs(share - 1) < 0.001) {
         await this.rollbackReferralRewards(tx, {
           merchantId,
-          receipt: {
-            id: receipt.id,
-            orderId,
-            customerId: receipt.customerId,
-            outletId: receipt.outletId ?? null,
-            staffId: receipt.staffId ?? null,
-          },
-        });
+            receipt: {
+              id: receipt.id,
+              orderId,
+              customerId: receipt.customerId,
+              outletId: refundOutletId,
+              staffId: receipt.staffId ?? null,
+            },
+          });
       }
       try {
         await this.staffMotivation.recordRefund(tx, {
@@ -2671,8 +2738,9 @@ export class LoyaltyService {
             pointsRestored: pointsToRestore,
             pointsRevoked: pointsToRevoke,
             createdAt: new Date().toISOString(),
-            outletId: receipt.outletId ?? null,
+            outletId: refundOutletId,
             staffId: receipt.staffId ?? null,
+            deviceId: refundDeviceId,
             requestId: requestId ?? null,
           } as any,
         },
@@ -2738,6 +2806,7 @@ export class LoyaltyService {
       take: hardLimit,
       include: {
         outlet: { select: { posType: true, posLastSeenAt: true } },
+        device: { select: { code: true } },
         reviews: { select: { id: true, rating: true, createdAt: true } },
       },
     });
@@ -2810,6 +2879,7 @@ export class LoyaltyService {
         staffId: true,
         createdAt: true,
         maturesAt: true,
+        device: { select: { code: true } },
       },
     });
     // Подтянем outlet данные одним запросом
@@ -2942,6 +3012,7 @@ export class LoyaltyService {
           ? entity.outlet.posLastSeenAt.toISOString()
           : null,
         staffId: entity.staffId ?? null,
+        deviceId: entity.device?.code ?? null,
         reviewId: entity.reviews?.[0]?.id ?? null,
         reviewRating: entity.reviews?.[0]?.rating ?? null,
         reviewCreatedAt: entity.reviews?.[0]?.createdAt
@@ -2985,6 +3056,7 @@ export class LoyaltyService {
           ? outlet.posLastSeenAt.toISOString()
           : null,
         staffId: lot.staffId ?? null,
+        deviceId: lot.device?.code ?? null,
         reviewId: null,
         reviewRating: null,
         reviewCreatedAt: null,

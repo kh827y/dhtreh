@@ -459,6 +459,7 @@ rulesJson.af структура на мерчанте:
 {
   "merchant": { "limit": 200, "windowSec": 3600, "dailyCap": 0, "weeklyCap": 0 },
   "outlet":   { "limit": 20,  "windowSec": 600,  "dailyCap": 0, "weeklyCap": 0 },
+  "device":   { "limit": 20,  "windowSec": 600,  "dailyCap": 0, "weeklyCap": 0 },
   "staff":    { "limit": 60,  "windowSec": 600,  "dailyCap": 0, "weeklyCap": 0 },
   "customer": { "limit": 5,   "windowSec": 120,  "dailyCap": 0, "weeklyCap": 0 },
   "blockFactors": ["blacklisted_customer", "balance_manipulation"]
@@ -469,7 +470,8 @@ rulesJson.af структура на мерчанте:
 - `dailyCap` — суточный кап по операциям (0 = выключен)
 - `weeklyCap` — кап за 7 суток (роллинг) (0 = выключен)
 - scope `outlet` фактически ограничивает операции по торговой точке (включая все устройства и сотрудников внутри).
-- `blockFactors` — список факторов скоринга, которые приводят к жёсткой блокировке, даже если уровень риска < CRITICAL
+- scope `device` — лимит для конкретного устройства (код устройства передаётся в запросах), работает совместно с `outlet` как агрегирующий потолок.
+- `blockFactors` — список факторов скоринга, которые приводят к жёсткой блокировке, даже если уровень риска < CRITICAL (доступны `no_outlet_id`, `no_device_id` и факторы из скоринга)
 
 ENV переменные по умолчанию (используются, если per-merchant не задано):
 
@@ -483,6 +485,10 @@ AF_LIMIT_OUTLET=20
 AF_WINDOW_OUTLET_SEC=600
 AF_DAILY_CAP_OUTLET=0
 AF_WEEKLY_CAP_OUTLET=0
+AF_LIMIT_DEVICE=20
+AF_WINDOW_DEVICE_SEC=600
+AF_DAILY_CAP_DEVICE=0
+AF_WEEKLY_CAP_DEVICE=0
 AF_LIMIT_STAFF=60
 AF_WINDOW_STAFF_SEC=600
 AF_DAILY_CAP_STAFF=0
@@ -1650,7 +1656,7 @@ Response 200: объект клиента, как в GET /portal/customers/{id}
 | `/portal/loyalty/promotions/{id}/status` | POST | Смена статуса (`DRAFT` → `ACTIVE`/`PAUSED`/`ARCHIVED`). |
 | `/portal/loyalty/promotions/bulk/status` | POST | Массовое изменение статусов по списку `ids`. |
 | `/portal/loyalty/promotions/{id}/duplicate` | POST | Создание черновика на основе существующей акции. |
-| `/portal/operations/log` | GET | Журнал начислений и списаний с фильтрами (даты, сотрудник, точка, направление, тип операции `operationType`). |
+| `/portal/operations/log` | GET | Журнал начислений и списаний с фильтрами (даты, сотрудник `staffId`, статус сотрудника `staffStatus=current\|former`, точка `outletId`, устройство `deviceId`, направление, тип операции `operationType`). |
 | `/portal/operations/log/{receiptId}` | GET | Детали конкретной операции (для покупок и индивидуальных транзакций, информация об отмене). |
 | `/portal/operations/log/{receiptId}/cancel` | POST | Отмена операции: для покупок — отмена чека с перерасчётом, для остальных транзакций — обратное начисление/списание. Возвратные операции (`TxnType.REFUND`) считаются финальными и вернут ошибку 400. |
 | `/portal/referrals/program` | GET/PUT | Получение и сохранение настроек реферальной программы (триггеры, тип награды, уровни, `minPurchaseAmount`, тексты сообщений). |

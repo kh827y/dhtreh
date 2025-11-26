@@ -36,6 +36,12 @@ export class QuoteDto {
   @IsOptional()
   @IsString()
   staffId?: string;
+  @ApiPropertyOptional({
+    description: 'Идентификатор устройства (код из настроек торговой точки)',
+  })
+  @IsOptional()
+  @IsString()
+  deviceId?: string;
 }
 
 export class CommitDto {
@@ -101,6 +107,12 @@ export class RefundDto {
   @IsNumber()
   @Min(0)
   refundEligibleTotal?: number;
+  @ApiPropertyOptional({
+    description: 'Идентификатор устройства, с которого оформляется возврат',
+  })
+  @IsOptional()
+  @IsString()
+  deviceId?: string;
 }
 
 // ====== Swagger DTOs for responses ======
@@ -228,6 +240,11 @@ export class TransactionItemDto {
   @ApiProperty() merchantCustomerId!: string;
   @ApiProperty() createdAt!: string;
   @ApiPropertyOptional() outletId?: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Идентификатор устройства (код)',
+  })
+  deviceId?: string | null;
   @ApiPropertyOptional({ enum: DeviceType, nullable: true }) outletPosType?:
     | keyof typeof DeviceType
     | string

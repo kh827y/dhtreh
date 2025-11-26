@@ -365,12 +365,16 @@ export default function ReviewsPage() {
                       </td>
                       <td style={tdStyle}>{row.comment ? row.comment : <span style={{ opacity: 0.6 }}>Без комментария</span>}</td>
                       <td style={tdStyle}>
-                        <div style={{ display: 'grid', gap: 2 }}>
-                          <span>{row.device || '—'}</span>
-                          {row.staff && row.staff !== '—' && (
-                            <span style={{ fontSize: 12, opacity: 0.7 }}>Сотрудник: {row.staff}</span>
-                          )}
-                        </div>
+                        {(() => {
+                          const hasDevice = Boolean(row.device && row.device !== '—');
+                          const actorLabel = hasDevice ? 'Устройство' : 'Сотрудник';
+                          const actorValue = hasDevice ? row.device : row.staff;
+                          return (
+                            <div style={{ display: 'grid', gap: 2 }}>
+                              <span>{actorLabel}: {actorValue || '—'}</span>
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td style={tdStyle}>{row.outlet}</td>
                       <td style={tdStyle}>{new Date(row.createdAt).toLocaleString('ru-RU')}</td>

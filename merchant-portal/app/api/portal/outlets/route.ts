@@ -19,6 +19,21 @@ export function normalizeReviewsShareLinks(input: unknown) {
   return Object.keys(result).length ? result : {};
 }
 
+export function normalizeDevices(input: unknown) {
+  if (!Array.isArray(input)) return undefined;
+  const devices: Array<{ code: string }> = [];
+  for (const item of input) {
+    const code =
+      typeof item === 'string'
+        ? item.trim()
+        : String((item as any)?.code ?? '').trim();
+    if (!code) continue;
+    if (devices.length >= 50) break;
+    devices.push({ code });
+  }
+  return devices;
+}
+
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const qs = new URLSearchParams();
@@ -40,15 +55,31 @@ export async function GET(req: NextRequest) {
     return new Response(JSON.stringify(data), { status: proxied.status, headers: { 'Content-Type': 'application/json' } });
   }
   const sourceItems: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
-  const items = sourceItems.map((o: any) => ({
-    id: String(o.id),
-    name: String(o.name || ''),
-    address: o.address ?? null,
-    description: o.description ?? null,
-    phone: o.phone ?? null,
-    works: typeof o.works === 'boolean' ? !!o.works : String(o.status || '').toUpperCase() === 'ACTIVE',
-    hidden: !!o.hidden,
-  }));
+  const items = sourceItems.map((o: any) => {
+    const rawDevices = Array.isArray(o?.devices) ? o.devices : [];
+    const devices = rawDevices
+      .filter((d) => d && !d.archivedAt)
+      .map((d) => {
+        const code = typeof d.code === 'string' ? d.code.trim() : '';
+        return {
+          id: String(d.id || ''),
+          code,
+          outletId: String(o?.id || ''),
+          outletName: String(o?.name || '').trim() || String(o?.code || ''),
+        };
+      })
+      .filter((d) => d.code);
+    return {
+      id: String(o.id),
+      name: String(o.name || ''),
+      address: o.address ?? null,
+      description: o.description ?? null,
+      phone: o.phone ?? null,
+      works: typeof o.works === 'boolean' ? !!o.works : String(o.status || '').toUpperCase() === 'ACTIVE',
+      hidden: !!o.hidden,
+      devices,
+    };
+  });
   const total = Number(data?.meta?.total ?? items.length) || items.length;
   return new Response(JSON.stringify({ items, total }), { status: proxied.status, headers: { 'Content-Type': 'application/json' } });
 }
@@ -73,6 +104,8 @@ export async function POST(req: NextRequest) {
   if (body?.schedule !== undefined) payload.schedule = body.schedule;
   const reviewsShareLinks = normalizeReviewsShareLinks(body?.reviewsShareLinks);
   if (reviewsShareLinks !== undefined) payload.reviewsShareLinks = reviewsShareLinks;
+  const devices = normalizeDevices(body?.devices);
+  if (devices !== undefined) payload.devices = devices;
   return portalFetch(req, '/portal/outlets', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

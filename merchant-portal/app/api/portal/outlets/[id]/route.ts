@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { portalFetch } from '../../_lib';
-import { normalizeReviewsShareLinks } from '../route';
+import { normalizeReviewsShareLinks, normalizeDevices } from '../route';
 
 export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
@@ -17,7 +17,8 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
   }
   // add convenient boolean works derived from status
   const works = typeof data?.works === 'boolean' ? !!data.works : String(data?.status || '').toUpperCase() === 'ACTIVE';
-  return new Response(JSON.stringify({ ...data, works }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  const devices = Array.isArray(data?.devices) ? data.devices : [];
+  return new Response(JSON.stringify({ ...data, works, devices }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
 
 export async function PUT(req: NextRequest, context: { params: Promise<{ id: string }> }) {
@@ -41,6 +42,8 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ id: str
   if (body?.schedule !== undefined) payload.schedule = body.schedule;
   const reviewsShareLinks = normalizeReviewsShareLinks(body?.reviewsShareLinks);
   if (reviewsShareLinks !== undefined) payload.reviewsShareLinks = reviewsShareLinks;
+  const devices = normalizeDevices(body?.devices);
+  if (devices !== undefined) payload.devices = devices;
   return portalFetch(req, `/portal/outlets/${encodeURIComponent(id)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },

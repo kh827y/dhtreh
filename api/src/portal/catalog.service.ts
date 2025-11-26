@@ -37,6 +37,11 @@ import {
   ProductStockInputDto,
   OutletScheduleDto,
 } from './catalog.dto';
+import {
+  normalizeDeviceCode,
+  ensureUniqueDeviceCodes,
+  type NormalizedDeviceCode,
+} from '../devices/device.util';
 
 const BULK_ACTION_MAP: Record<
   ProductBulkAction,
@@ -312,7 +317,9 @@ export class PortalCatalogService {
     return base;
   }
 
-  private mapOutlet(entity: Outlet): PortalOutletDto {
+  private mapOutlet(
+    entity: Outlet & { devices?: Array<any> },
+  ): PortalOutletDto {
     return {
       id: entity.id,
       name: entity.name,
@@ -335,6 +342,7 @@ export class PortalCatalogService {
       longitude: this.decimalToNumber(entity.longitude),
       manualLocation: entity.manualLocation,
       externalId: entity.externalId ?? null,
+      devices: this.mapDevices((entity as any).devices),
       reviewsShareLinks: (() => {
         const links = this.extractReviewLinks(entity.reviewLinks as any);
         if (!Object.keys(links).length) return null;
@@ -347,6 +355,121 @@ export class PortalCatalogService {
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };
+  }
+
+  private mapDevices(
+    devices?: Array<{
+      id: string;
+      code: string;
+      archivedAt: Date | null;
+      createdAt: Date;
+      updatedAt: Date;
+    }>,
+  ) {
+    const list = Array.isArray(devices) ? devices : [];
+    return list
+      .filter((device) => !device.archivedAt)
+      .map((device) => ({
+        id: device.id,
+        code: device.code,
+        archivedAt: device.archivedAt ?? null,
+        createdAt: device.createdAt,
+        updatedAt: device.updatedAt,
+      }));
+  }
+
+  private async loadOutletWithDevices(merchantId: string, outletId: string) {
+    const outlet = await this.prisma.outlet.findFirst({
+      where: { id: outletId, merchantId },
+      include: {
+        devices: {
+          where: { archivedAt: null },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+    if (!outlet) throw new NotFoundException('Outlet not found');
+    return outlet;
+  }
+
+  private normalizeDevicesInput(
+    devices?: Array<{ code?: string | null }>,
+  ): NormalizedDeviceCode[] {
+    if (!devices) return [];
+    const normalized = devices
+      .map((device) => {
+        if (!device) return null;
+        return normalizeDeviceCode(String(device.code ?? ''));
+      })
+      .filter(
+        (value): value is NormalizedDeviceCode => value !== null,
+      );
+    ensureUniqueDeviceCodes(normalized);
+    return normalized;
+  }
+
+  private async syncDevicesForOutlet(
+    tx: Prisma.TransactionClient,
+    merchantId: string,
+    outletId: string,
+    devices: NormalizedDeviceCode[],
+  ) {
+    ensureUniqueDeviceCodes(devices);
+    const codes = devices.map((device) => device.normalized);
+    if (!devices.length) {
+      await tx.device.updateMany({
+        where: { merchantId, outletId, archivedAt: null },
+        data: { archivedAt: new Date() },
+      });
+      return;
+    }
+    const existing = await tx.device.findMany({
+      where: { merchantId, codeNormalized: { in: codes } },
+    });
+    const conflict = existing.find(
+      (device) => device.outletId !== outletId && !device.archivedAt,
+    );
+    if (conflict) {
+      throw new BadRequestException(
+        'Идентификатор устройства уже привязан к другой торговой точке',
+      );
+    }
+    const now = new Date();
+    for (const device of devices) {
+      const matched = existing.find(
+        (d) => d.codeNormalized === device.normalized,
+      );
+      if (matched) {
+        await tx.device.update({
+          where: { id: matched.id },
+          data: {
+            outletId,
+            code: device.code,
+            codeNormalized: device.normalized,
+            archivedAt: null,
+            updatedAt: now,
+          },
+        });
+      } else {
+        await tx.device.create({
+          data: {
+            merchantId,
+            outletId,
+            code: device.code,
+            codeNormalized: device.normalized,
+          },
+        });
+      }
+    }
+    await tx.device.updateMany({
+      where: {
+        merchantId,
+        outletId,
+        archivedAt: null,
+        codeNormalized: { notIn: codes },
+      },
+      data: { archivedAt: now },
+    });
   }
 
   private async ensureCategoryOwnership(
@@ -975,7 +1098,16 @@ export class PortalCatalogService {
       }
     }
     const [items, total] = await Promise.all([
-      this.prisma.outlet.findMany({ where, orderBy: { createdAt: 'asc' } }),
+      this.prisma.outlet.findMany({
+        where,
+        orderBy: { createdAt: 'asc' },
+        include: {
+          devices: {
+            where: { archivedAt: null },
+            orderBy: { createdAt: 'asc' },
+          },
+        },
+      }),
       this.prisma.outlet.count({ where }),
     ]);
     return { items: items.map((outlet) => this.mapOutlet(outlet)), total };
@@ -985,10 +1117,7 @@ export class PortalCatalogService {
     merchantId: string,
     outletId: string,
   ): Promise<PortalOutletDto> {
-    const outlet = await this.prisma.outlet.findFirst({
-      where: { id: outletId, merchantId },
-    });
-    if (!outlet) throw new NotFoundException('Outlet not found');
+    const outlet = await this.loadOutletWithDevices(merchantId, outletId);
     return this.mapOutlet(outlet);
   }
 
@@ -1000,44 +1129,64 @@ export class PortalCatalogService {
     const address = dto.address?.trim();
     if (!name) throw new BadRequestException('Outlet name is required');
     if (!address) throw new BadRequestException('Outlet address is required');
+    const devices = this.normalizeDevicesInput(dto.devices);
     const scheduleEnabled = dto.showSchedule ?? false;
     const schedule =
       dto.schedule && scheduleEnabled
         ? dto.schedule
         : { mode: 'CUSTOM', days: [] };
     try {
-      const created = await this.prisma.outlet.create({
-        data: {
+      const created = await this.prisma.$transaction(async (tx) => {
+        const createdOutlet = await tx.outlet.create({
+          data: {
+            merchantId,
+            name,
+            address,
+            status: dto.works ? 'ACTIVE' : 'INACTIVE',
+            hidden: dto.hidden ?? false,
+            description: dto.description ?? null,
+            phone: dto.phone ?? null,
+            adminEmails:
+              dto.adminEmails?.map((email) => email.trim()).filter(Boolean) ??
+              [],
+            timezone: dto.timezone ?? null,
+            scheduleEnabled,
+            scheduleMode: schedule.mode,
+            scheduleJson: scheduleEnabled
+              ? (schedule as unknown as Prisma.InputJsonValue)
+              : (Prisma.DbNull as Prisma.NullableJsonNullValueInput),
+            externalId: dto.externalId?.trim() || null,
+            manualLocation: dto.manualLocation ?? false,
+            latitude: this.toDecimal(dto.latitude),
+            longitude: this.toDecimal(dto.longitude),
+            reviewLinks: (() => {
+              const patch = this.prepareReviewLinksPatch(dto.reviewsShareLinks);
+              if (!patch)
+                return Prisma.JsonNull as Prisma.NullableJsonNullValueInput;
+              const merged = this.applyReviewLinksPatch(null, patch);
+              return Object.keys(merged).length
+                ? (merged as unknown as Prisma.InputJsonValue)
+                : (Prisma.JsonNull as Prisma.NullableJsonNullValueInput);
+            })(),
+          },
+        });
+        await this.syncDevicesForOutlet(
+          tx,
           merchantId,
-          name,
-          address,
-          status: dto.works ? 'ACTIVE' : 'INACTIVE',
-          hidden: dto.hidden ?? false,
-          description: dto.description ?? null,
-          phone: dto.phone ?? null,
-          adminEmails:
-            dto.adminEmails?.map((email) => email.trim()).filter(Boolean) ?? [],
-          timezone: dto.timezone ?? null,
-          scheduleEnabled,
-          scheduleMode: schedule.mode,
-          scheduleJson: scheduleEnabled
-            ? (schedule as unknown as Prisma.InputJsonValue)
-            : (Prisma.DbNull as Prisma.NullableJsonNullValueInput),
-          externalId: dto.externalId?.trim() ?? null,
-          manualLocation: dto.manualLocation ?? false,
-          latitude: this.toDecimal(dto.latitude),
-          longitude: this.toDecimal(dto.longitude),
-          reviewLinks: (() => {
-            const patch = this.prepareReviewLinksPatch(dto.reviewsShareLinks);
-            if (!patch)
-              return Prisma.JsonNull as Prisma.NullableJsonNullValueInput;
-            const merged = this.applyReviewLinksPatch(null, patch);
-            return Object.keys(merged).length
-              ? (merged as unknown as Prisma.InputJsonValue)
-              : (Prisma.JsonNull as Prisma.NullableJsonNullValueInput);
-          })(),
-        },
+          createdOutlet.id,
+          devices,
+        );
+        return tx.outlet.findUnique({
+          where: { id: createdOutlet.id },
+          include: {
+            devices: {
+              where: { archivedAt: null },
+              orderBy: { createdAt: 'asc' },
+            },
+          },
+        });
       });
+      if (!created) throw new NotFoundException('Outlet not found');
       this.logger.log(
         JSON.stringify({
           event: 'portal.outlet.create',
@@ -1046,12 +1195,24 @@ export class PortalCatalogService {
         }),
       );
       this.metrics.inc('portal_outlets_changed_total', { action: 'create' });
-      return this.mapOutlet(created);
+      return this.mapOutlet(
+        created as Outlet & { devices?: Prisma.DeviceUncheckedCreateInput[] },
+      );
     } catch (error: any) {
-      if (error?.code === 'P2002')
+      if (error?.code === 'P2002') {
+        const target = (error.meta as any)?.target;
+        if (
+          Array.isArray(target) &&
+          target.includes('Device_merchantId_codeNormalized_key')
+        ) {
+          throw new BadRequestException(
+            'Устройство с таким идентификатором уже существует',
+          );
+        }
         throw new BadRequestException(
           'Outlet with this externalId already exists',
         );
+      }
       throw error;
     }
   }
@@ -1066,6 +1227,10 @@ export class PortalCatalogService {
     });
     if (!outlet) throw new NotFoundException('Outlet not found');
     const data: Prisma.OutletUpdateInput = {};
+    const devices =
+      dto.devices !== undefined
+        ? this.normalizeDevicesInput(dto.devices || [])
+        : null;
     if (dto.name !== undefined) {
       const name = dto.name.trim();
       if (!name) throw new BadRequestException('Outlet name cannot be empty');
@@ -1121,20 +1286,47 @@ export class PortalCatalogService {
       data.scheduleJson = Prisma.DbNull as Prisma.NullableJsonNullValueInput;
     }
     try {
-      const updated = await this.prisma.outlet.update({
-        where: { id: outletId },
-        data,
+      const updated = await this.prisma.$transaction(async (tx) => {
+        const hasPatch = Object.keys(data).length > 0;
+        const saved = hasPatch
+          ? await tx.outlet.update({
+              where: { id: outletId },
+              data,
+            })
+          : outlet;
+        if (devices !== null) {
+          await this.syncDevicesForOutlet(tx, merchantId, outletId, devices);
+        }
+        return tx.outlet.findUnique({
+          where: { id: saved.id },
+          include: {
+            devices: {
+              where: { archivedAt: null },
+              orderBy: { createdAt: 'asc' },
+            },
+          },
+        });
       });
       this.logger.log(
         JSON.stringify({ event: 'portal.outlet.update', merchantId, outletId }),
       );
       this.metrics.inc('portal_outlets_changed_total', { action: 'update' });
-      return this.mapOutlet(updated);
+      return this.mapOutlet(updated as any);
     } catch (error: any) {
-      if (error?.code === 'P2002')
+      if (error?.code === 'P2002') {
+        const target = (error.meta as any)?.target;
+        if (
+          Array.isArray(target) &&
+          target.includes('Device_merchantId_codeNormalized_key')
+        ) {
+          throw new BadRequestException(
+            'Устройство с таким идентификатором уже существует',
+          );
+        }
         throw new BadRequestException(
           'Outlet with this externalId already exists',
         );
+      }
       throw error;
     }
   }

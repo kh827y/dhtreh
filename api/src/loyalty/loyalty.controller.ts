@@ -1703,16 +1703,15 @@ export class LoyaltyController {
     const staffKey = req.headers['x-staff-key'] as string | undefined;
     const bridgeSig = req.headers['x-bridge-signature'] as string | undefined;
 
-    // If requireStaffKey is enabled, must have either staff key or bridge signature
-    if (!staffKey && !bridgeSig) {
-      throw new UnauthorizedException(
-        'X-Staff-Key or X-Bridge-Signature required',
-      );
-    }
-
+    // Для кассы staff-key необязателен; если передан — валидируем, иначе пропускаем
     if (staffKey) {
       const valid = await this.verifyStaffKey(merchantId, staffKey);
       if (!valid) throw new UnauthorizedException('Invalid staff key');
+    }
+    // Bridge-подпись для интеграций; в кассе не требуем, но если пришла — проверяем валидность ниже по коду
+    if (!staffKey && bridgeSig) {
+      // в этом методе не валидируем подпись, проверка выполняется в конкретных хендлерах при наличии заголовка
+      return;
     }
   }
 
@@ -1919,17 +1918,19 @@ export class LoyaltyController {
       if (s?.requireBridgeSig) {
         const sig =
           (req.headers['x-bridge-signature'] as string | undefined) || '';
-        let secret: string | null = outlet?.bridgeSecret ?? null;
-        let alt: string | null = outlet?.bridgeSecretNext ?? null;
-        if (!secret && !alt) {
-          secret = s?.bridgeSecret || null;
-          alt = (s as any)?.bridgeSecretNext || null;
+        if (sig) {
+          let secret: string | null = outlet?.bridgeSecret ?? null;
+          let alt: string | null = outlet?.bridgeSecretNext ?? null;
+          if (!secret && !alt) {
+            secret = s?.bridgeSecret || null;
+            alt = (s as any)?.bridgeSecretNext || null;
+          }
+          const bodyForSig = JSON.stringify(dto);
+          let ok = false;
+          if (secret && verifyBridgeSigUtil(sig, bodyForSig, secret)) ok = true;
+          else if (alt && verifyBridgeSigUtil(sig, bodyForSig, alt)) ok = true;
+          if (!ok) throw new UnauthorizedException('Invalid bridge signature');
         }
-        const bodyForSig = JSON.stringify(dto);
-        let ok = false;
-        if (secret && verifyBridgeSigUtil(sig, bodyForSig, secret)) ok = true;
-        else if (alt && verifyBridgeSigUtil(sig, bodyForSig, alt)) ok = true;
-        if (!ok) throw new UnauthorizedException('Invalid bridge signature');
       }
       // Расчёт quote без внешних промо-скидок (используем исходные суммы)
       const adjTotal = Math.max(0, Math.floor(dto.total));
@@ -1990,8 +1991,13 @@ export class LoyaltyController {
       });
     } catch {}
     const merchantIdEff = dto.merchantId || holdCached?.merchantId;
+    // staff-key больше не требуется для кассы; проверяем только при явном заголовке
     if (merchantIdEff) {
-      await this.enforceRequireStaffKey(merchantIdEff, req);
+      const staffKeyHeader = req.headers['x-staff-key'] as string | undefined;
+      if (staffKeyHeader) {
+        const valid = await this.verifyStaffKey(merchantIdEff, staffKeyHeader);
+        if (!valid) throw new UnauthorizedException('Invalid staff key');
+      }
     }
 
     let merchantCustomerId: string | null = null;
@@ -2012,26 +2018,28 @@ export class LoyaltyController {
       if (s?.requireBridgeSig) {
         const sig =
           (req.headers['x-bridge-signature'] as string | undefined) || '';
-        const outlet = await this.resolveOutlet(
-          merchantIdEff,
-          holdCached?.outletId ?? null,
-        );
-        let secret: string | null = outlet?.bridgeSecret ?? null;
-        let alt: string | null = outlet?.bridgeSecretNext ?? null;
-        if (!secret && !alt) {
-          secret = s?.bridgeSecret || null;
-          alt = (s as any)?.bridgeSecretNext || null;
+        if (sig) {
+          const outlet = await this.resolveOutlet(
+            merchantIdEff,
+            holdCached?.outletId ?? null,
+          );
+          let secret: string | null = outlet?.bridgeSecret ?? null;
+          let alt: string | null = outlet?.bridgeSecretNext ?? null;
+          if (!secret && !alt) {
+            secret = s?.bridgeSecret || null;
+            alt = (s as any)?.bridgeSecretNext || null;
+          }
+          const bodyForSig = JSON.stringify({
+            merchantId: merchantIdEff,
+            holdId: dto.holdId,
+            orderId: dto.orderId,
+            receiptNumber: dto.receiptNumber ?? undefined,
+          });
+          let ok = false;
+          if (secret && verifyBridgeSigUtil(sig, bodyForSig, secret)) ok = true;
+          else if (alt && verifyBridgeSigUtil(sig, bodyForSig, alt)) ok = true;
+          if (!ok) throw new UnauthorizedException('Invalid bridge signature');
         }
-        const bodyForSig = JSON.stringify({
-          merchantId: merchantIdEff,
-          holdId: dto.holdId,
-          orderId: dto.orderId,
-          receiptNumber: dto.receiptNumber ?? undefined,
-        });
-        let ok = false;
-        if (secret && verifyBridgeSigUtil(sig, bodyForSig, secret)) ok = true;
-        else if (alt && verifyBridgeSigUtil(sig, bodyForSig, alt)) ok = true;
-        if (!ok) throw new UnauthorizedException('Invalid bridge signature');
       }
     } catch {}
     try {
@@ -2143,7 +2151,11 @@ export class LoyaltyController {
       const hold = await this.prisma.hold.findUnique({ where: { id: holdId } });
       const merchantId = hold?.merchantId;
       if (merchantId) {
-        await this.enforceRequireStaffKey(merchantId, req);
+        const staffKeyHeader = req.headers['x-staff-key'] as string | undefined;
+        if (staffKeyHeader) {
+          const valid = await this.verifyStaffKey(merchantId, staffKeyHeader);
+          if (!valid) throw new UnauthorizedException('Invalid staff key');
+        }
       }
     } catch {}
     return this.service.cancel(holdId);
@@ -2268,7 +2280,11 @@ export class LoyaltyController {
     }
     (dto as any).merchantId = merchantId;
     (dto as any).orderId = orderId;
-    await this.enforceRequireStaffKey(merchantId, req);
+    const staffKeyHeader = req.headers['x-staff-key'] as string | undefined;
+    if (staffKeyHeader) {
+      const valid = await this.verifyStaffKey(merchantId, staffKeyHeader);
+      if (!valid) throw new UnauthorizedException('Invalid staff key');
+    }
     let merchantCustomerId: string | null = null;
     let data: any;
     // проверка подписи Bridge до выполнения
@@ -2279,36 +2295,38 @@ export class LoyaltyController {
       if (s?.requireBridgeSig) {
         const sig =
           (req.headers['x-bridge-signature'] as string | undefined) || '';
-        let receiptOutletId: string | null = null;
-        try {
-          const rcp = await this.prisma.receipt.findUnique({
-            where: {
-              merchantId_orderId: {
-                merchantId,
-                orderId,
+        if (sig) {
+          let receiptOutletId: string | null = null;
+          try {
+            const rcp = await this.prisma.receipt.findUnique({
+              where: {
+                merchantId_orderId: {
+                  merchantId,
+                  orderId,
+                },
               },
-            },
-            select: { outletId: true },
+              select: { outletId: true },
+            });
+            receiptOutletId = rcp?.outletId ?? null;
+          } catch {}
+          const outlet = await this.resolveOutlet(merchantId, receiptOutletId);
+          let secret: string | null = outlet?.bridgeSecret ?? null;
+          let alt: string | null = outlet?.bridgeSecretNext ?? null;
+          if (!secret && !alt) {
+            secret = s?.bridgeSecret || null;
+            alt = (s as any)?.bridgeSecretNext || null;
+          }
+          const bodyForSig = JSON.stringify({
+            merchantId,
+            orderId,
+            refundTotal: dto.refundTotal,
+            refundEligibleTotal: dto.refundEligibleTotal ?? undefined,
           });
-          receiptOutletId = rcp?.outletId ?? null;
-        } catch {}
-        const outlet = await this.resolveOutlet(merchantId, receiptOutletId);
-        let secret: string | null = outlet?.bridgeSecret ?? null;
-        let alt: string | null = outlet?.bridgeSecretNext ?? null;
-        if (!secret && !alt) {
-          secret = s?.bridgeSecret || null;
-          alt = (s as any)?.bridgeSecretNext || null;
+          let ok = false;
+          if (secret && verifyBridgeSigUtil(sig, bodyForSig, secret)) ok = true;
+          else if (alt && verifyBridgeSigUtil(sig, bodyForSig, alt)) ok = true;
+          if (!ok) throw new UnauthorizedException('Invalid bridge signature');
         }
-        const bodyForSig = JSON.stringify({
-          merchantId,
-          orderId,
-          refundTotal: dto.refundTotal,
-          refundEligibleTotal: dto.refundEligibleTotal ?? undefined,
-        });
-        let ok = false;
-        if (secret && verifyBridgeSigUtil(sig, bodyForSig, secret)) ok = true;
-        else if (alt && verifyBridgeSigUtil(sig, bodyForSig, alt)) ok = true;
-        if (!ok) throw new UnauthorizedException('Invalid bridge signature');
       }
     } catch {}
     try {
@@ -2329,6 +2347,7 @@ export class LoyaltyController {
             dto.refundTotal,
             dto.refundEligibleTotal,
             req.requestId,
+            dto.deviceId,
           );
           try {
             const receipt = await this.prisma.receipt.findUnique({
@@ -2368,6 +2387,7 @@ export class LoyaltyController {
           dto.refundTotal,
           dto.refundEligibleTotal,
           req.requestId,
+          dto.deviceId,
         );
         try {
           const receipt = await this.prisma.receipt.findUnique({

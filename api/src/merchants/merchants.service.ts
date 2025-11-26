@@ -655,6 +655,8 @@ export class MerchantsService {
       outletId: entity.outletId ?? null,
       ...this.mapOutletMeta(entity.outlet ?? null),
       staffId: entity.staffId ?? null,
+      deviceId:
+        (entity as any)?.device?.code ?? entity.deviceId ?? null,
     } as const;
   }
 
@@ -670,6 +672,8 @@ export class MerchantsService {
       outletId: entity.outletId ?? null,
       ...this.mapOutletMeta(entity.outlet ?? null),
       staffId: entity.staffId ?? null,
+      deviceId:
+        (entity as any)?.device?.code ?? entity.deviceId ?? null,
     } as const;
   }
 
@@ -681,7 +685,8 @@ export class MerchantsService {
     const clone: any = { ...rulesJson };
     if (clone.af && typeof clone.af === 'object' && !Array.isArray(clone.af)) {
       const af: any = { ...clone.af };
-      const outletCfg = af.outlet ?? af.device;
+      const outletCfg = af.outlet;
+      const deviceCfg = af.device;
       if (outletCfg !== undefined) {
         af.outlet =
           typeof outletCfg === 'object' &&
@@ -690,12 +695,26 @@ export class MerchantsService {
             ? { ...outletCfg }
             : outletCfg;
       }
-      if (Array.isArray(af.blockFactors)) {
-        af.blockFactors = af.blockFactors.map((factor: any) =>
-          factor === 'no_device_id' ? 'no_outlet_id' : factor,
-        );
+      if (deviceCfg !== undefined) {
+        af.device =
+          typeof deviceCfg === 'object' &&
+          deviceCfg !== null &&
+          !Array.isArray(deviceCfg)
+            ? { ...deviceCfg }
+            : deviceCfg;
+      } else if (af.device === undefined && af.outlet !== undefined) {
+        af.device =
+          typeof af.outlet === 'object' &&
+          af.outlet !== null &&
+          !Array.isArray(af.outlet)
+            ? { ...af.outlet }
+            : af.outlet;
       }
-      delete af.device;
+      if (Array.isArray(af.blockFactors)) {
+        af.blockFactors = af.blockFactors
+          .map((factor: any) => String(factor ?? '').trim())
+          .filter((factor: string) => factor.length > 0);
+      }
       clone.af = af;
     }
     return clone;
@@ -1719,7 +1738,10 @@ export class MerchantsService {
       where,
       orderBy: { createdAt: 'desc' },
       take: params.limit,
-      include: { outlet: { select: { posType: true, posLastSeenAt: true } } },
+      include: {
+        outlet: { select: { posType: true, posLastSeenAt: true } },
+        device: { select: { code: true } },
+      },
     });
     return items.map((entity) => this.mapTransaction(entity));
   }
@@ -1741,21 +1763,30 @@ export class MerchantsService {
       where,
       orderBy: { createdAt: 'desc' },
       take: params.limit,
-      include: { outlet: { select: { posType: true, posLastSeenAt: true } } },
+      include: {
+        outlet: { select: { posType: true, posLastSeenAt: true } },
+        device: { select: { code: true } },
+      },
     });
     return items.map((entity) => this.mapReceipt(entity));
   }
   async getReceipt(merchantId: string, receiptId: string) {
     const r = await this.prisma.receipt.findUnique({
       where: { id: receiptId },
-      include: { outlet: { select: { posType: true, posLastSeenAt: true } } },
+      include: {
+        outlet: { select: { posType: true, posLastSeenAt: true } },
+        device: { select: { code: true } },
+      },
     });
     if (!r || r.merchantId !== merchantId)
       throw new NotFoundException('Receipt not found');
     const tx = await this.prisma.transaction.findMany({
       where: { merchantId, orderId: r.orderId },
       orderBy: { createdAt: 'asc' },
-      include: { outlet: { select: { posType: true, posLastSeenAt: true } } },
+      include: {
+        outlet: { select: { posType: true, posLastSeenAt: true } },
+        device: { select: { code: true } },
+      },
     });
     return {
       receipt: this.mapReceipt(r),

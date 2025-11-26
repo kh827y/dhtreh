@@ -10,6 +10,7 @@ import { MetricsService } from '../metrics.service';
 import { AntiFraudService } from '../antifraud/antifraud.service';
 import { AlertsService } from '../alerts/alerts.service';
 import { TelegramStaffNotificationsService } from '../telegram/staff-notifications.service';
+import { normalizeDeviceCode } from '../devices/device.util';
 
 function envNum(name: string, def: number) {
   const v = (process.env[name] || '').trim();
@@ -68,6 +69,9 @@ export class AntiFraudGuard implements CanActivate {
     let outletId: string | undefined =
       req.body?.outletId || req?.params?.outletId || req?.query?.outletId;
     let staffId: string | undefined = req.body?.staffId;
+    let deviceId: string | undefined =
+      req.body?.deviceId || req?.params?.deviceId || req?.query?.deviceId;
+    let resolvedDeviceId: string | undefined = undefined;
 
     if (isCommit) {
       const holdId = req.body?.holdId as string | undefined;
@@ -81,12 +85,45 @@ export class AntiFraudGuard implements CanActivate {
             customerId = hold.customerId || customerId;
             outletId = hold.outletId || outletId;
             staffId = hold.staffId || staffId;
+            deviceId = hold.deviceId || deviceId;
+            resolvedDeviceId = hold.deviceId || resolvedDeviceId;
           }
         } catch {}
       }
     }
 
     if (!merchantId) return true; // cannot decide => allow
+
+    if (!resolvedDeviceId && deviceId) {
+      const rawCode = String(deviceId || '').trim();
+      if (rawCode) {
+        try {
+          const { normalized } = normalizeDeviceCode(rawCode);
+          const dev = await this.prisma.device.findFirst({
+            where: {
+              merchantId,
+              codeNormalized: normalized,
+              archivedAt: null,
+            },
+            select: { id: true },
+          });
+          resolvedDeviceId = dev?.id ?? resolvedDeviceId;
+        } catch {
+          // валидацию кода проведёт основной обработчик, тут не блокируем
+        }
+        if (!resolvedDeviceId) {
+          try {
+            const dev = await this.prisma.device.findUnique({
+              where: { id: rawCode },
+              select: { id: true, merchantId: true, archivedAt: true },
+            });
+            if (dev && !dev.archivedAt && dev.merchantId === merchantId) {
+              resolvedDeviceId = dev.id;
+            }
+          } catch {}
+        }
+      }
+    }
 
     // Limits (defaults)
     // Defaults from ENV
@@ -105,6 +142,12 @@ export class AntiFraudGuard implements CanActivate {
         windowSec: envNum('AF_WINDOW_OUTLET_SEC', 600),
         dailyCap: envNum('AF_DAILY_CAP_OUTLET', 0),
         weeklyCap: envNum('AF_WEEKLY_CAP_OUTLET', 0),
+      },
+      device: {
+        limit: envNum('AF_LIMIT_DEVICE', 20),
+        windowSec: envNum('AF_WINDOW_DEVICE_SEC', 600),
+        dailyCap: envNum('AF_DAILY_CAP_DEVICE', 0),
+        weeklyCap: envNum('AF_WEEKLY_CAP_DEVICE', 0),
       },
       staff: {
         limit: envNum('AF_LIMIT_STAFF', 60),
@@ -136,6 +179,7 @@ export class AntiFraudGuard implements CanActivate {
           : null;
       if (af) {
         const outletCfg = af.outlet ?? {};
+        const deviceCfg = af.device ?? {};
         limits = {
           customer: {
             limit: Number(af.customer?.limit ?? limits.customer.limit),
@@ -162,6 +206,14 @@ export class AntiFraudGuard implements CanActivate {
             windowSec: Number(outletCfg?.windowSec ?? limits.outlet.windowSec),
             dailyCap: Number(outletCfg?.dailyCap ?? limits.outlet.dailyCap),
             weeklyCap: Number(outletCfg?.weeklyCap ?? limits.outlet.weeklyCap),
+          },
+          device: {
+            limit: Number(deviceCfg?.limit ?? limits.device.limit),
+            windowSec: Number(
+              deviceCfg?.windowSec ?? limits.device.windowSec,
+            ),
+            dailyCap: Number(deviceCfg?.dailyCap ?? limits.device.dailyCap),
+            weeklyCap: Number(deviceCfg?.weeklyCap ?? limits.device.weeklyCap),
           },
           staff: {
             limit: Number(af.staff?.limit ?? limits.staff.limit),
@@ -190,6 +242,7 @@ export class AntiFraudGuard implements CanActivate {
     startOfWeek.setHours(0, 0, 0, 0);
 
     const resolvedOutletId = outletId || undefined;
+    const resolvedDeviceIdFinal = resolvedDeviceId || undefined;
     const notifyVelocity = (scope: string, count: number, limit: number) => {
       this.metrics.inc('antifraud_velocity_block_total', {
         scope,
@@ -205,6 +258,7 @@ export class AntiFraudGuard implements CanActivate {
               customerId,
               outletId: resolvedOutletId,
               staffId,
+              deviceId: resolvedDeviceIdFinal,
               count,
               limit,
             },
@@ -221,6 +275,7 @@ export class AntiFraudGuard implements CanActivate {
             customerId: customerId ?? null,
             outletId: resolvedOutletId ?? null,
             staffId: staffId ?? null,
+            deviceId: resolvedDeviceIdFinal ?? null,
             at: new Date().toISOString(),
             count,
             limit,
@@ -294,6 +349,42 @@ export class AntiFraudGuard implements CanActivate {
         });
         if (weekly >= limits.outlet.weeklyCap)
           block('outlet_weekly', weekly, limits.outlet.weeklyCap);
+      }
+    }
+
+    // Device-level (if known)
+    if (resolvedDeviceIdFinal) {
+      const from = new Date(now - limits.device.windowSec * 1000);
+      const count = await this.prisma.transaction.count({
+        where: {
+          merchantId,
+          deviceId: resolvedDeviceIdFinal,
+          createdAt: { gte: from },
+        },
+      });
+      if (count >= limits.device.limit)
+        block('device', count, limits.device.limit);
+      if (limits.device.dailyCap && limits.device.dailyCap > 0) {
+        const daily = await this.prisma.transaction.count({
+          where: {
+            merchantId,
+            deviceId: resolvedDeviceIdFinal,
+            createdAt: { gte: since24h },
+          },
+        });
+        if (daily >= limits.device.dailyCap)
+          block('device_daily', daily, limits.device.dailyCap);
+      }
+      if (limits.device.weeklyCap && limits.device.weeklyCap > 0) {
+        const weekly = await this.prisma.transaction.count({
+          where: {
+            merchantId,
+            deviceId: resolvedDeviceIdFinal,
+            createdAt: { gte: startOfWeek },
+          },
+        });
+        if (weekly >= limits.device.weeklyCap)
+          block('device_weekly', weekly, limits.device.weeklyCap);
       }
     }
 
@@ -401,6 +492,7 @@ export class AntiFraudGuard implements CanActivate {
                   : ('EARN' as const),
               outletId: hold.outletId || undefined,
               staffId: hold.staffId || undefined,
+              deviceId: hold.deviceId || resolvedDeviceIdFinal || undefined,
               ipAddress: ipAddr,
               userAgent: ua,
             };
@@ -425,6 +517,7 @@ export class AntiFraudGuard implements CanActivate {
                         customerId: hold.customerId,
                         outletId: hold.outletId || undefined,
                         staffId: hold.staffId,
+                        deviceId: hold.deviceId || resolvedDeviceIdFinal || undefined,
                         amount: earnPoints,
                         limit: limits.customer.pointsCap,
                       },
@@ -441,6 +534,7 @@ export class AntiFraudGuard implements CanActivate {
                       customerId: hold.customerId ?? null,
                       outletId: hold.outletId ?? null,
                       staffId: hold.staffId ?? null,
+                      deviceId: hold.deviceId ?? resolvedDeviceIdFinal ?? null,
                       operation: isCommit ? 'commit' : 'refund',
                       at: new Date().toISOString(),
                       limit: limits.customer.pointsCap,
@@ -462,7 +556,10 @@ export class AntiFraudGuard implements CanActivate {
                 ? (af.blockFactors as any[]).map((f) => String(f ?? ''))
                 : [];
               const hasOutletRule = blockFactors.includes('no_outlet_id');
+              const hasDeviceRule = blockFactors.includes('no_device_id');
               const shouldApplyNoOutlet = hasOutletRule && !hold.outletId;
+              const shouldApplyNoDevice =
+                hasDeviceRule && !(hold.deviceId || resolvedDeviceIdFinal);
               if (shouldApplyNoOutlet) {
                 const factor = 'no_outlet_id';
                 this.metrics.inc('antifraud_block_factor_total', { factor });
@@ -476,6 +573,7 @@ export class AntiFraudGuard implements CanActivate {
                         customerId: hold.customerId,
                         outletId: hold.outletId || undefined,
                         staffId: hold.staffId,
+                        deviceId: hold.deviceId ?? resolvedDeviceIdFinal ?? undefined,
                       },
                     })
                     .catch(() => {});
@@ -490,6 +588,45 @@ export class AntiFraudGuard implements CanActivate {
                       customerId: hold.customerId ?? null,
                       outletId: hold.outletId ?? null,
                       staffId: hold.staffId ?? null,
+                      deviceId: hold.deviceId ?? resolvedDeviceIdFinal ?? null,
+                      at: new Date().toISOString(),
+                    })
+                    .catch(() => {});
+                } catch {}
+                throw new HttpException(
+                  `Антифрод: заблокировано правилом по фактору (${factor})`,
+                  HttpStatus.TOO_MANY_REQUESTS,
+                );
+              }
+              if (shouldApplyNoDevice) {
+                const factor = 'no_device_id';
+                this.metrics.inc('antifraud_block_factor_total', { factor });
+                try {
+                  this.alerts
+                    .antifraudBlocked({
+                      merchantId: hold.merchantId,
+                      reason: 'factor',
+                      factor,
+                      ctx: {
+                        customerId: hold.customerId,
+                        outletId: hold.outletId || undefined,
+                        staffId: hold.staffId,
+                        deviceId: hold.deviceId ?? resolvedDeviceIdFinal ?? null,
+                      },
+                    })
+                    .catch(() => {});
+                } catch {}
+                try {
+                  this.staffNotify
+                    .enqueueEvent(hold.merchantId, {
+                      kind: 'FRAUD',
+                      reason: 'factor',
+                      scope: factor,
+                      operation: isCommit ? 'commit' : 'refund',
+                      customerId: hold.customerId ?? null,
+                      outletId: hold.outletId ?? null,
+                      staffId: hold.staffId ?? null,
+                      deviceId: hold.deviceId ?? resolvedDeviceIdFinal ?? null,
                       at: new Date().toISOString(),
                     })
                     .catch(() => {});
@@ -526,6 +663,8 @@ export class AntiFraudGuard implements CanActivate {
                       customerId: hold.customerId,
                       outletId: hold.outletId || undefined,
                       staffId: hold.staffId,
+                      deviceId:
+                        hold.deviceId ?? resolvedDeviceIdFinal ?? undefined,
                     },
                   })
                   .catch(() => {});
@@ -539,6 +678,7 @@ export class AntiFraudGuard implements CanActivate {
                     customerId: hold.customerId ?? null,
                     outletId: hold.outletId ?? null,
                     staffId: hold.staffId ?? null,
+                    deviceId: hold.deviceId ?? resolvedDeviceIdFinal ?? null,
                     operation: isCommit ? 'commit' : 'refund',
                     at: new Date().toISOString(),
                   })
@@ -581,26 +721,29 @@ export class AntiFraudGuard implements CanActivate {
                       merchantId: hold.merchantId,
                       reason: 'factor',
                       factor: matched,
-                      ctx: {
-                        customerId: hold.customerId,
-                        outletId: hold.outletId || undefined,
-                        staffId: hold.staffId,
-                      },
-                    })
-                    .catch(() => {});
-                } catch {}
-                try {
-                  this.staffNotify
-                    .enqueueEvent(hold.merchantId, {
-                      kind: 'FRAUD',
-                      reason: 'factor',
-                      scope: matched,
-                      customerId: hold.customerId ?? null,
-                      outletId: hold.outletId ?? null,
-                      staffId: hold.staffId ?? null,
-                      operation: isCommit ? 'commit' : 'refund',
-                      at: new Date().toISOString(),
-                    })
+                    ctx: {
+                      customerId: hold.customerId,
+                      outletId: hold.outletId || undefined,
+                      staffId: hold.staffId,
+                      deviceId:
+                        hold.deviceId ?? resolvedDeviceIdFinal ?? undefined,
+                    },
+                  })
+                  .catch(() => {});
+              } catch {}
+              try {
+                this.staffNotify
+                  .enqueueEvent(hold.merchantId, {
+                    kind: 'FRAUD',
+                    reason: 'factor',
+                    scope: matched,
+                    customerId: hold.customerId ?? null,
+                    outletId: hold.outletId ?? null,
+                    staffId: hold.staffId ?? null,
+                    deviceId: hold.deviceId ?? resolvedDeviceIdFinal ?? null,
+                    operation: isCommit ? 'commit' : 'refund',
+                    at: new Date().toISOString(),
+                  })
                     .catch(() => {});
                 } catch {}
                 throw new HttpException(

@@ -26,6 +26,7 @@ export interface TransactionContext {
   type: 'EARN' | 'REDEEM';
   outletId?: string;
   staffId?: string;
+  deviceId?: string;
   ipAddress?: string;
   userAgent?: string;
   location?: { lat: number; lon: number };
@@ -690,6 +691,7 @@ export class AntiFraudService {
             type: context.type,
             outletId: context.outletId || null,
             staffId: context.staffId || null,
+            deviceId: context.deviceId || null,
           } as any,
         },
       });

@@ -281,6 +281,16 @@ export class PortalController {
     return 'ALL';
   }
 
+  private normalizeStaffStatus(
+    status?: string,
+  ): OperationsLogFilters['staffStatus'] {
+    const value = String(status || '').toLowerCase();
+    if (value === 'current' || value === 'active') return 'current';
+    if (value === 'former' || value === 'fired' || value === 'archived')
+      return 'former';
+    return 'all';
+  }
+
   private asRecord(value: unknown): Record<string, any> {
     if (value && typeof value === 'object') return value as Record<string, any>;
     return {};
@@ -1115,7 +1125,9 @@ export class PortalController {
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('staffId') staffId?: string,
+    @Query('staffStatus') staffStatus?: string,
     @Query('outletId') outletId?: string,
+    @Query('deviceId') deviceId?: string,
     @Query('direction') direction?: string,
     @Query('receiptNumber') receiptNumber?: string,
     @Query('operationType') operationType?: string,
@@ -1132,7 +1144,9 @@ export class PortalController {
       from: fromDate || undefined,
       to: toDate || undefined,
       staffId: staffId || undefined,
+      staffStatus: this.normalizeStaffStatus(staffStatus),
       outletId: outletId || undefined,
+      deviceId: deviceId || undefined,
       direction: this.normalizeDirection(direction),
       receiptNumber: receiptNumber || undefined,
       operationType: operationType || undefined,

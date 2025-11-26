@@ -224,6 +224,7 @@ model Merchant {
   createdAt                   DateTime                     @default(now())
   Receipt                     Receipt[]
   outlets                     Outlet[]
+  devices                     Device[]
   staff                       Staff[]
   consents                    Consent[]
   telegramBot                 TelegramBot?
@@ -479,15 +480,18 @@ model Hold {
   expiresAt     DateTime?
   outletId      String?
   staffId       String?
+  deviceId      String?
   createdAt     DateTime   @default(now())
 
   outlet Outlet? @relation(fields: [outletId], references: [id], onDelete: SetNull)
   staff  Staff?  @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
 
   @@index([customerId, status])
   @@index([merchantId, status])
   @@index([merchantId, outletId])
   @@index([merchantId, staffId])
+  @@index([merchantId, deviceId])
 }
 
 model Receipt {
@@ -506,9 +510,11 @@ model Receipt {
   createdAt     DateTime @default(now())
   outletId      String?
   staffId       String?
+  deviceId      String?
 
   outlet            Outlet?   @relation(fields: [outletId], references: [id], onDelete: SetNull)
   staff             Staff?    @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  device            Device?   @relation(fields: [deviceId], references: [id], onDelete: SetNull)
   canceledAt        DateTime?
   canceledByStaffId String?
   canceledBy        Staff?    @relation("ReceiptCanceledBy", fields: [canceledByStaffId], references: [id], onDelete: SetNull)
@@ -517,6 +523,7 @@ model Receipt {
   @@index([merchantId, createdAt])
   @@index([merchantId, outletId])
   @@index([merchantId, staffId])
+  @@index([merchantId, deviceId])
   @@index([merchantId, canceledAt])
 }
 
@@ -532,6 +539,7 @@ model Transaction {
   createdAt         DateTime  @default(now())
   outletId          String?
   staffId           String?
+  deviceId          String?
   metadata          Json?
   canceledAt        DateTime?
   canceledByStaffId String?
@@ -540,12 +548,14 @@ model Transaction {
 
   outlet  Outlet?  @relation(fields: [outletId], references: [id], onDelete: SetNull)
   staff   Staff?   @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  device  Device?  @relation(fields: [deviceId], references: [id], onDelete: SetNull)
   reviews Review[]
 
   @@index([customerId, createdAt])
   @@index([merchantId, createdAt])
   @@index([merchantId, outletId])
   @@index([merchantId, staffId])
+  @@index([merchantId, deviceId])
   @@index([merchantId, customerId, type, createdAt])
 }
 
@@ -696,12 +706,36 @@ model Outlet {
   promotionParticipants PromotionParticipant[]
   staffMetrics          StaffKpiDaily[]
   staffMotivationEntries StaffMotivationEntry[]
+  devices               Device[]
 
   @@unique([merchantId, externalId])
   @@unique([merchantId, code])
   @@index([merchantId])
   @@index([merchantId, status])
   @@index([merchantId, hidden])
+}
+
+model Device {
+  id             String   @id @default(cuid())
+  merchantId     String
+  outletId       String
+  code           String
+  codeNormalized String
+  archivedAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  merchant      Merchant       @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  outlet        Outlet         @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  holds         Hold[]
+  receipts      Receipt[]
+  transactions  Transaction[]
+  ledgerEntries LedgerEntry[]
+  earnLots      EarnLot[]
+
+  @@unique([merchantId, codeNormalized])
+  @@index([merchantId, outletId])
+  @@index([outletId, archivedAt])
 }
 
 model OutletSchedule {
@@ -1164,11 +1198,15 @@ model LedgerEntry {
   receiptId  String?
   outletId   String?
   staffId    String?
+  deviceId   String?
   meta       Json?
   createdAt  DateTime      @default(now())
 
+  device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
   @@index([merchantId, createdAt])
   @@index([merchantId, customerId, createdAt])
+  @@index([merchantId, deviceId])
 }
 
 model EarnLot {
@@ -1184,11 +1222,15 @@ model EarnLot {
   receiptId      String?
   outletId       String?
   staffId        String?
+  deviceId       String?
   status         String    @default("ACTIVE") // ACTIVE | PENDING
   createdAt      DateTime  @default(now())
 
+  device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
   @@index([merchantId, customerId, earnedAt])
   @@index([merchantId, expiresAt])
+  @@index([merchantId, deviceId])
 }
 
 model AdminAudit {
