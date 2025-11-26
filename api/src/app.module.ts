@@ -13,8 +13,6 @@ import { MetricsController } from './metrics.controller';
 import { MetricsModule } from './metrics.module';
 import { SubscriptionModule } from './subscription/subscription.module';
 import { TelegramModule } from './telegram/telegram.module';
-import { PaymentModule } from './payments/payment.module';
-import { IntegrationsModule } from './integrations/integrations.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AlertsModule } from './alerts/alerts.module';
 import { AnalyticsModule } from './analytics/analytics.module';
@@ -88,8 +86,6 @@ try {
     AdminAuditModule,
     SubscriptionModule,
     TelegramModule,
-    PaymentModule,
-    IntegrationsModule,
     AlertsModule,
     CrmModule,
     GiftsModule,

@@ -5,7 +5,6 @@
 - [Основные эндпоинты](#основные-эндпоинты)
 - [Программа лояльности](#программа-лояльности)
 - [Управление мерчантами](#управление-мерчантами)
-- [Интеграции](#интеграции)
 - [Вебхуки](#вебхуки)
 - [Коды ошибок](#коды-ошибок)
 - [Уровни и бонусы](#уровни-и-бонусы)
@@ -16,6 +15,8 @@ Production: https://api.loyalty.example.com
 Staging: https://api-staging.loyalty.example.com
 Local: http://localhost:3000
 ```
+
+> Поддержка внешних платежных провайдеров и кассовых интеграций (YooKassa/CloudPayments/Тинькофф, АТОЛ/Эвотор/Poster/МодульКасса/1С) отключена. Подписки ведутся без сторонних платежей, кассовые вебхуки больше не принимаются.
 
 ## Аутентификация
 
@@ -1269,44 +1270,6 @@ Content-Type: application/json
 }
 ```
 
-## Интеграции с кассами
-
-### АТОЛ
-```http
-POST /integrations/atol/register
-X-Admin-Key: required
-
-{
-  "merchantId": "string",
-  "login": "atol_login",
-  "password": "atol_password",
-  "groupCode": "group_code",
-  "inn": "1234567890"
-}
-```
-
-### Эвотор
-```http
-POST /integrations/evotor/register
-X-Admin-Key: required
-
-{
-  "merchantId": "string",
-  "evotorToken": "evotor_api_token"
-}
-
-POST /integrations/evotor/webhook/{integrationId}
-Content-Type: application/json
-X-Evotor-Signature: signature
-
-{
-  "id": "uuid",
-  "timestamp": "2024-01-01T00:00:00Z",
-  "type": "receipt.sell",
-  "data": {...}
-}
-```
-
 ## POS Bridge
 
 ### Quote через Bridge
@@ -1380,8 +1343,6 @@ function verifyWebhookSignature(signature, body, secret) {
 - `subscription.created` - Создание подписки
 - `subscription.updated` - Обновление подписки
 - `subscription.canceled` - Отмена подписки
-- `payment.succeeded` - Успешный платеж
-- `payment.failed` - Неудачный платеж
 - `trial.expired` - Истечение пробного периода
 
 ## Подписки и тарифы

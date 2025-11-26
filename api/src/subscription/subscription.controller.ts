@@ -135,43 +135,6 @@ export class SubscriptionController {
   }
 
   /**
-   * Обработать платеж (webhook от платежной системы)
-   */
-  @Post('payment/webhook')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Webhook для обработки платежей' })
-  @ApiResponse({ status: 200, description: 'Платеж обработан' })
-  async handlePaymentWebhook(
-    @Body()
-    paymentData: {
-      subscriptionId: string;
-      status: string;
-      method?: string;
-      invoiceId?: string;
-      receiptUrl?: string;
-      failureReason?: string;
-    },
-  ) {
-    return this.subscriptionService.processPayment(
-      paymentData.subscriptionId,
-      paymentData,
-    );
-  }
-
-  /**
-   * История платежей
-   */
-  @Get(':merchantId/payments')
-  @ApiOperation({ summary: 'Получить историю платежей' })
-  @ApiResponse({ status: 200, description: 'История платежей' })
-  async getPaymentHistory(
-    @Param('merchantId') merchantId: string,
-    @Query('limit') limit?: number,
-  ) {
-    return this.subscriptionService.getPaymentHistory(merchantId, limit || 20);
-  }
-
-  /**
    * Проверить лимиты плана
    */
   @Post(':merchantId/validate-limits')

@@ -21,9 +21,6 @@ async function createOutlets(prisma, merchantId) {
       tags: ['флагман', '24/7'],
       scheduleEnabled: true,
       scheduleMode: 'CUSTOM',
-      integrationProvider: 'iiko',
-      integrationLocationCode: 'IIKO-001',
-      integrationPayload: { warehouseCode: 'M1', sync: true },
     },
     create: {
       id: 'outlet-main',
@@ -34,9 +31,6 @@ async function createOutlets(prisma, merchantId) {
       tags: ['флагман', '24/7'],
       scheduleEnabled: true,
       scheduleMode: 'CUSTOM',
-      integrationProvider: 'iiko',
-      integrationLocationCode: 'IIKO-001',
-      integrationPayload: { warehouseCode: 'M1', sync: true },
     },
   });
 
@@ -62,10 +56,7 @@ async function createOutlets(prisma, merchantId) {
       name: 'Киоск в бизнес-центре',
       address: 'Москва, Пресненская наб. 8',
       code: 'kiosk',
-      tags: ['iiko-sync'],
-      integrationProvider: 'poster',
-      integrationLocationCode: 'POS-778',
-      integrationPayload: { cashRegister: 'K1' },
+      tags: ['kiosk'],
     },
     create: {
       id: 'outlet-kiosk',
@@ -73,11 +64,8 @@ async function createOutlets(prisma, merchantId) {
       name: 'Киоск в бизнес-центре',
       address: 'Москва, Пресненская наб. 8',
       code: 'kiosk',
-      tags: ['iiko-sync'],
+      tags: ['kiosk'],
       scheduleEnabled: false,
-      integrationProvider: 'poster',
-      integrationLocationCode: 'POS-778',
-      integrationPayload: { cashRegister: 'K1' },
     },
   });
 

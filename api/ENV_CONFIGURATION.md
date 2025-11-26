@@ -19,32 +19,6 @@ API_KEY="your-api-key-for-internal-services"
 PORT=3001
 ```
 
-## Платежные системы
-
-### ЮKassa (YooMoney)
-```env
-PAYMENT_PROVIDER="yookassa"
-YOOKASSA_SHOP_ID="your-shop-id"
-YOOKASSA_SECRET_KEY="your-secret-key"
-PAYMENT_RETURN_URL="https://yourdomain.com/payment/success"
-```
-
-### CloudPayments
-```env
-PAYMENT_PROVIDER="cloudpayments"
-CLOUDPAYMENTS_PUBLIC_ID="your-public-id"
-CLOUDPAYMENTS_API_SECRET="your-api-secret"
-```
-
-### Тинькофф Касса
-```env
-PAYMENT_PROVIDER="tinkoff"
-TINKOFF_TERMINAL_KEY="your-terminal-key"
-TINKOFF_SECRET_KEY="your-secret-key"
-TINKOFF_API_URL="https://securepay.tinkoff.ru/v2"
-TINKOFF_NOTIFICATION_URL="https://yourdomain.com/api/payment/webhook"
-```
-
 ## Уведомления
 
 ### Push-уведомления (Firebase)
@@ -62,26 +36,6 @@ FIREBASE_SERVICE_ACCOUNT='{
   "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
   "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/..."
 }'
-```
-
-## Интеграции с кассами
-
-### АТОЛ
-```env
-ATOL_LOGIN="your-login"
-ATOL_PASSWORD="your-password"
-ATOL_GROUP_CODE="your-group"
-ATOL_INN="7729633321"  # ИНН организации
-ATOL_PAYMENT_ADDRESS="https://example.com"
-ATOL_COMPANY_EMAIL="info@example.com"
-ATOL_API_URL="https://online.atol.ru/possystem/v4"
-```
-
-### Эвотор
-```env
-EVOTOR_TOKEN="your-evotor-token"
-EVOTOR_STORE_UUID="your-store-uuid"
-EVOTOR_WEBHOOK_URL="https://yourdomain.com/api/integrations/evotor/webhook"
 ```
 
 ## Telegram
@@ -108,7 +62,6 @@ OPENTELEMETRY_ENDPOINT="http://localhost:4317"
 ## Cron задачи
 ```env
 CRON_ENABLED="true"  # Включить/выключить все cron задачи
-SUBSCRIPTION_RENEWAL_ENABLED="true"
 EXPIRATION_REMINDERS_ENABLED="true"
 CLEANUP_OLD_DATA_ENABLED="true"
 MONTHLY_REPORTS_ENABLED="true"
@@ -180,12 +133,6 @@ JWT_REFRESH_SECRET="dev-refresh-secret"
 API_KEY="dev-api-key"
 PORT=3001
 
-# Платежи (тестовый режим)
-PAYMENT_PROVIDER="yookassa"
-YOOKASSA_SHOP_ID="test-shop-id"
-YOOKASSA_SECRET_KEY="test-secret-key"
-PAYMENT_RETURN_URL="http://localhost:3000/payment/success"
-
 # Разработка
 NODE_ENV="development"
 LOG_LEVEL="debug"
@@ -202,12 +149,6 @@ JWT_SECRET="production-secret-generated-with-openssl"
 JWT_REFRESH_SECRET="production-refresh-secret-generated-with-openssl"
 API_KEY="production-api-key-generated-uuid"
 PORT=3001
-
-# Реальные платежи
-PAYMENT_PROVIDER="yookassa"
-YOOKASSA_SHOP_ID="real-shop-id"
-YOOKASSA_SECRET_KEY="real-secret-key"
-PAYMENT_RETURN_URL="https://loyalty.yourdomain.com/payment/success"
 
 # Push уведомления
 PUSH_PROVIDER="fcm"
@@ -236,7 +177,6 @@ BCRYPT_ROUNDS="12"
 - JWT_REFRESH_SECRET
 
 Для production также требуются:
-- Настройки выбранного платежного провайдера
 - CORS_ORIGINS для безопасности
 
 ## Генерация секретных ключей

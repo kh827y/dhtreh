@@ -4,7 +4,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { ConfigService } from '@nestjs/config';
 // import { Cron, CronExpression } from '@nestjs/schedule';
 
 export interface CreateSubscriptionDto {
@@ -22,10 +21,7 @@ export interface UpdateSubscriptionDto {
 
 @Injectable()
 export class SubscriptionService {
-  constructor(
-    private prisma: PrismaService,
-    private configService: ConfigService,
-  ) {}
+  constructor(private prisma: PrismaService) {}
 
   /**
    * Получить текущую подписку мерчанта
@@ -329,80 +325,6 @@ export class SubscriptionService {
   }
 
   /**
-   * Обработка платежа
-   */
-  async processPayment(subscriptionId: string, paymentData: any) {
-    const prismaAny = this.prisma as any;
-    const subscription = await prismaAny.subscription.findUnique({
-      where: { id: subscriptionId },
-      include: { plan: true },
-    });
-
-    if (!subscription) {
-      throw new NotFoundException('Подписка не найдена');
-    }
-
-    const payment = await prismaAny.payment.create({
-      data: {
-        subscriptionId,
-        amount: subscription.plan.price,
-        currency: subscription.plan.currency,
-        status: paymentData.status || 'pending',
-        paymentMethod: paymentData.method,
-        invoiceId: paymentData.invoiceId,
-        receiptUrl: paymentData.receiptUrl,
-        paidAt: paymentData.status === 'succeeded' ? new Date() : null,
-      },
-    });
-
-    // Если платеж успешный, обновляем период подписки
-    if (paymentData.status === 'succeeded') {
-      const newPeriodStart = subscription.currentPeriodEnd;
-      const newPeriodEnd = this.calculatePeriodEnd(
-        newPeriodStart,
-        subscription.plan.interval,
-      );
-
-      await prismaAny.subscription.update({
-        where: { id: subscriptionId },
-        data: {
-          currentPeriodStart: newPeriodStart,
-          currentPeriodEnd: newPeriodEnd,
-          status: 'active',
-        },
-      });
-
-      // Событие об успешном платеже
-      await prismaAny.eventOutbox.create({
-        data: {
-          merchantId: subscription.merchantId,
-          eventType: 'payment.succeeded',
-          payload: {
-            paymentId: payment.id,
-            subscriptionId,
-            amount: payment.amount,
-          },
-        },
-      });
-    } else if (paymentData.status === 'failed') {
-      // Событие о неудачном платеже
-      await this.prisma.eventOutbox.create({
-        data: {
-          merchantId: subscription.merchantId,
-          eventType: 'payment.failed',
-          payload: {
-            paymentId: payment.id,
-            subscriptionId,
-            reason: paymentData.failureReason,
-          },
-        },
-      });
-    }
-
-    return payment;
-  }
-
-  /**
    * Получение статистики использования
    */
   async getUsageStatistics(merchantId: string) {
@@ -476,48 +398,6 @@ export class SubscriptionService {
   }
 
   /**
-   * Автоматическое продление подписок (cron job)
-   */
-  // @Cron(CronExpression.EVERY_HOUR)
-  async renewSubscriptions() {
-    const prismaAny = this.prisma as any;
-    const expiredSubscriptions = await prismaAny.subscription.findMany({
-      where: {
-        status: 'active',
-        currentPeriodEnd: {
-          lte: new Date(),
-        },
-        cancelAt: null,
-      },
-      include: { plan: true },
-    });
-
-    for (const subscription of expiredSubscriptions) {
-      try {
-        // Здесь должна быть интеграция с платежной системой
-        // Для примера просто продлеваем подписку
-        const newPeriodStart = subscription.currentPeriodEnd;
-        const newPeriodEnd = this.calculatePeriodEnd(
-          newPeriodStart,
-          subscription.plan.interval,
-        );
-
-        await prismaAny.subscription.update({
-          where: { id: subscription.id },
-          data: {
-            currentPeriodStart: newPeriodStart,
-            currentPeriodEnd: newPeriodEnd,
-          },
-        });
-
-        console.log(`Подписка ${subscription.id} продлена до ${newPeriodEnd}`);
-      } catch (error) {
-        console.error(`Ошибка продления подписки ${subscription.id}:`, error);
-      }
-    }
-  }
-
-  /**
    * Обработка истекших trial периодов
    */
   // @Cron(CronExpression.EVERY_DAY_AT_NOON)
@@ -583,25 +463,6 @@ export class SubscriptionService {
     return (this.prisma as any).plan.findMany({
       where: { isActive: true },
       orderBy: { price: 'asc' },
-    });
-  }
-
-  /**
-   * Получение истории платежей
-   */
-  async getPaymentHistory(merchantId: string, limit = 20) {
-    const subscription = await this.prisma.subscription.findUnique({
-      where: { merchantId },
-    });
-
-    if (!subscription) {
-      return [];
-    }
-
-    return (this.prisma as any).payment.findMany({
-      where: { subscriptionId: subscription.id },
-      orderBy: { createdAt: 'desc' },
-      take: limit,
     });
   }
 }

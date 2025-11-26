@@ -1,134 +1,23 @@
 import { Injectable } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma.service';
-import { PaymentService } from '../payments/payment.service';
 import { PushService } from '../notifications/push/push.service';
 import { MetricsService } from '../metrics.service';
 
 /**
  * Cron задачи для управления подписками
- * Автоматическое продление, напоминания, отчеты
+ * Напоминания, отчеты и обслуживание подписок без автоплатежей
  */
 @Injectable()
 export class SubscriptionCronService {
   constructor(
     private prisma: PrismaService,
-    private paymentService: PaymentService,
     private pushService: PushService,
     private metrics: MetricsService,
   ) {}
 
   /**
-   * Проверка и продление подписок
-   * Запускается каждый день в 3:00 ночи
-   */
-  @Cron('0 3 * * *')
-  async processSubscriptionRenewals() {
-    console.log('[CRON] Starting subscription renewal process...');
-
-    const startTime = Date.now();
-    let processed = 0;
-    let renewed = 0;
-    let failed = 0;
-
-    try {
-      // Находим подписки, которые истекают сегодня
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-
-      const expiringSubscriptions = await this.prisma.subscription.findMany({
-        where: {
-          status: 'active',
-          currentPeriodEnd: {
-            gte: today,
-            lt: tomorrow,
-          },
-          autoRenew: true,
-        },
-        include: {
-          merchant: true,
-          plan: true,
-        },
-      });
-
-      console.log(
-        `[CRON] Found ${expiringSubscriptions.length} subscriptions to renew`,
-      );
-
-      for (const subscription of expiringSubscriptions) {
-        processed++;
-
-        try {
-          // Пытаемся создать платеж для продления
-          const payment = await this.paymentService.createSubscriptionPayment(
-            subscription.merchantId,
-            subscription.id,
-          );
-
-          if (payment.status === 'succeeded' || payment.status === 'pending') {
-            // Обновляем подписку
-            const newPeriodEnd = new Date(subscription.currentPeriodEnd);
-            newPeriodEnd.setMonth(newPeriodEnd.getMonth() + 1);
-
-            await this.prisma.subscription.update({
-              where: { id: subscription.id },
-              data: {
-                currentPeriodEnd: newPeriodEnd,
-                lastPaymentId: payment.id,
-                lastPaymentDate: new Date(),
-              },
-            });
-
-            renewed++;
-            console.log(
-              `[CRON] Renewed subscription ${subscription.id} for merchant ${subscription.merchantId}`,
-            );
-
-            // Отправляем уведомление
-            await this.sendRenewalNotification(subscription.merchantId, true);
-          } else {
-            throw new Error(`Payment failed with status: ${payment.status}`);
-          }
-        } catch (error) {
-          failed++;
-          console.error(
-            `[CRON] Failed to renew subscription ${subscription.id}:`,
-            error,
-          );
-
-          // Переводим подписку в статус expired
-          await this.prisma.subscription.update({
-            where: { id: subscription.id },
-            data: {
-              status: 'expired',
-              autoRenew: false,
-            },
-          });
-
-          // Отправляем уведомление о неудачном продлении
-          await this.sendRenewalNotification(subscription.merchantId, false);
-        }
-      }
-
-      // Обновляем метрики
-      this.metrics.increment('subscription_renewals_processed', processed);
-      this.metrics.increment('subscription_renewals_success', renewed);
-      this.metrics.increment('subscription_renewals_failed', failed);
-
-      const duration = Date.now() - startTime;
-      console.log(
-        `[CRON] Subscription renewal completed in ${duration}ms. Processed: ${processed}, Renewed: ${renewed}, Failed: ${failed}`,
-      );
-    } catch (error) {
-      console.error('[CRON] Error in subscription renewal process:', error);
-      this.metrics.increment('subscription_cron_errors');
-    }
-  }
-
-  /**
-   * Отправка напоминаний об истечении подписки
+   * Напоминания об истечении подписки (автопродление отключено)
    * Запускается каждый день в 10:00 утра
    */
   @Cron('0 10 * * *')
@@ -225,7 +114,6 @@ export class SubscriptionCronService {
           currentPeriodEnd: {
             lt: now,
           },
-          autoRenew: false,
         },
         data: {
           status: 'expired',
@@ -371,22 +259,6 @@ export class SubscriptionCronService {
         );
       }
 
-      // Очищаем старые платежи со статусом failed
-      const deletedPayments = await this.prisma.payment.deleteMany({
-        where: {
-          status: 'failed',
-          createdAt: {
-            lt: sixMonthsAgo,
-          },
-        },
-      });
-
-      if (deletedPayments.count > 0) {
-        console.log(
-          `[CRON] Deleted ${deletedPayments.count} old failed payments`,
-        );
-      }
-
       // Сброс флагов напоминаний для новых периодов
       await this.prisma.subscription.updateMany({
         where: {
@@ -496,7 +368,7 @@ export class SubscriptionCronService {
 
       const message = success
         ? 'Ваша подписка успешно продлена на следующий месяц'
-        : 'Не удалось автоматически продлить подписку. Пожалуйста, обновите платежные данные';
+        : 'Не удалось автоматически продлить подписку. Продлите её вручную в админке или через поддержку.';
 
       // Push уведомление
       await this.pushService

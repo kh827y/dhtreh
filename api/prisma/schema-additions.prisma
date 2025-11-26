@@ -12,15 +12,9 @@
 //  deletedAt        DateTime?
 
 // Добавить в модель Subscription:
-//  autoRenew        Boolean   @default(true)
-//  lastPaymentId    String?
-//  reminderSent7Days Boolean  @default(false)
-//  reminderSent1Day Boolean   @default(false)
-
-// Добавить в модель Payment:
-//  merchantId       String?
-//  metadata         Json?
-//  refundedAt       DateTime?
+//  autoRenew         Boolean   @default(true)
+//  reminderSent7Days Boolean   @default(false)
+//  reminderSent1Day  Boolean   @default(false)
 
 // Добавить в модель ReferralProgram:
 //  status           String    @default("ACTIVE")

@@ -1338,16 +1338,13 @@ model Subscription {
   trialEnd           DateTime?
   metadata           Json?
   autoRenew          Boolean   @default(true)
-  lastPaymentId      String?
   reminderSent7Days  Boolean   @default(false)
   reminderSent1Day   Boolean   @default(false)
-  lastPaymentDate    DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
   plan     Plan      @relation(fields: [planId], references: [id])
   merchant Merchant  @relation(fields: [merchantId], references: [id])
-  payments Payment[]
 }
 
 // Junction table for customer segments
@@ -1918,26 +1915,6 @@ model LoyaltyTierAssignment {
 
   @@unique([merchantId, customerId])
   @@index([tierId])
-}
-
-model Payment {
-  id             String    @id @default(cuid())
-  subscriptionId String
-  amount         Int
-  currency       String    @default("RUB")
-  status         String
-  paymentMethod  String?
-  invoiceId      String?
-  receiptUrl     String?
-  failureReason  String?
-  paidAt         DateTime?
-  provider       String?
-  merchantId     String?
-  metadata       Json?
-  refundedAt     DateTime?
-  createdAt      DateTime  @default(now())
-
-  subscription Subscription @relation(fields: [subscriptionId], references: [id])
 }
 
 model FraudCheck {

@@ -17,6 +17,12 @@ CREATE TYPE "public"."StaffRole" AS ENUM ('ADMIN', 'MERCHANT', 'CASHIER');
 CREATE TYPE "public"."StaffStatus" AS ENUM ('ACTIVE', 'PENDING', 'SUSPENDED', 'FIRED', 'ARCHIVED');
 
 -- CreateEnum
+CREATE TYPE "public"."StaffMotivationAction" AS ENUM ('PURCHASE', 'REFUND');
+
+-- CreateEnum
+CREATE TYPE "public"."TelegramStaffActorType" AS ENUM ('MERCHANT', 'STAFF', 'GROUP');
+
+-- CreateEnum
 CREATE TYPE "public"."StaffOutletAccessStatus" AS ENUM ('ACTIVE', 'REVOKED', 'EXPIRED');
 
 -- CreateEnum
@@ -26,7 +32,7 @@ CREATE TYPE "public"."AccessScope" AS ENUM ('PORTAL', 'CASHIER', 'API');
 CREATE TYPE "public"."StaffInvitationStatus" AS ENUM ('PENDING', 'ACCEPTED', 'EXPIRED', 'REVOKED');
 
 -- CreateEnum
-CREATE TYPE "public"."PromoCodeStatus" AS ENUM ('DRAFT', 'ACTIVE', 'PAUSED', 'EXPIRED', 'ARCHIVED');
+CREATE TYPE "public"."PromoCodeStatus" AS ENUM ('DRAFT', 'ACTIVE', 'EXPIRED', 'ARCHIVED');
 
 -- CreateEnum
 CREATE TYPE "public"."PromoCodeUsageLimitType" AS ENUM ('UNLIMITED', 'ONCE_TOTAL', 'ONCE_PER_CUSTOMER', 'LIMITED_PER_CUSTOMER');
@@ -100,6 +106,7 @@ CREATE TABLE "public"."GiftRedemption" (
 CREATE TABLE "public"."Merchant" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
+    "initialName" TEXT NOT NULL,
     "telegramWebhookSecret" TEXT,
     "telegramBotEnabled" BOOLEAN NOT NULL DEFAULT false,
     "telegramBotToken" TEXT,
@@ -156,10 +163,11 @@ CREATE TABLE "public"."MerchantSettings" (
     "outboxPausedUntil" TIMESTAMP(3),
     "smsSignature" TEXT,
     "phone" TEXT,
+    "timezone" TEXT DEFAULT 'MSK+4',
     "monthlyReports" BOOLEAN NOT NULL DEFAULT false,
     "staffMotivationEnabled" BOOLEAN NOT NULL DEFAULT false,
-    "staffMotivationNewCustomerPoints" INTEGER NOT NULL DEFAULT 0,
-    "staffMotivationExistingCustomerPoints" INTEGER NOT NULL DEFAULT 0,
+    "staffMotivationNewCustomerPoints" INTEGER NOT NULL DEFAULT 30,
+    "staffMotivationExistingCustomerPoints" INTEGER NOT NULL DEFAULT 10,
     "staffMotivationLeaderboardPeriod" TEXT,
     "staffMotivationCustomDays" INTEGER,
     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -226,8 +234,12 @@ CREATE TABLE "public"."MerchantCustomer" (
     "phone" TEXT,
     "email" TEXT,
     "name" TEXT,
+    "profileGender" TEXT,
+    "profileBirthDate" TIMESTAMP(3),
+    "profileCompletedAt" TIMESTAMP(3),
     "comment" TEXT,
     "accrualsBlocked" BOOLEAN NOT NULL DEFAULT false,
+    "redemptionsBlocked" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -263,6 +275,7 @@ CREATE TABLE "public"."Hold" (
     "expiresAt" TIMESTAMP(3),
     "outletId" TEXT,
     "staffId" TEXT,
+    "deviceId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "Hold_pkey" PRIMARY KEY ("id")
@@ -282,6 +295,7 @@ CREATE TABLE "public"."Receipt" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "outletId" TEXT,
     "staffId" TEXT,
+    "deviceId" TEXT,
     "canceledAt" TIMESTAMP(3),
     "canceledByStaffId" TEXT,
 
@@ -299,7 +313,10 @@ CREATE TABLE "public"."Transaction" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "outletId" TEXT,
     "staffId" TEXT,
+    "deviceId" TEXT,
     "metadata" JSONB,
+    "canceledAt" TIMESTAMP(3),
+    "canceledByStaffId" TEXT,
 
     CONSTRAINT "Transaction_pkey" PRIMARY KEY ("id")
 );
@@ -331,6 +348,25 @@ CREATE TABLE "public"."EventOutbox" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "EventOutbox_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."LoyaltyRealtimeEvent" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "customerId" TEXT NOT NULL,
+    "merchantCustomerId" TEXT,
+    "transactionId" TEXT,
+    "transactionType" TEXT,
+    "amount" INTEGER,
+    "eventType" TEXT NOT NULL,
+    "payload" JSONB,
+    "emittedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "deliveredAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "LoyaltyRealtimeEvent_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -410,6 +446,20 @@ CREATE TABLE "public"."Outlet" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "Outlet_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."Device" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "outletId" TEXT NOT NULL,
+    "code" TEXT NOT NULL,
+    "codeNormalized" TEXT NOT NULL,
+    "archivedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "Device_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -575,10 +625,14 @@ CREATE TABLE "public"."CashierSession" (
     "outletId" TEXT,
     "pinAccessId" TEXT,
     "startedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "lastSeenAt" TIMESTAMP(3),
     "endedAt" TIMESTAMP(3),
     "result" TEXT,
     "ipAddress" TEXT,
     "userAgent" TEXT,
+    "tokenHash" TEXT NOT NULL,
+    "expiresAt" TIMESTAMP(3),
+    "rememberPin" BOOLEAN NOT NULL DEFAULT false,
     "metadata" JSONB,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -749,6 +803,7 @@ CREATE TABLE "public"."LedgerEntry" (
     "receiptId" TEXT,
     "outletId" TEXT,
     "staffId" TEXT,
+    "deviceId" TEXT,
     "meta" JSONB,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -769,6 +824,7 @@ CREATE TABLE "public"."EarnLot" (
     "receiptId" TEXT,
     "outletId" TEXT,
     "staffId" TEXT,
+    "deviceId" TEXT,
     "status" TEXT NOT NULL DEFAULT 'ACTIVE',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -815,6 +871,8 @@ CREATE TABLE "public"."TelegramStaffInvite" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "expiresAt" TIMESTAMP(3),
     "createdById" TEXT,
+    "staffId" TEXT,
+    "actorType" "public"."TelegramStaffActorType" NOT NULL DEFAULT 'STAFF',
 
     CONSTRAINT "TelegramStaffInvite_pkey" PRIMARY KEY ("id")
 );
@@ -830,6 +888,8 @@ CREATE TABLE "public"."TelegramStaffSubscriber" (
     "addedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "lastSeenAt" TIMESTAMP(3),
     "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "staffId" TEXT,
+    "actorType" "public"."TelegramStaffActorType" NOT NULL DEFAULT 'STAFF',
 
     CONSTRAINT "TelegramStaffSubscriber_pkey" PRIMARY KEY ("id")
 );
@@ -869,10 +929,8 @@ CREATE TABLE "public"."Subscription" (
     "trialEnd" TIMESTAMP(3),
     "metadata" JSONB,
     "autoRenew" BOOLEAN NOT NULL DEFAULT true,
-    "lastPaymentId" TEXT,
     "reminderSent7Days" BOOLEAN NOT NULL DEFAULT false,
     "reminderSent1Day" BOOLEAN NOT NULL DEFAULT false,
-    "lastPaymentDate" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -1364,27 +1422,6 @@ CREATE TABLE "public"."LoyaltyTierAssignment" (
 );
 
 -- CreateTable
-CREATE TABLE "public"."Payment" (
-    "id" TEXT NOT NULL,
-    "subscriptionId" TEXT NOT NULL,
-    "amount" INTEGER NOT NULL,
-    "currency" TEXT NOT NULL DEFAULT 'RUB',
-    "status" TEXT NOT NULL,
-    "paymentMethod" TEXT,
-    "invoiceId" TEXT,
-    "receiptUrl" TEXT,
-    "failureReason" TEXT,
-    "paidAt" TIMESTAMP(3),
-    "provider" TEXT,
-    "merchantId" TEXT,
-    "metadata" JSONB,
-    "refundedAt" TIMESTAMP(3),
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "Payment_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
 CREATE TABLE "public"."FraudCheck" (
     "id" TEXT NOT NULL,
     "merchantId" TEXT NOT NULL,
@@ -1600,6 +1637,27 @@ CREATE TABLE "public"."StaffKpiDaily" (
 );
 
 -- CreateTable
+CREATE TABLE "public"."StaffMotivationEntry" (
+    "id" TEXT NOT NULL,
+    "merchantId" TEXT NOT NULL,
+    "staffId" TEXT NOT NULL,
+    "outletId" TEXT,
+    "customerId" TEXT NOT NULL,
+    "orderId" TEXT NOT NULL,
+    "receiptId" TEXT,
+    "action" "public"."StaffMotivationAction" NOT NULL,
+    "points" INTEGER NOT NULL,
+    "isNew" BOOLEAN NOT NULL DEFAULT false,
+    "share" DOUBLE PRECISION,
+    "eventAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "meta" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "StaffMotivationEntry_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "public"."SegmentMetricSnapshot" (
     "id" TEXT NOT NULL,
     "merchantId" TEXT NOT NULL,
@@ -1753,6 +1811,9 @@ CREATE INDEX "Hold_merchantId_outletId_idx" ON "public"."Hold"("merchantId", "ou
 CREATE INDEX "Hold_merchantId_staffId_idx" ON "public"."Hold"("merchantId", "staffId");
 
 -- CreateIndex
+CREATE INDEX "Hold_merchantId_deviceId_idx" ON "public"."Hold"("merchantId", "deviceId");
+
+-- CreateIndex
 CREATE INDEX "Receipt_merchantId_createdAt_idx" ON "public"."Receipt"("merchantId", "createdAt");
 
 -- CreateIndex
@@ -1760,6 +1821,9 @@ CREATE INDEX "Receipt_merchantId_outletId_idx" ON "public"."Receipt"("merchantId
 
 -- CreateIndex
 CREATE INDEX "Receipt_merchantId_staffId_idx" ON "public"."Receipt"("merchantId", "staffId");
+
+-- CreateIndex
+CREATE INDEX "Receipt_merchantId_deviceId_idx" ON "public"."Receipt"("merchantId", "deviceId");
 
 -- CreateIndex
 CREATE INDEX "Receipt_merchantId_canceledAt_idx" ON "public"."Receipt"("merchantId", "canceledAt");
@@ -1780,6 +1844,9 @@ CREATE INDEX "Transaction_merchantId_outletId_idx" ON "public"."Transaction"("me
 CREATE INDEX "Transaction_merchantId_staffId_idx" ON "public"."Transaction"("merchantId", "staffId");
 
 -- CreateIndex
+CREATE INDEX "Transaction_merchantId_deviceId_idx" ON "public"."Transaction"("merchantId", "deviceId");
+
+-- CreateIndex
 CREATE INDEX "Transaction_merchantId_customerId_type_createdAt_idx" ON "public"."Transaction"("merchantId", "customerId", "type", "createdAt");
 
 -- CreateIndex
@@ -1790,6 +1857,15 @@ CREATE INDEX "EventOutbox_status_nextRetryAt_idx" ON "public"."EventOutbox"("sta
 
 -- CreateIndex
 CREATE INDEX "EventOutbox_merchantId_createdAt_idx" ON "public"."EventOutbox"("merchantId", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "LoyaltyRealtimeEvent_merchantId_merchantCustomerId_delivere_idx" ON "public"."LoyaltyRealtimeEvent"("merchantId", "merchantCustomerId", "deliveredAt");
+
+-- CreateIndex
+CREATE INDEX "LoyaltyRealtimeEvent_merchantId_customerId_deliveredAt_idx" ON "public"."LoyaltyRealtimeEvent"("merchantId", "customerId", "deliveredAt");
+
+-- CreateIndex
+CREATE INDEX "LoyaltyRealtimeEvent_deliveredAt_idx" ON "public"."LoyaltyRealtimeEvent"("deliveredAt");
 
 -- CreateIndex
 CREATE INDEX "AutoReturnAttempt_merchantId_customerId_idx" ON "public"."AutoReturnAttempt"("merchantId", "customerId");
@@ -1828,6 +1904,15 @@ CREATE UNIQUE INDEX "Outlet_merchantId_externalId_key" ON "public"."Outlet"("mer
 CREATE UNIQUE INDEX "Outlet_merchantId_code_key" ON "public"."Outlet"("merchantId", "code");
 
 -- CreateIndex
+CREATE INDEX "Device_merchantId_outletId_idx" ON "public"."Device"("merchantId", "outletId");
+
+-- CreateIndex
+CREATE INDEX "Device_outletId_archivedAt_idx" ON "public"."Device"("outletId", "archivedAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Device_merchantId_codeNormalized_key" ON "public"."Device"("merchantId", "codeNormalized");
+
+-- CreateIndex
 CREATE INDEX "OutletSchedule_outletId_idx" ON "public"."OutletSchedule"("outletId");
 
 -- CreateIndex
@@ -1847,6 +1932,9 @@ CREATE INDEX "StaffOutletAccess_merchantId_outletId_idx" ON "public"."StaffOutle
 
 -- CreateIndex
 CREATE INDEX "StaffOutletAccess_staffId_status_idx" ON "public"."StaffOutletAccess"("staffId", "status");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "StaffOutletAccess_merchantId_pinCode_key" ON "public"."StaffOutletAccess"("merchantId", "pinCode");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "StaffOutletAccess_merchantId_staffId_outletId_key" ON "public"."StaffOutletAccess"("merchantId", "staffId", "outletId");
@@ -1889,6 +1977,9 @@ CREATE INDEX "StaffAccessLog_merchantId_createdAt_idx" ON "public"."StaffAccessL
 
 -- CreateIndex
 CREATE INDEX "StaffAccessLog_staffId_createdAt_idx" ON "public"."StaffAccessLog"("staffId", "createdAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "CashierSession_tokenHash_key" ON "public"."CashierSession"("tokenHash");
 
 -- CreateIndex
 CREATE INDEX "CashierSession_merchantId_startedAt_idx" ON "public"."CashierSession"("merchantId", "startedAt");
@@ -1951,10 +2042,16 @@ CREATE INDEX "LedgerEntry_merchantId_createdAt_idx" ON "public"."LedgerEntry"("m
 CREATE INDEX "LedgerEntry_merchantId_customerId_createdAt_idx" ON "public"."LedgerEntry"("merchantId", "customerId", "createdAt");
 
 -- CreateIndex
+CREATE INDEX "LedgerEntry_merchantId_deviceId_idx" ON "public"."LedgerEntry"("merchantId", "deviceId");
+
+-- CreateIndex
 CREATE INDEX "EarnLot_merchantId_customerId_earnedAt_idx" ON "public"."EarnLot"("merchantId", "customerId", "earnedAt");
 
 -- CreateIndex
 CREATE INDEX "EarnLot_merchantId_expiresAt_idx" ON "public"."EarnLot"("merchantId", "expiresAt");
+
+-- CreateIndex
+CREATE INDEX "EarnLot_merchantId_deviceId_idx" ON "public"."EarnLot"("merchantId", "deviceId");
 
 -- CreateIndex
 CREATE INDEX "AdminAudit_merchantId_createdAt_idx" ON "public"."AdminAudit"("merchantId", "createdAt");
@@ -1978,7 +2075,16 @@ CREATE INDEX "TelegramStaffInvite_merchantId_createdAt_idx" ON "public"."Telegra
 CREATE INDEX "TelegramStaffInvite_expiresAt_idx" ON "public"."TelegramStaffInvite"("expiresAt");
 
 -- CreateIndex
+CREATE INDEX "TelegramStaffInvite_merchantId_staffId_createdAt_idx" ON "public"."TelegramStaffInvite"("merchantId", "staffId", "createdAt");
+
+-- CreateIndex
 CREATE INDEX "TelegramStaffSubscriber_merchantId_isActive_idx" ON "public"."TelegramStaffSubscriber"("merchantId", "isActive");
+
+-- CreateIndex
+CREATE INDEX "TelegramStaffSubscriber_merchantId_staffId_idx" ON "public"."TelegramStaffSubscriber"("merchantId", "staffId");
+
+-- CreateIndex
+CREATE INDEX "TelegramStaffSubscriber_merchantId_actorType_idx" ON "public"."TelegramStaffSubscriber"("merchantId", "actorType");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "TelegramStaffSubscriber_merchantId_chatId_key" ON "public"."TelegramStaffSubscriber"("merchantId", "chatId");
@@ -2152,6 +2258,18 @@ CREATE INDEX "StaffKpiDaily_merchantId_date_idx" ON "public"."StaffKpiDaily"("me
 CREATE UNIQUE INDEX "StaffKpiDaily_staffId_outletId_date_key" ON "public"."StaffKpiDaily"("staffId", "outletId", "date");
 
 -- CreateIndex
+CREATE INDEX "StaffMotivationEntry_merchantId_eventAt_idx" ON "public"."StaffMotivationEntry"("merchantId", "eventAt");
+
+-- CreateIndex
+CREATE INDEX "StaffMotivationEntry_merchantId_staffId_eventAt_idx" ON "public"."StaffMotivationEntry"("merchantId", "staffId", "eventAt");
+
+-- CreateIndex
+CREATE INDEX "StaffMotivationEntry_merchantId_orderId_idx" ON "public"."StaffMotivationEntry"("merchantId", "orderId");
+
+-- CreateIndex
+CREATE INDEX "StaffMotivationEntry_merchantId_outletId_eventAt_idx" ON "public"."StaffMotivationEntry"("merchantId", "outletId", "eventAt");
+
+-- CreateIndex
 CREATE INDEX "SegmentMetricSnapshot_segmentId_periodStart_idx" ON "public"."SegmentMetricSnapshot"("segmentId", "periodStart");
 
 -- CreateIndex
@@ -2224,6 +2342,9 @@ ALTER TABLE "public"."Hold" ADD CONSTRAINT "Hold_outletId_fkey" FOREIGN KEY ("ou
 ALTER TABLE "public"."Hold" ADD CONSTRAINT "Hold_staffId_fkey" FOREIGN KEY ("staffId") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "public"."Hold" ADD CONSTRAINT "Hold_deviceId_fkey" FOREIGN KEY ("deviceId") REFERENCES "public"."Device"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "public"."Receipt" ADD CONSTRAINT "Receipt_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -2236,6 +2357,9 @@ ALTER TABLE "public"."Receipt" ADD CONSTRAINT "Receipt_outletId_fkey" FOREIGN KE
 ALTER TABLE "public"."Receipt" ADD CONSTRAINT "Receipt_staffId_fkey" FOREIGN KEY ("staffId") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "public"."Receipt" ADD CONSTRAINT "Receipt_deviceId_fkey" FOREIGN KEY ("deviceId") REFERENCES "public"."Device"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "public"."Receipt" ADD CONSTRAINT "Receipt_canceledByStaffId_fkey" FOREIGN KEY ("canceledByStaffId") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -2245,10 +2369,16 @@ ALTER TABLE "public"."Transaction" ADD CONSTRAINT "Transaction_customerId_fkey" 
 ALTER TABLE "public"."Transaction" ADD CONSTRAINT "Transaction_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "public"."Transaction" ADD CONSTRAINT "Transaction_canceledByStaffId_fkey" FOREIGN KEY ("canceledByStaffId") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "public"."Transaction" ADD CONSTRAINT "Transaction_outletId_fkey" FOREIGN KEY ("outletId") REFERENCES "public"."Outlet"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "public"."Transaction" ADD CONSTRAINT "Transaction_staffId_fkey" FOREIGN KEY ("staffId") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."Transaction" ADD CONSTRAINT "Transaction_deviceId_fkey" FOREIGN KEY ("deviceId") REFERENCES "public"."Device"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "public"."AutoReturnAttempt" ADD CONSTRAINT "AutoReturnAttempt_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -2264,6 +2394,12 @@ ALTER TABLE "public"."BirthdayGreeting" ADD CONSTRAINT "BirthdayGreeting_custome
 
 -- AddForeignKey
 ALTER TABLE "public"."Outlet" ADD CONSTRAINT "Outlet_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."Device" ADD CONSTRAINT "Device_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."Device" ADD CONSTRAINT "Device_outletId_fkey" FOREIGN KEY ("outletId") REFERENCES "public"."Outlet"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "public"."OutletSchedule" ADD CONSTRAINT "OutletSchedule_outletId_fkey" FOREIGN KEY ("outletId") REFERENCES "public"."Outlet"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -2392,6 +2528,12 @@ ALTER TABLE "public"."ProductVariantOption" ADD CONSTRAINT "ProductVariantOption
 ALTER TABLE "public"."ProductVariantOption" ADD CONSTRAINT "ProductVariantOption_optionValueId_fkey" FOREIGN KEY ("optionValueId") REFERENCES "public"."ProductOptionValue"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "public"."LedgerEntry" ADD CONSTRAINT "LedgerEntry_deviceId_fkey" FOREIGN KEY ("deviceId") REFERENCES "public"."Device"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."EarnLot" ADD CONSTRAINT "EarnLot_deviceId_fkey" FOREIGN KEY ("deviceId") REFERENCES "public"."Device"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "public"."TelegramBot" ADD CONSTRAINT "TelegramBot_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -2401,7 +2543,13 @@ ALTER TABLE "public"."TelegramStaffInvite" ADD CONSTRAINT "TelegramStaffInvite_m
 ALTER TABLE "public"."TelegramStaffInvite" ADD CONSTRAINT "TelegramStaffInvite_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "public"."TelegramStaffInvite" ADD CONSTRAINT "TelegramStaffInvite_staffId_fkey" FOREIGN KEY ("staffId") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "public"."TelegramStaffSubscriber" ADD CONSTRAINT "TelegramStaffSubscriber_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."TelegramStaffSubscriber" ADD CONSTRAINT "TelegramStaffSubscriber_staffId_fkey" FOREIGN KEY ("staffId") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "public"."Subscription" ADD CONSTRAINT "Subscription_planId_fkey" FOREIGN KEY ("planId") REFERENCES "public"."Plan"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -2590,9 +2738,6 @@ ALTER TABLE "public"."LoyaltyTierAssignment" ADD CONSTRAINT "LoyaltyTierAssignme
 ALTER TABLE "public"."LoyaltyTierAssignment" ADD CONSTRAINT "LoyaltyTierAssignment_assignedById_fkey" FOREIGN KEY ("assignedById") REFERENCES "public"."Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "public"."Payment" ADD CONSTRAINT "Payment_subscriptionId_fkey" FOREIGN KEY ("subscriptionId") REFERENCES "public"."Subscription"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE "public"."FraudCheck" ADD CONSTRAINT "FraudCheck_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -2651,6 +2796,18 @@ ALTER TABLE "public"."StaffKpiDaily" ADD CONSTRAINT "StaffKpiDaily_staffId_fkey"
 
 -- AddForeignKey
 ALTER TABLE "public"."StaffKpiDaily" ADD CONSTRAINT "StaffKpiDaily_outletId_fkey" FOREIGN KEY ("outletId") REFERENCES "public"."Outlet"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."StaffMotivationEntry" ADD CONSTRAINT "StaffMotivationEntry_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."StaffMotivationEntry" ADD CONSTRAINT "StaffMotivationEntry_staffId_fkey" FOREIGN KEY ("staffId") REFERENCES "public"."Staff"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."StaffMotivationEntry" ADD CONSTRAINT "StaffMotivationEntry_outletId_fkey" FOREIGN KEY ("outletId") REFERENCES "public"."Outlet"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."StaffMotivationEntry" ADD CONSTRAINT "StaffMotivationEntry_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "public"."Customer"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "public"."SegmentMetricSnapshot" ADD CONSTRAINT "SegmentMetricSnapshot_merchantId_fkey" FOREIGN KEY ("merchantId") REFERENCES "public"."Merchant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
