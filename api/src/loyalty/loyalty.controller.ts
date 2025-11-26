@@ -92,7 +92,7 @@ type MerchantContext = {
 const ALL_CUSTOMERS_SEGMENT_KEY = 'all-customers';
 
 @Controller('loyalty')
-@UseGuards(CashierGuard)
+@UseGuards(CashierGuard, SubscriptionGuard)
 @ApiTags('loyalty')
 @ApiExtraModels(QuoteRedeemRespDto, QuoteEarnRespDto)
 export class LoyaltyController {
@@ -1961,7 +1961,7 @@ export class LoyaltyController {
   }
 
   @Post('commit')
-  @UseGuards(SubscriptionGuard, AntiFraudGuard)
+  @UseGuards(AntiFraudGuard)
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @ApiHeader({
     name: 'Idempotency-Key',
@@ -2231,7 +2231,7 @@ export class LoyaltyController {
   }
 
   @Post('refund')
-  @UseGuards(SubscriptionGuard, AntiFraudGuard)
+  @UseGuards(AntiFraudGuard)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiHeader({
     name: 'Idempotency-Key',

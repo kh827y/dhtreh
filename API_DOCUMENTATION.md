@@ -1346,42 +1346,42 @@ function verifyWebhookSignature(signature, body, secret) {
 - `trial.expired` - Истечение пробного периода
 
 ## Подписки и тарифы
+В продакшене используется один тариф `Full` (`plan_full`) с полным доступом и без лимитов. Тариф выдаётся вручную через админку/админ‑API на фиксированное число дней. За 7 дней до даты окончания фронт портала показывает предупреждение, по истечении срока все операции (портал, касса, API) блокируются ответом 403 «Подписка закончилась».
 
 ### Получение доступных планов
 ```http
 GET /subscription/plans
 
 Response 200:
-{
-  "plans": [
-    {
-      "id": "plan_starter",
-      "name": "Стартовый",
-      "price": 1990,
-      "currency": "RUB",
-      "interval": "month",
-      "features": {
-        "maxTransactions": 10000,
-        "maxCustomers": 1000,
-        "maxOutlets": 3,
-        "webhooksEnabled": true,
-        "customBranding": false
-      }
-    }
-  ]
-}
+[
+  {
+    "id": "plan_full",
+    "name": "full",
+    "displayName": "Full",
+    "price": 0,
+    "currency": "RUB",
+    "interval": "day",
+    "features": { "all": true },
+    "maxTransactions": null,
+    "maxCustomers": null,
+    "maxOutlets": null,
+    "webhooksEnabled": true,
+    "customBranding": true
+  }
+]
 ```
 
-### Создание подписки
+### Ручная выдача/сброс подписки (админ)
 ```http
-POST /subscription/create
+POST /admin/merchants/{merchantId}/subscription
 X-Admin-Key: required
 
-{
-  "merchantId": "string",
-  "planId": "plan_starter",
-  "trialDays": 14
-}
+Body:
+{ "days": 30, "planId": "plan_full" }
+
+Response: { "status": "active", "currentPeriodEnd": "2025-01-10T00:00:00.000Z", ... }
+
+DELETE /admin/merchants/{merchantId}/subscription — сбросить подписку (после истечения/для блокировки).
 ```
 
 ### Проверка лимитов
@@ -1391,23 +1391,23 @@ GET /subscription/{merchantId}/usage
 Response 200:
 {
   "plan": {
-    "id": "plan_starter",
-    "name": "Стартовый"
+    "id": "plan_full",
+    "name": "Full"
   },
   "usage": {
     "transactions": {
       "used": 5432,
-      "limit": 10000,
-      "percentage": 54
+      "limit": "unlimited",
+      "percentage": null
     },
     "customers": {
       "used": 234,
-      "limit": 1000,
-      "percentage": 23
+      "limit": "unlimited",
+      "percentage": null
     }
   },
   "status": "active",
-  "currentPeriodEnd": "2024-02-01T00:00:00Z"
+  "currentPeriodEnd": "2025-01-01T00:00:00Z"
 }
 ```
 

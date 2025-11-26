@@ -10,6 +10,7 @@ import {
   Query,
   UseInterceptors,
   Res,
+  BadRequestException,
 } from '@nestjs/common';
 import { MerchantsService } from './merchants.service';
 import {
@@ -47,6 +48,7 @@ import {
 import { AdminAuditInterceptor } from '../admin-audit.interceptor';
 import { ErrorDto } from '../loyalty/dto';
 import { TransactionItemDto } from '../loyalty/dto';
+import { SubscriptionService } from '../subscription/subscription.service';
 
 @Controller('merchants')
 @UseGuards(AdminGuard, AdminIpGuard)
@@ -59,7 +61,10 @@ import { TransactionItemDto } from '../loyalty/dto';
 })
 @ApiExtraModels(TransactionItemDto)
 export class MerchantsController {
-  constructor(private readonly service: MerchantsService) {}
+  constructor(
+    private readonly service: MerchantsService,
+    private readonly subscriptions: SubscriptionService,
+  ) {}
 
   // Admin: list / create merchants
   @Get()
@@ -81,7 +86,14 @@ export class MerchantsController {
     },
   })
   listMerchants() {
-    return this.service.listMerchants();
+    return this.service.listMerchants().then((rows: any[]) =>
+      rows.map((row) => ({
+        ...row,
+        subscription: this.subscriptions.buildStateFromRecord(
+          (row as any)?.subscription ?? null,
+        ),
+      })),
+    );
   }
   @Post()
   @ApiOkResponse({
@@ -136,6 +148,27 @@ export class MerchantsController {
       email: body?.email,
       password: body?.password,
     });
+  }
+
+  @Post(':id/subscription')
+  grantSubscription(
+    @Param('id') id: string,
+    @Body() body: { days?: number; planId?: string },
+  ) {
+    const days = Number(body?.days);
+    if (!Number.isFinite(days) || days <= 0) {
+      throw new BadRequestException('days must be > 0');
+    }
+    return this.subscriptions.grantSubscription(
+      id,
+      body?.planId || 'plan_full',
+      days,
+    );
+  }
+
+  @Delete(':id/subscription')
+  resetSubscription(@Param('id') id: string) {
+    return this.subscriptions.resetSubscription(id);
   }
 
   @Delete(':id')

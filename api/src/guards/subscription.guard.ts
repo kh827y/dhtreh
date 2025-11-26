@@ -3,114 +3,102 @@ import {
   ExecutionContext,
   Injectable,
   ForbiddenException,
+  SetMetadata,
 } from '@nestjs/common';
+import { GqlExecutionContext } from '@nestjs/graphql';
+import { Reflector } from '@nestjs/core';
 import { PrismaService } from '../prisma.service';
 import { SubscriptionService } from '../subscription/subscription.service';
+
+export const ALLOW_INACTIVE_SUBSCRIPTION_KEY =
+  'allowInactiveSubscription';
+export const AllowInactiveSubscription = () =>
+  SetMetadata(ALLOW_INACTIVE_SUBSCRIPTION_KEY, true);
 
 @Injectable()
 export class SubscriptionGuard implements CanActivate {
   constructor(
     private prisma: PrismaService,
     private subscriptionService: SubscriptionService,
+    private reflector: Reflector,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    // В e2e/юнит тестах не блокируем — иначе сломаем сценарии
-    if (process.env.NODE_ENV === 'test') return true;
-    // Локальный обход через переменную окружения
-    const guardSwitch = (process.env.SUBSCRIPTION_GUARD || '')
-      .trim()
-      .toLowerCase();
-    if (
-      guardSwitch === 'off' ||
-      guardSwitch === '0' ||
-      guardSwitch === 'false' ||
-      guardSwitch === 'no'
-    ) {
-      return true;
+    const req =
+      context.getType<'http' | 'graphql'>() === 'http'
+        ? context.switchToHttp().getRequest()
+        : GqlExecutionContext.create(context).getContext()?.req;
+    if (!req) {
+      throw new ForbiddenException('Запрос без контекста запрещён');
     }
-    const req = context.switchToHttp().getRequest();
-    const method: string = (req.method || 'GET').toUpperCase();
-    const path: string =
-      req?.route?.path || req?.path || req?.originalUrl || '';
 
-    // Ограничиваем только «операции»: commit и refund
-    const isOperation =
-      method === 'POST' &&
-      (path === '/loyalty/commit' || path === '/loyalty/refund');
-    if (!isOperation) return true;
+    const allowInactive =
+      this.reflector.get<boolean>(
+        ALLOW_INACTIVE_SUBSCRIPTION_KEY,
+        context.getHandler(),
+      ) ||
+      this.reflector.get<boolean>(
+        ALLOW_INACTIVE_SUBSCRIPTION_KEY,
+        context.getClass(),
+      );
+    if (allowInactive) return true;
 
-    // Определяем merchantId
     let merchantId: string | undefined =
-      req.body?.merchantId || req?.params?.merchantId || req?.query?.merchantId;
-    if (!merchantId && path === '/loyalty/commit') {
-      // commit по holdId
+      req.portalMerchantId ||
+      req.cashierSession?.merchantId ||
+      req.body?.merchantId ||
+      req?.params?.merchantId ||
+      req?.query?.merchantId ||
+      req?.teleauth?.merchantId;
+
+    if (!merchantId && req.body?.holdId) {
       const holdId = req.body?.holdId;
-      if (holdId) {
+      try {
+        const hold = await this.prisma.hold.findUnique({
+          where: { id: holdId },
+        });
+        merchantId = hold?.merchantId;
+      } catch {}
+    }
+    if (!merchantId && req.body?.merchantLogin) {
+      const merchantLogin = String(req.body.merchantLogin || '').trim();
+      if (merchantLogin) {
         try {
-          const hold = await this.prisma.hold.findUnique({
-            where: { id: holdId },
+          const merchant = await this.prisma.merchant.findFirst({
+            where: { cashierLogin: merchantLogin },
+            select: { id: true },
           });
-          merchantId = hold?.merchantId;
+          merchantId = merchant?.id;
         } catch {}
       }
     }
-    if (!merchantId) return true; // если не смогли определить — не блокируем
 
-    const prismaAny = this.prisma as any;
-    // Если модель subscription недоступна (тестовые стабы) — не блокируем
-    if (!prismaAny?.subscription?.findUnique) return true;
-    const sub = await prismaAny.subscription.findUnique({
-      where: { merchantId },
-      include: { plan: true },
-    });
-    if (!sub) {
+    if (!merchantId) {
       throw new ForbiddenException(
-        'Операции недоступны: подписка не оформлена. Завершите онбординг.',
+        'Не удалось определить мерчанта для проверки подписки',
       );
     }
 
-    const now = new Date();
-    const status = String(sub.status || '');
-    const cpe: Date | null = sub.currentPeriodEnd
-      ? new Date(sub.currentPeriodEnd)
-      : null;
-    const trialEnd: Date | null = sub.trialEnd ? new Date(sub.trialEnd) : null;
-    const end = cpe || trialEnd; // приоритет текущего периода, иначе конец триала
-    const isActive =
-      status === 'active' || status === 'trialing' || status === 'trial';
-    // grace: 3 дня после окончания периода — операции разрешены
-    let withinGrace = false;
-    if (!isActive && end) {
-      const graceMs = 3 * 24 * 60 * 60 * 1000;
-      if (now.getTime() <= end.getTime() + graceMs)
-        withinGrace = now.getTime() >= end.getTime();
-    }
-    let allowed = isActive || withinGrace;
+    const { subscription, state } =
+      await this.subscriptionService.describeSubscription(merchantId);
+    req.subscriptionState = state;
+    req.subscription = subscription;
 
-    if (!allowed) {
-      // grace-период 3 дня от currentPeriodEnd
-      if (cpe) {
-        const grace = new Date(cpe);
-        grace.setDate(grace.getDate() + 3);
-        allowed = now <= grace;
-      }
-    }
-
-    if (!allowed) {
+    if (state.status !== 'active') {
       throw new ForbiddenException(
-        'Операции временно заблокированы: подписка недействительна. Интерфейс доступен, продлите подписку.',
+        state.problem || 'Подписка закончилась, продлите её чтобы продолжить работу',
       );
     }
 
-    // Проверка лимитов плана (мягко — бросает 400 при превышении)
-    try {
-      await this.subscriptionService.validatePlanLimits(merchantId, sub.plan);
-    } catch (e) {
-      // Пробрасываем как есть (BadRequestException из validatePlanLimits)
-      throw e;
+    if (subscription?.plan) {
+      await this.subscriptionService.validatePlanLimits(
+        merchantId,
+        subscription.plan,
+      );
     }
 
+    // Ограничиваем только операции, требующие подписки: все, кроме вспомогательных health/ping
+    // health/ping проверяются на уровне роутинга и сюда не попадают
     return true;
   }
 }

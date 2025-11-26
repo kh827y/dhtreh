@@ -1,7 +1,7 @@
 # API Documentation - Subscription Management
 
 ## Overview
-The subscription management system allows merchants to subscribe to different plans with various features and limits.
+Доступен один тариф `plan_full` (Full) без лимитов и с включёнными всеми функциями. Подписка выдаётся вручную через админ‑API `/admin/merchants/{merchantId}/subscription` на заданное число дней; по истечении доступа все операции портала/касы/API блокируются ответом 403 «Подписка закончилась».
 
 ## Base URL
 ```
@@ -22,59 +22,43 @@ Returns list of all available subscription plans.
 ```json
 [
   {
-    "id": "plan_starter",
-    "name": "starter", 
-    "displayName": "Starter",
-    "description": "Идеально для растущего бизнеса",
-    "price": 2900,
+    "id": "plan_full",
+    "name": "full",
+    "displayName": "Full",
+    "price": 0,
     "currency": "RUB",
-    "interval": "month",
-    "trialDays": 14,
-    "maxTransactions": 10000,
-    "maxCustomers": 1000,
-    "maxOutlets": 3,
+    "interval": "day",
+    "maxTransactions": null,
+    "maxCustomers": null,
+    "maxOutlets": null,
     "webhooksEnabled": true,
-    "customBranding": false,
-    "prioritySupport": false,
+    "customBranding": true,
+    "prioritySupport": true,
     "apiAccess": true,
-    "features": {
-      "basicReports": true,
-      "emailNotifications": true,
-      "exportData": true
-    }
+    "features": { "all": true }
   }
 ]
 ```
 
-### 2. Create Subscription
-**POST** `/subscription/create`
+### 2. Create Subscription (manual grant)
+**POST** `/admin/merchants/{merchantId}/subscription`
 
-Creates a new subscription for a merchant.
+Создаёт/перезаписывает подписку мерчанта.
 
 **Request Body:**
 ```json
-{
-  "merchantId": "merchant_123",
-  "planId": "plan_starter",
-  "trialDays": 14,
-  "metadata": {
-    "source": "website",
-    "campaign": "launch2024"
-  }
-}
+{ "days": 30, "planId": "plan_full" }
 ```
 
-**Response:**
+**Response (упрощённо):**
 ```json
 {
-  "id": "sub_abc123",
-  "merchantId": "merchant_123",
-  "planId": "plan_starter",
-  "status": "trialing",
-  "currentPeriodStart": "2024-12-12T00:00:00Z",
+  "status": "active",
+  "planName": "Full",
   "currentPeriodEnd": "2025-01-12T00:00:00Z",
-  "trialEnd": "2024-12-26T00:00:00Z",
-  "metadata": {...}
+  "daysLeft": 30,
+  "expiresSoon": false,
+  "expired": false
 }
 ```
 

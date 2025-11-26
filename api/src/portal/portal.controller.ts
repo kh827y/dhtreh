@@ -89,6 +89,8 @@ import {
   serializeTimezone,
 } from '../timezone/russia-timezones';
 import { UpdateRfmSettingsDto } from '../analytics/dto/update-rfm-settings.dto';
+import { SubscriptionService } from '../subscription/subscription.service';
+import { AllowInactiveSubscription } from '../guards/subscription.guard';
 
 @ApiTags('portal')
 @Controller('portal')
@@ -110,6 +112,7 @@ export class PortalController {
     private readonly telegramNotify: PortalTelegramNotifyService,
     private readonly referrals: ReferralService,
     private readonly reviews: PortalReviewsService,
+    private readonly subscriptions: SubscriptionService,
   ) {}
 
   private getMerchantId(req: any) {
@@ -354,6 +357,22 @@ export class PortalController {
     if (payload.metadata !== undefined) return payload.metadata;
     if (stats.metadata !== undefined) return stats.metadata;
     return null;
+  }
+
+  @Get('subscription')
+  @AllowInactiveSubscription()
+  async subscription(@Req() req: any) {
+    const merchantId = this.getMerchantId(req);
+    const { state } = await this.subscriptions.describeSubscription(merchantId);
+    return {
+      planId: state.planId,
+      planName: state.planName,
+      status: state.status,
+      currentPeriodEnd: state.currentPeriodEnd,
+      daysLeft: state.daysLeft,
+      expiresSoon: state.expiresSoon,
+      expired: state.expired,
+    };
   }
 
   @Get('reviews')

@@ -19,6 +19,12 @@ export type MerchantRow = {
   qrTtlSec?: number | null;
   requireBridgeSig?: boolean;
   requireStaffKey?: boolean;
+  subscriptionStatus?: string;
+  subscriptionPlanName?: string | null;
+  subscriptionEndsAt?: string | null;
+  subscriptionDaysLeft?: number | null;
+  subscriptionExpiresSoon?: boolean;
+  subscriptionExpired?: boolean;
 };
 
 export async function listMerchants(): Promise<MerchantRow[]> {
@@ -36,6 +42,15 @@ export async function listMerchants(): Promise<MerchantRow[]> {
     qrTtlSec: row.settings?.qrTtlSec ?? row.qrTtlSec ?? null,
     requireBridgeSig: row.settings?.requireBridgeSig ?? row.requireBridgeSig ?? false,
     requireStaffKey: row.settings?.requireStaffKey ?? row.requireStaffKey ?? false,
+    subscriptionStatus: (row as any)?.subscription?.status ?? undefined,
+    subscriptionPlanName:
+      (row as any)?.subscription?.planName ??
+      (row as any)?.subscription?.planId ??
+      null,
+    subscriptionEndsAt: (row as any)?.subscription?.currentPeriodEnd ?? null,
+    subscriptionDaysLeft: (row as any)?.subscription?.daysLeft ?? null,
+    subscriptionExpiresSoon: Boolean((row as any)?.subscription?.expiresSoon),
+    subscriptionExpired: Boolean((row as any)?.subscription?.expired),
   }));
 }
 export async function createMerchant(name: string, email: string, password: string, ownerName?: string): Promise<{ id: string; name: string; email: string }> {
@@ -78,5 +93,21 @@ export async function updateMerchantSettings(
   return http(`/merchants/${encodeURIComponent(merchantId)}/settings`, {
     method: 'PUT',
     body: JSON.stringify(dto),
+  });
+}
+
+export async function grantSubscription(
+  merchantId: string,
+  payload: { days: number; planId?: string },
+) {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/subscription`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function resetSubscription(merchantId: string) {
+  return http(`/merchants/${encodeURIComponent(merchantId)}/subscription`, {
+    method: 'DELETE',
   });
 }

@@ -6,6 +6,7 @@ import { PrismaModule } from '../prisma.module';
 import { ConfigModule } from '@nestjs/config';
 import { MetricsModule } from '../metrics.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { SubscriptionGuard } from '../guards/subscription.guard';
 
 @Module({
   imports: [
@@ -15,7 +16,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     NotificationsModule,
   ],
   controllers: [SubscriptionController],
-  providers: [SubscriptionService, SubscriptionCronService],
-  exports: [SubscriptionService],
+  providers: [SubscriptionService, SubscriptionCronService, SubscriptionGuard],
+  exports: [SubscriptionService, SubscriptionGuard],
 })
 export class SubscriptionModule {}

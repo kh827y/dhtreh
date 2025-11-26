@@ -2115,6 +2115,7 @@ export class MerchantsService {
             requireStaffKey: true,
           },
         },
+        subscription: { include: { plan: true } },
       },
     });
   }

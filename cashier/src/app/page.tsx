@@ -726,6 +726,9 @@ export default function Page() {
           requestId,
         }),
       });
+      if (!r.ok) {
+        throw new Error(await r.text());
+      }
       const data = await r.json();
       if (typeof data?.merchantCustomerId === 'string') {
         setMerchantCustomerId(data.merchantCustomerId);

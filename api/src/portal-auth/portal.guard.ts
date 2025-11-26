@@ -1,4 +1,9 @@
-import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  ForbiddenException,
+} from '@nestjs/common';
 import { GqlExecutionContext } from '@nestjs/graphql';
 import { PrismaService } from '../prisma.service';
 import { verifyPortalJwt } from './portal-jwt.util';
@@ -6,10 +11,17 @@ import {
   DEFAULT_TIMEZONE_CODE,
   findTimezone,
 } from '../timezone/russia-timezones';
+import { SubscriptionService } from '../subscription/subscription.service';
+import { Reflector } from '@nestjs/core';
+import { ALLOW_INACTIVE_SUBSCRIPTION_KEY } from '../guards/subscription.guard';
 
 @Injectable()
 export class PortalGuard implements CanActivate {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly subscriptions: SubscriptionService,
+    private readonly reflector: Reflector,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req: any =
@@ -17,6 +29,15 @@ export class PortalGuard implements CanActivate {
         ? context.switchToHttp().getRequest()
         : GqlExecutionContext.create(context).getContext()?.req;
     if (!req) return false;
+    const allowInactive =
+      this.reflector.get<boolean>(
+        ALLOW_INACTIVE_SUBSCRIPTION_KEY,
+        context.getHandler(),
+      ) ||
+      this.reflector.get<boolean>(
+        ALLOW_INACTIVE_SUBSCRIPTION_KEY,
+        context.getClass(),
+      );
     const auth = String(req.headers?.authorization || '');
     const m = /^Bearer\s+(.+)$/i.exec(auth);
     if (!m) return false;
@@ -79,6 +100,15 @@ export class PortalGuard implements CanActivate {
           allowAll: true,
           resources: new Map<string, Set<string>>(),
         };
+      }
+      const subscriptionState =
+        await this.subscriptions.getSubscriptionState(merchantId);
+      req.portalSubscription = subscriptionState;
+      if (!allowInactive && subscriptionState.status !== 'active') {
+        throw new ForbiddenException(
+          subscriptionState.problem ||
+            'Подписка закончилась, продлите её чтобы продолжить работу',
+        );
       }
       const timezoneRow = await this.prisma.merchantSettings.findUnique({
         where: { merchantId },

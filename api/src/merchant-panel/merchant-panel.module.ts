@@ -12,9 +12,10 @@ import { AccessGroupsResolver } from './resolvers/access-groups.resolver';
 import { OutletsResolver } from './resolvers/outlets.resolver';
 import { CashierResolver } from './resolvers/cashier.resolver';
 import { MetricsModule } from '../metrics.module';
+import { SubscriptionModule } from '../subscription/subscription.module';
 
 @Module({
-  imports: [PrismaModule, MerchantsModule, MetricsModule],
+  imports: [PrismaModule, MerchantsModule, MetricsModule, SubscriptionModule],
   providers: [
     MerchantPanelService,
     PortalGuard,

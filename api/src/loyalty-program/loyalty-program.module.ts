@@ -8,10 +8,12 @@ import { OperationsLogController } from './controllers/operations-log.controller
 import { TiersController } from './controllers/tiers.controller';
 import { RedeemLimitsController } from './controllers/redeem-limits.controller';
 import { CommunicationsModule } from '../communications/communications.module';
+import { PortalGuard } from '../portal-auth/portal.guard';
+import { SubscriptionModule } from '../subscription/subscription.module';
 
 @Module({
-  imports: [PrismaModule, MetricsModule, CommunicationsModule],
-  providers: [LoyaltyProgramService],
+  imports: [PrismaModule, MetricsModule, CommunicationsModule, SubscriptionModule],
+  providers: [LoyaltyProgramService, PortalGuard],
   controllers: [
     MechanicsController,
     PromotionsController,

@@ -6,6 +6,11 @@ import {
 import { Prisma, StaffRole, StaffStatus } from '@prisma/client';
 import { hashPassword } from '../password.util';
 import { PrismaService } from '../prisma.service';
+import {
+  SubscriptionService,
+  type SubscriptionState,
+  FULL_PLAN_ID,
+} from '../subscription/subscription.service';
 
 interface MerchantFilters {
   search?: string;
@@ -24,6 +29,7 @@ export interface AdminMerchantListItem {
   cashierLogin: string | null;
   ownerName: string | null;
   integrations: Array<{ id: string; provider: string; status: string | null }>;
+  subscription: AdminMerchantSubscriptionInfo;
 }
 
 export interface AdminMerchantDetail extends AdminMerchantListItem {
@@ -54,9 +60,22 @@ export interface UpdateMerchantSettingsPayload {
   telegramBotUsername?: string | null;
 }
 
+export type AdminMerchantSubscriptionInfo = {
+  status: SubscriptionState['status'];
+  planId: string | null;
+  planName: string | null;
+  currentPeriodEnd: Date | null;
+  daysLeft: number | null;
+  expiresSoon: boolean;
+  expired: boolean;
+};
+
 @Injectable()
 export class AdminMerchantsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly subscriptions: SubscriptionService,
+  ) {}
 
   async listMerchants(
     filters: MerchantFilters = {},
@@ -81,6 +100,7 @@ export class AdminMerchantsService {
       include: {
         staff: { where: { isOwner: true }, take: 1 },
         integrations: { select: { id: true, provider: true, isActive: true } },
+        subscription: { include: { plan: true } },
       },
     });
 
@@ -101,6 +121,7 @@ export class AdminMerchantsService {
         provider: integration.provider,
         status: integration.isActive ? 'ACTIVE' : 'INACTIVE',
       })),
+      subscription: this.normalizeSubscription(merchant.subscription),
     }));
   }
 
@@ -111,6 +132,7 @@ export class AdminMerchantsService {
         staff: { where: { isOwner: true }, take: 1 },
         integrations: { select: { id: true, provider: true, isActive: true } },
         settings: true,
+        subscription: { include: { plan: true } },
       },
     });
     if (!merchant) throw new NotFoundException('Merchant not found');
@@ -136,6 +158,7 @@ export class AdminMerchantsService {
         provider: integration.provider,
         status: integration.isActive ? 'ACTIVE' : 'INACTIVE',
       })),
+      subscription: this.normalizeSubscription(merchant.subscription),
       settings: {
         qrTtlSec: settings.qrTtlSec,
         requireBridgeSig: settings.requireBridgeSig,
@@ -144,6 +167,21 @@ export class AdminMerchantsService {
         telegramBotToken: settings.telegramBotToken ?? null,
         telegramBotUsername: settings.telegramBotUsername ?? null,
       },
+    };
+  }
+
+  private normalizeSubscription(
+    raw: any | null,
+  ): AdminMerchantSubscriptionInfo {
+    const state = this.subscriptions.buildStateFromRecord(raw);
+    return {
+      status: state.status,
+      planId: state.planId,
+      planName: state.planName,
+      currentPeriodEnd: state.currentPeriodEnd,
+      daysLeft: state.daysLeft,
+      expiresSoon: state.expiresSoon,
+      expired: state.expired,
     };
   }
 
@@ -378,6 +416,29 @@ export class AdminMerchantsService {
       telegramBotToken: settings.telegramBotToken ?? null,
       telegramBotUsername: settings.telegramBotUsername ?? null,
     };
+  }
+
+  async grantSubscription(
+    merchantId: string,
+    days: number,
+    planId?: string,
+  ) {
+    const planToUse = planId?.trim() || FULL_PLAN_ID;
+    const merchant = await this.prisma.merchant.findUnique({
+      where: { id: merchantId },
+      select: { id: true },
+    });
+    if (!merchant) throw new NotFoundException('Merchant not found');
+    return this.subscriptions.grantSubscription(merchantId, planToUse, days);
+  }
+
+  async resetSubscription(merchantId: string) {
+    const merchant = await this.prisma.merchant.findUnique({
+      where: { id: merchantId },
+      select: { id: true },
+    });
+    if (!merchant) throw new NotFoundException('Merchant not found');
+    return this.subscriptions.resetSubscription(merchantId);
   }
 
   async rotateCashierCredentials(

@@ -7,6 +7,8 @@ import {
   Put,
   Query,
   UseGuards,
+  Delete,
+  BadRequestException,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { AdminGuard } from '../admin.guard';
@@ -92,5 +94,21 @@ export class AdminMerchantsController {
     @Body() body: { regenerateLogin?: boolean },
   ) {
     return this.service.rotateCashierCredentials(id, !!body?.regenerateLogin);
+  }
+
+  @Post(':id/subscription')
+  grantSubscription(
+    @Param('id') id: string,
+    @Body() body: { days?: number; planId?: string },
+  ) {
+    const days = Number(body?.days);
+    if (!Number.isFinite(days) || days <= 0)
+      throw new BadRequestException('days must be > 0');
+    return this.service.grantSubscription(id, days, body?.planId);
+  }
+
+  @Delete(':id/subscription')
+  resetSubscription(@Param('id') id: string) {
+    return this.service.resetSubscription(id);
   }
 }

@@ -119,6 +119,15 @@ type PortalTimezonePayload = {
   options: PortalTimezone[];
 };
 
+type PortalSubscription = {
+  status: string;
+  planName: string | null;
+  currentPeriodEnd: string | null;
+  daysLeft: number | null;
+  expiresSoon: boolean;
+  expired: boolean;
+};
+
 const ITEM_PERMISSION_REQUIREMENTS: Record<
   string,
   Array<{ resource: string; action?: string }>
@@ -276,6 +285,42 @@ async function fetchPortalTimezone(): Promise<PortalTimezonePayload> {
   }
 }
 
+async function fetchPortalSubscription(): Promise<PortalSubscription | null> {
+  try {
+    const store = await cookies();
+    const token = store.get("portal_jwt")?.value;
+    if (!token) return null;
+    const base = (process.env.NEXT_PUBLIC_API_BASE || "").replace(/\/$/, "");
+    if (!base) return null;
+    const res = await fetch(`${base}/portal/subscription`, {
+      headers: { authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const endRaw = data?.currentPeriodEnd;
+    const end =
+      typeof endRaw === "string"
+        ? endRaw
+        : endRaw instanceof Date
+          ? endRaw.toISOString()
+          : null;
+    const daysLeftRaw = Number(data?.daysLeft);
+    return {
+      status: typeof data?.status === "string" ? data.status : "missing",
+      planName: typeof data?.planName === "string" ? data.planName : null,
+      currentPeriodEnd: end,
+      daysLeft: Number.isFinite(daysLeftRaw) ? daysLeftRaw : null,
+      expiresSoon: Boolean(data?.expiresSoon),
+      expired:
+        Boolean(data?.expired) ||
+        String(data?.status || "").toLowerCase() === "expired",
+    };
+  } catch {
+    return null;
+  }
+}
+
 function hasPermission(
   permissions: PortalPermissions,
   resource: string,
@@ -328,11 +373,101 @@ function filterSectionsByProfile(profile: PortalProfile | null): SidebarSection[
     .filter(Boolean) as SidebarSection[];
 }
 
+function formatDateLabel(value: string | null) {
+  if (!value) return "—";
+  try {
+    return new Date(value).toLocaleString("ru-RU", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return value;
+  }
+}
+
+function SubscriptionNotice({ subscription }: { subscription: PortalSubscription | null }) {
+  if (!subscription) return null;
+  const { expiresSoon, expired, daysLeft } = subscription;
+  if (!expiresSoon && !expired) return null;
+  const tone = expired ? "#f87171" : "#f59e0b";
+  const bg = expired ? "rgba(248,113,113,0.14)" : "rgba(245,158,11,0.16)";
+  const title = expired ? "Подписка закончилась" : "Подписка скоро истекает";
+  const text = expired
+    ? null
+    : `Осталось ${daysLeft ?? "несколько"} дней. Продлите подписку, чтобы не потерять доступ.`;
+  return (
+    <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+      {!expired && (
+        <div
+          style={{
+            maxWidth: 340,
+            border: `1px solid ${tone}`,
+            background: bg,
+            borderRadius: 12,
+            padding: "10px 12px",
+            color: "#fff",
+            boxShadow: "0 10px 30px rgba(0,0,0,0.3)",
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>{title}</div>
+          <div style={{ fontSize: 12, opacity: 0.85, lineHeight: 1.4 }}>{text}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PlanSummary({ subscription }: { subscription: PortalSubscription | null }) {
+  if (!subscription) return null;
+  const endLabel = formatDateLabel(subscription.currentPeriodEnd);
+  const tone = subscription.expired
+    ? "#f87171"
+    : subscription.expiresSoon
+      ? "#fbbf24"
+      : "#34d399";
+  return (
+    <div
+      style={{
+        border: "1px solid rgba(255,255,255,0.08)",
+        background: "rgba(255,255,255,0.02)",
+        padding: "10px 12px",
+        borderRadius: 12,
+        marginBottom: 12,
+        display: "flex",
+        justifyContent: "space-between",
+        gap: 12,
+        alignItems: "center",
+      }}
+    >
+      <div style={{ display: "grid", gap: 4 }}>
+        <div style={{ fontSize: 12, opacity: 0.7 }}>Тариф</div>
+        <div style={{ fontWeight: 700 }}>{subscription.planName || "—"}</div>
+      </div>
+      <div style={{ display: "grid", textAlign: "right", gap: 4 }}>
+        <div style={{ fontSize: 12, opacity: 0.7 }}>Статус</div>
+        <div style={{ color: tone, fontWeight: 700 }}>
+          {subscription.status}
+          {subscription.daysLeft != null && !subscription.expired
+            ? ` · ${subscription.daysLeft} дн.`
+            : ""}
+        </div>
+        <div style={{ fontSize: 12, opacity: 0.7 }}>Истекает: {endLabel}</div>
+      </div>
+    </div>
+  );
+}
+
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const profile = await fetchPortalProfile();
   const timezonePayload = await fetchPortalTimezone();
+  const subscription = await fetchPortalSubscription();
   const filteredSections = filterSectionsByProfile(profile);
   const staffLabel = profile?.staff?.name || profile?.staff?.email || null;
+  const expired = subscription?.expired ?? false;
+  const showPlan = subscription && !subscription.expired;
   return (
     <html lang="ru" className="dark">
       <body className={inter.className} style={{ margin: 0 }}>
@@ -349,11 +484,42 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 <span>v1</span>
               </div>
             </header>
-            <aside style={{ borderRight: '1px solid rgba(255,255,255,.06)', padding: 8, overflow: 'auto' }}>
+            <aside style={{ borderRight: '1px solid rgba(255,255,255,.06)', padding: 8, overflow: 'auto', opacity: expired ? 0.4 : 1, pointerEvents: expired ? 'none' : 'auto' }}>
               <SidebarNav sections={filteredSections} />
             </aside>
-            <main style={{ padding: 16 }}>
-              {children}
+            <main style={{ padding: 16, position: 'relative' }}>
+              <SubscriptionNotice subscription={subscription} />
+              {showPlan ? <PlanSummary subscription={subscription} /> : null}
+              <div style={{ position: 'relative' }}>
+                {subscription?.expired && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      zIndex: 3,
+                      display: 'grid',
+                      placeItems: 'center',
+                      background: 'linear-gradient(135deg, rgba(30,41,59,0.8), rgba(15,23,42,0.9))',
+                      borderRadius: 12,
+                    }}
+                  >
+                    <div style={{ textAlign: 'center', maxWidth: 480, padding: 16 }}>
+                      <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 6 }}>Подписка закончилась</div>
+                      <div style={{ opacity: 0.85, fontSize: 14 }}>
+                        Продлите, чтобы продолжить пользоваться услугами.
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div
+                  style={{
+                    opacity: subscription?.expired ? 0.35 : 1,
+                    pointerEvents: subscription?.expired ? 'none' : 'auto',
+                  }}
+                >
+                  {children}
+                </div>
+              </div>
             </main>
           </div>
         </TimezoneProvider>

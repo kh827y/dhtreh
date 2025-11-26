@@ -1,6 +1,6 @@
 "use client";
 import React from 'react';
-import { listMerchants, createMerchant, updateMerchant as apiUpdateMerchant, deleteMerchant as apiDeleteMerchant, setPortalLoginEnabled, initTotp, verifyTotp, disableTotp, impersonatePortal, getCashier, rotateCashier, type MerchantRow } from "../../lib/merchants";
+import { listMerchants, createMerchant, updateMerchant as apiUpdateMerchant, deleteMerchant as apiDeleteMerchant, setPortalLoginEnabled, initTotp, verifyTotp, disableTotp, impersonatePortal, getCashier, rotateCashier, grantSubscription as apiGrantSubscription, resetSubscription as apiResetSubscription, type MerchantRow } from "../../lib/merchants";
 
 const PORTAL_BASE = process.env.NEXT_PUBLIC_PORTAL_BASE || 'http://localhost:3004';
 
@@ -41,6 +41,26 @@ export default function AdminMerchantsPage() {
   async function toggleLogin(id: string, enabled: boolean) {
     setMsg(''); try { await setPortalLoginEnabled(id, enabled); await load(); } catch (e: unknown) { setMsg(e instanceof Error ? e.message : String(e)); }
   }
+  async function grantPlan(id: string, days: number) {
+    setMsg('');
+    try {
+      await apiGrantSubscription(id, { days, planId: 'plan_full' });
+      await load();
+      setMsg('Подписка обновлена');
+    } catch (e: unknown) {
+      setMsg(e instanceof Error ? e.message : String(e));
+    }
+  }
+  async function resetPlan(id: string) {
+    setMsg('');
+    try {
+      await apiResetSubscription(id);
+      await load();
+      setMsg('Подписка сброшена');
+    } catch (e: unknown) {
+      setMsg(e instanceof Error ? e.message : String(e));
+    }
+  }
   async function doInitTotp(id: string) {
     setMsg(''); setTotp(null);
     try { const r = await initTotp(id); setTotp(r); } catch (e: unknown) { setMsg(e instanceof Error ? e.message : String(e)); }
@@ -76,7 +96,13 @@ export default function AdminMerchantsPage() {
         {items.map(m => (
           <div key={m.id} style={{ border:'1px solid #ddd', borderRadius: 10, padding: 12 }}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap: 12, flexWrap:'wrap' }}>
-              <RowEditor row={m} onSave={saveRow} onDelete={removeRow} />
+              <RowEditor
+                row={m}
+                onSave={saveRow}
+                onDelete={removeRow}
+                onGrantSubscription={grantPlan}
+                onResetSubscription={resetPlan}
+              />
               <div style={{ display:'flex', gap: 8, flexWrap:'wrap' }}>
                 <button onClick={()=>openAs(m.id)} style={{ padding: '6px 10px' }}>Открыть как мерчант</button>
                 <label style={{ display:'flex', gap: 6, alignItems:'center' }}>
@@ -109,10 +135,12 @@ export default function AdminMerchantsPage() {
   );
 }
 
-function RowEditor({ row, onSave, onDelete }: {
+function RowEditor({ row, onSave, onDelete, onGrantSubscription, onResetSubscription }: {
   row: MerchantRow;
   onSave: (id: string, patch: { name?: string; email?: string; password?: string }) => void;
   onDelete: (id: string) => void;
+  onGrantSubscription: (id: string, days: number) => void;
+  onResetSubscription: (id: string) => void;
 }) {
   const [name, setName] = React.useState(row.name);
   const [email, setEmail] = React.useState(row.portalEmail || '');
@@ -121,6 +149,9 @@ function RowEditor({ row, onSave, onDelete }: {
   const [deleting, setDeleting] = React.useState(false);
   const [cashier, setCashier] = React.useState<{ login: string|null; hasPassword: boolean }|null>(null);
   const [cashierMsg, setCashierMsg] = React.useState('');
+  const [subscriptionDays, setSubscriptionDays] = React.useState(30);
+  const [subscriptionMsg, setSubscriptionMsg] = React.useState('');
+  const [subscriptionBusy, setSubscriptionBusy] = React.useState(false);
   async function save() { setSaving(true); try { await onSave(row.id, { name, email, password: pwd || undefined }); setPwd(''); } finally { setSaving(false); } }
   async function del() { if (!confirm('Удалить мерчанта?')) return; setDeleting(true); try { await onDelete(row.id); } finally { setDeleting(false); } }
   async function loadCashier() {
@@ -136,6 +167,44 @@ function RowEditor({ row, onSave, onDelete }: {
       setCashierMsg(`Пароль кассира: ${r.password}`);
     } catch (e: any) { setCashierMsg(String(e?.message || e)); }
   }
+  async function grantSubscription() {
+    const days = Number(subscriptionDays);
+    if (!Number.isFinite(days) || days <= 0) {
+      setSubscriptionMsg('Укажите срок в днях (>0)');
+      return;
+    }
+    setSubscriptionBusy(true);
+    setSubscriptionMsg('');
+    try {
+      await onGrantSubscription(row.id, days);
+      setSubscriptionMsg('Подписка обновлена');
+    } catch (e: any) {
+      setSubscriptionMsg(String(e?.message || e));
+    } finally {
+      setSubscriptionBusy(false);
+    }
+  }
+  async function resetSubscription() {
+    setSubscriptionBusy(true);
+    setSubscriptionMsg('');
+    try {
+      await onResetSubscription(row.id);
+      setSubscriptionMsg('Подписка сброшена');
+    } catch (e: any) {
+      setSubscriptionMsg(String(e?.message || e));
+    } finally {
+      setSubscriptionBusy(false);
+    }
+  }
+  const expiresLabel = row.subscriptionEndsAt ? new Date(row.subscriptionEndsAt).toLocaleString('ru-RU') : '—';
+  const daysLeftLabel = row.subscriptionDaysLeft != null ? `${row.subscriptionDaysLeft} дн.` : '—';
+  const subscriptionStatus = row.subscriptionStatus || 'missing';
+  const subscriptionPlan = row.subscriptionPlanName || '—';
+  const subscriptionBadgeColor = row.subscriptionExpired
+    ? '#dc2626'
+    : row.subscriptionExpiresSoon
+      ? '#d97706'
+      : '#0f9d58';
   return (
     <div style={{ display:'grid', gap:6 }}>
       <div style={{ display:'grid', gap:4 }}>
@@ -170,6 +239,40 @@ function RowEditor({ row, onSave, onDelete }: {
           )}
         </div>
         {cashierMsg && <div style={{ color:'#0a0' }}>{cashierMsg}</div>}
+      </div>
+      <div style={{ marginTop:6, paddingTop:6, borderTop:'1px dashed #ddd', display:'grid', gap:8 }}>
+        <div style={{ fontSize:13, opacity:.8 }}>Подписка</div>
+        <div style={{ display:'flex', flexWrap:'wrap', gap:12, alignItems:'center' }}>
+          <span>План: <b>{subscriptionPlan}</b></span>
+          <span style={{ opacity:.7 }}>Статус: {subscriptionStatus}</span>
+          <span style={{ opacity:.7 }}>Истекает: {expiresLabel}</span>
+          <span style={{ color: subscriptionBadgeColor }}>
+            {row.subscriptionExpired ? 'Подписка истекла' : `Осталось: ${daysLeftLabel}`}
+          </span>
+        </div>
+        <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+          <label style={{ display:'flex', gap:6, alignItems:'center' }}>
+            Дней:
+            <input
+              type="number"
+              min={1}
+              value={subscriptionDays}
+              onChange={(e)=>setSubscriptionDays(Number(e.target.value))}
+              style={{ padding:6, width:100 }}
+            />
+          </label>
+          <button onClick={grantSubscription} disabled={subscriptionBusy || !Number.isFinite(subscriptionDays) || subscriptionDays <= 0} className="btn btn-primary">
+            {subscriptionBusy ? 'Сохранение…' : 'Выдать Full'}
+          </button>
+          <button onClick={resetSubscription} disabled={subscriptionBusy} className="btn">
+            Сбросить подписку
+          </button>
+        </div>
+        {subscriptionMsg && (
+          <div style={{ color: subscriptionMsg.toLowerCase().includes('ошиб') ? '#f33' : '#0a0' }}>
+            {subscriptionMsg}
+          </div>
+        )}
       </div>
       <div style={{ marginTop:6, paddingTop:6, borderTop:'1px dashed #ddd', display:'grid', gap:8 }}>
         <div style={{ fontSize:13, opacity:.8 }}>Настройки кассовых операций</div>

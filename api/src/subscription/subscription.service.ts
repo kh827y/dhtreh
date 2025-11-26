@@ -2,9 +2,14 @@ import {
   Injectable,
   BadRequestException,
   NotFoundException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 // import { Cron, CronExpression } from '@nestjs/schedule';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const EXPIRATION_WARNING_DAYS = 7;
+export const FULL_PLAN_ID = 'plan_full';
 
 export interface CreateSubscriptionDto {
   merchantId: string;
@@ -19,18 +24,283 @@ export interface UpdateSubscriptionDto {
   metadata?: any;
 }
 
+export type SubscriptionState =
+  | {
+      status: 'missing';
+      planId: null;
+      planName: null;
+      currentPeriodEnd: null;
+      daysLeft: null;
+      expiresSoon: false;
+      expired: true;
+      problem: string;
+    }
+  | {
+      status: 'active' | 'expired';
+      planId: string | null;
+      planName: string | null;
+      currentPeriodEnd: Date | null;
+      daysLeft: number | null;
+      expiresSoon: boolean;
+      expired: boolean;
+      problem: string | null;
+    };
+
 @Injectable()
 export class SubscriptionService {
   constructor(private prisma: PrismaService) {}
+
+  private buildFullPlan() {
+    return {
+      id: FULL_PLAN_ID,
+      name: 'full',
+      displayName: 'Full',
+      price: 0,
+      currency: 'RUB',
+      interval: 'day',
+      features: { all: true },
+      maxTransactions: null,
+      maxCustomers: null,
+      maxOutlets: null,
+      webhooksEnabled: true,
+      customBranding: true,
+      prioritySupport: true,
+      apiAccess: true,
+      isActive: true,
+    };
+  }
+
+  async ensurePlan(planId: string) {
+    const prismaAny = this.prisma as any;
+    const predefined =
+      planId === FULL_PLAN_ID ? { ...this.buildFullPlan(), id: planId } : null;
+    if (predefined) {
+      return prismaAny.plan.upsert({
+        where: { id: predefined.id },
+        update: predefined,
+        create: predefined,
+      });
+    }
+    const existing = await prismaAny.plan.findUnique({
+      where: { id: planId },
+    });
+    if (!existing) throw new NotFoundException('План не найден');
+    if (existing.isActive === false)
+      throw new BadRequestException('План отключён');
+    return existing;
+  }
+
+  private computeState(
+    subscription: any | null,
+    now: Date = new Date(),
+  ): SubscriptionState {
+    if (!subscription) {
+      return {
+        status: 'missing',
+        planId: null,
+        planName: null,
+        currentPeriodEnd: null,
+        daysLeft: null,
+        expiresSoon: false,
+        expired: true,
+        problem: 'Программа лояльности временно недоступна',
+      };
+    }
+    const end: Date | null =
+      subscription.currentPeriodEnd ??
+      subscription.trialEnd ??
+      subscription.cancelAt ??
+      null;
+    const statusRaw = String(subscription.status || '').toLowerCase();
+    const statusAllows =
+      statusRaw === 'active' || statusRaw === 'trialing' || statusRaw === 'trial';
+    const expiredByDate = !end || end.getTime() <= now.getTime();
+    const expired =
+      !statusAllows ||
+      expiredByDate ||
+      (subscription.cancelAt &&
+        new Date(subscription.cancelAt).getTime() <= now.getTime());
+    const daysLeft =
+      end && !expired
+        ? Math.max(0, Math.ceil((end.getTime() - now.getTime()) / DAY_MS))
+        : expiredByDate
+          ? 0
+          : null;
+    return {
+      status: expired ? 'expired' : 'active',
+      planId: subscription.planId ?? null,
+      planName:
+        subscription.plan?.displayName ??
+        subscription.plan?.name ??
+        subscription.planId ??
+        null,
+      currentPeriodEnd: end ?? null,
+      daysLeft,
+      expiresSoon:
+        !expired && daysLeft != null && daysLeft <= EXPIRATION_WARNING_DAYS,
+      expired,
+      problem: expired ? 'Подписка закончилась' : null,
+    };
+  }
+
+  buildStateFromRecord(subscription: any | null, now: Date = new Date()) {
+    return this.computeState(subscription, now);
+  }
+
+  async getSubscriptionState(merchantId: string): Promise<SubscriptionState> {
+    const subscription = await (this.prisma as any).subscription.findUnique({
+      where: { merchantId },
+      include: { plan: true },
+    });
+    const state = this.computeState(subscription);
+    if (
+      subscription &&
+      state.expired &&
+      String(subscription.status || '') !== 'expired'
+    ) {
+      try {
+        await this.prisma.subscription.update({
+          where: { id: subscription.id },
+          data: {
+            status: 'expired',
+            autoRenew: false,
+            canceledAt: subscription.canceledAt ?? new Date(),
+            cancelAt:
+              subscription.cancelAt ??
+              subscription.currentPeriodEnd ??
+              new Date(),
+          },
+        });
+      } catch {}
+    }
+    return state;
+  }
+
+  async describeSubscription(merchantId: string) {
+    const subscription = await (this.prisma as any).subscription.findUnique({
+      where: { merchantId },
+      include: { plan: true },
+    });
+    const state = this.computeState(subscription);
+    if (
+      subscription &&
+      state.expired &&
+      String(subscription.status || '') !== 'expired'
+    ) {
+      try {
+        await this.prisma.subscription.update({
+          where: { id: subscription.id },
+          data: {
+            status: 'expired',
+            autoRenew: false,
+            canceledAt: subscription.canceledAt ?? new Date(),
+            cancelAt:
+              subscription.cancelAt ??
+              subscription.currentPeriodEnd ??
+              new Date(),
+          },
+        });
+      } catch {}
+    }
+    return { subscription, state };
+  }
+
+  async requireActiveSubscription(
+    merchantId: string,
+  ): Promise<SubscriptionState> {
+    const state = await this.getSubscriptionState(merchantId);
+    if (state.status !== 'active') {
+      throw new ForbiddenException(
+        state.problem || 'Подписка закончилась, продлите её чтобы продолжить работу',
+      );
+    }
+    return state;
+  }
+
+  async grantSubscription(
+    merchantId: string,
+    planId: string,
+    days: number,
+    metadata?: any,
+  ) {
+    if (!Number.isFinite(days) || days <= 0) {
+      throw new BadRequestException('Длительность подписки должна быть > 0 дней');
+    }
+    const plan = await this.ensurePlan(planId);
+    const now = new Date();
+    const end = new Date(now.getTime() + Math.ceil(days) * DAY_MS);
+    const payload = {
+      merchantId,
+      planId: plan.id,
+      status: 'active',
+      currentPeriodStart: now,
+      currentPeriodEnd: end,
+      cancelAt: null,
+      canceledAt: null,
+      trialEnd: null,
+      autoRenew: false,
+      reminderSent1Day: false,
+      reminderSent7Days: false,
+      metadata: metadata ?? null,
+    };
+
+    const existing = await (this.prisma as any).subscription.findUnique({
+      where: { merchantId },
+      include: { plan: true },
+    });
+    const upserted = existing
+      ? await this.prisma.subscription.update({
+          where: { id: existing.id },
+          data: payload,
+          include: { plan: true },
+        })
+      : await this.prisma.subscription.create({
+          data: payload,
+          include: { plan: true },
+        });
+
+    await (this.prisma as any).eventOutbox.create({
+      data: {
+        merchantId,
+        eventType: existing ? 'subscription.updated' : 'subscription.created',
+        payload: {
+          subscriptionId: upserted.id,
+          planId: upserted.planId,
+          currentPeriodEnd: upserted.currentPeriodEnd,
+          durationDays: Math.ceil(days),
+        },
+      },
+    });
+
+    return this.computeState(upserted);
+  }
+
+  async resetSubscription(merchantId: string) {
+    const existing = await (this.prisma as any).subscription.findUnique({
+      where: { merchantId },
+    });
+    if (!existing) return { ok: true, removed: false };
+    await this.prisma.subscription.delete({ where: { merchantId } });
+    await (this.prisma as any).eventOutbox.create({
+      data: {
+        merchantId,
+        eventType: 'subscription.canceled',
+        payload: { subscriptionId: existing.id, reset: true },
+      },
+    });
+    return { ok: true, removed: true };
+  }
 
   /**
    * Получить текущую подписку мерчанта
    */
   async getSubscription(merchantId: string) {
-    return (this.prisma as any).subscription.findUnique({
+    const subscription = await (this.prisma as any).subscription.findUnique({
       where: { merchantId },
       include: { plan: true },
     });
+    if (!subscription) return null;
+    return { ...subscription, state: this.computeState(subscription) };
   }
 
   /**
@@ -49,13 +319,7 @@ export class SubscriptionService {
     }
 
     // Получаем план
-    const plan = await prismaAny.plan.findUnique({
-      where: { id: dto.planId },
-    });
-
-    if (!plan || !plan.isActive) {
-      throw new NotFoundException('План не найден или неактивен');
-    }
+    const plan = await this.ensurePlan(dto.planId);
 
     // Рассчитываем даты
     const now = new Date();
@@ -81,6 +345,7 @@ export class SubscriptionService {
           currentPeriodEnd,
           trialEnd,
           metadata: dto.metadata,
+          autoRenew: false,
         },
         include: {
           plan: true,
@@ -129,15 +394,9 @@ export class SubscriptionService {
 
     // Если меняется план
     if (dto.planId && dto.planId !== subscription.planId) {
-      const newPlan = await prismaAny.plan.findUnique({
-        where: { id: dto.planId },
-      });
+      const newPlan = await this.ensurePlan(dto.planId);
 
-      if (!newPlan || !newPlan.isActive) {
-        throw new NotFoundException('План не найден или неактивен');
-      }
-
-      updateData.planId = dto.planId;
+      updateData.planId = newPlan.id;
 
       // Проверяем лимиты нового плана
       await this.validatePlanLimits(merchantId, newPlan);
@@ -296,16 +555,14 @@ export class SubscriptionService {
       include: { plan: true },
     });
 
-    if (
-      !subscription ||
-      (subscription.status !== 'active' && subscription.status !== 'trialing')
-    ) {
-      return false;
-    }
+    const state = this.computeState(subscription);
+    if (state.status !== 'active') return false;
 
-    const plan = subscription.plan;
+    const plan = subscription?.plan ?? null;
+    if (!plan) return false;
     const features = plan?.features;
 
+    if (features?.all === true) return true;
     switch (feature) {
       case 'webhooks':
         return (plan.webhooksEnabled ?? features?.webhooks === true) === true;
@@ -336,6 +593,10 @@ export class SubscriptionService {
 
     if (!subscription) {
       throw new NotFoundException('Подписка не найдена');
+    }
+    const state = this.computeState(subscription);
+    if (state.status !== 'active') {
+      throw new BadRequestException('Подписка неактивна');
     }
 
     const plan = subscription.plan;
@@ -440,6 +701,10 @@ export class SubscriptionService {
     const end = new Date(start);
 
     switch (interval) {
+      case 'day':
+      case 'daily':
+        end.setDate(end.getDate() + 1);
+        break;
       case 'month':
         end.setMonth(end.getMonth() + 1);
         break;
@@ -460,6 +725,7 @@ export class SubscriptionService {
    * Получение доступных планов
    */
   async getAvailablePlans() {
+    await this.ensurePlan(FULL_PLAN_ID);
     return (this.prisma as any).plan.findMany({
       where: { isActive: true },
       orderBy: { price: 'asc' },

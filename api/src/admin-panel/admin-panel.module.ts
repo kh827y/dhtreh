@@ -5,9 +5,10 @@ import { AdminMerchantsService } from './admin-merchants.service';
 import { MerchantsModule } from '../merchants/merchants.module';
 import { AdminNotificationsController } from './admin-notifications.controller';
 import { TelegramModule } from '../telegram/telegram.module';
+import { SubscriptionModule } from '../subscription/subscription.module';
 
 @Module({
-  imports: [PrismaModule, MerchantsModule, TelegramModule],
+  imports: [PrismaModule, MerchantsModule, TelegramModule, SubscriptionModule],
   controllers: [AdminMerchantsController, AdminNotificationsController],
   providers: [AdminMerchantsService],
   exports: [AdminMerchantsService],
