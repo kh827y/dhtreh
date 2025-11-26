@@ -6,6 +6,7 @@
 - [x] Admin: аутентификация упрощена до одной роли ADMIN (пароль + опциональный TOTP), manager/merchant-пароль убран.
 - [x] Admin: клиент к API использует только реальный `NEXT_PUBLIC_API_KEY` без `test-key`, примеры prod-окружения обновлены (.env.production.example, infra/env-examples/admin.env.example).
 - [x] Admin docs: обновлены страницы деплоя и наблюдаемости под актуальные ENV/метрики (ADMIN_UI_PASSWORD, NEXT_PUBLIC_API_KEY/NEXT_PUBLIC_API_BASE, loyalty_errors_total, loyalty_request_duration_seconds_bucket и др.).
+ - [x] Admin: страницы `/admin/settings`, `/admin/merchants` и `/admin/antifraud` приведены к новой модели лимитов и брендинга (базовые BPS и JWT для QUOTE, убраны daily caps/staff-key/Bridge-тумблеры, read-only anti-fraud отчёты, блок брендинга miniapp с цветами/логотипом и ссылкой на настройки мерчанта).
 
 ## Хотфикс 2025-12-XX — Акции с начислением баллов (очистка)
 - [x] Удалены legacy product/bonus экраны и API `/portal/actions`, в портале осталась заглушка `/loyalty/actions` с переходом в «Акции с начислением баллов».
@@ -223,6 +224,12 @@
 - [x] API `/portal/operations/log/{id}/cancel` отклоняет повторные отмены `TxnType.REFUND`, а `getDetails` больше не маркирует такие операции как доступные для отмены (`canCancel=false`).
 - [x] Merchant Portal (журнал операций и карточка клиента) прячет кнопку отмены для возвратов и показывает пользователю, что «Возврат нельзя отменить».
 - [x] Обновлены `API_DOCUMENTATION.md` и текущий план с описанием запрета на отмену возвратных транзакций.
+
+## Хотфикс 2025-11-24 — Device / Outlet / Staff
+- [x] Merchant Portal `/operations`: вместо поля «Сотрудник» в строках и деталях журнала показывается идентификатор устройства из `carrier.code` (без типов PC_POS/SMART), торговая точка остаётся отдельной колонкой.
+- [x] Merchant Portal `/reviews`: колонка «Устройство / сотрудник» в первую строку выводит идентификатор устройства (`deviceId` из backend), а ниже — имя сотрудника, торговая точка остаётся отдельным столбцом.
+- [x] API PortalReviewsService расширен полем `deviceId` (берётся из `Outlet.code` / `Outlet.externalId` / `Outlet.id`), OperationsLog по‑прежнему использует `carrier.code`; в UI типы устройств не отображаются.
+- [x] Антифрод и документация: конфигурация `rulesJson.af` и ENV‑лимиты описаны через scope `outlet` (лимит по торговой точке, включающей все устройства и сотрудников), staff‑key и Bridge‑подпись задокументированы как опциональные/legacy настройки без управления из админ‑UI.
 
 ## Хотфикс 2025-10-25 — Cashier: мобильный интерфейс
 - [x] Переработать экран авторизации и главную страницу кассира под мобильные устройства.

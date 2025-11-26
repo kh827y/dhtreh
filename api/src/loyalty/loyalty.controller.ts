@@ -1993,16 +1993,6 @@ export class LoyaltyController {
     if (merchantIdEff) {
       await this.enforceRequireStaffKey(merchantIdEff, req);
     }
-    let promoCandidate: { id: string } | null = null;
-    if (dto.promoCode && holdCached?.customerId && merchantIdEff) {
-      try {
-        const promo = await this.promoCodes.findActiveByCode(
-          merchantIdEff,
-          dto.promoCode,
-        );
-        if (promo) promoCandidate = { id: promo.id };
-      } catch {}
-    }
 
     let merchantCustomerId: string | null = null;
     if (holdCached?.customerId && merchantIdEff) {
@@ -2047,9 +2037,7 @@ export class LoyaltyController {
     try {
       const idemKey =
         (req.headers['idempotency-key'] as string | undefined) || undefined;
-      const commitOpts = promoCandidate
-        ? { promoCode: { promoCodeId: promoCandidate.id, code: dto.promoCode } }
-        : undefined;
+      const commitOpts = undefined;
       if (idemKey) {
         const merchantForIdem = merchantIdEff || undefined;
         if (merchantForIdem) {
@@ -2065,7 +2053,7 @@ export class LoyaltyController {
               dto.holdId,
               dto.orderId,
               dto.receiptNumber,
-              req.requestId ?? dto.requestId,
+              req.requestId,
               commitOpts,
             );
             if (
@@ -2094,7 +2082,7 @@ export class LoyaltyController {
             dto.holdId,
             dto.orderId,
             dto.receiptNumber,
-            req.requestId ?? dto.requestId,
+            req.requestId,
             commitOpts,
           );
         }
@@ -2103,7 +2091,7 @@ export class LoyaltyController {
           dto.holdId,
           dto.orderId,
           dto.receiptNumber,
-          req.requestId ?? dto.requestId,
+          req.requestId,
           commitOpts,
         );
       }

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from 'react';
-import { getSettings, updateSettings } from '../../lib/admin';
+import { getSettings } from '../../lib/admin';
 
 export default function AntiFraudPage() {
   const [merchantId] = useState<string>(process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1');
@@ -18,7 +18,6 @@ export default function AntiFraudPage() {
     staff: { limit: number; windowSec: number; dailyCap: number; weeklyCap: number };
     customer: { limit: number; windowSec: number; dailyCap: number; weeklyCap: number };
   } | null>(null);
-  const [cfgLoading, setCfgLoading] = useState(false);
   const [cfgMsg, setCfgMsg] = useState('');
   const [bfStr, setBfStr] = useState('');
 
@@ -79,28 +78,8 @@ export default function AntiFraudPage() {
 
   const saveAf = async () => {
     if (!af) return;
-    try {
-      setCfgLoading(true);
-      setCfgMsg('');
-      const s = await getSettings(merchantId);
-      const rules = s.rulesJson;
-      let next: any;
-      const blockFactors = bfStr.split(',').map(s=>s.trim()).filter(Boolean);
-      const afWithBf = { ...af, blockFactors } as any;
-      if (Array.isArray(rules)) {
-        next = { rules, af: afWithBf };
-      } else if (rules && typeof rules === 'object') {
-        next = { ...rules, af: afWithBf };
-      } else {
-        next = { af: afWithBf };
-      }
-      await updateSettings(merchantId, { earnBps: s.earnBps, redeemLimitBps: s.redeemLimitBps, rulesJson: next });
-      setCfgMsg('Лимиты сохранены');
-    } catch (e:any) {
-      setCfgMsg('Ошибка сохранения: ' + (e.message || e));
-    } finally {
-      setCfgLoading(false);
-    }
+    // сохранение лимитов отключено — настройки управляются на стороне backend/конфигурации
+    setCfgMsg('Редактирование лимитов через админку отключено; значения задаются на стороне backend.');
   };
 
   const analyzeAnomalies = (transactions: any[]) => {
@@ -255,77 +234,57 @@ export default function AntiFraudPage() {
 
       <div style={{ marginTop: 16, padding: 16, background: '#11111b', borderRadius: 8, border: '1px solid #313244' }}>
         <h3 style={{ marginTop: 0 }}>Настройки лимитов (Velocity)</h3>
+        <p style={{ opacity: 0.8, fontSize: 13, marginTop: 4 }}>
+          Значения ниже отображаются только для чтения. Реальные лимиты на мерчанта/точку/сотрудника/клиента задаются через
+          конфигурацию backend и/или rulesJson.af, а не из этой страницы.
+        </p>
         {af ? (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <fieldset style={{ border: '1px solid #313244', borderRadius: 6, padding: 12 }}>
               <legend>Merchant</legend>
-              <label>Лимит
-                <input type="number" value={af.merchant.limit} onChange={e=>setAf({ ...af, merchant: { ...af.merchant, limit: Number(e.target.value) } })} style={{ marginLeft: 8 }} />
-              </label>
-              <label style={{ marginLeft: 12 }}>Окно (сек)
-                <input type="number" value={af.merchant.windowSec} onChange={e=>setAf({ ...af, merchant: { ...af.merchant, windowSec: Number(e.target.value) } })} style={{ marginLeft: 8 }} />
-              </label>
-              <label style={{ marginLeft: 12 }}>Дневной кап
-                <input type="number" value={af.merchant.dailyCap} onChange={e=>setAf({ ...af, merchant: { ...af.merchant, dailyCap: Number(e.target.value) } })} style={{ marginLeft: 8 }} />
-              </label>
-              <label style={{ marginLeft: 12 }}>Недельный кап
-                <input type="number" value={af.merchant.weeklyCap} onChange={e=>setAf({ ...af, merchant: { ...af.merchant, weeklyCap: Number(e.target.value) } })} style={{ marginLeft: 8 }} />
-              </label>
+              <div style={{ display:'grid', gap:6, fontSize:13 }}>
+                <div>Лимит: <code>{af.merchant.limit}</code></div>
+                <div>Окно (сек): <code>{af.merchant.windowSec}</code></div>
+                <div>Дневной кап: <code>{af.merchant.dailyCap}</code></div>
+                <div>Недельный кап: <code>{af.merchant.weeklyCap}</code></div>
+              </div>
             </fieldset>
             <fieldset style={{ border: '1px solid #313244', borderRadius: 6, padding: 12 }}>
               <legend>Outlet</legend>
-              <label>Лимит
-                <input type="number" value={af.outlet.limit} onChange={e=>setAf({ ...af, outlet: { ...af.outlet, limit: Number(e.target.value) } })} style={{ marginLeft: 8 }} />
-              </label>
-              <label style={{ marginLeft: 12 }}>Окно (сек)
-                <input type="number" value={af.outlet.windowSec} onChange={e=>setAf({ ...af, outlet: { ...af.outlet, windowSec: Number(e.target.value) } })} style={{ marginLeft: 8 }} />
-              </label>
-              <label style={{ marginLeft: 12 }}>Дневной кап
-                <input type="number" value={af.outlet.dailyCap} onChange={e=>setAf({ ...af, outlet: { ...af.outlet, dailyCap: Number(e.target.value) } })} style={{ marginLeft: 8 }} />
-              </label>
-              <label style={{ marginLeft: 12 }}>Недельный кап
-                <input type="number" value={af.outlet.weeklyCap} onChange={e=>setAf({ ...af, outlet: { ...af.outlet, weeklyCap: Number(e.target.value) } })} style={{ marginLeft: 8 }} />
-              </label>
+              <div style={{ display:'grid', gap:6, fontSize:13 }}>
+                <div>Лимит: <code>{af.outlet.limit}</code></div>
+                <div>Окно (сек): <code>{af.outlet.windowSec}</code></div>
+                <div>Дневной кап: <code>{af.outlet.dailyCap}</code></div>
+                <div>Недельный кап: <code>{af.outlet.weeklyCap}</code></div>
+              </div>
             </fieldset>
             <fieldset style={{ border: '1px solid #313244', borderRadius: 6, padding: 12 }}>
               <legend>Staff</legend>
-              <label>Лимит
-                <input type="number" value={af.staff.limit} onChange={e=>setAf({ ...af, staff: { ...af.staff, limit: Number(e.target.value) } })} style={{ marginLeft: 8 }} />
-              </label>
-              <label style={{ marginLeft: 12 }}>Окно (сек)
-                <input type="number" value={af.staff.windowSec} onChange={e=>setAf({ ...af, staff: { ...af.staff, windowSec: Number(e.target.value) } })} style={{ marginLeft: 8 }} />
-              </label>
-              <label style={{ marginLeft: 12 }}>Дневной кап
-                <input type="number" value={af.staff.dailyCap} onChange={e=>setAf({ ...af, staff: { ...af.staff, dailyCap: Number(e.target.value) } })} style={{ marginLeft: 8 }} />
-              </label>
-              <label style={{ marginLeft: 12 }}>Недельный кап
-                <input type="number" value={af.staff.weeklyCap} onChange={e=>setAf({ ...af, staff: { ...af.staff, weeklyCap: Number(e.target.value) } })} style={{ marginLeft: 8 }} />
-              </label>
+              <div style={{ display:'grid', gap:6, fontSize:13 }}>
+                <div>Лимит: <code>{af.staff.limit}</code></div>
+                <div>Окно (сек): <code>{af.staff.windowSec}</code></div>
+                <div>Дневной кап: <code>{af.staff.dailyCap}</code></div>
+                <div>Недельный кап: <code>{af.staff.weeklyCap}</code></div>
+              </div>
             </fieldset>
             <fieldset style={{ border: '1px solid #313244', borderRadius: 6, padding: 12 }}>
               <legend>Customer</legend>
-              <label>Лимит
-                <input type="number" value={af.customer.limit} onChange={e=>setAf({ ...af, customer: { ...af.customer, limit: Number(e.target.value) } })} style={{ marginLeft: 8 }} />
-              </label>
-              <label style={{ marginLeft: 12 }}>Окно (сек)
-                <input type="number" value={af.customer.windowSec} onChange={e=>setAf({ ...af, customer: { ...af.customer, windowSec: Number(e.target.value) } })} style={{ marginLeft: 8 }} />
-              </label>
-              <label style={{ marginLeft: 12 }}>Дневной кап
-                <input type="number" value={af.customer.dailyCap} onChange={e=>setAf({ ...af, customer: { ...af.customer, dailyCap: Number(e.target.value) } })} style={{ marginLeft: 8 }} />
-              </label>
-              <label style={{ marginLeft: 12 }}>Недельный кап
-                <input type="number" value={af.customer.weeklyCap} onChange={e=>setAf({ ...af, customer: { ...af.customer, weeklyCap: Number(e.target.value) } })} style={{ marginLeft: 8 }} />
-              </label>
+              <div style={{ display:'grid', gap:6, fontSize:13 }}>
+                <div>Лимит: <code>{af.customer.limit}</code></div>
+                <div>Окно (сек): <code>{af.customer.windowSec}</code></div>
+                <div>Дневной кап: <code>{af.customer.dailyCap}</code></div>
+                <div>Недельный кап: <code>{af.customer.weeklyCap}</code></div>
+              </div>
             </fieldset>
             <div style={{ gridColumn: 'span 2', display: 'flex', alignItems: 'center', gap: 12 }}>
-              <label style={{ flex: 1 }}>Факторы для жёсткой блокировки (через запятую)
-                <input type="text" value={bfStr} onChange={e=>setBfStr(e.target.value)} placeholder="blacklisted_customer,balance_manipulation,location_jump" style={{ marginLeft: 8, width: '100%' }} />
-              </label>
+              <div style={{ flex: 1 }}>
+                <div style={{ marginBottom: 4 }}>Факторы для жёсткой блокировки (rulesJson.af.blockFactors):</div>
+                <code style={{ fontSize:12, whiteSpace:'pre-wrap' }}>{bfStr || '—'}</code>
+              </div>
             </div>
-            <div style={{ gridColumn: 'span 2', display: 'flex', alignItems: 'center', gap: 12 }}>
-              <button onClick={saveAf} disabled={cfgLoading}>Сохранить лимиты</button>
-              <span style={{ opacity: 0.8 }}>{cfgMsg}</span>
-            </div>
+            {cfgMsg && (
+              <div style={{ gridColumn: 'span 2', fontSize: 12, opacity: 0.85 }}>{cfgMsg}</div>
+            )}
           </div>
         ) : (
           <p style={{ opacity: 0.8 }}>Загрузка настроек…</p>

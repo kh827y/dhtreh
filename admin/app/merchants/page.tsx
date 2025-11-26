@@ -1,6 +1,6 @@
 "use client";
 import React from 'react';
-import { listMerchants, createMerchant, updateMerchant as apiUpdateMerchant, deleteMerchant as apiDeleteMerchant, setPortalLoginEnabled, initTotp, verifyTotp, disableTotp, impersonatePortal, getCashier, rotateCashier, updateMerchantSettings, type MerchantRow } from "../../lib/merchants";
+import { listMerchants, createMerchant, updateMerchant as apiUpdateMerchant, deleteMerchant as apiDeleteMerchant, setPortalLoginEnabled, initTotp, verifyTotp, disableTotp, impersonatePortal, getCashier, rotateCashier, type MerchantRow } from "../../lib/merchants";
 
 const PORTAL_BASE = process.env.NEXT_PUBLIC_PORTAL_BASE || 'http://localhost:3004';
 
@@ -37,17 +37,6 @@ export default function AdminMerchantsPage() {
   async function removeRow(id: string) {
     setMsg('');
     try { await apiDeleteMerchant(id); await load(); } catch (e: unknown) { setMsg(e instanceof Error ? e.message : String(e)); }
-  }
-  async function updateSettingsRow(id: string, fields: { qrTtlSec?: number; requireBridgeSig?: boolean; requireStaffKey?: boolean; earnBps: number; redeemLimitBps: number }) {
-    setMsg('');
-    try {
-      await updateMerchantSettings(id, fields);
-      await load();
-    } catch (e: unknown) {
-      const err = e instanceof Error ? e.message : String(e);
-      setMsg('Ошибка сохранения настроек: ' + err);
-      throw e;
-    }
   }
   async function toggleLogin(id: string, enabled: boolean) {
     setMsg(''); try { await setPortalLoginEnabled(id, enabled); await load(); } catch (e: unknown) { setMsg(e instanceof Error ? e.message : String(e)); }
@@ -87,7 +76,7 @@ export default function AdminMerchantsPage() {
         {items.map(m => (
           <div key={m.id} style={{ border:'1px solid #ddd', borderRadius: 10, padding: 12 }}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap: 12, flexWrap:'wrap' }}>
-              <RowEditor row={m} onSave={saveRow} onDelete={removeRow} onUpdateSettings={updateSettingsRow} />
+              <RowEditor row={m} onSave={saveRow} onDelete={removeRow} />
               <div style={{ display:'flex', gap: 8, flexWrap:'wrap' }}>
                 <button onClick={()=>openAs(m.id)} style={{ padding: '6px 10px' }}>Открыть как мерчант</button>
                 <label style={{ display:'flex', gap: 6, alignItems:'center' }}>
@@ -120,11 +109,10 @@ export default function AdminMerchantsPage() {
   );
 }
 
-function RowEditor({ row, onSave, onDelete, onUpdateSettings }: {
+function RowEditor({ row, onSave, onDelete }: {
   row: MerchantRow;
   onSave: (id: string, patch: { name?: string; email?: string; password?: string }) => void;
   onDelete: (id: string) => void;
-  onUpdateSettings: (id: string, patch: { qrTtlSec?: number; requireBridgeSig?: boolean; requireStaffKey?: boolean; earnBps: number; redeemLimitBps: number }) => Promise<void>;
 }) {
   const [name, setName] = React.useState(row.name);
   const [email, setEmail] = React.useState(row.portalEmail || '');
@@ -133,11 +121,6 @@ function RowEditor({ row, onSave, onDelete, onUpdateSettings }: {
   const [deleting, setDeleting] = React.useState(false);
   const [cashier, setCashier] = React.useState<{ login: string|null; hasPassword: boolean }|null>(null);
   const [cashierMsg, setCashierMsg] = React.useState('');
-  const [qrTtl, setQrTtl] = React.useState<number>(row.qrTtlSec ?? 120);
-  const [requireBridgeSig, setRequireBridgeSig] = React.useState<boolean>(!!row.requireBridgeSig);
-  const [requireStaffKey, setRequireStaffKey] = React.useState<boolean>(!!row.requireStaffKey);
-  const [settingsSaving, setSettingsSaving] = React.useState(false);
-  const [settingsMsg, setSettingsMsg] = React.useState('');
   async function save() { setSaving(true); try { await onSave(row.id, { name, email, password: pwd || undefined }); setPwd(''); } finally { setSaving(false); } }
   async function del() { if (!confirm('Удалить мерчанта?')) return; setDeleting(true); try { await onDelete(row.id); } finally { setDeleting(false); } }
   async function loadCashier() {
@@ -152,27 +135,6 @@ function RowEditor({ row, onSave, onDelete, onUpdateSettings }: {
       // Показать пароль один раз (в уведомлении)
       setCashierMsg(`Пароль кассира: ${r.password}`);
     } catch (e: any) { setCashierMsg(String(e?.message || e)); }
-  }
-  async function saveSettings() {
-    setSettingsSaving(true);
-    setSettingsMsg('');
-    try {
-      const earn = row.earnBps ?? 500;
-      const redeem = row.redeemLimitBps ?? 5000;
-      await onUpdateSettings(row.id, {
-        qrTtlSec: Math.max(15, Math.min(600, qrTtl || 0)),
-        requireBridgeSig,
-        requireStaffKey,
-        earnBps: earn,
-        redeemLimitBps: redeem,
-      });
-      setSettingsMsg('Сохранено');
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setSettingsMsg('Ошибка: ' + msg);
-    } finally {
-      setSettingsSaving(false);
-    }
   }
   return (
     <div style={{ display:'grid', gap:6 }}>
@@ -211,30 +173,14 @@ function RowEditor({ row, onSave, onDelete, onUpdateSettings }: {
       </div>
       <div style={{ marginTop:6, paddingTop:6, borderTop:'1px dashed #ddd', display:'grid', gap:8 }}>
         <div style={{ fontSize:13, opacity:.8 }}>Настройки кассовых операций</div>
-        <label style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
-          QR TTL (сек):
-          <input
-            type="number"
-            min={15}
-            max={600}
-            value={qrTtl}
-            onChange={e=>setQrTtl(Math.max(0, parseInt(e.target.value || '0', 10)))}
-            style={{ padding:6, width:100 }}
-          />
-        </label>
-        <label style={{ display:'flex', gap:8, alignItems:'center' }}>
-          <input type="checkbox" checked={requireBridgeSig} onChange={e=>setRequireBridgeSig(e.target.checked)} /> Требовать подпись Bridge
-        </label>
-        <label style={{ display:'flex', gap:8, alignItems:'center' }}>
-          <input type="checkbox" checked={requireStaffKey} onChange={e=>setRequireStaffKey(e.target.checked)} /> Требовать Staff‑ключ для операций
-        </label>
-        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-          <button onClick={saveSettings} disabled={settingsSaving} style={{ padding:'6px 10px' }}>
-            {settingsSaving ? 'Сохранение…' : 'Сохранить настройки'}
-          </button>
-          {settingsMsg && (
-            <span style={{ color: settingsMsg.startsWith('Ошибка') ? '#f33' : '#0a0' }}>{settingsMsg}</span>
-          )}
+        <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+          <a
+            href={`/settings?merchantId=${encodeURIComponent(row.id)}`}
+            className="btn"
+            style={{ padding:'6px 10px' }}
+          >
+            Открыть настройки мерчанта
+          </a>
         </div>
       </div>
     </div>

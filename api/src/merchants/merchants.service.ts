@@ -256,12 +256,7 @@ export class MerchantsService {
           additionalProperties: false,
           properties: {
             channelIn: { type: 'array', items: { type: 'string' } },
-            weekdayIn: {
-              type: 'array',
-              items: { type: 'integer', minimum: 0, maximum: 6 },
-            },
             minEligible: { type: 'number', minimum: 0 },
-            categoryIn: { type: 'array', items: { type: 'string' } },
           },
           required: [],
         },
@@ -321,7 +316,7 @@ export class MerchantsService {
     if (!merchant) throw new NotFoundException('Merchant not found');
     const s =
       merchant.settings ??
-      ({ earnBps: 500, redeemLimitBps: 5000, qrTtlSec: 120 } as any);
+      ({ earnBps: 300, redeemLimitBps: 5000, qrTtlSec: 120 } as any);
     const normalizedRules = this.normalizeRulesJson(s.rulesJson ?? null);
     return {
       merchantId,
@@ -588,7 +583,7 @@ export class MerchantsService {
     },
   ) {
     const s = await this.getSettings(merchantId);
-    let earnBps = s.earnBps ?? 500;
+    let earnBps = s.earnBps ?? 300;
     let redeemLimitBps = s.redeemLimitBps ?? 5000;
     const rules = s.rulesJson;
     if (Array.isArray(rules)) {
@@ -603,18 +598,8 @@ export class MerchantsService {
           )
             continue;
           if (
-            Array.isArray(cond.weekdayIn) &&
-            !cond.weekdayIn.includes(args.weekday)
-          )
-            continue;
-          if (
             cond.minEligible != null &&
             args.eligibleTotal < Number(cond.minEligible)
-          )
-            continue;
-          if (
-            Array.isArray(cond.categoryIn) &&
-            !cond.categoryIn.includes(args.category)
           )
             continue;
           const then = item.then ?? {};

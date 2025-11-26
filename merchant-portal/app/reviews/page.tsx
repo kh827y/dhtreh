@@ -15,6 +15,7 @@ type ApiReviewItem = {
   customer?: { id: string; name?: string | null; phone?: string | null; email?: string | null } | null;
   staff?: { id: string; name?: string | null } | null;
   outlet?: { id: string; name?: string | null } | null;
+  deviceId?: string | null;
 };
 
 type ReviewsApiResponse = {
@@ -29,6 +30,7 @@ type ReviewRow = {
   customer: { id: string; name: string };
   rating: number;
   comment: string | null;
+   device: string | null;
   staff: string;
   outlet: string;
   createdAt: string;
@@ -121,6 +123,8 @@ export default function ReviewsPage() {
                   (item.customer?.phone && item.customer.phone.trim()) ||
                   (item.customer?.email && item.customer.email.trim()) ||
                   "—";
+                const rawDeviceId = typeof item.deviceId === "string" ? item.deviceId.trim() : "";
+                const device = rawDeviceId || "—";
                 const staffName = (item.staff?.name || "").trim() || "—";
                 const outletName = (item.outlet?.name || "").trim() || "—";
                 const comment = typeof item.comment === "string" ? item.comment.trim() : "";
@@ -130,6 +134,7 @@ export default function ReviewsPage() {
                   comment: comment.length > 0 ? comment : null,
                   createdAt: item.createdAt,
                   customer: { id: customerId, name: customerName },
+                  device,
                   staff: staffName,
                   outlet: outletName,
                 };
@@ -340,7 +345,7 @@ export default function ReviewsPage() {
                     <th style={thStyle}>Клиент</th>
                     <th style={thStyle}>Оценка</th>
                     <th style={thStyle}>Комментарий</th>
-                    <th style={thStyle}>Сотрудник</th>
+                    <th style={thStyle}>Устройство / сотрудник</th>
                     <th style={thStyle}>Торговая точка</th>
                     <th style={thStyle}>Дата и время визита</th>
                   </tr>
@@ -359,7 +364,14 @@ export default function ReviewsPage() {
                         <StarRating rating={row.rating} size={18} />
                       </td>
                       <td style={tdStyle}>{row.comment ? row.comment : <span style={{ opacity: 0.6 }}>Без комментария</span>}</td>
-                      <td style={tdStyle}>{row.staff}</td>
+                      <td style={tdStyle}>
+                        <div style={{ display: 'grid', gap: 2 }}>
+                          <span>{row.device || '—'}</span>
+                          {row.staff && row.staff !== '—' && (
+                            <span style={{ fontSize: 12, opacity: 0.7 }}>Сотрудник: {row.staff}</span>
+                          )}
+                        </div>
+                      </td>
                       <td style={tdStyle}>{row.outlet}</td>
                       <td style={tdStyle}>{new Date(row.createdAt).toLocaleString('ru-RU')}</td>
                     </tr>

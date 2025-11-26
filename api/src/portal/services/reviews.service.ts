@@ -35,6 +35,7 @@ type PortalReviewItem = {
   customer: PortalReviewCustomer;
   staff: PortalReviewStaff | null;
   outlet: PortalReviewOutlet | null;
+  deviceId: string | null;
 };
 
 type PortalReviewListResult = {
@@ -200,7 +201,7 @@ export class PortalReviewsService {
         string,
         {
           outletId: string | null;
-          outlet: { id: string; name: string | null } | null;
+          outlet: { id: string; name: string | null; code: string | null; externalId: string | null } | null;
           staffId: string | null;
           staff: {
             id: string;
@@ -216,7 +217,7 @@ export class PortalReviewsService {
         orderId: { in: orderIds },
       },
       include: {
-        outlet: { select: { id: true, name: true } },
+        outlet: { select: { id: true, name: true, code: true, externalId: true } },
         staff: { select: { id: true, firstName: true, lastName: true } },
       },
     });
@@ -290,6 +291,12 @@ export class PortalReviewsService {
         : undefined;
       const comment =
         typeof review.comment === 'string' ? review.comment.trim() : '';
+      let deviceId: string | null = null;
+      if (receipt?.outlet) {
+        const code = (receipt.outlet.code ?? '').toString().trim();
+        const externalId = (receipt.outlet.externalId ?? '').toString().trim();
+        deviceId = code || externalId || receipt.outlet.id || null;
+      }
       return {
         id: review.id,
         rating: review.rating,
@@ -298,6 +305,7 @@ export class PortalReviewsService {
         customer: this.buildCustomer(review),
         staff: this.buildStaff(receipt),
         outlet: this.buildOutlet(receipt),
+        deviceId,
       };
     });
 

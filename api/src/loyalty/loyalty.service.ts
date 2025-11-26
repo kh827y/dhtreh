@@ -1095,7 +1095,6 @@ export class LoyaltyService {
         channel: 'VIRTUAL' | 'PC_POS' | 'SMART';
         weekday: number;
         eligibleTotal: number;
-        category?: string;
       }) => { earnBps: number; redeemLimitBps: number };
     }
   >();
@@ -1121,7 +1120,6 @@ export class LoyaltyService {
       channel: 'VIRTUAL' | 'PC_POS' | 'SMART';
       weekday: number;
       eligibleTotal: number;
-      category?: string;
     }) => ({ earnBps: base.earnBps, redeemLimitBps: base.redeemLimitBps });
     // Support both array root and object with { rules: [...] }
     const rulesArr: any[] | null = Array.isArray(rulesJson)
@@ -1145,16 +1143,9 @@ export class LoyaltyService {
               !cond.channelIn.includes(args.channel)
             )
               continue;
-            if (Array.isArray(cond.weekdayIn) && !cond.weekdayIn.includes(wd))
-              continue;
             if (
               cond.minEligible != null &&
               args.eligibleTotal < Number(cond.minEligible)
-            )
-              continue;
-            if (
-              Array.isArray(cond.categoryIn) &&
-              !cond.categoryIn.includes(args.category)
             )
               continue;
             const then = item.then ?? {};
@@ -1188,7 +1179,7 @@ export class LoyaltyService {
       where: { merchantId },
     });
     return {
-      earnBps: s?.earnBps ?? 500,
+      earnBps: s?.earnBps ?? 300,
       redeemLimitBps: s?.redeemLimitBps ?? 5000,
       redeemCooldownSec: s?.redeemCooldownSec ?? 0,
       earnCooldownSec: s?.earnCooldownSec ?? 0,
@@ -1323,7 +1314,6 @@ export class LoyaltyService {
       channel,
       weekday: wd,
       eligibleTotal: sanitizedEligibleTotal,
-      category: dto.category,
     });
     // Уровни управляются через LoyaltyTier, бонусы из локальных настроек не применяем
 

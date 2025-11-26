@@ -296,8 +296,6 @@ POINTS_TTL_REMINDER=1
   - `PUT /portal/promocodes/:promoCodeId` — обновляет настройки существующего промокода.
 - `POST /loyalty/promocodes/apply` — активация промокода клиентом (мини-аппа); возвращает начисленные баллы, срок действия бонуса и новый баланс.`
 
-Промокод применяется при `POST /loyalty/quote|commit`, если передан `promoCode`.
-
 ## Лимиты списаний/начислений (cap’ы)
 
 - REDEEM per‑order cap: лимит на заказ рассчитывается как `floor(eligible' * (redeemBps_base + levelBonus) / 10000)`. Повторный `quote` по тому же `orderId` учитывает уже применённое списание `receipt.redeemApplied` (остаток не может быть отрицательным). После `commit` следующий `quote` по тому же заказу вернёт остаток или `0`.

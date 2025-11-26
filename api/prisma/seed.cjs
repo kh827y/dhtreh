@@ -43,7 +43,7 @@ async function ensureMerchant() {
       cashierPasswordUpdatedAt: new Date(),
       settings: {
         create: {
-          earnBps: 500,
+          earnBps: 300,
           redeemLimitBps: 5000,
           qrTtlSec: 180,
           redeemCooldownSec: 30,

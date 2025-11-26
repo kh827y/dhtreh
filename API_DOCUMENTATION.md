@@ -19,12 +19,12 @@ Local: http://localhost:3000
 
 ## Аутентификация
 
-### Staff Key Authentication
-Для интеграций POS/bridge по-прежнему доступен ключ сотрудника:
+### Staff Key (legacy)
+Для старых POS/Bridge‑интеграций по-прежнему доступен ключ сотрудника (устаревающая механика, используется только для обратной совместимости):
 ```http
 X-Staff-Key: sk_live_xxxxxxxxxxxxxx
 ```
-Однако виртуальный терминал кассира теперь использует cookie-сессии, поэтому `X-Staff-Key` не требуется в браузере.
+В новых интеграциях рекомендуется опираться на подпись Bridge (`X-Bridge-Signature`) и/или cookie‑сессии кассира. Флаг `requireStaffKey` по умолчанию выключен и не управляется из админ‑UI.
 
 ### Cashier Session Authentication
 Фронтенд кассира проходит двухшаговую авторизацию:
@@ -146,7 +146,7 @@ X-Bridge-Signature: v1,ts=1234567890,sig=base64signature
 - `POST /loyalty/refund` — аналогично `commit`; для новых интеграций требуется `outletId`.
 - `POST /loyalty/qr` — если нет TeleAuth и Staff-Key, при включённой настройке требуется подпись.
 
-Совместимость со Staff-Key: если у мерчанта включено требование Staff-Key (`requireStaffKey`), допускается либо `X-Staff-Key`, либо `X-Bridge-Signature` (см. `loyalty.controller.ts: enforceRequireStaffKey`).
+Совместимость со Staff-Key: если для мерчанта вручную включено требование Staff-Key (`requireStaffKey`, настраивается только через backend/поддержку), допускается либо `X-Staff-Key`, либо `X-Bridge-Signature` (см. `loyalty.controller.ts: enforceRequireStaffKey`).
 
 Пример валидации:
 ```ts
@@ -458,7 +458,7 @@ rulesJson.af структура на мерчанте:
 ```json
 {
   "merchant": { "limit": 200, "windowSec": 3600, "dailyCap": 0, "weeklyCap": 0 },
-  "device":   { "limit": 20,  "windowSec": 600,  "dailyCap": 0, "weeklyCap": 0 },
+  "outlet":   { "limit": 20,  "windowSec": 600,  "dailyCap": 0, "weeklyCap": 0 },
   "staff":    { "limit": 60,  "windowSec": 600,  "dailyCap": 0, "weeklyCap": 0 },
   "customer": { "limit": 5,   "windowSec": 120,  "dailyCap": 0, "weeklyCap": 0 },
   "blockFactors": ["blacklisted_customer", "balance_manipulation"]
@@ -468,6 +468,7 @@ rulesJson.af структура на мерчанте:
 - `limit` + `windowSec` — скользящее окно частоты операций
 - `dailyCap` — суточный кап по операциям (0 = выключен)
 - `weeklyCap` — кап за 7 суток (роллинг) (0 = выключен)
+- scope `outlet` фактически ограничивает операции по торговой точке (включая все устройства и сотрудников внутри).
 - `blockFactors` — список факторов скоринга, которые приводят к жёсткой блокировке, даже если уровень риска < CRITICAL
 
 ENV переменные по умолчанию (используются, если per-merchant не задано):
@@ -478,18 +479,21 @@ AF_LIMIT_MERCHANT=200
 AF_WINDOW_MERCHANT_SEC=3600
 AF_DAILY_CAP_MERCHANT=0
 AF_WEEKLY_CAP_MERCHANT=0
-AF_LIMIT_DEVICE=20
-AF_WINDOW_DEVICE_SEC=600
-AF_DAILY_CAP_DEVICE=0
-AF_WEEKLY_CAP_DEVICE=0
+AF_LIMIT_OUTLET=20
+AF_WINDOW_OUTLET_SEC=600
+AF_DAILY_CAP_OUTLET=0
+AF_WEEKLY_CAP_OUTLET=0
 AF_LIMIT_STAFF=60
 AF_WINDOW_STAFF_SEC=600
 AF_DAILY_CAP_STAFF=0
 AF_WEEKLY_CAP_STAFF=0
 AF_LIMIT_CUSTOMER=5
 AF_WINDOW_CUSTOMER_SEC=120
-AF_DAILY_CAP_CUSTOMER=0
+AF_DAILY_CAP_CUSTOMER=5
 AF_WEEKLY_CAP_CUSTOMER=0
+AF_MONTHLY_CAP_CUSTOMER=40
+AF_POINTS_CAP_CUSTOMER=3000
+AF_BLOCK_DAILY_CUSTOMER=off
 ```
 
 ### Блокировки
@@ -529,7 +533,6 @@ ALERT_TELEGRAM_CHAT_ID=
 ```http
 POST /loyalty/quote
 Content-Type: application/json
-X-Staff-Key: required_if_enabled
 
 {
   "mode": "redeem" | "earn",
@@ -539,9 +542,7 @@ X-Staff-Key: required_if_enabled
   "total": 1000,
   "eligibleTotal": 1000,
   "outletId": "string", // обязательный для POS интеграций идентификатор торговой точки
-  "staffId": "string",  // optional
-  "category": "string",  // optional (для правил промо)
-  "promoCode": "string" // optional (применить промокод перед расчётом)
+  "staffId": "string"  // optional
 }
 
 Response 200 (REDEEM):
@@ -555,7 +556,7 @@ Response 200 (REDEEM):
 }
 
 Примечания к REDEEM:
-- Дневной лимит: если у мерчанта задан `redeemDailyCap`, то к расчёту применяется остаток за последние 24 часа — `dailyRedeemLeft = max(0, redeemDailyCap - sum(recent REDEEM))`. Итоговое списание равно `min(wallet.balance, redeemCapByBps, dailyRedeemLeft)`.
+- Дневной лимит: если настроен дневной кап в `rulesJson.af.customer.dailyCap` (или через ENV `AF_DAILY_CAP_CUSTOMER`), к расчёту применяется остаток за последние 24 часа — `dailyRedeemLeft = max(0, dailyCap - sum(recent REDEEM))`. Итоговое списание равно `min(wallet.balance, redeemCapByBps, dailyRedeemLeft)`.
 - Лимит на заказ: если в прошлых операциях по `orderId` уже списано `receipt.redeemApplied`, то новый quote учитывает остаток по заказу: `remainingByOrder = max(0, redeemCapByBps - redeemApplied)`.
 
 Response 200 (EARN):
@@ -568,7 +569,7 @@ Response 200 (EARN):
 
 Примечания к EARN:
 
-- Дневной лимит: если у мерчанта задан `earnDailyCap`, к расчёту применяется остаток за последние 24 часа — `dailyEarnLeft = max(0, earnDailyCap - sum(recent EARN))`. Итоговое начисление равно `min(pointsByBps, dailyEarnLeft)`.
+- Дневной лимит: если настроен дневной кап в `rulesJson.af.customer.dailyCap` (или через ENV `AF_DAILY_CAP_CUSTOMER`), к расчёту применяется остаток за последние 24 часа — `dailyEarnLeft = max(0, dailyCap - sum(recent EARN))`. Итоговое начисление равно `min(pointsByBps, dailyEarnLeft)`.
 
 ## Уровни (Loyalty Tiers)
 
@@ -675,9 +676,8 @@ Response 200:
 
 Последовательность в расчёте `POST /loyalty/quote`:
 
-1) Промокод (если указан `promoCode`) — уменьшает `eligibleTotal` и `total`.
-2) Базовые правила начисления/лимитов (`rulesJson.rules` или базовые ставки мерчанта).
-3) Бонусы уровня (Levels) — добавляются поверх базовых ставок: `earnBps += levelEarnBonus`, `redeemLimitBps += levelRedeemBonus`.
+1) Базовые правила начисления/лимитов (`rulesJson.rules` или базовые ставки мерчанта).
+2) Бонусы уровня (Levels) — добавляются поверх базовых ставок: `earnBps += levelEarnBonus`, `redeemLimitBps += levelRedeemBonus`.
 
 Итоговые формулы (упрощённо):
 
@@ -696,9 +696,9 @@ redeemCap  = floor( eligible' * (redeemBps_base + redeemBps_bonus(level)) / 1000
 Расчёт:
 
 ```
-eligible: 1000 → promoCode −10% = 900
-EARN: 900 * (500+200)/10000 = floor(900 * 0.07) = 63 балла
-REDEEM cap: 900 * (5000+1000)/10000 = floor(900 * 0.6) = 540
+eligible: 1000
+EARN: 1000 * (500+200)/10000 = floor(1000 * 0.07) = 70 баллов
+REDEEM cap: 1000 * (5000+1000)/10000 = floor(1000 * 0.6) = 600
 ```
 
 #### 3. Подтверждение операции (Commit)
@@ -713,8 +713,6 @@ X-Staff-Key: required_if_enabled
   "holdId": "uuid",
   "orderId": "string",
   "receiptNumber": "string", // optional
-  "requestId": "string",      // optional
-  "promoCode": "string"     // optional (идемпотентная фиксация использования промокода)
 }
 
 Response 200:
@@ -869,7 +867,7 @@ GET /loyalty/events/poll?merchantId={merchantId}&merchantCustomerId={merchantCus
 - `POST /portal/promocodes/deactivate` / `POST /portal/promocodes/activate` — смена статуса.
 - `POST /loyalty/promocodes/apply` — активация промокода клиентом (мини-аппа) с начислением баллов и TTL.
 
-В API лояльности промокод передаётся полем `promoCode` в `POST /loyalty/quote` и `POST /loyalty/commit`. При применении начисляются дополнительные баллы, TTL и уровень согласно настройкам.
+В API лояльности промокод применяется через отдельный эндпоинт `POST /loyalty/promocodes/apply` (мини‑аппа) и фиксируется как операция типа `PROMOCODE`/`CAMPAIGN` в журналах. Операции `quote/commit` больше не принимают поле `promoCode` в теле запроса.
 
 
 ## Referrals (beta/preview)

@@ -200,9 +200,6 @@ export class CashierGuard implements CanActivate {
           eligibleTotal: body?.eligibleTotal,
           outletId: body?.outletId ?? undefined,
           staffId: body?.staffId ?? undefined,
-          requestId: body?.requestId ?? undefined,
-          category: body?.category ?? undefined,
-          promoCode: body?.promoCode ?? undefined,
         });
       }
     } else if (normalizedPath === '/loyalty/commit') {

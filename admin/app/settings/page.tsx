@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { getSettings, updateSettings, previewRules, type MerchantSettings } from '../../lib/admin';
 
 function num(v: any, def: number | null = null): number | null {
@@ -9,13 +10,19 @@ function num(v: any, def: number | null = null): number | null {
 }
 
 export default function SettingsPage() {
-  const [merchantId, setMerchantId] = useState<string>(process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1');
+  const searchParams = useSearchParams();
+  const initialMerchantId =
+    searchParams.get('merchantId') || process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
+  const [merchantId, setMerchantId] = useState<string>(initialMerchantId);
   const [s, setS] = useState<MerchantSettings | null>(null);
   const [rules, setRules] = useState<string>('');
   const [msg, setMsg] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [rulesErrors, setRulesErrors] = useState<string[]>([]);
-  const [preview, setPreview] = useState<{ channel: 'SMART'|'PC_POS'|'VIRTUAL'; weekday: number; eligibleTotal: number; category?: string }>({ channel: 'SMART', weekday: new Date().getDay(), eligibleTotal: 1000 });
+  const [preview, setPreview] = useState<{ channel: 'SMART'|'PC_POS'|'VIRTUAL'; eligibleTotal: number }>({
+    channel: 'SMART',
+    eligibleTotal: 1000,
+  });
   const [previewOut, setPreviewOut] = useState<{ earnBps: number; redeemLimitBps: number } | null>(null);
   const [serverPreviewOut, setServerPreviewOut] = useState<{ earnBps: number; redeemLimitBps: number } | null>(null);
   // локальные поля для секретов (не подставляем значения из API)
@@ -27,6 +34,7 @@ export default function SettingsPage() {
   const [useWebhookNext, setUseWebhookNext] = useState<boolean>(false);
   const [bridgeSecret, setBridgeSecret] = useState<string>('');
   const [bridgeSecretNext, setBridgeSecretNext] = useState<string>('');
+  const [miniappBaseUrl, setMiniappBaseUrl] = useState<string>('');
   const [miniappThemePrimary, setMiniappThemePrimary] = useState<string>('');
   const [miniappThemeBg, setMiniappThemeBg] = useState<string>('');
   const [miniappLogoUrl, setMiniappLogoUrl] = useState<string>('');
@@ -41,6 +49,7 @@ export default function SettingsPage() {
       setWebhookKeyId(r.webhookKeyId || '');
       setWebhookKeyIdNext(r.webhookKeyIdNext || '');
       setUseWebhookNext(!!r.useWebhookNext);
+      setMiniappBaseUrl((r as any).miniappBaseUrl || '');
       setMiniappThemePrimary(r.miniappThemePrimary || '');
       setMiniappThemeBg(r.miniappThemeBg || '');
       setMiniappLogoUrl(r.miniappLogoUrl || '');
@@ -64,14 +73,9 @@ export default function SettingsPage() {
         earnBps: s.earnBps,
         redeemLimitBps: s.redeemLimitBps,
         qrTtlSec: s.qrTtlSec,
-        requireBridgeSig: !!s.requireBridgeSig,
-        requireStaffKey: !!s.requireStaffKey,
-        requireJwtForQuote: !!s.requireJwtForQuote,
         redeemCooldownSec: s.redeemCooldownSec,
         earnCooldownSec: s.earnCooldownSec,
-        redeemDailyCap: s.redeemDailyCap ?? undefined,
-        earnDailyCap: s.earnDailyCap ?? undefined,
-        pointsTtlDays: s.pointsTtlDays ?? undefined,
+        requireJwtForQuote: !!s.requireJwtForQuote,
         rulesJson,
         webhookUrl: webhookUrl || undefined,
         webhookKeyId: webhookKeyId || undefined,
@@ -81,6 +85,7 @@ export default function SettingsPage() {
         useWebhookNext: useWebhookNext,
         bridgeSecret: bridgeSecret || undefined,
         bridgeSecretNext: bridgeSecretNext || undefined,
+        miniappBaseUrl: miniappBaseUrl || undefined,
         miniappThemePrimary: miniappThemePrimary || undefined,
         miniappThemeBg: miniappThemeBg || undefined,
         miniappLogoUrl: miniappLogoUrl || undefined,
@@ -106,17 +111,15 @@ export default function SettingsPage() {
       const cond = item.if ?? {};
       const then = item.then ?? {};
       if (cond.channelIn && !Array.isArray(cond.channelIn)) errors.push(`#${idx}: if.channelIn должен быть массивом строк`);
-      if (cond.weekdayIn && !Array.isArray(cond.weekdayIn)) errors.push(`#${idx}: if.weekdayIn должен быть массивом чисел 0..6`);
       if (cond.minEligible != null && (typeof cond.minEligible !== 'number' || cond.minEligible < 0)) errors.push(`#${idx}: if.minEligible должен быть числом ≥ 0`);
-      if (cond.categoryIn && !Array.isArray(cond.categoryIn)) errors.push(`#${idx}: if.categoryIn должен быть массивом строк`);
       if (then.earnBps != null && (typeof then.earnBps !== 'number' || then.earnBps < 0 || then.earnBps > 10000)) errors.push(`#${idx}: then.earnBps должен быть 0..10000`);
       if (then.redeemLimitBps != null && (typeof then.redeemLimitBps !== 'number' || then.redeemLimitBps < 0 || then.redeemLimitBps > 10000)) errors.push(`#${idx}: then.redeemLimitBps должен быть 0..10000`);
     });
     return errors;
   }
 
-  function computeRules(json: any, args: { channel: 'SMART'|'PC_POS'|'VIRTUAL'; weekday: number; eligibleTotal: number; category?: string }): { earnBps: number; redeemLimitBps: number } {
-    let earnBps = s?.earnBps ?? 500;
+  function computeRules(json: any, args: { channel: 'SMART'|'PC_POS'|'VIRTUAL'; eligibleTotal: number }): { earnBps: number; redeemLimitBps: number } {
+    let earnBps = s?.earnBps ?? 300;
     let redeemLimitBps = s?.redeemLimitBps ?? 5000;
     if (Array.isArray(json)) {
       for (const item of json) {
@@ -124,9 +127,7 @@ export default function SettingsPage() {
           if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
           const cond = (item as any).if ?? {};
           if (Array.isArray(cond.channelIn) && !cond.channelIn.includes(args.channel)) continue;
-          if (Array.isArray(cond.weekdayIn) && !cond.weekdayIn.includes(args.weekday)) continue;
           if (cond.minEligible != null && args.eligibleTotal < Number(cond.minEligible)) continue;
-          if (Array.isArray(cond.categoryIn) && !cond.categoryIn.includes(args.category)) continue;
           const then = (item as any).then ?? {};
           if (then.earnBps != null) earnBps = Number(then.earnBps);
           if (then.redeemLimitBps != null) redeemLimitBps = Number(then.redeemLimitBps);
@@ -142,12 +143,16 @@ export default function SettingsPage() {
       setRulesErrors(validateRules(json));
       setPreviewOut(computeRules(json, preview));
       // запрос к серверу для превью текущих сохраненных правил мерчанта
-      previewRules(merchantId, preview)
+      previewRules(merchantId, {
+        channel: preview.channel,
+        weekday: new Date().getDay(),
+        eligibleTotal: preview.eligibleTotal,
+      })
         .then(res => setServerPreviewOut(res))
         .catch(()=>setServerPreviewOut(null));
     } catch { setRulesErrors(['Некорректный JSON']); setPreviewOut(null); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rules, preview.channel, preview.weekday, preview.eligibleTotal, preview.category, merchantId]);
+  }, [rules, preview.channel, preview.eligibleTotal, merchantId]);
 
   return (
     <div>
@@ -163,11 +168,11 @@ export default function SettingsPage() {
       {s && (
         <div style={{ display: 'grid', gap: 12, maxWidth: 820 }}>
           <div>
-            <label>Начисление (bps):</label>
+            <label>Базовое начисление (bps):</label>
             <input type="number" min={0} max={10000} value={s.earnBps} onChange={e=>setS({ ...s, earnBps: num(e.target.value, s.earnBps) || 0 })} style={{ marginLeft: 8, width: 100 }} />
           </div>
           <div>
-            <label>Лимит списания (bps):</label>
+            <label>Базовый лимит списания (bps):</label>
             <input type="number" min={0} max={10000} value={s.redeemLimitBps} onChange={e=>setS({ ...s, redeemLimitBps: num(e.target.value, s.redeemLimitBps) || 0 })} style={{ marginLeft: 8, width: 120 }} />
           </div>
           <div>
@@ -176,39 +181,29 @@ export default function SettingsPage() {
           </div>
           <div>
             <label>Cooldown списаний (сек):</label>
-            <input type="number" min={0} max={86400} value={s.redeemCooldownSec} onChange={e=>setS({ ...s, redeemCooldownSec: num(e.target.value, s.redeemCooldownSec) || 0 })} style={{ marginLeft: 8, width: 120 }} />
+            <input
+              type="number"
+              min={0}
+              max={86400}
+              value={s.redeemCooldownSec}
+              onChange={e=>setS({ ...s, redeemCooldownSec: num(e.target.value, s.redeemCooldownSec) || 0 })}
+              style={{ marginLeft: 8, width: 120 }}
+            />
           </div>
           <div>
             <label>Cooldown начислений (сек):</label>
-            <input type="number" min={0} max={86400} value={s.earnCooldownSec} onChange={e=>setS({ ...s, earnCooldownSec: num(e.target.value, s.earnCooldownSec) || 0 })} style={{ marginLeft: 8, width: 120 }} />
-          </div>
-          <div>
-            <label>Дневной лимит списаний:</label>
-            <input type="number" min={0} value={s.redeemDailyCap ?? 0} onChange={e=>setS({ ...s, redeemDailyCap: num(e.target.value, 0) || 0 })} style={{ marginLeft: 8, width: 140 }} />
-          </div>
-          <div>
-            <label>Дневной лимит начислений:</label>
-            <input type="number" min={0} value={s.earnDailyCap ?? 0} onChange={e=>setS({ ...s, earnDailyCap: num(e.target.value, 0) || 0 })} style={{ marginLeft: 8, width: 140 }} />
-          </div>
-          <div>
-            <label>TTL баллов (дней):</label>
-            <input type="number" min={0} value={s.pointsTtlDays ?? 0} onChange={e=>setS({ ...s, pointsTtlDays: num(e.target.value, 0) || 0 })} style={{ marginLeft: 8, width: 120 }} />
+            <input
+              type="number"
+              min={0}
+              max={86400}
+              value={s.earnCooldownSec}
+              onChange={e=>setS({ ...s, earnCooldownSec: num(e.target.value, s.earnCooldownSec) || 0 })}
+              style={{ marginLeft: 8, width: 120 }}
+            />
           </div>
           <div>
             <label>
-              Требовать Staff‑Key
-              <input type="checkbox" checked={!!s.requireStaffKey} onChange={e=>setS({ ...s, requireStaffKey: e.target.checked })} style={{ marginLeft: 8 }} />
-            </label>
-          </div>
-          <div>
-            <label>
-              Требовать подпись Bridge
-              <input type="checkbox" checked={!!s.requireBridgeSig} onChange={e=>setS({ ...s, requireBridgeSig: e.target.checked })} style={{ marginLeft: 8 }} />
-            </label>
-          </div>
-          <div>
-            <label>
-              Требовать JWT для QUOTE
+              Требовать JWT для QUOTE (выкл. — разрешаем customerId / номер карты / телефон и т.п.)
               <input type="checkbox" checked={!!s.requireJwtForQuote} onChange={e=>setS({ ...s, requireJwtForQuote: e.target.checked })} style={{ marginLeft: 8 }} />
             </label>
           </div>
@@ -231,14 +226,8 @@ export default function SettingsPage() {
                   <option value="VIRTUAL">VIRTUAL</option>
                 </select>
               </label>
-              <label>День недели:
-                <input type="number" min={0} max={6} value={preview.weekday} onChange={e=>setPreview(prev=>({ ...prev, weekday: parseInt(e.target.value||'0',10) }))} style={{ marginLeft: 8, width: 80 }} />
-              </label>
               <label>Сумма (eligible):
                 <input type="number" min={0} value={preview.eligibleTotal} onChange={e=>setPreview(prev=>({ ...prev, eligibleTotal: parseInt(e.target.value||'0',10) }))} style={{ marginLeft: 8, width: 120 }} />
-              </label>
-              <label>Категория:
-                <input value={preview.category || ''} onChange={e=>setPreview(prev=>({ ...prev, category: e.target.value||undefined }))} style={{ marginLeft: 8 }} placeholder="опц." />
               </label>
             </div>
             <div style={{ marginTop: 8, display:'grid', gap:6 }}>
@@ -292,17 +281,133 @@ export default function SettingsPage() {
           </div>
           <hr />
           <h3>Мини‑аппа (бренд)</h3>
-          <div>
-            <label>Основной цвет (HEX):</label>
-            <input value={miniappThemePrimary} onChange={e=>setMiniappThemePrimary(e.target.value)} style={{ marginLeft: 8, width: 160 }} placeholder="#4f46e5" />
-          </div>
-          <div>
-            <label>Цвет фона (HEX):</label>
-            <input value={miniappThemeBg} onChange={e=>setMiniappThemeBg(e.target.value)} style={{ marginLeft: 8, width: 160 }} placeholder="#0b1220" />
-          </div>
-          <div>
-            <label>Логотип (URL):</label>
-            <input value={miniappLogoUrl} onChange={e=>setMiniappLogoUrl(e.target.value)} style={{ marginLeft: 8, width: 520 }} placeholder="https://.../logo.png" />
+          <div style={{ display:'grid', gap:8 }}>
+            <div>
+              <label>Базовый URL мини‑аппы:</label>
+              <input
+                value={miniappBaseUrl}
+                onChange={e=>setMiniappBaseUrl(e.target.value)}
+                style={{ marginLeft: 8, width: 520 }}
+                placeholder="https://example.com/miniapp"
+              />
+              <div style={{ fontSize:12, opacity:.8, marginTop:4 }}>
+                Используется для deep‑link из Telegram / сайта (например, ссылка на WebApp или страницу мини‑аппы).
+              </div>
+            </div>
+            <div style={{ display:'flex', flexWrap:'wrap', gap:16, alignItems:'center' }}>
+              <div style={{ display:'grid', gap:6 }}>
+                <label>Основной цвет (HEX):</label>
+                <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                  <input
+                    type="color"
+                    value={miniappThemePrimary || '#4f46e5'}
+                    onChange={e=>setMiniappThemePrimary(e.target.value)}
+                    style={{ width:40, height:28, padding:0, border:'none', background:'transparent' }}
+                  />
+                  <input
+                    value={miniappThemePrimary}
+                    onChange={e=>setMiniappThemePrimary(e.target.value)}
+                    style={{ width:120 }}
+                    placeholder="#4f46e5"
+                  />
+                </div>
+                <div style={{ fontSize:12, opacity:.8 }}>Рекомендуется яркий акцентный цвет бренда (по умолчанию #4f46e5).</div>
+              </div>
+              <div style={{ display:'grid', gap:6 }}>
+                <label>Цвет фона (HEX):</label>
+                <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                  <input
+                    type="color"
+                    value={miniappThemeBg || '#f9fafb'}
+                    onChange={e=>setMiniappThemeBg(e.target.value)}
+                    style={{ width:40, height:28, padding:0, border:'none', background:'transparent' }}
+                  />
+                  <input
+                    value={miniappThemeBg}
+                    onChange={e=>setMiniappThemeBg(e.target.value)}
+                    style={{ width:120 }}
+                    placeholder="#f9fafb"
+                  />
+                </div>
+                <div style={{ fontSize:12, opacity:.8 }}>Фон мини‑аппы (по умолчанию #f9fafb).</div>
+              </div>
+            </div>
+            <div>
+              <label>Логотип (URL):</label>
+              <input
+                value={miniappLogoUrl}
+                onChange={e=>setMiniappLogoUrl(e.target.value)}
+                style={{ marginLeft: 8, width: 520 }}
+                placeholder="https://.../logo.png"
+              />
+              <div style={{ fontSize:12, opacity:.8, marginTop:4 }}>
+                PNG/SVG логотип, который используется в мини‑аппе и в превью deep‑link.
+              </div>
+            </div>
+            <div style={{ marginTop:8 }}>
+              <div style={{ fontSize:12, opacity:.8, marginBottom:4 }}>Предпросмотр карточки мини‑аппы:</div>
+              <div
+                style={{
+                  display:'flex',
+                  alignItems:'center',
+                  gap:12,
+                  padding:12,
+                  borderRadius:12,
+                  background: miniappThemeBg || '#f9fafb',
+                  border:'1px solid rgba(148,163,184,.4)',
+                  maxWidth:420,
+                }}
+              >
+                <div
+                  style={{
+                    width:40,
+                    height:40,
+                    borderRadius:10,
+                    background:'#020617',
+                    display:'flex',
+                    alignItems:'center',
+                    justifyContent:'center',
+                    overflow:'hidden',
+                  }}
+                >
+                  {miniappLogoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={miniappLogoUrl} alt="logo" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                  ) : (
+                    <span style={{ fontSize:18, color:'#e2e8f0' }}>∞</span>
+                  )}
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:14, fontWeight:600, color:'#e2e8f0' }}>Miniapp брендинг</div>
+                  <div style={{ fontSize:12, opacity:.8, color:'#cbd5f5' }}>Кнопки и акценты используют основной цвет, фон — цвет площадки.</div>
+                  <div style={{ marginTop:8, display:'flex', gap:8 }}>
+                    <div
+                      style={{
+                        padding:'4px 10px',
+                        borderRadius:999,
+                        fontSize:12,
+                        fontWeight:600,
+                        background: miniappThemePrimary || '#4f46e5',
+                        color:'#f9fafb',
+                      }}
+                    >
+                      CTA
+                    </div>
+                    <div
+                      style={{
+                        padding:'4px 10px',
+                        borderRadius:999,
+                        fontSize:12,
+                        border:'1px solid rgba(148,163,184,.6)',
+                        color:'#e5e7eb',
+                      }}
+                    >
+                      Secondary
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
           <div><button onClick={save} disabled={loading} style={{ padding: '8px 12px' }}>Сохранить</button></div>
         </div>

@@ -30,6 +30,7 @@ type Operation = {
   outlet: { id: string; name: string | null };
   client: { id: string; name: string };
   manager: { id: string; name: string | null };
+  device: string | null;
   rating: number | null;
   spent: number;
   spentSource: string | null;
@@ -108,6 +109,13 @@ function mapOperationFromDto(item: any): Operation {
   };
   const carrierId = carrierIdMap[carrierType] || carrierType.toLowerCase() || 'other';
   const fallbackCarrierName = carrierNameMap[carrierId] || '—';
+  const carrierCode = String(item?.carrier?.code || '');
+  const isDeviceCarrier =
+    carrierType === 'SMART' ||
+    carrierType === 'PC_POS' ||
+    carrierType === 'OUTLET';
+  const deviceId =
+    isDeviceCarrier && carrierCode.trim() ? carrierCode.trim() : '';
   const receipt = String(item?.receiptNumber || item?.orderId || item?.id || '');
   const earnedAmount = Number(item?.earn?.amount ?? 0);
   const spentAmount = Number(item?.redeem?.amount ?? 0);
@@ -141,7 +149,6 @@ function mapOperationFromDto(item: any): Operation {
     item?.carrier?.label != null && String(item.carrier.label).trim()
       ? String(item.carrier.label).trim()
       : fallbackCarrierName;
-  const carrierCode = String(item?.carrier?.code || '');
   return {
     id: String(item?.id || receipt),
     datetime: String(item?.occurredAt || new Date().toISOString()),
@@ -156,6 +163,7 @@ function mapOperationFromDto(item: any): Operation {
     },
     client: { id: String(item?.customer?.id || ''), name: customerName },
     manager: { id: managerId, name: managerName },
+    device: deviceId || null,
     rating: item?.rating != null ? Number(item.rating) : null,
     spent: Math.max(0, spentAmount),
     spentSource: item?.redeem?.source ? String(item.redeem.source) : null,
@@ -384,7 +392,11 @@ export default function OperationsPage() {
               </select>
             </FilterBlock>
             <FilterBlock label="Тип операции">
-              <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value as typeof typeFilter)} style={selectStyle}>
+              <select
+                value={typeFilter}
+                onChange={(event) => setTypeFilter(event.target.value as typeof typeFilter)}
+                style={selectStyle}
+              >
                 <option value="ALL">Все операции</option>
                 {kindFilterOptions.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -393,7 +405,7 @@ export default function OperationsPage() {
                 ))}
               </select>
             </FilterBlock>
-           <FilterBlock label="Списания и начисления">
+            <FilterBlock label="Списания и начисления">
               <select value={directionFilter} onChange={(event) => setDirectionFilter(event.target.value)} style={selectStyle}>
                 <option value="both">Списания и начисления</option>
                 <option value="earn">Только начисления</option>
@@ -432,7 +444,7 @@ export default function OperationsPage() {
             const statusColor = isCanceled || isRefundedOrigin ? "#94a3b8" : "inherit";
             const ratingValue = operation.rating ?? 0;
             const hasOutlet = Boolean(operation.outlet?.name);
-            const hasManager = Boolean(operation.manager?.name);
+            const deviceLabel = operation.device || '—';
             const isPurchaseOperation = purchaseSummaryKinds.includes(operation.kind);
             const summaryLabel = isPurchaseOperation ? "Сумма покупки" : null;
             const summaryValue =
@@ -488,7 +500,7 @@ export default function OperationsPage() {
                         <span>{operation.client.name}</span>
                       )}
                     </span>
-                    {hasManager && <span>Сотрудник: {operation.manager.name}</span>}
+                    <span>Устройство: {deviceLabel}</span>
                   </div>
                   <div style={ratingCellStyle}>
                     <StarRating rating={ratingValue} size={18} />
@@ -588,7 +600,7 @@ export default function OperationsPage() {
                   </a>
                 }
               />
-              <InfoRow label="Менеджер" value={preview.manager.name || '—'} />
+              <InfoRow label="Устройство" value={preview.device || '—'} />
               <div style={{ border: "1px solid rgba(148,163,184,0.16)", borderRadius: 14, padding: 16, display: "grid", gap: 10 }}>
                 <div style={{ fontWeight: 600 }}>Бонусные баллы</div>
                 <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>

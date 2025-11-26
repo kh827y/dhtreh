@@ -31,7 +31,7 @@ export async function listMerchants(): Promise<MerchantRow[]> {
     portalLoginEnabled: row.portalLoginEnabled,
     portalTotpEnabled: row.portalTotpEnabled,
     portalEmail: row.portalEmail ?? null,
-    earnBps: row.settings?.earnBps ?? row.earnBps ?? 500,
+    earnBps: row.settings?.earnBps ?? row.earnBps ?? 300,
     redeemLimitBps: row.settings?.redeemLimitBps ?? row.redeemLimitBps ?? 5000,
     qrTtlSec: row.settings?.qrTtlSec ?? row.qrTtlSec ?? null,
     requireBridgeSig: row.settings?.requireBridgeSig ?? row.requireBridgeSig ?? false,

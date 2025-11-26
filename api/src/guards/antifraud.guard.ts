@@ -120,6 +120,9 @@ export class AntiFraudGuard implements CanActivate {
       },
     } as const;
 
+    // Жёсткий daily-cap администратора для клиента (до мерчантских overrides)
+    const adminDailyCapCustomer = limits.customer.dailyCap;
+
     // Per-merchant overrides via MerchantSettings.rulesJson.af
     try {
       const s = merchantId
@@ -330,6 +333,13 @@ export class AntiFraudGuard implements CanActivate {
         const daily = await this.prisma.transaction.count({
           where: { merchantId, customerId, createdAt: { gte: since24h } },
         });
+        // 1) Жёсткий лимит платформы: AF_DAILY_CAP_CUSTOMER
+        if (adminDailyCapCustomer && adminDailyCapCustomer > 0) {
+          if (daily >= adminDailyCapCustomer) {
+            block('customer_daily', daily, adminDailyCapCustomer);
+          }
+        }
+        // 2) Мерчантский лимит + blockDaily (может быть ниже админского)
         if (daily >= limits.customer.dailyCap) {
           if (limits.customer.blockDaily) {
             block('customer_daily', daily, limits.customer.dailyCap);
