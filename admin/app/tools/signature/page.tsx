@@ -4,7 +4,7 @@ import { useState } from 'react';
 export default function SignatureTool() {
   const [secret, setSecret] = useState('');
   const [body, setBody] = useState(`{
-  "merchantId": "M-1",
+  "merchantId": "<merchant_id>",
   "holdId": "H-123",
   "orderId": "O-1"
 }`);

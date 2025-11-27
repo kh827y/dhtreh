@@ -1,9 +1,10 @@
 "use client";
 import { useState } from 'react';
 import { ttlReconciliation, type TtlRecon } from '../../lib/ttl';
+import { usePreferredMerchantId } from '../../lib/usePreferredMerchantId';
 
 export default function TtlPage() {
-  const [merchantId, setMerchantId] = useState<string>(process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1');
+  const { merchantId, setMerchantId } = usePreferredMerchantId();
   const [cutoff, setCutoff] = useState<string>(new Date(Date.now() - 30*24*60*60*1000).toISOString().slice(0,10));
   const [data, setData] = useState<TtlRecon | null>(null);
   const [msg, setMsg] = useState('');
@@ -13,13 +14,14 @@ export default function TtlPage() {
   const load = async () => {
     setLoading(true);
     try {
+      if (!merchantId) { setMsg('Укажите merchantId'); setData(null); return; }
       const d = await ttlReconciliation(merchantId, cutoff);
       setData(d); setMsg('');
     } catch (e:any) { setMsg(String(e?.message||e)); }
     finally { setLoading(false); }
   };
 
-  const csvUrl = `/api/admin/merchants/${encodeURIComponent(merchantId)}/ttl/reconciliation.csv?cutoff=${encodeURIComponent(cutoff)}${onlyDiff ? '&onlyDiff=1' : ''}`;
+  const csvUrl = merchantId ? `/api/admin/merchants/${encodeURIComponent(merchantId)}/ttl/reconciliation.csv?cutoff=${encodeURIComponent(cutoff)}${onlyDiff ? '&onlyDiff=1' : ''}` : '#';
 
   return (
     <div>

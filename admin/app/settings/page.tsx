@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { getSettings, updateSettings, previewRules, type MerchantSettings } from '../../lib/admin';
+import { usePreferredMerchantId } from '../../lib/usePreferredMerchantId';
 
 function num(v: any, def: number | null = null): number | null {
   const n = parseInt(String(v || ''), 10);
@@ -11,9 +12,8 @@ function num(v: any, def: number | null = null): number | null {
 
 export default function SettingsPage() {
   const searchParams = useSearchParams();
-  const initialMerchantId =
-    searchParams.get('merchantId') || process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
-  const [merchantId, setMerchantId] = useState<string>(initialMerchantId);
+  const initialMerchantId = searchParams.get('merchantId') || '';
+  const { merchantId, setMerchantId } = usePreferredMerchantId(initialMerchantId);
   const [s, setS] = useState<MerchantSettings | null>(null);
   const [rules, setRules] = useState<string>('');
   const [msg, setMsg] = useState<string>('');
@@ -41,6 +41,7 @@ export default function SettingsPage() {
   const [telegramStartParamRequired, setTelegramStartParamRequired] = useState<boolean>(false);
 
   useEffect(() => {
+    if (!merchantId) { setS(null); setMsg('Укажите merchantId'); return; }
     setLoading(true);
     getSettings(merchantId).then(r => {
       setS(r);

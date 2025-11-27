@@ -1,9 +1,10 @@
 "use client";
 import { useEffect, useState } from 'react';
 import { getSettings } from '../../lib/admin';
+import { usePreferredMerchantId } from '../../lib/usePreferredMerchantId';
 
 export default function AntiFraudPage() {
-  const [merchantId] = useState<string>(process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1');
+  const { merchantId, setMerchantId } = usePreferredMerchantId();
   const [loading, setLoading] = useState<boolean>(false);
   const [anomalies, setAnomalies] = useState<any[]>([]);
   const [nightActivity, setNightActivity] = useState<any[]>([]);
@@ -22,14 +23,16 @@ export default function AntiFraudPage() {
   const [bfStr, setBfStr] = useState('');
 
   useEffect(() => {
+    if (!merchantId) return;
     loadReports();
     // load antifraud limits
     loadAf();
-  }, [dateRange]);
+  }, [dateRange, merchantId]);
 
   const loadReports = async () => {
     setLoading(true);
     try {
+      if (!merchantId) { setLoading(false); return; }
       // Fetch transactions for analysis
       const txResponse = await fetch(`/api/admin/merchants/${merchantId}/transactions?limit=1000&from=${dateRange.from}&to=${dateRange.to}`);
       const txJson = await txResponse.json();
@@ -53,6 +56,7 @@ export default function AntiFraudPage() {
 
   const loadAf = async () => {
     try {
+      if (!merchantId) return;
       const s = await getSettings(merchantId);
       const rules = s.rulesJson;
       let afObj: any = null;
@@ -231,6 +235,14 @@ export default function AntiFraudPage() {
   return (
     <div>
       <h2>Anti-Fraud Report</h2>
+      <div style={{ display:'flex', gap:12, alignItems:'center', margin:'8px 0 16px' }}>
+        <label>
+          merchantId:
+          <input value={merchantId} onChange={e=>setMerchantId(e.target.value)} placeholder="Введите merchantId" style={{ marginLeft:8, padding:6, minWidth:200 }} />
+        </label>
+        {loading && <span>Загрузка…</span>}
+      </div>
+      {!merchantId && <div style={{ color:'#f38ba8', marginBottom:12 }}>Укажите merchantId, чтобы построить отчёт.</div>}
 
       <div style={{ marginTop: 16, padding: 16, background: '#11111b', borderRadius: 8, border: '1px solid #313244' }}>
         <h3 style={{ marginTop: 0 }}>Настройки лимитов (Velocity)</h3>

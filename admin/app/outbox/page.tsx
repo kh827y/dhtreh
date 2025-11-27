@@ -2,9 +2,10 @@
 import { useEffect, useState } from 'react';
 import { deleteOutbox, listOutbox, retryAll, retryOutbox, pauseOutbox, resumeOutbox, outboxStats, retrySince, outboxCsvUrl, listOutboxByOrder, type OutboxEvent } from '../../lib/outbox';
 import { getSettings } from '../../lib/admin';
+import { usePreferredMerchantId } from '../../lib/usePreferredMerchantId';
 
 export default function OutboxPage() {
-  const [merchantId, setMerchantId] = useState<string>(process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1');
+  const { merchantId, setMerchantId } = usePreferredMerchantId();
   const [status, setStatus] = useState<string>('PENDING');
   const [type, setType] = useState<string>('');
   const [since, setSince] = useState<string>('');
@@ -16,6 +17,7 @@ export default function OutboxPage() {
   const [orderId, setOrderId] = useState<string>('');
 
   const load = async () => {
+    if (!merchantId) { setMsg('Укажите merchantId'); setItems([]); setStats(null); setLoading(false); return; }
     setLoading(true);
     try {
       const [r, s, st] = await Promise.all([
@@ -30,32 +32,34 @@ export default function OutboxPage() {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { load().catch(()=>{}); }, []);
+  useEffect(() => { load().catch(()=>{}); }, [merchantId, status, type, since, limit]);
 
   const setPreset = (hours: number) => {
     const d = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
     setSince(d);
   };
 
-  const onRetry = async (id: string) => { await retryOutbox(merchantId, id); await load(); };
-  const onDelete = async (id: string) => { await deleteOutbox(merchantId, id); await load(); };
-  const onRetryAll = async () => { await retryAll(merchantId, status || undefined); await load(); };
-  const onRetryFailed = async () => { await retryAll(merchantId, 'FAILED'); await load(); };
-  const onRetryDead = async () => { await retryAll(merchantId, 'DEAD'); await load(); };
+  const onRetry = async (id: string) => { if (!merchantId) return; await retryOutbox(merchantId, id); await load(); };
+  const onDelete = async (id: string) => { if (!merchantId) return; await deleteOutbox(merchantId, id); await load(); };
+  const onRetryAll = async () => { if (!merchantId) return; await retryAll(merchantId, status || undefined); await load(); };
+  const onRetryFailed = async () => { if (!merchantId) return; await retryAll(merchantId, 'FAILED'); await load(); };
+  const onRetryDead = async () => { if (!merchantId) return; await retryAll(merchantId, 'DEAD'); await load(); };
   const onRetrySince = async () => {
+    if (!merchantId) return;
     const s = prompt('Статус для ретрая с даты (оставьте пустым для любого): PENDING|FAILED|DEAD', status || '');
     const dt = prompt('С даты (ISO, например 2025-09-01T00:00:00Z)', since || '');
     await retrySince(merchantId, { status: (s||undefined) as any, since: dt || undefined });
     await load();
   };
   const onPause = async () => {
+    if (!merchantId) return;
     const minsStr = prompt('На сколько минут паузу? (по умолчанию 60)');
     const minutes = minsStr ? parseInt(minsStr, 10) : 60;
     await pauseOutbox(merchantId, { minutes: isNaN(minutes) ? 60 : minutes });
     await load();
   };
-  const onResume = async () => { await resumeOutbox(merchantId); await load(); };
-  const csvHref = outboxCsvUrl(merchantId, { status: status || undefined, type: type || undefined, since: since || undefined, limit });
+  const onResume = async () => { if (!merchantId) return; await resumeOutbox(merchantId); await load(); };
+  const csvHref = merchantId ? outboxCsvUrl(merchantId, { status: status || undefined, type: type || undefined, since: since || undefined, limit }) : '#';
   const onRetrySinceLastDead = async () => {
     if (!stats?.lastDeadAt) return;
     await retrySince(merchantId, { since: stats.lastDeadAt, status: 'DEAD' });

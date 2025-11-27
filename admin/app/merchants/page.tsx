@@ -14,6 +14,8 @@ export default function AdminMerchantsPage() {
   const [msg, setMsg] = React.useState('');
   const [totp, setTotp] = React.useState<{ secret: string; otpauth: string }|null>(null);
   const [code, setCode] = React.useState('');
+  const [search, setSearch] = React.useState('');
+  const [subscriptionFilter, setSubscriptionFilter] = React.useState<'all'|'active'|'expiring'|'expired'>('all');
 
   async function load() {
     setLoading(true); setMsg('');
@@ -21,6 +23,24 @@ export default function AdminMerchantsPage() {
     finally { setLoading(false); }
   }
   React.useEffect(()=>{ load(); },[]);
+  const stats = React.useMemo(() => {
+    const total = items.length;
+    const expired = items.filter((m) => m.subscriptionExpired).length;
+    const expiring = items.filter((m) => !m.subscriptionExpired && m.subscriptionExpiresSoon).length;
+    const loginDisabled = items.filter((m) => m.portalLoginEnabled === false).length;
+    return { total, expired, expiring, loginDisabled, active: total - expired };
+  }, [items]);
+  const filteredItems = React.useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return items.filter((m) => {
+      const matchesQuery = !q || `${m.id} ${m.name} ${m.portalEmail || ''}`.toLowerCase().includes(q);
+      if (!matchesQuery) return false;
+      if (subscriptionFilter === 'active' && m.subscriptionExpired) return false;
+      if (subscriptionFilter === 'expiring' && !(m.subscriptionExpiresSoon && !m.subscriptionExpired)) return false;
+      if (subscriptionFilter === 'expired' && !m.subscriptionExpired) return false;
+      return true;
+    });
+  }, [items, search, subscriptionFilter]);
 
   async function create() {
     setMsg('');
@@ -83,17 +103,53 @@ export default function AdminMerchantsPage() {
 
   return (
     <main style={{ maxWidth: 980, margin: '32px auto', fontFamily: 'system-ui, Arial' }}>
-      <h1 style={{ marginBottom: 12 }}>Мерчанты</h1>
-      <div style={{ display:'grid', gap: 8, alignItems:'center', marginBottom: 16, gridTemplateColumns:'1fr 1fr 1fr 1fr auto' }}>
-        <input value={name} onChange={e=>setName(e.target.value)} placeholder="Название мерчанта" style={{ padding: 8 }} />
-        <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" type="email" style={{ padding: 8 }} />
-        <input value={password} onChange={e=>setPassword(e.target.value)} placeholder="Пароль (мин. 6)" type="password" style={{ padding: 8 }} />
-        <input value={ownerName} onChange={e=>setOwnerName(e.target.value)} placeholder="Имя владельца (обяз.)" style={{ padding: 8 }} />
-        <button onClick={create} disabled={!name.trim() || !email.trim() || password.length < 6 || !ownerName.trim()} style={{ padding: '8px 12px' }}>Создать</button>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap', marginBottom: 12 }}>
+        <h1 style={{ margin: 0 }}>Мерчанты</h1>
+        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+          <span style={{ fontSize:12, opacity:.8 }}>Данные загружаются из API (без моков)</span>
+          <button onClick={load} disabled={loading} style={{ padding:'8px 12px' }}>{loading ? 'Обновление…' : 'Обновить список'}</button>
+        </div>
+      </div>
+
+      <div style={{ display:'grid', gap:8, gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))', marginBottom: 12 }}>
+        <StatTile label="Всего" value={stats.total} />
+        <StatTile label="Активные" value={stats.active} color="#a6e3a1" />
+        <StatTile label="Истекает скоро" value={stats.expiring} color="#f9e2af" />
+        <StatTile label="Истекла подписка" value={stats.expired} color="#f38ba8" />
+        <StatTile label="Логин отключён" value={stats.loginDisabled} color="#f9e2af" />
+      </div>
+
+      <div style={{ display:'flex', gap:12, flexWrap:'wrap', alignItems:'center', marginBottom: 16 }}>
+        <label style={{ display:'flex', flexDirection:'column', gap:4, color:'#cbd5e1', fontSize:13 }}>
+          Поиск (id/название/email)
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Поиск..." style={{ padding: 8, minWidth:240 }} />
+        </label>
+        <label style={{ display:'flex', flexDirection:'column', gap:4, color:'#cbd5e1', fontSize:13 }}>
+          Подписка
+          <select value={subscriptionFilter} onChange={e=>setSubscriptionFilter(e.target.value as any)} style={{ padding: 8, minWidth:180 }}>
+            <option value="all">Все</option>
+            <option value="active">Активные</option>
+            <option value="expiring">Истекает скоро</option>
+            <option value="expired">Истекла</option>
+          </select>
+        </label>
+        <div style={{ fontSize:13, opacity:.8 }}>Показано: {filteredItems.length} из {items.length}</div>
+      </div>
+
+      <div style={{ background:'#0e1629', border:'1px solid #1e2a44', borderRadius:10, padding:12, marginBottom:16 }}>
+        <div style={{ fontWeight:600, marginBottom:8 }}>Создать мерчанта</div>
+        <div style={{ display:'grid', gap: 8, alignItems:'center', gridTemplateColumns:'1fr 1fr 1fr 1fr auto' }}>
+          <input value={name} onChange={e=>setName(e.target.value)} placeholder="Название мерчанта" style={{ padding: 8 }} />
+          <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" type="email" style={{ padding: 8 }} />
+          <input value={password} onChange={e=>setPassword(e.target.value)} placeholder="Пароль (мин. 6)" type="password" style={{ padding: 8 }} />
+          <input value={ownerName} onChange={e=>setOwnerName(e.target.value)} placeholder="Имя владельца (обяз.)" style={{ padding: 8 }} />
+          <button onClick={create} disabled={!name.trim() || !email.trim() || password.length < 6 || !ownerName.trim()} style={{ padding: '8px 12px' }}>Создать</button>
+        </div>
+        <div style={{ fontSize:12, opacity:.8, marginTop:6 }}>Требуется минимум: имя, email, пароль (≥6), имя владельца. Остальные настройки — в карточке мерчанта.</div>
       </div>
       {msg && <div style={{ marginBottom: 12, color: '#f44' }}>{msg}</div>}
       <div style={{ display:'grid', gap: 12 }}>
-        {items.map(m => (
+        {filteredItems.map(m => (
           <div key={m.id} style={{ border:'1px solid #ddd', borderRadius: 10, padding: 12 }}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap: 12, flexWrap:'wrap' }}>
               <RowEditor
@@ -129,9 +185,18 @@ export default function AdminMerchantsPage() {
             )}
           </div>
         ))}
-        {(!items.length && !loading) && <div style={{ opacity:.7 }}>Пока нет мерчантов</div>}
+        {(!filteredItems.length && !loading) && <div style={{ opacity:.7 }}>Нет подходящих мерчантов под фильтры</div>}
       </div>
     </main>
+  );
+}
+
+function StatTile({ label, value, color = '#e6edf3' }: { label: string; value: number | string; color?: string }) {
+  return (
+    <div style={{ background:'#0e1629', border:'1px solid #1e2a44', borderRadius:10, padding:10 }}>
+      <div style={{ fontSize:12, color:'#9fb0c9' }}>{label}</div>
+      <div style={{ fontSize:20, fontWeight:700, color }}>{value}</div>
+    </div>
   );
 }
 

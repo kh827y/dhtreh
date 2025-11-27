@@ -1,14 +1,16 @@
 "use client";
 import { useEffect, useState } from 'react';
+import { usePreferredMerchantId } from '../../../../lib/usePreferredMerchantId';
 
 export default function OutboxEventPage({ params }: { params: { id: string } }) {
-  const [merchantId, setMerchantId] = useState<string>(process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1');
+  const { merchantId, setMerchantId } = usePreferredMerchantId();
   const [data, setData] = useState<any>(null);
   const [msg, setMsg] = useState<string>('');
   const id = params.id;
 
   async function load() {
     try {
+      if (!merchantId) { setMsg('Укажите merchantId'); setData(null); return; }
       const r = await fetch(`/api/admin/merchants/${encodeURIComponent(merchantId)}/outbox/event/${encodeURIComponent(id)}`);
       if (!r.ok) throw new Error(await r.text());
       setData(await r.json()); setMsg('');
@@ -18,6 +20,7 @@ export default function OutboxEventPage({ params }: { params: { id: string } }) 
 
   const doRetry = async () => {
     try {
+      if (!merchantId) return;
       await fetch(`/api/admin/merchants/${encodeURIComponent(merchantId)}/outbox/${encodeURIComponent(id)}/retry`, { method: 'POST' });
       await load(); alert('Retry scheduled');
     } catch (e: any) { alert(String(e?.message || e)); }
@@ -25,6 +28,7 @@ export default function OutboxEventPage({ params }: { params: { id: string } }) 
   const doDelete = async () => {
     if (!confirm('Удалить событие?')) return;
     try {
+      if (!merchantId) return;
       await fetch(`/api/admin/merchants/${encodeURIComponent(merchantId)}/outbox/${encodeURIComponent(id)}`, { method: 'DELETE' });
       location.href = '/outbox';
     } catch (e: any) { alert(String(e?.message || e)); }
@@ -58,4 +62,3 @@ export default function OutboxEventPage({ params }: { params: { id: string } }) 
     </div>
   );
 }
-

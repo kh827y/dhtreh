@@ -1,9 +1,10 @@
 "use client";
 import { useEffect, useState } from 'react';
 import { listAudit, type AuditItem } from '../../lib/audit';
+import { usePreferredMerchantId } from '../../lib/usePreferredMerchantId';
 
 export default function AuditPage() {
-  const [merchantId, setMerchantId] = useState<string>(process.env.NEXT_PUBLIC_MERCHANT_ID || '');
+  const { merchantId, setMerchantId } = usePreferredMerchantId('');
   const [items, setItems] = useState<AuditItem[]>([]);
   const [limit, setLimit] = useState<number>(50);
   const [before, setBefore] = useState<string>('');

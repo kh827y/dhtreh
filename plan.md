@@ -19,6 +19,13 @@
 - [x] Admin docs: обновлены страницы деплоя и наблюдаемости под актуальные ENV/метрики (ADMIN_UI_PASSWORD, NEXT_PUBLIC_API_KEY/NEXT_PUBLIC_API_BASE, loyalty_errors_total, loyalty_request_duration_seconds_bucket и др.).
  - [x] Admin: страницы `/admin/settings`, `/admin/merchants` и `/admin/antifraud` приведены к новой модели лимитов и брендинга (базовые BPS и JWT для QUOTE, убраны daily caps/staff-key/Bridge-тумблеры, read-only anti-fraud отчёты, блок брендинга miniapp с цветами/логотипом и ссылкой на настройки мерчанта).
 
+## Хотфикс 2025-12-XX — Admin обзор и мерчанты
+- [x] Главная админки: системный обзор из `/observability/summary` (Outbox/5xx/Breaker/Rate limited, версия, инциденты, проблемные воркеры) и быстрые ссылки на Outbox/TTL/observability/health/audit/export.
+- [x] Виджет мерчантов на главной: счётчики активных/истекающих/истёкших, отключённого логина, последние созданные мерчанты с подсветкой подписки.
+- [x] Список мерчантов: поиск по id/названию/email, фильтры по статусу подписки, счётчики и явный refresh, подсказка об обращении только к реальному API.
+- [x] README admin обновлён под реальные разделы и ENV (API_BASE/ADMIN_KEY/ADMIN_SESSION_SECRET/NEXT_PUBLIC_API_KEY/METRICS_TOKEN) без упоминаний моков.
+- [x] Убран «мерчант по умолчанию»: никаких автоподстановок M-1 в UI/ENV; метрики главной только агрегированные, страницы Outbox/TTL/Antifraud/Settings требуют явного выбора мерчанта с сохранением локально.
+
 ## Хотфикс 2025-12-XX — Устройства и антифрод
 - [x] Вернули модель `Device`, добавили `deviceId` в Hold/Receipt/Transaction/Ledger/EarnLot, антифрод считает лимиты по устройствам и точкам (ENV `AF_*_DEVICE/AF_*_OUTLET` + `rulesJson.af`).
 - [x] Портал точек: управление устройствами (до 50 идентификаторов) вместо внешнего ID, API возвращает devices, журналы операций/отзывы показывают код устройства, операции/рефералы/рефанды сохраняют `deviceId`.

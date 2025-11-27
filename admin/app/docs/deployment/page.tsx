@@ -21,7 +21,7 @@ docker run -d --name api -p 3000:3000 --env-file ./api.env loyalty-api
       <h3>Bridge</h3>
       <pre style={{ whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{`docker build -t loyalty-bridge ./bridge
 docker run -d --name bridge -p 18080:18080 \
-  -e API_BASE=http://api:3000 -e MERCHANT_ID=M-1 -e BRIDGE_SECRET=... loyalty-bridge
+  -e API_BASE=http://api:3000 -e MERCHANT_ID=<merchant_id> -e BRIDGE_SECRET=... loyalty-bridge
 `}</pre>
 
       <h3>Admin/Miniapp</h3>

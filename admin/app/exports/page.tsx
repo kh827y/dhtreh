@@ -1,13 +1,15 @@
 "use client";
 import { useState } from 'react';
+import { usePreferredMerchantId } from '../../lib/usePreferredMerchantId';
 
 export default function ExportsPage() {
-  const [merchantId, setMerchantId] = useState<string>(process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1');
+  const { merchantId, setMerchantId } = usePreferredMerchantId();
   const [limit, setLimit] = useState<number>(1000);
   const [orderId, setOrderId] = useState<string>('');
   const [customerId, setCustomerId] = useState<string>('');
 
   const csvUrl = (path: string, params: Record<string,string|number|undefined>) => {
+    if (!merchantId) return '#';
     const q = new URLSearchParams();
     Object.entries(params).forEach(([k,v]) => { if (v!=null && v!=='') q.set(k, String(v)); });
     return `/api/admin/merchants/${encodeURIComponent(merchantId)}${path}${q.toString()?`?${q.toString()}`:''}`;

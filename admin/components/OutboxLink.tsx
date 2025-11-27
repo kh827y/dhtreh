@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from 'react';
 
-export default function OutboxLink({ merchantId }: { merchantId: string }) {
+export default function OutboxLink() {
   const [pending, setPending] = useState(false);
   const [dead, setDead] = useState(false);
   const load = async () => {
@@ -13,8 +13,7 @@ export default function OutboxLink({ merchantId }: { merchantId: string }) {
       setDead((j?.outboxDead || 0) > 0);
     } catch {}
   };
-  useEffect(() => { load().catch(()=>{}); const t = setInterval(load, 15000); return () => clearInterval(t); }, [merchantId]);
+  useEffect(() => { load().catch(()=>{}); const t = setInterval(load, 15000); return () => clearInterval(t); }, []);
   const badge = dead ? '🔴' : pending ? '🟡' : '🟢';
   return <a href="/outbox" style={{ color: '#89b4fa' }}>Outbox <span title={dead ? 'DEAD' : pending ? 'PENDING' : 'OK'}>{badge}</span></a>;
 }
-

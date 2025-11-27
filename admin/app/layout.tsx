@@ -1,6 +1,5 @@
 export const metadata = { title: 'Loyalty Admin', description: 'Админ‑панель' };
 
-import StatusBar from '../components/StatusBar';
 import OutboxLink from '../components/OutboxLink';
 import RoleBadge from '../components/RoleBadge';
 import '../src/app/globals.css';
@@ -21,7 +20,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     }
   }
   
-  const merchantId = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
   return (
     <html lang="ru">
       <body style={{ fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial', background: '#0b1220', color: '#e6edf3', margin: 0 }}>
@@ -36,7 +34,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <a href="/" style={{ color: '#89b4fa' }}>Главная</a>
               <a href="/merchants" style={{ color: '#89b4fa' }}>Мерчанты</a>
               <a href="/settings" style={{ color: '#89b4fa' }}>Настройки мерчанта</a>
-              <OutboxLink merchantId={merchantId} />
+              <OutboxLink />
               <a href="/outbox/monitor" style={{ color: '#89b4fa' }}>Outbox Monitor</a>
               <a href="/telegram_notifications" style={{ color: '#89b4fa' }}>Telegram уведомления</a>
               <a href="/ttl" style={{ color: '#89b4fa' }}>TTL Reconciliation</a>
@@ -58,7 +56,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </aside>
           {/* Main */}
           <main style={{ flex: 1, padding: 16 }}>
-            <StatusBar merchantId={merchantId} />
             <div style={{ marginTop: 12 }}>{children}</div>
           </main>
         </div>

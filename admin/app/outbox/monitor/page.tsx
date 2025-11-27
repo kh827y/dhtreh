@@ -1,11 +1,12 @@
 "use client";
 import { useEffect, useState } from 'react';
 import { outboxStats } from '../../../lib/outbox';
+import { usePreferredMerchantId } from '../../../lib/usePreferredMerchantId';
 
 type Summary = { outboxPending: number; outboxDead: number; http5xx: number; http4xx: number; circuitOpen?: number; rateLimited?: number; counters: Record<string, number>; outboxEvents?: Record<string, number> };
 
 export default function OutboxMonitorPage() {
-  const [merchantId, setMerchantId] = useState<string>(process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1');
+  const { merchantId, setMerchantId } = usePreferredMerchantId();
   const [since, setSince] = useState<string>('');
   const [stats, setStats] = useState<any>(null);
   const [metrics, setMetrics] = useState<Summary | null>(null);
@@ -13,6 +14,7 @@ export default function OutboxMonitorPage() {
 
   async function load() {
     try {
+      if (!merchantId) { setErr('Укажите merchantId'); setStats(null); setMetrics(null); return; }
       const [st, met] = await Promise.all([
         outboxStats(merchantId, since || undefined),
         fetch('/api/metrics').then(r=>r.json()),
@@ -94,4 +96,3 @@ function Metric({ label, value, warn }: { label: string; value: number; warn?: (
     </div>
   );
 }
-

@@ -1,52 +1,37 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Loyalty Admin
 
-## Getting Started
+Админка для глобальных настроек, мониторинга стабильности и управления мерчантами. Работает только с реальным API через `/api/admin` (проксируется в `API_BASE`, заголовок `X-Admin-Key`).
 
-First, run the development server:
+## Быстрый старт
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+1) Скопировать env: `cp infra/env-examples/admin.env.example admin/.env.local` и заполнить значения.
+2) Установить зависимости в корне: `pnpm install`.
+3) Запустить из каталога `admin`: `pnpm dev` (порт 3001 по умолчанию).
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Логин: `ADMIN_UI_PASSWORD` (опц. TOTP `ADMIN_UI_TOTP_SECRET`). Cookie шифруется `ADMIN_SESSION_SECRET`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Ключевые переменные окружения
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `API_BASE` — базовый URL API (https).
+- `ADMIN_KEY` — admin key для заголовка `X-Admin-Key`.
+- `ADMIN_SESSION_SECRET` — секрет подписи сессии админки (обязательно в проде).
+- `ADMIN_UI_PASSWORD` — пароль входа (обязательно в проде).
+- `ADMIN_UI_TOTP_SECRET` — опциональный TOTP для роли ADMIN.
+- `NEXT_PUBLIC_API_KEY` — публичный API key для фронтовых запросов админки.
+- `METRICS_TOKEN` — если `/metrics` требует заголовок `X-Metrics-Token`.
 
-## Notifications (Admin)
+Полный список/подсказки — `infra/env-examples/admin.env.example`.
 
-Page: `app/notifications` — broadcast by channel (ALL/EMAIL/PUSH), optional segment selection, dry‑run to estimate recipients, and template preview.
+## Основные разделы
 
-Hints:
+- Главная: системный обзор по `/observability/summary`, состояния воркеров, быстрые ссылки на мониторы.
+- Мерчанты: создание, поиск по id/названию/email, фильтры по статусу подписки, включение логина/TOTP, выдача Full подписки, кассовые учётные данные, вход в портал.
+- Мониторы: Outbox, TTL reconciliation, Observability/health, аудит и экспорт CSV.
+- Настройки мерчанта: реальные earn/redeem BPS, rulesJson, вебхуки, bridge secret, брендинг мини‑аппы (без моков и dev‑исключений).
+- Выбор мерчанта происходит вручную на страницах Outbox/TTL/Antifraud/Settings; выбранный merchantId сохраняется в localStorage (без дефолтов).
 
-- Use variables in templates: `{{customerName}}`, `{{merchantName}}`, and custom variables from the JSON block. Variables are applied to Subject/Text/HTML preview.
-- For EMAIL, Subject is required; for PUSH, Subject or Text is required.
-- Dry‑run returns estimated recipients before actual send.
-- Admin API requires `X-Admin-Key` configured on API (`ADMIN_KEY`).
+## Принципы
 
-Accessibility & i18n:
-
-- Basic a11y labels are added for inputs and buttons.
-- Lightweight RU/EN switch is available in the top right corner.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Только реальные HTTP‑запросы (никаких моков или dev‑веток).
+- Все ключи/секреты приходят из env (см. пример выше).
+- Ориентир на 50–100 мерчантов: лёгкие фильтры и минимум лишнего UI, без over‑engineering.
