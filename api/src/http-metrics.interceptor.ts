@@ -49,19 +49,30 @@ export class HttpMetricsInterceptor implements NestInterceptor {
           const rate = Number(process.env.ALERTS_5XX_SAMPLE_RATE || '0');
           if (rate > 0 && Math.random() < rate) {
             const rid = req?.requestId || req?.headers?.['x-request-id'] || '';
+            let traceId: string | undefined;
+            try {
+              const span = otelTrace.getSpan(otelContext.active());
+              traceId = span?.spanContext()?.traceId;
+            } catch {}
             const msg = [
-              '❗ 5xx on API',
               `status: ${status}`,
               `method: ${method}`,
               `route: ${route}`,
               rid ? `requestId: ${rid}` : undefined,
+              traceId ? `traceId: ${traceId}` : undefined,
               err?.message
                 ? `error: ${String(err.message).slice(0, 200)}`
                 : undefined,
-            ]
-              .filter(Boolean)
-              .join('\n');
-            this.alerts.notifyText(msg).catch(() => {});
+            ].filter(Boolean) as string[];
+            this.alerts
+              .notifyIncident({
+                title: '5xx on API',
+                lines: msg,
+                severity: 'critical',
+                throttleKey: `http5xx:${route}`,
+                throttleMinutes: 5,
+              })
+              .catch(() => {});
           }
         }
       } catch {}

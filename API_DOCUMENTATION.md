@@ -1770,6 +1770,21 @@ Response 200: объект клиента, как в GET /portal/customers/{id}
   - `birthday_push_sent_total{merchantId}` / `birthday_push_failed_total{merchantId,reason}` — успешные и неуспешные рассылки.
 - Аналитика портала `/portal/analytics/birthday-mechanic`: принимает `period` либо `from`+`to` и (опционально) `outletId`; отдаёт сводку `summary{greetings,giftPurchasers,revenueNet,averageCheck,giftPointsSpent,receiptsWithGifts}`, `timeline[]` (дата, greetings, purchases) и `revenue[]` (дата, revenue — выручка с вычетом потраченных подарочных баллов). Группировка по дням/неделям/месяцам выполняется на фронтенде.
 
+## Админ: наблюдаемость и алерты
+
+- `GET /observability/summary` — сводка (требует `x-admin-key`):
+  - `metrics`: `outboxPending`, `outboxDead`, `http5xx`, `http4xx`, `circuitOpen`, `rateLimited`, `counters`, `outboxEvents`.
+  - `workers`: `{ name, expected, alive, stale, intervalMs, lastTickAt, startedAt, reason? }`.
+  - `alerts`: состояние Telegram-бота (`enabled`, `chatId`, `sampleRate`), `incidents` — последние зафиксированные события (успех/ошибка отправки).
+  - `telemetry`: флаги Prometheus/Grafana/Sentry/OTel.
+- `GET /alerts/state` — статус бота + последние инциденты.
+- `POST /alerts/test` — отправка тестового сообщения (body `{ text?: string }`).
+
+ENV:
+
+- `ALERT_TELEGRAM_BOT_TOKEN`, `ALERT_TELEGRAM_CHAT_ID`, `ALERTS_5XX_SAMPLE_RATE`.
+- Пороги мониторинга: `ALERT_OUTBOX_PENDING_THRESHOLD`, `ALERT_OUTBOX_DEAD_THRESHOLD`, `ALERT_WORKER_STALE_MINUTES`, `ALERT_MONITOR_INTERVAL_MS`, `ALERT_REPEAT_MINUTES`.
+
 ## Поддержка
 
 - Email: support@loyalty.com

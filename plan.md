@@ -636,6 +636,10 @@
   - Клиент больше не использует `start_param/startapp` для определения `merchantId` — только URL (`?merchantId`/`?merchant`).
 - [x] Docs: `API_DOCUMENTATION.md` обновлён — описаны `GET/POST /loyalty/profile`, оговорена изоляция по мерчанту и серверная валидация.
 
+## Хотфикс 2025-10-09 — Ops алерты и наблюдаемость
+- [x] Алерт-бот админов: AlertsService с throttle и историей инцидентов, добавлен фоновый мониторинг outbox/воркеров (пороги через `ALERT_*`), 5xx алерты дополнились traceId; новые admin эндпоинты `/observability/summary`, `/alerts/state`, `/alerts/test`.
+- [x] Админка: раздел `/observability` (статус бота, последние инциденты, метрики outbox/HTTP, состояние воркеров, кнопка теста); обновлены README/API_DOCUMENTATION/env-примеры с порогами алертов и рекомендациями по Prom/Grafana/Sentry/OTel.
+
 ## Хотфикс 2025-10-02 — Подписи Bridge для лояльности
 - [x] CashierGuard: нормализуем payload подписи Bridge под контроллеры (quote/commit/refund/cancel) и берём `outletId` из hold/receipt, чтобы корректные подписи пропускались без Staff-Key.
 - [x] CashierGuard: при staff-key подхватываем outletId из hold/receipt и разрешаем mint QR с валидной bridge-подписью без staff-key.

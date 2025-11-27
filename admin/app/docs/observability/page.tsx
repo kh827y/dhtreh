@@ -1,65 +1,31 @@
 export default function ObservabilityDocs() {
   return (
     <div>
-      <h2>Наблюдаемость и Алерты</h2>
+      <h2>Наблюдаемость и алерты</h2>
+      <p>Основной стек: Prometheus + Grafana + Telegram-бот алертов. Sentry включаем только на проде, OpenTelemetry оставляем опциональным для точечной отладки.</p>
+
       <h3>Метрики Prometheus</h3>
       <ul>
-        <li><b>loyalty_request_duration_seconds_bucket</b>: гистограмма latency по HTTP‑запросам</li>
-        <li><b>loyalty_errors_total</b>: счётчик ошибок (лейблы method, route, status)</li>
-        <li><b>webhook_queue_size</b>: размер очереди вебхуков</li>
-        <li><b>antifraud_blocked_total</b>: количество заблокированных антифродом операций</li>
-        <li><b>loyalty_transactions_total</b>: количество транзакций лояльности</li>
+        <li><code>http_requests_total</code> и <code>http_request_duration_seconds_bucket</code> — ошибки/латентность по методам и маршрутам.</li>
+        <li><code>loyalty_outbox_pending</code>, <code>loyalty_outbox_dead_total</code>, <code>loyalty_outbox_events_total</code> — очередь вебхуков и исходящие события.</li>
+        <li><code>loyalty_quote_requests_total</code> / <code>loyalty_commit_requests_total</code> / <code>loyalty_refund_requests_total</code> с лейблом <code>result</code>.</li>
+        <li><code>pos_requests_total</code>, <code>pos_errors_total</code>, <code>pos_webhooks_total</code> — интеграции касс.</li>
       </ul>
-      <h3>Примеры алертов</h3>
-      <pre style={{ whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{`# 5xx всплеск
-- alert: HighErrorRate
-  expr: rate(loyalty_errors_total[5m]) > 0.1
-  for: 5m
-  labels: { severity: 'critical' }
-  annotations:
-    summary: "Высокий уровень ошибок"
-    description: "Более 10% запросов завершаются ошибкой"
 
-- alert: HighLatency
-  expr: histogram_quantile(0.95, rate(loyalty_request_duration_seconds_bucket[5m])) > 0.5
-  for: 10m
-  labels: { severity: 'warning' }
-  annotations:
-    summary: "Высокая задержка API"
-    description: "P95 latency превышает 500ms"
-
-- alert: WebhookQueueGrowing
-  expr: rate(webhook_queue_size[5m]) > 100
-  for: 15m
-  labels: { severity: 'warning' }
-  annotations:
-    summary: "Очередь вебхуков растет"
-    description: "Очередь вебхуков растет быстрее, чем обрабатывается"
-
-- alert: FraudDetectionHigh
-  expr: rate(antifraud_blocked_total[1h]) > 10
-  for: 5m
-  labels: { severity: 'warning' }
-  annotations:
-    summary: "Высокая активность фрода"
-    description: "Заблокировано более 10 транзакций за час"
-
-- alert: NoTransactionsLongTime
-  expr: increase(loyalty_transactions_total[1h]) == 0
-  for: 2h
-  labels: { severity: 'info' }
-  annotations:
-    summary: "Нет транзакций"
-    description: "Нет новых транзакций более 2 часов"
-`}</pre>
-      <h3>Grafana панели</h3>
+      <h3>Telegram-алерты</h3>
       <ul>
-        <li>RPS/latency по маршрутам</li>
-        <li>Quote/Commit/Error rate</li>
-        <li>Outbox backlog/SENT/FAILED/DEAD</li>
-        <li>Воркеры: lastTickAt, alive</li>
+        <li>ENV: <code>ALERT_TELEGRAM_BOT_TOKEN</code>, <code>ALERT_TELEGRAM_CHAT_ID</code>, сэмплинг 5xx — <code>ALERTS_5XX_SAMPLE_RATE</code>.</li>
+        <li>Пороги мониторинга: <code>ALERT_OUTBOX_PENDING_THRESHOLD</code>, <code>ALERT_OUTBOX_DEAD_THRESHOLD</code>, <code>ALERT_WORKER_STALE_MINUTES</code>.</li>
+        <li>В админке есть раздел «Наблюдаемость»: статус бота, последние инциденты, срабатывания по воркерам/очередям.</li>
+      </ul>
+
+      <h3>Grafana (рекомендации)</h3>
+      <ul>
+        <li>Дашборды RPS/latency с фильтром route и сравнениями по 4xx/5xx.</li>
+        <li>Outbox: backlog, DEAD, rate-limited, breaker open, время доставки.</li>
+        <li>Quote/Commit/Refund: успешные/ошибки, p95 latency.</li>
+        <li>POS-интеграции: webhooks и ошибки по провайдерам.</li>
       </ul>
     </div>
   );
 }
-

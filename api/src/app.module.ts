@@ -43,6 +43,8 @@ import { join } from 'path';
 import { AutoReturnWorker } from './auto-return.worker';
 import { BirthdayWorker } from './birthday.worker';
 import { TelegramStaffDigestWorker } from './telegram/staff-digest.worker';
+import { OpsAlertMonitor } from './alerts/ops-alert-monitor.service';
+import { AdminObservabilityController } from './admin-observability.controller';
 // Optional Redis storage for Throttler
 let throttlerStorage: any = undefined;
 try {
@@ -100,7 +102,7 @@ try {
     CustomerAudiencesModule,
     CommunicationsModule,
   ],
-  controllers: [HealthController, MetricsController],
+  controllers: [HealthController, MetricsController, AdminObservabilityController],
   providers: [
     HoldGcWorker,
     OutboxDispatcherWorker,
@@ -114,6 +116,7 @@ try {
     AutoReturnWorker,
     BirthdayWorker,
     TelegramStaffDigestWorker,
+    OpsAlertMonitor,
     { provide: APP_GUARD, useClass: CustomThrottlerGuard },
   ],
 })

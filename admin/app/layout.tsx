@@ -40,6 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <a href="/outbox/monitor" style={{ color: '#89b4fa' }}>Outbox Monitor</a>
               <a href="/telegram_notifications" style={{ color: '#89b4fa' }}>Telegram уведомления</a>
               <a href="/ttl" style={{ color: '#89b4fa' }}>TTL Reconciliation</a>
+              <a href="/observability" style={{ color: '#89b4fa' }}>Наблюдаемость</a>
               <div style={{ marginTop: 8, opacity: 0.8, fontSize: 12, textTransform: 'uppercase' }}>Документация</div>
               <a href="/docs/webhooks" style={{ color: '#89b4fa' }}>Вебхуки</a>
               <a href="/docs/integration" style={{ color: '#89b4fa' }}>Интеграции</a>

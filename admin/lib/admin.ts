@@ -459,3 +459,51 @@ export async function getReferralLeaderboard(merchantId: string, limit = 10) {
   if (limit) p.set('limit', String(limit));
   return http(`/referral/leaderboard/${encodeURIComponent(merchantId)}${p.toString()?`?${p.toString()}`:''}`);
 }
+
+// ===== Наблюдаемость и алерты =====
+export type ObservabilitySummary = {
+  ok: true;
+  version: string;
+  env: { nodeEnv: string; appVersion: string };
+  metrics: {
+    outboxPending: number;
+    outboxDead: number;
+    http5xx: number;
+    http4xx: number;
+    circuitOpen: number;
+    rateLimited: number;
+    counters: Record<string, number>;
+    outboxEvents: Record<string, number>;
+    posWebhooks?: Record<string, number>;
+  };
+  workers: Array<{
+    name: string;
+    expected: boolean;
+    reason?: string;
+    alive: boolean;
+    stale: boolean;
+    intervalMs: number;
+    lastTickAt: string | null;
+    startedAt: string | null;
+  }>;
+  alerts: { enabled: boolean; chatId: string | null; sampleRate: number };
+  incidents?: Array<{
+    id: string;
+    at: string;
+    severity: string;
+    title: string;
+    message: string;
+    delivered: boolean;
+    throttled: boolean;
+    error?: string;
+  }>;
+  telemetry?: { prometheus: boolean; grafana: boolean; sentry: boolean; otel: boolean };
+};
+
+export async function getObservabilitySummary(): Promise<ObservabilitySummary> {
+  return http('/observability/summary');
+}
+
+export async function sendAlertTest(text?: string): Promise<{ ok: true }> {
+  return http('/alerts/test', { method: 'POST', body: JSON.stringify({ text }) });
+}
