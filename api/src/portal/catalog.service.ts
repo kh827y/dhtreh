@@ -12,6 +12,8 @@ import {
   ProductStock,
   ProductVariant,
   Outlet,
+  ProductExternalId,
+  ProductCategoryExternal,
 } from '@prisma/client';
 import { MetricsService } from '../metrics.service';
 import { PrismaService } from '../prisma.service';
@@ -36,6 +38,9 @@ import {
   ProductVariantInputDto,
   ProductStockInputDto,
   OutletScheduleDto,
+  ImportCatalogDto,
+  ImportCategoryDto,
+  ImportProductDto,
 } from './catalog.dto';
 import {
   normalizeDeviceCode,
@@ -135,10 +140,13 @@ export class PortalCatalogService {
       id: entity.id,
       name: entity.name,
       slug: entity.slug,
+      code: entity.code ?? null,
       description: entity.description ?? null,
       imageUrl: entity.imageUrl ?? null,
       parentId: entity.parentId ?? null,
       order: entity.order,
+      externalProvider: (entity as any).externalProvider ?? null,
+      externalId: (entity as any).externalId ?? null,
     };
   }
 
@@ -146,12 +154,22 @@ export class PortalCatalogService {
     product: Product & {
       category?: ProductCategory | null;
       images: ProductImage[];
+      externalMappings?: ProductExternalId[];
     },
   ): ProductListItemDto {
+    const externalMappings =
+      (product as any).externalMappings as ProductExternalId[] | undefined;
+    const primaryExt = externalMappings?.[0];
+    const externalProvider =
+      product.externalProvider ?? primaryExt?.externalProvider ?? null;
+    const externalId = product.externalId ?? primaryExt?.externalId ?? null;
     return {
       id: product.id,
       name: product.name,
       sku: product.sku ?? null,
+      code: (product as any).code ?? null,
+      barcode: (product as any).barcode ?? null,
+      unit: (product as any).unit ?? null,
       categoryId: product.categoryId ?? null,
       categoryName: product.category?.name ?? null,
       previewImage: product.images[0]?.url ?? null,
@@ -160,6 +178,8 @@ export class PortalCatalogService {
       allowRedeem: product.allowRedeem,
       purchasesMonth: product.purchasesMonth,
       purchasesTotal: product.purchasesTotal,
+      externalProvider,
+      externalId,
     };
   }
 
@@ -169,6 +189,7 @@ export class PortalCatalogService {
       images: ProductImage[];
       variants: ProductVariant[];
       stocks: (ProductStock & { outlet?: Outlet | null })[];
+      externalMappings?: ProductExternalId[];
     },
   ): ProductDto {
     const images = product.images
@@ -520,6 +541,90 @@ export class PortalCatalogService {
     return (last?.order ?? 1000) + 10;
   }
 
+  private async syncCategoryExternal(
+    tx: Prisma.TransactionClient,
+    merchantId: string,
+    categoryId: string,
+    externalProvider?: string | null,
+    externalId?: string | null,
+  ) {
+    if (!externalProvider || !externalId) return;
+    await tx.productCategoryExternal.upsert({
+      where: {
+        merchantId_externalProvider_externalId: {
+          merchantId,
+          externalProvider,
+          externalId,
+        },
+      },
+      update: { categoryId },
+      create: { merchantId, categoryId, externalProvider, externalId },
+    });
+  }
+
+  private async syncProductExternal(
+    tx: Prisma.TransactionClient,
+    merchantId: string,
+    productId: string,
+    payload: {
+      externalProvider?: string | null;
+      externalId?: string | null;
+      barcode?: string | null;
+      sku?: string | null;
+    },
+  ) {
+    const externalProvider = payload.externalProvider?.trim();
+    const externalId = payload.externalId?.trim();
+    if (!externalProvider || !externalId) return;
+    await tx.productExternalId.upsert({
+      where: {
+        merchantId_externalProvider_externalId: {
+          merchantId,
+          externalProvider,
+          externalId,
+        },
+      },
+      update: {
+        productId,
+        barcode: payload.barcode ?? null,
+        sku: payload.sku ?? null,
+      },
+      create: {
+        merchantId,
+        productId,
+        externalProvider,
+        externalId,
+        barcode: payload.barcode ?? null,
+        sku: payload.sku ?? null,
+      },
+    });
+  }
+
+  private async writeSyncLog(params: {
+    merchantId: string;
+    provider: string;
+    endpoint: string;
+    status: 'ok' | 'error';
+    request?: any;
+    response?: any;
+    error?: any;
+  }) {
+    try {
+      await this.prisma.syncLog.create({
+        data: {
+          merchantId: params.merchantId,
+          provider: params.provider,
+          direction: 'IN',
+          endpoint: params.endpoint,
+          status: params.status,
+          request: params.request ?? null,
+          response: params.response ?? null,
+          error: params.error ? String(params.error) : null,
+        },
+      });
+    } catch {}
+  }
+
   // ===== Categories =====
   async listCategories(merchantId: string): Promise<CategoryDto[]> {
     const categories = await this.prisma.productCategory.findMany({
@@ -546,12 +651,22 @@ export class PortalCatalogService {
             merchantId,
             name,
             slug,
+            code: dto.code?.trim() || null,
             description: dto.description ?? null,
             imageUrl: dto.imageUrl ?? null,
             parentId: dto.parentId ?? null,
             order,
+            externalProvider: dto.externalProvider?.trim() || null,
+            externalId: dto.externalId?.trim() || null,
           },
         });
+        await this.syncCategoryExternal(
+          tx,
+          merchantId,
+          created.id,
+          dto.externalProvider?.trim() || null,
+          dto.externalId?.trim() || null,
+        );
         this.logger.log(
           JSON.stringify({
             event: 'portal.catalog.category.create',
@@ -601,6 +716,7 @@ export class PortalCatalogService {
       if (dto.description !== undefined)
         data.description = dto.description ?? null;
       if (dto.imageUrl !== undefined) data.imageUrl = dto.imageUrl ?? null;
+      if (dto.code !== undefined) data.code = dto.code?.trim() || null;
       if (dto.parentId !== undefined) {
         if (dto.parentId) {
           if (dto.parentId === categoryId)
@@ -611,12 +727,31 @@ export class PortalCatalogService {
           data.parent = { disconnect: true };
         }
       }
+      if (dto.externalProvider !== undefined)
+        (data as any).externalProvider = dto.externalProvider?.trim() || null;
+      if (dto.externalId !== undefined)
+        (data as any).externalId = dto.externalId?.trim() || null;
       if (Object.keys(data).length === 0) return this.mapCategory(category);
       try {
         const updated = await tx.productCategory.update({
           where: { id: categoryId },
           data,
         });
+        const extProvider =
+          dto.externalProvider?.trim() ??
+          category.externalProvider ??
+          undefined;
+        const extId =
+          dto.externalId?.trim() ?? category.externalId ?? undefined;
+        if (extProvider && extId) {
+          await this.syncCategoryExternal(
+            tx,
+            merchantId,
+            updated.id,
+            extProvider,
+            extId,
+          );
+        }
         this.logger.log(
           JSON.stringify({
             event: 'portal.catalog.category.update',
@@ -703,6 +838,36 @@ export class PortalCatalogService {
     if (query.status === 'hidden') where.visible = false;
     if (query.points === 'with_points') where.accruePoints = true;
     if (query.points === 'without_points') where.accruePoints = false;
+    const andFilters: Prisma.ProductWhereInput[] = [];
+    if (query.externalProvider) {
+      andFilters.push({
+        OR: [
+          { externalProvider: query.externalProvider },
+          {
+            externalMappings: {
+              some: { externalProvider: query.externalProvider },
+            },
+          },
+        ],
+      });
+    }
+    if (query.externalId) {
+      const extId = query.externalId.trim();
+      if (extId) {
+        andFilters.push({
+          OR: [
+            { externalId: { contains: extId, mode: 'insensitive' } },
+            {
+              externalMappings: {
+                some: {
+                  externalId: { contains: extId, mode: 'insensitive' },
+                },
+              },
+            },
+          ],
+        });
+      }
+    }
     if (query.search) {
       const term = query.search.trim();
       if (term) {
@@ -713,16 +878,35 @@ export class PortalCatalogService {
           OR: [
             { name: { contains: term, mode: 'insensitive' } },
             { sku: { contains: term, mode: 'insensitive' } },
+            { code: { contains: term, mode: 'insensitive' } },
+            { barcode: { contains: term, mode: 'insensitive' } },
+            { externalId: { contains: term, mode: 'insensitive' } },
+            {
+              externalMappings: {
+                some: { externalId: { contains: term, mode: 'insensitive' } },
+              },
+            },
           ],
         });
         where.AND = and;
+      }
+    }
+    if (andFilters.length) {
+      if (where.AND) {
+        where.AND = [...(Array.isArray(where.AND) ? where.AND : [where.AND]), ...andFilters];
+      } else {
+        where.AND = andFilters;
       }
     }
     const [items, total] = await Promise.all([
       this.prisma.product.findMany({
         where,
         orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
-        include: { category: true, images: { orderBy: { position: 'asc' } } },
+        include: {
+          category: true,
+          images: { orderBy: { position: 'asc' } },
+          externalMappings: true,
+        },
       }),
       this.prisma.product.count({ where }),
     ]);
@@ -740,6 +924,7 @@ export class PortalCatalogService {
         images: { orderBy: { position: 'asc' } },
         variants: { orderBy: { position: 'asc' } },
         stocks: { include: { outlet: true } },
+        externalMappings: true,
       },
     });
     if (!product) throw new NotFoundException('Product not found');
@@ -760,6 +945,13 @@ export class PortalCatalogService {
       merchant: { connect: { id: merchantId } },
       name: dto.name.trim(),
       sku: dto.sku ? dto.sku.trim() : null,
+      code: dto.code ? dto.code.trim() : null,
+      barcode: dto.barcode ? dto.barcode.trim() : null,
+      unit: dto.unit ? dto.unit.trim() : null,
+      externalProvider: dto.externalProvider
+        ? dto.externalProvider.trim()
+        : null,
+      externalId: dto.externalId ? dto.externalId.trim() : null,
       description: dto.description ?? null,
       order: dto.order ?? 0,
       iikoProductId: dto.iikoProductId ?? null,
@@ -849,6 +1041,23 @@ export class PortalCatalogService {
           images: { orderBy: { position: 'asc' } },
           variants: { orderBy: { position: 'asc' } },
           stocks: { include: { outlet: true } },
+          externalMappings: true,
+        },
+      });
+      await this.syncProductExternal(tx, merchantId, created.id, {
+        externalProvider: dto.externalProvider ?? null,
+        externalId: dto.externalId ?? null,
+        barcode: dto.barcode ?? null,
+        sku: dto.sku ?? null,
+      });
+      const full = await tx.product.findFirst({
+        where: { id: created.id },
+        include: {
+          category: true,
+          images: { orderBy: { position: 'asc' } },
+          variants: { orderBy: { position: 'asc' } },
+          stocks: { include: { outlet: true } },
+          externalMappings: true,
         },
       });
       this.logger.log(
@@ -861,7 +1070,7 @@ export class PortalCatalogService {
       this.metrics.inc('portal_catalog_products_changed_total', {
         action: 'create',
       });
-      return this.mapProductDetailed(created);
+      return this.mapProductDetailed(full || created);
     });
   }
 
@@ -893,6 +1102,15 @@ export class PortalCatalogService {
         data.name = name;
       }
       if (dto.sku !== undefined) data.sku = dto.sku ? dto.sku.trim() : null;
+      if (dto.code !== undefined) data.code = dto.code ? dto.code.trim() : null;
+      if (dto.barcode !== undefined)
+        data.barcode = dto.barcode ? dto.barcode.trim() : null;
+      if (dto.unit !== undefined) data.unit = dto.unit ? dto.unit.trim() : null;
+      if (dto.externalProvider !== undefined)
+        (data as any).externalProvider =
+          dto.externalProvider?.trim() || null;
+      if (dto.externalId !== undefined)
+        (data as any).externalId = dto.externalId?.trim() || null;
       if (dto.description !== undefined)
         data.description = dto.description ?? null;
       if (dto.order !== undefined) data.order = dto.order;
@@ -990,6 +1208,23 @@ export class PortalCatalogService {
           }
         }
       }
+      const extProvider =
+        dto.externalProvider !== undefined
+          ? dto.externalProvider?.trim() || null
+          : (product as any).externalProvider ?? null;
+      const extId =
+        dto.externalId !== undefined
+          ? dto.externalId?.trim() || null
+          : (product as any).externalId ?? null;
+      await this.syncProductExternal(tx, merchantId, productId, {
+        externalProvider: extProvider,
+        externalId: extId,
+        barcode:
+          dto.barcode !== undefined
+            ? dto.barcode ?? null
+            : (product as any).barcode ?? null,
+        sku: dto.sku !== undefined ? dto.sku ?? null : product.sku ?? null,
+      });
       const updated = await tx.product.findFirst({
         where: { id: productId },
         include: {
@@ -997,6 +1232,7 @@ export class PortalCatalogService {
           images: { orderBy: { position: 'asc' } },
           variants: { orderBy: { position: 'asc' } },
           stocks: { include: { outlet: true } },
+          externalMappings: true,
         },
       });
       if (!updated) throw new NotFoundException('Product not found');
@@ -1071,6 +1307,242 @@ export class PortalCatalogService {
       action: dto.action,
     });
     return { ok: true, updated: result.count };
+  }
+
+  async importCatalog(
+    merchantId: string,
+    provider: string,
+    dto: ImportCatalogDto,
+  ) {
+    const providerCode =
+      dto.externalProvider?.trim() ||
+      provider ||
+      'EXTERNAL';
+    const categoriesInput = Array.isArray(dto.categories)
+      ? dto.categories
+      : [];
+    const productsInput = Array.isArray(dto.products) ? dto.products : [];
+    const summary = {
+      createdCategories: 0,
+      updatedCategories: 0,
+      createdProducts: 0,
+      updatedProducts: 0,
+    };
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const categoryMap = new Map<string, string>();
+        for (const category of categoriesInput) {
+          const externalId = (category.externalId || '').trim();
+          const name = (category.name || '').trim();
+          if (!externalId || !name) continue;
+          const existing = await tx.productCategory.findFirst({
+            where: {
+              merchantId,
+              OR: [
+                {
+                  externalProvider: providerCode,
+                  externalId,
+                },
+                {
+                  external: {
+                    some: { externalProvider: providerCode, externalId },
+                  },
+                },
+              ],
+            },
+          });
+          let categoryId: string;
+          if (existing) {
+            await tx.productCategory.update({
+              where: { id: existing.id },
+              data: {
+                name,
+                code: category.code?.trim() || existing.code,
+                externalProvider: providerCode,
+                externalId,
+              },
+            });
+            categoryId = existing.id;
+            summary.updatedCategories += 1;
+          } else {
+            const created = await tx.productCategory.create({
+              data: {
+                merchantId,
+                name,
+                slug: category.code?.trim() || this.slugify(name),
+                code: category.code?.trim() || null,
+                externalProvider: providerCode,
+                externalId,
+                order: await this.nextCategoryOrder(tx, merchantId),
+              },
+            });
+            categoryId = created.id;
+            summary.createdCategories += 1;
+          }
+          await this.syncCategoryExternal(
+            tx,
+            merchantId,
+            categoryId,
+            providerCode,
+            externalId,
+          );
+          categoryMap.set(externalId, categoryId);
+        }
+
+        // Проставляем родителей после создания всех категорий
+        for (const category of categoriesInput) {
+          const externalId = (category.externalId || '').trim();
+          const parentExt = category.parentExternalId?.trim();
+          if (!externalId || !parentExt) continue;
+          const catId = categoryMap.get(externalId);
+          const parentId = categoryMap.get(parentExt);
+          if (catId && parentId) {
+            await tx.productCategory.update({
+              where: { id: catId },
+              data: { parentId },
+            });
+          }
+        }
+
+        for (const product of productsInput) {
+          const externalId = (product.externalId || '').trim();
+          const name = (product.name || '').trim();
+          if (!externalId || !name) continue;
+          const categoryId =
+            product.categoryId ??
+            (product.categoryExternalId
+              ? categoryMap.get(product.categoryExternalId.trim()) ?? null
+              : null);
+          const barcode = product.barcode?.trim() || null;
+          const sku = product.sku?.trim() || null;
+          const code = product.code?.trim() || null;
+          const existing = await tx.product.findFirst({
+            where: {
+              merchantId,
+              deletedAt: null,
+              OR: [
+                {
+                  externalProvider: providerCode,
+                  externalId,
+                },
+                {
+                  externalMappings: {
+                    some: { externalProvider: providerCode, externalId },
+                  },
+                },
+              ],
+            },
+          });
+          let resolved = existing;
+          if (!resolved && barcode) {
+            resolved = await tx.product.findFirst({
+              where: { merchantId, deletedAt: null, barcode },
+            });
+          }
+          if (!resolved && sku) {
+            resolved = await tx.product.findFirst({
+              where: { merchantId, deletedAt: null, sku },
+            });
+          }
+          if (!resolved && code) {
+            resolved = await tx.product.findFirst({
+              where: { merchantId, deletedAt: null, code },
+            });
+          }
+
+          if (resolved) {
+            await tx.product.update({
+              where: { id: resolved.id },
+              data: {
+                name,
+                category: categoryId
+                  ? { connect: { id: categoryId } }
+                  : undefined,
+                sku,
+                code,
+                barcode,
+                unit: product.unit?.trim() || resolved.unit,
+                externalProvider: providerCode,
+                externalId,
+                price: this.toDecimal(product.price ?? this.decimalToNumber(resolved.price)),
+                priceEnabled: true,
+              },
+            });
+            await this.syncProductExternal(tx, merchantId, resolved.id, {
+              externalProvider: providerCode,
+              externalId,
+              barcode,
+              sku,
+            });
+            summary.updatedProducts += 1;
+          } else {
+            const order = await this.nextProductOrder(tx, merchantId);
+            const created = await tx.product.create({
+              data: this.prepareProductCreateData(
+                merchantId,
+                {
+                  name,
+                  sku,
+                  code,
+                  barcode,
+                  unit: product.unit,
+                  priceEnabled: true,
+                  price: product.price ?? 0,
+                  hasVariants: false,
+                  visible: true,
+                  accruePoints: true,
+                  allowRedeem: true,
+                  externalProvider: providerCode,
+                  externalId,
+                  order,
+                } as CreateProductDto,
+                { categoryId },
+              ),
+              include: {
+                category: true,
+                images: { orderBy: { position: 'asc' } },
+                variants: { orderBy: { position: 'asc' } },
+                stocks: { include: { outlet: true } },
+                externalMappings: true,
+              },
+            });
+            await this.syncProductExternal(tx, merchantId, created.id, {
+              externalProvider: providerCode,
+              externalId,
+              barcode,
+              sku,
+            });
+            summary.createdProducts += 1;
+          }
+        }
+      });
+      await this.writeSyncLog({
+        merchantId,
+        provider: providerCode,
+        endpoint: `catalog/import/${provider.toLowerCase()}`,
+        status: 'ok',
+        request: {
+          products: productsInput.length,
+          categories: categoriesInput.length,
+        },
+        response: summary,
+      });
+      return { ok: true, ...summary };
+    } catch (error: any) {
+      await this.writeSyncLog({
+        merchantId,
+        provider: providerCode,
+        endpoint: `catalog/import/${provider.toLowerCase()}`,
+        status: 'error',
+        request: {
+          products: productsInput.length,
+          categories: categoriesInput.length,
+        },
+        response: summary,
+        error: error?.message ?? String(error),
+      });
+      throw error;
+    }
   }
 
   // ===== Outlets =====

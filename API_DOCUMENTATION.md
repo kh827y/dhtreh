@@ -3,6 +3,7 @@
 ## Содержание
 - [Аутентификация](#аутентификация)
 - [Основные эндпоинты](#основные-эндпоинты)
+- [Интеграции REST API](#интеграции-rest-api)
 - [Программа лояльности](#программа-лояльности)
 - [Управление мерчантами](#управление-мерчантами)
 - [Вебхуки](#вебхуки)
@@ -351,6 +352,20 @@ Response 200:
 - Claim доступен только для акций с типом награды `POINTS` и положительным значением `rewardValue`; повторный claim не допускается (идемпотентность по `promotionId+customerId`).
 
 ## Основные эндпоинты
+
+### Интеграции REST API
+
+Эндпоинты `/api/integrations/**` требуют заголовок `X-Api-Key` (интеграционный ключ); `merchantId` определяется по ключу. Throttling по `integrationId` с дефолтными лимитами: CODE — 60/мин, CALCULATE — 120/мин, BONUS — 60/мин, REFUND — 30/мин, OUTLETS/DEVICES — 60/мин, OPERATIONS — 30/мин (настраиваются в интеграции).
+
+- `POST /api/integrations/code` — { `userToken`, `deviceId?` } → `{ type: "bonus", client: { id_client, id_ext, name?, phone?, email?, balance } }`. Валидируется `merchantAud`, данные клиента резолвятся по `userToken`.
+- `POST /api/integrations/bonus/calculate` — { `userToken`, `orderId`, `mode: redeem|earn|mixed`, `total`, `eligibleTotal`, `deviceId?`, `outletId?`, `items?` } → чистый расчёт без hold/persist: `{ canRedeem, canEarn, maxPaidBonus, maxBonusValue, finalPayable, balance, orderId, mode }`.
+- `POST /api/integrations/bonus` — тот же базовый набор + ручные поля `paid_bonus?`, `bonus_value?`, `operationDate?` (ISO). Без ручных значений выполняется стандартный `quote+commit`; при указании ручных сумм проверяется баланс/дневные капы, списание не уводит баланс в минус. Идемпотентность по `orderId`: повтор вернёт существующий чек/транзакции. Ответ: `{ receiptId, integrationOperationId, redeemApplied, earnApplied, balanceBefore, balanceAfter, transactionIds, redeemTransactionIds, earnTransactionIds, mode }`.
+- `POST /api/integrations/refund` — { `orderId?`, `receiptNumber?`, `refundTotal`, `refundEligibleTotal?`, `deviceId?`, `outletId?`, `operationDate?` }. Возврат частичный/полный, идемпотентен по `orderId+сумма`: `{ share, pointsRestored, pointsRevoked, balanceAfter, receiptId, transactionIds, refundTransactionIds }`. `operationDate` используется как `createdAt` для транзакций/receipt.
+- `GET /api/integrations/outlets` — справочник точек мерчанта (`id`, `name`, `address?`, `description?`), без чужих `merchantId`.
+- `GET /api/integrations/devices` — опциональный `outletId`, возвращает устройства мерчанта (`id`, `code`, `outletId`) с валидацией кода/ID по Device.
+- `GET /api/integrations/operations` — история покупок/возвратов: query `orderId?` (ищет и по `receiptNumber`), `from?`/`to?` (ISO по `operationDate/createdAt`), `deviceId?`, `outletId?`, `limit?` (<=500). Ответ `items[]`: `{ kind: purchase|refund, orderId, receiptId?, receiptNumber?, total, redeemApplied?, earnApplied?, pointsRestored?, pointsRevoked?, refundShare?, refundTotal?, refundEligibleTotal?, operationDate, outletId?, deviceId?, deviceCode?, canceledAt?, pointsDelta, balanceBefore?, balanceAfter? }`. История строится только из зафиксированных BONUS (hold→commit) и REFUND; CODE/CALCULATE не создают записей.
+
+Item-level формат позиций для CALCULATE/BONUS: `items[]` с полями `id_product|productCode|productId`, `externalProvider`, `externalId`, `categoryId?`, `categoryExternalId?`, `sku?`, `barcode?`, `name?`, `qty`, `price`. Маппинг по `productId` → `(externalProvider, externalId)` → `barcode/sku` → `code`. В расчёте баллы/списание распределяются по позициям, учитываются акции с множителями (например, двойные баллы по товарам/категориям). В auto-режиме CALCULATE и BONUS возвращают одинаковые суммы; в ручном BONUS позиции всё равно сохраняются в hold/receipt/transaction для аналитики.
 
 ### Программа лояльности
 
@@ -972,6 +987,9 @@ Response 200:
     "id": "cat_1",
     "name": "Пицца",
     "slug": "pizza",
+    "code": "PIZ",
+    "externalProvider": "MOYSKLAD",
+    "externalId": "grp-100",
     "description": "string | null",
     "imageUrl": "https://... | null",
     "parentId": "cat_parent | null",
@@ -1044,6 +1062,11 @@ Response 200:
       "id": "prd_1",
       "name": "Маргарита",
       "sku": "PZ-001",
+      "code": "PIZ-001",
+      "barcode": "4601234567890",
+      "unit": "шт",
+      "externalProvider": "IIKO",
+      "externalId": "EXT-1",
       "categoryId": "cat_1",
       "categoryName": "Пицца",
       "previewImage": "https://cdn/...",
@@ -1067,6 +1090,11 @@ Response 200:
   "id": "prd_1",
   "name": "Маргарита",
   "sku": "PZ-001",
+  "code": "PIZ-001",
+  "barcode": "4601234567890",
+  "unit": "шт",
+  "externalProvider": "IIKO",
+  "externalId": "EXT-1",
   "order": 1000,
   "description": "Тонкое тесто, моцарелла",
   "categoryId": "cat_1",
@@ -1147,6 +1175,40 @@ Content-Type: application/json
 
 Response 200: { "ok": true, "updated": 2 }
 ```
+
+#### Импорт каталога (CommerceML / МойСклад)
+
+```http
+POST /portal/catalog/import/commerce-ml
+Authorization: Bearer <portal_jwt>
+Content-Type: application/json
+
+{
+  "externalProvider": "COMMERCE_ML",
+  "categories": [
+    { "externalId": "grp-1", "name": "Напитки", "parentExternalId": null, "code": "DRINKS" }
+  ],
+  "products": [
+    { "externalId": "pr-1", "name": "Капучино", "categoryExternalId": "grp-1", "barcode": "460...", "sku": "CAP-01", "unit": "шт", "price": 250, "code": "COF-1" }
+  ]
+}
+
+Response 200: { "ok": true, "createdCategories": 1, "updatedCategories": 0, "createdProducts": 1, "updatedProducts": 0 }
+```
+
+```http
+POST /portal/catalog/import/moysklad
+Authorization: Bearer <portal_jwt>
+Content-Type: application/json
+
+{
+  "products": [
+    { "externalId": "ms-1", "name": "Латте", "categoryExternalId": "grp-1", "barcode": "460...", "sku": "LAT-01", "unit": "шт", "price": 280 }
+  ]
+}
+```
+
+Поля позиций: `externalId`, `name`, `categoryExternalId` или `categoryId`, опционально `barcode`, `sku`, `code`, `unit`, `price`. Категории: `externalId`, `name`, `parentExternalId?`, `code?`. Маппинг выполняется по `productId`/`externalId` и, при необходимости, по `barcode`/`sku`/`code`, связи категорий восстанавливаются по `parentExternalId`. Все операции импортов логируются в `SyncLog` с итогом `ok/error`.
 
 #### Торговые точки портала
 
@@ -1598,9 +1660,12 @@ Response 200: объект клиента, как в GET /portal/customers/{id}
 | `/portal/push-campaigns/{id}/archive` | POST | Перенос кампании в архив. |
 | `/portal/push-campaigns/{id}/duplicate` | POST | Копирование кампании с новым расписанием. |
 | `/portal/integrations/telegram-mini-app` | GET | Состояние интеграции Telegram Mini App (статус, ссылка, токен). |
+| `/portal/integrations/rest-api` | GET | Состояние REST API интеграции (статус, маска ключа, базовый URL, лимиты). |
 | `/portal/integrations/telegram-mini-app/connect` | POST | Подключение Telegram Mini App по токену бота. |
 | `/portal/integrations/telegram-mini-app/check` | POST | Проверка подключения и состояния Telegram-бота. |
 | `/portal/integrations/telegram-mini-app` | DELETE | Отключение Telegram Mini App для мерчанта. |
+| `/portal/integrations/rest-api/issue` | POST | Выпуск/перевыпуск API-ключа для REST API интеграции. |
+| `/portal/integrations/rest-api` | DELETE | Деактивация REST API интеграции и отзыв ключа. |
 | `/portal/telegram-campaigns?scope=ACTIVE\|ARCHIVED` | GET | Активные и архивные Telegram-рассылки. |
 | `/portal/telegram-campaigns` | POST | Создание Telegram-рассылки (аудитория, текст, опционально изображение и дата старта). |
 | `/portal/telegram-campaigns/{id}/cancel` | POST | Отмена Telegram-кампании до начала отправки. |
@@ -1685,6 +1750,9 @@ Response 200: объект клиента, как в GET /portal/customers/{id}
   - POST `/portal/integrations/telegram-mini-app/link` → генерация диплинка Mini App: `{ deepLink, startParam }`.
   - POST `/portal/integrations/telegram-mini-app/setup-menu` → установка Chat Menu Button с web_app URL мини-приложения для мерчанта: `{ ok: true }`.
   - DELETE `/portal/integrations/telegram-mini-app` → отключение интеграции.
+  - GET `/portal/integrations/rest-api` → состояние REST API интеграции: `{ enabled, status, integrationId, apiKeyMask, baseUrl, requireBridgeSignature, rateLimits, issuedAt, availableEndpoints }`.
+  - POST `/portal/integrations/rest-api/issue` → выпуск или перевыпуск ключа, возвращает состояние + одноразовый `apiKey` для копирования.
+  - DELETE `/portal/integrations/rest-api` → отзыв ключа и деактивация интеграции (ключ стирается).
 
 - Публичный API Mini App:
   - POST `/loyalty/teleauth` body: `{ merchantId, initData }`

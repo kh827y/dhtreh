@@ -40,6 +40,7 @@ import { CommunicationsModule } from './communications/communications.module';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { join } from 'path';
+import { IntegrationsModule } from './integrations/integrations.module';
 import { AutoReturnWorker } from './auto-return.worker';
 import { BirthdayWorker } from './birthday.worker';
 import { TelegramStaffDigestWorker } from './telegram/staff-digest.worker';
@@ -98,6 +99,7 @@ try {
     PortalModule,
     AdminPanelModule,
     MerchantPanelModule,
+    IntegrationsModule,
     LoyaltyProgramModule,
     CustomerAudiencesModule,
     CommunicationsModule,

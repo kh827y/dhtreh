@@ -220,6 +220,9 @@ model Merchant {
   settings                    MerchantSettings?
   wallets                     Wallet[]
   holds                       Hold[]
+  holdItems                   HoldItem[]
+  receiptItems                ReceiptItem[]
+  transactionItems            TransactionItem[]
   transactions                Transaction[]
   createdAt                   DateTime                     @default(now())
   Receipt                     Receipt[]
@@ -279,6 +282,8 @@ model Merchant {
   // catalog
   productCategories           ProductCategory[]
   products                    Product[]
+  productCategoryExternals    ProductCategoryExternal[]
+  productExternalIds          ProductExternalId[]
   productAttributes           ProductAttribute[]
   productOptions              ProductOption[]
   // Portal auth
@@ -419,21 +424,21 @@ model CustomerTelegram {
 }
 
 model MerchantCustomer {
-  id              String   @id @default(cuid())
-  merchantId      String
-  customerId      String
-  tgId            String?
-  phone           String?
-  email           String?
-  name            String?
+  id                 String    @id @default(cuid())
+  merchantId         String
+  customerId         String
+  tgId               String?
+  phone              String?
+  email              String?
+  name               String?
   profileGender      String?
   profileBirthDate   DateTime?
   profileCompletedAt DateTime?
-  comment         String?
-  accrualsBlocked Boolean  @default(false)
-  redemptionsBlocked Boolean @default(false)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  comment            String?
+  accrualsBlocked    Boolean   @default(false)
+  redemptionsBlocked Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   merchant                Merchant                     @relation(fields: [merchantId], references: [id])
   customer                Customer                     @relation(fields: [customerId], references: [id])
@@ -482,6 +487,7 @@ model Hold {
   staffId       String?
   deviceId      String?
   createdAt     DateTime   @default(now())
+  items         HoldItem[]
 
   outlet Outlet? @relation(fields: [outletId], references: [id], onDelete: SetNull)
   staff  Staff?  @relation(fields: [staffId], references: [id], onDelete: SetNull)
@@ -492,6 +498,38 @@ model Hold {
   @@index([merchantId, outletId])
   @@index([merchantId, staffId])
   @@index([merchantId, deviceId])
+}
+
+model HoldItem {
+  id                  String   @id @default(cuid())
+  holdId              String
+  merchantId          String
+  productId           String?
+  categoryId          String?
+  externalProvider    String?
+  externalId          String?
+  name                String?
+  sku                 String?
+  barcode             String?
+  qty                 Decimal  @db.Decimal(14, 3)
+  price               Decimal  @db.Decimal(12, 2)
+  amount              Int
+  earnPoints          Int?
+  redeemAmount        Int?
+  promotionId         String?
+  promotionMultiplier Int?
+  metadata            Json?
+  createdAt           DateTime @default(now())
+
+  hold      Hold              @relation(fields: [holdId], references: [id], onDelete: Cascade)
+  merchant  Merchant          @relation(fields: [merchantId], references: [id])
+  product   Product?          @relation(fields: [productId], references: [id], onDelete: SetNull)
+  category  ProductCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  promotion LoyaltyPromotion? @relation(fields: [promotionId], references: [id], onDelete: SetNull)
+
+  @@index([holdId])
+  @@index([merchantId, productId])
+  @@index([merchantId, externalProvider, externalId])
 }
 
 model Receipt {
@@ -512,12 +550,13 @@ model Receipt {
   staffId       String?
   deviceId      String?
 
-  outlet            Outlet?   @relation(fields: [outletId], references: [id], onDelete: SetNull)
-  staff             Staff?    @relation(fields: [staffId], references: [id], onDelete: SetNull)
-  device            Device?   @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  outlet            Outlet?       @relation(fields: [outletId], references: [id], onDelete: SetNull)
+  staff             Staff?        @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  device            Device?       @relation(fields: [deviceId], references: [id], onDelete: SetNull)
   canceledAt        DateTime?
   canceledByStaffId String?
-  canceledBy        Staff?    @relation("ReceiptCanceledBy", fields: [canceledByStaffId], references: [id], onDelete: SetNull)
+  canceledBy        Staff?        @relation("ReceiptCanceledBy", fields: [canceledByStaffId], references: [id], onDelete: SetNull)
+  items             ReceiptItem[]
 
   @@unique([merchantId, orderId])
   @@index([merchantId, createdAt])
@@ -525,6 +564,39 @@ model Receipt {
   @@index([merchantId, staffId])
   @@index([merchantId, deviceId])
   @@index([merchantId, canceledAt])
+}
+
+model ReceiptItem {
+  id                  String   @id @default(cuid())
+  receiptId           String
+  merchantId          String
+  productId           String?
+  categoryId          String?
+  externalProvider    String?
+  externalId          String?
+  name                String?
+  sku                 String?
+  barcode             String?
+  qty                 Decimal  @db.Decimal(14, 3)
+  price               Decimal  @db.Decimal(12, 2)
+  amount              Int
+  earnApplied         Int      @default(0)
+  redeemApplied       Int      @default(0)
+  promotionId         String?
+  promotionMultiplier Int?
+  metadata            Json?
+  createdAt           DateTime @default(now())
+
+  receipt      Receipt           @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  merchant     Merchant          @relation(fields: [merchantId], references: [id])
+  product      Product?          @relation(fields: [productId], references: [id], onDelete: SetNull)
+  category     ProductCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  promotion    LoyaltyPromotion? @relation(fields: [promotionId], references: [id], onDelete: SetNull)
+  transactions TransactionItem[]
+
+  @@index([receiptId])
+  @@index([merchantId, productId])
+  @@index([merchantId, externalProvider, externalId])
 }
 
 model Transaction {
@@ -546,10 +618,11 @@ model Transaction {
 
   canceledBy Staff? @relation("TransactionCanceledBy", fields: [canceledByStaffId], references: [id], onDelete: SetNull)
 
-  outlet  Outlet?  @relation(fields: [outletId], references: [id], onDelete: SetNull)
-  staff   Staff?   @relation(fields: [staffId], references: [id], onDelete: SetNull)
-  device  Device?  @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  outlet  Outlet?           @relation(fields: [outletId], references: [id], onDelete: SetNull)
+  staff   Staff?            @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  device  Device?           @relation(fields: [deviceId], references: [id], onDelete: SetNull)
   reviews Review[]
+  items   TransactionItem[]
 
   @@index([customerId, createdAt])
   @@index([merchantId, createdAt])
@@ -557,6 +630,40 @@ model Transaction {
   @@index([merchantId, staffId])
   @@index([merchantId, deviceId])
   @@index([merchantId, customerId, type, createdAt])
+}
+
+model TransactionItem {
+  id                  String   @id @default(cuid())
+  transactionId       String
+  receiptItemId       String?
+  merchantId          String
+  productId           String?
+  categoryId          String?
+  externalProvider    String?
+  externalId          String?
+  name                String?
+  sku                 String?
+  barcode             String?
+  qty                 Decimal  @db.Decimal(14, 3)
+  price               Decimal  @db.Decimal(12, 2)
+  amount              Int
+  earnAmount          Int?
+  redeemAmount        Int?
+  promotionId         String?
+  promotionMultiplier Int?
+  metadata            Json?
+  createdAt           DateTime @default(now())
+
+  transaction Transaction       @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  receiptItem ReceiptItem?      @relation(fields: [receiptItemId], references: [id], onDelete: SetNull)
+  merchant    Merchant          @relation(fields: [merchantId], references: [id])
+  product     Product?          @relation(fields: [productId], references: [id], onDelete: SetNull)
+  category    ProductCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  promotion   LoyaltyPromotion? @relation(fields: [promotionId], references: [id], onDelete: SetNull)
+
+  @@index([transactionId])
+  @@index([merchantId, productId])
+  @@index([merchantId, externalProvider, externalId])
 }
 
 model QrNonce {
@@ -588,19 +695,19 @@ model EventOutbox {
 }
 
 model LoyaltyRealtimeEvent {
-  id                  String   @id @default(cuid())
-  merchantId          String
-  customerId          String
-  merchantCustomerId  String?
-  transactionId       String?
-  transactionType     String?
-  amount              Int?
-  eventType           String
-  payload             Json?
-  emittedAt           DateTime @default(now())
-  deliveredAt         DateTime?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                 String    @id @default(cuid())
+  merchantId         String
+  customerId         String
+  merchantCustomerId String?
+  transactionId      String?
+  transactionType    String?
+  amount             Int?
+  eventType          String
+  payload            Json?
+  emittedAt          DateTime  @default(now())
+  deliveredAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   @@index([merchantId, merchantCustomerId, deliveredAt])
   @@index([merchantId, customerId, deliveredAt])
@@ -693,20 +800,20 @@ model Outlet {
   updatedAt               DateTime    @updatedAt
 
   // обратные связи
-  holds                 Hold[]
-  receipts              Receipt[]
-  txns                  Transaction[]
-  pushDevices           PushDevice[]
-  staffAccesses         StaffOutletAccess[]
-  stocks                ProductStock[]
-  schedules             OutletSchedule[]
-  outletMetrics         OutletKpiDaily[]
-  cashierSessions       CashierSession[]
-  promoCodeUsages       PromoCodeUsage[]
-  promotionParticipants PromotionParticipant[]
-  staffMetrics          StaffKpiDaily[]
+  holds                  Hold[]
+  receipts               Receipt[]
+  txns                   Transaction[]
+  pushDevices            PushDevice[]
+  staffAccesses          StaffOutletAccess[]
+  stocks                 ProductStock[]
+  schedules              OutletSchedule[]
+  outletMetrics          OutletKpiDaily[]
+  cashierSessions        CashierSession[]
+  promoCodeUsages        PromoCodeUsage[]
+  promotionParticipants  PromotionParticipant[]
+  staffMetrics           StaffKpiDaily[]
   staffMotivationEntries StaffMotivationEntry[]
-  devices               Device[]
+  devices                Device[]
 
   @@unique([merchantId, externalId])
   @@unique([merchantId, code])
@@ -716,17 +823,17 @@ model Outlet {
 }
 
 model Device {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   merchantId     String
   outletId       String
   code           String
   codeNormalized String
   archivedAt     DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  merchant      Merchant       @relation(fields: [merchantId], references: [id], onDelete: Cascade)
-  outlet        Outlet         @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  merchant      Merchant      @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  outlet        Outlet        @relation(fields: [outletId], references: [id], onDelete: Cascade)
   holds         Hold[]
   receipts      Receipt[]
   transactions  Transaction[]
@@ -1005,72 +1112,126 @@ model CashierSession {
 }
 
 model ProductCategory {
-  id          String            @id @default(cuid())
-  merchantId  String
-  merchant    Merchant          @relation(fields: [merchantId], references: [id])
-  parentId    String?
-  parent      ProductCategory?  @relation("CategoryChildren", fields: [parentId], references: [id])
-  children    ProductCategory[] @relation("CategoryChildren")
-  name        String
-  slug        String
-  description String?
-  imageUrl    String?
-  order       Int               @default(1000)
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  deletedAt   DateTime?
+  id               String            @id @default(cuid())
+  merchantId       String
+  merchant         Merchant          @relation(fields: [merchantId], references: [id])
+  parentId         String?
+  parent           ProductCategory?  @relation("CategoryChildren", fields: [parentId], references: [id])
+  children         ProductCategory[] @relation("CategoryChildren")
+  name             String
+  slug             String
+  code             String?
+  externalProvider String?
+  externalId       String?
+  description      String?
+  imageUrl         String?
+  order            Int               @default(1000)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  deletedAt        DateTime?
 
-  products Product[]
+  products         Product[]
+  external         ProductCategoryExternal[]
+  holdItems        HoldItem[]
+  receiptItems     ReceiptItem[]
+  transactionItems TransactionItem[]
 
   @@unique([merchantId, slug])
+  @@index([merchantId, externalProvider, externalId])
   @@index([merchantId, order])
   @@index([merchantId, parentId])
 }
 
-model Product {
-  id             String           @id @default(cuid())
-  merchantId     String
-  merchant       Merchant         @relation(fields: [merchantId], references: [id])
-  categoryId     String?
-  category       ProductCategory? @relation(fields: [categoryId], references: [id])
-  name           String
-  sku            String?
-  description    String?
-  order          Int              @default(1000)
-  iikoProductId  String?
-  hasVariants    Boolean          @default(false)
-  priceEnabled   Boolean          @default(true)
-  price          Decimal?         @db.Decimal(10, 2)
-  allowCart      Boolean          @default(true)
-  visible        Boolean          @default(true)
-  accruePoints   Boolean          @default(true)
-  allowRedeem    Boolean          @default(true)
-  redeemPercent  Int              @default(100)
-  weightValue    Decimal?         @db.Decimal(10, 3)
-  weightUnit     String?
-  heightCm       Decimal?         @db.Decimal(10, 2)
-  widthCm        Decimal?         @db.Decimal(10, 2)
-  depthCm        Decimal?         @db.Decimal(10, 2)
-  proteins       Decimal?         @db.Decimal(10, 2)
-  fats           Decimal?         @db.Decimal(10, 2)
-  carbs          Decimal?         @db.Decimal(10, 2)
-  calories       Decimal?         @db.Decimal(10, 2)
-  tags           String[]         @default([])
-  purchasesMonth Int              @default(0)
-  purchasesTotal Int              @default(0)
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
-  deletedAt      DateTime?
+model ProductCategoryExternal {
+  id               String   @id @default(cuid())
+  merchantId       String
+  categoryId       String
+  externalProvider String
+  externalId       String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  images     ProductImage[]
-  variants   ProductVariant[]
-  stocks     ProductStock[]
-  attributes ProductAttribute[]
-  options    ProductOption[]
+  merchant Merchant        @relation(fields: [merchantId], references: [id])
+  category ProductCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([merchantId, externalProvider, externalId])
+  @@index([merchantId, categoryId])
+}
+
+model Product {
+  id               String           @id @default(cuid())
+  merchantId       String
+  merchant         Merchant         @relation(fields: [merchantId], references: [id])
+  categoryId       String?
+  category         ProductCategory? @relation(fields: [categoryId], references: [id])
+  name             String
+  code             String?
+  sku              String?
+  barcode          String?
+  unit             String?
+  externalProvider String?
+  externalId       String?
+  description      String?
+  order            Int              @default(1000)
+  iikoProductId    String?
+  hasVariants      Boolean          @default(false)
+  priceEnabled     Boolean          @default(true)
+  price            Decimal?         @db.Decimal(10, 2)
+  allowCart        Boolean          @default(true)
+  visible          Boolean          @default(true)
+  accruePoints     Boolean          @default(true)
+  allowRedeem      Boolean          @default(true)
+  redeemPercent    Int              @default(100)
+  weightValue      Decimal?         @db.Decimal(10, 3)
+  weightUnit       String?
+  heightCm         Decimal?         @db.Decimal(10, 2)
+  widthCm          Decimal?         @db.Decimal(10, 2)
+  depthCm          Decimal?         @db.Decimal(10, 2)
+  proteins         Decimal?         @db.Decimal(10, 2)
+  fats             Decimal?         @db.Decimal(10, 2)
+  carbs            Decimal?         @db.Decimal(10, 2)
+  calories         Decimal?         @db.Decimal(10, 2)
+  tags             String[]         @default([])
+  purchasesMonth   Int              @default(0)
+  purchasesTotal   Int              @default(0)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  deletedAt        DateTime?
+
+  images           ProductImage[]
+  variants         ProductVariant[]
+  stocks           ProductStock[]
+  attributes       ProductAttribute[]
+  options          ProductOption[]
+  holdItems        HoldItem[]
+  receiptItems     ReceiptItem[]
+  transactionItems TransactionItem[]
+  externalMappings ProductExternalId[]
 
   @@unique([merchantId, sku])
+  @@index([merchantId, externalProvider, externalId])
   @@index([merchantId, categoryId])
   @@index([merchantId, order])
+}
+
+model ProductExternalId {
+  id               String   @id @default(cuid())
+  merchantId       String
+  productId        String
+  externalProvider String
+  externalId       String
+  barcode          String?
+  sku              String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([merchantId, externalProvider, externalId])
+  @@index([merchantId, productId])
+  @@index([merchantId, barcode])
+  @@index([merchantId, sku])
 }
 
 model ProductImage {
@@ -1343,8 +1504,8 @@ model Subscription {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  plan     Plan      @relation(fields: [planId], references: [id])
-  merchant Merchant  @relation(fields: [merchantId], references: [id])
+  plan     Plan     @relation(fields: [planId], references: [id])
+  merchant Merchant @relation(fields: [merchantId], references: [id])
 }
 
 // Junction table for customer segments
@@ -1756,6 +1917,9 @@ model LoyaltyPromotion {
   metrics              LoyaltyPromotionMetric?
   participants         PromotionParticipant[]
   communicationTasks   CommunicationTask[]
+  holdItems            HoldItem[]
+  receiptItems         ReceiptItem[]
+  transactionItems     TransactionItem[]
 
   @@index([merchantId, status])
   @@index([segmentId])
@@ -1936,20 +2100,27 @@ model FraudCheck {
 }
 
 model Integration {
-  id          String    @id @default(cuid())
-  merchantId  String
-  type        String
-  provider    String
-  config      Json
-  credentials Json?
-  isActive    Boolean   @default(true)
-  lastSync    DateTime?
-  errorCount  Int       @default(0)
-  lastError   String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id              String    @id @default(cuid())
+  merchantId      String
+  type            String
+  provider        String
+  config          Json
+  credentials     Json?
+  apiKeyHash      String?
+  apiKeyMask      String?
+  apiKeyCreatedAt DateTime?
+  archivedAt      DateTime?
+  isActive        Boolean   @default(true)
+  lastSync        DateTime?
+  errorCount      Int       @default(0)
+  lastError       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   merchant Merchant @relation(fields: [merchantId], references: [id])
+
+  @@index([merchantId, provider])
+  @@index([apiKeyHash])
 }
 
 model SyncLog {
@@ -2161,7 +2332,7 @@ model StaffKpiDaily {
 }
 
 model StaffMotivationEntry {
-  id         String                 @id @default(cuid())
+  id         String                @id @default(cuid())
   merchantId String
   staffId    String
   outletId   String?
@@ -2170,12 +2341,12 @@ model StaffMotivationEntry {
   receiptId  String?
   action     StaffMotivationAction
   points     Int
-  isNew      Boolean                @default(false)
+  isNew      Boolean               @default(false)
   share      Float?
-  eventAt    DateTime               @default(now())
+  eventAt    DateTime              @default(now())
   meta       Json?
-  createdAt  DateTime               @default(now())
-  updatedAt  DateTime               @updatedAt
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
 
   merchant Merchant @relation(fields: [merchantId], references: [id])
   staff    Staff    @relation(fields: [staffId], references: [id])

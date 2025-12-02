@@ -1,5 +1,20 @@
 # Planning Mode — Long Run (2025-09-15)
 
+## В работе 2025-12-XX — Item-level товары/акции
+- [x] Prisma: добавлены таблицы ProductExternalId/ProductCategoryExternal/HoldItem/ReceiptItem/TransactionItem и поля code/barcode/unit/external* в Product/ProductCategory для item-level расчётов и маппинга интеграций.
+- [x] DTO/интеграции: расширены loyalty/integrations DTO и интеграционный контроллер под positions/items, добавлены хелперы маппинга товаров/категорий и промо-множителей.
+- [x] Расчёт/портал: quote/commit/processIntegrationBonus распределяют скидку/начисление по позициям с учётом множителей, позиции пишутся в hold/receipt/transaction, добавлены импорты каталога и выбор товаров/категорий в акциях/каталоге (merchant-portal), миграция `20251204000000_item_level_catalog`.
+
+## Блок 2025-12-XX — REST API интеграция (ключ)
+- [x] Prisma: добавлены поля apiKeyHash/apiKeyMask/apiKeyCreatedAt/archivedAt и индексы по provider/apiKeyHash для Integration.
+- [x] Backend Portal: сервис управления REST API ключом (issue/disable, маска, config с rateLimits/requireBridgeSignature), guard по API-ключу (X-Api-Key) и keyGenerator для троттлинга по integrationId.
+- [x] Portal API: эндпоинты `/portal/integrations/rest-api` (state/DELETE) и `/portal/integrations/rest-api/issue` для выпуска ключа.
+- [x] Merchant Portal: страница `/integrations/rest-api`, карточка на списке интеграций, отображение маски/базы URL, одноразовый показ ключа и управление.
+- [x] API docs обновлены под REST API интеграцию и управление ключом.
+- [x] Backend namespace `/api/integrations`: guard по `X-Api-Key`, эндпоинты CODE/CALCULATE/BONUS/REFUND с лимитами, ручными полями `paid_bonus/bonus_value`, поддержкой `operationDate` и идемпотентностью по `orderId`.
+- [x] BONUS-обёртка: сервисный `processIntegrationBonus` (hold→commit) в LoyaltyService с idempotency по merchantId+orderId, поддержкой auto/manual режимов, operationDate и доведением зависших PENDING hold до commit; `/api/integrations/bonus` использует обёртку вместо прямого quote/commit, ручные суммы проверяют баланс и дневные safety caps, добавлены юнит-тесты на повторы/manual caps/operationDate.
+- [x] REST API: добавлены GET `/api/integrations/outlets`, `/devices` и `/operations` (фильтры orderId/from-to/deviceId/outletId, расчёт баланса при наличии транзакций, троттлинг по integrationId и запись в SyncLog); API_DOCUMENTATION обновлена.
+
 ## Хотфикс 2025-12-XX — Удаление платежей и кассовых интеграций
 - [x] API: удалён модуль платежей (YooKassa/CloudPayments/Тинькофф), вебхуки/рефанды, связанные эндпоинты подписок и события outbox.
 - [x] API: вычищены интеграции касс (АТОЛ/Эвотор/Poster/МодульКасса/1С) и вспомогательные схемы/валидации.

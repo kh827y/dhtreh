@@ -65,12 +65,14 @@ import {
   PortalOutletDto,
   CreatePortalOutletDto,
   UpdatePortalOutletDto,
+  ImportCatalogDto,
 } from './catalog.dto';
 import { CommunicationsService } from '../communications/communications.service';
 import {
   StaffMotivationService,
   type UpdateStaffMotivationPayload,
 } from './services/staff-motivation.service';
+import { PortalRestApiIntegrationService } from './services/rest-api-integration.service';
 import {
   OperationsLogService,
   type OperationsLogFilters,
@@ -107,6 +109,7 @@ export class PortalController {
     private readonly communications: CommunicationsService,
     private readonly staffMotivation: StaffMotivationService,
     private readonly operations: OperationsLogService,
+    private readonly restApiIntegration: PortalRestApiIntegrationService,
     private readonly customersService: PortalCustomersService,
     private readonly telegramIntegration: PortalTelegramIntegrationService,
     private readonly telegramNotify: PortalTelegramNotifyService,
@@ -1440,6 +1443,71 @@ export class PortalController {
     return this.service.listIntegrations(this.getMerchantId(req));
   }
 
+  @Get('integrations/rest-api')
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        enabled: { type: 'boolean' },
+        status: { type: 'string' },
+        integrationId: { type: 'string', nullable: true },
+        apiKeyMask: { type: 'string', nullable: true },
+        baseUrl: { type: 'string', nullable: true },
+        requireBridgeSignature: { type: 'boolean' },
+        issuedAt: { type: 'string', format: 'date-time', nullable: true },
+        availableEndpoints: {
+          type: 'array',
+          items: { type: 'string' },
+        },
+        rateLimits: {
+          type: 'object',
+          properties: {
+            code: {
+              type: 'object',
+              properties: { limit: { type: 'number' }, ttl: { type: 'number' } },
+            },
+            calculate: {
+              type: 'object',
+              properties: { limit: { type: 'number' }, ttl: { type: 'number' } },
+            },
+            bonus: {
+              type: 'object',
+              properties: { limit: { type: 'number' }, ttl: { type: 'number' } },
+            },
+            refund: {
+              type: 'object',
+              properties: { limit: { type: 'number' }, ttl: { type: 'number' } },
+            },
+          },
+        },
+        message: { type: 'string', nullable: true },
+      },
+    },
+  })
+  restApiIntegrationState(@Req() req: any) {
+    return this.restApiIntegration.getState(this.getMerchantId(req));
+  }
+
+  @Post('integrations/rest-api/issue')
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        apiKey: { type: 'string', nullable: true },
+      },
+      additionalProperties: true,
+    },
+  })
+  restApiIntegrationIssue(@Req() req: any) {
+    return this.restApiIntegration.issueKey(this.getMerchantId(req));
+  }
+
+  @Delete('integrations/rest-api')
+  @ApiOkResponse({ schema: { type: 'object', additionalProperties: true } })
+  restApiIntegrationDisable(@Req() req: any) {
+    return this.restApiIntegration.disable(this.getMerchantId(req));
+  }
+
   @Get('integrations/telegram-mini-app')
   @ApiOkResponse({
     schema: {
@@ -1812,6 +1880,24 @@ export class PortalController {
   })
   bulkCatalogProducts(@Req() req: any, @Body() dto: ProductBulkActionDto) {
     return this.catalog.bulkProductAction(this.getMerchantId(req), dto);
+  }
+
+  @Post('catalog/import/commerce-ml')
+  importCommerceMl(@Req() req: any, @Body() dto: ImportCatalogDto) {
+    return this.catalog.importCatalog(
+      this.getMerchantId(req),
+      'COMMERCE_ML',
+      dto,
+    );
+  }
+
+  @Post('catalog/import/moysklad')
+  importMoySklad(@Req() req: any, @Body() dto: ImportCatalogDto) {
+    return this.catalog.importCatalog(
+      this.getMerchantId(req),
+      'MOYSKLAD',
+      dto,
+    );
   }
 
   // Outlets

@@ -82,8 +82,22 @@ function legacyPayloadToPromotion(
     );
   }
   const rewardValue = ensureNumber(reward.value, 0);
-  if (!Number.isFinite(rewardValue) || rewardValue <= 0) {
-    throw new BadRequestException('Укажите количество баллов для акции');
+  const multiplierRaw =
+    (reward as any).multiplier ??
+    (reward as any).earnMultiplier ??
+    (reward as any).pointsMultiplier ??
+    (reward as any).rewardMultiplier;
+  const multiplier =
+    Number.isFinite(Number(multiplierRaw)) && Number(multiplierRaw) > 0
+      ? Number(multiplierRaw)
+      : 0;
+  if (
+    (!Number.isFinite(rewardValue) || rewardValue < 0) &&
+    multiplier <= 0
+  ) {
+    throw new BadRequestException(
+      'Укажите количество баллов или множитель для акции',
+    );
   }
   const rewardMeta =
     reward && typeof (reward as any).metadata === 'object'
@@ -95,17 +109,41 @@ function legacyPayloadToPromotion(
     pointsExpire && Number.isFinite(Number(pointsExpireDaysRaw))
       ? Math.max(1, Math.trunc(Number(pointsExpireDaysRaw)))
       : null;
+  const targetProducts =
+    Array.isArray((body as any).productIds) && (body as any).productIds.length
+      ? ((body as any).productIds as any[]).map((id) => String(id))
+      : Array.isArray((body as any).products) && (body as any).products.length
+        ? ((body as any).products as any[]).map((id) => String(id))
+        : Array.isArray((rewardMeta as any).productIds)
+          ? ((rewardMeta as any).productIds as any[]).map((id) => String(id))
+          : [];
+  const targetCategories =
+    Array.isArray((body as any).categoryIds) && (body as any).categoryIds.length
+      ? ((body as any).categoryIds as any[]).map((id) => String(id))
+      : Array.isArray((body as any).categories) &&
+          (body as any).categories.length
+        ? ((body as any).categories as any[]).map((id) => String(id))
+        : Array.isArray((rewardMeta as any).categoryIds)
+          ? ((rewardMeta as any).categoryIds as any[]).map((id) => String(id))
+          : [];
   const normalizedRewardMetadata = {
     ...reward,
     type: 'POINTS',
     value: rewardValue,
+    productIds: targetProducts.length ? targetProducts : undefined,
+    categoryIds: targetCategories.length ? targetCategories : undefined,
     metadata: {
       ...rewardMeta,
       pointsExpire,
       pointsExpireDays,
+      multiplier: multiplier || rewardMeta?.multiplier,
+      productIds: targetProducts.length ? targetProducts : rewardMeta?.productIds,
+      categoryIds:
+        targetCategories.length ? targetCategories : rewardMeta?.categoryIds,
     },
     pointsExpire,
     pointsExpireDays,
+    multiplier,
     legacyType: 'POINTS',
   };
   const reminderRaw = body.metadata?.reminderOffsetHours;

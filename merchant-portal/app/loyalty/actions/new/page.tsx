@@ -1,211 +1,238 @@
 "use client";
-import React from 'react';
-import { useRouter } from 'next/navigation';
-import { Card, CardHeader, CardBody, Button } from '@loyalty/ui';
 
-const TYPES = ['BONUS','DISCOUNT','CASHBACK','BIRTHDAY','REFERRAL','FIRST_PURCHASE'] as const;
-const STATUSES = ['DRAFT','ACTIVE','PAUSED','COMPLETED'] as const;
-const REWARD_TYPES = ['POINTS','PERCENT','FIXED','PRODUCT'] as const;
-const CHANNELS = ['TELEGRAM','PUSH'] as const;
+import React from "react";
+import { useRouter } from "next/navigation";
+import { Card, CardHeader, CardBody, Button } from "@loyalty/ui";
 
-export default function CampaignCreatePage(){
+type Option = { id: string; name: string };
+
+export default function CampaignCreatePage() {
   const router = useRouter();
-  const [msg, setMsg] = React.useState('');
+  const [name, setName] = React.useState("");
+  const [startDate, setStartDate] = React.useState("");
+  const [endDate, setEndDate] = React.useState("");
+  const [status, setStatus] = React.useState("ACTIVE");
+  const [rewardValue, setRewardValue] = React.useState("0");
+  const [multiplier, setMultiplier] = React.useState("2");
+  const [productIds, setProductIds] = React.useState<string[]>([]);
+  const [categoryIds, setCategoryIds] = React.useState<string[]>([]);
+  const [products, setProducts] = React.useState<Option[]>([]);
+  const [categories, setCategories] = React.useState<Option[]>([]);
+  const [message, setMessage] = React.useState("");
   const [busy, setBusy] = React.useState(false);
-  const [name, setName] = React.useState('');
-  const [description, setDescription] = React.useState('');
-  const [type, setType] = React.useState<typeof TYPES[number]>('BONUS');
-  const [status, setStatus] = React.useState<typeof STATUSES[number]>('DRAFT');
-  const [startDate, setStartDate] = React.useState('');
-  const [endDate, setEndDate] = React.useState('');
-  const [targetSegmentId, setTargetSegmentId] = React.useState('');
-  const [budget, setBudget] = React.useState('');
-  const [maxUsagePerCustomer, setMaxUsagePerCustomer] = React.useState('');
-  const [maxUsageTotal, setMaxUsageTotal] = React.useState('');
-  const [notificationChannels, setNotificationChannels] = React.useState<Record<string, boolean>>({});
 
-  // reward
-  const [rewardType, setRewardType] = React.useState<typeof REWARD_TYPES[number]>('POINTS');
-  const [rewardValue, setRewardValue] = React.useState('');
-  const [rewardMaxValue, setRewardMaxValue] = React.useState('');
-  const [rewardMultiplier, setRewardMultiplier] = React.useState('');
-  const [rewardDesc, setRewardDesc] = React.useState('');
+  React.useEffect(() => {
+    fetch("/api/portal/catalog/products?status=visible")
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data?.items)) {
+          setProducts(
+            data.items.map((p: any) => ({ id: p.id, name: p.name || p.id })),
+          );
+        }
+      })
+      .catch(() => null);
+    fetch("/api/portal/catalog/categories")
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setCategories(
+            data.map((c: any) => ({ id: c.id, name: c.name || c.id })),
+          );
+        }
+      })
+      .catch(() => null);
+  }, []);
 
-  // rules (минимальный набор)
-  const [minPurchaseAmount, setMinPurchaseAmount] = React.useState('');
-  const [productCategoriesCsv, setProductCategoriesCsv] = React.useState('');
-  const [outletsCsv, setOutletsCsv] = React.useState('');
+  const toggleInArray = (
+    list: string[],
+    setList: (next: string[]) => void,
+    value: string,
+  ) => {
+    setList((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
+    );
+  };
 
-  function numOrUndef(v: string){ const n = Number(v); return isFinite(n) && v!=='' ? n : undefined; }
-  function arrCsv(v: string){ return v.split(',').map(s=>s.trim()).filter(Boolean); }
-
-  async function submit(){
-    if (!name.trim()) { setMsg('Укажите название акции'); return; }
-    setBusy(true); setMsg('');
+  const submit = async () => {
+    if (!name.trim()) {
+      setMessage("Введите название акции");
+      return;
+    }
+    setBusy(true);
+    setMessage("");
     try {
-      const dto: any = {
+      const payload: any = {
         name: name.trim(),
-        description: description.trim() || undefined,
-        type,
         status,
         startDate: startDate || undefined,
         endDate: endDate || undefined,
-        targetSegmentId: targetSegmentId || undefined,
-        budget: numOrUndef(budget),
-        maxUsagePerCustomer: numOrUndef(maxUsagePerCustomer),
-        maxUsageTotal: numOrUndef(maxUsageTotal),
-        notificationChannels: CHANNELS.filter(c=>notificationChannels[c]),
         reward: {
-          type: rewardType,
-          value: numOrUndef(rewardValue) ?? 0,
-          maxValue: numOrUndef(rewardMaxValue),
-          multiplier: numOrUndef(rewardMultiplier),
-          description: rewardDesc || undefined,
+          type: "POINTS",
+          value: Number(rewardValue) || 0,
+          multiplier: Number(multiplier) || 0,
+          metadata: {
+            productIds,
+            categoryIds,
+          },
         },
-        rules: {
-          minPurchaseAmount: numOrUndef(minPurchaseAmount),
-          productCategories: productCategoriesCsv ? arrCsv(productCategoriesCsv) : undefined,
-          outlets: outletsCsv ? arrCsv(outletsCsv) : undefined,
-        },
+        productIds,
+        categoryIds,
       };
-      const r = await fetch('/api/portal/loyalty/promotions', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(dto) });
-      if (!r.ok) throw new Error(await r.text());
-      const c = await r.json();
-      router.push(`/loyalty/actions/${encodeURIComponent(c.id)}`);
-    } catch(e:any) { setMsg(String(e?.message||e)); }
-    finally { setBusy(false); }
-  }
+      const res = await fetch("/api/portal/loyalty/promotions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      router.push("/loyalty/actions");
+    } catch (e: any) {
+      setMessage(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
-    <div style={{ display:'grid', gap:16 }}>
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+    <div style={{ display: "grid", gap: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div>
-          <div style={{ fontSize:18, fontWeight:700 }}>Новая акция</div>
-          <div style={{ opacity:.8, fontSize:13 }}>Заполните основные поля и награду</div>
+          <div style={{ fontSize: 18, fontWeight: 700 }}>Новая акция</div>
+          <div style={{ opacity: 0.7, fontSize: 13 }}>Двойные баллы или множитель на товары/категории</div>
         </div>
-        <div><a className="btn" href="/loyalty/actions">Назад</a></div>
+        <a className="btn" href="/loyalty/actions" style={{ textDecoration: "none" }}>
+          <Button variant="secondary">Назад</Button>
+        </a>
       </div>
 
       <Card>
-        <CardHeader title="Основные" />
+        <CardHeader title="Основные параметры" />
         <CardBody>
-          <div style={{ display:'grid', gap:10, gridTemplateColumns:'1fr 1fr' }}>
-            <div>
-              <div style={{ opacity:.7, fontSize:12 }}>Название</div>
-              <input value={name} onChange={e=>setName(e.target.value)} placeholder="Название" style={{ padding:8, width:'100%' }} />
-            </div>
-            <div>
-              <div style={{ opacity:.7, fontSize:12 }}>Тип</div>
-              <select value={type} onChange={e=>setType(e.target.value as any)} style={{ padding:8, width:'100%' }}>
-                {TYPES.map(t=> <option key={t} value={t}>{t}</option>)}
+          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+            <label style={{ display: "grid", gap: 4 }}>
+              <span style={{ fontSize: 12, opacity: 0.7 }}>Название</span>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Например, Двойные баллы на напитки"
+                style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "inherit" }}
+              />
+            </label>
+            <label style={{ display: "grid", gap: 4 }}>
+              <span style={{ fontSize: 12, opacity: 0.7 }}>Статус</span>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "inherit" }}
+              >
+                <option value="ACTIVE">Активна</option>
+                <option value="DRAFT">Черновик</option>
+                <option value="PAUSED">Выключена</option>
               </select>
-            </div>
-            <div>
-              <div style={{ opacity:.7, fontSize:12 }}>Статус</div>
-              <select value={status} onChange={e=>setStatus(e.target.value as any)} style={{ padding:8, width:'100%' }}>
-                {STATUSES.map(s=> <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-            <div />
-            <div>
-              <div style={{ opacity:.7, fontSize:12 }}>Дата начала</div>
-              <input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)} style={{ padding:8, width:'100%' }} />
-            </div>
-            <div>
-              <div style={{ opacity:.7, fontSize:12 }}>Дата окончания</div>
-              <input type="date" value={endDate} onChange={e=>setEndDate(e.target.value)} style={{ padding:8, width:'100%' }} />
-            </div>
-            <div>
-              <div style={{ opacity:.7, fontSize:12 }}>Сегмент (ID)</div>
-              <input value={targetSegmentId} onChange={e=>setTargetSegmentId(e.target.value)} placeholder="segmentId" style={{ padding:8, width:'100%' }} />
-            </div>
-            <div>
-              <div style={{ opacity:.7, fontSize:12 }}>Описание</div>
-              <input value={description} onChange={e=>setDescription(e.target.value)} placeholder="Описание" style={{ padding:8, width:'100%' }} />
-            </div>
+            </label>
+            <label style={{ display: "grid", gap: 4 }}>
+              <span style={{ fontSize: 12, opacity: 0.7 }}>Дата начала</span>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "inherit" }}
+              />
+            </label>
+            <label style={{ display: "grid", gap: 4 }}>
+              <span style={{ fontSize: 12, opacity: 0.7 }}>Дата окончания</span>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "inherit" }}
+              />
+            </label>
           </div>
         </CardBody>
       </Card>
 
       <Card>
-        <CardHeader title="Награда" />
+        <CardHeader title="Начисление" />
         <CardBody>
-          <div style={{ display:'grid', gap:10, gridTemplateColumns:'1fr 1fr 1fr 1fr' }}>
-            <div>
-              <div style={{ opacity:.7, fontSize:12 }}>Тип награды</div>
-              <select value={rewardType} onChange={e=>setRewardType(e.target.value as any)} style={{ padding:8, width:'100%' }}>
-                {REWARD_TYPES.map(t=> <option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
-            <div>
-              <div style={{ opacity:.7, fontSize:12 }}>Значение</div>
-              <input value={rewardValue} onChange={e=>setRewardValue(e.target.value)} placeholder="число" style={{ padding:8, width:'100%' }} />
-            </div>
-            <div>
-              <div style={{ opacity:.7, fontSize:12 }}>Макс. значение</div>
-              <input value={rewardMaxValue} onChange={e=>setRewardMaxValue(e.target.value)} placeholder="число" style={{ padding:8, width:'100%' }} />
-            </div>
-            <div>
-              <div style={{ opacity:.7, fontSize:12 }}>Множитель (x%)</div>
-              <input value={rewardMultiplier} onChange={e=>setRewardMultiplier(e.target.value)} placeholder="число" style={{ padding:8, width:'100%' }} />
-            </div>
-            <div style={{ gridColumn:'1/-1' }}>
-              <div style={{ opacity:.7, fontSize:12 }}>Текст награды</div>
-              <input value={rewardDesc} onChange={e=>setRewardDesc(e.target.value)} placeholder="Описание" style={{ padding:8, width:'100%' }} />
-            </div>
+          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
+            <label style={{ display: "grid", gap: 4 }}>
+              <span style={{ fontSize: 12, opacity: 0.7 }}>Фиксированное начисление (баллы)</span>
+              <input
+                type="number"
+                value={rewardValue}
+                onChange={(e) => setRewardValue(e.target.value)}
+                placeholder="0"
+                style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "inherit" }}
+              />
+            </label>
+            <label style={{ display: "grid", gap: 4 }}>
+              <span style={{ fontSize: 12, opacity: 0.7 }}>Множитель (x2, x3...)</span>
+              <input
+                type="number"
+                step="0.1"
+                value={multiplier}
+                onChange={(e) => setMultiplier(e.target.value)}
+                placeholder="2"
+                style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "inherit" }}
+              />
+            </label>
+          </div>
+          <div style={{ marginTop: 12, fontSize: 13, opacity: 0.75 }}>
+            Можно задать либо фиксированные баллы, либо множитель. Если баллы = 0 — используется только множитель.
           </div>
         </CardBody>
       </Card>
 
       <Card>
-        <CardHeader title="Правила и ограничения" />
+        <CardHeader title="Цели акции" />
         <CardBody>
-          <div style={{ display:'grid', gap:10, gridTemplateColumns:'1fr 1fr 1fr' }}>
+          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
             <div>
-              <div style={{ opacity:.7, fontSize:12 }}>Мин. сумма покупки</div>
-              <input value={minPurchaseAmount} onChange={e=>setMinPurchaseAmount(e.target.value)} placeholder="число" style={{ padding:8, width:'100%' }} />
+              <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>Товары</div>
+              <div style={{ display: "grid", gap: 6, maxHeight: 220, overflowY: "auto", padding: 8, border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8 }}>
+                {products.map((p) => (
+                  <label key={p.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input
+                      type="checkbox"
+                      checked={productIds.includes(p.id)}
+                      onChange={() => toggleInArray(productIds, setProductIds, p.id)}
+                    />{" "}
+                    {p.name}
+                  </label>
+                ))}
+                {!products.length && <div style={{ opacity: 0.7 }}>Список товаров пуст</div>}
+              </div>
             </div>
             <div>
-              <div style={{ opacity:.7, fontSize:12 }}>Категории товаров (CSV)</div>
-              <input value={productCategoriesCsv} onChange={e=>setProductCategoriesCsv(e.target.value)} placeholder="cat1,cat2" style={{ padding:8, width:'100%' }} />
-            </div>
-            <div>
-              <div style={{ opacity:.7, fontSize:12 }}>Точки (CSV)</div>
-              <input value={outletsCsv} onChange={e=>setOutletsCsv(e.target.value)} placeholder="outlet1,outlet2" style={{ padding:8, width:'100%' }} />
-            </div>
-            <div>
-              <div style={{ opacity:.7, fontSize:12 }}>Бюджет</div>
-              <input value={budget} onChange={e=>setBudget(e.target.value)} placeholder="число" style={{ padding:8, width:'100%' }} />
-            </div>
-            <div>
-              <div style={{ opacity:.7, fontSize:12 }}>Лимит на клиента</div>
-              <input value={maxUsagePerCustomer} onChange={e=>setMaxUsagePerCustomer(e.target.value)} placeholder="число" style={{ padding:8, width:'100%' }} />
-            </div>
-            <div>
-              <div style={{ opacity:.7, fontSize:12 }}>Лимит общий</div>
-              <input value={maxUsageTotal} onChange={e=>setMaxUsageTotal(e.target.value)} placeholder="число" style={{ padding:8, width:'100%' }} />
+              <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>Категории</div>
+              <div style={{ display: "grid", gap: 6, maxHeight: 220, overflowY: "auto", padding: 8, border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8 }}>
+                {categories.map((c) => (
+                  <label key={c.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input
+                      type="checkbox"
+                      checked={categoryIds.includes(c.id)}
+                      onChange={() => toggleInArray(categoryIds, setCategoryIds, c.id)}
+                    />{" "}
+                    {c.name}
+                  </label>
+                ))}
+                {!categories.length && <div style={{ opacity: 0.7 }}>Список категорий пуст</div>}
+              </div>
             </div>
           </div>
         </CardBody>
       </Card>
 
-      <Card>
-        <CardHeader title="Каналы уведомлений" />
-        <CardBody>
-          <div style={{ display:'flex', gap:12, alignItems:'center', flexWrap:'wrap' }}>
-            {CHANNELS.map(ch => (
-              <label key={ch} style={{ display:'flex', gap:8, alignItems:'center' }}>
-                <input type="checkbox" checked={!!notificationChannels[ch]} onChange={e=>setNotificationChannels(s=>({ ...s, [ch]: e.target.checked }))} /> {ch}
-              </label>
-            ))}
-          </div>
-        </CardBody>
-      </Card>
+      {message && <div style={{ color: message.toLowerCase().includes("ош") ? "#ef4444" : "#10b981" }}>{message}</div>}
 
-      {msg && <div style={{ color:'#f87171' }}>{msg}</div>}
-      <div style={{ display:'flex', gap:8 }}>
-        <Button variant="secondary" onClick={()=>router.push('/loyalty/actions')}>Отмена</Button>
-        <Button variant="primary" disabled={busy} onClick={submit}>{busy ? 'Создание…' : 'Создать'}</Button>
+      <div style={{ display: "flex", gap: 8 }}>
+        <Button variant="secondary" onClick={() => router.push("/loyalty/actions")}>
+          Отмена
+        </Button>
+        <Button variant="primary" disabled={busy} onClick={submit}>
+          {busy ? "Сохранение..." : "Сохранить"}
+        </Button>
       </div>
     </div>
   );

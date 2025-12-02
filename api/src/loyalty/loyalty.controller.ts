@@ -2045,7 +2045,10 @@ export class LoyaltyController {
     try {
       const idemKey =
         (req.headers['idempotency-key'] as string | undefined) || undefined;
-      const commitOpts = undefined;
+      const commitOpts =
+        dto.positions && Array.isArray(dto.positions)
+          ? { positions: dto.positions }
+          : undefined;
       if (idemKey) {
         const merchantForIdem = merchantIdEff || undefined;
         if (merchantForIdem) {

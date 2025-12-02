@@ -22,6 +22,14 @@ type TelegramSummary = {
   message?: string | null;
 };
 
+type RestApiSummary = {
+  enabled: boolean;
+  apiKeyMask: string | null;
+  baseUrl: string | null;
+  requireBridgeSignature: boolean;
+  message?: string | null;
+};
+
 function StatusPill({ color, label }: { color: string; label: string }) {
   return (
     <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600 }}>
@@ -39,6 +47,9 @@ export default function IntegrationsPage() {
   const [telegram, setTelegram] = React.useState<TelegramSummary | null>(null);
   const [telegramLoading, setTelegramLoading] = React.useState(true);
   const [telegramError, setTelegramError] = React.useState('');
+  const [restApi, setRestApi] = React.useState<RestApiSummary | null>(null);
+  const [restLoading, setRestLoading] = React.useState(true);
+  const [restError, setRestError] = React.useState('');
 
   async function loadIntegrations() {
     setLoading(true);
@@ -75,9 +86,30 @@ export default function IntegrationsPage() {
     }
   }
 
+  async function loadRestApi() {
+    setRestLoading(true);
+    setRestError('');
+    try {
+      const res = await fetch('/api/portal/integrations/rest-api');
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setRestApi(null);
+        throw new Error((data && typeof data?.message === 'string' && data.message) || 'Не удалось загрузить REST API');
+      }
+      setRestApi(data ?? null);
+      setRestError((data && typeof data?.message === 'string' && data.message) || '');
+    } catch (error: any) {
+      setRestApi(null);
+      setRestError(String(error?.message || error));
+    } finally {
+      setRestLoading(false);
+    }
+  }
+
   React.useEffect(() => {
     loadIntegrations();
     loadTelegram();
+    loadRestApi();
   }, []);
 
   const statusLabel = telegram?.enabled ? 'Подключена' : 'Не подключена';
@@ -95,6 +127,10 @@ export default function IntegrationsPage() {
 
   const handleOpenTelegram = () => {
     router.push('/integrations/telegram-mini-app');
+  };
+
+  const handleOpenRestApi = () => {
+    router.push('/integrations/rest-api');
   };
 
   const telegramCard = (
@@ -160,6 +196,70 @@ export default function IntegrationsPage() {
     </Card>
   );
 
+  const restStatusLabel = restApi?.enabled ? 'Активна' : 'Не подключена';
+  const restStatusColor = restApi?.enabled ? '#22c55e' : 'rgba(148,163,184,0.45)';
+  const restApiCard = (
+    <Card
+      style={{
+        border: '1px solid rgba(148,163,184,0.18)',
+        background: 'linear-gradient(135deg, rgba(16,185,129,0.14), rgba(15,23,42,0.78))',
+        transition: 'border-color .2s ease, transform .2s ease',
+      }}
+    >
+      <CardBody>
+        {restLoading ? (
+          <Skeleton height={160} />
+        ) : (
+          <div style={{ display: 'grid', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: 24, alignItems: 'center' }}>
+              <div
+                style={{
+                  width: 96,
+                  height: 96,
+                  borderRadius: '50%',
+                  background: 'rgba(16,185,129,0.16)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <svg width="54" height="54" viewBox="0 0 48 48" aria-hidden="true">
+                  <circle cx="24" cy="24" r="24" fill="#10b981" />
+                  <path
+                    d="M31 15c-2.9 0-5.2 1.9-5.9 4.5a6.5 6.5 0 0 0-5.1-.2c-2 .8-3.3 2.7-3.3 4.9a5.1 5.1 0 0 0 3.8 4.9v1.9c0 .5.5 1 1.1 1H25a1 1 0 0 0 1-1v-1.8a2.7 2.7 0 0 0 2.2-2.7 2.8 2.8 0 0 0-2.8-2.8h-3.9a1 1 0 0 1-.9-1c0-.4.2-.7.5-.9a4.5 4.5 0 0 1 6.9 3.6 1 1 0 0 0 1.1.9h1.8a1 1 0 0 0 1-.9C31.9 20.6 35 18 38 18a1 1 0 0 0 1-1v-1a1 1 0 0 0-1-1h-7Z"
+                    fill="#0f172a"
+                  />
+                </svg>
+              </div>
+              <div style={{ display: 'grid', gap: 8 }}>
+                <div style={{ fontSize: 20, fontWeight: 700 }}>REST API</div>
+                <div style={{ fontSize: 13, opacity: 0.75 }}>
+                  Доступ для внешних CRM/касс по API-ключу (CODE / CALCULATE / BONUS / REFUND)
+                </div>
+                {restApi?.apiKeyMask && (
+                  <div style={{ fontSize: 12, opacity: 0.7 }}>Маска ключа: {restApi.apiKeyMask}</div>
+                )}
+                {restError && <div style={{ fontSize: 12, color: '#f97316' }}>{restError}</div>}
+              </div>
+              <div style={{ display: 'grid', justifyItems: 'end', gap: 12 }}>
+                <StatusPill color={restStatusColor} label={restStatusLabel} />
+                <div style={{ fontSize: 12, opacity: 0.7 }}>Подробнее →</div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, opacity: 0.85 }}>
+              <span style={{ width: 9, height: 9, borderRadius: '50%', background: restStatusColor }} />
+              <span>
+                {restApi?.baseUrl
+                  ? `Базовый URL: ${restApi.baseUrl}`
+                  : 'API_BASE_URL не задан, ключ можно выпустить на странице интеграции'}
+              </span>
+            </div>
+          </div>
+        )}
+      </CardBody>
+    </Card>
+  );
+
   return (
     <div style={{ display: 'grid', gap: 20 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -170,6 +270,21 @@ export default function IntegrationsPage() {
         <Button variant="primary" disabled>
           Подключить интеграцию
         </Button>
+      </div>
+
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={handleOpenRestApi}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            handleOpenRestApi();
+          }
+        }}
+        style={{ outline: 'none', cursor: 'pointer' }}
+      >
+        {restApiCard}
       </div>
 
       <div

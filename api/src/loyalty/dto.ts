@@ -1,10 +1,75 @@
-import { IsEnum, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import {
+  IsArray,
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { DeviceType } from '@prisma/client';
+import { Type } from 'class-transformer';
 
 export enum Mode {
   REDEEM = 'redeem',
   EARN = 'earn',
+}
+
+export class LoyaltyPositionDto {
+  @ApiPropertyOptional({ description: 'Внутренний ID товара' })
+  @IsOptional()
+  @IsString()
+  productId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Провайдер внешней системы (iiko, r_keeper, MoySklad и т.п.)',
+  })
+  @IsOptional()
+  @IsString()
+  externalProvider?: string;
+
+  @ApiPropertyOptional({
+    description: 'Внешний ID товара в указанной системе',
+  })
+  @IsOptional()
+  @IsString()
+  externalId?: string;
+
+  @ApiPropertyOptional({ description: 'Явный ID категории' })
+  @IsOptional()
+  @IsString()
+  categoryId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Внешний ID категории в указанной системе',
+  })
+  @IsOptional()
+  @IsString()
+  categoryExternalId?: string;
+
+  @ApiPropertyOptional({ description: 'Штрихкод товара' })
+  @IsOptional()
+  @IsString()
+  barcode?: string;
+
+  @ApiPropertyOptional({ description: 'Артикул/SKU товара' })
+  @IsOptional()
+  @IsString()
+  sku?: string;
+
+  @ApiPropertyOptional({ description: 'Название товара' })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiProperty({ description: 'Количество', example: 1 })
+  @IsNumber()
+  qty!: number;
+
+  @ApiProperty({ description: 'Цена за единицу', example: 450 })
+  @IsNumber()
+  price!: number;
 }
 
 export class QuoteDto {
@@ -42,6 +107,13 @@ export class QuoteDto {
   @IsOptional()
   @IsString()
   deviceId?: string;
+
+  @ApiPropertyOptional({ type: () => [LoyaltyPositionDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => LoyaltyPositionDto)
+  positions?: LoyaltyPositionDto[];
 }
 
 export class CommitDto {
@@ -62,6 +134,13 @@ export class CommitDto {
   @IsOptional()
   @IsString()
   provider?: string;
+
+  @ApiPropertyOptional({ type: () => [LoyaltyPositionDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => LoyaltyPositionDto)
+  positions?: LoyaltyPositionDto[];
 }
 
 export class QrMintDto {

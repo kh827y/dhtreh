@@ -1,125 +1,164 @@
 "use client";
+
 import React from "react";
 import { Card, CardHeader, CardBody, Button } from "@loyalty/ui";
 
 type Category = {
   id: string;
   name: string;
+  code?: string | null;
+  externalProvider?: string | null;
+  externalId?: string | null;
+  parentId?: string | null;
   order: number;
-  image?: string;
 };
 
-const INITIAL_CATEGORIES: Category[] = [
-  {
-    id: "c-1",
-    name: "Пицца",
-    order: 1,
-    image: "https://images.unsplash.com/photo-1548365328-8b6db7cc1407?auto=format&fit=crop&w=200&q=60",
-  },
-  {
-    id: "c-2",
-    name: "Десерты",
-    order: 2,
-    image: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=200&q=60",
-  },
-  {
-    id: "c-3",
-    name: "Напитки",
-    order: 3,
-    image: "https://images.unsplash.com/photo-1464306076886-da185f07b294?auto=format&fit=crop&w=200&q=60",
-  },
-];
-
 export default function CategoriesPage() {
-  const [categories, setCategories] = React.useState<Category[]>(
-    INITIAL_CATEGORIES.sort((a, b) => a.order - b.order)
-  );
+  const [items, setItems] = React.useState<Category[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState("");
+  const [search, setSearch] = React.useState("");
 
-  const moveCategory = (id: string, direction: -1 | 1) => {
-    setCategories((prev) => {
-      const index = prev.findIndex((category) => category.id === id);
-      if (index === -1) return prev;
-      const targetIndex = index + direction;
-      if (targetIndex < 0 || targetIndex >= prev.length) return prev;
-      const copy = [...prev];
-      const [item] = copy.splice(index, 1);
-      copy.splice(targetIndex, 0, item);
-      return copy.map((category, position) => ({ ...category, order: position + 1 }));
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/portal/catalog/categories");
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setItems(Array.isArray(data) ? data : []);
+    } catch (e: any) {
+      setError(String(e?.message || e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    load();
+  }, [load]);
+
+  const filtered = React.useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return items;
+    return items.filter((cat) => {
+      const haystack = `${cat.name} ${cat.code ?? ""} ${cat.externalId ?? ""} ${cat.externalProvider ?? ""}`.toLowerCase();
+      return haystack.includes(term);
     });
+  }, [items, search]);
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("Удалить категорию?")) return;
+    try {
+      const res = await fetch(`/api/portal/catalog/categories/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(await res.text());
+      setItems((prev) => prev.filter((item) => item.id !== id));
+    } catch (e: any) {
+      setError(String(e?.message || e));
+    }
   };
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-        <div style={{ display: "grid", gap: 4 }}>
+        <div>
           <h1 style={{ margin: 0 }}>Категории</h1>
-          <div style={{ opacity: 0.75, fontSize: 14 }}>Управляйте древовидным каталогом категорий и их порядком.</div>
+          <div style={{ opacity: 0.7, fontSize: 14 }}>Данные из реального каталога без моков.</div>
         </div>
         <a href="/categories/new" style={{ textDecoration: "none" }}>
-          <Button variant="primary">Создать категорию</Button>
+          <Button variant="primary">Добавить категорию</Button>
         </a>
       </div>
 
       <Card>
-        <CardHeader title="Список категорий" subtitle={`Всего: ${categories.length}`} />
+        <CardHeader
+          title="Фильтр"
+          subtitle={loading ? "Загрузка..." : `Найдено: ${filtered.length}`}
+        />
         <CardBody>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", minWidth: 640, borderCollapse: "collapse" }}>
-              <thead>
-                <tr style={{ textAlign: "left", fontSize: 12, textTransform: "uppercase", opacity: 0.65 }}>
-                  <th style={{ padding: "12px 8px" }}>Превью</th>
-                  <th style={{ padding: "12px 8px" }}>Название категории</th>
-                  <th style={{ padding: "12px 8px" }}>Порядок</th>
-                  <th style={{ padding: "12px 8px", width: 160 }}>Действия</th>
-                </tr>
-              </thead>
-              <tbody>
-                {categories.map((category, index) => (
-                  <tr key={category.id} style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-                    <td style={{ padding: "12px 8px" }}>
-                      <div
-                        style={{
-                          width: 56,
-                          height: 56,
-                          borderRadius: 12,
-                          overflow: "hidden",
-                          background: "rgba(255,255,255,0.05)",
-                        }}
-                      >
-                        {category.image ? (
-                          <img
-                            src={category.image}
-                            alt={category.name}
-                            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                          />
-                        ) : (
-                          <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", opacity: 0.6 }}>
-                            🗂️
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td style={{ padding: "12px 8px", fontWeight: 600 }}>{category.name}</td>
-                    <td style={{ padding: "12px 8px" }}>{category.order}</td>
-                    <td style={{ padding: "12px 8px" }}>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <Button variant="ghost" disabled={index === 0} onClick={() => moveCategory(category.id, -1)}>
-                          ↑
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          disabled={index === categories.length - 1}
-                          onClick={() => moveCategory(category.id, 1)}
-                        >
-                          ↓
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+            <label style={{ display: "grid", gap: 4 }}>
+              <span style={{ fontSize: 12, opacity: 0.7 }}>Поиск (название, код, внешний ID)</span>
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Например, кофе"
+                style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "inherit" }}
+              />
+            </label>
+            <Button variant="secondary" onClick={load} disabled={loading}>
+              {loading ? "Обновляем..." : "Обновить"}
+            </Button>
           </div>
+        </CardBody>
+      </Card>
+
+      {error && (
+        <Card>
+          <CardBody>
+            <div style={{ color: "#ef4444" }}>{error}</div>
+          </CardBody>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader title="Список категорий" />
+        <CardBody>
+          {loading ? (
+            <div>Загрузка...</div>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: "left", padding: "8px 6px", opacity: 0.7 }}>Название</th>
+                    <th style={{ textAlign: "left", padding: "8px 6px", opacity: 0.7 }}>Код</th>
+                    <th style={{ textAlign: "left", padding: "8px 6px", opacity: 0.7 }}>Внешняя система</th>
+                    <th style={{ textAlign: "left", padding: "8px 6px", opacity: 0.7 }}>Внешний ID</th>
+                    <th style={{ textAlign: "left", padding: "8px 6px", opacity: 0.7 }}>Родитель</th>
+                    <th style={{ textAlign: "left", padding: "8px 6px", opacity: 0.7 }}>Порядок</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((cat) => (
+                    <tr key={cat.id} style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                      <td style={{ padding: "8px 6px" }}>{cat.name}</td>
+                      <td style={{ padding: "8px 6px", opacity: 0.9 }}>{cat.code || "—"}</td>
+                      <td style={{ padding: "8px 6px", opacity: 0.9 }}>{cat.externalProvider || "—"}</td>
+                      <td style={{ padding: "8px 6px", opacity: 0.9 }}>{cat.externalId || "—"}</td>
+                      <td style={{ padding: "8px 6px", opacity: 0.9 }}>
+                        {cat.parentId ? items.find((p) => p.id === cat.parentId)?.name || cat.parentId : "—"}
+                      </td>
+                      <td style={{ padding: "8px 6px", opacity: 0.9 }}>{cat.order}</td>
+                      <td style={{ padding: "8px 6px", textAlign: "right" }}>
+                        <button
+                          onClick={() => handleDelete(cat.id)}
+                          style={{
+                            background: "transparent",
+                            border: "1px solid rgba(239,68,68,0.4)",
+                            color: "#ef4444",
+                            padding: "6px 10px",
+                            borderRadius: 6,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Удалить
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {!filtered.length && (
+                    <tr>
+                      <td colSpan={7} style={{ padding: 12, opacity: 0.7 }}>
+                        Нет категорий
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardBody>
       </Card>
     </div>

@@ -23,10 +23,13 @@ export class CategoryDto {
   @ApiProperty() id!: string;
   @ApiProperty() name!: string;
   @ApiProperty() slug!: string;
+  @ApiPropertyOptional() code?: string | null;
   @ApiPropertyOptional() description?: string | null;
   @ApiPropertyOptional() imageUrl?: string | null;
   @ApiPropertyOptional() parentId?: string | null;
   @ApiProperty() order!: number;
+  @ApiPropertyOptional() externalProvider?: string | null;
+  @ApiPropertyOptional() externalId?: string | null;
 }
 
 export class CreateCategoryDto {
@@ -49,6 +52,20 @@ export class CreateCategoryDto {
   @IsOptional()
   @IsString()
   parentId?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  code?: string;
+  @ApiPropertyOptional({
+    description: 'Провайдер внешней системы (iiko, r_keeper, MoySklad и т.п.)',
+  })
+  @IsOptional()
+  @IsString()
+  externalProvider?: string;
+  @ApiPropertyOptional({ description: 'Внешний ID категории' })
+  @IsOptional()
+  @IsString()
+  externalId?: string;
 }
 
 export class UpdateCategoryDto extends PartialType(CreateCategoryDto) {}
@@ -124,6 +141,28 @@ export class CreateProductDto {
   @IsOptional()
   @IsString()
   sku?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  code?: string;
+  @ApiPropertyOptional({ description: 'Штрихкод' })
+  @IsOptional()
+  @IsString()
+  barcode?: string;
+  @ApiPropertyOptional({ description: 'Единица измерения (шт, кг и т.п.)' })
+  @IsOptional()
+  @IsString()
+  unit?: string;
+  @ApiPropertyOptional({
+    description: 'Провайдер внешней системы (iiko, r_keeper, MoySklad и т.п.)',
+  })
+  @IsOptional()
+  @IsString()
+  externalProvider?: string;
+  @ApiPropertyOptional({ description: 'Внешний ID товара' })
+  @IsOptional()
+  @IsString()
+  externalId?: string;
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -245,6 +284,9 @@ export class ProductListItemDto {
   @ApiProperty() id!: string;
   @ApiProperty() name!: string;
   @ApiPropertyOptional() sku?: string | null;
+  @ApiPropertyOptional() code?: string | null;
+  @ApiPropertyOptional() barcode?: string | null;
+  @ApiPropertyOptional() unit?: string | null;
   @ApiPropertyOptional() categoryId?: string | null;
   @ApiPropertyOptional() categoryName?: string | null;
   @ApiPropertyOptional() previewImage?: string | null;
@@ -253,6 +295,8 @@ export class ProductListItemDto {
   @ApiProperty() allowRedeem!: boolean;
   @ApiProperty() purchasesMonth!: number;
   @ApiProperty() purchasesTotal!: number;
+  @ApiPropertyOptional() externalProvider?: string | null;
+  @ApiPropertyOptional() externalId?: string | null;
 }
 
 export class ProductDto extends ProductListItemDto {
@@ -324,6 +368,16 @@ export class ListProductsQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
+  @ApiPropertyOptional({
+    description: 'Фильтр по провайдеру внешней системы (iiko, r_keeper, MoySklad и т.п.)',
+  })
+  @IsOptional()
+  @IsString()
+  externalProvider?: string;
+  @ApiPropertyOptional({ description: 'Фильтр по внешнему ID товара' })
+  @IsOptional()
+  @IsString()
+  externalId?: string;
 }
 
 export class OutletScheduleDayDto {
@@ -484,4 +538,43 @@ export class PortalOutletDto {
 export class PortalOutletListResponseDto {
   @ApiProperty({ type: () => [PortalOutletDto] }) items!: PortalOutletDto[];
   @ApiProperty() total!: number;
+}
+
+export class ImportCategoryDto {
+  @ApiProperty() @IsString() externalId!: string;
+  @ApiProperty() @IsString() name!: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() parentExternalId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() code?: string;
+}
+
+export class ImportProductDto {
+  @ApiProperty() @IsString() externalId!: string;
+  @ApiProperty() @IsString() name!: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() categoryExternalId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() categoryId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() sku?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() barcode?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() unit?: string;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() price?: number;
+  @ApiPropertyOptional() @IsOptional() @IsString() code?: string;
+}
+
+export class ImportCatalogDto {
+  @ApiPropertyOptional({
+    description: 'Провайдер внешней системы (будет переопределён роутом)',
+  })
+  @IsOptional()
+  @IsString()
+  externalProvider?: string;
+  @ApiProperty({ type: () => [ImportProductDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ImportProductDto)
+  products!: ImportProductDto[];
+  @ApiPropertyOptional({ type: () => [ImportCategoryDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ImportCategoryDto)
+  categories?: ImportCategoryDto[];
 }

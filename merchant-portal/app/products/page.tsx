@@ -1,401 +1,249 @@
 "use client";
+
 import React from "react";
 import { Card, CardHeader, CardBody, Button } from "@loyalty/ui";
 
 type Product = {
   id: string;
   name: string;
-  category: string;
-  image?: string;
+  sku?: string | null;
+  code?: string | null;
+  barcode?: string | null;
+  unit?: string | null;
+  categoryId?: string | null;
+  categoryName?: string | null;
   visible: boolean;
   accruePoints: boolean;
   allowRedeem: boolean;
-  purchasesMonth: number;
-  purchasesTotal: number;
-  sku?: string;
+  externalProvider?: string | null;
+  externalId?: string | null;
 };
 
-const MOCK_PRODUCTS: Product[] = [
-  {
-    id: "p-1",
-    name: "Маргарита",
-    category: "Пицца",
-    image: "https://images.unsplash.com/photo-1548365328-8b6db7cc1407?auto=format&fit=crop&w=200&q=60",
-    visible: true,
-    accruePoints: true,
-    allowRedeem: true,
-    purchasesMonth: 128,
-    purchasesTotal: 1450,
-    sku: "PZ-001",
-  },
-  {
-    id: "p-2",
-    name: "Чизкейк Нью-Йорк",
-    category: "Десерты",
-    image: "https://images.unsplash.com/photo-1542327897-37fa1ff59b4c?auto=format&fit=crop&w=200&q=60",
-    visible: true,
-    accruePoints: true,
-    allowRedeem: false,
-    purchasesMonth: 82,
-    purchasesTotal: 820,
-    sku: "DS-104",
-  },
-  {
-    id: "p-3",
-    name: "Салат Цезарь",
-    category: "Салаты",
-    image: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=200&q=60",
-    visible: false,
-    accruePoints: false,
-    allowRedeem: false,
-    purchasesMonth: 24,
-    purchasesTotal: 460,
-    sku: "SL-210",
-  },
-  {
-    id: "p-4",
-    name: "Лимонад ягодный",
-    category: "Напитки",
-    image: "https://images.unsplash.com/photo-1464306076886-da185f07b294?auto=format&fit=crop&w=200&q=60",
-    visible: true,
-    accruePoints: true,
-    allowRedeem: true,
-    purchasesMonth: 65,
-    purchasesTotal: 540,
-    sku: "DR-330",
-  },
-];
-
-type StatusFilter = "ALL" | "VISIBLE" | "HIDDEN";
-type PointsFilter = "ALL" | "WITH" | "WITHOUT";
+type Category = { id: string; name: string };
 
 export default function ProductsPage() {
-  const [products, setProducts] = React.useState<Product[]>(MOCK_PRODUCTS);
-  const [categoryFilter, setCategoryFilter] = React.useState<string>("ALL");
-  const [statusFilter, setStatusFilter] = React.useState<StatusFilter>("ALL");
-  const [pointsFilter, setPointsFilter] = React.useState<PointsFilter>("ALL");
+  const [items, setItems] = React.useState<Product[]>([]);
+  const [categories, setCategories] = React.useState<Category[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState("");
+
   const [search, setSearch] = React.useState("");
-  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
-  const [message, setMessage] = React.useState<string>("");
+  const [status, setStatus] = React.useState<"all" | "visible" | "hidden">("all");
+  const [points, setPoints] = React.useState<"all" | "with" | "without">("all");
+  const [categoryId, setCategoryId] = React.useState("");
+  const [externalProvider, setExternalProvider] = React.useState("");
 
-  const categories = React.useMemo(() => {
-    const unique = new Set<string>();
-    products.forEach((p) => unique.add(p.category));
-    return Array.from(unique).sort();
-  }, [products]);
-
-  const filteredProducts = React.useMemo(() => {
-    const term = search.trim().toLowerCase();
-    return products.filter((product) => {
-      if (categoryFilter !== "ALL" && product.category !== categoryFilter) return false;
-      if (statusFilter === "VISIBLE" && !product.visible) return false;
-      if (statusFilter === "HIDDEN" && product.visible) return false;
-      if (pointsFilter === "WITH" && !product.accruePoints) return false;
-      if (pointsFilter === "WITHOUT" && product.accruePoints) return false;
-      if (term) {
-        const haystack = `${product.name} ${product.sku ?? ""}`.toLowerCase();
-        if (!haystack.includes(term)) return false;
-      }
-      return true;
-    });
-  }, [products, categoryFilter, statusFilter, pointsFilter, search]);
-
-  const hasSelection = selectedIds.size > 0;
-
-  const toggleSelection = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const toggleSelectAll = (checked: boolean) => {
-    if (!checked) {
-      setSelectedIds(new Set());
-      return;
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const qs = new URLSearchParams();
+      if (status !== "all") qs.set("status", status);
+      if (points === "with") qs.set("points", "with_points");
+      if (points === "without") qs.set("points", "without_points");
+      if (categoryId) qs.set("categoryId", categoryId);
+      if (externalProvider.trim()) qs.set("externalProvider", externalProvider.trim());
+      if (search.trim()) qs.set("search", search.trim());
+      const res = await fetch(`/api/portal/catalog/products${qs.toString() ? `?${qs.toString()}` : ""}`);
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setItems(Array.isArray(data?.items) ? data.items : []);
+    } catch (e: any) {
+      setError(String(e?.message || e));
+    } finally {
+      setLoading(false);
     }
-    setSelectedIds(new Set(filteredProducts.map((p) => p.id)));
-  };
-
-  const applyBulkUpdate = (updater: (product: Product) => Product) => {
-    setProducts((prev) => prev.map((product) => (selectedIds.has(product.id) ? updater(product) : product)));
-    setMessage("Изменения сохранены для выбранных товаров.");
-  };
-
-  const handleBulkVisibility = (visible: boolean) => {
-    applyBulkUpdate((product) => ({ ...product, visible }));
-  };
-
-  const handleBulkRedeem = (allowRedeem: boolean) => {
-    applyBulkUpdate((product) => ({ ...product, allowRedeem }));
-  };
-
-  const handleBulkDelete = () => {
-    if (!window.confirm(`Удалить выбранные товары (${selectedIds.size})?`)) return;
-    setProducts((prev) => prev.filter((product) => !selectedIds.has(product.id)));
-    setSelectedIds(new Set());
-    setMessage("Выбранные товары удалены.");
-  };
+  }, [status, points, categoryId, externalProvider, search]);
 
   React.useEffect(() => {
-    if (!message) return;
-    const timer = window.setTimeout(() => setMessage(""), 4000);
-    return () => window.clearTimeout(timer);
-  }, [message]);
+    fetch("/api/portal/catalog/categories")
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setCategories(data.map((cat: any) => ({ id: cat.id, name: cat.name || cat.id })));
+        }
+      })
+      .catch(() => null);
+  }, []);
 
   React.useEffect(() => {
-    setSelectedIds((prev) => {
-      const next = new Set<string>();
-      filteredProducts.forEach((product) => {
-        if (prev.has(product.id)) next.add(product.id);
-      });
-      return next;
-    });
-  }, [filteredProducts]);
+    load();
+  }, [load]);
 
-  const allSelected = filteredProducts.length > 0 && filteredProducts.every((product) => selectedIds.has(product.id));
+  const filteredCount = items.length;
+  const pill = (text: string, bg: string) => (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "4px 10px",
+        borderRadius: 999,
+        fontSize: 12,
+        fontWeight: 600,
+        background: bg,
+        color: "#0f172a",
+        lineHeight: 1,
+      }}
+    >
+      {text}
+    </span>
+  );
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-        <div style={{ display: "grid", gap: 4 }}>
+        <div>
           <h1 style={{ margin: 0 }}>Товары</h1>
-          <div style={{ opacity: 0.75, fontSize: 14 }}>Управляйте каталогом, фильтрами и массовыми действиями.</div>
+          <div style={{ opacity: 0.7, fontSize: 14 }}>Реальный каталог: без моков и заглушек.</div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <a href="/products/new" style={{ textDecoration: "none" }}>
-            <Button variant="primary">Добавить товар</Button>
-          </a>
-        </div>
+        <a href="/products/new" style={{ textDecoration: "none" }}>
+          <Button variant="primary">Добавить товар</Button>
+        </a>
       </div>
 
       <Card>
-        <CardHeader title="Фильтры" subtitle={`Найдено: ${filteredProducts.length} товаров`} />
+        <CardHeader title="Фильтры" subtitle={loading ? "Загрузка..." : `Найдено: ${filteredCount}`} />
         <CardBody>
-          <div
-            style={{
-              display: "grid",
-              gap: 12,
-              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-              alignItems: "center",
-            }}
-          >
+          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+            <label style={{ display: "grid", gap: 4 }}>
+              <span style={{ fontSize: 12, opacity: 0.7 }}>Поиск (название, SKU, код, внешний ID)</span>
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Поиск..."
+                style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "inherit" }}
+              />
+            </label>
+            <label style={{ display: "grid", gap: 4 }}>
+              <span style={{ fontSize: 12, opacity: 0.7 }}>Статус</span>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value as any)}
+                style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "inherit" }}
+              >
+                <option value="all">Все</option>
+                <option value="visible">Видимые</option>
+                <option value="hidden">Скрытые</option>
+              </select>
+            </label>
+            <label style={{ display: "grid", gap: 4 }}>
+              <span style={{ fontSize: 12, opacity: 0.7 }}>Начисление баллов</span>
+              <select
+                value={points}
+                onChange={(e) => setPoints(e.target.value as any)}
+                style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "inherit" }}
+              >
+                <option value="all">Все</option>
+                <option value="with">Начисляют</option>
+                <option value="without">Не начисляют</option>
+              </select>
+            </label>
             <label style={{ display: "grid", gap: 4 }}>
               <span style={{ fontSize: 12, opacity: 0.7 }}>Категория</span>
               <select
-                value={categoryFilter}
-                onChange={(event) => setCategoryFilter(event.target.value)}
-                style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.2)", color: "inherit" }}
+                value={categoryId}
+                onChange={(e) => setCategoryId(e.target.value)}
+                style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "inherit" }}
               >
-                <option value="ALL">Все категории</option>
-                {categories.map((category) => (
-                  <option key={category} value={category}>
-                    {category}
+                <option value="">Все</option>
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.name}
                   </option>
                 ))}
               </select>
             </label>
-
             <label style={{ display: "grid", gap: 4 }}>
-              <span style={{ fontSize: 12, opacity: 0.7 }}>Статус</span>
-              <select
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
-                style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.2)", color: "inherit" }}
-              >
-                <option value="ALL">Все товары</option>
-                <option value="VISIBLE">Отображаются в каталоге</option>
-                <option value="HIDDEN">Не отображаются в каталоге</option>
-              </select>
-            </label>
-
-            <label style={{ display: "grid", gap: 4 }}>
-              <span style={{ fontSize: 12, opacity: 0.7 }}>Правила баллов</span>
-              <select
-                value={pointsFilter}
-                onChange={(event) => setPointsFilter(event.target.value as PointsFilter)}
-                style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.2)", color: "inherit" }}
-              >
-                <option value="ALL">Все</option>
-                <option value="WITH">С начислением баллов</option>
-                <option value="WITHOUT">Без начисления баллов</option>
-              </select>
-            </label>
-
-            <label style={{ display: "grid", gap: 4 }}>
-              <span style={{ fontSize: 12, opacity: 0.7 }}>Поиск</span>
+              <span style={{ fontSize: 12, opacity: 0.7 }}>Внешний провайдер</span>
               <input
-                type="search"
-                placeholder="Название или артикул"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.2)", color: "inherit" }}
+                value={externalProvider}
+                onChange={(e) => setExternalProvider(e.target.value)}
+                placeholder="iiko / MoySklad / r_keeper"
+                style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "inherit" }}
               />
             </label>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+              <Button variant="secondary" onClick={load} disabled={loading}>
+                {loading ? "Обновляем..." : "Обновить"}
+              </Button>
+            </div>
           </div>
         </CardBody>
       </Card>
 
-      {hasSelection && (
-        <Card style={{ border: "1px solid rgba(37, 211, 102, 0.35)" }}>
-          <CardBody style={{ display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between" }}>
-            <div>
-              <div style={{ fontWeight: 600 }}>Выбрано товаров: {selectedIds.size}</div>
-              <div style={{ fontSize: 12, opacity: 0.7 }}>Выберите действие для применения.</div>
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              <Button variant="secondary" onClick={() => handleBulkVisibility(true)}>
-                Показать в каталоге
-              </Button>
-              <Button variant="secondary" onClick={() => handleBulkVisibility(false)}>
-                Скрыть в каталоге
-              </Button>
-              <Button variant="secondary" onClick={() => handleBulkRedeem(true)}>
-                Разрешить оплату баллами
-              </Button>
-              <Button variant="secondary" onClick={() => handleBulkRedeem(false)}>
-                Запретить оплату баллами
-              </Button>
-              <Button variant="ghost" onClick={handleBulkDelete}>
-                Удалить
-              </Button>
-            </div>
+      {error && (
+        <Card>
+          <CardBody>
+            <div style={{ color: "#ef4444" }}>{error}</div>
           </CardBody>
         </Card>
       )}
 
-      {message && (
-        <div
-          className="glass"
-          style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid rgba(37, 211, 102, 0.2)", background: "rgba(37,211,102,0.1)" }}
-        >
-          {message}
-        </div>
-      )}
-
       <Card>
-        <CardHeader title="Каталог товаров" />
+        <CardHeader title="Каталог" />
         <CardBody>
-          {filteredProducts.length === 0 ? (
-            <div
-              style={{
-                display: "grid",
-                placeItems: "center",
-                gap: 16,
-                padding: "48px 0",
-                textAlign: "center",
-              }}
-            >
-              <div
-                aria-hidden
-                style={{
-                  width: 120,
-                  height: 120,
-                  borderRadius: "50%",
-                  background: "linear-gradient(135deg, rgba(37,211,102,0.35), rgba(37,211,102,0.15))",
-                  display: "grid",
-                  placeItems: "center",
-                  color: "rgba(37,211,102,0.85)",
-                  fontSize: 32,
-                  fontWeight: 600,
-                }}
-              >
-                🛒
-              </div>
-              <div style={{ display: "grid", gap: 6 }}>
-                <div style={{ fontSize: 18, fontWeight: 600 }}>Товары не найдены</div>
-                <div style={{ opacity: 0.7 }}>Измените фильтры или добавьте первый товар.</div>
-              </div>
-              <a href="/products/new" style={{ textDecoration: "none" }}>
-                <Button variant="primary">Добавить товар</Button>
-              </a>
-            </div>
+          {loading ? (
+            <div>Загрузка...</div>
           ) : (
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 840 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
-                  <tr style={{ textAlign: "left", fontSize: 12, textTransform: "uppercase", opacity: 0.65 }}>
-                    <th style={{ padding: "12px 8px" }}>
-                      <input
-                        type="checkbox"
-                        checked={allSelected}
-                        onChange={(event) => toggleSelectAll(event.target.checked)}
-                      />
-                    </th>
-                    <th style={{ padding: "12px 8px" }}>Превью</th>
-                    <th style={{ padding: "12px 8px" }}>Название</th>
-                    <th style={{ padding: "12px 8px" }}>Категория</th>
-                    <th style={{ padding: "12px 8px" }}>Покупок за месяц</th>
-                    <th style={{ padding: "12px 8px" }}>Покупок всего</th>
-                    <th style={{ padding: "12px 8px" }}>Артикул</th>
+                  <tr>
+                    <th style={{ textAlign: "left", padding: "8px 6px", opacity: 0.7 }}>Товар</th>
+                    <th style={{ textAlign: "left", padding: "8px 6px", opacity: 0.7 }}>Категория</th>
+                    <th style={{ textAlign: "left", padding: "8px 6px", opacity: 0.7 }}>Коды</th>
+                    <th style={{ textAlign: "left", padding: "8px 6px", opacity: 0.7 }}>Внешняя система</th>
+                    <th style={{ textAlign: "left", padding: "8px 6px", opacity: 0.7 }}>Баллы</th>
+                    <th style={{ textAlign: "left", padding: "8px 6px", opacity: 0.7 }}>Статус</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredProducts.map((product) => (
-                    <tr
-                      key={product.id}
-                      style={{
-                        borderTop: "1px solid rgba(255,255,255,0.08)",
-                        background: selectedIds.has(product.id) ? "rgba(37,211,102,0.1)" : undefined,
-                      }}
-                    >
-                      <td style={{ padding: "12px 8px" }}>
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.has(product.id)}
-                          onChange={() => toggleSelection(product.id)}
-                        />
-                      </td>
-                      <td style={{ padding: "12px 8px" }}>
-                        <div
-                          style={{
-                            width: 48,
-                            height: 48,
-                            borderRadius: 12,
-                            overflow: "hidden",
-                            background: "rgba(255,255,255,0.05)",
-                          }}
-                        >
-                          {product.image ? (
-                            <img
-                              src={product.image}
-                              alt={product.name}
-                              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                            />
-                          ) : (
-                            <div
-                              style={{
-                                width: "100%",
-                                height: "100%",
-                                display: "grid",
-                                placeItems: "center",
-                                fontSize: 20,
-                                opacity: 0.6,
-                              }}
-                            >
-                              📦
-                            </div>
-                          )}
+                  {items.map((product) => (
+                    <tr key={product.id} style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                      <td style={{ padding: "8px 6px", fontWeight: 600 }}>{product.name}</td>
+                      <td style={{ padding: "8px 6px", opacity: 0.9 }}>{product.categoryName || "—"}</td>
+                      <td style={{ padding: "8px 6px", opacity: 0.9 }}>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {product.sku && pill(`SKU ${product.sku}`, "rgba(59,130,246,0.25)")}
+                          {product.code && pill(`Код ${product.code}`, "rgba(148,163,184,0.3)")}
+                          {product.barcode && pill(`Штрихкод ${product.barcode}`, "rgba(148,163,184,0.3)")}
                         </div>
                       </td>
-                      <td style={{ padding: "12px 8px", fontWeight: 600 }}>
-                        <div style={{ display: "grid", gap: 4 }}>
-                          <span>{product.name}</span>
-                          <span style={{ fontSize: 12, opacity: 0.6 }}>
-                            {product.visible ? "Отображается" : "Скрыт"} ·
-                            {" "}
-                            {product.accruePoints ? "Начисляет баллы" : "Без баллов"}
-                          </span>
+                      <td style={{ padding: "8px 6px", opacity: 0.9 }}>
+                        {product.externalProvider || product.externalId ? (
+                          <div style={{ display: "grid", gap: 2 }}>
+                            <span>{product.externalProvider || "—"}</span>
+                            <span style={{ opacity: 0.8, fontSize: 12 }}>{product.externalId || ""}</span>
+                          </div>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td style={{ padding: "8px 6px", opacity: 0.9 }}>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {product.accruePoints
+                            ? pill("Начисление", "rgba(52,211,153,0.3)")
+                            : pill("Без начисления", "rgba(148,163,184,0.3)")}
+                          {product.allowRedeem
+                            ? pill("Можно списывать", "rgba(56,189,248,0.25)")
+                            : pill("Запрет списания", "rgba(148,163,184,0.3)")}
                         </div>
                       </td>
-                      <td style={{ padding: "12px 8px" }}>{product.category}</td>
-                      <td style={{ padding: "12px 8px" }}>{product.purchasesMonth}</td>
-                      <td style={{ padding: "12px 8px" }}>{product.purchasesTotal}</td>
-                      <td style={{ padding: "12px 8px" }}>{product.sku || "—"}</td>
+                      <td style={{ padding: "8px 6px", opacity: 0.9 }}>
+                        {product.visible
+                          ? pill("Виден", "rgba(52,211,153,0.3)")
+                          : pill("Скрыт", "rgba(148,163,184,0.3)")}
+                      </td>
                     </tr>
                   ))}
+                  {!items.length && (
+                    <tr>
+                      <td colSpan={6} style={{ padding: 12, opacity: 0.7 }}>
+                        Нет товаров
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>

@@ -20,6 +20,8 @@ import { PortalReviewsService } from './services/reviews.service';
 import { LoyaltyModule } from '../loyalty/loyalty.module';
 import { CustomerAudiencesModule } from '../customer-audiences/customer-audiences.module';
 import { SubscriptionModule } from '../subscription/subscription.module';
+import { IntegrationsModule } from '../integrations/integrations.module';
+import { PortalRestApiIntegrationService } from './services/rest-api-integration.service';
 
 @Module({
   imports: [
@@ -35,6 +37,7 @@ import { SubscriptionModule } from '../subscription/subscription.module';
     ReferralModule,
     LoyaltyModule,
     SubscriptionModule,
+    IntegrationsModule,
   ],
   controllers: [PortalController],
   providers: [
@@ -46,6 +49,7 @@ import { SubscriptionModule } from '../subscription/subscription.module';
     PortalTelegramIntegrationService,
     PortalTelegramNotifyService,
     PortalReviewsService,
+    PortalRestApiIntegrationService,
   ],
 })
 export class PortalModule {}
