@@ -1934,14 +1934,12 @@ export class LoyaltyController {
       }
       // Расчёт quote без внешних промо-скидок (используем исходные суммы)
       const adjTotal = Math.max(0, Math.floor(dto.total));
-      const adjEligible = Math.max(0, Math.floor(dto.eligibleTotal));
       const normalizedOutletId = dto.outletId ?? outlet?.id ?? undefined;
       const data = await this.service.quote(
         {
           ...dto,
           outletId: normalizedOutletId,
           total: adjTotal,
-          eligibleTotal: adjEligible,
           staffId,
           customerId: customer.id,
         },
@@ -2257,32 +2255,52 @@ export class LoyaltyController {
     const merchantId =
       typeof dto?.merchantId === 'string' ? dto.merchantId.trim() : '';
     if (!merchantId) throw new BadRequestException('merchantId required');
+    const rawInvoice =
+      (dto as any)?.invoice_num ??
+      (dto as any)?.invoiceNum ??
+      (dto as any)?.orderId ??
+      (dto as any)?.order_id;
+    let invoiceNum =
+      typeof rawInvoice === 'string' && rawInvoice.trim().length > 0
+        ? rawInvoice.trim()
+        : '';
     let orderId =
-      typeof dto?.orderId === 'string' && dto.orderId.trim().length > 0
-        ? dto.orderId.trim()
+      typeof (dto as any)?.order_id === 'string' &&
+      (dto as any).order_id.trim().length > 0
+        ? (dto as any).order_id.trim()
         : '';
     const receiptNumber =
       typeof dto?.receiptNumber === 'string' &&
       dto.receiptNumber.trim().length > 0
         ? dto.receiptNumber.trim()
         : null;
-    if (!orderId) {
+    if (!invoiceNum && !orderId) {
       if (!receiptNumber) {
         throw new BadRequestException(
-          'orderId or receiptNumber must be provided',
+          'invoice_num или order_id обязательны',
         );
       }
       const receipt = await this.prisma.receipt.findFirst({
         where: { merchantId, receiptNumber },
-        select: { orderId: true },
+        select: { orderId: true, id: true },
       });
       if (!receipt?.orderId) {
         throw new BadRequestException('Receipt not found');
       }
-      orderId = receipt.orderId;
+      invoiceNum = receipt.orderId;
+      orderId = receipt.id ?? '';
+    }
+    let operationDate: Date | null = null;
+    if (dto.operationDate) {
+      const parsed = new Date(dto.operationDate);
+      if (Number.isNaN(parsed.getTime())) {
+        throw new BadRequestException('operationDate must be a valid date');
+      }
+      operationDate = parsed;
     }
     (dto as any).merchantId = merchantId;
-    (dto as any).orderId = orderId;
+    (dto as any).invoice_num = invoiceNum;
+    (dto as any).order_id = orderId;
     const staffKeyHeader = req.headers['x-staff-key'] as string | undefined;
     if (staffKeyHeader) {
       const valid = await this.verifyStaffKey(merchantId, staffKeyHeader);
@@ -2321,9 +2339,8 @@ export class LoyaltyController {
           }
           const bodyForSig = JSON.stringify({
             merchantId,
-            orderId,
-            refundTotal: dto.refundTotal,
-            refundEligibleTotal: dto.refundEligibleTotal ?? undefined,
+            invoice_num: invoiceNum,
+            order_id: orderId || undefined,
           });
           let ok = false;
           if (secret && verifyBridgeSigUtil(sig, bodyForSig, secret)) ok = true;
@@ -2344,24 +2361,30 @@ export class LoyaltyController {
         if (saved) {
           data = saved.response as any;
         } else {
-          data = await this.service.refund(
+          data = await this.service.refund({
             merchantId,
+            invoiceNum,
             orderId,
-            dto.refundTotal,
-            dto.refundEligibleTotal,
-            req.requestId,
-            dto.deviceId,
-          );
+            requestId: req.requestId,
+            deviceId: dto.deviceId,
+            operationDate,
+          });
           try {
-            const receipt = await this.prisma.receipt.findUnique({
+            let receipt = await this.prisma.receipt.findUnique({
               where: {
                 merchantId_orderId: {
                   merchantId,
-                  orderId,
+                  orderId: invoiceNum,
                 },
               },
               select: { customerId: true },
             });
+            if (!receipt && orderId) {
+              receipt = await this.prisma.receipt.findFirst({
+                where: { id: orderId, merchantId },
+                select: { customerId: true },
+              });
+            }
             if (receipt?.customerId) {
               const mc = await this.ensureMerchantCustomerByCustomerId(
                 merchantId,
@@ -2384,24 +2407,30 @@ export class LoyaltyController {
           } catch {}
         }
       } else {
-        data = await this.service.refund(
+        data = await this.service.refund({
           merchantId,
+          invoiceNum,
           orderId,
-          dto.refundTotal,
-          dto.refundEligibleTotal,
-          req.requestId,
-          dto.deviceId,
-        );
+          requestId: req.requestId,
+          deviceId: dto.deviceId,
+          operationDate,
+        });
         try {
-          const receipt = await this.prisma.receipt.findUnique({
+          let receipt = await this.prisma.receipt.findUnique({
             where: {
               merchantId_orderId: {
                 merchantId,
-                orderId,
+                orderId: invoiceNum,
               },
             },
             select: { customerId: true },
           });
+          if (!receipt && orderId) {
+            receipt = await this.prisma.receipt.findFirst({
+              where: { id: orderId, merchantId },
+              select: { customerId: true },
+            });
+          }
           if (receipt?.customerId) {
             const mc = await this.ensureMerchantCustomerByCustomerId(
               merchantId,

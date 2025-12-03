@@ -92,6 +92,8 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
           base = pickIntegration('refund');
         } else if (path.includes('/api/integrations/code')) {
           base = pickIntegration('code');
+        } else if (path.includes('/api/integrations/client/migrate')) {
+          base = pickIntegration('clientMigrate');
         } else if (path.includes('/api/integrations/operations')) {
           base = pickIntegration('operations');
         } else if (path.includes('/api/integrations/outlets')) {

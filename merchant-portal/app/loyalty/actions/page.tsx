@@ -2,6 +2,7 @@
 
 import React from "react";
 import { Card, CardHeader, CardBody, Button } from "@loyalty/ui";
+import { useRouter } from "next/navigation";
 
 type Promotion = {
   id: string;
@@ -61,11 +62,13 @@ function deriveTargets(promo: Promotion) {
 }
 
 export default function ActionsPage() {
+  const router = useRouter();
   const [items, setItems] = React.useState<Promotion[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState("");
   const [search, setSearch] = React.useState("");
   const [selected, setSelected] = React.useState<string[]>([]);
+  const [showTypeModal, setShowTypeModal] = React.useState(false);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -160,6 +163,43 @@ export default function ActionsPage() {
     await archive(selected);
   };
 
+  const startCreate = (type: string) => {
+    setShowTypeModal(false);
+    router.push(`/loyalty/actions/new?type=${encodeURIComponent(type)}`);
+  };
+
+  const renderReward = (promo: Promotion) => {
+    const rewardType = String(
+      (promo as any)?.type ??
+        promo.reward?.type ??
+        (promo.rewardMetadata as any)?.kind ??
+        "",
+    ).toUpperCase();
+    const meta =
+      (promo.rewardMetadata && typeof promo.rewardMetadata === "object"
+        ? (promo.rewardMetadata as any)
+        : promo.reward?.metadata && typeof promo.reward.metadata === "object"
+          ? (promo.reward.metadata as any)
+          : {}) || {};
+    if (rewardType.includes("NTH_FREE")) {
+      const buy = meta.buyQty ?? meta.buy ?? meta.step ?? 0;
+      const free = meta.freeQty ?? meta.free ?? 1;
+      return `Каждый ${Number(buy) + Number(free) || 0}-й бесплатно (${buy}+${free})`;
+    }
+    if (rewardType.includes("FIXED_PRICE") || rewardType.includes("PRICE")) {
+      const price = meta.price ?? promo.reward?.value ?? promo.rewardValue ?? 0;
+      return `Акционная цена: ${price}`;
+    }
+    const multiplier =
+      promo.reward?.multiplier ??
+      promo.rewardMetadata?.multiplier ??
+      promo.rewardMetadata?.earnMultiplier ??
+      0;
+    return multiplier && multiplier > 0
+      ? `×${multiplier}`
+      : `${promo.reward?.value ?? 0} баллов`;
+  };
+
   return (
     <div style={{ display: "grid", gap: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
@@ -168,9 +208,9 @@ export default function ActionsPage() {
           <div style={{ opacity: 0.7, fontSize: 14 }}>Реальные данные, без моков.</div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <a href="/loyalty/actions/new" style={{ textDecoration: "none" }}>
-            <Button variant="primary">Создать акцию</Button>
-          </a>
+          <Button variant="primary" onClick={() => setShowTypeModal(true)}>
+            Создать акцию
+          </Button>
         </div>
       </div>
 
@@ -236,11 +276,6 @@ export default function ActionsPage() {
                 </thead>
                 <tbody>
                   {filtered.map((promo) => {
-                    const multiplier =
-                      promo.reward?.multiplier ??
-                      promo.rewardMetadata?.multiplier ??
-                      promo.rewardMetadata?.earnMultiplier ??
-                      0;
                     const targets = deriveTargets(promo);
                     return (
                       <tr key={promo.id} style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
@@ -255,11 +290,9 @@ export default function ActionsPage() {
                         <td style={{ padding: "8px 6px", opacity: 0.9 }}>
                           {formatRange(promo.startDate ?? null, promo.endDate ?? null)}
                         </td>
-                        <td style={{ padding: "8px 6px", opacity: 0.9 }}>
-                          {multiplier && multiplier > 0
-                            ? `×${multiplier}`
-                            : `${promo.reward?.value ?? 0} баллов`}
-                        </td>
+                    <td style={{ padding: "8px 6px", opacity: 0.9 }}>
+                          {renderReward(promo)}
+                    </td>
                         <td style={{ padding: "8px 6px", opacity: 0.9 }}>
                           {targets.products || targets.categories ? (
                             <div style={{ display: "flex", gap: 8 }}>
@@ -320,6 +353,66 @@ export default function ActionsPage() {
           )}
         </CardBody>
       </Card>
+
+      {showTypeModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.55)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 30,
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              background: "#0f172a",
+              border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: 12,
+              padding: 20,
+              maxWidth: 520,
+              width: "100%",
+              display: "grid",
+              gap: 12,
+              boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 700 }}>Выберите тип акции</div>
+                <div style={{ fontSize: 13, opacity: 0.7 }}>Все типы работают с реальным API, без моков.</div>
+              </div>
+              <button
+                aria-label="Закрыть"
+                onClick={() => setShowTypeModal(false)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "inherit",
+                  fontSize: 20,
+                  cursor: "pointer",
+                }}
+              >
+                ×
+              </button>
+            </div>
+            <div style={{ display: "grid", gap: 10 }}>
+              <Button variant="secondary" onClick={() => startCreate("POINTS")}>
+                Двойные баллы на товары
+              </Button>
+              <Button variant="secondary" onClick={() => startCreate("NTH_FREE")}>
+                Каждый N-ый товар бесплатно — 2+1 и другие комплекты
+              </Button>
+              <Button variant="secondary" onClick={() => startCreate("FIXED_PRICE")}>
+                Акционная цена на товары
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {selected.length > 0 && (
         <div

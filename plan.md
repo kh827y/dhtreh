@@ -1,9 +1,32 @@
 # Planning Mode — Long Run (2025-09-15)
 
+## Хотфикс 2025-12-XX — Интеграции: идентификация и контекст
+- [x] Интеграции CALCULATE-BONUS/BONUS (+deprecated CALCULATE) принимают `id_client`/`merchantCustomerId` как альтернативу `userToken`, проверки совпадения мерчанта/клиента вынесены в общий helper.
+- [x] CALCULATE-BONUS/CALCULATE-ACTION оставлены stateless: только `outletId?` (без deviceId/managerId), проверяется существование точки для bridge-подписи.
+- [x] BONUS требует хотя бы один контекст `outletId`/`deviceId`/`managerId`, поддерживает `managerId` для staff-мотивации (прокидывается в hold/receipt/transaction), валидации на конфликт устройства/сотрудника/точки.
+- [x] OUTLETS возвращает `managers[]` (активные сотрудники точки с кодом/логином), документация обновлена под новые идентификаторы/контекст.
+
+## Блок 2025-12-XX — Интеграции BONUS/REFUND (E)
+- [x] Внешняя модель ID упрощена до `invoice_num` (чек мерчанта) + `order_id` (ID операции лояльности); transactionIds* убраны из ответов.
+- [x] BONUS больше не принимает `mode`, фиксирует ровно переданные `paid_bonus`/`bonus_value` (без автосписания), идемпотентен по merchant+invoice_num, отвечает `outlet_name`.
+- [x] REFUND принимает `invoice_num` или `order_id` и выполняет только полный возврат (восстановление списаний + отзыв начислений), без долей/partial.
+- [x] История операций отдаёт `invoice_num`/`order_id`, баланс до/после, без технических массивов транзакций; BONUS — фиксация, REFUND — полная отмена, CALCULATE-BONUS/CALCULATE-ACTION — расчёт.
+
 ## В работе 2025-12-XX — Item-level товары/акции
 - [x] Prisma: добавлены таблицы ProductExternalId/ProductCategoryExternal/HoldItem/ReceiptItem/TransactionItem и поля code/barcode/unit/external* в Product/ProductCategory для item-level расчётов и маппинга интеграций.
 - [x] DTO/интеграции: расширены loyalty/integrations DTO и интеграционный контроллер под positions/items, добавлены хелперы маппинга товаров/категорий и промо-множителей.
 - [x] Расчёт/портал: quote/commit/processIntegrationBonus распределяют скидку/начисление по позициям с учётом множителей, позиции пишутся в hold/receipt/transaction, добавлены импорты каталога и выбор товаров/категорий в акциях/каталоге (merchant-portal), миграция `20251204000000_item_level_catalog`.
+- [x] Расчёт кассы разделён на CALCULATE-ACTION (промо по товарам) → CALCULATE-BONUS (лимиты earn/redeem) → BONUS; старый `/bonus/calculate` помечен deprecated.
+
+## Хотфикс 2025-12-XX — Eligible amount без поля в API
+- [x] Убрано поле eligibleTotal из DTO/контроллеров интеграций/loyalty; eligible-сумма считается в ядре по позициям (accruePoints/множители) и используется в minEligible/рефералах.
+- [x] Обновлены API docs/SDK/Bridge/Cashier под автокалькуляцию по позициям, добавлены тесты на расчёт eligibleAmount и реферальные начисления.
+
+## Хотфикс 2025-12-XX — CODE коэффициенты и миграция клиентов
+- [x] CODE больше не принимает deviceId и не требует контекст устройства.
+- [x] CODE возвращает базовые коэффициенты начисления/списания (earnPercent/maxPayBonusK) из настроек/уровней клиента и аналитику b_date/avgBill/visitFrequency/visitCount/totalAmount.
+- [x] MerchantCustomer хранит внешний ID (externalId) с уникальностью на мерчанта; id_ext в CODE = внешний ID.
+- [x] Добавлен POST `/api/integrations/client/migrate` для привязки/создания клиента по externalId/контактам; документация обновлена.
 
 ## Блок 2025-12-XX — REST API интеграция (ключ)
 - [x] Prisma: добавлены поля apiKeyHash/apiKeyMask/apiKeyCreatedAt/archivedAt и индексы по provider/apiKeyHash для Integration.

@@ -1,6 +1,6 @@
 import {
   IsArray,
-  IsEnum,
+  IsBoolean,
   IsInt,
   IsNumber,
   IsOptional,
@@ -8,35 +8,57 @@ import {
   Max,
   Min,
   ValidateNested,
+  Validate,
+  ValidatorConstraint,
+  ValidatorConstraintInterface,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 
-export enum IntegrationOperationMode {
-  REDEEM = 'redeem',
-  EARN = 'earn',
-  MIXED = 'mixed',
+@ValidatorConstraint({ name: 'ClientIdentifier', async: false })
+class ClientIdentifierConstraint implements ValidatorConstraintInterface {
+  validate(_: any, args: any) {
+    const obj = args?.object ?? {};
+    const userToken =
+      typeof obj?.userToken === 'string' && obj.userToken.trim().length > 0;
+    const idClient =
+      typeof obj?.id_client === 'string' && obj.id_client.trim().length > 0;
+    const merchantCustomerId =
+      typeof obj?.merchantCustomerId === 'string' &&
+      obj.merchantCustomerId.trim().length > 0;
+    return userToken || idClient || merchantCustomerId;
+  }
+
+  defaultMessage() {
+    return 'Укажите userToken или id_client или merchantCustomerId';
+  }
+}
+
+@ValidatorConstraint({ name: 'BonusContext', async: false })
+class BonusContextConstraint implements ValidatorConstraintInterface {
+  validate(_: any, args: any) {
+    const obj = args?.object ?? {};
+    const outletId =
+      typeof obj?.outletId === 'string' && obj.outletId.trim().length > 0;
+    const deviceId =
+      typeof obj?.deviceId === 'string' && obj.deviceId.trim().length > 0;
+    const managerId =
+      typeof obj?.managerId === 'string' && obj.managerId.trim().length > 0;
+    return outletId || deviceId || managerId;
+  }
+
+  defaultMessage() {
+    return 'Нужно передать outletId или deviceId или managerId';
+  }
 }
 
 export class IntegrationItemDto {
   @ApiPropertyOptional({
-    description: 'Внешний ID товара (id_product / externalId)',
+    description: 'Внешний ID товара (id_product / артикул)',
   })
   @IsOptional()
   @IsString()
   id_product?: string;
-
-  @ApiPropertyOptional({ description: 'Альтернативный код товара' })
-  @IsOptional()
-  @IsString()
-  productCode?: string;
-
-  @ApiPropertyOptional({
-    description: 'Провайдер внешней системы (iiko, r_keeper, MoySklad и т.п.)',
-  })
-  @IsOptional()
-  @IsString()
-  externalProvider?: string;
 
   @ApiPropertyOptional({ description: 'Внутренний ID товара' })
   @IsOptional()
@@ -48,27 +70,10 @@ export class IntegrationItemDto {
   @IsString()
   categoryId?: string;
 
-  @ApiPropertyOptional({
-    description: 'Внешний ID категории в указанной системе',
-  })
-  @IsOptional()
-  @IsString()
-  categoryExternalId?: string;
-
   @ApiPropertyOptional({ description: 'Название товара' })
   @IsOptional()
   @IsString()
   name?: string;
-
-  @ApiPropertyOptional({ description: 'Штрихкод' })
-  @IsOptional()
-  @IsString()
-  barcode?: string;
-
-  @ApiPropertyOptional({ description: 'SKU/артикул' })
-  @IsOptional()
-  @IsString()
-  sku?: string;
 
   @ApiProperty({ description: 'Количество', example: 1 })
   @IsNumber()
@@ -83,37 +88,60 @@ export class IntegrationCodeRequestDto {
   @ApiProperty()
   @IsString()
   userToken!: string;
-
-  @ApiPropertyOptional({
-    description: 'Идентификатор устройства (код из настроек торговой точки)',
-  })
-  @IsOptional()
-  @IsString()
-  deviceId?: string;
 }
 
 export class IntegrationCalculateDto {
-  @ApiProperty({ enum: IntegrationOperationMode })
-  @IsEnum(IntegrationOperationMode)
-  mode!: IntegrationOperationMode;
-
-  @ApiProperty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
-  userToken!: string;
+  userToken?: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional({
+    description: 'Глобальный ID клиента',
+    name: 'id_client',
+  })
+  @Transform(({ value, obj }) => value ?? obj?.idClient ?? obj?.customerId)
+  @IsOptional()
   @IsString()
-  orderId!: string;
+  id_client?: string;
+
+  @ApiPropertyOptional({
+    description: 'ID связки клиент+мерчант (merchantCustomerId)',
+  })
+  @Transform(({ value, obj }) =>
+    value ??
+    obj?.merchantCustomerId ??
+    obj?.merchant_customer_id ??
+    obj?.idClient ??
+    obj?.id_client,
+  )
+  @IsOptional()
+  @IsString()
+  merchantCustomerId?: string;
+
+  @Validate(ClientIdentifierConstraint)
+  _clientIdentifierValidator?: string;
+
+  @ApiProperty({
+    description: 'Кастомный номер чека от мерчанта',
+    name: 'invoice_num',
+  })
+  @Transform(({ value, obj }) => {
+    return (
+      value ??
+      obj?.invoice_num ??
+      obj?.invoiceNum ??
+      obj?.orderId ??
+      obj?.order_id
+    );
+  })
+  @IsString()
+  invoice_num!: string;
 
   @ApiProperty({ minimum: 0 })
   @IsNumber()
   @Min(0)
   total!: number;
-
-  @ApiProperty({ minimum: 0 })
-  @IsNumber()
-  @Min(0)
-  eligibleTotal!: number;
 
   @ApiPropertyOptional({
     description: 'Идентификатор устройства (код из настроек торговой точки)',
@@ -126,6 +154,18 @@ export class IntegrationCalculateDto {
   @IsOptional()
   @IsString()
   outletId?: string;
+
+  @ApiPropertyOptional({ name: 'paid_bonus', minimum: 0 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  paid_bonus?: number;
+
+  @ApiPropertyOptional({ name: 'bonus_value', minimum: 0 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  bonus_value?: number;
 
   @ApiPropertyOptional({ type: [IntegrationItemDto] })
   @IsOptional()
@@ -136,27 +176,58 @@ export class IntegrationCalculateDto {
 }
 
 export class IntegrationBonusDto {
-  @ApiProperty({ enum: IntegrationOperationMode })
-  @IsEnum(IntegrationOperationMode)
-  mode!: IntegrationOperationMode;
-
-  @ApiProperty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
-  userToken!: string;
+  @Validate(ClientIdentifierConstraint)
+  userToken?: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional({
+    description: 'Глобальный ID клиента',
+    name: 'id_client',
+  })
+  @Transform(({ value, obj }) => value ?? obj?.idClient ?? obj?.customerId)
+  @IsOptional()
   @IsString()
-  orderId!: string;
+  id_client?: string;
+
+  @ApiPropertyOptional({
+    description: 'ID связки клиент+мерчант (merchantCustomerId)',
+  })
+  @Transform(({ value, obj }) =>
+    value ??
+    obj?.merchantCustomerId ??
+    obj?.merchant_customer_id ??
+    obj?.idClient ??
+    obj?.id_client,
+  )
+  @IsOptional()
+  @IsString()
+  merchantCustomerId?: string;
+
+  @Validate(ClientIdentifierConstraint)
+  _clientIdentifierValidator?: string;
+
+  @ApiProperty({
+    description: 'Кастомный номер чека от мерчанта',
+    name: 'invoice_num',
+  })
+  @Transform(({ value, obj }) => {
+    return (
+      value ??
+      obj?.invoice_num ??
+      obj?.invoiceNum ??
+      obj?.orderId ??
+      obj?.order_id
+    );
+  })
+  @IsString()
+  invoice_num!: string;
 
   @ApiProperty({ minimum: 0 })
   @IsNumber()
   @Min(0)
   total!: number;
-
-  @ApiProperty({ minimum: 0 })
-  @IsNumber()
-  @Min(0)
-  eligibleTotal!: number;
 
   @ApiPropertyOptional({
     description: 'Идентификатор устройства (код из настроек торговой точки)',
@@ -169,6 +240,18 @@ export class IntegrationBonusDto {
   @IsOptional()
   @IsString()
   outletId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Идентификатор сотрудника/кассира (managerId)',
+    name: 'managerId',
+  })
+  @Transform(({ value, obj }) => value ?? obj?.id_manager ?? obj?.manager_id)
+  @IsOptional()
+  @IsString()
+  managerId?: string;
+
+  @Validate(BonusContextConstraint)
+  _bonusContextValidator?: string;
 
   @ApiPropertyOptional({ name: 'paid_bonus', minimum: 0 })
   @IsOptional()
@@ -197,27 +280,199 @@ export class IntegrationBonusDto {
   items?: IntegrationItemDto[];
 }
 
+export class IntegrationCalculateActionItemDto {
+  @ApiProperty({
+    description: 'Внешний ID товара (артикул id_product)',
+  })
+  @IsString()
+  id_product!: string;
+
+  @ApiProperty({
+    description: 'Количество',
+  })
+  @IsNumber()
+  qty!: number;
+
+  @ApiProperty({
+    description: 'Цена за единицу',
+  })
+  @IsNumber()
+  price!: number;
+
+  @ApiPropertyOptional({
+    description: 'Внешний ID категории товара',
+  })
+  @IsOptional()
+  @IsString()
+  categoryId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Название товара',
+  })
+  @IsOptional()
+  @IsString()
+  name?: string;
+}
+
+export class IntegrationCalculateActionDto {
+  @ApiProperty({
+    type: [IntegrationCalculateActionItemDto],
+  })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => IntegrationCalculateActionItemDto)
+  items!: IntegrationCalculateActionItemDto[];
+
+  @ApiPropertyOptional({
+    description: 'Опциональный контекст точки (для правил по торговой точке)',
+  })
+  @IsOptional()
+  @IsString()
+  outletId?: string;
+}
+
+export class IntegrationCalculateBonusItemDto {
+  @ApiProperty({
+    description: 'Внешний ID товара (артикул id_product)',
+  })
+  @IsString()
+  id_product!: string;
+
+  @ApiPropertyOptional({ description: 'Название товара' })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiPropertyOptional({ description: 'Количество', default: 1 })
+  @Transform(({ value, obj }) => {
+    const raw = value ?? obj?.quantity ?? obj?.qty;
+    return raw === undefined || raw === null ? 1 : raw;
+  })
+  @IsNumber()
+  qty!: number;
+
+  @ApiProperty({
+    description: 'Цена после применения акций',
+  })
+  @IsNumber()
+  price!: number;
+
+  @ApiPropertyOptional({
+    description: 'Цена до применения акций',
+    name: 'base_price',
+  })
+  @IsOptional()
+  @IsNumber()
+  base_price?: number;
+
+  @ApiPropertyOptional({
+    description: 'Можно ли начислять и списывать одновременно',
+    name: 'allow_earn_and_pay',
+  })
+  @IsOptional()
+  @IsBoolean()
+  allow_earn_and_pay?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'ID применённых акций',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  actions?: string[];
+
+  @ApiPropertyOptional({
+    description: 'Названия применённых акций',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  action_names?: string[];
+
+  @ApiPropertyOptional({
+    description: 'Множитель начисления (если акция x2/x3)',
+  })
+  @IsOptional()
+  @IsNumber()
+  earn_multiplier?: number;
+}
+
+export class IntegrationCalculateBonusDto {
+  @ApiPropertyOptional({
+    description: 'Токен клиента (QR/merchantCustomerId)',
+  })
+  @IsOptional()
+  @IsString()
+  @Validate(ClientIdentifierConstraint)
+  userToken?: string;
+
+  @ApiPropertyOptional({
+    description: 'Глобальный ID клиента',
+    name: 'id_client',
+  })
+  @Transform(({ value, obj }) => value ?? obj?.idClient ?? obj?.customerId)
+  @IsOptional()
+  @IsString()
+  id_client?: string;
+
+  @ApiPropertyOptional({
+    description: 'ID связки клиент+мерчант (merchantCustomerId)',
+  })
+  @Transform(({ value, obj }) =>
+    value ??
+    obj?.merchantCustomerId ??
+    obj?.merchant_customer_id ??
+    obj?.idClient ??
+    obj?.id_client,
+  )
+  @IsOptional()
+  @IsString()
+  merchantCustomerId?: string;
+
+  @Validate(ClientIdentifierConstraint)
+  _clientIdentifierValidator?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  outletId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Дата операции (ISO 8601)',
+  })
+  @IsOptional()
+  @IsString()
+  operationDate?: string;
+
+  @ApiProperty({
+    type: [IntegrationCalculateBonusItemDto],
+  })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => IntegrationCalculateBonusItemDto)
+  items!: IntegrationCalculateBonusItemDto[];
+}
+
 export class IntegrationRefundDto {
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description: 'Кастомный номер чека от мерчанта',
+    name: 'invoice_num',
+  })
+  @Transform(({ value, obj }) => {
+    return value ?? obj?.invoice_num ?? obj?.invoiceNum ?? obj?.orderId;
+  })
   @IsOptional()
   @IsString()
-  orderId?: string;
+  invoice_num?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description: 'ID операции лояльности (order_id)',
+    name: 'order_id',
+  })
+  @Transform(({ value, obj }) => value ?? obj?.order_id ?? obj?.receiptId)
   @IsOptional()
   @IsString()
-  receiptNumber?: string;
-
-  @ApiProperty({ minimum: 0 })
-  @IsNumber()
-  @Min(0)
-  refundTotal!: number;
-
-  @ApiPropertyOptional({ minimum: 0 })
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  refundEligibleTotal?: number;
+  order_id?: string;
 
   @ApiPropertyOptional({
     description: 'Идентификатор устройства (код из настроек торговой точки)',
@@ -239,11 +494,98 @@ export class IntegrationRefundDto {
   operationDate?: string;
 }
 
+export class IntegrationClientMigrationDto {
+  @ApiProperty({
+    description: 'Внешний ID клиента в системе интеграции',
+    name: 'client_id_ext',
+  })
+  @Transform(({ value, obj }) => {
+    return (
+      value ??
+      obj?.client_id_ext ??
+      obj?.clientIdExt ??
+      obj?.clientExtId ??
+      null
+    );
+  })
+  @IsString()
+  externalClientId!: string;
+
+  @ApiPropertyOptional({
+    description: 'Внутренний ID клиента (merchantCustomerId), если уже известен',
+    name: 'id_client',
+  })
+  @Transform(({ value, obj }) => {
+    return (
+      value ??
+      obj?.merchantCustomerId ??
+      obj?.id_client ??
+      obj?.idClient ??
+      null
+    );
+  })
+  @IsOptional()
+  @IsString()
+  merchantCustomerId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Номер телефона клиента (E.164, например +79991234567)',
+  })
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @ApiPropertyOptional({ description: 'Email клиента' })
+  @IsOptional()
+  @IsString()
+  email?: string;
+
+  @ApiPropertyOptional({ description: 'Имя клиента' })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Дата рождения или дата ключевого события (ISO 8601 или ГГГГ-ММ-ДД)',
+    name: 'b_date',
+  })
+  @Transform(({ value, obj }) => {
+    return value ?? obj?.b_date ?? obj?.birthDate ?? obj?.birthday ?? null;
+  })
+  @IsOptional()
+  @IsString()
+  birthday?: string;
+
+  @ApiPropertyOptional({
+    description: 'Пол клиента (например, M/F или произвольная строка)',
+  })
+  @IsOptional()
+  @IsString()
+  gender?: string;
+}
+
+export class IntegrationOutletManagerDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  name!: string;
+
+  @ApiPropertyOptional({ nullable: true, description: 'Код/внешний ID' })
+  code?: string | null;
+}
+
 export class IntegrationOutletDto {
   @ApiProperty() id!: string;
   @ApiProperty() name!: string;
   @ApiPropertyOptional({ nullable: true }) address?: string | null;
   @ApiPropertyOptional({ nullable: true }) description?: string | null;
+  @ApiPropertyOptional({
+    description: 'Сотрудники, привязанные к точке',
+    type: () => [IntegrationOutletManagerDto],
+  })
+  managers?: IntegrationOutletManagerDto[];
 }
 
 export class IntegrationOutletsRespDto {
@@ -276,11 +618,14 @@ export class IntegrationDevicesRespDto {
 
 export class IntegrationOperationsQueryDto {
   @ApiPropertyOptional({
-    description: 'Поиск по orderId/receiptNumber',
+    description: 'Поиск по invoice_num/receiptNumber',
   })
   @IsOptional()
   @IsString()
-  orderId?: string;
+  @Transform(({ value, obj }) => {
+    return value ?? obj?.orderId ?? obj?.order_id ?? obj?.invoice_num;
+  })
+  invoice_num?: string;
 
   @ApiPropertyOptional({
     description: 'Начало интервала (ISO 8601)',
@@ -331,11 +676,17 @@ export class IntegrationOperationDto {
   @ApiProperty({ enum: ['purchase', 'refund'] })
   kind!: 'purchase' | 'refund';
 
-  @ApiProperty()
-  orderId!: string;
+  @ApiProperty({
+    description: 'Кастомный номер чека от мерчанта',
+    name: 'invoice_num',
+  })
+  invoice_num!: string;
 
-  @ApiPropertyOptional({ nullable: true })
-  receiptId?: string | null;
+  @ApiProperty({
+    description: 'Внутренний ID операции лояльности',
+    name: 'order_id',
+  })
+  order_id!: string;
 
   @ApiPropertyOptional({ nullable: true })
   receiptNumber?: string | null;
@@ -403,24 +754,6 @@ export class IntegrationOperationDto {
     nullable: true,
   })
   deviceCode?: string | null;
-
-  @ApiPropertyOptional({
-    description: 'Доля возврата (0..1) при REFUND',
-    nullable: true,
-  })
-  refundShare?: number | null;
-
-  @ApiPropertyOptional({
-    description: 'Возвращаемая сумма (если передавалась в refund)',
-    nullable: true,
-  })
-  refundTotal?: number | null;
-
-  @ApiPropertyOptional({
-    description: 'Возвращаемая сумма, участвующая в бонусах (refundEligibleTotal)',
-    nullable: true,
-  })
-  refundEligibleTotal?: number | null;
 
   @ApiPropertyOptional({
     description: 'Пометка отменённого чека (full refund)',

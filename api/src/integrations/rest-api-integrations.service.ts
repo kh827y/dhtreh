@@ -14,6 +14,7 @@ export type RestApiRateLimits = {
   outlets: RestApiRateLimit;
   devices: RestApiRateLimit;
   operations: RestApiRateLimit;
+  clientMigrate: RestApiRateLimit;
 };
 
 export interface RestApiIntegrationConfig {
@@ -31,6 +32,7 @@ const DEFAULT_RATE_LIMITS: RestApiRateLimits = {
   outlets: { limit: 60, ttl: 60_000 },
   devices: { limit: 60, ttl: 60_000 },
   operations: { limit: 30, ttl: 60_000 },
+  clientMigrate: { limit: 30, ttl: 60_000 },
 };
 
 @Injectable()
@@ -102,6 +104,7 @@ export class RestApiIntegrationsService {
         outlets: pickLimit(rateLimits, 'outlets'),
         devices: pickLimit(rateLimits, 'devices'),
         operations: pickLimit(rateLimits, 'operations'),
+        clientMigrate: pickLimit(rateLimits, 'clientMigrate'),
       },
     };
   }

@@ -151,7 +151,6 @@ describe('LoyaltyService.quote with level benefits (Wave 2)', () => {
         userToken: 'C1',
         orderId: 'O-1',
         total: 1000,
-        eligibleTotal: 1000,
       },
       undefined,
     );
@@ -193,7 +192,6 @@ describe('LoyaltyService.quote with level benefits (Wave 2)', () => {
         userToken: 'C1',
         orderId: 'O-2',
         total: 1000,
-        eligibleTotal: 1000,
       },
       undefined,
     );

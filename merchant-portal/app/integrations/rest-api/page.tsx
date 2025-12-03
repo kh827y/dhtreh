@@ -9,6 +9,10 @@ type RateLimits = {
   calculate?: RateLimit;
   bonus?: RateLimit;
   refund?: RateLimit;
+  operations?: RateLimit;
+  outlets?: RateLimit;
+  devices?: RateLimit;
+  clientMigrate?: RateLimit;
 };
 
 type RestApiState = {
@@ -82,6 +86,7 @@ export default function RestApiIntegrationPage() {
       ? state.availableEndpoints
       : [
           `${baseUrl || ""}/api/integrations/code`,
+          `${baseUrl || ""}/api/integrations/client/migrate`,
           `${baseUrl || ""}/api/integrations/bonus/calculate`,
           `${baseUrl || ""}/api/integrations/bonus`,
           `${baseUrl || ""}/api/integrations/refund`,
@@ -269,7 +274,7 @@ export default function RestApiIntegrationPage() {
                     )}
                   </div>
                   <div style={{ fontSize: 12, opacity: 0.7 }}>
-                    Все запросы отправляются на этот домен: POST /api/integrations/code, /bonus/calculate, /bonus, /refund.
+                    Все запросы отправляются на этот домен: POST /api/integrations/code, /client/migrate, /bonus/calculate, /bonus, /refund.
                   </div>
                   <div style={{ display: "grid", gap: 4, fontSize: 12, opacity: 0.9 }}>
                     {endpoints.map((ep) => (
@@ -304,6 +309,9 @@ export default function RestApiIntegrationPage() {
                   </div>
                   <div>
                     <strong>REFUND</strong>: {formatRateLimit(state?.rateLimits?.refund)}
+                  </div>
+                  <div>
+                    <strong>CLIENT-MIGRATION</strong>: {formatRateLimit(state?.rateLimits?.clientMigrate)}
                   </div>
                 </div>
                 <div style={{ fontSize: 12, opacity: 0.7 }}>

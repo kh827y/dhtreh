@@ -50,7 +50,7 @@ POST http://127.0.0.1:18080/quote
   "merchantId": "M-1",
   "orderId": "O-123",
   "total": 1000,
-  "eligibleTotal": 1000,
+  "positions": [{ "id_product": "SKU-1", "qty": 1, "price": 1000 }],
   "userToken": "<jwt или customerId>"
 }
 ```
@@ -84,4 +84,3 @@ Backend очереди:
   - `bridge_queue_enqueued_total` — всего поставлено в очередь
   - `bridge_queue_flushed_total` — всего успешно отправлено из очереди
   - `bridge_queue_fail_total` — ошибок при отправке из очереди
-

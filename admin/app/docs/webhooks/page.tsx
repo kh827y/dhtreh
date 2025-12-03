@@ -40,7 +40,10 @@ export function verify(headers: any, rawBody: string, secret: string) {
       <h3>События</h3>
       <ul>
         <li><code>loyalty.commit</code> — фиксация операции (поля: orderId, receiptId, redeemApplied, earnApplied, ...).</li>
-        <li><code>loyalty.refund</code> — возврат (поля: orderId, share, pointsRestored, pointsRevoked, ...).</li>
+        <li>
+          <code>loyalty.refund</code> — возврат (invoice_num/order_id, share=1,
+          pointsRestored, pointsRevoked, ...).
+        </li>
         <li><code>loyalty.points_ttl.preview</code> — превью сгорания баллов.</li>
         <li><code>loyalty.earnlot.*</code> — события лотов начислений (если включено)</li>
       </ul>
@@ -48,4 +51,3 @@ export function verify(headers: any, rawBody: string, secret: string) {
     </div>
   );
 }
-

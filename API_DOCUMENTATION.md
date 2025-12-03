@@ -355,17 +355,20 @@ Response 200:
 
 ### Интеграции REST API
 
-Эндпоинты `/api/integrations/**` требуют заголовок `X-Api-Key` (интеграционный ключ); `merchantId` определяется по ключу. Throttling по `integrationId` с дефолтными лимитами: CODE — 60/мин, CALCULATE — 120/мин, BONUS — 60/мин, REFUND — 30/мин, OUTLETS/DEVICES — 60/мин, OPERATIONS — 30/мин (настраиваются в интеграции).
+Эндпоинты `/api/integrations/**` требуют заголовок `X-Api-Key` (интеграционный ключ); `merchantId` определяется по ключу. Throttling по `integrationId` с дефолтными лимитами: CODE — 60/мин, CALCULATE — 120/мин, BONUS — 60/мин, REFUND — 30/мин, OUTLETS/DEVICES — 60/мин, OPERATIONS — 30/мин, CLIENT-MIGRATION — 30/мин (настраиваются в интеграции).
 
-- `POST /api/integrations/code` — { `userToken`, `deviceId?` } → `{ type: "bonus", client: { id_client, id_ext, name?, phone?, email?, balance } }`. Валидируется `merchantAud`, данные клиента резолвятся по `userToken`.
-- `POST /api/integrations/bonus/calculate` — { `userToken`, `orderId`, `mode: redeem|earn|mixed`, `total`, `eligibleTotal`, `deviceId?`, `outletId?`, `items?` } → чистый расчёт без hold/persist: `{ canRedeem, canEarn, maxPaidBonus, maxBonusValue, finalPayable, balance, orderId, mode }`.
-- `POST /api/integrations/bonus` — тот же базовый набор + ручные поля `paid_bonus?`, `bonus_value?`, `operationDate?` (ISO). Без ручных значений выполняется стандартный `quote+commit`; при указании ручных сумм проверяется баланс/дневные капы, списание не уводит баланс в минус. Идемпотентность по `orderId`: повтор вернёт существующий чек/транзакции. Ответ: `{ receiptId, integrationOperationId, redeemApplied, earnApplied, balanceBefore, balanceAfter, transactionIds, redeemTransactionIds, earnTransactionIds, mode }`.
-- `POST /api/integrations/refund` — { `orderId?`, `receiptNumber?`, `refundTotal`, `refundEligibleTotal?`, `deviceId?`, `outletId?`, `operationDate?` }. Возврат частичный/полный, идемпотентен по `orderId+сумма`: `{ share, pointsRestored, pointsRevoked, balanceAfter, receiptId, transactionIds, refundTransactionIds }`. `operationDate` используется как `createdAt` для транзакций/receipt.
-- `GET /api/integrations/outlets` — справочник точек мерчанта (`id`, `name`, `address?`, `description?`), без чужих `merchantId`.
+- `POST /api/integrations/code` — { `userToken` } → `{ type: "bonus", client: { id_client, id_ext, name?, phone?, email?, balance, earnPercent, redeemLimitPercent, k_bonus, maxPayBonusK, b_date?, avgBill, visitFrequency, visitCount, totalAmount } }`. Валидируется `merchantAud`, данные клиента резолвятся по `userToken`. `id_ext` — внешний ID клиента из вашей системы (`merchantCustomer.externalId`), при отсутствии будет `null`. deviceId/outlet не требуются. `earnPercent`/`k_bonus` и `redeemLimitPercent`/`maxPayBonusK` берутся из настроек мерчанта и уровня клиента (без учёта товарных промо). Аналитика (`avgBill`, `visitCount`, `totalAmount`, `visitFrequency`, `b_date`) строится по чекам мерчанта; `visitFrequency` — среднее количество визитов за 30 дней.
+- `POST /api/integrations/client/migrate` — { `client_id_ext`, `id_client?` (merchantCustomerId), `phone?`, `email?`, `name?`, `b_date?`, `gender?` } → подтверждает/создаёт клиента и привязывает внешний ID. Ответ `{ result: "ok", client: { id_client, merchantCustomerId, id_ext, phone?, email?, name?, b_date?, balance } }`. При повторе с тем же `client_id_ext` вернётся существующая связка.
+- `POST /api/integrations/calculate/action` — промо-расчёт без побочных эффектов: `items[]` с `id_product`, `qty`, `price`, `categoryId?`, `name?`, `outletId?` → `{ positions: [{ id_product, name, qty, price, base_price, actions, action_names, earn_multiplier?, allow_earn_and_pay? }], info: string[] }`. Не требует userToken/устройства/сотрудника, контекст только по точке (stateless).
+- `POST /api/integrations/calculate/bonus` — pre-check начисления/списания без hold: `{ userToken? | id_client? | merchantCustomerId?, items[], outletId?, operationDate? }` → `{ products: [{ id_product, name, price, base_price?, quantity|qty, max_pay_bonus, earn_bonus, allow_earn_and_pay }], max_pay_bonus, bonus_value, final_payable, balance }`. Контекст — только торговая точка (stateless, без deviceId/managerId).
+- `POST /api/integrations/bonus/calculate` — **deprecated** предпросмотр лимитов, без поля `mode`, принимает `invoice_num` (номер чека), может учитывать переданные `paid_bonus`/`bonus_value` как пожелания. Переходная схема — `CALCULATE-ACTION → CALCULATE-BONUS → BONUS`.
+- `POST /api/integrations/bonus` — фиксация операции по переданным значениям: `invoice_num` (идемпотентность по merchant+invoice), `paid_bonus?` (списывается ровно указанное при достаточном балансе), `bonus_value?` (начисляется ровно указанное, если не передан — начисление не обязательно), `operationDate?` (ISO), `managerId?`. Контекст `outletId`/`deviceId`/`managerId` обязателен. Ответ без технических массивов транзакций: `{ invoice_num, order_id (ID операции лояльности), redeemApplied, earnApplied, balanceBefore?, balanceAfter?, outletId?, outlet_name? }`.
+- `POST /api/integrations/refund` — только полная отмена по `invoice_num` или `order_id` (`operationDate?`, `deviceId?`, `outletId?` для контекста). Возвращает `{ invoice_num, order_id, pointsRestored, pointsRevoked, balanceAfter }`, без partial-share и без transactionIds.
+- `GET /api/integrations/outlets` — справочник точек мерчанта (`id`, `name`, `address?`, `description?`) + `managers[]` (активные сотрудники с доступом к точке: `id`, `name`, `code?`), без чужих `merchantId`.
 - `GET /api/integrations/devices` — опциональный `outletId`, возвращает устройства мерчанта (`id`, `code`, `outletId`) с валидацией кода/ID по Device.
-- `GET /api/integrations/operations` — история покупок/возвратов: query `orderId?` (ищет и по `receiptNumber`), `from?`/`to?` (ISO по `operationDate/createdAt`), `deviceId?`, `outletId?`, `limit?` (<=500). Ответ `items[]`: `{ kind: purchase|refund, orderId, receiptId?, receiptNumber?, total, redeemApplied?, earnApplied?, pointsRestored?, pointsRevoked?, refundShare?, refundTotal?, refundEligibleTotal?, operationDate, outletId?, deviceId?, deviceCode?, canceledAt?, pointsDelta, balanceBefore?, balanceAfter? }`. История строится только из зафиксированных BONUS (hold→commit) и REFUND; CODE/CALCULATE не создают записей.
+- `GET /api/integrations/operations` — история покупок/возвратов: query `invoice_num?` (ищет и по `receiptNumber`), `from?`/`to?` (ISO по `operationDate/createdAt`), `deviceId?`, `outletId?`, `limit?` (<=500). Ответ `items[]`: `{ kind: purchase|refund, invoice_num, order_id, receiptNumber?, total, redeemApplied?, earnApplied?, pointsRestored?, pointsRevoked?, operationDate, outletId?, deviceId?, deviceCode?, canceledAt?, pointsDelta, balanceBefore?, balanceAfter? }`. История строится только из зафиксированных BONUS (hold→commit) и REFUND; CODE/CALCULATE не создают записей.
 
-Item-level формат позиций для CALCULATE/BONUS: `items[]` с полями `id_product|productCode|productId`, `externalProvider`, `externalId`, `categoryId?`, `categoryExternalId?`, `sku?`, `barcode?`, `name?`, `qty`, `price`. Маппинг по `productId` → `(externalProvider, externalId)` → `barcode/sku` → `code`. В расчёте баллы/списание распределяются по позициям, учитываются акции с множителями (например, двойные баллы по товарам/категориям). В auto-режиме CALCULATE и BONUS возвращают одинаковые суммы; в ручном BONUS позиции всё равно сохраняются в hold/receipt/transaction для аналитики.
+Item-level формат позиций для CALCULATE/CALCULATE-BONUS/BONUS: `items[]` с полями `id_product`, `categoryId?`, `name?`, `qty`, `price`, `base_price?`, `allow_earn_and_pay?`, `actions?`, `action_names?`. Маппинг по паре (id_product, categoryId) или внутреннему `productId`; `externalProvider`/`categoryExternalId`/`sku`/`barcode` больше не используются. Баллы/списание распределяются по позициям, учитываются акции по товарам (множители, N-й бесплатно, акционная цена).
 
 ### Программа лояльности
 
@@ -562,9 +565,11 @@ Content-Type: application/json
   "userToken": "jwt_or_customer_id",
   "orderId": "string",
   "total": 1000,
-  "eligibleTotal": 1000,
   "outletId": "string", // обязательный для POS интеграций идентификатор торговой точки
-  "staffId": "string"  // optional
+  "staffId": "string",  // optional
+  "positions": [ // optional, помогает учесть eligibility на уровне товаров
+    { "id_product": "SKU-1", "qty": 2, "price": 500, "accruePoints": true }
+  ]
 }
 
 Response 200 (REDEEM):
@@ -704,7 +709,7 @@ Response 200:
 Итоговые формулы (упрощённо):
 
 ```text
-eligible' = eligibleTotal
+eligible' = сумма eligible-позиций (рассчитывается на сервере)
 earnPoints = floor( eligible' * (earnBps_base + earnBps_bonus(level)) / 10000 )
 redeemCap  = floor( eligible' * (redeemBps_base + redeemBps_bonus(level)) / 10000 )
 ```
@@ -1571,7 +1576,7 @@ curl -X POST https://api.loyalty.com/loyalty/qr \
 curl -X POST https://api.loyalty.com/loyalty/quote \
   -H "Content-Type: application/json" \
   -H "X-Staff-Key: sk_live_xxxxx" \
-  -d '{"mode":"earn","merchantId":"M-1","userToken":"jwt","orderId":"123","total":1000,"eligibleTotal":1000}'
+  -d '{"mode":"earn","merchantId":"M-1","userToken":"jwt","orderId":"123","total":1000,"positions":[{"id_product":"SKU-1","qty":1,"price":1000}]}'
 ```
 
 ### JavaScript/TypeScript
@@ -1590,8 +1595,7 @@ const quote = await client.quote({
   merchantId: 'M-1',
   userToken: qrToken,
   orderId: 'ORDER-123',
-  total: 1000,
-  eligibleTotal: 1000
+  total: 1000
 });
 
 // Commit

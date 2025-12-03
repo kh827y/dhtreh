@@ -123,11 +123,10 @@ app.post('/quote', async (req, res) => {
     const merchantId = b.merchantId || DEFAULT_MERCHANT;
     const orderId = b.orderId;
     const total = Number(b.total || 0);
-    const eligibleTotal = Number(b.eligibleTotal || total);
     const userToken = b.userToken || '';
     const outletId = b.outletId || DEFAULT_OUTLET || undefined;
     if (!orderId) return res.status(400).json({ error: 'orderId required' });
-    const data = await callApi('/loyalty/quote', { mode, merchantId, orderId, total, eligibleTotal, userToken, outletId });
+    const data = await callApi('/loyalty/quote', { mode, merchantId, orderId, total, userToken, outletId, positions: b.positions });
     res.json(data);
   } catch (e) {
     res.status(502).json({ error: String(e.message || e) });

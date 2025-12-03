@@ -197,7 +197,6 @@ export class CashierGuard implements CanActivate {
           userToken: body?.userToken,
           orderId: body?.orderId,
           total: body?.total,
-          eligibleTotal: body?.eligibleTotal,
           outletId: body?.outletId ?? undefined,
           staffId: body?.staffId ?? undefined,
         });
@@ -267,9 +266,8 @@ export class CashierGuard implements CanActivate {
         if (resolvedOrderId) {
           payload = JSON.stringify({
             merchantId,
-            orderId: resolvedOrderId,
-            refundTotal: body.refundTotal,
-            refundEligibleTotal: body?.refundEligibleTotal ?? undefined,
+            invoice_num: resolvedOrderId,
+            order_id: body?.order_id ?? undefined,
           });
         }
       }

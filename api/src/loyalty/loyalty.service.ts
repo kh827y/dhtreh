@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
+import { fetchReceiptAggregates } from '../common/receipt-aggregates.util';
 import {
   TelegramStaffNotificationsService,
   type StaffNotificationPayload,
@@ -50,16 +51,15 @@ type IntegrationBonusParams = {
   merchantId: string;
   merchantCustomerId: string;
   customerId: string;
-  userToken: string;
-  mode: Mode;
-  orderId: string;
+  userToken?: string | null;
+  invoiceNum?: string | null;
   total: number;
-  eligibleTotal: number;
   paidBonus?: number | null;
   bonusValue?: number | null;
   outletId?: string | null;
   deviceId?: string | null;
   resolvedDeviceId?: string | null;
+  staffId?: string | null;
   operationDate?: Date | null;
   requestId?: string | null;
   items?: PositionInput[];
@@ -67,6 +67,8 @@ type IntegrationBonusParams = {
 
 type IntegrationBonusResult = {
   receiptId: string;
+  orderId: string;
+  invoiceNum: string;
   redeemApplied: number;
   earnApplied: number;
   balanceBefore: number | null;
@@ -76,15 +78,17 @@ type IntegrationBonusResult = {
 
 type PositionInput = {
   productId?: string;
-  externalProvider?: string;
   externalId?: string;
   categoryId?: string;
-  categoryExternalId?: string;
   name?: string;
-  sku?: string;
-  barcode?: string;
   qty: number;
   price: number;
+  accruePoints?: boolean;
+  basePrice?: number;
+  allowEarnAndPay?: boolean;
+  actions?: string[];
+  actionNames?: string[];
+  earnMultiplier?: number;
 };
 
 type ResolvedPosition = PositionInput & {
@@ -95,6 +99,19 @@ type ResolvedPosition = PositionInput & {
   promotionMultiplier: number;
   earnPoints?: number;
   redeemAmount?: number;
+  accruePoints: boolean;
+};
+
+type ActivePromotionRule = {
+  id: string;
+  name: string;
+  kind: 'POINTS_MULTIPLIER' | 'NTH_FREE' | 'FIXED_PRICE';
+  multiplier?: number;
+  buyQty?: number;
+  freeQty?: number;
+  fixedPrice?: number;
+  productIds: Set<string>;
+  categoryIds: Set<string>;
 };
 
 @Injectable()
@@ -171,6 +188,19 @@ export class LoyaltyService {
       typeof value === 'string' && value.trim().length
         ? value.trim()
         : undefined;
+    const parseBool = (value: any): boolean | undefined => {
+      if (value === true || value === false) return Boolean(value);
+      if (typeof value === 'string') {
+        const v = value.trim().toLowerCase();
+        if (v === 'true' || v === '1') return true;
+        if (v === 'false' || v === '0') return false;
+      }
+      if (typeof value === 'number') {
+        if (value === 1) return true;
+        if (value === 0) return false;
+      }
+      return undefined;
+    };
     for (const entry of raw) {
       if (!entry || typeof entry !== 'object') continue;
       const qtyRaw = Number((entry as any).qty ?? 0);
@@ -178,19 +208,66 @@ export class LoyaltyService {
       const qty = Number.isFinite(qtyRaw) ? qtyRaw : 0;
       const price = Number.isFinite(priceRaw) ? priceRaw : 0;
       if (qty <= 0 || price < 0) continue;
+      const basePriceRaw =
+        (entry as any).basePrice ?? (entry as any).base_price ?? price;
+      const basePrice = Number.isFinite(Number(basePriceRaw))
+        ? Math.max(0, Number(basePriceRaw))
+        : Math.max(0, price);
+      const actions = Array.isArray((entry as any).actions)
+        ? (entry as any).actions
+            .map((v: any) =>
+              typeof v === 'string' && v.trim().length ? v.trim() : null,
+            )
+            .filter((v: string | null): v is string => Boolean(v))
+        : undefined;
+      const actionNames = Array.isArray((entry as any).actionNames)
+        ? (entry as any).actionNames
+            .map((v: any) =>
+              typeof v === 'string' && v.trim().length ? v.trim() : null,
+            )
+            .filter((v: string | null): v is string => Boolean(v))
+        : Array.isArray((entry as any).action_names)
+          ? (entry as any).action_names
+              .map((v: any) =>
+                typeof v === 'string' && v.trim().length ? v.trim() : null,
+              )
+              .filter((v: string | null): v is string => Boolean(v))
+          : undefined;
+      const earnMultiplierRaw =
+        (entry as any).earnMultiplier ??
+        (entry as any).earn_multiplier ??
+        (entry as any).multiplier;
+      const earnMultiplier =
+        Number.isFinite(Number(earnMultiplierRaw)) && Number(earnMultiplierRaw) > 0
+          ? Number(earnMultiplierRaw)
+          : undefined;
       items.push({
         productId: normalizeStr((entry as any).productId),
-        externalProvider: normalizeStr((entry as any).externalProvider),
         externalId:
           normalizeStr((entry as any).externalId) ??
           normalizeStr((entry as any).id_product),
-        categoryId: normalizeStr((entry as any).categoryId),
-        categoryExternalId: normalizeStr((entry as any).categoryExternalId),
+        categoryId:
+          normalizeStr((entry as any).categoryId) ??
+          normalizeStr((entry as any).category_id),
         name: normalizeStr((entry as any).name),
-        sku: normalizeStr((entry as any).sku),
-        barcode: normalizeStr((entry as any).barcode),
         qty,
         price: Math.max(0, price),
+        basePrice,
+        accruePoints: parseBool(
+          (entry as any).accruePoints ??
+            (entry as any).accrue_points ??
+            (entry as any).allowAccrue ??
+            (entry as any).earn_bonus ??
+            (entry as any).eligible,
+        ),
+        allowEarnAndPay: parseBool(
+          (entry as any).allowEarnAndPay ??
+            (entry as any).allow_earn_and_pay ??
+            (entry as any).allowEarnPay,
+        ),
+        actions,
+        actionNames,
+        earnMultiplier,
       });
     }
     return items;
@@ -216,30 +293,10 @@ export class LoyaltyService {
           .filter((v): v is string => Boolean(v)),
       ),
     );
-    const extPairs = Array.from(
+    const externalIds = Array.from(
       new Set(
         normalized
-          .map((i) => {
-            const provider = normalize(i.externalProvider);
-            const extId =
-              normalize(i.externalId) ??
-              normalize((i as any).id_product as any);
-            return provider && extId ? `${provider}||${extId}` : null;
-          })
-          .filter((v): v is string => Boolean(v)),
-      ),
-    );
-    const barcodes = Array.from(
-      new Set(
-        normalized
-          .map((i) => normalize(i.barcode))
-          .filter((v): v is string => Boolean(v)),
-      ),
-    );
-    const skus = Array.from(
-      new Set(
-        normalized
-          .map((i) => normalize(i.sku))
+          .map((i) => normalize(i.externalId))
           .filter((v): v is string => Boolean(v)),
       ),
     );
@@ -250,117 +307,164 @@ export class LoyaltyService {
           .filter((v): v is string => Boolean(v)),
       ),
     );
-    const categoryExtPairs = Array.from(
-      new Set(
-        normalized
-          .map((i) => {
-            const provider = normalize(i.externalProvider);
-            const extId = normalize(i.categoryExternalId);
-            return provider && extId ? `${provider}||${extId}` : null;
-          })
-          .filter((v): v is string => Boolean(v)),
-      ),
-    );
 
-    const [productsById, productExternal, productsByCode, categoriesById, categoryExternal, multipliers] =
-      await Promise.all([
-        productIds.length
-          ? this.prisma.product
-              .findMany({
-                where: { merchantId, id: { in: productIds }, deletedAt: null },
-                select: { id: true, categoryId: true, sku: true, barcode: true },
-              })
-              .catch(() => []) as any
-          : [],
-        extPairs.length || barcodes.length || skus.length
-          ? this.prisma.productExternalId
-              .findMany({
-                where: {
-                  merchantId,
-                  OR: [
-                    ...extPairs.map((key) => {
-                      const [externalProvider, externalId] = key.split('||');
-                      return { externalProvider, externalId };
-                    }),
-                    ...(barcodes.length ? [{ barcode: { in: barcodes } }] : []),
-                    ...(skus.length ? [{ sku: { in: skus } }] : []),
-                  ],
+    const [
+      productsById,
+      productExternal,
+      productsByDirectExternal,
+      categoriesById,
+      categoryExternal,
+      multipliers,
+    ] = await Promise.all([
+      productIds.length
+        ? this.prisma.product
+            .findMany({
+              where: { merchantId, id: { in: productIds }, deletedAt: null },
+              select: {
+                id: true,
+                categoryId: true,
+                name: true,
+                accruePoints: true,
+                allowRedeem: true,
+              },
+            })
+            .catch(() => []) as any
+        : [],
+      externalIds.length
+        ? this.prisma.productExternalId
+            .findMany({
+              where: {
+                merchantId,
+                externalId: { in: externalIds },
+              },
+              include: {
+                product: {
+                  select: {
+                    id: true,
+                    categoryId: true,
+                    name: true,
+                    accruePoints: true,
+                    allowRedeem: true,
+                  },
                 },
-                include: { product: true },
-              })
-              .catch(() => []) as any
-          : [],
-        barcodes.length || skus.length
-          ? this.prisma.product
-              .findMany({
-                where: {
-                  merchantId,
-                  deletedAt: null,
-                  OR: [
-                    ...(barcodes.length ? [{ barcode: { in: barcodes } }] : []),
-                    ...(skus.length ? [{ sku: { in: skus } }] : []),
-                  ],
-                },
-                select: { id: true, categoryId: true, sku: true, barcode: true },
-              })
-              .catch(() => []) as any
-          : [],
-        categoryIds.length
-          ? this.prisma.productCategory
-              .findMany({
-                where: { merchantId, id: { in: categoryIds }, deletedAt: null },
-                select: { id: true },
-              })
-              .catch(() => []) as any
-          : [],
-        categoryExtPairs.length
-          ? this.prisma.productCategoryExternal
-              .findMany({
-                where: {
-                  merchantId,
-                  OR: categoryExtPairs.map((key) => {
-                    const [externalProvider, externalId] = key.split('||');
-                    return { externalProvider, externalId };
-                  }),
-                },
-                include: { category: true },
-              })
-              .catch(() => []) as any
-          : [],
-        this.loadActiveMultipliers(merchantId, new Date()),
-      ]);
+              },
+            })
+            .catch(() => []) as any
+        : [],
+      externalIds.length
+        ? this.prisma.product
+            .findMany({
+              where: {
+                merchantId,
+                deletedAt: null,
+                OR: [
+                  { externalId: { in: externalIds } },
+                  { code: { in: externalIds } },
+                  { sku: { in: externalIds } },
+                ],
+              },
+                select: {
+                  id: true,
+                  categoryId: true,
+                  name: true,
+                  accruePoints: true,
+                  allowRedeem: true,
+                  externalId: true,
+                  code: true,
+                  sku: true,
+              },
+            })
+            .catch(() => []) as any
+        : [],
+      categoryIds.length
+        ? this.prisma.productCategory
+            .findMany({
+              where: {
+                merchantId,
+                deletedAt: null,
+                OR: [
+                  { id: { in: categoryIds } },
+                  { externalId: { in: categoryIds } },
+                ],
+              },
+              select: { id: true, externalId: true },
+            })
+            .catch(() => []) as any
+        : [],
+      categoryIds.length
+        ? this.prisma.productCategoryExternal
+            .findMany({
+              where: { merchantId, externalId: { in: categoryIds } },
+              include: { category: { select: { id: true, externalId: true } } },
+            })
+            .catch(() => []) as any
+        : [],
+      this.loadActiveMultipliers(merchantId, new Date()),
+    ]);
 
-    const productByIdMap = new Map<string, { id: string; categoryId: string | null; sku: string | null; barcode: string | null }>();
+    const productByIdMap = new Map<
+      string,
+      {
+        id: string;
+        categoryId: string | null;
+        accruePoints: boolean;
+        allowRedeem: boolean;
+        name: string | null;
+      }
+    >();
     (productsById as any[]).forEach((p) =>
       productByIdMap.set(p.id, {
         id: p.id,
         categoryId: p.categoryId ?? null,
-        sku: p.sku ?? null,
-        barcode: p.barcode ?? null,
+        accruePoints: p.accruePoints !== false,
+        allowRedeem: p.allowRedeem !== false,
+        name: p.name ?? null,
       }),
     );
-    const productByExtMap = new Map<string, { id: string; categoryId: string | null; sku: string | null; barcode: string | null }>();
+    const productByExtMap = new Map<
+      string,
+      {
+        id: string;
+        categoryId: string | null;
+        accruePoints: boolean;
+        allowRedeem: boolean;
+        name: string | null;
+      }
+    >();
     (productExternal as any[]).forEach((ext: any) => {
-      const key = `${ext.externalProvider}||${ext.externalId}`;
+      const key = ext.externalId;
       productByExtMap.set(key, {
         id: ext.productId,
         categoryId: ext.product?.categoryId ?? null,
-        sku: ext.product?.sku ?? null,
-        barcode: ext.product?.barcode ?? null,
+        accruePoints: ext.product?.accruePoints !== false,
+        allowRedeem: ext.product?.allowRedeem !== false,
+        name: ext.product?.name ?? null,
       });
-      if (ext.barcode) productByExtMap.set(`barcode||${ext.barcode}`, { id: ext.productId, categoryId: ext.product?.categoryId ?? null, sku: ext.product?.sku ?? null, barcode: ext.product?.barcode ?? null });
-      if (ext.sku) productByExtMap.set(`sku||${ext.sku}`, { id: ext.productId, categoryId: ext.product?.categoryId ?? null, sku: ext.product?.sku ?? null, barcode: ext.product?.barcode ?? null });
     });
-    (productsByCode as any[]).forEach((p) => {
-      if (p.barcode) productByExtMap.set(`barcode||${p.barcode}`, { id: p.id, categoryId: p.categoryId ?? null, sku: p.sku ?? null, barcode: p.barcode ?? null });
-      if (p.sku) productByExtMap.set(`sku||${p.sku}`, { id: p.id, categoryId: p.categoryId ?? null, sku: p.sku ?? null, barcode: p.barcode ?? null });
+    (productsByDirectExternal as any[]).forEach((p) => {
+      const keys = new Set<string>();
+      if (p.externalId) keys.add(p.externalId);
+      if (p.code) keys.add(p.code);
+      if (p.sku) keys.add(p.sku);
+      keys.forEach((key) =>
+        productByExtMap.set(key, {
+          id: p.id,
+          categoryId: p.categoryId ?? null,
+          accruePoints: p.accruePoints !== false,
+          allowRedeem: p.allowRedeem !== false,
+          name: p.name ?? null,
+        }),
+      );
     });
 
     const categoryByIdMap = new Map<string, string>();
-    (categoriesById as any[]).forEach((c) => categoryByIdMap.set(c.id, c.id));
+    (categoriesById as any[]).forEach((c) => {
+      categoryByIdMap.set(c.id, c.id);
+      if (c.externalId) categoryByIdMap.set(c.externalId, c.id);
+    });
     const categoryByExtMap = new Map<string, string>();
     (categoryExternal as any[]).forEach((ext: any) => {
-      const key = `${ext.externalProvider}||${ext.externalId}`;
+      const key = ext.externalId;
       categoryByExtMap.set(key, ext.categoryId);
     });
 
@@ -371,35 +475,20 @@ export class LoyaltyService {
         Math.round(Math.max(0, Number(item.price || 0)) * Math.max(0, Number(item.qty || 0))),
       );
       if (amount <= 0) continue;
+      const extKey = normalize(item.externalId);
       const productId =
         (normalize(item.productId) &&
           productByIdMap.get(normalize(item.productId) as string)?.id) ||
-        (normalize(item.externalProvider) &&
-          normalize(item.externalId) &&
-          productByExtMap.get(
-            `${normalize(item.externalProvider)}||${normalize(item.externalId)}`,
-          )?.id) ||
-        (normalize(item.barcode) &&
-          productByExtMap.get(`barcode||${normalize(item.barcode)}`)?.id) ||
-        (normalize(item.sku) &&
-          productByExtMap.get(`sku||${normalize(item.sku)}`)?.id) ||
+        (extKey && productByExtMap.get(extKey as string)?.id) ||
         null;
       const productInfo: any =
         (productId && productByIdMap.get(productId)) ||
-        (productId &&
-          (productByExtMap.get(
-            `${normalize(item.externalProvider)}||${normalize(item.externalId)}`,
-          ) ||
-            productByExtMap.get(`barcode||${normalize(item.barcode)}`) ||
-            productByExtMap.get(`sku||${normalize(item.sku)}`)));
+        (extKey ? productByExtMap.get(extKey) : undefined);
       const categoryId =
         (normalize(item.categoryId) &&
           categoryByIdMap.get(normalize(item.categoryId) as string)) ||
-        (normalize(item.externalProvider) &&
-          normalize(item.categoryExternalId) &&
-          categoryByExtMap.get(
-            `${normalize(item.externalProvider)}||${normalize(item.categoryExternalId)}`,
-          )) ||
+        (normalize(item.categoryId) &&
+          categoryByExtMap.get(normalize(item.categoryId) as string)) ||
         productInfo?.categoryId ||
         null;
       const promo = this.pickMultiplier(
@@ -407,8 +496,23 @@ export class LoyaltyService {
         productId,
         categoryId,
       );
+      const accruePoints =
+        item.accruePoints != null
+          ? Boolean(item.accruePoints)
+          : productInfo?.accruePoints !== false;
+      const allowEarnAndPay =
+        item.allowEarnAndPay != null
+          ? Boolean(item.allowEarnAndPay)
+          : productInfo?.allowRedeem !== false;
+      const name =
+        item.name && item.name.length
+          ? item.name
+          : productInfo?.name && productInfo.name.length
+            ? productInfo.name
+            : undefined;
       resolved.push({
         ...item,
+        name,
         productId: productId ?? undefined,
         categoryId: categoryId ?? undefined,
         resolvedProductId: productId,
@@ -418,9 +522,193 @@ export class LoyaltyService {
         promotionMultiplier: promo?.multiplier ?? 1,
         earnPoints: 0,
         redeemAmount: 0,
+        accruePoints,
+        allowEarnAndPay,
+        price: Math.max(0, item.price),
+        basePrice:
+          item.basePrice != null && Number.isFinite(item.basePrice)
+            ? Math.max(0, Number(item.basePrice))
+            : Math.max(0, item.price),
       });
     }
     return resolved;
+  }
+
+  private computeEligibleAmountFromPositions(
+    positions: ResolvedPosition[],
+    fallbackTotal: number,
+  ) {
+    if (!positions.length) {
+      return Math.max(0, Math.floor(Number(fallbackTotal ?? 0)));
+    }
+    const eligible = positions
+      .filter(
+        (item) =>
+          item.accruePoints !== false &&
+          (item.promotionMultiplier == null || item.promotionMultiplier > 0),
+      )
+      .reduce((sum, item) => sum + Math.max(0, item.amount || 0), 0);
+    return Math.max(0, Math.floor(eligible));
+  }
+
+  private computeTotalsFromPositions(
+    fallbackTotal: number,
+    positions: ResolvedPosition[],
+  ) {
+    const baseTotal = Math.max(0, Math.floor(Number(fallbackTotal ?? 0)));
+    if (!positions.length) {
+      return { total: baseTotal, eligibleAmount: baseTotal };
+    }
+    const itemsTotal = positions.reduce(
+      (sum, item) => sum + Math.max(0, item.amount || 0),
+      0,
+    );
+    const eligibleAmount = this.computeEligibleAmountFromPositions(
+      positions,
+      itemsTotal,
+    );
+    const total = itemsTotal > 0 ? itemsTotal : baseTotal;
+    return {
+      total,
+      eligibleAmount: Math.min(total, eligibleAmount),
+    };
+  }
+
+  private async loadActivePromotionRules(
+    merchantId: string,
+    now: Date,
+  ): Promise<ActivePromotionRule[]> {
+    const promos = await this.prisma.loyaltyPromotion
+      .findMany({
+        where: {
+          merchantId,
+          status: PromotionStatus.ACTIVE,
+          archivedAt: null,
+          OR: [{ startAt: null }, { startAt: { lte: now } }],
+          AND: [{ endAt: null }, { endAt: { gte: now } }],
+        },
+      })
+      .catch(() => []);
+    const rules: ActivePromotionRule[] = [];
+    const pushAll = (value: any, target: Set<string>) => {
+      if (!Array.isArray(value)) return;
+      value.forEach((v) => {
+        if (typeof v === 'string' && v.trim()) target.add(v.trim());
+      });
+    };
+    for (const promo of promos) {
+      const meta =
+        promo.rewardMetadata && typeof promo.rewardMetadata === 'object'
+          ? (promo.rewardMetadata as Record<string, any>)
+          : {};
+      const productIds = new Set<string>();
+      const categoryIds = new Set<string>();
+      pushAll(meta.productIds, productIds);
+      pushAll(meta.products, productIds);
+      pushAll((meta.targets as any)?.products, productIds);
+      pushAll(meta.categoryIds, categoryIds);
+      pushAll(meta.categories, categoryIds);
+      pushAll((meta.targets as any)?.categories, categoryIds);
+
+      const kindRaw = String(meta.kind || meta.type || '').toUpperCase();
+      let kind: ActivePromotionRule['kind'] | null = null;
+      let multiplier: number | undefined;
+      let buyQty: number | undefined;
+      let freeQty: number | undefined;
+      let fixedPrice: number | undefined;
+      const pickMultiplier = () => {
+        const raw =
+          meta.multiplier ??
+          meta.earnMultiplier ??
+          meta.pointsMultiplier ??
+          meta.rewardMultiplier ??
+          promo.rewardValue;
+        const num = Number(raw);
+        return Number.isFinite(num) && num > 0 ? num : undefined;
+      };
+
+      if (
+        promo.rewardType === PromotionRewardType.POINTS ||
+        kindRaw === 'POINTS' ||
+        kindRaw === 'POINTS_MULTIPLIER'
+      ) {
+        multiplier = pickMultiplier();
+        if (multiplier) kind = 'POINTS_MULTIPLIER';
+      }
+
+      const buyRaw =
+        meta.buyQty ??
+        meta.buy ??
+        meta.every ??
+        meta.step ??
+        (meta.nth != null ? Number(meta.nth) - 1 : undefined);
+      const freeRaw =
+        meta.freeQty ??
+        meta.free ??
+        meta.getQty ??
+        meta.bonusQty ??
+        meta.giftQty ??
+        1;
+      const buyParsed = Number(buyRaw);
+      const freeParsed = Number(freeRaw);
+      const buy =
+        Number.isFinite(buyParsed) && buyParsed > 0
+          ? Math.max(1, Math.trunc(buyParsed))
+          : null;
+      const free =
+        Number.isFinite(freeParsed) && freeParsed > 0
+          ? Math.max(1, Math.trunc(freeParsed))
+          : 1;
+      if (
+        kind === null &&
+        (kindRaw === 'NTH_FREE' ||
+          kindRaw === 'EACH_NTH_FREE' ||
+          kindRaw === 'STEP' ||
+          buy !== null)
+      ) {
+        kind = 'NTH_FREE';
+        buyQty = buy ?? 1;
+        freeQty = free;
+      }
+
+      const fixedPriceRaw =
+        meta.price ??
+        meta.fixedPrice ??
+        meta.specialPrice ??
+        meta.promoPrice ??
+        (promo.rewardType === PromotionRewardType.DISCOUNT
+          ? promo.rewardValue
+          : undefined);
+      const fixedParsed = Number(fixedPriceRaw);
+      if (
+        kind === null &&
+        Number.isFinite(fixedParsed) &&
+        fixedParsed >= 0 &&
+        (kindRaw === 'FIXED_PRICE' ||
+          kindRaw === 'SPECIAL_PRICE' ||
+          kindRaw === 'PRICE' ||
+          promo.rewardType === PromotionRewardType.DISCOUNT ||
+          promo.rewardType === PromotionRewardType.CASHBACK ||
+          promo.rewardType === PromotionRewardType.CUSTOM)
+      ) {
+        kind = 'FIXED_PRICE';
+        fixedPrice = Math.max(0, fixedParsed);
+      }
+
+      if (!kind) continue;
+      rules.push({
+        id: promo.id,
+        name: promo.name,
+        kind,
+        multiplier,
+        buyQty,
+        freeQty,
+        fixedPrice,
+        productIds,
+        categoryIds,
+      });
+    }
+    return rules;
   }
 
   private async loadActiveMultipliers(merchantId: string, now: Date) {
@@ -505,6 +793,121 @@ export class LoyaltyService {
     return best;
   }
 
+  async calculateAction(params: { merchantId: string; items: PositionInput[] }) {
+    const resolved = await this.resolvePositions(
+      params.merchantId,
+      params.items,
+    );
+    if (!resolved.length) {
+      return { positions: [], info: [] as string[] };
+    }
+    const promotions = await this.loadActivePromotionRules(
+      params.merchantId,
+      new Date(),
+    );
+    const infoSet = new Set<string>();
+    const priority: Record<ActivePromotionRule['kind'], number> = {
+      FIXED_PRICE: 1,
+      NTH_FREE: 2,
+      POINTS_MULTIPLIER: 3,
+    };
+    const roundCurrency = (v: number) => Math.round(v * 100) / 100;
+    const positions = resolved.map((item) => {
+      const applicable = promotions
+        .filter((promo) => {
+          const matchesProduct =
+            item.resolvedProductId && promo.productIds.size
+              ? promo.productIds.has(item.resolvedProductId)
+              : false;
+          const matchesCategory =
+            item.resolvedCategoryId && promo.categoryIds.size
+              ? promo.categoryIds.has(item.resolvedCategoryId)
+              : false;
+          const appliesAll =
+            promo.productIds.size === 0 && promo.categoryIds.size === 0;
+          return matchesProduct || matchesCategory || appliesAll;
+        })
+        .sort(
+          (a, b) =>
+            (priority[a.kind] ?? 10) - (priority[b.kind] ?? 10),
+        );
+      const appliedIds: string[] = [];
+      const appliedNames: string[] = [];
+      let unitPrice = Math.max(0, item.price);
+      const basePrice =
+        item.basePrice != null && Number.isFinite(item.basePrice)
+          ? Math.max(0, Number(item.basePrice))
+          : unitPrice;
+      let total = unitPrice * item.qty;
+      let earnMultiplier =
+        item.promotionMultiplier && item.promotionMultiplier > 0
+          ? item.promotionMultiplier
+          : 1;
+
+      for (const promo of applicable) {
+        if (appliedIds.includes(promo.id)) continue;
+        appliedIds.push(promo.id);
+        appliedNames.push(promo.name);
+        if (promo.kind === 'POINTS_MULTIPLIER') {
+          if (promo.multiplier && promo.multiplier > earnMultiplier) {
+            earnMultiplier = promo.multiplier;
+          }
+          infoSet.add(`${promo.name}: множитель начисления x${promo.multiplier ?? 1}`);
+          continue;
+        }
+        if (promo.kind === 'NTH_FREE') {
+          const step = Math.max(
+            1,
+            Math.trunc((promo.buyQty ?? 1) + (promo.freeQty ?? 0)),
+          );
+          const freebies =
+            step > 0 ? Math.floor(item.qty / step) * Math.max(1, promo.freeQty ?? 1) : 0;
+          if (freebies > 0) {
+            const discount = freebies * unitPrice;
+            total = Math.max(0, total - discount);
+            infoSet.add(
+              `${promo.name}: каждая ${step}-я позиция бесплатно (-${roundCurrency(discount)})`,
+            );
+          }
+          continue;
+        }
+        if (promo.kind === 'FIXED_PRICE') {
+          const fixed = Math.max(
+            0,
+            Math.min(Number.MAX_SAFE_INTEGER, promo.fixedPrice ?? unitPrice),
+          );
+          unitPrice = fixed;
+          total = roundCurrency(fixed * item.qty);
+          infoSet.add(
+            `${promo.name}: цена ${roundCurrency(fixed)} вместо ${roundCurrency(basePrice)}`,
+          );
+        }
+      }
+
+      const finalPrice =
+        item.qty > 0 ? roundCurrency(total / item.qty) : unitPrice;
+      return {
+        id_product:
+          item.externalId ??
+          item.productId ??
+          item.resolvedProductId ??
+          null,
+        name: item.name ?? null,
+        qty: item.qty,
+        price: finalPrice,
+        base_price: basePrice,
+        actions: appliedIds,
+        action_names: appliedNames,
+        earn_multiplier: earnMultiplier > 0 ? earnMultiplier : 1,
+        allow_earn_and_pay:
+          item.allowEarnAndPay != null
+            ? Boolean(item.allowEarnAndPay)
+            : true,
+      };
+    });
+    return { positions, info: Array.from(infoSet) };
+  }
+
   private allocateProRata(amounts: number[], target: number): number[] {
     const normalizedTarget = Math.max(0, Math.floor(Number(target) || 0));
     const total = amounts.reduce(
@@ -561,7 +964,10 @@ export class LoyaltyService {
     items.forEach((item, idx) => {
       const redeemShare = shares[idx] ?? 0;
       item.redeemAmount = redeemShare;
-      const earnBase = Math.max(0, item.amount - redeemShare);
+      const earnBase =
+        item.accruePoints === false
+          ? 0
+          : Math.max(0, item.amount - redeemShare);
       const basePoints = Math.floor((earnBase * earnBps) / 10000);
       const multiplier =
         item.promotionMultiplier && item.promotionMultiplier > 0
@@ -589,11 +995,11 @@ export class LoyaltyService {
         merchantId,
         productId: item.resolvedProductId ?? null,
         categoryId: item.resolvedCategoryId ?? null,
-        externalProvider: item.externalProvider ?? null,
+        externalProvider: null,
         externalId: item.externalId ?? null,
         name: item.name ?? null,
-        sku: item.sku ?? null,
-        barcode: item.barcode ?? null,
+        sku: null,
+        barcode: null,
         qty: new Prisma.Decimal(item.qty),
         price: new Prisma.Decimal(item.price),
         amount: item.amount,
@@ -1628,7 +2034,7 @@ export class LoyaltyService {
       fn: (args: {
         channel: 'VIRTUAL' | 'PC_POS' | 'SMART';
         weekday: number;
-        eligibleTotal: number;
+        eligibleAmount: number;
       }) => { earnBps: number; redeemLimitBps: number };
     }
   >();
@@ -1653,7 +2059,7 @@ export class LoyaltyService {
     let fn = (args: {
       channel: 'VIRTUAL' | 'PC_POS' | 'SMART';
       weekday: number;
-      eligibleTotal: number;
+      eligibleAmount: number;
     }) => ({ earnBps: base.earnBps, redeemLimitBps: base.redeemLimitBps });
     // Support both array root and object with { rules: [...] }
     const rulesArr: any[] | null = Array.isArray(rulesJson)
@@ -1679,7 +2085,7 @@ export class LoyaltyService {
               continue;
             if (
               cond.minEligible != null &&
-              args.eligibleTotal < Number(cond.minEligible)
+              args.eligibleAmount < Number(cond.minEligible)
             )
               continue;
             const then = item.then ?? {};
@@ -1705,6 +2111,21 @@ export class LoyaltyService {
     const num = Number(value);
     if (!Number.isFinite(num)) return null;
     return Math.max(0, Math.floor(num));
+  }
+
+  private normalizePhoneOptional(phone?: string | null): string | null {
+    if (phone == null) return null;
+    const raw = String(phone).trim();
+    if (!raw) return null;
+    let digits = raw.replace(/\D/g, '');
+    if (digits.startsWith('8')) digits = `7${digits.slice(1)}`;
+    if (digits.length === 10 && !digits.startsWith('7')) {
+      digits = `7${digits}`;
+    }
+    if (digits.length !== 11) {
+      throw new BadRequestException('invalid phone');
+    }
+    return `+${digits}`;
   }
 
   private async ensurePointsWallet(merchantId: string, customerId: string) {
@@ -1908,15 +2329,6 @@ export class LoyaltyService {
     effectiveOutletId = outletCtx.outletId ?? effectiveOutletId ?? null;
     const resolvedDeviceId = deviceCtx?.id ?? null;
 
-    // Нормализуем суммы (защита от отрицательных/NaN)
-    let sanitizedTotal = Math.max(
-      0,
-      Math.floor(Number((dto as any).total ?? 0)),
-    );
-    let sanitizedEligibleTotal = Math.max(
-      0,
-      Math.floor(Number((dto as any).eligibleTotal ?? 0)),
-    );
     let resolvedPositions: ResolvedPosition[] = [];
     const rawPositions = this.sanitizePositions(
       (dto as any).positions as PositionInput[],
@@ -1926,25 +2338,12 @@ export class LoyaltyService {
         dto.merchantId,
         rawPositions,
       );
-      const itemsTotal = resolvedPositions.reduce(
-        (sum, item) => sum + Math.max(0, item.amount || 0),
-        0,
-      );
-      if (itemsTotal > 0) {
-        sanitizedTotal = itemsTotal;
-        const eligibleFromDto = Math.max(
-          0,
-          Math.floor(
-            Number(
-              (dto as any).eligibleTotal != null
-                ? (dto as any).eligibleTotal
-                : itemsTotal,
-            ),
-          ),
-        );
-        sanitizedEligibleTotal = Math.min(itemsTotal, eligibleFromDto);
-      }
     }
+    const { total: sanitizedTotal, eligibleAmount } =
+      this.computeTotalsFromPositions(
+        Math.max(0, Math.floor(Number((dto as any).total ?? 0))),
+        resolvedPositions,
+      );
     // применяем правила для earnBps/redeemLimitBps (с кешом)
     const wd = new Date().getDay();
     const rulesFn = this.compileRules(
@@ -1957,7 +2356,7 @@ export class LoyaltyService {
     let { earnBps, redeemLimitBps } = rulesFn({
       channel,
       weekday: wd,
-      eligibleTotal: sanitizedEligibleTotal,
+      eligibleAmount,
     });
     // Уровни управляются через LoyaltyTier, бонусы из локальных настроек не применяем
 
@@ -2173,7 +2572,7 @@ export class LoyaltyService {
           if (rcp) priorRedeemApplied = Math.max(0, rcp.redeemApplied || 0);
         } catch {}
       }
-      const limit = Math.floor((sanitizedEligibleTotal * redeemLimitBps) / 10000);
+      const limit = Math.floor((eligibleAmount * redeemLimitBps) / 10000);
       const remainingByOrder = Math.max(0, limit - priorRedeemApplied);
       if (dto.orderId && remainingByOrder <= 0) {
         return {
@@ -2227,7 +2626,7 @@ export class LoyaltyService {
             0,
           );
         } else if (allowSameReceipt) {
-          const earnBaseOnCash = Math.min(finalPayable, sanitizedEligibleTotal);
+          const earnBaseOnCash = Math.min(finalPayable, eligibleAmount);
           const eligibleByMin = !(
             tierMinPayment != null && finalPayable < tierMinPayment
           );
@@ -2311,7 +2710,7 @@ export class LoyaltyService {
             earnPoints: calc.postEarnPoints ?? 0,
             orderId: dto.orderId,
             total: sanitizedTotal,
-            eligibleTotal: sanitizedEligibleTotal,
+            eligibleTotal: eligibleAmount,
             qrJti: qr?.jti ?? null,
             expiresAt: qr?.exp ? new Date(qr.exp * 1000) : null,
             status: HoldStatus.PENDING,
@@ -2415,7 +2814,7 @@ export class LoyaltyService {
         };
       }
     }
-    let points = Math.floor((sanitizedEligibleTotal * earnBps) / 10000);
+    let points = Math.floor((eligibleAmount * earnBps) / 10000);
     let positionsForHold = resolvedPositions;
     if (resolvedPositions.length) {
       const itemsForCalc = resolvedPositions.map((item) => ({
@@ -2513,7 +2912,7 @@ export class LoyaltyService {
           earnPoints: points,
           orderId: dto.orderId,
           total: sanitizedTotal,
-          eligibleTotal: sanitizedEligibleTotal,
+          eligibleTotal: eligibleAmount,
           qrJti: qr?.jti ?? null,
           expiresAt: qr?.exp ? new Date(qr.exp * 1000) : null,
           status: HoldStatus.PENDING,
@@ -2608,28 +3007,27 @@ export class LoyaltyService {
     const positionsOverrideResolved = positionsOverrideInput.length
       ? await this.resolvePositions(hold.merchantId, positionsOverrideInput)
       : [];
-    const effectiveTotal = positionsOverrideResolved.length
-      ? positionsOverrideResolved.reduce(
-          (sum, item) => sum + Math.max(0, item.amount || 0),
-          0,
-        )
-      : Math.max(0, Math.floor(Number(hold.total ?? 0)));
-    let effectiveEligible = positionsOverrideResolved.length
-      ? Math.max(
-          0,
-          Math.floor(Number(hold.eligibleTotal ?? effectiveTotal)),
-        )
-      : Math.max(
-          0,
-          Math.floor(
-            Number(
-              hold.eligibleTotal != null
-                ? hold.eligibleTotal
-                : hold.total ?? 0,
-            ),
-          ),
-        );
-    if (effectiveTotal > 0) {
+    const fallbackHoldTotal = Math.max(
+      0,
+      Math.floor(Number(hold.total ?? 0)),
+    );
+    let effectiveTotal = fallbackHoldTotal;
+    let effectiveEligible = Math.max(
+      0,
+      Math.floor(
+        Number(
+          hold.eligibleTotal != null ? hold.eligibleTotal : hold.total ?? 0,
+        ),
+      ),
+    );
+    if (positionsOverrideResolved.length) {
+      const totals = this.computeTotalsFromPositions(
+        fallbackHoldTotal,
+        positionsOverrideResolved,
+      );
+      effectiveTotal = totals.total;
+      effectiveEligible = totals.eligibleAmount;
+    } else if (effectiveTotal > 0) {
       effectiveEligible = Math.min(effectiveEligible, effectiveTotal);
     }
 
@@ -2727,11 +3125,8 @@ export class LoyaltyService {
               categoryId: item.categoryId ?? undefined,
               resolvedProductId: item.productId ?? null,
               resolvedCategoryId: item.categoryId ?? null,
-              externalProvider: item.externalProvider ?? undefined,
               externalId: item.externalId ?? undefined,
               name: item.name ?? undefined,
-              sku: item.sku ?? undefined,
-              barcode: item.barcode ?? undefined,
               qty: Number(item.qty ?? 0),
               price: Number(item.price ?? 0),
               amount: Math.max(0, Number(item.amount ?? 0)),
@@ -2741,6 +3136,10 @@ export class LoyaltyService {
                 Number.isFinite(item.promotionMultiplier)
                   ? Number(item.promotionMultiplier) / 10000
                   : 1,
+              accruePoints:
+                item.accruePoints != null
+                  ? Boolean(item.accruePoints)
+                  : true,
               earnPoints:
                 item.earnPoints != null
                   ? Math.max(0, Math.floor(Number(item.earnPoints)))
@@ -3270,11 +3669,11 @@ export class LoyaltyService {
               merchantId: hold.merchantId,
               productId: item.resolvedProductId ?? null,
               categoryId: item.resolvedCategoryId ?? null,
-              externalProvider: item.externalProvider ?? null,
+              externalProvider: null,
               externalId: item.externalId ?? null,
               name: item.name ?? null,
-              sku: item.sku ?? null,
-              barcode: item.barcode ?? null,
+              sku: null,
+              barcode: null,
               qty: new Prisma.Decimal(item.qty ?? 0),
               price: new Prisma.Decimal(item.price ?? 0),
               amount: item.amount ?? 0,
@@ -3305,11 +3704,11 @@ export class LoyaltyService {
                 merchantId: hold.merchantId,
                 productId: rec.item.resolvedProductId ?? null,
                 categoryId: rec.item.resolvedCategoryId ?? null,
-                externalProvider: rec.item.externalProvider ?? null,
+                externalProvider: null,
                 externalId: rec.item.externalId ?? null,
                 name: rec.item.name ?? null,
-                sku: rec.item.sku ?? null,
-                barcode: rec.item.barcode ?? null,
+                sku: null,
+                barcode: null,
                 qty: new Prisma.Decimal(rec.item.qty ?? 0),
                 price: new Prisma.Decimal(rec.item.price ?? 0),
                 amount: rec.item.amount ?? 0,
@@ -3335,11 +3734,11 @@ export class LoyaltyService {
                 merchantId: hold.merchantId,
                 productId: rec.item.resolvedProductId ?? null,
                 categoryId: rec.item.resolvedCategoryId ?? null,
-                externalProvider: rec.item.externalProvider ?? null,
+                externalProvider: null,
                 externalId: rec.item.externalId ?? null,
                 name: rec.item.name ?? null,
-                sku: rec.item.sku ?? null,
-                barcode: rec.item.barcode ?? null,
+                sku: null,
+                barcode: null,
                 qty: new Prisma.Decimal(rec.item.qty ?? 0),
                 price: new Prisma.Decimal(rec.item.price ?? 0),
                 amount: rec.item.amount ?? 0,
@@ -3486,49 +3885,25 @@ export class LoyaltyService {
     const merchantId = String(params.merchantId || '').trim();
     const customerId = String(params.customerId || '').trim();
     const merchantCustomerId = String(params.merchantCustomerId || '').trim();
-    const orderId = String(params.orderId || '').trim();
+    const invoiceNum = String(params.invoiceNum || '').trim();
+    const orderId =
+      invoiceNum ||
+      `auto_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     if (!merchantId) throw new BadRequestException('merchantId required');
     if (!customerId) throw new BadRequestException('customerId required');
-    if (!orderId) throw new BadRequestException('orderId required');
     const operationDate = params.operationDate ?? null;
     const paidBonus = this.sanitizeManualAmount(params.paidBonus);
     const bonusValue = this.sanitizeManualAmount(params.bonusValue);
     const manualMode = paidBonus != null || bonusValue != null;
-    let sanitizedTotal = Math.max(0, Math.floor(Number(params.total ?? 0)));
-    let sanitizedEligible = Math.max(
-      0,
-      Math.floor(
-        Number(
-          params.eligibleTotal != null
-            ? params.eligibleTotal
-            : params.total ?? 0,
-        ),
-      ),
-    );
+    const baseTotal = Math.max(0, Math.floor(Number(params.total ?? 0)));
     const rawItems = this.sanitizePositions(
       (params.items as PositionInput[]) ?? [],
     );
     const resolvedItems = rawItems.length
       ? await this.resolvePositions(merchantId, rawItems)
       : [];
-    if (resolvedItems.length) {
-      const itemsTotal = resolvedItems.reduce(
-        (sum, item) => sum + Math.max(0, item.amount || 0),
-        0,
-      );
-      if (itemsTotal > 0) {
-        sanitizedTotal = itemsTotal;
-        const eligibleFromDto = Math.max(
-          0,
-          Math.floor(
-            Number(
-              params.eligibleTotal != null ? params.eligibleTotal : itemsTotal,
-            ),
-          ),
-        );
-        sanitizedEligible = Math.min(itemsTotal, eligibleFromDto);
-      }
-    }
+    const { total: sanitizedTotal, eligibleAmount } =
+      this.computeTotalsFromPositions(baseTotal, resolvedItems);
 
     await this.ensureCustomerId(customerId);
     try {
@@ -3559,6 +3934,8 @@ export class LoyaltyService {
       }
       const walletAfter = await this.balance(merchantId, merchantCustomerId);
       return {
+        orderId: existingReceipt.id,
+        invoiceNum: invoiceNum || orderId,
         receiptId: existingReceipt.id,
         redeemApplied: existingReceipt.redeemApplied ?? 0,
         earnApplied: existingReceipt.earnApplied ?? 0,
@@ -3581,7 +3958,7 @@ export class LoyaltyService {
     const wallet = await this.ensurePointsWallet(merchantId, customerId);
     const balanceBefore = wallet.balance ?? 0;
 
-    if (!existingHold && manualMode) {
+    if (manualMode) {
       if (paidBonus != null && paidBonus > balanceBefore) {
         throw new BadRequestException('Недостаточно бонусов для списания');
       }
@@ -3595,8 +3972,8 @@ export class LoyaltyService {
     }
 
     let holdId = existingHold?.id ?? null;
-    let manualRedeemOverride: number | null = null;
-    let manualEarnOverride: number | null = null;
+    let manualRedeemOverride: number | null = paidBonus ?? null;
+    let manualEarnOverride: number | null = bonusValue ?? null;
 
     let positionsForHold = resolvedItems.map((item) => ({
       ...item,
@@ -3628,83 +4005,54 @@ export class LoyaltyService {
       }));
     }
 
+    const holdMode =
+      manualRedeemOverride && manualRedeemOverride > 0
+        ? HoldMode.REDEEM
+        : HoldMode.EARN;
+    const redeemToSave = manualRedeemOverride ?? 0;
+    const earnToSave = manualEarnOverride ?? 0;
+
     if (!holdId) {
-      if (manualMode) {
-        const holdMode =
-          paidBonus && paidBonus > 0 ? HoldMode.REDEEM : HoldMode.EARN;
-        const hold = await this.prisma.hold.create({
-          data: {
-            id: randomUUID(),
-            customerId,
-            merchantId,
-            mode: holdMode,
-            redeemAmount: paidBonus ?? 0,
-            earnPoints: bonusValue ?? 0,
-            orderId,
-            total: sanitizedTotal,
-            eligibleTotal: sanitizedEligible,
-            status: HoldStatus.PENDING,
-            outletId: params.outletId ?? null,
-            staffId: null,
-            deviceId: params.resolvedDeviceId ?? null,
-            createdAt: operationDate ?? undefined,
-          },
-        });
-        holdId = hold.id;
-        manualRedeemOverride = paidBonus ?? null;
-        manualEarnOverride = bonusValue ?? null;
-        if (positionsForHold.length) {
-          await this.upsertHoldItems(
-            this.prisma as any,
-            holdId,
-            merchantId,
-            positionsForHold,
-          );
-        }
-      } else {
-        const quote = await this.quote(
-          {
-            mode: params.mode,
-            merchantId,
-            userToken: params.userToken,
-            orderId,
-            total: sanitizedTotal,
-            eligibleTotal: sanitizedEligible,
-            outletId: params.outletId ?? undefined,
-            deviceId: params.deviceId ?? undefined,
-            customerId,
-            staffId: undefined,
-            positions: rawItems,
-          },
-          undefined,
-          { operationDate },
+      const hold = await this.prisma.hold.create({
+        data: {
+          id: randomUUID(),
+          customerId,
+          merchantId,
+          mode: holdMode,
+          redeemAmount: redeemToSave,
+          earnPoints: earnToSave,
+          orderId,
+          total: sanitizedTotal,
+          eligibleTotal: eligibleAmount,
+          status: HoldStatus.PENDING,
+          outletId: params.outletId ?? null,
+          staffId: params.staffId ?? null,
+          deviceId: params.resolvedDeviceId ?? null,
+          createdAt: operationDate ?? undefined,
+        },
+      });
+      holdId = hold.id;
+      if (positionsForHold.length) {
+        await this.upsertHoldItems(
+          this.prisma as any,
+          holdId,
+          merchantId,
+          positionsForHold,
         );
-        if (!quote || !(quote as any).holdId) {
-          throw new BadRequestException('Не удалось подготовить операцию');
-        }
-        holdId = (quote as any).holdId;
       }
     } else {
       const holdExisting = existingHold!;
-      if (manualMode) {
+      if (manualRedeemOverride == null) {
         manualRedeemOverride =
-          paidBonus != null
-            ? paidBonus
-            : holdExisting.redeemAmount != null
-              ? Math.max(0, holdExisting.redeemAmount)
-              : null;
+          holdExisting.redeemAmount != null
+            ? Math.max(0, holdExisting.redeemAmount)
+            : null;
+      }
+      if (manualEarnOverride == null) {
         manualEarnOverride =
-          bonusValue != null
-            ? bonusValue
-            : holdExisting.mode !== HoldMode.EARN &&
-                Math.max(0, holdExisting.earnPoints || 0) > 0
-              ? Math.max(0, holdExisting.earnPoints || 0)
-              : bonusValue;
-      } else if (
-        holdExisting.mode !== HoldMode.EARN &&
-        Math.max(0, holdExisting.earnPoints || 0) > 0
-      ) {
-        manualEarnOverride = Math.max(0, holdExisting.earnPoints || 0);
+          holdExisting.earnPoints != null
+            ? Math.max(0, holdExisting.earnPoints)
+            : null;
       }
 
       if (manualMode && positionsForHold.length) {
@@ -3721,11 +4069,33 @@ export class LoyaltyService {
             where: { id: holdId },
             data: {
               total: sanitizedTotal,
-              eligibleTotal: sanitizedEligible,
+              eligibleTotal: eligibleAmount,
+              outletId: params.outletId ?? null,
+              staffId: params.staffId ?? null,
+              deviceId: params.resolvedDeviceId ?? null,
+              mode:
+                manualRedeemOverride && manualRedeemOverride > 0
+                  ? HoldMode.REDEEM
+                  : holdExisting.mode,
+              redeemAmount:
+                manualRedeemOverride != null
+                  ? manualRedeemOverride
+                  : holdExisting.redeemAmount,
+              earnPoints:
+                manualEarnOverride != null
+                  ? manualEarnOverride
+                  : holdExisting.earnPoints,
             },
           });
         } catch {}
       }
+    }
+
+    if (
+      manualRedeemOverride != null &&
+      manualRedeemOverride > balanceBefore
+    ) {
+      throw new BadRequestException('Недостаточно бонусов для списания');
     }
 
     if (!holdId) {
@@ -3734,7 +4104,7 @@ export class LoyaltyService {
     const commitResult = await this.commit(
       holdId,
       orderId,
-      undefined,
+      invoiceNum || undefined,
       params.requestId ?? undefined,
       {
         operationDate,
@@ -3742,7 +4112,10 @@ export class LoyaltyService {
           manualMode && manualRedeemOverride != null
             ? manualRedeemOverride
             : null,
-        manualEarnPoints: manualEarnOverride,
+        manualEarnPoints:
+          manualMode && manualEarnOverride != null
+            ? manualEarnOverride
+            : null,
         positions: manualMode ? undefined : rawItems,
       },
     );
@@ -3762,6 +4135,8 @@ export class LoyaltyService {
     const walletAfter = await this.balance(merchantId, merchantCustomerId);
     return {
       receiptId: receiptId,
+      orderId: receiptId,
+      invoiceNum: invoiceNum || orderId,
       redeemApplied: commitResult.redeemApplied ?? 0,
       earnApplied: commitResult.earnApplied ?? 0,
       balanceBefore,
@@ -3805,47 +4180,529 @@ export class LoyaltyService {
     };
   }
 
-  async refund(
-    merchantId: string,
-    orderId: string,
-    refundTotal: number,
-    refundEligibleTotal?: number,
-    requestId?: string,
-    deviceId?: string,
-    operationDate?: Date | null,
-  ) {
-    const receipt = await this.prisma.receipt.findUnique({
-      where: { merchantId_orderId: { merchantId, orderId } },
+  async calculateBonusPreview(params: {
+    merchantId: string;
+    merchantCustomerId: string;
+    customerId: string;
+    userToken?: string | null;
+    items: PositionInput[];
+    outletId?: string | null;
+    operationDate?: Date | null;
+  }) {
+    const normalized = this.sanitizePositions(params.items);
+    if (!normalized.length) {
+      throw new BadRequestException('items required');
+    }
+    const total = normalized.reduce(
+      (sum, item) => sum + Math.max(0, Math.round((item.price || 0) * (item.qty || 0))),
+      0,
+    );
+    const orderId = `calc_${Date.now()}_${Math.random()
+      .toString(16)
+      .slice(2)}`;
+    const quote = await this.quote(
+      {
+        mode: Mode.REDEEM,
+        merchantId: params.merchantId,
+        userToken:
+          params.userToken ??
+          params.merchantCustomerId ??
+          params.customerId,
+        orderId,
+        total,
+        outletId: params.outletId ?? undefined,
+        staffId: undefined,
+        customerId: params.customerId,
+        positions: normalized as any,
+      },
+      undefined,
+      { dryRun: true, operationDate: params.operationDate ?? null },
+    );
+    const balance = await this.balance(
+      params.merchantId,
+      params.merchantCustomerId,
+    );
+    const quotedPositions: ResolvedPosition[] = Array.isArray(
+      (quote as any)?.positions,
+    )
+      ? ((quote as any).positions as ResolvedPosition[])
+      : [];
+    const sourceItems = quotedPositions.length ? quotedPositions : normalized;
+    const products = sourceItems.map((item) => {
+      const redeem = Math.max(
+        0,
+        Math.floor(Number((item as any).redeemAmount ?? 0)),
+      );
+      const earn = Math.max(
+        0,
+        Math.floor(Number((item as any).earnPoints ?? 0)),
+      );
+      const qty = Math.max(0, Number((item as any).qty ?? 0));
+      const price = Math.max(0, Number((item as any).price ?? 0));
+      const basePrice =
+        (item as any).basePrice != null
+          ? Math.max(0, Number((item as any).basePrice))
+          : price;
+      const allowEarnAndPay =
+        (item as any).allowEarnAndPay != null
+          ? Boolean((item as any).allowEarnAndPay)
+          : true;
+      return {
+        id_product:
+          (item as any).externalId ??
+          (item as any).productId ??
+          (item as any).resolvedProductId ??
+          null,
+        name: (item as any).name ?? null,
+        price,
+        base_price: basePrice,
+        quantity: qty,
+        qty,
+        max_pay_bonus: redeem,
+        earn_bonus: earn,
+        allow_earn_and_pay: allowEarnAndPay,
+      };
     });
-    if (!receipt) throw new BadRequestException('Receipt not found');
-    const operationDateObj = operationDate ?? new Date();
+    return {
+      products,
+      max_pay_bonus: Math.max(
+        0,
+        Math.floor(Number((quote as any)?.discountToApply ?? 0)),
+      ),
+      bonus_value: Math.max(
+        0,
+        Math.floor(
+          Number(
+            (quote as any)?.postEarnPoints ??
+              (quote as any)?.pointsToEarn ??
+              0,
+          ),
+        ),
+      ),
+      final_payable: Math.max(
+        0,
+        Math.floor(Number((quote as any)?.finalPayable ?? total)),
+      ),
+      balance: balance.balance ?? 0,
+    };
+  }
 
+  async getBaseRatesForCustomer(
+    merchantId: string,
+    customerId: string,
+    opts?: { outletId?: string | null; eligibleAmount?: number },
+  ) {
+    const mid = typeof merchantId === 'string' ? merchantId.trim() : '';
+    const cid = typeof customerId === 'string' ? customerId.trim() : '';
+    if (!mid) throw new BadRequestException('merchantId required');
+    if (!cid) throw new BadRequestException('customerId required');
+
+    await ensureBaseTier(this.prisma, mid).catch(() => null);
+    const settings = await this.getSettings(mid);
+    const eligible = Math.max(
+      0,
+      Math.floor(Number(opts?.eligibleAmount ?? 0) || 0),
+    );
+    const outletCtx = await this.resolveOutletContext(mid, {
+      outletId: opts?.outletId ?? null,
+    });
+    const rulesFn = this.compileRules(
+      mid,
+      outletCtx.outletId ?? null,
+      {
+        earnBps: settings.earnBps,
+        redeemLimitBps: settings.redeemLimitBps,
+      },
+      settings.rulesJson,
+      settings.updatedAt,
+    );
+    const { earnBps: rawEarn, redeemLimitBps: rawRedeem } = rulesFn({
+      channel: outletCtx.channel,
+      weekday: new Date().getDay(),
+      eligibleAmount: eligible,
+    });
+    let earnBps = Math.max(
+      0,
+      Math.floor(
+        Number.isFinite(Number(rawEarn)) ? Number(rawEarn) : settings.earnBps,
+      ),
+    );
+    let redeemLimitBps = Math.max(
+      0,
+      Math.floor(
+        Number.isFinite(Number(rawRedeem))
+          ? Number(rawRedeem)
+          : settings.redeemLimitBps,
+      ),
+    );
+    let tierMinPayment: number | null = null;
+    try {
+      const assignment = await this.prisma.loyaltyTierAssignment.findFirst({
+        where: {
+          merchantId: mid,
+          customerId: cid,
+          OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+        },
+        orderBy: { assignedAt: 'desc' },
+      });
+      let tier: any = null;
+      if (assignment) {
+        tier = await this.prisma.loyaltyTier.findUnique({
+          where: { id: assignment.tierId },
+        });
+      }
+      if (!tier) {
+        tier = await this.prisma.loyaltyTier.findFirst({
+          where: { merchantId: mid, isInitial: true },
+          orderBy: { thresholdAmount: 'asc' },
+        });
+      }
+      if (tier) {
+        if (typeof tier.earnRateBps === 'number') {
+          earnBps = Math.max(0, Math.floor(Number(tier.earnRateBps)));
+        }
+        if (typeof tier.redeemRateBps === 'number') {
+          redeemLimitBps = Math.max(
+            0,
+            Math.floor(Number(tier.redeemRateBps)),
+          );
+        }
+        const meta: any = tier.metadata ?? null;
+        if (meta && typeof meta === 'object') {
+          const raw = meta.minPaymentAmount ?? meta.minPayment;
+          if (raw != null) {
+            const mp = Number(raw);
+            if (Number.isFinite(mp) && mp >= 0) {
+              tierMinPayment = Math.round(mp);
+            }
+          }
+        }
+      }
+    } catch {}
+    const toPercent = (bps: number) =>
+      Math.round(Math.max(0, Number(bps) || 0)) / 100;
+    return {
+      earnBps,
+      redeemLimitBps,
+      earnPercent: toPercent(earnBps),
+      redeemLimitPercent: toPercent(redeemLimitBps),
+      tierMinPayment,
+    };
+  }
+
+  async getCustomerAnalytics(merchantId: string, customerId: string) {
+    const mid = typeof merchantId === 'string' ? merchantId.trim() : '';
+    const cid = typeof customerId === 'string' ? customerId.trim() : '';
+    if (!mid) throw new BadRequestException('merchantId required');
+    if (!cid) throw new BadRequestException('customerId required');
+
+    const aggregates = await fetchReceiptAggregates(this.prisma, {
+      merchantId: mid,
+      customerIds: [cid],
+    });
+    let row =
+      Array.isArray(aggregates) && aggregates.length ? aggregates[0] : null;
+    if (!row) {
+      const stats = await this.prisma.customerStats.findUnique({
+        where: { merchantId_customerId: { merchantId: mid, customerId: cid } },
+      });
+      if (stats) {
+        row = {
+          customerId: cid,
+          visits: Number(stats.visits ?? 0),
+          totalSpent: Number(stats.totalSpent ?? 0),
+          firstPurchaseAt: stats.firstSeenAt ?? null,
+          lastPurchaseAt:
+            stats.lastOrderAt ??
+            stats.lastSeenAt ??
+            stats.firstSeenAt ??
+            null,
+        };
+      }
+    }
+    const visitCount = row?.visits ?? 0;
+    const totalAmount = Math.max(0, Number(row?.totalSpent ?? 0));
+    const avgBillRaw =
+      visitCount > 0 ? Math.max(0, totalAmount) / visitCount : 0;
+    const avgBill = Math.round(avgBillRaw * 100) / 100;
+    const firstDate = row?.firstPurchaseAt ?? null;
+    const lastDate = row?.lastPurchaseAt ?? firstDate;
+    let visitFrequency = 0;
+    if (visitCount > 0 && firstDate) {
+      const endDate = lastDate ?? firstDate;
+      const spanDays = Math.max(
+        1,
+        Math.round(
+          (endDate.getTime() - firstDate.getTime()) / 86_400_000,
+        ) + 1,
+      );
+      visitFrequency = (visitCount / spanDays) * 30; // визитов в среднем за 30 дней
+    }
+    const visitFrequencyRounded =
+      Math.round(visitFrequency * 100) / 100;
+    return {
+      bDate: firstDate ? firstDate.toISOString() : null,
+      visitCount,
+      totalAmount,
+      avgBill,
+      visitFrequency: visitFrequencyRounded,
+    };
+  }
+
+  async migrateExternalClient(params: {
+    merchantId: string;
+    externalId: string;
+    merchantCustomerId?: string | null;
+    phone?: string | null;
+    email?: string | null;
+    name?: string | null;
+    birthday?: string | Date | null;
+    gender?: string | null;
+  }) {
+    const merchantId = (params.merchantId || '').trim();
+    const externalId = (params.externalId || '').trim();
+    if (!merchantId) throw new BadRequestException('merchantId required');
+    if (!externalId)
+      throw new BadRequestException('externalClientId required');
+
+    const phone = this.normalizePhoneOptional(params.phone);
+    const email =
+      params.email && String(params.email).trim().length
+        ? String(params.email).trim()
+        : null;
+    const name =
+      params.name && String(params.name).trim().length
+        ? String(params.name).trim()
+        : null;
+    const gender =
+      params.gender && String(params.gender).trim().length
+        ? String(params.gender).trim()
+        : null;
+    let birthday: Date | null = null;
+    if (params.birthday != null) {
+      const parsed =
+        params.birthday instanceof Date
+          ? params.birthday
+          : new Date(String(params.birthday));
+      if (Number.isNaN(parsed.getTime())) {
+        throw new BadRequestException('birthday must be a valid date');
+      }
+      birthday = parsed;
+    }
+    const merchantCustomerId =
+      params.merchantCustomerId && params.merchantCustomerId.trim().length
+        ? params.merchantCustomerId.trim()
+        : null;
+
+    const { merchantCustomer, created, updated } =
+      await this.prisma.$transaction(async (tx) => {
+        let current: any = null;
+        if (merchantCustomerId) {
+          current = await tx.merchantCustomer.findUnique({
+            where: { id: merchantCustomerId },
+            include: { customer: true },
+          });
+          if (!current || current.merchantId !== merchantId) {
+            throw new BadRequestException('merchant customer not found');
+          }
+        }
+
+        const byExternal = await tx.merchantCustomer.findFirst({
+          where: { merchantId, externalId },
+          include: { customer: true },
+        });
+        if (byExternal) {
+          if (current && current.id !== byExternal.id) {
+            throw new ConflictException(
+              'external client already linked to another profile',
+            );
+          }
+          current = byExternal;
+        }
+
+        if (!current && phone) {
+          current = await tx.merchantCustomer.findFirst({
+            where: { merchantId, phone },
+            include: { customer: true },
+          });
+        }
+        if (!current && email) {
+          current = await tx.merchantCustomer.findFirst({
+            where: { merchantId, email },
+            include: { customer: true },
+          });
+        }
+
+        let customer: any = current?.customer ?? null;
+        if (!customer) {
+          if (phone) {
+            customer = await tx.customer.findFirst({ where: { phone } });
+          }
+          if (!customer && email) {
+            customer = await tx.customer.findFirst({ where: { email } });
+          }
+          if (!customer) {
+            customer = await tx.customer.create({
+              data: {
+                phone,
+                email,
+                name: name ?? null,
+                birthday: birthday ?? undefined,
+                gender: gender ?? undefined,
+              },
+            });
+          } else {
+            const customerUpdate: Prisma.CustomerUpdateInput = {};
+            if (phone && customer.phone !== phone) customerUpdate.phone = phone;
+            if (email && customer.email !== email) customerUpdate.email = email;
+            if (name && customer.name !== name) customerUpdate.name = name;
+            if (
+              birthday &&
+              (!customer.birthday ||
+                customer.birthday.getTime() !== birthday.getTime())
+            ) {
+              customerUpdate.birthday = birthday;
+            }
+            if (gender && customer.gender !== gender) {
+              customerUpdate.gender = gender;
+            }
+            if (Object.keys(customerUpdate).length) {
+              customer = await tx.customer.update({
+                where: { id: customer.id },
+                data: customerUpdate,
+              });
+            }
+          }
+        } else {
+          const customerUpdate: Prisma.CustomerUpdateInput = {};
+          if (phone && customer.phone !== phone) customerUpdate.phone = phone;
+          if (email && customer.email !== email) customerUpdate.email = email;
+          if (name && customer.name !== name) customerUpdate.name = name;
+          if (
+            birthday &&
+            (!customer.birthday ||
+              customer.birthday.getTime() !== birthday.getTime())
+          ) {
+            customerUpdate.birthday = birthday;
+          }
+          if (gender && customer.gender !== gender) {
+            customerUpdate.gender = gender;
+          }
+          if (Object.keys(customerUpdate).length) {
+            customer = await tx.customer.update({
+              where: { id: customer.id },
+              data: customerUpdate,
+            });
+          }
+        }
+
+        if (!current) {
+          const mc = await tx.merchantCustomer.create({
+            data: {
+              merchantId,
+              customerId: customer.id,
+              externalId,
+              phone,
+              email,
+              name,
+              profileBirthDate: birthday ?? undefined,
+              profileGender: gender ?? undefined,
+            },
+            include: { customer: true },
+          });
+          return { merchantCustomer: mc, created: true, updated: true };
+        }
+
+        const mcUpdate: Prisma.MerchantCustomerUpdateInput = {};
+        if (!current.externalId || current.externalId !== externalId) {
+          mcUpdate.externalId = externalId;
+        }
+        if (phone && current.phone !== phone) mcUpdate.phone = phone;
+        if (email && current.email !== email) mcUpdate.email = email;
+        if (name && current.name !== name) mcUpdate.name = name;
+        if (
+          birthday &&
+          (!current.profileBirthDate ||
+            current.profileBirthDate.getTime() !== birthday.getTime())
+        ) {
+          mcUpdate.profileBirthDate = birthday;
+        }
+        if (gender && current.profileGender !== gender) {
+          mcUpdate.profileGender = gender;
+        }
+        let updated = false;
+        let next = current;
+        if (Object.keys(mcUpdate).length) {
+          next = await tx.merchantCustomer.update({
+            where: { id: current.id },
+            data: mcUpdate,
+            include: { customer: true },
+          });
+          updated = true;
+        }
+        return { merchantCustomer: next, created: false, updated };
+      });
+
+    const balance = await this.balance(merchantId, merchantCustomer.id).catch(
+      () => ({ balance: 0 }),
+    );
+
+    return {
+      merchantCustomerId: merchantCustomer.id,
+      customerId: merchantCustomer.customerId,
+      externalId: merchantCustomer.externalId ?? externalId,
+      phone: merchantCustomer.phone ?? null,
+      email: merchantCustomer.email ?? null,
+      name: merchantCustomer.name ?? null,
+      birthday: merchantCustomer.profileBirthDate ?? null,
+      balance: balance?.balance ?? 0,
+      created,
+      updated,
+    };
+  }
+
+  async refund(params: {
+    merchantId: string;
+    invoiceNum?: string | null;
+    orderId?: string | null;
+    requestId?: string | null;
+    deviceId?: string | null;
+    operationDate?: Date | null;
+  }) {
+    const merchantId = String(params.merchantId || '').trim();
+    if (!merchantId) throw new BadRequestException('merchantId required');
+    const invoiceNum = String(params.invoiceNum || '').trim();
+    const orderIdRaw = String(params.orderId || '').trim();
+    if (!invoiceNum && !orderIdRaw) {
+      throw new BadRequestException('invoiceNum or orderId required');
+    }
+    let receipt = null as any;
+    if (orderIdRaw) {
+      receipt = await this.prisma.receipt.findFirst({
+        where: { merchantId, id: orderIdRaw },
+      });
+    }
+    if (!receipt && invoiceNum) {
+      receipt = await this.prisma.receipt.findFirst({
+        where: { merchantId, orderId: invoiceNum },
+      });
+    }
+    if (!receipt) throw new BadRequestException('Receipt not found');
+
+    const operationDateObj = params.operationDate ?? new Date();
     const deviceCtx = await this.resolveDeviceContext(
       merchantId,
-      deviceId ?? null,
+      params.deviceId ?? null,
       receipt.outletId ?? null,
     );
     const refundOutletId = receipt.outletId ?? deviceCtx?.outletId ?? null;
     const refundDeviceId = deviceCtx?.id ?? receipt.deviceId ?? null;
 
-    const eligible =
-      receipt.eligibleTotal > 0 ? receipt.eligibleTotal : receipt.total;
-    const baseForShare =
-      refundEligibleTotal != null ? refundEligibleTotal : refundTotal;
-    const share = Math.min(
-      1,
-      Math.max(0, eligible > 0 ? baseForShare / eligible : 0),
-    );
-
-    const pointsToRestore = Math.round(receipt.redeemApplied * share);
-    const pointsToRevoke = Math.round(receipt.earnApplied * share);
+    const pointsToRestore = Math.max(0, Math.round(receipt.redeemApplied || 0));
+    const pointsToRevoke = Math.max(0, Math.round(receipt.earnApplied || 0));
     const refundMeta = {
-      share,
-      refundTotal,
-      refundEligibleTotal: refundEligibleTotal ?? null,
       receiptId: receipt.id,
     } as Prisma.JsonObject;
-    const isFullRefund = share >= 0.999;
 
     const wallet = await this.prisma.wallet.findFirst({
       where: {
@@ -3864,7 +4721,7 @@ export class LoyaltyService {
     const existingRefunds = await this.prisma.transaction.findMany({
       where: {
         merchantId,
-        orderId,
+        orderId: receipt.orderId,
         type: TxnType.REFUND,
         canceledAt: null,
       },
@@ -3875,29 +4732,12 @@ export class LoyaltyService {
           tx.metadata && typeof tx.metadata === 'object'
             ? (tx.metadata as any)
             : null;
-        const metaTotal =
-          meta && meta.refundTotal != null
-            ? Number(meta.refundTotal)
-            : meta && meta.refund_total != null
-              ? Number(meta.refund_total)
-              : null;
-        const metaEligible =
-          meta && meta.refundEligibleTotal != null
-            ? Number(meta.refundEligibleTotal)
-            : meta && meta.refund_eligible_total != null
-              ? Number(meta.refund_eligible_total)
-              : null;
-        const totalMatches =
-          metaTotal != null &&
-          Number.isFinite(metaTotal) &&
-          Math.round(metaTotal) === Math.round(refundTotal);
-        const eligibleMatches =
-          refundEligibleTotal == null
-            ? metaEligible == null
-            : metaEligible != null &&
-              Number.isFinite(metaEligible) &&
-              Math.round(metaEligible) === Math.round(refundEligibleTotal);
-        return totalMatches && eligibleMatches;
+        const receiptMatch =
+          !receipt.id ||
+          !meta ||
+          !meta.receiptId ||
+          meta.receiptId === receipt.id;
+        return receiptMatch;
       } catch {
         return false;
       }
@@ -3909,22 +4749,9 @@ export class LoyaltyService {
       const pointsRevoked = matchingRefunds
         .filter((tx) => tx.amount < 0)
         .reduce((sum, tx) => sum + Math.max(0, -tx.amount), 0);
-      const shareFromMeta = matchingRefunds.find((tx) => {
-        const meta =
-          tx.metadata && typeof tx.metadata === 'object'
-            ? (tx.metadata as any)
-            : null;
-        return meta && meta.share != null;
-      });
-      const shareValue =
-        shareFromMeta &&
-        shareFromMeta.metadata &&
-        typeof (shareFromMeta.metadata as any).share === 'number'
-          ? ((shareFromMeta.metadata as any).share as number)
-          : share;
       return {
         ok: true,
-        share: shareValue,
+        share: 1,
         pointsRestored,
         pointsRevoked,
         merchantCustomerId: merchantContext.merchantCustomerId,
@@ -3944,7 +4771,7 @@ export class LoyaltyService {
             merchantId,
             type: TxnType.REFUND,
             amount: pointsToRestore,
-            orderId,
+            orderId: receipt.orderId,
             outletId: refundOutletId,
             staffId: receipt.staffId,
             deviceId: refundDeviceId,
@@ -3958,7 +4785,7 @@ export class LoyaltyService {
             merchantId,
             receipt.customerId,
             pointsToRestore,
-            { orderId },
+            { orderId: receipt.orderId },
           );
         }
         if (process.env.LEDGER_FEATURE === '1') {
@@ -3969,7 +4796,7 @@ export class LoyaltyService {
               debit: LedgerAccount.MERCHANT_LIABILITY,
               credit: LedgerAccount.CUSTOMER_BALANCE,
               amount: pointsToRestore,
-              orderId,
+              orderId: receipt.orderId,
               outletId: refundOutletId,
               staffId: receipt.staffId ?? null,
               deviceId: refundDeviceId,
@@ -3994,7 +4821,7 @@ export class LoyaltyService {
             merchantId,
             type: TxnType.REFUND,
             amount: -pointsToRevoke,
-            orderId,
+            orderId: receipt.orderId,
             outletId: refundOutletId,
             staffId: receipt.staffId,
             deviceId: refundDeviceId,
@@ -4008,7 +4835,7 @@ export class LoyaltyService {
             merchantId,
             receipt.customerId,
             pointsToRevoke,
-            { orderId },
+            { orderId: receipt.orderId },
           );
         }
         if (process.env.LEDGER_FEATURE === '1') {
@@ -4019,7 +4846,7 @@ export class LoyaltyService {
               debit: LedgerAccount.CUSTOMER_BALANCE,
               credit: LedgerAccount.MERCHANT_LIABILITY,
               amount: pointsToRevoke,
-              orderId,
+              orderId: receipt.orderId,
               outletId: refundOutletId,
               staffId: receipt.staffId ?? null,
               deviceId: refundDeviceId,
@@ -4032,34 +4859,11 @@ export class LoyaltyService {
           });
         }
       }
-      if (Math.abs(share - 1) < 0.001) {
-        await this.rollbackReferralRewards(tx, {
-          merchantId,
-          receipt: {
-            id: receipt.id,
-            orderId,
-            customerId: receipt.customerId,
-            outletId: refundOutletId,
-            staffId: receipt.staffId ?? null,
-          },
-        });
-      }
-      try {
-        await this.staffMotivation.recordRefund(tx, {
-          merchantId,
-          orderId,
-          eventAt: operationDateObj,
-          share,
-        });
-      } catch {}
-      if (isFullRefund) {
-        try {
-          await tx.receipt.update({
-            where: { id: receipt.id },
-            data: { canceledAt: operationDateObj },
-          });
-        } catch {}
-      }
+
+      await tx.receipt.update({
+        where: { id: receipt.id },
+        data: { canceledAt: operationDateObj },
+      });
       await tx.eventOutbox.create({
         data: {
           merchantId,
@@ -4067,20 +4871,40 @@ export class LoyaltyService {
           createdAt: operationDateObj,
           payload: {
             schemaVersion: 1,
-            orderId,
+            orderId: receipt.orderId,
             customerId: receipt.customerId,
             merchantId,
-            share,
+            share: 1,
             pointsRestored: pointsToRestore,
             pointsRevoked: pointsToRevoke,
             createdAt: operationDateObj.toISOString(),
             outletId: refundOutletId,
             staffId: receipt.staffId ?? null,
             deviceId: refundDeviceId,
-            requestId: requestId ?? null,
+            requestId: params.requestId ?? null,
           } as any,
         },
       });
+      try {
+        await this.rollbackReferralRewards(tx, {
+          merchantId,
+          receipt: {
+            id: receipt.id,
+            orderId: receipt.orderId,
+            customerId: receipt.customerId,
+            outletId: refundOutletId,
+            staffId: receipt.staffId ?? null,
+          },
+        });
+      } catch {}
+      try {
+        await this.staffMotivation.recordRefund(tx, {
+          merchantId,
+          orderId: receipt.orderId,
+          eventAt: operationDateObj,
+          share: 1,
+        });
+      } catch {}
       try {
         await this.recomputeTierProgress(tx, {
           merchantId,
@@ -4089,7 +4913,7 @@ export class LoyaltyService {
       } catch {}
       return {
         ok: true,
-        share,
+        share: 1,
         pointsRestored: pointsToRestore,
         pointsRevoked: pointsToRevoke,
         merchantCustomerId: merchantContext.merchantCustomerId,

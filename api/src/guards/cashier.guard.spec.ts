@@ -335,15 +335,12 @@ describe('CashierGuard', () => {
     const body = {
       merchantId: 'M-55',
       orderId: 'O-99',
-      refundTotal: 1500,
-      refundEligibleTotal: 1200,
       reason: 'double-charge',
     };
     const payload = JSON.stringify({
       merchantId: 'M-55',
-      orderId: 'O-99',
-      refundTotal: 1500,
-      refundEligibleTotal: 1200,
+      invoice_num: 'O-99',
+      order_id: undefined,
     });
     const ts = Math.floor(Date.now() / 1000).toString();
     const sig = crypto
@@ -393,9 +390,8 @@ describe('CashierGuard', () => {
 
     const payload = JSON.stringify({
       merchantId: 'M-55',
-      orderId: 'ORD-555',
-      refundTotal: 1500,
-      refundEligibleTotal: 1200,
+      invoice_num: 'ORD-555',
+      order_id: undefined,
     });
     const ts = Math.floor(Date.now() / 1000).toString();
     const sig = crypto
@@ -411,8 +407,6 @@ describe('CashierGuard', () => {
       body: {
         merchantId: 'M-55',
         receiptNumber: 'R-777',
-        refundTotal: 1500,
-        refundEligibleTotal: 1200,
       },
       query: {},
       params: {},

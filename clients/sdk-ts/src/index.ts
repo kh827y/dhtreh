@@ -31,7 +31,7 @@ export class LoyaltyApi {
   }
 
   // Endpoints
-  quote(body: { mode: 'redeem'|'earn'; merchantId: string; userToken: string; orderId: string; total: number; eligibleTotal: number; outletId?: string; staffId?: string; category?: string; promoCode?: string }, opts?: { staffKey?: string; bridgeSignatureSecret?: string }) {
+  quote(body: { mode: 'redeem'|'earn'; merchantId: string; userToken: string; orderId: string; total: number; outletId?: string; staffId?: string; category?: string; promoCode?: string; positions?: Array<{ productId?: string; externalProvider?: string; externalId?: string; categoryId?: string; categoryExternalId?: string; name?: string; sku?: string; barcode?: string; qty: number; price: number; accruePoints?: boolean }> }, opts?: { staffKey?: string; bridgeSignatureSecret?: string }) {
     const json = JSON.stringify(body);
     const headers: any = {};
     if (opts?.staffKey) headers['X-Staff-Key'] = opts.staffKey;
@@ -47,7 +47,17 @@ export class LoyaltyApi {
     return this.http('/loyalty/commit', { method: 'POST', headers, body: json });
   }
 
-  refund(body: { merchantId: string; orderId: string; refundTotal: number; refundEligibleTotal?: number }, opts?: { idempotencyKey?: string; bridgeSignatureSecret?: string }) {
+  refund(
+    body: {
+      merchantId: string;
+      invoice_num?: string;
+      order_id?: string;
+      deviceId?: string;
+      outletId?: string;
+      operationDate?: string;
+    },
+    opts?: { idempotencyKey?: string; bridgeSignatureSecret?: string },
+  ) {
     const json = JSON.stringify(body);
     const headers: any = {};
     if (opts?.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey;

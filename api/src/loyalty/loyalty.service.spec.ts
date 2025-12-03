@@ -8,7 +8,7 @@ describe('LoyaltyService.commit idempotency', () => {
       hold: { findUnique: jest.fn() },
       receipt: { findUnique: jest.fn(), create: jest.fn() },
       wallet: { findFirst: jest.fn() },
-      transaction: { create: jest.fn() },
+      transaction: { create: jest.fn(() => ({ id: 'TXN' })) },
       eventOutbox: { create: jest.fn() },
       outlet: { findFirst: jest.fn(), update: jest.fn() },
       merchantCustomer: {
@@ -172,7 +172,7 @@ describe('LoyaltyService.commit idempotency', () => {
           findUnique: jest.fn(() => ({ id: 'W2', balance: 0 })),
           update: jest.fn(),
         },
-        transaction: { create: jest.fn() },
+        transaction: { create: jest.fn(() => ({ id: 'TX' })) },
         eventOutbox: { create: jest.fn() },
         hold: { update: jest.fn() },
       });
@@ -227,7 +227,7 @@ describe('LoyaltyService.commit idempotency', () => {
           findUnique: jest.fn(() => ({ id: 'W3', balance: 0 })),
           update: jest.fn(),
         },
-        transaction: { create: jest.fn() },
+        transaction: { create: jest.fn(() => ({ id: 'TX' })) },
         eventOutbox: { create: jest.fn() },
         hold: { update: jest.fn() },
         outlet: { findFirst: jest.fn(), update: jest.fn() },
@@ -322,10 +322,8 @@ describe('LoyaltyService.processIntegrationBonus', () => {
       merchantCustomerId: 'MC-1',
       customerId: 'C-1',
       userToken: 'token',
-      mode: Mode.EARN,
-      orderId: 'ORDER-1',
+      invoiceNum: 'ORDER-1',
       total: 100,
-      eligibleTotal: 100,
     });
 
     expect(res.alreadyProcessed).toBe(true);
@@ -364,10 +362,8 @@ describe('LoyaltyService.processIntegrationBonus', () => {
       merchantCustomerId: 'MC-2',
       customerId: 'C-2',
       userToken: 'token',
-      mode: Mode.REDEEM,
-      orderId: 'ORDER-2',
+      invoiceNum: 'ORDER-2',
       total: 200,
-      eligibleTotal: 200,
       paidBonus: 50,
       outletId: 'OUT-1',
       resolvedDeviceId: 'DEV-1',
@@ -379,7 +375,7 @@ describe('LoyaltyService.processIntegrationBonus', () => {
     expect(svc.commit).toHaveBeenCalledWith(
       'H-MANUAL',
       'ORDER-2',
-      undefined,
+      'ORDER-2',
       undefined,
       expect.objectContaining({
         manualRedeemAmount: 50,
@@ -406,16 +402,14 @@ describe('LoyaltyService.processIntegrationBonus', () => {
     );
     await expect(
       svc.processIntegrationBonus({
-        merchantId: 'M-3',
-        merchantCustomerId: 'MC-3',
-        customerId: 'C-3',
-        userToken: 'token',
-        mode: Mode.REDEEM,
-        orderId: 'ORDER-3',
-        total: 100,
-        eligibleTotal: 100,
-        paidBonus: 50,
-      }),
+      merchantId: 'M-3',
+      merchantCustomerId: 'MC-3',
+      customerId: 'C-3',
+      userToken: 'token',
+      invoiceNum: 'ORDER-3',
+      total: 100,
+      paidBonus: 50,
+    }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.hold.create).not.toHaveBeenCalled();
   });
@@ -443,16 +437,14 @@ describe('LoyaltyService.processIntegrationBonus', () => {
 
     await expect(
       svc.processIntegrationBonus({
-        merchantId: 'M-4',
-        merchantCustomerId: 'MC-4',
-        customerId: 'C-4',
-        userToken: 'token',
-        mode: Mode.EARN,
-        orderId: 'ORDER-4',
-        total: 100,
-        eligibleTotal: 100,
-        bonusValue: 150,
-      }),
+      merchantId: 'M-4',
+      merchantCustomerId: 'MC-4',
+      customerId: 'C-4',
+      userToken: 'token',
+      invoiceNum: 'ORDER-4',
+      total: 100,
+      bonusValue: 150,
+    }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.hold.create).not.toHaveBeenCalled();
   });
@@ -487,10 +479,8 @@ describe('LoyaltyService.processIntegrationBonus', () => {
       merchantCustomerId: 'MC-5',
       customerId: 'C-5',
       userToken: 'token',
-      mode: Mode.REDEEM,
-      orderId: 'ORDER-5',
+      invoiceNum: 'ORDER-5',
       total: 150,
-      eligibleTotal: 150,
       paidBonus: 20,
       operationDate,
       resolvedDeviceId: 'DEV-5',
@@ -506,9 +496,161 @@ describe('LoyaltyService.processIntegrationBonus', () => {
     expect(svc.commit).toHaveBeenCalledWith(
       'H-5',
       'ORDER-5',
-      undefined,
+      'ORDER-5',
       undefined,
       expect.objectContaining({ operationDate }),
+    );
+  });
+
+  it('расчитывает eligibleAmount только по eligible-позициям', () => {
+    const prisma = mkPrisma();
+    const staffMotivation = mkStaffMotivation();
+    const svc = new LoyaltyService(
+      prisma,
+      metrics,
+      undefined as any,
+      undefined as any,
+      staffMotivation,
+    );
+    const positions = [
+      { amount: 500, promotionMultiplier: 1, accruePoints: true },
+      { amount: 300, promotionMultiplier: 1, accruePoints: false },
+      { amount: 200, promotionMultiplier: 0, accruePoints: true },
+    ] as any;
+    const totals = (svc as any).computeTotalsFromPositions(1200, positions);
+    expect(totals.total).toBe(1000);
+    expect(totals.eligibleAmount).toBe(500);
+  });
+
+  it('учитывает minEligible правил на основании eligibleAmount', () => {
+    const prisma = mkPrisma();
+    const staffMotivation = mkStaffMotivation();
+    const svc = new LoyaltyService(
+      prisma,
+      metrics,
+      undefined as any,
+      undefined as any,
+      staffMotivation,
+    );
+    const fn = (svc as any).compileRules(
+      'M-1',
+      null,
+      { earnBps: 100, redeemLimitBps: 1000 },
+      { rules: [{ if: { minEligible: 200 }, then: { earnBps: 700 } }] },
+      new Date(),
+    );
+    expect(
+      fn({ channel: 'VIRTUAL', weekday: 1, eligibleAmount: 150 }).earnBps,
+    ).toBe(100);
+    expect(
+      fn({ channel: 'VIRTUAL', weekday: 1, eligibleAmount: 250 }).earnBps,
+    ).toBe(700);
+  });
+
+  it('передаёт рассчитанный purchaseAmount в реферальные награды', async () => {
+    const hold = {
+      id: 'H-REF',
+      merchantId: 'M-REF',
+      customerId: 'C-CTX',
+      status: 'PENDING',
+      mode: 'EARN',
+      earnPoints: 0,
+      redeemAmount: 0,
+      outletId: null,
+      staffId: null,
+      total: 1000,
+      eligibleTotal: 1000,
+      items: [],
+    };
+    const prisma = mkPrisma();
+    prisma.hold = { findUnique: jest.fn().mockResolvedValue(hold as any) };
+    prisma.merchantCustomer =
+      prisma.merchantCustomer ||
+      ({
+        findUnique: jest.fn(),
+        create: jest.fn(),
+      } as any);
+    prisma.merchantCustomer.findUnique = jest
+      .fn()
+      .mockResolvedValue({ id: 'MC-REF' });
+    prisma.customer =
+      prisma.customer ||
+      ({
+        findUnique: jest.fn(),
+      } as any);
+    prisma.customer.findUnique = jest.fn().mockResolvedValue({
+      id: hold.customerId,
+      tgId: null,
+      phone: null,
+      email: null,
+      name: null,
+    });
+    prisma.loyaltyPromotion = { findMany: jest.fn().mockResolvedValue([]) };
+    prisma.wallet.findFirst.mockResolvedValue({
+      id: 'W-REF',
+      balance: 0,
+      type: 'POINTS',
+    });
+    const walletObj = { id: 'W-REF', balance: 0 };
+    const tx = mkPrisma({
+      hold: { update: jest.fn() },
+      wallet: {
+        findFirst: jest.fn().mockResolvedValue(walletObj),
+        findUnique: jest.fn().mockResolvedValue(walletObj),
+        create: jest.fn().mockResolvedValue(walletObj),
+        update: jest.fn(),
+      },
+      receipt: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({
+          id: 'R-REF',
+          redeemApplied: 0,
+          earnApplied: 0,
+          total: 1000,
+          eligibleTotal: 100,
+          createdAt: new Date(),
+          outletId: null,
+          staffId: null,
+          deviceId: null,
+        }),
+      },
+      holdItem: { deleteMany: jest.fn(), createMany: jest.fn() },
+      receiptItem: {
+        create: jest
+          .fn()
+          .mockImplementation(async ({ data }: any) => ({ id: 'ri', ...data })),
+      },
+      transactionItem: { create: jest.fn() },
+      transaction: { create: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
+      eventOutbox: { create: jest.fn() },
+      outlet: { update: jest.fn() },
+      merchantSettings: { findUnique: jest.fn().mockResolvedValue(null) },
+      loyaltyTierAssignment: { findFirst: jest.fn().mockResolvedValue(null) },
+      loyaltyTier: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
+      earnLot: { create: jest.fn() },
+    });
+    prisma.$transaction = jest.fn(async (fn: any) => fn(tx as any));
+    const staffMotivation = mkStaffMotivation();
+    const svc = new LoyaltyService(
+      prisma as any,
+      metrics,
+      undefined as any,
+      undefined as any,
+      staffMotivation,
+    );
+    (svc as any).applyReferralRewards = jest.fn().mockResolvedValue(undefined);
+    (svc as any).recomputeTierProgress = jest.fn();
+    const positions = [
+      { qty: 1, price: 100, accruePoints: true },
+      { qty: 1, price: 900, accruePoints: false },
+    ];
+    await svc.commit('H-REF', 'O-REF', undefined, undefined, { positions });
+    expect((svc as any).applyReferralRewards).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ purchaseAmount: 100 }),
     );
   });
 });

@@ -290,7 +290,6 @@ export default function Page() {
   const [merchantCustomerId, setMerchantCustomerId] = useState<string | null>(null);
   const [orderId, setOrderId] = useState<string>('');
   const [total, setTotal] = useState<number>(0);
-  const [eligibleTotal, setEligibleTotal] = useState<number>(0);
   const [receiptNumber, setReceiptNumber] = useState<string>('');
 
   const [holdId, setHoldId] = useState<string | null>(null);
@@ -634,7 +633,7 @@ export default function Page() {
   };
 
   const callQuote = async (
-    overrides?: Partial<{ total: number; eligibleTotal: number; mode: 'redeem' | 'earn'; receiptNumber: string }>,
+    overrides?: Partial<{ total: number; mode: 'redeem' | 'earn'; receiptNumber: string }>,
   ): Promise<QuoteRedeemResp | QuoteEarnResp | null> => {
     if (!session) {
       alert('Сначала авторизуйтесь в кассире.');
@@ -645,7 +644,6 @@ export default function Page() {
     setResult(null);
     setHoldId(null);
     const totalToSend = overrides?.total ?? total;
-    const eligibleToSend = overrides?.eligibleTotal ?? eligibleTotal;
     const modeToSend = overrides?.mode ?? mode;
     const receiptToSend = overrides?.receiptNumber ?? receiptNumber;
     try {
@@ -662,7 +660,6 @@ export default function Page() {
           userToken,
           orderId,
           total: totalToSend,
-          eligibleTotal: eligibleToSend,
           outletId: activeOutletId || undefined,
           staffId: activeStaffId || undefined,
           receiptNumber: receiptToSend || undefined,
@@ -900,11 +897,9 @@ export default function Page() {
     }
     setTotal(parsedAmount);
     setReceiptNumber(receiptInput.trim());
-    setEligibleTotal(parsedAmount);
     if (mode === 'redeem') {
       const quote = await callQuote({
         total: parsedAmount,
-        eligibleTotal: parsedAmount,
         mode: 'redeem',
         receiptNumber: receiptInput.trim(),
       });
@@ -916,7 +911,6 @@ export default function Page() {
     } else {
       const quote = await callQuote({
         total: parsedAmount,
-        eligibleTotal: parsedAmount,
         mode: 'earn',
         receiptNumber: receiptInput.trim(),
       });
@@ -942,7 +936,6 @@ export default function Page() {
     if (normalized === 0) {
       const earnOnly = await callQuote({
         total,
-        eligibleTotal: 0,
         mode: 'earn',
         receiptNumber,
       });
@@ -964,7 +957,6 @@ export default function Page() {
     if (normalized !== lastRequestedRedeem) {
       const updated = await callQuote({
         total,
-        eligibleTotal: normalized,
         mode: 'redeem',
         receiptNumber,
       });

@@ -43,8 +43,12 @@ export default function CampaignEditPage({
   const [startDate, setStartDate] = React.useState("");
   const [endDate, setEndDate] = React.useState("");
   const [status, setStatus] = React.useState("ACTIVE");
+  const [type, setType] = React.useState("POINTS");
   const [rewardValue, setRewardValue] = React.useState("0");
   const [multiplier, setMultiplier] = React.useState("1");
+  const [buyQty, setBuyQty] = React.useState("2");
+  const [freeQty, setFreeQty] = React.useState("1");
+  const [promoPrice, setPromoPrice] = React.useState("0");
   const [productIds, setProductIds] = React.useState<string[]>([]);
   const [categoryIds, setCategoryIds] = React.useState<string[]>([]);
 
@@ -89,15 +93,43 @@ export default function CampaignEditPage({
         setProductIds(targets.products || []);
         setCategoryIds(targets.categories || []);
         const reward = data?.reward || {};
-        setRewardValue(
-          reward?.value != null ? String(reward.value) : String(data?.rewardValue ?? 0),
-        );
-        const mult =
-          reward?.multiplier ??
-          reward?.metadata?.multiplier ??
-          data?.rewardMetadata?.multiplier ??
-          1;
-        setMultiplier(String(mult ?? 1));
+        const rewardType =
+          String(
+            data?.type ||
+              reward?.type ||
+              data?.rewardMetadata?.kind ||
+              reward?.metadata?.kind ||
+              "POINTS",
+          ).toUpperCase() || "POINTS";
+        setType(rewardType);
+        if (rewardType === "NTH_FREE") {
+          setBuyQty(
+            reward?.buyQty != null
+              ? String(reward.buyQty)
+              : String(reward?.value ?? reward?.metadata?.buyQty ?? 2),
+          );
+          setFreeQty(
+            reward?.freeQty != null
+              ? String(reward.freeQty)
+              : String(reward?.metadata?.freeQty ?? 1),
+          );
+        } else if (rewardType === "FIXED_PRICE") {
+          setPromoPrice(
+            reward?.price != null
+              ? String(reward.price)
+              : String(reward?.value ?? data?.rewardValue ?? 0),
+          );
+        } else {
+          setRewardValue(
+            reward?.value != null ? String(reward.value) : String(data?.rewardValue ?? 0),
+          );
+          const mult =
+            reward?.multiplier ??
+            reward?.metadata?.multiplier ??
+            data?.rewardMetadata?.multiplier ??
+            1;
+          setMultiplier(String(mult ?? 1));
+        }
       } catch (e: any) {
         setMessage(String(e?.message || e));
       } finally {
@@ -125,20 +157,42 @@ export default function CampaignEditPage({
     setBusy(true);
     setMessage("");
     try {
-      const payload: any = {
-        name: name.trim(),
-        status,
-        startDate: startDate || undefined,
-        endDate: endDate || undefined,
-        reward: {
+      const baseReward: any = {
+        metadata: {
+          productIds,
+          categoryIds,
+        },
+      };
+      let reward: any = { ...baseReward, type };
+      if (type === "NTH_FREE") {
+        reward = {
+          ...baseReward,
+          type: "NTH_FREE",
+          buyQty: Number(buyQty) || 0,
+          freeQty: Number(freeQty) || 1,
+        };
+      } else if (type === "FIXED_PRICE") {
+        reward = {
+          ...baseReward,
+          type: "FIXED_PRICE",
+          price: Number(promoPrice) || 0,
+          value: Number(promoPrice) || 0,
+        };
+      } else {
+        reward = {
+          ...baseReward,
           type: "POINTS",
           value: Number(rewardValue) || 0,
           multiplier: Number(multiplier) || 0,
-          metadata: {
-            productIds,
-            categoryIds,
-          },
-        },
+        };
+      }
+      const payload: any = {
+        name: name.trim(),
+        status,
+        type,
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
+        reward,
         productIds,
         categoryIds,
       };
@@ -166,7 +220,7 @@ export default function CampaignEditPage({
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div>
           <div style={{ fontSize: 18, fontWeight: 700 }}>Редактирование акции</div>
-          <div style={{ opacity: 0.7, fontSize: 13 }}>Двойные баллы на товары/категории</div>
+          <div style={{ opacity: 0.7, fontSize: 13 }}>Акции по товарам: баллы, N-й бесплатно или акционная цена</div>
         </div>
         <a className="btn" href="/loyalty/actions" style={{ textDecoration: "none" }}>
           <Button variant="secondary">Назад</Button>
@@ -217,6 +271,18 @@ export default function CampaignEditPage({
                 style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "inherit" }}
               />
             </label>
+            <label style={{ display: "grid", gap: 4 }}>
+              <span style={{ fontSize: 12, opacity: 0.7 }}>Тип акции</span>
+              <select
+                value={type}
+                onChange={(e) => setType(e.target.value.toUpperCase())}
+                style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "inherit" }}
+              >
+                <option value="POINTS">Двойные баллы на товары</option>
+                <option value="NTH_FREE">Каждый N-ый товар бесплатно</option>
+                <option value="FIXED_PRICE">Акционная цена на товары</option>
+              </select>
+            </label>
           </div>
         </CardBody>
       </Card>
@@ -224,32 +290,84 @@ export default function CampaignEditPage({
       <Card>
         <CardHeader title="Начисление" />
         <CardBody>
-          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
-            <label style={{ display: "grid", gap: 4 }}>
-              <span style={{ fontSize: 12, opacity: 0.7 }}>Фиксированное начисление (баллы)</span>
-              <input
-                type="number"
-                value={rewardValue}
-                onChange={(e) => setRewardValue(e.target.value)}
-                placeholder="0"
-                style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "inherit" }}
-              />
-            </label>
-            <label style={{ display: "grid", gap: 4 }}>
-              <span style={{ fontSize: 12, opacity: 0.7 }}>Множитель (x2, x3...)</span>
-              <input
-                type="number"
-                step="0.1"
-                value={multiplier}
-                onChange={(e) => setMultiplier(e.target.value)}
-                placeholder="2"
-                style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "inherit" }}
-              />
-            </label>
-          </div>
-          <div style={{ marginTop: 12, fontSize: 13, opacity: 0.75 }}>
-            Можно задать либо фиксированные баллы, либо множитель. Если баллы = 0 — используется только множитель.
-          </div>
+          {type === "POINTS" && (
+            <>
+              <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
+                <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ fontSize: 12, opacity: 0.7 }}>Фиксированное начисление (баллы)</span>
+                  <input
+                    type="number"
+                    value={rewardValue}
+                    onChange={(e) => setRewardValue(e.target.value)}
+                    placeholder="0"
+                    style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "inherit" }}
+                  />
+                </label>
+                <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ fontSize: 12, opacity: 0.7 }}>Множитель (x2, x3...)</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={multiplier}
+                    onChange={(e) => setMultiplier(e.target.value)}
+                    placeholder="2"
+                    style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "inherit" }}
+                  />
+                </label>
+              </div>
+              <div style={{ marginTop: 12, fontSize: 13, opacity: 0.75 }}>
+                Можно задать либо фиксированные баллы, либо множитель. Если баллы = 0 — используется только множитель.
+              </div>
+            </>
+          )}
+          {type === "NTH_FREE" && (
+            <>
+              <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
+                <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ fontSize: 12, opacity: 0.7 }}>Покупок до подарка (например, 2 для 2+1)</span>
+                  <input
+                    type="number"
+                    value={buyQty}
+                    onChange={(e) => setBuyQty(e.target.value)}
+                    placeholder="2"
+                    style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "inherit" }}
+                  />
+                </label>
+                <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ fontSize: 12, opacity: 0.7 }}>Бесплатных товаров в наборе</span>
+                  <input
+                    type="number"
+                    value={freeQty}
+                    onChange={(e) => setFreeQty(e.target.value)}
+                    placeholder="1"
+                    style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "inherit" }}
+                  />
+                </label>
+              </div>
+              <div style={{ marginTop: 12, fontSize: 13, opacity: 0.75 }}>
+                Клиент получает бесплатные товары при покупке набора. Например, 2+1: две оплаченные единицы и одна в подарок.
+              </div>
+            </>
+          )}
+          {type === "FIXED_PRICE" && (
+            <>
+              <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
+                <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ fontSize: 12, opacity: 0.7 }}>Акционная цена за единицу</span>
+                  <input
+                    type="number"
+                    value={promoPrice}
+                    onChange={(e) => setPromoPrice(e.target.value)}
+                    placeholder="199"
+                    style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "inherit" }}
+                  />
+                </label>
+              </div>
+              <div style={{ marginTop: 12, fontSize: 13, opacity: 0.75 }}>
+                Укажите конечную цену, по которой товар будет продаваться в рамках акции.
+              </div>
+            </>
+          )}
         </CardBody>
       </Card>
 

@@ -9,7 +9,7 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { DeviceType } from '@prisma/client';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 
 export enum Mode {
   REDEEM = 'redeem',
@@ -89,10 +89,6 @@ export class QuoteDto {
   @IsNumber()
   @Min(0)
   total: number;
-  @ApiProperty({ minimum: 0 })
-  @IsNumber()
-  @Min(0)
-  eligibleTotal: number;
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -170,28 +166,40 @@ export class RefundDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  orderId?: string;
+  @Transform(({ value, obj }) => {
+    return (
+      value ??
+      obj?.invoice_num ??
+      obj?.invoiceNum ??
+      obj?.orderId ??
+      obj?.order_id
+    );
+  })
+  invoice_num?: string;
+  @ApiPropertyOptional({
+    description: 'ID операции лояльности (order_id/receiptId)',
+  })
+  @Transform(({ value, obj }) => value ?? obj?.order_id ?? obj?.receiptId)
+  @IsOptional()
+  @IsString()
+  order_id?: string;
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   receiptNumber?: string;
-  // сумма возврата по чеку; для частичного возврата укажи часть
-  @ApiProperty({ minimum: 0 })
-  @IsNumber()
-  @Min(0)
-  refundTotal: number;
-  // база возврата (если в исходном чеке были исключения); можно не указывать — возьмём пропорцию по total
-  @ApiPropertyOptional({ minimum: 0 })
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  refundEligibleTotal?: number;
   @ApiPropertyOptional({
     description: 'Идентификатор устройства, с которого оформляется возврат',
   })
   @IsOptional()
   @IsString()
   deviceId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Дата операции (ISO 8601)',
+  })
+  @IsOptional()
+  @IsString()
+  operationDate?: string;
 }
 
 // ====== Swagger DTOs for responses ======

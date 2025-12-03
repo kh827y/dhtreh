@@ -860,7 +860,6 @@ export class LoyaltyProgramService {
   async listPromotions(merchantId: string, status?: PromotionStatus | 'ALL') {
     const where: Prisma.LoyaltyPromotionWhereInput = {
       merchantId,
-      rewardType: PromotionRewardType.POINTS,
     };
     if (status && status !== 'ALL') {
       where.status = status;
@@ -879,16 +878,13 @@ export class LoyaltyProgramService {
       },
     });
 
-    const filtered = promotions.filter((promotion) => {
-      const multiplier = this.extractMultiplierValue(promotion.rewardMetadata);
-      return (promotion.rewardValue ?? 0) > 0 || multiplier > 0;
-    });
-
     const revenueMap = await this.computePromotionRedeemRevenue(
       merchantId,
-      filtered.map((p) => p.id),
+      promotions
+        .filter((p) => p.rewardType === PromotionRewardType.POINTS)
+        .map((p) => p.id),
     );
-    filtered.forEach((promotion) => {
+    promotions.forEach((promotion) => {
       const revenue = revenueMap.get(promotion.id);
       if (!revenue) return;
       const charts = {
@@ -910,12 +906,12 @@ export class LoyaltyProgramService {
           event: 'portal.loyalty.promotions.list',
           merchantId,
           status: status ?? 'ALL',
-          total: filtered.length,
+          total: promotions.length,
         }),
       );
       this.metrics.inc('portal_loyalty_promotions_list_total');
     } catch {}
-    return filtered;
+    return promotions;
   }
 
   private async computePromotionRedeemRevenue(
@@ -1090,35 +1086,75 @@ export class LoyaltyProgramService {
     if (!payload.name?.trim())
       throw new BadRequestException('Название акции обязательно');
     const rewardType = payload.rewardType ?? PromotionRewardType.POINTS;
-    if (rewardType !== PromotionRewardType.POINTS) {
-      throw new BadRequestException(
-        'Поддерживаются только акции с начислением баллов',
-      );
-    }
     const rewardMetadata =
       payload.rewardMetadata && typeof payload.rewardMetadata === 'object'
-        ? (payload.rewardMetadata as Record<string, any>)
-        : null;
-    const multiplierRaw =
-      rewardMetadata?.multiplier ??
-      rewardMetadata?.earnMultiplier ??
-      rewardMetadata?.pointsMultiplier ??
-      rewardMetadata?.rewardMultiplier;
-    const multiplier =
-      Number.isFinite(Number(multiplierRaw)) && Number(multiplierRaw) > 0
-        ? Number(multiplierRaw)
-        : 0;
-    const rewardValueRaw = Number(payload.rewardValue ?? 0);
-    if (!Number.isFinite(rewardValueRaw) || rewardValueRaw < 0) {
-      throw new BadRequestException('Укажите количество баллов или множитель');
-    }
-    if (rewardValueRaw <= 0 && multiplier <= 0) {
-      throw new BadRequestException('Укажите количество баллов или множитель');
-    }
-    const rewardValue = Math.max(0, Math.floor(rewardValueRaw));
-    const pointsExpireInDays = this.normalizePointsTtl(
+        ? { ...(payload.rewardMetadata as Record<string, any>) }
+        : {};
+    let rewardValue = Math.max(
+      0,
+      Math.floor(Number(payload.rewardValue ?? 0) || 0),
+    );
+    let pointsExpireInDays = this.normalizePointsTtl(
       payload.pointsExpireInDays,
     );
+    if (rewardType === PromotionRewardType.POINTS) {
+      const multiplierRaw =
+        rewardMetadata?.multiplier ??
+        rewardMetadata?.earnMultiplier ??
+        rewardMetadata?.pointsMultiplier ??
+        rewardMetadata?.rewardMultiplier;
+      const multiplier =
+        Number.isFinite(Number(multiplierRaw)) && Number(multiplierRaw) > 0
+          ? Number(multiplierRaw)
+          : 0;
+      const rewardValueRaw = Number(payload.rewardValue ?? 0);
+      if (!Number.isFinite(rewardValueRaw) || rewardValueRaw < 0) {
+        throw new BadRequestException(
+          'Укажите количество баллов или множитель',
+        );
+      }
+      if (rewardValueRaw <= 0 && multiplier <= 0) {
+        throw new BadRequestException(
+          'Укажите количество баллов или множитель',
+        );
+      }
+      rewardValue = Math.max(0, Math.floor(rewardValueRaw));
+    } else {
+      pointsExpireInDays = null;
+      const kind = String(rewardMetadata?.kind || rewardMetadata?.type || '')
+        .toUpperCase()
+        .trim();
+      if (kind === 'NTH_FREE') {
+        const buyQtyRaw = (rewardMetadata as any).buyQty ?? 0;
+        const freeQtyRaw = (rewardMetadata as any).freeQty ?? 0;
+        const buyQty = Number(buyQtyRaw);
+        const freeQty = Number(freeQtyRaw);
+        if (!Number.isFinite(buyQty) || buyQty <= 0) {
+          throw new BadRequestException(
+            'Укажите buyQty для акции «каждый N-й бесплатно»',
+          );
+        }
+        if (!Number.isFinite(freeQty) || freeQty <= 0) {
+          throw new BadRequestException(
+            'Укажите freeQty для акции «каждый N-й бесплатно»',
+          );
+        }
+        rewardMetadata.buyQty = Math.max(1, Math.trunc(buyQty));
+        rewardMetadata.freeQty = Math.max(1, Math.trunc(freeQty));
+        rewardValue = 0;
+      } else if (kind === 'FIXED_PRICE') {
+        const priceRaw =
+          (rewardMetadata as any).price ?? payload.rewardValue ?? null;
+        const price = Number(priceRaw);
+        if (!Number.isFinite(price) || price < 0) {
+          throw new BadRequestException('Укажите акционную цену');
+        }
+        rewardMetadata.price = Math.max(0, price);
+        rewardValue = Math.round(Math.max(0, price));
+      } else {
+        throw new BadRequestException('Укажите тип акции (NTH_FREE/FIXED_PRICE)');
+      }
+    }
 
     const promotion = await this.prisma.loyaltyPromotion.create({
       data: {
@@ -1179,43 +1215,94 @@ export class LoyaltyProgramService {
       where: {
         merchantId,
         id: promotionId,
-        rewardType: PromotionRewardType.POINTS,
       },
     });
     if (!promotion) throw new NotFoundException('Акция не найдена');
     const rewardType =
       payload.rewardType ?? promotion.rewardType ?? PromotionRewardType.POINTS;
-    if (rewardType !== PromotionRewardType.POINTS) {
-      throw new BadRequestException(
-        'Поддерживаются только акции с начислением баллов',
-      );
-    }
     const rewardMetadata =
       payload.rewardMetadata && typeof payload.rewardMetadata === 'object'
-        ? (payload.rewardMetadata as Record<string, any>)
-        : (promotion.rewardMetadata as any) ?? null;
-    const multiplierRaw =
-      rewardMetadata?.multiplier ??
-      rewardMetadata?.earnMultiplier ??
-      rewardMetadata?.pointsMultiplier ??
-      rewardMetadata?.rewardMultiplier;
-    const multiplier =
-      Number.isFinite(Number(multiplierRaw)) && Number(multiplierRaw) > 0
-        ? Number(multiplierRaw)
-        : 0;
-    const rewardValueRaw = Number(
-      payload.rewardValue ?? promotion.rewardValue ?? 0,
+        ? { ...(payload.rewardMetadata as Record<string, any>) }
+        : promotion.rewardMetadata && typeof promotion.rewardMetadata === 'object'
+          ? { ...(promotion.rewardMetadata as any) }
+          : {};
+    let rewardValue = Math.max(
+      0,
+      Math.floor(
+        Number(payload.rewardValue ?? promotion.rewardValue ?? 0) || 0,
+      ),
     );
-    if (!Number.isFinite(rewardValueRaw) || rewardValueRaw < 0) {
-      throw new BadRequestException('Укажите количество баллов или множитель');
-    }
-    if (rewardValueRaw <= 0 && multiplier <= 0) {
-      throw new BadRequestException('Укажите количество баллов или множитель');
-    }
-    const rewardValue = Math.max(0, Math.floor(rewardValueRaw));
-    const pointsExpireInDays = this.normalizePointsTtl(
+    let pointsExpireInDays = this.normalizePointsTtl(
       payload.pointsExpireInDays ?? promotion.pointsExpireInDays,
     );
+    if (rewardType === PromotionRewardType.POINTS) {
+      const multiplierRaw =
+        rewardMetadata?.multiplier ??
+        rewardMetadata?.earnMultiplier ??
+        rewardMetadata?.pointsMultiplier ??
+        rewardMetadata?.rewardMultiplier;
+      const multiplier =
+        Number.isFinite(Number(multiplierRaw)) && Number(multiplierRaw) > 0
+          ? Number(multiplierRaw)
+          : 0;
+      const rewardValueRaw = Number(
+        payload.rewardValue ?? promotion.rewardValue ?? 0,
+      );
+      if (!Number.isFinite(rewardValueRaw) || rewardValueRaw < 0) {
+        throw new BadRequestException(
+          'Укажите количество баллов или множитель',
+        );
+      }
+      if (rewardValueRaw <= 0 && multiplier <= 0) {
+        throw new BadRequestException(
+          'Укажите количество баллов или множитель',
+        );
+      }
+      rewardValue = Math.max(0, Math.floor(rewardValueRaw));
+    } else {
+      pointsExpireInDays = null;
+      const kind = String(rewardMetadata?.kind || rewardMetadata?.type || '')
+        .toUpperCase()
+        .trim();
+      const promoMeta =
+        promotion.rewardMetadata && typeof promotion.rewardMetadata === 'object'
+          ? (promotion.rewardMetadata as any)
+          : {};
+      if (kind === 'NTH_FREE') {
+        const buyQtyRaw =
+          (rewardMetadata as any).buyQty ?? promoMeta?.buyQty;
+        const freeQtyRaw =
+          (rewardMetadata as any).freeQty ?? promoMeta?.freeQty;
+        const buyQty = Number(buyQtyRaw);
+        const freeQty = Number(freeQtyRaw);
+        if (!Number.isFinite(buyQty) || buyQty <= 0) {
+          throw new BadRequestException(
+            'Укажите buyQty для акции «каждый N-й бесплатно»',
+          );
+        }
+        if (!Number.isFinite(freeQty) || freeQty <= 0) {
+          throw new BadRequestException(
+            'Укажите freeQty для акции «каждый N-й бесплатно»',
+          );
+        }
+        rewardMetadata.buyQty = Math.max(1, Math.trunc(buyQty));
+        rewardMetadata.freeQty = Math.max(1, Math.trunc(freeQty));
+        rewardValue = 0;
+      } else if (kind === 'FIXED_PRICE') {
+        const priceRaw =
+          (rewardMetadata as any).price ??
+          promoMeta?.price ??
+          payload.rewardValue;
+        const price = Number(priceRaw);
+        if (!Number.isFinite(price) || price < 0) {
+          throw new BadRequestException('Укажите акционную цену');
+        }
+        rewardMetadata.price = Math.max(0, price);
+        rewardValue = Math.round(Math.max(0, price));
+      } else {
+        throw new BadRequestException('Укажите тип акции (NTH_FREE/FIXED_PRICE)');
+      }
+    }
 
     const updated = await this.prisma.loyaltyPromotion.update({
       where: { id: promotionId },
@@ -1269,7 +1356,6 @@ export class LoyaltyProgramService {
       where: {
         merchantId,
         id: promotionId,
-        rewardType: PromotionRewardType.POINTS,
       },
       include: {
         metrics: true,
@@ -1288,25 +1374,23 @@ export class LoyaltyProgramService {
       },
     });
     if (!promotion) throw new NotFoundException('Акция не найдена');
-    const multiplier = this.extractMultiplierValue(promotion.rewardMetadata);
-    if ((promotion.rewardValue ?? 0) <= 0 && multiplier <= 0) {
-      throw new NotFoundException('Акция не найдена');
-    }
-    const revenue = (
-      await this.computePromotionRedeemRevenue(merchantId, [promotionId])
-    ).get(promotionId);
-    if (revenue) {
-      const charts = {
-        ...((promotion as any).metrics?.charts ?? {}),
-        revenueSeries: revenue.series,
-        revenueDates: revenue.dates,
-      };
-      (promotion as any).metrics = {
-        ...(promotion as any).metrics,
-        revenueGenerated: revenue.netTotal,
-        revenueRedeemed: revenue.redeemedTotal,
-        charts,
-      };
+    if (promotion.rewardType === PromotionRewardType.POINTS) {
+      const revenue = (
+        await this.computePromotionRedeemRevenue(merchantId, [promotionId])
+      ).get(promotionId);
+      if (revenue) {
+        const charts = {
+          ...((promotion as any).metrics?.charts ?? {}),
+          revenueSeries: revenue.series,
+          revenueDates: revenue.dates,
+        };
+        (promotion as any).metrics = {
+          ...(promotion as any).metrics,
+          revenueGenerated: revenue.netTotal,
+          revenueRedeemed: revenue.redeemedTotal,
+          charts,
+        };
+      }
     }
     return promotion;
   }
@@ -1321,7 +1405,6 @@ export class LoyaltyProgramService {
       where: {
         merchantId,
         id: promotionId,
-        rewardType: PromotionRewardType.POINTS,
       },
     });
     if (!promotion) throw new NotFoundException('Акция не найдена');
@@ -1369,7 +1452,6 @@ export class LoyaltyProgramService {
           where: {
             id,
             merchantId,
-            rewardType: PromotionRewardType.POINTS,
           },
           data: {
             status,

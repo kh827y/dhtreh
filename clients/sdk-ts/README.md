@@ -16,7 +16,7 @@ const q = await api.quote({
   userToken: 'user-1',
   orderId: 'O-1',
   total: 1000,
-  eligibleTotal: 1000,
+  positions: [{ productId: 'P-1', qty: 1, price: 1000 }],
 }, { staffKey: '...' });
 
 // COMMIT
@@ -50,4 +50,3 @@ const act = await api.referrals.activate({ code: link.code, refereeId: 'C2' }, {
 // 4) Завершение после первой покупки (начисление рефереру)
 const done = await api.referrals.complete({ refereeId: 'C2', merchantId: 'M-REF', purchaseAmount: 500 }, { apiKey: API_KEY });
 ```
-

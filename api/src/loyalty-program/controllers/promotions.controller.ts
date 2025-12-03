@@ -76,39 +76,10 @@ function legacyPayloadToPromotion(
 ): PromotionPayload {
   const reward = body.reward ?? { type: 'POINTS', value: 0 };
   const rewardType = String(reward.type || 'POINTS').toUpperCase();
-  if (rewardType !== 'POINTS') {
-    throw new BadRequestException(
-      'Поддерживаются только акции с начислением баллов (reward.type = POINTS)',
-    );
-  }
-  const rewardValue = ensureNumber(reward.value, 0);
-  const multiplierRaw =
-    (reward as any).multiplier ??
-    (reward as any).earnMultiplier ??
-    (reward as any).pointsMultiplier ??
-    (reward as any).rewardMultiplier;
-  const multiplier =
-    Number.isFinite(Number(multiplierRaw)) && Number(multiplierRaw) > 0
-      ? Number(multiplierRaw)
-      : 0;
-  if (
-    (!Number.isFinite(rewardValue) || rewardValue < 0) &&
-    multiplier <= 0
-  ) {
-    throw new BadRequestException(
-      'Укажите количество баллов или множитель для акции',
-    );
-  }
   const rewardMeta =
     reward && typeof (reward as any).metadata === 'object'
       ? ((reward as any).metadata as Record<string, any>)
       : {};
-  const pointsExpire = Boolean(rewardMeta.pointsExpire);
-  const pointsExpireDaysRaw = rewardMeta.pointsExpireDays;
-  const pointsExpireDays =
-    pointsExpire && Number.isFinite(Number(pointsExpireDaysRaw))
-      ? Math.max(1, Math.trunc(Number(pointsExpireDaysRaw)))
-      : null;
   const targetProducts =
     Array.isArray((body as any).productIds) && (body as any).productIds.length
       ? ((body as any).productIds as any[]).map((id) => String(id))
@@ -126,41 +97,23 @@ function legacyPayloadToPromotion(
         : Array.isArray((rewardMeta as any).categoryIds)
           ? ((rewardMeta as any).categoryIds as any[]).map((id) => String(id))
           : [];
-  const normalizedRewardMetadata = {
-    ...reward,
-    type: 'POINTS',
-    value: rewardValue,
-    productIds: targetProducts.length ? targetProducts : undefined,
-    categoryIds: targetCategories.length ? targetCategories : undefined,
-    metadata: {
-      ...rewardMeta,
-      pointsExpire,
-      pointsExpireDays,
-      multiplier: multiplier || rewardMeta?.multiplier,
-      productIds: targetProducts.length ? targetProducts : rewardMeta?.productIds,
-      categoryIds:
-        targetCategories.length ? targetCategories : rewardMeta?.categoryIds,
-    },
-    pointsExpire,
-    pointsExpireDays,
-    multiplier,
-    legacyType: 'POINTS',
+  const normalizedRewardMetadata: any = {
+    ...rewardMeta,
+    productIds: targetProducts.length ? targetProducts : rewardMeta?.productIds,
+    categoryIds:
+      targetCategories.length ? targetCategories : rewardMeta?.categoryIds,
   };
   const reminderRaw = body.metadata?.reminderOffsetHours;
   const reminderOffsetHours =
     reminderRaw === undefined || reminderRaw === null
       ? null
       : ensureNumber(reminderRaw, 0);
-  return {
+  const basePayload = {
     name: body.name?.trim() || 'Без названия',
     description: body.description ?? null,
     segmentId: body.targetSegmentId ?? null,
     targetTierId: null,
     status: mapStatusToPromotion(body.status),
-    rewardType: PromotionRewardType.POINTS,
-    rewardValue,
-    rewardMetadata: normalizedRewardMetadata,
-    pointsExpireInDays: pointsExpire ? pointsExpireDays : null,
     pushOnStart: Boolean(
       body.metadata?.pushOnStart ?? body.notificationChannels?.includes('PUSH'),
     ),
@@ -169,9 +122,124 @@ function legacyPayloadToPromotion(
     autoLaunch: Boolean(body.metadata?.autoLaunch),
     startAt: body.startDate ?? null,
     endAt: body.endDate ?? null,
-    metadata: buildMetadata(body, normalizedRewardMetadata),
     actorId: body.metadata?.actorId ?? undefined,
-  } satisfies PromotionPayload;
+  };
+
+  if (rewardType === 'POINTS') {
+    const rewardValue = ensureNumber(reward.value, 0);
+    const multiplierRaw =
+      (reward as any).multiplier ??
+      (reward as any).earnMultiplier ??
+      (reward as any).pointsMultiplier ??
+      (reward as any).rewardMultiplier;
+    const multiplier =
+      Number.isFinite(Number(multiplierRaw)) && Number(multiplierRaw) > 0
+        ? Number(multiplierRaw)
+        : 0;
+    if (
+      (!Number.isFinite(rewardValue) || rewardValue < 0) &&
+      multiplier <= 0
+    ) {
+      throw new BadRequestException(
+        'Укажите количество баллов или множитель для акции',
+      );
+    }
+    const pointsExpire = Boolean(rewardMeta.pointsExpire);
+    const pointsExpireDaysRaw = rewardMeta.pointsExpireDays;
+    const pointsExpireDays =
+      pointsExpire && Number.isFinite(Number(pointsExpireDaysRaw))
+        ? Math.max(1, Math.trunc(Number(pointsExpireDaysRaw)))
+        : null;
+    const payload: PromotionPayload = {
+      ...basePayload,
+      rewardType: PromotionRewardType.POINTS,
+      rewardValue,
+      rewardMetadata: {
+        ...reward,
+        type: 'POINTS',
+        value: rewardValue,
+        productIds: targetProducts.length ? targetProducts : undefined,
+        categoryIds: targetCategories.length ? targetCategories : undefined,
+        metadata: {
+          ...normalizedRewardMetadata,
+          pointsExpire,
+          pointsExpireDays,
+          multiplier: multiplier || rewardMeta?.multiplier,
+        },
+        pointsExpire,
+        pointsExpireDays,
+        multiplier,
+        legacyType: 'POINTS',
+      },
+      pointsExpireInDays: pointsExpire ? pointsExpireDays : null,
+    };
+    payload.metadata = buildMetadata(body, payload.rewardMetadata);
+    return payload;
+  }
+
+  if (rewardType === 'NTH_FREE') {
+    const buyQty = ensureNumber(
+      (reward as any).buyQty ?? (reward as any).value,
+      0,
+    );
+    const freeQty = ensureNumber(
+      (reward as any).freeQty ?? (reward as any).giftQty ?? 1,
+      1,
+    );
+    if (!Number.isFinite(buyQty) || buyQty <= 0) {
+      throw new BadRequestException(
+        'Укажите buyQty (каждый N-й товар бесплатно)',
+      );
+    }
+    const rewardMetadata = {
+      ...normalizedRewardMetadata,
+      kind: 'NTH_FREE',
+      buyQty: Math.max(1, Math.trunc(buyQty)),
+      freeQty: Math.max(1, Math.trunc(freeQty)),
+      productIds: targetProducts.length ? targetProducts : undefined,
+      categoryIds: targetCategories.length ? targetCategories : undefined,
+    };
+    const payload: PromotionPayload = {
+      ...basePayload,
+      rewardType: PromotionRewardType.DISCOUNT,
+      rewardValue: 0,
+      rewardMetadata,
+      pointsExpireInDays: null,
+    };
+    payload.metadata = buildMetadata(body, rewardMetadata);
+    return payload;
+  }
+
+  if (rewardType === 'FIXED_PRICE') {
+    const priceRaw =
+      (reward as any).price ?? (reward as any).value ?? rewardMeta.price;
+    const price = ensureNumber(priceRaw, -1);
+    if (!Number.isFinite(price) || price < 0) {
+      throw new BadRequestException(
+        'Укажите акционную цену (reward.price)',
+      );
+    }
+    const rewardMetadata = {
+      ...normalizedRewardMetadata,
+      kind: 'FIXED_PRICE',
+      price: price,
+      productIds: targetProducts.length ? targetProducts : undefined,
+      categoryIds: targetCategories.length ? targetCategories : undefined,
+    };
+    const payload: PromotionPayload = {
+      ...basePayload,
+      rewardType: PromotionRewardType.DISCOUNT,
+      rewardValue: Math.max(0, Math.round(price)),
+      rewardMetadata,
+      pointsExpireInDays: null,
+    };
+    payload.metadata = buildMetadata(body, rewardMetadata);
+    return payload;
+  }
+
+  throw new BadRequestException(
+    'Поддерживаются типы POINTS, NTH_FREE и FIXED_PRICE',
+  );
 }
 
 function toLegacyResponse(promotion: any) {

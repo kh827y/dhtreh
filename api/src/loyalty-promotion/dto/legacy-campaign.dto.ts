@@ -6,7 +6,9 @@ export type CampaignType =
   | 'CASHBACK'
   | 'BIRTHDAY'
   | 'REFERRAL'
-  | 'FIRST_PURCHASE';
+  | 'FIRST_PURCHASE'
+  | 'NTH_FREE'
+  | 'FIXED_PRICE';
 
 export type CampaignStatus = 'DRAFT' | 'ACTIVE' | 'PAUSED' | 'COMPLETED';
 
@@ -26,12 +28,15 @@ export interface CampaignRules {
 }
 
 export interface CampaignReward {
-  type: 'POINTS' | 'PERCENT' | 'FIXED' | 'PRODUCT';
+  type: 'POINTS' | 'PERCENT' | 'FIXED' | 'PRODUCT' | 'NTH_FREE' | 'FIXED_PRICE';
   value: number;
   maxValue?: number;
   multiplier?: number;
   productId?: string;
   description?: string;
+  buyQty?: number;
+  freeQty?: number;
+  price?: number;
 }
 
 export interface CreateCampaignDto {
@@ -144,14 +149,19 @@ function normalizeCampaignRules(raw: any): CampaignRules {
 function normalizeCampaignReward(raw: any): CampaignReward {
   if (raw && typeof raw === 'object') {
     const reward = raw as Record<string, any>;
-    const type = reward.type;
+    const type = reward.type ?? reward.kind;
     const normalizedType: CampaignReward['type'] =
       type === 'POINTS' ||
       type === 'PERCENT' ||
       type === 'FIXED' ||
-      type === 'PRODUCT'
+      type === 'PRODUCT' ||
+      type === 'NTH_FREE' ||
+      type === 'FIXED_PRICE'
         ? type
         : 'POINTS';
+    const buyQty = toNumberOrNull(reward.buyQty) ?? undefined;
+    const freeQty = toNumberOrNull(reward.freeQty) ?? undefined;
+    const price = toNumberOrNull(reward.price) ?? undefined;
     return {
       type: normalizedType,
       value: Number.isFinite(reward.value) ? Number(reward.value) : 0,
@@ -160,6 +170,9 @@ function normalizeCampaignReward(raw: any): CampaignReward {
       productId: reward.productId ? String(reward.productId) : undefined,
       description:
         typeof reward.description === 'string' ? reward.description : undefined,
+      buyQty,
+      freeQty,
+      price,
     };
   }
   return {
@@ -204,7 +217,11 @@ export function transformPromotionEntity(
   const rewardSource = legacy.reward ?? entity.rewardMetadata ?? {};
   const reward = normalizeCampaignReward({
     ...rewardSource,
-    type: rewardSource?.type ?? legacy.type ?? entity.rewardType,
+    type:
+      rewardSource?.type ??
+      rewardSource?.kind ??
+      legacy.type ??
+      entity.rewardType,
   });
   const notificationChannels = asCampaignNotificationChannels(
     legacy.notificationChannels ?? legacy.channels ?? [],

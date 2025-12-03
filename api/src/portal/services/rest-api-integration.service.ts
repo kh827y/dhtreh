@@ -176,6 +176,7 @@ export class PortalRestApiIntegrationService {
       : '/api/integrations';
     return [
       `${prefix}/code`,
+      `${prefix}/client/migrate`,
       `${prefix}/bonus/calculate`,
       `${prefix}/bonus`,
       `${prefix}/refund`,

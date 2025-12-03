@@ -964,12 +964,11 @@ export class OperationsLogService {
     }
 
     try {
-      await this.loyalty.refund(
+      await this.loyalty.refund({
         merchantId,
-        receipt.orderId,
-        receipt.total,
-        receipt.eligibleTotal ?? receipt.total,
-      );
+        invoiceNum: receipt.orderId,
+        orderId: receipt.id,
+      });
     } catch (error: any) {
       throw new BadRequestException(
         error?.message || 'Не удалось отменить операцию',

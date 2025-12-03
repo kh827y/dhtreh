@@ -427,6 +427,7 @@ model MerchantCustomer {
   id                 String    @id @default(cuid())
   merchantId         String
   customerId         String
+  externalId         String?
   tgId               String?
   phone              String?
   email              String?
@@ -446,6 +447,7 @@ model MerchantCustomer {
   communicationRecipients CommunicationTaskRecipient[]
 
   @@unique([merchantId, customerId])
+  @@unique([merchantId, externalId])
   @@unique([merchantId, tgId])
   @@unique([merchantId, phone])
   @@unique([merchantId, email])
