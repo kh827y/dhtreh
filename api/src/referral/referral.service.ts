@@ -142,6 +142,7 @@ export class ReferralService {
     identifier: string,
     merchantId?: string,
   ): Promise<string> {
+    // Customer теперь per-merchant модель
     const raw = typeof identifier === 'string' ? identifier.trim() : '';
     if (!raw) {
       throw new BadRequestException('customer identifier required');
@@ -151,45 +152,10 @@ export class ReferralService {
       .findUnique({ where: { id: raw } })
       .catch(() => null);
     if (customer) {
-      if (merchantId) {
-        const linked = await (this.prisma as any).merchantCustomer
-          ?.findUnique?.({
-            where: {
-              merchantId_customerId: { merchantId, customerId: customer.id },
-            },
-            select: { id: true },
-          })
-          .catch(() => null);
-        if (!linked) {
-          throw new BadRequestException('customer not linked to merchant');
-        }
-      }
-      return customer.id;
-    }
-
-    const merchantCustomer = await (this.prisma as any).merchantCustomer
-      ?.findUnique?.({
-        where: { id: raw },
-        select: { customerId: true, merchantId: true },
-      })
-      .catch(() => null);
-    if (merchantCustomer) {
-      if (merchantId && merchantCustomer.merchantId !== merchantId) {
+      if (merchantId && customer.merchantId !== merchantId) {
         throw new BadRequestException('merchant mismatch for customer');
       }
-      return merchantCustomer.customerId;
-    }
-
-    if (merchantId) {
-      const byComposite = await (this.prisma as any).merchantCustomer
-        ?.findUnique?.({
-          where: { merchantId_customerId: { merchantId, customerId: raw } },
-          select: { customerId: true },
-        })
-        .catch(() => null);
-      if (byComposite) {
-        return byComposite.customerId;
-      }
+      return customer.id;
     }
 
     throw new BadRequestException('customer not found');

@@ -8,7 +8,7 @@ describe('QR token util', () => {
     const token = await signQrToken(primary, 'mc-1', 'M-1', 60);
     expect(looksLikeJwt(token)).toBe(true);
     const v = await verifyQrToken(primary, token);
-    expect(v.merchantCustomerId).toBe('mc-1');
+    expect(v.customerId).toBe('mc-1');
     expect(v.merchantAud).toBe('M-1');
   });
 
@@ -17,7 +17,7 @@ describe('QR token util', () => {
     const token = await signQrToken(next, 'mc-2', 'M-2', 60);
     // verify with wrong primary should fallback to NEXT
     const v = await verifyQrToken(primary, token);
-    expect(v.merchantCustomerId).toBe('mc-2');
+    expect(v.customerId).toBe('mc-2');
     expect(v.merchantAud).toBe('M-2');
   });
 

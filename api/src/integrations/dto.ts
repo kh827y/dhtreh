@@ -102,7 +102,7 @@ export class IntegrationBonusDto {
     value ??
     obj?.idClient ??
     obj?.customerId ??
-    obj?.merchantCustomerId ??
+    obj?.customerId ??
     obj?.merchant_customer_id,
   )
   @IsOptional()
@@ -237,7 +237,7 @@ export class IntegrationCalculateActionDto {
     value ??
     obj?.idClient ??
     obj?.customerId ??
-    obj?.merchantCustomerId ??
+    obj?.customerId ??
     obj?.merchant_customer_id ??
     null,
   )
@@ -336,7 +336,7 @@ export class IntegrationCalculateBonusDto {
     value ??
     obj?.idClient ??
     obj?.customerId ??
-    obj?.merchantCustomerId ??
+    obj?.customerId ??
     obj?.merchant_customer_id,
   )
   @IsOptional()

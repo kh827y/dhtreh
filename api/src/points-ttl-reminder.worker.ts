@@ -182,28 +182,20 @@ export class PointsTtlReminderWorker implements OnModuleInit, OnModuleDestroy {
     const reminders = this.aggregateLots(lots, ttlMs, now, windowEnd);
     if (!reminders.length) return;
 
+    // Customer теперь per-merchant модель
     const customerIds = Array.from(new Set(reminders.map((r) => r.customerId)));
-    const merchantCustomers = await this.prisma.merchantCustomer.findMany({
+    const customers = await this.prisma.customer.findMany({
       where: {
         merchantId: config.merchantId,
-        customerId: { in: customerIds },
+        id: { in: customerIds },
       },
-      select: { customerId: true, name: true, tgId: true },
+      select: { id: true, name: true, tgId: true },
     });
-    const customerNames = await this.prisma.customer.findMany({
-      where: { id: { in: customerIds } },
-      select: { id: true, name: true },
-    });
-    const mcByCustomer = new Map(
-      merchantCustomers.map((mc) => [mc.customerId, mc]),
-    );
-    const customerById = new Map(
-      customerNames.map((c) => [c.id, c.name || null]),
-    );
+    const customerById = new Map(customers.map((c) => [c.id, c]));
 
     for (const reminder of reminders) {
-      const mc = mcByCustomer.get(reminder.customerId);
-      if (!mc?.tgId) continue; // нет миниаппы — нет push
+      const customer = customerById.get(reminder.customerId);
+      if (!customer?.tgId) continue; // нет миниаппы — нет push
       if (
         await this.isDuplicate(
           config.merchantId,
@@ -213,11 +205,7 @@ export class PointsTtlReminderWorker implements OnModuleInit, OnModuleDestroy {
       ) {
         continue;
       }
-      const username =
-        (mc.name && mc.name.trim()) ||
-        customerById.get(reminder.customerId) ||
-        '' ||
-        '';
+      const username = customer.name?.trim() || '';
       const amountText = reminder.totalPoints.toLocaleString('ru-RU');
       const burnDateHuman = this.formatBurnDate(reminder.burnDate);
       const body = this.applyTemplate(config.template, {

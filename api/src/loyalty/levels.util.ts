@@ -52,7 +52,6 @@ export async function computeLevelState(args: {
   prisma: LevelsPrisma;
   metrics?: LevelsMetrics | null;
   merchantId: string;
-  merchantCustomerId?: string | null;
   customerId?: string | null;
   config: LevelsConfig;
   now?: number | Date;
@@ -78,11 +77,11 @@ export async function computeLevelState(args: {
   const prismaAny = prisma as any;
   if (
     !customerId &&
-    args.merchantCustomerId &&
-    prismaAny?.merchantCustomer?.findUnique
+    args.customerId &&
+    prismaAny?.customer?.findUnique
   ) {
-    const mc = await prismaAny.merchantCustomer.findUnique({
-      where: { id: args.merchantCustomerId },
+    const mc = await prismaAny.customer.findUnique({
+      where: { id: args.customerId },
       select: { customerId: true, merchantId: true },
     });
     if (!mc || mc.merchantId !== merchantId)

@@ -37,11 +37,11 @@ export class CashierGuard implements CanActivate {
     });
   }
 
-  private extractMerchantCustomerId(req: any): string | null {
+  private extractCustomerId(req: any): string | null {
     const sources = [
-      req?.body?.merchantCustomerId,
-      req?.params?.merchantCustomerId,
-      req?.query?.merchantCustomerId,
+      req?.body?.customerId,
+      req?.params?.customerId,
+      req?.query?.customerId,
       req?.body?.customerId,
       req?.params?.customerId,
     ];
@@ -509,11 +509,11 @@ export class CashierGuard implements CanActivate {
 
       if (requiresTelegramCustomer && !teleauthContext) return false;
       if (requiresTelegramCustomer && teleauthContext) {
-        const requestedMerchantCustomerId =
-          this.extractMerchantCustomerId(req);
+        const requestedCustomerId =
+          this.extractCustomerId(req);
         if (
-          requestedMerchantCustomerId &&
-          requestedMerchantCustomerId !== teleauthContext.merchantCustomerId
+          requestedCustomerId &&
+          requestedCustomerId !== teleauthContext.customerId
         ) {
           return false;
         }

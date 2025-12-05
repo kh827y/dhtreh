@@ -12,7 +12,7 @@ import { pgTryAdvisoryLock, pgAdvisoryUnlock } from '../pg-lock.util';
 import { isSystemAllAudience } from '../customer-audiences/audience.utils';
 
 type TelegramRecipient = {
-  merchantCustomerId: string;
+  customerId: string;
   tgId: string;
 };
 
@@ -226,7 +226,7 @@ export class CommunicationsDispatcherWorker
       rows.push({
         taskId: task.id,
         merchantId: task.merchantId,
-        merchantCustomerId: recipient.merchantCustomerId,
+        customerId: recipient.customerId,
         channel: CommunicationChannel.TELEGRAM,
         status,
         sentAt: status === 'SENT' ? new Date() : null,
@@ -328,7 +328,7 @@ export class CommunicationsDispatcherWorker
       rows.push({
         taskId: task.id,
         merchantId: task.merchantId,
-        merchantCustomerId: recipient.merchantCustomerId,
+        customerId: recipient.customerId,
         channel: CommunicationChannel.PUSH,
         status,
         sentAt: status === 'SENT' ? new Date() : null,
@@ -397,69 +397,27 @@ export class CommunicationsDispatcherWorker
     );
     if (Array.isArray(customerIds) && customerIds.length === 0) return [];
 
+    // Customer теперь per-merchant модель, id = customerId
     const telegramRecipients: TelegramRecipient[] = [];
     const seen = new Set<string>();
 
-    const merchantCustomers = await this.prisma.merchantCustomer.findMany({
+    const customers = await this.prisma.customer.findMany({
       where: {
         merchantId,
-        ...(Array.isArray(customerIds)
-          ? { customerId: { in: customerIds } }
-          : {}),
+        tgId: { not: null },
+        ...(Array.isArray(customerIds) ? { id: { in: customerIds } } : {}),
       },
-      select: {
-        id: true,
-        customerId: true,
-        tgId: true,
-      },
+      select: { id: true, tgId: true },
     });
 
-    const bindingCustomers = new Map<string, string>();
-    for (const mc of merchantCustomers) {
-      if (!mc.tgId) continue;
-      const key = String(mc.tgId);
+    for (const c of customers) {
+      if (!c.tgId) continue;
+      const key = String(c.tgId);
       if (seen.has(key)) continue;
       seen.add(key);
-      bindingCustomers.set(mc.customerId, mc.tgId);
       telegramRecipients.push({
-        merchantCustomerId: mc.id,
-        tgId: mc.tgId,
-      });
-    }
-
-    let fallbackMerchantCustomers: Array<{
-      id: string;
-      customerId: string;
-      tgId: string | null;
-    }> = [];
-    if (Array.isArray(customerIds)) {
-      const missingIds = customerIds.filter((id) => !bindingCustomers.has(id));
-      if (missingIds.length) {
-        fallbackMerchantCustomers = await this.prisma.merchantCustomer.findMany(
-          {
-            where: {
-              merchantId,
-              customerId: { in: missingIds },
-              tgId: { not: null },
-            },
-            select: { id: true, customerId: true, tgId: true },
-          },
-        );
-      }
-    } else {
-      fallbackMerchantCustomers = await this.prisma.merchantCustomer.findMany({
-        where: { merchantId, tgId: { not: null } },
-        select: { id: true, customerId: true, tgId: true },
-      });
-    }
-
-    for (const mc of fallbackMerchantCustomers) {
-      const key = `${mc.tgId}`;
-      if (!mc.tgId || seen.has(key)) continue;
-      seen.add(key);
-      telegramRecipients.push({
-        merchantCustomerId: mc.id,
-        tgId: mc.tgId,
+        customerId: c.id,
+        tgId: c.tgId,
       });
     }
 

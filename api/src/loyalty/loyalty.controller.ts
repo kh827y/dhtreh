@@ -70,23 +70,11 @@ import {
   PromotionRewardType,
 } from '@prisma/client';
 
-type MerchantCustomerWithCustomer = {
-  id: string;
-  merchantId: string;
-  customerId: string;
-  tgId: string | null;
-  phone: string | null;
-  email: string | null;
-  name: string | null;
-  profileGender: string | null;
-  profileBirthDate: Date | null;
-  profileCompletedAt: Date | null;
-  customer: Customer | null;
-};
-
-type MerchantContext = {
-  merchantCustomer: MerchantCustomerWithCustomer;
-  customer: Customer;
+// После рефакторинга Customer = per-merchant (бывший Customer)
+type CustomerRecord = Customer & {
+  profileGender?: string | null;
+  profileBirthDate?: Date | null;
+  profileCompletedAt?: Date | null;
 };
 
 const ALL_CUSTOMERS_SEGMENT_KEY = 'all-customers';
@@ -208,49 +196,25 @@ export class LoyaltyController {
     return null;
   }
 
-  // Проверка, что merchantCustomer принадлежит merchant и существует глобальная запись
-  private async ensureCustomerForMerchant(
+  // Проверка, что customer принадлежит merchant
+  private async ensureCustomer(
     merchantId: string,
-    merchantCustomerId: string,
-  ): Promise<MerchantCustomerWithCustomer> {
+    customerId: string,
+  ): Promise<CustomerRecord> {
     const mid = typeof merchantId === 'string' ? merchantId.trim() : '';
-    const mcid =
-      typeof merchantCustomerId === 'string' ? merchantCustomerId.trim() : '';
+    const cid = typeof customerId === 'string' ? customerId.trim() : '';
     if (!mid) throw new BadRequestException('merchantId required');
-    if (!mcid) throw new BadRequestException('merchantCustomerId required');
+    if (!cid) throw new BadRequestException('customerId required');
 
-    const prismaAny = this.prisma as any;
-    const merchantCustomer = await prismaAny?.merchantCustomer?.findUnique?.({
-      where: { id: mcid },
-      include: { customer: true },
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: cid },
     });
 
-    if (!merchantCustomer || merchantCustomer.merchantId !== mid) {
-      throw new BadRequestException('merchant customer not found');
+    if (!customer || customer.merchantId !== mid) {
+      throw new BadRequestException('customer not found');
     }
 
-    if (!merchantCustomer.customer) {
-      throw new BadRequestException('customer record not found');
-    }
-
-    return merchantCustomer;
-  }
-
-  private async resolveMerchantContext(
-    merchantId: string,
-    merchantCustomerId: string,
-  ): Promise<MerchantContext> {
-    const merchantCustomer = await this.ensureCustomerForMerchant(
-      merchantId,
-      merchantCustomerId,
-    );
-    if (!merchantCustomer.customer) {
-      throw new BadRequestException('customer record not found');
-    }
-    return {
-      merchantCustomer,
-      customer: merchantCustomer.customer,
-    };
+    return customer as CustomerRecord;
   }
 
   private extractNameFromInitData(initData?: string | null): string | null {
@@ -271,157 +235,93 @@ export class LoyaltyController {
     return null;
   }
 
-  private async ensureMerchantCustomerByTelegram(
+  private async ensureCustomerByTelegram(
     merchantId: string,
     tgId: string,
     initData?: string,
-  ): Promise<{ merchantCustomerId: string; customerId: string }> {
+  ): Promise<{ customerId: string }> {
     const nameFromInit = this.extractNameFromInitData(initData);
     return this.prisma.$transaction(async (tx) => {
-      const txAny = tx as any;
-      const existing = await txAny?.merchantCustomer?.findUnique?.({
+      const existing = await tx.customer.findUnique({
         where: { merchantId_tgId: { merchantId, tgId } },
-        select: { id: true, customerId: true },
+        select: { id: true },
       });
       if (existing) {
         await tx.wallet.upsert({
           where: {
             customerId_merchantId_type: {
-              customerId: existing.customerId,
+              customerId: existing.id,
               merchantId,
               type: WalletType.POINTS,
             } as any,
           },
           update: {},
           create: {
-            customerId: existing.customerId,
+            customerId: existing.id,
             merchantId,
             type: WalletType.POINTS,
           },
         } as any);
-        await txAny?.customerTelegram?.upsert?.({
+        await tx.customerTelegram.upsert({
           where: { merchantId_tgId: { merchantId, tgId } },
-          update: { merchantCustomerId: existing.id },
-          create: { merchantId, tgId, merchantCustomerId: existing.id },
+          update: { customerId: existing.id },
+          create: { merchantId, tgId, customerId: existing.id },
         });
-        return {
-          merchantCustomerId: existing.id,
-          customerId: existing.customerId,
-        };
+        return { customerId: existing.id };
       }
 
-      const preferredName = nameFromInit;
-      const createdCustomer = await tx.customer.create({
+      const created = await tx.customer.create({
         data: {
+          merchantId,
           tgId,
-          name: preferredName ?? undefined,
+          name: nameFromInit ?? null,
         },
         select: { id: true },
       });
-      const customerId = createdCustomer.id;
 
-      const created = await txAny?.merchantCustomer?.create?.({
-        data: {
-          merchantId,
-          customerId,
-          tgId,
-          name: preferredName ?? null,
-        },
-        select: { id: true, customerId: true },
-      });
-      if (!created) throw new Error('failed to create merchant customer');
-
-      await txAny?.customerTelegram?.upsert?.({
+      await tx.customerTelegram.upsert({
         where: { merchantId_tgId: { merchantId, tgId } },
-        update: { merchantCustomerId: created.id },
-        create: { merchantId, tgId, merchantCustomerId: created.id },
+        update: { customerId: created.id },
+        create: { merchantId, tgId, customerId: created.id },
       });
 
       await tx.wallet.upsert({
         where: {
           customerId_merchantId_type: {
-            customerId,
+            customerId: created.id,
             merchantId,
             type: WalletType.POINTS,
           } as any,
         },
         update: {},
         create: {
-          customerId,
+          customerId: created.id,
           merchantId,
           type: WalletType.POINTS,
         },
       } as any);
 
-      return {
-        merchantCustomerId: created.id,
-        customerId: created.customerId,
-      };
+      return { customerId: created.id };
     });
   }
 
-  private async ensureMerchantCustomerByCustomerId(
-    merchantId: string,
-    customerId: string,
-  ): Promise<MerchantCustomerWithCustomer> {
-    const prismaAny = this.prisma as any;
-    const existing = await prismaAny?.merchantCustomer?.findUnique?.({
-      where: { merchantId_customerId: { merchantId, customerId } },
-      include: { customer: true },
-    });
-    if (existing) return existing as MerchantCustomerWithCustomer;
-
-    const customer = await this.prisma.customer.findUnique({
-      where: { id: customerId },
-    });
-    if (!customer) throw new BadRequestException('customer not found');
-
-    const created = await prismaAny?.merchantCustomer?.create?.({
-      data: {
-        merchantId,
-        customerId,
-        tgId: customer.tgId ?? null,
-        phone: null,
-        email: customer.email ?? null,
-        name: null,
-        profileGender: null,
-        profileBirthDate: null,
-        profileCompletedAt: null,
-      },
-      include: { customer: true },
-    });
-    if (!created) throw new Error('failed to create merchant customer');
-    return created as MerchantCustomerWithCustomer;
-  }
-
-  private toProfileDto(
-    customer: Customer,
-    merchantCustomer: MerchantCustomerWithCustomer,
-  ): CustomerProfileDto {
+  private toProfileDto(customer: CustomerRecord): CustomerProfileDto {
     const gender =
-      merchantCustomer.profileGender === 'male' ||
-      merchantCustomer.profileGender === 'female'
-        ? merchantCustomer.profileGender
+      customer.profileGender === 'male' || customer.profileGender === 'female'
+        ? customer.profileGender
         : null;
-    const birthDate = merchantCustomer.profileBirthDate
-      ? merchantCustomer.profileBirthDate.toISOString().slice(0, 10)
+    const birthDate = customer.profileBirthDate
+      ? customer.profileBirthDate.toISOString().slice(0, 10)
       : null;
     return {
-      name: merchantCustomer.name ?? null,
+      name: customer.name ?? null,
       gender,
       birthDate,
     } satisfies CustomerProfileDto;
   }
 
-  private async listPromotionsForCustomer(
-    merchantId: string,
-    merchantCustomerId: string,
-  ) {
-    const merchantCustomer = await this.ensureCustomerForMerchant(
-      merchantId,
-      merchantCustomerId,
-    );
-    const customerId = merchantCustomer.customerId;
+  private async listPromotionsForCustomer(merchantId: string, customerId: string) {
+    const customer = await this.ensureCustomer(merchantId, customerId);
 
     const now = new Date();
     const promos = await this.prisma.loyaltyPromotion.findMany({
@@ -515,33 +415,6 @@ export class LoyaltyController {
     };
   }
 
-  private async fetchMerchantCustomerProfileFlags(
-    merchantCustomerId: string,
-  ): Promise<{ hasPhone: boolean; onboarded: boolean }> {
-    try {
-      const mc = await this.prisma.merchantCustomer.findUnique({
-        where: { id: merchantCustomerId },
-        select: {
-          phone: true,
-          name: true,
-          profileGender: true,
-          profileBirthDate: true,
-          profileCompletedAt: true,
-        },
-      });
-      if (!mc) return { hasPhone: false, onboarded: false };
-      return this.computeProfileFlags({
-        name: mc.name ?? null,
-        phone: mc.phone ?? null,
-        gender: mc.profileGender ?? null,
-        birthday: mc.profileBirthDate ?? null,
-        profileCompletedAt: mc.profileCompletedAt ?? null,
-      });
-    } catch {
-      return { hasPhone: false, onboarded: false };
-    }
-  }
-
   private async fetchCustomerProfileFlags(
     customerId: string,
   ): Promise<{ hasPhone: boolean; onboarded: boolean }> {
@@ -553,14 +426,18 @@ export class LoyaltyController {
           phone: true,
           gender: true,
           birthday: true,
+          profileGender: true,
+          profileBirthDate: true,
+          profileCompletedAt: true,
         },
       });
       if (!customer) return { hasPhone: false, onboarded: false };
       return this.computeProfileFlags({
         name: customer.name ?? null,
         phone: customer.phone ?? null,
-        gender: customer.gender ?? null,
-        birthday: customer.birthday ?? null,
+        gender: (customer as any).profileGender ?? customer.gender ?? null,
+        birthday: (customer as any).profileBirthDate ?? customer.birthday ?? null,
+        profileCompletedAt: (customer as any).profileCompletedAt ?? null,
       });
     } catch {
       return { hasPhone: false, onboarded: false };
@@ -572,13 +449,13 @@ export class LoyaltyController {
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   async listPromotions(
     @Query('merchantId') merchantId?: string,
-    @Query('merchantCustomerId') merchantCustomerId?: string,
+    @Query('customerId') customerId?: string,
   ) {
     const mid = typeof merchantId === 'string' ? merchantId.trim() : '';
     const mcid =
-      typeof merchantCustomerId === 'string' ? merchantCustomerId.trim() : '';
+      typeof customerId === 'string' ? customerId.trim() : '';
     if (!mid) throw new BadRequestException('merchantId required');
-    if (!mcid) throw new BadRequestException('merchantCustomerId required');
+    if (!mcid) throw new BadRequestException('customerId required');
     return this.listPromotionsForCustomer(mid, mcid);
   }
 
@@ -588,7 +465,7 @@ export class LoyaltyController {
     @Body()
     body: {
       merchantId?: string;
-      merchantCustomerId?: string;
+      customerId?: string;
       promotionId?: string;
       outletId?: string | null;
       staffId?: string | null;
@@ -596,9 +473,9 @@ export class LoyaltyController {
   ) {
     const merchantId =
       typeof body?.merchantId === 'string' ? body.merchantId.trim() : '';
-    const merchantCustomerId =
-      typeof body?.merchantCustomerId === 'string'
-        ? body.merchantCustomerId.trim()
+    const customerId =
+      typeof body?.customerId === 'string'
+        ? body.customerId.trim()
         : '';
     const promotionId =
       typeof body?.promotionId === 'string' ? body.promotionId.trim() : '';
@@ -611,15 +488,11 @@ export class LoyaltyController {
         ? body.staffId.trim()
         : null;
     if (!merchantId) throw new BadRequestException('merchantId required');
-    if (!merchantCustomerId)
-      throw new BadRequestException('merchantCustomerId required');
+    if (!customerId)
+      throw new BadRequestException('customerId required');
     if (!promotionId) throw new BadRequestException('promotionId required');
 
-    const merchantCustomer = await this.ensureCustomerForMerchant(
-      merchantId,
-      merchantCustomerId,
-    );
-    const customerId = merchantCustomer.customerId;
+    const customer = await this.ensureCustomer(merchantId, customerId);
 
     const now = new Date();
     return this.prisma.$transaction(async (tx) => {
@@ -1079,7 +952,7 @@ export class LoyaltyController {
     }
     const now = Math.floor(Date.now() / 1000);
     return {
-      merchantCustomerId: userToken,
+      customerId: userToken,
       merchantAud: undefined,
       jti: `plain:${userToken}:${now}`,
       iat: now,
@@ -1093,7 +966,7 @@ export class LoyaltyController {
     @Body()
     body: {
       merchantId?: string;
-      merchantCustomerId?: string;
+      customerId?: string;
       orderId?: string | null;
       rating?: number | string;
       comment?: string;
@@ -1109,17 +982,14 @@ export class LoyaltyController {
       typeof body?.merchantId === 'string' ? body.merchantId.trim() : '';
     if (!merchantId) throw new BadRequestException('merchantId is required');
 
-    const merchantCustomerId =
-      typeof body?.merchantCustomerId === 'string'
-        ? body.merchantCustomerId.trim()
+    const customerId =
+      typeof body?.customerId === 'string'
+        ? body.customerId.trim()
         : '';
-    if (!merchantCustomerId)
-      throw new BadRequestException('merchantCustomerId is required');
+    if (!customerId)
+      throw new BadRequestException('customerId is required');
 
-    const { customer } = await this.resolveMerchantContext(
-      merchantId,
-      merchantCustomerId,
-    );
+    const customer = await this.ensureCustomer(merchantId, customerId);
 
     const ratingRaw =
       typeof body?.rating === 'string' ? Number(body.rating) : body?.rating;
@@ -1188,7 +1058,7 @@ export class LoyaltyController {
       },
       {
         autoApprove: true,
-        metadata: { ...metadata, merchantCustomerId, customerId: customer.id },
+        metadata: { ...metadata, customerId: customer.id },
       },
     );
     let sharePayload: {
@@ -1242,28 +1112,25 @@ export class LoyaltyController {
     @Body()
     body: {
       merchantId?: string;
-      merchantCustomerId?: string;
+      customerId?: string;
       transactionId?: string;
     },
   ) {
     const merchantId =
       typeof body?.merchantId === 'string' ? body.merchantId.trim() : '';
-    const merchantCustomerId =
-      typeof body?.merchantCustomerId === 'string'
-        ? body.merchantCustomerId.trim()
+    const customerId =
+      typeof body?.customerId === 'string'
+        ? body.customerId.trim()
         : '';
     const transactionId =
       typeof body?.transactionId === 'string' ? body.transactionId.trim() : '';
     if (!merchantId) throw new BadRequestException('merchantId is required');
-    if (!merchantCustomerId)
-      throw new BadRequestException('merchantCustomerId is required');
+    if (!customerId)
+      throw new BadRequestException('customerId is required');
     if (!transactionId)
       throw new BadRequestException('transactionId is required');
 
-    const { customer, merchantCustomer } = await this.resolveMerchantContext(
-      merchantId,
-      merchantCustomerId,
-    );
+    const customer = await this.ensureCustomer(merchantId, customerId);
     const tx = await this.prisma.transaction.findFirst({
       where: { id: transactionId, merchantId, customerId: customer.id },
       select: { id: true, type: true, amount: true },
@@ -1279,7 +1146,6 @@ export class LoyaltyController {
       update: {
         merchantId,
         customerId: customer.id,
-        merchantCustomerId: merchantCustomer.id,
         transactionId: tx.id,
         transactionType: tx.type,
         amount: tx.amount,
@@ -1292,7 +1158,6 @@ export class LoyaltyController {
         id: eventId,
         merchantId,
         customerId: customer.id,
-        merchantCustomerId: merchantCustomer.id,
         transactionId: tx.id,
         transactionType: tx.type,
         amount: tx.amount,
@@ -1308,7 +1173,6 @@ export class LoyaltyController {
         id: eventId,
         merchantId,
         customerId: customer.id,
-        merchantCustomerId: merchantCustomer.id,
         transactionId: tx.id,
         transactionType: tx.type,
         amount: tx.amount,
@@ -1539,32 +1403,20 @@ export class LoyaltyController {
     ) {
       throw new BadRequestException('QR выписан для другого мерчанта');
     }
-    const { customer, merchantCustomer } = await this.resolveMerchantContext(
-      merchantId,
-      resolved.merchantCustomerId,
-    );
+    const customer = await this.ensureCustomer(merchantId, resolved.customerId);
     const customerName =
       typeof customer.name === 'string' && customer.name.trim().length > 0
         ? customer.name.trim()
         : null;
-    const merchantCustomerName =
-      typeof merchantCustomer.name === 'string' &&
-      merchantCustomer.name.trim().length > 0
-        ? merchantCustomer.name.trim()
-        : null;
     let balance: number | null = null;
     try {
-      const balanceResp = await this.service.balance(
-        merchantId,
-        merchantCustomer.id,
-      );
+      const balanceResp = await this.service.balance(merchantId, customer.id);
       balance =
         typeof balanceResp?.balance === 'number' ? balanceResp.balance : null;
     } catch {}
     return {
-      merchantCustomerId: merchantCustomer.id,
       customerId: customer.id,
-      name: customerName ?? merchantCustomerName ?? null,
+      name: customerName,
       balance,
     } satisfies CashierCustomerResolveRespDto;
   }
@@ -1732,7 +1584,7 @@ export class LoyaltyController {
   @ApiBadRequestResponse({ type: ErrorDto })
   async mintQr(@Body() dto: QrMintDto, @Req() req: Request) {
     // Optional authentication signals: teleauth or staff key or bridge signature; enforce only if merchant requires
-    const hasTeleauth = !!(req as any).teleauth?.merchantCustomerId;
+    const hasTeleauth = !!(req as any).teleauth?.customerId;
     const hasInitData =
       typeof dto.initData === 'string' && dto.initData.trim().length > 0;
     const hasAuth = hasTeleauth || hasInitData;
@@ -1747,7 +1599,7 @@ export class LoyaltyController {
     }
 
     // If merchant requires Bridge signature for QR minting, enforce it
-    if (!hasAuth && !staffKey && dto.merchantId && dto.merchantCustomerId) {
+    if (!hasAuth && !staffKey && dto.merchantId && dto.customerId) {
       const settings = await this.prisma.merchantSettings.findUnique({
         where: { merchantId: dto.merchantId },
       });
@@ -1756,7 +1608,7 @@ export class LoyaltyController {
           throw new UnauthorizedException('X-Bridge-Signature required');
         const bodyForSig = JSON.stringify({
           merchantId: dto.merchantId,
-          merchantCustomerId: dto.merchantCustomerId,
+          customerId: dto.customerId,
         });
         let verified = false;
         if (
@@ -1821,10 +1673,10 @@ export class LoyaltyController {
       if (s?.qrTtlSec) ttl = s.qrTtlSec;
     }
     if (!dto.merchantId) throw new BadRequestException('merchantId required');
-    await this.resolveMerchantContext(dto.merchantId, dto.merchantCustomerId);
+    await this.ensureCustomer(dto.merchantId, dto.customerId);
     const token = await signQrToken(
       secret,
-      dto.merchantCustomerId,
+      dto.customerId,
       dto.merchantId,
       ttl,
     );
@@ -1859,11 +1711,8 @@ export class LoyaltyController {
     const t0 = Date.now();
     try {
       const v = await this.resolveFromToken(dto.userToken);
-      const merchantCustomerId = v.merchantCustomerId;
-      const { customer } = await this.resolveMerchantContext(
-        dto.merchantId,
-        merchantCustomerId,
-      );
+      const customerId = v.customerId;
+      const customer = await this.ensureCustomer(dto.merchantId, customerId);
       const s = await this.prisma.merchantSettings.findUnique({
         where: { merchantId: dto.merchantId },
       });
@@ -1998,13 +1847,13 @@ export class LoyaltyController {
       }
     }
 
-    let merchantCustomerId: string | null = null;
+    let customerId: string | null = null;
     if (holdCached?.customerId && merchantIdEff) {
-      const merchantCustomer = await this.ensureMerchantCustomerByCustomerId(
+      const customer = await this.ensureCustomer(
         merchantIdEff,
         holdCached.customerId,
       );
-      merchantCustomerId = merchantCustomer.id;
+      customerId = customer.id;
     }
     // проверка подписи Bridge до выполнения, с учётом outlet из hold
     try {
@@ -2138,8 +1987,8 @@ export class LoyaltyController {
         if (req.requestId) res.setHeader('X-Request-Id', req.requestId);
       }
     } catch {}
-    if (merchantCustomerId && data && typeof data === 'object') {
-      data.merchantCustomerId = merchantCustomerId;
+    if (customerId && data && typeof data === 'object') {
+      data.customerId = customerId;
     }
     return data;
   }
@@ -2162,14 +2011,14 @@ export class LoyaltyController {
     return this.service.cancel(holdId);
   }
 
-  @Get('balance/:merchantId/:merchantCustomerId')
+  @Get('balance/:merchantId/:customerId')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @ApiOkResponse({ type: BalanceDto })
   balance2(
     @Param('merchantId') merchantId: string,
-    @Param('merchantCustomerId') merchantCustomerId: string,
+    @Param('customerId') customerId: string,
   ) {
-    return this.service.balance(merchantId, merchantCustomerId);
+    return this.service.balance(merchantId, customerId);
   }
 
   // Публичные настройки, доступные мини-аппе (без админ-ключа)
@@ -2212,18 +2061,15 @@ export class LoyaltyController {
     @Body()
     body: {
       merchantId?: string;
-      merchantCustomerId?: string;
+      customerId?: string;
       code?: string;
     },
   ) {
-    if (!body?.merchantId || !body?.merchantCustomerId)
+    if (!body?.merchantId || !body?.customerId)
       throw new BadRequestException(
-        'merchantId and merchantCustomerId required',
+        'merchantId and customerId required',
       );
-    const { customer } = await this.resolveMerchantContext(
-      body.merchantId,
-      body.merchantCustomerId,
-    );
+    const customer = await this.ensureCustomer(body.merchantId, body.customerId);
     return this.service.applyPromoCode({
       merchantId: body.merchantId,
       customerId: customer.id,
@@ -2306,7 +2152,7 @@ export class LoyaltyController {
       const valid = await this.verifyStaffKey(merchantId, staffKeyHeader);
       if (!valid) throw new UnauthorizedException('Invalid staff key');
     }
-    let merchantCustomerId: string | null = null;
+    let customerId: string | null = null;
     let data: any;
     // проверка подписи Bridge до выполнения
     try {
@@ -2386,11 +2232,11 @@ export class LoyaltyController {
               });
             }
             if (receipt?.customerId) {
-              const mc = await this.ensureMerchantCustomerByCustomerId(
+              const mc = await this.ensureCustomer(
                 merchantId,
                 receipt.customerId,
               );
-              merchantCustomerId = mc.id;
+              customerId = mc.id;
             }
           } catch {}
           try {
@@ -2432,11 +2278,11 @@ export class LoyaltyController {
             });
           }
           if (receipt?.customerId) {
-            const mc = await this.ensureMerchantCustomerByCustomerId(
+            const mc = await this.ensureCustomer(
               merchantId,
               receipt.customerId,
             );
-            merchantCustomerId = mc.id;
+            customerId = mc.id;
           }
         } catch {}
       }
@@ -2464,13 +2310,13 @@ export class LoyaltyController {
         if (req.requestId) res.setHeader('X-Request-Id', req.requestId);
       }
     } catch {}
-    if (merchantCustomerId && data && typeof data === 'object') {
-      data.merchantCustomerId = merchantCustomerId;
+    if (customerId && data && typeof data === 'object') {
+      data.customerId = customerId;
     }
     return data;
   }
 
-  // Telegram miniapp auth: принимает merchantId + initData, валидирует токеном бота мерчанта и возвращает merchantCustomerId
+  // Telegram miniapp auth: принимает merchantId + initData, валидирует токеном бота мерчанта и возвращает customerId
   @Post('teleauth')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async teleauth(@Body() body: { merchantId?: string; initData?: string }) {
@@ -2554,70 +2400,29 @@ export class LoyaltyController {
       if (e instanceof BadRequestException) throw e;
       // ignore start_param if malformed unless strict legacy mode triggers above
     }
-    // По tgId формируем учётку клиента. Разграничение по мерчанту через MerchantCustomer/CustomerTelegram.
+    // Customer теперь per-merchant модель
     const tgId = String(r.userId);
-    if (merchantId) {
-      const result = await this.ensureMerchantCustomerByTelegram(
-        merchantId,
-        tgId,
-        initData,
-      );
-      let merchantCustomerId = result?.merchantCustomerId;
-      if (!merchantCustomerId) {
-        try {
-          const existingCustomer = await this.prisma.customer.findFirst({
-            where: {
-              tgId,
-              merchantProfiles: { some: { merchantId } },
-            },
-          });
-          if (existingCustomer) {
-            const mc = await this.ensureMerchantCustomerByCustomerId(
-              merchantId,
-              existingCustomer.id,
-            );
-            merchantCustomerId = mc.id;
-          }
-        } catch {}
-      }
-      if (!merchantCustomerId) {
-        throw new BadRequestException('Failed to create merchant customer');
-      }
-      const flags =
-        await this.fetchMerchantCustomerProfileFlags(merchantCustomerId);
-      return { ok: true, merchantCustomerId, ...flags };
+    if (!merchantId) {
+      throw new BadRequestException('merchantId required');
     }
 
-    // Back-compat: если merchantId не указан — ведём себя как раньше (глобальная учётка по tgId)
-    const legacyId = 'tg:' + tgId;
-    const customer = await this.prisma.customer
-      .findFirst({ where: { tgId } })
-      .catch(() => null);
-    if (customer) {
-      const flags = await this.fetchCustomerProfileFlags(customer.id);
-      return { ok: true, merchantCustomerId: customer.id, ...flags };
-    }
-    const legacy = await this.prisma.customer
-      .findUnique({ where: { id: legacyId } })
-      .catch(() => null);
-    if (legacy) {
-      try {
-        await this.prisma.customer.update({
-          where: { id: legacy.id },
-          data: { tgId },
-        });
-      } catch {}
-      const flags = await this.fetchCustomerProfileFlags(legacy.id);
-      return { ok: true, merchantCustomerId: legacy.id, ...flags };
-    }
-    const created = await this.prisma.customer.create({ data: { tgId } });
-    const flags = this.computeProfileFlags({
-      name: created.name ?? null,
-      phone: created.phone ?? null,
-      gender: created.gender ?? null,
-      birthday: created.birthday ?? null,
+    // Ищем или создаём Customer по tgId для данного мерчанта
+    let customer = await this.prisma.customer.findUnique({
+      where: { merchantId_tgId: { merchantId, tgId } },
     });
-    return { ok: true, merchantCustomerId: created.id, ...flags };
+
+    if (!customer) {
+      customer = await this.prisma.customer.create({
+        data: { merchantId, tgId },
+      });
+      // Создаём связь в CustomerTelegram
+      await this.prisma.customerTelegram.create({
+        data: { merchantId, tgId, customerId: customer.id },
+      }).catch(() => {});
+    }
+
+    const flags = await this.fetchCustomerProfileFlags(customer.id);
+    return { ok: true, customerId: customer.id, ...flags };
   }
 
   @Get('profile')
@@ -2625,13 +2430,10 @@ export class LoyaltyController {
   @ApiOkResponse({ type: CustomerProfileDto })
   async getProfile(
     @Query('merchantId') merchantId: string,
-    @Query('merchantCustomerId') merchantCustomerId: string,
+    @Query('customerId') customerId: string,
   ) {
-    const { customer, merchantCustomer } = await this.resolveMerchantContext(
-      merchantId,
-      merchantCustomerId,
-    );
-    return this.toProfileDto(customer, merchantCustomer);
+    const customer = await this.ensureCustomer(merchantId, customerId);
+    return this.toProfileDto(customer);
   }
 
   @Get('profile/phone-status')
@@ -2639,13 +2441,10 @@ export class LoyaltyController {
   @ApiOkResponse({ type: CustomerPhoneStatusDto })
   async getProfilePhoneStatus(
     @Query('merchantId') merchantId: string,
-    @Query('merchantCustomerId') merchantCustomerId: string,
+    @Query('customerId') customerId: string,
   ) {
-    const { merchantCustomer } = await this.resolveMerchantContext(
-      merchantId,
-      merchantCustomerId,
-    );
-    const rawPhone = merchantCustomer?.phone ?? null;
+    const customer = await this.ensureCustomer(merchantId, customerId);
+    const rawPhone = customer?.phone ?? null;
     const hasPhone = typeof rawPhone === 'string' && rawPhone.trim().length > 0;
     return { hasPhone } satisfies CustomerPhoneStatusDto;
   }
@@ -2656,18 +2455,15 @@ export class LoyaltyController {
   async saveProfile(@Body() body: CustomerProfileSaveDto) {
     const merchantId =
       typeof body?.merchantId === 'string' ? body.merchantId.trim() : '';
-    const merchantCustomerId =
-      typeof body?.merchantCustomerId === 'string'
-        ? body.merchantCustomerId.trim()
+    const customerId =
+      typeof body?.customerId === 'string'
+        ? body.customerId.trim()
         : '';
     if (!merchantId) throw new BadRequestException('merchantId required');
-    if (!merchantCustomerId)
-      throw new BadRequestException('merchantCustomerId required');
+    if (!customerId)
+      throw new BadRequestException('customerId required');
 
-    const { customer, merchantCustomer } = await this.resolveMerchantContext(
-      merchantId,
-      merchantCustomerId,
-    );
+    const customer = await this.ensureCustomer(merchantId, customerId);
 
     if (typeof body?.name !== 'string' || !body.name.trim()) {
       throw new BadRequestException('name must be provided');
@@ -2696,7 +2492,7 @@ export class LoyaltyController {
       typeof (body as any)?.phone === 'string'
         ? (body as any).phone.trim()
         : '';
-    const mustRequirePhone = !merchantCustomer.phone;
+    const mustRequirePhone = !customer.phone;
     if (mustRequirePhone && !phoneRaw) {
       throw new BadRequestException(
         'Без номера телефона мы не можем зарегистрировать вас в программе лояльности',
@@ -2707,32 +2503,21 @@ export class LoyaltyController {
       phoneNormalized = this.normalizePhoneStrict(phoneRaw);
     }
 
-    let updatedCustomer: Customer = customer;
+    // Customer теперь per-merchant модель, обновляем напрямую
     const completionMark = new Date();
+    let updatedCustomer: Customer;
     try {
-      await this.prisma.$transaction(async (tx) => {
-        updatedCustomer = await tx.customer.update({
-          where: { id: customer.id },
-          data: Object.assign(
-            { name, gender, birthday: parsed },
-            phoneNormalized ? { phone: phoneNormalized } : {},
-          ),
-        });
-        const txAny = tx as any;
-        if (txAny?.merchantCustomer?.update) {
-          await txAny.merchantCustomer.update({
-            where: { id: merchantCustomer.id },
-            data: Object.assign(
-              {
-                name,
-                profileGender: gender,
-                profileBirthDate: parsed,
-                profileCompletedAt: completionMark,
-              },
-              phoneNormalized ? { phone: phoneNormalized } : {},
-            ),
-          });
-        }
+      updatedCustomer = await this.prisma.customer.update({
+        where: { id: customer.id },
+        data: {
+          name,
+          gender,
+          birthday: parsed,
+          profileGender: gender,
+          profileBirthDate: parsed,
+          profileCompletedAt: completionMark,
+          ...(phoneNormalized ? { phone: phoneNormalized } : {}),
+        },
       });
     } catch (e: any) {
       const code = e?.code || '';
@@ -2742,16 +2527,7 @@ export class LoyaltyController {
       }
       throw e;
     }
-    const nextMerchantCustomer: MerchantCustomerWithCustomer = {
-      ...merchantCustomer,
-      name,
-      phone: phoneNormalized ? phoneNormalized : merchantCustomer.phone,
-      profileGender: gender,
-      profileBirthDate: parsed,
-      profileCompletedAt: completionMark,
-      customer: updatedCustomer,
-    };
-    return this.toProfileDto(updatedCustomer, nextMerchantCustomer);
+    return this.toProfileDto(updatedCustomer);
   }
 
   @Get('transactions')
@@ -2759,7 +2535,7 @@ export class LoyaltyController {
   @ApiOkResponse({ schema: { $ref: getSchemaPath(TransactionsRespDto) } })
   transactions(
     @Query('merchantId') merchantId: string,
-    @Query('merchantCustomerId') merchantCustomerId: string,
+    @Query('customerId') customerId: string,
     @Query('limit') limitStr?: string,
     @Query('before') beforeStr?: string,
     @Query('outletId') outletId?: string,
@@ -2771,7 +2547,7 @@ export class LoyaltyController {
     const before = beforeStr ? new Date(beforeStr) : undefined;
     return this.service.transactions(
       merchantId,
-      merchantCustomerId,
+      customerId,
       limit,
       before,
       {
@@ -2824,12 +2600,9 @@ export class LoyaltyController {
   @ApiOkResponse({ schema: { $ref: getSchemaPath(ConsentGetRespDto) } })
   async getConsent(
     @Query('merchantId') merchantId: string,
-    @Query('merchantCustomerId') merchantCustomerId: string,
+    @Query('customerId') customerId: string,
   ) {
-    const { customer } = await this.resolveMerchantContext(
-      merchantId,
-      merchantCustomerId,
-    );
+    const customer = await this.ensureCustomer(merchantId, customerId);
     const c = await this.prisma.consent.findUnique({
       where: { merchantId_customerId: { merchantId, customerId: customer.id } },
     });
@@ -2840,16 +2613,13 @@ export class LoyaltyController {
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   async bootstrap(
     @Query('merchantId') merchantId: string,
-    @Query('merchantCustomerId') merchantCustomerId: string,
+    @Query('customerId') customerId: string,
     @Query('transactionsLimit') txLimitStr?: string,
   ) {
     const limit = txLimitStr
       ? Math.min(Math.max(parseInt(txLimitStr, 10) || 20, 1), 100)
       : 20;
-    const { customer, merchantCustomer } = await this.resolveMerchantContext(
-      merchantId,
-      merchantCustomerId,
-    );
+    const customer = await this.ensureCustomer(merchantId, customerId);
     const consent = await this.prisma.consent.findUnique({
       where: {
         merchantId_customerId: {
@@ -2860,19 +2630,19 @@ export class LoyaltyController {
     });
     const [balanceResp, levelsResp, transactionsResp, promotions] =
       await Promise.all([
-        this.service.balance(merchantId, merchantCustomerId),
-        this.levelsService.getLevel(merchantId, merchantCustomerId),
+        this.service.balance(merchantId, customerId),
+        this.levelsService.getLevel(merchantId, customerId),
         this.service.transactions(
           merchantId,
-          merchantCustomerId,
+          customerId,
           limit,
           undefined,
           {},
         ),
-        this.listPromotionsForCustomer(merchantId, merchantCustomerId),
+        this.listPromotionsForCustomer(merchantId, customerId),
       ]);
     return {
-      profile: this.toProfileDto(customer, merchantCustomer),
+      profile: this.toProfileDto(customer),
       consent: {
         granted: !!consent,
         consentAt: consent?.consentAt?.toISOString() ?? null,
@@ -2891,18 +2661,15 @@ export class LoyaltyController {
     @Body()
     body: {
       merchantId?: string;
-      merchantCustomerId?: string;
+      customerId?: string;
       granted?: boolean;
     },
   ) {
-    if (!body?.merchantId || !body?.merchantCustomerId)
+    if (!body?.merchantId || !body?.customerId)
       throw new BadRequestException(
-        'merchantId and merchantCustomerId required',
+        'merchantId and customerId required',
       );
-    const { customer } = await this.resolveMerchantContext(
-      body.merchantId,
-      body.merchantCustomerId,
-    );
+    const customer = await this.ensureCustomer(body.merchantId, body.customerId);
     if (body.granted) {
       await this.prisma.consent.upsert({
         where: {

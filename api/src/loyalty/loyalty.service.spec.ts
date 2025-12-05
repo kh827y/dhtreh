@@ -11,18 +11,16 @@ describe('LoyaltyService.commit idempotency', () => {
       transaction: { create: jest.fn(() => ({ id: 'TXN' })) },
       eventOutbox: { create: jest.fn() },
       outlet: { findFirst: jest.fn(), update: jest.fn() },
-      merchantCustomer: {
-        findUnique: jest.fn(() => ({ id: 'MC-CTX' })),
-        create: jest.fn(() => ({ id: 'MC-NEW' })),
-      },
       customer: {
         findUnique: jest.fn(() => ({
           id: 'C-CTX',
+          merchantId: 'M-CTX',
           tgId: null,
           phone: null,
           email: null,
           name: null,
         })),
+        create: jest.fn(() => ({ id: 'C-NEW', merchantId: 'M-CTX' })),
       },
       $transaction: jest.fn(async (fn: any) => fn(base)),
     };
@@ -76,7 +74,7 @@ describe('LoyaltyService.commit idempotency', () => {
       undefined as any,
       staffMotivation,
     );
-    const r = await svc.commit('H1', 'O-1');
+    const r = await svc.commit('H1', 'O-1', undefined, undefined, undefined);
     expect(r.alreadyCommitted).toBe(true);
     expect(r.receiptId).toBe('R1');
   });
@@ -132,7 +130,7 @@ describe('LoyaltyService.commit idempotency', () => {
       undefined as any,
       staffMotivation,
     );
-    const r = await svc.commit('H1', 'O-1');
+    const r = await svc.commit('H1', 'O-1', undefined, undefined, undefined);
     expect(r.alreadyCommitted).toBe(true);
     expect(r.receiptId).toBe('R_EXIST');
   });
@@ -186,7 +184,7 @@ describe('LoyaltyService.commit idempotency', () => {
       undefined as any,
       staffMotivation,
     );
-    const r = await svc.commit('H2', 'O-2');
+    const r = await svc.commit('H2', 'O-2', undefined, undefined, undefined);
     expect(r.ok).toBe(true);
     expect(r.receiptId).toBe('R2');
     expect(txUsed.outlet.update).not.toHaveBeenCalled();
@@ -242,7 +240,7 @@ describe('LoyaltyService.commit idempotency', () => {
       undefined as any,
       staffMotivation,
     );
-    await svc.commit('H3', 'ORDER-3');
+    await svc.commit('H3', 'ORDER-3', undefined, undefined, undefined);
     expect(txUsed.outlet.update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'OUT-1' } }),
     );
@@ -319,7 +317,6 @@ describe('LoyaltyService.processIntegrationBonus', () => {
 
     const res = await svc.processIntegrationBonus({
       merchantId: 'M-1',
-      merchantCustomerId: 'MC-1',
       customerId: 'C-1',
       userToken: 'token',
       invoiceNum: 'ORDER-1',
@@ -359,7 +356,6 @@ describe('LoyaltyService.processIntegrationBonus', () => {
 
     const res = await svc.processIntegrationBonus({
       merchantId: 'M-2',
-      merchantCustomerId: 'MC-2',
       customerId: 'C-2',
       userToken: 'token',
       invoiceNum: 'ORDER-2',
@@ -403,7 +399,6 @@ describe('LoyaltyService.processIntegrationBonus', () => {
     await expect(
       svc.processIntegrationBonus({
       merchantId: 'M-3',
-      merchantCustomerId: 'MC-3',
       customerId: 'C-3',
       userToken: 'token',
       invoiceNum: 'ORDER-3',
@@ -438,7 +433,6 @@ describe('LoyaltyService.processIntegrationBonus', () => {
     await expect(
       svc.processIntegrationBonus({
       merchantId: 'M-4',
-      merchantCustomerId: 'MC-4',
       customerId: 'C-4',
       userToken: 'token',
       invoiceNum: 'ORDER-4',
@@ -476,7 +470,6 @@ describe('LoyaltyService.processIntegrationBonus', () => {
 
     await svc.processIntegrationBonus({
       merchantId: 'M-5',
-      merchantCustomerId: 'MC-5',
       customerId: 'C-5',
       userToken: 'token',
       invoiceNum: 'ORDER-5',
@@ -564,13 +557,13 @@ describe('LoyaltyService.processIntegrationBonus', () => {
     };
     const prisma = mkPrisma();
     prisma.hold = { findUnique: jest.fn().mockResolvedValue(hold as any) };
-    prisma.merchantCustomer =
-      prisma.merchantCustomer ||
+    prisma.customer =
+      prisma.customer ||
       ({
         findUnique: jest.fn(),
         create: jest.fn(),
       } as any);
-    prisma.merchantCustomer.findUnique = jest
+    prisma.customer.findUnique = jest
       .fn()
       .mockResolvedValue({ id: 'MC-REF' });
     prisma.customer =

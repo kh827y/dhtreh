@@ -49,7 +49,6 @@ export interface TierDto {
 }
 
 export interface TierMemberDto {
-  merchantCustomerId: string | null;
   customerId: string;
   name: string | null;
   phone: string | null;
@@ -470,17 +469,16 @@ export class LoyaltyProgramService {
     const customerIds = Array.from(
       new Set(assignments.map((row) => row.customerId)),
     );
-    const merchantCustomers = customerIds.length
-      ? await this.prisma.merchantCustomer.findMany({
-          where: { merchantId, customerId: { in: customerIds } },
-          select: { id: true, customerId: true, name: true, phone: true },
+    const customers = customerIds.length
+      ? await this.prisma.customer.findMany({
+          where: { merchantId, id: { in: customerIds } },
+          select: { id: true, name: true, phone: true },
         })
       : [];
-    const mcMap = new Map(merchantCustomers.map((mc) => [mc.customerId, mc]));
+    const custMap = new Map(customers.map((c) => [c.id, c]));
     const items: TierMemberDto[] = assignments.slice(0, limit).map((row) => {
-      const profile = mcMap.get(row.customerId);
+      const profile = custMap.get(row.customerId);
       return {
-        merchantCustomerId: profile?.id ?? null,
         customerId: row.customerId,
         name: profile?.name ?? null,
         phone: profile?.phone ?? null,

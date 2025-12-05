@@ -1477,11 +1477,11 @@ export class AnalyticsService {
     merchantId: string,
     period: DashboardPeriod,
   ): Promise<CustomerMetrics> {
-    const totalCustomers = await this.prisma.merchantCustomer.count({
+    const totalCustomers = await this.prisma.customer.count({
       where: { merchantId },
     });
 
-    const newCustomers = await this.prisma.merchantCustomer.count({
+    const newCustomers = await this.prisma.customer.count({
       where: {
         merchantId,
         createdAt: { gte: period.from, lte: period.to },
@@ -1500,16 +1500,15 @@ export class AnalyticsService {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const inactiveCustomers = await this.prisma.merchantCustomer.count({
+    // Customer теперь per-merchant модель
+    const inactiveCustomers = await this.prisma.customer.count({
       where: {
         merchantId,
         NOT: {
-          customer: {
-            transactions: {
-              some: {
-                merchantId,
-                createdAt: { gte: thirtyDaysAgo },
-              },
+          transactions: {
+            some: {
+              merchantId,
+              createdAt: { gte: thirtyDaysAgo },
             },
           },
         },

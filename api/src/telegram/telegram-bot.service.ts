@@ -382,13 +382,13 @@ export class TelegramBotService {
           const tgId = String(userId);
           const phone = this.normalizePhoneStrict(phoneRaw);
           let profile: Awaited<
-            ReturnType<typeof this.resolveMerchantCustomer>
+            ReturnType<typeof this.resolveCustomer>
           > | null = null;
           try {
-            profile = await this.resolveMerchantCustomer(merchantId, { tgId });
-            await this.updateMerchantCustomer(
+            profile = await this.resolveCustomer(merchantId, { tgId });
+            await this.updateCustomer(
               merchantId,
-              profile.merchantCustomerId,
+              profile.customerId,
               { phone },
             );
             try {
@@ -398,26 +398,26 @@ export class TelegramBotService {
               });
             } catch {}
             this.logger.log(
-              `Сохранён телефон для merchantCustomer=${profile.merchantCustomerId} (merchant=${merchantId})`,
+              `Сохранён телефон для customer=${profile.customerId} (merchant=${merchantId})`,
             );
           } catch (err) {
             const code = err?.code || '';
             const msg = err?.message || String(err);
             if (code === 'P2002' || /Unique constraint/i.test(msg)) {
               try {
-                const existing = await this.findMerchantCustomerByPhone(
+                const existing = await this.findCustomerByPhone(
                   merchantId,
                   phone,
                 );
                 if (!existing) throw err;
-                await this.linkTelegramToMerchantCustomer(
+                await this.linkTelegramToCustomer(
                   tgId,
                   merchantId,
                   existing.id,
-                  profile,
+                  profile?.customerId ?? null,
                 );
                 this.logger.log(
-                  `Телефон уже использовался. Подвязали Telegram пользователя ${tgId} к merchantCustomer=${existing.id} (merchant=${merchantId})`,
+                  `Телефон уже использовался. Подвязали Telegram пользователя ${tgId} к customer=${existing.id} (merchant=${merchantId})`,
                 );
               } catch (linkError) {
                 const linkMsg = linkError?.message || String(linkError);
@@ -451,7 +451,7 @@ export class TelegramBotService {
   ) {
     // Пер-мерчантная учётка на основе tgId
     const tgId = String(userId);
-    const profile = await this.resolveMerchantCustomer(merchantId, { tgId });
+    const profile = await this.resolveCustomer(merchantId, { tgId });
     const customerId = profile.customerId;
 
     // Получаем настройки мерчанта
@@ -460,8 +460,8 @@ export class TelegramBotService {
     });
 
     const message = settings?.miniappThemePrimary
-      ? `🎉 Добро пожаловать в программу лояльности!\n\nВаш ID: ${profile.merchantCustomerId}\n\nИспользуйте кнопки ниже для работы с программой.`
-      : `🎉 Добро пожаловать в программу лояльности!\n\nВаш ID: ${profile.merchantCustomerId}`;
+      ? `🎉 Добро пожаловать в программу лояльности!\n\nВаш ID: ${profile.customerId}\n\nИспользуйте кнопки ниже для работы с программой.`
+      : `🎉 Добро пожаловать в программу лояльности!\n\nВаш ID: ${profile.customerId}`;
 
     const keyboard = {
       inline_keyboard: [
@@ -489,7 +489,7 @@ export class TelegramBotService {
     merchantId: string,
   ) {
     const tgId = String(userId);
-    const profile = await this.resolveMerchantCustomer(merchantId, { tgId });
+    const profile = await this.resolveCustomer(merchantId, { tgId });
     const customerId = profile.customerId;
 
     const wallet = await this.prisma.wallet.findFirst({
@@ -592,8 +592,8 @@ export class TelegramBotService {
     merchantId: string,
   ) {
     const tgId = String(userId);
-    const profile = await this.resolveMerchantCustomer(merchantId, { tgId });
-    const customerId = profile.merchantCustomerId;
+    const profile = await this.resolveCustomer(merchantId, { tgId });
+    const customerId = profile.customerId;
 
     const transactions = await this.prisma.transaction.findMany({
       where: {
@@ -827,13 +827,13 @@ export class TelegramBotService {
 
   // Отправка уведомлений клиентам
   async sendNotification(
-    merchantCustomerId: string,
+    customerId: string,
     merchantId: string,
     message: string,
   ) {
     const prismaAny = this.prisma as any;
     const link = await prismaAny?.customerTelegram?.findUnique?.({
-      where: { merchantCustomerId },
+      where: { customerId },
     });
     const tgId = link?.tgId || null;
     if (!tgId) return;
@@ -850,170 +850,96 @@ export class TelegramBotService {
     }
   }
 
-  // Resolve or create per-merchant mapping from tgId to customerId
-  private async resolveMerchantCustomer(
+  // После рефактора Customer = per-merchant модель
+  private async resolveCustomer(
     merchantId: string,
     opts: { tgId?: string; phone?: string },
-  ): Promise<{ merchantCustomerId: string; customerId: string }> {
-    const prismaAny = this.prisma as any;
+  ): Promise<{ customerId: string }> {
     const { tgId, phone } = opts;
     if (!tgId && !phone)
-      throw new Error('resolveMerchantCustomer requires tgId or phone');
+      throw new Error('resolveCustomer requires tgId or phone');
 
-    const manager = prismaAny?.merchantCustomer;
-
-    if (tgId && manager?.findUnique) {
-      const existing = await manager.findUnique({
-        where: { merchantId_tgId: { merchantId, tgId } },
-        select: { id: true, customerId: true },
-      });
-      if (existing)
-        return {
-          merchantCustomerId: existing.id,
-          customerId: existing.customerId,
-        };
-    }
-
-    if (phone && manager?.findUnique) {
-      const existingByPhone = await manager.findUnique({
-        where: { merchantId_phone: { merchantId, phone } },
-        select: { id: true, customerId: true },
-      });
-      if (existingByPhone) {
-        return {
-          merchantCustomerId: existingByPhone.id,
-          customerId: existingByPhone.customerId,
-        };
-      }
-    }
-
-    let customerId: string | null = null;
-    const associatedWithMerchant = {
-      OR: [
-        { merchantProfiles: { some: { merchantId } } },
-        { wallets: { some: { merchantId } } },
-        { transactions: { some: { merchantId } } },
-        { Receipt: { some: { merchantId } } },
-      ],
-    };
+    // Поиск по tgId
     if (tgId) {
-      const existingCustomer = await this.prisma.customer.findFirst({
-        where: Object.assign({ tgId }, associatedWithMerchant),
+      const existing = await this.prisma.customer.findUnique({
+        where: { merchantId_tgId: { merchantId, tgId } },
         select: { id: true },
       });
-      if (existingCustomer) customerId = existingCustomer.id;
-    }
-    if (!customerId && phone) {
-      const existingCustomerByPhone = await this.prisma.customer.findFirst({
-        where: Object.assign({ phone }, associatedWithMerchant),
-        select: { id: true },
-      });
-      if (existingCustomerByPhone) customerId = existingCustomerByPhone.id;
-    }
-    if (!customerId) {
-      const createdCustomer = await this.prisma.customer.create({
-        data: {
-          tgId: tgId ?? null,
-          phone: phone ?? null,
-        },
-        select: { id: true },
-      });
-      customerId = createdCustomer.id;
-    } else {
-      try {
-        await this.prisma.customer.update({
-          where: { id: customerId },
-          data: {
-            tgId: tgId ?? undefined,
-            phone: phone ?? undefined,
-          },
-        });
-      } catch {}
+      if (existing) return { customerId: existing.id };
     }
 
-    const created = await manager?.create?.({
+    // Поиск по phone
+    if (phone) {
+      const existingByPhone = await this.prisma.customer.findUnique({
+        where: { merchantId_phone: { merchantId, phone } },
+        select: { id: true },
+      });
+      if (existingByPhone) return { customerId: existingByPhone.id };
+    }
+
+    // Создаём нового Customer (per-merchant)
+    const created = await this.prisma.customer.create({
       data: {
         merchantId,
-        customerId,
         tgId: tgId ?? null,
         phone: phone ?? null,
       },
-      select: { id: true, customerId: true },
+      select: { id: true },
     });
 
-    if (!created) {
-      throw new Error('Failed to create merchant customer');
-    }
-
+    // Создаём запись в CustomerTelegram для обратной связи
     if (tgId) {
-      await prismaAny?.customerTelegram?.create?.({
-        data: { merchantId, tgId, merchantCustomerId: created.id },
-      });
+      await this.prisma.customerTelegram.create({
+        data: { merchantId, tgId, customerId: created.id },
+      }).catch(() => {});
     }
 
-    return { merchantCustomerId: created.id, customerId: created.customerId };
+    return { customerId: created.id };
   }
 
-  private async updateMerchantCustomer(
+  private async updateCustomer(
     merchantId: string,
-    merchantCustomerId: string,
+    customerId: string,
     data: Partial<{ phone: string; tgId: string | null; name: string | null }>,
   ): Promise<void> {
     const prismaAny = this.prisma as any;
-    await prismaAny?.merchantCustomer?.update?.({
-      where: { id: merchantCustomerId, merchantId },
+    await prismaAny?.customer?.update?.({
+      where: { id: customerId, merchantId },
       data,
     });
   }
 
-  private async findMerchantCustomerByPhone(merchantId: string, phone: string) {
-    const prismaAny = this.prisma as any;
-    return prismaAny?.merchantCustomer?.findUnique?.({
+  private async findCustomerByPhone(merchantId: string, phone: string) {
+    return this.prisma.customer.findUnique({
       where: { merchantId_phone: { merchantId, phone } },
-      select: { id: true, customerId: true },
+      select: { id: true },
     });
   }
 
-  private async linkTelegramToMerchantCustomer(
+  private async linkTelegramToCustomer(
     tgId: string,
     merchantId: string,
-    merchantCustomerId: string,
-    previousProfile?: { merchantCustomerId: string; customerId: string } | null,
+    customerId: string,
+    previousCustomerId?: string | null,
   ) {
     await this.prisma.$transaction(async (tx) => {
-      const txAny = tx as any;
-      await txAny?.merchantCustomer?.update?.({
-        where: { id: merchantCustomerId },
+      // Обновляем tgId у текущего Customer
+      await tx.customer.update({
+        where: { id: customerId },
         data: { tgId },
       });
 
-      const owner = await txAny?.merchantCustomer?.findUnique?.({
-        where: { id: merchantCustomerId },
-        select: { customerId: true },
-      });
-      if (owner?.customerId) {
-        await tx.customer.update({
-          where: { id: owner.customerId },
-          data: { tgId },
-        });
-      }
-
-      await txAny?.customerTelegram?.upsert?.({
+      // Обновляем/создаём связь в CustomerTelegram
+      await tx.customerTelegram.upsert({
         where: { merchantId_tgId: { merchantId, tgId } },
-        create: { merchantId, tgId, merchantCustomerId },
-        update: { merchantCustomerId },
+        create: { merchantId, tgId, customerId },
+        update: { customerId },
       });
 
-      if (
-        previousProfile &&
-        previousProfile.merchantCustomerId !== merchantCustomerId
-      ) {
-        await txAny?.merchantCustomer?.update?.({
-          where: { id: previousProfile.merchantCustomerId },
-          data: { tgId: null },
-        });
+      // Убираем tgId у предыдущего Customer если был
+      if (previousCustomerId && previousCustomerId !== customerId) {
         await tx.customer.update({
-          where: { id: previousProfile.customerId },
+          where: { id: previousCustomerId },
           data: { tgId: null },
         });
       }

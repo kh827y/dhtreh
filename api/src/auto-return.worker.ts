@@ -452,25 +452,19 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
     const merchantId = merchant.id;
     const invitedAt = new Date();
 
-    const merchantCustomer = await this.prisma.merchantCustomer.findFirst({
-      where: { merchantId, customerId },
-      select: { id: true, name: true, tgId: true },
+    // Customer теперь per-merchant модель, id = customerId
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: customerId },
+      select: { id: true, name: true, tgId: true, merchantId: true },
     });
-    if (!merchantCustomer?.tgId) {
+    if (!customer || customer.merchantId !== merchantId || !customer.tgId) {
       this.logger.warn(
         `Skip auto-return attempt: merchantId=${merchantId}, customerId=${customerId}, reason=no_telegram`,
       );
       return null;
     }
 
-    const customer = await this.prisma.customer.findUnique({
-      where: { id: customerId },
-      select: { name: true },
-    });
-
-    const username =
-      (merchantCustomer.name || customer?.name || 'Уважаемый клиент').trim() ||
-      'Уважаемый клиент';
+    const username = (customer.name || 'Уважаемый клиент').trim() || 'Уважаемый клиент';
     const bonusValue = config.giftPoints > 0 ? String(config.giftPoints) : '';
     const message = this.applyPlaceholders(config.text, {
       username,

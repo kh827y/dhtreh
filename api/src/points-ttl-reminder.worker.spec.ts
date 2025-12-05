@@ -21,9 +21,6 @@ describe('PointsTtlReminderWorker', () => {
 
   function makeWorker(overrides: Partial<any> = {}) {
     const prisma = {
-      merchantCustomer: {
-        findMany: jest.fn().mockResolvedValue([]),
-      },
       customer: {
         findMany: jest.fn().mockResolvedValue([]),
       },
@@ -67,17 +64,12 @@ describe('PointsTtlReminderWorker', () => {
           },
         ]),
       },
-      merchantCustomer: {
-        findMany: jest
-          .fn()
-          .mockResolvedValue([
-            { customerId: 'C1', name: 'Иван', tgId: '12345' },
-          ]),
-      },
       customer: {
         findMany: jest
           .fn()
-          .mockResolvedValue([{ id: 'C1', name: 'Иван Иванов' }]),
+          .mockResolvedValue([
+            { id: 'C1', name: 'Иван', tgId: '12345', merchantId: 'M1' },
+          ]),
       },
       pushNotification: {
         findFirst: jest.fn().mockResolvedValue(null),
@@ -135,13 +127,10 @@ describe('PointsTtlReminderWorker', () => {
           },
         ]),
       },
-      merchantCustomer: {
+      customer: {
         findMany: jest
           .fn()
-          .mockResolvedValue([{ customerId: 'C1', name: null, tgId: '999' }]),
-      },
-      customer: {
-        findMany: jest.fn().mockResolvedValue([]),
+          .mockResolvedValue([{ id: 'C1', name: null, tgId: '999', merchantId: 'M1' }]),
       },
       pushNotification: {
         findFirst: jest.fn().mockImplementation(({ where }: any) => {
@@ -180,13 +169,10 @@ describe('PointsTtlReminderWorker', () => {
           },
         ]),
       },
-      merchantCustomer: {
+      customer: {
         findMany: jest
           .fn()
-          .mockResolvedValue([{ customerId: 'C1', name: 'NoTg', tgId: null }]),
-      },
-      customer: {
-        findMany: jest.fn().mockResolvedValue([]),
+          .mockResolvedValue([{ id: 'C1', name: 'NoTg', tgId: null, merchantId: 'M1' }]),
       },
     });
 

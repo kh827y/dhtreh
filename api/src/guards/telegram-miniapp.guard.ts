@@ -16,7 +16,7 @@ export class TelegramMiniappGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest();
-    if (req?.teleauth?.merchantCustomerId) return true;
+    if (req?.teleauth?.customerId) return true;
 
     const merchantId = await this.resolveMerchantId(req);
     if (!merchantId) {
@@ -44,7 +44,7 @@ export class TelegramMiniappGuard implements CanActivate {
     if (
       requestedIds.length > 0 &&
       !requestedIds.some(
-        (id) => id === ctx.merchantCustomerId || id === ctx.customerId,
+        (id) => id === ctx.customerId || id === ctx.customerId,
       )
     ) {
       throw new UnauthorizedException('Customer identifier mismatch');
@@ -66,12 +66,12 @@ export class TelegramMiniappGuard implements CanActivate {
       this.sanitizeId(req?.params?.merchantId);
     if (direct) return direct;
 
-    const candidates = this.collectMerchantCustomerCandidates(req);
+    const candidates = this.collectCustomerCandidates(req);
     for (const id of candidates) {
       try {
         const record = await (
           this.prisma as any
-        )?.merchantCustomer?.findUnique?.({
+        )?.customer?.findUnique?.({
           where: { id },
           select: { merchantId: true },
         });
@@ -81,11 +81,11 @@ export class TelegramMiniappGuard implements CanActivate {
     return null;
   }
 
-  private collectMerchantCustomerCandidates(req: any): string[] {
+  private collectCustomerCandidates(req: any): string[] {
     const sources = [
-      req?.body?.merchantCustomerId,
-      req?.query?.merchantCustomerId,
-      req?.params?.merchantCustomerId,
+      req?.body?.customerId,
+      req?.query?.customerId,
+      req?.params?.customerId,
       req?.body?.customerId,
       req?.query?.customerId,
       req?.params?.customerId,
@@ -100,9 +100,9 @@ export class TelegramMiniappGuard implements CanActivate {
 
   private collectCustomerIdentifiers(req: any): string[] {
     const fields = [
-      req?.body?.merchantCustomerId,
-      req?.query?.merchantCustomerId,
-      req?.params?.merchantCustomerId,
+      req?.body?.customerId,
+      req?.query?.customerId,
+      req?.params?.customerId,
       req?.body?.customerId,
       req?.query?.customerId,
       req?.params?.customerId,

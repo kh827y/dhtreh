@@ -3,17 +3,13 @@ import { LevelsService } from '../levels/levels.service';
 
 function mkPrisma(overrides: any = {}) {
   const base: any = {
-    merchantCustomer: {
+    customer: {
       findUnique: jest.fn(async () => ({
-        id: 'MC1',
+        id: 'C1',
         merchantId: 'M1',
-        customerId: 'C1',
       })),
       findMany: jest.fn(async () => []),
-    },
-    customer: {
-      findUnique: jest.fn(async () => null),
-      create: jest.fn(async (args: any) => ({ id: args?.data?.id || 'C1' })),
+      create: jest.fn(async (args: any) => ({ id: args?.data?.id || 'C1', merchantId: 'M1' })),
     },
     merchant: { upsert: jest.fn(async () => ({})) },
     merchantSettings: {

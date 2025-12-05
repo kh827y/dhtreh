@@ -1,7 +1,0 @@
-﻿<?xml version="1.0" encoding="utf-8" ?>
-<Manifest xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.w3.org/2001/XMLSchema ../Binaries/iiko/Manifest.xsd">
-  <FileName>GetMeBackPaymentPlugin.dll</FileName>
-  <TypeName>GetMeBackPaymentPlugin_ns.GetMeBackPaymentPlugin</TypeName>
-  <ApiVersion>V8</ApiVersion>
-  <LicenseModuleId>108073418</LicenseModuleId>
-</Manifest>

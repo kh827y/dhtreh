@@ -2078,16 +2078,9 @@ export class MerchantsService {
     return w?.balance ?? 0;
   }
   async findCustomerByPhone(merchantId: string, phone: string) {
+    // Customer теперь per-merchant модель
     const c = await this.prisma.customer.findFirst({
-      where: {
-        phone,
-        OR: [
-          { merchantProfiles: { some: { merchantId } } },
-          { wallets: { some: { merchantId } } },
-          { transactions: { some: { merchantId } } },
-          { Receipt: { some: { merchantId } } },
-        ],
-      },
+      where: { merchantId, phone },
     });
     if (!c) return null;
     const bal = await this.getBalance(merchantId, c.id);

@@ -243,7 +243,7 @@ export class IntegrationsLoyaltyController {
     }
     const now = Math.floor(Date.now() / 1000);
     return {
-      merchantCustomerId: userToken,
+      customerId: userToken,
       merchantAud: undefined,
       jti: `plain:${userToken}:${now}`,
       iat: now,
@@ -251,19 +251,14 @@ export class IntegrationsLoyaltyController {
     } as const;
   }
 
-  private async resolveMerchantContext(merchantId: string, merchantCustomerId: string) {
-    const prismaAny = this.prisma as any;
-    const merchantCustomer = await prismaAny?.merchantCustomer?.findUnique?.({
-      where: { id: merchantCustomerId },
-      include: { customer: true },
+  private async ensureCustomer(merchantId: string, customerId: string) {
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: customerId },
     });
-    if (!merchantCustomer || merchantCustomer.merchantId !== merchantId) {
-      throw new BadRequestException('merchant customer not found');
+    if (!customer || customer.merchantId !== merchantId) {
+      throw new BadRequestException('customer not found');
     }
-    if (!merchantCustomer.customer) {
-      throw new BadRequestException('customer record not found');
-    }
-    return { merchantCustomer, customer: merchantCustomer.customer };
+    return customer;
   }
 
   private async ensureOutletContext(
@@ -287,7 +282,7 @@ export class IntegrationsLoyaltyController {
       userToken?: string | null;
       id_client?: string | null;
     },
-  ) {
+  ): Promise<{ customer: any; userToken: string | null }> {
     const userToken =
       typeof payload.userToken === 'string' && payload.userToken.trim().length
         ? payload.userToken.trim()
@@ -301,23 +296,12 @@ export class IntegrationsLoyaltyController {
       throw new BadRequestException('userToken или id_client обязательны');
     }
 
-    let explicit: { customer: any; merchantCustomer: any } | null = null;
+    let explicitCustomer: any = null;
     if (idClient) {
-      // id_client — это merchantCustomerId
-      const mc = await this.prisma.merchantCustomer.findUnique({
-        where: { id: idClient },
-        include: { customer: true },
-      });
-      if (!mc || mc.merchantId !== merchantId) {
-        throw new BadRequestException('merchant customer not found');
-      }
-      if (!mc.customer) {
-        throw new BadRequestException('customer record not found');
-      }
-      explicit = { merchantCustomer: mc, customer: mc.customer };
+      explicitCustomer = await this.ensureCustomer(merchantId, idClient);
     }
 
-    let tokenContext: { customer: any; merchantCustomer: any } | null = null;
+    let tokenCustomer: any = null;
     if (userToken) {
       const resolved = await this.resolveFromToken(userToken);
       if (
@@ -327,31 +311,18 @@ export class IntegrationsLoyaltyController {
       ) {
         throw new BadRequestException('QR выписан для другого мерчанта');
       }
-      const ctx = await this.resolveMerchantContext(
-        merchantId,
-        resolved.merchantCustomerId,
-      );
-      tokenContext = ctx;
+      tokenCustomer = await this.ensureCustomer(merchantId, resolved.customerId);
     }
 
-    if (
-      explicit &&
-      tokenContext &&
-      explicit.customer.id !== tokenContext.customer.id
-    ) {
-      throw new BadRequestException(
-        'userToken не совпадает с id_client',
-      );
+    if (explicitCustomer && tokenCustomer && explicitCustomer.id !== tokenCustomer.id) {
+      throw new BadRequestException('userToken не совпадает с id_client');
     }
 
-    const finalCtx = explicit ?? tokenContext;
-    if (!finalCtx) {
-      throw new BadRequestException('merchant customer not found');
+    const customer = explicitCustomer ?? tokenCustomer;
+    if (!customer) {
+      throw new BadRequestException('customer not found');
     }
-    return {
-      ...finalCtx,
-      userToken: userToken || null,
-    };
+    return { customer, userToken: userToken || null };
   }
 
   private buildStaffName(staff: {
@@ -1086,41 +1057,24 @@ export class IntegrationsLoyaltyController {
     ) {
       throw new BadRequestException('QR выписан для другого мерчанта');
     }
-    const { customer, merchantCustomer } = await this.resolveMerchantContext(
-      merchantId,
-      resolved.merchantCustomerId,
-    );
+    const customer = await this.ensureCustomer(merchantId, resolved.customerId);
 
-    await this.verifyBridgeSignatureIfRequired(
-      req,
-      merchantId,
-      null,
-      req.body,
-    );
+    await this.verifyBridgeSignatureIfRequired(req, merchantId, null, req.body);
     const [balanceResp, baseRates, analytics] = await Promise.all([
-      this.loyalty.balance(merchantId, merchantCustomer.id),
+      this.loyalty.balance(merchantId, customer.id),
       this.loyalty.getBaseRatesForCustomer(merchantId, customer.id),
       this.loyalty.getCustomerAnalytics(merchantId, customer.id),
     ]);
     const earnPercent = baseRates?.earnPercent ?? 0;
     const redeemLimitPercent = baseRates?.redeemLimitPercent ?? 0;
-    const name =
-      (customer.name && customer.name.trim()) ||
-      (merchantCustomer.name && merchantCustomer.name.trim()) ||
-      null;
-    const phone =
-      (customer.phone && customer.phone.trim()) ||
-      (merchantCustomer.phone && merchantCustomer.phone.trim()) ||
-      null;
-    const email =
-      (customer.email && customer.email.trim()) ||
-      (merchantCustomer.email && merchantCustomer.email.trim()) ||
-      null;
+    const name = customer.name?.trim() || null;
+    const phone = customer.phone?.trim() || null;
+    const email = customer.email?.trim() || null;
     return {
       type: 'bonus',
       client: {
         id_client: customer.id,
-        id_ext: merchantCustomer.externalId ?? null,
+        id_ext: customer.externalId ?? null,
         name,
         phone,
         email,
@@ -1195,7 +1149,7 @@ export class IntegrationsLoyaltyController {
     }
     const paidBonus =
       dto.paid_bonus != null ? this.sanitizeAmount(dto.paid_bonus) : null;
-    const { customer, merchantCustomer, userToken } =
+    const { customer, userToken } =
       await this.resolveCustomerContext(merchantId, dto);
     const outletId =
       typeof dto.outletId === 'string' && dto.outletId.trim()
@@ -1213,9 +1167,8 @@ export class IntegrationsLoyaltyController {
     const operationDate = this.parseOperationDate(dto.operationDate ?? null);
     const preview = await this.loyalty.calculateBonusPreview({
       merchantId,
-      merchantCustomerId: merchantCustomer.id,
       customerId: customer.id,
-      userToken: userToken ?? merchantCustomer.id,
+      userToken: userToken ?? customer.id,
       outletId: outletId ?? undefined,
       operationDate,
       items,
@@ -1246,7 +1199,7 @@ export class IntegrationsLoyaltyController {
     ).trim();
     if (!merchantId) throw new BadRequestException('merchantId required');
     const invoiceNum = (dto.invoice_num || '').trim() || null;
-    const { customer, merchantCustomer, userToken } =
+    const { customer, userToken } =
       await this.resolveCustomerContext(merchantId, dto);
     const operationDate = this.parseOperationDate(dto.operationDate ?? null);
     const sanitizedTotal = this.sanitizeAmount(dto.total);
@@ -1317,9 +1270,8 @@ export class IntegrationsLoyaltyController {
       dto.bonus_value != null ? this.sanitizeAmount(dto.bonus_value) : null;
     const result = await this.loyalty.processIntegrationBonus({
       merchantId,
-      merchantCustomerId: merchantCustomer.id,
       customerId: customer.id,
-      userToken: userToken ?? merchantCustomer.id,
+      userToken: userToken ?? customer.id,
       invoiceNum,
       total: sanitizedTotal,
       items,
@@ -1440,11 +1392,11 @@ export class IntegrationsLoyaltyController {
       operationDate,
     });
     const balanceAfter =
-      result.merchantCustomerId && result.merchantCustomerId.length
+      result.customerId && result.customerId.length
         ? (
             await this.loyalty.balance(
               merchantId,
-              result.merchantCustomerId,
+              result.customerId,
             )
           ).balance
         : null;

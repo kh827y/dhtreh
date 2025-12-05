@@ -129,6 +129,7 @@ export type ListCustomersQuery = {
 
 const msPerDay = 24 * 60 * 60 * 1000;
 
+// После рефактора Customer = per-merchant модель, все поля напрямую
 const customerBaseSelect = (merchantId: string) =>
   ({
     id: true,
@@ -138,21 +139,11 @@ const customerBaseSelect = (merchantId: string) =>
     birthday: true,
     gender: true,
     tags: true,
+    comment: true,
+    accrualsBlocked: true,
+    redemptionsBlocked: true,
     createdAt: true,
-    merchantProfiles: {
-      where: { merchantId },
-      select: {
-        id: true,
-        phone: true,
-        email: true,
-        name: true,
-        comment: true,
-        accrualsBlocked: true,
-        redemptionsBlocked: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    },
+    updatedAt: true,
     tierAssignments: {
       where: {
         merchantId,
@@ -439,13 +430,11 @@ export class PortalCustomersService {
     };
   }
 
+  // После рефактора Customer = per-merchant, entity сам является профилем
   private buildBaseDto(
     entity: CustomerBase,
     aggregates: Aggregates,
   ): PortalCustomerDto {
-    const profile = Array.isArray(entity.merchantProfiles)
-      ? (entity.merchantProfiles[0] ?? null)
-      : null;
     const stats = Array.isArray(entity.customerStats)
       ? (entity.customerStats[0] ?? null)
       : null;
@@ -465,14 +454,10 @@ export class PortalCustomersService {
     const aggregatedLastPurchase = aggregates.lastPurchaseAt.get(id) ?? null;
     const aggregatedFirstPurchase = aggregates.firstPurchaseAt.get(id) ?? null;
 
-    const primaryPhone =
-      (profile?.phone ?? entity.phone ?? null)?.toString() ?? null;
-    const primaryEmail =
-      (profile?.email ?? entity.email ?? null)?.toString() ?? null;
+    const primaryPhone = entity.phone?.toString() ?? null;
+    const primaryEmail = entity.email?.toString() ?? null;
     const displayName =
-      profile?.name ??
-      (typeof entity.name === 'string' ? entity.name : null) ??
-      null;
+      typeof entity.name === 'string' ? entity.name : null;
     const { firstName, lastName } = this.splitName(displayName);
 
     const birthdayIso = entity.birthday
@@ -495,7 +480,7 @@ export class PortalCustomersService {
       firstSeenAt: aggregatedFirstPurchase ?? stats?.firstSeenAt ?? null,
       lastOrderAt: lastPurchaseDate,
     });
-    const registeredSource = profile?.createdAt ?? entity.createdAt ?? null;
+    const registeredSource = entity.createdAt ?? null;
     const registeredAt = registeredSource
       ? new Date(registeredSource).toISOString()
       : null;
@@ -533,9 +518,9 @@ export class PortalCustomersService {
       spendTotal,
       registeredAt,
       createdAt: registeredAt,
-      comment: profile?.comment ?? null,
-      accrualsBlocked: Boolean(profile?.accrualsBlocked),
-      redemptionsBlocked: Boolean(profile?.redemptionsBlocked),
+      comment: entity.comment ?? null,
+      accrualsBlocked: Boolean(entity.accrualsBlocked),
+      redemptionsBlocked: Boolean(entity.redemptionsBlocked),
       levelId,
       levelName,
     };
@@ -579,7 +564,7 @@ export class PortalCustomersService {
     });
     if (!referral?.referrer) return null;
 
-    const profile = await (this.prisma as any)?.merchantCustomer?.findUnique?.({
+    const profile = await (this.prisma as any)?.customer?.findUnique?.({
       where: {
         merchantId_customerId: {
           merchantId,
@@ -603,6 +588,7 @@ export class PortalCustomersService {
     };
   }
 
+  // Возвращает список приглашённых клиентов для данного реферера
   private async resolveInvitedCustomers(
     merchantId: string,
     referrerId: string,
@@ -614,7 +600,6 @@ export class PortalCustomersService {
         refereeId: { not: null },
       },
       orderBy: { createdAt: 'desc' },
-      include: { referee: true },
     });
 
     const refereeIds = referrals
@@ -622,10 +607,11 @@ export class PortalCustomersService {
       .filter((id): id is string => Boolean(id));
     if (!refereeIds.length) return [];
 
-    const [profiles, stats, purchases] = await Promise.all([
-      (this.prisma as any)?.merchantCustomer?.findMany?.({
-        where: { merchantId, customerId: { in: refereeIds } },
-        select: { customerId: true, name: true, phone: true, createdAt: true },
+    // Customer теперь per-merchant модель
+    const [customers, stats, purchases] = await Promise.all([
+      this.prisma.customer.findMany({
+        where: { merchantId, id: { in: refereeIds } },
+        select: { id: true, name: true, phone: true, createdAt: true },
       }),
       this.prisma.customerStats.findMany({
         where: { merchantId, customerId: { in: refereeIds } },
@@ -637,9 +623,9 @@ export class PortalCustomersService {
       }),
     ]);
 
-    const profileMap = new Map<string, any>();
-    for (const profile of profiles ?? []) {
-      profileMap.set(profile.customerId, profile);
+    const customerMap = new Map<string, (typeof customers)[number]>();
+    for (const c of customers) {
+      customerMap.set(c.id, c);
     }
 
     const statsMap = new Map<string, number>();
@@ -653,21 +639,16 @@ export class PortalCustomersService {
     }
 
     return referrals.map((ref) => {
-      const profile = profileMap.get(ref.refereeId ?? '') ?? null;
+      const customer = customerMap.get(ref.refereeId ?? '') ?? null;
       const joinedAt =
-        profile?.createdAt ??
+        customer?.createdAt ??
         ref.activatedAt ??
         ref.completedAt ??
         ref.createdAt;
       return {
         id: ref.refereeId ?? '',
-        name:
-          profile?.name ??
-          ref.referee?.name ??
-          ref.referee?.phone ??
-          ref.refereeId ??
-          null,
-        phone: profile?.phone ?? ref.referee?.phone ?? null,
+        name: customer?.name ?? ref.refereeId ?? null,
+        phone: customer?.phone ?? null,
         joinedAt: joinedAt ? joinedAt.toISOString() : null,
         purchases:
           purchasesMap.get(ref.refereeId ?? '') ??
@@ -1250,7 +1231,7 @@ export class PortalCustomersService {
         { wallets: { some: { merchantId, type: WalletType.POINTS } } },
         { transactions: { some: { merchantId } } },
         { Receipt: { some: { merchantId } } },
-        { merchantProfiles: { some: { merchantId } } },
+        { merchantId },
       ],
     };
 
@@ -1262,26 +1243,8 @@ export class PortalCustomersService {
         AND: [
           { birthday: { not: null } },
           { gender: { in: ['male', 'female'] } },
-          {
-            OR: [
-              { phone: { not: null } },
-              {
-                merchantProfiles: {
-                  some: { merchantId, phone: { not: null } },
-                },
-              },
-            ],
-          },
-          {
-            OR: [
-              { name: { not: null } },
-              {
-                merchantProfiles: {
-                  some: { merchantId, name: { not: null } },
-                },
-              },
-            ],
-          },
+          { phone: { not: null } },
+          { name: { not: null } },
         ],
       });
     }
@@ -2176,7 +2139,7 @@ export class PortalCustomersService {
 
     const prismaAny = this.prisma as any;
     if (phone) {
-      const existingPhone = await prismaAny?.merchantCustomer?.findUnique?.({
+      const existingPhone = await prismaAny?.customer?.findUnique?.({
         where: { merchantId_phone: { merchantId, phone } },
       });
       if (existingPhone) {
@@ -2184,7 +2147,7 @@ export class PortalCustomersService {
       }
     }
     if (email) {
-      const existingEmail = await prismaAny?.merchantCustomer?.findUnique?.({
+      const existingEmail = await prismaAny?.customer?.findUnique?.({
         where: { merchantId_email: { merchantId, email } },
       });
       if (existingEmail) {
@@ -2192,14 +2155,19 @@ export class PortalCustomersService {
       }
     }
 
+    // Customer теперь per-merchant модель
     const customer = await this.prisma.customer.create({
       data: {
+        merchantId,
         phone: phone ?? null,
         email: email ?? null,
         name: fullName ?? null,
         birthday: dto.birthday ? new Date(dto.birthday) : null,
         gender: dto.gender ?? null,
         tags: this.sanitizeTags(dto.tags),
+        comment: dto.comment?.trim?.() || null,
+        accrualsBlocked: Boolean(dto.accrualsBlocked),
+        redemptionsBlocked: Boolean(dto.redemptionsBlocked),
       },
     });
 
@@ -2209,20 +2177,6 @@ export class PortalCustomersService {
         merchantId,
         type: WalletType.POINTS,
         balance: 0,
-      },
-    });
-
-    await prismaAny?.merchantCustomer?.create?.({
-      data: {
-        merchantId,
-        customerId: customer.id,
-        tgId: null,
-        phone: phone ?? null,
-        email: email ?? null,
-        name: fullName ?? null,
-        comment: dto.comment?.trim?.() || null,
-        accrualsBlocked: Boolean(dto.accrualsBlocked),
-        redemptionsBlocked: Boolean(dto.redemptionsBlocked),
       },
     });
 
@@ -2284,7 +2238,7 @@ export class PortalCustomersService {
     if (dto.phone !== undefined) {
       const phone = dto.phone?.trim() || null;
       if (phone) {
-        const clash = await prismaAny?.merchantCustomer?.findUnique?.({
+        const clash = await prismaAny?.customer?.findUnique?.({
           where: { merchantId_phone: { merchantId, phone } },
         });
         if (clash && clash.customerId !== customerId) {
@@ -2297,7 +2251,7 @@ export class PortalCustomersService {
     if (dto.email !== undefined) {
       const email = dto.email?.trim()?.toLowerCase() || null;
       if (email) {
-        const clash = await prismaAny?.merchantCustomer?.findUnique?.({
+        const clash = await prismaAny?.customer?.findUnique?.({
           where: { merchantId_email: { merchantId, email } },
         });
         if (clash && clash.customerId !== customerId) {
@@ -2384,7 +2338,7 @@ export class PortalCustomersService {
     }
 
     if (Object.keys(merchantUpdate).length > 0) {
-      await prismaAny?.merchantCustomer?.upsert?.({
+      await prismaAny?.customer?.upsert?.({
         where: {
           merchantId_customerId: { merchantId, customerId },
         },
@@ -2451,11 +2405,11 @@ export class PortalCustomersService {
     customerId: string,
     mode: 'earn' | 'redeem',
   ) {
-    const profile = await this.prisma.merchantCustomer.findUnique({
-      where: { merchantId_customerId: { merchantId, customerId } },
-      select: { accrualsBlocked: true, redemptionsBlocked: true },
+    const profile = await this.prisma.customer.findUnique({
+      where: { id: customerId },
+      select: { merchantId: true, accrualsBlocked: true, redemptionsBlocked: true },
     });
-    if (!profile) return;
+    if (!profile || profile.merchantId !== merchantId) return;
     if (mode === 'earn' && profile.accrualsBlocked) {
       throw new BadRequestException('Начисления заблокированы администратором');
     }
@@ -2485,7 +2439,7 @@ export class PortalCustomersService {
           },
         },
       }),
-      (this.prisma as any)?.merchantCustomer?.deleteMany?.({
+      (this.prisma as any)?.customer?.deleteMany?.({
         where: { merchantId, customerId },
       }),
     ]);

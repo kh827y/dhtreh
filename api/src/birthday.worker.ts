@@ -32,7 +32,6 @@ type MerchantConfig = {
 
 type Candidate = {
   customerId: string;
-  merchantCustomerName: string | null;
   customerName: string | null;
   birthdayDate: Date;
 };
@@ -323,33 +322,32 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
     merchant: MerchantConfig,
     target: Date,
   ): Promise<Candidate[]> {
-    const rows = await this.prisma.merchantCustomer.findMany({
+    // Customer теперь per-merchant, поля напрямую
+    const rows = await this.prisma.customer.findMany({
       where: {
         merchantId: merchant.id,
         tgId: { not: null },
-        customer: { birthday: { not: null } },
+        birthday: { not: null },
       },
       select: {
-        customerId: true,
+        id: true,
         name: true,
-        customer: { select: { birthday: true, name: true } },
+        birthday: true,
       },
     });
 
     const candidates: Candidate[] = [];
     for (const row of rows) {
-      const birthday = row.customer?.birthday;
-      if (!birthday) continue;
+      if (!row.birthday) continue;
       const actual = this.resolveBirthdayEvent(
-        birthday,
+        row.birthday,
         merchant.config,
         target,
       );
       if (!actual) continue;
       candidates.push({
-        customerId: row.customerId,
-        merchantCustomerName: row.name ?? null,
-        customerName: row.customer?.name ?? null,
+        customerId: row.id,
+        customerName: row.name ?? null,
         birthdayDate: actual,
       });
     }
@@ -383,7 +381,7 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
     target: Date,
   ): Promise<{ record: BirthdayGreeting | null; giftIssued: number }> {
     const username =
-      candidate.merchantCustomerName ||
+      candidate.customerName ||
       candidate.customerName ||
       'Уважаемый клиент';
     const giftIssued =

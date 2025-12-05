@@ -85,16 +85,16 @@ export async function getJose() {
 
 export async function signQrToken(
   secret: string,
-  merchantCustomerId: string,
+  customerId: string,
   merchantId?: string,
   ttlSec = 60,
 ) {
   const { SignJWT } = await getJose();
   const now = Math.floor(Date.now() / 1000);
   // Ensure JTI uniqueness to prevent accidental reuse within the same second
-  const jti = `${merchantCustomerId}:${now}:${randomUUID()}`;
+  const jti = `${customerId}:${now}:${randomUUID()}`;
   const kid = process.env.QR_JWT_KID || undefined;
-  return await new SignJWT({ sub: merchantCustomerId, t: 'qr' })
+  return await new SignJWT({ sub: customerId, t: 'qr' })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT', ...(kid ? { kid } : {}) })
     .setIssuedAt(now)
     .setExpirationTime(now + ttlSec)
@@ -104,7 +104,7 @@ export async function signQrToken(
 }
 
 export type VerifiedQr = {
-  merchantCustomerId: string;
+  customerId: string;
   merchantAud?: string;
   jti: string;
   iat: number;
@@ -136,7 +136,7 @@ export async function verifyQrToken(
     | string
     | undefined;
   return {
-    merchantCustomerId: String(payload.sub),
+    customerId: String(payload.sub),
     merchantAud: aud,
     jti: String(payload.jti),
     iat: payload.iat!,

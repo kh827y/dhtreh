@@ -1,11 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
 import { IntegrationsLoyaltyController } from './integrations-loyalty.controller';
 
-type PrismaMock = ReturnType<typeof createPrismaMock>;
+type PrismaMock = Record<string, any>;
 
-function createPrismaMock(overrides: Partial<PrismaMock> = {}) {
+function createPrismaMock(overrides: PrismaMock = {}) {
   return {
-    merchantCustomer: {
+    customer: {
       findUnique: jest.fn().mockResolvedValue(null),
     },
     outlet: {
@@ -68,15 +68,15 @@ describe('IntegrationsLoyaltyController', () => {
   } as any;
 
   it('использует id_client при отсутствии userToken', async () => {
-    const merchantCustomer = {
+    const customer = {
       id: 'MC-1',
       merchantId: 'M-1',
       customerId: 'C-1',
       customer: { id: 'C-1' },
     };
     const { controller, prisma, loyalty } = createController({
-      merchantCustomer: {
-        findUnique: jest.fn().mockResolvedValue(merchantCustomer),
+      customer: {
+        findUnique: jest.fn().mockResolvedValue(customer),
       },
     });
     loyalty.calculateBonusPreview.mockResolvedValue({
@@ -88,7 +88,7 @@ describe('IntegrationsLoyaltyController', () => {
     });
 
     const dto: any = {
-      id_client: merchantCustomer.id,
+      id_client: customer.id,
       items: [{ id_product: 'P1', qty: 1, price: 100 }],
     };
     const resp = await controller.calculateBonusPreview(dto, {
@@ -99,23 +99,22 @@ describe('IntegrationsLoyaltyController', () => {
     expect(resp.balance).toBe(0);
     expect(loyalty.calculateBonusPreview).toHaveBeenCalledWith(
       expect.objectContaining({
-        merchantCustomerId: merchantCustomer.id,
-        customerId: merchantCustomer.customerId,
+        customerId: customer.id,
       }),
     );
-    expect(prisma.merchantCustomer.findUnique).toHaveBeenCalled();
+    expect(prisma.customer.findUnique).toHaveBeenCalled();
   });
 
   it('ошибается, если не переданы outletId/deviceId/managerId в BONUS', async () => {
-    const merchantCustomer = {
+    const customer = {
       id: 'MC-2',
       merchantId: 'M-1',
       customerId: 'C-2',
       customer: { id: 'C-2' },
     };
     const { controller, loyalty, prisma } = createController({
-      merchantCustomer: {
-        findUnique: jest.fn().mockResolvedValue(merchantCustomer),
+      customer: {
+        findUnique: jest.fn().mockResolvedValue(customer),
       },
     });
     loyalty.processIntegrationBonus.mockResolvedValue({
@@ -130,7 +129,7 @@ describe('IntegrationsLoyaltyController', () => {
     });
 
     const dto: any = {
-      id_client: merchantCustomer.id,
+      id_client: customer.id,
       invoice_num: 'ORDER-1',
       total: 100,
       items: [],
@@ -143,7 +142,7 @@ describe('IntegrationsLoyaltyController', () => {
   });
 
   it('прокидывает managerId и подставляет outlet из сотрудника', async () => {
-    const merchantCustomer = {
+    const customer = {
       id: 'MC-3',
       merchantId: 'M-1',
       customerId: 'C-3',
@@ -151,8 +150,8 @@ describe('IntegrationsLoyaltyController', () => {
     };
     const { controller, loyalty, prisma } = createController(
       {
-        merchantCustomer: {
-          findUnique: jest.fn().mockResolvedValue(merchantCustomer),
+        customer: {
+          findUnique: jest.fn().mockResolvedValue(customer),
         },
         staff: {
           findFirst: jest.fn().mockResolvedValue({
@@ -181,7 +180,7 @@ describe('IntegrationsLoyaltyController', () => {
     });
 
     const dto: any = {
-      id_client: merchantCustomer.id,
+      id_client: customer.id,
       invoice_num: 'ORDER-2',
       total: 200,
       managerId: 'STAFF-1',
@@ -200,15 +199,15 @@ describe('IntegrationsLoyaltyController', () => {
   });
 
   it('возвращает invoice_num/order_id и outlet_name в ответе BONUS', async () => {
-    const merchantCustomer = {
+    const customer = {
       id: 'MC-4',
       merchantId: 'M-1',
       customerId: 'C-4',
       customer: { id: 'C-4' },
     };
     const { controller, loyalty, prisma } = createController({
-      merchantCustomer: {
-        findUnique: jest.fn().mockResolvedValue(merchantCustomer),
+      customer: {
+        findUnique: jest.fn().mockResolvedValue(customer),
       },
       receipt: {
         findFirst: jest.fn().mockResolvedValue({
@@ -236,7 +235,7 @@ describe('IntegrationsLoyaltyController', () => {
     });
 
     const dto: any = {
-      id_client: merchantCustomer.id,
+      id_client: customer.id,
       invoice_num: 'INV-42',
       total: 420,
       outletId: 'OUT-42',
@@ -265,7 +264,7 @@ describe('IntegrationsLoyaltyController', () => {
     loyalty.refund.mockResolvedValue({
       pointsRestored: 30,
       pointsRevoked: 10,
-      merchantCustomerId: 'MC-9',
+      customerId: 'MC-9',
     });
     loyalty.balance.mockResolvedValue({ balance: 100 });
 

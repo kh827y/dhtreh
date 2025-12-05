@@ -28,7 +28,10 @@ describe('AntiFraudGuard', () => {
     alerts = {
       antifraudBlocked: jest.fn().mockResolvedValue(undefined),
     };
-    guard = new AntiFraudGuard(prisma, metrics, antifraud, alerts);
+    const staffNotify = {
+      pushSuspiciousTx: jest.fn(),
+    } as any;
+    guard = new AntiFraudGuard(prisma as any, metrics as any, antifraud as any, alerts as any, staffNotify);
   });
 
   afterAll(() => {

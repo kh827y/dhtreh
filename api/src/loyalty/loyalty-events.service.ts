@@ -11,7 +11,6 @@ export type LoyaltyRealtimeEvent = {
   id: string;
   merchantId: string;
   customerId: string;
-  merchantCustomerId?: string | null;
   transactionId?: string | null;
   transactionType?: string | null;
   amount?: number | null;
@@ -30,7 +29,7 @@ type PendingListener = {
 export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(LoyaltyEventsService.name);
   private readonly listeners = new Set<PendingListener>();
-  private readonly merchantCustomerCache = new Map<string, string>();
+  private readonly customerCache = new Map<string, string>();
   private readonly reverseCustomerCache = new Map<
     string,
     { merchantId: string; customerId: string }
@@ -70,23 +69,18 @@ export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
 
   async waitForCustomerEvent(
     merchantId: string,
-    merchantCustomerId: string,
+    customerId: string,
     timeoutMs = 25000,
   ): Promise<LoyaltyRealtimeEvent | null> {
     const sanitizedMerchantId = (merchantId || '').trim();
-    const sanitizedMerchantCustomerId = (merchantCustomerId || '').trim();
-    if (!sanitizedMerchantId || !sanitizedMerchantCustomerId) {
+    const sanitizedCustomerId = (customerId || '').trim();
+    if (!sanitizedMerchantId || !sanitizedCustomerId) {
       return null;
     }
 
-    const resolvedCustomerId = await this.resolveCustomerId(
-      sanitizedMerchantId,
-      sanitizedMerchantCustomerId,
-    );
     const immediate = await this.claimPersistedEvent(
       sanitizedMerchantId,
-      sanitizedMerchantCustomerId,
-      resolvedCustomerId,
+      sanitizedCustomerId,
     );
     if (immediate) return immediate;
 
@@ -97,10 +91,7 @@ export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
       const event = await this.waitForEvent(
         (payload) =>
           payload.merchantId === sanitizedMerchantId &&
-          (payload.merchantCustomerId === sanitizedMerchantCustomerId ||
-            (!!resolvedCustomerId &&
-              !payload.merchantCustomerId &&
-              payload.customerId === resolvedCustomerId)),
+          payload.customerId === sanitizedCustomerId,
         window,
       );
       if (event) {
@@ -109,8 +100,7 @@ export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
       }
       const fallback = await this.claimPersistedEvent(
         sanitizedMerchantId,
-        sanitizedMerchantCustomerId,
-        resolvedCustomerId,
+        sanitizedCustomerId,
       );
       if (fallback) {
         return fallback;
@@ -121,22 +111,15 @@ export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
 
   private async claimPersistedEvent(
     merchantId: string,
-    merchantCustomerId: string,
-    customerIdHint?: string | null,
+    customerId: string,
   ): Promise<LoyaltyRealtimeEvent | null> {
     try {
       const prismaAny = this.prisma as any;
-      const customerId =
-        customerIdHint ??
-        (await this.resolveCustomerId(merchantId, merchantCustomerId));
       const where: any = {
         merchantId,
         deliveredAt: null,
-        OR: [{ merchantCustomerId }],
+        customerId,
       };
-      if (customerId) {
-        where.OR.push({ merchantCustomerId: null, customerId });
-      }
       const record = await prismaAny?.loyaltyRealtimeEvent?.findFirst?.({
         where,
         orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
@@ -149,9 +132,9 @@ export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
       if (!claimed || claimed.count !== 1) {
         return null;
       }
-      if (!record.merchantCustomerId) {
-        record.merchantCustomerId = merchantCustomerId;
-        void this.patchMissingMerchantCustomer(record.id, merchantCustomerId);
+      if (!record.customerId) {
+        record.customerId = customerId;
+        void this.patchMissingCustomer(record.id, customerId);
       }
       return this.mapRecord(record);
     } catch (error) {
@@ -164,15 +147,15 @@ export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async patchMissingMerchantCustomer(
+  private async patchMissingCustomer(
     eventId: string,
-    merchantCustomerId: string,
+    customerId: string,
   ) {
     try {
       const prismaAny = this.prisma as any;
       await prismaAny?.loyaltyRealtimeEvent?.update?.({
         where: { id: eventId },
-        data: { merchantCustomerId },
+        data: { customerId },
       });
     } catch {}
   }
@@ -195,22 +178,17 @@ export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private mapRecord(record: any): LoyaltyRealtimeEvent {
-    const merchantCustomerId =
-      typeof record?.merchantCustomerId === 'string'
-        ? record.merchantCustomerId
+    const customerId =
+      typeof record?.customerId === 'string'
+        ? record.customerId
         : null;
-    if (merchantCustomerId) {
-      this.rememberCustomerPair(
-        record.merchantId,
-        record.customerId,
-        merchantCustomerId,
-      );
+    if (customerId) {
+      this.rememberCustomer(record.merchantId, customerId);
     }
     return {
       id: record.id,
       merchantId: record.merchantId,
       customerId: record.customerId,
-      merchantCustomerId,
       transactionId: record.transactionId ?? null,
       transactionType: record.transactionType ?? null,
       amount:
@@ -258,74 +236,11 @@ export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async resolveMerchantCustomerId(
-    merchantId: string,
-    customerId: string,
-  ): Promise<string | null> {
+  // После рефакторинга Customer это per-merchant модель, кеширование упрощено
+  private rememberCustomer(merchantId: string, customerId: string) {
     const key = `${merchantId}:${customerId}`;
-    if (this.merchantCustomerCache.has(key)) {
-      return this.merchantCustomerCache.get(key)!;
-    }
-    try {
-      const record = await (this.prisma as any)?.merchantCustomer?.findFirst?.({
-        where: { merchantId, customerId },
-        select: { id: true },
-      });
-      const id = record?.id ?? null;
-      if (id) {
-        this.rememberCustomerPair(merchantId, customerId, id);
-      }
-      return id;
-    } catch (error) {
-      this.logger.warn(
-        `Failed to resolve merchantCustomerId for merchant=${merchantId} customer=${customerId}: ${
-          error instanceof Error ? error.message : error
-        }`,
-      );
-      return null;
-    }
-  }
-
-  private async resolveCustomerId(
-    merchantId: string,
-    merchantCustomerId: string,
-  ): Promise<string | null> {
-    const cached = this.reverseCustomerCache.get(merchantCustomerId);
-    if (cached && cached.merchantId === merchantId) {
-      return cached.customerId;
-    }
-    try {
-      const record = await (this.prisma as any)?.merchantCustomer?.findUnique?.(
-        {
-          where: { id: merchantCustomerId },
-          select: { merchantId: true, customerId: true },
-        },
-      );
-      if (!record || record.merchantId !== merchantId) return null;
-      this.rememberCustomerPair(
-        record.merchantId,
-        record.customerId,
-        merchantCustomerId,
-      );
-      return record.customerId;
-    } catch (error) {
-      this.logger.warn(
-        `Failed to resolve customerId for merchantCustomer=${merchantCustomerId}: ${
-          error instanceof Error ? error.message : error
-        }`,
-      );
-      return null;
-    }
-  }
-
-  private rememberCustomerPair(
-    merchantId: string,
-    customerId: string,
-    merchantCustomerId: string,
-  ) {
-    const key = `${merchantId}:${customerId}`;
-    this.merchantCustomerCache.set(key, merchantCustomerId);
-    this.reverseCustomerCache.set(merchantCustomerId, {
+    this.customerCache.set(key, customerId);
+    this.reverseCustomerCache.set(customerId, {
       merchantId,
       customerId,
     });
@@ -413,24 +328,11 @@ export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
       const customerId =
         typeof data?.customerId === 'string' ? data.customerId : null;
       if (!id || !merchantId || !customerId) return;
-      let merchantCustomerId =
-        typeof data?.merchantCustomerId === 'string'
-          ? data.merchantCustomerId
-          : null;
-      if (!merchantCustomerId) {
-        merchantCustomerId = await this.resolveMerchantCustomerId(
-          merchantId,
-          customerId,
-        );
-      }
-      if (merchantCustomerId) {
-        this.rememberCustomerPair(merchantId, customerId, merchantCustomerId);
-      }
+      this.rememberCustomer(merchantId, customerId);
       const event: LoyaltyRealtimeEvent = {
         id,
         merchantId,
         customerId,
-        merchantCustomerId,
         transactionId:
           typeof data?.transactionId === 'string' ? data.transactionId : null,
         transactionType:

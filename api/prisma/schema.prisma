@@ -274,7 +274,7 @@ model Merchant {
   telegramStaffSubscribers    TelegramStaffSubscriber[]
   // telegram miniapp: per-merchant mapping of tg users
   customerTelegrams           CustomerTelegram[]
-  merchantCustomers           MerchantCustomer[]
+  customers                   Customer[]
   autoReturnAttempts          AutoReturnAttempt[]
   birthdayGreetings           BirthdayGreeting[]
   // staff access per outlet
@@ -372,24 +372,36 @@ model Consent {
 }
 
 model Customer {
-  id                          String                       @id @default(cuid())
-  phone                       String?
-  tgId                        String?
-  email                       String?
-  name                        String?
-  birthday                    DateTime?
-  gender                      String?
-  city                        String?
-  tags                        String[]
-  metadata                    Json?
+  id                 String    @id @default(cuid())
+  merchantId         String
+  externalId         String?
+  tgId               String?
+  phone              String?
+  email              String?
+  name               String?
+  birthday           DateTime?
+  gender             String?
+  city               String?
+  tags               String[]
+  metadata           Json?
+  profileGender      String?
+  profileBirthDate   DateTime?
+  profileCompletedAt DateTime?
+  comment            String?
+  accrualsBlocked    Boolean   @default(false)
+  redemptionsBlocked Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+
+  // relations
   wallets                     Wallet[]
   holds                       Hold[]
   transactions                Transaction[]
-  createdAt                   DateTime                     @default(now())
   Receipt                     Receipt[]
   consents                    Consent[]
   segments                    SegmentCustomer[]
-  // back-relations
   promoCodeUsages             PromoCodeUsage[]
   reviews                     Review[]
   reviewReactions             ReviewReaction[]
@@ -403,57 +415,33 @@ model Customer {
   birthdayGreetings           BirthdayGreeting[]
   tierAssignments             LoyaltyTierAssignment[]
   communicationTaskRecipients CommunicationTaskRecipient[]
-  merchantProfiles            MerchantCustomer[]
+  telegramLinks               CustomerTelegram[]
   staffMotivationEntries      StaffMotivationEntry[]
-}
 
-/// Mapping of Telegram user to per-merchant Customer account
-model CustomerTelegram {
-  id                 String   @id @default(cuid())
-  merchantId         String
-  tgId               String
-  merchantCustomerId String   @unique
-  createdAt          DateTime @default(now())
-
-  merchant         Merchant         @relation(fields: [merchantId], references: [id])
-  merchantCustomer MerchantCustomer @relation(fields: [merchantCustomerId], references: [id])
-
-  @@unique([merchantId, tgId])
-  @@index([merchantId])
-  @@index([tgId])
-}
-
-model MerchantCustomer {
-  id                 String    @id @default(cuid())
-  merchantId         String
-  customerId         String
-  externalId         String?
-  tgId               String?
-  phone              String?
-  email              String?
-  name               String?
-  profileGender      String?
-  profileBirthDate   DateTime?
-  profileCompletedAt DateTime?
-  comment            String?
-  accrualsBlocked    Boolean   @default(false)
-  redemptionsBlocked Boolean   @default(false)
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
-
-  merchant                Merchant                     @relation(fields: [merchantId], references: [id])
-  customer                Customer                     @relation(fields: [customerId], references: [id])
-  telegramLinks           CustomerTelegram[]
-  communicationRecipients CommunicationTaskRecipient[]
-
-  @@unique([merchantId, customerId])
   @@unique([merchantId, externalId])
   @@unique([merchantId, tgId])
   @@unique([merchantId, phone])
   @@unique([merchantId, email])
-  @@index([customerId])
+  @@index([merchantId])
   @@index([tgId])
   @@index([phone])
+}
+
+/// Mapping of Telegram user to per-merchant Customer account
+model CustomerTelegram {
+  id          String   @id @default(cuid())
+  merchantId  String
+  tgId        String
+  customerId  String
+  createdAt   DateTime @default(now())
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+  customer Customer @relation(fields: [customerId], references: [id])
+
+  @@unique([merchantId, tgId])
+  @@index([merchantId])
+  @@index([tgId])
+  @@index([customerId])
 }
 
 model Wallet {
@@ -700,7 +688,6 @@ model LoyaltyRealtimeEvent {
   id                 String    @id @default(cuid())
   merchantId         String
   customerId         String
-  merchantCustomerId String?
   transactionId      String?
   transactionType    String?
   amount             Int?
@@ -711,7 +698,6 @@ model LoyaltyRealtimeEvent {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  @@index([merchantId, merchantCustomerId, deliveredAt])
   @@index([merchantId, customerId, deliveredAt])
   @@index([deliveredAt])
 }
@@ -1649,7 +1635,6 @@ model CommunicationTaskRecipient {
   taskId             String
   merchantId         String
   customerId         String?
-  merchantCustomerId String?
   channel            CommunicationChannel
   status             String               @default("PENDING")
   sentAt             DateTime?
@@ -1658,14 +1643,12 @@ model CommunicationTaskRecipient {
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @updatedAt
 
-  task             CommunicationTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  merchant         Merchant          @relation(fields: [merchantId], references: [id])
-  customer         Customer?         @relation(fields: [customerId], references: [id])
-  merchantCustomer MerchantCustomer? @relation(fields: [merchantCustomerId], references: [id])
+  task     CommunicationTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  merchant Merchant          @relation(fields: [merchantId], references: [id])
+  customer Customer?         @relation(fields: [customerId], references: [id])
 
   @@index([taskId, status])
   @@index([merchantId, channel])
-  @@index([merchantCustomerId])
 }
 
 model CommunicationAsset {

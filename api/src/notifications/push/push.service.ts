@@ -26,7 +26,6 @@ export interface SendPushDto {
 }
 
 type PushRecipient = {
-  merchantCustomerId: string;
   customerId: string;
   tgId: string;
 };
@@ -305,7 +304,7 @@ export class PushService {
         where,
         _count: true,
       }),
-      this.prisma.merchantCustomer.count({
+      this.prisma.customer.count({
         where: { merchantId, tgId: { not: null } },
       }),
     ]);
@@ -376,12 +375,12 @@ export class PushService {
   }
 
   async getCustomerWithDevice(customerId: string) {
-    const record = await this.prisma.merchantCustomer.findFirst({
-      where: { customerId, tgId: { not: null } },
-      select: { merchantId: true, customerId: true },
+    const record = await this.prisma.customer.findFirst({
+      where: { id: customerId, tgId: { not: null } },
+      select: { id: true, merchantId: true },
     });
     if (!record) return null;
-    return { customerId: record.customerId, merchantId: record.merchantId };
+    return { customerId: record.id, merchantId: record.merchantId };
   }
 
   private async ensureTelegramConnected(merchantId: string) {
@@ -400,17 +399,17 @@ export class PushService {
     merchantId: string,
     specificCustomers?: string[],
   ): Promise<PushRecipient[]> {
-    const where: Prisma.MerchantCustomerWhereInput = {
+    const where: Prisma.CustomerWhereInput = {
       merchantId,
       tgId: { not: null },
     };
     if (specificCustomers?.length) {
-      where.customerId = { in: specificCustomers };
+      where.id = { in: specificCustomers };
     }
 
-    const rows = await this.prisma.merchantCustomer.findMany({
+    const rows = await this.prisma.customer.findMany({
       where,
-      select: { id: true, customerId: true, tgId: true },
+      select: { id: true, tgId: true },
     });
 
     const seen = new Set<string>();
@@ -421,8 +420,7 @@ export class PushService {
       if (!key || seen.has(key)) continue;
       seen.add(key);
       recipients.push({
-        merchantCustomerId: row.id,
-        customerId: row.customerId,
+        customerId: row.id,
         tgId: key,
       });
     }

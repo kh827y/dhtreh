@@ -607,9 +607,10 @@ export class ImportExportService {
         },
       });
     } else {
-      // Создаем нового клиента
+      // Создаем нового клиента (Customer per-merchant)
       customer = await this.prisma.customer.create({
         data: {
+          merchantId,
           phone,
           email: row.email,
           name: row.name,

@@ -3,7 +3,6 @@ import { validateTelegramInitData } from './telegram.util';
 
 export type TelegramAuthContext = {
   merchantId: string;
-  merchantCustomerId: string;
   customerId: string;
   tgId: string;
 };
@@ -46,16 +45,15 @@ export async function resolveTelegramAuthContext(
   if (!validation.ok || !validation.userId) return null;
   const tgId = String(validation.userId);
   try {
-    const prismaAny = prisma as any;
-    const merchantCustomer = await prismaAny?.merchantCustomer?.findFirst?.({
+    // Customer теперь per-merchant модель
+    const customer = await prisma.customer.findFirst({
       where: { merchantId, tgId },
-      select: { id: true, customerId: true },
+      select: { id: true },
     });
-    if (!merchantCustomer) return null;
+    if (!customer) return null;
     return {
       merchantId,
-      merchantCustomerId: merchantCustomer.id,
-      customerId: merchantCustomer.customerId,
+      customerId: customer.id,
       tgId,
     };
   } catch {

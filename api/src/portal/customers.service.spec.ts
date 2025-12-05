@@ -17,14 +17,11 @@ const vipTier = {
 function buildPrisma() {
   return {
     customer: {
-      create: jest.fn(async () => ({ id: 'cust-1' })),
+      findUnique: jest.fn(async () => null),
+      create: jest.fn(async () => ({ id: 'cust-1', merchantId: 'M1' })),
     },
     wallet: {
       create: jest.fn(async () => ({ id: 'wallet-1' })),
-    },
-    merchantCustomer: {
-      findUnique: jest.fn(async () => null),
-      create: jest.fn(async () => ({ id: 'mc-1' })),
     },
     loyaltyTier: {
       findFirst: jest.fn(async () => ({ ...baseTier })),

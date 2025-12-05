@@ -72,17 +72,15 @@ export class LoyaltyPublicController {
     @Body()
     body: {
       merchantId?: string;
-      merchantCustomerId?: string;
+      customerId?: string;
       outletId?: string | null;
       staffId?: string | null;
     },
   ) {
     const merchantId =
       typeof body?.merchantId === 'string' ? body.merchantId.trim() : '';
-    const merchantCustomerId =
-      typeof body?.merchantCustomerId === 'string'
-        ? body.merchantCustomerId.trim()
-        : '';
+    const customerId =
+      typeof body?.customerId === 'string' ? body.customerId.trim() : '';
     const outletId =
       typeof body?.outletId === 'string' && body.outletId.trim()
         ? body.outletId.trim()
@@ -92,22 +90,19 @@ export class LoyaltyPublicController {
         ? body.staffId.trim()
         : null;
     if (!merchantId) throw new BadRequestException('merchantId required');
-    if (!merchantCustomerId)
-      throw new BadRequestException('merchantCustomerId required');
+    if (!customerId) throw new BadRequestException('customerId required');
 
-    const merchantCustomer = await (this.prisma as any)?.merchantCustomer
-      ?.findUnique?.({
-        where: { id: merchantCustomerId },
-        select: { customerId: true, merchantId: true },
-      })
-      .catch(() => null);
-    if (!merchantCustomer || merchantCustomer.merchantId !== merchantId)
-      throw new BadRequestException('merchant customer not found');
-    const customerId = merchantCustomer.customerId;
+    // Customer теперь per-merchant модель
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: customerId },
+      select: { id: true, merchantId: true },
+    });
+    if (!customer || customer.merchantId !== merchantId)
+      throw new BadRequestException('customer not found');
 
     return this.loyalty.grantRegistrationBonus({
       merchantId,
-      customerId,
+      customerId: customer.id,
       outletId,
       staffId,
     });
@@ -118,19 +113,19 @@ export class LoyaltyPublicController {
   @Throttle({ default: { limit: 120, ttl: 60_000 } })
   async pollEvents(
     @Query('merchantId') merchantId?: string,
-    @Query('merchantCustomerId') merchantCustomerId?: string,
+    @Query('customerId') customerId?: string,
   ) {
     const sanitizedMerchantId = (merchantId || '').trim();
-    const sanitizedMerchantCustomerId = (merchantCustomerId || '').trim();
+    const sanitizedCustomerId = (customerId || '').trim();
     if (!sanitizedMerchantId) {
       throw new BadRequestException('merchantId is required');
     }
-    if (!sanitizedMerchantCustomerId) {
-      throw new BadRequestException('merchantCustomerId is required');
+    if (!sanitizedCustomerId) {
+      throw new BadRequestException('customerId is required');
     }
     const event = await this.events.waitForCustomerEvent(
       sanitizedMerchantId,
-      sanitizedMerchantCustomerId,
+      sanitizedCustomerId,
     );
     return { event };
   }

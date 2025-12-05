@@ -62,13 +62,13 @@ describe('ReferralService (unit)', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('createReferral fails when no active program', async () => {
+  it('activateReferral fails when code not found', async () => {
     const prisma = mkPrisma({
-      referralProgram: { findFirst: jest.fn(async () => null) },
+      personalReferralCode: { findFirst: jest.fn(async () => null) },
     });
     const svc = mkSvc(prisma);
     await expect(
-      svc.createReferral({ merchantId: 'M1', referrerId: 'C1' }),
+      svc.activateReferral('BADCODE', 'C1'),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
@@ -91,13 +91,12 @@ describe('ReferralService (unit)', () => {
     expect(res).toBeNull();
   });
 
-  it('checkReferralCode returns valid=false when not found', async () => {
+  it('getActiveProgram returns null when no active program', async () => {
     const prisma = mkPrisma({
-      referral: { findFirst: jest.fn(async () => null) },
-      personalReferralCode: { findFirst: jest.fn(async () => null) },
+      referralProgram: { findFirst: jest.fn(async () => null) },
     });
     const svc = mkSvc(prisma);
-    const res = await svc.checkReferralCode('BAD');
-    expect(res.valid).toBe(false);
+    const res = await svc.getActiveProgram('M1');
+    expect(res).toBeNull();
   });
 });

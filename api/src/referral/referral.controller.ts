@@ -71,14 +71,14 @@ export class ReferralController {
     dto: {
       code: string;
       refereeId?: string;
-      merchantCustomerId?: string;
+      customerId?: string;
     },
   ) {
-    const refereeId = dto.merchantCustomerId
-      ? await this.referralService.resolveCustomerId(dto.merchantCustomerId)
+    const refereeId = dto.customerId
+      ? await this.referralService.resolveCustomerId(dto.customerId)
       : dto.refereeId;
     if (!refereeId) {
-      throw new BadRequestException('refereeId or merchantCustomerId required');
+      throw new BadRequestException('refereeId or customerId required');
     }
     return this.referralService.activateReferral(dto.code, refereeId);
   }

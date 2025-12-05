@@ -142,7 +142,7 @@ export class CommitDto {
 export class QrMintDto {
   @ApiProperty()
   @IsString()
-  merchantCustomerId: string;
+  customerId: string;
   @ApiPropertyOptional({ minimum: 10 })
   @IsOptional()
   @Min(10)
@@ -267,7 +267,7 @@ export class PublicSettingsDto {
 
 export class BalanceDto {
   @ApiProperty() merchantId!: string;
-  @ApiProperty() merchantCustomerId!: string;
+  @ApiProperty() customerId!: string;
   @ApiProperty() balance!: number;
 }
 
@@ -281,8 +281,6 @@ export class CashierCustomerResolveDto {
 }
 
 export class CashierCustomerResolveRespDto {
-  @ApiProperty()
-  merchantCustomerId!: string;
   @ApiProperty()
   customerId!: string;
   @ApiPropertyOptional({ nullable: true })
@@ -324,7 +322,7 @@ export class TransactionItemDto {
   @ApiProperty() amount!: number;
   @ApiPropertyOptional() orderId?: string | null;
   @ApiPropertyOptional({ nullable: true }) receiptNumber?: string | null;
-  @ApiProperty() merchantCustomerId!: string;
+  @ApiProperty() customerId!: string;
   @ApiProperty() createdAt!: string;
   @ApiPropertyOptional() outletId?: string | null;
   @ApiPropertyOptional({
@@ -454,7 +452,7 @@ export class CustomerPhoneStatusDto {
 
 export class CustomerProfileSaveDto {
   @ApiProperty() @IsString() merchantId!: string;
-  @ApiProperty() @IsString() merchantCustomerId!: string;
+  @ApiProperty() @IsString() customerId!: string;
   @ApiProperty() @IsString() name!: string;
   @ApiProperty({ enum: ['male', 'female'] }) @IsString() gender!:
     | 'male'

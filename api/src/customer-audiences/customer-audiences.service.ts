@@ -187,10 +187,11 @@ export class CustomerAudiencesService {
     merchantId: string,
     filters: unknown,
   ): ParsedSegmentFilters {
+    // Customer теперь per-merchant модель
     const andConditions: Prisma.CustomerWhereInput[] = [
       {
         OR: [
-          { merchantProfiles: { some: { merchantId } } },
+          { merchantId },
           { customerStats: { some: { merchantId } } },
           { Receipt: { some: { merchantId } } },
         ],
@@ -401,14 +402,8 @@ export class CustomerAudiencesService {
         );
       }
       if (Object.keys(createdAt).length) {
-        andConditions.push({
-          merchantProfiles: {
-            some: {
-              merchantId,
-              createdAt,
-            },
-          },
-        });
+        // Customer теперь per-merchant модель
+        andConditions.push({ merchantId, createdAt });
       }
     }
 
@@ -673,7 +668,7 @@ export class CustomerAudiencesService {
 
   private async getAllCustomersCount(merchantId: string): Promise<number> {
     try {
-      return await this.prisma.merchantCustomer.count({
+      return await this.prisma.customer.count({
         where: { merchantId },
       });
     } catch (err) {
