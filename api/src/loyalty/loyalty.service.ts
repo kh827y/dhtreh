@@ -68,7 +68,7 @@ type IntegrationBonusParams = {
 type IntegrationBonusResult = {
   receiptId: string;
   orderId: string;
-  invoiceNum: string;
+  invoiceNum: string | null;
   redeemApplied: number;
   earnApplied: number;
   balanceBefore: number | null;
@@ -812,7 +812,9 @@ export class LoyaltyService {
       POINTS_MULTIPLIER: 3,
     };
     const roundCurrency = (v: number) => Math.round(v * 100) / 100;
-    const positions = resolved.map((item) => {
+
+    // Используем flatMap для возможности разбиения позиций (NTH_FREE)
+    const positions = resolved.flatMap((item) => {
       const applicable = promotions
         .filter((promo) => {
           const matchesProduct =
@@ -838,11 +840,14 @@ export class LoyaltyService {
         item.basePrice != null && Number.isFinite(item.basePrice)
           ? Math.max(0, Number(item.basePrice))
           : unitPrice;
-      let total = unitPrice * item.qty;
       let earnMultiplier =
         item.promotionMultiplier && item.promotionMultiplier > 0
           ? item.promotionMultiplier
           : 1;
+
+      // Для NTH_FREE: кол-во бесплатных единиц
+      let freebies = 0;
+      let nthFreePromoApplied = false;
 
       for (const promo of applicable) {
         if (appliedIds.includes(promo.id)) continue;
@@ -860,13 +865,13 @@ export class LoyaltyService {
             1,
             Math.trunc((promo.buyQty ?? 1) + (promo.freeQty ?? 0)),
           );
-          const freebies =
+          const freeCount =
             step > 0 ? Math.floor(item.qty / step) * Math.max(1, promo.freeQty ?? 1) : 0;
-          if (freebies > 0) {
-            const discount = freebies * unitPrice;
-            total = Math.max(0, total - discount);
+          if (freeCount > 0) {
+            freebies = Math.min(freeCount, item.qty);
+            nthFreePromoApplied = true;
             infoSet.add(
-              `${promo.name}: каждая ${step}-я позиция бесплатно (-${roundCurrency(discount)})`,
+              `${promo.name}: ${freebies} шт. бесплатно`,
             );
           }
           continue;
@@ -877,33 +882,78 @@ export class LoyaltyService {
             Math.min(Number.MAX_SAFE_INTEGER, promo.fixedPrice ?? unitPrice),
           );
           unitPrice = fixed;
-          total = roundCurrency(fixed * item.qty);
           infoSet.add(
             `${promo.name}: цена ${roundCurrency(fixed)} вместо ${roundCurrency(basePrice)}`,
           );
         }
       }
 
-      const finalPrice =
-        item.qty > 0 ? roundCurrency(total / item.qty) : unitPrice;
-      return {
-        id_product:
-          item.externalId ??
-          item.productId ??
-          item.resolvedProductId ??
-          null,
+      const idProduct =
+        item.externalId ??
+        item.productId ??
+        item.resolvedProductId ??
+        null;
+      const allowEarnAndPay =
+        item.allowEarnAndPay != null ? Boolean(item.allowEarnAndPay) : true;
+
+      // Если есть бесплатные позиции — разбиваем на две записи (как GMB)
+      if (nthFreePromoApplied && freebies > 0 && freebies < item.qty) {
+        const paidQty = item.qty - freebies;
+        const result: any[] = [];
+        // Бесплатная позиция
+        result.push({
+          id_product: idProduct,
+          name: item.name ?? null,
+          qty: freebies,
+          price: 0,
+          base_price: basePrice,
+          actions: appliedIds,
+          action_names: appliedNames,
+          earn_multiplier: earnMultiplier > 0 ? earnMultiplier : 1,
+          allow_earn_and_pay: allowEarnAndPay,
+        });
+        // Платная позиция
+        result.push({
+          id_product: idProduct,
+          name: item.name ?? null,
+          qty: paidQty,
+          price: unitPrice,
+          base_price: basePrice,
+          actions: [],
+          action_names: [],
+          earn_multiplier: earnMultiplier > 0 ? earnMultiplier : 1,
+          allow_earn_and_pay: allowEarnAndPay,
+        });
+        return result;
+      }
+
+      // Если все бесплатные (qty == freebies)
+      if (nthFreePromoApplied && freebies >= item.qty) {
+        return [{
+          id_product: idProduct,
+          name: item.name ?? null,
+          qty: item.qty,
+          price: 0,
+          base_price: basePrice,
+          actions: appliedIds,
+          action_names: appliedNames,
+          earn_multiplier: earnMultiplier > 0 ? earnMultiplier : 1,
+          allow_earn_and_pay: allowEarnAndPay,
+        }];
+      }
+
+      // Стандартный случай — без разбиения
+      return [{
+        id_product: idProduct,
         name: item.name ?? null,
         qty: item.qty,
-        price: finalPrice,
+        price: unitPrice,
         base_price: basePrice,
         actions: appliedIds,
         action_names: appliedNames,
         earn_multiplier: earnMultiplier > 0 ? earnMultiplier : 1,
-        allow_earn_and_pay:
-          item.allowEarnAndPay != null
-            ? Boolean(item.allowEarnAndPay)
-            : true,
-      };
+        allow_earn_and_pay: allowEarnAndPay,
+      }];
     });
     return { positions, info: Array.from(infoSet) };
   }
@@ -3885,10 +3935,8 @@ export class LoyaltyService {
     const merchantId = String(params.merchantId || '').trim();
     const customerId = String(params.customerId || '').trim();
     const merchantCustomerId = String(params.merchantCustomerId || '').trim();
-    const invoiceNum = String(params.invoiceNum || '').trim();
-    const orderId =
-      invoiceNum ||
-      `auto_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const invoiceNum = String(params.invoiceNum || '').trim() || null;
+    const orderId = invoiceNum || randomUUID();
     if (!merchantId) throw new BadRequestException('merchantId required');
     if (!customerId) throw new BadRequestException('customerId required');
     const operationDate = params.operationDate ?? null;
@@ -4188,102 +4236,106 @@ export class LoyaltyService {
     items: PositionInput[];
     outletId?: string | null;
     operationDate?: Date | null;
+    total?: number | null;
+    paidBonus?: number | null;
   }) {
     const normalized = this.sanitizePositions(params.items);
-    if (!normalized.length) {
-      throw new BadRequestException('items required');
+    const baseTotal = Math.max(0, Math.floor(Number(params.total ?? 0) || 0));
+
+    // Если items пустой, но есть total — создаём виртуальную позицию
+    let resolved: ResolvedPosition[];
+    let total: number;
+    let eligibleAmount: number;
+    if (normalized.length) {
+      resolved = await this.resolvePositions(params.merchantId, normalized);
+      const computed = this.computeTotalsFromPositions(0, resolved);
+      total = computed.total;
+      eligibleAmount = computed.eligibleAmount;
+    } else if (baseTotal > 0) {
+      // Нет items, используем total как одну виртуальную позицию
+      resolved = [{
+        productId: undefined,
+        externalId: undefined,
+        resolvedProductId: undefined,
+        categoryId: undefined,
+        name: undefined,
+        qty: 1,
+        price: baseTotal,
+        basePrice: baseTotal,
+        amount: baseTotal,
+        accruePoints: true,
+        allowEarnAndPay: true,
+        promotionMultiplier: 1,
+      } as ResolvedPosition];
+      total = baseTotal;
+      eligibleAmount = baseTotal;
+    } else {
+      throw new BadRequestException('items или total обязательны');
     }
-    const total = normalized.reduce(
-      (sum, item) => sum + Math.max(0, Math.round((item.price || 0) * (item.qty || 0))),
-      0,
-    );
-    const orderId = `calc_${Date.now()}_${Math.random()
-      .toString(16)
-      .slice(2)}`;
-    const quote = await this.quote(
-      {
-        mode: Mode.REDEEM,
-        merchantId: params.merchantId,
-        userToken:
-          params.userToken ??
-          params.merchantCustomerId ??
-          params.customerId,
-        orderId,
-        total,
-        outletId: params.outletId ?? undefined,
-        staffId: undefined,
-        customerId: params.customerId,
-        positions: normalized as any,
-      },
-      undefined,
-      { dryRun: true, operationDate: params.operationDate ?? null },
-    );
-    const balance = await this.balance(
-      params.merchantId,
-      params.merchantCustomerId,
-    );
-    const quotedPositions: ResolvedPosition[] = Array.isArray(
-      (quote as any)?.positions,
-    )
-      ? ((quote as any).positions as ResolvedPosition[])
-      : [];
-    const sourceItems = quotedPositions.length ? quotedPositions : normalized;
-    const products = sourceItems.map((item) => {
-      const redeem = Math.max(
-        0,
-        Math.floor(Number((item as any).redeemAmount ?? 0)),
-      );
-      const earn = Math.max(
-        0,
-        Math.floor(Number((item as any).earnPoints ?? 0)),
-      );
-      const qty = Math.max(0, Number((item as any).qty ?? 0));
-      const price = Math.max(0, Number((item as any).price ?? 0));
+
+    // Загружаем баланс и ставки
+    const [balanceResp, rates] = await Promise.all([
+      this.balance(params.merchantId, params.merchantCustomerId),
+      this.getBaseRatesForCustomer(params.merchantId, params.customerId, {
+        outletId: params.outletId,
+        eligibleAmount,
+      }),
+    ]);
+    const balance = balanceResp.balance ?? 0;
+    const earnBps = rates.earnBps ?? 0;
+    const redeemLimitBps = rates.redeemLimitBps ?? 0;
+
+    // Считаем лимит списания по чеку
+    const maxRedeemByLimit = Math.floor((eligibleAmount * redeemLimitBps) / 10000);
+    let maxRedeemTotal = Math.min(balance, maxRedeemByLimit, eligibleAmount);
+
+    // Если передан paidBonus — учитываем желаемое списание
+    const paidBonus = Math.max(0, Math.floor(Number(params.paidBonus ?? 0) || 0));
+    if (paidBonus > 0) {
+      maxRedeemTotal = Math.min(maxRedeemTotal, paidBonus);
+    }
+
+    // Распределяем лимит списания по позициям (pro rata)
+    const amounts = resolved.map((item) => Math.max(0, item.amount || 0));
+    const redeemShares = this.allocateProRata(amounts, maxRedeemTotal);
+
+    // Считаем начисление по позициям
+    const products = resolved.map((item, idx) => {
+      const qty = Math.max(0, Number(item.qty ?? 0));
+      const price = Math.max(0, Number(item.price ?? 0));
       const basePrice =
-        (item as any).basePrice != null
-          ? Math.max(0, Number((item as any).basePrice))
-          : price;
+        item.basePrice != null ? Math.max(0, Number(item.basePrice)) : price;
       const allowEarnAndPay =
-        (item as any).allowEarnAndPay != null
-          ? Boolean((item as any).allowEarnAndPay)
-          : true;
+        item.allowEarnAndPay != null ? Boolean(item.allowEarnAndPay) : true;
+      const itemRedeem = redeemShares[idx] ?? 0;
+      const earnBase = item.accruePoints === false ? 0 : Math.max(0, (item.amount || 0) - itemRedeem);
+      const multiplier =
+        item.promotionMultiplier && item.promotionMultiplier > 0
+          ? item.promotionMultiplier
+          : 1;
+      const itemEarn = Math.floor((earnBase * earnBps * multiplier) / 10000);
       return {
-        id_product:
-          (item as any).externalId ??
-          (item as any).productId ??
-          (item as any).resolvedProductId ??
-          null,
-        name: (item as any).name ?? null,
+        id_product: item.externalId ?? item.productId ?? item.resolvedProductId ?? null,
+        name: item.name ?? null,
         price,
         base_price: basePrice,
         quantity: qty,
         qty,
-        max_pay_bonus: redeem,
-        earn_bonus: earn,
+        max_pay_bonus: itemRedeem,
+        earn_bonus: itemEarn,
         allow_earn_and_pay: allowEarnAndPay,
       };
     });
+
+    const totalEarn = products.reduce((sum, p) => sum + p.earn_bonus, 0);
+    const finalPayable = Math.max(0, total - maxRedeemTotal);
+
     return {
-      products,
-      max_pay_bonus: Math.max(
-        0,
-        Math.floor(Number((quote as any)?.discountToApply ?? 0)),
-      ),
-      bonus_value: Math.max(
-        0,
-        Math.floor(
-          Number(
-            (quote as any)?.postEarnPoints ??
-              (quote as any)?.pointsToEarn ??
-              0,
-          ),
-        ),
-      ),
-      final_payable: Math.max(
-        0,
-        Math.floor(Number((quote as any)?.finalPayable ?? total)),
-      ),
-      balance: balance.balance ?? 0,
+      products: normalized.length ? products : undefined,
+      max_pay_bonus: maxRedeemTotal,
+      bonus_value: totalEarn,
+      final_payable: finalPayable,
+      balance,
     };
   }
 
@@ -4446,218 +4498,6 @@ export class LoyaltyService {
       totalAmount,
       avgBill,
       visitFrequency: visitFrequencyRounded,
-    };
-  }
-
-  async migrateExternalClient(params: {
-    merchantId: string;
-    externalId: string;
-    merchantCustomerId?: string | null;
-    phone?: string | null;
-    email?: string | null;
-    name?: string | null;
-    birthday?: string | Date | null;
-    gender?: string | null;
-  }) {
-    const merchantId = (params.merchantId || '').trim();
-    const externalId = (params.externalId || '').trim();
-    if (!merchantId) throw new BadRequestException('merchantId required');
-    if (!externalId)
-      throw new BadRequestException('externalClientId required');
-
-    const phone = this.normalizePhoneOptional(params.phone);
-    const email =
-      params.email && String(params.email).trim().length
-        ? String(params.email).trim()
-        : null;
-    const name =
-      params.name && String(params.name).trim().length
-        ? String(params.name).trim()
-        : null;
-    const gender =
-      params.gender && String(params.gender).trim().length
-        ? String(params.gender).trim()
-        : null;
-    let birthday: Date | null = null;
-    if (params.birthday != null) {
-      const parsed =
-        params.birthday instanceof Date
-          ? params.birthday
-          : new Date(String(params.birthday));
-      if (Number.isNaN(parsed.getTime())) {
-        throw new BadRequestException('birthday must be a valid date');
-      }
-      birthday = parsed;
-    }
-    const merchantCustomerId =
-      params.merchantCustomerId && params.merchantCustomerId.trim().length
-        ? params.merchantCustomerId.trim()
-        : null;
-
-    const { merchantCustomer, created, updated } =
-      await this.prisma.$transaction(async (tx) => {
-        let current: any = null;
-        if (merchantCustomerId) {
-          current = await tx.merchantCustomer.findUnique({
-            where: { id: merchantCustomerId },
-            include: { customer: true },
-          });
-          if (!current || current.merchantId !== merchantId) {
-            throw new BadRequestException('merchant customer not found');
-          }
-        }
-
-        const byExternal = await tx.merchantCustomer.findFirst({
-          where: { merchantId, externalId },
-          include: { customer: true },
-        });
-        if (byExternal) {
-          if (current && current.id !== byExternal.id) {
-            throw new ConflictException(
-              'external client already linked to another profile',
-            );
-          }
-          current = byExternal;
-        }
-
-        if (!current && phone) {
-          current = await tx.merchantCustomer.findFirst({
-            where: { merchantId, phone },
-            include: { customer: true },
-          });
-        }
-        if (!current && email) {
-          current = await tx.merchantCustomer.findFirst({
-            where: { merchantId, email },
-            include: { customer: true },
-          });
-        }
-
-        let customer: any = current?.customer ?? null;
-        if (!customer) {
-          if (phone) {
-            customer = await tx.customer.findFirst({ where: { phone } });
-          }
-          if (!customer && email) {
-            customer = await tx.customer.findFirst({ where: { email } });
-          }
-          if (!customer) {
-            customer = await tx.customer.create({
-              data: {
-                phone,
-                email,
-                name: name ?? null,
-                birthday: birthday ?? undefined,
-                gender: gender ?? undefined,
-              },
-            });
-          } else {
-            const customerUpdate: Prisma.CustomerUpdateInput = {};
-            if (phone && customer.phone !== phone) customerUpdate.phone = phone;
-            if (email && customer.email !== email) customerUpdate.email = email;
-            if (name && customer.name !== name) customerUpdate.name = name;
-            if (
-              birthday &&
-              (!customer.birthday ||
-                customer.birthday.getTime() !== birthday.getTime())
-            ) {
-              customerUpdate.birthday = birthday;
-            }
-            if (gender && customer.gender !== gender) {
-              customerUpdate.gender = gender;
-            }
-            if (Object.keys(customerUpdate).length) {
-              customer = await tx.customer.update({
-                where: { id: customer.id },
-                data: customerUpdate,
-              });
-            }
-          }
-        } else {
-          const customerUpdate: Prisma.CustomerUpdateInput = {};
-          if (phone && customer.phone !== phone) customerUpdate.phone = phone;
-          if (email && customer.email !== email) customerUpdate.email = email;
-          if (name && customer.name !== name) customerUpdate.name = name;
-          if (
-            birthday &&
-            (!customer.birthday ||
-              customer.birthday.getTime() !== birthday.getTime())
-          ) {
-            customerUpdate.birthday = birthday;
-          }
-          if (gender && customer.gender !== gender) {
-            customerUpdate.gender = gender;
-          }
-          if (Object.keys(customerUpdate).length) {
-            customer = await tx.customer.update({
-              where: { id: customer.id },
-              data: customerUpdate,
-            });
-          }
-        }
-
-        if (!current) {
-          const mc = await tx.merchantCustomer.create({
-            data: {
-              merchantId,
-              customerId: customer.id,
-              externalId,
-              phone,
-              email,
-              name,
-              profileBirthDate: birthday ?? undefined,
-              profileGender: gender ?? undefined,
-            },
-            include: { customer: true },
-          });
-          return { merchantCustomer: mc, created: true, updated: true };
-        }
-
-        const mcUpdate: Prisma.MerchantCustomerUpdateInput = {};
-        if (!current.externalId || current.externalId !== externalId) {
-          mcUpdate.externalId = externalId;
-        }
-        if (phone && current.phone !== phone) mcUpdate.phone = phone;
-        if (email && current.email !== email) mcUpdate.email = email;
-        if (name && current.name !== name) mcUpdate.name = name;
-        if (
-          birthday &&
-          (!current.profileBirthDate ||
-            current.profileBirthDate.getTime() !== birthday.getTime())
-        ) {
-          mcUpdate.profileBirthDate = birthday;
-        }
-        if (gender && current.profileGender !== gender) {
-          mcUpdate.profileGender = gender;
-        }
-        let updated = false;
-        let next = current;
-        if (Object.keys(mcUpdate).length) {
-          next = await tx.merchantCustomer.update({
-            where: { id: current.id },
-            data: mcUpdate,
-            include: { customer: true },
-          });
-          updated = true;
-        }
-        return { merchantCustomer: next, created: false, updated };
-      });
-
-    const balance = await this.balance(merchantId, merchantCustomer.id).catch(
-      () => ({ balance: 0 }),
-    );
-
-    return {
-      merchantCustomerId: merchantCustomer.id,
-      customerId: merchantCustomer.customerId,
-      externalId: merchantCustomer.externalId ?? externalId,
-      phone: merchantCustomer.phone ?? null,
-      email: merchantCustomer.email ?? null,
-      name: merchantCustomer.name ?? null,
-      birthday: merchantCustomer.profileBirthDate ?? null,
-      balance: balance?.balance ?? 0,
-      created,
-      updated,
     };
   }
 

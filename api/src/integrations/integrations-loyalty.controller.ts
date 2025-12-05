@@ -27,7 +27,6 @@ import {
   IntegrationDevicesRespDto,
   IntegrationDeviceDto,
   IntegrationBonusDto,
-  IntegrationCalculateDto,
   IntegrationCalculateActionDto,
   IntegrationCalculateBonusDto,
   IntegrationCodeRequestDto,
@@ -37,10 +36,8 @@ import {
   IntegrationOutletDto,
   IntegrationOutletsRespDto,
   IntegrationRefundDto,
-  IntegrationClientMigrationDto,
 } from './dto';
 import { looksLikeJwt, verifyQrToken } from '../loyalty/token.util';
-import { Mode } from '../loyalty/dto';
 import { normalizeDeviceCode } from '../devices/device.util';
 import { verifyBridgeSignature } from '../loyalty/bridge.util';
 
@@ -289,7 +286,6 @@ export class IntegrationsLoyaltyController {
     payload: {
       userToken?: string | null;
       id_client?: string | null;
-      merchantCustomerId?: string | null;
     },
   ) {
     const userToken =
@@ -300,39 +296,19 @@ export class IntegrationsLoyaltyController {
       typeof payload.id_client === 'string' && payload.id_client.trim().length
         ? payload.id_client.trim()
         : '';
-    const merchantCustomerId =
-      typeof payload.merchantCustomerId === 'string' &&
-      payload.merchantCustomerId.trim().length
-        ? payload.merchantCustomerId.trim()
-        : '';
 
-    if (!userToken && !idClient && !merchantCustomerId) {
-      throw new BadRequestException(
-        'userToken или id_client или merchantCustomerId обязательны',
-      );
+    if (!userToken && !idClient) {
+      throw new BadRequestException('userToken или id_client обязательны');
     }
 
     let explicit: { customer: any; merchantCustomer: any } | null = null;
-    if (merchantCustomerId) {
+    if (idClient) {
+      // id_client — это merchantCustomerId
       const mc = await this.prisma.merchantCustomer.findUnique({
-        where: { id: merchantCustomerId },
+        where: { id: idClient },
         include: { customer: true },
       });
       if (!mc || mc.merchantId !== merchantId) {
-        throw new BadRequestException('merchant customer not found');
-      }
-      if (!mc.customer) {
-        throw new BadRequestException('customer record not found');
-      }
-      explicit = { merchantCustomer: mc, customer: mc.customer };
-    } else if (idClient) {
-      const mc = await this.prisma.merchantCustomer.findUnique({
-        where: {
-          merchantId_customerId: { merchantId, customerId: idClient },
-        },
-        include: { customer: true },
-      });
-      if (!mc) {
         throw new BadRequestException('merchant customer not found');
       }
       if (!mc.customer) {
@@ -364,7 +340,7 @@ export class IntegrationsLoyaltyController {
       explicit.customer.id !== tokenContext.customer.id
     ) {
       throw new BadRequestException(
-        'userToken не совпадает с id_client/merchantCustomerId',
+        'userToken не совпадает с id_client',
       );
     }
 
@@ -1053,6 +1029,7 @@ export class IntegrationsLoyaltyController {
 
     const items: IntegrationOperationDto[] = sliced.map((op) => ({
       kind: op.kind,
+      id_client: op.customerId,
       invoice_num: op.orderId,
       order_id: op.receiptId ?? op.orderId,
       receiptNumber: op.receiptNumber,
@@ -1161,84 +1138,6 @@ export class IntegrationsLoyaltyController {
     };
   }
 
-  @Post('client/migrate')
-  @Throttle({ default: { limit: 30, ttl: 60_000 } })
-  async migrateClient(
-    @Body() dto: IntegrationClientMigrationDto,
-    @Req() req: IntegrationRequest,
-  ) {
-    const merchantId = String(
-      req.integrationMerchantId || (req as any).merchantId || '',
-    ).trim();
-    if (!merchantId) throw new BadRequestException('merchantId required');
-    const raw = (req as any)?.body || {};
-    const normalizeStr = (value: any) =>
-      typeof value === 'string' && value.trim().length ? value.trim() : '';
-    const externalId = normalizeStr(
-      dto.externalClientId ||
-        raw.client_id_ext ||
-        raw.clientIdExt ||
-        raw.clientExtId,
-    );
-    if (!externalId) {
-      throw new BadRequestException('externalClientId required');
-    }
-    const merchantCustomerId =
-      normalizeStr(
-        dto.merchantCustomerId ||
-          raw.merchantCustomerId ||
-          raw.id_client ||
-          raw.idClient,
-      ) || null;
-    const birthdayRaw =
-      dto.birthday ??
-      raw.birthday ??
-      raw.b_date ??
-      raw.birthDate ??
-      null;
-    const gender =
-      dto.gender != null
-        ? dto.gender
-        : normalizeStr(raw.gender) || null;
-    await this.verifyBridgeSignatureIfRequired(
-      req,
-      merchantId,
-      null,
-      req.body,
-    );
-    const result = await this.loyalty.migrateExternalClient({
-      merchantId,
-      externalId,
-      merchantCustomerId,
-      phone: dto.phone,
-      email: dto.email,
-      name: dto.name,
-      birthday: birthdayRaw,
-      gender,
-    });
-    const birthday =
-      result.birthday instanceof Date
-        ? result.birthday.toISOString()
-        : result.birthday
-          ? new Date(result.birthday).toISOString()
-          : null;
-    return {
-      result: 'ok',
-      client: {
-        id_client: result.customerId,
-        merchantCustomerId: result.merchantCustomerId,
-        id_ext: result.externalId,
-        name: result.name ?? null,
-        phone: result.phone ?? null,
-        email: result.email ?? null,
-        b_date: birthday,
-        balance: result.balance ?? 0,
-      },
-      created: result.created || undefined,
-      updated: result.updated || undefined,
-    };
-  }
-
   @Post('calculate/action')
   @Throttle({ default: { limit: 180, ttl: 60_000 } })
   async calculateAction(
@@ -1290,9 +1189,12 @@ export class IntegrationsLoyaltyController {
     ).trim();
     if (!merchantId) throw new BadRequestException('merchantId required');
     const items = this.normalizeItems(dto.items);
-    if (!items.length) {
-      throw new BadRequestException('items required');
+    const total = this.sanitizeAmount(dto.total);
+    if (!items.length && (total == null || total <= 0)) {
+      throw new BadRequestException('items или total обязательны');
     }
+    const paidBonus =
+      dto.paid_bonus != null ? this.sanitizeAmount(dto.paid_bonus) : null;
     const { customer, merchantCustomer, userToken } =
       await this.resolveCustomerContext(merchantId, dto);
     const outletId =
@@ -1317,6 +1219,8 @@ export class IntegrationsLoyaltyController {
       outletId: outletId ?? undefined,
       operationDate,
       items,
+      total,
+      paidBonus,
     });
     await this.logIntegrationSync(
       req,
@@ -1331,111 +1235,6 @@ export class IntegrationsLoyaltyController {
     return preview;
   }
 
-  @Post('bonus/calculate')
-  @Throttle({ default: { limit: 120, ttl: 60_000 } })
-  async calculate(
-    @Body() dto: IntegrationCalculateDto,
-    @Req() req: IntegrationRequest,
-  ) {
-    const merchantId = String(
-      req.integrationMerchantId || (req as any).merchantId || '',
-    ).trim();
-    if (!merchantId) throw new BadRequestException('merchantId required');
-    const invoiceNum = (dto.invoice_num || '').trim();
-    if (!invoiceNum) throw new BadRequestException('invoice_num required');
-    const { customer, merchantCustomer, userToken } =
-      await this.resolveCustomerContext(merchantId, dto);
-    const sanitizedTotal = this.sanitizeAmount(dto.total);
-    const items = this.normalizeItems(dto.items);
-    const outletId =
-      typeof dto.outletId === 'string' && dto.outletId.trim()
-        ? dto.outletId.trim()
-        : null;
-    const rawDeviceId =
-      typeof dto.deviceId === 'string' && dto.deviceId.trim()
-        ? dto.deviceId.trim()
-        : null;
-    const device = await this.ensureDeviceContext(
-      merchantId,
-      rawDeviceId,
-      outletId,
-    );
-    const effectiveOutletId = outletId ?? device?.outletId ?? null;
-    const deviceCode = device?.code ?? rawDeviceId ?? null;
-    await this.verifyBridgeSignatureIfRequired(
-      req,
-      merchantId,
-      effectiveOutletId,
-      req.body,
-    );
-
-    const paidBonus =
-      dto.paid_bonus != null ? this.sanitizeAmount(dto.paid_bonus) : null;
-    const bonusValue =
-      dto.bonus_value != null ? this.sanitizeAmount(dto.bonus_value) : null;
-    const redeemQuote = await this.loyalty.quote(
-      {
-        mode: Mode.REDEEM,
-        merchantId,
-        userToken: userToken ?? merchantCustomer.id,
-        orderId: invoiceNum,
-        total: sanitizedTotal,
-        outletId: effectiveOutletId ?? undefined,
-        deviceId: deviceCode ?? undefined,
-        staffId: undefined,
-        customerId: customer.id,
-        positions: items as any,
-      },
-      undefined,
-      { dryRun: true },
-    );
-    const earnQuote = await this.loyalty.quote(
-      {
-        mode: Mode.EARN,
-        merchantId,
-        userToken: userToken ?? merchantCustomer.id,
-        orderId: invoiceNum,
-        total: sanitizedTotal,
-        outletId: effectiveOutletId ?? undefined,
-        deviceId: deviceCode ?? undefined,
-        staffId: undefined,
-        customerId: customer.id,
-        positions: items as any,
-      },
-      undefined,
-      { dryRun: true },
-    );
-    const balanceResp = await this.loyalty.balance(
-      merchantId,
-      merchantCustomer.id,
-    );
-    const maxPaidBonus =
-      typeof (redeemQuote as any)?.discountToApply === 'number'
-        ? (redeemQuote as any).discountToApply
-        : 0;
-    const earnFromRedeem =
-      typeof (redeemQuote as any)?.postEarnPoints === 'number'
-        ? (redeemQuote as any).postEarnPoints
-        : (redeemQuote as any)?.pointsToEarn ?? 0;
-    const earnFromEarnQuote =
-      typeof (earnQuote as any)?.pointsToEarn === 'number'
-        ? (earnQuote as any).pointsToEarn
-        : 0;
-    const maxBonusValue = Math.max(earnFromRedeem, earnFromEarnQuote);
-    return {
-      invoice_num: invoiceNum,
-      canRedeem: maxPaidBonus > 0 && (paidBonus == null || paidBonus > 0),
-      canEarn: maxBonusValue > 0,
-      maxPaidBonus,
-      maxBonusValue,
-      finalPayable:
-        (redeemQuote as any)?.finalPayable ?? Math.max(0, sanitizedTotal),
-      requested_paid_bonus: paidBonus ?? undefined,
-      requested_bonus_value: bonusValue ?? undefined,
-      balance: balanceResp.balance ?? 0,
-    };
-  }
-
   @Post('bonus')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   async bonus(
@@ -1446,8 +1245,7 @@ export class IntegrationsLoyaltyController {
       req.integrationMerchantId || (req as any).merchantId || '',
     ).trim();
     if (!merchantId) throw new BadRequestException('merchantId required');
-    const invoiceNum = (dto.invoice_num || '').trim();
-    if (!invoiceNum) throw new BadRequestException('invoice_num required');
+    const invoiceNum = (dto.invoice_num || '').trim() || null;
     const { customer, merchantCustomer, userToken } =
       await this.resolveCustomerContext(merchantId, dto);
     const operationDate = this.parseOperationDate(dto.operationDate ?? null);
@@ -1554,7 +1352,7 @@ export class IntegrationsLoyaltyController {
       : null;
     return {
       result: 'ok',
-      invoice_num: invoiceNum,
+      invoice_num: result.invoiceNum ?? invoiceNum ?? null,
       order_id: result.orderId ?? null,
       alreadyProcessed: result.alreadyProcessed || undefined,
       redeemApplied: result.redeemApplied ?? 0,

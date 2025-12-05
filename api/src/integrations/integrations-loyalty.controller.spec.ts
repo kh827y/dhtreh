@@ -67,7 +67,7 @@ describe('IntegrationsLoyaltyController', () => {
     requestId: 'req-1',
   } as any;
 
-  it('использует merchantCustomerId при отсутствии userToken', async () => {
+  it('использует id_client при отсутствии userToken', async () => {
     const merchantCustomer = {
       id: 'MC-1',
       merchantId: 'M-1',
@@ -88,7 +88,7 @@ describe('IntegrationsLoyaltyController', () => {
     });
 
     const dto: any = {
-      merchantCustomerId: merchantCustomer.id,
+      id_client: merchantCustomer.id,
       items: [{ id_product: 'P1', qty: 1, price: 100 }],
     };
     const resp = await controller.calculateBonusPreview(dto, {
@@ -101,7 +101,6 @@ describe('IntegrationsLoyaltyController', () => {
       expect.objectContaining({
         merchantCustomerId: merchantCustomer.id,
         customerId: merchantCustomer.customerId,
-        userToken: merchantCustomer.id,
       }),
     );
     expect(prisma.merchantCustomer.findUnique).toHaveBeenCalled();
@@ -121,6 +120,8 @@ describe('IntegrationsLoyaltyController', () => {
     });
     loyalty.processIntegrationBonus.mockResolvedValue({
       receiptId: 'R-1',
+      orderId: 'R-1',
+      invoiceNum: 'ORDER-1',
       redeemApplied: 0,
       earnApplied: 0,
       balanceBefore: 0,
@@ -129,8 +130,8 @@ describe('IntegrationsLoyaltyController', () => {
     });
 
     const dto: any = {
-      merchantCustomerId: merchantCustomer.id,
-      orderId: 'ORDER-1',
+      id_client: merchantCustomer.id,
+      invoice_num: 'ORDER-1',
       total: 100,
       items: [],
     };
@@ -170,6 +171,8 @@ describe('IntegrationsLoyaltyController', () => {
     );
     loyalty.processIntegrationBonus.mockResolvedValue({
       receiptId: 'R-2',
+      orderId: 'R-2',
+      invoiceNum: 'ORDER-2',
       redeemApplied: 0,
       earnApplied: 5,
       balanceBefore: 10,
@@ -178,8 +181,8 @@ describe('IntegrationsLoyaltyController', () => {
     });
 
     const dto: any = {
-      merchantCustomerId: merchantCustomer.id,
-      orderId: 'ORDER-2',
+      id_client: merchantCustomer.id,
+      invoice_num: 'ORDER-2',
       total: 200,
       managerId: 'STAFF-1',
       items: [{ id_product: 'X', qty: 1, price: 200 }],
@@ -224,6 +227,7 @@ describe('IntegrationsLoyaltyController', () => {
     loyalty.processIntegrationBonus.mockResolvedValue({
       orderId: 'R-4',
       receiptId: 'R-4',
+      invoiceNum: 'INV-42',
       redeemApplied: 0,
       earnApplied: 10,
       balanceBefore: 0,
@@ -232,8 +236,8 @@ describe('IntegrationsLoyaltyController', () => {
     });
 
     const dto: any = {
-      merchantCustomerId: merchantCustomer.id,
-      orderId: 'INV-42',
+      id_client: merchantCustomer.id,
+      invoice_num: 'INV-42',
       total: 420,
       outletId: 'OUT-42',
       items: [{ id_product: 'SKU', qty: 1, price: 420 }],
@@ -263,6 +267,7 @@ describe('IntegrationsLoyaltyController', () => {
       pointsRevoked: 10,
       merchantCustomerId: 'MC-9',
     });
+    loyalty.balance.mockResolvedValue({ balance: 100 });
 
     const dto: any = { invoice_num: 'INV-1' };
     const resp = await controller.refund(dto, { ...baseReq, body: dto });
