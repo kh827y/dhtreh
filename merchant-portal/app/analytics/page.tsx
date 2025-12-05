@@ -1,8 +1,20 @@
 "use client";
 
 import React from "react";
-import { Button, Card, CardBody, CardHeader, Chart, Skeleton } from "@loyalty/ui";
+import { Button, Card, CardBody, CardHeader, Chart, Skeleton, StatCard } from "@loyalty/ui";
 import { buildChartOption, buildMetricCards, hasTimelineData, DashboardResponse } from "./summary-utils";
+import {
+  BarChart3,
+  TrendingUp,
+  TrendingDown,
+  Users,
+  ShoppingCart,
+  DollarSign,
+  Calendar,
+  RefreshCw,
+  Download,
+  ChevronDown,
+} from "lucide-react";
 
 const quickRanges = [
   { label: "Вчера", value: "yesterday" },
@@ -13,6 +25,13 @@ const quickRanges = [
 ] as const;
 
 type QuickRange = (typeof quickRanges)[number];
+
+const metricIcons: Record<string, React.ReactNode> = {
+  revenue: <DollarSign size={20} />,
+  transactions: <ShoppingCart size={20} />,
+  customers: <Users size={20} />,
+  average: <BarChart3 size={20} />,
+};
 
 export default function AnalyticsDashboardPage() {
   const [range, setRange] = React.useState<QuickRange>(quickRanges[2]);
@@ -77,164 +96,265 @@ export default function AnalyticsDashboardPage() {
   const metrics = React.useMemo(() => buildMetricCards(data?.metrics), [data?.metrics]);
 
   return (
-    <div style={{ display: "grid", gap: 20 }}>
+    <div className="animate-in" style={{ display: "grid", gap: 24 }}>
+      {/* Page Header */}
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
-        <div>
-          <div style={{ fontSize: 26, fontWeight: 700 }}>Сводный отчёт</div>
-          <div style={{ fontSize: 13, opacity: 0.7 }}>
-            Продажи и клиенты за выбранный период. Возвраты и отмены не учитываются.
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+          <div style={{
+            width: 48,
+            height: 48,
+            borderRadius: "var(--radius-lg)",
+            background: "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.1))",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "var(--brand-primary-light)",
+          }}>
+            <BarChart3 size={24} />
           </div>
+          <div>
+            <h1 style={{ 
+              fontSize: 28, 
+              fontWeight: 800, 
+              margin: 0,
+              letterSpacing: "-0.02em",
+            }}>
+              Сводный отчёт
+            </h1>
+            <p style={{ 
+              fontSize: 14, 
+              color: "var(--fg-muted)", 
+              margin: "6px 0 0",
+            }}>
+              Продажи и клиенты за выбранный период
+            </p>
+          </div>
+        </div>
+        
+        <div style={{ display: "flex", gap: 8 }}>
+          <Button 
+            variant="ghost" 
+            onClick={load}
+            disabled={loading}
+            style={{ gap: 6 }}
+          >
+            <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+            Обновить
+          </Button>
         </div>
       </header>
 
+      {/* Filters Card */}
       <Card>
-        <CardBody style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {quickRanges.map((item) => {
-              const active = !appliedCustom && range.value === item.value;
-              return (
-                <button
-                  type="button"
-                  key={item.value}
-                  onClick={() => {
-                    setRange(item);
-                    setAppliedCustom(null);
-                  }}
-                  style={{
-                    padding: "6px 14px",
-                    borderRadius: 999,
-                    border: active ? "1px solid transparent" : "1px solid rgba(148,163,184,0.35)",
-                    background: active ? "var(--brand-primary)" : "rgba(15,23,42,0.6)",
-                    color: "#e2e8f0",
-                    cursor: "pointer",
-                  }}
-                >
-                  {item.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              gap: 10,
-              alignItems: "center",
-              flexWrap: "nowrap",
-              marginLeft: "auto",
-              minWidth: 340,
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                gap: 6,
-                alignItems: "center",
-                padding: "8px 10px",
-                borderRadius: 10,
-                border: "1px solid rgba(148,163,184,0.35)",
-                background: "rgba(15,23,42,0.6)",
-                color: "#e2e8f0",
-                minWidth: 260,
-                flex: "0 1 360px",
-              }}
-            >
-              <input
-                type="date"
-                value={customRangeDraft.from}
-                onChange={(event) =>
-                  setCustomRangeDraft((prev) => ({
-                    ...prev,
-                    from: event.target.value,
-                    to: prev.to && prev.to < event.target.value ? event.target.value : prev.to,
-                  }))
-                }
-                style={{
-                  border: "none",
-                  background: "transparent",
-                  color: "inherit",
-                  outline: "none",
-                  fontSize: 14,
-                  flex: 1,
-                }}
-              />
-              <span style={{ opacity: 0.6 }}>—</span>
-              <input
-                type="date"
-                value={customRangeDraft.to}
-                onChange={(event) =>
-                  setCustomRangeDraft((prev) => ({
-                    ...prev,
-                    to: event.target.value,
-                  }))
-                }
-                style={{
-                  border: "none",
-                  background: "transparent",
-                  color: "inherit",
-                  outline: "none",
-                  fontSize: 14,
-                  flex: 1,
-                }}
-              />
+        <CardBody style={{ padding: 16 }}>
+          <div style={{ 
+            display: "flex", 
+            gap: 16, 
+            alignItems: "center", 
+            flexWrap: "wrap",
+            justifyContent: "space-between"
+          }}>
+            {/* Period Selector */}
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {quickRanges.map((item) => {
+                const active = !appliedCustom && range.value === item.value;
+                return (
+                  <button
+                    type="button"
+                    key={item.value}
+                    onClick={() => {
+                      setRange(item);
+                      setAppliedCustom(null);
+                    }}
+                    style={{
+                      padding: "8px 16px",
+                      borderRadius: "var(--radius-full)",
+                      border: "1px solid",
+                      borderColor: active ? "rgba(99, 102, 241, 0.5)" : "var(--border-default)",
+                      background: active 
+                        ? "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.1))"
+                        : "transparent",
+                      color: active ? "var(--brand-primary-light)" : "var(--fg-secondary)",
+                      cursor: "pointer",
+                      fontWeight: active ? 600 : 500,
+                      fontSize: 13,
+                      transition: "all 0.2s ease",
+                    }}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
             </div>
 
-            <Button
-              onClick={applyCustomRange}
-              disabled={!canApplyCustom || loading}
-              style={{ height: 44, padding: "10px 14px", display: "inline-flex", alignItems: "center" }}
-            >
-              Применить даты
-            </Button>
-            {appliedCustom ? (
-              <button
-                type="button"
-                onClick={resetCustomRange}
-                style={{
-                  border: "none",
-                  background: "transparent",
-                  color: "var(--brand-primary)",
-                  cursor: "pointer",
-                  padding: "6px 10px",
-                }}
+            {/* Custom Date Range */}
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "8px 14px",
+                borderRadius: "var(--radius-md)",
+                border: "1px solid var(--border-default)",
+                background: "rgba(15, 23, 42, 0.5)",
+              }}>
+                <Calendar size={16} style={{ color: "var(--fg-muted)" }} />
+                <input
+                  type="date"
+                  value={customRangeDraft.from}
+                  onChange={(event) =>
+                    setCustomRangeDraft((prev) => ({
+                      ...prev,
+                      from: event.target.value,
+                      to: prev.to && prev.to < event.target.value ? event.target.value : prev.to,
+                    }))
+                  }
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    color: "var(--fg)",
+                    outline: "none",
+                    fontSize: 13,
+                    width: 110,
+                  }}
+                />
+                <span style={{ color: "var(--fg-dim)" }}>→</span>
+                <input
+                  type="date"
+                  value={customRangeDraft.to}
+                  onChange={(event) =>
+                    setCustomRangeDraft((prev) => ({
+                      ...prev,
+                      to: event.target.value,
+                    }))
+                  }
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    color: "var(--fg)",
+                    outline: "none",
+                    fontSize: 13,
+                    width: 110,
+                  }}
+                />
+              </div>
+
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={applyCustomRange}
+                disabled={!canApplyCustom || loading}
               >
-                Сбросить даты
-              </button>
-            ) : null}
+                Применить
+              </Button>
+              
+              {appliedCustom && (
+                <button
+                  type="button"
+                  onClick={resetCustomRange}
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    color: "var(--fg-muted)",
+                    cursor: "pointer",
+                    padding: "6px 10px",
+                    fontSize: 13,
+                  }}
+                >
+                  Сбросить
+                </button>
+              )}
+            </div>
           </div>
         </CardBody>
       </Card>
 
-      <section style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))" }}>
-        {metrics.map((metric) => (
-          <Card key={metric.title}>
-            <CardBody>
-              <div style={{ fontSize: 12, opacity: 0.7 }}>{metric.title}</div>
-              <div style={{ fontSize: 30, fontWeight: 700, marginTop: 6 }}>
-                {loading ? <Skeleton height={28} /> : metric.value}
-              </div>
-              <div style={{ fontSize: 12, opacity: 0.6 }}>{metric.description}</div>
-            </CardBody>
-          </Card>
+      {/* Stats Grid */}
+      <section style={{ 
+        display: "grid", 
+        gap: 16, 
+        gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" 
+      }}>
+        {metrics.map((metric, index) => (
+          <StatCard
+            key={metric.title}
+            title={metric.title}
+            value={loading ? "" : metric.value}
+            subtitle={metric.description}
+            icon={metricIcons[metric.key] || <BarChart3 size={20} />}
+            loading={loading}
+            className="animate-in"
+            style={{ animationDelay: `${index * 0.1}s` }}
+          />
         ))}
       </section>
 
-      <Card>
-        <CardHeader title="Динамика показателей" subtitle="Регистрации, количество продаж и сумма продаж по дням" />
-        <CardBody>
-          {loading ? (
-            <Skeleton height={360} />
-          ) : timelineHasData ? (
-            <Chart height={360} option={chartOption as any} />
-          ) : (
-            <div style={{ padding: 24, textAlign: "center", opacity: 0.7 }}>Нет данных за выбранный период</div>
-          )}
+      {/* Chart Card */}
+      <Card className="animate-in" style={{ animationDelay: "0.3s" }}>
+        <CardHeader 
+          title="Динамика показателей"
+          subtitle="Регистрации, количество продаж и сумма продаж по дням"
+          icon={<TrendingUp size={20} />}
+        />
+        <CardBody style={{ padding: 0 }}>
+          <div style={{ padding: "0 20px 20px" }}>
+            {loading ? (
+              <div style={{ padding: 20 }}>
+                <Skeleton height={360} />
+              </div>
+            ) : timelineHasData ? (
+              <Chart height={360} option={chartOption as any} />
+            ) : (
+              <div style={{ 
+                padding: 64, 
+                textAlign: "center",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 12,
+              }}>
+                <div style={{
+                  width: 64,
+                  height: 64,
+                  borderRadius: "var(--radius-lg)",
+                  background: "rgba(255, 255, 255, 0.05)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "var(--fg-dim)",
+                }}>
+                  <BarChart3 size={28} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>
+                    Нет данных
+                  </div>
+                  <div style={{ fontSize: 14, color: "var(--fg-muted)" }}>
+                    За выбранный период данные отсутствуют
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </CardBody>
       </Card>
 
-      {error ? (
-        <div style={{ padding: 16, borderRadius: 12, border: "1px solid rgba(248,113,113,0.4)", color: "#fecaca" }}>{error}</div>
-      ) : null}
+      {/* Error Message */}
+      {error && (
+        <div style={{ 
+          padding: 16, 
+          borderRadius: "var(--radius-md)", 
+          border: "1px solid rgba(239, 68, 68, 0.3)",
+          background: "rgba(239, 68, 68, 0.1)",
+          color: "var(--danger-light)",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+        }}>
+          <TrendingDown size={20} />
+          <span>{error}</span>
+        </div>
+      )}
     </div>
   );
 }

@@ -3,12 +3,13 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Card, CardHeader, CardBody, Button, Icons } from "@loyalty/ui";
+import { Card, CardHeader, CardBody, Button, Icons, Badge } from "@loyalty/ui";
 import { type CustomerRecord, getFullName } from "./data";
 import { normalizeCustomer } from "./normalize";
 import { CustomerFormModal, type CustomerFormPayload } from "./customer-form-modal";
+import { UsersRound, UserPlus, Upload as UploadIcon, Search, Edit3, Gift, Trash2, ChevronLeft, ChevronRight, Filter } from "lucide-react";
 
-const { Plus, Upload, Edit3, Gift, ChevronLeft, ChevronRight, Search, Trash2 } = Icons;
+const { Plus } = Icons;
 
 type Filters = {
   index: string;
@@ -273,27 +274,59 @@ export default function CustomersPage() {
   }
 
   return (
-    <div style={{ display: "grid", gap: 20 }}>
+    <div className="animate-in" style={{ display: "grid", gap: 24 }}>
       {toast && (
         <div style={toastStyle} role="status">
           {toast}
         </div>
       )}
 
+      {/* Page Header */}
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+          <div style={{
+            width: 48,
+            height: 48,
+            borderRadius: "var(--radius-lg)",
+            background: "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.1))",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "var(--brand-primary-light)",
+          }}>
+            <UsersRound size={24} />
+          </div>
+          <div>
+            <h1 style={{ 
+              fontSize: 28, 
+              fontWeight: 800, 
+              margin: 0,
+              letterSpacing: "-0.02em",
+            }}>
+              Клиенты
+            </h1>
+            <p style={{ 
+              fontSize: 14, 
+              color: "var(--fg-muted)", 
+              margin: "6px 0 0",
+            }}>
+              Список участников программы лояльности
+            </p>
+          </div>
+        </div>
+        
+        <div style={{ display: "flex", gap: 10 }}>
+          <Button onClick={openCreateModal} leftIcon={<UserPlus size={16} />}>
+            Добавить клиента
+          </Button>
+          <Button type="button" variant="secondary" leftIcon={<UploadIcon size={16} />} onClick={() => router.push("/customers/import")}>
+            Импорт
+          </Button>
+        </div>
+      </header>
+
       <Card>
-        <CardHeader
-          title="Клиенты"
-          subtitle="Список участников программы лояльности"
-          actions={
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-              <Button onClick={openCreateModal} leftIcon={<Plus size={16} />}>Добавить клиента</Button>
-              <Button type="button" variant="secondary" leftIcon={<Upload size={16} />} onClick={() => router.push("/customers/import")}>
-                Импортировать клиентов
-              </Button>
-            </div>
-          }
-        />
-        <CardBody style={{ display: "grid", gap: 16 }}>
+        <CardBody style={{ display: "grid", gap: 16, padding: 0 }}>
           <div style={{ overflowX: "auto" }}>
             <table style={tableStyle}>
               <thead>
@@ -547,75 +580,88 @@ const tableStyle: React.CSSProperties = {
 
 const headerCellStyle: React.CSSProperties = {
   textAlign: "left",
-  padding: "12px 10px",
+  padding: "14px 16px",
   fontSize: 12,
+  fontWeight: 600,
   textTransform: "uppercase",
-  letterSpacing: 0.4,
-  opacity: 0.6,
-  borderBottom: "1px solid rgba(148,163,184,0.24)",
+  letterSpacing: "0.05em",
+  color: "var(--fg-muted)",
+  borderBottom: "1px solid var(--border-default)",
+  background: "rgba(0, 0, 0, 0.2)",
 };
 
 const filterCellStyle: React.CSSProperties = {
-  padding: "8px 10px",
-  borderBottom: "1px solid rgba(148,163,184,0.14)",
+  padding: "10px 16px",
+  borderBottom: "1px solid var(--border-subtle)",
+  background: "rgba(0, 0, 0, 0.1)",
 };
 
 const filterInputStyle: React.CSSProperties = {
   width: "100%",
-  padding: "8px 10px",
-  borderRadius: 10,
-  border: "1px solid rgba(148,163,184,0.18)",
-  background: "rgba(15,23,42,0.45)",
-  color: "inherit",
+  padding: "8px 12px",
+  borderRadius: "var(--radius-sm)",
+  border: "1px solid var(--border-default)",
+  background: "rgba(15, 23, 42, 0.6)",
+  color: "var(--fg)",
+  fontSize: 13,
+  transition: "border-color 0.2s ease, box-shadow 0.2s ease",
 };
 
 const filterInputWrapperStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
-  gap: 6,
-  background: "rgba(15,23,42,0.35)",
-  borderRadius: 10,
-  padding: "0 8px",
-  border: "1px solid rgba(148,163,184,0.18)",
+  gap: 8,
+  background: "rgba(15, 23, 42, 0.6)",
+  borderRadius: "var(--radius-sm)",
+  padding: "0 10px",
+  border: "1px solid var(--border-default)",
 };
 
 const rowStyle: React.CSSProperties = {
-  borderBottom: "1px solid rgba(148,163,184,0.1)",
+  borderBottom: "1px solid var(--border-subtle)",
+  transition: "background 0.15s ease",
 };
 
 const cellStyle: React.CSSProperties = {
-  padding: "12px 10px",
+  padding: "14px 16px",
   fontSize: 14,
 };
 
 const linkStyle: React.CSSProperties = {
-  color: "#a5b4fc",
+  color: "var(--brand-primary-light)",
   textDecoration: "none",
+  fontWeight: 500,
+  transition: "color 0.15s ease",
 };
 
 const iconButtonStyle: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   justifyContent: "center",
-  width: 32,
-  height: 32,
-  borderRadius: 10,
-  border: "1px solid rgba(148,163,184,0.24)",
-  background: "rgba(15,23,42,0.4)",
-  color: "inherit",
+  width: 34,
+  height: 34,
+  borderRadius: "var(--radius-sm)",
+  border: "1px solid var(--border-default)",
+  background: "rgba(255, 255, 255, 0.03)",
+  color: "var(--fg-secondary)",
   cursor: "pointer",
+  transition: "all 0.15s ease",
 };
 
 const toastStyle: React.CSSProperties = {
   position: "fixed",
   top: 96,
   right: 24,
-  background: "rgba(34,197,94,0.16)",
-  border: "1px solid rgba(34,197,94,0.4)",
-  color: "#bbf7d0",
-  padding: "12px 16px",
-  borderRadius: 12,
+  background: "rgba(16, 185, 129, 0.15)",
+  border: "1px solid rgba(16, 185, 129, 0.4)",
+  color: "var(--success-light)",
+  padding: "14px 20px",
+  borderRadius: "var(--radius-md)",
   zIndex: 99,
   fontSize: 14,
-  boxShadow: "0 16px 60px rgba(15,118,110,0.35)",
+  fontWeight: 500,
+  boxShadow: "0 16px 48px rgba(0, 0, 0, 0.4)",
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
 };

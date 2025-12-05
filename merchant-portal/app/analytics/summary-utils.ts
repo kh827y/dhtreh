@@ -168,31 +168,37 @@ export function buildChartOption(timeline: SummaryTimelinePoint[]) {
 export function buildMetricCards(metrics?: SummaryMetrics) {
   return [
     {
+      key: "revenue",
       title: "Сумма продаж",
       value: metrics ? formatCurrency(metrics.salesAmount) : "—",
       description: "за выбранный период",
     },
     {
+      key: "average",
       title: "Средний чек",
       value: metrics ? formatCurrency(metrics.averageCheck) : "—",
       description: "средняя сумма покупки",
     },
     {
+      key: "customers",
       title: "Новые клиенты",
       value: metrics ? formatNumber(metrics.newCustomers) : "—",
       description: "зарегистрировались",
     },
     {
+      key: "active",
       title: "Активные клиенты",
       value: metrics ? formatNumber(metrics.activeCustomers) : "—",
       description: "совершили покупку",
     },
     {
+      key: "transactions",
       title: "Среднее количество покупок",
       value: metrics ? formatDecimal(metrics.averagePurchasesPerCustomer) : "—",
       description: "на одного покупателя",
     },
     {
+      key: "frequency",
       title: "Частота визитов",
       value:
         metrics && metrics.visitFrequencyDays != null

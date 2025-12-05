@@ -1,72 +1,93 @@
 "use client";
 
 import React from "react";
-import { Card } from "@loyalty/ui";
+import { Card, CardBody, Badge } from "@loyalty/ui";
 import Toggle from "../../../components/Toggle";
+import {
+  Trophy,
+  Scale,
+  RotateCcw,
+  Cake,
+  Gift,
+  Timer,
+  Users,
+  Sparkles,
+  ChevronRight,
+  Zap,
+  Settings,
+} from "lucide-react";
 
 type MechanicCard = {
   id: string;
   title: string;
   description: string;
-  icon: string;
+  icon: React.ReactNode;
   href: string;
   toggle?: boolean;
+  color?: string;
 };
 
 const cards: MechanicCard[] = [
   {
     id: "levels",
     title: "Уровни клиентов",
-    description: "Ступени программы и условия перехода",
-    icon: "🏆",
+    description: "Ступени программы и условия перехода между уровнями",
+    icon: <Trophy size={22} />,
     href: "/loyalty/mechanics/levels",
+    color: "rgba(250, 204, 21, 0.15)",
   },
   {
     id: "redeem-limits",
-    title: "Ограничения в баллах за покупки",
-    description: "Срок жизни, запреты и задержки начисления",
-    icon: "⚖️",
+    title: "Ограничения в баллах",
+    description: "Срок жизни, запреты и задержки начисления баллов",
+    icon: <Scale size={22} />,
     href: "/loyalty/mechanics/redeem-limits",
+    color: "rgba(148, 163, 184, 0.15)",
   },
   {
     id: "auto-return",
     title: "Автовозврат клиентов",
     description: "Возвращаем неактивных клиентов подарочными баллами",
-    icon: "🔁",
+    icon: <RotateCcw size={22} />,
     href: "/loyalty/mechanics/auto-return",
     toggle: true,
+    color: "rgba(99, 102, 241, 0.15)",
   },
   {
     id: "birthday",
-    title: "Поздравить клиентов с днём рождения",
-    description: "Автопоздравления и подарки к празднику",
-    icon: "🎂",
+    title: "Поздравление с днём рождения",
+    description: "Автопоздравления и подарочные баллы к празднику",
+    icon: <Cake size={22} />,
     href: "/loyalty/mechanics/birthday",
     toggle: true,
+    color: "rgba(236, 72, 153, 0.15)",
   },
   {
     id: "registration-bonus",
     title: "Баллы за регистрацию",
-    description: "Приветственный бонус новым участникам",
-    icon: "🎁",
+    description: "Приветственный бонус новым участникам программы",
+    icon: <Gift size={22} />,
     href: "/loyalty/mechanics/registration-bonus",
     toggle: true,
+    color: "rgba(16, 185, 129, 0.15)",
   },
   {
     id: "ttl",
-    title: "Напоминание о сгорании баллов",
-    description: "Предупреждение клиентов о скором сгорании",
-    icon: "⏳",
+    title: "Напоминание о сгорании",
+    description: "Предупреждение клиентов о скором сгорании баллов",
+    icon: <Timer size={22} />,
     href: "/loyalty/mechanics/ttl",
     toggle: true,
+    color: "rgba(245, 158, 11, 0.15)",
   },
   {
     id: "referral",
     title: "Реферальная программа",
-    description: "Вознаграждение за приглашения друзей",
-    icon: "🤝",
+    description: "Вознаграждение за приглашение новых клиентов",
+    icon: <Users size={22} />,
     href: "/referrals/program",
     toggle: true,
+    color: "rgba(6, 182, 212, 0.15)",
   },
 ];
 
@@ -216,75 +237,175 @@ export default function MechanicsPage() {
   }, [settings]);
 
   return (
-    <div style={{ display: "grid", gap: 24 }}>
-      <div>
-        <div style={{ fontSize: 28, fontWeight: 700, marginBottom: 6 }}>Механики</div>
-        <div style={{ fontSize: 14, opacity: 0.7 }}>Настраивайте сценарии лояльности и активации клиентов</div>
-      </div>
+    <div className="animate-in" style={{ display: "grid", gap: 28 }}>
+      {/* Page Header */}
+      <header style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+        <div style={{
+          width: 48,
+          height: 48,
+          borderRadius: "var(--radius-lg)",
+          background: "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.1))",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "var(--brand-primary-light)",
+        }}>
+          <Sparkles size={24} />
+        </div>
+        <div>
+          <h1 style={{ 
+            fontSize: 28, 
+            fontWeight: 800, 
+            margin: 0,
+            letterSpacing: "-0.02em",
+          }}>
+            Механики лояльности
+          </h1>
+          <p style={{ 
+            fontSize: 14, 
+            color: "var(--fg-muted)", 
+            margin: "6px 0 0",
+          }}>
+            Настраивайте сценарии лояльности и активации клиентов
+          </p>
+        </div>
+      </header>
 
-      <div
-        style={{
-          display: "grid",
-          gap: 16,
-          gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
-        }}
-      >
-        {cards.map((card) => {
+      {/* Cards Grid */}
+      <div style={{
+        display: "grid",
+        gap: 16,
+        gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+      }}>
+        {cards.map((card, index) => {
           const showToggle = Boolean(card.toggle);
           const isOn = enabled[card.id];
+          
           return (
-            <Card key={card.id} style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", padding: 20 }}>
-              <button
-                onClick={() => (window.location.href = card.href)}
-                style={{
-                  all: "unset",
-                  display: "grid",
-                  gap: 12,
-                  cursor: "pointer",
-                }}
-              >
-                <div
-                  aria-hidden
-                  style={{
-                    width: 48,
-                    height: 48,
-                    borderRadius: 14,
-                    background: "rgba(148,163,184,0.12)",
-                    display: "grid",
-                    placeItems: "center",
-                    fontSize: 24,
-                  }}
-                >
-                  {card.icon}
-                </div>
-                <div style={{ display: "grid", gap: 6 }}>
-                  <div style={{ fontSize: 18, fontWeight: 600 }}>{card.title}</div>
-                  <div style={{ fontSize: 13, opacity: 0.7, lineHeight: 1.45 }}>{card.description}</div>
-                </div>
-              </button>
-
-              <div style={{ marginTop: 18, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <Card 
+              key={card.id} 
+              hover
+              className="animate-in"
+              style={{ 
+                animationDelay: `${index * 0.05}s`,
+                display: "flex", 
+                flexDirection: "column",
+              }}
+            >
+              <CardBody style={{ padding: 0, flex: 1, display: "flex", flexDirection: "column" }}>
                 <a
                   href={card.href}
-                  style={{ color: "var(--brand-primary)", fontSize: 13, textDecoration: "none" }}
+                  style={{
+                    textDecoration: "none",
+                    color: "inherit",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 16,
+                    padding: 20,
+                    flex: 1,
+                  }}
                 >
-                  Открыть
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+                    <div style={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: "var(--radius-md)",
+                      background: card.color || "rgba(99, 102, 241, 0.15)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "var(--fg)",
+                    }}>
+                      {card.icon}
+                    </div>
+                    
+                    {showToggle && (
+                      <Badge 
+                        variant={isOn ? "success" : "default"}
+                        dot
+                      >
+                        {isOn ? "Активно" : "Выкл"}
+                      </Badge>
+                    )}
+                  </div>
+                  
+                  <div style={{ flex: 1 }}>
+                    <h3 style={{ 
+                      fontSize: 16, 
+                      fontWeight: 600, 
+                      margin: "0 0 6px",
+                      color: "var(--fg)",
+                    }}>
+                      {card.title}
+                    </h3>
+                    <p style={{ 
+                      fontSize: 13, 
+                      color: "var(--fg-muted)", 
+                      margin: 0,
+                      lineHeight: 1.5,
+                    }}>
+                      {card.description}
+                    </p>
+                  </div>
                 </a>
-                {showToggle && (
-                  <Toggle
-                    checked={!!isOn}
-                    onChange={(value) => handleToggle(card.id, value)}
-                    label={isOn ? "Включено" : "Отключено"}
-                    disabled={!!saving[card.id]}
-                  />
-                )}
-              </div>
+
+                {/* Footer */}
+                <div style={{ 
+                  padding: "14px 20px",
+                  borderTop: "1px solid var(--border-subtle)",
+                  display: "flex", 
+                  justifyContent: "space-between", 
+                  alignItems: "center",
+                  background: "rgba(0, 0, 0, 0.15)",
+                }}>
+                  <a
+                    href={card.href}
+                    style={{ 
+                      color: "var(--brand-primary-light)", 
+                      fontSize: 13, 
+                      fontWeight: 500,
+                      textDecoration: "none",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                      transition: "gap 0.2s ease",
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.gap = "8px"}
+                    onMouseLeave={(e) => e.currentTarget.style.gap = "4px"}
+                  >
+                    Настроить
+                    <ChevronRight size={16} />
+                  </a>
+                  
+                  {showToggle && (
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <Toggle
+                        checked={!!isOn}
+                        onChange={(value) => handleToggle(card.id, value)}
+                        label=""
+                        disabled={!!saving[card.id]}
+                      />
+                    </div>
+                  )}
+                </div>
+              </CardBody>
             </Card>
           );
         })}
       </div>
+
+      {/* Error Message */}
       {error && (
-        <div style={{ color: '#f87171', fontSize: 13 }}>{error}</div>
+        <div style={{ 
+          padding: 16, 
+          borderRadius: "var(--radius-md)", 
+          border: "1px solid rgba(239, 68, 68, 0.3)",
+          background: "rgba(239, 68, 68, 0.1)",
+          color: "var(--danger-light)",
+          fontSize: 14,
+        }}>
+          {error}
+        </div>
       )}
     </div>
   );
