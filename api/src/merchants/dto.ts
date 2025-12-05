@@ -464,7 +464,6 @@ export class ReceiptDto {
   @ApiProperty() orderId!: string;
   @ApiPropertyOptional() receiptNumber?: string | null;
   @ApiProperty() total!: number;
-  @ApiProperty() eligibleTotal!: number;
   @ApiProperty() redeemApplied!: number;
   @ApiProperty() earnApplied!: number;
   @ApiProperty() createdAt!: Date;

@@ -6,6 +6,7 @@ import {
   ReviewsShareSettings,
   grantRegistrationBonus,
   setTelegramAuthInitData,
+  type TeleauthResponse,
 } from './api';
 
 export type AuthStatus = 'idle' | 'authenticating' | 'authenticated' | 'failed';
@@ -95,7 +96,7 @@ export function getMerchantFromContext(initData: string | null): string | undefi
 
 export function useMiniappAuth(defaultMerchant: string) {
   const [merchantId, setMerchantId] = useState<string>(defaultMerchant);
-  const [merchantCustomerId, setMerchantCustomerId] = useState<string | null>(null);
+  const [customerId, setCustomerId] = useState<string | null>(null);
   const [initData, setInitData] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
@@ -113,7 +114,7 @@ export function useMiniappAuth(defaultMerchant: string) {
       setError('');
       setTeleOnboarded(null);
       setTeleHasPhone(null);
-      setMerchantCustomerId(null);
+      setCustomerId(null);
       const resolvedInitData = await waitForInitData();
       if (cancelled) return;
       setInitData(resolvedInitData);
@@ -137,13 +138,16 @@ export function useMiniappAuth(defaultMerchant: string) {
         setLoading(false);
         return;
       }
-      const customerKey = (m: string) => `miniapp.merchantCustomerId.v1:${m}`;
+      const customerKey = (m: string) => `miniapp.customerId.v1:${m}`;
+      const legacyCustomerKey = (m: string) => `miniapp.merchantCustomerId.v1:${m}`;
       const profileKey = (m: string) => `miniapp.profile.v2:${m}`;
       let previousScoped: string | null = null;
       try {
-        const stored = localStorage.getItem(customerKey(fallbackMerchant));
+        const stored =
+          localStorage.getItem(customerKey(fallbackMerchant)) ||
+          localStorage.getItem(legacyCustomerKey(fallbackMerchant));
         previousScoped =
-            stored && stored !== 'undefined' && stored.trim() ? stored : null;
+          stored && stored !== 'undefined' && stored.trim() ? stored : null;
       } catch {
         previousScoped = null;
       }
@@ -193,24 +197,28 @@ export function useMiniappAuth(defaultMerchant: string) {
           setShareSettings(normalizedShare);
         }
         if (authResult.status === 'rejected') throw authResult.reason;
-        const payload = authResult.value;
-        if (
-          !payload?.merchantCustomerId ||
-          typeof payload.merchantCustomerId !== 'string'
-        ) {
-          throw new Error('merchantCustomerId missing in teleauth response');
+        const payload = authResult.value as TeleauthResponse & { merchantCustomerId?: string | null };
+        const resolvedCustomerId =
+          typeof payload?.customerId === 'string' && payload.customerId.trim()
+            ? payload.customerId
+            : typeof payload?.merchantCustomerId === 'string' && payload.merchantCustomerId.trim()
+              ? payload.merchantCustomerId
+              : null;
+        if (!resolvedCustomerId) {
+          throw new Error('customerId missing in teleauth response');
         }
-        setMerchantCustomerId(payload.merchantCustomerId);
+        setCustomerId(resolvedCustomerId);
         setTeleOnboarded(Boolean(payload.onboarded));
         setTeleHasPhone(Boolean(payload.hasPhone));
         try {
           localStorage.setItem(
             customerKey(fallbackMerchant),
-            payload.merchantCustomerId,
+            resolvedCustomerId,
           );
           localStorage.removeItem('miniapp.customerId');
           localStorage.removeItem('miniapp.merchantCustomerId');
-          if (previousScoped && previousScoped !== payload.merchantCustomerId) {
+          localStorage.removeItem(legacyCustomerKey(fallbackMerchant));
+          if (previousScoped && previousScoped !== resolvedCustomerId) {
             localStorage.removeItem(profileKey(fallbackMerchant));
             localStorage.removeItem(
               `regBonus:${fallbackMerchant}:${previousScoped}`,
@@ -235,23 +243,23 @@ export function useMiniappAuth(defaultMerchant: string) {
   useEffect(() => {
     (async () => {
       try {
-        if (!merchantId || !merchantCustomerId) return;
-        const key = `regBonus:${merchantId}:${merchantCustomerId}`;
+        if (!merchantId || !customerId) return;
+        const key = `regBonus:${merchantId}:${customerId}`;
         const attempted = localStorage.getItem(key);
         if (attempted) return;
-        await grantRegistrationBonus(merchantId, merchantCustomerId).catch(() => void 0);
+        await grantRegistrationBonus(merchantId, customerId).catch(() => void 0);
         localStorage.setItem(key, '1');
       } catch {
         // глушим, чтобы не ломать UX миниаппы — сервер идемпотентен и может быть временно недоступен
       }
     })();
-  }, [merchantId, merchantCustomerId]);
+  }, [merchantId, customerId]);
 
   return {
     merchantId,
     setMerchantId,
-    merchantCustomerId,
-    setMerchantCustomerId,
+    customerId,
+    setCustomerId,
     teleOnboarded,
     setTeleOnboarded,
     teleHasPhone,

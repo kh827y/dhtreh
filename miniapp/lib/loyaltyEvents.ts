@@ -8,16 +8,27 @@ type EventHandler = (payload: unknown) => void;
 type SubscriptionOptions = {
   emitCached?: boolean;
   merchantId?: string | null;
-  merchantCustomerId?: string | null;
+  customerId?: string | null;
 };
 
 const subscribers = new Set<EventHandler>();
 const pollers = new Map<
   string,
-  { count: number; stop: () => void; merchantId: string; merchantCustomerId: string }
+  { count: number; stop: () => void; merchantId: string; customerId: string }
 >();
 let sharedChannel: BroadcastChannel | null = null;
 let storageListenerAttached = false;
+
+function normalizeEventPayload(payload: unknown): unknown {
+  if (!payload || typeof payload !== "object") return payload;
+  const maybeEvent = payload as { customerId?: unknown; merchantCustomerId?: unknown };
+  const cid =
+    (typeof maybeEvent.customerId === "string" && maybeEvent.customerId.trim()) ||
+    (typeof maybeEvent.merchantCustomerId === "string" && maybeEvent.merchantCustomerId.trim()) ||
+    null;
+  if (!cid) return payload;
+  return { ...maybeEvent, customerId: cid };
+}
 
 function ensureChannel() {
   if (sharedChannel || typeof window === "undefined") return;
@@ -46,21 +57,22 @@ function ensureStorageListener() {
 }
 
 function dispatchEvent(payload: unknown, replicate = true) {
+  const normalized = normalizeEventPayload(payload);
   for (const handler of subscribers) {
     try {
-      handler(payload);
+      handler(normalized);
     } catch {
       // ignore individual handler errors
     }
   }
   if (!replicate || typeof window === "undefined") return;
   try {
-    localStorage.setItem(LOYALTY_EVENT_STORAGE_KEY, JSON.stringify(payload));
+    localStorage.setItem(LOYALTY_EVENT_STORAGE_KEY, JSON.stringify(normalized));
   } catch {
     // ignore storage errors
   }
   try {
-    sharedChannel?.postMessage(payload);
+    sharedChannel?.postMessage(normalized);
   } catch {
     // ignore broadcast channel errors
   }
@@ -72,7 +84,7 @@ function delay(ms: number) {
   });
 }
 
-function acquirePoller(key: string, merchantId: string, merchantCustomerId: string) {
+function acquirePoller(key: string, merchantId: string, customerId: string) {
   const existing = pollers.get(key);
   if (existing) {
     existing.count += 1;
@@ -86,16 +98,16 @@ function acquirePoller(key: string, merchantId: string, merchantCustomerId: stri
     controller.abort();
     pollers.delete(key);
   };
-  pollers.set(key, { count: 1, stop, merchantId, merchantCustomerId });
+  pollers.set(key, { count: 1, stop, merchantId, customerId });
 
   const loop = async () => {
     while (!stopped) {
       try {
-        const response = await pollLoyaltyEvents(merchantId, merchantCustomerId, controller.signal);
+        const response = await pollLoyaltyEvents(merchantId, customerId, controller.signal);
         if (controller.signal.aborted || stopped) break;
         const event = response?.event as LoyaltyRealtimeEvent | null;
         if (event) {
-          dispatchEvent(event, true);
+          dispatchEvent(normalizeEventPayload(event), true);
           continue;
         }
       } catch {
@@ -121,7 +133,7 @@ function releasePoller(key: string) {
 
 export function subscribeToLoyaltyEvents(handler: EventHandler, options: SubscriptionOptions = {}) {
   if (typeof window === "undefined") return () => undefined;
-  const { emitCached = true, merchantId, merchantCustomerId } = options;
+  const { emitCached = true, merchantId, customerId } = options;
   ensureChannel();
   ensureStorageListener();
   subscribers.add(handler);
@@ -138,9 +150,9 @@ export function subscribeToLoyaltyEvents(handler: EventHandler, options: Subscri
   }
 
   const pollerKey =
-    merchantId && merchantCustomerId ? `${merchantId}:${merchantCustomerId}` : null;
+    merchantId && customerId ? `${merchantId}:${customerId}` : null;
   if (pollerKey) {
-    acquirePoller(pollerKey, merchantId, merchantCustomerId);
+    acquirePoller(pollerKey, merchantId, customerId);
   }
 
   return () => {

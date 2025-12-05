@@ -1,5 +1,5 @@
 export type QrMintResp = { token: string; ttl: number };
-export type BalanceResp = { merchantId: string; merchantCustomerId: string; balance: number };
+export type BalanceResp = { merchantId: string; customerId: string; balance: number };
 export type TransactionsResp = {
   items: Array<{
     id: string;
@@ -37,7 +37,7 @@ export type LevelRuleResp = {
 
 export type LevelsResp = {
   merchantId: string;
-  merchantCustomerId: string;
+  customerId: string;
   metric: 'earn'|'redeem'|'transactions';
   periodDays: number;
   value: number;
@@ -80,7 +80,6 @@ export type LoyaltyRealtimeEvent = {
   id: string;
   merchantId: string;
   customerId: string;
-  merchantCustomerId?: string | null;
   transactionId?: string | null;
   transactionType?: string | null;
   amount?: number | null;
@@ -163,7 +162,8 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
 
 export type TeleauthResponse = {
   ok: boolean;
-  merchantCustomerId: string;
+  customerId: string;
+  merchantCustomerId?: string;
   hasPhone: boolean;
   onboarded: boolean;
 };
@@ -172,10 +172,14 @@ export async function teleauth(
   merchantId: string,
   initData: string,
 ): Promise<TeleauthResponse> {
-  return http('/loyalty/teleauth', {
+  const res = await http<TeleauthResponse>('/loyalty/teleauth', {
     method: 'POST',
     body: JSON.stringify({ merchantId, initData }),
   });
+  return {
+    ...res,
+    merchantCustomerId: res.merchantCustomerId ?? res.customerId,
+  };
 }
 
 export type BootstrapResp = {
@@ -189,10 +193,10 @@ export type BootstrapResp = {
 
 export async function bootstrap(
   merchantId: string,
-  merchantCustomerId: string,
+  customerId: string,
   opts?: { transactionsLimit?: number },
 ): Promise<BootstrapResp> {
-  const qs = new URLSearchParams({ merchantId, merchantCustomerId });
+  const qs = new URLSearchParams({ merchantId, customerId });
   if (opts?.transactionsLimit) {
     qs.set('transactionsLimit', String(opts.transactionsLimit));
   }
@@ -201,7 +205,7 @@ export async function bootstrap(
 
 export async function submitReview(payload: {
   merchantId: string;
-  merchantCustomerId: string;
+  customerId: string;
   rating: number;
   comment?: string;
   orderId?: string | null;
@@ -214,7 +218,7 @@ export async function submitReview(payload: {
 }): Promise<SubmitReviewResponse> {
   const body: Record<string, unknown> = {
     merchantId: payload.merchantId,
-    merchantCustomerId: payload.merchantCustomerId,
+    customerId: payload.customerId,
     rating: payload.rating,
     comment: payload.comment ?? '',
   };
@@ -278,14 +282,14 @@ export async function publicSettings(merchantId: string): Promise<PublicSettings
 }
 
 export async function mintQr(
-  merchantCustomerId: string,
+  customerId: string,
   merchantId?: string,
   ttlSec?: number,
   initData?: string | null,
 ): Promise<QrMintResp> {
   return http('/loyalty/qr', {
     method: 'POST',
-    body: JSON.stringify({ merchantCustomerId, merchantId, ttlSec, initData: initData || undefined }),
+    body: JSON.stringify({ customerId, merchantId, ttlSec, initData: initData || undefined }),
   });
 }
 
@@ -304,9 +308,9 @@ export type PromotionItem = {
 
 export async function promotionsList(
   merchantId: string,
-  merchantCustomerId: string,
+  customerId: string,
 ): Promise<PromotionItem[]> {
-  const qs = new URLSearchParams({ merchantId, merchantCustomerId });
+  const qs = new URLSearchParams({ merchantId, customerId });
   return http(`/loyalty/promotions?${qs.toString()}`);
 }
 
@@ -322,13 +326,13 @@ export type PromotionClaimResp = {
 
 export async function promotionClaim(
   merchantId: string,
-  merchantCustomerId: string,
+  customerId: string,
   promotionId: string,
   outletId?: string | null,
 ): Promise<PromotionClaimResp> {
   const body: Record<string, unknown> = {
     merchantId,
-    merchantCustomerId,
+    customerId,
     promotionId,
   };
   if (typeof outletId === 'string' && outletId.trim()) body.outletId = outletId.trim();
@@ -337,18 +341,18 @@ export async function promotionClaim(
 
 export async function balance(
   merchantId: string,
-  merchantCustomerId: string,
+  customerId: string,
 ): Promise<BalanceResp> {
   return http(
-    `/loyalty/balance/${encodeURIComponent(merchantId)}/${encodeURIComponent(merchantCustomerId)}`,
+    `/loyalty/balance/${encodeURIComponent(merchantId)}/${encodeURIComponent(customerId)}`,
   );
 }
 
 export async function levels(
   merchantId: string,
-  merchantCustomerId: string,
+  customerId: string,
 ): Promise<LevelsResp> {
-  return http(`/levels/${encodeURIComponent(merchantId)}/${encodeURIComponent(merchantCustomerId)}`);
+  return http(`/levels/${encodeURIComponent(merchantId)}/${encodeURIComponent(customerId)}`);
 }
 
 export async function mechanicsLevels(merchantId: string): Promise<MechanicsLevelsResp> {
@@ -357,14 +361,14 @@ export async function mechanicsLevels(merchantId: string): Promise<MechanicsLeve
 
 export async function transactions(
   merchantId: string,
-  merchantCustomerId: string,
+  customerId: string,
   limit = 20,
   before?: string,
   opts?: { fresh?: boolean },
 ): Promise<TransactionsResp> {
   const qs = new URLSearchParams({
     merchantId,
-    merchantCustomerId,
+    customerId,
     limit: String(limit),
     ...(before ? { before } : {}),
   });
@@ -377,7 +381,7 @@ export async function transactions(
 
 export async function grantRegistrationBonus(
   merchantId: string,
-  merchantCustomerId: string,
+  customerId: string,
   outletId?: string | null,
 ): Promise<{
   ok: boolean;
@@ -390,7 +394,7 @@ export async function grantRegistrationBonus(
 }> {
   const body: Record<string, unknown> = {
     merchantId,
-    merchantCustomerId,
+    customerId,
   };
   if (typeof outletId === 'string' && outletId.trim()) body.outletId = outletId.trim();
   return http('/loyalty/mechanics/registration-bonus', { method: 'POST', body: JSON.stringify(body) });
@@ -398,38 +402,38 @@ export async function grantRegistrationBonus(
 
 export async function consentGet(
   merchantId: string,
-  merchantCustomerId: string,
+  customerId: string,
 ): Promise<{ granted: boolean; consentAt?: string }> {
-  return http(`/loyalty/consent?merchantId=${encodeURIComponent(merchantId)}&merchantCustomerId=${encodeURIComponent(merchantCustomerId)}`);
+  return http(`/loyalty/consent?merchantId=${encodeURIComponent(merchantId)}&customerId=${encodeURIComponent(customerId)}`);
 }
 
 export async function consentSet(
   merchantId: string,
-  merchantCustomerId: string,
+  customerId: string,
   granted: boolean,
 ): Promise<{ ok: boolean }> {
   return http('/loyalty/consent', {
     method: 'POST',
-    body: JSON.stringify({ merchantId, merchantCustomerId, granted }),
+    body: JSON.stringify({ merchantId, customerId, granted }),
   });
 }
 
 export async function referralLink(
-  merchantCustomerId: string,
+  customerId: string,
   merchantId: string,
 ): Promise<ReferralLinkResp> {
   if (
-    typeof merchantCustomerId !== 'string' ||
-    !merchantCustomerId ||
-    merchantCustomerId === 'undefined' ||
-    merchantCustomerId.trim() === '' ||
+    typeof customerId !== 'string' ||
+    !customerId ||
+    customerId === 'undefined' ||
+    customerId.trim() === '' ||
     typeof merchantId !== 'string' ||
     !merchantId
   ) {
-    throw new Error('merchantCustomerId and merchantId are required and must be valid');
+    throw new Error('customerId and merchantId are required and must be valid');
   }
   return httpDedup(
-    `/referral/link/${encodeURIComponent(merchantCustomerId)}?merchantId=${encodeURIComponent(merchantId)}`,
+    `/referral/link/${encodeURIComponent(customerId)}?merchantId=${encodeURIComponent(merchantId)}`,
     undefined,
     2000,
   );
@@ -437,37 +441,37 @@ export async function referralLink(
 
 export async function referralActivate(
   code: string,
-  merchantCustomerId: string,
+  customerId: string,
 ): Promise<{ success: boolean; message?: string; referralId?: string }> {
   return http('/referral/activate', {
     method: 'POST',
-    body: JSON.stringify({ code, merchantCustomerId }),
+    body: JSON.stringify({ code, customerId }),
   });
 }
 
 export async function pollLoyaltyEvents(
   merchantId: string,
-  merchantCustomerId: string,
+  customerId: string,
   signal?: AbortSignal,
 ): Promise<{ event: LoyaltyRealtimeEvent | null }> {
-  const qs = new URLSearchParams({ merchantId, merchantCustomerId });
+  const qs = new URLSearchParams({ merchantId, customerId });
   return http(`/loyalty/events/poll?${qs.toString()}`, { signal });
 }
 
 export async function dismissReviewPrompt(
   merchantId: string,
-  merchantCustomerId: string,
+  customerId: string,
   transactionId: string,
 ): Promise<{ ok: boolean; dismissedAt: string }> {
   return http('/loyalty/reviews/dismiss', {
     method: 'POST',
-    body: JSON.stringify({ merchantId, merchantCustomerId, transactionId }),
+    body: JSON.stringify({ merchantId, customerId, transactionId }),
   });
 }
 
 export async function promoCodeApply(
   merchantId: string,
-  merchantCustomerId: string,
+  customerId: string,
   code: string,
 ): Promise<{
   ok: boolean;
@@ -480,7 +484,7 @@ export async function promoCodeApply(
 }> {
   return http('/loyalty/promocodes/apply', {
     method: 'POST',
-    body: JSON.stringify({ merchantId, merchantCustomerId, code }),
+    body: JSON.stringify({ merchantId, customerId, code }),
   });
 }
 
@@ -497,27 +501,27 @@ export type CustomerPhoneStatus = {
 
 export async function profileGet(
   merchantId: string,
-  merchantCustomerId: string,
+  customerId: string,
 ): Promise<CustomerProfile> {
-  const qs = new URLSearchParams({ merchantId, merchantCustomerId });
+  const qs = new URLSearchParams({ merchantId, customerId });
   return http(`/loyalty/profile?${qs.toString()}`);
 }
 
 export async function profilePhoneStatus(
   merchantId: string,
-  merchantCustomerId: string,
+  customerId: string,
 ): Promise<CustomerPhoneStatus> {
-  const qs = new URLSearchParams({ merchantId, merchantCustomerId });
+  const qs = new URLSearchParams({ merchantId, customerId });
   return http(`/loyalty/profile/phone-status?${qs.toString()}`);
 }
 
 export async function profileSave(
   merchantId: string,
-  merchantCustomerId: string,
+  customerId: string,
   profile: { name: string; gender: 'male' | 'female'; birthDate: string; phone?: string },
 ): Promise<CustomerProfile> {
   return http('/loyalty/profile', {
     method: 'POST',
-    body: JSON.stringify({ merchantId, merchantCustomerId, ...profile }),
+    body: JSON.stringify({ merchantId, customerId, ...profile }),
   });
 }

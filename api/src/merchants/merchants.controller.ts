@@ -199,14 +199,12 @@ export class MerchantsController {
     @Param('id') id: string,
     @Query('channel') channel: 'VIRTUAL' | 'PC_POS' | 'SMART',
     @Query('weekday') weekdayStr?: string,
-    @Query('eligibleTotal') eligibleStr?: string,
     @Query('category') category?: string,
   ) {
     const weekday = Math.max(
       0,
       Math.min(6, parseInt(weekdayStr || '0', 10) || 0),
     );
-    const eligibleTotal = Math.max(0, parseInt(eligibleStr || '0', 10) || 0);
     const ch =
       channel === 'SMART' || channel === 'PC_POS' || channel === 'VIRTUAL'
         ? channel
@@ -214,7 +212,6 @@ export class MerchantsController {
     return this.service.previewRules(id, {
       channel: ch,
       weekday,
-      eligibleTotal,
       category,
     });
   }
@@ -713,7 +710,7 @@ export class MerchantsController {
       `attachment; filename="receipts_${id}_${Date.now()}.csv"`,
     );
     res.write(
-      'id,orderId,customerId,total,eligibleTotal,redeemApplied,earnApplied,createdAt,outletId,outletPosType,outletLastSeenAt,staffId\n',
+      'id,orderId,customerId,total,redeemApplied,earnApplied,createdAt,outletId,outletPosType,outletLastSeenAt,staffId\n',
     );
     let before = beforeStr ? new Date(beforeStr) : undefined;
     while (true) {
@@ -730,7 +727,6 @@ export class MerchantsController {
           r.orderId,
           r.customerId,
           r.total,
-          r.eligibleTotal,
           r.redeemApplied,
           r.earnApplied,
           r.createdAt.toISOString(),

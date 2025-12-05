@@ -100,7 +100,7 @@ X-Staff-Key: sk_live_xxxxxxxxxxxxxx
 
 #### POST /loyalty/cashier/customer
 - Требует активную cookie-сессию кассира.
-- Позволяет термналу получить `merchantCustomerId` и базовую информацию о клиенте по QR-токену.
+- Позволяет термналу получить `customerId` и базовую информацию о клиенте по QR-токену.
 - Тело запроса:
   ```json
   {
@@ -111,14 +111,14 @@ X-Staff-Key: sk_live_xxxxxxxxxxxxxx
 - Ответ 200:
   ```json
   {
-    "merchantCustomerId": "mc_123",
+    "customerId": "mc_123",
     "customerId": "c_456",
     "name": "Иван Петров",
     "balance": 1800
   }
   ```
 - Если QR выписан для другого мерчанта — 400 с текстом `QR выписан для другого мерчанта`.
-- Поле `balance` может быть `null`, если кошелёк ещё не создан; фронтенд может вызвать `/loyalty/balance` с полученным `merchantCustomerId`, чтобы пересчитать баланс.
+- Поле `balance` может быть `null`, если кошелёк ещё не создан; фронтенд может вызвать `/loyalty/balance` с полученным `customerId`, чтобы пересчитать баланс.
 
 ### Admin Key Authentication
 Для административных операций:
@@ -357,7 +357,7 @@ Response 200:
 
 Эндпоинты `/api/integrations/**` требуют заголовок `X-Api-Key` (интеграционный ключ); `merchantId` определяется по ключу. Throttling по `integrationId` с дефолтными лимитами: CODE — 60/мин, CALCULATE-ACTION/BONUS — 180/мин, BONUS — 60/мин, REFUND — 30/мин, OUTLETS/DEVICES — 60/мин, OPERATIONS — 30/мин (настраиваются в интеграции).
 
-Идентификация клиента: во всех методах, требующих клиента, используется `id_client` (= merchantCustomerId) или `userToken` (QR). `id_client` — это ID клиента в системе лояльности для данного мерчанта.
+Идентификация клиента: во всех методах, требующих клиента, используется `id_client` (= customerId) или `userToken` (QR). `id_client` — это ID клиента в системе лояльности для данного мерчанта.
 
 - `POST /api/integrations/code` — { `userToken` } → `{ type: "bonus", client: { id_client, id_ext, name?, phone?, email?, balance, earnPercent, redeemLimitPercent, k_bonus, maxPayBonusK, b_date?, avgBill, visitFrequency, visitCount, totalAmount } }`. Валидируется `merchantAud`, данные клиента резолвятся по `userToken`. `id_ext` — внешний ID клиента из вашей системы (`merchantCustomer.externalId`), при отсутствии будет `null`. deviceId/outlet не требуются. `earnPercent`/`k_bonus` и `redeemLimitPercent`/`maxPayBonusK` берутся из настроек мерчанта и уровня клиента (без учёта товарных промо). Аналитика (`avgBill`, `visitCount`, `totalAmount`, `visitFrequency`, `b_date`) строится по чекам мерчанта; `visitFrequency` — среднее количество визитов за 30 дней.
 - `POST /api/integrations/calculate/action` — промо-расчёт без побочных эффектов: `{ items[], id_client?, outletId? }` → `{ positions: [{ id_product, name, qty, price, base_price, actions, action_names, earn_multiplier?, allow_earn_and_pay? }], info: string[] }`. При акции "N-й бесплатно" позиции разбиваются: бесплатные (`price: 0`) и платные возвращаются отдельно (как в GMB API). Не требует userToken/устройства/сотрудника, контекст только по точке и опционально по клиенту (stateless).
@@ -445,7 +445,7 @@ Content-Type: application/json
 
 {
   "merchantId": "M-1",
-  "merchantCustomerId": "mc_123",
+  "customerId": "mc_123",
   "transactionId": "txn_123"
 }
 
@@ -456,7 +456,7 @@ Response 200:
 }
 ```
 
-- Требует валидного `merchantCustomerId` и транзакции этого клиента; при несоответствии вернётся `400`.
+- Требует валидного `customerId` и транзакции этого клиента; при несоответствии вернётся `400`.
 - Используется фронтом при закрытии модалки отзыва, чтобы она не открывалась на других устройствах или после повторного входа.
 - Факт скрытия сохраняется в `LoyaltyRealtimeEvent` и отображается как `reviewDismissedAt` в ответе `/loyalty/transactions`.
 
@@ -639,7 +639,7 @@ Response 200:
   "total": 12,
   "items": [
     {
-      "merchantCustomerId": "mc_123",
+      "customerId": "mc_123",
       "customerId": "cust_1",
       "name": "Иван Иванов",
       "phone": "+79991112233",
@@ -773,7 +773,7 @@ Response 200:
   "share": 0.5,
   "pointsRestored": 250,
   "pointsRevoked": 25,
-  "merchantCustomerId": "mc_123" // возвращается, если чек найден
+  "customerId": "mc_123" // возвращается, если чек найден
 }
 
 > Примечание: передавайте либо `orderId`, либо `receiptNumber`. Если оба поля указаны, приоритет у `orderId`.
@@ -793,7 +793,7 @@ Response 200:
 
 #### 6. История транзакций
 ```http
-GET /loyalty/transactions?merchantId={merchantId}&merchantCustomerId={merchantCustomerId}&limit=20&before={date}
+GET /loyalty/transactions?merchantId={merchantId}&customerId={customerId}&limit=20&before={date}
 
 Response 200:
 {
@@ -830,11 +830,11 @@ Response 200:
   - Тип `REGISTRATION` используется только для фронтенда (отображение «Бонус за регистрацию»); по сути это начисление баллов.
   - Поле `source` передаёт значение из metadata транзакции (например, `MANUAL_ACCRUAL` или `COMPLIMENTARY`). Мини-приложение отображает ручные начисления с `MANUAL_ACCRUAL` как обычные покупки, а `COMPLIMENTARY` — отдельным розовым блоком «Начислено администратором». `comment` содержит пользовательский комментарий администратора, если он был указан. Для отката реферальных наград `source = "REFERRAL_ROLLBACK"`; такие транзакции показываются как «Возврат реферала» и уменьшают баланс пригласившего клиента.
 - Если по заказу создан чек (`Receipt`), в ответе появится `receiptNumber`. Этот идентификатор отображается во всех фронтах и используется кассиром для ручного возврата вместо публичного `orderId`.
-- Параметр `merchantCustomerId` обязателен; `customerId` поддерживается только для обратной совместимости и будет удалён после завершения миграции миниаппы.
+- Параметр `customerId` обязателен; `customerId` поддерживается только для обратной совместимости и будет удалён после завершения миграции миниаппы.
 
 #### 7. Realtime события для миниаппы
 ```http
-GET /loyalty/events/poll?merchantId={merchantId}&merchantCustomerId={merchantCustomerId}
+GET /loyalty/events/poll?merchantId={merchantId}&customerId={customerId}
 ```
 
 - Long-poll запрос (таймаут ~25 секунд). Возвращает первое непрочитанное событие или `{ "event": null }`, если изменений не было.
@@ -846,7 +846,7 @@ GET /loyalty/events/poll?merchantId={merchantId}&merchantCustomerId={merchantCus
       "id": "evt_...",
       "merchantId": "M-1",
       "customerId": "c_123",
-      "merchantCustomerId": "mc_123",
+      "customerId": "mc_123",
       "transactionId": "txn_123",
       "transactionType": "EARN",
       "amount": 150,
@@ -1763,22 +1763,22 @@ Response 200: объект клиента, как в GET /portal/customers/{id}
     - Сервер валидирует `initData` по токену бота данного мерчанта (`MerchantSettings.telegramBotToken`).
     - При наличии `start_param`/`startapp` валидирует подпись по `TMA_LINK_SECRET` и сверяет `merchantId` (при расхождении — 400).
     - Для каждого мерчанта создаётся собственная связка `MerchantCustomer` → `Customer`, даже если Telegram аккаунт уже авторизован в другой сети.
-    - Ответ: `{ ok: true, merchantCustomerId, hasPhone: boolean, onboarded: boolean }`, где `hasPhone` и `onboarded` вычисляются **исключительно** по данным `MerchantCustomer` для текущего мерчанта. Даже если телефон/анкета уже заполнены у другого мерчанта, новый мерчант потребует пройти регистрацию заново (форма «Расскажите о себе» + привязка номера).
-  - GET `/loyalty/bootstrap?merchantId=...&merchantCustomerId=...&transactionsLimit=20`
+    - Ответ: `{ ok: true, customerId, hasPhone: boolean, onboarded: boolean }`, где `hasPhone` и `onboarded` вычисляются **исключительно** по данным `MerchantCustomer` для текущего мерчанта. Даже если телефон/анкета уже заполнены у другого мерчанта, новый мерчант потребует пройти регистрацию заново (форма «Расскажите о себе» + привязка номера).
+  - GET `/loyalty/bootstrap?merchantId=...&customerId=...&transactionsLimit=20`
     - Возвращает агрегированный ответ для стартового экрана: `{ profile, consent, balance, levels, transactions, promotions }`.
     - `transactionsLimit` (1–100, по умолчанию 20) задаёт количество операций в первой пачке истории. Остальные поля соответствуют отдельным эндпоинтам (`/loyalty/profile`, `/loyalty/consent`, `/loyalty/balance`, `/levels`, `/loyalty/transactions`, `/loyalty/promotions`).
   - Все последующие запросы мини‑аппы (профиль, согласия, промо, отзывы, регистрационный бонус и т.д.) должны содержать заголовок `Authorization: tma <initData>`. Сервер валидирует подпись Telegram для каждого запроса.
-  - GET `/loyalty/profile?merchantId={merchantId}&merchantCustomerId={merchantCustomerId}` → `{ name: string|null, gender: 'male'|'female'|null, birthDate: 'YYYY-MM-DD'|null }`.
-    - Профиль клиента хранится на стороне сервера и изолирован по паре `(merchantId, merchantCustomerId)`. Данные другого мерчанта (даже если они уже сохранены в `Customer`) не подставляются и не считаются заполненными.
+  - GET `/loyalty/profile?merchantId={merchantId}&customerId={customerId}` → `{ name: string|null, gender: 'male'|'female'|null, birthDate: 'YYYY-MM-DD'|null }`.
+    - Профиль клиента хранится на стороне сервера и изолирован по паре `(merchantId, customerId)`. Данные другого мерчанта (даже если они уже сохранены в `Customer`) не подставляются и не считаются заполненными.
     - Используется для кросс-девайс синхронизации данных профиля Mini App.
-  - GET `/loyalty/profile/phone-status?merchantId={merchantId}&merchantCustomerId={merchantCustomerId}` → `{ hasPhone: boolean }`.
+  - GET `/loyalty/profile/phone-status?merchantId={merchantId}&customerId={customerId}` → `{ hasPhone: boolean }`.
     - Возвращает признак наличия номера телефона у клиента **для данного мерчанта** (`MerchantCustomer.phone`). Телефон, сохранённый у другого мерчанта, не влияет на флаг.
     - Mini App запрашивает эндпоинт после действия пользователя "Поделиться номером", чтобы подтвердить получение номера перед сохранением профиля.
   - POST `/loyalty/profile`
     ```json
     {
       "merchantId": "M-1",
-      "merchantCustomerId": "cust_123",
+      "customerId": "cust_123",
       "name": "Иван Иванов",
       "gender": "male",
       "birthDate": "1995-04-12",

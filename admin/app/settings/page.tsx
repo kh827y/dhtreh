@@ -19,9 +19,8 @@ export default function SettingsPage() {
   const [msg, setMsg] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [rulesErrors, setRulesErrors] = useState<string[]>([]);
-  const [preview, setPreview] = useState<{ channel: 'SMART'|'PC_POS'|'VIRTUAL'; eligibleTotal: number }>({
+  const [preview, setPreview] = useState<{ channel: 'SMART'|'PC_POS'|'VIRTUAL' }>({
     channel: 'SMART',
-    eligibleTotal: 1000,
   });
   const [previewOut, setPreviewOut] = useState<{ earnBps: number; redeemLimitBps: number } | null>(null);
   const [serverPreviewOut, setServerPreviewOut] = useState<{ earnBps: number; redeemLimitBps: number } | null>(null);
@@ -119,7 +118,7 @@ export default function SettingsPage() {
     return errors;
   }
 
-  function computeRules(json: any, args: { channel: 'SMART'|'PC_POS'|'VIRTUAL'; eligibleTotal: number }): { earnBps: number; redeemLimitBps: number } {
+  function computeRules(json: any, args: { channel: 'SMART'|'PC_POS'|'VIRTUAL' }): { earnBps: number; redeemLimitBps: number } {
     let earnBps = s?.earnBps ?? 300;
     let redeemLimitBps = s?.redeemLimitBps ?? 5000;
     if (Array.isArray(json)) {
@@ -128,7 +127,6 @@ export default function SettingsPage() {
           if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
           const cond = (item as any).if ?? {};
           if (Array.isArray(cond.channelIn) && !cond.channelIn.includes(args.channel)) continue;
-          if (cond.minEligible != null && args.eligibleTotal < Number(cond.minEligible)) continue;
           const then = (item as any).then ?? {};
           if (then.earnBps != null) earnBps = Number(then.earnBps);
           if (then.redeemLimitBps != null) redeemLimitBps = Number(then.redeemLimitBps);
@@ -147,13 +145,12 @@ export default function SettingsPage() {
       previewRules(merchantId, {
         channel: preview.channel,
         weekday: new Date().getDay(),
-        eligibleTotal: preview.eligibleTotal,
       })
         .then(res => setServerPreviewOut(res))
         .catch(()=>setServerPreviewOut(null));
     } catch { setRulesErrors(['Некорректный JSON']); setPreviewOut(null); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rules, preview.channel, preview.eligibleTotal, merchantId]);
+  }, [rules, preview.channel, merchantId]);
 
   return (
     <div>
@@ -226,9 +223,6 @@ export default function SettingsPage() {
                   <option value="PC_POS">PC_POS</option>
                   <option value="VIRTUAL">VIRTUAL</option>
                 </select>
-              </label>
-              <label>Сумма (eligible):
-                <input type="number" min={0} value={preview.eligibleTotal} onChange={e=>setPreview(prev=>({ ...prev, eligibleTotal: parseInt(e.target.value||'0',10) }))} style={{ marginLeft: 8, width: 120 }} />
               </label>
             </div>
             <div style={{ marginTop: 8, display:'grid', gap:6 }}>

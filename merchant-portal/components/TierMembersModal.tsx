@@ -11,7 +11,6 @@ type TierSummary = {
 };
 
 type TierMember = {
-  merchantCustomerId: string | null;
   customerId: string;
   name: string | null;
   phone: string | null;
@@ -77,8 +76,7 @@ export function TierMembersModal({
         if (!res.ok) throw new Error((await res.text()) || res.statusText);
         const payload = mapResponse(await res.json().catch(() => null));
         const normalized = payload.items.map((item) => ({
-          merchantCustomerId: item?.merchantCustomerId ?? null,
-          customerId: item?.customerId ?? "",
+          customerId: item?.customerId ?? item?.merchantCustomerId ?? "",
           name: item?.name ?? null,
           phone: item?.phone ?? null,
           assignedAt: item?.assignedAt ?? "",
@@ -128,9 +126,9 @@ export function TierMembersModal({
   }, [members, search]);
 
   const handleMemberClick = (member: TierMember) => {
-    if (!member.merchantCustomerId) return;
+    if (!member.customerId) return;
     onClose();
-    router.push(`/customers/${member.merchantCustomerId}`);
+    router.push(`/customers/${member.customerId}`);
   };
 
   const showModal = open && tier;
@@ -252,7 +250,7 @@ export function TierMembersModal({
               }}
             >
               {filteredMembers.map((member) => {
-                const clickable = Boolean(member.merchantCustomerId);
+                const clickable = Boolean(member.customerId);
                 return (
                   <button
                     key={`${member.customerId}:${member.assignedAt}`}

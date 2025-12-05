@@ -14,7 +14,7 @@ export function EffectiveRatesPopover({ merchantId, levelName, className }: { me
     setLoading(true); setErr(''); setEarnPct(''); setRedeemPct('');
     try {
       const wd = new Date().getDay();
-      const p = new URLSearchParams({ channel: 'VIRTUAL', weekday: String(wd), eligibleTotal: '1000' }).toString();
+      const p = new URLSearchParams({ channel: 'VIRTUAL', weekday: String(wd) }).toString();
       const r = await fetch(`/api/admin/merchants/${encodeURIComponent(merchantId)}/rules/preview?` + p);
       if (!r.ok) throw new Error(await r.text());
       const rules = await r.json();
@@ -73,7 +73,6 @@ export function EffectiveRatesPopover({ merchantId, levelName, className }: { me
           {err && <div style={{ color:'#f38ba8', marginBottom: 6 }}>{err}</div>}
           {!err && (
             <div style={{ display:'grid', gap: 6 }}>
-              <div style={{ opacity: 0.9 }}>Для примера: eligible=1000</div>
               {loading ? (
                 <div style={{ display:'grid', gap: 6 }}>
                   <div style={{ height: 10, borderRadius: 4, background:'linear-gradient(90deg, #111827 25%, #1f2937 37%, #111827 63%)', backgroundSize:'400% 100%', animation:'shimmer 1.2s ease-in-out infinite' }} />

@@ -86,6 +86,19 @@ type LeaderboardEntry = {
   points: number;
 };
 
+type LeaderboardSettings = {
+  leaderboardPeriod?: string;
+  customDays?: number;
+  pointsForNewCustomer?: number;
+  pointsForExistingCustomer?: number;
+};
+
+type LeaderboardPeriod = {
+  kind?: string;
+  label?: string;
+  customDays?: number;
+};
+
 type RefundHistoryItem = {
   id: string;
   createdAt: string;
@@ -287,7 +300,7 @@ export default function Page() {
 
   const [mode, setMode] = useState<'redeem' | 'earn'>('redeem');
   const [userToken, setUserToken] = useState<string>('');
-  const [merchantCustomerId, setMerchantCustomerId] = useState<string | null>(null);
+  const [customerId, setCustomerId] = useState<string | null>(null);
   const [orderId, setOrderId] = useState<string>('');
   const [total, setTotal] = useState<number>(0);
   const [receiptNumber, setReceiptNumber] = useState<string>('');
@@ -727,8 +740,8 @@ export default function Page() {
         throw new Error(await r.text());
       }
       const data = await r.json();
-      if (typeof data?.merchantCustomerId === 'string') {
-        setMerchantCustomerId(data.merchantCustomerId);
+      if (typeof data?.customerId === 'string') {
+        setCustomerId(data.customerId);
       }
       if (data?.ok) {
         emitLoyaltyEvent({
@@ -758,9 +771,9 @@ export default function Page() {
     }
   };
 
-  const loadCustomerBalance = async (merchantCustomerId: string, merchant: string): Promise<number | null> => {
+  const loadCustomerBalance = async (customerId: string, merchant: string): Promise<number | null> => {
     try {
-      const r = await fetch(`${API_BASE}/loyalty/balance/${merchant}/${encodeURIComponent(merchantCustomerId)}`, {
+      const r = await fetch(`${API_BASE}/loyalty/balance/${merchant}/${encodeURIComponent(customerId)}`, {
         credentials: 'include',
       });
       if (!r.ok) return null;
@@ -802,10 +815,6 @@ export default function Page() {
         throw new Error(text || r.statusText);
       }
       const data = await r.json();
-      const resolvedMerchantCustomerId =
-        typeof data?.merchantCustomerId === 'string'
-          ? data.merchantCustomerId
-          : null;
       const resolvedCustomerId =
         typeof data?.customerId === 'string' && data.customerId.trim().length > 0
           ? data.customerId.trim()
@@ -814,14 +823,14 @@ export default function Page() {
         typeof data?.name === 'string' && data.name.trim().length > 0
           ? data.name.trim()
           : null;
-      setMerchantCustomerId(resolvedMerchantCustomerId);
+      setCustomerId(resolvedCustomerId);
       const balanceHint =
         typeof data?.balance === 'number' ? data.balance : null;
       const balancePromise =
-        resolvedMerchantCustomerId != null
+        resolvedCustomerId != null
           ? balanceHint != null
             ? Promise.resolve(balanceHint)
-            : loadCustomerBalance(resolvedMerchantCustomerId, merchant)
+            : loadCustomerBalance(resolvedCustomerId, merchant)
           : Promise.resolve<number | null>(null);
       const levelPromise =
         resolvedCustomerId != null
@@ -838,7 +847,7 @@ export default function Page() {
         balance,
       });
     } catch (e: unknown) {
-      setMerchantCustomerId(null);
+      setCustomerId(null);
       setOverview({
         customerId: null,
         name: fallbackName ?? null,
@@ -861,18 +870,17 @@ export default function Page() {
     setReceiptData(null);
     setResult(null);
     setHoldId(null);
-    setMerchantCustomerId(null);
+    setCustomerId(null);
     setOverview({ customerId: null, name: null, levelName: null, balance: null });
     setUserToken('');
     setManualTokenInput('');
     setReceiptNumber('');
     setTotal(0);
-    setEligibleTotal(0);
   };
 
   const beginFlow = async (token: string) => {
     setUserToken(token);
-    setMerchantCustomerId(null);
+    setCustomerId(null);
     setOverview({ customerId: null, name: null, levelName: null, balance: null });
     setManualTokenInput('');
     setFlowStep('details');
@@ -1005,12 +1013,12 @@ export default function Page() {
   const loadHistory = async (reset = false) => {
     if (histBusy) return;
     const activeMerchantId = session?.merchantId || merchantId;
-    if (!activeMerchantId || !merchantCustomerId) return;
+    if (!activeMerchantId || !customerId) return;
     setHistBusy(true);
     try {
       const url = new URL(`${API_BASE}/loyalty/transactions`);
       url.searchParams.set('merchantId', activeMerchantId);
-      url.searchParams.set('merchantCustomerId', merchantCustomerId);
+      url.searchParams.set('customerId', customerId);
       if (overview.customerId) url.searchParams.set('customerId', overview.customerId);
       url.searchParams.set('limit', '20');
       if (!reset && histNextBefore) url.searchParams.set('before', histNextBefore);
@@ -1046,7 +1054,7 @@ export default function Page() {
     setHistory([]);
     setRefundHistory([]);
     setHistNextBefore(null);
-  }, [merchantCustomerId, session?.merchantId, merchantId]);
+  }, [customerId, session?.merchantId, merchantId]);
 
   const doRefund = async () => {
     if (!session) {
@@ -1072,8 +1080,8 @@ export default function Page() {
       });
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
-      if (typeof data?.merchantCustomerId === 'string') {
-        setMerchantCustomerId(data.merchantCustomerId);
+      if (typeof data?.customerId === 'string') {
+        setCustomerId(data.customerId);
       }
       const sharePercent =
         typeof data?.share === 'number'
@@ -1116,8 +1124,8 @@ export default function Page() {
       const r = await fetch(url.toString(), { credentials: 'include' });
       if (!r.ok) throw new Error(await r.text());
       const data = await r.json();
-      const settings = (data?.settings ?? {}) as any;
-      const period = (data?.period ?? {}) as any;
+      const settings: LeaderboardSettings = data?.settings ?? {};
+      const period: LeaderboardPeriod = data?.period ?? {};
       const periodKind =
         typeof period?.kind === 'string'
           ? period.kind
@@ -1624,12 +1632,12 @@ export default function Page() {
       <div className="mt-6 space-y-4">
         <button
           onClick={() => loadHistory(true)}
-          disabled={histBusy || !merchantCustomerId}
+          disabled={histBusy || !customerId}
           className="w-full rounded-full bg-slate-800 py-3 text-sm font-semibold text-white disabled:opacity-40"
         >
           Загрузить историю
         </button>
-        {!merchantCustomerId && (
+        {!customerId && (
           <div className="text-xs text-slate-500">
             Отсканируйте клиента, чтобы посмотреть историю операций.
           </div>

@@ -394,7 +394,7 @@
                 },
                 {
                   "disabled": false,
-                  "key": "merchantCustomerId",
+                  "key": "customerId",
                   "value": "<string>",
                   "description": "(Required) "
                 }
@@ -422,7 +422,7 @@
                       "value": "<string>"
                     },
                     {
-                      "key": "merchantCustomerId",
+                      "key": "customerId",
                       "value": "<string>"
                     }
                   ],
@@ -1122,7 +1122,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"merchantCustomerId\": \"exercitation incididunt do\",\n  \"customerId\": \"dolore mollit dolor labore volupta\",\n  \"name\": {},\n  \"balance\": {}\n}",
+              "body": "{\n  \"customerId\": \"exercitation incididunt do\",\n  \"customerId\": \"dolore mollit dolor labore volupta\",\n  \"name\": {},\n  \"balance\": {}\n}",
               "cookie": [],
               "_postman_previewlanguage": "json"
             },
@@ -1321,7 +1321,7 @@
             "auth": null,
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"merchantCustomerId\": \"<string>\",\n  \"ttlSec\": \"<number>\",\n  \"merchantId\": \"<string>\",\n  \"initData\": \"<string>\"\n}",
+              "raw": "{\n  \"customerId\": \"<string>\",\n  \"ttlSec\": \"<number>\",\n  \"merchantId\": \"<string>\",\n  \"initData\": \"<string>\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1365,7 +1365,7 @@
                 "method": "POST",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"merchantCustomerId\": \"<string>\",\n  \"ttlSec\": \"<number>\",\n  \"merchantId\": \"<string>\",\n  \"initData\": \"<string>\"\n}",
+                  "raw": "{\n  \"customerId\": \"<string>\",\n  \"ttlSec\": \"<number>\",\n  \"merchantId\": \"<string>\",\n  \"initData\": \"<string>\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -1420,7 +1420,7 @@
                 "method": "POST",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"merchantCustomerId\": \"<string>\",\n  \"ttlSec\": \"<number>\",\n  \"merchantId\": \"<string>\",\n  \"initData\": \"<string>\"\n}",
+                  "raw": "{\n  \"customerId\": \"<string>\",\n  \"ttlSec\": \"<number>\",\n  \"merchantId\": \"<string>\",\n  \"initData\": \"<string>\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -1475,7 +1475,7 @@
                 "method": "POST",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"merchantCustomerId\": \"<string>\",\n  \"ttlSec\": \"<number>\",\n  \"merchantId\": \"<string>\",\n  \"initData\": \"<string>\"\n}",
+                  "raw": "{\n  \"customerId\": \"<string>\",\n  \"ttlSec\": \"<number>\",\n  \"merchantId\": \"<string>\",\n  \"initData\": \"<string>\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -1971,7 +1971,7 @@
                 "loyalty",
                 "balance",
                 ":merchantId",
-                ":merchantCustomerId"
+                ":customerId"
               ],
               "host": [
                 "{{baseUrl}}"
@@ -1989,7 +1989,7 @@
                   "disabled": false,
                   "type": "any",
                   "value": "<string>",
-                  "key": "merchantCustomerId",
+                  "key": "customerId",
                   "description": "(Required) "
                 }
               ]
@@ -2012,7 +2012,7 @@
                     "loyalty",
                     "balance",
                     ":merchantId",
-                    ":merchantCustomerId"
+                    ":customerId"
                   ],
                   "host": [
                     "{{baseUrl}}"
@@ -2030,7 +2030,7 @@
                       "disabled": false,
                       "type": "any",
                       "value": "<string>",
-                      "key": "merchantCustomerId",
+                      "key": "customerId",
                       "description": "(Required) "
                     }
                   ]
@@ -2052,7 +2052,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"merchantId\": \"veniam\",\n  \"merchantCustomerId\": \"ut ipsum dolore proident\",\n  \"balance\": -96009079.73936006\n}",
+              "body": "{\n  \"merchantId\": \"veniam\",\n  \"customerId\": \"ut ipsum dolore proident\",\n  \"balance\": -96009079.73936006\n}",
               "cookie": [],
               "_postman_previewlanguage": "json"
             }
@@ -2556,7 +2556,7 @@
                 },
                 {
                   "disabled": false,
-                  "key": "merchantCustomerId",
+                  "key": "customerId",
                   "value": "<string>",
                   "description": "(Required) "
                 }
@@ -2590,7 +2590,7 @@
                       "value": "<string>"
                     },
                     {
-                      "key": "merchantCustomerId",
+                      "key": "customerId",
                       "value": "<string>"
                     }
                   ],
@@ -2654,7 +2654,7 @@
             "auth": null,
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"merchantId\": \"<string>\",\n  \"merchantCustomerId\": \"<string>\",\n  \"name\": \"<string>\",\n  \"gender\": \"<string>\",\n  \"birthDate\": \"<string>\",\n  \"phone\": \"<string>\"\n}",
+              "raw": "{\n  \"merchantId\": \"<string>\",\n  \"customerId\": \"<string>\",\n  \"name\": \"<string>\",\n  \"gender\": \"<string>\",\n  \"birthDate\": \"<string>\",\n  \"phone\": \"<string>\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2686,7 +2686,7 @@
                 "method": "POST",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"merchantId\": \"<string>\",\n  \"merchantCustomerId\": \"<string>\",\n  \"name\": \"<string>\",\n  \"gender\": \"<string>\",\n  \"birthDate\": \"<string>\",\n  \"phone\": \"<string>\"\n}",
+                  "raw": "{\n  \"merchantId\": \"<string>\",\n  \"customerId\": \"<string>\",\n  \"name\": \"<string>\",\n  \"gender\": \"<string>\",\n  \"birthDate\": \"<string>\",\n  \"phone\": \"<string>\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -2736,7 +2736,7 @@
                 },
                 {
                   "disabled": false,
-                  "key": "merchantCustomerId",
+                  "key": "customerId",
                   "value": "<string>",
                   "description": "(Required) "
                 }
@@ -2771,7 +2771,7 @@
                       "value": "<string>"
                     },
                     {
-                      "key": "merchantCustomerId",
+                      "key": "customerId",
                       "value": "<string>"
                     }
                   ],
@@ -2827,7 +2827,7 @@
                 },
                 {
                   "disabled": false,
-                  "key": "merchantCustomerId",
+                  "key": "customerId",
                   "value": "<string>",
                   "description": "(Required) "
                 },
@@ -2885,7 +2885,7 @@
                       "value": "<string>"
                     },
                     {
-                      "key": "merchantCustomerId",
+                      "key": "customerId",
                       "value": "<string>"
                     },
                     {
@@ -3129,7 +3129,7 @@
                 },
                 {
                   "disabled": false,
-                  "key": "merchantCustomerId",
+                  "key": "customerId",
                   "value": "<string>",
                   "description": "(Required) "
                 }
@@ -3163,7 +3163,7 @@
                       "value": "<string>"
                     },
                     {
-                      "key": "merchantCustomerId",
+                      "key": "customerId",
                       "value": "<string>"
                     }
                   ],
@@ -3287,7 +3287,7 @@
                 },
                 {
                   "disabled": false,
-                  "key": "merchantCustomerId",
+                  "key": "customerId",
                   "value": "<string>",
                   "description": "(Required) "
                 },
@@ -3321,7 +3321,7 @@
                       "value": "<string>"
                     },
                     {
-                      "key": "merchantCustomerId",
+                      "key": "customerId",
                       "value": "<string>"
                     },
                     {
@@ -3533,7 +3533,7 @@
                 },
                 {
                   "disabled": false,
-                  "key": "merchantCustomerId",
+                  "key": "customerId",
                   "value": "<string>",
                   "description": "(Required) "
                 }
@@ -3562,7 +3562,7 @@
                       "value": "<string>"
                     },
                     {
-                      "key": "merchantCustomerId",
+                      "key": "customerId",
                       "value": "<string>"
                     }
                   ],
@@ -14107,7 +14107,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "[\n  {\n    \"id\": \"labore laborum\",\n    \"type\": \"EARN\",\n    \"amount\": 75153329.74655244,\n    \"merchantCustomerId\": \"et cupidatat culpa\",\n    \"createdAt\": \"ullamco ut labore qui\",\n    \"orderId\": {},\n    \"receiptNumber\": {},\n    \"outletId\": {},\n    \"deviceId\": {},\n    \"outletPosType\": \"VIRTUAL\",\n    \"outletLastSeenAt\": \"2008-02-19T03:17:08.698Z\",\n    \"staffId\": {},\n    \"reviewId\": {},\n    \"reviewRating\": {},\n    \"reviewCreatedAt\": \"1968-09-07T07:18:43.465Z\",\n    \"reviewDismissedAt\": \"1983-06-07T00:37:30.579Z\",\n    \"pending\": false,\n    \"maturesAt\": \"1993-08-08T03:01:01.619Z\",\n    \"daysUntilMature\": {},\n    \"source\": {},\n    \"comment\": {},\n    \"canceledAt\": \"1951-07-21T07:43:25.426Z\",\n    \"relatedOperationAt\": \"2007-07-09T20:27:56.115Z\"\n  },\n  {\n    \"id\": \"in tempor aliquip eiusmod\",\n    \"type\": \"REDEEM\",\n    \"amount\": 83106895.68064675,\n    \"merchantCustomerId\": \"eu sed anim in\",\n    \"createdAt\": \"Lorem\",\n    \"orderId\": {},\n    \"receiptNumber\": {},\n    \"outletId\": {},\n    \"deviceId\": {},\n    \"outletPosType\": \"VIRTUAL\",\n    \"outletLastSeenAt\": \"2014-09-21T17:13:26.376Z\",\n    \"staffId\": {},\n    \"reviewId\": {},\n    \"reviewRating\": {},\n    \"reviewCreatedAt\": \"2014-03-19T09:50:42.945Z\",\n    \"reviewDismissedAt\": \"1970-02-24T04:13:43.388Z\",\n    \"pending\": false,\n    \"maturesAt\": \"1959-05-16T02:55:23.515Z\",\n    \"daysUntilMature\": {},\n    \"source\": {},\n    \"comment\": {},\n    \"canceledAt\": \"2022-07-09T15:58:47.989Z\",\n    \"relatedOperationAt\": \"2005-10-30T10:57:38.655Z\"\n  }\n]",
+              "body": "[\n  {\n    \"id\": \"labore laborum\",\n    \"type\": \"EARN\",\n    \"amount\": 75153329.74655244,\n    \"customerId\": \"et cupidatat culpa\",\n    \"createdAt\": \"ullamco ut labore qui\",\n    \"orderId\": {},\n    \"receiptNumber\": {},\n    \"outletId\": {},\n    \"deviceId\": {},\n    \"outletPosType\": \"VIRTUAL\",\n    \"outletLastSeenAt\": \"2008-02-19T03:17:08.698Z\",\n    \"staffId\": {},\n    \"reviewId\": {},\n    \"reviewRating\": {},\n    \"reviewCreatedAt\": \"1968-09-07T07:18:43.465Z\",\n    \"reviewDismissedAt\": \"1983-06-07T00:37:30.579Z\",\n    \"pending\": false,\n    \"maturesAt\": \"1993-08-08T03:01:01.619Z\",\n    \"daysUntilMature\": {},\n    \"source\": {},\n    \"comment\": {},\n    \"canceledAt\": \"1951-07-21T07:43:25.426Z\",\n    \"relatedOperationAt\": \"2007-07-09T20:27:56.115Z\"\n  },\n  {\n    \"id\": \"in tempor aliquip eiusmod\",\n    \"type\": \"REDEEM\",\n    \"amount\": 83106895.68064675,\n    \"customerId\": \"eu sed anim in\",\n    \"createdAt\": \"Lorem\",\n    \"orderId\": {},\n    \"receiptNumber\": {},\n    \"outletId\": {},\n    \"deviceId\": {},\n    \"outletPosType\": \"VIRTUAL\",\n    \"outletLastSeenAt\": \"2014-09-21T17:13:26.376Z\",\n    \"staffId\": {},\n    \"reviewId\": {},\n    \"reviewRating\": {},\n    \"reviewCreatedAt\": \"2014-03-19T09:50:42.945Z\",\n    \"reviewDismissedAt\": \"1970-02-24T04:13:43.388Z\",\n    \"pending\": false,\n    \"maturesAt\": \"1959-05-16T02:55:23.515Z\",\n    \"daysUntilMature\": {},\n    \"source\": {},\n    \"comment\": {},\n    \"canceledAt\": \"2022-07-09T15:58:47.989Z\",\n    \"relatedOperationAt\": \"2005-10-30T10:57:38.655Z\"\n  }\n]",
               "cookie": [],
               "_postman_previewlanguage": "json"
             },
@@ -14511,7 +14511,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"receipt\": {\n    \"id\": \"labore\",\n    \"merchantId\": \"officia minim nisi\",\n    \"customerId\": \"tempor ut\",\n    \"orderId\": \"amet deserunt\",\n    \"total\": 18857135.778450295,\n    \"eligibleTotal\": 37169278.564143,\n    \"redeemApplied\": -86728555.85022457,\n    \"earnApplied\": 51452020.0310173,\n    \"createdAt\": \"1965-10-26T05:55:01.732Z\",\n    \"receiptNumber\": {},\n    \"outletId\": {},\n    \"outletPosType\": \"VIRTUAL\",\n    \"outletLastSeenAt\": \"2018-03-26T03:50:17.411Z\",\n    \"staffId\": {}\n  },\n  \"transactions\": [\n    {\n      \"id\": \"consequat do irure\",\n      \"type\": \"EARN\",\n      \"amount\": 30708584.270934075,\n      \"merchantCustomerId\": \"in eiusmod aute aliqua\",\n      \"createdAt\": \"aliqua co\",\n      \"orderId\": {},\n      \"receiptNumber\": {},\n      \"outletId\": {},\n      \"deviceId\": {},\n      \"outletPosType\": \"PC_POS\",\n      \"outletLastSeenAt\": \"1975-12-30T05:50:53.241Z\",\n      \"staffId\": {},\n      \"reviewId\": {},\n      \"reviewRating\": {},\n      \"reviewCreatedAt\": \"1957-04-29T16:10:51.932Z\",\n      \"reviewDismissedAt\": \"1999-03-09T08:02:57.483Z\",\n      \"pending\": false,\n      \"maturesAt\": \"1974-12-15T06:11:01.600Z\",\n      \"daysUntilMature\": {},\n      \"source\": {},\n      \"comment\": {},\n      \"canceledAt\": \"2023-02-11T06:27:33.252Z\",\n      \"relatedOperationAt\": \"1963-07-21T18:06:34.269Z\"\n    },\n    {\n      \"id\": \"irure nulla enim sed voluptate\",\n      \"type\": \"EARN\",\n      \"amount\": 85792790.83533838,\n      \"merchantCustomerId\": \"in tempor\",\n      \"createdAt\": \"in irure sunt\",\n      \"orderId\": {},\n      \"receiptNumber\": {},\n      \"outletId\": {},\n      \"deviceId\": {},\n      \"outletPosType\": \"PC_POS\",\n      \"outletLastSeenAt\": \"1968-05-12T10:21:29.278Z\",\n      \"staffId\": {},\n      \"reviewId\": {},\n      \"reviewRating\": {},\n      \"reviewCreatedAt\": \"1959-11-30T01:30:28.705Z\",\n      \"reviewDismissedAt\": \"2023-01-30T07:09:21.993Z\",\n      \"pending\": true,\n      \"maturesAt\": \"1978-12-13T07:08:23.484Z\",\n      \"daysUntilMature\": {},\n      \"source\": {},\n      \"comment\": {},\n      \"canceledAt\": \"2022-10-17T19:09:11.941Z\",\n      \"relatedOperationAt\": \"1997-06-27T09:13:15.990Z\"\n    }\n  ]\n}",
+              "body": "{\n  \"receipt\": {\n    \"id\": \"labore\",\n    \"merchantId\": \"officia minim nisi\",\n    \"customerId\": \"tempor ut\",\n    \"orderId\": \"amet deserunt\",\n    \"total\": 18857135.778450295,\n    \"eligibleTotal\": 37169278.564143,\n    \"redeemApplied\": -86728555.85022457,\n    \"earnApplied\": 51452020.0310173,\n    \"createdAt\": \"1965-10-26T05:55:01.732Z\",\n    \"receiptNumber\": {},\n    \"outletId\": {},\n    \"outletPosType\": \"VIRTUAL\",\n    \"outletLastSeenAt\": \"2018-03-26T03:50:17.411Z\",\n    \"staffId\": {}\n  },\n  \"transactions\": [\n    {\n      \"id\": \"consequat do irure\",\n      \"type\": \"EARN\",\n      \"amount\": 30708584.270934075,\n      \"customerId\": \"in eiusmod aute aliqua\",\n      \"createdAt\": \"aliqua co\",\n      \"orderId\": {},\n      \"receiptNumber\": {},\n      \"outletId\": {},\n      \"deviceId\": {},\n      \"outletPosType\": \"PC_POS\",\n      \"outletLastSeenAt\": \"1975-12-30T05:50:53.241Z\",\n      \"staffId\": {},\n      \"reviewId\": {},\n      \"reviewRating\": {},\n      \"reviewCreatedAt\": \"1957-04-29T16:10:51.932Z\",\n      \"reviewDismissedAt\": \"1999-03-09T08:02:57.483Z\",\n      \"pending\": false,\n      \"maturesAt\": \"1974-12-15T06:11:01.600Z\",\n      \"daysUntilMature\": {},\n      \"source\": {},\n      \"comment\": {},\n      \"canceledAt\": \"2023-02-11T06:27:33.252Z\",\n      \"relatedOperationAt\": \"1963-07-21T18:06:34.269Z\"\n    },\n    {\n      \"id\": \"irure nulla enim sed voluptate\",\n      \"type\": \"EARN\",\n      \"amount\": 85792790.83533838,\n      \"customerId\": \"in tempor\",\n      \"createdAt\": \"in irure sunt\",\n      \"orderId\": {},\n      \"receiptNumber\": {},\n      \"outletId\": {},\n      \"deviceId\": {},\n      \"outletPosType\": \"PC_POS\",\n      \"outletLastSeenAt\": \"1968-05-12T10:21:29.278Z\",\n      \"staffId\": {},\n      \"reviewId\": {},\n      \"reviewRating\": {},\n      \"reviewCreatedAt\": \"1959-11-30T01:30:28.705Z\",\n      \"reviewDismissedAt\": \"2023-01-30T07:09:21.993Z\",\n      \"pending\": true,\n      \"maturesAt\": \"1978-12-13T07:08:23.484Z\",\n      \"daysUntilMature\": {},\n      \"source\": {},\n      \"comment\": {},\n      \"canceledAt\": \"2022-10-17T19:09:11.941Z\",\n      \"relatedOperationAt\": \"1997-06-27T09:13:15.990Z\"\n    }\n  ]\n}",
               "cookie": [],
               "_postman_previewlanguage": "json"
             },
@@ -15650,7 +15650,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"balance\": 48714487.93325803,\n  \"recentTx\": [\n    {\n      \"id\": \"ut\",\n      \"type\": \"CAMPAIGN\",\n      \"amount\": -10312001.704841256,\n      \"merchantCustomerId\": \"consequat nostrud deserunt eu\",\n      \"createdAt\": \"consectetur deserunt commodo irure\",\n      \"orderId\": {},\n      \"receiptNumber\": {},\n      \"outletId\": {},\n      \"deviceId\": {},\n      \"outletPosType\": \"VIRTUAL\",\n      \"outletLastSeenAt\": \"2007-02-18T13:39:33.958Z\",\n      \"staffId\": {},\n      \"reviewId\": {},\n      \"reviewRating\": {},\n      \"reviewCreatedAt\": \"1972-05-31T08:26:06.580Z\",\n      \"reviewDismissedAt\": \"1992-02-25T19:48:44.402Z\",\n      \"pending\": true,\n      \"maturesAt\": \"2005-09-05T21:02:46.972Z\",\n      \"daysUntilMature\": {},\n      \"source\": {},\n      \"comment\": {},\n      \"canceledAt\": \"1992-08-07T14:28:14.282Z\",\n      \"relatedOperationAt\": \"1988-08-05T18:52:39.581Z\"\n    },\n    {\n      \"id\": \"ea sit proident dolore deserunt\",\n      \"type\": \"EARN\",\n      \"amount\": 91573305.56773177,\n      \"merchantCustomerId\": \"in \",\n      \"createdAt\": \"mollit ipsum ut aliquip deserunt\",\n      \"orderId\": {},\n      \"receiptNumber\": {},\n      \"outletId\": {},\n      \"deviceId\": {},\n      \"outletPosType\": \"SMART\",\n      \"outletLastSeenAt\": \"1981-09-10T05:29:43.990Z\",\n      \"staffId\": {},\n      \"reviewId\": {},\n      \"reviewRating\": {},\n      \"reviewCreatedAt\": \"1967-01-03T19:51:13.040Z\",\n      \"reviewDismissedAt\": \"2025-04-25T02:55:40.501Z\",\n      \"pending\": false,\n      \"maturesAt\": \"1993-08-07T14:16:02.662Z\",\n      \"daysUntilMature\": {},\n      \"source\": {},\n      \"comment\": {},\n      \"canceledAt\": \"1958-01-01T00:58:52.620Z\",\n      \"relatedOperationAt\": \"1946-06-10T00:26:16.045Z\"\n    }\n  ],\n  \"recentReceipts\": [\n    {\n      \"id\": \"nulla aute in\",\n      \"merchantId\": \"Ut do ut in\",\n      \"customerId\": \"ullamco ex labore\",\n      \"orderId\": \"cupidatat cillum tempor est ipsum\",\n      \"total\": 62424107.54831886,\n      \"eligibleTotal\": 58761328.08182049,\n      \"redeemApplied\": 42950921.81203252,\n      \"earnApplied\": -28583083.80264041,\n      \"createdAt\": \"1958-12-18T02:03:02.392Z\",\n      \"receiptNumber\": {},\n      \"outletId\": {},\n      \"outletPosType\": \"SMART\",\n      \"outletLastSeenAt\": \"1986-12-08T22:30:51.174Z\",\n      \"staffId\": {}\n    },\n    {\n      \"id\": \"id consequat Lorem\",\n      \"merchantId\": \"exercitation\",\n      \"customerId\": \"incididunt fugiat consectetur\",\n      \"orderId\": \"adipisicing et\",\n      \"total\": 31943599.604673386,\n      \"eligibleTotal\": 52978395.569013834,\n      \"redeemApplied\": -33355791.704977334,\n      \"earnApplied\": 71240413.80244291,\n      \"createdAt\": \"1968-03-04T11:12:22.578Z\",\n      \"receiptNumber\": {},\n      \"outletId\": {},\n      \"outletPosType\": \"SMART\",\n      \"outletLastSeenAt\": \"1961-10-08T21:06:34.869Z\",\n      \"staffId\": {}\n    }\n  ]\n}",
+              "body": "{\n  \"balance\": 48714487.93325803,\n  \"recentTx\": [\n    {\n      \"id\": \"ut\",\n      \"type\": \"CAMPAIGN\",\n      \"amount\": -10312001.704841256,\n      \"customerId\": \"consequat nostrud deserunt eu\",\n      \"createdAt\": \"consectetur deserunt commodo irure\",\n      \"orderId\": {},\n      \"receiptNumber\": {},\n      \"outletId\": {},\n      \"deviceId\": {},\n      \"outletPosType\": \"VIRTUAL\",\n      \"outletLastSeenAt\": \"2007-02-18T13:39:33.958Z\",\n      \"staffId\": {},\n      \"reviewId\": {},\n      \"reviewRating\": {},\n      \"reviewCreatedAt\": \"1972-05-31T08:26:06.580Z\",\n      \"reviewDismissedAt\": \"1992-02-25T19:48:44.402Z\",\n      \"pending\": true,\n      \"maturesAt\": \"2005-09-05T21:02:46.972Z\",\n      \"daysUntilMature\": {},\n      \"source\": {},\n      \"comment\": {},\n      \"canceledAt\": \"1992-08-07T14:28:14.282Z\",\n      \"relatedOperationAt\": \"1988-08-05T18:52:39.581Z\"\n    },\n    {\n      \"id\": \"ea sit proident dolore deserunt\",\n      \"type\": \"EARN\",\n      \"amount\": 91573305.56773177,\n      \"customerId\": \"in \",\n      \"createdAt\": \"mollit ipsum ut aliquip deserunt\",\n      \"orderId\": {},\n      \"receiptNumber\": {},\n      \"outletId\": {},\n      \"deviceId\": {},\n      \"outletPosType\": \"SMART\",\n      \"outletLastSeenAt\": \"1981-09-10T05:29:43.990Z\",\n      \"staffId\": {},\n      \"reviewId\": {},\n      \"reviewRating\": {},\n      \"reviewCreatedAt\": \"1967-01-03T19:51:13.040Z\",\n      \"reviewDismissedAt\": \"2025-04-25T02:55:40.501Z\",\n      \"pending\": false,\n      \"maturesAt\": \"1993-08-07T14:16:02.662Z\",\n      \"daysUntilMature\": {},\n      \"source\": {},\n      \"comment\": {},\n      \"canceledAt\": \"1958-01-01T00:58:52.620Z\",\n      \"relatedOperationAt\": \"1946-06-10T00:26:16.045Z\"\n    }\n  ],\n  \"recentReceipts\": [\n    {\n      \"id\": \"nulla aute in\",\n      \"merchantId\": \"Ut do ut in\",\n      \"customerId\": \"ullamco ex labore\",\n      \"orderId\": \"cupidatat cillum tempor est ipsum\",\n      \"total\": 62424107.54831886,\n      \"eligibleTotal\": 58761328.08182049,\n      \"redeemApplied\": 42950921.81203252,\n      \"earnApplied\": -28583083.80264041,\n      \"createdAt\": \"1958-12-18T02:03:02.392Z\",\n      \"receiptNumber\": {},\n      \"outletId\": {},\n      \"outletPosType\": \"SMART\",\n      \"outletLastSeenAt\": \"1986-12-08T22:30:51.174Z\",\n      \"staffId\": {}\n    },\n    {\n      \"id\": \"id consequat Lorem\",\n      \"merchantId\": \"exercitation\",\n      \"customerId\": \"incididunt fugiat consectetur\",\n      \"orderId\": \"adipisicing et\",\n      \"total\": 31943599.604673386,\n      \"eligibleTotal\": 52978395.569013834,\n      \"redeemApplied\": -33355791.704977334,\n      \"earnApplied\": 71240413.80244291,\n      \"createdAt\": \"1968-03-04T11:12:22.578Z\",\n      \"receiptNumber\": {},\n      \"outletId\": {},\n      \"outletPosType\": \"SMART\",\n      \"outletLastSeenAt\": \"1961-10-08T21:06:34.869Z\",\n      \"staffId\": {}\n    }\n  ]\n}",
               "cookie": [],
               "_postman_previewlanguage": "json"
             },
@@ -29001,7 +29001,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "[\n  {\n    \"id\": \"labore laborum\",\n    \"type\": \"EARN\",\n    \"amount\": 75153329.74655244,\n    \"merchantCustomerId\": \"et cupidatat culpa\",\n    \"createdAt\": \"ullamco ut labore qui\",\n    \"orderId\": {},\n    \"receiptNumber\": {},\n    \"outletId\": {},\n    \"deviceId\": {},\n    \"outletPosType\": \"VIRTUAL\",\n    \"outletLastSeenAt\": \"2008-02-19T03:17:08.698Z\",\n    \"staffId\": {},\n    \"reviewId\": {},\n    \"reviewRating\": {},\n    \"reviewCreatedAt\": \"1968-09-07T07:18:43.465Z\",\n    \"reviewDismissedAt\": \"1983-06-07T00:37:30.579Z\",\n    \"pending\": false,\n    \"maturesAt\": \"1993-08-08T03:01:01.619Z\",\n    \"daysUntilMature\": {},\n    \"source\": {},\n    \"comment\": {},\n    \"canceledAt\": \"1951-07-21T07:43:25.426Z\",\n    \"relatedOperationAt\": \"2007-07-09T20:27:56.115Z\"\n  },\n  {\n    \"id\": \"in tempor aliquip eiusmod\",\n    \"type\": \"REDEEM\",\n    \"amount\": 83106895.68064675,\n    \"merchantCustomerId\": \"eu sed anim in\",\n    \"createdAt\": \"Lorem\",\n    \"orderId\": {},\n    \"receiptNumber\": {},\n    \"outletId\": {},\n    \"deviceId\": {},\n    \"outletPosType\": \"VIRTUAL\",\n    \"outletLastSeenAt\": \"2014-09-21T17:13:26.376Z\",\n    \"staffId\": {},\n    \"reviewId\": {},\n    \"reviewRating\": {},\n    \"reviewCreatedAt\": \"2014-03-19T09:50:42.945Z\",\n    \"reviewDismissedAt\": \"1970-02-24T04:13:43.388Z\",\n    \"pending\": false,\n    \"maturesAt\": \"1959-05-16T02:55:23.515Z\",\n    \"daysUntilMature\": {},\n    \"source\": {},\n    \"comment\": {},\n    \"canceledAt\": \"2022-07-09T15:58:47.989Z\",\n    \"relatedOperationAt\": \"2005-10-30T10:57:38.655Z\"\n  }\n]",
+              "body": "[\n  {\n    \"id\": \"labore laborum\",\n    \"type\": \"EARN\",\n    \"amount\": 75153329.74655244,\n    \"customerId\": \"et cupidatat culpa\",\n    \"createdAt\": \"ullamco ut labore qui\",\n    \"orderId\": {},\n    \"receiptNumber\": {},\n    \"outletId\": {},\n    \"deviceId\": {},\n    \"outletPosType\": \"VIRTUAL\",\n    \"outletLastSeenAt\": \"2008-02-19T03:17:08.698Z\",\n    \"staffId\": {},\n    \"reviewId\": {},\n    \"reviewRating\": {},\n    \"reviewCreatedAt\": \"1968-09-07T07:18:43.465Z\",\n    \"reviewDismissedAt\": \"1983-06-07T00:37:30.579Z\",\n    \"pending\": false,\n    \"maturesAt\": \"1993-08-08T03:01:01.619Z\",\n    \"daysUntilMature\": {},\n    \"source\": {},\n    \"comment\": {},\n    \"canceledAt\": \"1951-07-21T07:43:25.426Z\",\n    \"relatedOperationAt\": \"2007-07-09T20:27:56.115Z\"\n  },\n  {\n    \"id\": \"in tempor aliquip eiusmod\",\n    \"type\": \"REDEEM\",\n    \"amount\": 83106895.68064675,\n    \"customerId\": \"eu sed anim in\",\n    \"createdAt\": \"Lorem\",\n    \"orderId\": {},\n    \"receiptNumber\": {},\n    \"outletId\": {},\n    \"deviceId\": {},\n    \"outletPosType\": \"VIRTUAL\",\n    \"outletLastSeenAt\": \"2014-09-21T17:13:26.376Z\",\n    \"staffId\": {},\n    \"reviewId\": {},\n    \"reviewRating\": {},\n    \"reviewCreatedAt\": \"2014-03-19T09:50:42.945Z\",\n    \"reviewDismissedAt\": \"1970-02-24T04:13:43.388Z\",\n    \"pending\": false,\n    \"maturesAt\": \"1959-05-16T02:55:23.515Z\",\n    \"daysUntilMature\": {},\n    \"source\": {},\n    \"comment\": {},\n    \"canceledAt\": \"2022-07-09T15:58:47.989Z\",\n    \"relatedOperationAt\": \"2005-10-30T10:57:38.655Z\"\n  }\n]",
               "cookie": [],
               "_postman_previewlanguage": "json"
             }

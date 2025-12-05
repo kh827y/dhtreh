@@ -147,7 +147,7 @@ function computeShareOptions(share: ReviewsShareSettings, activeOutletId: string
 export function FeedbackManager() {
   const auth = useMiniappAuthContext();
   const merchantId = auth.merchantId;
-  const merchantCustomerId = auth.merchantCustomerId;
+  const customerId = auth.customerId;
   const [transactionsList, setTransactionsList] = useState<TransactionItem[]>([]);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackRating, setFeedbackRating] = useState(0);
@@ -166,31 +166,31 @@ export function FeedbackManager() {
   const dismissedTxSet = useMemo(() => new Set(dismissedTransactions), [dismissedTransactions]);
 
   const loadTransactions = useCallback(async (opts?: { fresh?: boolean }) => {
-    if (!merchantId || !merchantCustomerId) return;
+    if (!merchantId || !customerId) return;
     try {
-      const response = await transactions(merchantId, merchantCustomerId, 20, undefined, { fresh: opts?.fresh });
+      const response = await transactions(merchantId, customerId, 20, undefined, { fresh: opts?.fresh });
       setTransactionsList(mapTransactions(response.items as TransactionItem[]));
     } catch (error) {
       setToast({ msg: `Не удалось обновить историю: ${resolveErrorMessage(error)}`, type: "error" });
     }
-  }, [merchantId, merchantCustomerId]);
+  }, [merchantId, customerId]);
 
   const persistDismissedTransaction = useCallback(
     async (transactionId: string) => {
-      if (!transactionId || !merchantId || !merchantCustomerId) return;
+      if (!transactionId || !merchantId || !customerId) return;
       try {
-        await dismissReviewPrompt(merchantId, merchantCustomerId, transactionId);
+        await dismissReviewPrompt(merchantId, customerId, transactionId);
       } catch {
         // игнорируем сбои сохранения скрытия, это не должно блокировать UI
       }
     },
-    [merchantId, merchantCustomerId],
+    [merchantId, customerId],
   );
 
   useEffect(() => {
-    if (!merchantCustomerId) return;
+    if (!customerId) return;
     void loadTransactions();
-  }, [merchantCustomerId, loadTransactions]);
+  }, [customerId, loadTransactions]);
 
   useEffect(() => {
     if (!dismissedReady) return;
@@ -374,7 +374,7 @@ export function FeedbackManager() {
         setToast({ msg: "Поставьте оценку", type: "error" });
         return;
       }
-      if (!merchantId || !merchantCustomerId) {
+      if (!merchantId || !customerId) {
         setToast({ msg: "Не удалось определить клиента", type: "error" });
         return;
       }
@@ -385,7 +385,7 @@ export function FeedbackManager() {
         setFeedbackSubmitting(true);
         const response = await submitReview({
           merchantId,
-          merchantCustomerId,
+          customerId,
           rating: feedbackRating,
           comment: feedbackComment,
           orderId: activeTx?.orderId ?? null,
@@ -460,7 +460,7 @@ export function FeedbackManager() {
       feedbackStage,
       feedbackRating,
       merchantId,
-      merchantCustomerId,
+      customerId,
       feedbackTxId,
       transactionsList,
       feedbackComment,
@@ -478,8 +478,13 @@ export function FeedbackManager() {
       const data = payload as Record<string, unknown>;
       const eventMerchant = data.merchantId ? String(data.merchantId) : "";
       if (eventMerchant && eventMerchant !== merchantId) return;
-      const eventMc = data.merchantCustomerId ? String(data.merchantCustomerId) : "";
-      if (eventMc && eventMc !== merchantCustomerId) return;
+      const eventMc =
+        data.customerId
+          ? String(data.customerId)
+          : data.merchantCustomerId
+            ? String(data.merchantCustomerId)
+            : "";
+      if (eventMc && eventMc !== customerId) return;
 
       const transactionTypeRaw = typeof data.transactionType === "string" ? data.transactionType : null;
       const fallbackType = typeof data.type === "string" ? data.type : null;
@@ -522,11 +527,11 @@ export function FeedbackManager() {
             : null;
       setPreferredTxId(txId || null);
       void loadTransactions({ fresh: true });
-    }, merchantId && merchantCustomerId ? { merchantId, merchantCustomerId } : undefined);
+    }, merchantId && customerId ? { merchantId, customerId } : undefined);
     return () => {
       unsubscribe();
     };
-  }, [merchantId, merchantCustomerId, loadTransactions]);
+  }, [merchantId, customerId, loadTransactions]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;

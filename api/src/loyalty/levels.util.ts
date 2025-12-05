@@ -75,18 +75,14 @@ export async function computeLevelState(args: {
 
   let customerId: string | null = args.customerId ?? null;
   const prismaAny = prisma as any;
-  if (
-    !customerId &&
-    args.customerId &&
-    prismaAny?.customer?.findUnique
-  ) {
+  if (args.customerId && prismaAny?.customer?.findUnique) {
     const mc = await prismaAny.customer.findUnique({
       where: { id: args.customerId },
-      select: { customerId: true, merchantId: true },
+      select: { id: true, merchantId: true },
     });
     if (!mc || mc.merchantId !== merchantId)
       throw new Error('merchant customer not found');
-    customerId = mc.customerId;
+    customerId = mc.id;
   }
   if (!customerId) throw new Error('customer not found');
 

@@ -4206,17 +4206,17 @@ export class LoyaltyService {
   }
 
   async balance(merchantId: string, customerId: string) {
-    const customer = await (this.prisma as any).customer
-      ?.findUnique?.({
+    const customer = await this.prisma.customer
+      .findUnique({
         where: { id: customerId },
-        select: { customerId: true },
+        select: { id: true, merchantId: true },
       })
       .catch(() => null);
-    if (!customer)
+    if (!customer || customer.merchantId !== merchantId)
       throw new BadRequestException('merchant customer not found');
     const wallet = await this.prisma.wallet.findFirst({
       where: {
-        customerId: customer.customerId,
+        customerId: customer.id,
         merchantId,
         type: WalletType.POINTS,
       },

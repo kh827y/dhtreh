@@ -1,7 +1,8 @@
 export type LoyaltyApiOptions = { baseUrl: string; fetch?: typeof fetch };
 export type TeleauthResponse = {
   ok: boolean;
-  merchantCustomerId: string;
+  customerId: string;
+  merchantCustomerId?: string;
   hasPhone: boolean;
   onboarded: boolean;
 };
@@ -79,7 +80,10 @@ export class LoyaltyApi {
   }
 
   teleauth(merchantId: string, initData: string) {
-    return this.http<TeleauthResponse>('/loyalty/teleauth', { method: 'POST', body: JSON.stringify({ merchantId, initData }) });
+    return this.http<TeleauthResponse>('/loyalty/teleauth', { method: 'POST', body: JSON.stringify({ merchantId, initData }) }).then((res) => ({
+      ...res,
+      merchantCustomerId: res.merchantCustomerId ?? res.customerId,
+    }));
   }
 
   mintQr(customerId: string, merchantId?: string, ttlSec?: number, initData?: string) {

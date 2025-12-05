@@ -30,7 +30,7 @@ export type SnapshotReferralInfo = {
 export type MiniappSnapshot = {
   version: number;
   merchantId: string;
-  merchantCustomerId: string;
+  customerId: string;
   cachedAt: number;
   balance: number | null;
   levelInfo: LevelInfo | null;
@@ -48,7 +48,7 @@ export type SnapshotPatch = Partial<
     MiniappSnapshot,
     | "version"
     | "merchantId"
-    | "merchantCustomerId"
+    | "customerId"
     | "referral"
     | "telegramProfile"
     | "transactions"
@@ -64,38 +64,39 @@ export type SnapshotPatch = Partial<
 const SNAPSHOT_VERSION = 1;
 const SNAPSHOT_PREFIX = "miniapp.snapshot.v1";
 
-function snapshotKey(merchantId: string, merchantCustomerId: string): string {
-  return `${SNAPSHOT_PREFIX}:${merchantId}:${merchantCustomerId}`;
+function snapshotKey(merchantId: string, customerId: string): string {
+  return `${SNAPSHOT_PREFIX}:${merchantId}:${customerId}`;
 }
 
-export function loadSnapshot(merchantId: string, merchantCustomerId: string): MiniappSnapshot | null {
+export function loadSnapshot(merchantId: string, customerId: string): MiniappSnapshot | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = localStorage.getItem(snapshotKey(merchantId, merchantCustomerId));
+    const raw = localStorage.getItem(snapshotKey(merchantId, customerId));
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as MiniappSnapshot;
+    const parsed = JSON.parse(raw) as MiniappSnapshot & { merchantCustomerId?: string };
     if (!parsed || parsed.version !== SNAPSHOT_VERSION) return null;
-    if (parsed.merchantId !== merchantId || parsed.merchantCustomerId !== merchantCustomerId) return null;
-    return parsed;
+    const parsedCustomerId = parsed.customerId ?? parsed.merchantCustomerId;
+    if (parsed.merchantId !== merchantId || parsedCustomerId !== customerId) return null;
+    return { ...parsed, customerId: parsedCustomerId };
   } catch {
     return null;
   }
 }
 
-export function clearSnapshot(merchantId: string, merchantCustomerId: string): void {
+export function clearSnapshot(merchantId: string, customerId: string): void {
   if (typeof window === "undefined") return;
   try {
-    localStorage.removeItem(snapshotKey(merchantId, merchantCustomerId));
+    localStorage.removeItem(snapshotKey(merchantId, customerId));
   } catch {
     // ignore storage errors
   }
 }
 
-function createEmptySnapshot(merchantId: string, merchantCustomerId: string, ts: number): MiniappSnapshot {
+function createEmptySnapshot(merchantId: string, customerId: string, ts: number): MiniappSnapshot {
   return {
     version: SNAPSHOT_VERSION,
     merchantId,
-    merchantCustomerId,
+    customerId,
     cachedAt: ts,
     balance: null,
     levelInfo: null,
@@ -137,13 +138,13 @@ export function applySnapshotPatch(
   prev: MiniappSnapshot | null,
   patch: SnapshotPatch,
   merchantId: string,
-  merchantCustomerId: string,
+  customerId: string,
 ): MiniappSnapshot {
   const now = Date.now();
   const base =
-    prev && prev.merchantId === merchantId && prev.merchantCustomerId === merchantCustomerId
+    prev && prev.merchantId === merchantId && prev.customerId === customerId
       ? prev
-      : createEmptySnapshot(merchantId, merchantCustomerId, now);
+      : createEmptySnapshot(merchantId, customerId, now);
   const next: MiniappSnapshot = {
     ...base,
     cachedAt: patch.cachedAt ?? now,
@@ -164,14 +165,14 @@ export function applySnapshotPatch(
   };
   next.version = SNAPSHOT_VERSION;
   next.merchantId = merchantId;
-  next.merchantCustomerId = merchantCustomerId;
+  next.customerId = customerId;
   return next;
 }
 
 export function saveSnapshot(snapshot: MiniappSnapshot): void {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(snapshotKey(snapshot.merchantId, snapshot.merchantCustomerId), JSON.stringify(snapshot));
+    localStorage.setItem(snapshotKey(snapshot.merchantId, snapshot.customerId), JSON.stringify(snapshot));
   } catch {
     // storage quota/availability issues are non-fatal
   }

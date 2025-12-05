@@ -578,7 +578,6 @@ export class MerchantsService {
     args: {
       channel: 'VIRTUAL' | 'PC_POS' | 'SMART';
       weekday: number;
-      eligibleTotal: number;
       category?: string;
     },
   ) {
@@ -595,11 +594,6 @@ export class MerchantsService {
           if (
             Array.isArray(cond.channelIn) &&
             !cond.channelIn.includes(args.channel)
-          )
-            continue;
-          if (
-            cond.minEligible != null &&
-            args.eligibleTotal < Number(cond.minEligible)
           )
             continue;
           const then = item.then ?? {};
@@ -648,7 +642,6 @@ export class MerchantsService {
       orderId: entity.orderId,
       receiptNumber: entity.receiptNumber ?? null,
       total: entity.total,
-      eligibleTotal: entity.eligibleTotal,
       redeemApplied: entity.redeemApplied,
       earnApplied: entity.earnApplied,
       createdAt: entity.createdAt,

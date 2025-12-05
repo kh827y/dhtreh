@@ -133,11 +133,10 @@ export function outboxCsvUrl(merchantId: string, opts?: { status?: string; since
   return `/api/admin/merchants/${encodeURIComponent(merchantId)}/outbox.csv${qs ? `?${qs}` : ''}`;
 }
 
-export async function previewRules(merchantId: string, args: { channel: 'SMART'|'PC_POS'|'VIRTUAL'; weekday: number; eligibleTotal: number; category?: string }): Promise<{ earnBps: number; redeemLimitBps: number }> {
+export async function previewRules(merchantId: string, args: { channel: 'SMART'|'PC_POS'|'VIRTUAL'; weekday: number; category?: string }): Promise<{ earnBps: number; redeemLimitBps: number }> {
   const p = new URLSearchParams();
   p.set('channel', args.channel);
   p.set('weekday', String(args.weekday));
-  p.set('eligibleTotal', String(args.eligibleTotal));
   if (args.category) p.set('category', args.category);
   const qs = p.toString();
   return http(`/merchants/${encodeURIComponent(merchantId)}/rules/preview?${qs}`);
@@ -147,7 +146,7 @@ export async function previewRules(merchantId: string, args: { channel: 'SMART'|
 export type CustomerSummary = {
   balance: number;
   recentTx: Array<{ id: string; type: string; amount: number; orderId?: string; createdAt: string; outletId?: string; outletPosType?: string | null; outletLastSeenAt?: string | null; staffId?: string }>;
-  recentReceipts: Array<{ id: string; orderId: string; customerId: string; total: number; eligibleTotal: number; redeemApplied: number; earnApplied: number; createdAt: string; outletId?: string; outletPosType?: string | null; outletLastSeenAt?: string | null; staffId?: string }>;
+  recentReceipts: Array<{ id: string; orderId: string; customerId: string; total: number; redeemApplied: number; earnApplied: number; createdAt: string; outletId?: string; outletPosType?: string | null; outletLastSeenAt?: string | null; staffId?: string }>;
 };
 
 export async function customerSearch(merchantId: string, phone: string): Promise<{ customerId: string; phone: string; balance: number } | null> {

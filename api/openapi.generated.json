@@ -98,7 +98,7 @@
             }
           },
           {
-            "name": "merchantCustomerId",
+            "name": "customerId",
             "required": true,
             "in": "query",
             "schema": {
@@ -702,7 +702,7 @@
         ]
       }
     },
-    "/loyalty/balance/{merchantId}/{merchantCustomerId}": {
+    "/loyalty/balance/{merchantId}/{customerId}": {
       "get": {
         "operationId": "LoyaltyController_balance2",
         "parameters": [
@@ -715,7 +715,7 @@
             }
           },
           {
-            "name": "merchantCustomerId",
+            "name": "customerId",
             "required": true,
             "in": "path",
             "schema": {
@@ -932,7 +932,7 @@
             }
           },
           {
-            "name": "merchantCustomerId",
+            "name": "customerId",
             "required": true,
             "in": "query",
             "schema": {
@@ -999,7 +999,7 @@
             }
           },
           {
-            "name": "merchantCustomerId",
+            "name": "customerId",
             "required": true,
             "in": "query",
             "schema": {
@@ -1037,7 +1037,7 @@
             }
           },
           {
-            "name": "merchantCustomerId",
+            "name": "customerId",
             "required": true,
             "in": "query",
             "schema": {
@@ -1173,7 +1173,7 @@
             }
           },
           {
-            "name": "merchantCustomerId",
+            "name": "customerId",
             "required": true,
             "in": "query",
             "schema": {
@@ -1230,7 +1230,7 @@
             }
           },
           {
-            "name": "merchantCustomerId",
+            "name": "customerId",
             "required": true,
             "in": "query",
             "schema": {
@@ -1325,7 +1325,7 @@
             }
           },
           {
-            "name": "merchantCustomerId",
+            "name": "customerId",
             "required": true,
             "in": "query",
             "schema": {
@@ -13504,7 +13504,7 @@
       "CashierCustomerResolveRespDto": {
         "type": "object",
         "properties": {
-          "merchantCustomerId": {
+          "customerId": {
             "type": "string"
           },
           "customerId": {
@@ -13520,7 +13520,7 @@
           }
         },
         "required": [
-          "merchantCustomerId",
+          "customerId",
           "customerId"
         ]
       },
@@ -13555,7 +13555,7 @@
       "QrMintDto": {
         "type": "object",
         "properties": {
-          "merchantCustomerId": {
+          "customerId": {
             "type": "string"
           },
           "ttlSec": {
@@ -13571,7 +13571,7 @@
           }
         },
         "required": [
-          "merchantCustomerId"
+          "customerId"
         ]
       },
       "QrMintRespDto": {
@@ -13760,7 +13760,7 @@
           "merchantId": {
             "type": "string"
           },
-          "merchantCustomerId": {
+          "customerId": {
             "type": "string"
           },
           "balance": {
@@ -13769,7 +13769,7 @@
         },
         "required": [
           "merchantId",
-          "merchantCustomerId",
+          "customerId",
           "balance"
         ]
       },
@@ -13963,7 +13963,7 @@
           "merchantId": {
             "type": "string"
           },
-          "merchantCustomerId": {
+          "customerId": {
             "type": "string"
           },
           "name": {
@@ -13986,7 +13986,7 @@
         },
         "required": [
           "merchantId",
-          "merchantCustomerId",
+          "customerId",
           "name",
           "gender",
           "birthDate"
@@ -14020,7 +14020,7 @@
             "type": "object",
             "nullable": true
           },
-          "merchantCustomerId": {
+          "customerId": {
             "type": "string"
           },
           "createdAt": {
@@ -14115,7 +14115,7 @@
           "id",
           "type",
           "amount",
-          "merchantCustomerId",
+          "customerId",
           "createdAt"
         ]
       },
@@ -16298,7 +16298,7 @@
           },
           "id_client": {
             "type": "string",
-            "description": "Внутренний ID клиента (merchantCustomerId), если уже известен"
+            "description": "Внутренний ID клиента (customerId), если уже известен"
           },
           "phone": {
             "type": "string",
