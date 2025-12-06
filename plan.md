@@ -12,6 +12,7 @@
     - `loyalty/mechanics/page.tsx`: использование `CardFooter` для корректного фона.
 - [x] Главная страница `app/page.tsx`: улучшена видимость стрелок навигации (`.nav-arrow`).
 - [x] Устранены проблемы с растягиванием полей ввода (`align-items: flex-start` в `.filter-block`).
+- [x] Переработан интерфейс страницы `analytics/time/page.tsx`: современный дизайн, тепловая карта, glassmorphism, поддержка тем.
 
 ## Хотфикс 2025-12-XX — Интеграции: идентификация и контекст
 - [x] Интеграции CALCULATE-BONUS/BONUS (+deprecated CALCULATE) принимают `id_client`/`merchantCustomerId` как альтернативу `userToken`, проверки совпадения мерчанта/клиента вынесены в общий helper.
