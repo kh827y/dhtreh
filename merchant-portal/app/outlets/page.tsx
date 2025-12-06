@@ -1,6 +1,17 @@
 "use client";
 import React from "react";
-import { Card, CardHeader, CardBody, Button, Skeleton } from "@loyalty/ui";
+import { Card, CardHeader, CardBody, Button, Skeleton, Badge } from "@loyalty/ui";
+import { 
+  Store, 
+  Plus, 
+  Search, 
+  MapPin, 
+  Phone, 
+  ChevronRight, 
+  CheckCircle2,
+  XCircle,
+  Building,
+} from "lucide-react";
 
 type OutletStatus = "WORKING" | "PAUSED";
 
@@ -69,102 +80,268 @@ export default function OutletsPage() {
   }, [items.length, loading, total]);
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-        <div style={{ display: "grid", gap: 4 }}>
-          <h1 style={{ margin: 0 }}>Торговые точки</h1>
-          <div style={{ opacity: 0.75, fontSize: 14 }}>Следите за статусом точек, редактируйте и подключайте интеграции.</div>
-        </div>
-        <div style={{ display: "grid", gap: 8, justifyItems: "end" }}>
-          <a href="/outlets/new" style={{ textDecoration: "none" }}>
-            <Button variant="primary">Добавить торговую точку</Button>
-          </a>
-          <div style={{ fontSize: 13, opacity: 0.75 }}>{summary}</div>
-        </div>
-      </div>
-
-      <Card>
-        <CardBody style={{ display: "grid", gap: 12 }}>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {STATUS_TABS.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`btn ${activeTab === tab.id ? "btn-primary" : "btn-ghost"}`}
-              >
-                {tab.label}
-              </button>
-            ))}
+    <div className="animate-in" style={{ display: "grid", gap: 24 }}>
+      {/* Page Header */}
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+          <div style={{
+            width: 48,
+            height: 48,
+            borderRadius: "var(--radius-lg)",
+            background: "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.1))",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "var(--brand-primary-light)",
+          }}>
+            <Store size={24} />
           </div>
-          <div style={{ display: "grid", gap: 6 }}>
-            <span style={{ fontSize: 12, opacity: 0.7 }}>Поиск по названию</span>
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Например, Тили-Тесто"
-              style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
-            />
+          <div>
+            <h1 style={{ 
+              fontSize: 28, 
+              fontWeight: 800, 
+              margin: 0,
+              letterSpacing: "-0.02em",
+            }}>
+              Торговые точки
+            </h1>
+            <p style={{ 
+              fontSize: 14, 
+              color: "var(--fg-muted)", 
+              margin: "6px 0 0",
+            }}>
+              Управляйте точками продаж, статусами и интеграциями
+            </p>
+          </div>
+        </div>
+        
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+          <a href="/outlets/new" style={{ textDecoration: "none" }}>
+            <Button variant="primary" leftIcon={<Plus size={16} />}>
+              Добавить точку
+            </Button>
+          </a>
+          <div style={{ fontSize: 13, color: "var(--fg-muted)" }}>{summary}</div>
+        </div>
+      </header>
+
+      {/* Filters */}
+      <Card>
+        <CardBody style={{ padding: 16 }}>
+          <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+            {/* Status tabs */}
+            <div style={{ display: "flex", gap: 6 }}>
+              {STATUS_TABS.map((tab) => {
+                const active = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveTab(tab.id)}
+                    style={{
+                      padding: "8px 16px",
+                      borderRadius: "var(--radius-full)",
+                      border: "1px solid",
+                      borderColor: active ? "rgba(99, 102, 241, 0.5)" : "var(--border-default)",
+                      background: active 
+                        ? "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.1))"
+                        : "transparent",
+                      color: active ? "var(--brand-primary-light)" : "var(--fg-secondary)",
+                      cursor: "pointer",
+                      fontWeight: active ? 600 : 500,
+                      fontSize: 13,
+                      transition: "all 0.2s ease",
+                    }}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+            
+            {/* Search */}
+            <div className="search-wrapper" style={{ flex: 1, minWidth: 200 }}>
+              <Search size={16} style={{ color: "var(--fg-muted)" }} />
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Поиск по названию..."
+                style={{ 
+                  flex: 1,
+                  border: "none",
+                  background: "transparent",
+                  color: "var(--fg)",
+                  outline: "none",
+                  fontSize: 14,
+                }}
+              />
+            </div>
           </div>
         </CardBody>
       </Card>
 
+      {/* Outlets Grid */}
       <div style={{ display: "grid", gap: 12 }}>
         {loading ? (
-          <Card>
-            <CardBody>
-              <Skeleton height={120} />
-            </CardBody>
-          </Card>
-        ) : items.length ? (
-          items.map((outlet) => (
-            <a key={outlet.id} href={`/outlets/${encodeURIComponent(outlet.id)}`} style={{ textDecoration: "none", color: "inherit" }}>
-              <div
-                className="glass"
-                style={{
-                  padding: 20,
-                  borderRadius: 14,
-                  display: "grid",
-                  gap: 8,
-                  cursor: "pointer",
-                  border: outlet.works ? "1px solid rgba(37,211,102,0.25)" : "1px solid rgba(255,255,255,0.08)",
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                  <div style={{ fontWeight: 600, fontSize: 18 }}>{outlet.name}</div>
-                  <div
-                    style={{
-                      padding: "4px 10px",
-                      borderRadius: 999,
-                      background: outlet.works ? "rgba(37,211,102,0.15)" : "rgba(255,255,255,0.1)",
-                      color: outlet.works ? "#4ade80" : "rgba(255,255,255,0.7)",
-                      fontSize: 12,
-                      fontWeight: 600,
-                    }}
-                  >
-                    {statusLabel(outlet.works)}
+          Array.from({ length: 3 }).map((_, i) => (
+            <Card key={i}>
+              <CardBody style={{ padding: 20 }}>
+                <div style={{ display: "flex", gap: 16 }}>
+                  <Skeleton height={48} style={{ width: 48, borderRadius: "var(--radius-md)" }} />
+                  <div style={{ flex: 1 }}>
+                    <Skeleton height={20} style={{ width: "40%", marginBottom: 8 }} />
+                    <Skeleton height={14} style={{ width: "60%" }} />
                   </div>
                 </div>
-                <div style={{ opacity: 0.8 }}>
-                  {outlet.address || "Адрес не указан"}
-                </div>
-                {outlet.description ? (
-                  <div style={{ opacity: 0.65, fontSize: 13 }}>{outlet.description}</div>
-                ) : null}
-                {outlet.phone ? (
-                  <div style={{ opacity: 0.65, fontSize: 12 }}>Телефон: {outlet.phone}</div>
-                ) : null}
-              </div>
+              </CardBody>
+            </Card>
+          ))
+        ) : items.length ? (
+          items.map((outlet, index) => (
+            <a 
+              key={outlet.id} 
+              href={`/outlets/${encodeURIComponent(outlet.id)}`} 
+              style={{ textDecoration: "none", color: "inherit" }}
+            >
+              <Card 
+                hover
+                className="animate-in"
+                style={{ 
+                  animationDelay: `${index * 0.05}s`,
+                  borderColor: outlet.works ? "rgba(16, 185, 129, 0.2)" : undefined,
+                }}
+              >
+                <CardBody style={{ padding: 0 }}>
+                  <div style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 16,
+                    padding: 20,
+                  }}>
+                    {/* Icon */}
+                    <div className="list-item-icon" style={{
+                      background: outlet.works 
+                        ? "linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(52, 211, 153, 0.1))"
+                        : undefined,
+                      color: outlet.works ? "var(--success-light)" : undefined,
+                    }}>
+                      <Building size={24} />
+                    </div>
+
+                    {/* Content */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                        <h3 style={{ 
+                          fontSize: 17, 
+                          fontWeight: 600, 
+                          margin: 0,
+                          color: "var(--fg)",
+                        }}>
+                          {outlet.name}
+                        </h3>
+                        <Badge variant={outlet.works ? "success" : "default"} dot>
+                          {statusLabel(outlet.works)}
+                        </Badge>
+                      </div>
+                      
+                      <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+                        {outlet.address && (
+                          <div style={{ 
+                            display: "flex", 
+                            alignItems: "center", 
+                            gap: 6,
+                            fontSize: 13,
+                            color: "var(--fg-muted)",
+                          }}>
+                            <MapPin size={14} />
+                            {outlet.address}
+                          </div>
+                        )}
+                        {outlet.phone && (
+                          <div style={{ 
+                            display: "flex", 
+                            alignItems: "center", 
+                            gap: 6,
+                            fontSize: 13,
+                            color: "var(--fg-muted)",
+                          }}>
+                            <Phone size={14} />
+                            {outlet.phone}
+                          </div>
+                        )}
+                      </div>
+                      
+                      {outlet.description && (
+                        <p style={{ 
+                          fontSize: 13, 
+                          color: "var(--fg-dim)", 
+                          margin: "8px 0 0",
+                          lineHeight: 1.4,
+                        }}>
+                          {outlet.description}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Arrow */}
+                    <div className="nav-arrow">
+                      <ChevronRight size={20} />
+                    </div>
+                  </div>
+                </CardBody>
+              </Card>
             </a>
           ))
         ) : (
-          <div className="glass" style={{ padding: 28, borderRadius: 14, textAlign: "center", opacity: 0.75 }}>
-            По заданным условиям точки не найдены.
+          <Card>
+            <CardBody style={{ padding: 48 }}>
+              <div style={{ 
+                display: "flex", 
+                flexDirection: "column", 
+                alignItems: "center", 
+                gap: 16,
+                textAlign: "center",
+              }}>
+                <div style={{
+                  width: 64,
+                  height: 64,
+                  borderRadius: "var(--radius-lg)",
+                  background: "rgba(255, 255, 255, 0.05)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "var(--fg-dim)",
+                }}>
+                  <Store size={28} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>
+                    Точки не найдены
+                  </div>
+                  <div style={{ fontSize: 14, color: "var(--fg-muted)" }}>
+                    Попробуйте изменить параметры поиска
+                  </div>
+                </div>
+              </div>
+            </CardBody>
+          </Card>
+        )}
+        
+        {error && !loading && (
+          <div style={{ 
+            padding: 16, 
+            borderRadius: "var(--radius-md)", 
+            border: "1px solid rgba(239, 68, 68, 0.3)",
+            background: "rgba(239, 68, 68, 0.1)",
+            color: "var(--danger-light)",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+          }}>
+            <XCircle size={18} />
+            {error}
           </div>
         )}
-        {error && !loading ? (
-          <div style={{ color: "#f87171" }}>{error}</div>
-        ) : null}
       </div>
     </div>
   );

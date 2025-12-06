@@ -1,9 +1,8 @@
 import { NextRequest } from 'next/server';
 import { portalFetch } from '../../_lib';
 
-export async function PUT(req: NextRequest, context: { params: Promise<{ id: string }> | { id: string } }) {
-  const p: any = context.params as any;
-  const { id } = typeof p?.then === 'function' ? await p : p;
+export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const body = await req.text();
   return portalFetch(req, `/portal/audiences/${encodeURIComponent(id)}`, {
     method: 'PUT',

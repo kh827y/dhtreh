@@ -1,7 +1,7 @@
 "use client";
 import React from 'react';
 
-export type BadgeVariant = 'default' | 'success' | 'warning' | 'danger' | 'info';
+export type BadgeVariant = 'default' | 'success' | 'warning' | 'danger' | 'info' | 'outline' | 'secondary' | 'primary';
 export type BadgeSize = 'sm' | 'md';
 
 export interface BadgeProps {
@@ -20,6 +20,9 @@ const variantClasses: Record<BadgeVariant, string> = {
   warning: 'badge badge-warning',
   danger: 'badge badge-danger',
   info: 'badge',
+  outline: 'badge badge-outline',
+  secondary: 'badge badge-secondary',
+  primary: 'badge badge-primary',
 };
 
 export function Badge({ 

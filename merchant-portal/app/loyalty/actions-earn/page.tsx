@@ -225,7 +225,7 @@ function buildRevenuePoints(series: number[], dates?: string[]): RevenuePoint[] 
       if (!date) return null;
       return { date, value: Math.max(0, safeNumber(value)) };
     })
-    .filter((item): item is RevenuePoint => Boolean(item) && Number.isFinite(item.value) && item.value >= 0);
+    .filter((item): item is RevenuePoint => item !== null && Number.isFinite(item.value) && item.value >= 0);
 }
 
 function formatShortDate(value: Date | null) {
@@ -1028,7 +1028,11 @@ const RevenueChart: React.FC<RevenueChartProps> = ({
     return <div style={{ fontSize: 12, opacity: 0.6 }}>Нет данных по выручке</div>;
   }
 
-  const lastDate = points[points.length - 1].date;
+  const lastPoint = points[points.length - 1];
+  if (!lastPoint) {
+    return <div style={{ fontSize: 12, opacity: 0.6 }}>Нет данных по выручке</div>;
+  }
+  const lastDate = lastPoint.date;
   const earliestDate = new Date(lastDate.getTime() - MAX_LOOKBACK_DAYS * DAY_MS);
   let earliestIdx = points.findIndex((p) => p.date >= earliestDate);
   if (earliestIdx === -1) earliestIdx = 0;
@@ -1063,20 +1067,20 @@ const RevenueChart: React.FC<RevenueChartProps> = ({
     () => ({
       color: [REVENUE_LINE_COLOR],
       tooltip: {
-        trigger: "axis",
-        axisPointer: { type: "line" },
-        valueFormatter: (value: number) => formatMoney(Math.round(value || 0)),
+        trigger: "axis" as const,
+        axisPointer: { type: "line" as const },
+        valueFormatter: (value: any) => formatMoney(Math.round(Number(value) || 0)),
       },
       grid: { left: 64, right: 16, top: 8, bottom: 4, containLabel: true },
       xAxis: {
-        type: "category",
+        type: "category" as const,
         data: categories,
         boundaryGap: false,
         axisLine: { lineStyle: { color: "rgba(148,163,184,0.6)" } },
         axisLabel: { color: "rgba(226,232,240,0.9)", fontSize: 11, margin: 4 },
       },
       yAxis: {
-        type: "value",
+        type: "value" as const,
         axisLine: { show: false },
         splitLine: { lineStyle: { color: "rgba(148,163,184,0.25)" } },
         axisLabel: {
@@ -1087,7 +1091,7 @@ const RevenueChart: React.FC<RevenueChartProps> = ({
       series: [
         {
           name: "Выручка",
-          type: "line",
+          type: "line" as const,
           smooth: true,
           showSymbol: true,
           symbol: "circle",

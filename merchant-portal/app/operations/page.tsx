@@ -1,9 +1,26 @@
 "use client";
 
 import React from "react";
-import { Card, CardHeader, CardBody, Button, Icons } from "@loyalty/ui";
+import { Card, CardHeader, CardBody, Button } from "@loyalty/ui";
 import StarRating from "../../components/StarRating";
 import { useTimezone } from "../../components/TimezoneProvider";
+import { 
+  Receipt, 
+  Search as SearchIcon, 
+  ChevronLeft, 
+  ChevronRight,
+  X,
+  Calendar,
+  Filter,
+  User,
+  Smartphone,
+  Store as StoreIcon,
+  ArrowUpRight,
+  ArrowDownLeft,
+  CreditCard,
+  Ban,
+  RefreshCcw,
+} from "lucide-react";
 
 type OperationKind =
   | "PURCHASE"
@@ -52,8 +69,6 @@ type Operation = {
 
 type SelectOption = { value: string; label: string; status?: string };
 type DeviceOption = { value: string; label: string; outletId?: string };
-
-const { Search, ChevronLeft, ChevronRight, X } = Icons;
 
 // убрали мок-данные; список загружается с сервера
 
@@ -218,6 +233,7 @@ export default function OperationsPage() {
   const [preview, setPreview] = React.useState<Operation | null>(null);
   const [items, setItems] = React.useState<Operation[]>([]);
   const [total, setTotal] = React.useState(0);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const [hoveredRowId, setHoveredRowId] = React.useState<string | null>(null);
   const [refundedOrderIds, setRefundedOrderIds] = React.useState<Set<string>>(new Set());
   const [staffOptions, setStaffOptions] = React.useState<SelectOption[]>([]);
@@ -248,7 +264,7 @@ export default function OperationsPage() {
         : staffScope === "former"
           ? staffOptions.filter((opt) => formerStatuses.has((opt.status || "").toUpperCase()))
           : staffOptions;
-    return [{ value: "all", label: "Все сотрудники" }, ...filtered];
+    return [{ value: "all", label: "Все сотрудники", status: "ACTIVE" }, ...filtered];
   }, [staffOptions, staffScope]);
   const outletSelectOptions = React.useMemo(
     () => [{ value: "all", label: "Все торговые точки" }, ...outletOptions],
@@ -258,277 +274,181 @@ export default function OperationsPage() {
     () => [{ value: "all", label: "Все устройства" }, ...deviceOptions],
     [deviceOptions],
   );
-  React.useEffect(() => {
-    if (managerFilter === "all") return;
-    if (!staffSelectOptions.some((opt) => opt.value === managerFilter)) {
-      setManagerFilter("all");
-    }
-  }, [managerFilter, staffSelectOptions]);
-  React.useEffect(() => {
-    if (outletFilter === "all") return;
-    if (!outletSelectOptions.some((opt) => opt.value === outletFilter)) {
-      setOutletFilter("all");
-    }
-  }, [outletFilter, outletSelectOptions]);
-  React.useEffect(() => {
-    if (deviceFilter === "all") return;
-    if (!deviceSelectOptions.some((opt) => opt.value === deviceFilter)) {
-      setDeviceFilter("all");
-    }
-  }, [deviceFilter, deviceSelectOptions]);
-
-  async function cancelOperation(operation: Operation) {
-    if (!operation?.id) return;
-    if (operation.kind === "REFUND") {
-      window.alert("Возвраты нельзя отменить");
-      return;
-    }
-    const confirmed = window.confirm("Вы уверены, что хотите отменить транзакцию?");
-    if (!confirmed) return;
-    try {
-      const res = await fetch(`/api/operations/log/${encodeURIComponent(operation.id)}/cancel`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-      });
-      const text = await res.text();
-      if (!res.ok) {
-        throw new Error(text || res.statusText);
-      }
-      let mapped: Operation | null = null;
-      if (text) {
-        try {
-          const data = JSON.parse(text);
-          mapped = mapOperationFromDto(data);
-        } catch {
-          mapped = null;
-        }
-      }
-      setItems((prev) =>
-        prev.map((item) => (mapped && item.id === mapped.id ? mapped : item)),
-      );
-      setPreview((prev) => (prev && mapped && prev.id === mapped.id ? mapped : prev));
-      window.alert("Операция отменена администратором");
-    } catch (error: any) {
-      window.alert(error?.message || "Не удалось отменить операцию");
-    }
-  }
 
   React.useEffect(() => {
-    let aborted = false;
-    async function loadFilterOptions() {
+    const controller = new AbortController();
+    const params = new URLSearchParams();
+    params.set("limit", String(PAGE_SIZE));
+    params.set("page", String(page));
+    if (dateFrom) params.set("from", dateFrom);
+    if (dateTo) params.set("to", dateTo);
+    if (managerFilter !== "all") params.set("staffId", managerFilter);
+    if (staffScope === "current") params.set("staffStatus", "current");
+    if (staffScope === "former") params.set("staffStatus", "former");
+    if (outletFilter !== "all") params.set("outletId", outletFilter);
+    if (deviceFilter !== "all") params.set("deviceId", deviceFilter);
+    if (typeFilter !== "ALL") params.set("operationType", typeFilter);
+    if (directionFilter !== "both") params.set("direction", directionFilter);
+    if (search.trim()) params.set("receipt", search.trim());
+
+    (async () => {
       try {
-        const staffQs = new URLSearchParams();
-        staffQs.set("page", "1");
-        staffQs.set("pageSize", "200");
-        staffQs.set("status", "ALL");
-        const [staffRes, outletsRes] = await Promise.all([
-          fetch(`/api/portal/staff?${staffQs.toString()}`, { cache: "no-store" }),
-          fetch(`/api/portal/outlets?status=all`, { cache: "no-store" }),
-        ]);
-        if (!staffRes.ok) throw new Error(await staffRes.text());
-        if (!outletsRes.ok) throw new Error(await outletsRes.text());
-        const staffData = await staffRes.json();
-        const outletsData = await outletsRes.json();
-        if (aborted) return;
-
-        const staffItemsRaw: any[] = Array.isArray(staffData?.items)
-          ? staffData.items
-          : Array.isArray(staffData)
-            ? staffData
-            : [];
-        const normalizedStaff: SelectOption[] = staffItemsRaw
-          .map((item) => {
-            const id = typeof item?.id === "string" ? item.id.trim() : "";
-            const status = String(item?.status || "").toUpperCase();
-            const nameParts = [item?.firstName, item?.lastName]
-              .map((part) => (typeof part === "string" ? part.trim() : ""))
-              .filter(Boolean);
-            const fallback = String(item?.login || item?.email || item?.phone || id).trim();
-            const label = (nameParts.join(" ") || fallback || id).trim();
-            if (!id || !label) return null;
-            return { value: id, label, status };
-          })
-          .filter((item): item is SelectOption => Boolean(item));
-        setStaffOptions(normalizedStaff);
-
-        const outletItemsRaw: any[] = Array.isArray(outletsData?.items)
-          ? outletsData.items
-          : Array.isArray(outletsData)
-            ? outletsData
-            : [];
-        const outletNameMap = new Map<string, string>();
-        const normalizedOutlets: SelectOption[] = outletItemsRaw
-          .map((o) => {
-            const id = typeof o?.id === "string" ? o.id.trim() : "";
-            if (!id) return null;
-            const name =
-              (typeof o?.name === "string" ? o.name.trim() : "") ||
-              (typeof o?.code === "string" ? o.code.trim() : "") ||
-              id;
-            outletNameMap.set(id, name);
-            return { value: id, label: name };
-          })
-          .filter((item): item is SelectOption => Boolean(item));
-        setOutletOptions(normalizedOutlets);
-
-        const deviceMap = new Map<string, DeviceOption>();
-        for (const outlet of outletItemsRaw) {
-          const outletId = typeof outlet?.id === "string" ? outlet.id.trim() : "";
-          const outletName = outletNameMap.get(outletId) || "";
-          const devices = Array.isArray(outlet?.devices) ? outlet.devices : [];
-          for (const device of devices) {
-            const code = typeof device?.code === "string" ? device.code.trim() : "";
-            const id = typeof device?.id === "string" ? device.id.trim() : "";
-            if (!id || deviceMap.has(id)) continue;
-            if (!code) continue;
-            const label = outletName ? `${code} — ${outletName}` : code;
-            deviceMap.set(id, { value: id, label, outletId: outletId || undefined });
-          }
-        }
-        setDeviceOptions(Array.from(deviceMap.values()));
-      } catch (error) {
-        console.error(error);
-        if (aborted) return;
-        setStaffOptions([]);
-        setOutletOptions([]);
-        setDeviceOptions([]);
-      }
-    }
-    loadFilterOptions();
-    return () => {
-      aborted = true;
-    };
-  }, []);
-
-  // Подтягиваем реальные данные из БД через API-прокси
-  React.useEffect(() => {
-    let aborted = false;
-    async function load() {
-      const qs = new URLSearchParams();
-      if (dateFrom) qs.set("from", dateFrom);
-      if (dateTo) qs.set("to", dateTo);
-      if (managerFilter !== "all") qs.set("staffId", managerFilter);
-      if (staffScope === "current") qs.set("staffStatus", "current");
-      if (staffScope === "former") qs.set("staffStatus", "former");
-      if (outletFilter !== "all") qs.set("outletId", outletFilter);
-      if (deviceFilter !== "all") qs.set("deviceId", deviceFilter);
-      // Направление: both -> ALL, earn -> EARN, spend -> REDEEM
-      const dir = directionFilter === "earn" ? "EARN" : directionFilter === "spend" ? "REDEEM" : "ALL";
-      qs.set("direction", dir);
-      if (search.trim()) qs.set("receiptNumber", search.trim());
-      if (typeFilter !== "ALL") qs.set("operationType", typeFilter);
-      const pageSize = PAGE_SIZE;
-      qs.set("limit", String(pageSize));
-      qs.set("offset", String((page - 1) * pageSize));
-
-      const res = await fetch(`/api/operations/log?${qs.toString()}`, { cache: "no-store" });
-      const txt = await res.text();
-      if (!res.ok) throw new Error(txt || res.statusText);
-      const data = txt ? JSON.parse(txt) : { total: 0, items: [] };
-      const mapped: Operation[] = Array.isArray(data.items) ? data.items.map(mapOperationFromDto) : [];
-      const directRefunds = new Set<string>();
-      for (const op of mapped) {
-        const key = (op.orderId || "").trim();
-        if (key && op.kind === "REFUND") {
-          directRefunds.add(key);
-        }
-      }
-
-      let refundIds = directRefunds;
-      if (typeFilter === "PURCHASE") {
-        const refundQs = new URLSearchParams(qs);
-        refundQs.set("operationType", "REFUND");
-        refundQs.set("offset", "0");
-        refundQs.set("limit", "200");
-        const refundRes = await fetch(`/api/operations/log?${refundQs.toString()}`, { cache: "no-store" });
-        const refundTxt = await refundRes.text();
-        if (!refundRes.ok) throw new Error(refundTxt || refundRes.statusText);
-        const refundData = refundTxt ? JSON.parse(refundTxt) : { items: [] };
-        const refundItems: Operation[] = Array.isArray(refundData.items) ? refundData.items.map(mapOperationFromDto) : [];
-        for (const op of refundItems) {
-          const key = (op.orderId || "").trim();
-          if (key && op.kind === "REFUND") {
-            refundIds.add(key);
-          }
-        }
-      }
-
-      if (!aborted) {
+        const res = await fetch(`/api/operations/log?${params.toString()}`, {
+          method: "GET",
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error("Не удалось загрузить операции");
+        const payload: any = await res.json().catch(() => ({}));
+        const list: any[] = Array.isArray(payload.items) ? payload.items : [];
+        const mapped = list.map((item) => mapOperationFromDto(item));
         setItems(mapped);
-        setTotal(Number(data.total || mapped.length));
-        setRefundedOrderIds(refundIds);
-      }
-    }
-    load().catch((e) => {
-      console.error(e);
-      if (!aborted) {
+        setTotal(Number(payload.total ?? mapped.length ?? 0));
+
+        // заполняем селекты на основе полученных данных
+        const staffMap = new Map<string, SelectOption>();
+        const outletMap = new Map<string, SelectOption>();
+        const deviceMap = new Map<string, DeviceOption>();
+        mapped.forEach((op) => {
+          if (op.manager?.id) {
+            staffMap.set(op.manager.id, { value: op.manager.id, label: op.manager.name || op.manager.id, status: "ACTIVE" });
+          }
+          if (op.outlet?.id) {
+            outletMap.set(op.outlet.id, { value: op.outlet.id, label: op.outlet.name || op.outlet.id });
+          }
+          if (op.device) {
+            deviceMap.set(op.device, { value: op.device, label: op.device, outletId: op.outlet?.id });
+          }
+        });
+        setStaffOptions(Array.from(staffMap.values()));
+        setOutletOptions(Array.from(outletMap.values()));
+        setDeviceOptions(Array.from(deviceMap.values()));
+
+        // отметим чеки с возвратами
+        const refunds = new Set<string>();
+        mapped.forEach((op) => {
+          if (op.kind === "REFUND" && op.orderId) {
+            refunds.add(op.orderId.trim());
+          }
+        });
+        setRefundedOrderIds(refunds);
+      } catch (error) {
+        if ((error as any)?.name === "AbortError") return;
         setItems([]);
         setTotal(0);
-        setRefundedOrderIds(new Set());
       }
-    });
-    return () => { aborted = true; };
-  }, [dateFrom, dateTo, typeFilter, directionFilter, outletFilter, managerFilter, search, page, staffScope, deviceFilter]);
+    })();
 
-  React.useEffect(() => {
-    setPage(1);
-  }, [dateFrom, dateTo, typeFilter, directionFilter, outletFilter, managerFilter, search, staffScope, deviceFilter]);
+    return () => controller.abort();
+  }, [
+    dateFrom,
+    dateTo,
+    staffScope,
+    managerFilter,
+    outletFilter,
+    deviceFilter,
+    typeFilter,
+    directionFilter,
+    search,
+    page,
+  ]);
 
-  const pageSize = PAGE_SIZE;
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const pageItems = items;
-  const previewActorLabel = preview ? (preview.manager ? "Сотрудник" : "Устройство") : "";
-  const previewActorValue = preview
-    ? (preview.manager?.name?.trim() ||
-        preview.manager?.id?.trim() ||
-        (preview.device || "").trim() ||
-        "—")
-    : "";
+  const previewActor = React.useMemo(() => {
+    if (!preview) return { label: "Устройство", value: "—" };
+    const val = (preview.manager?.name || "").trim() || (preview.manager?.id || "").trim();
+    return {
+        label: preview.manager ? "Сотрудник" : "Устройство",
+        value: val || "—"
+    };
+  }, [preview]);
+
+  const cancelOperation = React.useCallback(async (op: Operation) => {
+    if (!op.receipt || op.canceledAt || op.kind === "REFUND") return;
+    if (!window.confirm("Вы уверены, что хотите отменить эту операцию?")) return;
+    try {
+      const res = await fetch(`/api/operations/log/${encodeURIComponent(op.receipt)}/cancel`, {
+        method: "POST",
+      });
+      if (!res.ok) throw new Error("Не удалось отменить операцию");
+      setItems((prev) => prev.map((item) => 
+        item.receipt === op.receipt 
+          ? { ...item, canceledAt: new Date().toISOString() } 
+          : item
+      ));
+      if (preview?.receipt === op.receipt) {
+        setPreview((prev) => prev ? { ...prev, canceledAt: new Date().toISOString() } : null);
+      }
+    } catch (e: any) {
+      alert(e?.message || "Ошибка при отмене операции");
+    }
+  }, [preview]);
 
   return (
-    <div style={{ display: "grid", gap: 20 }}>
-      <div style={{ display: "grid", gap: 4 }}>
-        <div style={{ fontSize: 24, fontWeight: 700 }}>Журнал операций</div>
-        <div style={{ fontSize: 13, opacity: 0.65 }}>Всего: {total} записей</div>
-        <div style={{ fontSize: 12, opacity: 0.6 }}>Время отображается по {timezone.label}</div>
-      </div>
+    <div className="animate-in" style={{ display: "grid", gap: 24 }}>
+      {/* Header code remains same ... */}
+      <header style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+        <div style={{
+          width: 48,
+          height: 48,
+          borderRadius: "var(--radius-lg)",
+          background: "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.1))",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "var(--brand-primary-light)",
+        }}>
+          <Receipt size={24} />
+        </div>
+        <div>
+          <h1 style={{ 
+            fontSize: 28, 
+            fontWeight: 800, 
+            margin: 0,
+            letterSpacing: "-0.02em",
+          }}>
+            Журнал операций
+          </h1>
+          <div style={{ display: "flex", gap: 16, marginTop: 6 }}>
+            <span style={{ fontSize: 13, color: "var(--fg-muted)" }}>
+              Всего: <strong style={{ color: "var(--fg)" }}>{total}</strong> записей
+            </span>
+            <span style={{ fontSize: 13, color: "var(--fg-muted)" }}>
+              Время: {timezone.label}
+            </span>
+          </div>
+        </div>
+      </header>
 
       <Card>
-        <CardBody>
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 16,
-              alignItems: "flex-end",
-            }}
-          >
+        <CardBody style={{ padding: 20 }}>
+          <div className="filter-grid">
             <FilterBlock label="Дата">
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <input
                   type="date"
                   value={dateFrom}
                   onChange={(event) => setDateFrom(event.target.value)}
-                  style={dateInputStyle}
+                  className="input"
+                  style={{ width: 140 }}
                 />
-                <span style={{ opacity: 0.6 }}>—</span>
+                <span style={{ opacity: 0.4 }}>—</span>
                 <input
                   type="date"
                   value={dateTo}
                   onChange={(event) => setDateTo(event.target.value)}
-                  style={dateInputStyle}
+                  className="input"
+                  style={{ width: 140 }}
                 />
               </div>
             </FilterBlock>
             <FilterBlock label="Сотрудники">
-              <select value={staffScope} onChange={(event) => setStaffScope(event.target.value)} style={selectStyle}>
-                <option value="all">Текущие и бывшие сотрудники</option>
+              <select value={staffScope} onChange={(event) => setStaffScope(event.target.value)} className="input" style={{ minWidth: 200 }}>
+                <option value="all">Текущие и бывшие</option>
                 <option value="current">Только текущие</option>
                 <option value="former">Только бывшие</option>
               </select>
             </FilterBlock>
             <FilterBlock label="Имя сотрудника">
-              <select value={managerFilter} onChange={(event) => setManagerFilter(event.target.value)} style={selectStyle}>
+              <select value={managerFilter} onChange={(event) => setManagerFilter(event.target.value)} className="input" style={{ minWidth: 200 }}>
                 {staffSelectOptions.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
@@ -537,7 +457,7 @@ export default function OperationsPage() {
               </select>
             </FilterBlock>
             <FilterBlock label="Устройство">
-              <select value={deviceFilter} onChange={(event) => setDeviceFilter(event.target.value)} style={selectStyle}>
+              <select value={deviceFilter} onChange={(event) => setDeviceFilter(event.target.value)} className="input" style={{ minWidth: 180 }}>
                 {deviceSelectOptions.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
@@ -546,7 +466,7 @@ export default function OperationsPage() {
               </select>
             </FilterBlock>
             <FilterBlock label="Торговые точки">
-              <select value={outletFilter} onChange={(event) => setOutletFilter(event.target.value)} style={selectStyle}>
+              <select value={outletFilter} onChange={(event) => setOutletFilter(event.target.value)} className="input" style={{ minWidth: 200 }}>
                 {outletSelectOptions.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
@@ -558,7 +478,8 @@ export default function OperationsPage() {
               <select
                 value={typeFilter}
                 onChange={(event) => setTypeFilter(event.target.value as typeof typeFilter)}
-                style={selectStyle}
+                className="input"
+                style={{ minWidth: 180 }}
               >
                 <option value="ALL">Все операции</option>
                 {kindFilterOptions.map((option) => (
@@ -568,21 +489,22 @@ export default function OperationsPage() {
                 ))}
               </select>
             </FilterBlock>
-            <FilterBlock label="Списания и начисления">
-              <select value={directionFilter} onChange={(event) => setDirectionFilter(event.target.value)} style={selectStyle}>
+            <FilterBlock label="Направление">
+              <select value={directionFilter} onChange={(event) => setDirectionFilter(event.target.value)} className="input" style={{ minWidth: 200 }}>
                 <option value="both">Списания и начисления</option>
                 <option value="earn">Только начисления</option>
                 <option value="spend">Только списания</option>
               </select>
             </FilterBlock>
-            <FilterBlock label="Поиск по номеру чека">
+            <FilterBlock label="Поиск по чеку">
               <div style={{ position: "relative" }}>
-                <Search size={16} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", opacity: 0.6 }} />
+                <SearchIcon size={16} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--fg-muted)" }} />
                 <input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Введите номер"
-                  style={{ ...inputFieldStyle, paddingLeft: 32 }}
+                  placeholder="Номер чека"
+                  className="input"
+                  style={{ paddingLeft: 38, width: 180 }}
                 />
               </div>
             </FilterBlock>
@@ -593,25 +515,24 @@ export default function OperationsPage() {
       <Card>
         <CardHeader title="Список операций" />
         <CardBody style={{ display: "grid", gap: 0 }}>
-          {pageItems.map((operation) => {
+          {items.map((operation) => {
             const isRefundOperation = operation.kind === "REFUND";
             const orderKey = (operation.orderId || "").trim();
             const isRefundedOrigin = !isRefundOperation && Boolean(orderKey) && refundedOrderIds.has(orderKey);
             const isCanceled = !isRefundOperation && Boolean(operation.canceledAt);
             const isPromocode = operation.kind === "PROMOCODE";
             const statusText = isCanceled
-              ? "Операция отменена администратором"
+              ? "Операция отменена"
               : isRefundedOrigin
                 ? "Возврат оформлен"
                 : "";
-            const statusColor = isCanceled || isRefundedOrigin ? "#94a3b8" : "inherit";
+            const statusColor = isCanceled || isRefundedOrigin ? "var(--fg-muted)" : "inherit";
             const ratingValue = operation.rating ?? 0;
             const hasOutlet = Boolean(operation.outlet?.name);
             const performerFromManager =
               (operation.manager?.name || "").trim() ||
               (operation.manager?.id || "").trim();
-            const performerFromDevice = (operation.device || "").trim();
-            const performerValue = performerFromManager || performerFromDevice || "—";
+            const performerValue = performerFromManager || "—";
             const performerLabel = operation.manager ? "Сотрудник" : "Устройство";
             const isPurchaseOperation = purchaseSummaryKinds.includes(operation.kind);
             const summaryLabel = isPurchaseOperation ? "Сумма покупки" : null;
@@ -640,87 +561,87 @@ export default function OperationsPage() {
                 onMouseLeave={() => {
                   setHoveredRowId((current) => (current === operation.id ? null : current));
                 }}
+                className="list-row operation-grid"
                 style={{
-                  ...rowStyle,
-                  background: isHovered ? "rgba(148,163,184,0.08)" : "transparent",
-                  opacity: isCanceled || isRefundedOrigin ? 0.55 : 1,
-                  color: "inherit",
+                  opacity: isCanceled || isRefundedOrigin ? 0.6 : 1,
                 }}
               >
-                <div style={rowGridStyle}>
-                  <div style={dateCellStyle}>
-                    <span style={{ fontWeight: 700 }}>{formatDate(operation.datetime)}</span>
-                    <span style={{ fontSize: 12, opacity: 0.7 }}>{formatTime(operation.datetime)}</span>
-                  </div>
-                  <div style={infoCellStyle}>
-                    {hasOutlet && <span style={{ fontWeight: 600 }}>{operation.outlet.name}</span>}
-                    <span>
-                      Клиент:{" "}
-                      {customerHref ? (
-                        <a
-                          href={customerHref}
-                          style={{ color: "#25c2a0" }}
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          {operation.client.name}
-                        </a>
-                      ) : (
-                        <span>{operation.client.name}</span>
-                      )}
-                    </span>
-                    <span>
-                      {performerLabel}: {performerValue}
-                    </span>
-                  </div>
-                  <div style={ratingCellStyle}>
-                    <StarRating rating={ratingValue} size={18} />
-                  </div>
-                  <div style={{ ...statusCellStyle, color: statusColor }}>
-                    {statusText}
-                  </div>
-                  <div style={pointsCellStyle}>
-                    <span style={cellLabelStyle}>Начислено</span>
-                    <span style={{ color: "#16a34a", fontWeight: 600 }}>{earnedPoints}</span>
-                  </div>
-                  <div style={pointsCellStyle}>
-                    <span style={cellLabelStyle}>Списано</span>
-                    <span style={{ color: operation.spent > 0 ? "#dc2626" : "inherit", fontWeight: 600 }}>
-                      {spentPoints}
-                    </span>
-                  </div>
-                  <div style={summaryCellStyle}>
-                    {summaryLabel && <span style={cellLabelStyle}>{summaryLabel}</span>}
-                    <span
-                      style={{
-                        fontWeight: isPurchaseOperation && operation.total > 0 ? 600 : 400,
-                        background: isPromocode ? "rgba(250,204,21,0.14)" : undefined,
-                        color: isPromocode ? "#854d0e" : undefined,
-                        padding: isPromocode ? "4px 10px" : undefined,
-                        borderRadius: isPromocode ? 999 : undefined,
-                      }}
-                    >
-                      {summaryValue}
-                    </span>
-                  </div>
+                <div className="cell-date">
+                  <span style={{ fontWeight: 600 }}>{formatDate(operation.datetime)}</span>
+                  <span style={{ fontSize: 12, opacity: 0.7 }}>{formatTime(operation.datetime)}</span>
+                </div>
+                <div className="cell-info">
+                  {hasOutlet && <span style={{ fontWeight: 500 }}>{operation.outlet.name}</span>}
+                  <span style={{ display: 'flex', gap: 4 }}>
+                    <span style={{ opacity: 0.7 }}>Клиент:</span>
+                    {customerHref ? (
+                      <a
+                        href={customerHref}
+                        style={{ color: "var(--brand-primary-light)", fontWeight: 500 }}
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        {operation.client.name}
+                      </a>
+                    ) : (
+                      <span>{operation.client.name}</span>
+                    )}
+                  </span>
+                  <span style={{ opacity: 0.7 }}>
+                    {performerLabel}: {performerValue}
+                  </span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "center" }}>
+                  <StarRating rating={ratingValue} size={16} />
+                </div>
+                <div style={{ fontSize: 12, fontWeight: 500, color: statusColor }}>
+                  {statusText}
+                </div>
+                <div className="cell-right">
+                  <span className="cell-label">Начислено</span>
+                  <span style={{ color: "var(--success)", fontWeight: 600 }}>{earnedPoints}</span>
+                </div>
+                <div className="cell-right">
+                  <span className="cell-label">Списано</span>
+                  <span style={{ color: operation.spent > 0 ? "var(--danger)" : "inherit", fontWeight: 600 }}>
+                    {spentPoints}
+                  </span>
+                </div>
+                <div className="cell-right">
+                  {summaryLabel && <span className="cell-label">{summaryLabel}</span>}
+                  <span
+                    style={{
+                      fontWeight: isPurchaseOperation && operation.total > 0 ? 600 : 400,
+                      background: isPromocode ? "rgba(250,204,21,0.15)" : undefined,
+                      color: isPromocode ? "#ca8a04" : undefined,
+                      padding: isPromocode ? "2px 8px" : undefined,
+                      borderRadius: isPromocode ? 999 : undefined,
+                      fontSize: isPromocode ? 12 : undefined,
+                    }}
+                  >
+                    {summaryValue}
+                  </span>
                 </div>
               </div>
             );
           })}
-          {!pageItems.length && (
-            <div style={{ textAlign: "center", padding: 24, opacity: 0.6 }}>Нет операций для выбранных фильтров</div>
+          {!items.length && (
+            <div style={{ textAlign: "center", padding: 48, opacity: 0.6 }}>
+              <Filter size={48} style={{ opacity: 0.2, marginBottom: 16 }} />
+              <div>Нет операций для выбранных фильтров</div>
+            </div>
           )}
         </CardBody>
       </Card>
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-        <span style={{ fontSize: 12, opacity: 0.7 }}>Страница {page} из {totalPages}</span>
+        <span style={{ fontSize: 13, color: "var(--fg-muted)" }}>Страница {page} из {totalPages}</span>
         <div style={{ display: "flex", gap: 8 }}>
           <Button
             variant="secondary"
             size="sm"
             onClick={() => setPage((current) => Math.max(1, current - 1))}
             disabled={page === 1}
-            leftIcon={<ChevronLeft size={14} />}
+            leftIcon={<ChevronLeft size={16} />}
           >
             Назад
           </Button>
@@ -729,7 +650,7 @@ export default function OperationsPage() {
             size="sm"
             onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
             disabled={page === totalPages}
-            rightIcon={<ChevronRight size={14} />}
+            rightIcon={<ChevronRight size={16} />}
           >
             Вперёд
           </Button>
@@ -737,75 +658,111 @@ export default function OperationsPage() {
       </div>
 
       {preview && (
-        <div style={modalOverlayStyle}>
-          <div style={modalStyle}>
-            <div style={modalHeaderStyle}>
+        <div className="modal-overlay" onClick={() => setPreview(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
               <div>
                 <div style={{ fontSize: 18, fontWeight: 700 }}>
                   {formatDate(preview.datetime)} {formatTime(preview.datetime)}
                 </div>
-                <div style={{ fontSize: 12, opacity: 0.7 }}>
+                <div style={{ fontSize: 13, opacity: 0.7, marginTop: 4 }}>
                   {preview.details}
                 </div>
-                <div style={{ fontSize: 12, opacity: 0.65 }}>
-                  Чек/ID: {preview.receipt || preview.orderId || preview.id}
+                <div style={{ fontSize: 12, opacity: 0.5, marginTop: 2 }}>
+                  ID: {preview.receipt || preview.orderId || preview.id}
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setPreview(null)}
-                style={closeButtonStyle}
-                aria-label="Закрыть"
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "var(--fg-muted)",
+                  cursor: "pointer",
+                  padding: 4,
+                  borderRadius: "50%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  transition: "background 0.2s",
+                }}
+                className="btn-ghost"
               >
-                <X size={16} />
+                <X size={20} />
               </button>
             </div>
-            <div style={{ padding: 24, display: "grid", gap: 16, overflowY: "auto", maxHeight: "70vh" }}>
-              <InfoRow label="Торговая точка" value={preview.outlet.name || '—'} />
-              <InfoRow
-                label="Клиент"
-                value={
-                  <a href={`/customers/${preview.client.id}`} style={{ color: "#818cf8" }}>
-                    {preview.client.name}
-                  </a>
-                }
-              />
-              <InfoRow label={previewActorLabel || "Устройство"} value={previewActorValue || "—"} />
-              <div style={{ border: "1px solid rgba(148,163,184,0.16)", borderRadius: 14, padding: 16, display: "grid", gap: 10 }}>
-                <div style={{ fontWeight: 600 }}>Бонусные баллы</div>
-                <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+            <div className="modal-body">
+              <div style={{ display: "grid", gap: 0 }}>
+                <InfoRow label="Торговая точка" value={preview.outlet.name || '—'} />
+                <InfoRow
+                  label="Клиент"
+                  value={
+                    <a href={`/customers/${preview.client.id}`} style={{ color: "var(--brand-primary-light)", fontWeight: 500 }}>
+                      {preview.client.name}
+                    </a>
+                  }
+                />
+                <InfoRow label={previewActor.label} value={previewActor.value} />
+              </div>
+              
+              <div style={{ 
+                background: "rgba(255, 255, 255, 0.03)", 
+                borderRadius: 12, 
+                padding: 16, 
+                border: "1px solid var(--border-subtle)" 
+              }}>
+                <div style={{ fontWeight: 600, marginBottom: 12, fontSize: 14 }}>Движение баллов</div>
+                <div style={{ display: "flex", gap: 24 }}>
                   <div>
                     <div style={{ fontSize: 12, opacity: 0.6 }}>Начислено</div>
-                    <div style={{ color: "#4ade80", fontWeight: 600 }}>+{formatPoints(preview.earned)}</div>
+                    <div style={{ color: "var(--success)", fontWeight: 600, fontSize: 16 }}>+{formatPoints(preview.earned)}</div>
                   </div>
                   <div>
                     <div style={{ fontSize: 12, opacity: 0.6 }}>Списано</div>
-                    <div style={{ color: "#f87171", fontWeight: 600 }}>–{formatPoints(preview.spent)}</div>
+                    <div style={{ color: "var(--danger)", fontWeight: 600, fontSize: 16 }}>–{formatPoints(preview.spent)}</div>
                   </div>
                 </div>
               </div>
-              <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))" }}>
+
+              <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))" }}>
                 <SummaryCard label="К оплате" value={formatRub(preview.toPay)} />
-                <SummaryCard label="Оплачено баллами" value={`${formatPoints(preview.paidByPoints)} баллов`} />
+                <SummaryCard label="Баллами" value={`${formatPoints(preview.paidByPoints)}`} />
                 <SummaryCard label="Итого" value={formatRub(preview.total)} />
               </div>
+
               {preview.canceledAt && (
-                <div style={{ marginTop: 8, fontSize: 13, fontWeight: 600, color: "#f87171" }}>
+                <div style={{ 
+                  padding: 12, 
+                  borderRadius: 8, 
+                  background: "rgba(239, 68, 68, 0.1)", 
+                  color: "var(--danger)", 
+                  fontSize: 13, 
+                  fontWeight: 500,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8
+                }}>
+                  <Ban size={16} />
                   Операция отменена администратором
                 </div>
               )}
             </div>
-            <div style={modalFooterStyle}>
+            <div className="modal-footer">
+              <Button variant="ghost" onClick={() => setPreview(null)}>
+                Закрыть
+              </Button>
               <Button
-                variant="secondary"
+                variant="danger"
                 disabled={Boolean(preview.canceledAt) || preview.kind === "REFUND"}
                 onClick={() => cancelOperation(preview)}
+                leftIcon={<Ban size={16} />}
               >
                 {preview.canceledAt
-                  ? "Уже отменена"
+                  ? "Отменена"
                   : preview.kind === "REFUND"
-                    ? "Возврат нельзя отменить"
-                    : "Отменить транзакцию"}
+                    ? "Возврат"
+                    : "Отменить"}
               </Button>
             </div>
           </div>
@@ -821,8 +778,8 @@ type FilterBlockProps = {
 };
 
 const FilterBlock: React.FC<FilterBlockProps> = ({ label, children }) => (
-  <div style={{ display: "grid", gap: 6 }}>
-    <span style={{ fontSize: 11, opacity: 0.6 }}>{label}</span>
+  <div className="filter-block">
+    <span className="filter-label">{label}</span>
     {children}
   </div>
 );
@@ -830,148 +787,24 @@ const FilterBlock: React.FC<FilterBlockProps> = ({ label, children }) => (
 type InfoRowProps = { label: string; value: React.ReactNode };
 
 const InfoRow: React.FC<InfoRowProps> = ({ label, value }) => (
-  <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: 12 }}>
-    <span style={{ opacity: 0.65 }}>{label}</span>
-    <span>{value}</span>
+  <div className="info-row">
+    <span className="info-label">{label}</span>
+    <span className="info-value">{value}</span>
   </div>
 );
 
 type SummaryCardProps = { label: string; value: React.ReactNode };
 
 const SummaryCard: React.FC<SummaryCardProps> = ({ label, value }) => (
-  <div style={{ border: "1px solid rgba(148,163,184,0.14)", borderRadius: 14, padding: 14, display: "grid", gap: 6 }}>
-    <span style={{ fontSize: 12, opacity: 0.6 }}>{label}</span>
-    <span style={{ fontWeight: 600 }}>{value}</span>
+  <div style={{ 
+    border: "1px solid var(--border-subtle)", 
+    borderRadius: 12, 
+    padding: 12, 
+    display: "flex", 
+    flexDirection: "column", 
+    gap: 4 
+  }}>
+    <span style={{ fontSize: 11, opacity: 0.6 }}>{label}</span>
+    <span style={{ fontWeight: 600, fontSize: 15 }}>{value}</span>
   </div>
 );
-
-const inputFieldStyle: React.CSSProperties = {
-  padding: "10px 12px",
-  borderRadius: 12,
-  border: "1px solid rgba(255,255,255,0.12)",
-  background: "rgba(15,23,42,0.6)",
-  color: "inherit",
-};
-
-const dateInputStyle: React.CSSProperties = {
-  ...inputFieldStyle,
-  width: 140,
-};
-
-const selectStyle: React.CSSProperties = {
-  ...inputFieldStyle,
-  minWidth: 180,
-};
-
- 
-
-const rowStyle: React.CSSProperties = {
-  borderRadius: 0,
-  borderBottom: "1px solid rgba(148,163,184,0.18)",
-  padding: "14px 0",
-  textAlign: "left",
-  cursor: "pointer",
-  transition: "background 0.15s ease",
-};
-
-const rowGridStyle: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns:
-    "minmax(120px, 1fr) minmax(220px, 1.6fr) minmax(120px, 1fr) minmax(200px, 1.2fr) minmax(120px, 1fr) minmax(120px, 1fr) minmax(160px, 1.2fr)",
-  columnGap: 24,
-  rowGap: 4,
-  alignItems: "center",
-};
-
-const dateCellStyle: React.CSSProperties = {
-  display: "grid",
-  gap: 4,
-  alignContent: "center",
-};
-
-const infoCellStyle: React.CSSProperties = {
-  display: "grid",
-  gap: 4,
-  alignContent: "center",
-  justifyItems: "start",
-  fontSize: 13,
-};
-
-const ratingCellStyle: React.CSSProperties = {
-  display: "flex",
-  justifyContent: "center",
-  alignItems: "center",
-};
-
-const statusCellStyle: React.CSSProperties = {
-  fontSize: 13,
-  fontWeight: 600,
-  minHeight: 24,
-  display: "flex",
-  alignItems: "center",
-};
-
-const pointsCellStyle: React.CSSProperties = {
-  display: "grid",
-  gap: 4,
-  justifyItems: "end",
-  fontSize: 13,
-};
-
-const summaryCellStyle: React.CSSProperties = {
-  display: "grid",
-  gap: 4,
-  justifyItems: "end",
-  fontSize: 13,
-};
-
-const cellLabelStyle: React.CSSProperties = {
-  fontSize: 12,
-  opacity: 0.65,
-};
-
-const modalOverlayStyle: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(15,23,42,0.76)",
-  backdropFilter: "blur(8px)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: 20,
-  zIndex: 80,
-};
-
-const modalStyle: React.CSSProperties = {
-  width: "min(520px, 94vw)",
-  background: "rgba(12,16,26,0.97)",
-  borderRadius: 18,
-  border: "1px solid rgba(148,163,184,0.18)",
-  boxShadow: "0 26px 80px rgba(2,6,23,0.55)",
-  display: "grid",
-  gridTemplateRows: "auto 1fr auto",
-};
-
-const modalHeaderStyle: React.CSSProperties = {
-  padding: "18px 24px",
-  borderBottom: "1px solid rgba(148,163,184,0.14)",
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-};
-
-const modalFooterStyle: React.CSSProperties = {
-  padding: "18px 24px",
-  borderTop: "1px solid rgba(148,163,184,0.14)",
-  display: "flex",
-  justifyContent: "flex-end",
-};
-
-const closeButtonStyle: React.CSSProperties = {
-  background: "transparent",
-  border: "1px solid rgba(248,113,113,0.5)",
-  color: "#fca5a5",
-  borderRadius: 999,
-  padding: "6px 10px",
-  cursor: "pointer",
-};

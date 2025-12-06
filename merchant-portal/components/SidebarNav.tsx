@@ -108,7 +108,7 @@ const sectionIcons: Record<string, React.ReactNode> = {
 };
 
 function LinkItem({ href, label, isActive }: SectionItem & { isActive: boolean }) {
-  const icon = iconMap[href] || iconMap[href.split("?")[0]];
+  const icon = iconMap[href] || iconMap[href.split("?")[0] ?? ""];
   
   return (
     <a

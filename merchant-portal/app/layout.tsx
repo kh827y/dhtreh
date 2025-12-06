@@ -5,6 +5,8 @@ import { Inter } from "next/font/google";
 import SidebarNav, { SidebarSection } from "../components/SidebarNav";
 import { cookies } from "next/headers";
 import TimezoneProvider, { PortalTimezone } from "../components/TimezoneProvider";
+import { ThemeProvider } from "../components/ThemeProvider";
+import { AppHeader } from "../components/AppHeader";
 
 export const metadata = {
   title: "Merchant Portal — Программа лояльности",
@@ -238,7 +240,7 @@ async function fetchPortalProfile(): Promise<PortalProfile | null> {
                     name: String(group?.name ?? "").trim() || null,
                     scope: String(group?.scope ?? "").toUpperCase(),
                   }))
-                  .filter((group) => group.id && group.name)
+                  .filter((group: { id: string; name: string | null; scope: string }) => group.id && group.name)
               : [],
           }
         : null;
@@ -344,7 +346,7 @@ function hasPermission(
 }
 
 function normalizeHref(href: string) {
-  const base = href.split("?")[0];
+  const base = href.split("?")[0] ?? "";
   return base.endsWith("/") && base !== "/" ? base.slice(0, -1) : base;
 }
 
@@ -472,116 +474,82 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const filteredSections = filterSectionsByProfile(profile);
   const staffLabel = profile?.staff?.name || profile?.staff?.email || null;
   const expired = subscription?.expired ?? false;
-  const showPlan = subscription && !subscription.expired;
   
   return (
-    <html lang="ru" className={`dark ${inter.variable}`}>
-      <body className={inter.className} style={{ margin: 0 }}>
-        <TimezoneProvider timezone={timezonePayload.timezone} options={timezonePayload.options}>
-          {/* Background decorations */}
-          <div className="bg-decoration" />
-          
-          <div className="app-layout">
-            {/* Header */}
-            <header className="app-header">
-              <div className="header-content">
-                <div className="header-brand">
-                  <div className="brand-logo">
-                    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                      <path d="M2 17l10 5 10-5" />
-                      <path d="M2 12l10 5 10-5" />
-                    </svg>
-                  </div>
-                  <div className="brand-text">
-                    <span className="brand-name">Loyalty</span>
-                    <span className="brand-label">Business</span>
-                  </div>
+    <html lang="ru" className={inter.variable} suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              try {
+                var stored = localStorage.getItem('merchant-portal-theme');
+                var theme = stored || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+                document.documentElement.classList.add(theme);
+                document.documentElement.setAttribute('data-theme', theme);
+              } catch (e) {}
+            `,
+          }}
+        />
+      </head>
+      <body className={`${inter.className} antialiased`} style={{ margin: 0 }}>
+        <ThemeProvider defaultTheme="dark">
+          <TimezoneProvider timezone={timezonePayload.timezone} options={timezonePayload.options}>
+            {/* Background decorations */}
+            <div className="bg-decoration" />
+            
+            <div className="app-layout">
+              {/* Header */}
+              <AppHeader 
+                staffLabel={staffLabel}
+                role={profile?.role || null}
+                subscription={subscription}
+              />
+
+              {/* Sidebar */}
+              <aside 
+                className="app-sidebar"
+                style={{ 
+                  opacity: expired ? 0.4 : 1, 
+                  pointerEvents: expired ? 'none' : 'auto' 
+                }}
+              >
+                <div className="sidebar-content">
+                  <SidebarNav sections={filteredSections} />
                 </div>
+              </aside>
+
+              {/* Main Content */}
+              <main className="app-main">
+                <SubscriptionNotice subscription={subscription} />
                 
-                <div className="header-actions">
-                  {staffLabel && (
-                    <div className="user-info">
-                      <div className="user-avatar">
-                        {staffLabel.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="user-details">
-                        <span className="user-name">{staffLabel}</span>
-                        {profile?.role && <span className="user-role">{profile.role}</span>}
+                <div className="main-content">
+                  {subscription?.expired && (
+                    <div className="expired-overlay">
+                      <div className="expired-content">
+                        <div className="expired-icon">
+                          <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" strokeWidth="1.5">
+                            <circle cx="12" cy="12" r="10" />
+                            <path d="M12 6v6l4 2" />
+                          </svg>
+                        </div>
+                        <h2>Подписка закончилась</h2>
+                        <p>Продлите подписку, чтобы продолжить пользоваться всеми функциями портала.</p>
+                        <button className="btn btn-primary">Продлить подписку</button>
                       </div>
                     </div>
                   )}
-                </div>
-              </div>
-            </header>
-
-            {/* Sidebar */}
-            <aside 
-              className="app-sidebar"
-              style={{ 
-                opacity: expired ? 0.4 : 1, 
-                pointerEvents: expired ? 'none' : 'auto' 
-              }}
-            >
-              <div className="sidebar-content">
-                <SidebarNav sections={filteredSections} />
-              </div>
-              
-              {/* Sidebar Footer */}
-              <div className="sidebar-footer">
-                {showPlan && subscription && (
-                  <div className="plan-badge">
-                    <div className="plan-info">
-                      <span className="plan-name">{subscription.planName || "Тариф"}</span>
-                      <span className="plan-status" style={{ color: subscription.expiresSoon ? 'var(--warning)' : 'var(--success)' }}>
-                        {subscription.daysLeft != null ? `${subscription.daysLeft} дн.` : subscription.status}
-                      </span>
-                    </div>
-                    <div className="plan-progress">
-                      <div 
-                        className="plan-progress-fill" 
-                        style={{ 
-                          width: subscription.daysLeft ? `${Math.min((subscription.daysLeft / 30) * 100, 100)}%` : '100%',
-                          background: subscription.expiresSoon ? 'var(--warning)' : 'var(--success)'
-                        }} 
-                      />
-                    </div>
+                  
+                  <div style={{
+                    opacity: subscription?.expired ? 0.35 : 1,
+                    pointerEvents: subscription?.expired ? 'none' : 'auto',
+                  }}>
+                    {children}
                   </div>
-                )}
-              </div>
-            </aside>
-
-            {/* Main Content */}
-            <main className="app-main">
-              <SubscriptionNotice subscription={subscription} />
-              
-              <div className="main-content">
-                {subscription?.expired && (
-                  <div className="expired-overlay">
-                    <div className="expired-content">
-                      <div className="expired-icon">
-                        <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" strokeWidth="1.5">
-                          <circle cx="12" cy="12" r="10" />
-                          <path d="M12 6v6l4 2" />
-                        </svg>
-                      </div>
-                      <h2>Подписка закончилась</h2>
-                      <p>Продлите подписку, чтобы продолжить пользоваться всеми функциями портала.</p>
-                      <button className="btn btn-primary">Продлить подписку</button>
-                    </div>
-                  </div>
-                )}
-                
-                <div style={{
-                  opacity: subscription?.expired ? 0.35 : 1,
-                  pointerEvents: subscription?.expired ? 'none' : 'auto',
-                }}>
-                  {children}
                 </div>
-              </div>
-            </main>
-          </div>
-        </TimezoneProvider>
+              </main>
+            </div>
+          </TimezoneProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

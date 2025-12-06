@@ -2,6 +2,8 @@
 
 import React from "react";
 import { Card, CardHeader, CardBody, Chart, Skeleton } from "@loyalty/ui";
+import { useTheme } from "../../../components/ThemeProvider";
+import { Users, BarChart3 } from "lucide-react";
 
 type GenderItem = { sex: string; customers: number; transactions: number; revenue: number; averageCheck: number };
 type AgeItem = { age: number; customers: number; transactions: number; revenue: number; averageCheck: number };
@@ -52,6 +54,12 @@ const describeSexAgeLabel = (label: string) => {
 };
 
 export default function AnalyticsPortraitPage() {
+  const { theme } = useTheme();
+  const textColor = theme === "light" ? "#334155" : "rgba(226,232,240,0.85)";
+  const axisColor = theme === "light" ? "#64748b" : "rgba(226,232,240,0.9)";
+  const tooltipBg = theme === "light" ? "#ffffff" : "rgba(15,23,42,0.95)";
+  const tooltipText = theme === "light" ? "#0f172a" : "#f1f5f9";
+  const borderColor = theme === "light" ? "#e2e8f0" : "#0f172a";
   const [audiences, setAudiences] = React.useState<AudienceOption[]>([defaultAudienceOption]);
   const [audience, setAudience] = React.useState<AudienceOption>(defaultAudienceOption);
   const [audiencesLoading, setAudiencesLoading] = React.useState(true);
@@ -222,20 +230,21 @@ export default function AnalyticsPortraitPage() {
         orient: "horizontal",
         bottom: 0,
         data: seriesData.map((item) => item.name),
+        textStyle: { color: textColor },
       },
       series: [
         {
           name: "Пол",
           type: "pie",
           radius: ["38%", "70%"],
-          itemStyle: { borderRadius: 12, borderColor: "#0f172a", borderWidth: 2 },
+          itemStyle: { borderRadius: 12, borderColor: borderColor, borderWidth: 2 },
           labelLine: { show: false },
-          label: { formatter: "{b}", color: "#e2e8f0" },
+          label: { formatter: "{b}", color: textColor },
           data: seriesData,
         },
       ],
     } as const;
-  }, [normalizedGenderData]);
+  }, [normalizedGenderData, textColor, borderColor]);
 
   const genderBarsOption = React.useMemo(() => {
     if (!normalizedGenderData.length) return null;
@@ -285,13 +294,16 @@ export default function AnalyticsPortraitPage() {
       color: metrics.map((metric) => metric.color),
       legend: {
         top: 4,
-        textStyle: { color: "rgba(226,232,240,0.85)" },
+        textStyle: { color: textColor },
         data: metrics.map((metric) => metric.name),
       },
       grid: { left: 16, right: 32, top: 48, bottom: 32 },
       tooltip: {
         trigger: "axis",
         axisPointer: { type: "shadow" },
+        backgroundColor: tooltipBg,
+        borderColor: theme === "light" ? "#e2e8f0" : "rgba(148,163,184,0.2)",
+        textStyle: { color: tooltipText },
         formatter: (params: any) => {
           if (!Array.isArray(params) || !params.length) return "";
           const axisLabel = params[0]?.axisValueLabel || params[0]?.axisValue || "";
@@ -310,7 +322,7 @@ export default function AnalyticsPortraitPage() {
         type: "category",
         data: labels,
         axisTick: { alignWithLabel: true },
-        axisLabel: { color: "rgba(226,232,240,0.9)" },
+        axisLabel: { color: axisColor },
       },
       yAxis: metrics.map((metric, index) => ({
         type: "value",
@@ -335,7 +347,7 @@ export default function AnalyticsPortraitPage() {
         itemStyle: { borderRadius: [8, 8, 0, 0], color: metric.color },
       })),
     } as const;
-  }, [normalizedGenderData]);
+  }, [normalizedGenderData, textColor, axisColor, tooltipBg, tooltipText, theme]);
 
   const ageOption = React.useMemo(() => {
     const items = (data?.age || []).map((item) => {
@@ -366,12 +378,15 @@ export default function AnalyticsPortraitPage() {
       color: ["#38bdf8", "#f97316", "#6366f1", "#22c55e"],
       legend: {
         top: 4,
-        textStyle: { color: "rgba(226,232,240,0.85)" },
+        textStyle: { color: textColor },
       },
       grid: { left: 32, right: 32, top: 48, bottom: 80 },
       tooltip: {
         trigger: "axis",
         axisPointer: { type: "line" },
+        backgroundColor: tooltipBg,
+        borderColor: theme === "light" ? "#e2e8f0" : "rgba(148,163,184,0.2)",
+        textStyle: { color: tooltipText },
         formatter: (params: any) => {
           if (!Array.isArray(params) || !params.length) return "";
           const axisValue = params[0]?.axisValue;
@@ -395,7 +410,7 @@ export default function AnalyticsPortraitPage() {
         type: "value",
         min: 0,
         max: 100,
-        axisLabel: { color: "rgba(226,232,240,0.9)" },
+        axisLabel: { color: axisColor },
         splitLine: { show: false },
       },
       yAxis: [0, 1, 2, 3].map((_, index) => ({
@@ -469,7 +484,7 @@ export default function AnalyticsPortraitPage() {
         },
       ],
     } as const;
-  }, [data]);
+  }, [data, textColor, axisColor, tooltipBg, tooltipText, theme]);
 
   const sexAgeChart = React.useMemo(() => {
     const categories: string[] = [];
@@ -535,12 +550,15 @@ export default function AnalyticsPortraitPage() {
         color: ["#38bdf8", "#f97316", "#6366f1", "#22c55e"],
         legend: {
           top: 4,
-          textStyle: { color: "rgba(226,232,240,0.85)" },
+          textStyle: { color: textColor },
         },
         grid: { left: 32, right: 32, top: 48, bottom: 80 },
         tooltip: {
           trigger: "axis",
           axisPointer: { type: "line" },
+          backgroundColor: tooltipBg,
+          borderColor: theme === "light" ? "#e2e8f0" : "rgba(148,163,184,0.2)",
+          textStyle: { color: tooltipText },
           formatter: (params: any) => {
             if (!Array.isArray(params) || !params.length) return "";
             const axisValue = params[0]?.axisValue;
@@ -561,7 +579,7 @@ export default function AnalyticsPortraitPage() {
           data: categories,
           axisTick: { alignWithLabel: true },
           axisLabel: {
-            color: "rgba(226,232,240,0.9)",
+            color: axisColor,
             interval: 0,
             rotate: 45,
             hideOverlap: true,
@@ -635,36 +653,62 @@ export default function AnalyticsPortraitPage() {
         ],
       } as const,
     };
-  }, [data]);
+  }, [data, textColor, axisColor, tooltipBg, tooltipText, theme]);
 
   return (
-    <div style={{ display: "grid", gap: 20 }}>
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
-        <div>
-          <div style={{ fontSize: 26, fontWeight: 700 }}>Портрет клиента</div>
-          <div style={{ fontSize: 13, opacity: 0.7 }}>Статистика по аудиториям и базовым признакам</div>
+    <div className="animate-in" style={{ display: "grid", gap: 24 }}>
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+          <div style={{
+            width: 48,
+            height: 48,
+            borderRadius: "var(--radius-lg)",
+            background: "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.1))",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "var(--brand-primary-light)",
+          }}>
+            <Users size={24} />
+          </div>
+          <div>
+            <h1 style={{ 
+              fontSize: 28, 
+              fontWeight: 800, 
+              margin: 0,
+              letterSpacing: "-0.02em",
+            }}>
+              Портрет клиента
+            </h1>
+            <p style={{ 
+              fontSize: 14, 
+              color: "var(--fg-muted)", 
+              margin: "6px 0 0",
+            }}>
+              Статистика по аудиториям и базовым признакам
+            </p>
+          </div>
         </div>
-        <div style={{ display: "grid", gap: 6 }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 13 }}>
-            <span style={{ opacity: 0.75 }}>Аудитории</span>
-            <select
-              value={audience.value}
-              disabled={audiencesLoading}
-              onChange={(event) => {
-                const next = audiences.find((item) => item.value === event.target.value) || defaultAudienceOption;
-                setAudience(next);
-              }}
-              style={{ padding: "10px 14px", borderRadius: 12, background: "rgba(15,23,42,0.6)", border: "1px solid rgba(148,163,184,0.35)", color: "#e2e8f0" }}
-            >
-              {audiences.map((item) => (
-                <option key={item.value || "__default"} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </label>
+        <div className="filter-block">
+          <span className="filter-label">Аудитория</span>
+          <select
+            value={audience.value}
+            disabled={audiencesLoading}
+            onChange={(event) => {
+              const next = audiences.find((item) => item.value === event.target.value) || defaultAudienceOption;
+              setAudience(next);
+            }}
+            className="input"
+            style={{ minWidth: 200 }}
+          >
+            {audiences.map((item) => (
+              <option key={item.value || "__default"} value={item.value}>
+                {item.label}
+              </option>
+            ))}
+          </select>
           {audiencesError && (
-            <span style={{ color: "#f87171", fontSize: 12 }}>{audiencesError}</span>
+            <span style={{ color: "var(--danger)", fontSize: 12 }}>{audiencesError}</span>
           )}
         </div>
       </header>
@@ -672,11 +716,12 @@ export default function AnalyticsPortraitPage() {
       {msg && !loading && (
         <div
           style={{
-            padding: "10px 14px",
-            borderRadius: 12,
-            background: "rgba(248,113,113,0.12)",
-            color: "#fca5a5",
-            fontSize: 13,
+            padding: 16,
+            borderRadius: "var(--radius-md)",
+            border: "1px solid rgba(239, 68, 68, 0.3)",
+            background: "rgba(239, 68, 68, 0.1)",
+            color: "var(--danger-light)",
+            fontSize: 14,
           }}
         >
           {msg}

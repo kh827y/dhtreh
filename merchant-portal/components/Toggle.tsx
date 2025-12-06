@@ -4,7 +4,7 @@ import React from "react";
 type ToggleProps = {
   checked: boolean;
   onChange: (value: boolean) => void;
-  label: string;
+  label?: string;
   disabled?: boolean;
   title?: string;
 };
@@ -39,7 +39,7 @@ export const Toggle: React.FC<ToggleProps> = ({ checked, onChange, label, disabl
         width: 42,
         height: 24,
         borderRadius: 16,
-        background: checked ? "var(--brand-primary)" : "rgba(255,255,255,.2)",
+        background: checked ? "var(--brand-primary)" : "var(--bg-toggle-off)",
         position: "relative",
         transition: "background .2s ease",
         display: "inline-flex",
@@ -59,7 +59,7 @@ export const Toggle: React.FC<ToggleProps> = ({ checked, onChange, label, disabl
         }}
       />
     </span>
-    <span>{label}</span>
+    {label && <span>{label}</span>}
   </label>
 );
 

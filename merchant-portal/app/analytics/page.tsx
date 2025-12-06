@@ -2,6 +2,7 @@
 
 import React from "react";
 import { Button, Card, CardBody, CardHeader, Chart, Skeleton, StatCard } from "@loyalty/ui";
+import { useTheme } from "../../components/ThemeProvider";
 import { buildChartOption, buildMetricCards, hasTimelineData, DashboardResponse } from "./summary-utils";
 import {
   BarChart3,
@@ -12,8 +13,6 @@ import {
   DollarSign,
   Calendar,
   RefreshCw,
-  Download,
-  ChevronDown,
 } from "lucide-react";
 
 const quickRanges = [
@@ -34,6 +33,7 @@ const metricIcons: Record<string, React.ReactNode> = {
 };
 
 export default function AnalyticsDashboardPage() {
+  const { theme } = useTheme();
   const [range, setRange] = React.useState<QuickRange>(quickRanges[2]);
   const [customRangeDraft, setCustomRangeDraft] = React.useState<{ from: string; to: string }>({ from: "", to: "" });
   const [appliedCustom, setAppliedCustom] = React.useState<{ from: string; to: string } | null>(null);
@@ -74,7 +74,7 @@ export default function AnalyticsDashboardPage() {
   const timeline = data?.timeline ?? [];
   const timelineHasData = hasTimelineData(timeline);
 
-  const chartOption = React.useMemo(() => buildChartOption(timeline), [timeline]);
+  const chartOption = React.useMemo(() => buildChartOption(timeline, theme), [timeline, theme]);
 
   const canApplyCustom =
     Boolean(customRangeDraft.from) &&
@@ -166,20 +166,7 @@ export default function AnalyticsDashboardPage() {
                       setRange(item);
                       setAppliedCustom(null);
                     }}
-                    style={{
-                      padding: "8px 16px",
-                      borderRadius: "var(--radius-full)",
-                      border: "1px solid",
-                      borderColor: active ? "rgba(99, 102, 241, 0.5)" : "var(--border-default)",
-                      background: active 
-                        ? "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.1))"
-                        : "transparent",
-                      color: active ? "var(--brand-primary-light)" : "var(--fg-secondary)",
-                      cursor: "pointer",
-                      fontWeight: active ? 600 : 500,
-                      fontSize: 13,
-                      transition: "all 0.2s ease",
-                    }}
+                    className={`quick-filter-btn ${active ? "active" : ""}`}
                   >
                     {item.label}
                   </button>
@@ -189,15 +176,7 @@ export default function AnalyticsDashboardPage() {
 
             {/* Custom Date Range */}
             <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-              <div style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "8px 14px",
-                borderRadius: "var(--radius-md)",
-                border: "1px solid var(--border-default)",
-                background: "rgba(15, 23, 42, 0.5)",
-              }}>
+              <div className="date-range-wrapper">
                 <Calendar size={16} style={{ color: "var(--fg-muted)" }} />
                 <input
                   type="date"
@@ -313,16 +292,7 @@ export default function AnalyticsDashboardPage() {
                 alignItems: "center",
                 gap: 12,
               }}>
-                <div style={{
-                  width: 64,
-                  height: 64,
-                  borderRadius: "var(--radius-lg)",
-                  background: "rgba(255, 255, 255, 0.05)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: "var(--fg-dim)",
-                }}>
+                <div className="state-empty-icon">
                   <BarChart3 size={28} />
                 </div>
                 <div>

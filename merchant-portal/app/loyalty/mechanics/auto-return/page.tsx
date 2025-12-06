@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Card, CardBody, Skeleton, Chart } from "@loyalty/ui";
 import Toggle from "../../../../components/Toggle";
@@ -44,7 +44,7 @@ type AutoReturnStats = {
 
 type Banner = { type: "success" | "error"; text: string };
 
-export default function AutoReturnPage() {
+function AutoReturnPageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const initialTab = searchParams.get("tab") === "stats" ? "stats" : "main";
@@ -92,6 +92,14 @@ export default function AutoReturnPage() {
 
       {tab === "main" ? <SettingsTab /> : <StatisticsTab />}
     </div>
+  );
+}
+
+export default function AutoReturnPage() {
+  return (
+    <Suspense fallback={<Skeleton height={400} />}>
+      <AutoReturnPageInner />
+    </Suspense>
   );
 }
 
@@ -361,11 +369,10 @@ function SettingsTab() {
 }
 
 function StatisticsTab() {
-  const [outlets, setOutlets] = React.useState<OutletOption[]>([
-    { value: "all", label: "Все торговые точки" },
-  ]);
-  const [selectedOutlet, setSelectedOutlet] = React.useState<OutletOption>(outlets[0]);
-  const [range, setRange] = React.useState<QuickRange>(quickRanges[2]);
+  const defaultOutlet: OutletOption = { value: "all", label: "Все торговые точки" };
+  const [outlets, setOutlets] = React.useState<OutletOption[]>([defaultOutlet]);
+  const [selectedOutlet, setSelectedOutlet] = React.useState<OutletOption>(defaultOutlet);
+  const [range, setRange] = React.useState<QuickRange>(quickRanges[2] ?? { label: "Год", days: 365 });
   const [customRangeDraft, setCustomRangeDraft] = React.useState<{ from: string; to: string }>({ from: "", to: "" });
   const [appliedCustom, setAppliedCustom] = React.useState<{ from: string; to: string } | null>(null);
   const [stats, setStats] = React.useState<AutoReturnStats | null>(null);
@@ -540,7 +547,7 @@ function StatisticsTab() {
 
   const rfmOption = React.useMemo(() => {
     if (!rfmData.length || !rfmSegments.length) return null;
-    const categories = Array.from(new Set(rfmData.map(item => item.bucket))).sort((a, b) => a.localeCompare(b));
+    const categories = Array.from(new Set(rfmData.map(item => item.bucket))).filter((b): b is string => typeof b === "string").sort((a, b) => a.localeCompare(b));
     const values = new Map<string, number>();
     for (const row of rfmData) {
       values.set(`${row.bucket}|${row.segment}`, (values.get(`${row.bucket}|${row.segment}`) ?? 0) + row.returned);
@@ -613,7 +620,7 @@ function StatisticsTab() {
               value={selectedOutlet.value}
               onChange={event => {
                 const value = event.target.value;
-                const option = outlets.find(item => item.value === value) ?? outlets[0];
+                const option = outlets.find(item => item.value === value) ?? defaultOutlet;
                 setSelectedOutlet(option);
               }}
               style={{

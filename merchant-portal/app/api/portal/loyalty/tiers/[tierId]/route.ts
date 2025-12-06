@@ -1,13 +1,13 @@
 import { NextRequest } from 'next/server';
 import { portalFetch } from '../../../_lib';
 
-export async function GET(req: NextRequest, ctx: { params: Promise<{ tierId: string }> | { tierId: string } }) {
-  const { tierId } = await Promise.resolve(ctx.params as any);
+export async function GET(req: NextRequest, { params }: { params: Promise<{ tierId: string }> }) {
+  const { tierId } = await params;
   return portalFetch(req, `/portal/loyalty/tiers/${encodeURIComponent(tierId)}`, { method: 'GET' });
 }
 
-export async function PUT(req: NextRequest, ctx: { params: Promise<{ tierId: string }> | { tierId: string } }) {
-  const { tierId } = await Promise.resolve(ctx.params as any);
+export async function PUT(req: NextRequest, { params }: { params: Promise<{ tierId: string }> }) {
+  const { tierId } = await params;
   const body = await req.text();
   return portalFetch(req, `/portal/loyalty/tiers/${encodeURIComponent(tierId)}`, {
     method: 'PUT',
@@ -16,7 +16,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ tierId: str
   });
 }
 
-export async function DELETE(req: NextRequest, ctx: { params: Promise<{ tierId: string }> | { tierId: string } }) {
-  const { tierId } = await Promise.resolve(ctx.params as any);
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ tierId: string }> }) {
+  const { tierId } = await params;
   return portalFetch(req, `/portal/loyalty/tiers/${encodeURIComponent(tierId)}`, { method: 'DELETE' });
 }

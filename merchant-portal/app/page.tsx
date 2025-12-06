@@ -436,18 +436,7 @@ function SetupStepCard({ step, index }: { step: SetupStep; index: number }) {
             </div>
 
             {/* Arrow */}
-            <div style={{
-              width: 36,
-              height: 36,
-              borderRadius: 'var(--radius-sm)',
-              background: 'rgba(255, 255, 255, 0.05)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--fg-muted)',
-              flexShrink: 0,
-              transition: 'all 0.2s ease',
-            }}>
+            <div className="nav-arrow">
               <ChevronRight size={20} />
             </div>
           </div>

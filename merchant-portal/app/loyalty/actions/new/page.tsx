@@ -1,12 +1,12 @@
 "use client";
 
-import React from "react";
+import React, { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Card, CardHeader, CardBody, Button } from "@loyalty/ui";
+import { Card, CardHeader, CardBody, Button, Skeleton } from "@loyalty/ui";
 
 type Option = { id: string; name: string };
 
-export default function CampaignCreatePage() {
+function CampaignCreatePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialType = (searchParams.get("type") || "POINTS").toUpperCase();
@@ -52,7 +52,7 @@ export default function CampaignCreatePage() {
 
   const toggleInArray = (
     list: string[],
-    setList: (next: string[]) => void,
+    setList: React.Dispatch<React.SetStateAction<string[]>>,
     value: string,
   ) => {
     setList((prev) =>
@@ -327,5 +327,13 @@ export default function CampaignCreatePage() {
         </Button>
       </div>
     </div>
+  );
+}
+
+export default function CampaignCreatePage() {
+  return (
+    <Suspense fallback={<Skeleton height={400} />}>
+      <CampaignCreatePageInner />
+    </Suspense>
   );
 }

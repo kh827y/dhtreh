@@ -85,7 +85,7 @@ export function groupRfmReturnsTimeline(points: RfmReturnPoint[], group: ChartGr
 
   return Array.from(map.entries())
     .map(([key, returned]) => {
-      const [bucket, ...segmentParts] = key.split("|");
+      const [bucket = "", ...segmentParts] = key.split("|");
       return { bucket, segment: segmentParts.join("|"), returned };
     })
     .sort((a, b) => a.bucket.localeCompare(b.bucket) || a.segment.localeCompare(b.segment));

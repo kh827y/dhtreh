@@ -1,9 +1,24 @@
 "use client";
 
 import React from "react";
-import { Card, CardHeader, CardBody, Button, Skeleton } from "@loyalty/ui";
+import { createPortal } from "react-dom";
+import { Card, CardBody, Button, Skeleton, MotionFadeIn } from "@loyalty/ui";
 import Toggle from "../../components/Toggle";
-import StarRating from "../../components/StarRating";
+import { 
+  Settings, 
+  Star, 
+  User, 
+  Store, 
+  Smartphone, 
+  MessageSquare, 
+  TrendingUp, 
+  MessageCircle,
+  X,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown
+} from "lucide-react";
 
 type SelectOption = { value: string; label: string };
 
@@ -27,13 +42,20 @@ type ReviewsApiResponse = {
 
 type ReviewRow = {
   id: string;
-  customer: { id: string; name: string };
+  customer: { id: string; name: string; initials: string };
   rating: number;
   comment: string | null;
-   device: string | null;
+  device: string | null;
   staff: string;
   outlet: string;
   createdAt: string;
+};
+
+type DeviceInfo = {
+  id: string;
+  code: string;
+  outletId: string;
+  outletName: string;
 };
 
 const ratingFilters = [
@@ -52,25 +74,81 @@ const shareThresholds = [
   { value: "1", label: "⭐ 1 звезда и выше" },
 ];
 
+const PAGE_SIZE = 10;
+
+function getInitials(name: string) {
+  return name
+    .split(" ")
+    .map((n) => n[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+}
+
+// Custom Select Component
+function CustomSelect({ 
+  value, 
+  onChange, 
+  options, 
+  icon: Icon,
+  placeholder 
+}: { 
+  value: string; 
+  onChange: (val: string) => void; 
+  options: SelectOption[];
+  icon?: React.ComponentType<{ size?: number; color?: string }>;
+  placeholder?: string;
+}) {
+  return (
+    <div style={selectWrapperStyle}>
+      {Icon && <Icon size={16} color="var(--fg-muted)" />}
+      <select 
+        value={value} 
+        onChange={(e) => onChange(e.target.value)} 
+        style={selectStyle}
+      >
+        {options.map((opt) => (
+          <option key={opt.value} value={opt.value}>{opt.label}</option>
+        ))}
+      </select>
+      <ChevronDown size={14} color="var(--fg-muted)" style={{ pointerEvents: 'none', flexShrink: 0 }} />
+    </div>
+  );
+}
+
 export default function ReviewsPage() {
   const [loading, setLoading] = React.useState(false);
   const [withCommentOnly, setWithCommentOnly] = React.useState(false);
   const [selectedOutlet, setSelectedOutlet] = React.useState("all");
   const [selectedStaff, setSelectedStaff] = React.useState("all");
+  const [selectedDevice, setSelectedDevice] = React.useState("all");
+  const [page, setPage] = React.useState(1);
+  
   const [reviews, setReviews] = React.useState<ReviewRow[]>([]);
   const [totalCount, setTotalCount] = React.useState(0);
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+
   const [outletOptions, setOutletOptions] = React.useState<SelectOption[]>([
     { value: "all", label: "Все торговые точки" },
   ]);
   const [staffOptions, setStaffOptions] = React.useState<SelectOption[]>([
     { value: "all", label: "Все сотрудники" },
   ]);
+  const [deviceOptions, setDeviceOptions] = React.useState<SelectOption[]>([
+    { value: "all", label: "Все устройства" },
+  ]);
+
+  // Stats for ALL filtered reviews (separate fetch)
+  const [statsAvg, setStatsAvg] = React.useState<number>(0);
+  const [statsWithComments, setStatsWithComments] = React.useState<number>(0);
+
   const fetchIdRef = React.useRef(0);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [settingsSnapshot, setSettingsSnapshot] = React.useState<any | null>(null);
   const [settingsError, setSettingsError] = React.useState<string | null>(null);
   const [settingsSaving, setSettingsSaving] = React.useState(false);
 
+  // Settings state
   const [notifyEnabled, setNotifyEnabled] = React.useState(true);
   const [notifyThreshold, setNotifyThreshold] = React.useState("3");
   const [emailEnabled, setEmailEnabled] = React.useState(false);
@@ -94,18 +172,97 @@ export default function ReviewsPage() {
     });
   }, []);
 
+  // Fetch devices from outlets API on mount
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/portal/outlets", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        const allDevices: DeviceInfo[] = [];
+        const outlets: SelectOption[] = [{ value: "all", label: "Все торговые точки" }];
+        
+        if (Array.isArray(data?.items)) {
+          data.items.forEach((outlet: any) => {
+            if (outlet?.id) {
+              outlets.push({ value: outlet.id, label: outlet.name || "Без названия" });
+            }
+            if (Array.isArray(outlet?.devices)) {
+              outlet.devices.forEach((d: DeviceInfo) => {
+                if (d?.id && d?.code) {
+                  allDevices.push(d);
+                }
+              });
+            }
+          });
+        }
+        
+        setOutletOptions(outlets);
+        // Use device code as value since API filters by deviceId which is the code
+        setDeviceOptions([
+          { value: "all", label: "Все устройства" },
+          ...allDevices.map(d => ({ value: d.code, label: `${d.code} (${d.outletName})` }))
+        ]);
+      } catch (err) {
+        console.error("Failed to fetch outlets/devices", err);
+      }
+    })();
+  }, []);
+
+  // Fetch stats for ALL filtered reviews (without pagination)
+  React.useEffect(() => {
+    let cancelled = false;
+    const params = new URLSearchParams();
+    params.set("limit", "10000"); // Large number to get all for stats
+    if (withCommentOnly) params.set("withCommentOnly", "1");
+    if (selectedOutlet !== "all") params.set("outletId", selectedOutlet);
+    if (selectedStaff !== "all") params.set("staffId", selectedStaff);
+    if (selectedDevice !== "all") params.set("deviceId", selectedDevice);
+    
+    (async () => {
+      try {
+        const res = await fetch(`/api/portal/reviews?${params.toString()}`, { cache: "no-store" });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as ReviewsApiResponse;
+        if (cancelled) return;
+        
+        const items = Array.isArray(data?.items) ? data.items : [];
+        if (items.length > 0) {
+          const sum = items.reduce((acc, r) => acc + (r.rating || 0), 0);
+          setStatsAvg(Number((sum / items.length).toFixed(1)));
+          setStatsWithComments(items.filter(r => r.comment && r.comment.trim().length > 0).length);
+        } else {
+          setStatsAvg(0);
+          setStatsWithComments(0);
+        }
+      } catch {
+        if (!cancelled) {
+          setStatsAvg(0);
+          setStatsWithComments(0);
+        }
+      }
+    })();
+    
+    return () => { cancelled = true; };
+  }, [withCommentOnly, selectedOutlet, selectedStaff, selectedDevice]);
+
+  // Fetch paginated reviews
   React.useEffect(() => {
     const fetchId = ++fetchIdRef.current;
     setLoading(true);
     let cancelled = false;
     const params = new URLSearchParams();
+    params.set("limit", String(PAGE_SIZE));
+    params.set("offset", String((page - 1) * PAGE_SIZE));
     if (withCommentOnly) params.set("withCommentOnly", "1");
     if (selectedOutlet !== "all") params.set("outletId", selectedOutlet);
     if (selectedStaff !== "all") params.set("staffId", selectedStaff);
+    if (selectedDevice !== "all") params.set("deviceId", selectedDevice);
+    
     const search = params.toString();
     (async () => {
       try {
-        const res = await fetch(`/api/portal/reviews${search ? `?${search}` : ""}`, { cache: "no-store" });
+        const res = await fetch(`/api/portal/reviews?${search}`, { cache: "no-store" });
         if (!res.ok) {
           const text = await res.text().catch(() => "");
           throw new Error(text || `Ошибка ${res.status}`);
@@ -126,7 +283,6 @@ export default function ReviewsPage() {
                 const rawDeviceId = typeof item.deviceId === "string" ? item.deviceId.trim() : "";
                 const staffNameRaw = (item.staff?.name || "").trim();
                 const staffName = staffNameRaw || "—";
-                const device = staffNameRaw ? "—" : rawDeviceId || "—";
                 const outletName = (item.outlet?.name || "").trim() || "—";
                 const comment = typeof item.comment === "string" ? item.comment.trim() : "";
                 return {
@@ -134,8 +290,8 @@ export default function ReviewsPage() {
                   rating: item.rating,
                   comment: comment.length > 0 ? comment : null,
                   createdAt: item.createdAt,
-                  customer: { id: customerId, name: customerName },
-                  device,
+                  customer: { id: customerId, name: customerName, initials: getInitials(customerName) },
+                  device: rawDeviceId || null,
                   staff: staffName,
                   outlet: outletName,
                 };
@@ -145,36 +301,18 @@ export default function ReviewsPage() {
         setReviews(normalizedReviews);
         setTotalCount(typeof data?.total === "number" ? data.total : normalizedReviews.length);
 
-        const nextOutletOptions: SelectOption[] = [
-          { value: "all", label: "Все торговые точки" },
-          ...(Array.isArray(data?.outlets)
-            ? data.outlets
-                .filter((item): item is { id: string; name?: string | null } => !!item && typeof item === "object")
-                .map((item) => ({
-                  value: item.id,
-                  label: (item.name || "").trim() || "Без названия",
-                }))
-            : []),
-        ];
-        setOutletOptions(nextOutletOptions);
-        if (selectedOutlet !== "all" && !nextOutletOptions.some((opt) => opt.value === selectedOutlet)) {
-          setSelectedOutlet("all");
-        }
-
-        const nextStaffOptions: SelectOption[] = [
-          { value: "all", label: "Все сотрудники" },
-          ...(Array.isArray(data?.staff)
-            ? data.staff
-                .filter((item): item is { id: string; name?: string | null } => !!item && typeof item === "object")
-                .map((item) => ({
-                  value: item.id,
-                  label: (item.name || "").trim() || item.id,
-                }))
-            : []),
-        ];
-        setStaffOptions(nextStaffOptions);
-        if (selectedStaff !== "all" && !nextStaffOptions.some((opt) => opt.value === selectedStaff)) {
-          setSelectedStaff("all");
+        // Update staff options if returned
+        if (Array.isArray(data?.staff)) {
+          const nextStaffOptions: SelectOption[] = [
+            { value: "all", label: "Все сотрудники" },
+            ...data.staff
+              .filter((item): item is { id: string; name?: string | null } => !!item && typeof item === "object")
+              .map((item) => ({
+                value: item.id,
+                label: (item.name || "").trim() || item.id,
+              })),
+          ];
+          setStaffOptions(nextStaffOptions);
         }
       } catch (error) {
         console.error(error);
@@ -187,12 +325,17 @@ export default function ReviewsPage() {
       }
     })();
 
-    return () => {
-      cancelled = true;
-    };
-  }, [withCommentOnly, selectedOutlet, selectedStaff]);
+    return () => { cancelled = true; };
+  }, [withCommentOnly, selectedOutlet, selectedStaff, selectedDevice, page]);
 
+  // Reset page when filters change
   React.useEffect(() => {
+    setPage(1);
+  }, [withCommentOnly, selectedOutlet, selectedStaff, selectedDevice]);
+
+  // Fetch settings when modal opens
+  React.useEffect(() => {
+    if (!settingsOpen) return;
     let cancelled = false;
     (async () => {
       try {
@@ -212,10 +355,22 @@ export default function ReviewsPage() {
         setSettingsError(error instanceof Error ? error.message : String(error));
       }
     })();
+    return () => { cancelled = true; };
+  }, [settingsOpen, applyShareSettings]);
+
+  // Blur background while modal is open (even if backdrop-filter is unsupported)
+  React.useEffect(() => {
+    if (typeof document === "undefined") return;
+    const body = document.body;
+    if (settingsOpen) {
+      body.classList.add("modal-blur-active");
+    } else {
+      body.classList.remove("modal-blur-active");
+    }
     return () => {
-      cancelled = true;
+      body.classList.remove("modal-blur-active");
     };
-  }, [applyShareSettings]);
+  }, [settingsOpen]);
 
   const handleSaveSettings = React.useCallback(async () => {
     if (!settingsSnapshot) {
@@ -241,36 +396,7 @@ export default function ReviewsPage() {
       },
     };
 
-    const payload: Record<string, unknown> = {
-      earnBps: base.earnBps,
-      redeemLimitBps: base.redeemLimitBps,
-      qrTtlSec: base.qrTtlSec,
-      webhookUrl: base.webhookUrl ?? undefined,
-      webhookSecret: base.webhookSecret ?? undefined,
-      webhookKeyId: base.webhookKeyId ?? undefined,
-      webhookSecretNext: base.webhookSecretNext ?? undefined,
-      webhookKeyIdNext: base.webhookKeyIdNext ?? undefined,
-      useWebhookNext: base.useWebhookNext ?? undefined,
-      redeemCooldownSec: base.redeemCooldownSec ?? undefined,
-      earnCooldownSec: base.earnCooldownSec ?? undefined,
-      redeemDailyCap: base.redeemDailyCap ?? undefined,
-      earnDailyCap: base.earnDailyCap ?? undefined,
-      requireJwtForQuote: base.requireJwtForQuote ?? undefined,
-      rulesJson: rulesBase,
-      requireBridgeSig: base.requireBridgeSig ?? undefined,
-      bridgeSecret: base.bridgeSecret ?? undefined,
-      bridgeSecretNext: base.bridgeSecretNext ?? undefined,
-      requireStaffKey: base.requireStaffKey ?? undefined,
-      pointsTtlDays: base.pointsTtlDays ?? undefined,
-      earnDelayDays: base.earnDelayDays ?? undefined,
-      telegramBotToken: base.telegramBotToken ?? undefined,
-      telegramBotUsername: base.telegramBotUsername ?? undefined,
-      telegramStartParamRequired: base.telegramStartParamRequired ?? undefined,
-      miniappBaseUrl: base.miniappBaseUrl ?? undefined,
-      miniappThemePrimary: base.miniappThemePrimary ?? undefined,
-      miniappThemeBg: base.miniappThemeBg ?? undefined,
-      miniappLogoUrl: base.miniappLogoUrl ?? undefined,
-    };
+    const payload: Record<string, unknown> = { ...base, rulesJson: rulesBase };
 
     setSettingsSaving(true);
     try {
@@ -287,7 +413,6 @@ export default function ReviewsPage() {
       setSettingsSnapshot(updated);
       applyShareSettings(updated);
       setSettingsOpen(false);
-      alert("Настройки сохранены");
     } catch (error) {
       console.error(error);
       alert(`Не удалось сохранить настройки: ${error instanceof Error ? error.message : String(error)}`);
@@ -297,198 +422,433 @@ export default function ReviewsPage() {
   }, [applyShareSettings, settingsSnapshot, shareEnabled, shareThreshold, sharePlatforms]);
 
   return (
-    <div style={{ display: 'grid', gap: 20 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
-        <div style={{ display: 'grid', gap: 6 }}>
-          <div style={{ fontSize: 24, fontWeight: 700 }}>Отзывы</div>
-          <div style={{ fontSize: 13, opacity: 0.7 }}>
-            Собирает статистику о качестве обслуживания. Позволяет улучшать сервис и оперативно реагировать на низкие оценки.
+    <div className="animate-in" style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
+      {/* Header Section */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 20, flexWrap: 'wrap' }}>
+          <div style={{ maxWidth: 640 }}>
+            <h1 style={{ fontSize: 32, fontWeight: 800, letterSpacing: '-0.02em', margin: '0 0 12px', color: 'var(--fg)' }}>
+              Отзывы
+            </h1>
+            <p style={{ fontSize: 15, lineHeight: 1.6, color: 'var(--fg-secondary)', margin: 0 }}>
+              Сбор статистики качества обслуживания. Клиенту предоставляется возможность оставить оценку визита после совершения покупки. Позволяет улучшать сервис и оперативно реагировать на низкие оценки.
+            </p>
           </div>
-          <div style={{ fontSize: 12, opacity: 0.6, maxWidth: 520 }}>
-            <b>В телеграм приложении:</b> после каждой покупки показывает окно запросом оценки о качестве обслуживания.
-          </div>
+          <Button 
+            variant="outline" 
+            onClick={() => setSettingsOpen(true)}
+            leftIcon={<Settings size={16} />}
+            style={{ flexShrink: 0 }}
+          >
+            Настройки
+          </Button>
         </div>
-        <Button variant="primary" onClick={() => setSettingsOpen(true)}>Настройки</Button>
+
+        {/* Stats Cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
+          <Card style={{ padding: 20, display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{ width: 48, height: 48, borderRadius: 12, background: 'rgba(250, 204, 21, 0.1)', color: '#ca8a04', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Star size={24} strokeWidth={2.5} />
+            </div>
+            <div>
+              <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1, color: 'var(--fg)' }}>{statsAvg > 0 ? statsAvg : '—'}</div>
+              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--fg-muted)', marginTop: 4 }}>Средняя оценка</div>
+            </div>
+          </Card>
+          
+          <Card style={{ padding: 20, display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{ width: 48, height: 48, borderRadius: 12, background: 'rgba(99, 102, 241, 0.1)', color: 'var(--brand-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <TrendingUp size={24} strokeWidth={2.5} />
+            </div>
+            <div>
+              <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1, color: 'var(--fg)' }}>{totalCount}</div>
+              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--fg-muted)', marginTop: 4 }}>Всего отзывов</div>
+            </div>
+          </Card>
+
+          <Card style={{ padding: 20, display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{ width: 48, height: 48, borderRadius: 12, background: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <MessageCircle size={24} strokeWidth={2.5} />
+            </div>
+            <div>
+              <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1, color: 'var(--fg)' }}>{statsWithComments || '—'}</div>
+              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--fg-muted)', marginTop: 4 }}>С комментариями</div>
+            </div>
+          </Card>
+        </div>
       </div>
 
+      {/* Toolbar */}
       <Card>
-        <CardHeader title="Фильтры" subtitle="Уточните выборку отзывов" />
-        <CardBody>
-          <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-            <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <input type="checkbox" checked={withCommentOnly} onChange={(e) => setWithCommentOnly(e.target.checked)} />
-              Показывать только с комментариями
-            </label>
-            <select value={selectedOutlet} onChange={(e) => setSelectedOutlet(e.target.value)} style={{ padding: 8, borderRadius: 8 }}>
-              {outletOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-            <select value={selectedStaff} onChange={(e) => setSelectedStaff(e.target.value)} style={{ padding: 8, borderRadius: 8 }}>
-              {staffOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
+        <CardBody style={{ padding: 16 }}>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+            <CustomSelect
+              value={selectedOutlet}
+              onChange={setSelectedOutlet}
+              options={outletOptions}
+              icon={Store}
+            />
+            <CustomSelect
+              value={selectedStaff}
+              onChange={setSelectedStaff}
+              options={staffOptions}
+              icon={User}
+            />
+            <CustomSelect
+              value={selectedDevice}
+              onChange={setSelectedDevice}
+              options={deviceOptions}
+              icon={Smartphone}
+            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginLeft: 'auto' }}>
+              <Toggle checked={withCommentOnly} onChange={setWithCommentOnly} label="Только с текстом" />
+            </div>
           </div>
         </CardBody>
       </Card>
 
+      {/* Content Table */}
       <Card>
-        <CardHeader title="Отзывы" subtitle={`${totalCount} записей`} />
-        <CardBody>
-          {loading ? (
-            <Skeleton height={220} />
-          ) : reviews.length ? (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
-                <thead>
-                  <tr>
-                    <th style={thStyle}>Клиент</th>
-                    <th style={thStyle}>Оценка</th>
-                    <th style={thStyle}>Комментарий</th>
-                    <th style={thStyle}>Устройство / сотрудник</th>
-                    <th style={thStyle}>Торговая точка</th>
-                    <th style={thStyle}>Дата и время визита</th>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-surface)' }}>
+                <th style={{ ...thStyle, width: '15%' }}>Клиент</th>
+                <th style={{ ...thStyle, width: '8%' }}>Оценка</th>
+                <th style={{ ...thStyle, width: '35%' }}>Комментарий</th>
+                <th style={{ ...thStyle, width: '14%' }}>Источник</th>
+                <th style={{ ...thStyle, width: '14%' }}>Точка</th>
+                <th style={{ ...thStyle, width: '14%' }}>Дата</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                 Array.from({ length: 5 }).map((_, i) => (
+                   <tr key={i}>
+                     <td colSpan={6} style={{ padding: 16 }}>
+                       <Skeleton height={40} />
+                     </td>
+                   </tr>
+                 ))
+              ) : reviews.length > 0 ? (
+                reviews.map((review) => (
+                  <tr key={review.id} className="list-row">
+                    <td style={tdStyle}>
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                        <div style={{ 
+                          width: 32, height: 32, borderRadius: 999, flexShrink: 0,
+                          background: 'var(--bg-surface)',
+                          color: 'var(--fg-secondary)', fontWeight: 600, fontSize: 12,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          border: '1px solid var(--border-default)'
+                        }}>
+                          {review.customer.initials}
+                        </div>
+                        <div style={{ fontWeight: 500, color: 'var(--fg)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                           {review.customer.id ? (
+                              <a href={`/customers/${review.customer.id}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+                                {review.customer.name}
+                              </a>
+                            ) : review.customer.name}
+                        </div>
+                      </div>
+                    </td>
+                    <td style={tdStyle}>
+                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                         <Star size={16} fill={review.rating >= 4 ? '#22c55e' : review.rating >= 3 ? '#facc15' : '#ef4444'} strokeWidth={0} />
+                         <span style={{ fontWeight: 600, color: review.rating >= 4 ? '#15803d' : review.rating >= 3 ? '#a16207' : '#b91c1c' }}>{review.rating}</span>
+                       </div>
+                    </td>
+                    <td style={{ ...tdStyle, ...commentCellStyle }}>
+                      {review.comment ? (
+                        <div style={{ fontSize: 14, lineHeight: 1.5, color: 'var(--fg)', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
+                          {review.comment}
+                        </div>
+                      ) : (
+                        <span style={{ opacity: 0.4, fontSize: 13 }}>—</span>
+                      )}
+                    </td>
+                    <td style={tdStyle}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--fg)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {review.device ? (
+                            <Smartphone size={14} color="var(--fg-muted)" />
+                          ) : (
+                            <User size={14} color="var(--fg-muted)" />
+                          )}
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {review.device || review.staff}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>
+                          {review.device ? 'Устройство' : 'Сотрудник'}
+                        </div>
+                      </div>
+                    </td>
+                    <td style={tdStyle}>
+                      <span style={{ color: 'var(--fg-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>{review.outlet}</span>
+                    </td>
+                    <td style={tdStyle}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <span style={{ color: 'var(--fg)' }}>{new Date(review.createdAt).toLocaleDateString('ru-RU')}</span>
+                        <span style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{new Date(review.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {reviews.map((row) => (
-                    <tr key={row.id} style={{ borderBottom: '1px solid rgba(148,163,184,0.14)' }}>
-                      <td style={tdStyle}>
-                        {row.customer.id ? (
-                          <a href={`/customers/${row.customer.id}`} style={{ color: '#818cf8', textDecoration: 'none' }}>{row.customer.name}</a>
-                        ) : (
-                          <span>{row.customer.name}</span>
-                        )}
-                      </td>
-                      <td style={tdStyle}>
-                        <StarRating rating={row.rating} size={18} />
-                      </td>
-                      <td style={tdStyle}>{row.comment ? row.comment : <span style={{ opacity: 0.6 }}>Без комментария</span>}</td>
-                      <td style={tdStyle}>
-                        {(() => {
-                          const hasDevice = Boolean(row.device && row.device !== '—');
-                          const actorLabel = hasDevice ? 'Устройство' : 'Сотрудник';
-                          const actorValue = hasDevice ? row.device : row.staff;
-                          return (
-                            <div style={{ display: 'grid', gap: 2 }}>
-                              <span>{actorLabel}: {actorValue || '—'}</span>
-                            </div>
-                          );
-                        })()}
-                      </td>
-                      <td style={tdStyle}>{row.outlet}</td>
-                      <td style={tdStyle}>{new Date(row.createdAt).toLocaleString('ru-RU')}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={6} style={{ padding: 40, textAlign: 'center', color: 'var(--fg-muted)' }}>
+                    Отзывов не найдено
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>
+              Страница {page} из {totalPages}
             </div>
-          ) : (
-            <div style={{ padding: 16, opacity: 0.7 }}>Отзывов не найдено</div>
-          )}
-        </CardBody>
-      </Card>
-
-      {settingsOpen && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.74)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, zIndex: 90 }}>
-          <div style={{ width: 'min(720px, 96vw)', background: 'rgba(12,16,26,0.96)', borderRadius: 20, border: '1px solid rgba(148,163,184,0.16)', boxShadow: '0 28px 80px rgba(2,6,23,0.5)', display: 'grid', gridTemplateRows: 'auto 1fr auto', maxHeight: '92vh', overflow: 'auto' }}>
-            <div style={{ padding: '18px 24px', borderBottom: '1px solid rgba(148,163,184,0.18)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ fontSize: 18, fontWeight: 700 }}>Настройки уведомлений</div>
-                <div style={{ fontSize: 13, opacity: 0.7 }}>Настройте пороги и каналы уведомлений об оценках</div>
-              </div>
-              <button className="btn btn-ghost" onClick={() => setSettingsOpen(false)}>✕</button>
-            </div>
-
-            <div style={{ padding: 24, display: 'grid', gap: 18 }}>
-              <div style={{ display: 'grid', gap: 8 }}>
-                <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <Toggle checked={notifyEnabled} onChange={setNotifyEnabled} label="Уведомлять при оценках" />
-                  <select value={notifyThreshold} onChange={(e) => setNotifyThreshold(e.target.value)} style={{ padding: 10, borderRadius: 10 }}>
-                    {ratingFilters.map((opt) => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gap: 8 }}>
-                <Toggle checked={emailEnabled} onChange={setEmailEnabled} label="Отправлять оценки на электронную почту" />
-                {emailEnabled && (
-                  <div style={{ display: 'grid', gap: 6 }}>
-                    <input value={emailTargets} onChange={(e) => setEmailTargets(e.target.value)} placeholder="Введите email адрес(а)" style={{ padding: 10, borderRadius: 10 }} />
-                    <div style={{ fontSize: 12, opacity: 0.7 }}>Можно указать несколько почт через запятую</div>
-                  </div>
-                )}
-              </div>
-
-              <div style={{ display: 'grid', gap: 8 }}>
-                <Toggle checked={telegramEnabled} onChange={setTelegramEnabled} label="Оповещать об оценках в телеграм" />
-                {telegramEnabled && (
-                  <div style={{ fontSize: 12, opacity: 0.75 }}>
-                    Подключить телеграм аккаунты для уведомлений можно <a href="/settings/telegram" style={{ color: '#818cf8', textDecoration: 'underline' }}>настройках</a>.
-                  </div>
-                )}
-              </div>
-
-              <div style={{ display: 'grid', gap: 12 }}>
-                <Toggle checked={shareEnabled} onChange={setShareEnabled} label="Улучшать отзывы о заведении на Яндекс.Картах, 2ГИС, Google" />
-                <div style={{ fontSize: 12, opacity: 0.7 }}>
-                  Если клиент поставит хорошую оценку, ему будет предложено перейти в другие сервисы и поделиться там своим отзывом.
-                </div>
-                {settingsError && (
-                  <div style={{ background: 'rgba(248,113,113,0.12)', color: '#f87171', padding: '10px 12px', borderRadius: 12, fontSize: 13 }}>
-                    Не удалось загрузить актуальные настройки: {settingsError}
-                  </div>
-                )}
-                {shareEnabled && (
-                  <div style={{ display: 'grid', gap: 14 }}>
-                    <div style={{ display: 'grid', gap: 8 }}>
-                      <label style={{ fontSize: 13, opacity: 0.8 }}>Оценка при которой предлагать делиться отзывом в других сервисах</label>
-                      <select value={shareThreshold} onChange={(e) => setShareThreshold(e.target.value)} style={{ padding: 10, borderRadius: 10 }}>
-                        {shareThresholds.map((opt) => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div style={{ fontSize: 12, opacity: 0.75 }}>
-                      Сервисы в которых можно будет поделиться отзывом. Для каждой торговой точки необходимо задать ссылку на карточку объекта из сервиса отзывов, это можно сделать в настройке торговой точки в <a href="/outlets" style={{ color: '#818cf8', textDecoration: 'underline' }}>разделе «Торговые точки»</a>.
-                    </div>
-                    <div style={{ display: 'grid', gap: 8 }}>
-                      <Toggle checked={sharePlatforms.yandex} onChange={(value) => setSharePlatforms((prev) => ({ ...prev, yandex: value }))} label="Яндекс" />
-                      <Toggle checked={sharePlatforms.twogis} onChange={(value) => setSharePlatforms((prev) => ({ ...prev, twogis: value }))} label="2ГИС" />
-                      <Toggle checked={sharePlatforms.google} onChange={(value) => setSharePlatforms((prev) => ({ ...prev, google: value }))} label="Google" />
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div style={{ padding: '16px 24px', borderTop: '1px solid rgba(148,163,184,0.18)', display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-              <button className="btn" onClick={() => setSettingsOpen(false)} disabled={settingsSaving}>Отмена</button>
-              <Button variant="primary" onClick={handleSaveSettings} disabled={settingsSaving}>
-                {settingsSaving ? 'Сохранение…' : 'Сохранить'}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Button 
+                variant="secondary" 
+                size="sm" 
+                disabled={page === 1 || loading}
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                leftIcon={<ChevronLeft size={16} />}
+              >
+                Назад
+              </Button>
+              <Button 
+                variant="secondary" 
+                size="sm" 
+                disabled={page >= totalPages || loading}
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                rightIcon={<ChevronRight size={16} />}
+              >
+                Вперед
               </Button>
             </div>
           </div>
-        </div>
+        )}
+      </Card>
+
+      {/* Settings Modal - rendered via Portal to body */}
+      {settingsOpen && typeof document !== 'undefined' && createPortal(
+        <div className="modal-overlay" onClick={() => setSettingsOpen(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--fg)' }}>Настройки отзывов</div>
+                <div style={{ fontSize: 13, color: 'var(--fg-muted)', marginTop: 4 }}>Управление уведомлениями и интеграциями</div>
+              </div>
+              <button 
+                onClick={() => setSettingsOpen(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--fg-muted)', padding: 4 }}
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ gap: 32 }}>
+              {/* Notifications Section */}
+              <section>
+                <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--fg-muted)', marginBottom: 16 }}>
+                  Уведомления
+                </div>
+                <div style={{ display: 'grid', gap: 20 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontWeight: 500 }}>Уведомлять при оценках</div>
+                      <div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>Получать пуш или email при новых отзывах</div>
+                    </div>
+                    <Toggle checked={notifyEnabled} onChange={setNotifyEnabled} />
+                  </div>
+
+                  {notifyEnabled && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, background: 'var(--bg-surface)', borderRadius: 8 }}>
+                      <span style={{ fontSize: 13 }}>Порог оценки:</span>
+                      <select 
+                        value={notifyThreshold} 
+                        onChange={(e) => setNotifyThreshold(e.target.value)}
+                        style={{ ...modalSelectStyle }}
+                      >
+                        {ratingFilters.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                      </select>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontWeight: 500 }}>Telegram уведомления</div>
+                      <div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>
+                         Отправлять в подключенный бот
+                         {!telegramEnabled && <span style={{ color: 'var(--warning)', marginLeft: 6 }}>(отключено)</span>}
+                      </div>
+                    </div>
+                    <Toggle checked={telegramEnabled} onChange={setTelegramEnabled} />
+                  </div>
+
+                  <div style={{ display: 'grid', gap: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontWeight: 500 }}>Email уведомления</div>
+                        <div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>Отправлять на почту</div>
+                      </div>
+                      <Toggle checked={emailEnabled} onChange={setEmailEnabled} />
+                    </div>
+                    {emailEnabled && (
+                       <input 
+                        value={emailTargets} 
+                        onChange={(e) => setEmailTargets(e.target.value)} 
+                        placeholder="email@example.com" 
+                        className="input"
+                        style={{ width: '100%' }}
+                      />
+                    )}
+                  </div>
+                </div>
+              </section>
+
+              {/* External Share Section */}
+              <section>
+                <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--fg-muted)', marginBottom: 16 }}>
+                  Сбор отзывов на картах
+                </div>
+                <div style={{ display: 'grid', gap: 20 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                     <div>
+                        <div style={{ fontWeight: 500 }}>Предлагать оставить отзыв</div>
+                        <div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>На Яндекс, Google или 2ГИС</div>
+                      </div>
+                      <Toggle checked={shareEnabled} onChange={setShareEnabled} />
+                  </div>
+
+                  {shareEnabled && (
+                    <div style={{ display: 'grid', gap: 16, padding: 16, background: 'var(--bg-surface)', borderRadius: 12, border: '1px solid var(--border-default)' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                         <label style={{ fontSize: 13, fontWeight: 500 }}>Минимальная оценка для предложения</label>
+                         <select 
+                            value={shareThreshold} 
+                            onChange={(e) => setShareThreshold(e.target.value)} 
+                            style={{ ...modalSelectStyle }}
+                          >
+                            {shareThresholds.map((opt) => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+                      </div>
+
+                      <div style={{ display: 'grid', gap: 12 }}>
+                        <label style={{ fontSize: 13, fontWeight: 500 }}>Платформы</label>
+                        <div style={{ display: 'flex', gap: 24 }}>
+                          <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer' }}>
+                            <div style={{ width: 18, height: 18, borderRadius: 4, border: '1px solid var(--border-default)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: sharePlatforms.yandex ? 'var(--brand-primary)' : 'transparent', borderColor: sharePlatforms.yandex ? 'var(--brand-primary)' : 'var(--border-default)' }}>
+                              {sharePlatforms.yandex && <Check size={12} color="white" />}
+                            </div>
+                            <input type="checkbox" checked={sharePlatforms.yandex} onChange={(e) => setSharePlatforms(p => ({...p, yandex: e.target.checked}))} style={{ display: 'none' }} />
+                            <span>Яндекс</span>
+                          </label>
+                          <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer' }}>
+                            <div style={{ width: 18, height: 18, borderRadius: 4, border: '1px solid var(--border-default)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: sharePlatforms.twogis ? 'var(--brand-primary)' : 'transparent', borderColor: sharePlatforms.twogis ? 'var(--brand-primary)' : 'var(--border-default)' }}>
+                              {sharePlatforms.twogis && <Check size={12} color="white" />}
+                            </div>
+                            <input type="checkbox" checked={sharePlatforms.twogis} onChange={(e) => setSharePlatforms(p => ({...p, twogis: e.target.checked}))} style={{ display: 'none' }} />
+                            <span>2ГИС</span>
+                          </label>
+                          <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer' }}>
+                            <div style={{ width: 18, height: 18, borderRadius: 4, border: '1px solid var(--border-default)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: sharePlatforms.google ? 'var(--brand-primary)' : 'transparent', borderColor: sharePlatforms.google ? 'var(--brand-primary)' : 'var(--border-default)' }}>
+                              {sharePlatforms.google && <Check size={12} color="white" />}
+                            </div>
+                            <input type="checkbox" checked={sharePlatforms.google} onChange={(e) => setSharePlatforms(p => ({...p, google: e.target.checked}))} style={{ display: 'none' }} />
+                            <span>Google</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+            </div>
+
+            <div className="modal-footer">
+              <Button variant="secondary" onClick={() => setSettingsOpen(false)}>Отмена</Button>
+              <Button variant="primary" onClick={handleSaveSettings} disabled={settingsSaving}>
+                {settingsSaving ? 'Сохранение...' : 'Сохранить'}
+              </Button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Styles
+// ─────────────────────────────────────────────────────────────────────────────
+
+const selectWrapperStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 10,
+  padding: '10px 14px',
+  borderRadius: 10,
+  border: '1px solid var(--border-default)',
+  background: 'var(--bg-surface)',
+  minWidth: 200,
+  flex: 1,
+  maxWidth: 280,
+  cursor: 'pointer',
+  transition: 'border-color 0.2s, box-shadow 0.2s',
+};
+
+const selectStyle: React.CSSProperties = {
+  flex: 1,
+  background: 'transparent',
+  border: 'none',
+  outline: 'none',
+  fontSize: 14,
+  color: 'var(--fg)',
+  cursor: 'pointer',
+  appearance: 'none',
+  WebkitAppearance: 'none',
+  MozAppearance: 'none',
+};
+
+const modalSelectStyle: React.CSSProperties = {
+  flex: 1,
+  padding: '8px 12px',
+  borderRadius: 8,
+  border: '1px solid var(--border-default)',
+  background: 'var(--bg-body)',
+  color: 'var(--fg)',
+  fontSize: 14,
+  cursor: 'pointer',
+  outline: 'none',
+};
+
 const thStyle: React.CSSProperties = {
   textAlign: 'left',
-  padding: '10px 12px',
-  fontSize: 11,
-  opacity: 0.6,
+  padding: '12px 16px',
+  fontSize: 12,
+  fontWeight: 600,
+  color: 'var(--fg-muted)',
   textTransform: 'uppercase',
-  letterSpacing: 0.4,
-  borderBottom: '1px solid rgba(148,163,184,0.18)',
+  letterSpacing: '0.05em',
 };
 
 const tdStyle: React.CSSProperties = {
-  padding: '12px 12px',
+  padding: '12px 16px',
   fontSize: 13,
+  verticalAlign: 'top',
+};
+
+const commentCellStyle: React.CSSProperties = {
+  maxWidth: 0, // Trick to force text wrapping in fixed-layout table
 };

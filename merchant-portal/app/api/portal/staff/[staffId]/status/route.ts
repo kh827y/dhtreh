@@ -1,8 +1,8 @@
 import { NextRequest } from 'next/server';
 import { portalFetch } from '../../../_lib';
 
-export async function POST(req: NextRequest, ctx: { params: { staffId: string } }) {
-  const { staffId } = await Promise.resolve(ctx.params);
+export async function POST(req: NextRequest, { params }: { params: Promise<{ staffId: string }> }) {
+  const { staffId } = await params;
   const body = await req.json().catch(() => ({} as any));
   const payload: Record<string, any> = {};
   if (body?.status !== undefined && body.status !== null) {

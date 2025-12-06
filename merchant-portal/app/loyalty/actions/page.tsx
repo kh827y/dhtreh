@@ -171,15 +171,15 @@ export default function ActionsPage() {
   const renderReward = (promo: Promotion) => {
     const rewardType = String(
       (promo as any)?.type ??
-        promo.reward?.type ??
+        (promo.reward as any)?.type ??
         (promo.rewardMetadata as any)?.kind ??
         "",
     ).toUpperCase();
     const meta =
       (promo.rewardMetadata && typeof promo.rewardMetadata === "object"
         ? (promo.rewardMetadata as any)
-        : promo.reward?.metadata && typeof promo.reward.metadata === "object"
-          ? (promo.reward.metadata as any)
+        : (promo.reward as any)?.metadata && typeof (promo.reward as any).metadata === "object"
+          ? ((promo.reward as any).metadata as any)
           : {}) || {};
     if (rewardType.includes("NTH_FREE")) {
       const buy = meta.buyQty ?? meta.buy ?? meta.step ?? 0;
@@ -187,7 +187,7 @@ export default function ActionsPage() {
       return `Каждый ${Number(buy) + Number(free) || 0}-й бесплатно (${buy}+${free})`;
     }
     if (rewardType.includes("FIXED_PRICE") || rewardType.includes("PRICE")) {
-      const price = meta.price ?? promo.reward?.value ?? promo.rewardValue ?? 0;
+      const price = meta.price ?? promo.reward?.value ?? (promo as any).rewardValue ?? 0;
       return `Акционная цена: ${price}`;
     }
     const multiplier =

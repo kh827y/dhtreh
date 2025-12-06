@@ -1,8 +1,8 @@
 import { NextRequest } from 'next/server';
 import { portalFetch } from '../../_lib';
 
-export async function PUT(req: NextRequest, { params }: { params: { promoCodeId: string } }) {
-  const promoCodeId = String(params?.promoCodeId || '');
+export async function PUT(req: NextRequest, { params }: { params: Promise<{ promoCodeId: string }> }) {
+  const { promoCodeId } = await params;
   if (!promoCodeId) {
     return new Response('promoCodeId required', { status: 400 });
   }

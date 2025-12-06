@@ -77,13 +77,10 @@ export default function PushPage() {
     setLoading(true);
     setError(null);
     try {
-      const [active, archived] = await Promise.all<[
-        PushCampaign[],
-        PushCampaign[]
-      ]>([
+      const [active, archived] = await Promise.all([
         fetchJson<PushCampaign[]>("/api/portal/communications/push?scope=ACTIVE"),
         fetchJson<PushCampaign[]>("/api/portal/communications/push?scope=ARCHIVED"),
-      ]);
+      ] as const);
       setCampaigns({ ACTIVE: active, ARCHIVED: archived });
     } catch (err: any) {
       setError(err?.message || "Не удалось загрузить push-рассылки");

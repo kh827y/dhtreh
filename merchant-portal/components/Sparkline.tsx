@@ -54,11 +54,14 @@ export const Sparkline: React.FC<SparklineProps> = ({
   const pathD = React.useMemo(() => {
     if (!points) return "";
     const coords = points.split(" ").map((pair) => pair.split(",").map(Number));
-    if (!coords.length) return "";
-    const [firstX, firstY] = coords[0];
+    const first = coords[0];
+    if (!coords.length || !first) return "";
+    const [firstX = 0, firstY = 0] = first;
     let d = `M ${firstX} ${firstY}`;
     for (let i = 1; i < coords.length; i++) {
-      const [x, y] = coords[i];
+      const coord = coords[i];
+      if (!coord) continue;
+      const [x = 0, y = 0] = coord;
       d += ` L ${x} ${y}`;
     }
     return d;
@@ -67,15 +70,18 @@ export const Sparkline: React.FC<SparklineProps> = ({
   const areaD = React.useMemo(() => {
     if (!points) return "";
     const coords = points.split(" ").map((pair) => pair.split(",").map(Number));
-    if (!coords.length) return "";
-    const [firstX] = coords[0];
-    const [, lastY] = coords[coords.length - 1];
+    const first = coords[0];
+    const last = coords[coords.length - 1];
+    if (!coords.length || !first || !last) return "";
+    const [firstX = 0] = first;
     const baseline = height;
     let d = `M ${firstX} ${baseline}`;
-    for (const [x, y] of coords) {
+    for (const coord of coords) {
+      if (!coord) continue;
+      const [x = 0, y = 0] = coord;
       d += ` L ${x} ${y}`;
     }
-    d += ` L ${coords[coords.length - 1][0]} ${baseline} Z`;
+    d += ` L ${last[0] ?? 0} ${baseline} Z`;
     return d;
   }, [points, height]);
 

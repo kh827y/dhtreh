@@ -1,7 +1,7 @@
 "use client";
 import React, { forwardRef } from 'react';
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'outline';
 
 type Size = 'sm' | 'md' | 'lg';
 
@@ -38,6 +38,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       ? 'btn-secondary'
       : variant === 'danger'
       ? 'btn-danger'
+      : variant === 'outline'
+      ? 'btn-outline'
       : 'btn-ghost';
   return (
     <button

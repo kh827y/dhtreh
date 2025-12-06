@@ -1,13 +1,13 @@
 import { NextRequest } from 'next/server';
 import { portalFetch } from '../../../_lib';
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const id = params.id;
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   return portalFetch(req, `/portal/loyalty/promotions/${encodeURIComponent(id)}`, { method: 'GET' });
 }
 
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
-  const id = params.id;
+export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const body = await req.text();
   const headers: Record<string, string> = {
     'content-type': req.headers.get('content-type') || 'application/json',
@@ -19,9 +19,9 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   });
 }
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   // status change: forward to /status
-  const id = params.id;
+  const { id } = await params;
   const body = await req.text();
   const headers: Record<string, string> = {
     'content-type': req.headers.get('content-type') || 'application/json',

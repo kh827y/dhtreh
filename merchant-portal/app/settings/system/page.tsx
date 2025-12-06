@@ -1,8 +1,18 @@
 "use client";
 
 import React from "react";
-import { Card, CardHeader, CardBody, Button } from "@loyalty/ui";
+import { Card, CardHeader, CardBody, Button, Badge } from "@loyalty/ui";
 import { useTimezone, useTimezoneOptions, useTimezoneUpdater } from "../../../components/TimezoneProvider";
+import { 
+  Settings, 
+  Building2, 
+  Clock, 
+  Globe, 
+  MapPin,
+  Save,
+  CheckCircle2,
+  AlertCircle,
+} from "lucide-react";
 
 const WAIT_LABEL_TIMEOUT = 2500;
 
@@ -109,77 +119,144 @@ export default function SystemSettingsPage() {
   const selected = options.find((item) => item.code === value) || timezone;
 
   return (
-    <div style={{ display: "grid", gap: 20 }}>
-      <header>
-        <div style={{ fontSize: 26, fontWeight: 700, marginBottom: 6 }}>Системные настройки</div>
-        <div style={{ fontSize: 14, opacity: 0.8, maxWidth: 720 }}>
-          Здесь задаётся единый часовой пояс для портала, аналитики и журналов. Все даты и вычисления выполняются относительно выбранного региона России.
+    <div className="animate-in" style={{ display: "grid", gap: 28 }}>
+      {/* Page Header */}
+      <header style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+        <div style={{
+          width: 48,
+          height: 48,
+          borderRadius: "var(--radius-lg)",
+          background: "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.1))",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "var(--brand-primary-light)",
+        }}>
+          <Settings size={24} />
+        </div>
+        <div>
+          <h1 style={{ 
+            fontSize: 28, 
+            fontWeight: 800, 
+            margin: 0,
+            letterSpacing: "-0.02em",
+          }}>
+            Системные настройки
+          </h1>
+          <p style={{ 
+            fontSize: 14, 
+            color: "var(--fg-muted)", 
+            margin: "6px 0 0",
+            maxWidth: 600,
+          }}>
+            Основные настройки портала: название компании и часовой пояс
+          </p>
         </div>
       </header>
 
-      <Card>
+      {/* Company Name Card */}
+      <Card hover className="animate-in" style={{ animationDelay: "0.1s" }}>
         <CardHeader
           title="Название компании"
-          subtitle="Используется во всех клиентах: портал, миниаппа, уведомления и отчёты"
+          subtitle="Отображается клиентам в приложении, уведомлениях и отчётах"
+          icon={<Building2 size={20} />}
         />
-        <CardBody>
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <span style={{ fontSize: 13, opacity: 0.8 }}>Отображаемое название</span>
+        <CardBody style={{ padding: 24 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <label style={{ 
+                fontSize: 13, 
+                fontWeight: 500, 
+                color: "var(--fg-secondary)" 
+              }}>
+                Отображаемое название
+              </label>
               <input
                 value={companyName}
                 onChange={(event) => setCompanyName(event.target.value)}
                 disabled={nameSaving || nameLoading}
                 maxLength={120}
-                placeholder={savedName || companyName || "Название компании"}
+                placeholder={savedName || companyName || "Введите название компании"}
+                className="input"
                 style={{
-                  padding: "12px 14px",
-                  borderRadius: 12,
-                  border: "1px solid rgba(148,163,184,0.35)",
-                  background: "rgba(15,23,42,0.6)",
-                  color: "#e2e8f0",
-                  fontSize: 14,
+                  fontSize: 15,
                 }}
               />
-            </label>
+            </div>
 
-            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <div style={{ 
+              display: "flex", 
+              gap: 16, 
+              alignItems: "center",
+              paddingTop: 4,
+            }}>
               <Button
                 variant="primary"
                 disabled={
                   nameSaving || nameLoading || !companyName.trim() || companyName.trim() === savedName
                 }
                 onClick={saveName}
+                leftIcon={<Save size={16} />}
               >
                 {nameSaving ? "Сохранение..." : "Сохранить"}
               </Button>
-              {nameMessage ? <span style={{ color: "#34d399", fontSize: 13 }}>{nameMessage}</span> : null}
-              {nameError ? <span style={{ color: "#f87171", fontSize: 13 }}>{nameError}</span> : null}
+              
+              {nameMessage && (
+                <div style={{ 
+                  display: "flex", 
+                  alignItems: "center", 
+                  gap: 6, 
+                  color: "var(--success-light)", 
+                  fontSize: 13,
+                  fontWeight: 500,
+                }}>
+                  <CheckCircle2 size={16} />
+                  {nameMessage}
+                </div>
+              )}
+              
+              {nameError && (
+                <div style={{ 
+                  display: "flex", 
+                  alignItems: "center", 
+                  gap: 6, 
+                  color: "var(--danger-light)", 
+                  fontSize: 13 
+                }}>
+                  <AlertCircle size={16} />
+                  {nameError}
+                </div>
+              )}
             </div>
           </div>
         </CardBody>
       </Card>
 
-      <Card>
+      {/* Timezone Card */}
+      <Card hover className="animate-in" style={{ animationDelay: "0.2s" }}>
         <CardHeader
-          title="Часовой пояс мерчанта"
-          subtitle="Используется для аналитики, журналов операций, расписаний и уведомлений"
+          title="Часовой пояс"
+          subtitle="Применяется к аналитике, операциям и уведомлениям"
+          icon={<Clock size={20} />}
         />
-        <CardBody>
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <span style={{ fontSize: 13, opacity: 0.8 }}>Регион России (относительно МСК)</span>
+        <CardBody style={{ padding: 24 }}>
+          <div style={{ display: "grid", gap: 24 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <label style={{ 
+                fontSize: 13, 
+                fontWeight: 500, 
+                color: "var(--fg-secondary)" 
+              }}>
+                Регион России
+              </label>
               <select
                 value={value}
                 onChange={(event) => setValue(event.target.value)}
                 disabled={saving}
+                className="input"
                 style={{
-                  padding: "12px 14px",
-                  borderRadius: 12,
-                  border: "1px solid rgba(148,163,184,0.35)",
-                  background: "rgba(15,23,42,0.6)",
-                  color: "#e2e8f0",
-                  fontSize: 14,
+                  fontSize: 15,
+                  cursor: "pointer",
                 }}
               >
                 {options.map((option) => (
@@ -188,30 +265,112 @@ export default function SystemSettingsPage() {
                   </option>
                 ))}
               </select>
-            </label>
+            </div>
 
-            <div style={{ fontSize: 13, lineHeight: 1.6, opacity: 0.85 }}>
-              <div>
-                <strong>Город/регион:</strong> {selected.city} ({selected.description})
+            {/* Timezone Info */}
+            <div className="info-panel">
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: "var(--radius-sm)",
+                  background: "rgba(99, 102, 241, 0.1)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "var(--brand-primary-light)",
+                }}>
+                  <MapPin size={18} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, color: "var(--fg-muted)" }}>Город</div>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>{selected.city}</div>
+                </div>
               </div>
-              <div>
-                <strong>Смещение относительно Москвы:</strong> МСК{selected.mskOffset >= 0 ? `+${selected.mskOffset}` : selected.mskOffset}
+              
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: "var(--radius-sm)",
+                  background: "rgba(6, 182, 212, 0.1)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "var(--brand-accent-light)",
+                }}>
+                  <Clock size={18} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, color: "var(--fg-muted)" }}>Смещение</div>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>
+                    МСК{selected.mskOffset >= 0 ? `+${selected.mskOffset}` : selected.mskOffset}
+                  </div>
+                </div>
               </div>
-              <div>
-                <strong>UTC:</strong> UTC{selected.utcOffsetMinutes / 60 >= 0 ? "+" : ""}
-                {selected.utcOffsetMinutes / 60}
-              </div>
-              <div>
-                <strong>IANA:</strong> {selected.iana}
+              
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: "var(--radius-sm)",
+                  background: "rgba(16, 185, 129, 0.1)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "var(--success-light)",
+                }}>
+                  <Globe size={18} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, color: "var(--fg-muted)" }}>UTC</div>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>
+                    UTC{selected.utcOffsetMinutes / 60 >= 0 ? "+" : ""}{selected.utcOffsetMinutes / 60}
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-              <Button variant="primary" disabled={saving || value === timezone.code} onClick={applySelection}>
+            <div style={{ 
+              display: "flex", 
+              gap: 16, 
+              alignItems: "center",
+            }}>
+              <Button 
+                variant="primary" 
+                disabled={saving || value === timezone.code} 
+                onClick={applySelection}
+                leftIcon={<Save size={16} />}
+              >
                 {saving ? "Сохранение..." : "Сохранить"}
               </Button>
-              {message ? <span style={{ color: "#34d399", fontSize: 13 }}>{message}</span> : null}
-              {error ? <span style={{ color: "#f87171", fontSize: 13 }}>{error}</span> : null}
+              
+              {message && (
+                <div style={{ 
+                  display: "flex", 
+                  alignItems: "center", 
+                  gap: 6, 
+                  color: "var(--success-light)", 
+                  fontSize: 13,
+                  fontWeight: 500,
+                }}>
+                  <CheckCircle2 size={16} />
+                  {message}
+                </div>
+              )}
+              
+              {error && (
+                <div style={{ 
+                  display: "flex", 
+                  alignItems: "center", 
+                  gap: 6, 
+                  color: "var(--danger-light)", 
+                  fontSize: 13 
+                }}>
+                  <AlertCircle size={16} />
+                  {error}
+                </div>
+              )}
             </div>
           </div>
         </CardBody>

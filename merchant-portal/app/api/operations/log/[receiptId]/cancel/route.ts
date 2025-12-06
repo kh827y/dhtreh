@@ -3,10 +3,9 @@ import { portalFetch } from '../../../../portal/_lib';
 
 export async function POST(
   req: NextRequest,
-  context: { params: Promise<{ receiptId: string }> | { receiptId: string } },
+  { params }: { params: Promise<{ receiptId: string }> },
 ) {
-  const p: any = context.params as any;
-  const { receiptId } = typeof p?.then === 'function' ? await p : p;
+  const { receiptId } = await params;
   return portalFetch(
     req,
     `/portal/operations/log/${encodeURIComponent(receiptId)}/cancel`,

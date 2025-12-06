@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { portalFetch } from '../../_lib';
-import { normalizeReviewsShareLinks, normalizeDevices } from '../route';
+import { normalizeReviewsShareLinks, normalizeDevices } from '../_lib';
 
 export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;

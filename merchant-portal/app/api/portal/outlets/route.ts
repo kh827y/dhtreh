@@ -1,38 +1,6 @@
 import { NextRequest } from 'next/server';
 import { portalFetch } from '../_lib';
-
-export function normalizeReviewsShareLinks(input: unknown) {
-  if (!input || typeof input !== 'object') return undefined;
-  const result: Record<string, string | null> = {};
-  for (const [rawKey, rawValue] of Object.entries(input as Record<string, unknown>)) {
-    const key = String(rawKey || '').toLowerCase().trim();
-    if (!key) continue;
-    if (rawValue == null) {
-      result[key] = null;
-      continue;
-    }
-    if (typeof rawValue === 'string') {
-      const trimmed = rawValue.trim();
-      result[key] = trimmed.length ? trimmed : null;
-    }
-  }
-  return Object.keys(result).length ? result : {};
-}
-
-export function normalizeDevices(input: unknown) {
-  if (!Array.isArray(input)) return undefined;
-  const devices: Array<{ code: string }> = [];
-  for (const item of input) {
-    const code =
-      typeof item === 'string'
-        ? item.trim()
-        : String((item as any)?.code ?? '').trim();
-    if (!code) continue;
-    if (devices.length >= 50) break;
-    devices.push({ code });
-  }
-  return devices;
-}
+import { normalizeReviewsShareLinks, normalizeDevices } from './_lib';
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
@@ -58,8 +26,8 @@ export async function GET(req: NextRequest) {
   const items = sourceItems.map((o: any) => {
     const rawDevices = Array.isArray(o?.devices) ? o.devices : [];
     const devices = rawDevices
-      .filter((d) => d && !d.archivedAt)
-      .map((d) => {
+      .filter((d: any) => d && !d.archivedAt)
+      .map((d: any) => {
         const code = typeof d.code === 'string' ? d.code.trim() : '';
         return {
           id: String(d.id || ''),
@@ -68,7 +36,7 @@ export async function GET(req: NextRequest) {
           outletName: String(o?.name || '').trim() || String(o?.code || ''),
         };
       })
-      .filter((d) => d.code);
+      .filter((d: { id: string; code: string; outletId: string; outletName: string }) => d.code);
     return {
       id: String(o.id),
       name: String(o.name || ''),

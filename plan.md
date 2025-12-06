@@ -1,5 +1,18 @@
 # Planning Mode — Long Run (2025-09-15)
 
+## Рефактор 2025-12-06 — UI Merchant Portal
+- [x] Исправлена ошибка `Runtime ReferenceError: pageItems is not defined` в `app/operations/page.tsx` (замена на `items` + добавлен `previewActor` для модалки).
+- [x] Обновлена цветовая схема `packages/ui/src/theme.css`: улучшены цвета и контраст для светлой темы, добавлены тени и границы.
+- [x] Добавлены глобальные CSS-классы (`.input`, `.filter-block`, `.info-panel`, `.list-item-icon`, `.nav-arrow`) в `app/globals.css` для унификации стилей и поддержки тем.
+- [x] Рефакторинг страниц для поддержки тем и улучшения UX:
+    - `customers/page.tsx`: переход на `data-list` и `filter-grid`, убраны инлайн-стили таблицы.
+    - `analytics/page.tsx`: графики теперь учитывают тему (`useTheme`), элементы управления используют классы.
+    - `operations/page.tsx`: исправлены стили фильтров и модального окна.
+    - `settings/system/page.tsx` и `outlets/page.tsx`: замена инлайн-стилей на классы.
+    - `loyalty/mechanics/page.tsx`: использование `CardFooter` для корректного фона.
+- [x] Главная страница `app/page.tsx`: улучшена видимость стрелок навигации (`.nav-arrow`).
+- [x] Устранены проблемы с растягиванием полей ввода (`align-items: flex-start` в `.filter-block`).
+
 ## Хотфикс 2025-12-XX — Интеграции: идентификация и контекст
 - [x] Интеграции CALCULATE-BONUS/BONUS (+deprecated CALCULATE) принимают `id_client`/`merchantCustomerId` как альтернативу `userToken`, проверки совпадения мерчанта/клиента вынесены в общий helper.
 - [x] CALCULATE-BONUS/CALCULATE-ACTION оставлены stateless: только `outletId?` (без deviceId/managerId), проверяется существование точки для bridge-подписи.

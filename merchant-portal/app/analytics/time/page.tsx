@@ -92,7 +92,7 @@ export default function AnalyticsTimePage() {
   const [recencyLoading, setRecencyLoading] = React.useState(true);
   const [recencyError, setRecencyError] = React.useState("");
 
-  const [activityPeriod, setActivityPeriod] = React.useState(activityPeriods[0].value);
+  const [activityPeriod, setActivityPeriod] = React.useState(activityPeriods[0]?.value ?? "week");
   const [activity, setActivity] = React.useState<TimeActivityResponse | null>(null);
   const [activityLoading, setActivityLoading] = React.useState(true);
   const [activityError, setActivityError] = React.useState("");
@@ -199,6 +199,7 @@ export default function AnalyticsTimePage() {
           const point = params?.[0];
           if (!point) return "";
           const bucket = buckets[point.dataIndex];
+          if (!bucket) return "";
           const title = recency.group === "day" ? `${bucket.value} день` : bucket.label;
           return `${title}<br/>Клиентов: ${bucket.customers.toLocaleString("ru-RU")}`;
         },

@@ -45,7 +45,7 @@ const formatPercentLabel = (value: number) => {
 };
 
 export default function AnalyticsRepeatPage() {
-  const [periodValue, setPeriodValue] = React.useState(periodOptions[1].value);
+  const [periodValue, setPeriodValue] = React.useState(periodOptions[1]?.value ?? "month");
   const [outletOptions, setOutletOptions] = React.useState<SelectOption[]>([defaultOutletOption]);
   const [outletValue, setOutletValue] = React.useState(defaultOutletOption.value);
   const [outletsLoading, setOutletsLoading] = React.useState(true);
@@ -254,7 +254,7 @@ export default function AnalyticsRepeatPage() {
               onChange={(event) => {
                 const nextValue = event.target.value;
                 const exists = periodOptions.some((option) => option.value === nextValue);
-                setPeriodValue(exists ? nextValue : periodOptions[0].value);
+                setPeriodValue(exists ? nextValue : (periodOptions[0]?.value ?? "month"));
               }}
               style={selectStyle}
             >

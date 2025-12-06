@@ -1,8 +1,21 @@
 "use client";
 import React from "react";
-import { Card, CardHeader, CardBody, Button, Skeleton } from "@loyalty/ui";
+import { Card, CardHeader, CardBody, Button, Skeleton, Badge } from "@loyalty/ui";
 import { useRouter } from "next/navigation";
 import Toggle from "../../components/Toggle";
+import { 
+  Users, 
+  Plus, 
+  Search, 
+  MapPin, 
+  UserCog, 
+  ShieldCheck, 
+  Clock, 
+  ChevronRight,
+  Filter,
+  X,
+  Store
+} from "lucide-react";
 
 type StaffOutletAccess = {
   id: string;
@@ -424,165 +437,151 @@ export default function StaffPage() {
   }
 
   return (
-    <div style={{ display: "grid", gap: 20 }}>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "center" }}>
-          <div style={{ fontSize: 24, fontWeight: 700 }}>Сотрудники</div>
-          <div style={{ fontSize: 13, opacity: 0.8 }}>Управляйте доступами и статусами команды</div>
-        </div>
-        <div style={{ fontSize: 13, opacity: 0.7 }}>{recordsLabel}</div>
-      </div>
-
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
-        <button
-          className="btn"
-          style={{
-            minWidth: 112,
-            background: tab === "ACTIVE" ? "var(--brand-primary)" : "rgba(255,255,255,.06)",
-            borderColor: "transparent",
-            color: tab === "ACTIVE" ? "#0b0f19" : "#fff",
-            fontWeight: tab === "ACTIVE" ? 600 : 500,
-            transition: "background .2s ease",
-          }}
-          onClick={() => setTab("ACTIVE")}
-        >
-          Работает{` (${counters.active})`}
-        </button>
-        <button
-          className="btn"
-          style={{
-            minWidth: 112,
-            background: tab === "FIRED" ? "var(--brand-primary)" : "rgba(255,255,255,.06)",
-            borderColor: "transparent",
-            color: tab === "FIRED" ? "#0b0f19" : "#fff",
-            fontWeight: tab === "FIRED" ? 600 : 500,
-            transition: "background .2s ease",
-          }}
-          onClick={() => setTab("FIRED")}
-        >
-          Уволен{` (${counters.fired})`}
-        </button>
-      </div>
-
-      <div
-        style={{
+    <div className="animate-in" style={{ display: "grid", gap: 24 }}>
+      {/* Header */}
+      <header style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+        <div style={{
+          width: 48,
+          height: 48,
+          borderRadius: "var(--radius-lg)",
+          background: "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.1))",
           display: "flex",
-          flexWrap: "wrap",
-          gap: 12,
           alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
-          <select
-            value={roleFilter}
-            onChange={(e) => setRoleFilter(e.target.value)}
-            style={{ padding: "8px 12px", minWidth: 180, borderRadius: 8 }}
-          >
-            <option value="ALL">Все роли</option>
-            {roles.map((role) => (
-              <option key={role} value={role}>
-                {getRoleLabel(role)}
-              </option>
-            ))}
-          </select>
-          <select
-            value={outletFilter}
-            onChange={(e) => setOutletFilter(e.target.value)}
-            style={{ padding: "8px 12px", minWidth: 220, borderRadius: 8 }}
-          >
-            <option value="ALL">Все торговые точки</option>
-            {outlets.map((outlet) => (
-              <option key={outlet.id} value={outlet.id}>
-                {outlet.name}
-              </option>
-            ))}
-          </select>
-          <Toggle
-            checked={onlyPortal}
-            onChange={setOnlyPortal}
-            label="Только с доступом в панель"
-          />
+          justifyContent: "center",
+          color: "var(--brand-primary-light)",
+        }}>
+          <Users size={24} />
         </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            flexWrap: "wrap",
-          }}
-        >
-          <Button variant="primary" onClick={() => setShowCreate(true)}>
-            Добавить сотрудника
-          </Button>
-          <div style={{ position: "relative" }}>
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Поиск по имени или e-mail"
-              style={{
-                padding: "8px 36px 8px 14px",
-                minWidth: 240,
-                borderRadius: 8,
-              }}
-            />
-            <span
-              aria-hidden
-              style={{
-                position: "absolute",
-                right: 12,
-                top: "50%",
-                transform: "translateY(-50%)",
-                fontSize: 16,
-                opacity: 0.6,
-              }}
-            >
-              🔍
+        <div>
+          <h1 style={{ 
+            fontSize: 28, 
+            fontWeight: 800, 
+            margin: 0,
+            letterSpacing: "-0.02em",
+          }}>
+            Сотрудники
+          </h1>
+          <div style={{ display: "flex", gap: 16, marginTop: 6 }}>
+            <span style={{ fontSize: 13, color: "var(--fg-muted)" }}>
+              Всего: <strong style={{ color: "var(--fg)" }}>{recordsLabel}</strong>
             </span>
           </div>
         </div>
-      </div>
+        <div style={{ marginLeft: "auto" }}>
+           <Button variant="primary" onClick={() => setShowCreate(true)} leftIcon={<Plus size={16} />}>
+            Добавить сотрудника
+          </Button>
+        </div>
+      </header>
+
+      {/* Tabs & Filters */}
+      <Card>
+        <CardBody style={{ padding: 20 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            <div style={{ display: "flex", gap: 8 }}>
+               <button
+                className="btn"
+                style={{
+                  minWidth: 112,
+                  background: tab === "ACTIVE" ? "var(--brand-primary)" : "transparent",
+                  borderColor: tab === "ACTIVE" ? "transparent" : "var(--border-default)",
+                  color: tab === "ACTIVE" ? "#fff" : "var(--fg)",
+                  fontWeight: tab === "ACTIVE" ? 600 : 500,
+                  transition: "all .2s ease",
+                }}
+                onClick={() => setTab("ACTIVE")}
+              >
+                Работает{` (${counters.active})`}
+              </button>
+              <button
+                className="btn"
+                style={{
+                  minWidth: 112,
+                  background: tab === "FIRED" ? "var(--brand-primary)" : "transparent",
+                  borderColor: tab === "FIRED" ? "transparent" : "var(--border-default)",
+                  color: tab === "FIRED" ? "#fff" : "var(--fg)",
+                  fontWeight: tab === "FIRED" ? 600 : 500,
+                  transition: "all .2s ease",
+                }}
+                onClick={() => setTab("FIRED")}
+              >
+                Уволен{` (${counters.fired})`}
+              </button>
+            </div>
+
+            <div className="filter-grid">
+               <div className="filter-block">
+                 <span className="filter-label">Роль</span>
+                 <select
+                  value={roleFilter}
+                  onChange={(e) => setRoleFilter(e.target.value)}
+                  className="input"
+                  style={{ minWidth: 180 }}
+                >
+                  <option value="ALL">Все роли</option>
+                  {roles.map((role) => (
+                    <option key={role} value={role}>
+                      {getRoleLabel(role)}
+                    </option>
+                  ))}
+                </select>
+               </div>
+               <div className="filter-block">
+                 <span className="filter-label">Торговая точка</span>
+                 <select
+                  value={outletFilter}
+                  onChange={(e) => setOutletFilter(e.target.value)}
+                  className="input"
+                  style={{ minWidth: 220 }}
+                >
+                  <option value="ALL">Все торговые точки</option>
+                  {outlets.map((outlet) => (
+                    <option key={outlet.id} value={outlet.id}>
+                      {outlet.name}
+                    </option>
+                  ))}
+                </select>
+               </div>
+               <div className="filter-block">
+                 <span className="filter-label">Доступ</span>
+                 <div style={{ paddingTop: 4 }}>
+                    <Toggle
+                      checked={onlyPortal}
+                      onChange={setOnlyPortal}
+                      label="Только с доступом в панель"
+                    />
+                 </div>
+               </div>
+               <div className="filter-block" style={{ flex: 1, minWidth: 240 }}>
+                 <span className="filter-label">Поиск</span>
+                 <div style={{ position: "relative" }}>
+                  <Search size={16} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--fg-muted)" }} />
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Поиск по имени или e-mail"
+                    className="input"
+                    style={{ paddingLeft: 38, width: "100%" }}
+                  />
+                </div>
+               </div>
+            </div>
+          </div>
+        </CardBody>
+      </Card>
 
       <Card>
         <CardHeader title="Команда" subtitle="Список сотрудников с правами доступа" />
-        <CardBody>
+        <CardBody style={{ padding: 0 }}>
           {loading ? (
-            <Skeleton height={220} />
+             <div style={{ padding: 20 }}><Skeleton height={220} /></div>
           ) : uniqueItems.length ? (
-            <div style={{ display: "grid", gap: 8 }}>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "minmax(260px, 2fr) minmax(180px, 1fr) minmax(200px, 1fr) minmax(200px, 1fr)",
-                  fontSize: 12,
-                  textTransform: "uppercase",
-                  letterSpacing: 0.4,
-                  opacity: 0.7,
-                  padding: "4px 12px",
-                }}
-              >
-                <div>Имя</div>
-                <div>Торговые точки</div>
-                <div>
-                  Активность
-                  <span
-                    title="Дата последней транзакции или входа в панель управления"
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: 16,
-                      height: 16,
-                      borderRadius: "50%",
-                      border: "1px solid rgba(255,255,255,.4)",
-                      marginLeft: 6,
-                      fontSize: 10,
-                    }}
-                  >
-                    ?
-                  </span>
-                </div>
-                <div>Доступ в панель управления</div>
+            <div className="data-list">
+              <div className="list-row staff-grid" style={{ background: "rgba(255,255,255,0.02)", borderBottom: "1px solid var(--border-subtle)" }}>
+                <div className="cell-label">ИМЯ</div>
+                <div className="cell-label">ТОРГОВЫЕ ТОЧКИ</div>
+                <div className="cell-label">АКТИВНОСТЬ</div>
+                <div className="cell-label">ДОСТУП В ПАНЕЛЬ</div>
               </div>
               {uniqueItems.map((staff, idx) => {
                 const displayName = getDisplayName(staff);
@@ -598,92 +597,67 @@ export default function StaffPage() {
                   }
                   return `${active.length} торговых точек`;
                 })();
-                const applyRowHighlight = (el: HTMLAnchorElement, active: boolean) => {
-                  el.style.borderColor = active ? "var(--brand-primary)" : "rgba(255,255,255,.05)";
-                  el.style.background = active ? "rgba(20,26,38,.72)" : "rgba(10,14,24,.4)";
-                  el.style.transform = active ? "translateY(-1px)" : "translateY(0)";
-                };
+                
                 return (
                   <a
                     key={`${staff.id}-${idx}`}
                     href={`/staff/${encodeURIComponent(staff.id)}`}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "minmax(260px, 2fr) minmax(180px, 1fr) minmax(200px, 1fr) minmax(200px, 1fr)",
-                      alignItems: "center",
-                      gap: 12,
-                      padding: "12px 12px",
-                      borderRadius: 12,
-                      textDecoration: "none",
-                      color: "inherit",
-                      background: "rgba(10,14,24,.4)",
-                      border: "1px solid rgba(255,255,255,.05)",
-                      transition: "border-color .2s ease, transform .2s ease, background .2s ease",
-                      transform: "translateY(0)",
-                    }}
-                    onMouseEnter={(e) => applyRowHighlight(e.currentTarget, true)}
-                    onMouseLeave={(e) => applyRowHighlight(e.currentTarget, false)}
-                    onFocus={(e) => applyRowHighlight(e.currentTarget, true)}
-                    onBlur={(e) => applyRowHighlight(e.currentTarget, false)}
+                    className="list-row staff-grid"
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                       <div
                         style={{
-                          width: 44,
-                          height: 44,
+                          width: 40,
+                          height: 40,
                           borderRadius: "50%",
-                          background: "rgba(255,255,255,.08)",
+                          background: "linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(168, 85, 247, 0.1))",
+                          border: "1px solid rgba(255,255,255,0.1)",
+                          color: "var(--brand-primary-light)",
                           overflow: "hidden",
                           flexShrink: 0,
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
                           fontWeight: 600,
-                          fontSize: 18,
+                          fontSize: 16,
                         }}
                       >
                         {(displayName || "?").slice(0, 1).toUpperCase()}
                       </div>
-                      <div style={{ display: "grid", gap: 4 }}>
+                      <div style={{ display: "grid", gap: 2 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontSize: 16, fontWeight: 600 }}>{displayName}</span>
+                          <span style={{ fontSize: 15, fontWeight: 600, color: "var(--fg)" }}>{displayName}</span>
                           {staff.isOwner || (staff.role || "").toUpperCase() === "MERCHANT" ? (
-                            <span
-                              title="Владелец мерчанта"
-                              style={{
-                                display: "inline-flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                width: 20,
-                                height: 20,
-                                borderRadius: "50%",
-                                background: "var(--brand-primary)",
-                                color: "#0b0f19",
-                                fontWeight: 700,
-                                fontSize: 12,
-                              }}
-                            >
-                              А
-                            </span>
+                            <Badge variant="primary" className="text-xs py-0 px-1.5 h-5">Владелец</Badge>
                           ) : null}
                         </div>
-                        <div style={{ fontSize: 13, opacity: 0.75 }}>{getRoleLabel(staff.role)}</div>
-                        {secondary ? (
-                          <div style={{ fontSize: 12, opacity: 0.6 }}>{secondary}</div>
-                        ) : null}
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--fg-muted)" }}>
+                           <span>{getRoleLabel(staff.role)}</span>
+                           {secondary && (
+                             <>
+                               <span>·</span>
+                               <span>{secondary}</span>
+                             </>
+                           )}
+                        </div>
                       </div>
                     </div>
-                    <div style={{ fontSize: 13, opacity: 0.85 }}>{outletText}</div>
-                    <div style={{ fontSize: 13, opacity: 0.85 }}>{formatActivityDate(staff.lastActivityAt)}</div>
+                    
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--fg-secondary)", fontSize: 14 }}>
+                      <Store size={16} className="text-muted" />
+                      {outletText}
+                    </div>
+                    
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--fg-secondary)", fontSize: 14 }}>
+                      <Clock size={16} className="text-muted" />
+                      {formatActivityDate(staff.lastActivityAt)}
+                    </div>
+                    
                     <div>
                       {portalsAccess ? (
-                        <span style={{ color: "#4ade80", display: "inline-flex", alignItems: "center", gap: 6 }}>
-                          ✓ <span>Да</span>
-                        </span>
+                        <Badge variant="success" dot>Да</Badge>
                       ) : (
-                        <span style={{ color: "#f87171", display: "inline-flex", alignItems: "center", gap: 6 }}>
-                          ✕ <span>Нет</span>
-                        </span>
+                        <span style={{ color: "var(--fg-muted)", fontSize: 14 }}>Нет</span>
                       )}
                     </div>
                   </a>
@@ -691,52 +665,24 @@ export default function StaffPage() {
               })}
             </div>
           ) : (
-            <div style={{ padding: "16px 12px", opacity: 0.7 }}>Нет сотрудников, удовлетворяющих условиям фильтра</div>
+            <div style={{ padding: "40px 20px", textAlign: "center", opacity: 0.7 }}>
+              <div style={{ marginBottom: 12, opacity: 0.5 }}><UserCog size={48} /></div>
+              Нет сотрудников, удовлетворяющих условиям фильтра
+            </div>
           )}
           {error && !loading ? (
-            <div style={{ color: "#f87171", marginTop: 16 }}>{error}</div>
+            <div style={{ color: "var(--danger)", padding: 20 }}>{error}</div>
           ) : null}
         </CardBody>
       </Card>
 
-      {showCreate ? (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(5,8,16,0.75)",
-            backdropFilter: "blur(8px)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 20,
-            zIndex: 60,
-          }}
-        >
-          <div
-            style={{
-              width: "min(720px, 96vw)",
-              background: "rgba(12,16,26,0.96)",
-              borderRadius: 16,
-              border: "1px solid rgba(255,255,255,.08)",
-              boxShadow: "0 20px 60px rgba(0,0,0,0.45)",
-              display: "grid",
-              gridTemplateRows: "auto 1fr auto",
-              maxHeight: "90vh",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "18px 24px",
-                borderBottom: "1px solid rgba(255,255,255,.06)",
-              }}
-            >
+      {showCreate && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-header">
               <div>
                 <div style={{ fontSize: 18, fontWeight: 700 }}>Добавить сотрудника</div>
-                <div style={{ fontSize: 13, opacity: 0.7 }}>Заполните данные и назначьте доступы</div>
+                <div style={{ fontSize: 13, opacity: 0.7, marginTop: 4 }}>Заполните данные и назначьте доступы</div>
               </div>
               <button
                 aria-label="Закрыть"
@@ -744,217 +690,112 @@ export default function StaffPage() {
                   setShowCreate(false);
                   resetCreateForm();
                 }}
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: "50%",
-                  border: "none",
-                  background: "rgba(248,113,113,0.15)",
-                  color: "#fca5a5",
-                  fontSize: 18,
-                  cursor: "pointer",
-                }}
+                className="btn-ghost"
+                style={{ padding: 6, borderRadius: "50%", border: "none", cursor: "pointer", display: "flex" }}
               >
-                ✕
+                <X size={20} />
               </button>
             </div>
-            <div
-              style={{
-                padding: "24px",
-                overflowY: "auto",
-                display: "grid",
-                gap: 18,
-              }}
-            >
-              <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-                <div style={{ display: "grid", gap: 6 }}>
-                  <label style={{ fontSize: 13, opacity: 0.75 }}>Имя *</label>
-                  <input
-                    value={cFirstName}
-                    onChange={(e) => setCFirstName(e.target.value)}
-                    placeholder="Например, Анна"
-                    style={{ padding: "10px 12px", borderRadius: 8 }}
-                  />
-                </div>
-                <div style={{ display: "grid", gap: 6 }}>
-                  <label style={{ fontSize: 13, opacity: 0.75 }}>Фамилия</label>
-                  <input
-                    value={cLastName}
-                    onChange={(e) => setCLastName(e.target.value)}
-                    placeholder="Опционально"
-                    style={{ padding: "10px 12px", borderRadius: 8 }}
-                  />
-                </div>
-              </div>
-              <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-                <div style={{ display: "grid", gap: 6 }}>
-                  <label style={{ fontSize: 13, opacity: 0.75 }}>Должность</label>
-                  <input
-                    value={cPosition}
-                    onChange={(e) => setCPosition(e.target.value)}
-                    placeholder="Например, Старший кассир"
-                    style={{ padding: "10px 12px", borderRadius: 8 }}
-                  />
-                </div>
-                <div style={{ display: "grid", gap: 6 }}>
-                  <label style={{ fontSize: 13, opacity: 0.75 }}>Телефон</label>
-                  <input
-                    value={cPhone}
-                    onChange={(e) => setCPhone(e.target.value)}
-                    placeholder="+7 (___) ___-__-__"
-                    style={{ padding: "10px 12px", borderRadius: 8 }}
-                  />
-                </div>
-              </div>
-              <div style={{ display: "grid", gap: 6 }}>
-                <label style={{ fontSize: 13, opacity: 0.75 }}>Комментарий</label>
-                <textarea
-                  value={cComment}
-                  onChange={(e) => setCComment(e.target.value)}
-                  placeholder="Дополнительная информация, заметки"
-                  style={{ padding: "10px 12px", borderRadius: 8, minHeight: 80, resize: "vertical" }}
-                />
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 16,
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                }}
-              >
-                <Toggle
-                  checked={cPortal}
-                  onChange={(next) => {
-                    setCPortal(next);
-                    if (next && groups.length === 0 && !groupsLoading) {
-                      ensureGroupsLoaded();
-                    }
-                  }}
-                  label="Доступ в админ‑панель"
-                />
-                <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, opacity: 0.75 }}>
-                  <span
-                    title="Позволяет входить в панель управления программы лояльности. При создании кассиров обычно ставим выкл."
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: 18,
-                      height: 18,
-                      borderRadius: "50%",
-                      border: "1px solid rgba(255,255,255,.4)",
-                      fontSize: 12,
-                      cursor: "help",
-                    }}
-                  >
-                    ?
-                  </span>
-                </div>
-              </div>
-
-              {cPortal ? (
-                <div style={{ display: "grid", gap: 18 }}>
-                  <div
-                    style={{
-                      display: "grid",
-                      gap: 12,
-                      gridTemplateColumns: "minmax(260px, 1fr) auto auto",
-                      alignItems: "end",
-                    }}
-                  >
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <label style={{ fontSize: 13, opacity: 0.75 }}>Выбрать группу доступа *</label>
-                      <select
-                        value={cGroup}
-                        onChange={(e) => setCGroup(e.target.value)}
-                        style={{ padding: "10px 12px", borderRadius: 8 }}
-                      >
-                        <option value="">— выберите группу —</option>
-                        {uniqueGroups.map((group, idx) => (
-                          <option key={`${group.id || group.name}-${idx}`} value={group.id || group.name}>
-                            {group.name}{" "}
-                            {typeof group.membersCount === "number"
-                              ? `(${group.membersCount})`
-                              : typeof group.memberCount === "number"
-                              ? `(${group.memberCount})`
-                              : ""}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <button
-                      className="btn btn-ghost"
-                      onClick={ensureGroupsLoaded}
-                      disabled={groupsLoading}
-                      title="Обновить список групп"
-                      style={{ padding: "10px 18px" }}
-                    >
-                      ⟳
-                    </button>
-                    <a
-                      href="/settings/access"
-                      className="btn btn-ghost"
-                      style={{ textDecoration: "none", padding: "10px 18px" }}
-                      title="Перейти к настройке групп доступа"
-                    >
-                      ＋
-                    </a>
-                  </div>
-                  <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <label style={{ fontSize: 13, opacity: 0.75 }}>E-mail *</label>
+            <div className="modal-body">
+              <div style={{ display: "grid", gap: 16 }}>
+                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                    <div className="filter-block">
+                      <label className="filter-label">Имя *</label>
                       <input
-                        value={cEmail}
-                        onChange={(e) => setCEmail(e.target.value)}
-                        placeholder="example@company.ru"
-                        style={{ padding: "10px 12px", borderRadius: 8 }}
+                        value={cFirstName}
+                        onChange={(e) => setCFirstName(e.target.value)}
+                        placeholder="Например, Анна"
+                        className="input"
                       />
                     </div>
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <label style={{ fontSize: 13, opacity: 0.75 }}>Пароль *</label>
+                    <div className="filter-block">
+                      <label className="filter-label">Фамилия</label>
                       <input
-                        value={cPassword}
-                        onChange={(e) => setCPassword(e.target.value)}
-                        placeholder="Придумайте пароль"
-                        type="password"
-                        style={{ padding: "10px 12px", borderRadius: 8 }}
+                        value={cLastName}
+                        onChange={(e) => setCLastName(e.target.value)}
+                        placeholder="Опционально"
+                        className="input"
                       />
                     </div>
-                  </div>
-                </div>
-              ) : null}
-
-              {createError ? (
-                <div style={{ color: "#f87171", fontSize: 13 }}>{createError}</div>
-              ) : null}
+                 </div>
+                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                    <div className="filter-block">
+                        <label className="filter-label">Должность</label>
+                        <input
+                        value={cPosition}
+                        onChange={(e) => setCPosition(e.target.value)}
+                        placeholder="Например, Старший кассир"
+                        className="input"
+                        />
+                    </div>
+                    <div className="filter-block">
+                        <label className="filter-label">Телефон</label>
+                        <input
+                        value={cPhone}
+                        onChange={(e) => setCPhone(e.target.value)}
+                        placeholder="+7 (___) ___-__-__"
+                        className="input"
+                        />
+                    </div>
+                 </div>
+                 <div className="filter-block">
+                    <label className="filter-label">Комментарий</label>
+                    <textarea
+                      value={cComment}
+                      onChange={(e) => setCComment(e.target.value)}
+                      placeholder="Дополнительная информация"
+                      className="input"
+                      style={{ minHeight: 80, resize: "vertical", paddingTop: 10 }}
+                    />
+                 </div>
+                 
+                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "rgba(255,255,255,0.03)", borderRadius: 8, border: "1px solid var(--border-subtle)" }}>
+                    <div style={{ display: "grid", gap: 2 }}>
+                       <div style={{ fontWeight: 500, fontSize: 14 }}>Доступ в панель управления</div>
+                       <div style={{ fontSize: 12, opacity: 0.6 }}>Разрешить вход в этот портал</div>
+                    </div>
+                    <Toggle label="" checked={cPortal} onChange={(next) => {
+                        setCPortal(next);
+                        if (next && groups.length === 0 && !groupsLoading) ensureGroupsLoaded();
+                    }} />
+                 </div>
+                 
+                 {cPortal && (
+                   <div className="animate-in" style={{ display: "grid", gap: 16, paddingLeft: 12, borderLeft: "2px solid var(--border-default)" }}>
+                      <div className="filter-block">
+                        <label className="filter-label">Группа прав *</label>
+                        <select value={cGroup} onChange={(e) => setCGroup(e.target.value)} className="input">
+                          <option value="">Выберите роль</option>
+                          {uniqueGroups.map(g => (
+                            <option key={g.id} value={g.id}>{g.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="filter-block">
+                        <label className="filter-label">Email (логин) *</label>
+                        <input value={cEmail} onChange={(e) => setCEmail(e.target.value)} placeholder="employee@company.com" className="input" />
+                      </div>
+                      <div className="filter-block">
+                        <label className="filter-label">Пароль *</label>
+                        <input type="password" value={cPassword} onChange={(e) => setCPassword(e.target.value)} placeholder="Минимум 6 символов" className="input" />
+                      </div>
+                   </div>
+                 )}
+                 
+                 {createError && (
+                   <div style={{ color: "var(--danger)", fontSize: 13 }}>{createError}</div>
+                 )}
+              </div>
             </div>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: 12,
-                padding: "16px 24px",
-                borderTop: "1px solid rgba(255,255,255,.06)",
-              }}
-            >
-              <button
-                className="btn"
-                onClick={() => {
-                  setShowCreate(false);
-                  resetCreateForm();
-                }}
-              >
-                Отмена
-              </button>
-              <Button variant="primary" disabled={!canSubmitCreate || submitting} onClick={handleCreate}>
-                {submitting ? "Сохраняем…" : "Создать"}
-              </Button>
+            <div className="modal-footer">
+               <Button variant="ghost" onClick={() => setShowCreate(false)}>Отмена</Button>
+               <Button variant="primary" disabled={!canSubmitCreate || submitting} onClick={handleCreate}>
+                 {submitting ? "Создание..." : "Создать сотрудника"}
+               </Button>
             </div>
           </div>
         </div>
-      ) : null}
+      )}
     </div>
   );
 }

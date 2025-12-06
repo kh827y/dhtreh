@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Card, CardBody, Badge } from "@loyalty/ui";
+import { Card, CardBody, CardFooter, Badge } from "@loyalty/ui";
 import Toggle from "../../../components/Toggle";
 import {
   Trophy,
@@ -110,7 +110,9 @@ export default function MechanicsPage() {
       const ids = Object.keys(endpoints);
       const responses = await Promise.all(
         ids.map(async (id) => {
-          const res = await fetch(endpoints[id]);
+          const endpoint = endpoints[id];
+          if (!endpoint) throw new Error(`Unknown endpoint: ${id}`);
+          const res = await fetch(endpoint);
           const json = await res.json().catch(() => ({}));
           if (!res.ok) throw new Error(json?.message || `Не удалось загрузить ${id}`);
           return { id, json } as const;
@@ -218,7 +220,9 @@ export default function MechanicsPage() {
         payload = base;
       }
 
-      const res = await fetch(endpointMap[id], {
+      const endpoint = endpointMap[id];
+      if (!endpoint) throw new Error(`Unknown endpoint: ${id}`);
+      const res = await fetch(endpoint, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -350,13 +354,10 @@ export default function MechanicsPage() {
                 </a>
 
                 {/* Footer */}
-                <div style={{ 
-                  padding: "14px 20px",
-                  borderTop: "1px solid var(--border-subtle)",
+                <CardFooter style={{ 
                   display: "flex", 
                   justifyContent: "space-between", 
                   alignItems: "center",
-                  background: "rgba(0, 0, 0, 0.15)",
                 }}>
                   <a
                     href={card.href}
@@ -387,7 +388,7 @@ export default function MechanicsPage() {
                       />
                     </div>
                   )}
-                </div>
+                </CardFooter>
               </CardBody>
             </Card>
           );

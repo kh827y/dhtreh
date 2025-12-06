@@ -1,7 +1,20 @@
 "use client";
 
 import React from "react";
-import { Card, CardHeader, CardBody, Button } from "@loyalty/ui";
+import { Card, CardHeader, CardBody, Button, Badge, Skeleton } from "@loyalty/ui";
+import { 
+  ShoppingBag, 
+  Plus, 
+  Search, 
+  Filter, 
+  Package, 
+  Tag, 
+  Barcode, 
+  Server, 
+  Gift, 
+  Eye, 
+  EyeOff 
+} from "lucide-react";
 
 type Product = {
   id: string;
@@ -71,99 +84,115 @@ export default function ProductsPage() {
   }, [load]);
 
   const filteredCount = items.length;
-  const pill = (text: string, bg: string) => (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6,
-        padding: "4px 10px",
-        borderRadius: 999,
-        fontSize: 12,
-        fontWeight: 600,
-        background: bg,
-        color: "#0f172a",
-        lineHeight: 1,
-      }}
-    >
-      {text}
-    </span>
-  );
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-        <div>
-          <h1 style={{ margin: 0 }}>Товары</h1>
-          <div style={{ opacity: 0.7, fontSize: 14 }}>Реальный каталог: без моков и заглушек.</div>
+    <div className="animate-in" style={{ display: "grid", gap: 24 }}>
+      {/* Header */}
+      <header style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+        <div style={{
+          width: 48,
+          height: 48,
+          borderRadius: "var(--radius-lg)",
+          background: "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.1))",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "var(--brand-primary-light)",
+        }}>
+          <ShoppingBag size={24} />
         </div>
-        <a href="/products/new" style={{ textDecoration: "none" }}>
-          <Button variant="primary">Добавить товар</Button>
-        </a>
-      </div>
+        <div>
+          <h1 style={{ 
+            fontSize: 28, 
+            fontWeight: 800, 
+            margin: 0,
+            letterSpacing: "-0.02em",
+          }}>
+            Товары
+          </h1>
+          <div style={{ display: "flex", gap: 16, marginTop: 6 }}>
+            <span style={{ fontSize: 13, color: "var(--fg-muted)" }}>
+              Найдено: <strong style={{ color: "var(--fg)" }}>{filteredCount}</strong>
+            </span>
+          </div>
+        </div>
+        <div style={{ marginLeft: "auto" }}>
+           <a href="/products/new" style={{ textDecoration: "none" }}>
+             <Button variant="primary" leftIcon={<Plus size={16} />}>Добавить товар</Button>
+           </a>
+        </div>
+      </header>
 
+      {/* Filters */}
       <Card>
-        <CardHeader title="Фильтры" subtitle={loading ? "Загрузка..." : `Найдено: ${filteredCount}`} />
-        <CardBody>
-          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-            <label style={{ display: "grid", gap: 4 }}>
-              <span style={{ fontSize: 12, opacity: 0.7 }}>Поиск (название, SKU, код, внешний ID)</span>
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Поиск..."
-                style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "inherit" }}
-              />
-            </label>
-            <label style={{ display: "grid", gap: 4 }}>
-              <span style={{ fontSize: 12, opacity: 0.7 }}>Статус</span>
-              <select
+        <CardBody style={{ padding: 20 }}>
+          <div className="filter-grid">
+            <div className="filter-block" style={{ flex: 1, minWidth: 240 }}>
+               <span className="filter-label">Поиск (название, SKU, код)</span>
+               <div style={{ position: "relative" }}>
+                  <Search size={16} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--fg-muted)" }} />
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Поиск..."
+                    className="input"
+                    style={{ paddingLeft: 38, width: "100%" }}
+                  />
+               </div>
+            </div>
+            <div className="filter-block">
+               <span className="filter-label">Статус</span>
+               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value as any)}
-                style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "inherit" }}
+                className="input"
+                style={{ minWidth: 140 }}
               >
                 <option value="all">Все</option>
                 <option value="visible">Видимые</option>
                 <option value="hidden">Скрытые</option>
               </select>
-            </label>
-            <label style={{ display: "grid", gap: 4 }}>
-              <span style={{ fontSize: 12, opacity: 0.7 }}>Начисление баллов</span>
-              <select
+            </div>
+            <div className="filter-block">
+               <span className="filter-label">Баллы</span>
+               <select
                 value={points}
                 onChange={(e) => setPoints(e.target.value as any)}
-                style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "inherit" }}
+                className="input"
+                style={{ minWidth: 160 }}
               >
                 <option value="all">Все</option>
                 <option value="with">Начисляют</option>
                 <option value="without">Не начисляют</option>
               </select>
-            </label>
-            <label style={{ display: "grid", gap: 4 }}>
-              <span style={{ fontSize: 12, opacity: 0.7 }}>Категория</span>
-              <select
+            </div>
+            <div className="filter-block">
+               <span className="filter-label">Категория</span>
+               <select
                 value={categoryId}
                 onChange={(e) => setCategoryId(e.target.value)}
-                style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "inherit" }}
+                className="input"
+                style={{ minWidth: 180 }}
               >
-                <option value="">Все</option>
+                <option value="">Все категории</option>
                 {categories.map((cat) => (
                   <option key={cat.id} value={cat.id}>
                     {cat.name}
                   </option>
                 ))}
               </select>
-            </label>
-            <label style={{ display: "grid", gap: 4 }}>
-              <span style={{ fontSize: 12, opacity: 0.7 }}>Внешний провайдер</span>
-              <input
+            </div>
+            <div className="filter-block">
+               <span className="filter-label">Внешняя система</span>
+               <input
                 value={externalProvider}
                 onChange={(e) => setExternalProvider(e.target.value)}
-                placeholder="iiko / MoySklad / r_keeper"
-                style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "inherit" }}
+                placeholder="iiko / r_keeper"
+                className="input"
+                style={{ width: 160 }}
               />
-            </label>
-            <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+            </div>
+            <div style={{ paddingBottom: 2 }}>
               <Button variant="secondary" onClick={load} disabled={loading}>
                 {loading ? "Обновляем..." : "Обновить"}
               </Button>
@@ -173,79 +202,80 @@ export default function ProductsPage() {
       </Card>
 
       {error && (
-        <Card>
-          <CardBody>
-            <div style={{ color: "#ef4444" }}>{error}</div>
-          </CardBody>
-        </Card>
+        <div style={{ padding: 16, borderRadius: 12, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "var(--danger)" }}>
+          {error}
+        </div>
       )}
 
+      {/* List */}
       <Card>
         <CardHeader title="Каталог" />
-        <CardBody>
+        <CardBody style={{ padding: 0 }}>
           {loading ? (
-            <div>Загрузка...</div>
+            <div style={{ padding: 20 }}><Skeleton height={200} /></div>
           ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr>
-                    <th style={{ textAlign: "left", padding: "8px 6px", opacity: 0.7 }}>Товар</th>
-                    <th style={{ textAlign: "left", padding: "8px 6px", opacity: 0.7 }}>Категория</th>
-                    <th style={{ textAlign: "left", padding: "8px 6px", opacity: 0.7 }}>Коды</th>
-                    <th style={{ textAlign: "left", padding: "8px 6px", opacity: 0.7 }}>Внешняя система</th>
-                    <th style={{ textAlign: "left", padding: "8px 6px", opacity: 0.7 }}>Баллы</th>
-                    <th style={{ textAlign: "left", padding: "8px 6px", opacity: 0.7 }}>Статус</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((product) => (
-                    <tr key={product.id} style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-                      <td style={{ padding: "8px 6px", fontWeight: 600 }}>{product.name}</td>
-                      <td style={{ padding: "8px 6px", opacity: 0.9 }}>{product.categoryName || "—"}</td>
-                      <td style={{ padding: "8px 6px", opacity: 0.9 }}>
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                          {product.sku && pill(`SKU ${product.sku}`, "rgba(59,130,246,0.25)")}
-                          {product.code && pill(`Код ${product.code}`, "rgba(148,163,184,0.3)")}
-                          {product.barcode && pill(`Штрихкод ${product.barcode}`, "rgba(148,163,184,0.3)")}
-                        </div>
-                      </td>
-                      <td style={{ padding: "8px 6px", opacity: 0.9 }}>
-                        {product.externalProvider || product.externalId ? (
-                          <div style={{ display: "grid", gap: 2 }}>
-                            <span>{product.externalProvider || "—"}</span>
-                            <span style={{ opacity: 0.8, fontSize: 12 }}>{product.externalId || ""}</span>
-                          </div>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td style={{ padding: "8px 6px", opacity: 0.9 }}>
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                          {product.accruePoints
-                            ? pill("Начисление", "rgba(52,211,153,0.3)")
-                            : pill("Без начисления", "rgba(148,163,184,0.3)")}
-                          {product.allowRedeem
-                            ? pill("Можно списывать", "rgba(56,189,248,0.25)")
-                            : pill("Запрет списания", "rgba(148,163,184,0.3)")}
-                        </div>
-                      </td>
-                      <td style={{ padding: "8px 6px", opacity: 0.9 }}>
-                        {product.visible
-                          ? pill("Виден", "rgba(52,211,153,0.3)")
-                          : pill("Скрыт", "rgba(148,163,184,0.3)")}
-                      </td>
-                    </tr>
-                  ))}
-                  {!items.length && (
-                    <tr>
-                      <td colSpan={6} style={{ padding: 12, opacity: 0.7 }}>
-                        Нет товаров
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+            <div className="data-list">
+              <div className="list-row products-grid" style={{ background: "rgba(255,255,255,0.02)", borderBottom: "1px solid var(--border-subtle)" }}>
+                <div className="cell-label">ТОВАР</div>
+                <div className="cell-label">КАТЕГОРИЯ</div>
+                <div className="cell-label">КОДЫ</div>
+                <div className="cell-label">ВНЕШНЯЯ СИСТЕМА</div>
+                <div className="cell-label">БАЛЛЫ</div>
+                <div className="cell-label">СТАТУС</div>
+              </div>
+              {items.map((product) => (
+                <div key={product.id} className="list-row products-grid">
+                  <div style={{ fontWeight: 600, color: "var(--fg)" }}>{product.name}</div>
+                  <div style={{ fontSize: 13, color: "var(--fg-secondary)" }}>
+                    {product.categoryName ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <Tag size={14} className="text-muted" />
+                        {product.categoryName}
+                      </div>
+                    ) : "—"}
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {product.sku && <Badge variant="outline" className="text-xs">SKU {product.sku}</Badge>}
+                    {product.code && <Badge variant="outline" className="text-xs">{product.code}</Badge>}
+                    {product.barcode && <Badge variant="outline" className="text-xs"><Barcode size={12} style={{ marginRight: 4 }}/>{product.barcode}</Badge>}
+                    {!product.sku && !product.code && !product.barcode && <span className="text-muted text-sm">—</span>}
+                  </div>
+                  <div style={{ fontSize: 13, color: "var(--fg-secondary)" }}>
+                    {product.externalProvider || product.externalId ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <Server size={14} className="text-muted" />
+                        <span>{product.externalProvider || "External"}</span>
+                        {product.externalId && <span className="text-muted" style={{ fontSize: 11 }}>#{product.externalId}</span>}
+                      </div>
+                    ) : "—"}
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {product.accruePoints ? (
+                      <Badge variant="success" dot>Начисление</Badge>
+                    ) : (
+                      <Badge variant="secondary" className="opacity-50">Нет</Badge>
+                    )}
+                    {product.allowRedeem ? (
+                      <Badge variant="primary" dot>Списание</Badge>
+                    ) : (
+                      <Badge variant="secondary" className="opacity-50">Нет</Badge>
+                    )}
+                  </div>
+                  <div>
+                    {product.visible ? (
+                      <Badge variant="success" className="gap-1"><Eye size={12}/> Виден</Badge>
+                    ) : (
+                      <Badge variant="secondary" className="gap-1 opacity-70"><EyeOff size={12}/> Скрыт</Badge>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {!items.length && (
+                <div style={{ padding: 40, textAlign: "center", opacity: 0.6 }}>
+                  <Package size={48} style={{ opacity: 0.3, marginBottom: 12 }} />
+                  <div>Товары не найдены</div>
+                </div>
+              )}
             </div>
           )}
         </CardBody>

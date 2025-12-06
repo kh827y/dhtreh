@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { use } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardHeader, CardBody, Button } from "@loyalty/ui";
 
@@ -30,8 +30,9 @@ function extractTargets(data: any) {
 export default function CampaignEditPage({
   params,
 }: {
-  params: { campaignId: string };
+  params: Promise<{ campaignId: string }>;
 }) {
+  const { campaignId } = use(params);
   const router = useRouter();
   const [products, setProducts] = React.useState<Option[]>([]);
   const [categories, setCategories] = React.useState<Option[]>([]);
@@ -81,7 +82,7 @@ export default function CampaignEditPage({
       setMessage("");
       try {
         const res = await fetch(
-          `/api/portal/loyalty/promotions/${encodeURIComponent(params.campaignId)}`,
+          `/api/portal/loyalty/promotions/${encodeURIComponent(campaignId)}`,
         );
         if (!res.ok) throw new Error(await res.text());
         const data = await res.json();
@@ -137,11 +138,11 @@ export default function CampaignEditPage({
       }
     };
     load();
-  }, [params.campaignId]);
+  }, [campaignId]);
 
   const toggleInArray = (
     list: string[],
-    setList: (next: string[]) => void,
+    setList: React.Dispatch<React.SetStateAction<string[]>>,
     value: string,
   ) => {
     setList((prev) =>
@@ -197,7 +198,7 @@ export default function CampaignEditPage({
         categoryIds,
       };
       const res = await fetch(
-        `/api/portal/loyalty/promotions/${encodeURIComponent(params.campaignId)}`,
+        `/api/portal/loyalty/promotions/${encodeURIComponent(campaignId)}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },

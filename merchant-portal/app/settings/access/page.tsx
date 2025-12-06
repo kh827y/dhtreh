@@ -200,12 +200,13 @@ export default function AccessSettingsPage() {
 
   function updateDraftPermissions(moduleId: string, key: keyof CrudMatrix, value: boolean) {
     if (!draft) return;
+    const existing = draft.permissions[moduleId] ?? { create: false, read: false, update: false, delete: false };
     setDraft({
       ...draft,
       permissions: {
         ...draft.permissions,
-        [moduleId]: { ...draft.permissions[moduleId], [key]: value },
-      },
+        [moduleId]: { ...existing, [key]: value },
+      } as ModulePermissions,
     });
   }
 

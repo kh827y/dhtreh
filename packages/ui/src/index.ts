@@ -1,5 +1,5 @@
 export { Button } from './components/Button';
-export { Card, CardHeader, CardBody, CardFooter } from './components/Card';
+export { Card, CardHeader, CardBody, CardFooter, type CardProps, type CardHeaderProps, type CardBodyProps, type CardFooterProps } from './components/Card';
 export { Skeleton } from './components/Skeleton';
 export { Chart } from './components/Chart';
 export { MotionFadeIn } from './components/Motion';

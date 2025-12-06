@@ -678,11 +678,9 @@ const usageLimitSelection = form.usageLimitSelection;
             </div>
             <div style={{ padding: '16px 24px', borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
               <button className="btn" onClick={closeModal} disabled={submitting}>Закрыть</button>
-              {modalMode !== 'view' && (
-                <Button variant="primary" onClick={handleSubmit} disabled={submitting}>
-                  {submitting ? 'Сохраняем…' : modalMode === 'create' ? 'Создать' : 'Сохранить'}
-                </Button>
-              )}
+              <Button variant="primary" onClick={handleSubmit} disabled={submitting}>
+                {submitting ? 'Сохраняем…' : modalMode === 'create' ? 'Создать' : 'Сохранить'}
+              </Button>
             </div>
           </div>
         </div>
@@ -723,14 +721,14 @@ function mapRowToForm(row: PromocodeRow): FormState {
           : 0,
       )
     : '0';
-  const usagePeriodEnabled = meta?.usagePeriod?.enabled ?? !!row.cooldownDays;
+  const usagePeriodEnabled = meta?.usagePeriod?.enabled ?? !!(row as any).cooldownDays;
   const usagePeriodDays = usagePeriodEnabled
-    ? String(meta?.usagePeriod?.days ?? row.cooldownDays ?? '')
+    ? String(meta?.usagePeriod?.days ?? (row as any).cooldownDays ?? '')
     : '';
   const recentVisitEnabled =
-    meta?.requireRecentVisit?.enabled ?? !!row.requireVisit;
+    meta?.requireRecentVisit?.enabled ?? !!(row as any).requireVisit;
   const recentVisitHours = String(
-    meta?.requireRecentVisit?.hours ?? row.visitLookbackHours ?? 0,
+    meta?.requireRecentVisit?.hours ?? (row as any).visitLookbackHours ?? 0,
   );
   return {
     code: row.code || row.name || '',

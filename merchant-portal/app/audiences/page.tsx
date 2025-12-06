@@ -6,7 +6,7 @@ import { Card, CardHeader, CardBody, Button, Skeleton } from "@loyalty/ui";
 import Toggle from "../../components/Toggle";
 import TagSelect from "../../components/TagSelect";
 import RangeSlider from "../../components/RangeSlider";
-import { Search, PlusCircle, X, Trash2, Users2 } from "lucide-react";
+import { Search, PlusCircle, X, Trash2, Users2, Edit2, Eye, Settings, User, Calendar } from "lucide-react";
 
 type TableColumn = {
   key: keyof AudienceRow | 'actions';
@@ -358,7 +358,7 @@ function filtersToDisplay(filters: any) {
 
   const source = filters as Record<string, unknown>;
   const genderValues = parseStringArray(source.gender);
-  if (genderValues.length === 1) {
+  if (genderValues.length === 1 && genderValues[0]) {
     const value = genderValues[0].toLowerCase();
     if (value === 'male') display.gender = 'Мужской';
     else if (value === 'female') display.gender = 'Женский';
@@ -459,7 +459,7 @@ function filtersToDisplay(filters: any) {
   const deviceValues = parseStringArray(
     source.devicePlatforms ?? source.device,
   );
-  if (deviceValues.length === 1) {
+  if (deviceValues.length === 1 && deviceValues[0]) {
     display.device = normalizeDeviceLabel(deviceValues[0]);
   }
 
@@ -522,16 +522,16 @@ function parseMetricEntry(value: unknown): MetricEntry | null {
   return null;
 }
 
-function formatMetricEntry(entry: MetricEntry | null, suffix = '', { approx = true }: { approx?: boolean } = {}) {
-  if (!entry) return null;
+function formatMetricEntry(entry: MetricEntry | null, suffix = '', { approx = true }: { approx?: boolean } = {}): string | undefined {
+  if (!entry) return undefined;
   if (entry.value != null) {
     const formatted = `${entry.value.toLocaleString('ru-RU')}${suffix}`;
     return approx ? `≈ ${formatted}` : formatted;
   }
   if (entry.min != null || entry.max != null) {
-    return formatRange(entry.min ?? null, entry.max ?? null, suffix);
+    return formatRange(entry.min ?? null, entry.max ?? null, suffix) ?? undefined;
   }
-  return null;
+  return undefined;
 }
 
 function metricsToDisplay(snapshot: unknown) {
@@ -602,7 +602,7 @@ function filtersToSettings(filters: any): AudienceSettings {
   }
 
   const genderValues = parseStringArray(source.gender);
-  if (genderValues.length === 1) {
+  if (genderValues.length === 1 && genderValues[0]) {
     const value = genderValues[0].toLowerCase();
     if (value === 'male' || value === 'female') {
       settings.genderEnabled = true;
@@ -736,7 +736,7 @@ function filtersToSettings(filters: any): AudienceSettings {
       source.levels ??
       (typeof source.level === 'string' ? [source.level] : undefined),
   );
-  if (levelValues.length === 1) {
+  if (levelValues.length === 1 && levelValues[0]) {
     settings.levelEnabled = true;
     settings.level = levelValues[0];
   }
@@ -744,7 +744,7 @@ function filtersToSettings(filters: any): AudienceSettings {
   const deviceValues = parseStringArray(
     source.devicePlatforms ?? source.device,
   );
-  if (deviceValues.length === 1) {
+  if (deviceValues.length === 1 && deviceValues[0]) {
     settings.deviceEnabled = true;
     settings.device = normalizeDeviceLabel(deviceValues[0]);
   }
@@ -1005,153 +1005,182 @@ export default function AudiencesPage() {
   };
 
   return (
-    <div style={{ display: 'grid', gap: 20 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
+    <div className="animate-in" style={{ display: "grid", gap: 24 }}>
+      {/* Header */}
+      <header style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+        <div style={{
+          width: 48,
+          height: 48,
+          borderRadius: "var(--radius-lg)",
+          background: "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.1))",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "var(--brand-primary-light)",
+        }}>
+          <Users2 size={24} />
+        </div>
         <div>
-          <div style={{ fontSize: 24, fontWeight: 700 }}>Аудитории клиентов</div>
-          <div style={{ fontSize: 13, opacity: 0.7 }}>Сегментируйте клиентов по поведению и характеристикам</div>
+          <h1 style={{ 
+            fontSize: 28, 
+            fontWeight: 800, 
+            margin: 0,
+            letterSpacing: "-0.02em",
+          }}>
+            Аудитории
+          </h1>
+          <p style={{ 
+            fontSize: 14, 
+            color: "var(--fg-muted)", 
+            margin: "6px 0 0",
+          }}>
+            Сегментация клиентской базы
+          </p>
         </div>
-        <Button variant="primary" onClick={openCreate} startIcon={<PlusCircle size={18} />}>Создать аудиторию</Button>
-      </div>
-
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ position: 'relative', flex: '0 1 320px' }}>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Поиск по названию"
-            style={{ width: '100%', padding: '10px 36px 10px 12px', borderRadius: 10 }}
-          />
-          <Search size={16} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', opacity: 0.6 }} />
+        <div style={{ marginLeft: "auto" }}>
+           <Button variant="primary" onClick={openCreate} leftIcon={<PlusCircle size={16} />}>
+            Создать аудиторию
+          </Button>
         </div>
-      </div>
+      </header>
 
+      {/* Filters */}
       <Card>
-        <CardHeader title="Аудитории" subtitle={`${filtered.length} записей`} />
-        <CardBody>
-          {loading ? (
-            <Skeleton height={220} />
-          ) : filtered.length ? (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 960 }}>
-                <thead>
-                  <tr>
-                    {tableColumns.map((col) => (
-                      <th key={col.key as string} style={{ textAlign: 'left', padding: '10px 12px', fontSize: 11, opacity: 0.65, letterSpacing: 0.4, textTransform: 'uppercase', borderBottom: '1px solid rgba(148,163,184,0.18)' }}>
-                        {col.label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((aud) => (
-                    <tr
-                      key={aud.id}
-                      onClick={() => openEdit(aud)}
-                      style={{ cursor: 'pointer', borderBottom: '1px solid rgba(148,163,184,0.1)' }}
-                    >
-                      {tableColumns.map((col) => {
-                        const isName = col.key === 'name';
-                        const cellStyle: React.CSSProperties = {
-                          padding: '12px 12px',
-                          ...(isName ? { fontWeight: 600 } : {}),
-                        };
-                        let value: React.ReactNode;
-                        if (col.key === 'actions') {
-                          value = (
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={(event) => openMembersModal(aud, event)}
-                              startIcon={<Users2 size={16} />}
-                            >
-                              Открыть
-                            </Button>
-                          );
-                        } else {
-                          value = aud[col.key as keyof AudienceRow] ?? '—';
-                        }
-                        return (
-                          <td key={col.key as string} style={cellStyle}>
-                            {value}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        <CardBody style={{ padding: 20 }}>
+          <div className="filter-grid">
+            <div className="filter-block" style={{ flex: 1, minWidth: 300 }}>
+               <span className="filter-label">Поиск по названию</span>
+               <div style={{ position: "relative" }}>
+                  <Search size={16} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--fg-muted)" }} />
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Например, Постоянные гости..."
+                    className="input"
+                    style={{ paddingLeft: 38, width: "100%" }}
+                  />
+               </div>
             </div>
+          </div>
+        </CardBody>
+      </Card>
+
+      {/* List */}
+      <Card>
+        <CardHeader title="Сегменты" />
+        <CardBody style={{ padding: 0 }}>
+          {loading ? (
+            <div style={{ padding: 20 }}><Skeleton height={200} /></div>
           ) : (
-            <div style={{ padding: 16, opacity: 0.7 }}>Аудитории не найдены</div>
+            <div className="data-list">
+              <div className="list-row audience-grid" style={{ background: "rgba(255,255,255,0.02)", borderBottom: "1px solid var(--border-subtle)" }}>
+                <div className="cell-label">НАЗВАНИЕ</div>
+                <div className="cell-label">УЧАСТНИКИ</div>
+                <div className="cell-label">ПОСЛ. ПОКУПКА</div>
+                <div className="cell-label">КОЛ-ВО ПОКУПОК</div>
+                <div className="cell-label">СРЕДНИЙ ЧЕК</div>
+                <div className="cell-label" style={{ textAlign: "right" }}>ДЕЙСТВИЯ</div>
+              </div>
+              {filtered.map((audience) => (
+                <div 
+                  key={audience.id} 
+                  className="list-row audience-grid"
+                  onClick={() => openEdit(audience)}
+                  style={{ cursor: "pointer" }}
+                >
+                  <div style={{ fontWeight: 600, color: "var(--fg)" }}>{audience.name}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+                    <Users2 size={14} className="text-muted" />
+                    {audience.participants}
+                  </div>
+                  <div style={{ fontSize: 13, color: "var(--fg-secondary)" }}>
+                    {audience.lastPurchaseDays !== '—' ? `${audience.lastPurchaseDays} дн.` : '—'}
+                  </div>
+                  <div style={{ fontSize: 13, color: "var(--fg-secondary)" }}>
+                    {audience.purchaseCount}
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: "var(--fg)" }}>
+                    {audience.averageCheck}
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); openEdit(audience); }}
+                      className="btn-icon"
+                      title="Настроить"
+                      style={{ color: "var(--fg-secondary)", padding: 6, borderRadius: 6, cursor: "pointer", border: "none", background: "transparent" }}
+                    >
+                      <Settings size={16} />
+                    </button>
+                    <button
+                      onClick={(e) => openMembersModal(audience, e)}
+                      className="btn-icon"
+                      title="Участники"
+                      style={{ color: "var(--brand-primary-light)", padding: 6, borderRadius: 6, cursor: "pointer", border: "none", background: "transparent" }}
+                    >
+                      <User size={16} />
+                    </button>
+                    <button
+                      onClick={(e) => { 
+                        e.stopPropagation();
+                        if (confirm('Удалить аудиторию?')) {
+                           api(`/api/portal/audiences/${encodeURIComponent(audience.id)}/archive`, { method: 'POST', body: JSON.stringify({}) })
+                             .then(() => { loadAudiences(); closeModal(); })
+                             .catch(console.error);
+                        }
+                      }}
+                      className="btn-icon"
+                      title="Удалить"
+                      style={{ color: "var(--danger)", padding: 6, borderRadius: 6, cursor: "pointer", border: "none", background: "transparent" }}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {!filtered.length && (
+                <div style={{ padding: 40, textAlign: "center", opacity: 0.6 }}>
+                  <Users2 size={48} style={{ opacity: 0.3, marginBottom: 12 }} />
+                  <div>Аудитории не найдены</div>
+                </div>
+              )}
+            </div>
           )}
         </CardBody>
       </Card>
 
         {membersModalAudience && (
-          <div
-            style={{
-              position: 'fixed',
-              inset: 0,
-              background: 'rgba(15,23,42,0.74)',
-              backdropFilter: 'blur(8px)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: 20,
-              zIndex: 95,
-            }}
-          >
-            <div
-              style={{
-                width: 'min(720px, 96vw)',
-                maxHeight: '94vh',
-                overflow: 'hidden',
-                background: 'rgba(12,16,26,0.96)',
-                borderRadius: 22,
-                border: '1px solid rgba(148,163,184,0.16)',
-                boxShadow: '0 28px 80px rgba(2,6,23,0.5)',
-                display: 'grid',
-                gridTemplateRows: 'auto 1fr',
-              }}
-            >
-              <div
-                style={{
-                  padding: '18px 24px',
-                  borderBottom: '1px solid rgba(148,163,184,0.16)',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                }}
-              >
+          <div className="modal-overlay" onClick={closeMembersModal}>
+            <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(720px, 96vw)', maxHeight: '80vh' }}>
+              <div className="modal-header">
                 <div>
                   <div style={{ fontSize: 18, fontWeight: 700 }}>{membersModalAudience.name}</div>
-                  <div style={{ fontSize: 13, opacity: 0.65 }}>
+                  <div style={{ fontSize: 13, opacity: 0.65, marginTop: 4 }}>
                     {membersModalAudience.participants} участников
                   </div>
                 </div>
-                <button className="btn btn-ghost" onClick={closeMembersModal}>
-                  <X size={18} />
+                <button className="btn-ghost" onClick={closeMembersModal} style={{ padding: 6, borderRadius: '50%', border: 'none', cursor: 'pointer', display: 'flex' }}>
+                  <X size={20} />
                 </button>
               </div>
 
-              <div style={{ padding: 24, display: 'grid', gap: 16 }}>
+              <div className="modal-body">
                 <div style={{ position: 'relative' }}>
-                  <input
-                    value={memberSearch}
-                    onChange={(event) => setMemberSearch(event.target.value)}
-                    placeholder="Поиск по телефону или имени"
-                    style={{ width: '100%', padding: '10px 36px 10px 12px', borderRadius: 10 }}
-                  />
                   <Search
                     size={16}
                     style={{
                       position: 'absolute',
-                      right: 12,
+                      left: 12,
                       top: '50%',
                       transform: 'translateY(-50%)',
-                      opacity: 0.6,
+                      color: 'var(--fg-muted)',
                     }}
+                  />
+                  <input
+                    value={memberSearch}
+                    onChange={(event) => setMemberSearch(event.target.value)}
+                    placeholder="Поиск по телефону или имени"
+                    className="input"
+                    style={{ width: '100%', paddingLeft: 38 }}
                   />
                 </div>
 
@@ -1161,8 +1190,8 @@ export default function AudiencesPage() {
                   <div
                     style={{
                       display: 'grid',
-                      gap: 10,
-                      maxHeight: '52vh',
+                      gap: 8,
+                      maxHeight: '50vh',
                       overflowY: 'auto',
                       paddingRight: 4,
                     }}
@@ -1171,30 +1200,34 @@ export default function AudiencesPage() {
                       <button
                         key={member.id}
                         onClick={() => handleMemberClick(member)}
-                        className="btn btn-ghost"
+                        className="btn-ghost"
                         style={{
                           justifyContent: 'space-between',
                           textAlign: 'left',
                           padding: '12px 16px',
-                          borderRadius: 14,
-                          border: '1px solid rgba(148,163,184,0.18)',
+                          borderRadius: 12,
+                          border: '1px solid var(--border-subtle)',
+                          width: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          background: 'rgba(255,255,255,0.02)',
                         }}
                       >
                         <div style={{ display: 'grid', gap: 4 }}>
-                          <div style={{ fontWeight: 600 }}>{member.name || member.phone}</div>
-                          <div style={{ fontSize: 12, opacity: 0.7 }}>
+                          <div style={{ fontWeight: 600, fontSize: 14 }}>{member.name || member.phone}</div>
+                          <div style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
                             {member.phone}
                             {member.age ? ` • ${member.age} лет` : ''}
                           </div>
                         </div>
-                        <div style={{ fontSize: 12, opacity: 0.6 }}>
-                          Зарегистрирован: {formatDateRu(member.registrationDate)}
+                        <div style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
+                          {formatDateRu(member.registrationDate)}
                         </div>
                       </button>
                     ))}
                   </div>
                 ) : (
-                  <div style={{ padding: 12, opacity: 0.7 }}>Участники не найдены</div>
+                  <div style={{ padding: 20, textAlign: 'center', opacity: 0.6 }}>Участники не найдены</div>
                 )}
               </div>
             </div>
@@ -1202,44 +1235,53 @@ export default function AudiencesPage() {
         )}
 
         {modalMode && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.74)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, zIndex: 90 }}>
-            <div style={{ width: 'min(960px, 96vw)', maxHeight: '94vh', overflow: 'auto', background: 'rgba(12,16,26,0.96)', borderRadius: 22, border: '1px solid rgba(148,163,184,0.16)', boxShadow: '0 28px 80px rgba(2,6,23,0.5)', display: 'grid', gridTemplateRows: 'auto 1fr auto' }}>
-            <div style={{ padding: '18px 24px', borderBottom: '1px solid rgba(148,163,184,0.16)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ fontSize: 18, fontWeight: 700 }}>{modalMode === 'create' ? 'Создать аудиторию' : audienceName}</div>
-                <div style={{ fontSize: 13, opacity: 0.65 }}>{modalMode === 'create' ? 'Настройте фильтры и сохраните аудиторию' : `${currentAudience?.participants ?? 0} участников`}</div>
-              </div>
-              <button className="btn btn-ghost" onClick={closeModal}><X size={18} /></button>
-            </div>
-
-            <div style={{ padding: 24, display: 'grid', gap: 20 }}>
-              <div style={{ display: 'grid', gap: 8 }}>
-                <label style={{ fontSize: 13, opacity: 0.8 }}>Название *</label>
-                <input value={audienceName} onChange={(e) => setAudienceName(e.target.value)} placeholder="Например, Лояльные" style={{ padding: 12, borderRadius: 10 }} />
+          <div className="modal-overlay">
+            <div className="modal" style={{ width: 'min(960px, 96vw)', maxHeight: '90vh' }}>
+              <div className="modal-header">
+                <div>
+                  <div style={{ fontSize: 18, fontWeight: 700 }}>{modalMode === 'create' ? 'Создать аудиторию' : audienceName}</div>
+                  <div style={{ fontSize: 13, opacity: 0.65, marginTop: 4 }}>{modalMode === 'create' ? 'Настройте фильтры и сохраните аудиторию' : `${currentAudience?.participants ?? 0} участников`}</div>
+                </div>
+                <button className="btn-ghost" onClick={closeModal} style={{ padding: 6, borderRadius: '50%', border: 'none', cursor: 'pointer', display: 'flex' }}>
+                  <X size={20} />
+                </button>
               </div>
 
-              <SettingsForm
-                settings={settings}
-                onChange={setSettings}
-                outletOptions={outletOptions}
-                levelOptions={levelOptions}
-              />
-            </div>
+              <div className="modal-body">
+                <div style={{ display: 'grid', gap: 24 }}>
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    <label style={{ fontSize: 13, fontWeight: 500, color: 'var(--fg-secondary)' }}>Название *</label>
+                    <input 
+                      value={audienceName} 
+                      onChange={(e) => setAudienceName(e.target.value)} 
+                      placeholder="Например, Лояльные" 
+                      className="input"
+                    />
+                  </div>
 
-            <div style={{ padding: '16px 24px', borderTop: '1px solid rgba(148,163,184,0.16)', display: 'flex', justifyContent: modalMode === 'edit' ? 'space-between' : 'flex-end', gap: 12 }}>
-              {modalMode === 'edit' && currentAudience && (
-                <Button variant="danger" startIcon={<Trash2 size={16} />} onClick={handleDelete}>Удалить аудиторию</Button>
-              )}
-              <div style={{ display: 'flex', gap: 12 }}>
-                <button className="btn" onClick={closeModal} disabled={saving}>Отмена</button>
-                <Button variant="primary" onClick={handleSubmit} disabled={saving} startIcon={<Users2 size={16} />}>
-                  {saving ? 'Сохраняем…' : 'Сохранить'}
-                </Button>
+                  <SettingsForm
+                    settings={settings}
+                    onChange={setSettings}
+                    outletOptions={outletOptions}
+                    levelOptions={levelOptions}
+                  />
+                </div>
+              </div>
+
+              <div className="modal-footer" style={{ justifyContent: modalMode === 'edit' ? 'space-between' : 'flex-end' }}>
+                {modalMode === 'edit' && currentAudience && (
+                  <Button variant="danger" startIcon={<Trash2 size={16} />} onClick={handleDelete}>Удалить аудиторию</Button>
+                )}
+                <div style={{ display: 'flex', gap: 12 }}>
+                  <button className="btn" onClick={closeModal} disabled={saving}>Отмена</button>
+                  <Button variant="primary" onClick={handleSubmit} disabled={saving} startIcon={<Users2 size={16} />}>
+                    {saving ? 'Сохраняем…' : 'Сохранить'}
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
     </div>
   );
 }

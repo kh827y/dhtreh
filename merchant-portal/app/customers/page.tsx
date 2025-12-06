@@ -271,397 +271,326 @@ export default function CustomersPage() {
         setToast(e?.message || "Ошибка при сохранении клиента");
       }
     }
+    setModalState(null);
   }
 
   return (
-    <div className="animate-in" style={{ display: "grid", gap: 24 }}>
-      {toast && (
-        <div style={toastStyle} role="status">
-          {toast}
+<div className="animate-in" style={{ display: "grid", gap: 24 }}>
+  {toast && (
+    <div style={{
+      position: "fixed",
+      top: 96,
+      right: 24,
+      background: "rgba(16, 185, 129, 0.15)",
+      border: "1px solid rgba(16, 185, 129, 0.4)",
+      color: "var(--success-light)",
+      padding: "14px 20px",
+      borderRadius: "var(--radius-md)",
+      zIndex: 99,
+      fontSize: 14,
+      fontWeight: 500,
+      boxShadow: "0 16px 48px rgba(0, 0, 0, 0.4)",
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      backdropFilter: "blur(8px)"
+    }} role="status">
+      {toast}
+    </div>
+  )}
+
+  {/* Page Header */}
+  <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
+    <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+      <div style={{
+        width: 48,
+        height: 48,
+        borderRadius: "var(--radius-lg)",
+        background: "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.1))",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: "var(--brand-primary-light)",
+      }}>
+        <UsersRound size={24} />
+      </div>
+      <div>
+        <h1 style={{ 
+          fontSize: 28, 
+          fontWeight: 800, 
+          margin: 0,
+          letterSpacing: "-0.02em",
+        }}>
+          Клиенты
+        </h1>
+        <p style={{ 
+          fontSize: 14, 
+          color: "var(--fg-muted)", 
+          margin: "6px 0 0",
+        }}>
+          Список участников программы лояльности ({filteredCustomers.length})
+        </p>
+      </div>
+    </div>
+    
+    <div style={{ display: "flex", gap: 10 }}>
+      <Button onClick={openCreateModal} leftIcon={<UserPlus size={16} />}>
+        Добавить клиента
+      </Button>
+      <Button type="button" variant="secondary" leftIcon={<UploadIcon size={16} />} onClick={() => router.push("/customers/import")}>
+        Импорт
+      </Button>
+    </div>
+  </header>
+
+  {/* Filters */}
+  <Card>
+    <CardBody style={{ padding: 20 }}>
+      <div className="filter-grid">
+         <div className="filter-block">
+           <span className="filter-label">№</span>
+           <div style={{ position: "relative" }}>
+             <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--fg-muted)" }} />
+             <input
+               className="input"
+               style={{ width: 100, paddingLeft: 32 }}
+               value={filters.index}
+               onChange={(e) => setFilters((prev) => ({ ...prev, index: e.target.value }))}
+               placeholder="№"
+             />
+           </div>
+         </div>
+         <div className="filter-block" style={{ flex: 1, minWidth: 160 }}>
+           <span className="filter-label">Телефон</span>
+           <input
+             className="input"
+             style={{ width: "100%" }}
+             value={filters.login}
+             onChange={(e) => setFilters((prev) => ({ ...prev, login: e.target.value }))}
+             placeholder="Телефон..."
+           />
+         </div>
+         <div className="filter-block" style={{ flex: 1, minWidth: 160 }}>
+           <span className="filter-label">Имя</span>
+           <input
+             className="input"
+             style={{ width: "100%" }}
+             value={filters.name}
+             onChange={(e) => setFilters((prev) => ({ ...prev, name: e.target.value }))}
+             placeholder="Имя..."
+           />
+         </div>
+         <div className="filter-block" style={{ flex: 1, minWidth: 160 }}>
+           <span className="filter-label">Email</span>
+           <input
+             className="input"
+             style={{ width: "100%" }}
+             value={filters.email}
+             onChange={(e) => setFilters((prev) => ({ ...prev, email: e.target.value }))}
+             placeholder="Email..."
+           />
+         </div>
+         <div className="filter-block">
+           <span className="filter-label">Ср. чек</span>
+           <input
+             type="number"
+             className="input"
+             style={{ width: 120 }}
+             value={filters.averageCheck}
+             onChange={(e) => setFilters((prev) => ({ ...prev, averageCheck: e.target.value }))}
+             placeholder="от..."
+           />
+         </div>
+         <div className="filter-block">
+           <span className="filter-label">Частота</span>
+           <input
+             className="input"
+             style={{ width: 120 }}
+             value={filters.frequency}
+             onChange={(e) => setFilters((prev) => ({ ...prev, frequency: e.target.value }))}
+             placeholder="Напр. еженедельно"
+           />
+         </div>
+         <div className="filter-block">
+           <span className="filter-label">Дата рожд.</span>
+           <input
+             type="date"
+             className="input"
+             style={{ width: 140 }}
+             value={filters.birthday}
+             onChange={(e) => setFilters((prev) => ({ ...prev, birthday: e.target.value }))}
+           />
+         </div>
+         <div className="filter-block">
+           <span className="filter-label">Возраст</span>
+           <input
+             type="number"
+             className="input"
+             style={{ width: 80 }}
+             value={filters.age}
+             onChange={(e) => setFilters((prev) => ({ ...prev, age: e.target.value }))}
+             placeholder="лет"
+           />
+         </div>
+      </div>
+    </CardBody>
+  </Card>
+
+  <Card>
+    <CardBody style={{ padding: 0 }}>
+      <div className="data-list">
+         <div className="list-row customer-grid" style={{ background: "rgba(255,255,255,0.02)", borderBottom: "1px solid var(--border-subtle)" }}>
+            <div className="cell-label">#</div>
+            <div className="cell-label">ТЕЛЕФОН</div>
+            <div className="cell-label">ИМЯ</div>
+            <div className="cell-label">EMAIL</div>
+            <div className="cell-label">ЧАСТОТА</div>
+            <div className="cell-label">СР. ЧЕК</div>
+            <div className="cell-label">ДАТА РОЖД.</div>
+            <div className="cell-label">ВОЗРАСТ</div>
+            <div className="cell-label" style={{ textAlign: "right" }}>ДЕЙСТВИЯ</div>
+         </div>
+         {pageItems.map((customer, index) => (
+           <div key={customer.id} className="list-row customer-grid">
+              <div style={{ color: "var(--fg-muted)", fontSize: 13 }}>{startIndex + index + 1}</div>
+              <div>
+                <Link href={`/customers/${customer.id}`} style={{ color: "var(--brand-primary-light)", fontWeight: 500, textDecoration: "none" }}>
+                  {customer.phone || customer.login}
+                </Link>
+              </div>
+              <div>
+                <Link href={`/customers/${customer.id}`} style={{ color: "var(--fg)", fontWeight: 500, textDecoration: "none" }}>
+                  {getFullName(customer) || "—"}
+                </Link>
+              </div>
+              <div style={{ fontSize: 13, color: "var(--fg-secondary)", overflow: "hidden", textOverflow: "ellipsis" }}>{customer.email || "—"}</div>
+              <div style={{ fontSize: 13, color: "var(--fg-secondary)" }}>{formatVisitFrequency(customer)}</div>
+              <div style={{ fontSize: 13, fontWeight: 500 }}>{formatCurrency(customer.averageCheck)}</div>
+              <div style={{ fontSize: 13, color: "var(--fg-muted)" }}>{formatDate(customer.birthday)}</div>
+              <div style={{ fontSize: 13, color: "var(--fg-muted)" }}>{customer.age || "—"}</div>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                <Link
+                  href={`/customers/complimentary?phone=${encodeURIComponent(customer.login)}`}
+                  title="Начислить комплиментарные баллы"
+                  className="btn-icon"
+                  style={{ color: "var(--fg-secondary)", padding: 6, borderRadius: 6, display: "flex" }}
+                >
+                  <Gift size={16} />
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => openEditModal(customer)}
+                  title="Редактировать"
+                  className="btn-icon"
+                  style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--fg-secondary)", padding: 6, borderRadius: 6 }}
+                >
+                  <Edit3 size={16} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDelete(customer)}
+                  title="Удалить"
+                  className="btn-icon"
+                  style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--danger)", padding: 6, borderRadius: 6 }}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+           </div>
+         ))}
+      </div>
+
+      {!pageItems.length && (
+        <div style={{ padding: 40, textAlign: "center", opacity: 0.6 }}>
+          <UsersRound size={48} style={{ opacity: 0.2, marginBottom: 12 }} />
+          <div>Клиенты не найдены. Попробуйте изменить фильтры.</div>
         </div>
       )}
 
-      {/* Page Header */}
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
-          <div style={{
-            width: 48,
-            height: 48,
-            borderRadius: "var(--radius-lg)",
-            background: "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.1))",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "var(--brand-primary-light)",
-          }}>
-            <UsersRound size={24} />
-          </div>
-          <div>
-            <h1 style={{ 
-              fontSize: 28, 
-              fontWeight: 800, 
-              margin: 0,
-              letterSpacing: "-0.02em",
-            }}>
-              Клиенты
-            </h1>
-            <p style={{ 
-              fontSize: 14, 
-              color: "var(--fg-muted)", 
-              margin: "6px 0 0",
-            }}>
-              Список участников программы лояльности
-            </p>
-          </div>
-        </div>
-        
-        <div style={{ display: "flex", gap: 10 }}>
-          <Button onClick={openCreateModal} leftIcon={<UserPlus size={16} />}>
-            Добавить клиента
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, padding: 20, borderTop: "1px solid var(--border-subtle)" }}>
+        <span style={{ fontSize: 13, color: "var(--fg-muted)" }}>
+          Показаны записи {shownFrom}-{shownTo} из {filteredCustomers.length}
+        </span>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+            disabled={currentPage === 1}
+            leftIcon={<ChevronLeft size={14} />}
+          >
+            Назад
           </Button>
-          <Button type="button" variant="secondary" leftIcon={<UploadIcon size={16} />} onClick={() => router.push("/customers/import")}>
-            Импорт
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+            disabled={currentPage === totalPages || !filteredCustomers.length}
+            rightIcon={<ChevronRight size={14} />}
+          >
+            Вперёд
           </Button>
         </div>
-      </header>
+      </div>
+    </CardBody>
+  </Card>
 
-      <Card>
-        <CardBody style={{ display: "grid", gap: 16, padding: 0 }}>
-          <div style={{ overflowX: "auto" }}>
-            <table style={tableStyle}>
-              <thead>
-                <tr>
-                  <th style={headerCellStyle}>#</th>
-                  <th style={headerCellStyle}>Телефон</th>
-                  <th style={headerCellStyle}>Имя</th>
-                  <th style={headerCellStyle}>Электронная почта</th>
-                  <th style={headerCellStyle}>Частота визитов</th>
-                  <th style={headerCellStyle}>Средний чек</th>
-                  <th style={headerCellStyle}>День рождения</th>
-                  <th style={headerCellStyle}>Возраст</th>
-                  <th style={headerCellStyle} aria-label="Действия" />
-                </tr>
-                <tr>
-                  <th style={filterCellStyle}>
-                    <div style={filterInputWrapperStyle}>
-                      <Search size={14} style={{ opacity: 0.6 }} />
-                      <input
-                        style={filterInputStyle}
-                        value={filters.index}
-                        onChange={(event) => setFilters((prev) => ({ ...prev, index: event.target.value }))}
-                        placeholder="№"
-                      />
-                    </div>
-                  </th>
-                  <th style={filterCellStyle}>
-                    <div style={filterInputWrapperStyle}>
-                      <Search size={14} style={{ opacity: 0.6 }} />
-                      <input
-                        style={filterInputStyle}
-                        value={filters.login}
-                        onChange={(event) => setFilters((prev) => ({ ...prev, login: event.target.value }))}
-                        placeholder="Телефон"
-                      />
-                    </div>
-                  </th>
-                  <th style={filterCellStyle}>
-                    <div style={filterInputWrapperStyle}>
-                      <Search size={14} style={{ opacity: 0.6 }} />
-                      <input
-                        style={filterInputStyle}
-                        value={filters.name}
-                        onChange={(event) => setFilters((prev) => ({ ...prev, name: event.target.value }))}
-                        placeholder="Имя клиента"
-                      />
-                    </div>
-                  </th>
-                  <th style={filterCellStyle}>
-                    <div style={filterInputWrapperStyle}>
-                      <Search size={14} style={{ opacity: 0.6 }} />
-                      <input
-                        style={filterInputStyle}
-                        value={filters.email}
-                        onChange={(event) => setFilters((prev) => ({ ...prev, email: event.target.value }))}
-                        placeholder="Email"
-                      />
-                    </div>
-                  </th>
-                  <th style={filterCellStyle}>
-                    <div style={filterInputWrapperStyle}>
-                      <Search size={14} style={{ opacity: 0.6 }} />
-                      <input
-                        style={filterInputStyle}
-                        value={filters.frequency}
-                        onChange={(event) => setFilters((prev) => ({ ...prev, frequency: event.target.value }))}
-                        placeholder="Напр. еженедельно"
-                      />
-                    </div>
-                  </th>
-                  <th style={filterCellStyle}>
-                    <input
-                      style={filterInputStyle}
-                      type="number"
-                      min={0}
-                      value={filters.averageCheck}
-                      onChange={(event) => setFilters((prev) => ({ ...prev, averageCheck: event.target.value }))}
-                      placeholder="от"
-                    />
-                  </th>
-                  <th style={filterCellStyle}>
-                    <input
-                      style={filterInputStyle}
-                      type="date"
-                      value={filters.birthday}
-                      onChange={(event) => setFilters((prev) => ({ ...prev, birthday: event.target.value }))}
-                    />
-                  </th>
-                  <th style={filterCellStyle}>
-                    <input
-                      style={filterInputStyle}
-                      type="number"
-                      min={0}
-                      value={filters.age}
-                      onChange={(event) => setFilters((prev) => ({ ...prev, age: event.target.value }))}
-                      placeholder="Возраст"
-                    />
-                  </th>
-                  <th style={filterCellStyle} />
-                </tr>
-              </thead>
-              <tbody>
-                {pageItems.map((customer, index) => (
-                  <tr key={customer.id} style={rowStyle}>
-                    <td style={cellStyle}>{startIndex + index + 1}</td>
-                    <td style={cellStyle}>
-                      <Link href={`/customers/${customer.id}`} style={linkStyle}>
-                        {customer.phone || customer.login}
-                      </Link>
-                    </td>
-                    <td style={cellStyle}>
-                      <Link href={`/customers/${customer.id}`} style={linkStyle}>
-                        {getFullName(customer) || "—"}
-                      </Link>
-                    </td>
-                    <td style={cellStyle}>{customer.email || "—"}</td>
-                    <td style={cellStyle}>{formatVisitFrequency(customer)}</td>
-                    <td style={cellStyle}>{formatCurrency(customer.averageCheck)}</td>
-                    <td style={cellStyle}>{formatDate(customer.birthday)}</td>
-                    <td style={cellStyle}>{customer.age || "—"}</td>
-                    <td style={{ ...cellStyle, width: 112 }}>
-                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                        <Link
-                          href={`/customers/complimentary?phone=${encodeURIComponent(customer.login)}`}
-                          title="Начислить комплиментарные баллы"
-                          style={iconButtonStyle}
-                        >
-                          <Gift size={16} />
-                        </Link>
-                        <button
-                          type="button"
-                          onClick={() => openEditModal(customer)}
-                          title="Редактировать"
-                          style={iconButtonStyle}
-                        >
-                          <Edit3 size={16} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(customer)}
-                          title="Удалить"
-                          style={{ ...iconButtonStyle, color: '#fca5a5', borderColor: 'rgba(248,113,113,0.35)' }}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {!pageItems.length && (
-            <div style={{ padding: 24, textAlign: "center", opacity: 0.6 }}>Клиенты не найдены. Попробуйте изменить фильтры.</div>
-          )}
-
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-            <span style={{ fontSize: 12, opacity: 0.7 }}>
-              Показаны записи {shownFrom}-{shownTo} из {filteredCustomers.length}
-            </span>
-            <div style={{ display: "flex", gap: 8 }}>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setPage((current) => Math.max(1, current - 1))}
-                disabled={currentPage === 1}
-                leftIcon={<ChevronLeft size={14} />}
-              >
-                Назад
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-                disabled={currentPage === totalPages || !filteredCustomers.length}
-                rightIcon={<ChevronRight size={14} />}
-              >
-                Вперёд
-              </Button>
-            </div>
-          </div>
-        </CardBody>
-      </Card>
-
-      <CustomerFormModal
-        open={Boolean(modalState)}
-        mode={modalState?.mode ?? "create"}
-        initialValues={
-          modalState?.customer
-            ? mapCustomerToForm(modalState.customer)
-            : { levelId: defaultLevelId }
-        }
-        loginToIgnore={modalState?.customer?.login}
-        levels={levelsCatalog}
-        onClose={() => setModalState(null)}
-        onSubmit={handleModalSubmit}
-        existingLogins={existingLogins}
-      />
-    </div>
-  );
+  <CustomerFormModal
+    open={Boolean(modalState)}
+    mode={modalState?.mode ?? "create"}
+    initialValues={
+      modalState?.customer
+        ? mapCustomerToForm(modalState.customer)
+        : { levelId: defaultLevelId }
+    }
+    loginToIgnore={modalState?.customer?.login}
+    levels={levelsCatalog}
+    onClose={() => setModalState(null)}
+    onSubmit={handleModalSubmit}
+    existingLogins={existingLogins}
+  />
+</div>
+);
 }
 
 function formatVisitFrequency(customer: CustomerRecord): string {
-  const value = customer.visitFrequencyDays;
-  if (value == null || value <= 0) return "—";
-  return value.toLocaleString("ru-RU");
+const value = customer.visitFrequencyDays;
+if (value == null || value <= 0) return "—";
+return value.toLocaleString("ru-RU");
 }
 
 function parseTags(tags: string): string[] {
-  return tags
-    .split(/[,;]+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
+return tags
+  .split(/[,;]+/)
+  .map((item) => item.trim())
+  .filter(Boolean);
 }
 
-function formatDate(value?: string): string {
-  if (!value) return "—";
-  try {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return "—";
-    return date.toLocaleDateString("ru-RU");
-  } catch {
-    return "—";
-  }
+function formatDate(value?: string | null): string {
+if (!value) return "—";
+try {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString("ru-RU");
+} catch {
+  return "—";
+}
 }
 
 function formatCurrency(value: number): string {
-  return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(value);
+return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(value);
 }
 
 function mapCustomerToForm(customer: CustomerRecord): Partial<CustomerFormPayload> {
-  const birthdayValue = customer.birthday ? customer.birthday.slice(0, 10) : "";
-  return {
-    login: customer.phone || customer.login,
-    email: customer.email ?? "",
-    firstName: getFullName(customer) || "",
-    tags: customer.tags.join(", "),
-    birthday: birthdayValue,
-    levelId: customer.levelId ?? null,
-    gender: customer.gender,
-    comment: customer.comment ?? "",
-  };
+const birthdayValue = customer.birthday ? customer.birthday.slice(0, 10) : "";
+return {
+  login: customer.phone || customer.login,
+  email: customer.email ?? "",
+  firstName: getFullName(customer) || "",
+  tags: customer.tags.join(", "),
+  birthday: birthdayValue,
+  levelId: customer.levelId ?? null,
+  gender: customer.gender,
+  comment: customer.comment ?? "",
+};
 }
-
-const tableStyle: React.CSSProperties = {
-  width: "100%",
-  borderCollapse: "collapse",
-  minWidth: 900,
-};
-
-const headerCellStyle: React.CSSProperties = {
-  textAlign: "left",
-  padding: "14px 16px",
-  fontSize: 12,
-  fontWeight: 600,
-  textTransform: "uppercase",
-  letterSpacing: "0.05em",
-  color: "var(--fg-muted)",
-  borderBottom: "1px solid var(--border-default)",
-  background: "rgba(0, 0, 0, 0.2)",
-};
-
-const filterCellStyle: React.CSSProperties = {
-  padding: "10px 16px",
-  borderBottom: "1px solid var(--border-subtle)",
-  background: "rgba(0, 0, 0, 0.1)",
-};
-
-const filterInputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "8px 12px",
-  borderRadius: "var(--radius-sm)",
-  border: "1px solid var(--border-default)",
-  background: "rgba(15, 23, 42, 0.6)",
-  color: "var(--fg)",
-  fontSize: 13,
-  transition: "border-color 0.2s ease, box-shadow 0.2s ease",
-};
-
-const filterInputWrapperStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 8,
-  background: "rgba(15, 23, 42, 0.6)",
-  borderRadius: "var(--radius-sm)",
-  padding: "0 10px",
-  border: "1px solid var(--border-default)",
-};
-
-const rowStyle: React.CSSProperties = {
-  borderBottom: "1px solid var(--border-subtle)",
-  transition: "background 0.15s ease",
-};
-
-const cellStyle: React.CSSProperties = {
-  padding: "14px 16px",
-  fontSize: 14,
-};
-
-const linkStyle: React.CSSProperties = {
-  color: "var(--brand-primary-light)",
-  textDecoration: "none",
-  fontWeight: 500,
-  transition: "color 0.15s ease",
-};
-
-const iconButtonStyle: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  width: 34,
-  height: 34,
-  borderRadius: "var(--radius-sm)",
-  border: "1px solid var(--border-default)",
-  background: "rgba(255, 255, 255, 0.03)",
-  color: "var(--fg-secondary)",
-  cursor: "pointer",
-  transition: "all 0.15s ease",
-};
-
-const toastStyle: React.CSSProperties = {
-  position: "fixed",
-  top: 96,
-  right: 24,
-  background: "rgba(16, 185, 129, 0.15)",
-  border: "1px solid rgba(16, 185, 129, 0.4)",
-  color: "var(--success-light)",
-  padding: "14px 20px",
-  borderRadius: "var(--radius-md)",
-  zIndex: 99,
-  fontSize: 14,
-  fontWeight: 500,
-  boxShadow: "0 16px 48px rgba(0, 0, 0, 0.4)",
-  display: "flex",
-  alignItems: "center",
-  gap: 10,
-};

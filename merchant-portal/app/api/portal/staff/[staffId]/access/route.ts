@@ -1,8 +1,8 @@
 import { NextRequest } from 'next/server';
 import { portalFetch } from '../../../_lib';
 
-export async function GET(req: NextRequest, ctx: { params: Promise<{ staffId: string }> | { staffId: string } }) {
-  const { staffId } = await Promise.resolve(ctx.params as any);
+export async function GET(req: NextRequest, { params }: { params: Promise<{ staffId: string }> }) {
+  const { staffId } = await params;
   if (!staffId) {
     return new Response(JSON.stringify({ error: 'BadRequest', message: 'staffId is required' }), {
       status: 400,
@@ -12,8 +12,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ staffId: st
   return portalFetch(req, `/portal/staff/${encodeURIComponent(staffId)}/access`, { method: 'GET' });
 }
 
-export async function POST(req: NextRequest, ctx: { params: Promise<{ staffId: string }> | { staffId: string } }) {
-  const { staffId } = await Promise.resolve(ctx.params as any);
+export async function POST(req: NextRequest, { params }: { params: Promise<{ staffId: string }> }) {
+  const { staffId } = await params;
   if (!staffId) {
     return new Response(JSON.stringify({ error: 'BadRequest', message: 'staffId is required' }), {
       status: 400,

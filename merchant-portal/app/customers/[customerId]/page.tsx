@@ -249,7 +249,7 @@ export default function CustomerCardPage() {
                   : rawId;
             return { id: rawId, name: label } as OutletOption;
           })
-          .filter((item): item is OutletOption => Boolean(item));
+          .filter((item: OutletOption | undefined | null): item is OutletOption => Boolean(item));
         if (!cancelled) {
           setOutlets(normalized);
         }
@@ -1068,7 +1068,7 @@ export default function CustomerCardPage() {
                       <td style={cellStyle}>{formatDateTime(review.createdAt)}</td>
                       <td style={cellStyle}>{review.outlet}</td>
                       <td style={cellStyle}>
-                        <StarRating rating={review.rating} size={18} />
+                        <StarRating rating={review.rating ?? 0} size={18} />
                       </td>
                       <td style={cellStyle}>{review.comment}</td>
                     </tr>
@@ -1485,7 +1485,7 @@ function formatPoints(value?: number | null): string {
   return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(Number(value));
 }
 
-function formatDate(value?: string): string {
+function formatDate(value?: string | null): string {
   if (!value) return "—";
   try {
     const date = new Date(value);
@@ -1496,7 +1496,7 @@ function formatDate(value?: string): string {
   }
 }
 
-function formatDateTime(value?: string): string {
+function formatDateTime(value?: string | null): string {
   if (!value) return "—";
   try {
     const date = new Date(value);
@@ -1552,11 +1552,13 @@ const AccrueModal: React.FC<AccrueModalProps> = ({
 
   React.useEffect(() => {
     if (!outlets.length) return;
+    const firstOutlet = outlets[0];
+    if (!firstOutlet) return;
     setForm((prev) => {
       if (prev.outletId && outlets.some((item) => item.id === prev.outletId)) {
         return prev;
       }
-      return { ...prev, outletId: outlets[0].id };
+      return { ...prev, outletId: firstOutlet.id };
     });
   }, [outlets]);
 
@@ -1805,11 +1807,13 @@ const RedeemModal: React.FC<RedeemModalProps> = ({
 
   React.useEffect(() => {
     if (!outlets.length) return;
+    const firstOutlet = outlets[0];
+    if (!firstOutlet) return;
     setForm((prev) => {
       if (prev.outletId && outlets.some((item) => item.id === prev.outletId)) {
         return prev;
       }
-      return { ...prev, outletId: outlets[0].id };
+      return { ...prev, outletId: firstOutlet.id };
     });
   }, [outlets]);
 

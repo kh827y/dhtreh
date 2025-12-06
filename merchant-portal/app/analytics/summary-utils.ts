@@ -57,11 +57,11 @@ export function hasTimelineData(timeline: SummaryTimelinePoint[]): boolean {
   );
 }
 
-export function buildChartOption(timeline: SummaryTimelinePoint[]) {
+export function buildChartOption(timeline: SummaryTimelinePoint[], theme: "light" | "dark" = "dark") {
   if (!timeline.length) {
     return {
       grid: { left: 32, right: 80, top: 32, bottom: 48 },
-      xAxis: { type: "category", data: [], axisLine: { lineStyle: { color: "rgba(148,163,184,0.4)" } } },
+      xAxis: { type: "category", data: [], axisLine: { lineStyle: { color: theme === "light" ? "rgba(0,0,0,0.1)" : "rgba(148,163,184,0.4)" } } },
       yAxis: [],
       series: [],
     } as const;
@@ -80,19 +80,22 @@ export function buildChartOption(timeline: SummaryTimelinePoint[]) {
   const salesCountMax = scaleMax(salesCount, 0.7);
   const salesAmountMax = scaleMax(salesAmount, 1);
 
+  const textColor = theme === "light" ? "#64748b" : "#cbd5f5";
+  const axisLineColor = theme === "light" ? "rgba(0,0,0,0.1)" : "rgba(148,163,184,0.4)";
+
   return {
-    tooltip: { trigger: "axis" },
+    tooltip: { trigger: "axis", backgroundColor: theme === "light" ? "#ffffff" : "rgba(15,23,42,0.9)", borderColor: axisLineColor, textStyle: { color: theme === "light" ? "#0f172a" : "#f1f5f9" } },
     legend: {
       data: ["Регистрации", "Продажи", "Сумма продаж"],
-      textStyle: { color: "#cbd5f5" },
+      textStyle: { color: textColor },
     },
     grid: { left: 32, right: 96, top: 32, bottom: 48 },
     xAxis: {
       type: "category",
       boundaryGap: false,
       data: labels,
-      axisLabel: { color: "#cbd5f5" },
-      axisLine: { lineStyle: { color: "rgba(148,163,184,0.4)" } },
+      axisLabel: { color: textColor },
+      axisLine: { lineStyle: { color: axisLineColor } },
     },
     yAxis: [
       {
@@ -100,7 +103,7 @@ export function buildChartOption(timeline: SummaryTimelinePoint[]) {
         position: "left",
         axisLabel: { show: false },
         splitLine: { show: false },
-        axisLine: { lineStyle: { color: "rgba(148,163,184,0.4)" } },
+        axisLine: { lineStyle: { color: axisLineColor } },
         min: 0,
         max: registrationsMax,
       },
@@ -109,7 +112,7 @@ export function buildChartOption(timeline: SummaryTimelinePoint[]) {
         position: "right",
         axisLabel: { show: false },
         splitLine: { show: false },
-        axisLine: { lineStyle: { color: "rgba(148,163,184,0.4)" } },
+        axisLine: { lineStyle: { color: axisLineColor } },
         min: 0,
         max: salesCountMax,
       },
@@ -119,7 +122,7 @@ export function buildChartOption(timeline: SummaryTimelinePoint[]) {
         offset: 52,
         axisLabel: { show: false },
         splitLine: { show: false },
-        axisLine: { lineStyle: { color: "rgba(148,163,184,0.4)" } },
+        axisLine: { lineStyle: { color: axisLineColor } },
         min: 0,
         max: salesAmountMax,
       },

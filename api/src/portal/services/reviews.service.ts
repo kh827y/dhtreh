@@ -6,6 +6,7 @@ type PortalReviewFilters = {
   withCommentOnly?: boolean;
   outletId?: string;
   staffId?: string;
+  deviceId?: string;
   limit?: number;
   offset?: number;
 };
@@ -175,11 +176,28 @@ export class PortalReviewsService {
 
   private async findOrderIdsByFilters(
     merchantId: string,
-    filters: { outletId?: string; staffId?: string },
+    filters: { outletId?: string; staffId?: string; deviceId?: string },
   ) {
     const receiptWhere: Prisma.ReceiptWhereInput = { merchantId };
     if (filters.outletId) receiptWhere.outletId = filters.outletId;
     if (filters.staffId) receiptWhere.staffId = filters.staffId;
+    if (filters.deviceId) {
+      const andParts = Array.isArray(receiptWhere.AND)
+        ? receiptWhere.AND
+        : receiptWhere.AND
+          ? [receiptWhere.AND]
+          : [];
+      receiptWhere.AND = [
+        ...andParts,
+        ...(filters.staffId ? [] : [{ staffId: null }]),
+        {
+          OR: [
+            { deviceId: filters.deviceId },
+            { device: { code: filters.deviceId } },
+          ],
+        },
+      ];
+    }
 
     const receipts = await this.prisma.receipt.findMany({
       where: receiptWhere,
@@ -256,10 +274,11 @@ export class PortalReviewsService {
 
     const filterOptionsPromise = this.collectFilterOptions(merchantId);
 
-    if (filters.outletId || filters.staffId) {
+    if (filters.outletId || filters.staffId || filters.deviceId) {
       const allowedOrderIds = await this.findOrderIdsByFilters(merchantId, {
         outletId: filters.outletId,
         staffId: filters.staffId,
+        deviceId: filters.deviceId,
       });
       if (!allowedOrderIds.length) {
         const { outlets, staff } = await filterOptionsPromise;

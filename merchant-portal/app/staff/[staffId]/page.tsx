@@ -859,7 +859,7 @@ export default function StaffCardPage({ params }: { params: Promise<{ staffId: s
                       <div style={{ display: "flex", gap: 8 }}>
                         <select
                           value={accessForm.groupId}
-                          disabled={item?.isOwner}
+                          disabled={!!item?.isOwner}
                           onChange={(e) => setAccessForm((prev) => ({ ...prev, groupId: e.target.value }))}
                           style={{ padding: "10px 12px", borderRadius: 8, flex: 1 }}
                         >

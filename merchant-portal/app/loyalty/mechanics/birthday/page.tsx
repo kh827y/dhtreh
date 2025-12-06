@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Card, CardBody, Chart, Skeleton } from "@loyalty/ui";
 import Toggle from "../../../../components/Toggle";
@@ -43,7 +43,7 @@ type BirthdayStats = {
 
 type Banner = { type: "success" | "error"; text: string };
 
-export default function BirthdayPage() {
+function BirthdayPageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const initialTab = searchParams.get("tab") === "stats" ? "stats" : "main";
@@ -98,6 +98,14 @@ export default function BirthdayPage() {
 
       {tab === "main" ? <SettingsTab /> : <StatisticsTab />}
     </div>
+  );
+}
+
+export default function BirthdayPage() {
+  return (
+    <Suspense fallback={<Skeleton height={400} />}>
+      <BirthdayPageInner />
+    </Suspense>
   );
 }
 
@@ -368,11 +376,10 @@ function SettingsTab() {
 }
 
 function StatisticsTab() {
-  const [outlets, setOutlets] = React.useState<OutletOption[]>([
-    { value: "all", label: "Все торговые точки" },
-  ]);
-  const [selectedOutlet, setSelectedOutlet] = React.useState<OutletOption>(outlets[0]);
-  const [range, setRange] = React.useState<QuickRange>(quickRanges[2]);
+  const defaultOutlet: OutletOption = { value: "all", label: "Все торговые точки" };
+  const [outlets, setOutlets] = React.useState<OutletOption[]>([defaultOutlet]);
+  const [selectedOutlet, setSelectedOutlet] = React.useState<OutletOption>(defaultOutlet);
+  const [range, setRange] = React.useState<QuickRange>(quickRanges[2] ?? { label: "Год", days: 365 });
   const [customRangeDraft, setCustomRangeDraft] = React.useState<{ from: string; to: string }>({ from: "", to: "" });
   const [appliedCustom, setAppliedCustom] = React.useState<{ from: string; to: string } | null>(null);
   const [stats, setStats] = React.useState<BirthdayStats | null>(null);
@@ -543,7 +550,7 @@ function StatisticsTab() {
               value={selectedOutlet.value}
               onChange={(event) => {
                 const value = event.target.value;
-                const option = outlets.find((item) => item.value === value) ?? outlets[0];
+                const option = outlets.find((item) => item.value === value) ?? defaultOutlet;
                 setSelectedOutlet(option);
               }}
               style={{

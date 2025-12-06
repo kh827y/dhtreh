@@ -3,10 +3,9 @@ import { portalFetch } from '../../../../portal/_lib';
 
 export async function POST(
   req: NextRequest,
-  context: { params: Promise<{ id: string }> | { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const p: any = context.params as any;
-  const { id } = typeof p?.then === 'function' ? await p : p;
+  const { id } = await params;
   const body = await req.text();
   return portalFetch(
     req,

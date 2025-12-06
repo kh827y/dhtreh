@@ -1,20 +1,23 @@
 "use client";
 import React from 'react';
 
-export interface CardProps extends React.PropsWithChildren {
+export interface CardProps {
   className?: string;
   style?: React.CSSProperties;
   hover?: boolean;
   glow?: boolean;
   variant?: 'default' | 'stat' | 'gradient';
+  children?: React.ReactNode;
+  id?: string;
 }
 
-export function Card({ className = '', style, children, hover, glow, variant = 'default' }: CardProps) {
+export function Card({ className = '', style, children, hover, glow, variant = 'default', id }: CardProps) {
   const variantClass = variant === 'stat' ? 'card-stat' : variant === 'gradient' ? 'border-gradient' : '';
   const hoverClass = hover ? 'card-hover' : '';
   const glowClass = glow ? 'glow-primary' : '';
   return (
     <div 
+      id={id}
       className={`card ${variantClass} ${hoverClass} ${glowClass} ${className}`.trim()} 
       style={style}
     >
@@ -72,9 +75,10 @@ export function CardHeader({ className = '', style, title, subtitle, actions, ic
   );
 }
 
-export interface CardBodyProps extends React.PropsWithChildren {
+export interface CardBodyProps {
   className?: string;
   style?: React.CSSProperties;
+  children?: React.ReactNode;
 }
 
 export function CardBody({ className = '', style, children }: CardBodyProps) {
@@ -83,19 +87,19 @@ export function CardBody({ className = '', style, children }: CardBodyProps) {
   );
 }
 
-export interface CardFooterProps extends React.PropsWithChildren {
+export interface CardFooterProps {
   className?: string;
   style?: React.CSSProperties;
+  children?: React.ReactNode;
 }
 
 export function CardFooter({ className = '', style, children }: CardFooterProps) {
   return (
     <div 
-      className={className} 
+      className={`card-footer ${className}`} 
       style={{ 
         padding: '14px 20px', 
         borderTop: '1px solid var(--border-subtle)', 
-        background: 'rgba(0, 0, 0, 0.2)',
         ...(style || {}) 
       }}
     >

@@ -76,7 +76,7 @@ export function TierMembersModal({
         if (!res.ok) throw new Error((await res.text()) || res.statusText);
         const payload = mapResponse(await res.json().catch(() => null));
         const normalized = payload.items.map((item) => ({
-          customerId: item?.customerId ?? item?.merchantCustomerId ?? "",
+          customerId: item?.customerId ?? (item as any)?.merchantCustomerId ?? "",
           name: item?.name ?? null,
           phone: item?.phone ?? null,
           assignedAt: item?.assignedAt ?? "",

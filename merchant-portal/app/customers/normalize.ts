@@ -240,7 +240,7 @@ export function normalizeCustomer(input: any): CustomerRecord {
   const expiry = Array.isArray(input?.expiry)
     ? input.expiry
         .map(normalizeExpiry)
-        .filter((item) => item.amount > 0 && item.expiresAt)
+        .filter((item: CustomerExpiry) => item.amount > 0 && item.expiresAt)
     : [];
   const reviews = Array.isArray(input?.reviews)
     ? input.reviews.map(normalizeReview)
@@ -278,7 +278,7 @@ export function normalizeCustomer(input: any): CustomerRecord {
 
   return {
     id: String(input?.id ?? ""),
-    login: phone || toStringOrNull(input?.email ?? input?.id) ?? "",
+    login: phone || (toStringOrNull(input?.email ?? input?.id) ?? ""),
     phone: phone || null,
     email: toStringOrNull(input?.email),
     firstName,

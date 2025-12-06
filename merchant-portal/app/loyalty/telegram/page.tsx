@@ -147,13 +147,10 @@ export default function TelegramPage() {
     setLoading(true);
     setError(null);
     try {
-      const [active, archived] = await Promise.all<[
-        TelegramCampaign[],
-        TelegramCampaign[]
-      ]>([
+      const [active, archived] = await Promise.all([
         fetchJson<TelegramCampaign[]>("/api/portal/communications/telegram?scope=ACTIVE"),
         fetchJson<TelegramCampaign[]>("/api/portal/communications/telegram?scope=ARCHIVED"),
-      ]);
+      ] as const);
       setCampaigns({ ACTIVE: active, ARCHIVED: archived });
     } catch (err: any) {
       setError(err?.message || "Не удалось загрузить рассылки");
@@ -181,8 +178,9 @@ export default function TelegramPage() {
         const allOption = mapped.find((a) => a.systemKey === "all-customers" || a.isSystem);
         if (allOption) {
           setForm((prev) => ({ ...prev, audience: allOption.id }));
-        } else if (mapped.length) {
-          setForm((prev) => ({ ...prev, audience: mapped[0].id }));
+        } else {
+          const first = mapped[0];
+          if (first) setForm((prev) => ({ ...prev, audience: first.id }));
         }
       }
     } catch (err) {

@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { portalFetch } from '../_lib';
 
-const ALLOWED_QUERY_PARAMS = new Set(['withCommentOnly', 'outletId', 'staffId', 'limit', 'offset']);
+const ALLOWED_QUERY_PARAMS = new Set(['withCommentOnly', 'outletId', 'staffId', 'deviceId', 'limit', 'offset']);
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);

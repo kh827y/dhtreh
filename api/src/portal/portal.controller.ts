@@ -384,6 +384,7 @@ export class PortalController {
     @Query('withCommentOnly') withCommentOnly?: string,
     @Query('outletId') outletId?: string,
     @Query('staffId') staffId?: string,
+    @Query('deviceId') deviceId?: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
@@ -392,6 +393,7 @@ export class PortalController {
       withCommentOnly: withCommentOnly === '1' || withCommentOnly === 'true',
       outletId: outletId || undefined,
       staffId: staffId || undefined,
+      deviceId: deviceId || undefined,
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
     });
