@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Chart, Skeleton } from "@loyalty/ui";
+import { Chart } from "@loyalty/ui";
 import { 
   Clock, 
   Activity, 
@@ -137,11 +137,102 @@ const ToggleGroup = <T extends string>({
   </div>
 );
 
+const Skeleton = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
+  <div className={["skeleton", className].filter(Boolean).join(" ")} style={style} />
+);
+
+const recencySkeletonHeights = [90, 140, 120, 180, 150, 200, 130, 170, 140, 160, 120, 100];
+
+const RecencyChartSkeleton = () => (
+  <div className="h-[360px] rounded-2xl border border-default/70 bg-surface p-6 flex flex-col gap-6 overflow-hidden">
+    <div className="flex items-center justify-between gap-4">
+      <Skeleton className="h-4 w-28 rounded-full" />
+      <Skeleton className="h-4 w-16 rounded-full" />
+    </div>
+    <div className="flex-1 flex items-end gap-3">
+      {recencySkeletonHeights.map((height, idx) => (
+        <Skeleton key={idx} className="flex-1 rounded-lg" style={{ height }} />
+      ))}
+    </div>
+    <div className="flex justify-between text-xs text-muted">
+      <Skeleton className="h-3 w-12 rounded-full" />
+      <Skeleton className="h-3 w-16 rounded-full" />
+      <Skeleton className="h-3 w-12 rounded-full" />
+    </div>
+  </div>
+);
+
+const ColumnChartSkeleton = ({ columns = 7 }: { columns?: number }) => {
+  const pattern = [60, 110, 90, 130, 80, 120, 70];
+
+  return (
+    <div className="chart-skeleton">
+      <div className="chart-skeleton-header">
+        <Skeleton className="h-4 w-28 rounded-full" />
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-3 w-10 rounded-full" />
+          <Skeleton className="h-3 w-14 rounded-full" />
+        </div>
+      </div>
+      <div className="chart-skeleton-body">
+        <div className="chart-skeleton-bars">
+          {Array.from({ length: columns }).map((_, idx) => {
+            const height = pattern[idx % pattern.length] + (idx % 3) * 10;
+            const opacity = 0.7 + ((idx % 4) * 0.05);
+            return <div key={idx} className="chart-skeleton-bar" style={{ height, opacity }} />;
+          })}
+        </div>
+      </div>
+      <div className="chart-skeleton-axis">
+        <Skeleton className="h-3 w-10 rounded-full" />
+        <Skeleton className="h-3 w-10 rounded-full" />
+        <Skeleton className="h-3 w-10 rounded-full" />
+      </div>
+    </div>
+  );
+};
+
+const HeatmapSkeleton = () => (
+  <div className="time-heatmap-wrapper pb-4 time-heatmap-loading">
+    <div className="time-heatmap heatmap-skeleton-shell">
+      <div className="heatmap-skeleton-header">
+        <Skeleton className="h-4 w-28 rounded-full" />
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-3 w-12 rounded-full" />
+          <Skeleton className="h-3 w-16 rounded-full" />
+        </div>
+      </div>
+
+      <div className="time-heatmap-grid">
+        <div className="time-heatmap-corner">
+          <Skeleton className="h-3 w-16 rounded-full" />
+        </div>
+        {hourLabels.map((label) => (
+          <Skeleton key={label} className="h-3 w-full rounded-full heatmap-skeleton-hour" />
+        ))}
+
+        {weekDayShortLabels.map((day) => (
+          <React.Fragment key={day}>
+            <div className="time-heatmap-day heatmap-skeleton-day">
+              <Skeleton className="h-3 w-12 rounded-full mb-2" />
+              <Skeleton className="h-2 w-20 rounded-full" />
+            </div>
+            {hourLabels.map((_, hourIdx) => (
+              <div key={`${day}-${hourIdx}`} className="time-heatmap-cell heatmap-skeleton-cell" />
+            ))}
+          </React.Fragment>
+        ))}
+      </div>
+    </div>
+  </div>
+);
+
 // --- Page Component ---
 
 export default function AnalyticsTimePage() {
   const [grouping, setGrouping] = React.useState<RecencyGrouping>("day");
   const [limit, setLimit] = React.useState(recencyLimits.day.default);
+  const [committedLimit, setCommittedLimit] = React.useState(recencyLimits.day.default);
   const [recency, setRecency] = React.useState<RecencyResponse | null>(null);
   const [recencyLoading, setRecencyLoading] = React.useState(true);
   const [recencyError, setRecencyError] = React.useState("");
@@ -156,13 +247,24 @@ export default function AnalyticsTimePage() {
     // When grouping changes, reset limit to default
     const defaults = recencyLimits[grouping].default;
     setLimit(defaults);
-    // And clear data because the grouping type changed
+    setCommittedLimit(defaults);
+    // Clear data to show fresh skeleton on grouping change
     setRecency(null);
+    setRecencyLoading(true);
   }, [grouping]);
+
+  // Handler for slider release
+  const handleSliderCommit = React.useCallback(() => {
+    const cfg = recencyLimits[grouping];
+    const clamped = Math.max(cfg.min, Math.min(cfg.max, limit));
+    if (clamped !== committedLimit) {
+      setCommittedLimit(clamped);
+    }
+  }, [grouping, limit, committedLimit]);
 
   React.useEffect(() => {
     const cfg = recencyLimits[grouping];
-    const clamped = Math.max(cfg.min, Math.min(cfg.max, limit));
+    const clamped = Math.max(cfg.min, Math.min(cfg.max, committedLimit));
 
     let cancelled = false;
     const controller = new AbortController();
@@ -199,7 +301,7 @@ export default function AnalyticsTimePage() {
       cancelled = true;
       controller.abort();
     };
-  }, [grouping, limit]); // Keep dependencies as is
+  }, [grouping, committedLimit]);
 
   // Activity Fetch Effect
   React.useEffect(() => {
@@ -432,7 +534,7 @@ export default function AnalyticsTimePage() {
     // Show every вторую подпись, чтобы избежать наложения на узких экранах
     return createBarChartOption(hourData, hourLabels, { 
       xLabelInterval: 0,
-      xLabelFormatter: (_label, idx) => (idx % 2 === 0 ? hourLabels[idx] : ""),
+      xLabelFormatter: (_label, idx) => (idx % 2 === 0 ? hourLabels[idx] ?? "" : ""),
       gridOverrides: { bottom: 36 }
     });
   }, [activity, createBarChartOption]);
@@ -458,10 +560,11 @@ export default function AnalyticsTimePage() {
   }, [heatmapMatrix]);
 
   const renderHeatmap = () => {
+    if (activityLoading) return <HeatmapSkeleton />;
     if (!heatmapMatrix) return <div className="h-40 flex items-center justify-center text-muted">Нет данных</div>;
     
     return (
-      <div className="time-heatmap-wrapper overflow-x-auto pb-4">
+      <div className="time-heatmap-wrapper pb-4">
         <div className="time-heatmap">
           <div className="time-heatmap-grid">
             <div className="time-heatmap-corner text-xs text-secondary">День/час</div>
@@ -523,14 +626,6 @@ export default function AnalyticsTimePage() {
             ))}
           </div>
         </div>
-
-        <div className="time-heatmap-legend">
-          <span className="time-legend-label">Минимум</span>
-          <div className="time-legend-bar">
-            <div className="time-legend-gradient" />
-          </div>
-          <span className="time-legend-label">До {toNumber(heatmapMaxOrders)} продаж</span>
-        </div>
       </div>
     );
   };
@@ -538,6 +633,7 @@ export default function AnalyticsTimePage() {
   const recencyLimitConfig = recencyLimits[grouping];
   const sliderLabel = formatRecencyRange(grouping, limit);
   const sliderProgress = ((limit - recencyLimitConfig.min) / (recencyLimitConfig.max - recencyLimitConfig.min)) * 100;
+  const hasRecencyData = Boolean(recencyOption);
 
   return (
     <div className="min-h-screen pb-20 animate-in time-analytics-page">
@@ -580,41 +676,36 @@ export default function AnalyticsTimePage() {
                 <div className="text-right">
                   <div className="text-sm text-secondary">Всего клиентов в выборке</div>
                   <div className="text-2xl font-bold text-primary">
-                    {recency ? recency.totalCustomers.toLocaleString("ru-RU") : "—"}
+                    {recencyLoading && !recency ? (
+                      <Skeleton className="h-7 w-24 rounded-md" />
+                    ) : recency ? (
+                      recency.totalCustomers.toLocaleString("ru-RU")
+                    ) : (
+                      "—"
+                    )}
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="min-h-[350px] relative">
-              {/* Keep chart visible during loading (via opacity) to prevent jumping */}
-              <div className={`transition-opacity duration-300 ${recencyLoading ? 'opacity-50' : 'opacity-100'}`}>
-                {recencyOption ? (
-                  <Chart option={recencyOption as any} height={350} />
-                ) : (
-                  // Only show skeleton if NO data is available (first load)
-                  <Skeleton className="h-[350px] w-full rounded-xl" />
-                )}
-              </div>
-              
-              {/* Loading Overlay if needed */}
-              {recencyLoading && recency && (
-                <div className="absolute inset-0 flex items-center justify-center z-10">
-                   <div className="bg-surface px-4 py-2 rounded-full shadow-lg border border-default text-sm font-medium animate-pulse text-primary">
-                     Обновление...
-                   </div>
-                </div>
-              )}
-
-              {recencyError && (
-                <div className="absolute inset-0 flex items-center justify-center text-red-500 bg-surface/80 rounded-xl z-20">
+            <div className="relative">
+              {recencyLoading && !hasRecencyData ? (
+                <RecencyChartSkeleton />
+              ) : recencyError ? (
+                <div className="h-[360px] flex items-center justify-center rounded-2xl border border-destructive/40 bg-surface text-red-500">
                   {recencyError}
                 </div>
+              ) : hasRecencyData ? (
+                <div className="h-[360px] rounded-2xl overflow-hidden border border-default/70 bg-surface">
+                  <Chart option={recencyOption as any} height={360} />
+                </div>
+              ) : (
+                <div className="h-[360px] rounded-2xl border border-default/70 bg-surface" />
               )}
             </div>
 
             {/* Enhanced Slider Section */}
-            <div className="mt-8 bg-surface rounded-xl p-5 border border-default shadow-sm">
+            <div className="mt-8 time-slider-panel rounded-xl p-5 md:p-6">
               <div className="flex justify-between items-center mb-4">
                 <div className="flex items-center gap-2">
                   <div className="p-1.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-md">
@@ -643,14 +734,10 @@ export default function AnalyticsTimePage() {
                   step={recencyLimitConfig.step}
                   value={limit}
                   onChange={(e) => setLimit(Number(e.target.value))}
+                  onMouseUp={handleSliderCommit}
+                  onTouchEnd={handleSliderCommit}
                   className="time-slider-input"
                 />
-                <div 
-                  className="time-slider-thumb-label"
-                  style={{ left: `${sliderProgress}%` }}
-                >
-                  {sliderLabel}
-                </div>
               </div>
               <div className="flex justify-between text-xs text-muted mt-2 font-medium">
                  <span>{formatRecencyRange(grouping, recencyLimitConfig.min)}</span>
@@ -687,7 +774,15 @@ export default function AnalyticsTimePage() {
                 <p className="text-xs text-secondary">Сравнение среднего чека, продаж и выручки</p>
               </div>
               <div className="flex-1 min-h-[300px]">
-                {activityLoading ? <Skeleton className="h-full w-full" /> : <Chart option={dayOfWeekOption as any} height={300} />}
+                {activityLoading ? (
+                  <ColumnChartSkeleton columns={7} />
+                ) : activity ? (
+                  <Chart option={dayOfWeekOption as any} height={300} />
+                ) : (
+                  <div className="h-full flex items-center justify-center text-muted rounded-xl border border-default/60">
+                    Нет данных
+                  </div>
+                )}
               </div>
             </div>
 
@@ -698,7 +793,15 @@ export default function AnalyticsTimePage() {
                 <p className="text-xs text-secondary">Распределение нагрузки в течение дня</p>
               </div>
               <div className="flex-1 min-h-[300px]">
-                {activityLoading ? <Skeleton className="h-full w-full" /> : <Chart option={hoursOption as any} height={300} />}
+                {activityLoading ? (
+                  <ColumnChartSkeleton columns={24} />
+                ) : activity ? (
+                  <Chart option={hoursOption as any} height={300} />
+                ) : (
+                  <div className="h-full flex items-center justify-center text-muted rounded-xl border border-default/60">
+                    Нет данных
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -707,7 +810,7 @@ export default function AnalyticsTimePage() {
         {/* SECTION 3: HEATMAP */}
         <section>
           <div className="glass-card p-6 md:p-8">
-            <div className="flex items-center gap-3 mb-8">
+            <div className="flex items-center gap-3 mb-6">
               <div className="p-2 bg-violet-subtle rounded-lg">
                 <TrendingUp size={24} />
               </div>
@@ -717,22 +820,17 @@ export default function AnalyticsTimePage() {
               </div>
             </div>
 
-            <div className="bg-surface rounded-xl p-4 border border-default overflow-hidden">
-              {activityLoading ? (
-                <div className="space-y-4">
-                  {[...Array(7)].map((_, i) => (
-                    <Skeleton key={i} className="h-8 w-full" />
-                  ))}
-                </div>
-              ) : (
-                renderHeatmap()
-              )}
+            <div className="bg-surface rounded-2xl p-5 md:p-6 border border-default shadow-sm relative">
+              {renderHeatmap()}
             </div>
             
-            <div className="mt-4 flex items-start gap-2 text-xs text-muted">
-              <Info size={14} className="mt-0.5 shrink-0" />
-              <p>Наведите на ячейку, чтобы увидеть детальную информацию по продажам, выручке и среднему чеку за этот час.</p>
-            </div>
+            <div className="mt-5 flex flex-col gap-3">
+              <div className="flex items-center gap-2 text-xs text-muted leading-relaxed max-w-4xl">
+                <Info size={16} className="shrink-0" />
+                <p>Наведите на ячейку, чтобы увидеть детальную информацию по продажам, выручке и среднему чеку за этот час.</p>
+              </div>
+              
+              </div>
           </div>
         </section>
 
