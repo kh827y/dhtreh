@@ -1,9 +1,9 @@
 "use client";
 
 import React from "react";
-import { Card, CardHeader, CardBody, Chart, Skeleton } from "@loyalty/ui";
+import { Card, CardBody, Chart, Skeleton } from "@loyalty/ui";
 import { useTheme } from "../../../components/ThemeProvider";
-import { Users, BarChart3 } from "lucide-react";
+import { Users, BarChart3, TrendingUp, ChevronDown } from "lucide-react";
 
 type GenderItem = { sex: string; customers: number; transactions: number; revenue: number; averageCheck: number };
 type AgeItem = { age: number; customers: number; transactions: number; revenue: number; averageCheck: number };
@@ -11,8 +11,33 @@ type SexAgeItem = { sex: string; age: number; customers: number; transactions: n
 type Resp = { gender: GenderItem[]; age: AgeItem[]; sexAge: SexAgeItem[] };
 
 type AudienceOption = { value: string; label: string };
+type DateRange = { from: string; to: string };
+type PeriodValue = "week" | "month" | "quarter" | "year" | "all" | "custom";
+
+const periodOptions: Array<{ value: PeriodValue; label: string }> = [
+  { value: "week", label: "За неделю" },
+  { value: "month", label: "За месяц" },
+  { value: "quarter", label: "За квартал" },
+  { value: "year", label: "За год" },
+  { value: "all", label: "За всё время" },
+  { value: "custom", label: "Произвольный период" },
+];
 
 const defaultAudienceOption: AudienceOption = { value: "", label: "Все клиенты" };
+
+const formatDateInput = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const getDefaultRange = (): DateRange => {
+  const today = new Date();
+  const fromDate = new Date(today);
+  fromDate.setDate(fromDate.getDate() - 29);
+  return { from: formatDateInput(fromDate), to: formatDateInput(today) };
+};
 
 const normalizeSexKey = (sex: string | null | undefined): "M" | "F" | "U" => {
   const raw = (sex || "").toString().trim().toUpperCase();
@@ -60,6 +85,9 @@ export default function AnalyticsPortraitPage() {
   const tooltipBg = theme === "light" ? "#ffffff" : "rgba(15,23,42,0.95)";
   const tooltipText = theme === "light" ? "#0f172a" : "#f1f5f9";
   const borderColor = theme === "light" ? "#e2e8f0" : "#0f172a";
+  const [period, setPeriod] = React.useState<PeriodValue>("all");
+  const [customRange, setCustomRange] = React.useState<DateRange>(getDefaultRange());
+  const [isPeriodMenuOpen, setPeriodMenuOpen] = React.useState(false);
   const [audiences, setAudiences] = React.useState<AudienceOption[]>([defaultAudienceOption]);
   const [audience, setAudience] = React.useState<AudienceOption>(defaultAudienceOption);
   const [audiencesLoading, setAudiencesLoading] = React.useState(true);
@@ -147,28 +175,45 @@ export default function AnalyticsPortraitPage() {
 
   React.useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     (async () => {
       setLoading(true);
       setMsg("");
       try {
-        const params = new URLSearchParams({ period: "month" });
+        const params = new URLSearchParams();
+        if (period === "custom") {
+          if (!customRange.from || !customRange.to) {
+            setMsg("Укажите даты начала и окончания");
+            setLoading(false);
+            return;
+          }
+          params.set("from", customRange.from);
+          params.set("to", customRange.to);
+        } else if (period === "all") {
+          params.set("from", "1970-01-01");
+          params.set("to", formatDateInput(new Date()));
+        } else {
+          params.set("period", period);
+        }
         if (audience.value) params.set("segmentId", audience.value);
         const res = await fetch(`/api/portal/analytics/portrait?${params.toString()}`, {
           cache: "no-store",
+          signal: controller.signal,
         });
         const json = await res.json();
         if (!res.ok) throw new Error(json?.message || "Ошибка загрузки");
         if (!cancelled) setData(json);
       } catch (error: any) {
-        if (!cancelled) setMsg(String(error?.message || error));
+        if (!cancelled && error?.name !== "AbortError") setMsg(String(error?.message || error));
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, [audience]);
+  }, [audience, customRange.from, customRange.to, period]);
 
   const normalizedGenderData = React.useMemo(() => {
     const map = new Map<"M" | "F" | "U", GenderItem>();
@@ -655,123 +700,491 @@ export default function AnalyticsPortraitPage() {
     };
   }, [data, textColor, axisColor, tooltipBg, tooltipText, theme]);
 
+  const totalGenderCustomers = React.useMemo(
+    () => normalizedGenderData.reduce((acc, item) => acc + (item.customers || 0), 0),
+    [normalizedGenderData],
+  );
+
+  const totals = React.useMemo(() => {
+    const transactions = normalizedGenderData.reduce(
+      (acc, item) => acc + (item.transactions || 0),
+      0,
+    );
+    const revenue = normalizedGenderData.reduce((acc, item) => acc + (item.revenue || 0), 0);
+    const averageCheck = transactions > 0 ? Math.round(revenue / transactions) : 0;
+    return {
+      customers: totalGenderCustomers,
+      transactions,
+      revenue: Math.round(revenue),
+      averageCheck,
+    };
+  }, [normalizedGenderData, totalGenderCustomers]);
+
+  const genderInsights = React.useMemo(() => {
+    if (!normalizedGenderData.length) return [];
+    return normalizedGenderData
+      .map((item) => ({
+        ...item,
+        share:
+          totalGenderCustomers > 0
+            ? Math.round((item.customers / totalGenderCustomers) * 1000) / 10
+            : 0,
+      }))
+      .sort((a, b) => b.share - a.share);
+  }, [normalizedGenderData, totalGenderCustomers]);
+
+  const genderLeader = genderInsights[0] || null;
+
+  const ageHighlight = React.useMemo(() => {
+    const list = (data?.age || [])
+      .map((item) => {
+        const ageValue = clampAgeValue(item.age);
+        if (ageValue == null) return null;
+        const transactions = item.transactions || 0;
+        const revenue = item.revenue || 0;
+        return {
+          age: ageValue,
+          customers: item.customers || 0,
+          averageCheck:
+            item.averageCheck || (transactions > 0 ? Math.round(revenue / transactions) : 0),
+        };
+      })
+      .filter(Boolean) as Array<{ age: number; customers: number; averageCheck: number }>;
+    if (!list.length) return null;
+    list.sort((a, b) => b.customers - a.customers);
+    return list[0];
+  }, [data?.age]);
+
+  const isInitialLoading = loading && !data;
+  const isRefreshing = loading && Boolean(data);
+const topAverageCheckGroup = React.useMemo(() => {
+  const rows = (data?.sexAge || []).map((item) => {
+    const age = clampAgeValue(item.age);
+    const sex = normalizeSexKey(item.sex);
+      const customers = item.customers || 0;
+      const avg =
+        item.averageCheck ||
+        (item.transactions && item.transactions > 0
+          ? Math.round(item.revenue / item.transactions)
+          : 0);
+      return { age, sex, customers, averageCheck: avg };
+    });
+    const valid = rows.filter((row) => row.age != null);
+    if (!valid.length) return null;
+    valid.sort((a, b) => b.averageCheck - a.averageCheck);
+    const leader =
+      valid.find((row) => row.averageCheck > 0 && row.customers > 0) ||
+      valid[0];
+    if (!leader) return null;
+    const sexLabel =
+      leader.sex === "F" ? "Женщины" : leader.sex === "M" ? "Мужчины" : "Не указан";
+    const ageLabel = leader.age != null ? `${leader.age} лет` : "";
+    return {
+      title: ageLabel ? `${sexLabel}, ${ageLabel}` : sexLabel,
+      averageCheck: leader.averageCheck,
+    };
+  }, [data?.sexAge]);
+
+  const periodLabel = React.useMemo(() => {
+    switch (period) {
+      case "week":
+        return "За неделю";
+      case "quarter":
+        return "За квартал";
+      case "year":
+        return "За год";
+      case "all":
+        return "За всё время";
+      case "custom":
+        return "Произвольный период";
+      default:
+        return "За месяц";
+    }
+  }, [period]);
+
+  const handleFromChange = React.useCallback(
+    (value: string) => {
+      setCustomRange((prev) => ({
+        from: value,
+        to: prev.to && prev.to < value ? value : prev.to,
+      }));
+    },
+    [],
+  );
+
+  const handleToChange = React.useCallback((value: string) => {
+    setCustomRange((prev) => ({ ...prev, to: value }));
+  }, []);
+
+  const heroStats = React.useMemo(
+    () => [
+      {
+        key: "customers",
+        label: "Клиентов",
+        value: formatInteger(totals.customers),
+        hint: "Активные в выборке",
+        icon: <Users size={18} />,
+        accent: "indigo",
+      },
+      {
+        key: "averageCheck",
+        label: "Средний чек",
+        value: formatCurrency(totals.averageCheck),
+        hint: `${formatInteger(totals.transactions)} продаж`,
+        icon: <BarChart3 size={18} />,
+        accent: "amber",
+      },
+      {
+        key: "revenue",
+        label: "Сумма продаж",
+        value: formatCurrency(totals.revenue),
+        hint: audience.label || "Все клиенты",
+        icon: <TrendingUp size={18} />,
+        accent: "emerald",
+      },
+    ],
+    [audience.label, totals.averageCheck, totals.customers, totals.revenue, totals.transactions],
+  );
+
+  const ChartSkeletonBlock = ({ columns = 8, tall = false }: { columns?: number; tall?: boolean }) => (
+    <div className="chart-skeleton">
+      <div className="chart-skeleton-header">
+        <Skeleton width={120} height={12} />
+        <Skeleton width={80} height={12} />
+      </div>
+      <div className="chart-skeleton-body">
+        <div className="chart-skeleton-bars">
+          {Array.from({ length: columns }).map((_, idx) => {
+            const base = tall ? 120 : 80;
+            const height = base + ((idx % 4) + 1) * 12;
+            const opacity = 0.7 + (idx % 5) * 0.05;
+            return <div key={idx} className="chart-skeleton-bar" style={{ height, opacity }} />;
+          })}
+        </div>
+      </div>
+      <div className="chart-skeleton-axis">
+        <Skeleton width={50} height={10} />
+        <Skeleton width={40} height={10} />
+        <Skeleton width={50} height={10} />
+      </div>
+    </div>
+  );
+
+  const PieChartSkeleton = () => (
+    <div className="chart-skeleton">
+      <div className="chart-skeleton-header">
+        <Skeleton width={120} height={12} />
+        <Skeleton width={80} height={12} />
+      </div>
+      <div className="chart-skeleton-body chart-skeleton-body-pie">
+        <div className="chart-skeleton-pie">
+          <div className="chart-skeleton-pie-center" />
+        </div>
+      </div>
+      <div className="chart-skeleton-axis">
+        <Skeleton width={60} height={10} />
+        <Skeleton width={50} height={10} />
+        <Skeleton width={60} height={10} />
+      </div>
+    </div>
+  );
+
   return (
-    <div className="animate-in" style={{ display: "grid", gap: 24 }}>
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
-          <div style={{
-            width: 48,
-            height: 48,
-            borderRadius: "var(--radius-lg)",
-            background: "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.1))",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "var(--brand-primary-light)",
-          }}>
-            <Users size={24} />
-          </div>
-          <div>
-            <h1 style={{ 
-              fontSize: 28, 
-              fontWeight: 800, 
-              margin: 0,
-              letterSpacing: "-0.02em",
-            }}>
-              Портрет клиента
-            </h1>
-            <p style={{ 
-              fontSize: 14, 
-              color: "var(--fg-muted)", 
-              margin: "6px 0 0",
-            }}>
-              Статистика по аудиториям и базовым признакам
-            </p>
-          </div>
-        </div>
-        <div className="filter-block">
-          <span className="filter-label">Аудитория</span>
-          <select
-            value={audience.value}
-            disabled={audiencesLoading}
-            onChange={(event) => {
-              const next = audiences.find((item) => item.value === event.target.value) || defaultAudienceOption;
-              setAudience(next);
-            }}
-            className="input"
-            style={{ minWidth: 200 }}
-          >
-            {audiences.map((item) => (
-              <option key={item.value || "__default"} value={item.value}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-          {audiencesError && (
-            <span style={{ color: "var(--danger)", fontSize: 12 }}>{audiencesError}</span>
-          )}
-        </div>
-      </header>
-
-      {msg && !loading && (
-        <div
-          style={{
-            padding: 16,
-            borderRadius: "var(--radius-md)",
-            border: "1px solid rgba(239, 68, 68, 0.3)",
-            background: "rgba(239, 68, 68, 0.1)",
-            color: "var(--danger-light)",
-            fontSize: 14,
-          }}
-        >
-          {msg}
-        </div>
-      )}
-
-      <Card>
-        <CardHeader title="Пол" subtitle="Доля клиентов и сопутствующие метрики" />
-        <CardBody>
-          {loading ? (
-            <Skeleton height={320} />
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "minmax(240px, 360px) 1fr", gap: 24, alignItems: "center" }}>
-              <Chart option={genderOption as any} height={300} />
-              <div style={{ display: "grid", gap: 20 }}>
-                {genderBarsOption ? (
-                  <div style={{ display: "grid", gap: 8 }}>
-                    <span style={{ fontSize: 12, opacity: 0.7 }}>
-                      Средний чек, количество и сумма продаж по полу
-                    </span>
-                    <Chart option={genderBarsOption as any} height={320} />
+    <div className="portrait-page animate-in">
+      <section className="portrait-hero">
+        <div className="portrait-hero-grid">
+          <div className="portrait-hero-intro">
+            <div className="portrait-eyebrow">Audience DNA</div>
+            <div className="portrait-title-row">
+              <h1 className="portrait-title">Портрет клиента</h1>
+              <div className="portrait-period-switcher">
+                <button
+                  type="button"
+                  className={`portrait-live-pill period${isPeriodMenuOpen ? " open" : ""}`}
+                  onClick={() => setPeriodMenuOpen((prev) => !prev)}
+                >
+                  <span className="live-dot" />
+                  {period !== "custom" && <span>{periodLabel}</span>}
+                  <ChevronDown size={14} className="period-arrow" />
+                </button>
+                {isPeriodMenuOpen && (
+                  <div className="portrait-period-menu">
+                    {periodOptions.map((opt) => (
+                      <button
+                        key={opt.value}
+                        className={`period-option${period === opt.value ? " active" : ""}`}
+                        onClick={() => {
+                          setPeriod(opt.value);
+                          setPeriodMenuOpen(false);
+                        }}
+                        type="button"
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
                   </div>
-                ) : (
-                  <div style={{ opacity: 0.7 }}>Недостаточно данных по полу</div>
                 )}
               </div>
+              {period === "custom" && (
+                <div className="portrait-custom-range-inline">
+                  <div className="date-range-wrapper">
+                    <input
+                      type="date"
+                      value={customRange.from}
+                      onChange={(event) => handleFromChange(event.target.value)}
+                      style={{
+                        border: "none",
+                        background: "transparent",
+                        color: "var(--fg)",
+                        outline: "none",
+                        fontSize: 13,
+                        width: 110,
+                      }}
+                    />
+                    <span style={{ color: "var(--fg-dim)" }}>→</span>
+                    <input
+                      type="date"
+                      value={customRange.to}
+                      onChange={(event) => handleToChange(event.target.value)}
+                      style={{
+                        border: "none",
+                        background: "transparent",
+                        color: "var(--fg)",
+                        outline: "none",
+                        fontSize: 13,
+                        width: 110,
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
-          )}
+            <p className="portrait-subtitle">
+              Реконструируем профиль клиентов по полу, возрасту и покупательской активности.
+              Используйте сегментацию, чтобы увидеть нюансы поведения и планировать акции точнее.
+            </p>
+            <div className="portrait-pill-row">
+              <div className="portrait-pill">
+                <span className="pill-label">Лидер по полу</span>
+                <span className="pill-value">
+                  {genderLeader
+                    ? `${sexDisplayName[genderLeader.sex] || genderLeader.sex} · ${formatInteger(genderLeader.customers)}`
+                    : "Нет данных"}
+                </span>
+              </div>
+              <div className="portrait-pill">
+                <span className="pill-label">Преобладающий возраст</span>
+                <span className="pill-value">
+                  {ageHighlight
+                    ? `${ageHighlight.age} лет · средний чек ${formatCurrency(ageHighlight.averageCheck)}`
+                    : "Данных пока нет"}
+                </span>
+              </div>
+              <div className="portrait-pill">
+                <span className="pill-label">Топ среднего чека</span>
+                <span className="pill-value">
+                  {topAverageCheckGroup
+                    ? `${topAverageCheckGroup.title} · ${formatCurrency(topAverageCheckGroup.averageCheck)}`
+                    : "Данных пока нет"}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div className="portrait-hero-panel">
+            <div className="portrait-control">
+              <div className="portrait-control-head">
+                <span className="portrait-control-label">Аудитория</span>
+                {isRefreshing && <span className="pill-refresh">обновляем...</span>}
+              </div>
+              {audiencesLoading ? (
+                <Skeleton height={44} />
+              ) : (
+                <div className="portrait-select-wrap">
+                  <select
+                    value={audience.value}
+                    onChange={(event) => {
+                      const next =
+                        audiences.find((item) => item.value === event.target.value) ||
+                        defaultAudienceOption;
+                      setAudience(next);
+                    }}
+                    className="portrait-select"
+                  >
+                    {audiences.map((item) => (
+                      <option key={item.value || "__default"} value={item.value}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {audiencesError ? (
+                <div className="portrait-control-error">{audiencesError}</div>
+              ) : (
+                <div className="portrait-control-hint">
+                  {audience.label ? `Фокус на сегменте: ${audience.label}` : "Выберите сегмент для точных инсайтов"}
+                </div>
+              )}
+            </div>
+            <div className="portrait-hero-stats">
+              {isInitialLoading
+                ? Array.from({ length: 3 }).map((_, idx) => <Skeleton key={idx} height={72} />)
+                : heroStats.map((stat) => (
+                    <div key={stat.key} className={`portrait-hero-stat accent-${stat.accent}`}>
+                      <div className="stat-icon">{stat.icon}</div>
+                      <div className="stat-copy">
+                        <span className="stat-label">{stat.label}</span>
+                        <div className="stat-value">{stat.value}</div>
+                        <span className="stat-hint">{stat.hint}</span>
+                      </div>
+                    </div>
+                  ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {msg && !loading && <div className="portrait-alert">{msg}</div>}
+
+      <div className="portrait-grid">
+        <Card className="portrait-panel" hover>
+          <div className="portrait-panel-head">
+            <div className="panel-title-block">
+              <div className="panel-icon">
+                <Users size={18} />
+              </div>
+              <div>
+                <div className="panel-title">Гендерный профиль</div>
+                <div className="panel-subtitle">Доля клиентов и экономика по полу</div>
+              </div>
+            </div>
+            <div className="panel-pill">{audience.label || "Все клиенты"}</div>
+          </div>
+          <CardBody className="portrait-panel-body">
+            <div className="panel-grid two-columns">
+              <div className="chart-shell">
+                {isInitialLoading ? (
+                  <PieChartSkeleton />
+                ) : (
+                  <Chart option={genderOption as any} height={320} />
+                )}
+              </div>
+              <div className="panel-side">
+                <div className="chart-shell ghost">
+                  {isInitialLoading ? (
+                    <ChartSkeletonBlock columns={5} />
+                ) : genderBarsOption ? (
+                  <Chart option={genderBarsOption as any} height={260} />
+                ) : (
+                  <div className="panel-empty">Недостаточно данных по полу</div>
+                )}
+              </div>
+              <div className="gender-list">
+                  {isInitialLoading ? (
+                    Array.from({ length: 2 }).map((_, idx) => <Skeleton key={idx} height={72} />)
+                  ) : genderInsights.length ? (
+                    genderInsights.map((item) => (
+                      <div key={item.sex} className="gender-row">
+                        <div className="gender-row-head">
+                          <span className="gender-name">{sexDisplayName[item.sex] || item.sex}</span>
+                          <span className="gender-share">{item.share.toFixed(1)}%</span>
+                        </div>
+                        <div className="gender-row-meta">
+                          <span>{formatInteger(item.customers)} клиентов</span>
+                          <span>{formatInteger(item.transactions)} продаж</span>
+                          <span>Средний чек {formatCurrency(item.averageCheck)}</span>
+                        </div>
+                        <div className="gender-progress">
+                          <div style={{ width: `${Math.min(100, Math.max(6, item.share))}%` }} />
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="panel-empty">Нет распределения по полу</div>
+                  )}
+              </div>
+            </div>
+          </div>
         </CardBody>
       </Card>
 
-      <Card>
-        <CardHeader title="Возраст" subtitle="Распределение клиентов по возрастам и ключевым метрикам" />
-        <CardBody>
-          {loading ? <Skeleton height={260} /> : <Chart option={ageOption as any} height={320} />}
-        </CardBody>
-      </Card>
+        <Card className="portrait-panel" hover>
+          <div className="portrait-panel-head">
+            <div className="panel-title-block">
+              <div className="panel-icon">
+                <BarChart3 size={18} />
+              </div>
+              <div>
+                <div className="panel-title">Возраст и чек</div>
+                <div className="panel-subtitle">Распределение клиентов по возрастам и ключевым метрикам</div>
+              </div>
+            </div>
+            <div className="panel-pill muted">Скролл и масштаб доступен</div>
+          </div>
+          <CardBody className="portrait-panel-body">
+            <div className="chart-shell wide">
+              {isInitialLoading ? (
+                <ChartSkeletonBlock columns={12} tall />
+              ) : (
+                <Chart option={ageOption as any} height={360} />
+              )}
+            </div>
+            <div className="portrait-meta-grid">
+              {isInitialLoading ? (
+                Array.from({ length: 3 }).map((_, idx) => <Skeleton key={idx} height={90} />)
+              ) : (
+                <>
+                  <div className="meta-card">
+                    <div className="meta-label">Преобладающий возраст</div>
+                    <div className="meta-value">{ageHighlight ? `${ageHighlight.age} лет` : "Нет данных"}</div>
+                    <div className="meta-hint">
+                      {ageHighlight
+                        ? `Средний чек ${formatCurrency(ageHighlight.averageCheck)}`
+                        : "Как только появятся продажи, покажем лидеров"}
+                    </div>
+                  </div>
+                  <div className="meta-card">
+                    <div className="meta-label">Средний чек</div>
+                    <div className="meta-value">{formatCurrency(totals.averageCheck)}</div>
+                    <div className="meta-hint">{formatInteger(totals.transactions)} продаж в выборке</div>
+                  </div>
+                  <div className="meta-card">
+                    <div className="meta-label">Клиентов в выборке</div>
+                    <div className="meta-value">{formatInteger(totals.customers)}</div>
+                    <div className="meta-hint">Интерактивный диапазон 0–100 лет</div>
+                  </div>
+                </>
+              )}
+            </div>
+          </CardBody>
+        </Card>
 
-      <Card>
-        <CardHeader title="Зависимость пола и возраста" subtitle="Кросс-анализ аудиторий" />
-        <CardBody>
-          {loading ? (
-            <Skeleton height={260} />
-          ) : sexAgeChart.hasData ? (
-            <Chart option={sexAgeChart.option as any} height={320} />
-          ) : (
-            <div style={{ opacity: 0.7 }}>Недостаточно данных для отображения графика</div>
-          )}
-        </CardBody>
-      </Card>
+        <Card className="portrait-panel" hover>
+          <div className="portrait-panel-head">
+            <div className="panel-title-block">
+              <div className="panel-icon">
+                <TrendingUp size={18} />
+              </div>
+              <div>
+                <div className="panel-title">Пол × Возраст</div>
+                <div className="panel-subtitle">Кросс-анализ аудитории по полу и возрасту</div>
+              </div>
+            </div>
+            <div className="panel-pill">Детальный срез</div>
+          </div>
+          <CardBody className="portrait-panel-body">
+            <div className="chart-shell wide">
+              {isInitialLoading ? (
+                <ChartSkeletonBlock columns={14} tall />
+              ) : sexAgeChart.hasData ? (
+                <Chart option={sexAgeChart.option as any} height={360} />
+              ) : (
+                <div className="panel-empty">Недостаточно данных для отображения графика</div>
+              )}
+            </div>
+          </CardBody>
+        </Card>
+      </div>
     </div>
   );
 }
