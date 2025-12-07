@@ -847,13 +847,13 @@ const topAverageCheckGroup = React.useMemo(() => {
   );
 
   const ChartSkeletonBlock = ({ columns = 8, tall = false }: { columns?: number; tall?: boolean }) => (
-    <div className="chart-skeleton">
-      <div className="chart-skeleton-header">
+    <div className="chart-skeleton" style={{ overflow: 'hidden', isolation: 'isolate' }}>
+      <div className="chart-skeleton-header" style={{ overflow: 'hidden' }}>
         <Skeleton width={120} height={12} />
         <Skeleton width={80} height={12} />
       </div>
-      <div className="chart-skeleton-body">
-        <div className="chart-skeleton-bars">
+      <div className="chart-skeleton-body" style={{ overflow: 'hidden', isolation: 'isolate' }}>
+        <div className="chart-skeleton-bars" style={{ overflow: 'hidden' }}>
           {Array.from({ length: columns }).map((_, idx) => {
             const base = tall ? 120 : 80;
             const height = base + ((idx % 4) + 1) * 12;
@@ -862,7 +862,7 @@ const topAverageCheckGroup = React.useMemo(() => {
           })}
         </div>
       </div>
-      <div className="chart-skeleton-axis">
+      <div className="chart-skeleton-axis" style={{ overflow: 'hidden' }}>
         <Skeleton width={50} height={10} />
         <Skeleton width={40} height={10} />
         <Skeleton width={50} height={10} />
@@ -871,21 +871,41 @@ const topAverageCheckGroup = React.useMemo(() => {
   );
 
   const PieChartSkeleton = () => (
-    <div className="chart-skeleton">
-      <div className="chart-skeleton-header">
+    <div className="chart-skeleton" style={{ overflow: 'hidden', isolation: 'isolate' }}>
+      <div className="chart-skeleton-header" style={{ overflow: 'hidden' }}>
         <Skeleton width={120} height={12} />
         <Skeleton width={80} height={12} />
       </div>
-      <div className="chart-skeleton-body chart-skeleton-body-pie">
-        <div className="chart-skeleton-pie">
+      <div className="chart-skeleton-body chart-skeleton-body-pie" style={{ overflow: 'hidden', isolation: 'isolate' }}>
+        <div className="chart-skeleton-pie" style={{ overflow: 'hidden', isolation: 'isolate' }}>
           <div className="chart-skeleton-pie-center" />
         </div>
       </div>
-      <div className="chart-skeleton-axis">
+      <div className="chart-skeleton-axis" style={{ overflow: 'hidden' }}>
         <Skeleton width={60} height={10} />
         <Skeleton width={50} height={10} />
         <Skeleton width={60} height={10} />
       </div>
+    </div>
+  );
+
+  const LineChartSkeleton = () => (
+    <div className="line-skeleton" style={{ overflow: 'hidden', isolation: 'isolate' }}>
+      <div className="line-skeleton-legend" style={{ overflow: 'hidden' }}>
+        <span className="line-skeleton-dot dot-1" />
+        <span className="line-skeleton-dot dot-2" />
+        <span className="line-skeleton-dot dot-3" />
+        <span className="line-skeleton-dot dot-4" />
+      </div>
+      <div className="line-skeleton-area" style={{ overflow: 'hidden', isolation: 'isolate' }}>
+        <svg viewBox="0 0 200 80" preserveAspectRatio="none">
+          <path className="line-skeleton-path p1" d="M0,58 Q8,55 16,52 Q24,48 32,44 Q40,40 48,35 Q56,30 64,26 Q72,22 80,20 Q88,18 96,22 Q104,26 112,30 Q120,34 128,32 Q136,30 144,34 Q152,38 160,42 Q168,46 176,50 Q184,54 192,56 L200,58" />
+          <path className="line-skeleton-path p2" d="M0,65 Q10,63 20,60 Q30,57 40,53 Q50,49 60,46 Q70,43 80,40 Q90,37 100,36 Q110,35 120,38 Q130,41 140,44 Q150,47 160,51 Q170,55 180,58 Q190,61 200,63" />
+          <path className="line-skeleton-path p3" d="M0,52 Q7,48 14,44 Q21,40 28,35 Q35,30 42,25 Q49,20 56,16 Q63,12 70,10 Q77,8 84,12 Q91,16 98,20 Q105,24 112,22 Q119,20 126,24 Q133,28 140,32 Q147,36 154,34 Q161,32 168,36 Q175,40 182,44 Q189,48 200,50" />
+          <path className="line-skeleton-path p4" d="M0,70 Q12,68 24,66 Q36,64 48,60 Q60,56 72,53 Q84,50 96,48 Q108,46 120,48 Q132,50 144,54 Q156,58 168,61 Q180,64 192,66 L200,68" />
+        </svg>
+      </div>
+      <div className="line-skeleton-zoom" />
     </div>
   );
 
@@ -997,7 +1017,7 @@ const topAverageCheckGroup = React.useMemo(() => {
                 {isRefreshing && <span className="pill-refresh">обновляем...</span>}
               </div>
               {audiencesLoading ? (
-                <Skeleton height={44} />
+                <div style={{ overflow: 'hidden', borderRadius: 12 }}><Skeleton height={44} /></div>
               ) : (
                 <div className="portrait-select-wrap">
                   <select
@@ -1028,7 +1048,7 @@ const topAverageCheckGroup = React.useMemo(() => {
             </div>
             <div className="portrait-hero-stats">
               {isInitialLoading
-                ? Array.from({ length: 3 }).map((_, idx) => <Skeleton key={idx} height={72} />)
+                ? Array.from({ length: 3 }).map((_, idx) => <div key={idx} style={{ overflow: 'hidden', borderRadius: 14 }}><Skeleton height={72} /></div>)
                 : heroStats.map((stat) => (
                     <div key={stat.key} className={`portrait-hero-stat accent-${stat.accent}`}>
                       <div className="stat-icon">{stat.icon}</div>
@@ -1081,7 +1101,7 @@ const topAverageCheckGroup = React.useMemo(() => {
               </div>
               <div className="gender-list">
                   {isInitialLoading ? (
-                    Array.from({ length: 2 }).map((_, idx) => <Skeleton key={idx} height={72} />)
+                    Array.from({ length: 2 }).map((_, idx) => <div key={idx} style={{ overflow: 'hidden', borderRadius: 12 }}><Skeleton height={72} /></div>)
                   ) : genderInsights.length ? (
                     genderInsights.map((item) => (
                       <div key={item.sex} className="gender-row">
@@ -1124,14 +1144,14 @@ const topAverageCheckGroup = React.useMemo(() => {
           <CardBody className="portrait-panel-body">
             <div className="chart-shell wide">
               {isInitialLoading ? (
-                <ChartSkeletonBlock columns={12} tall />
+                <LineChartSkeleton />
               ) : (
                 <Chart option={ageOption as any} height={360} />
               )}
             </div>
             <div className="portrait-meta-grid">
               {isInitialLoading ? (
-                Array.from({ length: 3 }).map((_, idx) => <Skeleton key={idx} height={90} />)
+                Array.from({ length: 3 }).map((_, idx) => <div key={idx} style={{ overflow: 'hidden', borderRadius: 12 }}><Skeleton height={90} /></div>)
               ) : (
                 <>
                   <div className="meta-card">
@@ -1175,7 +1195,7 @@ const topAverageCheckGroup = React.useMemo(() => {
           <CardBody className="portrait-panel-body">
             <div className="chart-shell wide">
               {isInitialLoading ? (
-                <ChartSkeletonBlock columns={14} tall />
+                <LineChartSkeleton />
               ) : sexAgeChart.hasData ? (
                 <Chart option={sexAgeChart.option as any} height={360} />
               ) : (

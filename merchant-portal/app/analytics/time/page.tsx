@@ -144,17 +144,17 @@ const Skeleton = ({ className, style }: { className?: string; style?: React.CSSP
 const recencySkeletonHeights = [90, 140, 120, 180, 150, 200, 130, 170, 140, 160, 120, 100];
 
 const RecencyChartSkeleton = () => (
-  <div className="h-[360px] rounded-2xl border border-default/70 bg-surface p-6 flex flex-col gap-6 overflow-hidden">
-    <div className="flex items-center justify-between gap-4">
+  <div className="h-[360px] rounded-2xl border border-default/70 bg-surface p-6 flex flex-col gap-6" style={{ overflow: 'hidden', isolation: 'isolate' }}>
+    <div className="flex items-center justify-between gap-4" style={{ overflow: 'hidden' }}>
       <Skeleton className="h-4 w-28 rounded-full" />
       <Skeleton className="h-4 w-16 rounded-full" />
     </div>
-    <div className="flex-1 flex items-end gap-3">
+    <div className="flex-1 flex items-end gap-3" style={{ overflow: 'hidden' }}>
       {recencySkeletonHeights.map((height, idx) => (
         <Skeleton key={idx} className="flex-1 rounded-lg" style={{ height }} />
       ))}
     </div>
-    <div className="flex justify-between text-xs text-muted">
+    <div className="flex justify-between text-xs text-muted" style={{ overflow: 'hidden' }}>
       <Skeleton className="h-3 w-12 rounded-full" />
       <Skeleton className="h-3 w-16 rounded-full" />
       <Skeleton className="h-3 w-12 rounded-full" />
@@ -166,16 +166,16 @@ const ColumnChartSkeleton = ({ columns = 7 }: { columns?: number }) => {
   const pattern = [60, 110, 90, 130, 80, 120, 70];
 
   return (
-    <div className="chart-skeleton">
-      <div className="chart-skeleton-header">
+    <div className="chart-skeleton" style={{ overflow: 'hidden', isolation: 'isolate' }}>
+      <div className="chart-skeleton-header" style={{ overflow: 'hidden' }}>
         <Skeleton className="h-4 w-28 rounded-full" />
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2" style={{ overflow: 'hidden' }}>
           <Skeleton className="h-3 w-10 rounded-full" />
           <Skeleton className="h-3 w-14 rounded-full" />
         </div>
       </div>
-      <div className="chart-skeleton-body">
-        <div className="chart-skeleton-bars">
+      <div className="chart-skeleton-body" style={{ overflow: 'hidden', isolation: 'isolate' }}>
+        <div className="chart-skeleton-bars" style={{ overflow: 'hidden' }}>
           {Array.from({ length: columns }).map((_, idx) => {
             const height = pattern[idx % pattern.length] + (idx % 3) * 10;
             const opacity = 0.7 + ((idx % 4) * 0.05);
@@ -183,7 +183,7 @@ const ColumnChartSkeleton = ({ columns = 7 }: { columns?: number }) => {
           })}
         </div>
       </div>
-      <div className="chart-skeleton-axis">
+      <div className="chart-skeleton-axis" style={{ overflow: 'hidden' }}>
         <Skeleton className="h-3 w-10 rounded-full" />
         <Skeleton className="h-3 w-10 rounded-full" />
         <Skeleton className="h-3 w-10 rounded-full" />
@@ -193,32 +193,34 @@ const ColumnChartSkeleton = ({ columns = 7 }: { columns?: number }) => {
 };
 
 const HeatmapSkeleton = () => (
-  <div className="time-heatmap-wrapper pb-4 time-heatmap-loading">
-    <div className="time-heatmap heatmap-skeleton-shell">
-      <div className="heatmap-skeleton-header">
+  <div className="time-heatmap-wrapper pb-4 time-heatmap-loading" style={{ overflow: 'hidden', isolation: 'isolate' }}>
+    <div className="time-heatmap heatmap-skeleton-shell" style={{ overflow: 'hidden' }}>
+      <div className="heatmap-skeleton-header" style={{ overflow: 'hidden' }}>
         <Skeleton className="h-4 w-28 rounded-full" />
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2" style={{ overflow: 'hidden' }}>
           <Skeleton className="h-3 w-12 rounded-full" />
           <Skeleton className="h-3 w-16 rounded-full" />
         </div>
       </div>
 
-      <div className="time-heatmap-grid">
-        <div className="time-heatmap-corner">
+      <div className="time-heatmap-grid" style={{ overflow: 'hidden' }}>
+        <div className="time-heatmap-corner" style={{ overflow: 'hidden' }}>
           <Skeleton className="h-3 w-16 rounded-full" />
         </div>
         {hourLabels.map((label) => (
-          <Skeleton key={label} className="h-3 w-full rounded-full heatmap-skeleton-hour" />
+          <div key={label} style={{ overflow: 'hidden' }}>
+            <Skeleton className="h-3 w-full rounded-full heatmap-skeleton-hour" />
+          </div>
         ))}
 
         {weekDayShortLabels.map((day) => (
           <React.Fragment key={day}>
-            <div className="time-heatmap-day heatmap-skeleton-day">
+            <div className="time-heatmap-day heatmap-skeleton-day" style={{ overflow: 'hidden', isolation: 'isolate' }}>
               <Skeleton className="h-3 w-12 rounded-full mb-2" />
               <Skeleton className="h-2 w-20 rounded-full" />
             </div>
             {hourLabels.map((_, hourIdx) => (
-              <div key={`${day}-${hourIdx}`} className="time-heatmap-cell heatmap-skeleton-cell" />
+              <div key={`${day}-${hourIdx}`} className="time-heatmap-cell heatmap-skeleton-cell" style={{ overflow: 'hidden', isolation: 'isolate' }} />
             ))}
           </React.Fragment>
         ))}
@@ -675,9 +677,9 @@ export default function AnalyticsTimePage() {
                 />
                 <div className="text-right">
                   <div className="text-sm text-secondary">Всего клиентов в выборке</div>
-                  <div className="text-2xl font-bold text-primary">
+                  <div className="text-2xl font-bold text-primary" style={{ overflow: 'hidden' }}>
                     {recencyLoading && !recency ? (
-                      <Skeleton className="h-7 w-24 rounded-md" />
+                      <Skeleton className="h-7 w-24 rounded-md" style={{ display: 'inline-block' }} />
                     ) : recency ? (
                       recency.totalCustomers.toLocaleString("ru-RU")
                     ) : (
