@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma.service';
 import { fetchReceiptAggregates } from '../common/receipt-aggregates.util';
 
 type ParsedRfmSettings = {
+  recencyMode: 'auto' | 'manual';
   recencyDays?: number;
   frequency?: { mode?: 'auto' | 'manual'; threshold?: number | null };
   monetary?: { mode?: 'auto' | 'manual'; threshold?: number | null };
@@ -18,8 +19,6 @@ type Quantiles = {
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const DEFAULT_RECENCY_DAYS = 365;
-
 function startOfDay(d: Date) {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
@@ -58,14 +57,44 @@ export class AnalyticsAggregatorWorker {
     rulesJson: Prisma.JsonValue | null | undefined,
   ): ParsedRfmSettings {
     const root = this.toJsonObject(rulesJson);
-    if (!root) return {};
+    if (!root)
+      return {
+        recencyMode: 'auto',
+      };
     const raw = root.rfm;
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
-    const rfm = raw;
-    const recencyDays = this.toNumber(rfm.recencyDays);
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+      return { recencyMode: 'auto' };
+    const rfm = raw as Record<string, unknown>;
+    const recencyObject = this.toJsonObject(
+      rfm.recency as Prisma.JsonValue,
+    ) as
+      | {
+          mode?: unknown;
+          days?: unknown;
+          recencyDays?: unknown;
+          threshold?: unknown;
+        }
+      | null;
+    const legacyRecencyDays = this.toNumber(rfm.recencyDays);
+    const recencyModeFromObject =
+      recencyObject?.mode === 'manual' ? 'manual' : 'auto';
+    const recencyDaysFromObject = this.toNumber(
+      recencyObject?.days ?? recencyObject?.recencyDays ?? recencyObject?.threshold,
+    );
+    let recencyMode: 'auto' | 'manual' = recencyModeFromObject;
+    let recencyDays = recencyDaysFromObject;
+    if (!recencyDays && legacyRecencyDays) {
+      recencyDays = legacyRecencyDays;
+      recencyMode = 'manual';
+    }
+    if (!(recencyDays && recencyDays > 0) && recencyMode === 'manual') {
+      recencyMode = 'auto';
+      recencyDays = undefined;
+    }
     const frequencyRaw = this.toJsonObject(rfm.frequency as Prisma.JsonValue);
     const monetaryRaw = this.toJsonObject(rfm.monetary as Prisma.JsonValue);
     return {
+      recencyMode,
       recencyDays:
         recencyDays && recencyDays > 0 ? Math.round(recencyDays) : undefined,
       frequency: frequencyRaw
@@ -130,6 +159,26 @@ export class AnalyticsAggregatorWorker {
     return 5 - bucket; // 5 — свежие/лояльные, 1 — потерянные
   }
 
+  private scoreRecencyQuantile(
+    daysSince: number,
+    quantiles?: Quantiles | null,
+  ): number {
+    if (!Number.isFinite(daysSince)) return 1;
+    if (!quantiles) return 1;
+    const { q20, q40, q60, q80 } = quantiles;
+    if (q20 == null || q40 == null || q60 == null || q80 == null) return 1;
+    if (q20 === q40 && q40 === q60 && q60 === q80) {
+      if (daysSince < q20) return 5;
+      if (daysSince > q20) return 1;
+      return q20 === 0 ? 5 : 3;
+    }
+    if (daysSince <= q20) return 5;
+    if (daysSince <= q40) return 4;
+    if (daysSince <= q60) return 3;
+    if (daysSince <= q80) return 2;
+    return 1;
+  }
+
   private scoreDescending(
     value: number,
     threshold: number | null | undefined,
@@ -160,7 +209,7 @@ export class AnalyticsAggregatorWorker {
     return 1;
   }
 
-  private computeRecencyDays(
+  private computeRecencyDaysBounded(
     lastOrderAt: Date | null | undefined,
     horizon: number,
     now: Date,
@@ -172,6 +221,18 @@ export class AnalyticsAggregatorWorker {
     if (diff <= 0) return 0;
     const days = Math.floor(diff / DAY_MS);
     return Math.max(0, Math.min(days, horizon));
+  }
+
+  private computeRecencyDaysRaw(
+    lastOrderAt: Date | null | undefined,
+    now: Date,
+  ): number {
+    if (!(lastOrderAt instanceof Date) || Number.isNaN(lastOrderAt.getTime())) {
+      return Number.POSITIVE_INFINITY;
+    }
+    const diff = now.getTime() - lastOrderAt.getTime();
+    if (diff <= 0) return 0;
+    return Math.max(0, Math.floor(diff / DAY_MS));
   }
 
   // Ежедневная агрегация KPI за вчерашний день
@@ -295,10 +356,12 @@ export class AnalyticsAggregatorWorker {
     ]);
 
     const parsedSettings = this.parseRfmSettings(settingsRow?.rulesJson);
+    const recencyMode =
+      parsedSettings.recencyMode === 'manual' && parsedSettings.recencyDays
+        ? 'manual'
+        : 'auto';
     const recencyHorizon =
-      parsedSettings.recencyDays && parsedSettings.recencyDays > 0
-        ? parsedSettings.recencyDays
-        : DEFAULT_RECENCY_DAYS;
+      recencyMode === 'manual' ? parsedSettings.recencyDays : undefined;
 
     const firstSeenMap = new Map<string, Date>();
     for (const w of wallets) {
@@ -338,18 +401,27 @@ export class AnalyticsAggregatorWorker {
       }
     }
 
-    const frequencySamples = stats.map((s) =>
-      Math.max(0, Number(s.visits ?? 0)),
-    );
-    const monetarySamples = stats.map((s) =>
-      Math.max(0, Number(s.totalSpent ?? 0)),
-    );
+    const now = new Date();
+
+    const frequencySamples = stats
+      .map((s) => Math.max(0, Number(s.visits ?? 0)))
+      .filter((value) => value > 0);
+    const monetarySamples = stats
+      .map((s) => Math.max(0, Number(s.totalSpent ?? 0)))
+      .filter((value) => value > 0);
+    const recencySamples = stats
+      .filter((s) => (s.visits ?? 0) > 0 && s.lastOrderAt)
+      .map((s) => this.computeRecencyDaysRaw(s.lastOrderAt, now))
+      .filter((value) => Number.isFinite(value) && value >= 0);
 
     const frequencyQuantiles = frequencySamples.length
       ? this.computeQuantiles(frequencySamples)
       : null;
     const monetaryQuantiles = monetarySamples.length
       ? this.computeQuantiles(monetarySamples)
+      : null;
+    const recencyQuantiles = recencySamples.length
+      ? this.computeQuantiles(recencySamples)
       : null;
 
     const resolvedFrequencyThreshold =
@@ -366,17 +438,28 @@ export class AnalyticsAggregatorWorker {
     const moneyThreshold =
       resolvedMoneyThreshold != null ? resolvedMoneyThreshold : null;
 
-    const now = new Date();
-
     for (const s of stats) {
       const visits = Math.max(0, Number(s.visits ?? 0));
       const totalSpent = Math.max(0, Number(s.totalSpent ?? 0));
-      const daysSince = this.computeRecencyDays(
+      const daysSinceRaw = this.computeRecencyDaysRaw(
         s.lastOrderAt ?? null,
-        recencyHorizon,
         now,
       );
-      const rfmR = this.scoreRecency(daysSince, recencyHorizon);
+      const boundedRecency =
+        recencyMode === 'manual' && recencyHorizon
+          ? this.computeRecencyDaysBounded(
+              s.lastOrderAt ?? null,
+              recencyHorizon,
+              now,
+            )
+          : null;
+      const rfmR =
+        recencyMode === 'manual' && recencyHorizon
+          ? this.scoreRecency(
+              boundedRecency ?? recencyHorizon,
+              recencyHorizon,
+            )
+          : this.scoreRecencyQuantile(daysSinceRaw, recencyQuantiles);
       const rfmF = this.scoreDescending(
         visits,
         frequencyThreshold,

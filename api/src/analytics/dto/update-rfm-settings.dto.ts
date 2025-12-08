@@ -3,13 +3,21 @@ import { IsIn, IsInt, Min, ValidateIf } from 'class-validator';
 
 export class UpdateRfmSettingsDto {
   @ApiProperty({
+    enum: ['auto', 'manual'],
+    description: 'Режим расчёта давности покупок',
+    default: 'auto',
+  })
+  @IsIn(['auto', 'manual'])
+  recencyMode!: 'auto' | 'manual';
+
+  @ApiProperty({
     minimum: 1,
-    default: 365,
     description: 'После какого количества дней клиента считаем потерянным',
   })
+  @ValidateIf((dto) => dto.recencyMode === 'manual')
   @IsInt()
   @Min(1)
-  recencyDays!: number;
+  recencyDays?: number;
 
   @ApiProperty({
     enum: ['auto', 'manual'],

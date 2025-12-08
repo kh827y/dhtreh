@@ -37,9 +37,14 @@ describe('AnalyticsAggregatorWorker — RFM helpers', () => {
       days: number,
       horizon: number,
     ) => number;
-    const computeRecencyDays = (worker as any).computeRecencyDays as (
+    const computeRecencyDaysBounded = (worker as any)
+      .computeRecencyDaysBounded as (
+        lastOrderAt: Date | null | undefined,
+        horizon: number,
+        now: Date,
+      ) => number;
+    const computeRecencyDaysRaw = (worker as any).computeRecencyDaysRaw as (
       lastOrderAt: Date | null | undefined,
-      horizon: number,
       now: Date,
     ) => number;
     const now = new Date('2024-01-15T00:00:00.000Z');
@@ -49,13 +54,18 @@ describe('AnalyticsAggregatorWorker — RFM helpers', () => {
     expect(scoreRecency(75, 100)).toBe(2);
     expect(scoreRecency(150, 100)).toBe(1);
 
-    expect(computeRecencyDays(new Date('2023-12-31T00:00:00.000Z'), 100, now)).toBe(
-      15,
-    );
-    expect(computeRecencyDays(new Date('2024-03-01T00:00:00.000Z'), 100, now)).toBe(
-      0,
-    );
-    expect(computeRecencyDays(null, 100, now)).toBe(100);
+    expect(
+      computeRecencyDaysBounded(
+        new Date('2023-12-31T00:00:00.000Z'),
+        100,
+        now,
+      ),
+    ).toBe(15);
+    expect(
+      computeRecencyDaysBounded(new Date('2024-03-01T00:00:00.000Z'), 100, now),
+    ).toBe(0);
+    expect(computeRecencyDaysBounded(null, 100, now)).toBe(100);
+    expect(computeRecencyDaysRaw(null, now)).toBe(Number.POSITIVE_INFINITY);
   });
 
   it('segments descending metrics by threshold or quantiles', () => {
@@ -125,13 +135,13 @@ describe('AnalyticsAggregatorWorker — recalculateCustomerStatsForMerchant', ()
     jest.useRealTimers();
   });
 
-  it('builds RFM scores with auto thresholds, merges wallets and receipts, and keeps earliest firstSeenAt', async () => {
+  it('builds RFM scores with auto thresholds (including recency), merges wallets and receipts, and keeps earliest firstSeenAt', async () => {
     const now = new Date('2024-02-01T00:00:00.000Z');
     jest.setSystemTime(now);
 
     const prisma = createPrismaMock();
     prisma.merchantSettings.findUnique.mockResolvedValue({
-      rulesJson: { rfm: { recencyDays: 365, frequency: { mode: 'auto' }, monetary: { mode: 'auto' } } },
+      rulesJson: { rfm: { frequency: { mode: 'auto' }, monetary: { mode: 'auto' } } },
     });
     prisma.wallet.findMany.mockResolvedValue([
       { merchantId: 'm-1', customerId: 'fresh', createdAt: new Date('2023-01-10T00:00:00.000Z') },
@@ -203,11 +213,11 @@ describe('AnalyticsAggregatorWorker — recalculateCustomerStatsForMerchant', ()
         visits: 6,
         totalSpent: 600,
         avgCheck: 100,
-        rfmR: 4,
-        rfmF: 4,
-        rfmM: 4,
-        rfmScore: 444,
-        rfmClass: '4-4-4',
+        rfmR: 3,
+        rfmF: 3,
+        rfmM: 3,
+        rfmScore: 333,
+        rfmClass: '3-3-3',
       }),
     );
 

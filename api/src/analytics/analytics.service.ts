@@ -103,6 +103,7 @@ type RfmGroupSummary = {
   monetary: RfmRange;
 };
 type ParsedRfmSettings = {
+  recencyMode?: 'auto' | 'manual';
   recencyDays?: number;
   frequency?: { mode?: 'auto' | 'manual'; threshold?: number | null };
   monetary?: { mode?: 'auto' | 'manual'; threshold?: number | null };
@@ -116,7 +117,6 @@ type Quantiles = {
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const DEFAULT_RECENCY_DAYS = 365;
 
 export interface CustomerPortraitMetrics {
   gender: Array<{
@@ -1032,14 +1032,41 @@ export class AnalyticsService {
     rulesJson: Prisma.JsonValue | null | undefined,
   ): ParsedRfmSettings {
     const root = this.toJsonObject(rulesJson);
-    if (!root) return {};
+    if (!root) return { recencyMode: 'auto' };
     const raw = root.rfm;
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
-    const rfm = raw;
-    const recencyDays = this.toNumber(rfm.recencyDays);
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+      return { recencyMode: 'auto' };
+    const rfm = raw as Record<string, unknown>;
+    const recencyObject = this.toJsonObject(
+      rfm.recency as Prisma.JsonValue,
+    ) as
+      | {
+          mode?: unknown;
+          days?: unknown;
+          recencyDays?: unknown;
+          threshold?: unknown;
+        }
+      | null;
+    const legacyRecencyDays = this.toNumber(rfm.recencyDays);
+    const recencyModeFromObject =
+      recencyObject?.mode === 'manual' ? 'manual' : 'auto';
+    const recencyDaysFromObject = this.toNumber(
+      recencyObject?.days ?? recencyObject?.recencyDays ?? recencyObject?.threshold,
+    );
+    let recencyMode: 'auto' | 'manual' = recencyModeFromObject;
+    let recencyDays = recencyDaysFromObject;
+    if (!recencyDays && legacyRecencyDays) {
+      recencyDays = legacyRecencyDays;
+      recencyMode = 'manual';
+    }
+    if (!(recencyDays && recencyDays > 0) && recencyMode === 'manual') {
+      recencyMode = 'auto';
+      recencyDays = undefined;
+    }
     const frequencyRaw = this.toJsonObject(rfm.frequency as Prisma.JsonValue);
     const monetaryRaw = this.toJsonObject(rfm.monetary as Prisma.JsonValue);
     return {
+      recencyMode,
       recencyDays:
         recencyDays && recencyDays > 0 ? Math.round(recencyDays) : undefined,
       frequency: frequencyRaw
@@ -1060,7 +1087,8 @@ export class AnalyticsService {
   private mergeRfmRules(
     rulesJson: Prisma.JsonValue | null | undefined,
     rfm: {
-      recencyDays: number;
+      recencyMode: 'auto' | 'manual';
+      recencyDays?: number | null;
       frequency: { mode: 'auto' | 'manual'; threshold: number | null };
       monetary: { mode: 'auto' | 'manual'; threshold: number | null };
     },
@@ -1068,7 +1096,15 @@ export class AnalyticsService {
     const root = this.toJsonObject(rulesJson);
     const next: Prisma.JsonObject = root ? { ...root } : {};
     next.rfm = {
-      recencyDays: rfm.recencyDays,
+      ...(rfm.recencyMode === 'manual' && rfm.recencyDays
+        ? { recencyDays: rfm.recencyDays }
+        : {}),
+      recency: {
+        mode: rfm.recencyMode,
+        ...(rfm.recencyMode === 'manual' && rfm.recencyDays
+          ? { recencyDays: rfm.recencyDays }
+          : {}),
+      },
       frequency: {
         mode: rfm.frequency.mode,
         ...(rfm.frequency.threshold != null
@@ -1161,19 +1197,30 @@ export class AnalyticsService {
     return Math.max(minimum, Math.round(value));
   }
 
-  private computeRecencyDays(
+  private computeRecencyDaysBounded(
     lastOrderAt: Date | null | undefined,
     horizon: number,
     now: Date,
   ): number {
     if (!(lastOrderAt instanceof Date) || Number.isNaN(lastOrderAt.getTime())) {
-      return Math.max(1, horizon);
+      return horizon;
     }
     const diff = now.getTime() - lastOrderAt.getTime();
     if (diff <= 0) return 0;
     const days = Math.floor(diff / DAY_MS);
-    const limit = Math.max(1, horizon);
-    return Math.max(0, Math.min(days, limit));
+    return Math.max(0, Math.min(days, horizon));
+  }
+
+  private computeRecencyDaysRaw(
+    lastOrderAt: Date | null | undefined,
+    now: Date,
+  ): number {
+    if (!(lastOrderAt instanceof Date) || Number.isNaN(lastOrderAt.getTime())) {
+      return Number.POSITIVE_INFINITY;
+    }
+    const diff = now.getTime() - lastOrderAt.getTime();
+    if (diff <= 0) return 0;
+    return Math.max(0, Math.floor(diff / DAY_MS));
   }
 
   private scoreRecency(daysSince: number, horizon: number): number {
@@ -1182,6 +1229,26 @@ export class AnalyticsService {
     const bounded = Math.max(0, Math.min(daysSince, limit));
     const bucket = Math.min(4, Math.floor((bounded / limit) * 5));
     return 5 - bucket;
+  }
+
+  private scoreRecencyQuantile(
+    daysSince: number,
+    quantiles?: Quantiles | null,
+  ): number {
+    if (!Number.isFinite(daysSince)) return 1;
+    if (!quantiles) return 1;
+    const { q20, q40, q60, q80 } = quantiles;
+    if (q20 == null || q40 == null || q60 == null || q80 == null) return 1;
+    if (q20 === q40 && q40 === q60 && q60 === q80) {
+      if (daysSince < q20) return 5;
+      if (daysSince > q20) return 1;
+      return q20 === 0 ? 5 : 3;
+    }
+    if (daysSince <= q20) return 5;
+    if (daysSince <= q40) return 4;
+    if (daysSince <= q60) return 3;
+    if (daysSince <= q80) return 2;
+    return 1;
   }
 
   private scoreDescending(
@@ -1234,24 +1301,23 @@ export class AnalyticsService {
       }),
     ]);
     const storedSettings = this.parseRfmSettings(settingsRow?.rulesJson);
+    const recencyMode =
+      storedSettings.recencyMode === 'manual' && storedSettings.recencyDays
+        ? 'manual'
+        : 'auto';
     const recencyHorizon =
-      storedSettings.recencyDays && storedSettings.recencyDays > 0
-        ? storedSettings.recencyDays
-        : DEFAULT_RECENCY_DAYS;
+      recencyMode === 'manual' ? storedSettings.recencyDays : undefined;
     const now = new Date();
     const recencyBuckets = new Map<number, number[]>();
     const frequencyBuckets = new Map<number, number[]>();
     const monetaryBuckets = new Map<number, number[]>();
     const frequencySamples: number[] = [];
     const monetarySamples: number[] = [];
+    const recencySamples: number[] = [];
     const distribution = new Map<string, number>();
 
     const prepared = stats.map((row) => {
-      const daysSince = this.computeRecencyDays(
-        row.lastOrderAt,
-        recencyHorizon,
-        now,
-      );
+      const daysSinceRaw = this.computeRecencyDaysRaw(row.lastOrderAt, now);
       const visits = Math.max(0, Number(row.visits ?? 0));
       const totalSpent = Math.max(0, Number(row.totalSpent ?? 0));
 
@@ -1259,12 +1325,15 @@ export class AnalyticsService {
       const fScore = this.normalizeScore(row.rfmF);
       const mScore = this.normalizeScore(row.rfmM);
 
-      frequencySamples.push(visits);
-      monetarySamples.push(totalSpent);
+      if (visits > 0) frequencySamples.push(visits);
+      if (totalSpent > 0) monetarySamples.push(totalSpent);
+      if (visits > 0 && Number.isFinite(daysSinceRaw) && daysSinceRaw >= 0) {
+        recencySamples.push(daysSinceRaw);
+      }
 
       return {
         row,
-        daysSince,
+        daysSinceRaw,
         visits,
         totalSpent,
         rScore,
@@ -1281,6 +1350,8 @@ export class AnalyticsService {
       monetarySamples.length > 0
         ? this.computeQuantiles(monetarySamples)
         : null;
+    const recencyQuantiles =
+      recencySamples.length > 0 ? this.computeQuantiles(recencySamples) : null;
     const frequencyMode =
       storedSettings.frequency?.mode === 'manual' ? 'manual' : 'auto';
     const moneyMode =
@@ -1295,9 +1366,22 @@ export class AnalyticsService {
         : null;
 
     for (const entry of prepared) {
+      const boundedRecency =
+        recencyMode === 'manual' && recencyHorizon
+          ? this.computeRecencyDaysBounded(
+              entry.row.lastOrderAt,
+              recencyHorizon,
+              now,
+            )
+          : null;
       const resolvedRScore =
         entry.rScore ??
-        this.scoreRecency(entry.daysSince, recencyHorizon);
+        (recencyMode === 'manual' && recencyHorizon
+          ? this.scoreRecency(
+              boundedRecency ?? recencyHorizon,
+              recencyHorizon,
+            )
+          : this.scoreRecencyQuantile(entry.daysSinceRaw, recencyQuantiles));
       const resolvedFScore =
         entry.fScore ??
         this.scoreDescending(
@@ -1314,7 +1398,13 @@ export class AnalyticsService {
         );
 
       if (resolvedRScore)
-        this.pushToBucket(recencyBuckets, resolvedRScore, entry.daysSince);
+        this.pushToBucket(
+          recencyBuckets,
+          resolvedRScore,
+          recencyMode === 'manual' && recencyHorizon
+            ? boundedRecency ?? recencyHorizon
+            : entry.daysSinceRaw,
+        );
       if (resolvedFScore)
         this.pushToBucket(frequencyBuckets, resolvedFScore, entry.visits);
       if (resolvedMScore)
@@ -1344,7 +1434,8 @@ export class AnalyticsService {
     }));
 
     const settingsResponse = {
-      recencyDays: recencyHorizon,
+      recencyMode,
+      recencyDays: recencyHorizon ?? null,
       frequencyMode,
       frequencyThreshold:
         frequencyMode === 'manual'
@@ -1382,7 +1473,9 @@ export class AnalyticsService {
       select: { rulesJson: true },
     });
     const nextRules = this.mergeRfmRules(settingsRow?.rulesJson, {
-      recencyDays: dto.recencyDays,
+      recencyMode: dto.recencyMode,
+      recencyDays:
+        dto.recencyMode === 'manual' ? dto.recencyDays ?? null : null,
       frequency: {
         mode: dto.frequencyMode,
         threshold:

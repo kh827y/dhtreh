@@ -12,7 +12,8 @@ type RfmGroup = {
 };
 type RfmDistributionRow = { class: string; customers: number };
 type RfmSettingsState = {
-  recencyDays: number;
+  recencyMode: "auto" | "manual";
+  recencyDays: number | null;
   frequencyMode: "auto" | "manual";
   frequencyThreshold: number | null;
   frequencySuggested: number | null;
@@ -28,7 +29,8 @@ type RfmAnalyticsResponse = {
 };
 
 const defaultSettings: RfmSettingsState = {
-  recencyDays: 365,
+  recencyMode: "auto",
+  recencyDays: null,
   frequencyMode: "auto",
   frequencyThreshold: null,
   frequencySuggested: null,
@@ -81,7 +83,8 @@ async function fetchAnalytics(): Promise<RfmAnalyticsResponse> {
 }
 
 async function updateSettings(payload: {
-  recencyDays: number;
+  recencyMode: "auto" | "manual";
+  recencyDays?: number;
   frequencyMode: "auto" | "manual";
   frequencyThreshold?: number;
   moneyMode: "auto" | "manual";
@@ -130,6 +133,7 @@ export default function AnalyticsRfmPage() {
 
   const dirty = React.useMemo(() => {
     return (
+      draft.recencyMode !== settings.recencyMode ||
       draft.recencyDays !== settings.recencyDays ||
       draft.frequencyMode !== settings.frequencyMode ||
       (draft.frequencyMode === "manual" && draft.frequencyThreshold !== settings.frequencyThreshold) ||
@@ -139,9 +143,11 @@ export default function AnalyticsRfmPage() {
   }, [draft, settings]);
 
   const applySettings = async () => {
-    if (draft.recencyDays < 1) {
-      alert("Давность должна быть положительным числом дней");
-      return;
+    if (draft.recencyMode === "manual") {
+      if (draft.recencyDays == null || draft.recencyDays < 1) {
+        alert("Давность должна быть положительным числом дней");
+        return;
+      }
     }
     if (draft.frequencyMode === "manual") {
       if (!draft.frequencyThreshold || draft.frequencyThreshold < 1) {
@@ -158,7 +164,10 @@ export default function AnalyticsRfmPage() {
     setSaving(true);
     try {
       const payload = {
-        recencyDays: Math.max(1, Math.round(draft.recencyDays)),
+        recencyMode: draft.recencyMode,
+        ...(draft.recencyMode === "manual"
+          ? { recencyDays: Math.max(1, Math.round(draft.recencyDays ?? 1)) }
+          : {}),
         frequencyMode: draft.frequencyMode,
         ...(draft.frequencyMode === "manual"
           ? { frequencyThreshold: Math.max(1, Math.round(draft.frequencyThreshold ?? 1)) }
@@ -309,17 +318,34 @@ export default function AnalyticsRfmPage() {
             <div style={{ display: "grid", gap: 16 }}>
               <label style={{ display: "grid", gap: 6 }}>
                 <span style={{ fontSize: 13, opacity: 0.75 }}>Recency (давность в днях)</span>
-                <input
-                  type="number"
-                  min={1}
-                  value={draft.recencyDays}
+                <select
+                  value={draft.recencyMode}
                   onChange={(event) => {
-                    const next = Number(event.target.value);
-                    setDraft((prev) => ({ ...prev, recencyDays: Number.isFinite(next) ? Math.max(1, Math.round(next)) : prev.recencyDays }));
+                    const nextMode = event.target.value as RfmSettingsState["recencyMode"];
+                    setDraft((prev) => ({ ...prev, recencyMode: nextMode }));
                   }}
                   style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(148,163,184,0.35)", background: "rgba(15,23,42,0.6)", color: "#e2e8f0" }}
-                />
-                <span style={{ fontSize: 12, opacity: 0.65 }}>После какого количества дней покупатель будет безвозвратно потерян</span>
+                >
+                  <option value="auto">Автоматически (квантильный расчёт)</option>
+                  <option value="manual">Задать вручную</option>
+                </select>
+                {draft.recencyMode === "manual" ? (
+                  <input
+                    type="number"
+                    min={1}
+                    value={draft.recencyDays ?? ""}
+                    onChange={(event) => {
+                      const next = Number(event.target.value);
+                      setDraft((prev) => ({ ...prev, recencyDays: Number.isFinite(next) ? Math.max(1, Math.round(next)) : prev.recencyDays }));
+                    }}
+                    style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(148,163,184,0.35)", background: "rgba(15,23,42,0.6)", color: "#e2e8f0" }}
+                  />
+                ) : (
+                  <div style={{ fontSize: 12, opacity: 0.65 }}>
+                    Границы R определяются автоматически по квантилям давности
+                  </div>
+                )}
+                <span style={{ fontSize: 12, opacity: 0.65 }}>После какого количества дней покупатель будет безвозвратно потерян (для ручного режима)</span>
               </label>
 
               <label style={{ display: "grid", gap: 6 }}>
