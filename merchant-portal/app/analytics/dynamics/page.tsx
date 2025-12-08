@@ -1,7 +1,8 @@
 "use client";
 
 import React from "react";
-import { Card, CardHeader, CardBody, Chart, Skeleton, Button } from "@loyalty/ui";
+import { Card, CardBody, Chart, Skeleton } from "@loyalty/ui";
+import { Sparkles, LineChart, Coins, Clock4, RefreshCw } from "lucide-react";
 import { useTimezone } from "../../../components/TimezoneProvider";
 
 type DetailGrouping = "day" | "week" | "month";
@@ -20,6 +21,12 @@ const detailOptions: Array<{ value: DetailGrouping; label: string }> = [
   { value: "week", label: "По неделям" },
   { value: "month", label: "По месяцам" },
 ];
+
+const detailLabels: Record<DetailGrouping, string> = {
+  day: "по дням",
+  week: "по неделям",
+  month: "по месяцам",
+};
 
 type RevenuePoint = {
   date: string;
@@ -58,9 +65,68 @@ function parseBucketDate(value: string) {
   return new Date(Date.UTC(y, m - 1, d));
 }
 
+function formatCurrency(value: number, maximumFractionDigits = 0) {
+  return new Intl.NumberFormat("ru-RU", {
+    style: "currency",
+    currency: "RUB",
+    maximumFractionDigits,
+    minimumFractionDigits: 0,
+  }).format(value || 0);
+}
+
+function formatNumber(value: number) {
+  return Math.round(value || 0).toLocaleString("ru-RU");
+}
+
+type SegmentedProps = {
+  value: DetailGrouping;
+  onChange: (val: DetailGrouping) => void;
+  disabledWhen?: (val: DetailGrouping) => boolean;
+};
+
+function SegmentedControl({ value, onChange, disabledWhen }: SegmentedProps) {
+  return (
+    <div className="dynamics-segmented">
+      {detailOptions.map((option) => {
+        const disabled = disabledWhen?.(option.value) ?? false;
+        return (
+          <button
+            key={option.value}
+            className={`dynamics-segment ${value === option.value ? "active" : ""}`}
+            onClick={() => onChange(option.value)}
+            disabled={disabled}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+const ChartSkeleton = () => (
+  <div className="dynamics-chart-skeleton">
+    <div className="dynamics-chart-skeleton__head">
+      <Skeleton className="h-4 w-28 rounded-full" />
+      <Skeleton className="h-4 w-16 rounded-full" />
+    </div>
+    <div className="dynamics-chart-skeleton__body">
+      {Array.from({ length: 14 }).map((_, idx) => (
+        <div key={idx} className="dynamics-chart-skeleton__bar" style={{ height: 40 + (idx % 5) * 18 }} />
+      ))}
+    </div>
+    <div className="dynamics-chart-skeleton__foot">
+      <Skeleton className="h-3 w-20 rounded-full" />
+      <Skeleton className="h-3 w-16 rounded-full" />
+      <Skeleton className="h-3 w-24 rounded-full" />
+    </div>
+  </div>
+);
+
 export default function AnalyticsDynamicsPage() {
   const [preset, setPreset] = React.useState<PeriodPreset>("week");
-  const [detail, setDetail] = React.useState<DetailGrouping>("day");
+  const [pointsDetail, setPointsDetail] = React.useState<DetailGrouping>("day");
+  const [checkDetail, setCheckDetail] = React.useState<DetailGrouping>("day");
   const [customDraft, setCustomDraft] = React.useState<{ from: string; to: string }>({ from: "", to: "" });
   const [customApplied, setCustomApplied] = React.useState<{ from: string; to: string } | null>(null);
   const [loading, setLoading] = React.useState(false);
@@ -68,6 +134,7 @@ export default function AnalyticsDynamicsPage() {
   const [revenue, setRevenue] = React.useState<RevenueMetrics | null>(null);
   const [loyalty, setLoyalty] = React.useState<LoyaltyMetrics | null>(null);
   const timezone = useTimezone();
+
   const monthFormatter = React.useMemo(
     () => new Intl.DateTimeFormat("ru-RU", { month: "short", year: "numeric", timeZone: timezone.iana }),
     [timezone],
@@ -76,6 +143,7 @@ export default function AnalyticsDynamicsPage() {
     () => new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", timeZone: timezone.iana }),
     [timezone],
   );
+
   const formatBucketLabel = React.useCallback(
     (date: string, grouping: DetailGrouping) => {
       const parsed = parseBucketDate(date);
@@ -119,10 +187,10 @@ export default function AnalyticsDynamicsPage() {
   }, [customDraft]);
 
   React.useEffect(() => {
-    if (preset === "yesterday" && detail !== "day") {
-      setDetail("day");
-    }
-  }, [preset, detail]);
+    if (preset !== "yesterday") return;
+    if (pointsDetail !== "day") setPointsDetail("day");
+    if (checkDetail !== "day") setCheckDetail("day");
+  }, [preset, pointsDetail, checkDetail]);
 
   React.useEffect(() => {
     if (preset === "custom" && !customApplied) {
@@ -144,7 +212,8 @@ export default function AnalyticsDynamicsPage() {
 
     const revenueParams = new URLSearchParams(baseParams);
     const loyaltyParams = new URLSearchParams(baseParams);
-    loyaltyParams.set("group", detail);
+    revenueParams.set("group", checkDetail);
+    loyaltyParams.set("group", pointsDetail);
 
     Promise.all([
       fetch(`/api/portal/analytics/revenue?${revenueParams.toString()}`, { signal: controller.signal }),
@@ -182,19 +251,20 @@ export default function AnalyticsDynamicsPage() {
       cancelled = true;
       controller.abort();
     };
-  }, [preset, detail, customApplied]);
+  }, [preset, pointsDetail, checkDetail, customApplied]);
 
   const revenueGrouping: DetailGrouping = React.useMemo(() => {
     const grouping = revenue?.seriesGrouping;
     if (grouping === "week" || grouping === "month") return grouping;
-    return "day";
-  }, [revenue?.seriesGrouping]);
+    return checkDetail;
+  }, [revenue?.seriesGrouping, checkDetail]);
 
   const pointsGrouping: DetailGrouping = React.useMemo(() => {
     const grouping = loyalty?.pointsGrouping;
     if (grouping === "week" || grouping === "month") return grouping;
-    return grouping === "day" ? "day" : detail;
-  }, [loyalty?.pointsGrouping, detail]);
+    if (grouping === "day") return "day";
+    return pointsDetail;
+  }, [loyalty?.pointsGrouping, pointsDetail]);
 
   const averageCheckOption = React.useMemo(() => {
     const points = revenue?.dailyRevenue ?? [];
@@ -290,116 +360,221 @@ export default function AnalyticsDynamicsPage() {
     } as const;
   }, [loyalty?.pointsSeries, pointsGrouping]);
 
+  const presetLabel = React.useMemo(() => {
+    if (preset === "custom") return "Свой период";
+    return presetOptions.find((item) => item.value === preset)?.label || "";
+  }, [preset]);
+
+  const pointsBalance = React.useMemo(() => {
+    const series = loyalty?.pointsSeries;
+    if (!series?.length) return null;
+    const last = series[series.length - 1];
+    return last?.balance ?? null;
+  }, [loyalty?.pointsSeries]);
+
+  const revenueGrowth = revenue?.revenueGrowth ?? null;
+
   return (
-    <div style={{ display: "grid", gap: 20 }}>
-      <header
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          flexWrap: "wrap",
-          gap: 16,
-        }}
-      >
-        <div>
-          <div style={{ fontSize: 26, fontWeight: 700 }}>Динамика</div>
-          <div style={{ fontSize: 13, opacity: 0.7 }}>Показатели выручки и программы лояльности в динамике</div>
-          <div style={{ fontSize: 12, opacity: 0.65, marginTop: 4 }}>Все даты указаны по {timezone.label}</div>
-        </div>
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 12,
-            alignItems: "center",
-            justifyContent: "flex-end",
-          }}
-        >
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {presetOptions.map((option) => (
-              <Button
-                key={option.value}
-                variant={preset === option.value ? "primary" : "secondary"}
-                size="sm"
-                onClick={() => handlePresetChange(option.value)}
-                disabled={loading && preset === option.value}
+    <div className="dynamics-page animate-in">
+      <section className="dynamics-hero">
+        <div className="dynamics-hero-grid">
+          <div className="dynamics-hero-intro">
+            <div className="dynamics-eyebrow">
+              <Sparkles size={16} />
+              Pulse mode
+            </div>
+            <div className="dynamics-title-row">
+              <h1 className="dynamics-title">Динамика</h1>
+              <span className="dynamics-chip">Часовой пояс: {timezone.label}</span>
+            </div>
+            <p className="dynamics-subtitle">
+              Динамика выручки, среднего чека и баллов программы лояльности. Видно, где бизнес ускоряется, а где
+              теряет темп.
+            </p>
+            <div className="dynamics-pill-grid">
+              <div className="dynamics-pill">
+                <div className="pill-head">
+                  <LineChart size={16} />
+                  <span>Общая выручка</span>
+                </div>
+                {loading && !revenue ? (
+                  <Skeleton className="h-6 w-32 rounded-md" />
+                ) : (
+                  <div className="pill-value">{formatCurrency(revenue?.totalRevenue || 0)}</div>
+                )}
+                <div className="pill-hint">за выбранный период ({presetLabel.toLowerCase()})</div>
+              </div>
+              <div className="dynamics-pill">
+                <div className="pill-head">
+                  <Coins size={16} />
+                  <span>Средний чек</span>
+                </div>
+                {loading && !revenue ? (
+                  <Skeleton className="h-6 w-28 rounded-md" />
+                ) : (
+                  <div className="pill-value">{formatCurrency(revenue?.averageCheck || 0, 0)}</div>
+                )}
+                <div className="pill-hint">как менялась корзина клиента</div>
+              </div>
+              <div className="dynamics-pill">
+                <div className="pill-head">
+                  <Clock4 size={16} />
+                  <span>Транзакций</span>
+                </div>
+                {loading && !revenue ? (
+                  <Skeleton className="h-6 w-24 rounded-md" />
+                ) : (
+                  <div className="pill-value">{formatNumber(revenue?.transactionCount || 0)}</div>
+                )}
+                <div className="pill-hint">все покупки клиентов</div>
+              </div>
+              <div className="dynamics-pill muted">
+                <div className="pill-head">
+                  <RefreshCw size={16} />
+                  <span>Баланс баллов</span>
+                </div>
+                {loading && !loyalty ? (
+                  <Skeleton className="h-6 w-24 rounded-md" />
+                ) : (
+                  <div className="pill-value">
+                    {pointsBalance === null ? "—" : `${formatNumber(pointsBalance)} б.`}
+                  </div>
+                )}
+                <div className="pill-hint">последнее значение за период</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="dynamics-control-card">
+            <div className="dynamics-control-head">
+              <div>
+                <div className="control-label">Быстрые отрезки</div>
+                <div className="control-hint">Одним нажатием переключайтесь между периодами</div>
+              </div>
+              {loading && <div className="control-status">Обновляем данные…</div>}
+            </div>
+            <div className="dynamics-chip-row">
+              {presetOptions.map((option) => (
+                <button
+                  key={option.value}
+                  className={`dynamics-chip ${preset === option.value ? "active" : ""}`}
+                  onClick={() => handlePresetChange(option.value)}
+                  disabled={loading && preset === option.value}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="dynamics-control-head split">
+              <div>
+                <div className="control-label">Свой диапазон</div>
+                <div className="control-hint">Глубокая выборка по нужным датам</div>
+              </div>
+              <span className="control-status subtle">UTC привязка к {timezone.label}</span>
+            </div>
+            <div className="dynamics-date-grid">
+              <label className="dynamics-date-field">
+                <span>С</span>
+                <input
+                  type="date"
+                  value={customDraft.from}
+                  onChange={(event) => setCustomDraft((prev) => ({ ...prev, from: event.target.value }))}
+                  className="dynamics-date-input"
+                />
+              </label>
+              <label className="dynamics-date-field">
+                <span>По</span>
+                <input
+                  type="date"
+                  value={customDraft.to}
+                  onChange={(event) => setCustomDraft((prev) => ({ ...prev, to: event.target.value }))}
+                  className="dynamics-date-input"
+                />
+              </label>
+              <button
+                className={`dynamics-apply ${preset === "custom" ? "active" : ""}`}
+                onClick={applyCustomRange}
+                disabled={loading || !customDraft.from || !customDraft.to}
               >
-                {option.label}
-              </Button>
-            ))}
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 13 }}>
-            <span style={{ opacity: 0.75 }}>Кастомный период</span>
-            <input
-              type="date"
-              value={customDraft.from}
-              onChange={(event) => setCustomDraft((prev) => ({ ...prev, from: event.target.value }))}
-              style={{
-                padding: "8px 12px",
-                borderRadius: 10,
-                background: "rgba(15,23,42,0.6)",
-                border: "1px solid rgba(148,163,184,0.35)",
-                color: "#e2e8f0",
-              }}
-            />
-            <input
-              type="date"
-              value={customDraft.to}
-              onChange={(event) => setCustomDraft((prev) => ({ ...prev, to: event.target.value }))}
-              style={{
-                padding: "8px 12px",
-                borderRadius: 10,
-                background: "rgba(15,23,42,0.6)",
-                border: "1px solid rgba(148,163,184,0.35)",
-                color: "#e2e8f0",
-              }}
-            />
-            <Button
-              variant={preset === "custom" ? "primary" : "secondary"}
-              size="sm"
-              onClick={applyCustomRange}
-              disabled={loading || !customDraft.from || !customDraft.to}
-            >
-              Применить
-            </Button>
+                Применить
+              </button>
+            </div>
           </div>
         </div>
-      </header>
+      </section>
 
-      <Card>
-        <CardHeader title="Средний чек" subtitle="Динамика среднего чека, ₽" />
-        <CardBody>
-          {loading && !revenue ? <Skeleton height={340} /> : <Chart option={averageCheckOption as any} height={340} />}
-        </CardBody>
-      </Card>
+      {msg && <div className="dynamics-alert">{msg}</div>}
 
-      <Card>
-        <CardHeader title="Баллы" subtitle="Начисление, списание, сгорание и баланс" />
-        <CardBody>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-            {detailOptions.map((option) => (
-              <Button
-                key={option.value}
-                size="sm"
-                variant={pointsGrouping === option.value ? "primary" : "secondary"}
-                onClick={() => {
-                  setDetail(option.value);
+      <div className="dynamics-panels">
+        <Card className="dynamics-card" hover>
+          <CardBody className="dynamics-card-body">
+            <div className="dynamics-card-head">
+              <div className="dynamics-headline">
+                <LineChart size={20} />
+                <div>
+                  <div className="title">Средний чек</div>
+                  <div className="subtitle">Детализация и волатильность среднего чека</div>
+                </div>
+              </div>
+              <SegmentedControl
+                value={revenueGrouping}
+                onChange={(val) => {
+                  setCheckDetail(val);
                   setMsg("");
                 }}
-                disabled={loading && detail === option.value}
-              >
-                {option.label}
-              </Button>
-            ))}
-          </div>
-          {loading && !loyalty ? <Skeleton height={360} /> : <Chart option={pointsOption as any} height={360} />}
-          {msg && (
-            <div style={{ color: "#f87171", marginTop: 12 }}>
-              {msg}
+                disabledWhen={(val) => preset === "yesterday" && val !== "day"}
+              />
             </div>
-          )}
-        </CardBody>
-      </Card>
+            <div className="dynamics-meta">
+              <span className="meta-chip">Детализация {detailLabels[revenueGrouping]}</span>
+              {typeof revenueGrowth === "number" && (
+                <span className={`meta-chip ${revenueGrowth >= 0 ? "success" : "warning"}`}>
+                  {revenueGrowth >= 0 ? "Рост" : "Падение"} {revenueGrowth > 0 ? "+" : ""}
+                  {revenueGrowth.toLocaleString("ru-RU", { maximumFractionDigits: 1 })}%
+                </span>
+              )}
+              <span className="meta-chip subtle">Период: {presetLabel.toLowerCase()}</span>
+            </div>
+            <div className="dynamics-chart-shell">
+              {loading && !revenue ? (
+                <ChartSkeleton />
+              ) : (
+                <Chart option={averageCheckOption as any} height={360} />
+              )}
+            </div>
+          </CardBody>
+        </Card>
+
+        <Card className="dynamics-card" hover>
+          <CardBody className="dynamics-card-body">
+            <div className="dynamics-card-head">
+              <div className="dynamics-headline">
+                <Coins size={20} />
+                <div>
+                  <div className="title">Баллы программы лояльности</div>
+                  <div className="subtitle">Начисление, списание, сгорание и баланс</div>
+                </div>
+              </div>
+              <SegmentedControl
+                value={pointsGrouping}
+                onChange={(val) => {
+                  setPointsDetail(val);
+                  setMsg("");
+                }}
+                disabledWhen={(val) => preset === "yesterday" && val !== "day"}
+              />
+            </div>
+            <div className="dynamics-meta">
+              <span className="meta-chip">Группировка {detailLabels[pointsGrouping]}</span>
+              <span className="meta-chip subtle">Баланс: {pointsBalance === null ? "—" : `${formatNumber(pointsBalance)} б.`}</span>
+            </div>
+            <div className="dynamics-chart-shell">
+              {loading && !loyalty ? <ChartSkeleton /> : <Chart option={pointsOption as any} height={360} />}
+            </div>
+          </CardBody>
+        </Card>
+      </div>
     </div>
   );
 }

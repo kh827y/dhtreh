@@ -9,6 +9,7 @@ import {
 } from '../timezone/russia-timezones';
 import { UpdateRfmSettingsDto } from './dto/update-rfm-settings.dto';
 import { fetchReceiptAggregates } from '../common/receipt-aggregates.util';
+import { AnalyticsAggregatorWorker } from './analytics-aggregator.worker';
 
 export interface DashboardPeriod {
   from: Date;
@@ -301,6 +302,7 @@ export class AnalyticsService {
   constructor(
     private prisma: PrismaService,
     private configService: ConfigService,
+    private aggregatorWorker?: AnalyticsAggregatorWorker,
   ) {}
 
   /**
@@ -1135,38 +1137,6 @@ export class AnalyticsService {
     };
   }
 
-  private deriveRecencyScore(
-    value: number,
-    quantiles: Quantiles,
-  ): number | null {
-    if (!Number.isFinite(value)) return null;
-    const { q20, q40, q60, q80 } = quantiles;
-    if (q20 == null || q40 == null || q60 == null || q80 == null) {
-      return null;
-    }
-    if (value <= q20) return 1;
-    if (value <= q40) return 2;
-    if (value <= q60) return 3;
-    if (value <= q80) return 4;
-    return 5;
-  }
-
-  private deriveDescendingScore(
-    value: number,
-    quantiles: Quantiles,
-  ): number | null {
-    if (!Number.isFinite(value)) return null;
-    const { q20, q40, q60, q80 } = quantiles;
-    if (q20 == null || q40 == null || q60 == null || q80 == null) {
-      return null;
-    }
-    if (value <= q20) return 5;
-    if (value <= q40) return 4;
-    if (value <= q60) return 3;
-    if (value <= q80) return 2;
-    return 1;
-  }
-
   private suggestUpperQuantile(
     values: number[],
     options: { minimum?: number } = {},
@@ -1183,17 +1153,65 @@ export class AnalyticsService {
     return rounded;
   }
 
+  private normalizeThreshold(
+    value: number | null | undefined,
+    minimum: number,
+  ): number | null {
+    if (value == null || !Number.isFinite(value)) return null;
+    return Math.max(minimum, Math.round(value));
+  }
+
   private computeRecencyDays(
     lastOrderAt: Date | null | undefined,
-    fallback: number,
+    horizon: number,
     now: Date,
   ): number {
     if (!(lastOrderAt instanceof Date) || Number.isNaN(lastOrderAt.getTime())) {
-      return fallback + 1;
+      return Math.max(1, horizon);
     }
     const diff = now.getTime() - lastOrderAt.getTime();
     if (diff <= 0) return 0;
-    return Math.max(0, Math.floor(diff / DAY_MS));
+    const days = Math.floor(diff / DAY_MS);
+    const limit = Math.max(1, horizon);
+    return Math.max(0, Math.min(days, limit));
+  }
+
+  private scoreRecency(daysSince: number, horizon: number): number {
+    if (!Number.isFinite(daysSince)) return 1;
+    const limit = Math.max(1, horizon);
+    const bounded = Math.max(0, Math.min(daysSince, limit));
+    const bucket = Math.min(4, Math.floor((bounded / limit) * 5));
+    return 5 - bucket;
+  }
+
+  private scoreDescending(
+    value: number,
+    threshold: number | null | undefined,
+    quantiles?: Quantiles | null,
+  ): number {
+    if (!Number.isFinite(value)) return 1;
+    if (threshold != null && Number.isFinite(threshold) && threshold > 0) {
+      if (value >= threshold) return 5;
+      if (value >= threshold * 0.75) return 4;
+      if (value >= threshold * 0.5) return 3;
+      if (value >= threshold * 0.25) return 2;
+      return 1;
+    }
+    if (quantiles) {
+      const { q20, q40, q60, q80 } = quantiles;
+      if (q20 == null || q40 == null || q60 == null || q80 == null) return 1;
+      if (q20 === q40 && q40 === q60 && q60 === q80) {
+        if (value > q20) return 5;
+        if (value < q20) return 1;
+        return q20 === 0 ? 1 : 3;
+      }
+      if (value <= q20) return 1;
+      if (value <= q40) return 2;
+      if (value <= q60) return 3;
+      if (value <= q80) return 4;
+      return 5;
+    }
+    return 1;
   }
 
   async getRfmGroupsAnalytics(merchantId: string) {
@@ -1224,9 +1242,8 @@ export class AnalyticsService {
     const recencyBuckets = new Map<number, number[]>();
     const frequencyBuckets = new Map<number, number[]>();
     const monetaryBuckets = new Map<number, number[]>();
-    const recencyValues: number[] = [];
-    const frequencyValues: number[] = [];
-    const monetaryValues: number[] = [];
+    const frequencySamples: number[] = [];
+    const monetarySamples: number[] = [];
     const distribution = new Map<string, number>();
 
     const prepared = stats.map((row) => {
@@ -1242,9 +1259,8 @@ export class AnalyticsService {
       const fScore = this.normalizeScore(row.rfmF);
       const mScore = this.normalizeScore(row.rfmM);
 
-      recencyValues.push(daysSince);
-      frequencyValues.push(visits);
-      monetaryValues.push(totalSpent);
+      frequencySamples.push(visits);
+      monetarySamples.push(totalSpent);
 
       return {
         row,
@@ -1257,31 +1273,45 @@ export class AnalyticsService {
       };
     });
 
-    const recencyQuantiles =
-      recencyValues.length > 0 ? this.computeQuantiles(recencyValues) : null;
     const frequencyQuantiles =
-      frequencyValues.length > 0
-        ? this.computeQuantiles(frequencyValues)
+      frequencySamples.length > 0
+        ? this.computeQuantiles(frequencySamples)
         : null;
     const monetaryQuantiles =
-      monetaryValues.length > 0 ? this.computeQuantiles(monetaryValues) : null;
+      monetarySamples.length > 0
+        ? this.computeQuantiles(monetarySamples)
+        : null;
+    const frequencyMode =
+      storedSettings.frequency?.mode === 'manual' ? 'manual' : 'auto';
+    const moneyMode =
+      storedSettings.monetary?.mode === 'manual' ? 'manual' : 'auto';
+    const frequencyThreshold =
+      frequencyMode === 'manual'
+        ? this.normalizeThreshold(storedSettings.frequency?.threshold, 1)
+        : null;
+    const moneyThreshold =
+      moneyMode === 'manual'
+        ? this.normalizeThreshold(storedSettings.monetary?.threshold, 0)
+        : null;
 
     for (const entry of prepared) {
       const resolvedRScore =
         entry.rScore ??
-        (recencyQuantiles
-          ? this.deriveRecencyScore(entry.daysSince, recencyQuantiles)
-          : null);
+        this.scoreRecency(entry.daysSince, recencyHorizon);
       const resolvedFScore =
         entry.fScore ??
-        (frequencyQuantiles
-          ? this.deriveDescendingScore(entry.visits, frequencyQuantiles)
-          : null);
+        this.scoreDescending(
+          entry.visits,
+          frequencyThreshold,
+          frequencyThreshold == null ? frequencyQuantiles : null,
+        );
       const resolvedMScore =
         entry.mScore ??
-        (monetaryQuantiles
-          ? this.deriveDescendingScore(entry.totalSpent, monetaryQuantiles)
-          : null);
+        this.scoreDescending(
+          entry.totalSpent,
+          moneyThreshold,
+          moneyThreshold == null ? monetaryQuantiles : null,
+        );
 
       if (resolvedRScore)
         this.pushToBucket(recencyBuckets, resolvedRScore, entry.daysSince);
@@ -1299,10 +1329,10 @@ export class AnalyticsService {
       distribution.set(classKey, (distribution.get(classKey) ?? 0) + 1);
     }
 
-    const suggestedFrequency = this.suggestUpperQuantile(frequencyValues, {
+    const suggestedFrequency = this.suggestUpperQuantile(frequencySamples, {
       minimum: 1,
     });
-    const suggestedMoney = this.suggestUpperQuantile(monetaryValues, {
+    const suggestedMoney = this.suggestUpperQuantile(monetarySamples, {
       minimum: 0,
     });
 
@@ -1313,24 +1343,19 @@ export class AnalyticsService {
       monetary: this.buildRange(monetaryBuckets.get(score) ?? []),
     }));
 
-    const frequencyMode =
-      storedSettings.frequency?.mode === 'manual' ? 'manual' : 'auto';
-    const moneyMode =
-      storedSettings.monetary?.mode === 'manual' ? 'manual' : 'auto';
-
     const settingsResponse = {
       recencyDays: recencyHorizon,
       frequencyMode,
       frequencyThreshold:
         frequencyMode === 'manual'
-          ? (storedSettings.frequency?.threshold ?? suggestedFrequency ?? null)
-          : (suggestedFrequency ?? null),
+          ? frequencyThreshold ?? null
+          : suggestedFrequency ?? null,
       frequencySuggested: suggestedFrequency ?? null,
       moneyMode,
       moneyThreshold:
         moneyMode === 'manual'
-          ? (storedSettings.monetary?.threshold ?? suggestedMoney ?? null)
-          : (suggestedMoney ?? null),
+          ? moneyThreshold ?? null
+          : suggestedMoney ?? null,
       moneySuggested: suggestedMoney ?? null,
     };
 
@@ -1376,6 +1401,11 @@ export class AnalyticsService {
       update: { rulesJson: nextRules, updatedAt: new Date() },
       create: { merchantId, rulesJson: nextRules },
     });
+    if (this.aggregatorWorker?.recalculateCustomerStatsForMerchant) {
+      await this.aggregatorWorker.recalculateCustomerStatsForMerchant(
+        merchantId,
+      );
+    }
     return this.getRfmGroupsAnalytics(merchantId);
   }
 

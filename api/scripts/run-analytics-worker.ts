@@ -11,7 +11,7 @@ async function main() {
 
   if (merchantId) {
     console.log(`Recalculating RFM for merchant ${merchantId}`);
-    await (worker as any).recalculateCustomerStats(merchantId);
+    await worker.recalculateCustomerStatsForMerchant(merchantId);
   } else {
     console.log('Running full analytics aggregation tick (aggregateForDate today)');
     await worker.aggregateForDate(new Date());
