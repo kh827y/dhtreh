@@ -1596,6 +1596,7 @@ export class PortalController {
       properties: {
         notifyOrders: { type: 'boolean' },
         notifyReviews: { type: 'boolean' },
+        notifyReviewThreshold: { type: 'number' },
         notifyDailyDigest: { type: 'boolean' },
         notifyFraud: { type: 'boolean' },
       },
@@ -1624,6 +1625,7 @@ export class PortalController {
     body: {
       notifyOrders?: boolean;
       notifyReviews?: boolean;
+      notifyReviewThreshold?: number;
       notifyDailyDigest?: boolean;
       notifyFraud?: boolean;
     },
@@ -1635,6 +1637,7 @@ export class PortalController {
       {
         notifyOrders: body?.notifyOrders,
         notifyReviews: body?.notifyReviews,
+        notifyReviewThreshold: body?.notifyReviewThreshold,
         notifyDailyDigest: body?.notifyDailyDigest,
         notifyFraud: body?.notifyFraud,
       },

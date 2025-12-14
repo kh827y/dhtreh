@@ -58,14 +58,6 @@ type DeviceInfo = {
   outletName: string;
 };
 
-const ratingFilters = [
-  { value: "5", label: "⭐⭐⭐⭐⭐ 5 звезд и ниже" },
-  { value: "4", label: "⭐⭐⭐⭐ 4 звезды и ниже" },
-  { value: "3", label: "⭐⭐⭐ 3 звезды и ниже" },
-  { value: "2", label: "⭐⭐ 2 звезды и ниже" },
-  { value: "1", label: "⭐ 1 звезда" },
-];
-
 const shareThresholds = [
   { value: "5", label: "⭐⭐⭐⭐⭐ 5 звезд" },
   { value: "4", label: "⭐⭐⭐⭐ 4 звезды и выше" },
@@ -149,11 +141,6 @@ export default function ReviewsPage() {
   const [settingsSaving, setSettingsSaving] = React.useState(false);
 
   // Settings state
-  const [notifyEnabled, setNotifyEnabled] = React.useState(true);
-  const [notifyThreshold, setNotifyThreshold] = React.useState("3");
-  const [emailEnabled, setEmailEnabled] = React.useState(false);
-  const [emailTargets, setEmailTargets] = React.useState("support@merchant.ru");
-  const [telegramEnabled, setTelegramEnabled] = React.useState(true);
   const [shareEnabled, setShareEnabled] = React.useState(false);
   const [shareThreshold, setShareThreshold] = React.useState("5");
   const [sharePlatforms, setSharePlatforms] = React.useState<{ yandex: boolean; twogis: boolean; google: boolean }>({ yandex: true, twogis: false, google: false });
@@ -642,9 +629,8 @@ export default function ReviewsPage() {
         <div className="modal-overlay" onClick={() => setSettingsOpen(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <div>
+              <div style={{ display: 'grid', gap: 0 }}>
                 <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--fg)' }}>Настройки отзывов</div>
-                <div style={{ fontSize: 13, color: 'var(--fg-muted)', marginTop: 4 }}>Управление уведомлениями и интеграциями</div>
               </div>
               <button 
                 onClick={() => setSettingsOpen(false)}
@@ -655,66 +641,6 @@ export default function ReviewsPage() {
             </div>
 
             <div className="modal-body" style={{ gap: 32 }}>
-              {/* Notifications Section */}
-              <section>
-                <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--fg-muted)', marginBottom: 16 }}>
-                  Уведомления
-                </div>
-                <div style={{ display: 'grid', gap: 20 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ fontWeight: 500 }}>Уведомлять при оценках</div>
-                      <div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>Получать пуш или email при новых отзывах</div>
-                    </div>
-                    <Toggle checked={notifyEnabled} onChange={setNotifyEnabled} />
-                  </div>
-
-                  {notifyEnabled && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, background: 'var(--bg-surface)', borderRadius: 8 }}>
-                      <span style={{ fontSize: 13 }}>Порог оценки:</span>
-                      <select 
-                        value={notifyThreshold} 
-                        onChange={(e) => setNotifyThreshold(e.target.value)}
-                        style={{ ...modalSelectStyle }}
-                      >
-                        {ratingFilters.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                      </select>
-                    </div>
-                  )}
-
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ fontWeight: 500 }}>Telegram уведомления</div>
-                      <div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>
-                         Отправлять в подключенный бот
-                         {!telegramEnabled && <span style={{ color: 'var(--warning)', marginLeft: 6 }}>(отключено)</span>}
-                      </div>
-                    </div>
-                    <Toggle checked={telegramEnabled} onChange={setTelegramEnabled} />
-                  </div>
-
-                  <div style={{ display: 'grid', gap: 12 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <div style={{ fontWeight: 500 }}>Email уведомления</div>
-                        <div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>Отправлять на почту</div>
-                      </div>
-                      <Toggle checked={emailEnabled} onChange={setEmailEnabled} />
-                    </div>
-                    {emailEnabled && (
-                       <input 
-                        value={emailTargets} 
-                        onChange={(e) => setEmailTargets(e.target.value)} 
-                        placeholder="email@example.com" 
-                        className="input"
-                        style={{ width: '100%' }}
-                      />
-                    )}
-                  </div>
-                </div>
-              </section>
-
-              {/* External Share Section */}
               <section>
                 <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--fg-muted)', marginBottom: 16 }}>
                   Сбор отзывов на картах
@@ -722,7 +648,7 @@ export default function ReviewsPage() {
                 <div style={{ display: 'grid', gap: 20 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                      <div>
-                        <div style={{ fontWeight: 500 }}>Предлагать оставить отзыв</div>
+                        <div style={{ fontWeight: 500 }}>Предлагать поделиться отзывом</div>
                         <div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>На Яндекс, Google или 2ГИС</div>
                       </div>
                       <Toggle checked={shareEnabled} onChange={setShareEnabled} />

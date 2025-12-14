@@ -6,6 +6,14 @@ import Toggle from "../../../components/Toggle";
 
 type Subscriber = { id: string; chatId: string; chatType: string; username: string | null; title: string | null; staffId?: string | null; actorType?: string | null; addedAt?: string | null; lastSeenAt?: string | null };
 
+const reviewThresholdOptions = [
+  { value: 5, label: "⭐⭐⭐⭐⭐ 5 звёзд" },
+  { value: 4, label: "⭐⭐⭐⭐ 4 и выше" },
+  { value: 3, label: "⭐⭐⭐ 3 и выше" },
+  { value: 2, label: "⭐⭐ 2 и выше" },
+  { value: 1, label: "⭐ 1 и выше" },
+];
+
 export default function TelegramSettingsPage() {
   const [state, setState] = React.useState<{ configured: boolean; botUsername: string | null; botLink: string | null } | null>(null);
   const [invite, setInvite] = React.useState<{ startUrl: string; startGroupUrl: string; token: string } | null>(null);
@@ -15,6 +23,7 @@ export default function TelegramSettingsPage() {
   const [prefs, setPrefs] = React.useState({
     notifyOrders: true,
     notifyReviews: true,
+    notifyReviewThreshold: 3,
     notifyDailyDigest: true,
     notifyFraud: true,
   });
@@ -49,6 +58,7 @@ export default function TelegramSettingsPage() {
           setPrefs({
             notifyOrders: !!prefJson.notifyOrders,
             notifyReviews: !!prefJson.notifyReviews,
+            notifyReviewThreshold: Number.isFinite(prefJson.notifyReviewThreshold) ? Math.min(5, Math.max(1, Math.round(prefJson.notifyReviewThreshold))) : 3,
             notifyDailyDigest: !!prefJson.notifyDailyDigest,
             notifyFraud: prefJson.notifyFraud !== undefined ? !!prefJson.notifyFraud : true,
           });
@@ -96,10 +106,10 @@ export default function TelegramSettingsPage() {
     } finally { setBusy(false); }
   };
 
-  const updatePreference = async (field: keyof typeof prefs, value: boolean) => {
-    const previous = prefs[field];
+  const updatePreference = async (field: keyof typeof prefs, value: boolean | number) => {
+    const previous = prefs[field] as any;
     setErr('');
-    setPrefs((prevState) => ({ ...prevState, [field]: value }));
+    setPrefs((prevState) => ({ ...prevState, [field]: value } as typeof prefs));
     try {
       setPrefsSaving(true);
       const res = await fetch('/api/portal/settings/telegram-notify/preferences', {
@@ -111,14 +121,6 @@ export default function TelegramSettingsPage() {
       try { next = await res.json(); } catch {}
       if (!res.ok) {
         throw new Error((next && next.message) || 'Не удалось сохранить настройки уведомлений');
-      }
-      if (next && typeof next === 'object') {
-        setPrefs({
-          notifyOrders: !!next.notifyOrders,
-          notifyReviews: !!next.notifyReviews,
-          notifyDailyDigest: !!next.notifyDailyDigest,
-          notifyFraud: next.notifyFraud !== undefined ? !!next.notifyFraud : true,
-        });
       }
     } catch (e:any) {
       setErr(String(e?.message || e));
@@ -132,7 +134,9 @@ export default function TelegramSettingsPage() {
     <div style={{ display: 'grid', gap: 20 }}>
       <div>
         <div style={{ fontSize: 24, fontWeight: 700 }}>Уведомления в Telegram</div>
-        <div style={{ fontSize: 13, opacity: 0.7, marginTop: 6 }}>Получайте оперативные уведомления об операциях и отзывах прямо в мессенджер.</div>
+        <div style={{ fontSize: 13, opacity: 0.7, marginTop: 6 }}>
+          Настройки персональны для текущего сотрудника. Выберите, какие оповещения получать.
+        </div>
       </div>
 
       <Card>
@@ -169,12 +173,30 @@ export default function TelegramSettingsPage() {
                 label="Оповещать о новых заказах"
                 disabled={prefsSaving}
               />
-              <Toggle
-                checked={prefs.notifyReviews}
-                onChange={(next) => updatePreference('notifyReviews', next)}
-                label="Оповещать о новых отзывах"
-                disabled={prefsSaving}
-              />
+              <div style={{ display: 'grid', gap: 8 }}>
+                <Toggle
+                  checked={prefs.notifyReviews}
+                  onChange={(next) => updatePreference('notifyReviews', next)}
+                  label="Оповещать о новых отзывах"
+                  disabled={prefsSaving}
+                />
+                {prefs.notifyReviews && (
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'center', paddingLeft: 2 }}>
+                    <span style={{ fontSize: 13 }}>Порог оценки:</span>
+                    <select
+                      value={prefs.notifyReviewThreshold}
+                      onChange={(e) => updatePreference('notifyReviewThreshold', Number(e.target.value))}
+                      className="input"
+                      style={{ width: 220, padding: '8px 10px' }}
+                      disabled={prefsSaving}
+                    >
+                      {reviewThresholdOptions.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
               <Toggle
                 checked={prefs.notifyDailyDigest}
                 onChange={(next) => updatePreference('notifyDailyDigest', next)}

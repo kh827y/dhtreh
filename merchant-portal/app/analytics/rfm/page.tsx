@@ -3,7 +3,7 @@
 import React from "react";
 import { Card, CardHeader, CardBody, Button, Skeleton } from "@loyalty/ui";
 
-type RfmRange = { min: number | null; max: number | null };
+type RfmRange = { min: number | null; max: number | null; count: number };
 type RfmGroup = {
   score: number;
   recency: RfmRange;
@@ -233,9 +233,18 @@ export default function AnalyticsRfmPage() {
                   groups.map((group) => (
                     <tr key={group.score} style={{ borderTop: "1px solid rgba(148,163,184,0.15)" }}>
                       <td style={{ padding: "10px 8px" }}>{group.score}</td>
-                      <td style={{ padding: "10px 8px" }}>{formatRecencyRange(group.recency)}</td>
-                      <td style={{ padding: "10px 8px" }}>{formatFrequencyRange(group.frequency)}</td>
-                      <td style={{ padding: "10px 8px" }}>{formatMoneyRange(group.monetary)}</td>
+                      <td style={{ padding: "10px 8px" }}>
+                        <div>{formatRecencyRange(group.recency)}</div>
+                        <div style={{ fontSize: 11, opacity: 0.6 }}>{(group.recency.count ?? 0).toLocaleString("ru-RU")} кл.</div>
+                      </td>
+                      <td style={{ padding: "10px 8px" }}>
+                        <div>{formatFrequencyRange(group.frequency)}</div>
+                        <div style={{ fontSize: 11, opacity: 0.6 }}>{(group.frequency.count ?? 0).toLocaleString("ru-RU")} кл.</div>
+                      </td>
+                      <td style={{ padding: "10px 8px" }}>
+                        <div>{formatMoneyRange(group.monetary)}</div>
+                        <div style={{ fontSize: 11, opacity: 0.6 }}>{(group.monetary.count ?? 0).toLocaleString("ru-RU")} кл.</div>
+                      </td>
                     </tr>
                   ))
                 ) : (

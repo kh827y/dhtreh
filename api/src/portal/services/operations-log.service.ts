@@ -95,7 +95,7 @@ export class OperationsLogService {
     merchantId: string,
     filters: OperationsLogFilters,
   ): Promise<OperationsLogListDto> {
-    const allowSameReceipt = await this.isAllowSameReceipt(merchantId);
+    const allowSameReceipt = true;
     const staffStatuses = this.normalizeStaffStatuses(filters.staffStatus);
     const limit = Math.min(Math.max(filters.limit ?? 25, 1), 200);
     const offset = Math.max(filters.offset ?? 0, 0);

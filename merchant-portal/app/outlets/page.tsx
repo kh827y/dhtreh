@@ -1,28 +1,14 @@
 "use client";
 import React from "react";
 import { Card, CardHeader, CardBody, Button, Skeleton, Badge } from "@loyalty/ui";
-import { 
-  Store, 
-  Plus, 
-  Search, 
-  MapPin, 
-  Phone, 
-  ChevronRight, 
-  CheckCircle2,
-  XCircle,
-  Building,
-} from "lucide-react";
+import { Store, Plus, Search, ChevronRight, XCircle, Building } from "lucide-react";
 
 type OutletStatus = "WORKING" | "PAUSED";
 
 type Outlet = {
   id: string;
   name: string;
-  address?: string | null;
-  description?: string | null;
-  phone?: string | null;
   works?: boolean;
-  hidden?: boolean;
 };
 
 const STATUS_TABS: { id: OutletStatus | "ALL"; label: string }[] = [
@@ -105,12 +91,8 @@ export default function OutletsPage() {
             }}>
               Торговые точки
             </h1>
-            <p style={{ 
-              fontSize: 14, 
-              color: "var(--fg-muted)", 
-              margin: "6px 0 0",
-            }}>
-              Управляйте точками продаж, статусами и интеграциями
+            <p style={{ fontSize: 14, color: "var(--fg-muted)", margin: "6px 0 0" }}>
+              Управляйте точками продаж и устройствами
             </p>
           </div>
         </div>
@@ -239,48 +221,13 @@ export default function OutletsPage() {
                         }}>
                           {outlet.name}
                         </h3>
+                      </div>
+                      
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--fg-muted)" }}>
                         <Badge variant={outlet.works ? "success" : "default"} dot>
                           {statusLabel(outlet.works)}
                         </Badge>
                       </div>
-                      
-                      <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-                        {outlet.address && (
-                          <div style={{ 
-                            display: "flex", 
-                            alignItems: "center", 
-                            gap: 6,
-                            fontSize: 13,
-                            color: "var(--fg-muted)",
-                          }}>
-                            <MapPin size={14} />
-                            {outlet.address}
-                          </div>
-                        )}
-                        {outlet.phone && (
-                          <div style={{ 
-                            display: "flex", 
-                            alignItems: "center", 
-                            gap: 6,
-                            fontSize: 13,
-                            color: "var(--fg-muted)",
-                          }}>
-                            <Phone size={14} />
-                            {outlet.phone}
-                          </div>
-                        )}
-                      </div>
-                      
-                      {outlet.description && (
-                        <p style={{ 
-                          fontSize: 13, 
-                          color: "var(--fg-dim)", 
-                          margin: "8px 0 0",
-                          lineHeight: 1.4,
-                        }}>
-                          {outlet.description}
-                        </p>
-                      )}
                     </div>
 
                     {/* Arrow */}

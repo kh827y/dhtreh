@@ -131,17 +131,6 @@ export default function AnalyticsDashboardPage() {
           </div>
         </div>
         
-        <div style={{ display: "flex", gap: 8 }}>
-          <Button 
-            variant="ghost" 
-            onClick={load}
-            disabled={loading}
-            style={{ gap: 6 }}
-          >
-            <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-            Обновить
-          </Button>
-        </div>
       </header>
 
       {/* Filters Card */}

@@ -7,27 +7,27 @@ import { Card, CardHeader, CardBody, Button, Icons, Badge } from "@loyalty/ui";
 import { type CustomerRecord, getFullName } from "./data";
 import { normalizeCustomer } from "./normalize";
 import { CustomerFormModal, type CustomerFormPayload } from "./customer-form-modal";
-import { UsersRound, UserPlus, Upload as UploadIcon, Search, Edit3, Gift, Trash2, ChevronLeft, ChevronRight, Filter } from "lucide-react";
+import { UsersRound, UserPlus, Upload as UploadIcon, Search, Edit3, Trash2, ChevronLeft, ChevronRight, Filter } from "lucide-react";
 
 const { Plus } = Icons;
 
 type Filters = {
-  index: string;
   login: string;
   name: string;
   email: string;
-  frequency: string;
+  frequencyFrom: string;
+  frequencyTo: string;
   averageCheck: string;
   birthday: string;
   age: string;
 };
 
 const initialFilters: Filters = {
-  index: "",
   login: "",
   name: "",
   email: "",
-  frequency: "",
+  frequencyFrom: "",
+  frequencyTo: "",
   averageCheck: "",
   birthday: "",
   age: "",
@@ -132,9 +132,7 @@ export default function CustomersPage() {
   }, []);
 
   const filteredCustomers = React.useMemo(() => {
-    return customers.filter((customer, index) => {
-      const rowNumber = index + 1;
-      if (filters.index && !String(rowNumber).includes(filters.index.trim())) return false;
+    return customers.filter((customer) => {
       if (filters.login) {
         const haystack = (customer.phone || customer.login || "").toLowerCase();
         if (!haystack.includes(filters.login.trim().toLowerCase())) return false;
@@ -144,10 +142,21 @@ export default function CustomersPage() {
         if (!fullName.includes(filters.name.trim().toLowerCase())) return false;
       }
       if (filters.email && !(customer.email || "").toLowerCase().includes(filters.email.trim().toLowerCase())) return false;
-      if (filters.frequency) {
-        const freq = formatVisitFrequency(customer).toLowerCase();
-        if (!freq.includes(filters.frequency.trim().toLowerCase())) return false;
+
+      const freqDays = customer.visitFrequencyDays;
+      if (filters.frequencyFrom) {
+        const min = Number(filters.frequencyFrom);
+        if (!Number.isNaN(min)) {
+          if (freqDays == null || freqDays < min) return false;
+        }
       }
+      if (filters.frequencyTo) {
+        const max = Number(filters.frequencyTo);
+        if (!Number.isNaN(max)) {
+          if (freqDays == null || freqDays > max) return false;
+        }
+      }
+
       if (filters.averageCheck) {
         const min = Number(filters.averageCheck);
         if (!Number.isNaN(min) && customer.averageCheck < min) return false;
@@ -172,7 +181,7 @@ export default function CustomersPage() {
 
   React.useEffect(() => {
     setPage(1);
-  }, [filters.index, filters.login, filters.name, filters.email, filters.frequency, filters.averageCheck, filters.birthday, filters.age]);
+  }, [filters.login, filters.name, filters.email, filters.frequencyFrom, filters.frequencyTo, filters.averageCheck, filters.birthday, filters.age]);
 
   React.useEffect(() => {
     if (page > totalPages) {
@@ -347,91 +356,89 @@ export default function CustomersPage() {
   <Card>
     <CardBody style={{ padding: 20 }}>
       <div className="filter-grid">
-         <div className="filter-block">
-           <span className="filter-label">№</span>
-           <div style={{ position: "relative" }}>
-             <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--fg-muted)" }} />
-             <input
-               className="input"
-               style={{ width: 100, paddingLeft: 32 }}
-               value={filters.index}
-               onChange={(e) => setFilters((prev) => ({ ...prev, index: e.target.value }))}
-               placeholder="№"
-             />
-           </div>
-         </div>
-         <div className="filter-block" style={{ flex: 1, minWidth: 160 }}>
-           <span className="filter-label">Телефон</span>
-           <input
-             className="input"
-             style={{ width: "100%" }}
-             value={filters.login}
-             onChange={(e) => setFilters((prev) => ({ ...prev, login: e.target.value }))}
-             placeholder="Телефон..."
-           />
-         </div>
-         <div className="filter-block" style={{ flex: 1, minWidth: 160 }}>
-           <span className="filter-label">Имя</span>
-           <input
-             className="input"
-             style={{ width: "100%" }}
-             value={filters.name}
-             onChange={(e) => setFilters((prev) => ({ ...prev, name: e.target.value }))}
-             placeholder="Имя..."
-           />
-         </div>
-         <div className="filter-block" style={{ flex: 1, minWidth: 160 }}>
-           <span className="filter-label">Email</span>
-           <input
-             className="input"
-             style={{ width: "100%" }}
-             value={filters.email}
-             onChange={(e) => setFilters((prev) => ({ ...prev, email: e.target.value }))}
-             placeholder="Email..."
-           />
-         </div>
-         <div className="filter-block">
-           <span className="filter-label">Ср. чек</span>
-           <input
-             type="number"
-             className="input"
-             style={{ width: 120 }}
-             value={filters.averageCheck}
-             onChange={(e) => setFilters((prev) => ({ ...prev, averageCheck: e.target.value }))}
-             placeholder="от..."
-           />
-         </div>
-         <div className="filter-block">
-           <span className="filter-label">Частота</span>
-           <input
-             className="input"
-             style={{ width: 120 }}
-             value={filters.frequency}
-             onChange={(e) => setFilters((prev) => ({ ...prev, frequency: e.target.value }))}
-             placeholder="Напр. еженедельно"
-           />
-         </div>
-         <div className="filter-block">
-           <span className="filter-label">Дата рожд.</span>
-           <input
-             type="date"
-             className="input"
-             style={{ width: 140 }}
-             value={filters.birthday}
-             onChange={(e) => setFilters((prev) => ({ ...prev, birthday: e.target.value }))}
-           />
-         </div>
-         <div className="filter-block">
-           <span className="filter-label">Возраст</span>
-           <input
-             type="number"
-             className="input"
-             style={{ width: 80 }}
-             value={filters.age}
-             onChange={(e) => setFilters((prev) => ({ ...prev, age: e.target.value }))}
-             placeholder="лет"
-           />
-         </div>
+        <div className="filter-block" style={{ flex: 1, minWidth: 160 }}>
+          <span className="filter-label">Телефон</span>
+          <input
+            className="input"
+            style={{ width: "100%" }}
+            value={filters.login}
+            onChange={(e) => setFilters((prev) => ({ ...prev, login: e.target.value }))}
+            placeholder="Телефон..."
+          />
+        </div>
+        <div className="filter-block" style={{ flex: 1, minWidth: 160 }}>
+          <span className="filter-label">Имя</span>
+          <input
+            className="input"
+            style={{ width: "100%" }}
+            value={filters.name}
+            onChange={(e) => setFilters((prev) => ({ ...prev, name: e.target.value }))}
+            placeholder="Имя..."
+          />
+        </div>
+        <div className="filter-block" style={{ flex: 1, minWidth: 160 }}>
+          <span className="filter-label">Email</span>
+          <input
+            className="input"
+            style={{ width: "100%" }}
+            value={filters.email}
+            onChange={(e) => setFilters((prev) => ({ ...prev, email: e.target.value }))}
+            placeholder="Email..."
+          />
+        </div>
+        <div className="filter-block">
+          <span className="filter-label">Ср. чек</span>
+          <input
+            type="number"
+            className="input"
+            style={{ width: 120 }}
+            value={filters.averageCheck}
+            onChange={(e) => setFilters((prev) => ({ ...prev, averageCheck: e.target.value }))}
+            placeholder="от..."
+          />
+        </div>
+        <div className="filter-block">
+          <span className="filter-label">Частота</span>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              type="number"
+              className="input"
+              style={{ width: 80 }}
+              value={filters.frequencyFrom}
+              onChange={(e) => setFilters((prev) => ({ ...prev, frequencyFrom: e.target.value }))}
+              placeholder="От"
+            />
+            <input
+              type="number"
+              className="input"
+              style={{ width: 80 }}
+              value={filters.frequencyTo}
+              onChange={(e) => setFilters((prev) => ({ ...prev, frequencyTo: e.target.value }))}
+              placeholder="До"
+            />
+          </div>
+        </div>
+        <div className="filter-block">
+          <span className="filter-label">Дата рожд.</span>
+          <input
+            type="date"
+            className="input"
+            style={{ width: 140 }}
+            value={filters.birthday}
+            onChange={(e) => setFilters((prev) => ({ ...prev, birthday: e.target.value }))}
+          />
+        </div>
+        <div className="filter-block">
+          <span className="filter-label">Возраст</span>
+          <input
+            type="number"
+            className="input"
+            style={{ width: 80 }}
+            value={filters.age}
+            onChange={(e) => setFilters((prev) => ({ ...prev, age: e.target.value }))}
+            placeholder="лет"
+          />
+        </div>
       </div>
     </CardBody>
   </Card>
@@ -469,14 +476,6 @@ export default function CustomersPage() {
               <div style={{ fontSize: 13, color: "var(--fg-muted)" }}>{formatDate(customer.birthday)}</div>
               <div style={{ fontSize: 13, color: "var(--fg-muted)" }}>{customer.age || "—"}</div>
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                <Link
-                  href={`/customers/complimentary?phone=${encodeURIComponent(customer.login)}`}
-                  title="Начислить комплиментарные баллы"
-                  className="btn-icon"
-                  style={{ color: "var(--fg-secondary)", padding: 6, borderRadius: 6, display: "flex" }}
-                >
-                  <Gift size={16} />
-                </Link>
                 <button
                   type="button"
                   onClick={() => openEditModal(customer)}

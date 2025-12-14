@@ -36,6 +36,7 @@ import {
   QrMintRespDto,
   OkDto,
   BalanceDto,
+  CashierOutletTransactionsRespDto,
   CashierCustomerResolveDto,
   CashierCustomerResolveRespDto,
   PublicSettingsDto,
@@ -1517,6 +1518,38 @@ export class LoyaltyController {
         points: item.points,
       })),
     };
+  }
+
+  @Get('cashier/outlet-transactions')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiOkResponse({
+    schema: { $ref: getSchemaPath(CashierOutletTransactionsRespDto) },
+  })
+  async cashierOutletTransactions(
+    @Req() req: any,
+    @Query('merchantId') merchantIdQuery?: string,
+    @Query('outletId') outletIdQuery?: string,
+    @Query('limit') limitStr?: string,
+    @Query('before') beforeStr?: string,
+  ) {
+    const session = req?.cashierSession ?? null;
+    const merchantId =
+      session?.merchantId ??
+      (typeof merchantIdQuery === 'string' && merchantIdQuery.trim()
+        ? merchantIdQuery.trim()
+        : null);
+    const outletId =
+      session?.outletId ??
+      (typeof outletIdQuery === 'string' && outletIdQuery.trim()
+        ? outletIdQuery.trim()
+        : null);
+    if (!merchantId) throw new BadRequestException('merchantId required');
+    if (!outletId) throw new BadRequestException('outletId required');
+    const limit = limitStr
+      ? Math.min(Math.max(parseInt(limitStr, 10) || 20, 1), 100)
+      : 20;
+    const before = beforeStr ? new Date(beforeStr) : undefined;
+    return this.service.outletTransactions(merchantId, outletId, limit, before);
   }
 
   private async verifyStaffKey(

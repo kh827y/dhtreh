@@ -1,16 +1,7 @@
 "use client";
 import React from 'react';
 import { useRouter } from 'next/navigation';
-import { Card, CardHeader, CardBody, Button, Skeleton } from '@loyalty/ui';
-
-type Integration = {
-  id: string;
-  type: string;
-  provider: string;
-  isActive: boolean;
-  lastSync?: string | null;
-  errorCount: number;
-};
+import { Card, CardBody, Skeleton } from '@loyalty/ui';
 
 type TelegramSummary = {
   enabled: boolean;
@@ -41,29 +32,12 @@ function StatusPill({ color, label }: { color: string; label: string }) {
 
 export default function IntegrationsPage() {
   const router = useRouter();
-  const [items, setItems] = React.useState<Integration[]>([]);
-  const [loading, setLoading] = React.useState(true);
-  const [msg, setMsg] = React.useState('');
   const [telegram, setTelegram] = React.useState<TelegramSummary | null>(null);
   const [telegramLoading, setTelegramLoading] = React.useState(true);
   const [telegramError, setTelegramError] = React.useState('');
   const [restApi, setRestApi] = React.useState<RestApiSummary | null>(null);
   const [restLoading, setRestLoading] = React.useState(true);
   const [restError, setRestError] = React.useState('');
-
-  async function loadIntegrations() {
-    setLoading(true);
-    setMsg('');
-    try {
-      const res = await fetch('/api/portal/integrations');
-      const data = await res.json();
-      setItems(Array.isArray(data) ? data : []);
-    } catch (e: any) {
-      setMsg(String(e?.message || e));
-    } finally {
-      setLoading(false);
-    }
-  }
 
   async function loadTelegram() {
     setTelegramLoading(true);
@@ -107,7 +81,6 @@ export default function IntegrationsPage() {
   }
 
   React.useEffect(() => {
-    loadIntegrations();
     loadTelegram();
     loadRestApi();
   }, []);
@@ -260,86 +233,60 @@ export default function IntegrationsPage() {
     </Card>
   );
 
+  const integrationsCards = [
+    {
+      key: 'rest',
+      enabled: Boolean(restApi?.enabled),
+      card: (
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={handleOpenRestApi}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              handleOpenRestApi();
+            }
+          }}
+          style={{ outline: 'none', cursor: 'pointer' }}
+        >
+          {restApiCard}
+        </div>
+      ),
+    },
+    {
+      key: 'telegram',
+      enabled: Boolean(telegram?.enabled),
+      card: (
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={handleOpenTelegram}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              handleOpenTelegram();
+            }
+          }}
+          style={{ outline: 'none', cursor: 'pointer' }}
+        >
+          {telegramCard}
+        </div>
+      ),
+    },
+  ].sort((a, b) => Number(b.enabled) - Number(a.enabled));
+
   return (
     <div style={{ display: 'grid', gap: 20 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
           <div style={{ fontSize: 18, fontWeight: 700 }}>Интеграции</div>
-          <div style={{ opacity: 0.8, fontSize: 13 }}>Bridge / POS / CRM / Payments</div>
         </div>
-        <Button variant="primary" disabled>
-          Подключить интеграцию
-        </Button>
       </div>
 
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={handleOpenRestApi}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            handleOpenRestApi();
-          }
-        }}
-        style={{ outline: 'none', cursor: 'pointer' }}
-      >
-        {restApiCard}
-      </div>
-
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={handleOpenTelegram}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            handleOpenTelegram();
-          }
-        }}
-        style={{ outline: 'none', cursor: 'pointer' }}
-      >
-        {telegramCard}
-      </div>
-
-      <Card>
-        <CardHeader title="Подключённые интеграции" />
-        <CardBody>
-          {loading ? (
-            <Skeleton height={160} />
-          ) : (
-            <div style={{ display: 'grid', gap: 8 }}>
-              {items.map((it) => (
-                <div
-                  key={it.id}
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 160px 160px 160px 120px',
-                    gap: 8,
-                    padding: '8px 0',
-                    borderBottom: '1px solid rgba(255,255,255,.06)',
-                  }}
-                >
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{it.provider}</div>
-                    <div style={{ opacity: 0.8, fontSize: 12 }}>{it.type}</div>
-                  </div>
-                  <div style={{ opacity: 0.9 }}>{it.isActive ? 'Активна' : 'Отключена'}</div>
-                  <div style={{ opacity: 0.9 }}>{it.lastSync ? new Date(it.lastSync).toLocaleString() : '—'}</div>
-                  <div style={{ opacity: 0.9 }}>Ошибки: {it.errorCount}</div>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                    <Button size="sm" disabled>
-                      Подробнее
-                    </Button>
-                  </div>
-                </div>
-              ))}
-              {!items.length && <div style={{ opacity: 0.7 }}>Интеграции не подключены</div>}
-              {msg && <div style={{ color: '#f87171' }}>{msg}</div>}
-            </div>
-          )}
-        </CardBody>
-      </Card>
+      {integrationsCards.map((item) => (
+        <React.Fragment key={item.key}>{item.card}</React.Fragment>
+      ))}
     </div>
   );
 }

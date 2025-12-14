@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { createPortal } from "react-dom";
 import { Card, CardHeader, CardBody, Button } from "@loyalty/ui";
 import StarRating from "../../components/StarRating";
 import { useTimezone } from "../../components/TimezoneProvider";
@@ -116,6 +117,15 @@ function formatPoints(value: number) {
   return value.toLocaleString("ru-RU");
 }
 
+const orderKey = (op: Pick<Operation, "orderId" | "receipt" | "canceledAt" | "kind">) => {
+  const key = (op.orderId || op.receipt || "").trim();
+  // для возвратов без orderId/receipt пытаемся брать id как ключ
+  if (key) return key;
+  // fallback только для REFUND без ключа
+  if ((op as any).kind === "REFUND") return `refund-${(op as any).id || ""}`;
+  return "";
+};
+
 function mapOperationFromDto(item: any): Operation {
   const carrierType = String(item?.carrier?.type || '').toUpperCase();
   const carrierIdMap: Record<string, string> = { PHONE: 'phone', APP: 'app', WALLET: 'wallet', CARD: 'card' };
@@ -154,17 +164,24 @@ function mapOperationFromDto(item: any): Operation {
         }
       : null;
   const canceledAt = item?.canceledAt ? String(item.canceledAt) : null;
+  const rawCanceledBy = item?.canceledBy as any;
   const canceledByName =
-    item?.canceledBy?.name ||
-    item?.canceledBy?.fullName ||
-    item?.canceledBy?.login ||
+    rawCanceledBy?.name ||
+    rawCanceledBy?.fullName ||
+    rawCanceledBy?.login ||
+    rawCanceledBy?.email ||
     null;
-  const canceledBy = canceledAt
-    ? {
-        id: String(item?.canceledBy?.id || ''),
-        name: canceledByName ? String(canceledByName) : null,
-      }
-    : null;
+  const hasCanceledBy = Boolean(
+    rawCanceledBy &&
+      ((rawCanceledBy.id && String(rawCanceledBy.id).trim()) || canceledByName),
+  );
+  const canceledBy =
+    canceledAt && hasCanceledBy
+      ? {
+          id: String(rawCanceledBy.id || ''),
+          name: canceledByName ? String(canceledByName) : null,
+        }
+      : null;
   const rawKind = String(item?.kind || '').toUpperCase();
   const allowedKinds = Object.keys(operationKindLabels) as OperationKind[];
   const kind = allowedKinds.includes(rawKind as OperationKind)
@@ -275,11 +292,34 @@ export default function OperationsPage() {
     [deviceOptions],
   );
 
+  const isRefundedOperation = React.useCallback(
+    (op: Operation | null) => {
+      if (!op) return false;
+      if (op.kind === "REFUND") return true;
+      const key = orderKey(op);
+      return Boolean(key) && refundedOrderIds.has(key);
+    },
+    [refundedOrderIds],
+  );
+
+  React.useEffect(() => {
+    if (typeof document === "undefined") return;
+    const body = document.body;
+    if (preview) {
+      body.classList.add("modal-blur-active");
+    } else {
+      body.classList.remove("modal-blur-active");
+    }
+    return () => {
+      body.classList.remove("modal-blur-active");
+    };
+  }, [preview]);
+
   React.useEffect(() => {
     const controller = new AbortController();
     const params = new URLSearchParams();
     params.set("limit", String(PAGE_SIZE));
-    params.set("page", String(page));
+    params.set("offset", String((page - 1) * PAGE_SIZE));
     if (dateFrom) params.set("from", dateFrom);
     if (dateTo) params.set("to", dateTo);
     if (managerFilter !== "all") params.set("staffId", managerFilter);
@@ -301,6 +341,16 @@ export default function OperationsPage() {
         const payload: any = await res.json().catch(() => ({}));
         const list: any[] = Array.isArray(payload.items) ? payload.items : [];
         const mapped = list.map((item) => mapOperationFromDto(item));
+        // отметим чеки с возвратами
+        const refunds = new Set<string>();
+        mapped.forEach((op) => {
+          if (op.kind === "REFUND") {
+            const key = orderKey(op);
+            if (key) refunds.add(key);
+          }
+        });
+
+        setRefundedOrderIds(refunds);
         setItems(mapped);
         setTotal(Number(payload.total ?? mapped.length ?? 0));
 
@@ -322,15 +372,6 @@ export default function OperationsPage() {
         setStaffOptions(Array.from(staffMap.values()));
         setOutletOptions(Array.from(outletMap.values()));
         setDeviceOptions(Array.from(deviceMap.values()));
-
-        // отметим чеки с возвратами
-        const refunds = new Set<string>();
-        mapped.forEach((op) => {
-          if (op.kind === "REFUND" && op.orderId) {
-            refunds.add(op.orderId.trim());
-          }
-        });
-        setRefundedOrderIds(refunds);
       } catch (error) {
         if ((error as any)?.name === "AbortError") return;
         setItems([]);
@@ -362,25 +403,33 @@ export default function OperationsPage() {
   }, [preview]);
 
   const cancelOperation = React.useCallback(async (op: Operation) => {
-    if (!op.receipt || op.canceledAt || op.kind === "REFUND") return;
+    if (!op.id || op.kind === "REFUND") return;
     if (!window.confirm("Вы уверены, что хотите отменить эту операцию?")) return;
     try {
-      const res = await fetch(`/api/operations/log/${encodeURIComponent(op.receipt)}/cancel`, {
+      const res = await fetch(`/api/operations/log/${encodeURIComponent(op.id)}/cancel`, {
         method: "POST",
       });
-      if (!res.ok) throw new Error("Не удалось отменить операцию");
-      setItems((prev) => prev.map((item) => 
-        item.receipt === op.receipt 
-          ? { ...item, canceledAt: new Date().toISOString() } 
-          : item
-      ));
-      if (preview?.receipt === op.receipt) {
-        setPreview((prev) => prev ? { ...prev, canceledAt: new Date().toISOString() } : null);
+      const text = await res.text();
+      if (!res.ok) {
+        throw new Error(text || "Не удалось отменить операцию");
+      }
+      let mapped: Operation | null = null;
+      if (text) {
+        try {
+          const data = JSON.parse(text);
+          mapped = mapOperationFromDto(data);
+        } catch {
+          mapped = null;
+        }
+      }
+      if (mapped) {
+        setItems((prev) => prev.map((item) => (item.id === mapped!.id ? mapped! : item)));
+        setPreview((prev) => (prev && prev.id === mapped!.id ? mapped! : prev));
       }
     } catch (e: any) {
       alert(e?.message || "Ошибка при отмене операции");
     }
-  }, [preview]);
+  }, []);
 
   return (
     <div className="animate-in" style={{ display: "grid", gap: 24 }}>
@@ -517,15 +566,17 @@ export default function OperationsPage() {
         <CardBody style={{ display: "grid", gap: 0 }}>
           {items.map((operation) => {
             const isRefundOperation = operation.kind === "REFUND";
-            const orderKey = (operation.orderId || "").trim();
-            const isRefundedOrigin = !isRefundOperation && Boolean(orderKey) && refundedOrderIds.has(orderKey);
+            const isRefundedOrigin = !isRefundOperation && isRefundedOperation(operation);
             const isCanceled = !isRefundOperation && Boolean(operation.canceledAt);
+            const hasAdminCancelMarker = Boolean(operation.canceledBy);
             const isPromocode = operation.kind === "PROMOCODE";
-            const statusText = isCanceled
-              ? "Операция отменена"
+            const statusText = isCanceled && hasAdminCancelMarker
+              ? "Операция отменена администратором"
               : isRefundedOrigin
                 ? "Возврат оформлен"
-                : "";
+                : isCanceled
+                  ? "Операция отменена"
+                  : "";
             const statusColor = isCanceled || isRefundedOrigin ? "var(--fg-muted)" : "inherit";
             const ratingValue = operation.rating ?? 0;
             const hasOutlet = Boolean(operation.outlet?.name);
@@ -657,9 +708,10 @@ export default function OperationsPage() {
         </div>
       </div>
 
-      {preview && (
+      {preview && typeof document !== "undefined"
+        ? createPortal(
         <div className="modal-overlay" onClick={() => setPreview(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
             <div className="modal-header">
               <div>
                 <div style={{ fontSize: 18, fontWeight: 700 }}>
@@ -731,20 +783,56 @@ export default function OperationsPage() {
                 <SummaryCard label="Итого" value={formatRub(preview.total)} />
               </div>
 
-              {preview.canceledAt && (
-                <div style={{ 
-                  padding: 12, 
-                  borderRadius: 8, 
-                  background: "rgba(239, 68, 68, 0.1)", 
-                  color: "var(--danger)", 
-                  fontSize: 13, 
+              {(() => {
+                const isRefundOperationModal = preview.kind === "REFUND";
+                const isRefundedOriginModal = !isRefundOperationModal && isRefundedOperation(preview);
+                const isCanceledModal = !isRefundOperationModal && Boolean(preview.canceledAt);
+                const hasAdminCancelMarkerModal = Boolean(preview.canceledBy);
+                if (isCanceledModal) {
+                  const isWarnStyle = isRefundedOriginModal && !hasAdminCancelMarkerModal;
+                  const text = isRefundedOriginModal
+                    ? "Оформлен возврат по покупке"
+                    : "Операция отменена администратором";
+                  return (
+                    <div
+                      style={{
+                        padding: 12,
+                        borderRadius: 8,
+                        background: isWarnStyle
+                          ? "rgba(234, 179, 8, 0.12)"
+                          : "rgba(239, 68, 68, 0.1)",
+                        color: isWarnStyle
+                          ? "var(--warning, #eab308)"
+                          : "var(--danger)",
+                        fontSize: 13,
+                        fontWeight: 500,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                      }}
+                    >
+                      <Ban size={16} />
+                      {text}
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
+              {preview.kind === "REFUND" && (
+                <div style={{
+                  padding: 12,
+                  borderRadius: 8,
+                  background: "rgba(234, 179, 8, 0.12)",
+                  color: "var(--warning, #eab308)",
+                  fontSize: 13,
                   fontWeight: 500,
                   display: "flex",
                   alignItems: "center",
-                  gap: 8
+                  gap: 8,
                 }}>
                   <Ban size={16} />
-                  Операция отменена администратором
+                  Возврат нельзя отменить
                 </div>
               )}
             </div>
@@ -754,20 +842,21 @@ export default function OperationsPage() {
               </Button>
               <Button
                 variant="danger"
-                disabled={Boolean(preview.canceledAt) || preview.kind === "REFUND"}
+                disabled={
+                  Boolean(preview.canceledAt) ||
+                  preview.kind === "REFUND" ||
+                  isRefundedOperation(preview)
+                }
                 onClick={() => cancelOperation(preview)}
                 leftIcon={<Ban size={16} />}
               >
-                {preview.canceledAt
-                  ? "Отменена"
-                  : preview.kind === "REFUND"
-                    ? "Возврат"
-                    : "Отменить"}
+                {preview.canceledAt ? "Отменена" : "Отменить"}
               </Button>
             </div>
           </div>
-        </div>
-      )}
+        </div>,
+        document.body,
+      ) : null}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Card, CardHeader, CardBody, Button, Icons } from "@loyalty/ui";
@@ -135,6 +136,7 @@ export default function CustomerCardPage() {
   const customerIdRaw = Array.isArray(params.customerId) ? params.customerId[0] : params.customerId;
   const customerId = String(customerIdRaw || '');
   const [customer, setCustomer] = React.useState<CustomerRecord | null>(null);
+  const [customerLoading, setCustomerLoading] = React.useState(true);
   const [accrueOpen, setAccrueOpen] = React.useState(false);
   const [redeemOpen, setRedeemOpen] = React.useState(false);
   const [complimentaryOpen, setComplimentaryOpen] = React.useState(false);
@@ -186,13 +188,20 @@ export default function CustomerCardPage() {
 
   React.useEffect(() => {
     let aborted = false;
+    setCustomerLoading(true);
     (async () => {
       try {
         const data = await api<CustomerRecord>(`/api/customers/${encodeURIComponent(customerId)}`);
-        if (!aborted) setCustomer(data ? normalizeCustomer(data) : null);
+        if (!aborted) {
+          setCustomer(data ? normalizeCustomer(data) : null);
+        }
       } catch (e) {
         if (!aborted) setCustomer(null);
         console.error(e);
+      } finally {
+        if (!aborted) {
+          setCustomerLoading(false);
+        }
       }
     })();
     return () => {
@@ -332,6 +341,14 @@ export default function CustomerCardPage() {
       console.error(error);
     }
   }, [customerId]);
+
+  if (customerLoading) {
+    return (
+      <div style={{ padding: 24, opacity: 0.7 }}>
+        Загрузка данных клиента...
+      </div>
+    );
+  }
 
   if (!customer) {
     return (
@@ -695,14 +712,21 @@ export default function CustomerCardPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {transactionsPageItems.map((operation, index) => {
+                    {transactionsPageItems.map((operation: CustomerTransaction, index: number) => {
                       const isBlockedAccrual = operation.type === "EARN" && operation.blockedAccrual;
                       const receiptKey = getReceiptKey(operation);
                       const refundInfo = receiptKey ? refundContext.get(receiptKey) : undefined;
                       const isRefundOperation = operation.type?.toUpperCase?.() === "REFUND";
                       const isRefundedOrigin =
                         !isRefundOperation && Boolean(refundInfo?.refundEvents.length);
+                      const hasAdminCancelMarker = Boolean(operation.canceledBy);
                       const isCanceled = !isRefundOperation && Boolean(operation.canceledAt);
+                      const isAdminRefundEvent = Boolean(refundInfo?.refundEvents.some((e) => e.admin));
+                      // Алгоритм как в журнале, но если по чеку есть REFUND без admin-маркера, считаем это возвратом кассы.
+                      // Админская отмена: либо есть admin REFUND, либо отмена с canceledBy и без кассового возврата.
+                      const isAdminCancel =
+                        !isRefundOperation &&
+                        (isAdminRefundEvent || (isCanceled && hasAdminCancelMarker && !isRefundedOrigin));
                       const canCancel =
                         !isCanceled && !isRefundOperation && !isRefundedOrigin && operation.kind !== "REFUND";
                       const isComplimentary = operation.kind === "COMPLIMENTARY";
@@ -745,13 +769,15 @@ export default function CustomerCardPage() {
                         operation.kind === "PURCHASE" && (combinedEarn || combinedRedeem);
                       const detailsText = isRefundOperation
                         ? formatRefundDetails(operation, refundInfo)
-                        : isCanceled
+                        : isAdminCancel
                           ? `Отменено администратором: ${baseDetails}`
                           : isRefundedOrigin
                             ? `Возврат: ${operation.details}`
-                            : isCombinedPurchase
-                              ? "Покупка"
-                              : operation.details;
+                            : isCanceled
+                              ? `Отменено администратором: ${baseDetails}`
+                              : isCombinedPurchase
+                                ? "Покупка"
+                                : operation.details;
                       const isReferralLike = isReferral || isReferralRollback;
                       const isRefundAdmin = isRefundOperation && operation.kind === "CANCELED";
                       let headerText: string | null = null;
@@ -1328,9 +1354,9 @@ const menuWrapperStyle: React.CSSProperties = {
 const menuCardStyle: React.CSSProperties = {
   width: 280,
   borderRadius: 16,
-  border: "1px solid rgba(148,163,184,0.2)",
-  background: "rgba(12,16,26,0.98)",
-  boxShadow: "0 20px 60px rgba(2,6,23,0.45)",
+  border: "1px solid var(--border-default)",
+  background: "var(--bg-elevated)",
+  boxShadow: "var(--shadow-xl)",
   padding: 16,
   display: "grid",
   gap: 8,
@@ -1355,12 +1381,12 @@ const headerCellStyle: React.CSSProperties = {
   textTransform: "uppercase",
   letterSpacing: 0.4,
   opacity: 0.6,
-  borderBottom: "1px solid rgba(148,163,184,0.24)",
+  borderBottom: "1px solid var(--border-subtle)",
 };
 
 const cellStyle: React.CSSProperties = {
   padding: "12px 10px",
-  borderBottom: "1px solid rgba(148,163,184,0.12)",
+  borderBottom: "1px solid var(--border-subtle)",
   fontSize: 14,
 };
 
@@ -1375,14 +1401,15 @@ const amountPillStyle: React.CSSProperties = {
 };
 
 const rowStyle: React.CSSProperties = {
-  borderBottom: "1px solid rgba(148,163,184,0.1)",
+  borderBottom: "1px solid var(--border-subtle)",
 };
 
 const codeStyle: React.CSSProperties = {
   padding: "6px 10px",
   borderRadius: 8,
-  background: "rgba(15,23,42,0.5)",
-  border: "1px solid rgba(148,163,184,0.2)",
+  background: "var(--bg-surface)",
+  border: "1px solid var(--border-default)",
+  color: "var(--fg)",
 };
 
 const toastStyle: React.CSSProperties = {
@@ -1451,7 +1478,10 @@ function buildRefundContext(transactions: CustomerTransaction[]): Map<string, Re
       }
     }
     if (txType === "REFUND") {
-      current.refundEvents.push({ datetime: tx.datetime, admin: tx.kind === "CANCELED" });
+      const isAdmin =
+        Boolean(tx?.canceledBy) ||
+        (tx.details || "").includes("совершён администратором");
+      current.refundEvents.push({ datetime: tx.datetime, admin: isAdmin });
     }
     map.set(key, current);
   }
@@ -1546,6 +1576,12 @@ const AccrueModal: React.FC<AccrueModalProps> = ({
   const [errors, setErrors] = React.useState<AccrueErrors>({});
   const [apiError, setApiError] = React.useState<string | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
+
+  React.useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.body.classList.add("modal-blur-active");
+    return () => document.body.classList.remove("modal-blur-active");
+  }, []);
 
   const earnRateBps = customer.earnRateBps ?? null;
   const outletsUnavailable = !outletsLoading && outlets.length === 0;
@@ -1661,9 +1697,18 @@ const AccrueModal: React.FC<AccrueModalProps> = ({
     }
   }
 
-  return (
-    <div style={modalOverlayStyle}>
-      <form onSubmit={handleSubmit} style={modalStyle} role="dialog" aria-modal="true">
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div className="modal-overlay" onClick={onClose}>
+      <form
+        onSubmit={handleSubmit}
+        className="modal"
+        style={modalStyle}
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
         <ModalHeader title="Начисление баллов" onClose={onClose} />
         <div style={modalBodyStyle}>
           <section style={modalSectionStyle}>
@@ -1770,7 +1815,8 @@ const AccrueModal: React.FC<AccrueModalProps> = ({
           </Button>
         </div>
       </form>
-    </div>
+    </div>,
+    document.body,
   );
 };
 
@@ -1802,6 +1848,12 @@ const RedeemModal: React.FC<RedeemModalProps> = ({
   const [errors, setErrors] = React.useState<RedeemErrors>({});
   const [apiError, setApiError] = React.useState<string | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
+
+  React.useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.body.classList.add("modal-blur-active");
+    return () => document.body.classList.remove("modal-blur-active");
+  }, []);
 
   const outletsUnavailable = !outletsLoading && outlets.length === 0;
 
@@ -1890,9 +1942,18 @@ const RedeemModal: React.FC<RedeemModalProps> = ({
     }
   }
 
-  return (
-    <div style={modalOverlayStyle}>
-      <form onSubmit={handleSubmit} style={modalStyle} role="dialog" aria-modal="true">
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div className="modal-overlay" onClick={onClose}>
+      <form
+        onSubmit={handleSubmit}
+        className="modal"
+        style={modalStyle}
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
         <ModalHeader title="Списание баллов" onClose={onClose} />
         <div style={modalBodyStyle}>
           <section style={modalSectionStyle}>
@@ -1951,7 +2012,8 @@ const RedeemModal: React.FC<RedeemModalProps> = ({
           </Button>
         </div>
       </form>
-    </div>
+    </div>,
+    document.body,
   );
 };
 
@@ -1964,6 +2026,12 @@ const ComplimentaryModal: React.FC<ComplimentaryModalProps> = ({ customer, onClo
   const [errors, setErrors] = React.useState<ComplimentaryErrors>({});
   const [apiError, setApiError] = React.useState<string | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
+
+  React.useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.body.classList.add("modal-blur-active");
+    return () => document.body.classList.remove("modal-blur-active");
+  }, []);
 
   function update<K extends keyof ComplimentaryForm>(key: K, value: ComplimentaryForm[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -2039,9 +2107,18 @@ const ComplimentaryModal: React.FC<ComplimentaryModalProps> = ({ customer, onClo
     }
   }
 
-  return (
-    <div style={modalOverlayStyle}>
-      <form onSubmit={handleSubmit} style={modalStyle} role="dialog" aria-modal="true">
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div className="modal-overlay" onClick={onClose}>
+      <form
+        onSubmit={handleSubmit}
+        className="modal"
+        style={modalStyle}
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
         <ModalHeader title="Комплиментарные баллы" onClose={onClose} />
         <div style={modalBodyStyle}>
           <section style={modalSectionStyle}>
@@ -2105,7 +2182,8 @@ const ComplimentaryModal: React.FC<ComplimentaryModalProps> = ({ customer, onClo
           </Button>
         </div>
       </form>
-    </div>
+    </div>,
+    document.body,
   );
 };
 
@@ -2127,32 +2205,21 @@ const ModalHeader: React.FC<ModalHeaderProps> = ({ title, subtitle, onClose }) =
   </div>
 );
 
-const modalOverlayStyle: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(15,23,42,0.76)",
-  backdropFilter: "blur(8px)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: 20,
-  zIndex: 120,
-};
-
 const modalStyle: React.CSSProperties = {
   width: "min(640px, 96vw)",
-  borderRadius: 18,
-  border: "1px solid rgba(148,163,184,0.18)",
-  background: "rgba(12,16,26,0.97)",
-  boxShadow: "0 26px 90px rgba(2,6,23,0.55)",
+  maxHeight: "82vh",
+  borderRadius: "var(--radius-lg)",
+  border: "1px solid var(--border-default)",
+  background: "var(--bg-elevated)",
+  boxShadow: "var(--shadow-xl)",
   display: "grid",
   gridTemplateRows: "auto 1fr auto",
-  color: "inherit",
+  color: "var(--fg)",
 };
 
 const modalHeaderStyle: React.CSSProperties = {
   padding: "18px 24px",
-  borderBottom: "1px solid rgba(148,163,184,0.14)",
+  borderBottom: "1px solid var(--border-default)",
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
@@ -2169,16 +2236,16 @@ const modalBodyStyle: React.CSSProperties = {
 
 const modalFooterStyle: React.CSSProperties = {
   padding: "16px 24px",
-  borderTop: "1px solid rgba(148,163,184,0.14)",
+  borderTop: "1px solid var(--border-default)",
   display: "flex",
   justifyContent: "flex-end",
   gap: 12,
 };
 
 const closeButtonStyle: React.CSSProperties = {
-  background: "rgba(248,113,113,0.18)",
-  border: "1px solid rgba(248,113,113,0.5)",
-  color: "#fca5a5",
+  background: "none",
+  border: "none",
+  color: "var(--fg-muted)",
   width: 32,
   height: 32,
   borderRadius: "50%",
@@ -2186,6 +2253,7 @@ const closeButtonStyle: React.CSSProperties = {
   alignItems: "center",
   justifyContent: "center",
   cursor: "pointer",
+  padding: 4,
 };
 
 const modalSectionStyle: React.CSSProperties = {
@@ -2211,9 +2279,9 @@ const labelStyle: React.CSSProperties = {
 const inputStyle: React.CSSProperties = {
   padding: "10px 12px",
   borderRadius: 12,
-  border: "1px solid rgba(148,163,184,0.18)",
-  background: "rgba(15,23,42,0.55)",
-  color: "inherit",
+  border: "1px solid var(--border-default)",
+  background: "var(--bg-surface)",
+  color: "var(--fg)",
 };
 
 const ErrorText: React.FC<React.PropsWithChildren> = ({ children }) => (

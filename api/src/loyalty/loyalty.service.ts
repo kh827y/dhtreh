@@ -4771,6 +4771,267 @@ export class LoyaltyService {
     return this.staffMotivation.getLeaderboard(merchantId, options);
   }
 
+  async outletTransactions(
+    merchantId: string,
+    outletId: string,
+    limit = 20,
+    before?: Date,
+  ) {
+    const allowSameReceipt = await this.isAllowSameReceipt(merchantId);
+    const formatStaff = (staff?: {
+      firstName?: string | null;
+      lastName?: string | null;
+      login?: string | null;
+    }): string | null => {
+      if (!staff) return null;
+      const name = [staff.firstName, staff.lastName]
+        .map((p) => (p || '').trim())
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+      return name || staff.login?.trim() || null;
+    };
+    const formatCustomer = (customer?: {
+      name?: string | null;
+      phone?: string | null;
+      email?: string | null;
+    }): string | null => {
+      if (!customer) return null;
+      return (
+        customer.name?.trim() ||
+        customer.phone?.trim() ||
+        customer.email?.trim() ||
+        null
+      );
+    };
+    const hardLimit = Math.min(Math.max(limit, 1), 100);
+    const whereTx: any = {
+      merchantId,
+      outletId,
+      canceledAt: null,
+      type: { in: [TxnType.EARN, TxnType.REDEEM, TxnType.REFUND] },
+    };
+    if (before) whereTx.createdAt = { lt: before };
+
+    const txItems = await this.prisma.transaction.findMany({
+      where: whereTx,
+      orderBy: { createdAt: 'desc' },
+      take: hardLimit,
+      include: {
+        outlet: { select: { name: true } },
+        staff: { select: { firstName: true, lastName: true, login: true } },
+        customer: { select: { name: true, phone: true, email: true } },
+      },
+    });
+
+    const orderIdsForReceipts = Array.from(
+      new Set(
+        txItems
+          .map((entity) => {
+            if (typeof entity.orderId !== 'string') return null;
+            const trimmed = entity.orderId.trim();
+            return trimmed.length > 0 ? trimmed : null;
+          })
+          .filter((value): value is string => Boolean(value)),
+      ),
+    );
+
+    const receiptMetaByOrderId = new Map<
+      string,
+      {
+        receiptNumber: string | null;
+        createdAt: string;
+        total: number;
+        earnApplied: number;
+        redeemApplied: number;
+        staffName: string | null;
+        customerName: string | null;
+        outletName: string | null;
+      }
+    >();
+    if (orderIdsForReceipts.length > 0) {
+      const receipts = await this.prisma.receipt.findMany({
+        where: { merchantId, orderId: { in: orderIdsForReceipts } },
+        select: {
+          orderId: true,
+          receiptNumber: true,
+          createdAt: true,
+          total: true,
+          earnApplied: true,
+          redeemApplied: true,
+          outlet: { select: { name: true, code: true } },
+          staff: { select: { firstName: true, lastName: true, login: true } },
+          customer: { select: { name: true, phone: true, email: true } },
+        },
+      });
+      for (const receipt of receipts) {
+        if (!receipt.orderId) continue;
+        const key = receipt.orderId;
+        const normalized =
+          typeof receipt.receiptNumber === 'string' &&
+          receipt.receiptNumber.trim().length > 0
+            ? receipt.receiptNumber.trim()
+            : null;
+        receiptMetaByOrderId.set(key, {
+          receiptNumber: normalized,
+          createdAt: receipt.createdAt.toISOString(),
+          total: Number(receipt.total ?? 0),
+          earnApplied: Math.max(0, Number(receipt.earnApplied ?? 0)),
+          redeemApplied: Math.max(0, Number(receipt.redeemApplied ?? 0)),
+          staffName: formatStaff(receipt.staff ?? undefined),
+          customerName: formatCustomer(receipt.customer ?? undefined),
+          outletName:
+            receipt.outlet?.name?.trim() ||
+            receipt.outlet?.code?.trim() ||
+            null,
+        });
+      }
+    }
+
+    const normalizedTxs = txItems.map((entity) => {
+      const orderId =
+        typeof entity.orderId === 'string' && entity.orderId.trim().length > 0
+          ? entity.orderId.trim()
+          : null;
+      return {
+        id: entity.id,
+        mode: 'TXN' as const,
+        type: entity.type,
+        amount: entity.amount,
+        orderId,
+        receiptNumber: orderId
+          ? receiptMetaByOrderId.get(orderId)?.receiptNumber ?? null
+          : null,
+        createdAt: entity.createdAt.toISOString(),
+        outletId: entity.outletId ?? null,
+        outletName: entity.outlet?.name ?? null,
+        purchaseAmount: orderId
+          ? receiptMetaByOrderId.get(orderId)?.total ?? null
+          : null,
+        earnApplied: orderId
+          ? receiptMetaByOrderId.get(orderId)?.earnApplied ?? null
+          : null,
+        redeemApplied: orderId
+          ? receiptMetaByOrderId.get(orderId)?.redeemApplied ?? null
+          : null,
+        staffName:
+          formatStaff(entity.staff ?? undefined) ||
+          receiptMetaByOrderId.get(orderId ?? '')?.staffName ||
+          null,
+        customerName:
+          formatCustomer(entity.customer ?? undefined) ||
+          receiptMetaByOrderId.get(orderId ?? '')?.customerName ||
+          null,
+      };
+    });
+
+    // агрегируем покупки и возвраты по чеку
+    const purchaseEntries = Array.from(receiptMetaByOrderId.entries()).map(
+      ([orderId, meta]) => {
+        const change = (meta.earnApplied ?? 0) - (meta.redeemApplied ?? 0);
+        return {
+          id: `purchase:${orderId}`,
+          mode: 'PURCHASE' as const,
+          type: null,
+          amount: change,
+          orderId,
+          receiptNumber: meta.receiptNumber ?? null,
+          createdAt: meta.createdAt,
+          outletId,
+          outletName: meta.outletName ?? null,
+          purchaseAmount: meta.total ?? null,
+          earnApplied: meta.earnApplied ?? null,
+          redeemApplied: meta.redeemApplied ?? null,
+          refundEarn: null,
+          refundRedeem: null,
+          staffName: meta.staffName ?? null,
+          customerName: meta.customerName ?? null,
+        };
+      },
+    );
+
+    const refundGrouped = new Map<
+      string,
+      {
+        earn: number;
+        redeem: number;
+        createdAt: string;
+        receiptNumber: string | null;
+        staffName: string | null;
+        customerName: string | null;
+      }
+    >();
+    for (const tx of normalizedTxs) {
+      if (tx.type !== TxnType.REFUND) continue;
+      const orderId = tx.orderId ?? 'unknown';
+      const group =
+        refundGrouped.get(orderId) ??
+        ({
+          earn: 0,
+          redeem: 0,
+          createdAt: tx.createdAt,
+          receiptNumber: tx.receiptNumber ?? null,
+          staffName: tx.staffName ?? null,
+          customerName: tx.customerName ?? null,
+        } as any);
+      const amount = Number(tx.amount ?? 0);
+      if (amount > 0) group.redeem += amount;
+      else if (amount < 0) group.earn += Math.abs(amount);
+      if (tx.createdAt > group.createdAt) group.createdAt = tx.createdAt;
+      if (!group.receiptNumber && tx.receiptNumber)
+        group.receiptNumber = tx.receiptNumber;
+      if (!group.staffName && tx.staffName) group.staffName = tx.staffName;
+      if (!group.customerName && tx.customerName)
+        group.customerName = tx.customerName;
+      refundGrouped.set(orderId, group);
+    }
+
+    const refundEntries = Array.from(refundGrouped.entries()).map(
+      ([orderId, meta]) => {
+        const receiptMeta = receiptMetaByOrderId.get(orderId);
+        const purchaseAmount = receiptMeta?.total ?? null;
+        return {
+          id: `refund:${orderId}`,
+          mode: 'REFUND' as const,
+          type: null,
+          amount: (meta.redeem ?? 0) - (meta.earn ?? 0),
+          orderId: orderId === 'unknown' ? null : orderId,
+          receiptNumber: meta.receiptNumber ?? receiptMeta?.receiptNumber ?? null,
+          createdAt: meta.createdAt,
+          outletId,
+          outletName: receiptMeta?.outletName ?? null,
+          purchaseAmount,
+          earnApplied: null,
+          redeemApplied: null,
+          refundEarn: meta.earn ?? 0,
+          refundRedeem: meta.redeem ?? 0,
+          staffName:
+            meta.staffName ??
+            receiptMeta?.staffName ??
+            null,
+          customerName:
+            meta.customerName ??
+            receiptMeta?.customerName ??
+            null,
+        };
+      },
+    );
+
+    const isolatedTx = normalizedTxs.filter(
+      (tx) =>
+        tx.mode === 'TXN' &&
+        (!tx.orderId || !receiptMetaByOrderId.has(tx.orderId)),
+    );
+
+    const merged = [...purchaseEntries, ...refundEntries, ...isolatedTx].sort(
+      (a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0),
+    );
+    const sliced = merged.slice(0, hardLimit);
+    const nextBefore =
+      sliced.length > 0 ? sliced[sliced.length - 1].createdAt : null;
+    return { items: sliced, nextBefore, allowSameReceipt };
+  }
+
   async transactions(
     merchantId: string,
     customerId: string,
@@ -5125,6 +5386,34 @@ export class LoyaltyService {
     if (expired) {
       await this.recomputeTierProgress(tx, { merchantId, customerId });
     }
+  }
+
+  private async isAllowSameReceipt(merchantId: string): Promise<boolean> {
+    let allowSame = true;
+    try {
+      const settings = await this.prisma.merchantSettings.findUnique({
+        where: { merchantId },
+        select: { rulesJson: true },
+      });
+      const rules =
+        settings && typeof settings.rulesJson === 'object'
+          ? (settings.rulesJson as Record<string, any>)
+          : null;
+      if (rules && Object.prototype.hasOwnProperty.call(rules, 'allowSameReceipt')) {
+        allowSame = Boolean((rules as any).allowSameReceipt);
+      } else if (
+        rules &&
+        Object.prototype.hasOwnProperty.call(rules, 'allowEarnRedeemSameReceipt')
+      ) {
+        allowSame = Boolean((rules as any).allowEarnRedeemSameReceipt);
+      } else if (
+        rules &&
+        Object.prototype.hasOwnProperty.call(rules, 'disallowEarnRedeemSameReceipt')
+      ) {
+        allowSame = !Boolean((rules as any).disallowEarnRedeemSameReceipt);
+      }
+    } catch {}
+    return allowSame;
   }
 
   private async recomputeTierProgress(

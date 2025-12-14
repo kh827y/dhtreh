@@ -1,5 +1,7 @@
 "use client";
-export default function SettingsStaffWrapper(){
-  if (typeof window !== 'undefined') window.location.href = '/staff';
-  return null;
+
+import StaffPage from "../../staff/page";
+
+export default function SettingsStaffWrapper() {
+  return <StaffPage />;
 }

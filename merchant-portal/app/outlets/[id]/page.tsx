@@ -4,34 +4,9 @@ import { useParams, useRouter } from "next/navigation";
 import { Card, CardHeader, CardBody, Button, Skeleton } from "@loyalty/ui";
 import Toggle from "../../../components/Toggle";
 
-type TabKey = "BASIC" | "SCHEDULE" | "INTEGRATIONS";
-
-type DaySchedule = {
-  id: string;
-  label: string;
-  enabled: boolean;
-  from: string;
-  to: string;
-};
-
-const TIMEZONES = [
-  "UTC+03:00 Москва",
-  "UTC+04:00 Самара",
-  "UTC+05:00 Екатеринбург",
-  "UTC+07:00 Новосибирск",
-];
+type TabKey = "BASIC" | "INTEGRATIONS";
 
 const DEVICE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{1,63}$/;
-
-const createDefaultSchedule = (): DaySchedule[] => [
-  { id: "mon", label: "Пн", enabled: true, from: "10:00", to: "22:00" },
-  { id: "tue", label: "Вт", enabled: true, from: "10:00", to: "22:00" },
-  { id: "wed", label: "Ср", enabled: true, from: "10:00", to: "22:00" },
-  { id: "thu", label: "Чт", enabled: true, from: "10:00", to: "22:00" },
-  { id: "fri", label: "Пт", enabled: true, from: "10:00", to: "23:00" },
-  { id: "sat", label: "Сб", enabled: true, from: "11:00", to: "23:00" },
-  { id: "sun", label: "Вс", enabled: false, from: "11:00", to: "21:00" },
-];
 
 export default function EditOutletPage() {
   const params = useParams<{ id: string }>();
@@ -43,52 +18,23 @@ export default function EditOutletPage() {
   const [toast, setToast] = React.useState("");
 
   const [works, setWorks] = React.useState(true);
-  const [hidden, setHidden] = React.useState(false);
   const [name, setName] = React.useState("");
-  const [description, setDescription] = React.useState("");
-  const [phone, setPhone] = React.useState("");
-  const [address, setAddress] = React.useState("");
-  const [manualMarker, setManualMarker] = React.useState(false);
-  const [adminEmails, setAdminEmails] = React.useState("");
-  const [basicError, setBasicError] = React.useState("");
-
-  const [timezone, setTimezone] = React.useState(TIMEZONES[3]);
-  const [showSchedule, setShowSchedule] = React.useState(false);
-  const [mode, setMode] = React.useState<"24/7" | "custom">("custom");
-  const [schedule, setSchedule] = React.useState<DaySchedule[]>(createDefaultSchedule);
-  const [scheduleMessage, setScheduleMessage] = React.useState("");
-
-  const [devices, setDevices] = React.useState<Array<{ id?: string; code: string }>>([]);
-  const [deviceErrors, setDeviceErrors] = React.useState<Record<string, string>>({});
-  const [integrationsMessage, setIntegrationsMessage] = React.useState("");
   const [reviewLinks, setReviewLinks] = React.useState<{ yandex: string; twogis: string; google: string }>({
     yandex: "",
     twogis: "",
     google: "",
   });
+  const [basicError, setBasicError] = React.useState("");
+
+  const [devices, setDevices] = React.useState<Array<{ id?: string; code: string }>>([]);
+  const [deviceErrors, setDeviceErrors] = React.useState<Record<string, string>>({});
+  const [integrationsMessage, setIntegrationsMessage] = React.useState("");
 
   React.useEffect(() => {
     if (!toast) return;
     const timer = window.setTimeout(() => setToast(""), 3200);
     return () => window.clearTimeout(timer);
   }, [toast]);
-
-  const switchMode = (value: "24/7" | "custom") => {
-    setMode(value);
-    if (value === "24/7") {
-      setSchedule((prev) => prev.map((day) => ({ ...day, enabled: true, from: "00:00", to: "23:59" })));
-    } else {
-      setSchedule(createDefaultSchedule());
-    }
-  };
-
-  const updateDay = (id: string, patch: Partial<DaySchedule>) => {
-    setSchedule((prev) => prev.map((day) => (day.id === id ? { ...day, ...patch } : day)));
-  };
-
-  const toggleDay = (id: string, enabled: boolean) => {
-    setSchedule((prev) => prev.map((day) => (day.id === id ? { ...day, enabled } : day)));
-  };
 
   const addDeviceRow = () => {
     if (devices.length >= 50) {
@@ -112,10 +58,6 @@ export default function EditOutletPage() {
     setDeviceErrors({});
   };
 
-  const updateReviewLink = React.useCallback((key: 'yandex' | 'twogis' | 'google', value: string) => {
-    setReviewLinks((prev) => ({ ...prev, [key]: value }));
-  }, []);
-
   const load = React.useCallback(async () => {
     setLoading(true);
     try {
@@ -123,14 +65,7 @@ export default function EditOutletPage() {
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       setWorks(Boolean(data?.works ?? (String(data?.status || '').toUpperCase() === 'ACTIVE')));
-      setHidden(Boolean(data?.hidden));
       setName(String(data?.name || ''));
-      setDescription(String(data?.description || ''));
-      setPhone(String(data?.phone || ''));
-      setAddress(String(data?.address || ''));
-      setAdminEmails(Array.isArray(data?.adminEmails) ? data.adminEmails.join(', ') : '');
-      setTimezone(String(data?.timezone || TIMEZONES[3]));
-      setManualMarker(Boolean(data?.manualLocation));
       setDevices(
         Array.isArray(data?.devices)
           ? data.devices.map((device: any) => ({
@@ -147,18 +82,6 @@ export default function EditOutletPage() {
         twogis: typeof reviewsShareLinks.twogis === 'string' ? reviewsShareLinks.twogis : '',
         google: typeof reviewsShareLinks.google === 'string' ? reviewsShareLinks.google : '',
       });
-      const scheduleEnabled = Boolean(data?.scheduleEnabled);
-      setShowSchedule(scheduleEnabled);
-      const modeStr = String(data?.scheduleMode || 'CUSTOM');
-      setMode(modeStr === '24_7' ? '24/7' : 'custom');
-      const days: Array<{ day: number; enabled: boolean; opensAt?: string | null; closesAt?: string | null }> = Array.isArray(data?.schedule) ? data.schedule : [];
-      const numToId: Record<number, string> = { 0: 'sun', 1: 'mon', 2: 'tue', 3: 'wed', 4: 'thu', 5: 'fri', 6: 'sat' };
-      const next = createDefaultSchedule().map((d) => {
-        const num = ({ mon:1,tue:2,wed:3,thu:4,fri:5,sat:6,sun:0 } as Record<string, number>)[d.id] ?? 1;
-        const src = days.find((x) => Number(x.day) === num);
-        return src ? { ...d, enabled: !!src.enabled, from: src.opensAt || d.from, to: src.closesAt || d.to } : d;
-      });
-      setSchedule(next);
     } catch (e: any) {
       setToast(String(e?.message || e || 'Не удалось загрузить точку'));
     } finally {
@@ -175,23 +98,7 @@ export default function EditOutletPage() {
       setBasicError("Заполните название торговой точки");
       return false;
     }
-    if (!address.trim()) {
-      setBasicError("Укажите адрес точки");
-      return false;
-    }
     setBasicError("");
-    return true;
-  };
-
-  const handleSaveSchedule = () => {
-    if (showSchedule && mode === "custom") {
-      const hasEnabledDay = schedule.some((day) => day.enabled);
-      if (!hasEnabledDay) {
-        setScheduleMessage("Включите хотя бы один рабочий день");
-        return false;
-      }
-    }
-    setScheduleMessage("");
     return true;
   };
 
@@ -233,45 +140,20 @@ export default function EditOutletPage() {
   const submitSave = async () => {
     const okBasic = handleSaveBasic();
     if (!okBasic) return;
-    const okSchedule = handleSaveSchedule();
-    if (!okSchedule) return;
     const normalizedDevices = validateDevices();
     if (normalizedDevices === null) {
       setTab("INTEGRATIONS");
       return;
     }
 
-    const adminList = adminEmails
-      .split(',')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-    const dayIndex: Record<string, number> = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
     const payload: any = {
       works,
-      hidden,
       name: name.trim(),
-      description: description.trim() || null,
-      phone: phone.trim() || null,
-      address: address.trim(),
-      adminEmails: adminList,
-      timezone,
-    };
-    if (showSchedule) {
-      payload.schedule = {
-        mode: mode === '24/7' ? '24_7' : 'CUSTOM',
-        days: schedule.map((d) => ({
-          day: String(dayIndex[d.id] ?? 0),
-          enabled: !!d.enabled,
-          opensAt: d.enabled ? d.from : null,
-          closesAt: d.enabled ? d.to : null,
-        })),
-      };
-    }
-
-    payload.reviewsShareLinks = {
-      yandex: reviewLinks.yandex.trim() || null,
-      twogis: reviewLinks.twogis.trim() || null,
-      google: reviewLinks.google.trim() || null,
+      reviewsShareLinks: {
+        yandex: reviewLinks.yandex.trim() || null,
+        twogis: reviewLinks.twogis.trim() || null,
+        google: reviewLinks.google.trim() || null,
+      },
     };
 
     if (normalizedDevices.length) {
@@ -330,9 +212,6 @@ export default function EditOutletPage() {
             <button type="button" className={`btn ${tab === "BASIC" ? "btn-primary" : "btn-ghost"}`} onClick={() => setTab("BASIC")}>
               Основное
             </button>
-            <button type="button" className={`btn ${tab === "SCHEDULE" ? "btn-primary" : "btn-ghost"}`} onClick={() => setTab("SCHEDULE")}>
-              Режим работы
-            </button>
             <button type="button" className={`btn ${tab === "INTEGRATIONS" ? "btn-primary" : "btn-ghost"}`} onClick={() => setTab("INTEGRATIONS") }>
               Интеграции
             </button>
@@ -350,10 +229,9 @@ export default function EditOutletPage() {
         <>
           {tab === "BASIC" && (
             <Card>
-              <CardHeader title="Основное" subtitle="Название, контакты и адрес" />
+              <CardHeader title="Основное" subtitle="Статус, название и ссылки на карточки отзывов" />
               <CardBody style={{ display: "grid", gap: 16 }}>
                 <Toggle checked={works} onChange={setWorks} label="Работает" />
-                <Toggle checked={hidden} onChange={setHidden} label="Скрыть торговую точку от клиентов" />
 
                 <label style={{ display: "grid", gap: 6 }}>
                   <span style={{ fontSize: 12, opacity: 0.7 }}>Название *</span>
@@ -365,53 +243,39 @@ export default function EditOutletPage() {
                   />
                 </label>
 
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span style={{ fontSize: 12, opacity: 0.7 }}>Описание</span>
-                  <textarea
-                    value={description}
-                    onChange={(event) => setDescription(event.target.value)}
-                    rows={3}
-                    placeholder="Как добраться, особенности парковки и входа"
-                    style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit", resize: "vertical" }}
-                  />
-                </label>
-
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span style={{ fontSize: 12, opacity: 0.7 }}>Контактный телефон</span>
-                  <input
-                    value={phone}
-                    onChange={(event) => setPhone(event.target.value)}
-                    placeholder="+7 (999) 000-00-00"
-                    style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
-                  />
-                </label>
-
-                <div style={{ display: "grid", gap: 6 }}>
-                  <span style={{ fontSize: 12, opacity: 0.7 }}>Адрес *</span>
-                  <input
-                    value={address}
-                    onChange={(event) => setAddress(event.target.value)}
-                    placeholder="Начните вводить адрес и выберите подсказку"
-                    style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
-                  />
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <Button variant="secondary" onClick={() => setManualMarker((prev) => !prev)}>
-                      {manualMarker ? "Маркер установлен" : "Поставить маркер вручную"}
-                    </Button>
-                    {manualMarker && <span style={{ fontSize: 12, opacity: 0.7 }}>Перетащите маркер на карте (демо)</span>}
+                <div className="glass" style={{ padding: 16, borderRadius: 12, display: "grid", gap: 12 }}>
+                  <div style={{ fontWeight: 600 }}>Ссылки на карточки отзывов</div>
+                  <div style={{ fontSize: 12, opacity: 0.75 }}>
+                    Эти ссылки используются в мини-аппе, чтобы предлагать гостям поделиться отзывом после высокой оценки.
                   </div>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 12, opacity: 0.7 }}>Яндекс.Карты</span>
+                    <input
+                      value={reviewLinks.yandex}
+                      onChange={(event) => setReviewLinks((prev) => ({ ...prev, yandex: event.target.value }))}
+                      placeholder="https://yandex.ru/maps/..."
+                      style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
+                    />
+                  </label>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 12, opacity: 0.7 }}>2ГИС</span>
+                    <input
+                      value={reviewLinks.twogis}
+                      onChange={(event) => setReviewLinks((prev) => ({ ...prev, twogis: event.target.value }))}
+                      placeholder="https://2gis.ru/..."
+                      style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
+                    />
+                  </label>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 12, opacity: 0.7 }}>Google</span>
+                    <input
+                      value={reviewLinks.google}
+                      onChange={(event) => setReviewLinks((prev) => ({ ...prev, google: event.target.value }))}
+                      placeholder="https://maps.google.com/..."
+                      style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
+                    />
+                  </label>
                 </div>
-
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span style={{ fontSize: 12, opacity: 0.7 }}>Почта администратора</span>
-                  <input
-                    value={adminEmails}
-                    onChange={(event) => setAdminEmails(event.target.value)}
-                    placeholder="email@example.com, second@example.com"
-                    style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
-                  />
-                  <span style={{ fontSize: 12, opacity: 0.6 }}>Можно указать несколько адресов через запятую — уведомления не увидят клиенты.</span>
-                </label>
 
                 {basicError && <div style={{ color: "#f87171", fontSize: 13 }}>{basicError}</div>}
 
@@ -423,171 +287,47 @@ export default function EditOutletPage() {
             </Card>
           )}
 
-          {tab === "SCHEDULE" && (
-            <Card>
-              <CardHeader title="Режим работы" subtitle="Часовой пояс и график" />
-              <CardBody style={{ display: "grid", gap: 16 }}>
-                <label style={{ display: "grid", gap: 6, maxWidth: 320 }}>
-                  <span style={{ fontSize: 12, opacity: 0.7 }}>Часовой пояс</span>
-                  <select
-                    value={timezone}
-                    onChange={(event) => setTimezone(event.target.value)}
-                    style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
-                  >
-                    {TIMEZONES.map((item) => (
-                      <option key={item} value={item}>
-                        {item}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <Toggle checked={showSchedule} onChange={setShowSchedule} label="Отображать расписание" />
-
-                {showSchedule && (
-                  <div className="glass" style={{ padding: 16, borderRadius: 12, display: "grid", gap: 12 }}>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <button type="button" className={`btn ${mode === "24/7" ? "btn-primary" : "btn-ghost"}`} onClick={() => switchMode("24/7")}>
-                        Работает круглосуточно
-                      </button>
-                      <button type="button" className={`btn ${mode === "custom" ? "btn-primary" : "btn-ghost"}`} onClick={() => switchMode("custom")}>
-                        Задать расписание по дням
-                      </button>
-                    </div>
-
-                    {mode === "custom" && (
-                      <div style={{ display: "grid", gap: 10 }}>
-                        {schedule.map((day) => (
-                          <div key={day.id} className="glass" style={{ padding: 12, borderRadius: 12, display: "grid", gap: 8 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                              <div style={{ fontWeight: 600 }}>{day.label}</div>
-                              <Toggle checked={day.enabled} onChange={(value) => toggleDay(day.id, value)} label={day.enabled ? "Рабочий" : "Выходной"} />
-                            </div>
-                            {day.enabled && (
-                              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                                <label style={{ display: "grid", gap: 4 }}>
-                                  <span style={{ fontSize: 12, opacity: 0.7 }}>С</span>
-                                  <input
-                                    type="time"
-                                    value={day.from}
-                                    onChange={(event) => updateDay(day.id, { from: event.target.value })}
-                                    style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
-                                  />
-                                </label>
-                                <label style={{ display: "grid", gap: 4 }}>
-                                  <span style={{ fontSize: 12, opacity: 0.7 }}>По</span>
-                                  <input
-                                    type="time"
-                                    value={day.to}
-                                    onChange={(event) => updateDay(day.id, { to: event.target.value })}
-                                    style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
-                                  />
-                                </label>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                  <Button variant="ghost" onClick={() => router.push("/outlets")}>Отменить</Button>
-                  <Button variant="primary" onClick={submitSave}>Сохранить</Button>
-                </div>
-                {scheduleMessage && <div style={{ color: scheduleMessage.includes("сохранено") ? "#4ade80" : "#f87171" }}>{scheduleMessage}</div>}
-              </CardBody>
-            </Card>
-          )}
-
           {tab === "INTEGRATIONS" && (
-            <Card>
-              <CardHeader title="Интеграции" subtitle="Устройства и ссылки для интеграций" />
-              <CardBody style={{ display: "grid", gap: 16 }}>
-                <div className="glass" style={{ padding: 16, borderRadius: 12, display: "grid", gap: 6 }}>
-                  <div style={{ fontWeight: 600 }}>Устройства</div>
-                  <div style={{ fontSize: 12, opacity: 0.8 }}>
-                    Установите произвольный идентификатор устройства. Он будет использоваться для подключения к устройству,
-                    а также в аналитике, журнале операций и тд.
-                  </div>
-                </div>
-
-                <div style={{ display: "grid", gap: 12 }}>
-                  {devices.map((device, index) => {
-                    const key = device.id || `d${index}`;
-                    const error = deviceErrors[`d${index}`];
-                    return (
-                      <div key={key} className="glass" style={{ padding: 12, borderRadius: 12, display: "grid", gap: 10 }}>
-                        <label style={{ display: "grid", gap: 6 }}>
-                          <span style={{ fontSize: 12, opacity: 0.7 }}>Идентификатор устройства</span>
-                          <input
-                            value={device.code}
-                            onChange={(event) => updateDeviceCode(index, event.target.value)}
-                            placeholder="POS-001"
-                            maxLength={64}
-                            style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
-                          />
-                        </label>
-                        {error && <div style={{ color: "#f87171", fontSize: 12 }}>{error}</div>}
-                        <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                          <Button variant="ghost" onClick={() => removeDevice(index)}>Удалить</Button>
-                        </div>
+          <Card>
+            <CardHeader title="Устройства" />
+            <CardBody style={{ display: "grid", gap: 16 }}>
+              <div style={{ display: "grid", gap: 12 }}>
+                {devices.map((device, index) => {
+                  const key = device.id || `d${index}`;
+                  const error = deviceErrors[`d${index}`];
+                  return (
+                    <div key={key} className="glass" style={{ padding: 12, borderRadius: 12, display: "grid", gap: 10 }}>
+                      <label style={{ display: "grid", gap: 6 }}>
+                        <span style={{ fontSize: 12, opacity: 0.7 }}>Укажите произвольный идентификатор устройства (допустимы латиница, цифры, точки, дефисы и подчёркивания)</span>
+                        <input
+                          value={device.code}
+                          onChange={(event) => updateDeviceCode(index, event.target.value)}
+                          placeholder="POS-1"
+                          maxLength={64}
+                          style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
+                        />
+                      </label>
+                      {error && <div style={{ color: "#f87171", fontSize: 12 }}>{error}</div>}
+                      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                        <Button variant="ghost" onClick={() => removeDevice(index)}>Удалить</Button>
                       </div>
-                    );
-                  })}
-                  {devices.length < 50 && (
-                    <Button variant="ghost" onClick={addDeviceRow}>Добавить устройство</Button>
-                  )}
-                </div>
-                <div style={{ fontSize: 12, opacity: 0.7 }}>
-                  Допустимы латиница, цифры, точки, дефисы и подчёркивания. До 50 устройств на точку.
-                </div>
+                    </div>
+                  );
+                })}
+                {devices.length < 50 && (
+                  <Button variant="ghost" onClick={addDeviceRow}>Добавить устройство</Button>
+                )}
+              </div>
 
-                <div className="glass" style={{ padding: 16, borderRadius: 12, display: "grid", gap: 12 }}>
-                  <div style={{ fontWeight: 600 }}>Ссылки на карточки отзывов</div>
-                  <div style={{ fontSize: 12, opacity: 0.75 }}>
-                    Эти ссылки используются в мини-аппе, чтобы предлагать гостям поделиться отзывом после высокой оценки.
-                  </div>
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: 12, opacity: 0.7 }}>Яндекс.Карты</span>
-                    <input
-                      value={reviewLinks.yandex}
-                      onChange={(event) => updateReviewLink('yandex', event.target.value)}
-                      placeholder="https://yandex.ru/maps/..."
-                      style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
-                    />
-                  </label>
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: 12, opacity: 0.7 }}>2ГИС</span>
-                    <input
-                      value={reviewLinks.twogis}
-                      onChange={(event) => updateReviewLink('twogis', event.target.value)}
-                      placeholder="https://2gis.ru/..."
-                      style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
-                    />
-                  </label>
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: 12, opacity: 0.7 }}>Google</span>
-                    <input
-                      value={reviewLinks.google}
-                      onChange={(event) => updateReviewLink('google', event.target.value)}
-                      placeholder="https://maps.google.com/..."
-                      style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
-                    />
-                  </label>
-                </div>
-
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                  <Button variant="ghost" onClick={() => router.push("/outlets")}>Отменить</Button>
-                  <Button variant="primary" onClick={submitSave}>Сохранить</Button>
-                </div>
-                {integrationsMessage && <div style={{ color: "#f87171" }}>{integrationsMessage}</div>}
-              </CardBody>
-            </Card>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                <Button variant="ghost" onClick={() => router.push("/outlets")}>Отменить</Button>
+                <Button variant="primary" onClick={submitSave}>Сохранить</Button>
+              </div>
+              {integrationsMessage && <div style={{ color: "#f87171" }}>{integrationsMessage}</div>}
+            </CardBody>
+          </Card>
+        )}
+      </>
+    )}
+  </div>
+);

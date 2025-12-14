@@ -9,6 +9,7 @@ import {
 export type StaffNotifySettings = {
   notifyOrders: boolean;
   notifyReviews: boolean;
+  notifyReviewThreshold: number;
   notifyDailyDigest: boolean;
   notifyFraud: boolean;
 };
@@ -65,6 +66,7 @@ export class TelegramStaffNotificationsService {
   private readonly defaults: StaffNotifySettings = {
     notifyOrders: true,
     notifyReviews: true,
+    notifyReviewThreshold: 3,
     notifyDailyDigest: true,
     notifyFraud: true,
   };
@@ -81,6 +83,12 @@ export class TelegramStaffNotificationsService {
     if (!source || typeof source !== 'object') {
       return { ...this.defaults };
     }
+    const clampThreshold = (v: unknown, fallback: number) => {
+      const num = Number(v);
+      if (!Number.isFinite(num)) return fallback;
+      return Math.min(5, Math.max(1, Math.round(num)));
+    };
+
     return {
       notifyOrders: this.toBool(
         source.notifyOrders,
@@ -89,6 +97,10 @@ export class TelegramStaffNotificationsService {
       notifyReviews: this.toBool(
         source.notifyReviews,
         this.defaults.notifyReviews,
+      ),
+      notifyReviewThreshold: clampThreshold(
+        (source as any)?.notifyReviewThreshold,
+        this.defaults.notifyReviewThreshold,
       ),
       notifyDailyDigest: this.toBool(
         source.notifyDailyDigest,
@@ -109,6 +121,12 @@ export class TelegramStaffNotificationsService {
         return false;
     }
     return fallback;
+  }
+
+  private toNumber(value: unknown, fallback: number): number {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return fallback;
+    return Math.min(5, Math.max(1, Math.round(num)));
   }
 
   private actorKey(actor: StaffNotifyActor): string {
@@ -206,6 +224,10 @@ export class TelegramStaffNotificationsService {
       notifyReviews: this.toBool(
         patch.notifyReviews,
         current.notifyReviews ?? this.defaults.notifyReviews,
+      ),
+      notifyReviewThreshold: this.toNumber(
+        patch.notifyReviewThreshold,
+        current.notifyReviewThreshold ?? this.defaults.notifyReviewThreshold,
       ),
       notifyDailyDigest: this.toBool(
         patch.notifyDailyDigest,

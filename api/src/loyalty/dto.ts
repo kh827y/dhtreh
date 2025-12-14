@@ -8,7 +8,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { DeviceType } from '@prisma/client';
+import { DeviceType, TxnType } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 
 export enum Mode {
@@ -407,6 +407,38 @@ export class TransactionItemDto {
 export class TransactionsRespDto {
   @ApiProperty({ type: [TransactionItemDto] }) items!: TransactionItemDto[];
   @ApiPropertyOptional({ nullable: true }) nextBefore?: string | null;
+}
+
+export class CashierOutletTransactionDto {
+  @ApiProperty() id!: string;
+  @ApiProperty({
+    enum: ['PURCHASE', 'REFUND', 'TXN'],
+    description:
+      'PURCHASE — агрегированная запись чека (earn/redeem вместе), REFUND — возврат по чеку (агрегировано), TXN — отдельная транзакция',
+  })
+  mode!: 'PURCHASE' | 'REFUND' | 'TXN';
+  @ApiPropertyOptional({ enum: TxnType, nullable: true })
+  type?: TxnType | null;
+  @ApiPropertyOptional() amount?: number | null;
+  @ApiPropertyOptional({ nullable: true }) orderId?: string | null;
+  @ApiPropertyOptional({ nullable: true }) receiptNumber?: string | null;
+  @ApiProperty() createdAt!: string;
+  @ApiPropertyOptional({ nullable: true }) outletId?: string | null;
+  @ApiPropertyOptional({ nullable: true }) outletName?: string | null;
+  @ApiPropertyOptional({ nullable: true }) purchaseAmount?: number | null;
+  @ApiPropertyOptional({ nullable: true }) earnApplied?: number | null;
+  @ApiPropertyOptional({ nullable: true }) redeemApplied?: number | null;
+  @ApiPropertyOptional({ nullable: true }) refundEarn?: number | null;
+  @ApiPropertyOptional({ nullable: true }) refundRedeem?: number | null;
+  @ApiPropertyOptional({ nullable: true }) staffName?: string | null;
+  @ApiPropertyOptional({ nullable: true }) customerName?: string | null;
+}
+
+export class CashierOutletTransactionsRespDto {
+  @ApiProperty({ type: [CashierOutletTransactionDto] })
+  items!: CashierOutletTransactionDto[];
+  @ApiPropertyOptional({ nullable: true }) nextBefore?: string | null;
+  @ApiProperty() allowSameReceipt!: boolean;
 }
 
 export class PublicOutletDto {

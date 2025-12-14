@@ -1,5 +1,7 @@
 "use client";
-export default function SettingsIntegrationsWrapper(){
-  if (typeof window !== 'undefined') window.location.href = '/integrations';
-  return null;
+
+import IntegrationsPage from "../../integrations/page";
+
+export default function SettingsIntegrationsWrapper() {
+  return <IntegrationsPage />;
 }

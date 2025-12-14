@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { createPortal } from "react-dom";
 import { Button, Icons } from "@loyalty/ui";
 import type { Gender } from "./data";
 
@@ -69,7 +70,18 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
     }
   }, [open, initialValues, levels]);
 
-  if (!open) return null;
+  React.useEffect(() => {
+    if (typeof document === "undefined") return;
+    const body = document.body;
+    if (open) {
+      body.classList.add("modal-blur-active");
+    } else {
+      body.classList.remove("modal-blur-active");
+    }
+    return () => body.classList.remove("modal-blur-active");
+  }, [open]);
+
+  if (!open || typeof document === "undefined") return null;
 
   function update<K extends keyof CustomerFormPayload>(key: K, value: CustomerFormPayload[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -123,9 +135,16 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
     }
   }
 
-  return (
-    <div style={overlayStyle}>
-      <form onSubmit={handleSubmit} style={modalStyle} role="dialog" aria-modal="true">
+  return createPortal(
+    <div className="modal-overlay" onClick={onClose}>
+      <form
+        onSubmit={handleSubmit}
+        className="modal"
+        style={modalStyle}
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div style={modalHeaderStyle}>
           <div style={{ fontSize: 18, fontWeight: 700 }}>
             {mode === "create" ? "Добавить клиента" : "Редактировать клиента"}
@@ -247,36 +266,26 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
           </Button>
         </div>
       </form>
-    </div>
+    </div>,
+    document.body,
   );
-};
-
-const overlayStyle: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(15,23,42,0.76)",
-  backdropFilter: "blur(8px)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: 20,
-  zIndex: 90,
 };
 
 const modalStyle: React.CSSProperties = {
   width: "min(640px, 96vw)",
-  borderRadius: 18,
-  border: "1px solid rgba(148,163,184,0.18)",
-  background: "rgba(12,16,26,0.97)",
-  boxShadow: "0 24px 90px rgba(2,6,23,0.6)",
+  maxHeight: "82vh",
+  borderRadius: "var(--radius-lg)",
+  border: "1px solid var(--border-default)",
+  background: "var(--bg-elevated)",
+  boxShadow: "var(--shadow-xl)",
   display: "grid",
   gridTemplateRows: "auto 1fr auto",
-  color: "inherit",
+  color: "var(--fg)",
 };
 
 const modalHeaderStyle: React.CSSProperties = {
   padding: "18px 24px",
-  borderBottom: "1px solid rgba(148,163,184,0.14)",
+  borderBottom: "1px solid var(--border-default)",
   display: "flex",
   alignItems: "flex-start",
   justifyContent: "space-between",
@@ -285,16 +294,16 @@ const modalHeaderStyle: React.CSSProperties = {
 
 const modalFooterStyle: React.CSSProperties = {
   padding: "16px 24px",
-  borderTop: "1px solid rgba(148,163,184,0.14)",
+  borderTop: "1px solid var(--border-default)",
   display: "flex",
   justifyContent: "flex-end",
   gap: 12,
 };
 
 const closeButtonStyle: React.CSSProperties = {
-  background: "rgba(248,113,113,0.18)",
-  border: "1px solid rgba(248,113,113,0.5)",
-  color: "#fca5a5",
+  background: "none",
+  border: "none",
+  color: "var(--fg-muted)",
   width: 32,
   height: 32,
   borderRadius: "50%",
@@ -302,6 +311,7 @@ const closeButtonStyle: React.CSSProperties = {
   alignItems: "center",
   justifyContent: "center",
   cursor: "pointer",
+  padding: 4,
 };
 
 const fieldStyle: React.CSSProperties = {
@@ -317,9 +327,9 @@ const labelStyle: React.CSSProperties = {
 const inputStyle: React.CSSProperties = {
   padding: "10px 12px",
   borderRadius: 12,
-  border: "1px solid rgba(148,163,184,0.18)",
-  background: "rgba(15,23,42,0.55)",
-  color: "inherit",
+  border: "1px solid var(--border-default)",
+  background: "var(--bg-surface)",
+  color: "var(--fg)",
 };
 
 const ErrorText: React.FC<React.PropsWithChildren> = ({ children }) => (

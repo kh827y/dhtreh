@@ -816,35 +816,46 @@ const topAverageCheckGroup = React.useMemo(() => {
     setCustomRange((prev) => ({ ...prev, to: value }));
   }, []);
 
-  const heroStats = React.useMemo(
-    () => [
+  const heroStats = React.useMemo(() => {
+    const male = normalizedGenderData.find((x) => x.sex === "M");
+    const female = normalizedGenderData.find((x) => x.sex === "F");
+    const mRev = male?.revenue || 0;
+    const fRev = female?.revenue || 0;
+    const totalKnownRev = mRev + fRev || 1;
+    const topGender = mRev >= fRev ? "Мужчины" : "Женщины";
+    const topGenderShare = Math.round((Math.max(mRev, fRev) / totalKnownRev) * 100);
+
+    const ages = data?.age || [];
+    const topAgeItem = [...ages].sort((a, b) => (b.revenue || 0) - (a.revenue || 0))[0];
+    const topAge = topAgeItem ? clampAgeValue(topAgeItem.age) : null;
+
+    return [
       {
         key: "customers",
-        label: "Клиентов",
+        label: "Активных клиентов",
         value: formatInteger(totals.customers),
-        hint: "Активные в выборке",
+        hint: "В текущей выборке",
         icon: <Users size={18} />,
         accent: "indigo",
       },
       {
-        key: "averageCheck",
-        label: "Средний чек",
-        value: formatCurrency(totals.averageCheck),
-        hint: `${formatInteger(totals.transactions)} продаж`,
-        icon: <BarChart3 size={18} />,
-        accent: "amber",
-      },
-      {
-        key: "revenue",
-        label: "Сумма продаж",
-        value: formatCurrency(totals.revenue),
-        hint: audience.label || "Все клиенты",
+        key: "top_gender",
+        label: "Основной профиль",
+        value: topGender,
+        hint: `${topGenderShare}% выручки (М+Ж)`,
         icon: <TrendingUp size={18} />,
         accent: "emerald",
       },
-    ],
-    [audience.label, totals.averageCheck, totals.customers, totals.revenue, totals.transactions],
-  );
+      {
+        key: "top_age",
+        label: "Ядро аудитории",
+        value: topAge ? `${topAge} лет` : "—",
+        hint: "Пик покупательской активности",
+        icon: <BarChart3 size={18} />,
+        accent: "amber",
+      },
+    ];
+  }, [normalizedGenderData, totals.customers, data?.age]);
 
   const ChartSkeletonBlock = ({ columns = 8, tall = false }: { columns?: number; tall?: boolean }) => (
     <div className="chart-skeleton" style={{ overflow: 'hidden', isolation: 'isolate' }}>

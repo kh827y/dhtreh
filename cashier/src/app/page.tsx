@@ -22,14 +22,23 @@ type QuoteEarnResp = {
 
 type Txn = {
   id: string;
-  type: 'EARN' | 'REDEEM' | 'REFUND' | 'ADJUST';
-  amount: number;
+  mode: 'PURCHASE' | 'REFUND' | 'TXN';
+  type: 'EARN' | 'REDEEM' | 'REFUND' | 'ADJUST' | null;
+  amount: number | null;
   orderId?: string | null;
   receiptNumber?: string | null;
   createdAt: string;
   outletId?: string | null;
+  outletName?: string | null;
   outletPosType?: string | null;
   outletLastSeenAt?: string | null;
+  purchaseAmount?: number | null;
+  earnApplied?: number | null;
+  redeemApplied?: number | null;
+  refundEarn?: number | null;
+  refundRedeem?: number | null;
+  staffName?: string | null;
+  customerName?: string | null;
 };
 
 type CashierSessionInfo = {
@@ -104,6 +113,16 @@ type RefundHistoryItem = {
   createdAt: string;
   amount: number;
   receiptNumber?: string | null;
+};
+
+type RefundPreview = {
+  receiptId: string;
+  orderId: string | null;
+  receiptNumber: string | null;
+  customerName: string | null;
+  purchaseAmount: number;
+  pointsToRestore: number;
+  pointsToRevoke: number;
 };
 
 type RawLeaderboardItem = {
@@ -311,7 +330,9 @@ export default function Page() {
   const [scanOpen, setScanOpen] = useState(false);
 
   const [refundReceiptNumber, setRefundReceiptNumber] = useState<string>('');
-  const [refundTotal, setRefundTotal] = useState<number>(0);
+  const [refundPreview, setRefundPreview] = useState<RefundPreview | null>(null);
+  const [refundBusy, setRefundBusy] = useState(false);
+  const [refundError, setRefundError] = useState<string>('');
 
   const [history, setHistory] = useState<Txn[]>([]);
   const [histBusy, setHistBusy] = useState(false);
@@ -370,6 +391,7 @@ export default function Page() {
   const [leaderboardOutletFilter, setLeaderboardOutletFilter] = useState<string | null>(null);
   const [ratingInfoOpen, setRatingInfoOpen] = useState(false);
   const [refundHistory, setRefundHistory] = useState<RefundHistoryItem[]>([]);
+  const [allowSameReceipt, setAllowSameReceipt] = useState(false);
 
   const [manualTokenInput, setManualTokenInput] = useState('');
 
@@ -1013,13 +1035,13 @@ export default function Page() {
   const loadHistory = async (reset = false) => {
     if (histBusy) return;
     const activeMerchantId = session?.merchantId || merchantId;
-    if (!activeMerchantId || !customerId) return;
+    const outletId = session?.outlet?.id || null;
+    if (!activeMerchantId || !outletId) return;
     setHistBusy(true);
     try {
-      const url = new URL(`${API_BASE}/loyalty/transactions`);
+      const url = new URL(`${API_BASE}/loyalty/cashier/outlet-transactions`);
       url.searchParams.set('merchantId', activeMerchantId);
-      url.searchParams.set('customerId', customerId);
-      if (overview.customerId) url.searchParams.set('customerId', overview.customerId);
+      url.searchParams.set('outletId', outletId);
       url.searchParams.set('limit', '20');
       if (!reset && histNextBefore) url.searchParams.set('before', histNextBefore);
       const r = await fetch(url.toString(), { credentials: 'include' });
@@ -1029,15 +1051,16 @@ export default function Page() {
       }
       const data = await r.json();
       const items: Txn[] = Array.isArray(data.items) ? data.items : [];
+      setAllowSameReceipt(Boolean(data.allowSameReceipt));
       setHistory((old) => (reset ? items : [...old, ...items]));
       setHistNextBefore(typeof data.nextBefore === 'string' ? data.nextBefore : null);
       if (reset) {
         const refunds = items
-          .filter((i) => i.type === 'REFUND')
+          .filter((i) => i.mode === 'REFUND')
           .map((i) => ({
             id: i.id,
             createdAt: i.createdAt,
-            amount: i.amount,
+            amount: i.refundRedeem ?? i.amount ?? 0,
             receiptNumber: i.receiptNumber ?? null,
           }));
         setRefundHistory(refunds);
@@ -1054,28 +1077,114 @@ export default function Page() {
     setHistory([]);
     setRefundHistory([]);
     setHistNextBefore(null);
-  }, [customerId, session?.merchantId, merchantId]);
+  }, [session?.outlet?.id, session?.merchantId, merchantId]);
+
+  const loadRefundPreview = async () => {
+    if (!session) {
+      alert('Сначала авторизуйтесь в кассире.');
+      return;
+    }
+    const code = refundReceiptNumber.trim();
+    if (!code) {
+      setRefundError('Укажите номер чека или ID операции');
+      setRefundPreview(null);
+      return;
+    }
+    const activeMerchantId = session?.merchantId || merchantId;
+    const outletId = session?.outlet?.id || null;
+    if (!outletId) {
+      setRefundError('Нет выбранной торговой точки');
+      setRefundPreview(null);
+      return;
+    }
+    setRefundBusy(true);
+    setRefundError('');
+    setRefundPreview(null);
+    try {
+      let found: Txn | null = null;
+      let nextBefore: string | null = null;
+      // Поиск чека по истории точки (несколько страниц на всякий случай)
+      for (let page = 0; page < 5 && !found; page += 1) {
+        const url = new URL(`${API_BASE}/loyalty/cashier/outlet-transactions`);
+        url.searchParams.set('merchantId', activeMerchantId);
+        url.searchParams.set('outletId', outletId);
+        url.searchParams.set('limit', '50');
+        if (nextBefore) url.searchParams.set('before', nextBefore);
+        const r = await fetch(url.toString(), { credentials: 'include' });
+        if (!r.ok) {
+          const text = await r.text();
+          throw new Error(text || r.statusText);
+        }
+        const data = await r.json();
+        const items: Txn[] = Array.isArray(data.items) ? data.items : [];
+        found =
+          items.find(
+            (i) =>
+              i.mode === 'PURCHASE' &&
+              (i.receiptNumber === code || (i.orderId ?? '').trim() === code),
+          ) ?? null;
+        if (found) break;
+        nextBefore =
+          typeof data.nextBefore === 'string' && data.nextBefore
+            ? data.nextBefore
+            : null;
+        if (!nextBefore) break;
+      }
+      if (!found) {
+        setRefundError('Чек с таким номером или ID операции не найден');
+        setRefundPreview(null);
+        return;
+      }
+      const purchaseAmount = found.purchaseAmount ?? 0;
+      const pointsToRestore = Math.max(0, found.redeemApplied ?? 0);
+      const pointsToRevoke = Math.max(0, found.earnApplied ?? 0);
+      setRefundPreview({
+        receiptId: found.id,
+        orderId: found.orderId ?? null,
+        receiptNumber: found.receiptNumber ?? null,
+        customerName: found.customerName ?? null,
+        purchaseAmount,
+        pointsToRestore,
+        pointsToRevoke,
+      });
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      setRefundError(message || 'Не удалось получить данные по чеку');
+      setRefundPreview(null);
+    } finally {
+      setRefundBusy(false);
+    }
+  };
 
   const doRefund = async () => {
     if (!session) {
       alert('Сначала авторизуйтесь в кассире.');
       return;
     }
-    const receipt = refundReceiptNumber.trim();
-    if (!receipt || refundTotal <= 0) {
-      alert('Укажи номер чека и сумму возврата (>0)');
+    const code = refundReceiptNumber.trim();
+    if (!code) {
+      setRefundError('Укажите номер чека или ID операции');
       return;
     }
+    const preview = refundPreview;
+    if (!preview) {
+      await loadRefundPreview();
+      if (!refundPreview) return;
+    }
+    const effective = preview ?? refundPreview!;
+    const activeMerchantId = session?.merchantId || merchantId;
+    setRefundBusy(true);
+    setRefundError('');
     try {
-      const activeMerchantId = session?.merchantId || merchantId;
       const r = await fetch(`${API_BASE}/loyalty/refund`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           merchantId: activeMerchantId,
-          receiptNumber: receipt,
-          refundTotal,
+          invoice_num: effective.orderId || code,
+          order_id: effective.orderId || undefined,
+          receiptNumber: effective.receiptNumber || code,
         }),
       });
       if (!r.ok) throw new Error(await r.text());
@@ -1083,27 +1192,15 @@ export default function Page() {
       if (typeof data?.customerId === 'string') {
         setCustomerId(data.customerId);
       }
-      const sharePercent =
-        typeof data?.share === 'number'
-          ? ((data.share * 100).toFixed(1) as string)
-          : '—';
-      const restored =
-        typeof data?.pointsRestored === 'number'
-          ? String(data.pointsRestored)
-          : '—';
-      const revoked =
-        typeof data?.pointsRevoked === 'number'
-          ? String(data.pointsRevoked)
-          : '—';
       setRefundReceiptNumber('');
-      setRefundTotal(0);
-      alert(
-        `Возврат выполнен. доля=${sharePercent}%, восстановлено ${restored}, списано ${revoked}`,
-      );
+      setRefundPreview(null);
       loadHistory(true);
+      alert('Возврат выполнен. Баллы пересчитаны.');
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
-      alert('Ошибка refund: ' + message);
+      setRefundError(message || 'Ошибка возврата');
+    } finally {
+      setRefundBusy(false);
     }
   };
 
@@ -1627,63 +1724,172 @@ export default function Page() {
     </div>
   );
 
-  const renderHistoryTab = () => (
-    <div className="flex-1 overflow-y-auto px-6 pb-32">
-      <div className="mt-6 space-y-4">
-        <button
-          onClick={() => loadHistory(true)}
-          disabled={histBusy || !customerId}
-          className="w-full rounded-full bg-slate-800 py-3 text-sm font-semibold text-white disabled:opacity-40"
-        >
-          Загрузить историю
-        </button>
-        {!customerId && (
-          <div className="text-xs text-slate-500">
-            Отсканируйте клиента, чтобы посмотреть историю операций.
+  const renderHistoryTab = () => {
+    const outletName =
+      session?.outlet?.name || session?.outlet?.id || 'ваша торговая точка';
+    return (
+      <div className="flex-1 overflow-y-auto px-6 pb-32">
+        <div className="mt-6 space-y-4">
+          <div className="rounded-3xl bg-slate-800/60 p-4 text-sm text-slate-300">
+            История операций по точке: <span className="text-white">{outletName}</span>
           </div>
-        )}
-        <div className="space-y-4">
-          {history.map((item) => {
-            const isEarn = item.type === 'EARN';
-            const isRedeem = item.type === 'REDEEM';
-            const isRefund = item.type === 'REFUND';
-            const color = isEarn ? 'text-emerald-300' : isRedeem ? 'text-orange-300' : 'text-slate-300';
-            const sign = item.amount > 0 ? '+' : '';
-            return (
-              <div key={item.id} className="space-y-2 border-b border-slate-800 pb-3">
-                <div className="flex items-center justify-between text-sm text-slate-400">
-                  <span>{formatDateTime(item.createdAt)}</span>
-                  <span className="text-slate-500">{item.outletId || '—'}</span>
-                </div>
-                <div className="text-xs uppercase tracking-widest text-slate-500">{item.type}</div>
-                <div className={`text-base font-semibold ${color}`}>
-                  {sign}{item.amount} ₽
-                </div>
-                <div className="text-xs text-slate-500">
-                  {item.receiptNumber ? `Чек ${item.receiptNumber}` : 'Чек не указан'}
-                </div>
-                <div className="text-xs text-slate-500">
-                  {isEarn && `Клиенту начислено ${Math.abs(item.amount)} ☆`}
-                  {isRedeem && `С клиента списано ${Math.abs(item.amount)} ☆`}
-                  {isRefund && `Возврат ${Math.abs(item.amount)} ₽`}
-                </div>
-              </div>
-            );
-          })}
-          {!history.length && <div className="text-sm text-slate-400">Нет операций</div>}
-          {histNextBefore && (
-            <button
-              onClick={() => loadHistory(false)}
-              disabled={histBusy}
-              className="w-full rounded-full border border-slate-700 py-3 text-sm font-semibold text-white disabled:opacity-40"
-            >
-              Показать ещё
-            </button>
+          <button
+            onClick={() => loadHistory(true)}
+            disabled={histBusy || !session?.outlet?.id}
+            className="w-full rounded-full bg-slate-800 py-3 text-sm font-semibold text-white disabled:opacity-40"
+          >
+            Загрузить историю
+          </button>
+          {!session?.outlet?.id && (
+            <div className="text-xs text-slate-500">
+              История станет доступна после выбора торговой точки.
+            </div>
           )}
+          <div className="space-y-4">
+            {history.map((item) => {
+              const isPurchase = item.mode === 'PURCHASE';
+              const isRefund = item.mode === 'REFUND';
+              const isTx = item.mode === 'TXN';
+              const isEarn = item.type === 'EARN';
+              const isRedeem = item.type === 'REDEEM';
+              const typeLabel = isPurchase
+                ? 'Покупка'
+                : isRefund
+                  ? 'Возврат'
+                  : isEarn
+                    ? 'Начисление'
+                    : isRedeem
+                      ? 'Списание'
+                      : item.type || 'Операция';
+              const color =
+                isPurchase || isEarn
+                  ? 'text-emerald-300'
+                  : isRefund || isRedeem
+                    ? 'text-orange-300'
+                    : 'text-slate-100';
+              const bg =
+                isPurchase || isEarn
+                  ? 'bg-emerald-500/10'
+                  : isRefund || isRedeem
+                    ? 'bg-orange-500/10'
+                    : 'bg-slate-700/50';
+              const amount = item.amount ?? 0;
+              const topAmount = isPurchase || isRefund
+                ? item.purchaseAmount ?? amount
+                : amount;
+              const sign = isPurchase || isRefund ? '' : topAmount > 0 ? '+' : '';
+
+              return (
+                <div
+                  key={item.id}
+                  className="space-y-3 rounded-3xl bg-slate-900/60 border border-slate-800 p-4"
+                >
+                  <div className="flex items-center justify-between text-sm text-slate-400">
+                    <span>{formatDateTime(item.createdAt)}</span>
+                    <span className="text-xs text-slate-500">
+                      {item.receiptNumber ? `Чек ${item.receiptNumber}` : 'Чек не указан'}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div
+                      className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${bg} ${color}`}
+                    >
+                      {typeLabel}
+                    </div>
+                    <div
+                      className={`text-base font-semibold ${
+                        isPurchase ? 'text-white' : color
+                      }`}
+                    >
+                      {sign}
+                      {formatCurrency(Math.abs(topAmount))}
+                    </div>
+                  </div>
+
+                  {(isPurchase || isRefund) && (() => {
+                    const redeemVal = Math.abs(
+                      isRefund
+                        ? item.refundRedeem ?? 0
+                        : item.redeemApplied ?? 0,
+                    );
+                    const earnVal = Math.abs(
+                      isRefund ? item.refundEarn ?? 0 : item.earnApplied ?? 0,
+                    );
+                    const sections: Array<{
+                      label: string;
+                      value: number;
+                      colorClass: string;
+                    }> = [];
+                    if (redeemVal > 0) {
+                      sections.push({
+                        label: isRefund ? 'Возврат списаний' : 'Списано баллов',
+                        value: redeemVal,
+                        colorClass: 'text-orange-200',
+                      });
+                    }
+                    if (earnVal > 0) {
+                      sections.push({
+                        label: isRefund ? 'Возврат начислений' : 'Начислено баллов',
+                        value: earnVal,
+                        colorClass: 'text-emerald-200',
+                      });
+                    }
+                    if (!sections.length) return null;
+                    return (
+                      <div className="grid grid-cols-2 gap-3 text-xs text-slate-400">
+                        {sections.map((section) => (
+                          <div key={section.label}>
+                            <div className="text-slate-500">{section.label}</div>
+                            <div className={section.colorClass}>
+                              {formatPoints(section.value)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+
+                  {isTx && (
+                    <div className="text-xs text-slate-500 space-y-1">
+                      {isEarn && amount !== 0 && (
+                        <div>Начислено {formatPoints(Math.abs(amount))} баллов</div>
+                      )}
+                      {isRedeem && amount !== 0 && (
+                        <div>Списано {formatPoints(Math.abs(amount))} баллов</div>
+                      )}
+                      {item.type === 'REFUND' && amount !== 0 && (
+                        <div>Возврат на {formatPoints(Math.abs(amount))} баллов</div>
+                      )}
+                    </div>
+                  )}
+
+                  {(item.staffName || item.customerName) && (
+                    <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/60 mt-2">
+                      <span>Сотрудник: {item.staffName || '—'}</span>
+                      <span>Клиент: {item.customerName || '—'}</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {!history.length && (
+              <div className="text-sm text-slate-400">Нет операций по этой точке.</div>
+            )}
+            {histNextBefore && (
+              <button
+                onClick={() => loadHistory(false)}
+                disabled={histBusy}
+                className="w-full rounded-full border border-slate-700 py-3 text-sm font-semibold text-white disabled:opacity-40"
+              >
+                Показать ещё
+              </button>
+            )}
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderRatingTab = () => {
     const filterActive = Boolean(leaderboardOutletFilter);
@@ -1808,37 +2014,93 @@ export default function Page() {
       <div className="mt-6 space-y-6">
         <div className="rounded-3xl bg-slate-800/70 p-6 space-y-4">
           <div className="text-sm text-slate-300">Оформить возврат по чеку</div>
-          <input
-            value={refundReceiptNumber}
-            onChange={(e) => setRefundReceiptNumber(e.target.value)}
-            placeholder="Номер чека"
-            className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-          />
-          <input
-            type="number"
-            value={refundTotal ? String(refundTotal) : ''}
-            onChange={(e) => setRefundTotal(Number(e.target.value))}
-            placeholder="Сумма возврата"
-            className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-          />
-          <button
-            onClick={doRefund}
-            className="w-full rounded-full bg-emerald-500 py-3 text-sm font-semibold text-slate-900"
-          >
-            Оформить возврат
-          </button>
+          <div className="space-y-2">
+            <label className="text-sm text-slate-300">Номер чека или ID операции</label>
+            <input
+              value={refundReceiptNumber}
+              onChange={(e) => {
+                setRefundReceiptNumber(e.target.value);
+                setRefundPreview(null);
+                setRefundError('');
+              }}
+              placeholder="Например, 123456 или O-123"
+              className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+          </div>
+          {refundError && <div className="text-sm text-red-400">{refundError}</div>}
+          <div className="flex gap-3">
+            <button
+              onClick={() => {
+                setRefundReceiptNumber('');
+                setRefundPreview(null);
+                setRefundError('');
+              }}
+              className="flex-1 rounded-full border border-slate-600 py-3 text-sm font-semibold text-slate-300"
+            >
+              Отмена
+            </button>
+            <button
+              onClick={loadRefundPreview}
+              disabled={refundBusy || !refundReceiptNumber.trim()}
+              className="flex-1 rounded-full bg-emerald-500 py-3 text-sm font-semibold text-slate-900 disabled:opacity-40"
+            >
+              Найти чек
+            </button>
+          </div>
         </div>
-        <div className="space-y-4">
-          <h3 className="text-sm text-slate-300">История возвратов</h3>
-          {refundHistory.map((item) => (
-            <div key={item.id} className="rounded-3xl bg-slate-800/60 p-4 space-y-1">
-              <div className="text-sm text-slate-400">{formatDateTime(item.createdAt)}</div>
-              <div className="text-base font-semibold text-orange-300">Возврат {formatCurrency(Math.abs(item.amount))}</div>
-              <div className="text-xs text-slate-500">Чек {item.receiptNumber || '—'}</div>
+
+        {refundPreview && (
+          <div className="rounded-3xl bg-slate-800/70 p-6 space-y-4">
+            <div className="text-sm text-slate-300">Подтвердите возврат</div>
+            <div className="space-y-2 text-sm text-slate-300">
+              <div className="flex items-center justify-between">
+                <span>Клиент</span>
+                <span className="font-semibold text-white">
+                  {refundPreview.customerName || '—'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Сумма покупки</span>
+                <span className="font-semibold text-white">
+                  {formatCurrency(refundPreview.purchaseAmount)}
+                </span>
+              </div>
+              {refundPreview.pointsToRestore > 0 && (
+                <div className="flex items-center justify-between">
+                  <span>Вернём списанные баллы</span>
+                  <span className="font-semibold text-emerald-300">
+                    {formatPoints(refundPreview.pointsToRestore)} баллов
+                  </span>
+                </div>
+              )}
+              {refundPreview.pointsToRevoke > 0 && (
+                <div className="flex items-center justify-between">
+                  <span>Спишем начисленные баллы</span>
+                  <span className="font-semibold text-orange-300">
+                    {formatPoints(refundPreview.pointsToRevoke)} баллов
+                  </span>
+                </div>
+              )}
             </div>
-          ))}
-          {!refundHistory.length && <div className="text-sm text-slate-400">Пока нет возвратов.</div>}
-        </div>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => {
+                  setRefundPreview(null);
+                }}
+                className="flex-1 rounded-full border border-slate-600 py-3 text-sm font-semibold text-slate-300"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={doRefund}
+                disabled={refundBusy}
+                className="flex-1 rounded-full bg-emerald-500 py-3 text-sm font-semibold text-slate-900 disabled:opacity-40"
+              >
+                Подтвердить
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

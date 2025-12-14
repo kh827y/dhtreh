@@ -4,34 +4,9 @@ import { useRouter } from "next/navigation";
 import { Card, CardHeader, CardBody, Button } from "@loyalty/ui";
 import Toggle from "../../../components/Toggle";
 
-type TabKey = "BASIC" | "SCHEDULE" | "INTEGRATIONS";
-
-type DaySchedule = {
-  id: string;
-  label: string;
-  enabled: boolean;
-  from: string;
-  to: string;
-};
-
-const TIMEZONES = [
-  "UTC+03:00 Москва",
-  "UTC+04:00 Самара",
-  "UTC+05:00 Екатеринбург",
-  "UTC+07:00 Новосибирск",
-];
+type TabKey = "BASIC" | "INTEGRATIONS";
 
 const DEVICE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{1,63}$/;
-
-const createDefaultSchedule = (): DaySchedule[] => [
-  { id: "mon", label: "Пн", enabled: true, from: "10:00", to: "22:00" },
-  { id: "tue", label: "Вт", enabled: true, from: "10:00", to: "22:00" },
-  { id: "wed", label: "Ср", enabled: true, from: "10:00", to: "22:00" },
-  { id: "thu", label: "Чт", enabled: true, from: "10:00", to: "22:00" },
-  { id: "fri", label: "Пт", enabled: true, from: "10:00", to: "23:00" },
-  { id: "sat", label: "Сб", enabled: true, from: "11:00", to: "23:00" },
-  { id: "sun", label: "Вс", enabled: false, from: "11:00", to: "21:00" },
-];
 
 export default function CreateOutletPage() {
   const router = useRouter();
@@ -39,20 +14,13 @@ export default function CreateOutletPage() {
   const [toast, setToast] = React.useState("");
 
   const [works, setWorks] = React.useState(true);
-  const [hidden, setHidden] = React.useState(false);
   const [name, setName] = React.useState("Тили-Тесто, Московской 56");
-  const [description, setDescription] = React.useState("Вход со стороны двора, рядом парковка");
-  const [phone, setPhone] = React.useState("+7 (913) 000-00-00");
-  const [address, setAddress] = React.useState("Новосибирск, ул. Московская, 56");
-  const [manualMarker, setManualMarker] = React.useState(false);
-  const [adminEmails, setAdminEmails] = React.useState("manager@example.com");
+  const [reviewLinks, setReviewLinks] = React.useState<{ yandex: string; twogis: string; google: string }>({
+    yandex: "",
+    twogis: "",
+    google: "",
+  });
   const [basicError, setBasicError] = React.useState("");
-
-  const [timezone, setTimezone] = React.useState(TIMEZONES[3]);
-  const [showSchedule, setShowSchedule] = React.useState(true);
-  const [mode, setMode] = React.useState<"24/7" | "custom">("custom");
-  const [schedule, setSchedule] = React.useState<DaySchedule[]>(createDefaultSchedule);
-  const [scheduleMessage, setScheduleMessage] = React.useState("");
 
   const [devices, setDevices] = React.useState<Array<{ code: string }>>([]);
   const [deviceErrors, setDeviceErrors] = React.useState<Record<string, string>>({});
@@ -63,23 +31,6 @@ export default function CreateOutletPage() {
     const timer = window.setTimeout(() => setToast(""), 3200);
     return () => window.clearTimeout(timer);
   }, [toast]);
-
-  const switchMode = (value: "24/7" | "custom") => {
-    setMode(value);
-    if (value === "24/7") {
-      setSchedule((prev) => prev.map((day) => ({ ...day, enabled: true, from: "00:00", to: "23:59" })));
-    } else {
-      setSchedule(createDefaultSchedule());
-    }
-  };
-
-  const updateDay = (id: string, patch: Partial<DaySchedule>) => {
-    setSchedule((prev) => prev.map((day) => (day.id === id ? { ...day, ...patch } : day)));
-  };
-
-  const toggleDay = (id: string, enabled: boolean) => {
-    setSchedule((prev) => prev.map((day) => (day.id === id ? { ...day, enabled } : day)));
-  };
 
   const addDeviceRow = () => {
     if (devices.length >= 50) {
@@ -108,23 +59,7 @@ export default function CreateOutletPage() {
       setBasicError("Заполните название торговой точки");
       return false;
     }
-    if (!address.trim()) {
-      setBasicError("Укажите адрес точки");
-      return false;
-    }
     setBasicError("");
-    return true;
-  };
-
-  const handleSaveSchedule = () => {
-    if (mode === "custom") {
-      const hasEnabledDay = schedule.some((day) => day.enabled);
-      if (!hasEnabledDay) {
-        setScheduleMessage("Включите хотя бы один рабочий день");
-        return false;
-      }
-    }
-    setScheduleMessage("");
     return true;
   };
 
@@ -166,8 +101,6 @@ export default function CreateOutletPage() {
   const submitCreate = async () => {
     const okBasic = handleSaveBasic();
     if (!okBasic) return;
-    const okSchedule = handleSaveSchedule();
-    if (!okSchedule) return;
     const normalizedDevices = validateDevices();
     if (normalizedDevices === null) {
       setTab("INTEGRATIONS");
@@ -175,34 +108,17 @@ export default function CreateOutletPage() {
     }
 
     // Build payload
-    const adminList = adminEmails
-      .split(',')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-    const dayIndex: Record<string, number> = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
     const payload: any = {
       works,
-      hidden,
       name: name.trim(),
-      description: description.trim() || null,
-      phone: phone.trim() || null,
-      address: address.trim(),
-      adminEmails: adminList,
-      timezone,
+      reviewsShareLinks: {
+        yandex: reviewLinks.yandex.trim() || null,
+        twogis: reviewLinks.twogis.trim() || null,
+        google: reviewLinks.google.trim() || null,
+      },
     };
     if (normalizedDevices.length) {
       payload.devices = normalizedDevices;
-    }
-    if (showSchedule) {
-      payload.schedule = {
-        mode: mode === '24/7' ? '24_7' : 'CUSTOM',
-        days: schedule.map((d) => ({
-          day: String(dayIndex[d.id] ?? 0),
-          enabled: !!d.enabled,
-          opensAt: d.enabled ? d.from : null,
-          closesAt: d.enabled ? d.to : null,
-        })),
-      };
     }
 
     try {
@@ -257,10 +173,7 @@ export default function CreateOutletPage() {
             <button type="button" className={`btn ${tab === "BASIC" ? "btn-primary" : "btn-ghost"}`} onClick={() => setTab("BASIC")}>
               Основное
             </button>
-            <button type="button" className={`btn ${tab === "SCHEDULE" ? "btn-primary" : "btn-ghost"}`} onClick={() => setTab("SCHEDULE")}>
-              Режим работы
-            </button>
-            <button type="button" className={`btn ${tab === "INTEGRATIONS" ? "btn-primary" : "btn-ghost"}`} onClick={() => setTab("INTEGRATIONS") }>
+            <button type="button" className={`btn ${tab === "INTEGRATIONS" ? "btn-primary" : "btn-ghost"}`} onClick={() => setTab("INTEGRATIONS")}>
               Интеграции
             </button>
           </div>
@@ -269,10 +182,9 @@ export default function CreateOutletPage() {
 
       {tab === "BASIC" && (
         <Card>
-          <CardHeader title="Основное" subtitle="Название, контакты и адрес" />
+          <CardHeader title="Основное" subtitle="Статус, название и ссылки на карточки отзывов" />
           <CardBody style={{ display: "grid", gap: 16 }}>
             <Toggle checked={works} onChange={setWorks} label="Работает" />
-            <Toggle checked={hidden} onChange={setHidden} label="Скрыть торговую точку от клиентов" />
 
             <label style={{ display: "grid", gap: 6 }}>
               <span style={{ fontSize: 12, opacity: 0.7 }}>Название *</span>
@@ -284,53 +196,39 @@ export default function CreateOutletPage() {
               />
             </label>
 
-            <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontSize: 12, opacity: 0.7 }}>Описание</span>
-              <textarea
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                rows={3}
-                placeholder="Как добраться, особенности парковки и входа"
-                style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit", resize: "vertical" }}
-              />
-            </label>
-
-            <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontSize: 12, opacity: 0.7 }}>Контактный телефон</span>
-              <input
-                value={phone}
-                onChange={(event) => setPhone(event.target.value)}
-                placeholder="+7 (999) 000-00-00"
-                style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
-              />
-            </label>
-
-            <div style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontSize: 12, opacity: 0.7 }}>Адрес *</span>
-              <input
-                value={address}
-                onChange={(event) => setAddress(event.target.value)}
-                placeholder="Начните вводить адрес и выберите подсказку"
-                style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
-              />
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <Button variant="secondary" onClick={() => setManualMarker((prev) => !prev)}>
-                  {manualMarker ? "Маркер установлен" : "Поставить маркер вручную"}
-                </Button>
-                {manualMarker && <span style={{ fontSize: 12, opacity: 0.7 }}>Перетащите маркер на карте (демо)</span>}
+            <div className="glass" style={{ padding: 16, borderRadius: 12, display: "grid", gap: 12 }}>
+              <div style={{ fontWeight: 600 }}>Ссылки на карточки отзывов</div>
+              <div style={{ fontSize: 12, opacity: 0.75 }}>
+                Эти ссылки используются в мини-аппе, чтобы предлагать гостям поделиться отзывом после высокой оценки.
               </div>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={{ fontSize: 12, opacity: 0.7 }}>Яндекс.Карты</span>
+                <input
+                  value={reviewLinks.yandex}
+                  onChange={(event) => setReviewLinks((prev) => ({ ...prev, yandex: event.target.value }))}
+                  placeholder="https://yandex.ru/maps/..."
+                  style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
+                />
+              </label>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={{ fontSize: 12, opacity: 0.7 }}>2ГИС</span>
+                <input
+                  value={reviewLinks.twogis}
+                  onChange={(event) => setReviewLinks((prev) => ({ ...prev, twogis: event.target.value }))}
+                  placeholder="https://2gis.ru/..."
+                  style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
+                />
+              </label>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={{ fontSize: 12, opacity: 0.7 }}>Google</span>
+                <input
+                  value={reviewLinks.google}
+                  onChange={(event) => setReviewLinks((prev) => ({ ...prev, google: event.target.value }))}
+                  placeholder="https://maps.google.com/..."
+                  style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
+                />
+              </label>
             </div>
-
-            <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontSize: 12, opacity: 0.7 }}>Почта администратора</span>
-              <input
-                value={adminEmails}
-                onChange={(event) => setAdminEmails(event.target.value)}
-                placeholder="email@example.com, second@example.com"
-                style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
-              />
-              <span style={{ fontSize: 12, opacity: 0.6 }}>Можно указать несколько адресов через запятую — уведомления не увидят клиенты.</span>
-            </label>
 
             {basicError && <div style={{ color: "#f87171", fontSize: 13 }}>{basicError}</div>}
 
@@ -342,96 +240,10 @@ export default function CreateOutletPage() {
         </Card>
       )}
 
-      {tab === "SCHEDULE" && (
-        <Card>
-          <CardHeader title="Режим работы" subtitle="Часовой пояс и график" />
-          <CardBody style={{ display: "grid", gap: 16 }}>
-            <label style={{ display: "grid", gap: 6, maxWidth: 320 }}>
-              <span style={{ fontSize: 12, opacity: 0.7 }}>Часовой пояс</span>
-              <select
-                value={timezone}
-                onChange={(event) => setTimezone(event.target.value)}
-                style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
-              >
-                {TIMEZONES.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <Toggle checked={showSchedule} onChange={setShowSchedule} label="Отображать расписание" />
-
-            {showSchedule && (
-              <div className="glass" style={{ padding: 16, borderRadius: 12, display: "grid", gap: 12 }}>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button type="button" className={`btn ${mode === "24/7" ? "btn-primary" : "btn-ghost"}`} onClick={() => switchMode("24/7")}>
-                    Работает круглосуточно
-                  </button>
-                  <button type="button" className={`btn ${mode === "custom" ? "btn-primary" : "btn-ghost"}`} onClick={() => switchMode("custom")}>
-                    Задать расписание по дням
-                  </button>
-                </div>
-
-                {mode === "custom" && (
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {schedule.map((day) => (
-                      <div key={day.id} className="glass" style={{ padding: 12, borderRadius: 12, display: "grid", gap: 8 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                          <div style={{ fontWeight: 600 }}>{day.label}</div>
-                          <Toggle checked={day.enabled} onChange={(value) => toggleDay(day.id, value)} label={day.enabled ? "Рабочий" : "Выходной"} />
-                        </div>
-                        {day.enabled && (
-                          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                            <label style={{ display: "grid", gap: 4 }}>
-                              <span style={{ fontSize: 12, opacity: 0.7 }}>С</span>
-                              <input
-                                type="time"
-                                value={day.from}
-                                onChange={(event) => updateDay(day.id, { from: event.target.value })}
-                                style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
-                              />
-                            </label>
-                            <label style={{ display: "grid", gap: 4 }}>
-                              <span style={{ fontSize: 12, opacity: 0.7 }}>По</span>
-                              <input
-                                type="time"
-                                value={day.to}
-                                onChange={(event) => updateDay(day.id, { to: event.target.value })}
-                                style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
-                              />
-                            </label>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-              <Button variant="ghost" onClick={() => router.push("/outlets")}>Отменить</Button>
-              <Button variant="primary" onClick={submitCreate}>Создать точку</Button>
-            </div>
-            {scheduleMessage && <div style={{ color: scheduleMessage.includes("сохранено") ? "#4ade80" : "#f87171" }}>{scheduleMessage}</div>}
-          </CardBody>
-        </Card>
-      )}
-
       {tab === "INTEGRATIONS" && (
         <Card>
-          <CardHeader title="Интеграции" subtitle="Устройства для подключения POS и плагинов" />
+          <CardHeader title="Устройства" />
           <CardBody style={{ display: "grid", gap: 16 }}>
-            <div className="glass" style={{ padding: 16, borderRadius: 12, display: "grid", gap: 6 }}>
-              <div style={{ fontWeight: 600 }}>Устройства</div>
-              <div style={{ fontSize: 12, opacity: 0.8 }}>
-                Установите произвольный идентификатор устройства. Он будет использоваться для подключения к устройству,
-                а также в аналитике, журнале операций и тд.
-              </div>
-            </div>
-
             <div style={{ display: "grid", gap: 12 }}>
               {devices.map((device, index) => {
                 const key = `d${index}`;
@@ -439,11 +251,11 @@ export default function CreateOutletPage() {
                 return (
                   <div key={key} className="glass" style={{ padding: 12, borderRadius: 12, display: "grid", gap: 10 }}>
                     <label style={{ display: "grid", gap: 6 }}>
-                      <span style={{ fontSize: 12, opacity: 0.7 }}>Идентификатор устройства</span>
+                      <span style={{ fontSize: 12, opacity: 0.7 }}>Укажите произвольный идентификатор устройства (допустимы латиница, цифры, точки, дефисы и подчёркивания)</span>
                       <input
                         value={device.code}
                         onChange={(event) => updateDeviceCode(index, event.target.value)}
-                        placeholder="POS-001"
+                        placeholder="POS-1"
                         maxLength={64}
                         style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
                       />
@@ -462,12 +274,9 @@ export default function CreateOutletPage() {
               )}
             </div>
 
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <div style={{ fontSize: 12, opacity: 0.7 }}>Допустимы латиница, цифры, точки, дефисы и подчёркивания. До 50 устройств на точку.</div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <Button variant="ghost" onClick={() => router.push("/outlets")}>Отменить</Button>
-                <Button variant="primary" onClick={submitCreate}>Создать точку</Button>
-              </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+              <Button variant="ghost" onClick={() => router.push("/outlets")}>Отменить</Button>
+              <Button variant="primary" onClick={submitCreate}>Создать точку</Button>
             </div>
             {integrationsMessage && <div style={{ color: "#f87171" }}>{integrationsMessage}</div>}
           </CardBody>

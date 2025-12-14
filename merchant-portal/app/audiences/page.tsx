@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Card, CardHeader, CardBody, Button, Skeleton } from "@loyalty/ui";
 import Toggle from "../../components/Toggle";
@@ -834,6 +835,7 @@ export default function AudiencesPage() {
   const [membersModalMembers, setMembersModalMembers] = React.useState<AudienceMember[]>([]);
   const [outletOptions, setOutletOptions] = React.useState<Option[]>([]);
   const [levelOptions, setLevelOptions] = React.useState<Option[]>([]);
+  const anyModalOpen = Boolean(modalMode || membersModalAudience);
 
   const loadAudiences = React.useCallback(async () => {
     setLoading(true);
@@ -969,8 +971,18 @@ export default function AudiencesPage() {
     setAudienceName('');
     setSettings(defaultSettings);
     setCurrentAudience(null);
-    setMemberSearch('');
   };
+
+  React.useEffect(() => {
+    if (typeof document === "undefined") return;
+    const body = document.body;
+    if (anyModalOpen) {
+      body.classList.add("modal-blur-active");
+    } else {
+      body.classList.remove("modal-blur-active");
+    }
+    return () => body.classList.remove("modal-blur-active");
+  }, [anyModalOpen]);
 
   const handleSubmit = async () => {
     if (!audienceName.trim()) {
@@ -1067,7 +1079,7 @@ export default function AudiencesPage() {
 
       {/* List */}
       <Card>
-        <CardHeader title="Сегменты" />
+        <CardHeader title="Аудитории" />
         <CardBody style={{ padding: 0 }}>
           {loading ? (
             <div style={{ padding: 20 }}><Skeleton height={200} /></div>
@@ -1148,9 +1160,9 @@ export default function AudiencesPage() {
         </CardBody>
       </Card>
 
-        {membersModalAudience && (
+        {membersModalAudience && typeof document !== 'undefined' && createPortal(
           <div className="modal-overlay" onClick={closeMembersModal}>
-            <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(720px, 96vw)', maxHeight: '80vh' }}>
+            <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(720px, 96vw)', maxHeight: '75vh' }}>
               <div className="modal-header">
                 <div>
                   <div style={{ fontSize: 18, fontWeight: 700 }}>{membersModalAudience.name}</div>
@@ -1231,12 +1243,13 @@ export default function AudiencesPage() {
                 )}
               </div>
             </div>
-          </div>
+          </div>,
+          document.body,
         )}
 
-        {modalMode && (
-          <div className="modal-overlay">
-            <div className="modal" style={{ width: 'min(960px, 96vw)', maxHeight: '90vh' }}>
+        {modalMode && typeof document !== 'undefined' && createPortal(
+          <div className="modal-overlay" onClick={closeModal}>
+            <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(960px, 96vw)', maxHeight: '82vh' }}>
               <div className="modal-header">
                 <div>
                   <div style={{ fontSize: 18, fontWeight: 700 }}>{modalMode === 'create' ? 'Создать аудиторию' : audienceName}</div>
@@ -1280,7 +1293,8 @@ export default function AudiencesPage() {
                 </div>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body,
         )}
     </div>
   );

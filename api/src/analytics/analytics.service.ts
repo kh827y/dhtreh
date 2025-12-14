@@ -95,7 +95,7 @@ export interface OperationalMetrics {
   outletUsage: OutletUsageStats[];
 }
 
-type RfmRange = { min: number | null; max: number | null };
+type RfmRange = { min: number | null; max: number | null; count: number };
 type RfmGroupSummary = {
   score: number;
   recency: RfmRange;
@@ -1145,14 +1145,14 @@ export class AnalyticsService {
   }
 
   private buildRange(values: number[]): RfmRange {
-    if (!values.length) return { min: null, max: null };
+    if (!values.length) return { min: null, max: null, count: 0 };
     let min = values[0];
     let max = values[0];
     for (const value of values) {
       if (value < min) min = value;
       if (value > max) max = value;
     }
-    return { min, max };
+    return { min, max, count: values.length };
   }
 
   private computeQuantiles(values: number[]) {

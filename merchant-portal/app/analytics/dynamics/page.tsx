@@ -385,7 +385,6 @@ export default function AnalyticsDynamicsPage() {
             </div>
             <div className="dynamics-title-row">
               <h1 className="dynamics-title">Динамика</h1>
-              <span className="dynamics-chip">Часовой пояс: {timezone.label}</span>
             </div>
             <p className="dynamics-subtitle">
               Динамика выручки, среднего чека и баллов программы лояльности. Видно, где бизнес ускоряется, а где
@@ -471,7 +470,6 @@ export default function AnalyticsDynamicsPage() {
                 <div className="control-label">Свой диапазон</div>
                 <div className="control-hint">Глубокая выборка по нужным датам</div>
               </div>
-              <span className="control-status subtle">UTC привязка к {timezone.label}</span>
             </div>
             <div className="dynamics-date-grid">
               <label className="dynamics-date-field">
