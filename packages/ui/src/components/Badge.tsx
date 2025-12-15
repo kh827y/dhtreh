@@ -14,45 +14,16 @@ export interface BadgeProps {
   style?: React.CSSProperties;
 }
 
-const variantClasses: Record<BadgeVariant, string> = {
-  default: 'badge',
-  success: 'badge badge-success',
-  warning: 'badge badge-warning',
-  danger: 'badge badge-danger',
-  info: 'badge',
-  outline: 'badge badge-outline',
-  secondary: 'badge badge-secondary',
-  primary: 'badge badge-primary',
-};
-
 export function Badge({ 
   children, 
-  variant = 'default', 
-  size = 'md',
-  icon,
-  dot,
   className = '',
   style 
 }: BadgeProps) {
-  const sizeStyles: React.CSSProperties = size === 'sm' 
-    ? { padding: '2px 8px', fontSize: 11 }
-    : {};
-
   return (
     <span 
-      className={`${variantClasses[variant]} ${className}`}
-      style={{ ...sizeStyles, ...style }}
+      className={className}
+      style={style}
     >
-      {dot && (
-        <span style={{
-          width: 6,
-          height: 6,
-          borderRadius: '50%',
-          background: 'currentColor',
-          marginRight: 4
-        }} />
-      )}
-      {icon && <span style={{ display: 'flex', marginRight: 4 }}>{icon}</span>}
       {children}
     </span>
   );

@@ -14,9 +14,11 @@ export function middleware(req: NextRequest) {
   for (const p of pubPaths) if (p.test(pathname)) return NextResponse.next();
   const token = req.cookies.get('portal_jwt')?.value || '';
   if (!token) {
+    const redirect = req.nextUrl.pathname + (req.nextUrl.search || '');
     const url = req.nextUrl.clone();
     url.pathname = '/login';
     url.search = '';
+    url.searchParams.set('redirect', redirect);
     return NextResponse.redirect(url);
   }
   const payloadPart = token.split('.')[1] || '';
@@ -33,15 +35,17 @@ export function middleware(req: NextRequest) {
   }
   if (expired) {
     const refresh = req.cookies.get('portal_refresh')?.value || '';
-    const redirect = encodeURIComponent(req.nextUrl.pathname + (req.nextUrl.search || ''));
+    const redirect = req.nextUrl.pathname + (req.nextUrl.search || '');
     const url = req.nextUrl.clone();
     if (refresh) {
       url.pathname = '/api/session/refresh';
-      url.search = `?redirect=${redirect}`;
+      url.search = '';
+      url.searchParams.set('redirect', redirect);
       return NextResponse.redirect(url);
     }
     url.pathname = '/login';
     url.search = '';
+    url.searchParams.set('redirect', redirect);
     return NextResponse.redirect(url);
   }
   return NextResponse.next();

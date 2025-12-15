@@ -1,6 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
+const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || "").replace(/\/$/, "");
+
+// Helper to safely fetch and parse JSON, returning null on error
+async function safeFetch(url: string, headers: Record<string, string>) {
+  try {
+    const res = await fetch(url, { headers, cache: "no-store" });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -8,50 +19,63 @@ export async function GET(req: NextRequest) {
     if (!token) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    if (!API_BASE) {
+      return NextResponse.json(
+        { error: "Server misconfiguration: NEXT_PUBLIC_API_BASE is not set" },
+        { status: 500 },
+      );
+    }
 
     const headers = { authorization: `Bearer ${token}` };
 
-    // Fetch multiple endpoints in parallel to check setup status
-    const [settingsRes, outletsRes, staffRes, mechanicsRes] = await Promise.all([
-      fetch(`${API_BASE}/portal/settings/system`, { headers }).catch(() => null),
-      fetch(`${API_BASE}/portal/outlets`, { headers }).catch(() => null),
-      fetch(`${API_BASE}/portal/staff`, { headers }).catch(() => null),
-      fetch(`${API_BASE}/portal/loyalty/mechanics`, { headers }).catch(() => null),
+    // Fetch multiple endpoints in parallel - gracefully handle missing endpoints
+    const [settings, outlets, staff, mechanics] = await Promise.all([
+      safeFetch(`${API_BASE}/portal/settings/system`, headers),
+      safeFetch(`${API_BASE}/portal/outlets`, headers),
+      safeFetch(`${API_BASE}/portal/staff`, headers),
+      safeFetch(`${API_BASE}/portal/loyalty/mechanics`, headers),
     ]);
 
-    // Check if loyalty settings are configured
+    // Check if loyalty settings are configured (levels with earnBps/redeemBps)
     let hasLoyaltySettings = false;
-    if (settingsRes?.ok) {
-      const settings = await settingsRes.json().catch(() => null);
-      hasLoyaltySettings = settings?.earnBps > 0 || settings?.redeemBps > 0;
+    if (settings) {
+      // Check if any levels have earn/redeem configured
+      const levels = settings.levels || settings.tiers || [];
+      if (Array.isArray(levels) && levels.length > 0) {
+        hasLoyaltySettings = levels.some((lvl: { earnBps?: number; redeemBps?: number }) => 
+          (lvl.earnBps && lvl.earnBps > 0) || (lvl.redeemBps && lvl.redeemBps > 0)
+        );
+      } else {
+        hasLoyaltySettings = (settings.earnBps && settings.earnBps > 0) || 
+                            (settings.redeemBps && settings.redeemBps > 0);
+      }
     }
 
     // Check if outlets exist
     let hasOutlets = false;
-    if (outletsRes?.ok) {
-      const outlets = await outletsRes.json().catch(() => null);
+    let outletsCount = 0;
+    if (outlets) {
       const outletList = Array.isArray(outlets) ? outlets : outlets?.items || [];
       hasOutlets = outletList.length > 0;
+      outletsCount = outletList.length;
     }
 
     // Check if staff exists
     let hasStaff = false;
-    if (staffRes?.ok) {
-      const staff = await staffRes.json().catch(() => null);
+    let staffCount = 0;
+    if (staff) {
       const staffList = Array.isArray(staff) ? staff : staff?.items || [];
       hasStaff = staffList.length > 0;
+      staffCount = staffList.length;
     }
 
     // Check if any mechanics are enabled
     let hasMechanics = false;
-    if (mechanicsRes?.ok) {
-      const mechanics = await mechanicsRes.json().catch(() => null);
-      if (mechanics) {
-        hasMechanics = mechanics.birthday?.enabled || 
-                       mechanics.referral?.enabled || 
-                       mechanics.autoReturn?.enabled ||
-                       mechanics.welcome?.enabled;
-      }
+    if (mechanics) {
+      hasMechanics = mechanics.birthday?.enabled ||
+                     mechanics.referral?.enabled ||
+                     mechanics.autoReturn?.enabled ||
+                     mechanics.welcome?.enabled;
     }
 
     return NextResponse.json({
@@ -59,18 +83,16 @@ export async function GET(req: NextRequest) {
       hasOutlets,
       hasStaff,
       hasMechanics,
-      hasWallet: false, // Will be checked separately if wallet API exists
-      hasPush: false, // Will be checked separately if push API exists
-    });
-  } catch (err) {
-    console.error("Setup status error:", err);
-    return NextResponse.json({
-      hasLoyaltySettings: false,
-      hasOutlets: false,
-      hasStaff: false,
-      hasMechanics: false,
+      outletsCount,
+      staffCount,
       hasWallet: false,
       hasPush: false,
     });
+  } catch (err) {
+    console.error("Setup status error:", err);
+    return NextResponse.json(
+      { error: "Не удалось загрузить статус настройки" },
+      { status: 502 },
+    );
   }
 }

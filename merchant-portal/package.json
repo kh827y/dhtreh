@@ -10,19 +10,22 @@
     "test": "tsx --test tests/**/*.test.ts"
   },
   "dependencies": {
+    "@loyalty/ui": "workspace:*",
+    "lucide-react": "^0.561.0",
+    "next": "15.5.2",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "next": "15.5.2",
-    "@loyalty/ui": "workspace:*",
-    "lucide-react": "^0.474.0"
+    "recharts": "^3.6.0"
   },
   "devDependencies": {
-    "typescript": "^5",
+    "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "15.5.2",
-    "tsx": "^4.19.2"
+    "tailwindcss": "^4",
+    "tsx": "^4.19.2",
+    "typescript": "^5"
   }
 }

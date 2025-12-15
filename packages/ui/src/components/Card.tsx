@@ -11,14 +11,11 @@ export interface CardProps {
   id?: string;
 }
 
-export function Card({ className = '', style, children, hover, glow, variant = 'default', id }: CardProps) {
-  const variantClass = variant === 'stat' ? 'card-stat' : variant === 'gradient' ? 'border-gradient' : '';
-  const hoverClass = hover ? 'card-hover' : '';
-  const glowClass = glow ? 'glow-primary' : '';
+export function Card({ className = '', style, children, id }: CardProps) {
   return (
     <div 
       id={id}
-      className={`card ${variantClass} ${hoverClass} ${glowClass} ${className}`.trim()} 
+      className={className}
       style={style}
     >
       {children}
@@ -35,40 +32,12 @@ export interface CardHeaderProps {
   icon?: React.ReactNode;
 }
 
-export function CardHeader({ className = '', style, title, subtitle, actions, icon }: CardHeaderProps) {
+export function CardHeader({ className = '', style, title, subtitle, actions }: CardHeaderProps) {
   return (
-    <div 
-      className={`card-header ${className}`} 
-      style={{ 
-        padding: '16px 20px', 
-        borderBottom: '1px solid var(--border-subtle)', 
-        display: 'flex', 
-        alignItems: 'center', 
-        justifyContent: 'space-between',
-        gap: 12,
-        ...(style || {}) 
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
-        {icon && (
-          <div style={{ 
-            width: 40, 
-            height: 40, 
-            borderRadius: 'var(--radius-md)', 
-            background: 'rgba(99, 102, 241, 0.15)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--brand-primary-light)',
-            flexShrink: 0
-          }}>
-            {icon}
-          </div>
-        )}
-        <div style={{ display: 'grid', gap: 2, minWidth: 0 }}>
-          {title && <div className="card-title" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>}
-          {subtitle && <div className="card-muted">{subtitle}</div>}
-        </div>
+    <div className={className} style={style}>
+      <div>
+        {title}
+        {subtitle ? <div>{subtitle}</div> : null}
       </div>
       {actions}
     </div>
@@ -83,7 +52,7 @@ export interface CardBodyProps {
 
 export function CardBody({ className = '', style, children }: CardBodyProps) {
   return (
-    <div className={className} style={{ padding: 20, ...(style || {}) }}>{children}</div>
+    <div className={className} style={style}>{children}</div>
   );
 }
 
@@ -95,14 +64,7 @@ export interface CardFooterProps {
 
 export function CardFooter({ className = '', style, children }: CardFooterProps) {
   return (
-    <div 
-      className={`card-footer ${className}`} 
-      style={{ 
-        padding: '14px 20px', 
-        borderTop: '1px solid var(--border-subtle)', 
-        ...(style || {}) 
-      }}
-    >
+    <div className={className} style={style}>
       {children}
     </div>
   );

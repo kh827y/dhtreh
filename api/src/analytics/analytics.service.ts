@@ -8,7 +8,10 @@ import {
   findTimezone,
 } from '../timezone/russia-timezones';
 import { UpdateRfmSettingsDto } from './dto/update-rfm-settings.dto';
-import { fetchReceiptAggregates } from '../common/receipt-aggregates.util';
+import {
+  fetchReceiptAggregates,
+  type ReceiptAggregateRow,
+} from '../common/receipt-aggregates.util';
 import { AnalyticsAggregatorWorker } from './analytics-aggregator.worker';
 
 export interface DashboardPeriod {
@@ -162,12 +165,30 @@ export interface ReferralSummary {
   registeredViaReferral: number;
   purchasedViaReferral: number;
   referralRevenue: number;
+  bonusesIssued: number;
+  timeline: ReferralTimelinePoint[];
   topReferrers: Array<{
     rank: number;
     name: string;
     customerId: string;
     invited: number;
+    conversions: number;
+    revenue: number;
   }>;
+  previous: ReferralPeriodSnapshot;
+}
+
+export interface ReferralPeriodSnapshot {
+  registeredViaReferral: number;
+  purchasedViaReferral: number;
+  referralRevenue: number;
+  bonusesIssued: number;
+}
+
+export interface ReferralTimelinePoint {
+  date: string;
+  registrations: number;
+  firstPurchases: number;
 }
 
 export interface BusinessMetrics {
@@ -730,111 +751,242 @@ export class AnalyticsService {
   async getReferralSummary(
     merchantId: string,
     period: DashboardPeriod,
+    timezone?: string | RussiaTimezone,
   ): Promise<ReferralSummary> {
-    const [activations, firstPurchaseRows] = await Promise.all([
-      this.prisma.referral.findMany({
-        where: {
-          program: { merchantId },
-          activatedAt: { gte: period.from, lte: period.to },
-        },
-        select: {
-          referrerId: true,
-          refereeId: true,
-          referrer: { select: { name: true } },
-        },
-      }),
-      this.prisma.$queryRaw<Array<{ count: number }>>(Prisma.sql`
-        WITH referees AS (
-          SELECT DISTINCT ref."refereeId" AS customer_id
-          FROM "Referral" ref
-          JOIN "ReferralProgram" prog ON prog."id" = ref."programId"
-          WHERE prog."merchantId" = ${merchantId}
-            AND ref."refereeId" IS NOT NULL
-            AND ref."status" IN ('ACTIVATED', 'COMPLETED')
-        ),
-        valid_receipts AS (
-          SELECT r."customerId", r."createdAt"
-          FROM "Receipt" r
-          WHERE r."merchantId" = ${merchantId}
-            AND r."total" > 0
-            AND r."canceledAt" IS NULL
-            AND NOT EXISTS (
-              SELECT 1
-              FROM "Transaction" refund
-              WHERE refund."merchantId" = r."merchantId"
-                AND refund."orderId" = r."orderId"
-                AND refund."type" = 'REFUND'
-                AND refund."canceledAt" IS NULL
-            )
-        ),
-        first_purchases AS (
-          SELECT
-            vr."customerId",
-            MIN(vr."createdAt") AS first_purchase_at
-          FROM valid_receipts vr
-          JOIN referees rf ON rf.customer_id = vr."customerId"
-          GROUP BY vr."customerId"
-        )
-        SELECT COUNT(*)::int AS count
-        FROM first_purchases fp
-        WHERE fp.first_purchase_at BETWEEN ${period.from} AND ${period.to}
-      `),
-    ]);
-    const registeredViaReferral = activations.length;
-    const purchasedViaReferral = Number(firstPurchaseRows?.[0]?.count ?? 0);
+    const tz = await this.getTimezoneInfo(merchantId, timezone);
+    const current = await this.computeReferralPeriodStats(
+      merchantId,
+      period,
+      tz,
+      { withTimeline: true, withLeaderboard: true },
+    );
+    const previous = await this.computeReferralPeriodStats(
+      merchantId,
+      this.getPreviousPeriod(period),
+      tz,
+      { withTimeline: false, withLeaderboard: false },
+    );
 
-    const leaderboard = new Map<string, { name: string; invited: number }>();
-    for (const entry of activations) {
-      if (!entry.referrerId) continue;
-      if (!leaderboard.has(entry.referrerId)) {
-        leaderboard.set(entry.referrerId, {
-          name: entry.referrer?.name || 'Без имени',
-          invited: 0,
-        });
+    return {
+      ...current,
+      previous: {
+        registeredViaReferral: previous.registeredViaReferral,
+        purchasedViaReferral: previous.purchasedViaReferral,
+        referralRevenue: previous.referralRevenue,
+        bonusesIssued: previous.bonusesIssued,
+      },
+    };
+  }
+
+  private computeReferralReward(
+    rewardType?: string | null,
+    rewardValue?: number | null,
+    purchaseAmount?: number | null,
+  ) {
+    const roundTwo = (value: number) => Math.round(value * 100) / 100;
+    const normalizedReward = Number.isFinite(rewardValue ?? NaN)
+      ? Math.max(0, Number(rewardValue))
+      : 0;
+    if ((rewardType || '').toUpperCase() === 'PERCENT') {
+      const amount = Number.isFinite(purchaseAmount ?? NaN)
+        ? Number(purchaseAmount)
+        : 0;
+      if (amount <= 0 || normalizedReward <= 0) return 0;
+      return roundTwo((amount * normalizedReward) / 100);
+    }
+    if (normalizedReward <= 0) return 0;
+    return roundTwo(normalizedReward);
+  }
+
+  private async computeReferralPeriodStats(
+    merchantId: string,
+    period: DashboardPeriod,
+    tz: RussiaTimezone,
+    opts: { withTimeline: boolean; withLeaderboard: boolean },
+  ) {
+    const activations = await this.prisma.referral.findMany({
+      where: {
+        program: { merchantId },
+        status: { in: ['ACTIVATED', 'COMPLETED'] },
+        activatedAt: { gte: period.from, lte: period.to },
+      },
+      select: {
+        referrerId: true,
+        refereeId: true,
+        activatedAt: true,
+        completedAt: true,
+        purchaseAmount: true,
+        program: {
+          select: {
+            referrerReward: true,
+            rewardType: true,
+            refereeReward: true,
+          },
+        },
+        ...(opts.withLeaderboard
+          ? { referrer: { select: { name: true } } }
+          : {}),
+      },
+    });
+
+    const registeredViaReferral = activations.length;
+    const refereeIds: string[] = [];
+    const refereeToReferrer = new Map<string, string>();
+    const leaderboard = new Map<
+      string,
+      { name: string; invited: number; conversions: number; revenue: number }
+    >();
+    let bonusesIssued = 0;
+
+    for (const activation of activations) {
+      const referrerId = activation.referrerId;
+      const refereeId = activation.refereeId;
+      if (refereeId) {
+        refereeIds.push(refereeId);
+        refereeToReferrer.set(refereeId, referrerId);
       }
-      leaderboard.get(entry.referrerId)!.invited += 1;
+      if (opts.withLeaderboard) {
+        if (!leaderboard.has(referrerId)) {
+          leaderboard.set(referrerId, {
+            name: activation.referrer?.name || 'Без имени',
+            invited: 0,
+            conversions: 0,
+            revenue: 0,
+          });
+        }
+        leaderboard.get(referrerId)!.invited += 1;
+      }
+      const friendReward = Math.max(
+        0,
+        Number(activation.program?.refereeReward ?? 0),
+      );
+      if (refereeId) {
+        bonusesIssued += friendReward;
+      }
+      if (
+        activation.completedAt &&
+        activation.completedAt >= period.from &&
+        activation.completedAt <= period.to
+      ) {
+        const reward = this.computeReferralReward(
+          activation.program?.rewardType,
+          activation.program?.referrerReward,
+          activation.purchaseAmount,
+        );
+        bonusesIssued += reward;
+      }
     }
 
-    const top = Array.from(leaderboard.entries())
-      .map(([customerId, v]) => ({
-        customerId,
-        name: v.name,
-        invited: v.invited,
-      }))
-      .sort((a, b) => {
-        if (b.invited === a.invited) {
-          return a.customerId.localeCompare(b.customerId);
-        }
-        return b.invited - a.invited;
-      })
-      .slice(0, 20)
-      .map((x, i) => ({ rank: i + 1, ...x }));
-
+    let purchasedViaReferral = 0;
     let referralRevenue = 0;
-    const newCustomerIds = Array.from(
-      new Set(
-        activations
-          .map((item) => item.refereeId)
-          .filter((id): id is string => Boolean(id)),
-      ),
-    );
-    if (newCustomerIds.length > 0) {
-      const revenueRows = await fetchReceiptAggregates(this.prisma, {
+    let cohortAggregates: ReceiptAggregateRow[] = [];
+    if (refereeIds.length > 0) {
+      cohortAggregates = await fetchReceiptAggregates(this.prisma, {
         merchantId,
-        customerIds: newCustomerIds,
+        customerIds: refereeIds,
         period,
       });
-      referralRevenue = revenueRows.reduce(
-        (sum, row) => sum + Math.max(0, row.totalSpent),
-        0,
+      for (const row of cohortAggregates) {
+        referralRevenue += Math.max(0, row.totalSpent);
+        if (
+          row.firstPurchaseAt &&
+          row.firstPurchaseAt >= period.from &&
+          row.firstPurchaseAt <= period.to
+        ) {
+          purchasedViaReferral += 1;
+        }
+      }
+    }
+
+    if (opts.withLeaderboard && cohortAggregates.length > 0) {
+      for (const row of cohortAggregates) {
+        const referrerId = refereeToReferrer.get(row.customerId);
+        if (!referrerId || !leaderboard.has(referrerId)) continue;
+        leaderboard.get(referrerId)!.revenue += Math.max(0, row.totalSpent);
+        if (
+          row.firstPurchaseAt &&
+          row.firstPurchaseAt >= period.from &&
+          row.firstPurchaseAt <= period.to
+        ) {
+          leaderboard.get(referrerId)!.conversions += 1;
+        }
+      }
+    }
+
+    const timeline: ReferralTimelinePoint[] = [];
+    if (opts.withTimeline) {
+      const timelineKeys = new Map<string, ReferralTimelinePoint>();
+      for (
+        let cursor = new Date(period.from.getTime());
+        cursor.getTime() <= period.to.getTime();
+        cursor = new Date(cursor.getTime() + DAY_MS)
+      ) {
+        const key = this.formatDateLabel(cursor, tz);
+        if (!timelineKeys.has(key)) {
+          timelineKeys.set(key, {
+            date: key,
+            registrations: 0,
+            firstPurchases: 0,
+          });
+        }
+      }
+
+      for (const activation of activations) {
+        if (!activation.activatedAt) continue;
+        const key = this.formatDateLabel(activation.activatedAt, tz);
+        const point = timelineKeys.get(key);
+        if (point) point.registrations += 1;
+      }
+
+      if (cohortAggregates.length > 0) {
+        for (const row of cohortAggregates) {
+          if (
+            row.firstPurchaseAt &&
+            row.firstPurchaseAt >= period.from &&
+            row.firstPurchaseAt <= period.to
+          ) {
+            const key = this.formatDateLabel(row.firstPurchaseAt, tz);
+            const point = timelineKeys.get(key);
+            if (point) point.firstPurchases += 1;
+          }
+        }
+      }
+      timeline.push(
+        ...Array.from(timelineKeys.values()).sort((a, b) =>
+          a.date.localeCompare(b.date),
+        ),
       );
     }
+
+    const topReferrers = opts.withLeaderboard
+      ? Array.from(leaderboard.entries())
+          .map(([customerId, v]) => ({
+            customerId,
+            name: v.name,
+            invited: v.invited,
+            conversions: v.conversions,
+            revenue: v.revenue,
+          }))
+          .sort((a, b) => {
+            if (b.invited === a.invited) {
+              if (b.conversions === a.conversions) {
+                return a.customerId.localeCompare(b.customerId);
+              }
+              return b.conversions - a.conversions;
+            }
+            return b.invited - a.invited;
+          })
+          .slice(0, 20)
+          .map((x, i) => ({ rank: i + 1, ...x }))
+      : [];
 
     return {
       registeredViaReferral,
       purchasedViaReferral,
       referralRevenue,
-      topReferrers: top,
+      bonusesIssued: Math.round(bonusesIssued * 100) / 100,
+      timeline,
+      topReferrers,
     };
   }
 
@@ -1316,7 +1468,13 @@ export class AnalyticsService {
     const recencySamples: number[] = [];
     const distribution = new Map<string, number>();
 
-    const prepared = stats.map((row) => {
+    const eligibleStats = stats.filter((row) => {
+      const visits = Math.max(0, Number(row.visits ?? 0));
+      const totalSpent = Math.max(0, Number(row.totalSpent ?? 0));
+      return visits > 0 && totalSpent > 0;
+    });
+
+    const prepared = eligibleStats.map((row) => {
       const daysSinceRaw = this.computeRecencyDaysRaw(row.lastOrderAt, now);
       const visits = Math.max(0, Number(row.visits ?? 0));
       const totalSpent = Math.max(0, Number(row.totalSpent ?? 0));
@@ -1463,7 +1621,7 @@ export class AnalyticsService {
       settings: settingsResponse,
       groups,
       distribution: distributionRows,
-      totals: { customers: stats.length },
+      totals: { customers: eligibleStats.length },
     };
   }
 

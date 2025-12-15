@@ -21,7 +21,9 @@ export async function GET(req: NextRequest) {
   const redirectPath = safeRedirectPath(redirectParam);
 
   const resLogin = () => {
-    const r = NextResponse.redirect(new URL('/login', new URL(req.url).origin));
+    const url = new URL('/login', new URL(req.url).origin);
+    url.searchParams.set('redirect', redirectPath);
+    const r = NextResponse.redirect(url);
     const secure = process.env.NODE_ENV === 'production';
     const domain = (process.env.PORTAL_COOKIE_DOMAIN || '').trim() || undefined;
     r.cookies.set({ name: 'portal_jwt', value: '', httpOnly: true, sameSite: 'lax', secure, path: '/', maxAge: 0, domain });

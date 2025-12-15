@@ -61,6 +61,24 @@ describe('AnalyticsService — RFM segmentation', () => {
         visits: 2,
         totalSpent: 100,
       },
+      {
+        rfmClass: null,
+        rfmR: null,
+        rfmF: null,
+        rfmM: null,
+        lastOrderAt: null,
+        visits: 0,
+        totalSpent: 0,
+      },
+      {
+        rfmClass: null,
+        rfmR: null,
+        rfmF: null,
+        rfmM: null,
+        lastOrderAt: new Date('2024-03-20T00:00:00.000Z'),
+        visits: 2,
+        totalSpent: 0,
+      },
     ]);
 
     const result = await service.getRfmGroupsAnalytics('m-1');
@@ -74,9 +92,11 @@ describe('AnalyticsService — RFM segmentation', () => {
     expect(distribution['5-4-4']).toBe(1);
     expect(distribution['3-1-1']).toBe(1);
 
+    expect(result.totals.customers).toBe(2);
+
     const freq1 = result.groups.find((group) => group.score === 1)?.frequency;
     const freq4 = result.groups.find((group) => group.score === 4)?.frequency;
-    expect(freq1).toEqual({ min: 2, max: 2 });
-    expect(freq4).toEqual({ min: 8, max: 8 });
+    expect(freq1).toEqual({ min: 2, max: 2, count: 1 });
+    expect(freq4).toEqual({ min: 8, max: 8, count: 1 });
   });
 });

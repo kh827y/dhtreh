@@ -1,7 +1,12 @@
 "use client";
 
 import React from "react";
-import { Card, CardHeader, CardBody, Button, Skeleton } from "@loyalty/ui";
+import { HelpCircle, Settings2, Sliders, X } from "lucide-react";
+import {
+  buildRfmCombinations,
+  getCombinationBadgeClass,
+  sumCombinations,
+} from "./utils";
 
 type RfmRange = { min: number | null; max: number | null; count: number };
 type RfmGroup = {
@@ -30,48 +35,16 @@ type RfmAnalyticsResponse = {
 
 const defaultSettings: RfmSettingsState = {
   recencyMode: "auto",
-  recencyDays: null,
+  recencyDays: 90,
   frequencyMode: "auto",
-  frequencyThreshold: null,
+  frequencyThreshold: 10,
   frequencySuggested: null,
   moneyMode: "auto",
-  moneyThreshold: null,
+  moneyThreshold: 50000,
   moneySuggested: null,
 };
 
 const currencyFormatter = new Intl.NumberFormat("ru-RU");
-
-function formatRange(range: RfmRange, formatter: (value: number) => string) {
-  const hasMin = typeof range.min === "number" && Number.isFinite(range.min);
-  const hasMax = typeof range.max === "number" && Number.isFinite(range.max);
-  if (hasMin && hasMax) {
-    const minValue = formatter(Math.max(0, Math.round(range.min!)));
-    const maxValue = formatter(Math.max(0, Math.round(range.max!)));
-    if (range.min === range.max) return minValue;
-    return `${minValue} – ${maxValue}`;
-  }
-  if (hasMin) {
-    const minValue = formatter(Math.max(0, Math.round(range.min!)));
-    return `≥ ${minValue}`;
-  }
-  if (hasMax) {
-    const maxValue = formatter(Math.max(0, Math.round(range.max!)));
-    return `≤ ${maxValue}`;
-  }
-  return "—";
-}
-
-function formatRecencyRange(range: RfmRange) {
-  return formatRange(range, (value) => `${value.toLocaleString("ru-RU")} дн.`);
-}
-
-function formatFrequencyRange(range: RfmRange) {
-  return formatRange(range, (value) => `${value.toLocaleString("ru-RU")} покупок`);
-}
-
-function formatMoneyRange(range: RfmRange) {
-  return formatRange(range, (value) => `${currencyFormatter.format(value)} ₽`);
-}
 
 async function fetchAnalytics(): Promise<RfmAnalyticsResponse> {
   const res = await fetch("/api/portal/analytics/rfm", { cache: "no-store" });
@@ -105,24 +78,47 @@ async function updateSettings(payload: {
 export default function AnalyticsRfmPage() {
   const [analytics, setAnalytics] = React.useState<RfmAnalyticsResponse | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState("");
   const [saving, setSaving] = React.useState(false);
-  const [open, setOpen] = React.useState(false);
+  const [showInfo, setShowInfo] = React.useState(true);
+
   const [settings, setSettings] = React.useState<RfmSettingsState>(defaultSettings);
   const [draft, setDraft] = React.useState<RfmSettingsState>(defaultSettings);
 
+  const normalizeSettings = React.useCallback((incoming: RfmSettingsState) => {
+    return {
+      ...incoming,
+      recencyDays: incoming.recencyDays ?? defaultSettings.recencyDays,
+      frequencyThreshold:
+        incoming.frequencyThreshold ??
+        incoming.frequencySuggested ??
+        defaultSettings.frequencyThreshold,
+      moneyThreshold:
+        incoming.moneyThreshold ??
+        incoming.moneySuggested ??
+        defaultSettings.moneyThreshold,
+    };
+  }, []);
+
   const load = React.useCallback(async () => {
     setLoading(true);
+    setError("");
     try {
       const data = await fetchAnalytics();
-      setAnalytics(data);
-      setSettings(data.settings);
-      setDraft(data.settings);
+      const normalizedSettings = normalizeSettings(data.settings);
+      setAnalytics({ ...data, settings: normalizedSettings });
+      setSettings(normalizedSettings);
+      setDraft(normalizedSettings);
     } catch (error) {
       console.error("Не удалось загрузить RFM-аналитику", error);
+      setAnalytics(null);
+      setError(
+        String((error as any)?.message || "Не удалось загрузить RFM-аналитику"),
+      );
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [normalizeSettings]);
 
   React.useEffect(() => {
     load();
@@ -130,6 +126,65 @@ export default function AnalyticsRfmPage() {
 
   const groups = analytics?.groups ?? [];
   const distribution = analytics?.distribution ?? [];
+  const combinations = React.useMemo(
+    () => buildRfmCombinations(distribution),
+    [distribution],
+  );
+  const totalClients = React.useMemo(
+    () => sumCombinations(combinations),
+    [combinations],
+  );
+
+  const getAggregatedCounts = React.useCallback(
+    (type: "r" | "f" | "m", score: number) => {
+      return combinations
+        .filter((c) => c[type] === score)
+        .reduce((sum, curr) => sum + curr.count, 0);
+    },
+    [combinations],
+  );
+
+  const getRangeLabel = React.useCallback(
+    (type: "r" | "f" | "m", score: number) => {
+      const group = groups.find((g) => g.score === score);
+      if (!group) return "—";
+
+      if (type === "r") {
+        const min = group.recency.min;
+        const max = group.recency.max;
+        if (min == null && max == null) return "—";
+        if (min != null && max != null) {
+          if (min === max) return `${Math.round(min)} дн.`;
+          return `${Math.round(min)} - ${Math.round(max)} дн.`;
+        }
+        if (min != null) return `≥ ${Math.round(min)} дн.`;
+        return `≤ ${Math.round(max as number)} дн.`;
+      }
+
+      if (type === "f") {
+        const min = group.frequency.min;
+        const max = group.frequency.max;
+        if (min == null && max == null) return "—";
+        if (min != null && max != null) {
+          if (min === max) return `${Math.round(min)} зак.`;
+          return `${Math.round(min)} - ${Math.round(max)} зак.`;
+        }
+        if (min != null) return `≥ ${Math.round(min)} зак.`;
+        return `≤ ${Math.round(max as number)} зак.`;
+      }
+
+      const min = group.monetary.min;
+      const max = group.monetary.max;
+      if (min == null && max == null) return "—";
+      if (min != null && max != null) {
+        if (min === max) return `${currencyFormatter.format(Math.round(min))} ₽`;
+        return `${currencyFormatter.format(Math.round(min))} - ${currencyFormatter.format(Math.round(max))} ₽`;
+      }
+      if (min != null) return `≥ ${currencyFormatter.format(Math.round(min))} ₽`;
+      return `≤ ${currencyFormatter.format(Math.round(max as number))} ₽`;
+    },
+    [groups],
+  );
 
   const dirty = React.useMemo(() => {
     return (
@@ -142,22 +197,19 @@ export default function AnalyticsRfmPage() {
     );
   }, [draft, settings]);
 
-  const applySettings = async () => {
+  const applySettings = React.useCallback(async () => {
     if (draft.recencyMode === "manual") {
       if (draft.recencyDays == null || draft.recencyDays < 1) {
-        alert("Давность должна быть положительным числом дней");
         return;
       }
     }
     if (draft.frequencyMode === "manual") {
       if (!draft.frequencyThreshold || draft.frequencyThreshold < 1) {
-        alert("Количество покупок должно быть не меньше 1");
         return;
       }
     }
     if (draft.moneyMode === "manual") {
       if (draft.moneyThreshold == null || draft.moneyThreshold < 0) {
-        alert("Сумма чека должна быть неотрицательной");
         return;
       }
     }
@@ -178,261 +230,456 @@ export default function AnalyticsRfmPage() {
           : {}),
       } as const;
       const data = await updateSettings(payload);
-      setAnalytics(data);
-      setSettings(data.settings);
-      setDraft(data.settings);
-      setOpen(false);
+      const normalizedSettings = normalizeSettings(data.settings);
+      setAnalytics({ ...data, settings: normalizedSettings });
+      setSettings(normalizedSettings);
+      setDraft(normalizedSettings);
     } catch (error) {
       console.error("Не удалось сохранить настройки RFM", error);
-      alert("Не удалось сохранить настройки");
+      setError(String((error as any)?.message || "Не удалось сохранить настройки"));
     } finally {
       setSaving(false);
     }
-  };
+  }, [draft, normalizeSettings]);
 
-  const closeModal = () => {
-    setDraft(settings);
-    setOpen(false);
-  };
+  React.useEffect(() => {
+    if (loading) return;
+    if (saving) return;
+    if (!dirty) return;
+    const isManual =
+      draft.recencyMode === "manual" ||
+      draft.frequencyMode === "manual" ||
+      draft.moneyMode === "manual";
+    if (!isManual) return;
+
+    const timeout = window.setTimeout(() => {
+      void applySettings();
+    }, 650);
+    return () => window.clearTimeout(timeout);
+  }, [applySettings, dirty, draft, loading, saving]);
+
+  const mode =
+    draft.recencyMode === "manual" ||
+    draft.frequencyMode === "manual" ||
+    draft.moneyMode === "manual"
+      ? "Manual"
+      : "Auto";
 
   return (
-    <div style={{ display: "grid", gap: 20 }}>
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
-        <div>
-          <div style={{ fontSize: 26, fontWeight: 700 }}>RFM-Анализ</div>
-          <div style={{ fontSize: 13, opacity: 0.7 }}>Сегментация клиентов по давности, частоте и сумме покупок</div>
-        </div>
-        <Button variant="secondary" onClick={() => { setDraft(settings); setOpen(true); }} disabled={loading}>Настройки</Button>
-      </header>
+    <div className="p-8 max-w-[1600px] mx-auto space-y-6 animate-fade-in">
+      <div>
+        <h2 className="text-2xl font-bold text-gray-900">RFM Анализ</h2>
+        <p className="text-gray-500">
+          Сегментация клиентов на основе покупательского поведения.
+        </p>
+      </div>
 
-      <Card>
-        <CardBody>
-          <div style={{ fontSize: 13, lineHeight: 1.5, opacity: 0.8 }}>
-            RFM-анализ помогает быстро понять, как давно клиенты совершали покупки, насколько часто они возвращаются и на какие суммы. Чем выше значение R — тем более «тёплый» клиент, а высокие F и M показывают лояльную аудиторию.
-          </div>
-        </CardBody>
-      </Card>
-
-      <Card>
-        <CardHeader title="Группы RFM" subtitle="Текущие диапазоны сегментации" />
-        <CardBody>
-          {loading ? (
-            <Skeleton height={180} />
-          ) : (
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-              <thead>
-                <tr style={{ textAlign: "left", opacity: 0.7 }}>
-                  <th style={{ padding: "12px 8px" }}># Группы</th>
-                  <th style={{ padding: "12px 8px" }}>Давность?</th>
-                  <th style={{ padding: "12px 8px" }}>Частота?</th>
-                  <th style={{ padding: "12px 8px" }}>Деньги?</th>
-                </tr>
-              </thead>
-              <tbody>
-                {groups.length ? (
-                  groups.map((group) => (
-                    <tr key={group.score} style={{ borderTop: "1px solid rgba(148,163,184,0.15)" }}>
-                      <td style={{ padding: "10px 8px" }}>{group.score}</td>
-                      <td style={{ padding: "10px 8px" }}>
-                        <div>{formatRecencyRange(group.recency)}</div>
-                        <div style={{ fontSize: 11, opacity: 0.6 }}>{(group.recency.count ?? 0).toLocaleString("ru-RU")} кл.</div>
-                      </td>
-                      <td style={{ padding: "10px 8px" }}>
-                        <div>{formatFrequencyRange(group.frequency)}</div>
-                        <div style={{ fontSize: 11, opacity: 0.6 }}>{(group.frequency.count ?? 0).toLocaleString("ru-RU")} кл.</div>
-                      </td>
-                      <td style={{ padding: "10px 8px" }}>
-                        <div>{formatMoneyRange(group.monetary)}</div>
-                        <div style={{ fontSize: 11, opacity: 0.6 }}>{(group.monetary.count ?? 0).toLocaleString("ru-RU")} кл.</div>
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={4} style={{ padding: "12px 8px", opacity: 0.7 }}>Недостаточно данных для расчёта групп.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          )}
-        </CardBody>
-      </Card>
-
-      <Card>
-        <CardHeader title="Размер RFM-групп" subtitle="Количество клиентов в каждом сегменте" />
-        <CardBody>
-          {loading ? (
-            <Skeleton height={180} />
-          ) : (
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-              <thead>
-                <tr style={{ textAlign: "left", opacity: 0.7 }}>
-                  <th style={{ padding: "12px 8px" }}>Группа (R-F-M)</th>
-                  <th style={{ padding: "12px 8px" }}>Клиентов</th>
-                </tr>
-              </thead>
-              <tbody>
-                {distribution.length ? (
-                  distribution.map((row) => (
-                    <tr key={row.class} style={{ borderTop: "1px solid rgba(148,163,184,0.15)" }}>
-                      <td style={{ padding: "10px 8px" }}>{row.class}</td>
-                      <td style={{ padding: "10px 8px" }}>{row.customers.toLocaleString("ru-RU")}</td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={2} style={{ padding: "12px 8px", opacity: 0.7 }}>Нет клиентов, подходящих под расчёт RFM.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          )}
-        </CardBody>
-      </Card>
-
-      {open && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(15,23,42,0.72)",
-            display: "grid",
-            placeItems: "center",
-            zIndex: 90,
-          }}
-        >
-          <div style={{ background: "#0f172a", borderRadius: 16, padding: 24, width: "min(420px, 92vw)", boxShadow: "0 24px 60px rgba(15,23,42,0.45)", position: "relative" }}>
-            <button
-              onClick={closeModal}
-              aria-label="Закрыть"
-              style={{
-                position: "absolute",
-                top: 12,
-                right: 12,
-                width: 32,
-                height: 32,
-                borderRadius: "50%",
-                border: "none",
-                background: "rgba(248,113,113,0.12)",
-                color: "#f87171",
-                fontSize: 18,
-                cursor: "pointer",
-              }}
-            >
-              ×
-            </button>
-            <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Границы RFM-сегментов</h2>
-            <div style={{ display: "grid", gap: 16 }}>
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 13, opacity: 0.75 }}>Recency (давность в днях)</span>
-                <select
-                  value={draft.recencyMode}
-                  onChange={(event) => {
-                    const nextMode = event.target.value as RfmSettingsState["recencyMode"];
-                    setDraft((prev) => ({ ...prev, recencyMode: nextMode }));
-                  }}
-                  style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(148,163,184,0.35)", background: "rgba(15,23,42,0.6)", color: "#e2e8f0" }}
-                >
-                  <option value="auto">Автоматически (квантильный расчёт)</option>
-                  <option value="manual">Задать вручную</option>
-                </select>
-                {draft.recencyMode === "manual" ? (
-                  <input
-                    type="number"
-                    min={1}
-                    value={draft.recencyDays ?? ""}
-                    onChange={(event) => {
-                      const next = Number(event.target.value);
-                      setDraft((prev) => ({ ...prev, recencyDays: Number.isFinite(next) ? Math.max(1, Math.round(next)) : prev.recencyDays }));
-                    }}
-                    style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(148,163,184,0.35)", background: "rgba(15,23,42,0.6)", color: "#e2e8f0" }}
-                  />
-                ) : (
-                  <div style={{ fontSize: 12, opacity: 0.65 }}>
-                    Границы R определяются автоматически по квантилям давности
-                  </div>
-                )}
-                <span style={{ fontSize: 12, opacity: 0.65 }}>После какого количества дней покупатель будет безвозвратно потерян (для ручного режима)</span>
-              </label>
-
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 13, opacity: 0.75 }}>Frequency (частота)</span>
-                <select
-                  value={draft.frequencyMode}
-                  onChange={(event) => {
-                    const nextMode = event.target.value as RfmSettingsState["frequencyMode"];
-                    setDraft((prev) => ({ ...prev, frequencyMode: nextMode }));
-                  }}
-                  style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(148,163,184,0.35)", background: "rgba(15,23,42,0.6)", color: "#e2e8f0" }}
-                >
-                  <option value="auto">Автоматически</option>
-                  <option value="manual">Задать вручную</option>
-                </select>
-                {draft.frequencyMode === "manual" ? (
-                  <input
-                    type="number"
-                    min={1}
-                    value={draft.frequencyThreshold ?? ""}
-                    onChange={(event) => {
-                      const next = Number(event.target.value);
-                      setDraft((prev) => ({ ...prev, frequencyThreshold: Number.isFinite(next) ? Math.max(1, Math.round(next)) : prev.frequencyThreshold }));
-                    }}
-                    style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(148,163,184,0.35)", background: "rgba(15,23,42,0.6)", color: "#e2e8f0" }}
-                  />
-                ) : (
-                  <div style={{ fontSize: 12, opacity: 0.65 }}>
-                    {draft.frequencySuggested != null
-                      ? `Автоподбор: ≥ ${draft.frequencySuggested.toLocaleString("ru-RU")} покупок`
-                      : "Автоподбор будет доступен после появления данных"}
-                  </div>
-                )}
-                <span style={{ fontSize: 12, opacity: 0.65 }}>После какого количества покупок покупателя можно считать сверх-лояльным</span>
-              </label>
-
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 13, opacity: 0.75 }}>Money (сумма чека)</span>
-                <select
-                  value={draft.moneyMode}
-                  onChange={(event) => {
-                    const nextMode = event.target.value as RfmSettingsState["moneyMode"];
-                    setDraft((prev) => ({ ...prev, moneyMode: nextMode }));
-                  }}
-                  style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(148,163,184,0.35)", background: "rgba(15,23,42,0.6)", color: "#e2e8f0" }}
-                >
-                  <option value="auto">Автоматически</option>
-                  <option value="manual">Задать вручную</option>
-                </select>
-                {draft.moneyMode === "manual" ? (
-                  <input
-                    type="number"
-                    min={0}
-                    value={draft.moneyThreshold ?? ""}
-                    onChange={(event) => {
-                      const next = Number(event.target.value);
-                      setDraft((prev) => ({ ...prev, moneyThreshold: Number.isFinite(next) ? Math.max(0, Math.round(next)) : prev.moneyThreshold }));
-                    }}
-                    style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(148,163,184,0.35)", background: "rgba(15,23,42,0.6)", color: "#e2e8f0" }}
-                  />
-                ) : (
-                  <div style={{ fontSize: 12, opacity: 0.65 }}>
-                    {draft.moneySuggested != null
-                      ? `Автоподбор: ≥ ${currencyFormatter.format(draft.moneySuggested)} ₽`
-                      : "Автоподбор станет доступен, когда появятся продажи"}
-                  </div>
-                )}
-                <span style={{ fontSize: 12, opacity: 0.65 }}>Какую сумму чека можно считать максимально возможной. Все покупатели с чеком выше указанного будут попадать в группу</span>
-              </label>
+      {showInfo && (
+        <div className="bg-blue-50 border border-blue-100 rounded-xl p-5 relative">
+          <button
+            onClick={() => setShowInfo(false)}
+            className="absolute top-4 right-4 text-blue-400 hover:text-blue-600"
+          >
+            <X size={18} />
+          </button>
+          <div className="flex items-start space-x-4">
+            <div className="bg-blue-100 p-2 rounded-lg">
+              <HelpCircle className="text-blue-600" size={24} />
             </div>
-
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 24 }}>
-              <Button variant="secondary" onClick={closeModal} disabled={saving}>Отмена</Button>
-              <Button variant="primary" onClick={applySettings} disabled={!dirty || saving}>Сохранить</Button>
+            <div className="space-y-2">
+              <h3 className="font-bold text-blue-900 text-lg">Что такое RFM?</h3>
+              <p className="text-blue-800 text-sm max-w-4xl leading-relaxed">
+                RFM — это маркетинговый метод, используемый для количественной
+                оценки и группировки клиентов на основе давности (Recency),
+                частоты (Frequency) и денежной суммы (Monetary) их транзакций для
+                выявления лучших клиентов и проведения целевых кампаний.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
+                <div className="bg-white/60 p-3 rounded-lg">
+                  <span className="font-bold text-blue-900 block mb-1">
+                    Давность (R)
+                  </span>
+                  <span className="text-xs text-blue-700">
+                    Как давно клиент совершал покупку. Балл 5 = Недавно.
+                  </span>
+                </div>
+                <div className="bg-white/60 p-3 rounded-lg">
+                  <span className="font-bold text-blue-900 block mb-1">
+                    Частота (F)
+                  </span>
+                  <span className="text-xs text-blue-700">
+                    Как часто клиент совершает покупки. Балл 5 = Часто.
+                  </span>
+                </div>
+                <div className="bg-white/60 p-3 rounded-lg">
+                  <span className="font-bold text-blue-900 block mb-1">
+                    Деньги (M)
+                  </span>
+                  <span className="text-xs text-blue-700">
+                    Сколько денег тратит клиент. Балл 5 = Много.
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       )}
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <Settings2 size={18} className="text-gray-500" />
+            <h3 className="font-semibold text-gray-900">Конфигурация</h3>
+          </div>
+
+          <div className="flex bg-gray-200 rounded-lg p-1">
+            <button
+              onClick={() => {
+                setSaving(true);
+                setDraft((prev) => ({
+                  ...prev,
+                  recencyMode: "auto",
+                  frequencyMode: "auto",
+                  moneyMode: "auto",
+                }));
+                void updateSettings({
+                  recencyMode: "auto",
+                  frequencyMode: "auto",
+                  moneyMode: "auto",
+                })
+                  .then((data) => {
+                    const normalizedSettings = normalizeSettings(data.settings);
+                    setAnalytics({ ...data, settings: normalizedSettings });
+                    setSettings(normalizedSettings);
+                    setDraft(normalizedSettings);
+                  })
+                  .catch((err: any) => {
+                    console.error("Не удалось сохранить настройки RFM", err);
+                    setError(
+                      String(
+                        err?.message ||
+                          "Не удалось сохранить настройки RFM",
+                      ),
+                    );
+                  })
+                  .finally(() => setSaving(false));
+              }}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+                mode === "Auto"
+                  ? "bg-white shadow-sm text-gray-900"
+                  : "text-gray-500"
+              }`}
+              disabled={loading || saving}
+            >
+              Авто
+            </button>
+            <button
+              onClick={() => {
+                setSaving(true);
+                setDraft((prev) => {
+                  const recencyDays =
+                    prev.recencyDays ?? settings.recencyDays ?? 90;
+                  const frequencyThreshold =
+                    prev.frequencyThreshold ??
+                    settings.frequencyThreshold ??
+                    settings.frequencySuggested ??
+                    10;
+                  const moneyThreshold =
+                    prev.moneyThreshold ??
+                    settings.moneyThreshold ??
+                    settings.moneySuggested ??
+                    50000;
+
+                  return {
+                    ...prev,
+                    recencyMode: "manual",
+                    frequencyMode: "manual",
+                    moneyMode: "manual",
+                    recencyDays,
+                    frequencyThreshold,
+                    moneyThreshold,
+                  };
+                });
+
+                const recencyDays =
+                  (draft.recencyDays ?? settings.recencyDays ?? 90) || 90;
+                const frequencyThreshold =
+                  (draft.frequencyThreshold ??
+                    settings.frequencyThreshold ??
+                    settings.frequencySuggested ??
+                    10) || 10;
+                const moneyThreshold =
+                  (draft.moneyThreshold ??
+                    settings.moneyThreshold ??
+                    settings.moneySuggested ??
+                    50000) || 50000;
+
+                void updateSettings({
+                  recencyMode: "manual",
+                  recencyDays: Math.max(1, Math.round(recencyDays)),
+                  frequencyMode: "manual",
+                  frequencyThreshold: Math.max(
+                    1,
+                    Math.round(frequencyThreshold),
+                  ),
+                  moneyMode: "manual",
+                  moneyThreshold: Math.max(0, Math.round(moneyThreshold)),
+                })
+                  .then((data) => {
+                    const normalizedSettings = normalizeSettings(data.settings);
+                    setAnalytics({ ...data, settings: normalizedSettings });
+                    setSettings(normalizedSettings);
+                    setDraft(normalizedSettings);
+                  })
+                  .catch((err: any) => {
+                    console.error("Не удалось сохранить настройки RFM", err);
+                    setError(
+                      String(
+                        err?.message ||
+                          "Не удалось сохранить настройки RFM",
+                      ),
+                    );
+                  })
+                  .finally(() => setSaving(false));
+              }}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+                mode === "Manual"
+                  ? "bg-white shadow-sm text-gray-900"
+                  : "text-gray-500"
+              }`}
+              disabled={loading || saving}
+            >
+              Вручную
+            </button>
+          </div>
+        </div>
+
+        <div
+          className={`p-6 grid grid-cols-1 md:grid-cols-3 gap-8 transition-opacity duration-300 ${
+            mode === "Auto"
+              ? "opacity-50 pointer-events-none grayscale"
+              : "opacity-100"
+          }`}
+        >
+          <div className="space-y-3">
+            <label className="text-sm font-medium text-gray-700 flex justify-between">
+              <span>Верхний предел Давности</span>
+              <span className="text-xs text-red-500 bg-red-50 px-2 py-0.5 rounded">
+                Риск оттока
+              </span>
+            </label>
+            <div className="relative">
+              <input
+                type="number"
+                value={draft.recencyDays ?? ""}
+                onChange={(e) =>
+                  setDraft((prev) => ({
+                    ...prev,
+                    recencyDays: e.target.value === "" ? null : Number(e.target.value),
+                  }))
+                }
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+                дней
+              </span>
+            </div>
+            <p className="text-xs text-gray-500">
+              Клиенты, не покупавшие дольше этого срока, получают R=1.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <label className="text-sm font-medium text-gray-700 flex justify-between">
+              <span>Нижний предел Частоты</span>
+              <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded">
+                Лояльный
+              </span>
+            </label>
+            <div className="relative">
+              <input
+                type="number"
+                value={draft.frequencyThreshold ?? ""}
+                onChange={(e) =>
+                  setDraft((prev) => ({
+                    ...prev,
+                    frequencyThreshold: e.target.value === "" ? null : Number(e.target.value),
+                  }))
+                }
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+                заказов
+              </span>
+            </div>
+            <p className="text-xs text-gray-500">
+              Клиенты с большим количеством заказов получают F=5.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <label className="text-sm font-medium text-gray-700 flex justify-between">
+              <span>Нижний предел Денег</span>
+              <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded">
+                Лояльный
+              </span>
+            </label>
+            <div className="relative">
+              <input
+                type="number"
+                value={draft.moneyThreshold ?? ""}
+                onChange={(e) =>
+                  setDraft((prev) => ({
+                    ...prev,
+                    moneyThreshold: e.target.value === "" ? null : Number(e.target.value),
+                  }))
+                }
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+                ₽
+              </span>
+            </div>
+            <p className="text-xs text-gray-500">
+              Клиенты с тратами больше этой суммы получают M=5.
+            </p>
+          </div>
+        </div>
+
+        {mode === "Auto" && (
+          <div className="px-6 pb-4 -mt-2">
+            <p className="text-xs text-purple-600 font-medium flex items-center">
+              <Sliders size={12} className="mr-1" />
+              Используется автоматическая оптимизация границ на основе
+              исторических данных.
+            </p>
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="xl:col-span-2 bg-white rounded-xl border border-gray-100 shadow-sm p-6">
+          <h3 className="font-bold text-gray-900 mb-6">
+            Распределение RFM групп
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="text-xs text-gray-500 uppercase bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 rounded-tl-lg">Балл</th>
+                  <th className="px-4 py-3">
+                    <div className="font-bold text-gray-700">Давность (R)</div>
+                    <div className="font-normal text-gray-400 capitalize">
+                      Дней с посл. покупки
+                    </div>
+                  </th>
+                  <th className="px-4 py-3">
+                    <div className="font-bold text-gray-700">Частота (F)</div>
+                    <div className="font-normal text-gray-400 capitalize">
+                      Всего транзакций
+                    </div>
+                  </th>
+                  <th className="px-4 py-3 rounded-tr-lg">
+                    <div className="font-bold text-gray-700">Деньги (M)</div>
+                    <div className="font-normal text-gray-400 capitalize">
+                      Сумма покупок
+                    </div>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {[5, 4, 3, 2, 1].map((score) => (
+                  <tr key={score} className="hover:bg-gray-50/50">
+                    <td className="px-4 py-4 font-bold text-lg text-gray-900 w-16 text-center bg-gray-50/30">
+                      {score}
+                    </td>
+                    {(["r", "f", "m"] as const).map((metric) => (
+                      <td key={metric} className="px-4 py-4">
+                        <div className="flex flex-col">
+                          <span className="text-gray-900 font-medium">
+                            {loading ? "—" : getRangeLabel(metric, score)}
+                          </span>
+                          <div className="flex items-center mt-1 space-x-2">
+                            <span className="text-xs font-semibold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">
+                              {loading
+                                ? "—"
+                                : `${getAggregatedCounts(metric, score)} клиентов`}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 flex flex-col h-[600px]">
+          <h3 className="font-bold text-gray-900 mb-2">Детальные комбинации</h3>
+          <p className="text-xs text-gray-500 mb-4">Сегменты по R-F-M баллам.</p>
+
+          <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-white shadow-sm z-10">
+                <tr className="text-xs text-gray-500 border-b border-gray-100">
+                  <th className="pb-2 text-left pl-2">Комбинация</th>
+                  <th className="pb-2 text-right pr-2">Клиенты</th>
+                  <th className="pb-2 text-right pr-2">Доля</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {combinations.map((combo) => {
+                  const share =
+                    totalClients > 0
+                      ? ((combo.count / totalClients) * 100).toFixed(1)
+                      : "0.0";
+                  const badgeColor = getCombinationBadgeClass(combo);
+
+                  return (
+                    <tr
+                      key={`${combo.r}-${combo.f}-${combo.m}`}
+                      className="group hover:bg-gray-50"
+                    >
+                      <td className="py-2.5 pl-2">
+                        <span
+                          className={`font-mono font-bold px-2 py-1 rounded text-xs ${badgeColor}`}
+                        >
+                          {combo.r}-{combo.f}-{combo.m}
+                        </span>
+                      </td>
+                      <td className="py-2.5 text-right font-medium text-gray-900 pr-2">
+                        {combo.count}
+                      </td>
+                      <td className="py-2.5 text-right text-gray-500 text-xs pr-2">
+                        {share}%
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {!loading && combinations.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={3}
+                      className="py-6 text-center text-sm text-gray-500"
+                    >
+                      Нет данных для отображения.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

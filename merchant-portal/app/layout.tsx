@@ -1,4 +1,3 @@
-import "@loyalty/ui/theme.css";
 import "./globals.css";
 import React from "react";
 import { Inter } from "next/font/google";
@@ -7,36 +6,33 @@ import { cookies } from "next/headers";
 import TimezoneProvider, { PortalTimezone } from "../components/TimezoneProvider";
 import { ThemeProvider } from "../components/ThemeProvider";
 import { AppHeader } from "../components/AppHeader";
+import { AlertTriangle, Lock, CreditCard } from "lucide-react";
+import { ContentWrapper } from "../components/ContentWrapper";
 
 export const metadata = {
   title: "Merchant Portal — Программа лояльности",
   description: "Личный кабинет мерчанта: настройки лояльности, аналитика и CRM",
 };
 
-const inter = Inter({ 
-  subsets: ["latin", "cyrillic"],
-  display: "swap",
-  variable: "--font-inter"
-});
-
+// Секции sidebar — 1:1 как в new design/components/Sidebar.tsx
 const sections: SidebarSection[] = [
   {
-    id: "wizard",
-    title: "Мастер",
-    items: [{ href: "/", label: "Мастер настройки" }],
+    id: "master",
+    title: "МАСТЕР",
+    items: [{ href: "/", label: "Основные настройки" }],
   },
   {
     id: "analytics",
-    title: "Аналитика",
+    title: "АНАЛИТИКА",
     items: [
-      { href: "/analytics", label: "Сводный отчёт" },
+      { href: "/analytics", label: "Сводный отчет" },
       { href: "/analytics/time", label: "По времени" },
       { href: "/analytics/portrait", label: "Портрет клиента" },
       { href: "/analytics/repeat", label: "Повторные продажи" },
       { href: "/analytics/dynamics", label: "Динамика" },
-      { href: "/analytics/rfm", label: "RFM-анализ" },
-      { href: "/analytics/outlets", label: "Активность торговых точек" },
-      { href: "/analytics/staff", label: "Активность сотрудников" },
+      { href: "/analytics/rfm", label: "RFM Анализ" },
+      { href: "/analytics/outlets", label: "Активность точек" },
+      { href: "/analytics/staff", label: "Активность персонала" },
       { href: "/analytics/referrals", label: "Реферальная программа" },
       { href: "/loyalty/mechanics/birthday?tab=stats", label: "Дни рождения" },
       { href: "/loyalty/mechanics/auto-return?tab=stats", label: "Автовозврат клиентов" },
@@ -44,61 +40,56 @@ const sections: SidebarSection[] = [
   },
   {
     id: "loyalty",
-    title: "Программа лояльности",
+    title: "ПРОГРАММА ЛОЯЛЬНОСТИ",
     items: [
       { href: "/loyalty/mechanics", label: "Механики" },
-      { href: "/loyalty/actions", label: "Акции" },
-      { href: "/loyalty/actions-earn", label: "Акции с начислением баллов" },
-      { href: "/operations", label: "Журнал операций" },
-      { href: "/loyalty/push", label: "Push‑рассылки" },
-      { href: "/loyalty/telegram", label: "Telegram‑рассылки" },
+      { href: "/loyalty/actions", label: "Акции с товарами" },
+      { href: "/loyalty/actions-earn", label: "Акции с баллами" },
       { href: "/promocodes", label: "Промокоды" },
       { href: "/loyalty/staff-motivation", label: "Мотивация персонала" },
-      { href: "/loyalty/antifraud", label: "Защита от мошенничества" },
       { href: "/loyalty/cashier", label: "Панель кассира" },
+      { href: "/loyalty/antifraud", label: "Защита от мошенничества" },
+      { href: "/operations", label: "Журнал операций" },
+      { href: "/loyalty/push", label: "Push-рассылки" },
+      { href: "/loyalty/telegram", label: "Telegram-рассылки" },
     ],
   },
   {
-    id: "reviews",
-    title: "Отзывы",
-    items: [{ href: "/reviews", label: "Обратная связь" }],
+    id: "feedback",
+    title: "ОБРАТНАЯ СВЯЗЬ",
+    items: [{ href: "/reviews", label: "Отзывы" }],
   },
   {
-    id: "customers",
-    title: "Клиенты и аудитории",
+    id: "clients",
+    title: "КЛИЕНТЫ И АУДИТОРИИ",
     items: [
       { href: "/customers", label: "Клиенты" },
       { href: "/audiences", label: "Аудитории" },
     ],
   },
   {
-    id: "catalog",
-    title: "Товары и категории",
+    id: "goods",
+    title: "ТОВАРЫ И КАТЕГОРИИ",
     items: [
       { href: "/products", label: "Товары" },
       { href: "/categories", label: "Категории" },
     ],
   },
   {
-    id: "wallet",
-    title: "Карта Wallet",
-    items: [{ href: "/wallet", label: "Карта Wallet" }],
-  },
-  {
     id: "settings",
-    title: "Настройки",
+    title: "НАСТРОЙКИ",
     items: [
+      { href: "/settings/system", label: "Системные настройки" },
       { href: "/settings/outlets", label: "Торговые точки" },
       { href: "/settings/staff", label: "Сотрудники" },
-      { href: "/settings/access", label: "Права доступа" },
+      { href: "/settings/access", label: "Группы доступа" },
+      { href: "/settings/telegram", label: "Уведомления в Telegram" },
       { href: "/settings/integrations", label: "Интеграции" },
-      { href: "/settings/telegram", label: "Уведомления в телеграм" },
-      { href: "/settings/system", label: "Системные настройки" },
     ],
   },
   {
     id: "tools",
-    title: "Инструменты",
+    title: "ИНСТРУМЕНТЫ",
     items: [{ href: "/customers/import", label: "Импорт данных" }],
   },
 ];
@@ -134,6 +125,12 @@ type PortalSubscription = {
   expiresSoon: boolean;
   expired: boolean;
 };
+
+const inter = Inter({
+  subsets: ["latin", "cyrillic"],
+  display: "swap",
+  variable: "--font-inter",
+});
 
 const ITEM_PERMISSION_REQUIREMENTS: Record<
   string,
@@ -397,71 +394,15 @@ function formatDateLabel(value: string | null) {
 
 function SubscriptionNotice({ subscription }: { subscription: PortalSubscription | null }) {
   if (!subscription) return null;
-  const { expiresSoon, expired, daysLeft } = subscription;
-  if (!expiresSoon && !expired) return null;
-  const tone = expired ? "#f87171" : "#f59e0b";
-  const bg = expired ? "rgba(248,113,113,0.14)" : "rgba(245,158,11,0.16)";
-  const title = expired ? "Подписка закончилась" : "Подписка скоро истекает";
-  const text = expired
-    ? null
-    : `Осталось ${daysLeft ?? "несколько"} дней. Продлите подписку, чтобы не потерять доступ.`;
+  if (subscription.expired || !subscription.expiresSoon) return null;
+  const daysLeft = subscription.daysLeft;
   return (
-    <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
-      {!expired && (
-        <div
-          style={{
-            maxWidth: 340,
-            border: `1px solid ${tone}`,
-            background: bg,
-            borderRadius: 12,
-            padding: "10px 12px",
-            color: "#fff",
-            boxShadow: "0 10px 30px rgba(0,0,0,0.3)",
-          }}
-        >
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>{title}</div>
-          <div style={{ fontSize: 12, opacity: 0.85, lineHeight: 1.4 }}>{text}</div>
+    <div className="flex justify-end mb-4">
+      <div className="max-w-sm w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 shadow-sm">
+        <div className="font-semibold text-sm">Подписка скоро истекает</div>
+        <div className="text-xs text-amber-800/80 mt-1 leading-snug">
+          Осталось {daysLeft ?? "несколько"} дней. Продлите подписку, чтобы не потерять доступ.
         </div>
-      )}
-    </div>
-  );
-}
-
-function PlanSummary({ subscription }: { subscription: PortalSubscription | null }) {
-  if (!subscription) return null;
-  const endLabel = formatDateLabel(subscription.currentPeriodEnd);
-  const tone = subscription.expired
-    ? "#f87171"
-    : subscription.expiresSoon
-      ? "#fbbf24"
-      : "#34d399";
-  return (
-    <div
-      style={{
-        border: "1px solid rgba(255,255,255,0.08)",
-        background: "rgba(255,255,255,0.02)",
-        padding: "10px 12px",
-        borderRadius: 12,
-        marginBottom: 12,
-        display: "flex",
-        justifyContent: "space-between",
-        gap: 12,
-        alignItems: "center",
-      }}
-    >
-      <div style={{ display: "grid", gap: 4 }}>
-        <div style={{ fontSize: 12, opacity: 0.7 }}>Тариф</div>
-        <div style={{ fontWeight: 700 }}>{subscription.planName || "—"}</div>
-      </div>
-      <div style={{ display: "grid", textAlign: "right", gap: 4 }}>
-        <div style={{ fontSize: 12, opacity: 0.7 }}>Статус</div>
-        <div style={{ color: tone, fontWeight: 700 }}>
-          {subscription.status}
-          {subscription.daysLeft != null && !subscription.expired
-            ? ` · ${subscription.daysLeft} дн.`
-            : ""}
-        </div>
-        <div style={{ fontSize: 12, opacity: 0.7 }}>Истекает: {endLabel}</div>
       </div>
     </div>
   );
@@ -477,76 +418,136 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   
   return (
     <html lang="ru" className={inter.variable} suppressHydrationWarning>
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              try {
-                var stored = localStorage.getItem('merchant-portal-theme');
-                var theme = stored || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-                document.documentElement.classList.add(theme);
-                document.documentElement.setAttribute('data-theme', theme);
-              } catch (e) {}
-            `,
-          }}
-        />
-      </head>
-      <body className={`${inter.className} antialiased`} style={{ margin: 0 }}>
-        <ThemeProvider defaultTheme="dark">
+      <body className={inter.className}>
+        <ThemeProvider defaultTheme="light">
           <TimezoneProvider timezone={timezonePayload.timezone} options={timezonePayload.options}>
-            {/* Background decorations */}
-            <div className="bg-decoration" />
-            
-            <div className="app-layout">
-              {/* Header */}
-              <AppHeader 
-                staffLabel={staffLabel}
-                role={profile?.role || null}
-                subscription={subscription}
-              />
-
-              {/* Sidebar */}
-              <aside 
-                className="app-sidebar"
-                style={{ 
-                  opacity: expired ? 0.4 : 1, 
-                  pointerEvents: expired ? 'none' : 'auto' 
-                }}
+            <div className="flex min-h-screen bg-slate-50 overflow-x-hidden font-sans text-slate-900">
+              {/* Sidebar — 1:1 как в new design */}
+              <aside
+                className={
+                  "w-72 bg-white border-r border-gray-200 h-screen flex flex-col flex-shrink-0 sticky top-0 overflow-y-auto custom-scrollbar" +
+                  (expired ? " opacity-40 pointer-events-none" : "")
+                }
               >
-                <div className="sidebar-content">
-                  <SidebarNav sections={filteredSections} />
-                </div>
-              </aside>
-
-              {/* Main Content */}
-              <main className="app-main">
-                <SubscriptionNotice subscription={subscription} />
-                
-                <div className="main-content">
-                  {subscription?.expired && (
-                    <div className="expired-overlay">
-                      <div className="expired-content">
-                        <div className="expired-icon">
-                          <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" strokeWidth="1.5">
-                            <circle cx="12" cy="12" r="10" />
-                            <path d="M12 6v6l4 2" />
-                          </svg>
-                        </div>
-                        <h2>Подписка закончилась</h2>
-                        <p>Продлите подписку, чтобы продолжить пользоваться всеми функциями портала.</p>
-                        <button className="btn btn-primary">Продлить подписку</button>
-                      </div>
-                    </div>
-                  )}
-                  
-                  <div style={{
-                    opacity: subscription?.expired ? 0.35 : 1,
-                    pointerEvents: subscription?.expired ? 'none' : 'auto',
-                  }}>
-                    {children}
+                <div className="p-6 flex items-center space-x-2">
+                  <div className="w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0">
+                    L
+                  </div>
+                  <div>
+                    <h1 className="font-bold text-gray-800 text-lg leading-tight">Loyalty</h1>
+                    <span className="text-xs text-gray-500 uppercase tracking-widest">
+                      Business
+                    </span>
                   </div>
                 </div>
-              </main>
+
+                <SidebarNav sections={filteredSections} />
+              </aside>
+
+              {/* Header + Content */}
+              <div className="flex-1 flex flex-col min-h-screen overflow-x-hidden">
+                <AppHeader
+                  staffLabel={staffLabel}
+                  role={profile?.role || null}
+                  subscription={subscription}
+                  navSections={filteredSections}
+                />
+
+                <main className="flex-1 min-h-0 overflow-x-hidden bg-gray-50/50">
+                  <div className="main-content flex-1 min-h-0 overflow-visible relative">
+                    {subscription?.expired && (
+                      <div className="fixed inset-0 z-50 bg-gray-50 flex items-center justify-center p-4 overflow-hidden">
+                        <div
+                          className="absolute inset-0 opacity-[0.03] pointer-events-none"
+                          style={{
+                            backgroundImage:
+                              "radial-gradient(#6b7280 1px, transparent 1px)",
+                            backgroundSize: "32px 32px",
+                          }}
+                        />
+                        <div className="max-w-lg w-full bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden relative z-10">
+                          <div className="bg-red-500 h-2 w-full" />
+
+                          <div className="p-8">
+                            <div className="flex flex-col items-center text-center">
+                              <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center mb-6 ring-8 ring-red-50/50">
+                                <Lock className="h-10 w-10 text-red-500" />
+                              </div>
+
+                              <h1 className="text-2xl font-bold text-gray-900 mb-2">
+                                Доступ приостановлен
+                              </h1>
+                              <p className="text-gray-500 mb-8 max-w-sm">
+                                Срок действия вашей подписки истек. Функции портала
+                                временно заблокированы.
+                              </p>
+
+                              <div className="w-full bg-gray-50 border border-gray-200 rounded-xl p-4 mb-8 text-left">
+                                <div className="flex justify-between items-start mb-4 border-b border-gray-200 pb-3">
+                                  <div>
+                                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                                      Ваш тариф
+                                    </span>
+                                    <div className="font-bold text-gray-900 text-lg">
+                                      {subscription.planName || "—"}
+                                    </div>
+                                  </div>
+                                  <span className="bg-red-100 text-red-700 text-xs px-2 py-1 rounded-md font-medium">
+                                    Истек
+                                  </span>
+                                </div>
+                                <div className="space-y-2 text-sm text-gray-600">
+                                  <div className="flex justify-between">
+                                    <span>Дата окончания:</span>
+                                    <span className="font-medium text-gray-900">
+                                      {formatDateLabel(subscription.currentPeriodEnd)}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Actions — 1:1 как в new design */}
+                              <div className="w-full space-y-3">
+                                <a
+                                  href="https://t.me/chavron_oceann"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="w-full flex items-center justify-center py-3.5 px-4 bg-gray-900 hover:bg-gray-800 text-white rounded-xl font-bold transition-all shadow-lg hover:shadow-xl"
+                                >
+                                  <CreditCard className="mr-2 h-5 w-5" />
+                                  Оплатить и возобновить
+                                </a>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Footer — 1:1 как в new design */}
+                          <div className="bg-gray-50 px-8 py-4 border-t border-gray-100 text-center">
+                            <div className="flex items-center justify-center space-x-2 text-xs text-gray-500">
+                              <AlertTriangle size={12} className="text-amber-500" />
+                              <span>
+                                Данные ваших клиентов сохраняются в течение 90 дней после блокировки.
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <ContentWrapper>
+                      <SubscriptionNotice subscription={subscription} />
+                      <div
+                        style={{
+                          opacity: subscription?.expired ? 0.35 : 1,
+                          pointerEvents: subscription?.expired ? "none" : "auto",
+                        }}
+                      >
+                        {children}
+                      </div>
+                    </ContentWrapper>
+                  </div>
+                </main>
+              </div>
             </div>
           </TimezoneProvider>
         </ThemeProvider>

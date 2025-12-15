@@ -16,41 +16,17 @@ export interface ButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonE
   children?: React.ReactNode;
 }
 
-const sizeClass = (s: Size) => {
-  switch (s) {
-    case 'sm': return { padding: '8px 12px', fontSize: 12 } as React.CSSProperties;
-    case 'lg': return { padding: '12px 18px', fontSize: 16 } as React.CSSProperties;
-    default: return { padding: '10px 14px', fontSize: 14 } as React.CSSProperties;
-  }
-};
-
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = 'primary', size = 'md', leftIcon, rightIcon, startIcon, endIcon, className, style, children, ...rest },
+  { variant: _variant, size: _size = 'md', leftIcon: _left, rightIcon: _right, startIcon: _start, endIcon: _end, className, children, style: _style, ...rest },
   ref
 ) {
-  // map aliases to canonical props and avoid leaking them to DOM
-  const leading = leftIcon ?? startIcon ?? null;
-  const trailing = rightIcon ?? endIcon ?? null;
-  const vClass =
-    variant === 'primary'
-      ? 'btn-primary'
-      : variant === 'secondary'
-      ? 'btn-secondary'
-      : variant === 'danger'
-      ? 'btn-danger'
-      : variant === 'outline'
-      ? 'btn-outline'
-      : 'btn-ghost';
   return (
     <button
       ref={ref}
-      className={`btn ${vClass} ${className ?? ''}`}
-      style={{ ...sizeClass(size), ...(style || {}) }}
+      className={className}
       {...rest}
     >
-      {leading}
-      <span>{children}</span>
-      {trailing}
+      {children}
     </button>
   );
 });

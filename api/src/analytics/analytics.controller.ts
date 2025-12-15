@@ -149,7 +149,12 @@ export class AnalyticsController {
     @Query('to') to?: string,
   ) {
     const period = this.getPeriod(periodType, from, to);
-    return this.analyticsService.getReferralSummary(merchantId, period);
+    const timezone = await this.analyticsService.resolveTimezone(merchantId);
+    return this.analyticsService.getReferralSummary(
+      merchantId,
+      period,
+      timezone,
+    );
   }
 
   /**

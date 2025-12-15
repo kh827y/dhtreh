@@ -10,24 +10,9 @@ export function ThemeToggle() {
   return (
     <button
       onClick={toggleTheme}
-      className="theme-toggle"
+      className="theme-toggle flex items-center justify-center w-10 h-10 rounded-md bg-gray-50 border border-gray-200 text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors relative overflow-hidden"
       title={theme === "dark" ? "Включить светлую тему" : "Включить тёмную тему"}
       aria-label="Переключить тему"
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        width: 40,
-        height: 40,
-        borderRadius: "var(--radius-md)",
-        background: "rgba(255, 255, 255, 0.05)",
-        border: "1px solid var(--border-subtle)",
-        color: "var(--fg-secondary)",
-        cursor: "pointer",
-        transition: "all 0.2s ease",
-        position: "relative",
-        overflow: "hidden",
-      }}
     >
       <span
         style={{

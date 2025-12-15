@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect } from "react";
 
 type Theme = "light" | "dark";
 
@@ -28,50 +28,28 @@ interface ThemeProviderProps {
 
 export function ThemeProvider({
   children,
-  defaultTheme = "dark",
+  defaultTheme: _defaultTheme = "light",
   storageKey = "merchant-portal-theme",
 }: ThemeProviderProps) {
-  const [theme, setThemeState] = useState<Theme>(defaultTheme);
-  const [mounted, setMounted] = useState(false);
+  const theme: Theme = "light";
 
   useEffect(() => {
-    setMounted(true);
-    const stored = localStorage.getItem(storageKey) as Theme | null;
-    if (stored === "light" || stored === "dark") {
-      setThemeState(stored);
-    } else {
-      // Check system preference
-      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      setThemeState(prefersDark ? "dark" : "light");
-    }
+    const root = document.documentElement;
+    root.classList.remove("dark");
+    root.classList.add("light");
+    root.setAttribute("data-theme", "light");
+    try {
+      localStorage.setItem(storageKey, "light");
+    } catch {}
   }, [storageKey]);
 
-  useEffect(() => {
-    if (!mounted) return;
-    
-    const root = document.documentElement;
-    root.classList.remove("light", "dark");
-    root.classList.add(theme);
-    root.setAttribute("data-theme", theme);
-    localStorage.setItem(storageKey, theme);
-  }, [theme, mounted, storageKey]);
-
-  const setTheme = (newTheme: Theme) => {
-    setThemeState(newTheme);
+  const setTheme = (_newTheme: Theme) => {
+    // light-only
   };
 
   const toggleTheme = () => {
-    setThemeState((prev) => (prev === "dark" ? "light" : "dark"));
+    // light-only
   };
-
-  // Prevent flash of wrong theme
-  if (!mounted) {
-    return (
-      <ThemeContext.Provider value={{ theme: defaultTheme, setTheme, toggleTheme }}>
-        {children}
-      </ThemeContext.Provider>
-    );
-  }
 
   return (
     <ThemeContext.Provider value={{ theme, setTheme, toggleTheme }}>

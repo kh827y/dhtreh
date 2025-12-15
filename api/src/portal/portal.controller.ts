@@ -1262,9 +1262,11 @@ export class PortalController {
     @Query('to') to?: string,
   ) {
     const merchantId = this.getMerchantId(req);
+    const timezoneCode = String(req.portalTimezone || DEFAULT_TIMEZONE_CODE);
     return this.analytics.getReferralSummary(
       merchantId,
       this.computePeriod(req, period, from, to),
+      timezoneCode,
     );
   }
   @Get('analytics/operations')
