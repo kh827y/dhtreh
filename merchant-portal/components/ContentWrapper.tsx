@@ -10,6 +10,11 @@ const styledPaths = new Set<string>([
   "/analytics/portrait",
   "/analytics/referrals",
   "/analytics/rfm",
+  "/analytics/repeat",
+  "/analytics/dynamics",
+  "/analytics/staff",
+  "/analytics/outlets",
+  "/analytics",
 ]);
 
 export function ContentWrapper({ children }: { children: React.ReactNode }) {

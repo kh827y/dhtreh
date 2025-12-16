@@ -1,80 +1,84 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  buildChartOption,
-  buildMetricCards,
+  buildChartPoints,
+  calcDelta,
+  formatCurrency,
   formatDayLabel,
+  formatDecimal,
+  formatNumber,
+  formatPeriodLabel,
   hasTimelineData,
-  SummaryMetrics,
-  SummaryTimelinePoint,
 } from "../app/analytics/summary-utils";
 
 describe("analytics summary utils", () => {
-  it("formats metric cards for all elements", () => {
-    const metrics: SummaryMetrics = {
-      salesAmount: 12345,
-      averageCheck: 411,
-      newCustomers: 7,
-      activeCustomers: 3,
-      averagePurchasesPerCustomer: 2.34,
-      visitFrequencyDays: 5.8,
+  it("форматирует числа и валюту", () => {
+    assert.equal(formatNumber(12345), "12\u00a0345");
+    assert.equal(formatDecimal(12.345), "12,3");
+    assert.equal(formatCurrency(5000), "5\u00a0000\u00a0₽");
+  });
+
+  it("строит точки графика и выравнивает прошлый период", () => {
+    const points = buildChartPoints({
+      current: [
+        { date: "2025-11-01", registrations: 2, salesCount: 3, salesAmount: 5000 },
+        { date: "2025-11-02", registrations: 1, salesCount: 0, salesAmount: 0 },
+      ],
+      previous: [{ date: "2025-10-31", registrations: 5, salesCount: 2, salesAmount: 4200 }],
+      grouping: "day",
+    });
+
+    assert.equal(points.length, 2);
+    assert.deepEqual(points[0], {
+      label: "01.11",
+      revenue: 5000,
+      prevRevenue: 4200,
+      registrations: 2,
+      prevRegistrations: 5,
+    });
+    assert.equal(points[1].prevRevenue, 0);
+  });
+
+  it("считает дельту и направления", () => {
+    const up = calcDelta(120, 100);
+    assert.equal(up.direction, "up");
+    assert.equal(Math.round((up.value || 0) * 10) / 10, 20);
+
+    const down = calcDelta(50, 100);
+    assert.equal(down.direction, "down");
+    assert.equal(Math.round((down.value || 0) * 10) / 10, -50);
+
+    const neutral = calcDelta(10, 0);
+    assert.equal(neutral.value, null);
+    assert.equal(neutral.direction, "neutral");
+  });
+
+  it("определяет наличие данных с учетом прошлого периода", () => {
+    const empty = { current: [], previous: [], grouping: "day" as const };
+    const hasCurrent = {
+      current: [{ date: "2025-11-01", registrations: 0, salesCount: 1, salesAmount: 0 }],
+      previous: [],
+      grouping: "day" as const,
+    };
+    const hasPrevious = {
+      current: [],
+      previous: [{ date: "2025-10-31", registrations: 1, salesCount: 0, salesAmount: 0 }],
+      grouping: "day" as const,
     };
 
-    const cards = buildMetricCards(metrics);
-    const lookup = new Map(cards.map((card) => [card.title, card.value]));
-
-    assert.equal(lookup.get("Сумма продаж"), "12\u00a0345\u00a0₽");
-    assert.equal(lookup.get("Средний чек"), "411\u00a0₽");
-    assert.equal(lookup.get("Новые клиенты"), "7");
-    assert.equal(lookup.get("Активные клиенты"), "3");
-    assert.equal(lookup.get("Среднее количество покупок"), "2,3");
-    assert.equal(lookup.get("Частота визитов"), "5,8 дн.");
+    assert.equal(hasTimelineData(empty), false);
+    assert.equal(hasTimelineData(hasCurrent), true);
+    assert.equal(hasTimelineData(hasPrevious), true);
   });
 
-  it("handles empty metrics", () => {
-    const cards = buildMetricCards(undefined as unknown as SummaryMetrics);
-    cards.forEach((card) => assert.equal(card.value, "—"));
-  });
-
-  it("detects timeline data presence", () => {
-    const emptyTimeline: SummaryTimelinePoint[] = [
-      { date: "2025-11-15", registrations: 0, salesCount: 0, salesAmount: 0 },
-    ];
-    const filledTimeline: SummaryTimelinePoint[] = [
-      { date: "2025-11-15", registrations: 0, salesCount: 2, salesAmount: 1500 },
-    ];
-
-    assert.equal(hasTimelineData([]), false);
-    assert.equal(hasTimelineData(emptyTimeline), false);
-    assert.equal(hasTimelineData(filledTimeline), true);
-  });
-
-  it("builds chart option with separate axes and no point labels", () => {
-    const option = buildChartOption([
-      { date: "2025-11-01", registrations: 2, salesCount: 3, salesAmount: 5000 },
-      { date: "2025-11-02", registrations: 1, salesCount: 0, salesAmount: 0 },
-    ]);
-
-    assert.equal((option as any).yAxis.length, 3);
-    const series = (option as any).series;
-    assert.equal(series[0].yAxisIndex, 0);
-    assert.equal(series[1].yAxisIndex, 1);
-    assert.equal(series[2].yAxisIndex, 2);
-    assert.equal(series[1].type, "line");
-    series.forEach((item: any) => assert.equal(item.label?.show, false));
-    assert.deepEqual((option as any).xAxis.data, ["01.11", "02.11"]);
-    (option as any).yAxis.forEach((axis: any) => {
-      assert.equal(axis.axisLabel?.show, false);
-      assert.equal(axis.splitLine?.show, false);
-      assert.equal(axis.name, undefined);
-    });
-    // Проверяем индивидуальное масштабирование: регистрации на 40%, продажи на 70%, сумма на 100%
-    assert.equal((option as any).yAxis[0].max, 5); // 2 / 0.4 => 5
-    assert.equal((option as any).yAxis[1].max, 5); // 3 / 0.7 => 4.3 => 5
-    assert.equal((option as any).yAxis[2].max, 5000); // 5000 / 1 => 5000
-  });
-
-  it("formats day labels", () => {
+  it("форматирует день и период", () => {
     assert.equal(formatDayLabel("2025-11-17"), "17.11");
+    const label = formatPeriodLabel({
+      from: "2025-11-01T00:00:00Z",
+      to: "2025-11-30T23:59:59Z",
+      type: "month",
+    }).toLowerCase();
+    assert.equal(label.includes("ноябрь"), true);
+    assert.equal(label.includes("2025"), true);
   });
 });

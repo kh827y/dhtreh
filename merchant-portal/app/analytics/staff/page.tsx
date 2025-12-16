@@ -2,12 +2,11 @@
 
 import React from "react";
 import "./staff.css";
-import { Card, CardHeader, CardBody, Skeleton, Button, StatCard, Progress } from "@loyalty/ui";
-import { CalendarRange, MapPin, Sparkles, Users, Star, Zap, TrendingUp } from "lucide-react";
+import { Calendar, Store, Users, Medal, TrendingUp, UserPlus, BadgeCheck, Star } from "lucide-react";
 
 type ApiStaffRow = {
   id: string;
-  name: string;
+  name?: string | null;
   outletId?: string | null;
   outletName?: string | null;
   transactions?: number;
@@ -17,132 +16,59 @@ type ApiStaffRow = {
   pointsRedeemed?: number;
   newCustomers?: number;
   performanceScore?: number;
-  averageRating?: number | null;
-  reviewsCount?: number;
 };
 
 type OperationsResponse = { staffMetrics?: ApiStaffRow[] };
 type OutletOption = { value: string; label: string };
-type DateRange = { from: string; to: string };
+type PeriodValue = "yesterday" | "week" | "month" | "quarter" | "year";
 
-type DisplayRow = {
+type StaffDisplayRow = {
   id: string;
   name: string;
   branch: string;
-  transactions: number;
-  revenue: number;
-  averageCheck: number;
-  pointsIssued: number;
-  pointsRedeemed: number;
-  newCustomers: number;
   performanceScore: number;
-  averageRating?: number;
-  reviewsCount?: number;
+  salesCount: number;
+  revenue: number;
+  avgCheck: number;
+  accruedPoints: number;
+  redeemedPoints: number;
+  newClients: number;
 };
 
-type StaffSummary = {
-  totalRevenue: number;
-  totalTransactions: number;
-  averageCheck: number;
-  pointsIssued: number;
-  pointsRedeemed: number;
-  newCustomers: number;
-  averagePerformance: number;
-  averageRating?: number;
-  topPerformer?: DisplayRow;
-};
-
-const numberFormatter = new Intl.NumberFormat("ru-RU");
-const moneyFormatter = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 });
-const shortDateFormatter = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "short" });
-
-function formatDateInput(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function getRangeForDays(days: number): DateRange {
-  const today = new Date();
-  const to = formatDateInput(today);
-  const fromDate = new Date(today);
-  fromDate.setDate(fromDate.getDate() - (days - 1));
-  const from = formatDateInput(fromDate);
-  return { from, to };
-}
-
-function formatDateLabel(input?: string) {
-  if (!input) return null;
-  const date = new Date(input);
-  if (Number.isNaN(date.getTime())) return null;
-  return shortDateFormatter.format(date);
-}
-
-function formatRangeLabel(range: DateRange) {
-  const from = formatDateLabel(range.from);
-  const to = formatDateLabel(range.to);
-  if (!from || !to) return "Период не выбран";
-  return `${from} — ${to}`;
-}
-
-const quickRanges = [
-  { label: "7 дней", days: 7 },
-  { label: "30 дней", days: 30 },
-  { label: "90 дней", days: 90 },
-  { label: "180 дней", days: 180 },
+const periodOptions: Array<{ value: PeriodValue; label: string }> = [
+  { value: "yesterday", label: "Вчера" },
+  { value: "week", label: "Неделя" },
+  { value: "month", label: "Месяц" },
+  { value: "quarter", label: "Квартал" },
+  { value: "year", label: "Год" },
 ];
+
+const moneyFormatter = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 });
+const numberFormatter = new Intl.NumberFormat("ru-RU");
+
+const formatCurrency = (value: number) => `₽${moneyFormatter.format(Math.round(value))}`;
+const formatNumber = (value: number) => numberFormatter.format(Math.round(value));
+const safeNumber = (value: number | null | undefined) =>
+  typeof value === "number" && !Number.isNaN(value) ? value : 0;
 
 const initialsFromName = (name: string) =>
   name
     .split(" ")
     .filter(Boolean)
-    .slice(0, 2)
     .map((part) => part[0])
     .join("")
-    .toUpperCase() || "◎";
+    .toUpperCase();
 
-export default function AnalyticsStaffPage() {
-  const initialRange = React.useMemo(() => getRangeForDays(30), []);
-  const [rangeDraft, setRangeDraft] = React.useState<DateRange>(initialRange);
-  const [appliedRange, setAppliedRange] = React.useState<DateRange>(initialRange);
+export default function StaffActivityPage() {
+  const [period, setPeriod] = React.useState<PeriodValue>("month");
   const [selectedOutlet, setSelectedOutlet] = React.useState<string>("all");
-  const [combineOutlets, setCombineOutlets] = React.useState(true);
-  const [loading, setLoading] = React.useState(true);
-  const [msg, setMsg] = React.useState("");
+  const [groupByEmployee, setGroupByEmployee] = React.useState(false);
+  const [outletOptions, setOutletOptions] = React.useState<OutletOption[]>([{ value: "all", label: "Все точки" }]);
   const [items, setItems] = React.useState<ApiStaffRow[]>([]);
-  const [outletOptions, setOutletOptions] = React.useState<OutletOption[]>([{ value: "all", label: "Все" }]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState("");
   const [outletsLoading, setOutletsLoading] = React.useState(false);
   const [outletsError, setOutletsError] = React.useState("");
-  const [activePreset, setActivePreset] = React.useState<number | null>(30);
-
-  const applyRange = React.useCallback(() => {
-    if (!rangeDraft.from || !rangeDraft.to) {
-      setMsg("Укажите даты начала и окончания");
-      return;
-    }
-    const fromDate = new Date(rangeDraft.from);
-    const toDate = new Date(rangeDraft.to);
-    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
-      setMsg("Некорректные даты");
-      return;
-    }
-    if (fromDate.getTime() > toDate.getTime()) {
-      setMsg("Дата начала не может быть позже даты окончания");
-      return;
-    }
-    setAppliedRange({ ...rangeDraft });
-    setActivePreset(null);
-    setMsg("");
-  }, [rangeDraft]);
-
-  const applyPresetRange = React.useCallback((days: number) => {
-    const nextRange = getRangeForDays(days);
-    setRangeDraft(nextRange);
-    setAppliedRange(nextRange);
-    setActivePreset(days);
-    setMsg("");
-  }, []);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -154,23 +80,25 @@ export default function AnalyticsStaffPage() {
         if (!res.ok) {
           throw new Error((data as any)?.message || "Не удалось загрузить точки");
         }
-        return data as { items?: Array<{ id: string; name: string }> };
+        return data as { items?: Array<{ id: string; name?: string | null }> };
       })
       .then((data) => {
         if (cancelled) return;
-        const dynamic = Array.isArray(data.items)
-          ? data.items
-              .filter((o) => o && typeof o.id === "string")
-              .map((o) => ({ value: o.id, label: o.name || o.id }))
-          : [];
-        setOutletOptions([{ value: "all", label: "Все" }, ...dynamic]);
+        const dynamic =
+          Array.isArray(data.items) && data.items.length
+            ? data.items
+                .filter((row): row is { id: string; name?: string | null } => Boolean(row?.id))
+                .map((row) => ({ value: row.id, label: row.name || row.id }))
+            : [];
+        setOutletOptions([{ value: "all", label: "Все точки" }, ...dynamic]);
       })
-      .catch((error: any) => {
-        if (!cancelled) setOutletsError(String(error?.message || error));
+      .catch((err: any) => {
+        if (!cancelled) setOutletsError(String(err?.message || err));
       })
       .finally(() => {
         if (!cancelled) setOutletsLoading(false);
       });
+
     return () => {
       cancelled = true;
     };
@@ -182,559 +110,408 @@ export default function AnalyticsStaffPage() {
   }, [outletOptions, selectedOutlet]);
 
   React.useEffect(() => {
-    if (!appliedRange.from || !appliedRange.to) return;
     const controller = new AbortController();
     let cancelled = false;
     setLoading(true);
-    setMsg("");
-    const params = new URLSearchParams({ from: appliedRange.from, to: appliedRange.to });
+    setError("");
+
+    const params = new URLSearchParams({ period });
     fetch(`/api/portal/analytics/operations?${params.toString()}`, { signal: controller.signal })
       .then(async (res) => {
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error((data as any)?.message || "Не удалось загрузить аналитику сотрудников");
+        if (!res.ok) throw new Error((data as any)?.message || "Не удалось загрузить аналитику персонала");
         return data as OperationsResponse;
       })
       .then((data) => {
         if (cancelled) return;
         setItems(Array.isArray(data.staffMetrics) ? data.staffMetrics : []);
       })
-      .catch((error: any) => {
-        if (cancelled || error?.name === "AbortError") return;
-        setMsg(String(error?.message || error));
+      .catch((err: any) => {
+        if (cancelled || err?.name === "AbortError") return;
+        setError(String(err?.message || err));
         setItems([]);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+
     return () => {
       cancelled = true;
       controller.abort();
     };
-  }, [appliedRange.from, appliedRange.to]);
+  }, [period]);
 
-  const selectedOutletLabel = React.useMemo(() => {
-    if (selectedOutlet === "all") return "Все точки";
-    return outletOptions.find((opt) => opt.value === selectedOutlet)?.label || "Выбранная точка";
-  }, [selectedOutlet, outletOptions]);
-
-  const staffRows = React.useMemo<DisplayRow[]>(() => {
+  const staffRows = React.useMemo<StaffDisplayRow[]>(() => {
     if (!items.length) return [];
 
-    const formatRow = (row: ApiStaffRow, branch: string): DisplayRow => {
-      const sales = Number(row.transactions ?? 0);
-      const revenue = Number(row.revenue ?? 0);
-      const avgCheck =
-        typeof row.averageCheck === "number"
-          ? row.averageCheck
-          : sales > 0
-            ? revenue / Math.max(1, sales)
-            : 0;
-      return {
-        id: row.id,
-        name: row.name || row.id,
-        branch,
-        transactions: sales,
-        revenue,
-        averageCheck: avgCheck,
-        pointsIssued: Number(row.pointsIssued ?? 0),
-        pointsRedeemed: Number(row.pointsRedeemed ?? 0),
-        newCustomers: Number(row.newCustomers ?? 0),
-        performanceScore: Number(row.performanceScore ?? 0),
-        averageRating: typeof row.averageRating === "number" ? row.averageRating : undefined,
-        reviewsCount: typeof row.reviewsCount === "number" ? Number(row.reviewsCount) : undefined,
-      };
-    };
+    const withOutlet = selectedOutlet === "all" ? items : items.filter((row) => row.outletId === selectedOutlet);
 
-    if (!combineOutlets) {
-      const applyOutletFilter = selectedOutlet !== "all";
-      const filtered = applyOutletFilter ? items.filter((row) => row.outletId === selectedOutlet) : items;
-      return filtered
-        .map((row) => formatRow(row, row.outletName || row.outletId || "—"))
-        .sort((a, b) => {
-          if (b.revenue === a.revenue) return b.performanceScore - a.performanceScore;
-          return b.revenue - a.revenue;
-        });
+    if (groupByEmployee) {
+      const aggregated = new Map<string, StaffDisplayRow & { branches: Set<string> }>();
+      withOutlet.forEach((row) => {
+        if (!row.id) return;
+        if (!aggregated.has(row.id)) {
+          aggregated.set(row.id, {
+            id: row.id,
+            name: row.name || row.id,
+            branch: "",
+            performanceScore: 0,
+            salesCount: 0,
+            revenue: 0,
+            avgCheck: 0,
+            accruedPoints: 0,
+            redeemedPoints: 0,
+            newClients: 0,
+            branches: new Set<string>(),
+          });
+        }
+        const entry = aggregated.get(row.id)!;
+        entry.branches.add(row.outletName || row.outletId || "Все точки");
+        entry.performanceScore += safeNumber(row.performanceScore);
+        entry.salesCount += safeNumber(row.transactions);
+        entry.revenue += safeNumber(row.revenue);
+        entry.accruedPoints += safeNumber(row.pointsIssued);
+        entry.redeemedPoints += safeNumber(row.pointsRedeemed);
+        entry.newClients += safeNumber(row.newCustomers);
+      });
+
+      return Array.from(aggregated.values())
+        .map((entry) => {
+          const avgCheck = entry.salesCount > 0 ? Math.round(entry.revenue / Math.max(1, entry.salesCount)) : 0;
+          return {
+            ...entry,
+            branch: Array.from(entry.branches).join(", "),
+            avgCheck,
+            revenue: Math.round(entry.revenue),
+            salesCount: Math.round(entry.salesCount),
+            accruedPoints: Math.round(entry.accruedPoints),
+            redeemedPoints: Math.round(Math.abs(entry.redeemedPoints)),
+            newClients: Math.round(entry.newClients),
+            performanceScore: Math.round(entry.performanceScore),
+          };
+        })
+        .sort((a, b) => (b.revenue === a.revenue ? b.performanceScore - a.performanceScore : b.revenue - a.revenue));
     }
 
-    const aggregated = new Map<string, DisplayRow & { ratingWeighted: number }>();
-    items.forEach((row) => {
-      if (selectedOutlet !== "all" && row.outletId !== selectedOutlet) {
-        return;
-      }
-      const key = row.id;
-      if (!aggregated.has(key)) {
-        aggregated.set(key, {
+    return withOutlet
+      .map((row) => {
+        const salesCount = safeNumber(row.transactions);
+        const revenue = safeNumber(row.revenue);
+        const avgCheck =
+          typeof row.averageCheck === "number" && !Number.isNaN(row.averageCheck)
+            ? Math.round(row.averageCheck)
+            : salesCount > 0
+              ? Math.round(revenue / Math.max(1, salesCount))
+              : 0;
+        return {
           id: row.id,
           name: row.name || row.id,
-          branch: selectedOutletLabel,
-          transactions: 0,
-          revenue: 0,
-          averageCheck: 0,
-          pointsIssued: 0,
-          pointsRedeemed: 0,
-          newCustomers: 0,
-          performanceScore: 0,
-          averageRating: undefined,
-          reviewsCount: 0,
-          ratingWeighted: 0,
-        });
-      }
-      const entry = aggregated.get(key)!;
-      entry.transactions += Number(row.transactions ?? 0);
-      entry.revenue += Number(row.revenue ?? 0);
-      entry.pointsIssued += Number(row.pointsIssued ?? 0);
-      entry.pointsRedeemed += Number(row.pointsRedeemed ?? 0);
-      entry.newCustomers += Number(row.newCustomers ?? 0);
-      entry.performanceScore += Number(row.performanceScore ?? 0);
-      if (typeof row.averageRating === "number" && typeof row.reviewsCount === "number") {
-        const reviews = Math.max(0, Number(row.reviewsCount));
-        entry.ratingWeighted += row.averageRating * reviews;
-        entry.reviewsCount = (entry.reviewsCount ?? 0) + reviews;
-      }
-    });
-
-    return Array.from(aggregated.values())
-      .map((entry) => {
-        const avg = entry.transactions > 0 ? entry.revenue / Math.max(1, entry.transactions) : 0;
-        const averageRating =
-          entry.reviewsCount && entry.reviewsCount > 0 ? entry.ratingWeighted / entry.reviewsCount : undefined;
-        return {
-          id: entry.id,
-          name: entry.name,
-          branch: entry.branch,
-          transactions: entry.transactions,
-          revenue: entry.revenue,
-          averageCheck: avg,
-          pointsIssued: entry.pointsIssued,
-          pointsRedeemed: entry.pointsRedeemed,
-          newCustomers: entry.newCustomers,
-          performanceScore: entry.performanceScore,
-          averageRating,
-          reviewsCount: entry.reviewsCount,
+          branch: row.outletName || row.outletId || "—",
+          performanceScore: Math.round(safeNumber(row.performanceScore)),
+          salesCount: Math.round(salesCount),
+          revenue: Math.round(revenue),
+          avgCheck,
+          accruedPoints: Math.round(safeNumber(row.pointsIssued)),
+          redeemedPoints: Math.round(Math.abs(safeNumber(row.pointsRedeemed))),
+          newClients: Math.round(safeNumber(row.newCustomers)),
         };
       })
-      .sort((a, b) => {
-        if (b.revenue === a.revenue) return b.performanceScore - a.performanceScore;
-        return b.revenue - a.revenue;
-      });
-  }, [items, combineOutlets, selectedOutlet, selectedOutletLabel]);
+      .sort((a, b) => (b.revenue === a.revenue ? b.performanceScore - a.performanceScore : b.revenue - a.revenue));
+  }, [items, groupByEmployee, selectedOutlet]);
 
-  const staffSummary = React.useMemo<StaffSummary>(() => {
+  const totals = React.useMemo(() => {
     if (!staffRows.length) {
       return {
-        totalRevenue: 0,
-        totalTransactions: 0,
-        averageCheck: 0,
-        pointsIssued: 0,
-        pointsRedeemed: 0,
-        newCustomers: 0,
-        averagePerformance: 0,
-        averageRating: undefined,
-        topPerformer: undefined,
+        salesCount: 0,
+        revenue: 0,
+        accruedPoints: 0,
+        redeemedPoints: 0,
+        newClients: 0,
+        performanceScore: 0,
       };
     }
 
-    const totals = staffRows.reduce(
+    const sum = staffRows.reduce(
       (acc, row) => {
+        acc.salesCount += row.salesCount;
         acc.revenue += row.revenue;
-        acc.transactions += row.transactions;
-        acc.pointsIssued += row.pointsIssued;
-        acc.pointsRedeemed += Math.abs(row.pointsRedeemed);
-        acc.newCustomers += row.newCustomers;
+        acc.accruedPoints += row.accruedPoints;
+        acc.redeemedPoints += row.redeemedPoints;
+        acc.newClients += row.newClients;
         acc.performanceScore += row.performanceScore;
-        if (typeof row.averageRating === "number" && typeof row.reviewsCount === "number") {
-          const reviews = Math.max(0, row.reviewsCount);
-          acc.ratingWeighted += row.averageRating * reviews;
-          acc.reviews += reviews;
-        }
         return acc;
       },
-      { revenue: 0, transactions: 0, pointsIssued: 0, pointsRedeemed: 0, newCustomers: 0, performanceScore: 0, ratingWeighted: 0, reviews: 0 }
+      {
+        salesCount: 0,
+        revenue: 0,
+        accruedPoints: 0,
+        redeemedPoints: 0,
+        newClients: 0,
+        performanceScore: 0,
+      }
     );
 
-    const averageCheck = totals.transactions > 0 ? totals.revenue / Math.max(1, totals.transactions) : 0;
-    const averageRating = totals.reviews > 0 ? totals.ratingWeighted / totals.reviews : undefined;
-    const averagePerformance = totals.performanceScore / staffRows.length;
-
     return {
-      totalRevenue: totals.revenue,
-      totalTransactions: totals.transactions,
-      averageCheck,
-      pointsIssued: totals.pointsIssued,
-      pointsRedeemed: totals.pointsRedeemed,
-      newCustomers: totals.newCustomers,
-      averagePerformance,
-      averageRating,
-      topPerformer: staffRows[0],
+      salesCount: sum.salesCount,
+      revenue: sum.revenue,
+      accruedPoints: sum.accruedPoints,
+      redeemedPoints: sum.redeemedPoints,
+      newClients: sum.newClients,
+      avgCheck: sum.salesCount > 0 ? Math.round(sum.revenue / Math.max(1, sum.salesCount)) : 0,
+      performanceScore: Math.round(sum.performanceScore / staffRows.length),
     };
   }, [staffRows]);
 
-  const daysInRange = React.useMemo(() => {
-    if (!appliedRange.from || !appliedRange.to) return null;
-    const fromDate = new Date(appliedRange.from);
-    const toDate = new Date(appliedRange.to);
-    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) return null;
-    const diff = Math.floor((toDate.getTime() - fromDate.getTime()) / 86400000) + 1;
-    return Math.max(1, diff);
-  }, [appliedRange.from, appliedRange.to]);
+  const leaders = React.useMemo(() => {
+    if (!staffRows.length) return null;
+    const byScore = [...staffRows].sort((a, b) =>
+      b.performanceScore === a.performanceScore ? b.revenue - a.revenue : b.performanceScore - a.performanceScore
+    )[0];
+    const byRevenue = [...staffRows].sort((a, b) => (b.revenue === a.revenue ? b.salesCount - a.salesCount : b.revenue - a.revenue))[0];
+    const byAcquisition = [...staffRows].sort((a, b) =>
+      b.newClients === a.newClients ? b.revenue - a.revenue : b.newClients - a.newClients
+    )[0];
+    return { score: byScore, revenue: byRevenue, acquisition: byAcquisition };
+  }, [staffRows]);
 
-  const acquisitionPerDay = React.useMemo(() => {
-    if (!daysInRange) return null;
-    return staffSummary.newCustomers / daysInRange;
-  }, [daysInRange, staffSummary.newCustomers]);
-
-  const maxRevenue = React.useMemo(
-    () => staffRows.reduce((max, row) => Math.max(max, row.revenue), 0),
-    [staffRows]
+  const periodLabel = React.useMemo(
+    () => periodOptions.find((option) => option.value === period)?.label ?? "Период",
+    [period]
   );
 
-  const rangeLabel = formatRangeLabel(appliedRange);
+  const uniqueOutlets = React.useMemo(() => outletOptions.filter((opt) => opt.value !== "all"), [outletOptions]);
+
+  const handleToggleGroup = () => {
+    if (!groupByEmployee && selectedOutlet !== "all") {
+      setSelectedOutlet("all");
+    }
+    setGroupByEmployee((prev) => !prev);
+  };
 
   return (
-    <div className="staff-analytics-page">
-      <section className="staff-hero animate-in">
-        <div className="staff-hero__content">
-          <div className="hero-eyebrow">Персонал · вовлеченность</div>
-          <h1 className="hero-title">Активность сотрудников</h1>
-          <p className="hero-description">
-            Следите за вкладом команды в продажи и удержание клиентов. Страница объединяет финансы, бонусы и отзывы
-            в одном потоке и показывает лидеров периода.
-          </p>
-          <div className="hero-chips">
-            <span className="hero-chip">
-              <CalendarRange size={16} />
-              {rangeLabel}
-            </span>
-            <span className="hero-chip">
-              <MapPin size={16} />
-              {selectedOutletLabel}
-            </span>
-            <span className={`hero-chip ${combineOutlets ? "chip-active" : ""}`}>
-              <TrendingUp size={16} />
-              {combineOutlets ? "Объединённая статистика" : "По каждой точке"}
-            </span>
-          </div>
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Активность персонала</h2>
+          <p className="text-gray-500">Показатели эффективности сотрудников и KPI.</p>
         </div>
 
-        <div className="staff-hero__badges">
-          <div className="hero-score glass-card">
-            <div className="muted-label">Скорость привлечения</div>
-            {loading ? (
-              <Skeleton height={46} width="70%" />
-            ) : (
-              <div className="hero-score__value">
-                {acquisitionPerDay != null
-                  ? numberFormatter.format(Math.max(0, Math.round(acquisitionPerDay)))
-                  : "—"}
-                <span className="hero-score__suffix">нов./день</span>
-              </div>
-            )}
-            <div className="muted-label">За выбранный период</div>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center space-x-2 bg-white border border-gray-200 rounded-lg px-3 py-2 shadow-sm">
+            <Calendar size={16} className="text-gray-400" />
+            <select
+              value={period}
+              onChange={(e) => setPeriod(e.target.value as PeriodValue)}
+              className="bg-transparent text-sm text-gray-700 font-medium focus:outline-none cursor-pointer pr-4"
+            >
+              {periodOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </div>
-          <div className="hero-highlight">
-            <div className="muted-label">Лидер периода</div>
-            {loading ? (
-              <Skeleton height={38} />
-            ) : staffSummary.topPerformer ? (
-              <div className="hero-highlight__content">
-                <div className="hero-highlight__name">{staffSummary.topPerformer.name}</div>
-                <div className="hero-highlight__meta">
-                  <Sparkles size={14} />
-                  {moneyFormatter.format(Math.round(staffSummary.topPerformer.revenue))} ₽ ·{" "}
-                  {numberFormatter.format(Math.round(staffSummary.topPerformer.transactions))} чеков
-                </div>
-              </div>
-            ) : (
-              <div className="hero-highlight__empty">Данных пока нет</div>
-            )}
+
+          <div className="flex items-center space-x-2 bg-white border border-gray-200 rounded-lg px-3 py-2 shadow-sm">
+            <Store size={16} className="text-gray-400" />
+            <select
+              value={selectedOutlet}
+              onChange={(e) => setSelectedOutlet(e.target.value)}
+              disabled={outletsLoading}
+              className="bg-transparent text-sm text-gray-700 font-medium focus:outline-none cursor-pointer pr-4"
+            >
+              <option value="all">Все точки</option>
+              {uniqueOutlets.map((outlet) => (
+                <option key={outlet.value} value={outlet.value}>
+                  {outlet.label}
+                </option>
+              ))}
+            </select>
           </div>
+
+          <button
+            onClick={handleToggleGroup}
+            className={`flex items-center space-x-2 border rounded-lg px-3 py-2 shadow-sm text-sm font-medium transition-colors ${
+              groupByEmployee
+                ? "bg-purple-50 border-purple-200 text-purple-700"
+                : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+            }`}
+            title="Объединить статистику сотрудника по всем точкам"
+          >
+            <Users size={16} />
+            <span>Объединить торговые точки</span>
+          </button>
         </div>
-      </section>
-
-      <Card className="staff-filters animate-in animate-in-delay-1">
-        <CardHeader
-          title="Фильтры периода"
-          subtitle="Выберите даты, точку продаж и режим агрегации — интерфейс мгновенно перестроится."
-          actions={
-            <Button variant="secondary" size="sm" onClick={applyRange} disabled={loading || !rangeDraft.from || !rangeDraft.to}>
-              Применить период
-            </Button>
-          }
-        />
-        <CardBody>
-          <div className="filters-grid">
-            <div className="filter-control filter-control--wide">
-              <div className="control-label">Быстрый выбор</div>
-              <div className="preset-chips">
-                {quickRanges.map((preset) => (
-                  <button
-                    key={preset.days}
-                    type="button"
-                    className={`preset-btn ${activePreset === preset.days ? "active" : ""}`}
-                    onClick={() => applyPresetRange(preset.days)}
-                    disabled={loading}
-                  >
-                    {preset.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="filter-control">
-              <div className="control-label">С даты</div>
-              <input
-                type="date"
-                className="control-input"
-                value={rangeDraft.from}
-                onChange={(event) => {
-                  setActivePreset(null);
-                  setRangeDraft((prev) => ({ ...prev, from: event.target.value }));
-                }}
-              />
-            </div>
-
-            <div className="filter-control">
-              <div className="control-label">По дату</div>
-              <input
-                type="date"
-                className="control-input"
-                value={rangeDraft.to}
-                onChange={(event) => {
-                  setActivePreset(null);
-                  setRangeDraft((prev) => ({ ...prev, to: event.target.value }));
-                }}
-              />
-            </div>
-
-            <div className="filter-control">
-              <div className="control-label">Режим агрегации</div>
-              <label className={`switch ${combineOutlets ? "checked" : ""}`}>
-                <input
-                  type="checkbox"
-                  checked={combineOutlets}
-                  onChange={(event) => setCombineOutlets(event.target.checked)}
-                />
-                <span className="switch-track">
-                  <span className="switch-thumb" />
-                </span>
-                <span className="switch-text">Объединить торговые точки</span>
-              </label>
-            </div>
-
-            <div className="filter-control">
-              <div className="control-label">Торговая точка</div>
-              <select
-                className="control-input"
-                value={selectedOutlet}
-                onChange={(event) => setSelectedOutlet(event.target.value)}
-                disabled={outletsLoading}
-              >
-                {outletOptions.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          {outletsError && <div className="alert alert-error">{outletsError}</div>}
-          {msg && !loading && <div className="alert alert-error">{msg}</div>}
-        </CardBody>
-      </Card>
-
-      <div className="staff-metrics-grid animate-in animate-in-delay-2">
-        <StatCard
-          title="Ø Выручка на сотрудника"
-          value={`${moneyFormatter.format(Math.round(staffRows.length ? staffSummary.totalRevenue / staffRows.length : 0))} ₽`}
-          subtitle={`Всего: ${moneyFormatter.format(Math.round(staffSummary.totalRevenue))} ₽`}
-          icon={<Zap size={18} />}
-          loading={loading}
-          className="metric-card metric-card--revenue"
-        />
-        <StatCard
-          title="Ø Продаж на сотрудника"
-          value={`${numberFormatter.format(Math.round(staffRows.length ? staffSummary.totalTransactions / staffRows.length : 0))}`}
-          subtitle={`Всего чеков: ${numberFormatter.format(Math.round(staffSummary.totalTransactions))}`}
-          icon={<Users size={18} />}
-          loading={loading}
-          className="metric-card metric-card--clients"
-        />
-        <StatCard
-          title="Ø Новых клиентов на сотрудника"
-          value={`${numberFormatter.format(Math.round(staffRows.length ? staffSummary.newCustomers / staffRows.length : 0))}`}
-          subtitle={`Всего новых: ${numberFormatter.format(Math.round(staffSummary.newCustomers))}`}
-          icon={<Sparkles size={18} />}
-          loading={loading}
-          className="metric-card metric-card--loyalty"
-        />
-        <StatCard
-          title="Средняя оценка"
-          value={
-            staffSummary.averageRating
-              ? `${staffSummary.averageRating.toFixed(2)} / 5`
-              : staffRows.length
-                ? "Нет оценок"
-                : "—"
-          }
-          subtitle={`Перфоманс: ${numberFormatter.format(Math.round(staffSummary.averagePerformance || 0))} очков`}
-          icon={<Star size={18} />}
-          loading={loading}
-          className="metric-card metric-card--feedback"
-        />
       </div>
 
-      <Card className="staff-table-card animate-in animate-in-delay-3">
-        <CardHeader
-          title="Команда и вклад в период"
-          subtitle="Детализация по каждому сотруднику: продажи, бонусы, отзывы и новые клиенты."
-        />
-        <CardBody>
-          <div className="table-meta">
-            <span className="meta-pill">
-              <Sparkles size={14} />
-              {staffRows.length ? `${staffRows.length} сотрудников` : "Ожидаем данные"}
-            </span>
-            <span className="meta-pill">
-              <CalendarRange size={14} />
-              {rangeLabel}
-            </span>
-            <span className="meta-pill">
-              <MapPin size={14} />
-              {selectedOutletLabel}
-            </span>
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {Array.from({ length: 3 }).map((_, idx) => (
+            <div
+              key={idx}
+              className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm relative overflow-hidden animate-pulse"
+            >
+              <div className="h-4 bg-gray-100 rounded w-28 mb-4" />
+              <div className="h-6 bg-gray-100 rounded w-1/2 mb-3" />
+              <div className="h-4 bg-gray-100 rounded w-2/5" />
+            </div>
+          ))}
+        </div>
+      ) : leaders ? (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-gradient-to-br from-white to-amber-50 p-5 rounded-xl border border-amber-100 shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-3 opacity-10">
+              <Star size={64} className="text-amber-500" />
+            </div>
+            <div className="flex items-center space-x-3 mb-2">
+              <div className="bg-amber-100 p-2 rounded-lg text-amber-600">
+                <Medal size={20} />
+              </div>
+              <span className="text-sm font-semibold text-amber-900">Лучший сотрудник</span>
+            </div>
+            <div className="mt-2">
+              <h3 className="text-xl font-bold text-gray-900">{leaders.score?.name}</h3>
+              <div className="flex items-baseline space-x-2 mt-1">
+                <span className="text-2xl font-bold text-amber-600">{formatNumber(leaders.score?.performanceScore ?? 0)}</span>
+                <span className="text-sm text-gray-500">очков</span>
+              </div>
+              <p className="text-xs text-gray-400 mt-1 line-clamp-1">{leaders.score?.branch}</p>
+            </div>
           </div>
 
-          {loading ? (
-            <div className="table-skeleton">
-              {Array.from({ length: 5 }).map((_, idx) => (
-                <div key={idx} className="table-skeleton__row">
-                  <div className="skeleton skeleton-avatar" />
-                  <div className="skeleton" style={{ height: 14, width: "28%" }} />
-                  <div className="skeleton" style={{ height: 12, width: "18%" }} />
-                  <div className="skeleton" style={{ height: 12, width: "16%" }} />
-                  <div className="skeleton" style={{ height: 12, width: "14%" }} />
-                </div>
-              ))}
+          <div className="bg-gradient-to-br from-white to-purple-50 p-5 rounded-xl border border-purple-100 shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-3 opacity-10">
+              <TrendingUp size={64} className="text-purple-600" />
             </div>
-          ) : (
-            <>
-              <div className="table-scroll">
-                <table className="staff-table">
-                  <thead>
-                    <tr>
-                      <th>Сотрудник</th>
-                      <th>Филиал</th>
-                      <th>Оценка работы</th>
-                      <th>Продажи и чеки</th>
-                      <th>Лояльность</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {staffRows.map((row, index) => {
-                      const share = maxRevenue > 0 ? (row.revenue / maxRevenue) * 100 : 0;
-                      return (
-                        <tr key={`${row.id}-${row.branch}`} className="staff-row">
-                          <td>
-                            <div className="staff-cell staff-cell__person">
-                              <div className="staff-avatar">{initialsFromName(row.name || row.id)}</div>
-                              <div className="staff-person">
-                                <div className="staff-name">
-                                  {row.name || row.id}
-                                  {index === 0 && <span className="chip chip--gold">Лидер</span>}
-                                </div>
-                                <div className="staff-id">{row.id}</div>
-                                <div className="staff-performance">
-                                  <span className="score-pill">
-                                    {numberFormatter.format(Math.round(row.performanceScore))} очков
-                                  </span>
-                                  {typeof row.averageRating === "number" && (
-                                    <span className="rating-pill">
-                                      <Star size={14} />
-                                      {row.averageRating.toFixed(2)}
-                                      {typeof row.reviewsCount === "number" && row.reviewsCount > 0 && (
-                                        <span className="rating-muted">
-                                          · {row.reviewsCount} отзывов
-                                        </span>
-                                      )}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-
-                          <td>
-                            <div className="staff-cell">
-                              <span className="branch-pill">{row.branch}</span>
-                              <div className="muted-label">Точка продаж</div>
-                            </div>
-                          </td>
-
-                          <td>
-                            <div className="staff-cell">
-                              <div className="kpi-block">
-                                <div className="kpi-value">
-                                  {typeof row.averageRating === "number" ? row.averageRating.toFixed(2) : "—"}
-                                </div>
-                                <div className="muted-label">Средняя оценка</div>
-                              </div>
-                              <div className="kpi-block">
-                                <div className="kpi-value">{numberFormatter.format(Math.round(row.newCustomers))}</div>
-                                <div className="muted-label">Новые клиенты</div>
-                              </div>
-                            </div>
-                          </td>
-
-                          <td>
-                            <div className="staff-cell staff-cell__grid">
-                              <div className="kpi-block">
-                                <div className="kpi-label">Выручка</div>
-                                <div className="kpi-value">{moneyFormatter.format(Math.round(row.revenue))} ₽</div>
-                                <Progress value={row.revenue} max={Math.max(1, maxRevenue)} size="sm" />
-                              </div>
-                              <div className="kpi-block">
-                                <div className="kpi-label">Чеки</div>
-                                <div className="kpi-value">{numberFormatter.format(Math.round(row.transactions))}</div>
-                                <div className="muted-label">Средний чек: {moneyFormatter.format(Math.round(row.averageCheck || 0))} ₽</div>
-                              </div>
-                              <div className="kpi-share">
-                                <TrendingUp size={14} />
-                                Вклад: {share.toFixed(1)}%
-                              </div>
-                            </div>
-                          </td>
-
-                          <td>
-                            <div className="staff-cell staff-cell__grid">
-                              <div className="kpi-block">
-                                <div className="kpi-label">Начислено</div>
-                                <div className="kpi-value">{numberFormatter.format(Math.round(row.pointsIssued))}</div>
-                                <div className="muted-label">баллов</div>
-                              </div>
-                              <div className="kpi-block">
-                                <div className="kpi-label">Списано</div>
-                                <div className="kpi-value">{numberFormatter.format(Math.round(Math.abs(row.pointsRedeemed)))}</div>
-                                <div className="muted-label">баллов</div>
-                              </div>
-                              <div className="kpi-block">
-                                <div className="kpi-label">Новые</div>
-                                <div className="kpi-value">{numberFormatter.format(Math.round(row.newCustomers))}</div>
-                                <div className="muted-label">клиенты</div>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+            <div className="flex items-center space-x-3 mb-2">
+              <div className="bg-purple-100 p-2 rounded-lg text-purple-600">
+                <BadgeCheck size={20} />
               </div>
-              {!staffRows.length && <div className="empty-state-compact">Нет данных за выбранный период</div>}
-              {msg && <div className="alert alert-error">{msg}</div>}
-            </>
-          )}
-        </CardBody>
-      </Card>
+              <span className="text-sm font-semibold text-purple-900">Лучший продавец</span>
+            </div>
+            <div className="mt-2">
+              <h3 className="text-xl font-bold text-gray-900">{leaders.revenue?.name}</h3>
+              <p className="text-2xl font-bold text-purple-700 mt-1">{formatCurrency(leaders.revenue?.revenue ?? 0)}</p>
+              <p className="text-xs text-gray-400 mt-1">{formatNumber(leaders.revenue?.salesCount ?? 0)} транзакций</p>
+            </div>
+          </div>
+
+          <div className="bg-gradient-to-br from-white to-blue-50 p-5 rounded-xl border border-blue-100 shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-3 opacity-10">
+              <UserPlus size={64} className="text-blue-600" />
+            </div>
+            <div className="flex items-center space-x-3 mb-2">
+              <div className="bg-blue-100 p-2 rounded-lg text-blue-600">
+                <UserPlus size={20} />
+              </div>
+              <span className="text-sm font-semibold text-blue-900">Лидер привлечения</span>
+            </div>
+            <div className="mt-2">
+              <h3 className="text-xl font-bold text-gray-900">{leaders.acquisition?.name}</h3>
+              <p className="text-2xl font-bold text-blue-700 mt-1">
+                +{formatNumber(leaders.acquisition?.newClients ?? 0)} <span className="text-sm font-normal text-blue-600">новых клиентов</span>
+              </p>
+              <p className="text-xs text-gray-400 mt-1 line-clamp-1">{leaders.acquisition?.branch}</p>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="p-6 text-center text-sm text-gray-500 border border-gray-100 rounded-xl bg-white">Нет данных за выбранный период</div>
+      )}
+
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-gray-100">
+          <h3 className="font-bold text-gray-900">Детальная эффективность</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="text-xs text-gray-500 uppercase bg-gray-50 border-b border-gray-100">
+              <tr>
+                <th className="px-6 py-4 font-semibold">Сотрудник</th>
+                <th className="px-6 py-4 font-semibold">Филиал</th>
+                <th className="px-6 py-4 font-semibold text-center">Очки</th>
+                <th className="px-6 py-4 font-semibold text-right">Чеков</th>
+                <th className="px-6 py-4 font-semibold text-right">Выручка</th>
+                <th className="px-6 py-4 font-semibold text-right">Ср. чек</th>
+                <th className="px-6 py-4 font-semibold text-right">Начисл.</th>
+                <th className="px-6 py-4 font-semibold text-right">Списано</th>
+                <th className="px-6 py-4 font-semibold text-right">Новые</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {loading
+                ? Array.from({ length: 6 }).map((_, idx) => (
+                    <tr key={idx} className="animate-pulse">
+                      {Array.from({ length: 9 }).map((__, cellIdx) => (
+                        <td key={cellIdx} className="px-6 py-4">
+                          <div className="h-4 bg-gray-100 rounded w-24" />
+                        </td>
+                      ))}
+                    </tr>
+                  ))
+                : staffRows.map((staff) => (
+                    <tr key={`${staff.id}-${staff.branch}`} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-4 font-medium text-gray-900 flex items-center">
+                        <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 mr-3 text-xs font-bold flex-shrink-0">
+                          {initialsFromName(staff.name)}
+                        </div>
+                        {staff.name}
+                      </td>
+                      <td className="px-6 py-4 text-gray-600">
+                        <span
+                          className="inline-block px-2 py-1 bg-gray-100 rounded text-xs text-gray-600 max-w-[150px] truncate"
+                          title={staff.branch}
+                        >
+                          {staff.branch}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <span
+                          className={`font-bold ${
+                            staff.performanceScore >= 90 ? "text-green-600" : staff.performanceScore >= 80 ? "text-blue-600" : "text-amber-600"
+                          }`}
+                        >
+                          {formatNumber(staff.performanceScore)}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right text-gray-600">{formatNumber(staff.salesCount)}</td>
+                      <td className="px-6 py-4 text-right font-medium text-gray-900">{formatCurrency(staff.revenue)}</td>
+                      <td className="px-6 py-4 text-right text-gray-600">{formatCurrency(staff.avgCheck)}</td>
+                      <td className="px-6 py-4 text-right text-green-600">+{formatNumber(staff.accruedPoints)}</td>
+                      <td className="px-6 py-4 text-right text-red-500">-{formatNumber(staff.redeemedPoints)}</td>
+                      <td className="px-6 py-4 text-right">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700">
+                          +{formatNumber(staff.newClients)}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+            </tbody>
+            <tfoot className="bg-gray-50 border-t border-gray-200">
+              <tr className="font-bold text-gray-900">
+                <td className="px-6 py-4" colSpan={2}>
+                  ИТОГО / СРЕДНЕЕ
+                </td>
+                <td className="px-6 py-4 text-center">{loading ? "—" : formatNumber(totals.performanceScore)}</td>
+                <td className="px-6 py-4 text-right">{loading ? "—" : formatNumber(totals.salesCount)}</td>
+                <td className="px-6 py-4 text-right">{loading ? "—" : formatCurrency(totals.revenue)}</td>
+                <td className="px-6 py-4 text-right text-purple-700">{loading ? "—" : formatCurrency(totals.avgCheck)}</td>
+                <td className="px-6 py-4 text-right text-green-700">{loading ? "—" : `+${formatNumber(totals.accruedPoints)}`}</td>
+                <td className="px-6 py-4 text-right text-red-700">{loading ? "—" : `-${formatNumber(totals.redeemedPoints)}`}</td>
+                <td className="px-6 py-4 text-right">{loading ? "—" : `+${formatNumber(totals.newClients)}`}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        {!loading && !staffRows.length && (
+          <div className="p-6 text-center text-sm text-gray-500 border-t border-gray-100">Нет данных за выбранный период</div>
+        )}
+        {(error || outletsError) && (
+          <div className="px-6 pb-6 text-sm text-red-600 font-medium">
+            {error || outletsError}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

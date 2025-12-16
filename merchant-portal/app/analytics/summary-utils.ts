@@ -1,3 +1,5 @@
+export type TimeGrouping = "day" | "week" | "month";
+
 export type SummaryTimelinePoint = {
   date: string;
   registrations: number;
@@ -7,22 +9,46 @@ export type SummaryTimelinePoint = {
 
 export type SummaryMetrics = {
   salesAmount: number;
+  orders: number;
   averageCheck: number;
   newCustomers: number;
   activeCustomers: number;
   averagePurchasesPerCustomer: number;
   visitFrequencyDays: number | null;
+  pointsBurned: number;
 };
 
 export type DashboardResponse = {
   period: { from: string; to: string; type: string };
+  previousPeriod: { from: string; to: string; type: string };
   metrics: SummaryMetrics;
-  timeline: SummaryTimelinePoint[];
+  previousMetrics: SummaryMetrics;
+  timeline: {
+    current: SummaryTimelinePoint[];
+    previous: SummaryTimelinePoint[];
+    grouping: TimeGrouping;
+  };
+  composition: { newChecks: number; repeatChecks: number };
+  retention: {
+    activeCurrent: number;
+    activePrevious: number;
+    retained: number;
+    retentionRate: number;
+    churnRate: number;
+  };
+};
+
+export type ChartPoint = {
+  label: string;
+  revenue: number;
+  prevRevenue: number;
+  registrations: number;
+  prevRegistrations: number;
 };
 
 export function formatNumber(value?: number | null): string {
   if (value === undefined || value === null || Number.isNaN(value)) return "—";
-  return new Intl.NumberFormat("ru-RU").format(value);
+  return new Intl.NumberFormat("ru-RU").format(Math.round(value));
 }
 
 export function formatDecimal(value?: number | null, fractionDigits = 1): string {
@@ -42,172 +68,85 @@ export function formatCurrency(value?: number | null): string {
   }).format(value);
 }
 
+export function formatPeriodLabel(period?: { from: string; to: string; type: string }): string {
+  if (!period) return "";
+  const from = parseDate(period.from);
+  const to = parseDate(period.to);
+
+  const formatFull = (date: Date) =>
+    new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
+
+  const formatMonth = (date: Date) =>
+    new Intl.DateTimeFormat("ru-RU", { month: "long", year: "numeric" }).format(date);
+
+  if (period.type === "yesterday") return "Вчера";
+  if (period.type === "week") return "Эта неделя";
+  if (period.type === "month" && from) return capitalize(formatMonth(from));
+  if (period.type === "quarter" && from) {
+    const quarter = Math.floor(from.getUTCMonth() / 3) + 1;
+    return `${quarter} квартал ${from.getUTCFullYear()}`;
+  }
+  if (period.type === "year" && from) return `${from.getUTCFullYear()} год`;
+  if (from && to) return `${formatFull(from)} — ${formatFull(to)}`;
+  return "";
+}
+
+export function buildChartPoints(timeline: DashboardResponse["timeline"]): ChartPoint[] {
+  const length = Math.max(timeline.current.length, timeline.previous.length);
+  return Array.from({ length }).map((_, index) => {
+    const current = timeline.current[index];
+    const previous = timeline.previous[index];
+    const rawLabel = current?.date || previous?.date || `${index + 1}`;
+
+    return {
+      label: formatDayLabel(rawLabel),
+      revenue: current?.salesAmount ?? 0,
+      prevRevenue: previous?.salesAmount ?? 0,
+      registrations: current?.registrations ?? 0,
+      prevRegistrations: previous?.registrations ?? 0,
+    };
+  });
+}
+
+export function calcDelta(current: number, previous: number) {
+  if (!Number.isFinite(previous) || previous === 0) {
+    return { value: null as number | null, direction: "neutral" as const };
+  }
+  const delta = ((current - previous) / previous) * 100;
+  if (Math.abs(delta) < 0.0001) return { value: 0, direction: "neutral" as const };
+  return { value: delta, direction: delta > 0 ? ("up" as const) : ("down" as const) };
+}
+
+export function hasTimelineData(timeline: DashboardResponse["timeline"]): boolean {
+  return (
+    timeline.current.some(
+      (point) =>
+        (point.registrations ?? 0) > 0 ||
+        (point.salesAmount ?? 0) > 0 ||
+        (point.salesCount ?? 0) > 0,
+    ) ||
+    timeline.previous.some(
+      (point) =>
+        (point.registrations ?? 0) > 0 ||
+        (point.salesAmount ?? 0) > 0 ||
+        (point.salesCount ?? 0) > 0,
+    )
+  );
+}
+
 export function formatDayLabel(date: string) {
   if (!date || date.length < 10) return date;
   const [, month, day] = date.split("-");
   return `${day}.${month}` || date;
 }
 
-export function hasTimelineData(timeline: SummaryTimelinePoint[]): boolean {
-  return timeline.some(
-    (point) =>
-      (point.registrations ?? 0) > 0 ||
-      (point.salesAmount ?? 0) > 0 ||
-      (point.salesCount ?? 0) > 0,
-  );
+function parseDate(value?: string) {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return null;
+  return date;
 }
 
-export function buildChartOption(timeline: SummaryTimelinePoint[], theme: "light" | "dark" = "dark") {
-  if (!timeline.length) {
-    return {
-      grid: { left: 32, right: 80, top: 32, bottom: 48 },
-      xAxis: { type: "category", data: [], axisLine: { lineStyle: { color: theme === "light" ? "rgba(0,0,0,0.1)" : "rgba(148,163,184,0.4)" } } },
-      yAxis: [],
-      series: [],
-    } as const;
-  }
-
-  const labels = timeline.map((point) => formatDayLabel(point.date));
-  const registrations = timeline.map((point) => point.registrations);
-  const salesCount = timeline.map((point) => point.salesCount);
-  const salesAmount = timeline.map((point) => point.salesAmount);
-  const scaleMax = (values: number[], ratio: number) => {
-    const max = Math.max(...values, 0);
-    if (max <= 0) return undefined;
-    return Math.max(1, Math.ceil(max / ratio));
-  };
-  const registrationsMax = scaleMax(registrations, 0.4);
-  const salesCountMax = scaleMax(salesCount, 0.7);
-  const salesAmountMax = scaleMax(salesAmount, 1);
-
-  const textColor = theme === "light" ? "#64748b" : "#cbd5f5";
-  const axisLineColor = theme === "light" ? "rgba(0,0,0,0.1)" : "rgba(148,163,184,0.4)";
-
-  return {
-    tooltip: { trigger: "axis", backgroundColor: theme === "light" ? "#ffffff" : "rgba(15,23,42,0.9)", borderColor: axisLineColor, textStyle: { color: theme === "light" ? "#0f172a" : "#f1f5f9" } },
-    legend: {
-      data: ["Регистрации", "Продажи", "Сумма продаж"],
-      textStyle: { color: textColor },
-    },
-    grid: { left: 32, right: 96, top: 32, bottom: 48 },
-    xAxis: {
-      type: "category",
-      boundaryGap: false,
-      data: labels,
-      axisLabel: { color: textColor },
-      axisLine: { lineStyle: { color: axisLineColor } },
-    },
-    yAxis: [
-      {
-        type: "value",
-        position: "left",
-        axisLabel: { show: false },
-        splitLine: { show: false },
-        axisLine: { lineStyle: { color: axisLineColor } },
-        min: 0,
-        max: registrationsMax,
-      },
-      {
-        type: "value",
-        position: "right",
-        axisLabel: { show: false },
-        splitLine: { show: false },
-        axisLine: { lineStyle: { color: axisLineColor } },
-        min: 0,
-        max: salesCountMax,
-      },
-      {
-        type: "value",
-        position: "right",
-        offset: 52,
-        axisLabel: { show: false },
-        splitLine: { show: false },
-        axisLine: { lineStyle: { color: axisLineColor } },
-        min: 0,
-        max: salesAmountMax,
-      },
-    ],
-    series: [
-      {
-        name: "Регистрации",
-        type: "line",
-        yAxisIndex: 0,
-        smooth: true,
-        symbol: "circle",
-        lineStyle: { width: 2, color: "#38bdf8" },
-        itemStyle: { color: "#38bdf8" },
-        areaStyle: { opacity: 0.12, color: "#38bdf8" },
-        label: { show: false },
-        data: registrations,
-      },
-      {
-        name: "Продажи",
-        type: "line",
-        yAxisIndex: 1,
-        data: salesCount,
-        smooth: true,
-        symbol: "circle",
-        lineStyle: { width: 2, color: "rgba(94,234,212,0.9)" },
-        itemStyle: { color: "rgba(94,234,212,0.9)" },
-        areaStyle: { opacity: 0.12, color: "rgba(94,234,212,0.6)" },
-        label: { show: false },
-      },
-      {
-        name: "Сумма продаж",
-        type: "line",
-        yAxisIndex: 2,
-        smooth: true,
-        symbol: "circle",
-        lineStyle: { width: 2, color: "#a78bfa" },
-        itemStyle: { color: "#a78bfa" },
-        areaStyle: { opacity: 0.1, color: "#a78bfa" },
-        label: { show: false },
-        data: salesAmount,
-      },
-    ],
-  } as const;
-}
-
-export function buildMetricCards(metrics?: SummaryMetrics) {
-  return [
-    {
-      key: "revenue",
-      title: "Сумма продаж",
-      value: metrics ? formatCurrency(metrics.salesAmount) : "—",
-      description: "за выбранный период",
-    },
-    {
-      key: "average",
-      title: "Средний чек",
-      value: metrics ? formatCurrency(metrics.averageCheck) : "—",
-      description: "средняя сумма покупки",
-    },
-    {
-      key: "customers",
-      title: "Новые клиенты",
-      value: metrics ? formatNumber(metrics.newCustomers) : "—",
-      description: "зарегистрировались",
-    },
-    {
-      key: "active",
-      title: "Активные клиенты",
-      value: metrics ? formatNumber(metrics.activeCustomers) : "—",
-      description: "совершили покупку",
-    },
-    {
-      key: "transactions",
-      title: "Среднее количество покупок",
-      value: metrics ? formatDecimal(metrics.averagePurchasesPerCustomer) : "—",
-      description: "на одного покупателя",
-    },
-    {
-      key: "frequency",
-      title: "Частота визитов",
-      value:
-        metrics && metrics.visitFrequencyDays != null
-          ? `${formatDecimal(metrics.visitFrequencyDays)} дн.`
-          : "—",
-      description: "Среднее количество дней между покупками",
-    },
-  ];
+function capitalize(value: string) {
+  if (!value) return value;
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }

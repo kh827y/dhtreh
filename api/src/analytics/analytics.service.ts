@@ -28,17 +28,40 @@ export interface DashboardSummary {
     to: string;
     type: DashboardPeriod['type'];
   };
+  previousPeriod: {
+    from: string;
+    to: string;
+    type: DashboardPeriod['type'];
+  };
   metrics: SummaryMetrics;
-  timeline: SummaryTimelinePoint[];
+  previousMetrics: SummaryMetrics;
+  timeline: {
+    current: SummaryTimelinePoint[];
+    previous: SummaryTimelinePoint[];
+    grouping: TimeGrouping;
+  };
+  composition: {
+    newChecks: number;
+    repeatChecks: number;
+  };
+  retention: {
+    activeCurrent: number;
+    activePrevious: number;
+    retained: number;
+    retentionRate: number;
+    churnRate: number;
+  };
 }
 
 export interface SummaryMetrics {
   salesAmount: number;
+  orders: number;
   averageCheck: number;
   newCustomers: number;
   activeCustomers: number;
   averagePurchasesPerCustomer: number;
   visitFrequencyDays: number | null;
+  pointsBurned: number;
 }
 
 export interface SummaryTimelinePoint {
@@ -247,6 +270,13 @@ interface HourlyData {
   transactions: number;
 }
 
+interface DashboardAggregates {
+  revenue: number;
+  orders: number;
+  buyers: number;
+  pointsRedeemed: number;
+}
+
 interface DailyData {
   date: string;
   revenue: number;
@@ -335,65 +365,55 @@ export class AnalyticsService {
     timezone?: string | RussiaTimezone,
   ): Promise<DashboardSummary> {
     const tz = await this.getTimezoneInfo(merchantId, timezone);
+    const grouping = this.resolveGrouping(period);
+    const previousPeriod = this.getPreviousPeriod(period);
 
-    const [salesAggregates, dailySales, registrationsByDay, visitFrequency] =
-      await Promise.all([
-        this.prisma.$queryRaw<
-          Array<{
-            revenue: Prisma.Decimal | number | null;
-            orders: bigint | number | null;
-            buyers: bigint | number | null;
-          }>
-        >(Prisma.sql`
-          SELECT
-            COALESCE(SUM(r."total"), 0)::numeric AS revenue,
-            COUNT(*)::bigint AS orders,
-            COUNT(DISTINCT r."customerId")::bigint AS buyers
-          FROM "Receipt" r
-          WHERE r."merchantId" = ${merchantId}
-            AND r."createdAt" >= ${period.from}
-            AND r."createdAt" <= ${period.to}
-            AND r."canceledAt" IS NULL
-            AND NOT EXISTS (
-              SELECT 1
-              FROM "Transaction" refund
-              WHERE refund."merchantId" = r."merchantId"
-                AND refund."orderId" = r."orderId"
-                AND refund."type" = 'REFUND'
-                AND refund."canceledAt" IS NULL
-            )
-        `),
-        this.getDailyRevenue(merchantId, period, 'day', tz),
-        this.getRegistrationsByDay(merchantId, period, tz),
-        this.calculateVisitFrequencyDays(merchantId, period, tz),
-      ]);
+    const [
+      currentAggregates,
+      previousAggregates,
+      currentDailySales,
+      previousDailySales,
+      currentRegistrationsByDay,
+      previousRegistrationsByDay,
+      visitFrequency,
+      previousVisitFrequency,
+      retentionBases,
+      composition,
+    ] = await Promise.all([
+      this.getDashboardAggregates(merchantId, period),
+      this.getDashboardAggregates(merchantId, previousPeriod),
+      this.getDailyRevenue(merchantId, period, grouping, tz),
+      this.getDailyRevenue(merchantId, previousPeriod, grouping, tz),
+      this.getRegistrationsByDay(merchantId, period, tz),
+      this.getRegistrationsByDay(merchantId, previousPeriod, tz),
+      this.calculateVisitFrequencyDays(merchantId, period, tz),
+      this.calculateVisitFrequencyDays(merchantId, previousPeriod, tz),
+      this.getRetentionBases(merchantId, period, previousPeriod),
+      this.getCompositionStats(merchantId, period),
+    ]);
 
-    const totalSales = Math.max(
-      0,
-      Math.round(Number(salesAggregates?.[0]?.revenue ?? 0)),
+    const metrics = this.buildDashboardMetrics(
+      currentAggregates,
+      currentRegistrationsByDay,
+      visitFrequency,
     );
-    const orders = Math.max(
-      0,
-      Math.round(Number(salesAggregates?.[0]?.orders ?? 0)),
+    const previousMetrics = this.buildDashboardMetrics(
+      previousAggregates,
+      previousRegistrationsByDay,
+      previousVisitFrequency,
     );
-    const buyers = Math.max(
-      0,
-      Math.round(Number(salesAggregates?.[0]?.buyers ?? 0)),
+    const timeline = {
+      current: this.mergeTimeline(currentDailySales, currentRegistrationsByDay),
+      previous: this.mergeTimeline(
+        previousDailySales,
+        previousRegistrationsByDay,
+      ),
+      grouping,
+    };
+    const retention = this.calculateRetentionStats(
+      retentionBases.current,
+      retentionBases.previous,
     );
-    const averageCheck = orders > 0 ? Math.round(totalSales / orders) : 0;
-    const averagePurchasesPerCustomer =
-      buyers > 0 ? Math.round((orders / buyers || 0) * 10) / 10 : 0;
-    let newCustomers = 0;
-    for (const value of registrationsByDay.values()) {
-      newCustomers += value;
-    }
-
-    const timeline = dailySales.map((item) => ({
-      date: item.date,
-      registrations: registrationsByDay.get(item.date) ?? 0,
-      salesCount: item.transactions,
-      salesAmount: item.revenue,
-    }));
 
     return {
       period: {
@@ -401,15 +421,16 @@ export class AnalyticsService {
         to: period.to.toISOString(),
         type: period.type,
       },
-      metrics: {
-        salesAmount: totalSales,
-        averageCheck,
-        newCustomers,
-        activeCustomers: buyers,
-        averagePurchasesPerCustomer,
-        visitFrequencyDays: visitFrequency,
+      previousPeriod: {
+        from: previousPeriod.from.toISOString(),
+        to: previousPeriod.to.toISOString(),
+        type: previousPeriod.type,
       },
+      metrics,
+      previousMetrics,
       timeline,
+      composition,
+      retention,
     };
   }
 
@@ -425,6 +446,7 @@ export class AnalyticsService {
       where: {
         merchantId,
         canceledAt: null,
+        total: { gt: 0 },
         createdAt: { gte: period.from, lte: period.to },
         ...(segmentId
           ? {
@@ -434,11 +456,7 @@ export class AnalyticsService {
             }
           : {}),
       },
-      select: {
-        orderId: true,
-        total: true,
-        createdAt: true,
-        customerId: true,
+      include: {
         customer: { select: { id: true, gender: true, birthday: true } },
       },
     });
@@ -515,7 +533,7 @@ export class AnalyticsService {
     };
 
     for (const receipt of relevantReceipts) {
-      const customerId = receipt.customerId || receipt.customer?.id || null;
+      const customerId = receipt.customerId;
       const sex = normalizeSex(receipt.customer?.gender);
       const bday = receipt.customer?.birthday || null;
       const age = bday
@@ -1672,10 +1690,7 @@ export class AnalyticsService {
     const tz = await this.getTimezoneInfo(merchantId, timezone);
     const effectiveGrouping = this.resolveGrouping(period, grouping);
     const [currentTotals] = await this.prisma.$queryRaw<
-      Array<{
-        revenue: Prisma.Decimal | number | null;
-        orders: bigint | number | null;
-      }>
+      Array<{ revenue: Prisma.Decimal | number | null; orders: bigint | number | null }>
     >(Prisma.sql`
       SELECT
         COALESCE(SUM(r."total"), 0)::numeric AS revenue,
@@ -1685,6 +1700,7 @@ export class AnalyticsService {
         AND r."createdAt" >= ${period.from}
         AND r."createdAt" <= ${period.to}
         AND r."canceledAt" IS NULL
+        AND r."total" > 0
         AND NOT EXISTS (
           SELECT 1
           FROM "Transaction" refund
@@ -1711,6 +1727,7 @@ export class AnalyticsService {
         AND r."createdAt" >= ${previousPeriod.from}
         AND r."createdAt" <= ${previousPeriod.to}
         AND r."canceledAt" IS NULL
+        AND r."total" > 0
         AND NOT EXISTS (
           SELECT 1
           FROM "Transaction" refund
@@ -3133,6 +3150,232 @@ export class AnalyticsService {
     return Math.round(days * 10) / 10;
   }
 
+  private buildDashboardMetrics(
+    aggregates: DashboardAggregates,
+    registrationsByDay: Map<string, number>,
+    visitFrequency: number | null,
+  ): SummaryMetrics {
+    const salesAmount = Math.max(0, Math.round(aggregates.revenue));
+    const orders = Math.max(0, Math.round(aggregates.orders));
+    const buyers = Math.max(0, Math.round(aggregates.buyers));
+    const totalRegistrations = Array.from(registrationsByDay.values()).reduce(
+      (sum, value) => sum + Math.max(0, value),
+      0,
+    );
+    const averageCheck = orders > 0 ? Math.round(salesAmount / orders) : 0;
+    const averagePurchasesPerCustomer =
+      buyers > 0 ? Math.round((orders / buyers) * 10) / 10 : 0;
+
+    return {
+      salesAmount,
+      orders,
+      averageCheck,
+      newCustomers: totalRegistrations,
+      activeCustomers: buyers,
+      averagePurchasesPerCustomer,
+      visitFrequencyDays: visitFrequency,
+      pointsBurned: Math.max(0, Math.round(aggregates.pointsRedeemed)),
+    };
+  }
+
+  private mergeTimeline(
+    sales: DailyData[],
+    registrationsByDay: Map<string, number>,
+  ): SummaryTimelinePoint[] {
+    return sales.map((item) => ({
+      date: item.date,
+      registrations: registrationsByDay.get(item.date) ?? 0,
+      salesCount: item.transactions,
+      salesAmount: item.revenue,
+    }));
+  }
+
+  private async getDashboardAggregates(
+    merchantId: string,
+    period: DashboardPeriod,
+  ): Promise<DashboardAggregates> {
+    const [row] = await this.prisma.$queryRaw<
+      Array<{
+        revenue: Prisma.Decimal | number | null;
+        orders: bigint | number | null;
+        buyers: bigint | number | null;
+        pointsRedeemed: Prisma.Decimal | number | null;
+      }>
+    >(Prisma.sql`
+      SELECT
+        COALESCE(SUM(r."total"), 0)::numeric AS revenue,
+        COUNT(*)::bigint AS orders,
+        COUNT(DISTINCT r."customerId")::bigint AS buyers,
+        COALESCE(SUM(ABS(COALESCE(r."redeemApplied", 0))), 0)::numeric AS "pointsRedeemed"
+      FROM "Receipt" r
+      WHERE r."merchantId" = ${merchantId}
+        AND r."createdAt" >= ${period.from}
+        AND r."createdAt" <= ${period.to}
+        AND r."canceledAt" IS NULL
+        AND r."total" > 0
+        AND NOT EXISTS (
+          SELECT 1
+          FROM "Transaction" refund
+          WHERE refund."merchantId" = r."merchantId"
+            AND refund."orderId" = r."orderId"
+            AND refund."type" = 'REFUND'
+            AND refund."canceledAt" IS NULL
+        )
+    `);
+
+    return {
+      revenue: Number(row?.revenue ?? 0),
+      orders: Number(row?.orders ?? 0),
+      buyers: Number(row?.buyers ?? 0),
+      pointsRedeemed: Math.abs(Number(row?.pointsRedeemed ?? 0)),
+    };
+  }
+
+  private async getRetentionBases(
+    merchantId: string,
+    current: DashboardPeriod,
+    previous: DashboardPeriod,
+  ) {
+    const [currentRows, previousRows] = await Promise.all([
+      this.prisma.$queryRaw<Array<{ customerId: string | null }>>(Prisma.sql`
+        SELECT DISTINCT r."customerId" AS "customerId"
+        FROM "Receipt" r
+        WHERE r."merchantId" = ${merchantId}
+          AND r."createdAt" >= ${current.from}
+          AND r."createdAt" <= ${current.to}
+          AND r."canceledAt" IS NULL
+          AND r."total" > 0
+          AND r."customerId" IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1
+            FROM "Transaction" refund
+            WHERE refund."merchantId" = r."merchantId"
+              AND refund."orderId" = r."orderId"
+              AND refund."type" = 'REFUND'
+              AND refund."canceledAt" IS NULL
+          )
+      `),
+      this.prisma.$queryRaw<Array<{ customerId: string | null }>>(Prisma.sql`
+        SELECT DISTINCT r."customerId" AS "customerId"
+        FROM "Receipt" r
+        WHERE r."merchantId" = ${merchantId}
+          AND r."createdAt" >= ${previous.from}
+          AND r."createdAt" <= ${previous.to}
+          AND r."canceledAt" IS NULL
+          AND r."total" > 0
+          AND r."customerId" IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1
+            FROM "Transaction" refund
+            WHERE refund."merchantId" = r."merchantId"
+              AND refund."orderId" = r."orderId"
+              AND refund."type" = 'REFUND'
+              AND refund."canceledAt" IS NULL
+          )
+      `),
+    ]);
+
+    const currentSet = new Set(
+      currentRows
+        .map((row) => String(row.customerId || '').trim())
+        .filter(Boolean),
+    );
+    const previousSet = new Set(
+      previousRows
+        .map((row) => String(row.customerId || '').trim())
+        .filter(Boolean),
+    );
+
+    return { current: currentSet, previous: previousSet };
+  }
+
+  private calculateRetentionStats(
+    current: Set<string>,
+    previous: Set<string>,
+  ) {
+    let retained = 0;
+    for (const id of previous) {
+      if (current.has(id)) retained += 1;
+    }
+    const activePrevious = previous.size;
+    const activeCurrent = current.size;
+    const retentionRate =
+      activePrevious > 0
+        ? Math.round((retained / activePrevious) * 1000) / 10
+        : 0;
+    const churnRate =
+      activePrevious > 0
+        ? Math.max(0, Math.round((100 - retentionRate) * 10) / 10)
+        : 0;
+
+    return {
+      activeCurrent,
+      activePrevious,
+      retained,
+      retentionRate,
+      churnRate,
+    };
+  }
+
+  private async getCompositionStats(
+    merchantId: string,
+    period: DashboardPeriod,
+  ) {
+    const [row] = await this.prisma.$queryRaw<
+      Array<{ newChecks: bigint | number | null; repeatChecks: bigint | number | null }>
+    >(Prisma.sql`
+      WITH valid_receipts AS (
+        SELECT
+          r."customerId",
+          r."createdAt"
+        FROM "Receipt" r
+        WHERE r."merchantId" = ${merchantId}
+          AND r."createdAt" >= ${period.from}
+          AND r."createdAt" <= ${period.to}
+          AND r."canceledAt" IS NULL
+          AND r."total" > 0
+          AND r."customerId" IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1
+            FROM "Transaction" refund
+            WHERE refund."merchantId" = r."merchantId"
+              AND refund."orderId" = r."orderId"
+              AND refund."type" = 'REFUND'
+              AND refund."canceledAt" IS NULL
+          )
+      ),
+      first_purchases AS (
+        SELECT
+          r."customerId",
+          MIN(r."createdAt") AS first_at
+        FROM "Receipt" r
+        WHERE r."merchantId" = ${merchantId}
+          AND r."canceledAt" IS NULL
+          AND r."total" > 0
+          AND r."customerId" IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1
+            FROM "Transaction" refund
+            WHERE refund."merchantId" = r."merchantId"
+              AND refund."orderId" = r."orderId"
+              AND refund."type" = 'REFUND'
+              AND refund."canceledAt" IS NULL
+          )
+        GROUP BY r."customerId"
+      )
+      SELECT
+        COALESCE(SUM(CASE WHEN fp.first_at >= ${period.from} AND fp.first_at <= ${period.to} THEN 1 ELSE 0 END), 0)::bigint AS "newChecks",
+        COALESCE(SUM(CASE WHEN fp.first_at < ${period.from} THEN 1 ELSE 0 END), 0)::bigint AS "repeatChecks"
+      FROM valid_receipts vr
+      JOIN first_purchases fp ON fp."customerId" = vr."customerId"
+    `);
+
+    return {
+      newChecks: Math.max(0, Math.round(Number(row?.newChecks ?? 0))),
+      repeatChecks: Math.max(0, Math.round(Number(row?.repeatChecks ?? 0))),
+    };
+  }
+
   private async getPointsSeries(
     merchantId: string,
     period: DashboardPeriod,
@@ -3511,6 +3754,8 @@ export class AnalyticsService {
             AND r."createdAt" >= ${period.from}
             AND r."createdAt" <= ${period.to}
             AND r."canceledAt" IS NULL
+            AND r."total" > 0
+            AND r."customerId" IS NOT NULL
             AND r."outletId" IS NOT NULL
             AND NOT EXISTS (
               SELECT 1
@@ -3543,6 +3788,8 @@ export class AnalyticsService {
           FROM "Receipt" r
           WHERE r."merchantId" = ${merchantId}
             AND r."canceledAt" IS NULL
+            AND r."total" > 0
+            AND r."customerId" IS NOT NULL
             AND r."outletId" IS NOT NULL
             AND NOT EXISTS (
               SELECT 1
@@ -3668,16 +3915,18 @@ export class AnalyticsService {
               r."total",
               r."earnApplied",
               r."redeemApplied"
-            FROM "Receipt" r
-            WHERE r."merchantId" = ${merchantId}
-              AND r."staffId" IS NOT NULL
-              AND r."createdAt" >= ${period.from}
-              AND r."createdAt" <= ${period.to}
-              AND r."canceledAt" IS NULL
-              AND NOT EXISTS (
-                SELECT 1
-                FROM "Transaction" refund
-                WHERE refund."merchantId" = r."merchantId"
+          FROM "Receipt" r
+          WHERE r."merchantId" = ${merchantId}
+            AND r."staffId" IS NOT NULL
+            AND r."createdAt" >= ${period.from}
+            AND r."createdAt" <= ${period.to}
+            AND r."canceledAt" IS NULL
+            AND r."total" > 0
+            AND r."customerId" IS NOT NULL
+            AND NOT EXISTS (
+              SELECT 1
+              FROM "Transaction" refund
+              WHERE refund."merchantId" = r."merchantId"
                   AND refund."orderId" = r."orderId"
                   AND refund."type" = 'REFUND'
                   AND refund."canceledAt" IS NULL
@@ -3708,13 +3957,15 @@ export class AnalyticsService {
               r."staffId",
               r."outletId",
               r."createdAt"
-            FROM "Receipt" r
-            WHERE r."merchantId" = ${merchantId}
-              AND r."canceledAt" IS NULL
-              AND NOT EXISTS (
-                SELECT 1
-                FROM "Transaction" refund
-                WHERE refund."merchantId" = r."merchantId"
+          FROM "Receipt" r
+          WHERE r."merchantId" = ${merchantId}
+            AND r."canceledAt" IS NULL
+            AND r."total" > 0
+            AND r."customerId" IS NOT NULL
+            AND NOT EXISTS (
+              SELECT 1
+              FROM "Transaction" refund
+              WHERE refund."merchantId" = r."merchantId"
                   AND refund."orderId" = r."orderId"
                   AND refund."type" = 'REFUND'
                   AND refund."canceledAt" IS NULL

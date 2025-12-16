@@ -2,510 +2,340 @@
 
 import React from "react";
 import "./outlets.css";
-import { Card, CardHeader, CardBody, Skeleton, Button } from "@loyalty/ui";
-import { CalendarRange, Sparkles, Store, TrendingUp, Gauge, Users, ArrowUpRight, RefreshCw } from "lucide-react";
+import { Calendar, Store, Award, TrendingUp, Users, ShoppingBag } from "lucide-react";
 
 type ApiOutletRow = {
   id: string;
-  name: string;
-  revenue: number;
-  transactions: number;
-  averageCheck: number;
-  pointsIssued: number;
-  pointsRedeemed: number;
-  customers: number;
-  newCustomers: number;
+  name?: string | null;
+  revenue?: number;
+  transactions?: number;
+  averageCheck?: number;
+  pointsIssued?: number;
+  pointsRedeemed?: number;
+  customers?: number;
+  newCustomers?: number;
 };
 
-type OperationsResponse = {
-  outletMetrics?: ApiOutletRow[];
-};
+type OperationsResponse = { outletMetrics?: ApiOutletRow[] };
+type PeriodValue = "yesterday" | "week" | "month" | "quarter" | "year";
 
-type DateRange = { from: string; to: string };
-
-type QuickPreset = {
+type OutletDisplayRow = {
   id: string;
-  label: string;
-  days: number;
+  name: string;
+  salesCount: number;
+  revenue: number;
+  avgCheck: number;
+  accruedPoints: number;
+  redeemedPoints: number;
+  customerCount: number;
+  newClients: number;
 };
 
-const quickPresets: QuickPreset[] = [
-  { id: "7", label: "7 дней", days: 7 },
-  { id: "30", label: "30 дней", days: 30 },
-  { id: "90", label: "90 дней", days: 90 },
-  { id: "365", label: "Год", days: 365 },
+const periodOptions: Array<{ value: PeriodValue; label: string }> = [
+  { value: "yesterday", label: "Вчера" },
+  { value: "week", label: "Неделя" },
+  { value: "month", label: "Месяц" },
+  { value: "quarter", label: "Квартал" },
+  { value: "year", label: "Год" },
 ];
 
+const moneyFormatter = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 });
 const numberFormatter = new Intl.NumberFormat("ru-RU");
-const ratioFormatter = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1, minimumFractionDigits: 0 });
-const currencyFormatter = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 });
-const rangeFormatter = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "short", year: "numeric" });
 
-function safeNumber(value: number | null | undefined) {
-  return typeof value === "number" && !Number.isNaN(value) ? value : 0;
-}
+const safeNumber = (value: number | null | undefined) =>
+  typeof value === "number" && !Number.isNaN(value) ? value : 0;
 
-function formatDateInput(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
+const formatCurrency = (value: number) => `₽${moneyFormatter.format(Math.round(value))}`;
+const formatNumber = (value: number) => numberFormatter.format(Math.round(value));
 
-function buildRangeByDays(days: number): DateRange {
-  const today = new Date();
-  const to = formatDateInput(today);
-  const fromDate = new Date(today);
-  fromDate.setDate(fromDate.getDate() - (days - 1));
-  const from = formatDateInput(fromDate);
-  return { from, to };
-}
-
-function getDefaultRange(): DateRange {
-  return buildRangeByDays(30);
-}
-
-function readableRange(range: DateRange) {
-  const fromDate = new Date(range.from);
-  const toDate = new Date(range.to);
-  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
-    return "Диапазон не выбран";
-  }
-  return `${rangeFormatter.format(fromDate)} — ${rangeFormatter.format(toDate)}`;
-}
-
-function formatCurrency(amount: number) {
-  return `${currencyFormatter.format(Math.round(amount))} ₽`;
-}
-
-function formatNumber(amount: number) {
-  return numberFormatter.format(Math.round(amount));
-}
-
-function formatRatio(value: number) {
-  return ratioFormatter.format(Math.round(value * 10) / 10);
-}
-
-function computeAverageCheck(row: ApiOutletRow) {
-  if (typeof row.averageCheck === "number" && !Number.isNaN(row.averageCheck)) {
-    return row.averageCheck;
-  }
-  const sales = safeNumber(row.transactions);
-  return sales > 0 ? safeNumber(row.revenue) / sales : 0;
-}
-
-export default function AnalyticsOutletsPage() {
-  const initialRange = React.useMemo(() => getDefaultRange(), []);
-  const [rangeDraft, setRangeDraft] = React.useState<DateRange>(initialRange);
-  const [appliedRange, setAppliedRange] = React.useState<DateRange>(initialRange);
-  const [activePreset, setActivePreset] = React.useState<string>("30");
-  const [loading, setLoading] = React.useState(true);
-  const [msg, setMsg] = React.useState("");
+export default function OutletsActivityPage() {
+  const [period, setPeriod] = React.useState<PeriodValue>("month");
   const [items, setItems] = React.useState<ApiOutletRow[]>([]);
-  const [refreshTick, setRefreshTick] = React.useState(0);
-
-  const applyRange = React.useCallback(() => {
-    if (!rangeDraft.from || !rangeDraft.to) {
-      setMsg("Укажите даты начала и окончания");
-      return;
-    }
-    const fromDate = new Date(rangeDraft.from);
-    const toDate = new Date(rangeDraft.to);
-    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
-      setMsg("Некорректные даты");
-      return;
-    }
-    if (fromDate.getTime() > toDate.getTime()) {
-      setMsg("Дата начала не может быть позже даты окончания");
-      return;
-    }
-    setAppliedRange({ ...rangeDraft });
-    setActivePreset("custom");
-    setMsg("");
-  }, [rangeDraft]);
-
-  const applyPreset = React.useCallback((preset: QuickPreset) => {
-    const range = buildRangeByDays(preset.days);
-    setRangeDraft(range);
-    setAppliedRange(range);
-    setActivePreset(preset.id);
-    setMsg("");
-  }, []);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState("");
 
   React.useEffect(() => {
-    if (!appliedRange.from || !appliedRange.to) return;
     const controller = new AbortController();
     let cancelled = false;
     setLoading(true);
-    setMsg("");
-    const params = new URLSearchParams({ from: appliedRange.from, to: appliedRange.to, _r: String(refreshTick) });
+    setError("");
+
+    const params = new URLSearchParams({ period });
     fetch(`/api/portal/analytics/operations?${params.toString()}`, { signal: controller.signal })
       .then(async (res) => {
-        const data = (await res.json().catch(() => ({}))) as OperationsResponse | { message?: string };
-        if (!res.ok) {
-          throw new Error((data as any)?.message || "Не удалось загрузить аналитику по точкам");
-        }
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error((data as any)?.message || "Не удалось загрузить аналитику по точкам");
         return data as OperationsResponse;
       })
       .then((data) => {
         if (cancelled) return;
         setItems(Array.isArray(data.outletMetrics) ? data.outletMetrics : []);
       })
-      .catch((error: any) => {
-        if (cancelled || error?.name === "AbortError") return;
-        setMsg(String(error?.message || error));
+      .catch((err: any) => {
+        if (cancelled || err?.name === "AbortError") return;
+        setError(String(err?.message || err));
         setItems([]);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+
     return () => {
       cancelled = true;
       controller.abort();
     };
-  }, [appliedRange.from, appliedRange.to, refreshTick]);
+  }, [period]);
 
-  const totals = React.useMemo(() => {
-    return items.reduce(
-      (acc, row) => {
-        acc.sales += safeNumber(row.transactions);
-        acc.revenue += safeNumber(row.revenue);
-        acc.pointsIssued += safeNumber(row.pointsIssued);
-        acc.pointsRedeemed += safeNumber(row.pointsRedeemed);
-        acc.buyers += safeNumber(row.customers);
-        acc.newCustomers += safeNumber(row.newCustomers);
-        return acc;
-      },
-      { sales: 0, revenue: 0, pointsIssued: 0, pointsRedeemed: 0, buyers: 0, newCustomers: 0 }
-    );
+  const rows = React.useMemo<OutletDisplayRow[]>(() => {
+    if (!items.length) return [];
+    return items
+      .map((row) => {
+        const salesCount = safeNumber(row.transactions);
+        const revenue = safeNumber(row.revenue);
+        const avgCheck =
+          typeof row.averageCheck === "number" && !Number.isNaN(row.averageCheck)
+            ? Math.round(row.averageCheck)
+            : salesCount > 0
+              ? Math.round(revenue / Math.max(1, salesCount))
+              : 0;
+        return {
+          id: row.id,
+          name: row.name || row.id,
+          salesCount: Math.round(salesCount),
+          revenue: Math.round(revenue),
+          avgCheck,
+          accruedPoints: Math.round(safeNumber(row.pointsIssued)),
+          redeemedPoints: Math.round(Math.abs(safeNumber(row.pointsRedeemed))),
+          customerCount: Math.round(safeNumber(row.customers)),
+          newClients: Math.round(safeNumber(row.newCustomers)),
+        };
+      })
+      .sort((a, b) => b.revenue - a.revenue);
   }, [items]);
 
-  const totalAvgCheck = totals.sales > 0 ? totals.revenue / totals.sales : 0;
-  const averagePerOutlet = items.length ? totals.revenue / items.length : 0;
-  const newCustomersShare = totals.buyers > 0 ? (totals.newCustomers / totals.buyers) * 100 : 0;
+  const totals = React.useMemo(() => {
+    if (!rows.length) {
+      return {
+        salesCount: 0,
+        revenue: 0,
+        accruedPoints: 0,
+        redeemedPoints: 0,
+        customerCount: 0,
+        newClients: 0,
+      };
+    }
+
+    const sum = rows.reduce(
+      (acc, row) => {
+        acc.salesCount += row.salesCount;
+        acc.revenue += row.revenue;
+        acc.accruedPoints += row.accruedPoints;
+        acc.redeemedPoints += row.redeemedPoints;
+        acc.customerCount += row.customerCount;
+        acc.newClients += row.newClients;
+        return acc;
+      },
+      {
+        salesCount: 0,
+        revenue: 0,
+        accruedPoints: 0,
+        redeemedPoints: 0,
+        customerCount: 0,
+        newClients: 0,
+      }
+    );
+
+    return {
+      salesCount: sum.salesCount,
+      revenue: sum.revenue,
+      accruedPoints: sum.accruedPoints,
+      redeemedPoints: sum.redeemedPoints,
+      customerCount: sum.customerCount,
+      newClients: sum.newClients,
+      avgCheck: sum.salesCount > 0 ? Math.round(sum.revenue / Math.max(1, sum.salesCount)) : 0,
+    };
+  }, [rows]);
 
   const leaders = React.useMemo(() => {
-    if (!items.length) return null;
-    const byRevenue = [...items].sort((a, b) => safeNumber(b.revenue) - safeNumber(a.revenue));
-    const byNew = [...items].sort((a, b) => safeNumber(b.newCustomers) - safeNumber(a.newCustomers));
-    const revenueLeader = byRevenue[0];
-    if (!revenueLeader) return null;
-    const revenueShare = totals.revenue > 0 ? (safeNumber(revenueLeader.revenue) / totals.revenue) * 100 : 0;
-    return {
-      revenue: revenueLeader,
-      revenueShare,
-      newCustomers: byNew[0],
-    };
-  }, [items, totals.revenue]);
+    if (!rows.length) return null;
+    const byRevenue = [...rows].sort((a, b) => b.revenue - a.revenue)[0];
+    const byNewClients = [...rows].sort((a, b) => b.newClients - a.newClients)[0];
+    const byTraffic = [...rows].sort((a, b) => b.salesCount - a.salesCount)[0];
+    return { revenue: byRevenue, newClients: byNewClients, traffic: byTraffic };
+  }, [rows]);
 
-  const metrics = React.useMemo(
-    () => {
-      const count = Math.max(1, items.length);
-      const repeatRate = totals.buyers > 0 ? totals.sales / totals.buyers : 0;
-      return [
-      {
-        key: "revenue",
-        title: "Ø Выручка на точку",
-        value: formatCurrency(totals.revenue / count),
-        hint: `Общая: ${formatCurrency(totals.revenue)}`,
-        icon: <TrendingUp size={18} />,
-        accent: "primary",
-      },
-      {
-        key: "sales",
-        title: "Ø Продаж на точку",
-        value: formatNumber(totals.sales / count),
-        hint: `Всего: ${formatNumber(totals.sales)} чеков`,
-        icon: <Store size={18} />,
-        accent: "violet",
-      },
-      {
-        key: "avg",
-        title: "Средний чек",
-        value: totals.sales ? formatCurrency(totalAvgCheck) : "—",
-        hint: "По всей сети",
-        icon: <Gauge size={18} />,
-        accent: "blue",
-      },
-      {
-        key: "repeat",
-        title: "Покупок на клиента",
-        value: totals.buyers > 0 ? formatRatio(repeatRate) : "—",
-        hint: totals.buyers > 0 ? `Всего клиентов: ${formatNumber(totals.buyers)}` : "Нет данных по клиентам",
-        icon: <Gauge size={18} />,
-        accent: "amber",
-      },
-      {
-        key: "customers",
-        title: "Ø Клиентов на точку",
-        value: formatNumber(totals.buyers / count),
-        hint: `Новых: ${formatNumber(totals.newCustomers / count)} (avg)`,
-        icon: <Users size={18} />,
-        accent: "teal",
-      },
-    ]},
-    [averagePerOutlet, newCustomersShare, totalAvgCheck, totals.buyers, totals.newCustomers, totals.pointsIssued, totals.pointsRedeemed, totals.revenue, totals.sales, items.length]
+  const periodLabel = React.useMemo(
+    () => periodOptions.find((option) => option.value === period)?.label ?? "Период",
+    [period]
   );
 
   return (
-    <div className="outlets-page">
-      <section className="outlets-hero">
-        <div className="outlets-hero__spark">
-          <div className="pill pill-ghost"><Sparkles size={14} /> Отчёты по точкам</div>
-          <div className="pill pill-ghost subtle">Готово к светлой и тёмной теме</div>
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Активность точек</h2>
+          <p className="text-gray-500">Показатели эффективности по локациям и точкам продаж.</p>
         </div>
-        <div className="outlets-hero__content">
-          <div className="outlets-hero__text">
-            <h1>Активность торговых точек</h1>
-            <p>Глубокая аналитика эффективности продаж и лояльности по каждому филиалу за выбранный период.</p>
-            <div className="outlets-hero__meta">
-              <div className="hero-meta-chip">
-                <CalendarRange size={16} />
-                <span>{readableRange(appliedRange)}</span>
-              </div>
-              <div className="hero-meta-chip ghost">
-                <Store size={16} />
-                <span>{loading ? "Загрузка точек…" : `${items.length} точек в отчёте`}</span>
-              </div>
-            </div>
-          </div>
-          <div className="outlets-hero__badge">
-            {loading ? (
-              <div className="hero-badge__skeleton">
-                <Skeleton height={20} width={160} />
-                <Skeleton height={32} width={200} />
-              </div>
-            ) : (
-              <>
-                <div className="hero-badge__label">Сейчас в фокусе</div>
-                <div className="hero-badge__value">{formatCurrency(totals.revenue)}</div>
-                <div className="hero-badge__hint">Выручка за период, средний чек {totals.sales ? formatCurrency(totalAvgCheck) : "—"}</div>
-                <div className="hero-badge__trend">
-                  <ArrowUpRight size={16} />
-                  <span>Средний оборот на точку {items.length ? formatCurrency(averagePerOutlet) : "—"}</span>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      </section>
 
-      <Card className="outlets-card">
-        <CardBody>
-          <div className="filters-grid">
-            <div className="filters-presets">
-              <div className="filter-label">Быстрый период</div>
-              <div className="preset-row">
-                {quickPresets.map((preset) => (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    className={`preset-btn ${activePreset === preset.id ? "active" : ""}`}
-                    onClick={() => applyPreset(preset)}
-                    disabled={loading}
-                  >
-                    {preset.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="filters-range">
-              <div className="filter-label">Свои даты</div>
-              <div className="range-controls">
-                <label className="range-input">
-                  <span>С</span>
-                  <input
-                    type="date"
-                    value={rangeDraft.from}
-                    onChange={(event) => {
-                      setActivePreset("custom");
-                      setRangeDraft((prev) => ({ ...prev, from: event.target.value }));
-                    }}
-                  />
-                </label>
-                <label className="range-input">
-                  <span>По</span>
-                  <input
-                    type="date"
-                    value={rangeDraft.to}
-                    onChange={(event) => {
-                      setActivePreset("custom");
-                      setRangeDraft((prev) => ({ ...prev, to: event.target.value }));
-                    }}
-                  />
-                </label>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={applyRange}
-                  disabled={loading || !rangeDraft.from || !rangeDraft.to}
-                  style={{ whiteSpace: "nowrap" }}
-                >
-                  Применить
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setRefreshTick((tick) => tick + 1)}
-                  disabled={loading}
-                  style={{ gap: 6 }}
-                >
-                  <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-                  Обновить
-                </Button>
-              </div>
-            </div>
-          </div>
-          {msg && <div className="inline-warning">{msg}</div>}
-        </CardBody>
-      </Card>
-
-      <section className="metrics-grid">
-        {loading
-          ? Array.from({ length: 5 }).map((_, idx) => (
-              <div key={idx} className="metric-card skeleton">
-                <Skeleton height={16} width={120} />
-                <Skeleton height={32} width={160} />
-                <Skeleton height={12} width={140} />
-              </div>
-            ))
-          : metrics.map((metric) => (
-              <div key={metric.key} className={`metric-card accent-${metric.accent}`}>
-                <div className="metric-icon">{metric.icon}</div>
-                <div className="metric-title">{metric.title}</div>
-                <div className="metric-value">{metric.value}</div>
-                <div className="metric-hint">{metric.hint}</div>
-              </div>
+        <div className="flex items-center space-x-2 bg-white border border-gray-200 rounded-lg px-3 py-2 shadow-sm">
+          <Calendar size={16} className="text-gray-400" />
+          <select
+            value={period}
+            onChange={(e) => setPeriod(e.target.value as PeriodValue)}
+            className="bg-transparent text-sm text-gray-700 font-medium focus:outline-none cursor-pointer pr-4"
+          >
+            {periodOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
             ))}
-      </section>
+          </select>
+        </div>
+      </div>
 
-      <Card className="outlets-card">
-        <CardHeader title="Сводка по точкам" subtitle="Лидеры, динамика и распределение объёмов" />
-        <CardBody>
-          <div className="outlets-highlight">
-            <div className="highlight-block">
-              <div className="highlight-title">Лидирует по выручке</div>
-              {loading ? (
-                <Skeleton height={18} width={200} />
-              ) : leaders?.revenue ? (
-                <div className="highlight-value">
-                  <Store size={16} />
-                  <div>
-                    <div className="highlight-name">{leaders.revenue.name || leaders.revenue.id}</div>
-                    <div className="highlight-sub">
-                      {formatCurrency(safeNumber(leaders.revenue.revenue))} · {formatNumber(leaders.revenue.transactions)} продаж · {leaders.revenueShare.toFixed(0)}% оборота
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="highlight-empty">Нет данных</div>
-              )}
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {Array.from({ length: 3 }).map((_, idx) => (
+            <div
+              key={idx}
+              className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm relative overflow-hidden animate-pulse"
+            >
+              <div className="h-4 bg-gray-100 rounded w-28 mb-4" />
+              <div className="h-6 bg-gray-100 rounded w-1/2 mb-3" />
+              <div className="h-4 bg-gray-100 rounded w-2/5" />
             </div>
-            <div className="highlight-block">
-              <div className="highlight-title">Активнее всего привлекает новых</div>
-              {loading ? (
-                <Skeleton height={18} width={180} />
-              ) : leaders?.newCustomers ? (
-                <div className="highlight-value">
-                  <Users size={16} />
-                  <div>
-                    <div className="highlight-name">{leaders.newCustomers.name || leaders.newCustomers.id}</div>
-                    <div className="highlight-sub">{formatNumber(leaders.newCustomers.newCustomers)} новых клиентов за период</div>
-                  </div>
-                </div>
-              ) : (
-                <div className="highlight-empty">Нет данных</div>
-              )}
+          ))}
+        </div>
+      ) : leaders ? (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-gradient-to-br from-white to-purple-50 p-5 rounded-xl border border-purple-100 shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-3 opacity-10">
+              <Store size={64} className="text-purple-600" />
             </div>
-            <div className="highlight-block">
-              <div className="highlight-title">Средний оборот точки</div>
-              {loading ? <Skeleton height={18} width={120} /> : <div className="highlight-number">{items.length ? formatCurrency(averagePerOutlet) : "—"}</div>}
-              <div className="highlight-sub muted">Основано на {items.length || 0} точках</div>
+            <div className="flex items-center space-x-3 mb-2">
+              <div className="bg-purple-100 p-2 rounded-lg text-purple-600">
+                <Award size={20} />
+              </div>
+              <span className="text-sm font-semibold text-purple-900">Лидер по выручке</span>
+            </div>
+            <div className="mt-2">
+              <h3 className="text-xl font-bold text-gray-900">{leaders.revenue?.name}</h3>
+              <p className="text-2xl font-bold text-purple-700 mt-1">{formatCurrency(leaders.revenue?.revenue ?? 0)}</p>
             </div>
           </div>
 
-          {loading ? (
-            <div className="table-skeleton">
-              {Array.from({ length: 6 }).map((_, idx) => (
-                <div key={idx} className="table-skeleton-row">
-                  <Skeleton height={14} width={30} />
-                  <Skeleton height={14} width={120} />
-                  <Skeleton height={14} width={80} />
-                  <Skeleton height={14} width={100} />
-                  <Skeleton height={14} width={80} />
-                  <Skeleton height={14} width={100} />
-                  <Skeleton height={14} width={100} />
-                  <Skeleton height={14} width={90} />
-                  <Skeleton height={14} width={90} />
-                </div>
-              ))}
+          <div className="bg-gradient-to-br from-white to-blue-50 p-5 rounded-xl border border-blue-100 shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-3 opacity-10">
+              <Users size={64} className="text-blue-600" />
             </div>
-          ) : (
-            <div className="table-wrapper">
-              <table className="outlets-table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Торговая точка</th>
-                    <th>Продажи</th>
-                    <th>Сумма продаж</th>
-                    <th>Средний чек</th>
-                    <th>Начисленные баллы</th>
-                    <th>Списанные баллы</th>
-                    <th>Покупателей</th>
-                    <th>Новые клиенты</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((row, index) => {
-                    const avgCheck = computeAverageCheck(row);
-                    const share = totals.revenue > 0 ? (safeNumber(row.revenue) / totals.revenue) * 100 : 0;
-                    const isLeader = leaders?.revenue?.id === row.id;
-                    return (
-                      <tr key={row.id} className={isLeader ? "leader" : ""}>
-                        <td>{index + 1}</td>
-                        <td>
-                          <div className="cell-name">{row.name || row.id}</div>
-                          <div className="cell-id">ID: {row.id}</div>
-                        </td>
-                        <td>{formatNumber(safeNumber(row.transactions))}</td>
-                        <td>
-                          <div className="cell-value">{formatCurrency(safeNumber(row.revenue))}</div>
-                          {share > 0 && <div className="cell-sub">{share.toFixed(0)}% оборота</div>}
-                        </td>
-                        <td>{formatCurrency(avgCheck)}</td>
-                        <td>{formatNumber(safeNumber(row.pointsIssued))}</td>
-                        <td>{formatNumber(safeNumber(row.pointsRedeemed))}</td>
-                        <td>{formatNumber(safeNumber(row.customers))}</td>
-                        <td>{formatNumber(safeNumber(row.newCustomers))}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan={2}>ИТОГО</td>
-                    <td>{formatNumber(totals.sales)}</td>
-                    <td>{formatCurrency(totals.revenue)}</td>
-                    <td>{items.length ? formatCurrency(totalAvgCheck) : "—"}</td>
-                    <td>{formatNumber(totals.pointsIssued)}</td>
-                    <td>{formatNumber(totals.pointsRedeemed)}</td>
-                    <td>{formatNumber(totals.buyers)}</td>
-                    <td>{formatNumber(totals.newCustomers)}</td>
-                  </tr>
-                </tfoot>
-              </table>
-              {!items.length && (
-                <div className="table-empty">
-                  <div className="table-empty__title">Нет данных за выбранный период</div>
-                  <div className="table-empty__text">Попробуйте другой диапазон или обновите фильтры</div>
-                </div>
-              )}
+            <div className="flex items-center space-x-3 mb-2">
+              <div className="bg-blue-100 p-2 rounded-lg text-blue-600">
+                <TrendingUp size={20} />
+              </div>
+              <span className="text-sm font-semibold text-blue-900">Лидер роста</span>
             </div>
-          )}
-        </CardBody>
-      </Card>
+            <div className="mt-2">
+              <h3 className="text-xl font-bold text-gray-900">{leaders.newClients?.name}</h3>
+              <p className="text-2xl font-bold text-blue-700 mt-1">
+                +{formatNumber(leaders.newClients?.newClients ?? 0)} <span className="text-sm font-normal text-blue-600">новых клиентов</span>
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-gradient-to-br from-white to-green-50 p-5 rounded-xl border border-green-100 shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-3 opacity-10">
+              <ShoppingBag size={64} className="text-green-600" />
+            </div>
+            <div className="flex items-center space-x-3 mb-2">
+              <div className="bg-green-100 p-2 rounded-lg text-green-600">
+                <Store size={20} />
+              </div>
+              <span className="text-sm font-semibold text-green-900">Макс. трафик</span>
+            </div>
+            <div className="mt-2">
+              <h3 className="text-xl font-bold text-gray-900">{leaders.traffic?.name}</h3>
+              <p className="text-2xl font-bold text-green-700 mt-1">
+                {formatNumber(leaders.traffic?.salesCount ?? 0)} <span className="text-sm font-normal text-green-600">транзакций</span>
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="p-6 text-center text-sm text-gray-500 border border-gray-100 rounded-xl bg-white">Нет данных за выбранный период</div>
+      )}
+
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-gray-100">
+          <h3 className="font-bold text-gray-900">Эффективность точек</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="text-xs text-gray-500 uppercase bg-gray-50 border-b border-gray-100">
+              <tr>
+                <th className="px-6 py-4 font-semibold">Точка</th>
+                <th className="px-6 py-4 font-semibold text-right">Чеков</th>
+                <th className="px-6 py-4 font-semibold text-right">Выручка</th>
+                <th className="px-6 py-4 font-semibold text-right">Ср. чек</th>
+                <th className="px-6 py-4 font-semibold text-right">Начисл.</th>
+                <th className="px-6 py-4 font-semibold text-right">Списано</th>
+                <th className="px-6 py-4 font-semibold text-right">Клиентов</th>
+                <th className="px-6 py-4 font-semibold text-right">Новые</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {loading
+                ? Array.from({ length: 6 }).map((_, idx) => (
+                    <tr key={idx} className="animate-pulse">
+                      {Array.from({ length: 8 }).map((__, cellIdx) => (
+                        <td key={cellIdx} className="px-6 py-4">
+                          <div className="h-4 bg-gray-100 rounded w-24" />
+                        </td>
+                      ))}
+                    </tr>
+                  ))
+                : rows.map((outlet) => (
+                    <tr key={outlet.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-4 font-medium text-gray-900 flex items-center">
+                        <Store size={16} className="text-gray-400 mr-2" />
+                        {outlet.name}
+                      </td>
+                      <td className="px-6 py-4 text-right text-gray-600">{formatNumber(outlet.salesCount)}</td>
+                      <td className="px-6 py-4 text-right font-medium text-gray-900">{formatCurrency(outlet.revenue)}</td>
+                      <td className="px-6 py-4 text-right text-gray-600">{formatCurrency(outlet.avgCheck)}</td>
+                      <td className="px-6 py-4 text-right text-green-600">+{formatNumber(outlet.accruedPoints)}</td>
+                      <td className="px-6 py-4 text-right text-red-500">-{formatNumber(outlet.redeemedPoints)}</td>
+                      <td className="px-6 py-4 text-right text-gray-600">{formatNumber(outlet.customerCount)}</td>
+                      <td className="px-6 py-4 text-right">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                          +{formatNumber(outlet.newClients)}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+            </tbody>
+            <tfoot className="bg-gray-50 border-t border-gray-200">
+              <tr className="font-bold text-gray-900">
+                <td className="px-6 py-4">ИТОГО</td>
+                <td className="px-6 py-4 text-right">{loading ? "—" : formatNumber(totals.salesCount)}</td>
+                <td className="px-6 py-4 text-right">{loading ? "—" : formatCurrency(totals.revenue)}</td>
+                <td className="px-6 py-4 text-right text-purple-700">{loading ? "—" : formatCurrency(totals.avgCheck)}</td>
+                <td className="px-6 py-4 text-right text-green-700">
+                  {loading ? "—" : `+${formatNumber(totals.accruedPoints)}`}
+                </td>
+                <td className="px-6 py-4 text-right text-red-700">
+                  {loading ? "—" : `-${formatNumber(totals.redeemedPoints)}`}
+                </td>
+                <td className="px-6 py-4 text-right">{loading ? "—" : formatNumber(totals.customerCount)}</td>
+                <td className="px-6 py-4 text-right">{loading ? "—" : `+${formatNumber(totals.newClients)}`}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        {!loading && !rows.length && (
+          <div className="p-6 text-center text-sm text-gray-500 border-t border-gray-100">Нет данных за выбранный период</div>
+        )}
+        {error && <div className="px-6 pb-6 text-sm text-red-600 font-medium">{error}</div>}
+      </div>
     </div>
   );
 }

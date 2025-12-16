@@ -142,7 +142,6 @@ export function aggregateAgeRanges(
     let clients = 0;
     let transactions = 0;
     let revenue = 0;
-    let weightedAvgCheckSum = 0;
 
     for (const item of items || []) {
       const age = clampAgeValue(item.age);
@@ -152,15 +151,10 @@ export function aggregateAgeRanges(
       clients += Math.max(0, item.customers || 0);
       transactions += Math.max(0, item.transactions || 0);
       revenue += Math.max(0, item.revenue || 0);
-      weightedAvgCheckSum += Math.max(0, item.averageCheck || 0) * Math.max(0, item.customers || 0);
     }
 
     const avgCheck =
-      clients > 0
-        ? Math.round(weightedAvgCheckSum / clients)
-        : transactions > 0
-          ? Math.round(revenue / transactions)
-          : 0;
+      transactions > 0 ? Math.round(revenue / transactions) : 0;
 
     return {
       label: range.label,

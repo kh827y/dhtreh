@@ -374,9 +374,27 @@ export class CashierGuard implements CanActivate {
       req,
       merchantIdHint,
     );
-    const merchantId = context.merchantId;
+    let merchantId = context.merchantId;
     const outletId = context.outletId ?? null;
-    const payload = context.payload;
+    let payload = context.payload;
+
+    if (!merchantId) {
+      merchantId =
+        merchantIdHint ||
+        req?.body?.merchantId ||
+        req?.params?.merchantId ||
+        req?.query?.merchantId ||
+        undefined;
+    }
+
+    // Для простых QR-запросов и случаев без заранее сформированного payload
+    if (!payload && merchantId && req?.body) {
+      try {
+        payload = JSON.stringify({ ...req.body, merchantId });
+      } catch {
+        payload = null;
+      }
+    }
 
     if (!merchantId || !payload) return { ok: false, context };
 

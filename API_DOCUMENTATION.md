@@ -254,9 +254,11 @@ Merchant Portal использует отдельный JWT, выдаваемы�
 #### Portal proxy
 
 - `GET /portal/analytics/dashboard` — принимает `period=yesterday|day|week|month|quarter|year` либо пару `from` / `to` (ISO‑даты `YYYY-MM-DD`, границы нормализуются в таймзоне мерчанта). Возвращает:
-  - `period`: `{ from, to, type }` (ISO‑строки).
-  - `metrics`: `salesAmount`, `averageCheck`, `newCustomers`, `activeCustomers`, `averagePurchasesPerCustomer`, `visitFrequencyDays` (средний интервал между покупками в днях) — все суммы строятся по `Receipt.total`.
-  - `timeline[]`: для каждой даты (`YYYY-MM-DD` с учётом таймзоны мерчанта) поля `registrations` (новые кошельки), `salesCount` (чеков), `salesAmount` (сумма продаж). Интервалы без операций заполняются нулями.
+  - `period` и `previousPeriod`: `{ from, to, type }` (ISO‑строки).
+  - `metrics` и `previousMetrics`: `salesAmount`, `orders`, `averageCheck`, `newCustomers` (создано `Wallet`), `activeCustomers`, `averagePurchasesPerCustomer`, `visitFrequencyDays` (средний интервал между покупками в днях), `pointsBurned` (сумма `redeemApplied` по чекам без отмен/возврата).
+  - `timeline`: `{ current[], previous[], grouping }` — оба ряда выравнены по количеству точек; каждая точка (`YYYY-MM-DD` в таймзоне мерчанта) содержит `registrations`, `salesCount`, `salesAmount`.
+  - `composition`: `{ newChecks, repeatChecks }` — число чеков новых и вернувшихся клиентов в текущем периоде.
+  - `retention`: `{ activeCurrent, activePrevious, retained, retentionRate, churnRate }` — сравнение активной базы прошлого периода с текущей.
   - Возвраты/отмены исключены: учитываются только чеки без `canceledAt`, по которым нет активных `Transaction` c `type=REFUND` и `canceledAt IS NULL`.
 - `GET /portal/analytics/time/recency` — принимает те же query-параметры, что и основной эндпоинт, использует merchantId из сессии.
 - `GET /portal/analytics/time/activity` — параметры `period` / `from` / `to`, выдаёт данные для дашборда `/analytics/time`.

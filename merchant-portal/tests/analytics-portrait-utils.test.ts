@@ -63,7 +63,7 @@ describe("analytics portrait utils", () => {
     const teens = ranges.find((r) => r.label === "До 18");
     assert.ok(teens);
     assert.equal(teens?.clients, 2);
-    assert.equal(teens?.avgCheck, 488); // (389 + 586) / 2 ≈ 487.5
+    assert.equal(teens?.avgCheck, 553); // (389 + 2930) / (1 + 5) ≈ 553.17
   });
 
   it("builds combined demography per age and sex", () => {
