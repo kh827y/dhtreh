@@ -1,1160 +1,927 @@
 "use client";
 
-import React from "react";
-import { Card, CardHeader, CardBody, Button, Skeleton, Chart } from "@loyalty/ui";
-import Toggle from "../../../components/Toggle";
-import TagSelect from "../../../components/TagSelect";
-import { Calendar, Users2, PlusCircle, X, RefreshCw, Bell, Flame } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  Plus,
+  Trash2,
+  Power,
+  Info,
+  Calendar,
+  Coins,
+  ShoppingBag,
+  ArrowLeft,
+  Save,
+  Users,
+  Flame,
+  ShieldCheck,
+  Pencil,
+  Bell,
+  ExternalLink,
+  AlertCircle,
+} from "lucide-react";
 
-const tabs = [
-  { id: "UPCOMING" as const, label: "Предстоящие" },
-  { id: "ACTIVE" as const, label: "Активные" },
-  { id: "PAST" as const, label: "Прошедшие" },
-];
+type PromotionStatus = "active" | "disabled" | "ended";
 
-type PromotionStatus = "DRAFT" | "SCHEDULED" | "ACTIVE" | "PAUSED" | "COMPLETED" | "CANCELED" | "ARCHIVED" | string;
+interface PointsPromotion {
+  id: string;
+  title: string;
+  startDate: string;
+  createdAt: string | null;
+  hasExplicitStartDate: boolean;
+  endDate: string;
+  status: PromotionStatus;
+  accruePoints: boolean;
+  pointsAmount: number;
+  isBurning: boolean;
+  audience: string;
+  pushAtStart: boolean;
+  pushStartText?: string;
+  pushBeforeEnd: boolean;
+  pushEndText?: string;
+  revenue: number;
+  cost: number;
+}
 
-type CampaignReward = {
-  awardPoints: boolean;
-  points: number;
-  pointsExpire: boolean;
-};
-
-type CampaignNotification = {
-  pushOnStart: boolean;
-  pushMessage?: string;
-  pushReminder: boolean;
-  pushReminderMessage?: string;
-};
-
-type Campaign = {
+type AudienceOption = {
   id: string;
   name: string;
-  description: string;
-  status: PromotionStatus;
-  startDate: string | null;
-  endDate: string | null;
-  segmentId: string | null;
-  audienceIsAll: boolean;
-  segmentName: string;
-  totalAudience: number; // всего в аудитории
-  usedCount: number; // активировали/получили бонус
-  revenueSeries: number[];
-  revenueDates?: string[];
-  revenueNet: number;
-  launched: boolean;
-  createdAt: string;
-  reward: CampaignReward;
-  notifications: CampaignNotification;
+  isAll: boolean;
 };
 
-type AudienceOption = { value: string; label: string; description?: string; size?: number; isAll?: boolean };
+const formatCurrency = (val: number) => `₽${val.toLocaleString()}`;
 
-type ActionFormState = {
-  name: string;
-  description: string;
-  startDate: string;
-  endDate: string;
-  audience: string;
-  awardPoints: boolean;
-  points: string;
-  pointsExpire: boolean;
-  pushOnStart: boolean;
-  pushMessage: string;
-  pushReminder: boolean;
-  pushReminderMessage: string;
-  launched: boolean;
-};
-
-const defaultForm: ActionFormState = {
-  name: "",
-  description: "",
-  startDate: "",
-  endDate: "",
-  audience: "",
-  awardPoints: true,
-  points: "100",
-  pointsExpire: false,
-  pushOnStart: false,
-  pushMessage: "",
-  pushReminder: false,
-  pushReminderMessage: "",
-  launched: true,
-};
-
-// удалены мок-данные: работаем только с реальным API
-
-const PushPreview: React.FC<{ title: string; message: string }> = ({ title, message }) => (
-  <div
-    style={{
-      background: "linear-gradient(135deg, rgba(30,41,59,0.9), rgba(15,23,42,0.92))",
-      border: "1px solid rgba(148,163,184,0.2)",
-      borderRadius: 14,
-      padding: "12px 16px",
-      minWidth: 220,
-      color: "#e2e8f0",
-      fontSize: 13,
-      boxShadow: "0 16px 40px rgba(15,23,42,0.35)",
-    }}
-  >
-    <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-      <div style={{ width: 32, height: 32, borderRadius: 10, background: "rgba(99,102,241,0.2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <Bell size={16} />
-      </div>
-      <div style={{ fontWeight: 600 }}>{title || "Уведомление"}</div>
-    </div>
-    <div style={{ marginTop: 6, lineHeight: 1.4 }}>{message || "Текст уведомления"}</div>
-  </div>
-);
-
-function normalizeStatus(status: any): PromotionStatus {
-  if (!status) return "DRAFT";
-  const upper = String(status).toUpperCase();
-  switch (upper) {
-    case "ACTIVE":
-    case "PAUSED":
-    case "SCHEDULED":
-    case "COMPLETED":
-    case "CANCELED":
-    case "ARCHIVED":
-    case "DRAFT":
-      return upper;
-    default:
-      return upper;
-  }
-}
-
-function formatRange(from: string | null, to: string | null) {
-  if (!from && !to) return "Бессрочно";
-  if (from && to) return `${new Date(from).toLocaleDateString("ru-RU")} — ${new Date(to).toLocaleDateString("ru-RU")}`;
-  if (from) return `с ${new Date(from).toLocaleDateString("ru-RU")}`;
-  if (to) return `до ${new Date(to).toLocaleDateString("ru-RU")}`;
-  return "—";
-}
-
-function safeNumber(value: any): number {
+function safeNumber(value: unknown): number {
   const num = Number(value);
   return Number.isFinite(num) ? num : 0;
 }
 
-function formatMoney(value: number) {
-  return value.toLocaleString("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 });
-}
-
-function computeTab(action: Campaign, now = new Date()): "UPCOMING" | "ACTIVE" | "PAST" {
-  const status = normalizeStatus(action.status);
-  const start = action.startDate ? new Date(action.startDate) : null;
-  const end = action.endDate ? new Date(action.endDate) : null;
-  if (status === "COMPLETED" || status === "ARCHIVED" || status === "CANCELED") return "PAST";
-  if ((status === "ACTIVE" || status === "PAUSED") && (!end || end >= now)) return "ACTIVE";
-  if (status === "SCHEDULED") return "UPCOMING";
-  if (start && start > now) return "UPCOMING";
-  if (end && end < now) return "PAST";
-  return status === "ACTIVE" ? "ACTIVE" : "UPCOMING";
-}
-
-type RevenueData = { series: number[]; dates: string[] | null };
-
-function deriveRevenueSeries(metrics: any): RevenueData {
-  const charts = metrics && typeof metrics === "object" ? (metrics.charts as Record<string, any>) ?? {} : {};
-  const candidates = [
-    charts.revenueNet,
-    charts.redeemedNet,
-    charts.redeemNet,
-    charts.revenueRedeemed,
-    charts.redeemed,
-    charts.daily,
-    charts.weekly,
-    charts.monthly,
-    charts.revenueSeries,
-  ].find((value) => Array.isArray(value)) as number[] | undefined;
-  const rawSeries = Array.isArray(candidates) ? candidates : [];
-  const dates =
-    Array.isArray(charts.revenueDates) && charts.revenueDates.length === rawSeries.length
-      ? charts.revenueDates
-      : null;
-  const sanitized = rawSeries
-    .map((value) => safeNumber(value))
-    .filter((value) => Number.isFinite(value) && value >= 0);
-
-  if (sanitized.length && safeNumber(metrics?.pointsRedeemed) > 0 && safeNumber(metrics?.revenueRedeemed) > 0) {
-    const totalRevenue = sanitized.reduce((acc, value) => acc + value, 0);
-    const totalPoints = safeNumber(metrics.pointsRedeemed);
-    if (totalRevenue > 0) {
-      return {
-        series: sanitized.map((value) => Math.max(0, value - (totalPoints * (value / totalRevenue)))),
-        dates,
-      };
-    }
+function readApiError(payload: unknown): string | null {
+  if (!payload) return null;
+  if (typeof payload === "string") return payload.trim() || null;
+  if (typeof payload === "object" && payload) {
+    const anyPayload = payload as any;
+    if (typeof anyPayload.message === "string") return anyPayload.message;
+    if (Array.isArray(anyPayload.message) && typeof anyPayload.message[0] === "string") return anyPayload.message[0];
+    if (typeof anyPayload.error === "string") return anyPayload.error;
   }
-  return { series: sanitized, dates };
+  return null;
 }
 
-function deriveAudienceSize(segment: any, analytics: any): number {
-  const countFromSegment =
-    safeNumber(segment?._count?.customers) ||
-    safeNumber(segment?.customerCount) ||
-    safeNumber(segment?.customersCount) ||
-    safeNumber(segment?.metricsSnapshot?.estimatedCustomers);
-  if (countFromSegment > 0) return countFromSegment;
-  const audienceFromAnalytics =
-    safeNumber(analytics?.metrics?.audienceTotal) ||
-    safeNumber(analytics?.audienceTotal);
-  return audienceFromAnalytics;
+function formatDateRu(value: unknown, fallback: string) {
+  if (!value) return fallback;
+  const d = new Date(String(value));
+  if (Number.isNaN(d.getTime())) return fallback;
+  return d.toLocaleDateString("ru-RU");
 }
 
-type RevenuePoint = { date: Date; value: number };
-const DAY_MS = 86_400_000;
-const WINDOW_DAYS = 7;
-const MAX_LOOKBACK_DAYS = 365;
-
-function parseDate(value: string): Date | null {
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  return d;
+function resolvePromotionStatus(item: any): PromotionStatus {
+  const status = String(item?.status || "").toUpperCase();
+  const endAt = item?.endDate ? new Date(item.endDate) : item?.endAt ? new Date(item.endAt) : null;
+  if (endAt && Number.isFinite(endAt.getTime()) && endAt.getTime() < Date.now()) return "ended";
+  if (status === "ACTIVE" || status === "SCHEDULED") return "active";
+  return "disabled";
 }
 
-function buildRevenuePoints(series: number[], dates?: string[]): RevenuePoint[] {
-  const hasDates = Array.isArray(dates) && dates.length === series.length;
-  const today = new Date();
-  return series
-    .map((value, index) => {
-      const date = hasDates
-        ? parseDate(dates![index]!)
-        : new Date(today.getTime() - (series.length - 1 - index) * DAY_MS);
-      if (!date) return null;
-      return { date, value: Math.max(0, safeNumber(value)) };
-    })
-    .filter((item): item is RevenuePoint => item !== null && Number.isFinite(item.value) && item.value >= 0);
+function extractPointsExpireFlag(item: any): boolean {
+  const legacyReward = item?.metadata?.legacyCampaign?.reward ?? null;
+  const meta =
+    legacyReward && typeof legacyReward === "object"
+      ? legacyReward.metadata && typeof legacyReward.metadata === "object"
+        ? legacyReward.metadata
+        : legacyReward
+      : null;
+  return Boolean(meta?.pointsExpire ?? meta?.metadata?.pointsExpire ?? meta?.pointsExpireAfterEnd);
 }
 
-function formatShortDate(value: Date | null) {
-  if (!value || Number.isNaN(value.getTime())) return "—";
-  return value.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
+function computeROI(revenue: number, cost: number) {
+  if (cost === 0) return 0;
+  return (revenue / cost).toFixed(1);
 }
 
 export default function ActionsEarnPage() {
-  const [tab, setTab] = React.useState<typeof tabs[number]["id"]>("ACTIVE");
-  const [campaigns, setCampaigns] = React.useState<Campaign[]>([]);
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState("");
-  const [showCreate, setShowCreate] = React.useState(false);
-  const [form, setForm] = React.useState<ActionFormState>(defaultForm);
-  const [saving, setSaving] = React.useState(false);
-  const [audiences, setAudiences] = React.useState<AudienceOption[]>([]);
-  const [audLoading, setAudLoading] = React.useState(false);
-  const [editingId, setEditingId] = React.useState<string | null>(null);
-  const now = React.useMemo(() => new Date(), []);
-  const [chartWindow, setChartWindow] = React.useState<Record<string, number>>({});
+  const onNavigate = (viewName: string) => {
+    if (viewName === "audiences") window.location.assign("/audiences");
+  };
+  const [view, setView] = useState<"list" | "create">("list");
+  const [activeTab, setActiveTab] = useState<PromotionStatus>("active");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingCreatedAtIso, setEditingCreatedAtIso] = useState<string | null>(null);
 
-  const loadAudiences = React.useCallback(async () => {
-    setAudLoading(true);
-    try {
-      const res = await fetch("/api/portal/audiences?includeSystem=1");
-      if (!res.ok) throw new Error(await res.text());
-      const json = await res.json();
-      const base: AudienceOption[] = Array.isArray(json)
-        ? json.map((a: any) => ({
-            value: a.id,
-            label: a.name || "Без названия",
-            description: a.description || "",
-            size:
-              safeNumber(a.customerCount) ||
-              safeNumber(a._count?.customers) ||
-              safeNumber(a.metricsSnapshot?.estimatedCustomers),
-            isAll: a.systemKey === "all-customers" || (a.isSystem && /все\s+клиенты/i.test(a.name || "")),
-          }))
-        : [];
-      const sorted = base.sort((a, b) => (b.isAll ? 1 : 0) - (a.isAll ? 1 : 0));
-      setAudiences(sorted);
-    } catch {
-      setAudiences([]);
-    } finally {
-      setAudLoading(false);
+  const [audiences, setAudiences] = useState<AudienceOption[]>([]);
+  const [promotions, setPromotions] = useState<PointsPromotion[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  const allAudience = useMemo(() => audiences.find((a) => a.isAll) ?? null, [audiences]);
+  const allAudienceId = allAudience?.id ?? "";
+
+  const [formData, setFormData] = useState({
+    title: "",
+    isActive: false,
+    startImmediately: true,
+    startDate: new Date().toISOString().split("T")[0],
+    isIndefinite: false,
+    endDate: new Date(Date.now() + 86400000 * 7).toISOString().split("T")[0],
+    audience: "",
+    accruePoints: true,
+    pointsAmount: 100,
+    isBurning: false,
+    pushAtStart: false,
+    pushStartText: "",
+    pushBeforeEnd: false,
+    pushEndText: "",
+  });
+
+  const getAudienceName = (id: string) => {
+    const a = audiences.find((aa) => aa.id === id);
+    return a ? a.name : id;
+  };
+
+  const loadAudiences = async () => {
+    const res = await fetch("/api/portal/audiences?includeSystem=1");
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(readApiError(text) || "Не удалось загрузить аудитории");
     }
-  }, []);
+    const json = await res.json();
+    const mapped: AudienceOption[] = Array.isArray(json)
+      ? json.map((a: any) => ({
+          id: String(a.id),
+          name: String(a.name || "Без названия"),
+          isAll: Boolean(a.systemKey === "all-customers" || (a.isSystem && /все\\s+клиенты/i.test(a.name || ""))),
+        }))
+      : [];
+    mapped.sort((a, b) => Number(b.isAll) - Number(a.isAll));
+    setAudiences(mapped);
+  };
 
-  const allAudience = React.useMemo(() => audiences.find((a) => a.isAll) ?? null, [audiences]);
-  const audienceSizes = React.useMemo(() => {
-    const map = new Map<string, number>();
-    audiences.forEach((a) => {
-      if (typeof a.size === "number") {
-        map.set(a.value, a.size);
-      }
-    });
-    return map;
-  }, [audiences]);
-
-  const loadCampaigns = React.useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const res = await fetch("/api/portal/loyalty/promotions");
-      if (!res.ok) throw new Error(await res.text());
-      const json = await res.json();
-      const mapped: Campaign[] = Array.isArray(json)
-        ? json.map((item: any) => {
-            const status = normalizeStatus(item.status);
-            const rewardSource = item.reward ?? item.rewardMetadata ?? {};
-            const rewardMeta =
-              (rewardSource.metadata && typeof rewardSource.metadata === "object" ? rewardSource.metadata : rewardSource) ??
-              {};
-            const reward: CampaignReward = {
-              awardPoints: (rewardSource.type || "").toString().toUpperCase() === "POINTS",
-              points: safeNumber(rewardSource.value ?? item.rewardValue),
-              pointsExpire: Boolean(rewardMeta.pointsExpire ?? rewardMeta.pointsExpireAfterEnd),
-            };
-            const notifications: CampaignNotification = {
-              pushOnStart: Boolean(item.metadata?.pushOnStart),
-              pushMessage: item.metadata?.pushMessage || "",
-              pushReminder: Boolean(item.metadata?.pushReminder),
-              pushReminderMessage: item.metadata?.pushReminderMessage || "",
-            };
-            const metrics = item.analytics?.metrics ?? item.analytics ?? item.metrics ?? {};
-            const revenueData = deriveRevenueSeries(metrics);
-            const netRevenue = Math.max(
-              0,
-              safeNumber(metrics.revenueRedeemed ?? metrics.revenueGenerated) -
-                safeNumber(metrics.pointsRedeemed ?? metrics.pointsIssued),
-            );
-            const totalAudience = deriveAudienceSize(item.segment ?? item.audience, item.analytics);
-            const usedCount =
-              safeNumber(metrics.participantsCount) ||
-              safeNumber(item.analytics?.participantsCount) ||
-              safeNumber(item.participantsCount);
-            const segment =
-              (Object.prototype.hasOwnProperty.call(item, "segment") ? item.segment : item.audience) ?? {};
-            const targetSegment = Object.prototype.hasOwnProperty.call(item, "targetSegmentId")
-              ? item.targetSegmentId
-              : segment?.id ?? null;
-            const name = segment?.name || item.segmentName || (targetSegment ? "Сегмент" : "Все клиенты");
-            const audienceIsAll =
-              segment?.systemKey === "all-customers" ||
-              segment?.isSystem === true ||
-              (!targetSegment && /все\s+клиенты/i.test(name || ""));
-            return {
-              id: item.id,
-              name: item.name || "Без названия",
-              description: item.description || "",
-              status,
-              startDate: item.startDate ?? item.startAt ?? null,
-              endDate: item.endDate ?? item.endAt ?? null,
-              segmentId: targetSegment || null,
-              audienceIsAll,
-              segmentName: name,
-              totalAudience,
-              usedCount,
-              revenueSeries: revenueData.series.length ? revenueData.series : netRevenue > 0 ? [netRevenue] : [],
-              revenueDates: revenueData.dates ?? undefined,
-              revenueNet: netRevenue,
-              launched: status === "ACTIVE" || status === "PAUSED" || status === "SCHEDULED",
-              createdAt: item.createdAt || new Date().toISOString(),
-              reward,
-              notifications,
-            } as Campaign;
-          })
-        : [];
-      setCampaigns(mapped);
-    } catch (e: any) {
-      try {
-        setError(String(e?.message || e));
-      } catch {
-        setError("Ошибка загрузки акций");
-      }
-      setCampaigns([]);
-    } finally {
-      setLoading(false);
+  const loadPromotions = async (audAllId: string) => {
+    const res = await fetch("/api/portal/loyalty/promotions");
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(readApiError(text) || "Не удалось загрузить акции");
     }
-  }, []);
+    const json = await res.json();
+    const mapped: PointsPromotion[] = Array.isArray(json)
+      ? json.map((item: any) => {
+          const metrics = item?.analytics?.metrics ?? item?.metrics ?? {};
+          const revenue = Math.max(0, safeNumber(metrics?.revenueGenerated));
+          const cost = Math.max(0, safeNumber(metrics?.pointsRedeemed));
 
-  React.useEffect(() => {
-    let cancelled = false;
+          const createdAtIso = item?.createdAt ? String(item.createdAt) : item?.createdAtIso ? String(item.createdAtIso) : null;
+          const hasExplicitStartDate = Boolean(item?.startDate);
+          const startDateValue = item?.startDate ?? createdAtIso;
+          const startDate = startDateValue ? formatDateRu(startDateValue, "—") : "—";
+          const endDate = item?.endDate ? formatDateRu(item.endDate, "—") : "Бессрочно";
+
+          const audienceId = item?.targetSegmentId ? String(item.targetSegmentId) : item?.segmentId ? String(item.segmentId) : "";
+          const resolvedAudience = audienceId || audAllId;
+          const status = resolvePromotionStatus(item);
+          const burning = extractPointsExpireFlag(item);
+
+          const rewardValue = safeNumber(item?.reward?.value ?? item?.rewardValue ?? 0);
+          const pushAtStart = Boolean(item?.metadata?.pushOnStart);
+          const pushStartText = String(item?.metadata?.pushMessage || "");
+          const pushBeforeEnd = Boolean(item?.metadata?.pushReminder);
+          const pushEndText = String(item?.metadata?.pushReminderMessage || "");
+
+          return {
+            id: String(item.id),
+            title: String(item.name || "Без названия"),
+            startDate,
+            createdAt: createdAtIso,
+            hasExplicitStartDate,
+            endDate,
+            status,
+            accruePoints: true,
+            pointsAmount: Math.max(0, Math.round(rewardValue)),
+            isBurning: burning,
+            audience: resolvedAudience,
+            pushAtStart,
+            pushStartText,
+            pushBeforeEnd,
+            pushEndText,
+            revenue,
+            cost,
+          };
+        })
+      : [];
+    setPromotions(mapped);
+  };
+
+  useEffect(() => {
+    let mounted = true;
     (async () => {
-      await Promise.all([loadCampaigns(), loadAudiences()]);
-      if (cancelled) return;
+      try {
+        await loadAudiences();
+      } catch (e: any) {
+        if (mounted) alert(e?.message || "Не удалось загрузить аудитории");
+      }
     })();
     return () => {
-      cancelled = true;
+      mounted = false;
     };
-  }, [loadCampaigns, loadAudiences]);
+  }, []);
 
-  React.useEffect(() => {
-    if (!form.audience && allAudience?.value) {
-      setForm((prev) => ({ ...prev, audience: allAudience.value }));
+  useEffect(() => {
+    if (!audiences.length) return;
+    if (!formData.audience && allAudienceId) {
+      setFormData((prev) => ({ ...prev, audience: allAudienceId }));
     }
-  }, [allAudience?.value, form.audience]);
+  }, [audiences.length, allAudienceId, formData.audience]);
 
-  const filtered = React.useMemo(
-    () => campaigns.filter((item) => computeTab(item, now) === tab),
-    [campaigns, tab, now],
+  useEffect(() => {
+    if (!audiences.length) return;
+    let mounted = true;
+    (async () => {
+      try {
+        await loadPromotions(allAudienceId);
+      } catch (e: any) {
+        if (mounted) alert(e?.message || "Не удалось загрузить акции");
+        if (mounted) setPromotions([]);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [audiences.length, allAudienceId]);
+
+  const filteredPromotions = promotions.filter((p) => p.status === activeTab);
+
+  const PlaceholdersHint = () => (
+    <div className="flex flex-wrap gap-2 text-xs text-gray-500 mt-2">
+      <span>Доступные переменные:</span>
+      <span className="bg-gray-100 px-1.5 py-0.5 rounded text-gray-700 cursor-help" title="Название акции">
+        {"{name}"}
+      </span>
+      <span className="bg-gray-100 px-1.5 py-0.5 rounded text-gray-700 cursor-help" title="Имя клиента">
+        {"{client}"}
+      </span>
+      <span className="bg-gray-100 px-1.5 py-0.5 rounded text-gray-700 cursor-help" title="Сумма баллов">
+        {"{bonus}"}
+      </span>
+    </div>
   );
 
-  const handleCreate = () => {
+  const startCreation = () => {
     setEditingId(null);
-    setForm((prev) => ({
-      ...defaultForm,
-      audience: allAudience?.value ?? "",
-    }));
-    setShowCreate(true);
-  };
-
-  const handleOpenEdit = (c: Campaign) => {
-    const audienceFromCampaign = c.segmentId || (c.audienceIsAll ? allAudience?.value ?? "" : "");
-    setEditingId(c.id);
-    setForm({
-      name: c.name || "",
-      description: c.description || "",
-      startDate: c.startDate ? c.startDate.slice(0, 10) : "",
-      endDate: c.endDate ? c.endDate.slice(0, 10) : "",
-      audience: audienceFromCampaign,
-      awardPoints: !!c.reward.awardPoints,
-      points: String(c.reward.points || 0),
-      pointsExpire: !!c.reward.pointsExpire,
-      pushOnStart: !!c.notifications.pushOnStart,
-      pushMessage: c.notifications.pushMessage || "",
-      pushReminder: !!c.notifications.pushReminder,
-      pushReminderMessage: c.notifications.pushReminderMessage || "",
-      launched: c.status === "ACTIVE" || c.status === "SCHEDULED" || c.status === "PAUSED",
+    setEditingCreatedAtIso(null);
+    setFormData({
+      title: "",
+      isActive: false,
+      startImmediately: true,
+      startDate: new Date().toISOString().split("T")[0],
+      isIndefinite: false,
+      endDate: new Date(Date.now() + 86400000 * 7).toISOString().split("T")[0],
+      audience: allAudienceId,
+      accruePoints: true,
+      pointsAmount: 100,
+      isBurning: false,
+      pushAtStart: false,
+      pushStartText: "Мы запустили акцию {name}! Вам доступно к получению {bonus} бонусов.",
+      pushBeforeEnd: false,
+      pushEndText: "Акция {name} заканчивается через 2 дня! Не упустите выгоду.",
     });
-    setShowCreate(true);
+    setView("create");
   };
 
-  const handleSubmit = async () => {
-    if (!form.name.trim()) {
-      alert("Укажите название акции");
+  const handleEdit = (promo: PointsPromotion) => {
+    setEditingId(promo.id);
+    setEditingCreatedAtIso(promo.createdAt);
+
+    const parseDate = (dateStr: string) => {
+      if (dateStr === "Бессрочно" || dateStr.includes("Бессрочно")) return new Date().toISOString().split("T")[0];
+      const parts = dateStr.split(".");
+      if (parts.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`;
+      return new Date().toISOString().split("T")[0];
+    };
+
+    const isIndefinite = promo.endDate === "Бессрочно";
+    const startImmediately = !promo.hasExplicitStartDate;
+
+    setFormData({
+      title: promo.title,
+      isActive: promo.status === "active",
+      startImmediately,
+      startDate: parseDate(promo.startDate),
+      isIndefinite,
+      endDate: parseDate(promo.endDate),
+      audience: promo.audience,
+      accruePoints: promo.accruePoints,
+      pointsAmount: promo.pointsAmount,
+      isBurning: promo.isBurning,
+      pushAtStart: promo.pushAtStart,
+      pushStartText: promo.pushStartText || "",
+      pushBeforeEnd: promo.pushBeforeEnd,
+      pushEndText: promo.pushEndText || "",
+    });
+    setView("create");
+  };
+
+  const upsertPromotion = async (payload: any) => {
+    const endpoint = editingId ? `/api/portal/loyalty/promotions/${encodeURIComponent(editingId)}` : "/api/portal/loyalty/promotions";
+    const res = await fetch(endpoint, {
+      method: editingId ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(readApiError(text) || "Не удалось сохранить акцию");
+    }
+  };
+
+  const handleSave = async () => {
+    if (saving) return;
+    if (!formData.title) {
+      alert("Введите название акции");
       return;
     }
-    if (form.awardPoints && Number(form.points || 0) <= 0) {
+    if (!formData.accruePoints || safeNumber(formData.pointsAmount) <= 0) {
       alert("Укажите количество баллов");
       return;
     }
-    if (form.startDate && form.endDate) {
-      const startMs = new Date(form.startDate).getTime();
-      const endMs = new Date(form.endDate).getTime();
-      if (startMs > endMs) {
+    if (formData.startDate && formData.endDate && !formData.isIndefinite) {
+      const startMs = new Date(formData.startDate).getTime();
+      const endMs = new Date(formData.endDate).getTime();
+      if (Number.isFinite(startMs) && Number.isFinite(endMs) && startMs > endMs) {
         alert("Дата начала не может быть позже даты завершения");
         return;
       }
     }
-    if (form.pointsExpire && !form.endDate) {
-      alert("Укажите дату завершения, чтобы баллы сгорели после окончания акции");
-      return;
-    }
-    const startIso = form.startDate ? new Date(form.startDate).toISOString() : null;
-    const endIso = form.endDate ? new Date(form.endDate).toISOString() : null;
-    let status: PromotionStatus = form.launched ? "ACTIVE" : "DRAFT";
-    if (form.launched && startIso) {
-      const start = new Date(startIso);
-      if (start.getTime() > Date.now()) status = "SCHEDULED";
-    }
+
+    const now = new Date();
+    const startAt = formData.startImmediately
+      ? editingId && editingCreatedAtIso
+        ? new Date(editingCreatedAtIso)
+        : now
+      : new Date(formData.startDate);
+    const endAt = formData.isIndefinite ? null : new Date(formData.endDate);
+    const startIso = Number.isFinite(startAt.getTime()) ? startAt.toISOString() : now.toISOString();
+    const endIso = endAt && Number.isFinite(endAt.getTime()) ? endAt.toISOString() : null;
+
+    const wantsActive = formData.isActive;
+    const status = wantsActive ? "ACTIVE" : "DRAFT";
+
+    const selectedAudience = formData.audience || allAudienceId || null;
+    const audienceIdToSend = selectedAudience && allAudienceId && selectedAudience === allAudienceId ? null : selectedAudience;
+
+    const payload = {
+      name: formData.title,
+      description: "",
+      status,
+      startDate: startIso,
+      endDate: endIso,
+      targetSegmentId: audienceIdToSend,
+      type: "BONUS",
+      reward: {
+        type: "POINTS",
+        value: Math.max(0, Math.round(Number(formData.pointsAmount || 0))),
+        metadata: {
+          pointsExpire: formData.isBurning,
+          pointsExpireAfterEnd: formData.isBurning,
+        },
+      },
+      metadata: {
+        pushOnStart: formData.pushAtStart,
+        pushMessage: formData.pushStartText,
+        pushReminder: formData.pushBeforeEnd,
+        pushReminderMessage: formData.pushEndText,
+        reminderOffsetHours: formData.pushBeforeEnd ? 48 : null,
+      },
+      rules: {},
+    };
+
     setSaving(true);
     try {
-      const payload = {
-        name: form.name.trim(),
-        description: form.description.trim(),
-        status,
-        startDate: startIso,
-        endDate: endIso,
-        targetSegmentId: form.audience || allAudience?.value || null,
-        type: "BONUS",
-        reward: {
-          type: "POINTS",
-          value: Number(form.points || 0),
-          metadata: {
-            pointsExpire: form.pointsExpire,
-            pointsExpireAfterEnd: form.pointsExpire,
-          },
-        },
-        metadata: {
-          pushOnStart: form.pushOnStart,
-          pushMessage: form.pushMessage,
-          pushReminder: form.pushReminder,
-          pushReminderMessage: form.pushReminderMessage,
-          reminderOffsetHours: form.pushReminder ? 48 : null,
-        },
-        rules: {},
-      };
-      const endpoint = editingId
-        ? `/api/portal/loyalty/promotions/${encodeURIComponent(editingId)}`
-        : "/api/portal/loyalty/promotions";
-      await fetch(endpoint, {
-        method: editingId ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      await loadCampaigns();
-      setShowCreate(false);
+      await upsertPromotion(payload);
+      await loadPromotions(allAudienceId);
+      setView("list");
+      setActiveTab(formData.isActive ? "active" : "disabled");
+    } catch (e: any) {
+      alert(e?.message || "Не удалось сохранить акцию");
     } finally {
       setSaving(false);
     }
   };
 
-  const renderCard = (campaign: Campaign) => {
-    const audienceId = campaign.segmentId || (campaign.audienceIsAll ? allAudience?.value ?? "" : "");
-    const totalFromSegments = audienceId ? audienceSizes.get(audienceId) ?? null : null;
-    const baseTotal = totalFromSegments ?? Math.max(0, Number(campaign.totalAudience || 0));
-    const total = baseTotal;
-    const used = Math.min(total, Math.max(0, Number(campaign.usedCount || 0)));
-    const ignored = Math.max(0, total - used);
-    const usedShare = total ? Math.round((used / total) * 100) : 0;
-    const ignoredShare = total ? Math.round((ignored / total) * 100) : 0;
-    const tabId = computeTab(campaign, now);
-
-    return (
-      <div
-        key={campaign.id}
-        role="button"
-        tabIndex={0}
-        onClick={() => handleOpenEdit(campaign)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            handleOpenEdit(campaign);
-          }
-        }}
-        style={{ cursor: "pointer" }}
-      >
-        <Card style={{ position: "relative", borderRadius: 0, margin: 0 }}>
-          <CardBody style={{ padding: 12 }}>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "minmax(260px,1.2fr) minmax(320px,1.6fr)",
-                gap: 16,
-                alignItems: "stretch",
-              }}
-            >
-              <div
-                style={{
-                  display: "grid",
-                  gap: 10,
-                  padding: 12,
-                  borderRadius: 12,
-                  background: "rgba(148,163,184,0.06)",
-                }}
-              >
-                <div style={{ display: "grid", gap: 4 }}>
-                  <div style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.25 }}>
-                    {campaign.name}
-                  </div>
-                  {campaign.description && (
-                    <div style={{ fontSize: 13, lineHeight: 1.35, opacity: 0.9 }}>
-                      {campaign.description}
-                    </div>
-                  )}
-                </div>
-
-                <div style={{ display: "grid", gap: 6, fontSize: 13 }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 10,
-                      alignItems: "center",
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                      <Calendar size={16} />
-                      <span>{formatRange(campaign.startDate, campaign.endDate)}</span>
-                    </div>
-                    {campaign.reward.awardPoints && (
-                      <div
-                        style={{
-                          display: "inline-flex",
-                          gap: 6,
-                          alignItems: "center",
-                          padding: "2px 8px",
-                          borderRadius: 999,
-                          background: "rgba(79,70,229,0.12)",
-                        }}
-                      >
-                        <Flame size={14} />
-                        <span>{campaign.reward.points} баллов</span>
-                        {campaign.reward.pointsExpire && (
-                          <span style={{ opacity: 0.7, fontSize: 12 }}>до окончания акции</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <Users2 size={16} />
-                    <span>
-                      Аудитория: <span style={{ fontWeight: 500 }}>{campaign.segmentName || "—"}</span>
-                    </span>
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(3,minmax(0,1fr))",
-                    gap: 10,
-                    fontSize: 12,
-                    marginTop: 4,
-                  }}
-                >
-                  <div style={{ display: "grid", gap: 4 }}>
-                    <span style={{ opacity: 0.7 }}>Вся аудитория</span>
-                    <strong style={{ fontSize: 13 }}>
-                      {total ? total.toLocaleString("ru-RU") : "—"}
-                    </strong>
-                  </div>
-                  <div style={{ display: "grid", gap: 4 }}>
-                    <span style={{ opacity: 0.7 }}>Воспользовались</span>
-                    <strong style={{ fontSize: 13 }}>
-                      {used.toLocaleString("ru-RU")} {total ? `(${usedShare}%)` : ""}
-                    </strong>
-                  </div>
-                  <div style={{ display: "grid", gap: 4 }}>
-                    <span style={{ opacity: 0.7 }}>Проигнорировали</span>
-                    <strong style={{ fontSize: 13 }}>
-                      {ignored.toLocaleString("ru-RU")} {total ? `(${ignoredShare}%)` : ""}
-                    </strong>
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    marginTop: 6,
-                    height: 8,
-                    borderRadius: 6,
-                    background: "rgba(148,163,184,0.25)",
-                    overflow: "hidden",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: `${usedShare}%`,
-                      height: "100%",
-                      background: "linear-gradient(90deg, rgba(99,102,241,0.95), rgba(129,140,248,0.9))",
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div
-                style={{
-                  padding: "12px 12px 8px",
-                  borderRadius: 12,
-                  background: "rgba(148,163,184,0.06)",
-                }}
-              >
-                <RevenueChart
-                  campaignId={campaign.id}
-                  dates={campaign.revenueDates}
-                  series={campaign.revenueSeries}
-                  chartWindow={chartWindow}
-                  setChartWindow={setChartWindow}
-                />
-              </div>
-            </div>
-          </CardBody>
-        </Card>
-      </div>
-    );
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("Вы уверены, что хотите удалить эту акцию?")) return;
+    const res = await fetch(`/api/portal/loyalty/promotions/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      alert(readApiError(text) || "Не удалось удалить акцию");
+      return;
+    }
+    await loadPromotions(allAudienceId);
   };
 
-  return (
-    <div style={{ display: "grid", gap: 20 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
-        <div style={{ display: "grid", gap: 6 }}>
-          <div style={{ fontSize: 24, fontWeight: 700 }}>Акции</div>
-          <div style={{ fontSize: 13, opacity: 0.7 }}>
-            Создавайте и управляйте кампаниями с повышенным начислением баллов
+  const handleToggleStatus = async (promo: PointsPromotion) => {
+    if (promo.status === "ended") return;
+    const newStatus = promo.status === "active" ? "PAUSED" : "ACTIVE";
+    const res = await fetch(`/api/portal/loyalty/promotions/${encodeURIComponent(promo.id)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: newStatus }),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      alert(readApiError(text) || "Не удалось изменить статус акции");
+      return;
+    }
+    await loadPromotions(allAudienceId);
+  };
+
+  const renderCreateForm = () => (
+    <div className="max-w-5xl mx-auto pb-10">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center space-x-4">
+          <button onClick={() => setView("list")} className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500">
+            <ArrowLeft size={24} />
+          </button>
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900">{editingId ? "Редактирование" : "Создание акции"}</h2>
+            <p className="text-sm text-gray-500">{editingId ? "Изменение параметров акции" : "Настройка новой кампании"}</p>
           </div>
         </div>
-        <Button variant="primary" onClick={handleCreate} startIcon={<PlusCircle size={16} />}>
-          Создать акцию
-        </Button>
-      </div>
 
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        {tabs.map((t) => (
+        <div className="flex items-center space-x-4">
+          {/* Draft/Active Toggle */}
+          <div className="flex items-center space-x-3 bg-white px-4 py-2 rounded-lg border border-gray-200">
+            <span className={`text-sm font-medium ${formData.isActive ? "text-green-600" : "text-gray-500"}`}>
+              {formData.isActive ? "Активная" : "Черновик"}
+            </span>
+            <button
+              onClick={() => setFormData({ ...formData, isActive: !formData.isActive })}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${formData.isActive ? "bg-green-500" : "bg-gray-300"}`}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${formData.isActive ? "translate-x-6" : "translate-x-1"}`} />
+            </button>
+          </div>
+
           <button
-            key={t.id}
-            className="btn"
-            onClick={() => setTab(t.id)}
-            style={{
-              minWidth: 140,
-              background: tab === t.id ? "var(--brand-primary)" : "rgba(255,255,255,0.05)",
-              color: tab === t.id ? "#0f172a" : "#f8fafc",
-              fontWeight: tab === t.id ? 600 : 500,
-            }}
+            onClick={handleSave}
+            className="flex items-center space-x-2 bg-purple-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-purple-700 transition-colors shadow-sm"
           >
-            {t.label}
+            <Save size={18} />
+            <span>Сохранить</span>
           </button>
-        ))}
+        </div>
       </div>
 
-      {error && <div style={{ color: "#f87171", fontSize: 13 }}>{error}</div>}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Left Column: Main Config */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* 1. Main Info */}
+          <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm space-y-6">
+            <h3 className="text-lg font-bold text-gray-900">Основная информация</h3>
 
-      <Card>
-        <CardHeader title={`${tabs.find((t) => t.id === tab)?.label}`} />
-        <CardBody>
-          {loading ? (
-            <Skeleton height={240} />
-          ) : filtered.length ? (
-            <div style={{ display: "grid", gap: 0, gridTemplateColumns: "1fr" }}>
-              {filtered.map(renderCard)}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Название акции</label>
+              <input
+                type="text"
+                placeholder="Например: Бонусы за регистрацию"
+                value={formData.title}
+                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-purple-500 focus:outline-none"
+              />
             </div>
-          ) : (
-            <div style={{ padding: 16, opacity: 0.7 }}>Нет акций в этом разделе</div>
-          )}
-        </CardBody>
-      </Card>
 
-      {showCreate && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(15,23,42,0.72)",
-            backdropFilter: "blur(10px)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 20,
-            zIndex: 80,
-          }}
-        >
-          <div
-            style={{
-              width: "min(900px, 96vw)",
-              maxHeight: "92vh",
-              overflow: "auto",
-              background: "rgba(12,16,26,0.96)",
-              borderRadius: 18,
-              border: "1px solid rgba(148,163,184,0.14)",
-              boxShadow: "0 30px 80px rgba(2,6,23,0.5)",
-              display: "grid",
-              gridTemplateRows: "auto 1fr auto",
-            }}
-          >
-            <div
-              style={{
-                padding: "18px 24px",
-                borderBottom: "1px solid rgba(148,163,184,0.14)",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}
-            >
+            <div className="grid grid-cols-2 gap-6">
+              {/* Start Date */}
               <div>
-                <div style={{ fontSize: 18, fontWeight: 700 }}>
-                  {editingId ? "Редактировать акцию" : "Создать акцию"}
-                </div>
-                <div style={{ fontSize: 13, opacity: 0.7 }}>Заполните параметры для начисления баллов</div>
-              </div>
-              <button className="btn btn-ghost" onClick={() => setShowCreate(false)}>
-                <X size={18} />
-              </button>
-            </div>
-
-            <div style={{ padding: 24, display: "grid", gap: 18 }}>
-              <div style={{ display: "grid", gap: 12 }}>
-                <label style={{ fontSize: 13, opacity: 0.8 }}>Название акции (видно только вам)</label>
-                <input
-                  value={form.name}
-                  onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-                  placeholder="Например, Лето x2"
-                  style={{ padding: 12, borderRadius: 10 }}
-                />
-                <textarea
-                  value={form.description}
-                  onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
-                  placeholder="Краткое описание для команды"
-                  style={{ padding: 12, borderRadius: 10, minHeight: 80, resize: "vertical" }}
-                />
-              </div>
-
-              <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))" }}>
-                <DateButton
-                  label="Дата начала"
-                  value={form.startDate}
-                  defaultLabel="Сразу"
-                  onChange={(value) => setForm((prev) => ({ ...prev, startDate: value }))}
-                />
-                <DateButton
-                  label="Дата завершения"
-                  value={form.endDate}
-                  defaultLabel="Бессрочно"
-                  onChange={(value) => setForm((prev) => ({ ...prev, endDate: value }))}
-                />
-              </div>
-
-              <div style={{ display: "grid", gap: 10 }}>
-                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                  <label style={{ fontSize: 13, opacity: 0.8 }}>Аудитория, кому доступна акция</label>
-                  <button
-                    className="btn btn-ghost"
-                    title="Обновить размер аудитории"
-                    onClick={async () => {
-                      if (!form.audience) return;
-                      await fetch(`/api/portal/audiences/${encodeURIComponent(form.audience)}/refresh`, {
-                        method: "POST",
-                      });
-                      await loadAudiences();
-                    }}
-                  >
-                    <RefreshCw size={16} />
-                  </button>
-                </div>
-                <TagSelect
-                  options={audiences}
-                  value={form.audience ? [form.audience] : allAudience?.value ? [allAudience.value] : []}
-                  onChange={(values) => {
-                    const v = values[0];
-                    setForm((prev) => ({ ...prev, audience: v || "" }));
-                  }}
-                  allowMultiple={false}
-                  placeholder={audLoading ? "Загружаем аудитории..." : "Выберите аудиторию"}
-                  disabled={audLoading}
-                />
-                {form.audience && (
-                  <div style={{ fontSize: 12, opacity: 0.8 }}>
-                    Размер аудитории:{" "}
-                    {audiences.find((a) => a.value === form.audience)?.size?.toLocaleString("ru-RU") ?? "—"}
-                  </div>
-                )}
-                <div style={{ fontSize: 12, opacity: 0.7 }}>
-                  Если вы не нашли подходящей аудитории,{" "}
-                  <a href="/audiences" style={{ color: "#818cf8", textDecoration: "underline" }}>
-                    создайте новую
-                  </a>
-                </div>
-              </div>
-
-              <div style={{ display: "grid", gap: 14 }}>
-                <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-                  <Toggle
-                    checked={form.awardPoints}
-                    onChange={(value) => setForm((prev) => ({ ...prev, awardPoints: value }))}
-                    label="Начислить баллы"
-                  />
-                  {form.awardPoints && (
+                <label className="block text-sm font-medium text-gray-700 mb-2">Начало</label>
+                <div className="space-y-3">
+                  <label className="flex items-center space-x-2 cursor-pointer">
                     <input
-                      value={form.points}
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          points: e.target.value.replace(/[^0-9]/g, "") || "0",
-                        }))
-                      }
-                      placeholder="Введите количество баллов"
-                      style={{ padding: 10, borderRadius: 10, width: 180 }}
+                      type="checkbox"
+                      checked={formData.startImmediately}
+                      onChange={(e) => setFormData({ ...formData, startImmediately: e.target.checked })}
+                      className="rounded text-purple-600 focus:ring-purple-500"
                     />
-                  )}
-                </div>
-                {form.awardPoints && (
-                  <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-                    <Toggle
-                      checked={form.pointsExpire}
-                      onChange={(value) => setForm((prev) => ({ ...prev, pointsExpire: value }))}
-                      label="Баллы сгорают после окончания акции"
+                    <span className="text-sm text-gray-900">Начать сразу</span>
+                  </label>
+
+                  <div className={`relative ${formData.startImmediately ? "opacity-50 pointer-events-none" : ""}`}>
+                    <input
+                      type="date"
+                      value={formData.startDate}
+                      onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                     />
                   </div>
-                )}
-              </div>
-
-              <div style={{ display: "grid", gap: 16 }}>
-                <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))" }}>
-                  <NotificationEditor
-                    title="PUSH-уведомление при старте"
-                    enabled={form.pushOnStart}
-                    message={form.pushMessage}
-                    onToggle={(value) => setForm((prev) => ({ ...prev, pushOnStart: value }))}
-                    onChange={(value) => setForm((prev) => ({ ...prev, pushMessage: value }))}
-                  />
-                  <NotificationEditor
-                    title="Повторить за 2 дня до конца"
-                    enabled={form.pushReminder}
-                    message={form.pushReminderMessage}
-                    onToggle={(value) => setForm((prev) => ({ ...prev, pushReminder: value }))}
-                    onChange={(value) => setForm((prev) => ({ ...prev, pushReminderMessage: value }))}
-                  />
                 </div>
               </div>
 
-              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                <Toggle
-                  checked={form.launched}
-                  onChange={(value) => setForm((prev) => ({ ...prev, launched: value }))}
-                  label="Запустить акцию"
-                />
-                <span style={{ fontSize: 12, opacity: 0.7 }}>
-                  {form.launched ? "Сразу появится в активных акциях" : "Будет сохранена как черновик"}
-                </span>
-              </div>
-            </div>
+              {/* End Date */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Завершение</label>
+                <div className="space-y-3">
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.isIndefinite}
+                      onChange={(e) => setFormData({ ...formData, isIndefinite: e.target.checked })}
+                      className="rounded text-purple-600 focus:ring-purple-500"
+                    />
+                    <span className="text-sm text-gray-900">Бессрочно</span>
+                  </label>
 
-            <div
-              style={{
-                padding: "18px 24px",
-                borderTop: "1px solid rgba(148,163,184,0.14)",
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: 12,
-              }}
-            >
-              <button className="btn" onClick={() => setShowCreate(false)} disabled={saving}>
-                Отмена
-              </button>
-              <Button
-                variant="primary"
-                onClick={handleSubmit}
-                disabled={saving}
-                startIcon={<PlusCircle size={16} />}
-              >
-                {saving ? "Сохраняем…" : editingId ? "Сохранить" : "Создать акцию"}
-              </Button>
+                  <div className={`relative ${formData.isIndefinite ? "opacity-50 pointer-events-none" : ""}`}>
+                    <input
+                      type="date"
+                      value={formData.endDate}
+                      onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
+
+          {/* 2. Rewards Configuration */}
+          <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm space-y-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-gray-900">Начисление баллов</h3>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formData.accruePoints}
+                  onChange={(e) => setFormData({ ...formData, accruePoints: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+              </label>
+            </div>
+
+            {formData.accruePoints && (
+              <div className="animate-fade-in space-y-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Количество баллов</label>
+                  <div className="relative w-full sm:w-1/2">
+                    <Coins size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="number"
+                      value={formData.pointsAmount}
+                      onChange={(e) => setFormData({ ...formData, pointsAmount: Number(e.target.value) })}
+                      className="w-full border border-gray-300 rounded-lg pl-10 pr-4 py-2 focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
+                  <span className="block text-sm font-medium text-gray-900 mb-2">Правила сгорания</span>
+                  <div className="space-y-3">
+                    <label className="flex items-center space-x-3 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="burning"
+                        checked={!formData.isBurning}
+                        onChange={() => setFormData({ ...formData, isBurning: false })}
+                        className="text-purple-600 focus:ring-purple-500"
+                      />
+                      <div className="flex items-center space-x-2 text-sm text-gray-700">
+                        <ShieldCheck size={16} className="text-green-600" />
+                        <span>Баллы не сгорают</span>
+                      </div>
+                    </label>
+
+                    <label className="flex items-center space-x-3 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="burning"
+                        checked={formData.isBurning}
+                        onChange={() => setFormData({ ...formData, isBurning: true })}
+                        className="text-purple-600 focus:ring-purple-500"
+                      />
+                      <div className="flex items-center space-x-2 text-sm text-gray-700">
+                        <Flame size={16} className="text-orange-500" />
+                        <span>Сгорают после окончания акции</span>
+                      </div>
+                    </label>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-3 ml-7">
+                    {formData.isBurning
+                      ? "Если акция завершится, неиспользованные баллы, начисленные в рамках этой акции, будут аннулированы."
+                      : "Начисленные баллы останутся на счету клиента пока не будут потрачены."}
+                  </p>
+                </div>
+              </div>
+            )}
+
+          </div>
+        </div>
+
+        {/* Right Column: Audience and Notifications */}
+        <div className="space-y-6">
+          {/* Audience */}
+          <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm space-y-4">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center space-x-2 text-gray-900 font-bold text-lg">
+                <Users size={20} className="text-gray-400" />
+                <h3>Аудитория</h3>
+              </div>
+              {onNavigate && (
+                <button
+                  title="Перейти к аудиториям"
+                  className="text-purple-600 hover:text-purple-800"
+                  onClick={() => onNavigate("audiences")}
+                >
+                  <ExternalLink size={16} />
+                </button>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Сегмент получателей</label>
+              <select
+                value={formData.audience}
+                onChange={(e) => setFormData({ ...formData, audience: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+              >
+                {audiences.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Notifications */}
+          <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm space-y-4">
+            <div className="flex items-center space-x-2 text-gray-900 font-bold text-lg mb-2">
+              <Bell size={20} className="text-gray-400" />
+              <h3>Уведомления</h3>
+            </div>
+
+            <div className="space-y-5">
+              <div className="space-y-3">
+                <label className="flex items-start space-x-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.pushAtStart}
+                    onChange={(e) => setFormData({ ...formData, pushAtStart: e.target.checked })}
+                    className="mt-1 rounded text-purple-600 focus:ring-purple-500"
+                  />
+                  <div>
+                    <span className="block text-sm font-medium text-gray-900">PUSH при старте</span>
+                    <span className="text-xs text-gray-500">Отправить уведомление клиентам в момент начала акции.</span>
+                  </div>
+                </label>
+
+                {formData.pushAtStart && (
+                  <div className="animate-fade-in pl-7">
+                    <div className="relative">
+                      <textarea
+                        maxLength={300}
+                        value={formData.pushStartText}
+                        onChange={(e) => setFormData({ ...formData, pushStartText: e.target.value })}
+                        placeholder="Введите текст уведомления..."
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none min-h-[80px] resize-y"
+                      />
+                      <span className="absolute bottom-2 right-2 text-xs text-gray-400 pointer-events-none">
+                        {formData.pushStartText.length}/300
+                      </span>
+                    </div>
+                    <PlaceholdersHint />
+                  </div>
+                )}
+              </div>
+
+              <div className={`pt-4 border-t border-gray-100 ${formData.isIndefinite ? "opacity-50 pointer-events-none" : ""}`}>
+                <label className="flex items-start space-x-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.pushBeforeEnd}
+                    onChange={(e) => setFormData({ ...formData, pushBeforeEnd: e.target.checked })}
+                    className="mt-1 rounded text-purple-600 focus:ring-purple-500"
+                  />
+                  <div>
+                    <span className="block text-sm font-medium text-gray-900">Напомнить об окончании</span>
+                    <span className="text-xs text-gray-500">Отправить PUSH за 2 дня до завершения акции.</span>
+                  </div>
+                </label>
+
+                {formData.pushBeforeEnd && !formData.isIndefinite && (
+                  <div className="animate-fade-in pl-7 mt-3">
+                    <div className="relative">
+                      <textarea
+                        maxLength={300}
+                        value={formData.pushEndText}
+                        onChange={(e) => setFormData({ ...formData, pushEndText: e.target.value })}
+                        placeholder="Введите текст напоминания..."
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none min-h-[80px] resize-y"
+                      />
+                      <span className="absolute bottom-2 right-2 text-xs text-gray-400 pointer-events-none">
+                        {formData.pushEndText.length}/300
+                      </span>
+                    </div>
+                    <PlaceholdersHint />
+                  </div>
+                )}
+
+                {formData.isIndefinite && (
+                  <p className="text-xs text-amber-600 mt-2 flex items-center">
+                    <AlertCircle size={12} className="mr-1" />
+                    Недоступно для бессрочных акций
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+
+  if (view === "create") {
+    return <div className="p-8 max-w-[1600px] mx-auto animate-fade-in">{renderCreateForm()}</div>;
+  }
+
+  return (
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Акции с начислением баллов</h2>
+          <p className="text-gray-500 mt-1">Управление бонусными кампаниями и начислениями.</p>
+        </div>
+
+        <button
+          onClick={startCreation}
+          className="flex items-center space-x-2 bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors shadow-sm"
+        >
+          <Plus size={18} />
+          <span>Создать акцию</span>
+        </button>
+      </div>
+
+      {/* Tabs */}
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex space-x-8">
+          {(["active", "disabled", "ended"] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`
+                whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors
+                ${activeTab === tab ? "border-purple-500 text-purple-600" : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"}
+              `}
+            >
+              {tab === "active" && "Активные"}
+              {tab === "disabled" && "Выключенные"}
+              {tab === "ended" && "Прошедшие"}
+              <span
+                className={`ml-2 py-0.5 px-2 rounded-full text-xs ${activeTab === tab ? "bg-purple-100 text-purple-600" : "bg-gray-100 text-gray-500"}`}
+              >
+                {promotions.filter((p) => p.status === tab).length}
+              </span>
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {/* List */}
+      {filteredPromotions.length === 0 ? (
+        <div className="text-center py-20 bg-white rounded-xl border border-gray-100 border-dashed">
+          <ShoppingBag size={48} className="mx-auto text-gray-300 mb-4" />
+          <h3 className="text-lg font-medium text-gray-900">Здесь пока ничего нет</h3>
+          <p className="text-gray-500">В этом разделе пока нет акций с начислением баллов.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          {filteredPromotions.map((promo) => {
+            const revPerBonus = computeROI(promo.revenue, promo.cost);
+            return (
+              <div
+                key={promo.id}
+                className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow relative group"
+              >
+                {/* Header: Title, Dates, Actions */}
+                <div className="flex justify-between items-start mb-4">
+                  <div className="flex-1 pr-4">
+                    <h3 className="text-lg font-bold text-gray-900 mb-2">{promo.title}</h3>
+                    <div className="flex items-center text-sm text-gray-400">
+                      <Calendar size={14} className="mr-1.5" />
+                      {promo.startDate} - {promo.endDate}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => handleEdit(promo)}
+                      title="Редактировать"
+                      className="p-2 rounded-lg text-gray-400 hover:text-purple-600 hover:bg-purple-50 transition-colors"
+                    >
+                      <Pencil size={18} />
+                    </button>
+                    {promo.status !== "ended" && (
+                      <button
+                        onClick={() => void handleToggleStatus(promo)}
+                        title={promo.status === "active" ? "Выключить" : "Включить"}
+                        className={`p-2 rounded-lg transition-colors ${promo.status === "active" ? "text-green-600 bg-green-50 hover:bg-green-100" : "text-gray-400 bg-gray-100 hover:bg-gray-200"}`}
+                      >
+                        <Power size={18} />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => void handleDelete(promo.id)}
+                      title="Удалить"
+                      className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Configuration Badges */}
+                <div className="flex flex-wrap gap-3 mb-6">
+                  {/* Points Value & Type */}
+                  {promo.accruePoints ? (
+                    <div
+                      className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg border ${promo.isBurning ? "bg-orange-50 border-orange-100 text-orange-700" : "bg-blue-50 border-blue-100 text-blue-700"}`}
+                    >
+                      {promo.isBurning ? <Flame size={16} /> : <ShieldCheck size={16} />}
+                      <span className="font-bold">+{promo.pointsAmount} Б</span>
+                      {promo.isBurning ? (
+                        <span className="text-xs border-l border-orange-200 pl-2 ml-1 opacity-80">Сгораемые</span>
+                      ) : (
+                        <span className="text-xs border-l border-blue-200 pl-2 ml-1 opacity-80">Не сгорают</span>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-gray-50 border border-gray-100 text-gray-500">
+                      <Coins size={16} />
+                      <span className="text-xs font-medium">Без баллов</span>
+                    </div>
+                  )}
+
+                  {/* Audience */}
+                  <div className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-gray-50 border border-gray-100 text-gray-600">
+                    <Users size={16} />
+                    <span className="text-sm font-medium">{getAudienceName(promo.audience)}</span>
+                  </div>
+
+                  {/* Push Badges */}
+                  {(promo.pushAtStart || promo.pushBeforeEnd) && (
+                    <div className="flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-purple-50 border border-purple-100 text-purple-600">
+                      <Bell size={16} />
+                      <span className="text-xs font-bold">PUSH</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Stats Grid */}
+                <div className="grid grid-cols-3 gap-4 pt-4 border-t border-gray-50">
+                  {/* Revenue */}
+                  <div>
+                    <div className="relative group/tooltip w-fit flex items-center text-xs text-gray-500 mb-1 cursor-help">
+                      <span>Выручка</span>
+                      <Info size={10} className="ml-1 text-gray-300" />
+                      {/* Tooltip */}
+                      <div className="hidden group-hover/tooltip:block absolute bottom-full left-0 mb-2 w-64 bg-gray-900 text-white text-xs rounded-lg p-2 z-20 shadow-xl pointer-events-none text-left">
+                        Сумма чеков с применёнными акционными баллами за вычетом самих баллов. Возвраты не учитываются.
+                      </div>
+                    </div>
+                    <div className="text-lg font-bold text-gray-900">{formatCurrency(promo.revenue)}</div>
+                  </div>
+
+                  {/* Cost */}
+                  <div>
+                    <div className="relative group/tooltip w-fit flex items-center text-xs text-gray-500 mb-1 cursor-help">
+                      <span>Расходы</span>
+                      <Info size={10} className="ml-1 text-gray-300" />
+                      {/* Tooltip */}
+                      <div className="hidden group-hover/tooltip:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 bg-gray-900 text-white text-xs rounded-lg p-2 z-20 shadow-xl pointer-events-none text-left">
+                        Сумма потраченных баллов в денежном эквиваленте.
+                      </div>
+                    </div>
+                    <div className="text-lg font-bold text-gray-900">{formatCurrency(promo.cost)}</div>
+                  </div>
+
+                  {/* Revenue per Bonus */}
+                  <div>
+                    <div className="relative group/tooltip w-fit flex items-center text-xs text-gray-500 mb-1 cursor-help">
+                      <span>Выручка на 1₽ бонуса</span>
+                      <Info size={10} className="ml-1 text-gray-300" />
+                      {/* Tooltip */}
+                      <div className="hidden group-hover/tooltip:block absolute bottom-full right-0 mb-2 w-64 bg-gray-900 text-white text-xs rounded-lg p-2 z-20 shadow-xl pointer-events-none text-left">
+                        Сколько реальных денег клиент потратил на каждый 1 бонус. Эффективность акции.
+                      </div>
+                    </div>
+                    <div className={`text-lg font-bold ${Number(revPerBonus) > 10 ? "text-green-600" : "text-gray-900"}`}>
+                      {revPerBonus}₽
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
-
-type DateButtonProps = {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  defaultLabel: string;
-};
-
-const DateButton: React.FC<DateButtonProps> = ({ label, value, onChange, defaultLabel }) => {
-  const inputRef = React.useRef<HTMLInputElement | null>(null);
-  const display = value ? new Date(value).toLocaleDateString("ru-RU") : defaultLabel;
-  return (
-    <div style={{ display: "grid", gap: 6 }}>
-      <label style={{ fontSize: 13, opacity: 0.8 }}>{label}</label>
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <button
-          className="btn"
-          onClick={() => inputRef.current?.showPicker?.() ?? inputRef.current?.click()}
-          style={{ minWidth: 160 }}
-        >
-          {display}
-        </button>
-        <button className="btn btn-ghost" onClick={() => onChange("")} title="Сбросить">
-          <X size={16} />
-        </button>
-      </div>
-      <input
-        ref={inputRef}
-        type="date"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        style={{ display: "none" }}
-      />
-    </div>
-  );
-};
-
-type NotificationEditorProps = {
-  title: string;
-  enabled: boolean;
-  message: string;
-  onToggle: (value: boolean) => void;
-  onChange: (value: string) => void;
-};
-
-const NotificationEditor: React.FC<NotificationEditorProps> = ({
-  title,
-  enabled,
-  message,
-  onToggle,
-  onChange,
-}) => (
-  <div
-    style={{
-      padding: 16,
-      border: "1px solid rgba(148,163,184,0.18)",
-      borderRadius: 14,
-      background: "rgba(148,163,184,0.08)",
-      display: "grid",
-      gap: 10,
-    }}
-  >
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-      <div style={{ fontSize: 13.5, fontWeight: 600 }}>{title}</div>
-      <Toggle checked={enabled} onChange={onToggle} label={enabled ? "Вкл" : "Выкл"} />
-    </div>
-    {enabled && (
-      <div style={{ display: "grid", gap: 8 }}>
-        <textarea
-          value={message}
-          onChange={(e) => onChange(e.target.value.slice(0, 300))}
-          placeholder="Текст уведомления"
-          style={{ padding: 10, borderRadius: 10, minHeight: 90 }}
-        />
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            fontSize: 12,
-            opacity: 0.7,
-          }}
-        >
-          <span>Используйте переменные: {"{name}"}</span>
-          <span>{message.length}/300</span>
-        </div>
-        <PushPreview title="Пуш-уведомление" message={message} />
-      </div>
-    )}
-  </div>
-);
-
-type RevenueChartProps = {
-  campaignId: string;
-  dates?: string[];
-  series: number[];
-  chartWindow: Record<string, number>;
-  setChartWindow: React.Dispatch<React.SetStateAction<Record<string, number>>>;
-};
-
-const REVENUE_LINE_COLOR = "#ffffff";
-
-const RevenueChart: React.FC<RevenueChartProps> = ({
-  campaignId,
-  dates,
-  series,
-  chartWindow,
-  setChartWindow,
-}) => {
-  const points = React.useMemo(() => buildRevenuePoints(series, dates), [series, dates]);
-  if (!points.length) {
-    return <div style={{ fontSize: 12, opacity: 0.6 }}>Нет данных по выручке</div>;
-  }
-
-  const lastPoint = points[points.length - 1];
-  if (!lastPoint) {
-    return <div style={{ fontSize: 12, opacity: 0.6 }}>Нет данных по выручке</div>;
-  }
-  const lastDate = lastPoint.date;
-  const earliestDate = new Date(lastDate.getTime() - MAX_LOOKBACK_DAYS * DAY_MS);
-  let earliestIdx = points.findIndex((p) => p.date >= earliestDate);
-  if (earliestIdx === -1) earliestIdx = 0;
-  const maxStart = Math.max(earliestIdx, points.length - WINDOW_DAYS);
-  const storedStart = chartWindow[campaignId];
-  const start = Math.min(
-    Math.max(earliestIdx, storedStart ?? maxStart),
-    Math.max(earliestIdx, points.length - WINDOW_DAYS),
-  );
-  const windowPoints = points.slice(start, start + WINDOW_DAYS);
-  const windowSum = windowPoints.reduce((acc, p) => acc + p.value, 0);
-  const totalSum = points.reduce((acc, p) => acc + p.value, 0);
-
-  const canPrev = start > earliestIdx;
-  const canNext = start + WINDOW_DAYS < points.length;
-  const shiftWindow = (delta: number) => {
-    setChartWindow((prev) => {
-      const base = prev[campaignId] ?? start;
-      const next = Math.min(
-        Math.max(earliestIdx, base + delta),
-        Math.max(earliestIdx, points.length - WINDOW_DAYS),
-      );
-      return { ...prev, [campaignId]: next };
-    });
-  };
-
-  const categories = React.useMemo(
-    () => windowPoints.map((p) => formatShortDate(p.date)),
-    [windowPoints],
-  );
-  const option = React.useMemo(
-    () => ({
-      color: [REVENUE_LINE_COLOR],
-      tooltip: {
-        trigger: "axis" as const,
-        axisPointer: { type: "line" as const },
-        valueFormatter: (value: any) => formatMoney(Math.round(Number(value) || 0)),
-      },
-      grid: { left: 64, right: 16, top: 8, bottom: 4, containLabel: true },
-      xAxis: {
-        type: "category" as const,
-        data: categories,
-        boundaryGap: false,
-        axisLine: { lineStyle: { color: "rgba(148,163,184,0.6)" } },
-        axisLabel: { color: "rgba(226,232,240,0.9)", fontSize: 11, margin: 4 },
-      },
-      yAxis: {
-        type: "value" as const,
-        axisLine: { show: false },
-        splitLine: { lineStyle: { color: "rgba(148,163,184,0.25)" } },
-        axisLabel: {
-          color: "rgba(226,232,240,0.9)",
-          formatter: (v: number) => formatMoney(Math.round(Number(v) || 0)),
-        },
-      },
-      series: [
-        {
-          name: "Выручка",
-          type: "line" as const,
-          smooth: true,
-          showSymbol: true,
-          symbol: "circle",
-          symbolSize: 5,
-          lineStyle: { width: 2, color: REVENUE_LINE_COLOR },
-          itemStyle: { color: REVENUE_LINE_COLOR },
-          areaStyle: { opacity: 0.18, color: "rgba(255,255,255,0.18)" },
-          data: windowPoints.map((p) => Math.round(p.value)),
-        },
-      ],
-    }),
-    [categories, windowPoints],
-  );
-
-  return (
-    <div style={{ display: "grid", gap: 4 }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          flexWrap: "wrap",
-          gap: 8,
-          fontSize: 12,
-          marginTop: -8,
-        }}
-      >
-        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <span style={{ opacity: 0.7 }}>За неделю:</span>
-            <strong>{formatMoney(Math.round(windowSum))}</strong>
-          </div>
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <span style={{ opacity: 0.7 }}>За все время:</span>
-            <strong>{formatMoney(Math.round(totalSum))}</strong>
-          </div>
-        </div>
-        <div style={{ display: "flex", gap: 6 }}>
-          <button
-            className="btn btn-ghost"
-            disabled={!canPrev}
-            onClick={() => shiftWindow(-WINDOW_DAYS)}
-            style={{ padding: "8px 12px", minWidth: "auto", fontSize: 16, lineHeight: 1 }}
-          >
-            ←
-          </button>
-          <button
-            className="btn btn-ghost"
-            disabled={!canNext}
-            onClick={() => shiftWindow(WINDOW_DAYS)}
-            style={{ padding: "8px 12px", minWidth: "auto", fontSize: 16, lineHeight: 1 }}
-          >
-            →
-          </button>
-        </div>
-      </div>
-
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{ width: "100%" }}
-      >
-        <Chart height={180} option={option} />
-      </div>
-    </div>
-  );
-};

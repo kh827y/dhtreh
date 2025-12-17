@@ -14,6 +14,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
+import { computePromotionRedeemRevenueFromData } from './promotion-redeem-revenue';
 import { CommunicationsService } from '../communications/communications.service';
 import { ensureBaseTier } from '../loyalty/tier-defaults.util';
 
@@ -145,10 +146,8 @@ export class LoyaltyProgramService {
     if (!date) return null;
     const d = new Date(date);
     if (Number.isNaN(d.getTime())) return null;
-    const now = Date.now();
-    // createPushTask/createTelegramTask требуют дату не в прошлом
-    if (d.getTime() < now + 60_000) return new Date(now + 60_000);
-    return d;
+    // Если время уже прошло — отправим немедленно (scheduledAt=null)
+    return d.getTime() > Date.now() ? d : null;
   }
 
   private async isTelegramEnabled(merchantId: string): Promise<boolean> {
@@ -175,7 +174,7 @@ export class LoyaltyProgramService {
       channel,
       status: { in: ['SCHEDULED', 'RUNNING', 'PAUSED'] },
     };
-    if (scheduledAt) (where as any).scheduledAt = scheduledAt;
+    if (scheduledAt !== null) (where as any).scheduledAt = scheduledAt;
     const existing = await this.prisma.communicationTask.findFirst({ where });
     return !!existing;
   }
@@ -209,6 +208,22 @@ export class LoyaltyProgramService {
     return parts.join(' · ');
   }
 
+  private resolvePromotionText(
+    promotion: any,
+    kind: 'start' | 'reminder',
+    reminderHours?: number,
+  ): string {
+    const meta =
+      promotion?.metadata && typeof promotion.metadata === 'object'
+        ? (promotion.metadata as Record<string, any>)
+        : {};
+    const raw =
+      kind === 'start' ? meta.pushMessage : meta.pushReminderMessage;
+    if (typeof raw === 'string' && raw.trim()) return raw.trim();
+    if (kind === 'start') return this.buildStartText(promotion);
+    return this.buildReminderText(promotion, reminderHours ?? 48);
+  }
+
   private async schedulePromotionNotifications(
     merchantId: string,
     promotion: any,
@@ -221,15 +236,20 @@ export class LoyaltyProgramService {
 
     // START notifications
     if (promotion.pushOnStart) {
-      let when: Date | null = null;
+      let when: Date | null | undefined = undefined;
       if (promotion.status === 'SCHEDULED' && promotion.startAt) {
         when = this.normalizeFuture(promotion.startAt);
       } else if (promotion.status === 'ACTIVE') {
-        // немедленная отправка → +60 секунд
-        when = new Date(now + 60_000);
+        // Если акция активна, но ещё не началась (startAt в будущем) — шедулим на startAt.
+        if (promotion.startAt && promotion.startAt.getTime() > now) {
+          when = this.normalizeFuture(promotion.startAt);
+        } else {
+          // немедленная отправка
+          when = null;
+        }
       }
-      if (when) {
-        const text = this.buildStartText(promotion);
+      if (when !== undefined) {
+        const text = this.resolvePromotionText(promotion, 'start');
         // PUSH — если выбран шаблон
         if (promotion.pushTemplateStartId) {
           if (
@@ -282,7 +302,7 @@ export class LoyaltyProgramService {
             });
           }
         }
-      }
+      }      
     }
 
     // REMINDER notifications (default 48h before end)
@@ -297,7 +317,7 @@ export class LoyaltyProgramService {
       if (ts > now) {
         const when = this.normalizeFuture(new Date(ts));
         if (when) {
-          const text = this.buildReminderText(promotion, offsetH);
+          const text = this.resolvePromotionText(promotion, 'reminder', offsetH);
           if (promotion.pushTemplateReminderId) {
             if (
               !(await this.taskExists({
@@ -870,12 +890,50 @@ export class LoyaltyProgramService {
     return { ok: true };
   }
 
+  async deletePromotion(merchantId: string, promotionId: string) {
+    await this.prisma.$transaction(async (tx) => {
+      const promotion = await tx.loyaltyPromotion.findFirst({
+        where: { merchantId, id: promotionId },
+        select: { id: true },
+      });
+      if (!promotion) throw new NotFoundException('Акция не найдена');
+
+      // Fully delete related communication tasks (recipients cascade by FK).
+      await tx.communicationTask.deleteMany({
+        where: { merchantId, promotionId },
+      });
+
+      await tx.loyaltyPromotion.delete({ where: { id: promotionId } });
+    });
+
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'portal.loyalty.promotions.delete',
+          merchantId,
+          promotionId,
+        }),
+      );
+      this.metrics.inc('portal_loyalty_promotions_changed_total', {
+        action: 'delete',
+      });
+    } catch {}
+
+    return { ok: true };
+  }
+
   async listPromotions(merchantId: string, status?: PromotionStatus | 'ALL') {
     const where: Prisma.LoyaltyPromotionWhereInput = {
       merchantId,
     };
     if (status && status !== 'ALL') {
       where.status = status;
+      if (status !== PromotionStatus.ARCHIVED) {
+        where.archivedAt = null;
+      }
+    } else {
+      where.archivedAt = null;
+      where.status = { not: PromotionStatus.ARCHIVED };
     }
 
     const promotions = await this.prisma.loyaltyPromotion.findMany({
@@ -908,7 +966,8 @@ export class LoyaltyProgramService {
       (promotion as any).metrics = {
         ...(promotion as any).metrics,
         revenueGenerated: revenue.netTotal,
-        revenueRedeemed: revenue.redeemedTotal,
+        revenueRedeemed: revenue.grossTotal,
+        pointsRedeemed: revenue.redeemedTotal,
         charts,
       };
     });
@@ -938,6 +997,7 @@ export class LoyaltyProgramService {
         dates: string[];
         netTotal: number;
         redeemedTotal: number;
+        grossTotal: number;
       }
     >
   > {
@@ -949,6 +1009,7 @@ export class LoyaltyProgramService {
         dates: string[];
         netTotal: number;
         redeemedTotal: number;
+        grossTotal: number;
       }
     >();
     if (!ids.length) return result;
@@ -965,30 +1026,14 @@ export class LoyaltyProgramService {
     });
     if (!participants.length) return result;
 
-    const participantsByCustomer = new Map<
-      string,
-      Array<{
-        promotionId: string;
-        joinedAt: Date;
-        remaining: number;
-      }>
-    >();
     let globalMin = participants[0].joinedAt;
     participants.forEach((p) => {
       if (p.joinedAt < globalMin) globalMin = p.joinedAt;
-      const list = participantsByCustomer.get(p.customerId) ?? [];
-      list.push({
-        promotionId: p.promotionId,
-        joinedAt: p.joinedAt,
-        remaining: Math.max(0, Number(p.pointsIssued ?? 0)),
-      });
-      participantsByCustomer.set(p.customerId, list);
     });
-    participantsByCustomer.forEach((list) =>
-      list.sort((a, b) => a.joinedAt.getTime() - b.joinedAt.getTime()),
-    );
 
-    const customerIds = Array.from(participantsByCustomer.keys());
+    const customerIds = Array.from(
+      new Set(participants.map((p) => p.customerId)),
+    );
     const receipts = await this.prisma.receipt.findMany({
       where: {
         merchantId,
@@ -1005,94 +1050,20 @@ export class LoyaltyProgramService {
       },
       orderBy: [{ customerId: 'asc' }, { createdAt: 'asc' }],
     });
-
-    const receiptsByCustomer = new Map<string, typeof receipts>();
-    receipts.forEach((r) => {
-      const list = receiptsByCustomer.get(r.customerId) ?? [];
-      list.push(r);
-      receiptsByCustomer.set(r.customerId, list);
-    });
-
-    const buckets = new Map<
-      string,
-      {
-        byDay: Map<string, { net: number; redeemed: number }>;
-        netTotal: number;
-        redeemedTotal: number;
-      }
-    >();
-
-    participantsByCustomer.forEach((customerPromos, customerId) => {
-      const customerReceipts = receiptsByCustomer
-        .get(customerId)
-        ?.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
-      if (!customerReceipts?.length) return;
-
-      customerReceipts.forEach((receipt) => {
-        const totalRedeem = Math.max(0, Number(receipt.redeemApplied ?? 0));
-        if (!totalRedeem) return;
-        const cashPart = Math.max(0, Number(receipt.total ?? 0) - totalRedeem);
-
-        const allocations: Array<{
-          promo: (typeof customerPromos)[number];
-          amount: number;
-        }> = [];
-        let redeemLeft = totalRedeem;
-        for (const promo of customerPromos) {
-          if (promo.joinedAt > receipt.createdAt) break;
-          if (promo.remaining <= 0) continue;
-          if (redeemLeft <= 0) break;
-          const allocated = Math.min(promo.remaining, redeemLeft);
-          promo.remaining -= allocated;
-          redeemLeft -= allocated;
-          allocations.push({ promo, amount: allocated });
-        }
-
-        const promoRedeemTotal = allocations.reduce(
-          (acc, cur) => acc + cur.amount,
-          0,
-        );
-        if (!promoRedeemTotal) return;
-
-        allocations.forEach(({ promo, amount }) => {
-          const share = amount / promoRedeemTotal;
-          const netPart = cashPart * share;
-          const dayKey = receipt.createdAt.toISOString().slice(0, 10);
-          if (!buckets.has(promo.promotionId)) {
-            buckets.set(promo.promotionId, {
-              byDay: new Map(),
-              netTotal: 0,
-              redeemedTotal: 0,
-            });
-          }
-          const bucket = buckets.get(promo.promotionId)!;
-          const dayBucket = bucket.byDay.get(dayKey) ?? {
-            net: 0,
-            redeemed: 0,
-          };
-          dayBucket.net += netPart;
-          dayBucket.redeemed += amount;
-          bucket.byDay.set(dayKey, dayBucket);
-          bucket.netTotal += netPart;
-          bucket.redeemedTotal += amount;
-        });
-      });
-    });
-
-    buckets.forEach((value, promoId) => {
-      const days = Array.from(value.byDay.keys()).sort();
-      const series = days.map((day) =>
-        Math.round(value.byDay.get(day)?.net ?? 0),
-      );
-      result.set(promoId, {
-        series,
-        dates: days,
-        netTotal: Math.round(value.netTotal),
-        redeemedTotal: Math.round(value.redeemedTotal),
-      });
-    });
-
-    return result;
+    return computePromotionRedeemRevenueFromData(
+      participants.map((p) => ({
+        promotionId: p.promotionId,
+        customerId: p.customerId,
+        joinedAt: p.joinedAt,
+        pointsIssued: p.pointsIssued ?? null,
+      })),
+      receipts.map((r) => ({
+        customerId: r.customerId,
+        createdAt: r.createdAt,
+        redeemApplied: r.redeemApplied,
+        total: r.total,
+      })),
+    );
   }
 
   async createPromotion(merchantId: string, payload: PromotionPayload) {
@@ -1400,7 +1371,8 @@ export class LoyaltyProgramService {
         (promotion as any).metrics = {
           ...(promotion as any).metrics,
           revenueGenerated: revenue.netTotal,
-          revenueRedeemed: revenue.redeemedTotal,
+          revenueRedeemed: revenue.grossTotal,
+          pointsRedeemed: revenue.redeemedTotal,
           charts,
         };
       }

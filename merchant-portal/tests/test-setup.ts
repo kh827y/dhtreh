@@ -3,6 +3,7 @@ import { JSDOM } from "jsdom";
 const dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "http://localhost" });
 
 (globalThis as any).window = dom.window;
+(globalThis as any).self = dom.window;
 (globalThis as any).document = dom.window.document;
 Object.defineProperty(globalThis, "navigator", {
   value: dom.window.navigator,

@@ -2,6 +2,7 @@ import {
   Body,
   BadRequestException,
   Controller,
+  Delete,
   Get,
   Param,
   Post,
@@ -368,5 +369,11 @@ export class PromotionsController {
         rewardValue: participant.pointsIssued ?? null,
       })),
     };
+  }
+
+  @Delete(':id')
+  delete(@Req() req: any, @Param('id') id: string) {
+    const merchantId = this.merchantId(req);
+    return this.service.deletePromotion(merchantId, id);
   }
 }

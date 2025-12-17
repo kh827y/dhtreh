@@ -10,10 +10,12 @@ import { MetricsService } from '../metrics.service';
 import { TelegramBotService } from '../telegram/telegram-bot.service';
 import { pgTryAdvisoryLock, pgAdvisoryUnlock } from '../pg-lock.util';
 import { isSystemAllAudience } from '../customer-audiences/audience.utils';
+import { applyCurlyPlaceholders } from './message-placeholders';
 
 type TelegramRecipient = {
   customerId: string;
   tgId: string;
+  name: string | null;
 };
 
 @Injectable()
@@ -197,15 +199,43 @@ export class CommunicationsDispatcherWorker
     let sent = 0;
     let failed = 0;
 
+    const promotion =
+      task.promotionId && typeof task.promotionId === 'string'
+        ? await this.prisma.loyaltyPromotion.findFirst({
+            where: { merchantId: task.merchantId, id: task.promotionId },
+            select: { id: true, name: true, rewardValue: true },
+          })
+        : null;
+    const promotionName =
+      typeof payload.name === 'string' && payload.name.trim()
+        ? payload.name.trim()
+        : promotion?.name ?? '';
+    const hasBonusSource =
+      payload.bonus !== undefined ||
+      payload.rewardValue !== undefined ||
+      payload.points !== undefined ||
+      promotion?.rewardValue !== undefined;
+    const bonusRaw =
+      payload.bonus ?? payload.rewardValue ?? payload.points ?? promotion?.rewardValue;
+    const bonus = Number.isFinite(Number(bonusRaw))
+      ? Math.max(0, Math.trunc(Number(bonusRaw)))
+      : 0;
+
     for (const recipient of recipients) {
       let status = 'SENT';
       let error: string | null = null;
       try {
+        const vars: Record<string, string | number> = {
+          client: recipient.name?.trim() || 'клиент',
+        };
+        if (promotionName) vars.name = promotionName;
+        if (hasBonusSource) vars.bonus = bonus;
+        const rendered = applyCurlyPlaceholders(text, vars).trim();
         await this.telegramBots.sendCampaignMessage(
           task.merchantId,
           recipient.tgId,
           {
-            text,
+            text: rendered || text,
             asset:
               asset && asset.data
                 ? {
@@ -304,16 +334,47 @@ export class CommunicationsDispatcherWorker
         : undefined;
     const extra = this.toStringRecord(payload.data);
 
+    const promotion =
+      task.promotionId && typeof task.promotionId === 'string'
+        ? await this.prisma.loyaltyPromotion.findFirst({
+            where: { merchantId: task.merchantId, id: task.promotionId },
+            select: { id: true, name: true, rewardValue: true },
+          })
+        : null;
+    const promotionName =
+      typeof payload.name === 'string' && payload.name.trim()
+        ? payload.name.trim()
+        : promotion?.name ?? '';
+    const hasBonusSource =
+      payload.bonus !== undefined ||
+      payload.rewardValue !== undefined ||
+      payload.points !== undefined ||
+      promotion?.rewardValue !== undefined;
+    const bonusRaw =
+      payload.bonus ?? payload.rewardValue ?? payload.points ?? promotion?.rewardValue;
+    const bonus = Number.isFinite(Number(bonusRaw))
+      ? Math.max(0, Math.trunc(Number(bonusRaw)))
+      : 0;
+
     for (const recipient of recipients) {
       let status = 'SENT';
       let error: string | null = null;
       try {
+        const vars: Record<string, string | number> = {
+          client: recipient.name?.trim() || 'клиент',
+        };
+        if (promotionName) vars.name = promotionName;
+        if (hasBonusSource) vars.bonus = bonus;
+        const renderedText = applyCurlyPlaceholders(text, vars).trim();
+        const renderedTitle = title
+          ? applyCurlyPlaceholders(title, vars).trim()
+          : undefined;
         await this.telegramBots.sendPushNotification(
           task.merchantId,
           recipient.tgId,
           {
-            title,
-            body: text,
+            title: renderedTitle || title,
+            body: renderedText || text,
             data: extra,
             deepLink,
           },
@@ -407,7 +468,7 @@ export class CommunicationsDispatcherWorker
         tgId: { not: null },
         ...(Array.isArray(customerIds) ? { id: { in: customerIds } } : {}),
       },
-      select: { id: true, tgId: true },
+      select: { id: true, tgId: true, name: true },
     });
 
     for (const c of customers) {
@@ -418,6 +479,7 @@ export class CommunicationsDispatcherWorker
       telegramRecipients.push({
         customerId: c.id,
         tgId: c.tgId,
+        name: c.name ?? null,
       });
     }
 
