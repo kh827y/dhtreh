@@ -727,7 +727,7 @@ export class ReferralService {
 
   private normalizeMessageTemplate(message?: string | null) {
     const fallback =
-      'Расскажите друзьям о нашей программе и получите бонус. Делитесь ссылкой {link} или промокодом {code}.';
+      'Расскажите друзьям о нашей программе и получите бонус. Делитесь ссылкой {link} или вашим кодом {code}.';
     if (typeof message !== 'string') return fallback;
     const trimmed = message.trim();
     if (!trimmed) return fallback;
