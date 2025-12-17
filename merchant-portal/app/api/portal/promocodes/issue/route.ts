@@ -8,6 +8,8 @@ export async function POST(req: NextRequest) {
     description: body?.description ? String(body.description) : undefined,
     code: String(body?.code || ''),
     points: Number(body?.points || 0),
+    perCustomerLimit:
+      body?.perCustomerLimit !== undefined ? Number(body.perCustomerLimit) : undefined,
     validFrom: body?.validFrom ? String(body.validFrom) : undefined,
     validUntil: body?.validUntil ? String(body.validUntil) : undefined,
     awardPoints: body?.awardPoints !== undefined ? !!body.awardPoints : undefined,

@@ -1,824 +1,937 @@
 "use client";
-import React from "react";
-import { Card, CardHeader, CardBody, Button, Skeleton } from "@loyalty/ui";
-import Toggle from "../../components/Toggle";
-import { Pencil, Archive, RotateCcw } from "lucide-react";
 
-type PromocodeRow = {
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  Ticket,
+  Plus,
+  Copy,
+  Calendar,
+  Coins,
+  Trophy,
+  ArrowLeft,
+  Save,
+  Archive,
+  RefreshCw,
+  Pencil,
+  Flame,
+  ShieldCheck,
+  MapPin,
+} from "lucide-react";
+
+type PromocodeStatus = "active" | "archived";
+
+type TierOption = { id: string; name: string };
+
+type PortalPromocodeRow = {
   id: string;
-  name?: string;
-  code?: string | null;
-  description?: string;
-  value: number;
-  status: string;
-  isActive: boolean;
+  code: string;
+  description?: string | null;
+  value?: number;
+  status?: string;
   validFrom?: string | null;
   validUntil?: string | null;
+  createdAt?: string | null;
   totalUsed?: number;
   usageLimitType?: string;
   usageLimitValue?: number | null;
   perCustomerLimit?: number | null;
+  cooldownDays?: number | null;
+  requireVisit?: boolean;
+  assignTierId?: string | null;
+  pointsExpireInDays?: number | null;
   metadata?: Record<string, any> | null;
 };
 
-type LevelOption = { id: string; name: string };
-
-type FormState = {
+interface Promocode {
+  id: string;
   code: string;
   description: string;
-  awardPoints: boolean;
-  points: string;
-  burnEnabled: boolean;
-  burnDays: string;
-  levelEnabled: boolean;
-  levelId: string;
-  usageLimit: 'none' | 'once_total' | 'once_per_customer';
-  usageLimitSelection: 'none' | 'per_customer' | 'limited';
-  usageLimitValue: string;
-  levelExpireDays: string;
-  usagePeriodEnabled: boolean;
-  usagePeriodDays: string;
-  recentVisitEnabled: boolean;
-  recentVisitHours: string;
-  validFrom: string;
-  validUntil: string;
-};
+  points: number | null;
+  assignsLevel: string | null;
+  assignsLevelId: string | null;
+  startDate: string;
+  endDate: string | "Бессрочно";
+  usageLimit: number | "unlimited";
+  usedCount: number;
+  perClientLimit: number;
+  frequencyDays: number;
+  requiresVisit: boolean;
+  pointsBurnDays: number | null;
+  status: PromocodeStatus;
+  source: PortalPromocodeRow;
+}
 
-const initialForm: FormState = {
-  code: "",
-  description: "",
-  awardPoints: true,
-  points: "0",
-  burnEnabled: false,
-  burnDays: "",
-  levelEnabled: false,
-  levelId: "",
-  usageLimit: "none",
-  usageLimitSelection: "none",
-  usageLimitValue: "1",
-  levelExpireDays: "0",
-  usagePeriodEnabled: false,
-  usagePeriodDays: "",
-  recentVisitEnabled: false,
-  recentVisitHours: "0",
-  validFrom: "",
-  validUntil: "",
-};
+function formatDateRu(value: unknown): string | null {
+  if (!value) return null;
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString("ru-RU");
+}
 
-function formatDate(date?: string | null) {
-  if (!date) return "—";
-  try {
-    return new Date(date).toLocaleDateString("ru-RU");
-  } catch {
-    return "—";
+function formatDateInput(value: unknown): string {
+  if (!value) return new Date().toISOString().split("T")[0];
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return new Date().toISOString().split("T")[0];
+  return date.toISOString().split("T")[0];
+}
+
+function readApiError(payload: unknown): string | null {
+  if (!payload) return null;
+  if (typeof payload === "string") return payload.trim() || null;
+  if (typeof payload === "object" && payload) {
+    const anyPayload = payload as any;
+    if (typeof anyPayload.message === "string") return anyPayload.message;
+    if (Array.isArray(anyPayload.message) && typeof anyPayload.message[0] === "string") return anyPayload.message[0];
+    if (typeof anyPayload.error === "string") return anyPayload.error;
   }
+  return null;
 }
 
-function formatRange(from?: string | null, to?: string | null) {
-  if (!from && !to) return "Бессрочно";
-  if (from && to) return `${formatDate(from)} — ${formatDate(to)}`;
-  if (from) return `с ${formatDate(from)}`;
-  return `до ${formatDate(to)}`;
+function safeInt(value: unknown, fallback: number): number {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  return Math.floor(num);
 }
 
-function levelName(meta?: Record<string, any> | null, levels?: LevelOption[]) {
-  if (!meta?.level || !meta.level.enabled) return "—";
-  const target = String(meta.level.target || "");
-  const found = levels?.find((lvl) => lvl.id === target);
-  return found ? found.name : target || "—";
+function extractBurnDays(row: PortalPromocodeRow): number | null {
+  const fromColumn = safeInt(row.pointsExpireInDays, Number.NaN);
+  if (Number.isFinite(fromColumn) && fromColumn > 0) return fromColumn;
+  const meta = row.metadata as any;
+  if (!meta?.burn?.enabled) return null;
+  const days = safeInt(meta?.burn?.days, Number.NaN);
+  if (!Number.isFinite(days) || days <= 0) return null;
+  return days;
 }
 
-export default function PromocodesPage() {
-  const [tab, setTab] = React.useState<'ACTIVE' | 'ARCHIVE'>('ACTIVE');
-  const [loading, setLoading] = React.useState(true);
-  const [items, setItems] = React.useState<PromocodeRow[]>([]);
-  const [error, setError] = React.useState('');
-  const [modalMode, setModalMode] = React.useState<'create' | 'edit' | null>(null);
-  const [form, setForm] = React.useState<FormState>(initialForm);
-  const [editing, setEditing] = React.useState<PromocodeRow | null>(null);
-  const [submitting, setSubmitting] = React.useState(false);
-  const [levels, setLevels] = React.useState<LevelOption[]>([]);
-  const [levelsLoading, setLevelsLoading] = React.useState(false);
-  const [formError, setFormError] = React.useState('');
+function extractAssignTierId(row: PortalPromocodeRow): string | null {
+  if (row.assignTierId) return String(row.assignTierId);
+  const meta = row.metadata as any;
+  const target = meta?.level?.enabled ? meta?.level?.target : null;
+  return target ? String(target) : null;
+}
 
-const summaryText = React.useMemo(() => {
-  const total = items.length;
-  if (!total) return 'Показаны записи 0-0 из 0';
-  return `Показаны записи 1-${total} из ${total}`;
-}, [items]);
-const usageLimitSelection = form.usageLimitSelection;
+function resolvePromocodeStatus(row: PortalPromocodeRow): PromocodeStatus {
+  return String(row.status || "").toUpperCase() === "ACTIVE" ? "active" : "archived";
+}
 
-  const load = React.useCallback(async () => {
-    setLoading(true);
-    setError('');
+function mapPortalRow(row: any): PortalPromocodeRow {
+  return {
+    id: String(row?.id ?? ""),
+    code: String(row?.code ?? ""),
+    description: row?.description ?? "",
+    value: Number(row?.value ?? 0) || 0,
+    status: String(row?.status ?? ""),
+    validFrom: row?.validFrom ?? null,
+    validUntil: row?.validUntil ?? null,
+    createdAt: row?.createdAt ?? null,
+    totalUsed: Number(row?.totalUsed ?? 0) || 0,
+    usageLimitType: row?.usageLimitType ? String(row.usageLimitType) : undefined,
+    usageLimitValue: row?.usageLimitValue != null ? Number(row.usageLimitValue) : null,
+    perCustomerLimit: row?.perCustomerLimit != null ? Number(row.perCustomerLimit) : null,
+    cooldownDays: row?.cooldownDays != null ? Number(row.cooldownDays) : null,
+    requireVisit: Boolean(row?.requireVisit),
+    assignTierId: row?.assignTierId != null ? String(row.assignTierId) : null,
+    pointsExpireInDays: row?.pointsExpireInDays != null ? Number(row.pointsExpireInDays) : null,
+    metadata: row?.metadata && typeof row.metadata === "object" ? row.metadata : null,
+  };
+}
+
+function toPromocode(row: PortalPromocodeRow, tiers: TierOption[]): Promocode {
+  const assignsLevelId = extractAssignTierId(row);
+  const assignsLevel =
+    assignsLevelId != null
+      ? tiers.find((tier) => tier.id === assignsLevelId)?.name ?? assignsLevelId
+      : null;
+
+  const hasPoints = Number(row.value ?? 0) > 0;
+  const points = hasPoints ? safeInt(row.value, 0) : null;
+  const startSource = row.validFrom ?? row.createdAt ?? null;
+  const startDate = formatDateRu(startSource) ?? new Date().toLocaleDateString("ru-RU");
+  const endDate = row.validUntil ? formatDateRu(row.validUntil) ?? "Бессрочно" : "Бессрочно";
+
+  const usageLimitType = String(row.usageLimitType || "").toUpperCase();
+  const usageLimitValue = safeInt(row.usageLimitValue, Number.NaN);
+  const usageLimit =
+    usageLimitType === "ONCE_TOTAL" && Number.isFinite(usageLimitValue) && usageLimitValue > 0
+      ? usageLimitValue
+      : "unlimited";
+
+  const perClientLimitRaw = safeInt(row.perCustomerLimit, Number.NaN);
+  const perClientLimit = Number.isFinite(perClientLimitRaw) && perClientLimitRaw > 0 ? perClientLimitRaw : 1;
+
+  const cooldownRaw = safeInt(row.cooldownDays, 0);
+  const frequencyDays = cooldownRaw > 0 ? cooldownRaw : 0;
+
+  return {
+    id: row.id,
+    code: row.code,
+    description: String(row.description ?? ""),
+    points,
+    assignsLevel,
+    assignsLevelId,
+    startDate,
+    endDate: endDate || "Бессрочно",
+    usageLimit,
+    usedCount: safeInt(row.totalUsed, 0),
+    perClientLimit,
+    frequencyDays,
+    requiresVisit: Boolean(row.requireVisit),
+    pointsBurnDays: extractBurnDays(row),
+    status: resolvePromocodeStatus(row),
+    source: row,
+  };
+}
+
+async function safeCopy(text: string) {
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  document.execCommand("copy");
+  document.body.removeChild(textarea);
+}
+
+const PromocodesPage: React.FC = () => {
+  const [view, setView] = useState<"list" | "create">("list");
+  const [activeTab, setActiveTab] = useState<PromocodeStatus>("active");
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const [tiers, setTiers] = useState<TierOption[]>([]);
+  const [rawPromocodes, setRawPromocodes] = useState<PortalPromocodeRow[]>([]);
+
+  const defaultLevelId = useMemo(() => tiers[0]?.id ?? "", [tiers]);
+
+  const [formData, setFormData] = useState({
+    code: "",
+    description: "",
+    hasPoints: true,
+    pointsValue: 100,
+    hasLevel: false,
+    levelValue: "",
+
+    isLimited: false,
+    limitValue: 100,
+    perClientLimit: 1,
+
+    hasFrequencyLimit: false,
+    frequencyDays: 1,
+
+    requiresVisit: false,
+
+    isIndefinite: false,
+    startDate: new Date().toISOString().split("T")[0],
+    endDate: new Date(Date.now() + 86400000 * 30).toISOString().split("T")[0],
+
+    isPointsBurning: false,
+    pointsBurnDays: 30,
+  });
+
+  const promocodes = useMemo(() => rawPromocodes.map((row) => toPromocode(row, tiers)), [rawPromocodes, tiers]);
+
+  const filteredPromocodes = useMemo(() => promocodes.filter((p) => p.status === activeTab), [promocodes, activeTab]);
+
+  const loadTiers = async () => {
+    try {
+      const res = await fetch("/api/portal/loyalty/tiers", { cache: "no-store" });
+      if (!res.ok) throw new Error(await res.text().catch(() => ""));
+      const payload = await res.json();
+      const source = Array.isArray(payload?.items) ? payload.items : Array.isArray(payload) ? payload : [];
+      const mapped = source
+        .filter(Boolean)
+        .map((row: any) => ({ id: String(row?.id ?? ""), name: String(row?.name ?? "") }))
+        .filter((row) => row.id && row.name);
+      setTiers(mapped);
+    } catch {
+      setTiers([]);
+    }
+  };
+
+  const loadPromocodes = async () => {
     try {
       const qs = new URLSearchParams();
-      qs.set('status', tab === 'ACTIVE' ? 'ACTIVE' : 'ARCHIVE');
-      qs.set('limit', '200');
-      const res = await fetch(`/api/portal/promocodes?${qs.toString()}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.message || 'Не удалось загрузить промокоды');
-      const rows: PromocodeRow[] = Array.isArray(data?.items) ? data.items : [];
-      setItems(rows);
-    } catch (e: any) {
-      setError(String(e?.message || e));
-    } finally {
-      setLoading(false);
-    }
-  }, [tab]);
-
-  const ensureLevels = React.useCallback(async () => {
-    if (levels.length || levelsLoading) return;
-    setLevelsLoading(true);
-    try {
-      const res = await fetch("/api/portal/loyalty/tiers");
-      const data = await res.json();
-      if (res.ok) {
-        const source: any[] = Array.isArray(data?.items)
-          ? data.items
-          : Array.isArray(data)
-            ? data
-            : [];
-        const lv: LevelOption[] = source
-          .filter((row) => row)
-          .map((row) => ({
-            id: String(row.id || ""),
-            name: row.isHidden ? `${String(row.name || "")} (скрытый)` : String(row.name || ""),
-          }))
-          .sort((a, b) => a.name.localeCompare(b.name));
-        setLevels(lv);
-      } else {
-        setLevels([]);
-      }
+      qs.set("limit", "200");
+      const res = await fetch(`/api/portal/promocodes?${qs.toString()}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(await res.text().catch(() => ""));
+      const payload = await res.json();
+      const source = Array.isArray(payload?.items) ? payload.items : Array.isArray(payload) ? payload : [];
+      setRawPromocodes(source.map(mapPortalRow).filter((row) => row.id && row.code));
     } catch {
-      setLevels([]);
-    } finally {
-      setLevelsLoading(false);
+      setRawPromocodes([]);
     }
-  }, [levels.length, levelsLoading]);
-
-  React.useEffect(() => { load(); }, [load]);
-  React.useEffect(() => { ensureLevels(); }, [ensureLevels]);
-
-  const openCreate = () => {
-    setForm(initialForm);
-    setFormError('');
-    setEditing(null);
-    setModalMode('create');
-    ensureLevels();
   };
 
-  const openEdit = (row: PromocodeRow) => {
-    setEditing(row);
-    setFormError('');
-    setForm(mapRowToForm(row));
-    setModalMode('edit');
-    ensureLevels();
+  useEffect(() => {
+    void loadTiers();
+    void loadPromocodes();
+  }, []);
+
+  useEffect(() => {
+    if (formData.hasLevel && !formData.levelValue && defaultLevelId) {
+      setFormData((prev) => ({ ...prev, levelValue: defaultLevelId }));
+    }
+  }, [formData.hasLevel, formData.levelValue, defaultLevelId]);
+
+  const generateCode = () => {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let result = "";
+    for (let i = 0; i < 8; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setFormData((prev) => ({ ...prev, code: result }));
   };
 
-  const closeModal = () => {
-    setModalMode(null);
-    setEditing(null);
-    setForm(initialForm);
-    setFormError('');
-  };
+  const handleSave = async () => {
+    const code = formData.code.trim().toUpperCase();
+    if (!code) return alert("Введите промокод");
 
-  const handleArchive = async (row: PromocodeRow) => {
-    try {
-      const res = await fetch('/api/portal/promocodes/deactivate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ promoCodeId: row.id }),
+    const hasLevel = formData.hasLevel && !!formData.levelValue;
+    if (formData.hasLevel && !hasLevel) return alert("Выберите уровень");
+
+    const payload = {
+      code,
+      description: formData.description.trim() || undefined,
+      awardPoints: formData.hasPoints,
+      points: formData.hasPoints ? Math.max(0, safeInt(formData.pointsValue, 0)) : 0,
+      burnEnabled: formData.hasPoints && formData.isPointsBurning,
+      burnDays:
+        formData.hasPoints && formData.isPointsBurning ? Math.max(1, safeInt(formData.pointsBurnDays, 30)) : undefined,
+      levelEnabled: hasLevel,
+      levelId: hasLevel ? formData.levelValue : undefined,
+      usageLimit: formData.isLimited ? ("once_total" as const) : ("none" as const),
+      usageLimitValue: formData.isLimited ? Math.max(1, safeInt(formData.limitValue, 1)) : undefined,
+      perCustomerLimit: Math.max(1, safeInt(formData.perClientLimit, 1)),
+      usagePeriodEnabled: formData.hasFrequencyLimit,
+      usagePeriodDays: formData.hasFrequencyLimit ? Math.max(1, safeInt(formData.frequencyDays, 1)) : undefined,
+      recentVisitEnabled: formData.requiresVisit,
+      validFrom: formData.startDate,
+      validUntil: formData.isIndefinite ? undefined : formData.endDate,
+    };
+
+    const submitOnce = async (overwrite: boolean) => {
+      const res = await fetch(editingId ? `/api/portal/promocodes/${editingId}` : "/api/portal/promocodes/issue", {
+        method: editingId ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...payload, ...(overwrite ? { overwrite: true } : {}) }),
       });
-      if (!res.ok) throw new Error(await res.text());
-      await load();
-    } catch (e: any) {
-      alert(String(e?.message || e));
-    }
-  };
-
-  const handleActivate = async (row: PromocodeRow) => {
-    try {
-      const res = await fetch('/api/portal/promocodes/activate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ promoCodeId: row.id }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      await load();
-    } catch (e: any) {
-      alert(String(e?.message || e));
-    }
-  };
-
-  const handleSubmit = async () => {
-    if (!form.code.trim()) {
-      setFormError('Укажите промокод');
-      return;
-    }
-    if (form.awardPoints && Number(form.points || 0) <= 0) {
-      setFormError('Укажите количество баллов');
-      return;
-    }
-    if (form.levelEnabled && !form.levelId) {
-      setFormError('Выберите уровень');
-      return;
-    }
-    if (form.levelEnabled && Number(form.levelExpireDays || 0) < 0) {
-      setFormError('Срок действия уровня не может быть отрицательным');
-      return;
-    }
-    if (form.usagePeriodEnabled && Number(form.usagePeriodDays || 0) <= 0) {
-      setFormError('Укажите период использования в днях');
-      return;
-    }
-    if (form.usageLimit === 'once_total' && Number(form.usageLimitValue || 0) <= 0) {
-      setFormError('Укажите лимит применений промокода');
-      return;
-    }
-    setSubmitting(true);
-    setFormError('');
-    const submitOnce = async (overwrite = false) => {
-      const payload = { ...buildPayload(form), ...(overwrite ? { overwrite: true } : {}) };
-      if (modalMode === 'create') {
-        const res = await fetch('/api/portal/promocodes/issue', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        if (!res.ok) throw new Error(await res.text());
-      } else if (modalMode === 'edit' && editing) {
-        const res = await fetch(`/api/portal/promocodes/${encodeURIComponent(editing.id)}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        if (!res.ok) throw new Error(await res.text());
+      if (res.ok) return;
+      const text = await res.text().catch(() => "");
+      let parsed: unknown = null;
+      try {
+        parsed = text ? JSON.parse(text) : null;
+      } catch {
+        parsed = text;
       }
+      throw new Error(readApiError(parsed) || "Не удалось сохранить промокод");
     };
 
     try {
       await submitOnce(false);
-      closeModal();
-      await load();
-    } catch (e: any) {
-      const msg = String(e?.message || e);
-      const duplicate =
-        msg.includes('Промокод с таким названием уже существует') ||
-        msg.toLowerCase().includes('unique constraint');
+    } catch (e) {
+      const msg = readApiError(e instanceof Error ? e.message : e) || String((e as any)?.message || e);
+      const duplicate = msg.includes("перезаписать") || msg.includes("уже существует") || msg.toLowerCase().includes("unique constraint");
       if (duplicate) {
-        const confirmOverwrite = window.confirm('Промокод с таким названием уже существует, хотите перезаписать?');
-        if (confirmOverwrite) {
-          try {
-            await submitOnce(true);
-            closeModal();
-            await load();
-            return;
-          } catch (err: any) {
-            setFormError(String(err?.message || err));
-          }
-        } else {
-          setFormError('Промокод с таким названием уже существует');
-        }
+        const confirmOverwrite = window.confirm("Промокод с таким названием уже существует, хотите перезаписать?");
+        if (!confirmOverwrite) return;
+        await submitOnce(true);
       } else {
-        setFormError(msg);
+        alert(msg || "Не удалось сохранить промокод");
+        return;
       }
-    } finally {
-      setSubmitting(false);
+    }
+
+    await loadPromocodes();
+    setView("list");
+    setActiveTab("active");
+    setEditingId(null);
+  };
+
+  const handleEdit = (item: Promocode) => {
+    setEditingId(item.id);
+    const pointsBurnDays = item.pointsBurnDays ?? 30;
+    const isPointsBurning = item.pointsBurnDays != null;
+    const startDate = formatDateInput(item.source.validFrom ?? item.source.createdAt);
+    const endDate = formatDateInput(item.source.validUntil);
+    const perClientLimit = safeInt(item.source.perCustomerLimit, 1);
+    const cooldownDays = safeInt(item.source.cooldownDays, 0);
+
+    setFormData({
+      code: item.code,
+      description: item.description,
+      hasPoints: item.points != null,
+      pointsValue: item.points ?? 100,
+      hasLevel: item.assignsLevelId != null,
+      levelValue: item.assignsLevelId ?? defaultLevelId,
+      isLimited: item.usageLimit !== "unlimited",
+      limitValue: item.usageLimit === "unlimited" ? 100 : item.usageLimit,
+      perClientLimit: Math.max(1, perClientLimit),
+      hasFrequencyLimit: cooldownDays > 0,
+      frequencyDays: cooldownDays > 0 ? cooldownDays : 1,
+      requiresVisit: item.requiresVisit,
+      isIndefinite: item.endDate === "Бессрочно",
+      startDate,
+      endDate,
+      isPointsBurning: item.points != null && isPointsBurning,
+      pointsBurnDays,
+    });
+
+    setView("create");
+  };
+
+  const handleArchive = async (id: string) => {
+    try {
+      const res = await fetch("/api/portal/promocodes/deactivate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ promoCodeId: id }),
+      });
+      if (!res.ok) throw new Error(await res.text().catch(() => ""));
+      await loadPromocodes();
+    } catch (e) {
+      alert(readApiError(e instanceof Error ? e.message : e) || "Не удалось отправить промокод в архив");
     }
   };
 
-  const renderActions = (row: PromocodeRow) => {
-    return (
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-        <button className="btn btn-ghost" title="Редактировать" onClick={() => openEdit(row)}>
-          <Pencil size={16} />
-        </button>
-        {tab === 'ACTIVE' ? (
-          <button className="btn btn-ghost" title="В архив" onClick={() => handleArchive(row)}>
-            <Archive size={16} />
-          </button>
-        ) : (
-          <button className="btn btn-ghost" title="Вернуть из архива" onClick={() => handleActivate(row)}>
-            <RotateCcw size={16} />
-          </button>
-        )}
-      </div>
-    );
+  const handleRestore = async (id: string) => {
+    try {
+      const res = await fetch("/api/portal/promocodes/activate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ promoCodeId: id }),
+      });
+      if (!res.ok) throw new Error(await res.text().catch(() => ""));
+      await loadPromocodes();
+    } catch (e) {
+      alert(readApiError(e instanceof Error ? e.message : e) || "Не удалось восстановить промокод");
+    }
   };
 
-  const renderRows = () => {
-    if (loading) return <Skeleton height={220} />;
-    if (!items.length) return <div style={{ padding: 12, opacity: 0.7 }}>Промокоды отсутствуют</div>;
+  if (view === "create") {
     return (
-      <div style={{ display: 'grid', gap: 8 }}>
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1.4fr 1fr 0.8fr 1fr 1fr 140px',
-          fontSize: 12,
-          textTransform: 'uppercase',
-          opacity: 0.6,
-          padding: '6px 12px',
-        }}>
-          <div>Промокод</div>
-          <div>Описание</div>
-          <div>Начислить баллов</div>
-          <div>Присвоить уровень</div>
-          <div>Срок действия</div>
-          <div>Использован раз</div>
-        </div>
-        {items.map((row) => (
-          <div
-            key={row.id}
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1.4fr 1fr 0.8fr 1fr 1fr 140px',
-              gap: 12,
-              alignItems: 'center',
-              padding: '10px 12px',
-              borderRadius: 12,
-              background: 'rgba(10,14,24,0.35)',
-              border: '1px solid rgba(255,255,255,0.06)',
-            }}
-          >
-            <div>
-              <div style={{ fontWeight: 600 }}>{row.code || row.name || row.id}</div>
-              <div style={{ fontSize: 12, opacity: 0.6 }}>{row.name && row.name !== row.code ? row.name : ''}</div>
-            </div>
-            <div style={{ fontSize: 13, opacity: 0.8 }}>{row.description || '—'}</div>
-            <div style={{ fontSize: 13, opacity: 0.8 }}>
-              {row.metadata?.awardPoints === false || row.value <= 0 ? '—' : row.value}
-            </div>
-            <div style={{ fontSize: 13, opacity: 0.8 }}>{levelName(row.metadata, levels) || '—'}</div>
-            <div style={{ fontSize: 13, opacity: 0.8 }}>{formatRange(row.validFrom, row.validUntil)}</div>
-            <div style={{ fontSize: 13, opacity: 0.8 }}>{typeof row.totalUsed === 'number' ? row.totalUsed : '—'}</div>
-            <div style={{ gridColumn: '1 / -1' }}>{renderActions(row)}</div>
-          </div>
-        ))}
-      </div>
-    );
-  };
-
-  return (
-    <div style={{ display: 'grid', gap: 20 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <div style={{ fontSize: 24, fontWeight: 700 }}>Промокоды</div>
-          <div style={{ fontSize: 13, opacity: 0.7 }}>Управляйте промокодами на начисление баллов</div>
-        </div>
-        <Button variant="primary" onClick={openCreate}>Создать промокод</Button>
-      </div>
-
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button
-          className="btn"
-          style={{
-            minWidth: 140,
-            background: tab === 'ACTIVE' ? 'var(--brand-primary)' : 'rgba(255,255,255,.08)',
-            color: tab === 'ACTIVE' ? '#0b0f19' : '#fff',
-          }}
-          onClick={() => setTab('ACTIVE')}
-        >
-          Активные
-        </button>
-        <button
-          className="btn"
-          style={{
-            minWidth: 140,
-            background: tab === 'ARCHIVE' ? 'var(--brand-primary)' : 'rgba(255,255,255,.08)',
-            color: tab === 'ARCHIVE' ? '#0b0f19' : '#fff',
-          }}
-          onClick={() => setTab('ARCHIVE')}
-        >
-          Архивные
-        </button>
-      </div>
-
-      <div style={{ fontSize: 13, opacity: 0.7 }}>{loading ? 'Загрузка…' : summaryText}</div>
-      {error && <div style={{ color: '#f87171' }}>{error}</div>}
-
-      <Card>
-        <CardHeader title={tab === 'ACTIVE' ? 'Активные промокоды' : 'Архивные промокоды'} />
-        <CardBody>{renderRows()}</CardBody>
-      </Card>
-
-      {modalMode && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,8,16,0.65)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, zIndex: 90 }}>
-          <div style={{ width: 'min(840px, 96vw)', maxHeight: '92vh', overflowY: 'auto', background: 'rgba(12,16,26,0.96)', borderRadius: 16, border: '1px solid rgba(255,255,255,0.08)', display: 'grid', gridTemplateRows: 'auto 1fr auto' }}>
-            <div style={{ padding: '18px 24px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="p-8 max-w-[1600px] mx-auto animate-fade-in">
+        <div className="max-w-3xl mx-auto">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={() => setView("list")}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500"
+              >
+                <ArrowLeft size={24} />
+              </button>
               <div>
-                <div style={{ fontSize: 18, fontWeight: 700 }}>
-                  {modalMode === 'create' ? 'Создать промокод' : modalMode === 'edit' ? 'Редактировать промокод' : 'Детали промокода'}
-                </div>
-                <div style={{ fontSize: 13, opacity: 0.7 }}>Балльный промокод для клиентов</div>
+                <h2 className="text-2xl font-bold text-gray-900">{editingId ? "Редактирование" : "Новый промокод"}</h2>
+                <p className="text-sm text-gray-500">Настройка правил активации промокода</p>
               </div>
-              <button className="btn btn-ghost" onClick={closeModal}>✕</button>
             </div>
-            <div style={{ padding: 24, display: 'grid', gap: 18 }}>
-              <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
-                <div style={{ display: 'grid', gap: 6 }}>
-                  <label style={{ fontSize: 13, opacity: 0.8 }}>Промокод *</label>
-                  <input
-                    value={form.code}
-                    onChange={(e) => setForm((prev) => ({ ...prev, code: e.target.value.toUpperCase() }))}
-                    disabled={false}
-                    style={{ padding: 10, borderRadius: 8 }}
-                    placeholder="Например, BONUS100"
-                  />
-                </div>
-                <div style={{ display: 'grid', gap: 6 }}>
-                  <label style={{ fontSize: 13, opacity: 0.8 }}>Описание</label>
-                  <input
-                    value={form.description}
-                    onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
-                    disabled={false}
-                    style={{ padding: 10, borderRadius: 8 }}
-                    placeholder="Видите только вы"
-                  />
-                </div>
-              </div>
+            <button
+              onClick={() => void handleSave()}
+              className="flex items-center space-x-2 bg-purple-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-purple-700 transition-colors shadow-sm"
+            >
+              <Save size={18} />
+              <span>Сохранить</span>
+            </button>
+          </div>
 
-              <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
-                <div style={{ display: 'grid', gap: 6 }}>
-                  <label style={{ fontSize: 13, opacity: 0.8 }}>Начислять баллы за ввод промокода</label>
-                  <Toggle
-                    checked={form.awardPoints}
-                    onChange={(value) => setForm((prev) => ({ ...prev, awardPoints: value }))}
-                    label={form.awardPoints ? 'Включено' : 'Выключено'}
-                    disabled={false}
-                  />
-                </div>
-                {form.awardPoints && (
-                  <div style={{ display: 'grid', gap: 6 }}>
-                    <label style={{ fontSize: 13, opacity: 0.8 }}>Введите количество баллов</label>
+          <div className="space-y-6">
+            {/* Main Info */}
+            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm space-y-6">
+              <h3 className="text-lg font-bold text-gray-900">Основная информация</h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Код</label>
+                  <div className="relative flex items-center">
+                    <Ticket size={18} className="absolute left-3 text-gray-400 z-10" />
                     <input
-                      value={form.points}
-                      onChange={(e) => setForm((prev) => ({ ...prev, points: e.target.value.replace(/[^0-9]/g, '') }))}
-                      disabled={false}
-                      inputMode="numeric"
-                      style={{ padding: 10, borderRadius: 8 }}
+                      type="text"
+                      value={formData.code}
+                      onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
+                      placeholder="CODE2024"
+                      className="w-full border border-gray-300 rounded-l-lg pl-10 pr-4 py-2 uppercase font-mono tracking-wide focus:ring-2 focus:ring-purple-500 focus:outline-none focus:z-10 relative z-0"
                     />
+                    <button
+                      onClick={generateCode}
+                      className="px-4 py-2 bg-gray-100 border border-l-0 border-gray-300 rounded-r-lg text-sm font-medium text-gray-600 hover:bg-gray-200 transition-colors relative z-0"
+                    >
+                      Сгенерировать
+                    </button>
                   </div>
-                )}
-              </div>
-
-              <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
-                <div style={{ display: 'grid', gap: 6 }}>
-                  <label style={{ fontSize: 13, opacity: 0.8 }}>Включить сгорание баллов</label>
-                  <Toggle
-                    checked={form.burnEnabled}
-                    onChange={(value) => setForm((prev) => ({ ...prev, burnEnabled: value, burnDays: value ? (prev.burnDays || '30') : '' }))}
-                    label={form.burnEnabled ? 'Включено' : 'Выключено'}
-                    disabled={false}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Описание</label>
+                  <input
+                    type="text"
+                    value={formData.description}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    placeholder="Для чего этот код..."
+                    className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-purple-500 focus:outline-none"
                   />
                 </div>
-                {form.burnEnabled && (
-                  <div style={{ display: 'grid', gap: 6 }}>
-                    <label style={{ fontSize: 13, opacity: 0.8 }}>Через сколько дней баллы сгорят?</label>
-                    <input
-                      value={form.burnDays}
-                      onChange={(e) => setForm((prev) => ({ ...prev, burnDays: e.target.value.replace(/[^0-9]/g, '') }))}
-                      disabled={false}
-                      inputMode="numeric"
-                      style={{ padding: 10, borderRadius: 8 }}
-                    />
-                  </div>
-                )}
               </div>
 
-              <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
-                <div style={{ display: 'grid', gap: 6 }}>
-                  <label style={{ fontSize: 13, opacity: 0.8 }}>Изменить уровень клиента за ввод промокода</label>
-                  <Toggle
-                    checked={form.levelEnabled}
-                    onChange={(value) => setForm((prev) => ({ ...prev, levelEnabled: value }))}
-                    label={form.levelEnabled ? 'Включено' : 'Выключено'}
-                    disabled={false}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Начало действия</label>
+                  <input
+                    type="date"
+                    value={formData.startDate}
+                    onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                   />
                 </div>
-                {form.levelEnabled && (
-                  <div style={{ display: 'grid', gap: 12 }}>
-                    <div style={{ display: 'grid', gap: 6 }}>
-                      <label style={{ fontSize: 13, opacity: 0.8 }}>Выберите уровень</label>
-                      <select
-                        value={form.levelId}
-                        onChange={(e) => setForm((prev) => ({ ...prev, levelId: e.target.value }))}
-                        disabled={levelsLoading}
-                        style={{ padding: 10, borderRadius: 8 }}
-                      >
-                        <option value="">— выберите —</option>
-                        {levels.map((lvl) => (
-                          <option key={lvl.id} value={lvl.id}>{lvl.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div style={{ display: 'grid', gap: 6 }}>
-                      <label style={{ fontSize: 13, opacity: 0.8 }}>Срок действия уровня (дней)</label>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Окончание</label>
+                  <div className="space-y-2">
+                    <div className={`relative ${formData.isIndefinite ? "opacity-50 pointer-events-none" : ""}`}>
                       <input
-                        value={form.levelExpireDays}
-                        onChange={(e) => setForm((prev) => ({ ...prev, levelExpireDays: e.target.value.replace(/[^0-9]/g, '') }))}
-                        disabled={false}
-                        inputMode="numeric"
-                        style={{ padding: 10, borderRadius: 8 }}
-                        placeholder="0 — бессрочно"
+                        type="date"
+                        value={formData.endDate}
+                        onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                       />
-                      <div style={{ fontSize: 12, opacity: 0.6 }}>0 — бессрочно, при истечении назначаем уровень по сумме покупок.</div>
+                    </div>
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.isIndefinite}
+                        onChange={(e) => setFormData({ ...formData, isIndefinite: e.target.checked })}
+                        className="rounded text-purple-600 focus:ring-purple-500"
+                      />
+                      <span className="text-sm text-gray-600">Бессрочно</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Rewards */}
+            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm space-y-6">
+              <h3 className="text-lg font-bold text-gray-900">Вознаграждение</h3>
+
+              <div className="space-y-4">
+                {/* Points Reward */}
+                <div className="p-4 bg-gray-50 rounded-lg border border-gray-100">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-start space-x-3">
+                      <input
+                        type="checkbox"
+                        checked={formData.hasPoints}
+                        onChange={(e) => setFormData({ ...formData, hasPoints: e.target.checked })}
+                        className="mt-1 rounded text-purple-600 focus:ring-purple-500"
+                      />
+                      <div>
+                        <span className="block font-medium text-gray-900">Начислить баллы</span>
+                        <span className="text-sm text-gray-500">Клиент получит баллы при активации кода</span>
+                      </div>
+                    </div>
+                    {formData.hasPoints && (
+                      <div className="relative w-32">
+                        <input
+                          type="number"
+                          value={formData.pointsValue}
+                          onChange={(e) => setFormData({ ...formData, pointsValue: Number(e.target.value) })}
+                          className="w-full border border-gray-300 rounded-lg pl-3 pr-8 py-1.5 text-sm"
+                        />
+                        <Coins size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Points Expiration */}
+                  {formData.hasPoints && (
+                    <div className="ml-7 pt-4 border-t border-gray-200 animate-fade-in">
+                      <span className="block text-sm font-medium text-gray-800 mb-2">Срок действия баллов</span>
+                      <div className="space-y-2">
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="points_burn"
+                            checked={!formData.isPointsBurning}
+                            onChange={() => setFormData({ ...formData, isPointsBurning: false })}
+                            className="text-purple-600 focus:ring-purple-500"
+                          />
+                          <div className="flex items-center space-x-2 text-sm text-gray-600">
+                            <ShieldCheck size={14} className="text-green-600" />
+                            <span>Не сгорают</span>
+                          </div>
+                        </label>
+
+                        <div className="flex items-center space-x-4">
+                          <label className="flex items-center space-x-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="points_burn"
+                              checked={formData.isPointsBurning}
+                              onChange={() => setFormData({ ...formData, isPointsBurning: true })}
+                              className="text-purple-600 focus:ring-purple-500"
+                            />
+                            <div className="flex items-center space-x-2 text-sm text-gray-600">
+                              <Flame size={14} className="text-orange-500" />
+                              <span>Сгорят через</span>
+                            </div>
+                          </label>
+                          {formData.isPointsBurning && (
+                            <div className="relative w-24">
+                              <input
+                                type="number"
+                                value={formData.pointsBurnDays}
+                                onChange={(e) => setFormData({ ...formData, pointsBurnDays: Number(e.target.value) })}
+                                className="w-full border border-gray-300 rounded px-2 py-1 text-sm h-8"
+                              />
+                              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">дн.</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Level Reward */}
+                <div className="flex items-start justify-between p-4 bg-gray-50 rounded-lg border border-gray-100">
+                  <div className="flex items-start space-x-3">
+                    <input
+                      type="checkbox"
+                      checked={formData.hasLevel}
+                      onChange={(e) => setFormData({ ...formData, hasLevel: e.target.checked })}
+                      className="mt-1 rounded text-purple-600 focus:ring-purple-500"
+                    />
+                    <div>
+                      <span className="block font-medium text-gray-900">Присвоить уровень</span>
+                      <span className="text-sm text-gray-500">Изменить текущий уровень лояльности клиента</span>
                     </div>
                   </div>
-                )}
-              </div>
-
-                <div style={{ display: 'grid', gap: 12 }}>
-                <label style={{ fontSize: 13, opacity: 0.8 }}>Ограничения на количество использований</label>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button
-                    className="btn"
-                    style={{
-                      background: usageLimitSelection === 'none' ? 'var(--brand-primary)' : 'rgba(255,255,255,.08)',
-                      color: usageLimitSelection === 'none' ? '#0b0f19' : '#fff',
-                    }}
-                    disabled={false}
-                    onClick={() => setForm((prev) => ({ ...prev, usageLimit: 'none', usageLimitSelection: 'none', usageLimitValue: '1' }))}
-                  >
-                    Без ограничений
-                  </button>
-                  <button
-                    className="btn"
-                    style={{
-                      background: usageLimitSelection === 'per_customer' ? 'var(--brand-primary)' : 'rgba(255,255,255,.08)',
-                      color: usageLimitSelection === 'per_customer' ? '#0b0f19' : '#fff',
-                    }}
-                    disabled={false}
-                    onClick={() =>
-                      setForm((prev) => ({
-                        ...prev,
-                        usageLimit: 'once_per_customer',
-                        usageLimitSelection: 'per_customer',
-                        usageLimitValue: '1',
-                      }))
-                    }
-                  >
-                    Одно использование каждому клиенту
-                  </button>
-                  <button
-                    className="btn"
-                    style={{
-                      background: usageLimitSelection === 'limited' ? 'var(--brand-primary)' : 'rgba(255,255,255,.08)',
-                      color: usageLimitSelection === 'limited' ? '#0b0f19' : '#fff',
-                    }}
-                    disabled={false}
-                    onClick={() =>
-                      setForm((prev) => ({
-                        ...prev,
-                        usageLimit: 'once_total',
-                        usageLimitSelection: 'limited',
-                        usageLimitValue: Number(prev.usageLimitValue || 0) > 1 ? prev.usageLimitValue : '10',
-                      }))
-                    }
-                  >
-                    Одно использование N клиентам
-                  </button>
+                  {formData.hasLevel && (
+                    <select
+                      value={formData.levelValue}
+                      onChange={(e) => setFormData({ ...formData, levelValue: e.target.value })}
+                      className="w-32 border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white"
+                    >
+                      {tiers.map((tier) => (
+                        <option key={tier.id} value={tier.id}>
+                          {tier.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
-                {usageLimitSelection === 'limited' && (
-                  <div style={{ display: 'grid', gap: 6, maxWidth: 260 }}>
-                    <label style={{ fontSize: 13, opacity: 0.8 }}>Сколько клиентов могут применить промокод?</label>
-                    <input
-                      value={form.usageLimitValue}
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          usageLimitValue: e.target.value.replace(/[^0-9]/g, ''),
-                        }))
-                      }
-                      disabled={false}
-                      inputMode="numeric"
-                      style={{ padding: 10, borderRadius: 8 }}
-                    />
-                  </div>
-                )}
-                {usageLimitSelection === 'per_customer' && (
-                  <div style={{ fontSize: 12, opacity: 0.7 }}>
-                    Каждый клиент может активировать промокод один раз.
-                  </div>
-                )}
               </div>
-
-              <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
-                <div style={{ display: 'grid', gap: 6 }}>
-                  <label style={{ fontSize: 13, opacity: 0.8 }}>
-                    Период использования в днях
-                    <span title="Как часто клиент может использовать промокод. По умолчанию промокоды можно использовать единожды." style={{ marginLeft: 6, border: '1px solid rgba(255,255,255,.4)', borderRadius: '50%', display: 'inline-flex', width: 16, height: 16, alignItems: 'center', justifyContent: 'center', fontSize: 11 }}>
-                      ?
-                    </span>
-                  </label>
-                  <Toggle
-                    checked={form.usagePeriodEnabled}
-                    onChange={(value) => setForm((prev) => ({ ...prev, usagePeriodEnabled: value, usagePeriodDays: value ? (prev.usagePeriodDays || '7') : '' }))}
-                    label={form.usagePeriodEnabled ? 'Включено' : 'Выключено'}
-                    disabled={false}
-                  />
-                </div>
-                {form.usagePeriodEnabled && (
-                  <div style={{ display: 'grid', gap: 6 }}>
-                    <label style={{ fontSize: 13, opacity: 0.8 }}>Введите количество дней</label>
-                    <input
-                      value={form.usagePeriodDays}
-                      onChange={(e) => setForm((prev) => ({ ...prev, usagePeriodDays: e.target.value.replace(/[^0-9]/g, '') }))}
-                      disabled={false}
-                      inputMode="numeric"
-                      style={{ padding: 10, borderRadius: 8 }}
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
-                <div style={{ display: 'grid', gap: 6 }}>
-                  <label style={{ fontSize: 13, opacity: 0.8 }}>Активен только если был визит</label>
-                  <Toggle
-                    checked={form.recentVisitEnabled}
-                    onChange={(value) => setForm((prev) => ({ ...prev, recentVisitEnabled: value, recentVisitHours: value ? prev.recentVisitHours || '0' : '0' }))}
-                    label={form.recentVisitEnabled ? 'Включено' : 'Выключено'}
-                    disabled={false}
-                  />
-                </div>
-                {form.recentVisitEnabled && (
-                  <div style={{ display: 'grid', gap: 6 }}>
-                    <label style={{ fontSize: 13, opacity: 0.8 }}>Количество часов в течение которых активен промокод</label>
-                    <input
-                      value={form.recentVisitHours}
-                      onChange={(e) => setForm((prev) => ({ ...prev, recentVisitHours: e.target.value.replace(/[^0-9]/g, '') }))}
-                      disabled={false}
-                      inputMode="numeric"
-                      style={{ padding: 10, borderRadius: 8 }}
-                    />
-                    <div style={{ fontSize: 12, opacity: 0.6 }}>Если указан <b>0</b>, то промокод можно использовать, если был хотя бы 1 визит.</div>
-                  </div>
-                )}
-              </div>
-
-              <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
-                <DateSelector
-                  label="Дата начала"
-                  value={form.validFrom}
-                  onChange={(value) => setForm((prev) => ({ ...prev, validFrom: value }))}
-                  disabled={false}
-                  defaultLabel="Сразу"
-                />
-                <DateSelector
-                  label="Дата завершения"
-                  value={form.validUntil}
-                  onChange={(value) => setForm((prev) => ({ ...prev, validUntil: value }))}
-                  disabled={false}
-                  defaultLabel="Бессрочно"
-                />
-              </div>
-
-              {formError && <div style={{ color: '#f87171' }}>{formError}</div>}
             </div>
-            <div style={{ padding: '16px 24px', borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-              <button className="btn" onClick={closeModal} disabled={submitting}>Закрыть</button>
-              <Button variant="primary" onClick={handleSubmit} disabled={submitting}>
-                {submitting ? 'Сохраняем…' : modalMode === 'create' ? 'Создать' : 'Сохранить'}
-              </Button>
+
+            {/* Limits */}
+            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm space-y-6">
+              <h3 className="text-lg font-bold text-gray-900">Ограничения использования</h3>
+
+              <div className="space-y-5">
+                {/* Total Limit (N clients) */}
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.isLimited}
+                      onChange={(e) => setFormData({ ...formData, isLimited: e.target.checked })}
+                      className="rounded text-purple-600 focus:ring-purple-500"
+                    />
+                    <div>
+                      <span className="text-sm text-gray-900 font-medium">Ограничить общее количество</span>
+                      <p className="text-xs text-gray-500">
+                        Сколько всего раз этот промокод может быть активирован (всеми клиентами).
+                      </p>
+                    </div>
+                  </label>
+
+                  {formData.isLimited && (
+                    <div className="relative w-32 animate-fade-in">
+                      <input
+                        type="number"
+                        value={formData.limitValue}
+                        onChange={(e) => setFormData({ ...formData, limitValue: Number(e.target.value) })}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Per Client Limit */}
+                <div className="flex items-center justify-between border-t border-gray-50 pt-4">
+                  <div>
+                    <span className="block text-sm text-gray-900 font-medium">Лимит на одного клиента</span>
+                    <p className="text-xs text-gray-500">Сколько раз один клиент может использовать код.</p>
+                  </div>
+                  <div className="relative w-32">
+                    <input
+                      type="number"
+                      min={1}
+                      value={formData.perClientLimit}
+                      onChange={(e) =>
+                        setFormData({ ...formData, perClientLimit: Math.max(1, Number(e.target.value)) })
+                      }
+                      className="w-full border border-gray-300 rounded-lg pl-3 pr-10 py-1.5 text-sm [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">
+                      раз
+                    </span>
+                  </div>
+                </div>
+
+                {/* Usage Period (Frequency) */}
+                <div className="flex items-center justify-between border-t border-gray-50 pt-4">
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.hasFrequencyLimit}
+                      onChange={(e) => setFormData({ ...formData, hasFrequencyLimit: e.target.checked })}
+                      className="rounded text-purple-600 focus:ring-purple-500"
+                    />
+                    <div>
+                      <span className="text-sm text-gray-900 font-medium">Период использования в днях</span>
+                      <p className="text-xs text-gray-500">Как часто клиент может использовать промокод.</p>
+                    </div>
+                  </label>
+
+                  {formData.hasFrequencyLimit && (
+                    <div className="relative w-32 animate-fade-in">
+                      <input
+                        type="number"
+                        min={1}
+                        value={formData.frequencyDays}
+                        onChange={(e) =>
+                          setFormData({ ...formData, frequencyDays: Math.max(1, Number(e.target.value)) })
+                        }
+                        className="w-full border border-gray-300 rounded-lg pl-3 pr-10 py-1.5 text-sm [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">
+                        дн.
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Visit Requirement */}
+                <div className="border-t border-gray-50 pt-4">
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.requiresVisit}
+                      onChange={(e) => setFormData({ ...formData, requiresVisit: e.target.checked })}
+                      className="rounded text-purple-600 focus:ring-purple-500"
+                    />
+                    <div className="flex items-center">
+                      <span className="text-sm text-gray-900 font-medium mr-2">Активен только если был визит</span>
+                      <MapPin size={14} className="text-gray-400" />
+                    </div>
+                  </label>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-      )}
-    </div>
-  );
-
-}
-
-function mapRowToForm(row: PromocodeRow): FormState {
-  const meta = row.metadata || {};
-  const awardPoints = meta.awardPoints !== false;
-  const points = awardPoints ? String(meta.pointsValue ?? row.value ?? 0) : '0';
-  const burnEnabled = !!meta?.burn?.enabled;
-  const burnDays = burnEnabled ? String(meta?.burn?.days ?? '') : '';
-  const levelEnabled = !!meta?.level?.enabled;
-  const levelId = levelEnabled ? String(meta?.level?.target ?? '') : '';
-  const usageLimit = (meta?.usageLimit as FormState['usageLimit']) || (row.usageLimitType === 'ONCE_TOTAL' ? 'once_total' : row.usageLimitType === 'ONCE_PER_CUSTOMER' ? 'once_per_customer' : 'none');
-  const rawUsageLimitValue = row.usageLimitValue ?? meta?.usageLimitValue;
-  const usageLimitValue =
-    usageLimit === 'once_total'
-      ? String(
-          Number.isFinite(Number(rawUsageLimitValue))
-            ? Math.max(1, Number(rawUsageLimitValue))
-            : 1,
-        )
-      : '1';
-  const usageLimitSelection: FormState['usageLimitSelection'] =
-    usageLimit === 'none'
-      ? 'none'
-      : usageLimit === 'once_per_customer'
-        ? 'per_customer'
-        : 'limited';
-  const levelExpireDays = levelEnabled
-    ? String(
-        Number.isFinite(Number(meta?.level?.expiresInDays))
-          ? Math.max(0, Number(meta?.level?.expiresInDays))
-          : 0,
-      )
-    : '0';
-  const usagePeriodEnabled = meta?.usagePeriod?.enabled ?? !!(row as any).cooldownDays;
-  const usagePeriodDays = usagePeriodEnabled
-    ? String(meta?.usagePeriod?.days ?? (row as any).cooldownDays ?? '')
-    : '';
-  const recentVisitEnabled =
-    meta?.requireRecentVisit?.enabled ?? !!(row as any).requireVisit;
-  const recentVisitHours = String(
-    meta?.requireRecentVisit?.hours ?? (row as any).visitLookbackHours ?? 0,
-  );
-  return {
-    code: row.code || row.name || '',
-    description: row.description || '',
-    awardPoints,
-    points,
-    burnEnabled,
-    burnDays,
-    levelEnabled,
-    levelId,
-    usageLimit,
-    usageLimitSelection,
-    usageLimitValue,
-    levelExpireDays,
-    usagePeriodEnabled,
-    usagePeriodDays,
-    recentVisitEnabled,
-    recentVisitHours,
-    validFrom: row.validFrom ? row.validFrom.slice(0, 10) : '',
-    validUntil: row.validUntil ? row.validUntil.slice(0, 10) : '',
-  };
-}
-
-function buildPayload(state: FormState) {
-  return {
-    code: state.code.trim(),
-    description: state.description.trim() || undefined,
-    points: Number(state.points || 0),
-    awardPoints: state.awardPoints,
-    burnEnabled: state.burnEnabled,
-    burnDays: state.burnEnabled ? Number(state.burnDays || 0) : undefined,
-    levelEnabled: state.levelEnabled,
-    levelId: state.levelEnabled ? state.levelId : undefined,
-    levelExpireDays:
-      state.levelEnabled && Number(state.levelExpireDays || 0) > 0
-        ? Number(state.levelExpireDays || 0)
-        : undefined,
-    usageLimit: state.usageLimit,
-    usageLimitValue:
-      state.usageLimit === 'once_total'
-        ? Math.max(1, Number(state.usageLimitValue || 1))
-        : undefined,
-    usagePeriodEnabled: state.usagePeriodEnabled,
-    usagePeriodDays: state.usagePeriodEnabled ? Number(state.usagePeriodDays || 0) : undefined,
-    recentVisitEnabled: state.recentVisitEnabled,
-    recentVisitHours: state.recentVisitEnabled ? Number(state.recentVisitHours || 0) : undefined,
-    validFrom: state.validFrom || undefined,
-    validUntil: state.validUntil || undefined,
-  };
-}
-
-type DateSelectorProps = {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  disabled?: boolean;
-  defaultLabel: string;
-};
-
-const DateSelector: React.FC<DateSelectorProps> = ({ label, value, onChange, disabled, defaultLabel }) => {
-  const inputRef = React.useRef<HTMLInputElement>(null);
-  const displayValue = value ? new Date(value).toLocaleDateString('ru-RU') : defaultLabel;
-  return (
-    <div style={{ display: 'grid', gap: 6 }}>
-      <label style={{ fontSize: 13, opacity: 0.8 }}>{label}</label>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <button
-          className="btn"
-          onClick={() => {
-            if (disabled) return;
-            const input = inputRef.current;
-            if (!input) return;
-            if (typeof (input as any).showPicker === 'function') (input as any).showPicker();
-            else input.click();
-          }}
-          disabled={disabled}
-          style={{ minWidth: 160 }}
-        >
-          {displayValue}
-        </button>
-        <button className="btn btn-ghost" onClick={() => !disabled && onChange('')} disabled={disabled}>✕</button>
       </div>
-      <input
-        ref={inputRef}
-        type="date"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        style={{ display: 'none' }}
-        disabled={disabled}
-      />
+    );
+  }
+
+  // --- List View ---
+  return (
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
+        <div>
+          <div className="flex items-center space-x-2">
+            <h2 className="text-2xl font-bold text-gray-900">Промокоды</h2>
+          </div>
+          <p className="text-gray-500 mt-1">Управление кодами для начисления бонусов и смены уровней.</p>
+        </div>
+
+        <button
+          onClick={() => {
+            setEditingId(null);
+            setFormData({
+              code: "",
+              description: "",
+              hasPoints: true,
+              pointsValue: 100,
+              hasLevel: false,
+              levelValue: defaultLevelId,
+              isLimited: false,
+              limitValue: 100,
+              perClientLimit: 1,
+              hasFrequencyLimit: false,
+              frequencyDays: 1,
+              requiresVisit: false,
+              isIndefinite: false,
+              startDate: new Date().toISOString().split("T")[0],
+              endDate: new Date(Date.now() + 86400000 * 30).toISOString().split("T")[0],
+              isPointsBurning: false,
+              pointsBurnDays: 30,
+            });
+            setView("create");
+          }}
+          className="flex items-center space-x-2 bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors shadow-sm"
+        >
+          <Plus size={18} />
+          <span>Создать промокод</span>
+        </button>
+      </div>
+
+      {/* Tabs */}
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex space-x-8">
+          <button
+            onClick={() => setActiveTab("active")}
+            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === "active" ? "border-purple-500 text-purple-600" : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"}`}
+          >
+            Активные
+            <span
+              className={`ml-2 py-0.5 px-2 rounded-full text-xs ${activeTab === "active" ? "bg-purple-100 text-purple-600" : "bg-gray-100 text-gray-500"}`}
+            >
+              {promocodes.filter((p) => p.status === "active").length}
+            </span>
+          </button>
+          <button
+            onClick={() => setActiveTab("archived")}
+            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === "archived" ? "border-purple-500 text-purple-600" : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"}`}
+          >
+            Архивные
+            <span
+              className={`ml-2 py-0.5 px-2 rounded-full text-xs ${activeTab === "archived" ? "bg-purple-100 text-purple-600" : "bg-gray-100 text-gray-500"}`}
+            >
+              {promocodes.filter((p) => p.status === "archived").length}
+            </span>
+          </button>
+        </nav>
+      </div>
+
+      {/* Table */}
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="text-xs text-gray-500 uppercase bg-gray-50 border-b border-gray-100">
+              <tr>
+                <th className="px-6 py-4 font-semibold">Промокод</th>
+                <th className="px-6 py-4 font-semibold">Описание</th>
+                <th className="px-6 py-4 font-semibold">Бонусы</th>
+                <th className="px-6 py-4 font-semibold">Уровень</th>
+                <th className="px-6 py-4 font-semibold">Срок действия</th>
+                <th className="px-6 py-4 font-semibold text-right">Использований</th>
+                <th className="px-6 py-4 font-semibold text-right w-28">Действия</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {filteredPromocodes.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-10 text-center text-gray-500">
+                    <Ticket size={48} className="mx-auto text-gray-300 mb-4" />
+                    <p>{activeTab === "active" ? "Нет активных промокодов" : "Архив пуст"}</p>
+                  </td>
+                </tr>
+              ) : (
+                filteredPromocodes.map((item) => (
+                  <tr key={item.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-mono font-bold text-gray-900 bg-gray-100 px-2 py-1 rounded">
+                          {item.code}
+                        </span>
+                        <button
+                          title="Копировать"
+                          className="text-gray-400 hover:text-gray-600"
+                          onClick={() => void safeCopy(item.code)}
+                        >
+                          <Copy size={14} />
+                        </button>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-gray-600">
+                      <p className="line-clamp-1 max-w-xs" title={item.description}>
+                        {item.description}
+                      </p>
+                    </td>
+                    <td className="px-6 py-4">
+                      {item.points ? (
+                        <div className="flex items-center space-x-1 text-green-600 font-medium">
+                          <Coins size={14} />
+                          <span>+{item.points}</span>
+                          {item.pointsBurnDays && (
+                            <span title={`Сгорают через ${item.pointsBurnDays} дней`}>
+                              <Flame size={12} className="text-orange-500 ml-1" />
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4">
+                      {item.assignsLevel ? (
+                        <div
+                          className={`flex items-center space-x-1 px-2 py-0.5 rounded text-xs font-bold w-fit
+                                    ${item.assignsLevel === "Gold" ? "bg-yellow-100 text-yellow-700" : item.assignsLevel === "Silver" ? "bg-gray-100 text-gray-700" : "bg-slate-100 text-slate-700"}`}
+                        >
+                          <Trophy size={12} />
+                          <span>{item.assignsLevel}</span>
+                        </div>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-gray-600 text-xs">
+                      <div className="flex items-center space-x-1">
+                        <Calendar size={14} className="text-gray-400" />
+                        <span>
+                          {item.startDate} - {item.endDate}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex flex-col items-end">
+                        <span className="font-medium text-gray-900">{item.usedCount}</span>
+                        {item.usageLimit !== "unlimited" && <span className="text-xs text-gray-400">из {item.usageLimit}</span>}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex items-center justify-end space-x-2">
+                        <button
+                          onClick={() => handleEdit(item)}
+                          title="Редактировать"
+                          className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        {activeTab === "active" ? (
+                          <button
+                            onClick={() => void handleArchive(item.id)}
+                            title="В архив"
+                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          >
+                            <Archive size={16} />
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => void handleRestore(item.id)}
+                            title="Восстановить"
+                            className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                          >
+                            <RefreshCw size={16} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 };
+
+export default PromocodesPage;

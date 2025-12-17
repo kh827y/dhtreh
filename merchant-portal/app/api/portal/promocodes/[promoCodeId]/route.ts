@@ -12,6 +12,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ prom
     description: body?.description ? String(body.description) : undefined,
     code: body?.code ? String(body.code) : undefined,
     points: body?.points !== undefined ? Number(body.points) : undefined,
+    perCustomerLimit:
+      body?.perCustomerLimit !== undefined ? Number(body.perCustomerLimit) : undefined,
     awardPoints: body?.awardPoints !== undefined ? !!body.awardPoints : undefined,
     burnEnabled: body?.burnEnabled !== undefined ? !!body.burnEnabled : undefined,
     burnDays: body?.burnDays !== undefined ? Number(body.burnDays) : undefined,

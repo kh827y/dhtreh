@@ -20,6 +20,7 @@ export type PortalPromoCodePayload = {
   levelExpireDays?: number;
   usageLimit?: 'none' | 'once_total' | 'once_per_customer';
   usageLimitValue?: number;
+  perCustomerLimit?: number;
   usagePeriodEnabled?: boolean;
   usagePeriodDays?: number;
   recentVisitEnabled?: boolean;
@@ -101,6 +102,10 @@ export class PromoCodesService {
       usageLimit === 'once_total'
         ? Math.max(1, Number(payload.usageLimitValue ?? 1))
         : undefined;
+    const perCustomerLimit =
+      payload.perCustomerLimit != null
+        ? Math.max(1, Math.floor(Number(payload.perCustomerLimit)))
+        : undefined;
     return {
       awardPoints: payload.awardPoints !== false,
       burn: {
@@ -119,6 +124,7 @@ export class PromoCodesService {
       },
       usageLimit,
       usageLimitValue,
+      perCustomerLimit,
       usagePeriod: {
         enabled: payload.usagePeriodEnabled ?? false,
         days: payload.usagePeriodEnabled
@@ -179,6 +185,7 @@ export class PromoCodesService {
       isActive: row.status === PromoCodeStatus.ACTIVE,
       validFrom: row.activeFrom ? row.activeFrom.toISOString() : null,
       validUntil: row.activeUntil ? row.activeUntil.toISOString() : null,
+      createdAt: row.createdAt ? row.createdAt.toISOString() : null,
       totalUsed: row.metrics?.totalIssued ?? 0,
       usageLimitType: row.usageLimitType,
       usageLimitValue: row.usageLimitValue ?? null,
@@ -186,6 +193,8 @@ export class PromoCodesService {
       cooldownDays: row.cooldownDays ?? null,
       requireVisit: row.requireVisit ?? false,
       visitLookbackHours: row.visitLookbackHours ?? null,
+      assignTierId: row.assignTierId ?? null,
+      pointsExpireInDays: row.pointsExpireInDays ?? null,
       metadata,
     };
   }
@@ -248,6 +257,14 @@ export class PromoCodesService {
       ? Math.max(1, Number(payload.burnDays ?? 0))
       : null;
     const usageLimit = payload.usageLimit ?? 'none';
+    const perCustomerLimitRaw =
+      payload.perCustomerLimit != null
+        ? Math.floor(Number(payload.perCustomerLimit))
+        : null;
+    const perCustomerLimitRequested =
+      perCustomerLimitRaw != null && Number.isFinite(perCustomerLimitRaw)
+        ? Math.max(1, perCustomerLimitRaw)
+        : null;
     const usageLimitValueRaw =
       usageLimit === 'once_total'
         ? Math.max(1, Math.floor(Number(payload.usageLimitValue ?? 1)))
@@ -260,14 +277,19 @@ export class PromoCodesService {
       case 'once_total':
         usageLimitType = PromoCodeUsageLimitType.ONCE_TOTAL;
         usageLimitValue = usageLimitValueRaw ?? 1;
-        perCustomerLimit = 1;
+        perCustomerLimit = perCustomerLimitRequested ?? 1;
         break;
       case 'once_per_customer':
         usageLimitType = PromoCodeUsageLimitType.ONCE_PER_CUSTOMER;
         perCustomerLimit = 1;
         break;
       default:
-        usageLimitType = PromoCodeUsageLimitType.UNLIMITED;
+        if (perCustomerLimitRequested != null) {
+          usageLimitType = PromoCodeUsageLimitType.LIMITED_PER_CUSTOMER;
+          perCustomerLimit = perCustomerLimitRequested;
+        } else {
+          usageLimitType = PromoCodeUsageLimitType.UNLIMITED;
+        }
     }
 
     const cooldownDays = payload.usagePeriodEnabled
@@ -622,8 +644,17 @@ export class PromoCodesService {
       const limit = promo.usageLimitValue ?? 1;
       if (total >= limit)
         throw new BadRequestException('Лимит промокода исчерпан.');
-      if (customerUsageCount >= 1)
-        throw new BadRequestException('Вы уже использовали этот промокод.');
+      const perCustomer = promo.perCustomerLimit ?? 1;
+      const normalizedPerCustomer =
+        Number.isFinite(Number(perCustomer)) && Number(perCustomer) > 0
+          ? Number(perCustomer)
+          : 1;
+      if (customerUsageCount >= normalizedPerCustomer) {
+        if (normalizedPerCustomer <= 1) {
+          throw new BadRequestException('Вы уже использовали этот промокод.');
+        }
+        throw new BadRequestException('Достигнут лимит для клиента');
+      }
     } else if (
       promo.usageLimitType === PromoCodeUsageLimitType.ONCE_PER_CUSTOMER
     ) {
