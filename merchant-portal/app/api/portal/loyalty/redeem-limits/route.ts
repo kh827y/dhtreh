@@ -21,7 +21,13 @@ export async function GET(req: NextRequest) {
   const ttlDays = Number(data?.pointsTtlDays ?? 0) || 0;
   const delayDays = Number(data?.earnDelayDays ?? 0) || 0;
   const rulesJson = data?.rulesJson && typeof data.rulesJson === 'object' ? data.rulesJson : {};
-  const forbidSameReceipt = Boolean(rulesJson?.disallowEarnRedeemSameReceipt);
+  let allowSameReceipt = false;
+  if (Object.prototype.hasOwnProperty.call(rulesJson, 'allowEarnRedeemSameReceipt')) {
+    allowSameReceipt = Boolean(rulesJson.allowEarnRedeemSameReceipt);
+  } else if (Object.prototype.hasOwnProperty.call(rulesJson, 'disallowEarnRedeemSameReceipt')) {
+    allowSameReceipt = !Boolean(rulesJson.disallowEarnRedeemSameReceipt);
+  }
+  const forbidSameReceipt = !allowSameReceipt;
 
   return Response.json({
     ttlEnabled: ttlDays > 0,
@@ -29,6 +35,7 @@ export async function GET(req: NextRequest) {
     delayEnabled: delayDays > 0,
     delayDays,
     forbidSameReceipt,
+    allowSameReceipt,
   });
 }
 
@@ -48,7 +55,13 @@ export async function PUT(req: NextRequest) {
   const delayDaysInput = Number(body.delayDays);
   const delayDays = delayEnabled ? Math.max(0, Math.floor(Number.isFinite(delayDaysInput) ? delayDaysInput : 0)) : 0;
 
-  const forbidSameReceipt = Boolean(body.forbidSameReceipt);
+  let allowSameReceipt = false;
+  if (Object.prototype.hasOwnProperty.call(body, 'allowSameReceipt')) {
+    allowSameReceipt = Boolean((body as any).allowSameReceipt);
+  } else if (Object.prototype.hasOwnProperty.call(body, 'forbidSameReceipt')) {
+    allowSameReceipt = !Boolean((body as any).forbidSameReceipt);
+  }
+  const forbidSameReceipt = !allowSameReceipt;
 
   const { res, data, raw } = await fetchSettings(req);
   if (!res.ok) {
@@ -56,11 +69,8 @@ export async function PUT(req: NextRequest) {
   }
 
   const rulesJson = data?.rulesJson && typeof data.rulesJson === 'object' ? { ...data.rulesJson } : {};
-  if (forbidSameReceipt) {
-    rulesJson.disallowEarnRedeemSameReceipt = true;
-  } else if (rulesJson.disallowEarnRedeemSameReceipt) {
-    delete rulesJson.disallowEarnRedeemSameReceipt;
-  }
+  delete (rulesJson as any).disallowEarnRedeemSameReceipt;
+  (rulesJson as any).allowEarnRedeemSameReceipt = allowSameReceipt;
 
   const payload: Record<string, any> = {
     earnBps: data?.earnBps ?? 0,

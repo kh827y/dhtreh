@@ -54,6 +54,8 @@ export interface TierMemberDto {
   phone: string | null;
   assignedAt: string;
   source: string | null;
+  totalSpent: number | null;
+  firstSeenAt: string | null;
 }
 
 export interface TierMembersResponse {
@@ -472,18 +474,29 @@ export class LoyaltyProgramService {
     const customers = customerIds.length
       ? await this.prisma.customer.findMany({
           where: { merchantId, id: { in: customerIds } },
-          select: { id: true, name: true, phone: true },
+          select: { id: true, name: true, phone: true, createdAt: true },
+        })
+      : [];
+    const stats = customerIds.length
+      ? await this.prisma.customerStats.findMany({
+          where: { merchantId, customerId: { in: customerIds } },
+          select: { customerId: true, totalSpent: true, firstSeenAt: true },
         })
       : [];
     const custMap = new Map(customers.map((c) => [c.id, c]));
+    const statsMap = new Map(stats.map((s) => [s.customerId, s]));
     const items: TierMemberDto[] = assignments.slice(0, limit).map((row) => {
       const profile = custMap.get(row.customerId);
+      const stat = statsMap.get(row.customerId);
+      const seenAt = stat?.firstSeenAt ?? profile?.createdAt ?? null;
       return {
         customerId: row.customerId,
         name: profile?.name ?? null,
         phone: profile?.phone ?? null,
         assignedAt: row.assignedAt.toISOString(),
         source: row.source ?? null,
+        totalSpent: stat?.totalSpent ?? null,
+        firstSeenAt: seenAt ? new Date(seenAt).toISOString() : null,
       };
     });
     const total = await this.prisma.loyaltyTierAssignment.count({
@@ -586,7 +599,9 @@ export class LoyaltyProgramService {
             payload.redeemRatePercent,
             tier.redeemRateBps ?? 0,
           )
-        : tier.redeemRateBps;
+        : payload.redeemRatePercent === null
+          ? null
+          : tier.redeemRateBps;
     const minPaymentAmount =
       payload.minPaymentAmount != null
         ? this.sanitizeAmount(payload.minPaymentAmount, 0)

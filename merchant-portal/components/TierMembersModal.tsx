@@ -2,7 +2,8 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { Button, Icons, Skeleton } from "@loyalty/ui";
+import { Loader2, Search, X } from "lucide-react";
+import { createPortal } from "react-dom";
 
 type TierSummary = {
   id: string;
@@ -16,6 +17,8 @@ type TierMember = {
   phone: string | null;
   assignedAt: string;
   source: string | null;
+  totalSpent: number | null;
+  firstSeenAt: string | null;
 };
 
 type TierMembersResponse = {
@@ -24,6 +27,24 @@ type TierMembersResponse = {
   items: TierMember[];
   nextCursor: string | null;
 };
+
+function humanError(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === "string" && error.trim()) return error.trim();
+  return fallback;
+}
+
+function formatDate(value: string | null) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString("ru-RU");
+}
+
+function formatMoney(value: number | null) {
+  if (value == null) return "—";
+  return `${value.toLocaleString("ru-RU")} ₽`;
+}
 
 export function TierMembersModal({
   tier,
@@ -34,7 +55,19 @@ export function TierMembersModal({
   open: boolean;
   onClose: () => void;
 }) {
-  const router = useRouter();
+  let router: ReturnType<typeof useRouter> | null = null;
+  try {
+    router = useRouter();
+  } catch {
+    router = null;
+  }
+  const safeRouter =
+    router ??
+    ({
+      push: () => {},
+      replace: () => {},
+      refresh: () => {},
+    } as const);
   const [members, setMembers] = React.useState<TierMember[]>([]);
   const [search, setSearch] = React.useState("");
   const [loading, setLoading] = React.useState(false);
@@ -73,7 +106,11 @@ export function TierMembersModal({
           `/api/portal/loyalty/tiers/${encodeURIComponent(tier.id)}/customers?${qs.toString()}`,
           { cache: "no-store" },
         );
-        if (!res.ok) throw new Error((await res.text()) || res.statusText);
+        if (!res.ok)
+          throw new Error(
+            (await res.text().catch(() => "")) ||
+              "Не удалось загрузить клиентов уровня",
+          );
         const payload = mapResponse(await res.json().catch(() => null));
         const normalized = payload.items.map((item) => ({
           customerId: item?.customerId ?? (item as any)?.merchantCustomerId ?? "",
@@ -81,19 +118,20 @@ export function TierMembersModal({
           phone: item?.phone ?? null,
           assignedAt: item?.assignedAt ?? "",
           source: item?.source ?? null,
+          totalSpent:
+            item?.totalSpent != null ? Number(item.totalSpent) : null,
+          firstSeenAt: item?.firstSeenAt ?? null,
         }));
         setNextCursor(payload.nextCursor ?? null);
         setTotal(payload.total ?? normalized.length);
-        setMembers((prev) =>
-          append ? [...prev, ...normalized] : normalized,
-        );
+        setMembers((prev) => (append ? [...prev, ...normalized] : normalized));
       } catch (e: any) {
         if (!append) {
           setMembers([]);
           setNextCursor(null);
           setTotal(0);
         }
-        setError(String(e?.message || e || "Не удалось загрузить клиентов"));
+        setError(humanError(e, "Не удалось загрузить клиентов"));
       } finally {
         setLoading(false);
       }
@@ -128,182 +166,131 @@ export function TierMembersModal({
   const handleMemberClick = (member: TierMember) => {
     if (!member.customerId) return;
     onClose();
-    router.push(`/customers/${member.customerId}`);
+    safeRouter.push(`/customers/${member.customerId}`);
   };
 
-  const showModal = open && tier;
-  const { Search, X } = Icons;
+  if (!open || !tier) return null;
 
-  if (!showModal) return null;
-
-  const formatDateTime = (value: string) => {
-    if (!value) return "—";
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return "—";
-    return new Intl.DateTimeFormat("ru-RU", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(date);
-  };
-
-  return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(15,23,42,0.74)",
-        backdropFilter: "blur(8px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 20,
-        zIndex: 120,
-      }}
-    >
-      <div
-        style={{
-          width: "min(720px, 96vw)",
-          maxHeight: "94vh",
-          overflow: "hidden",
-          background: "rgba(12,16,26,0.96)",
-          borderRadius: 22,
-          border: "1px solid rgba(148,163,184,0.16)",
-          boxShadow: "0 28px 80px rgba(2,6,23,0.5)",
-          display: "grid",
-          gridTemplateRows: "auto 1fr",
-        }}
-      >
-        <div
-          style={{
-            padding: "18px 24px",
-            borderBottom: "1px solid rgba(148,163,184,0.16)",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: 12,
-          }}
-        >
+  return createPortal(
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-[4px] z-[100] flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl flex flex-col max-h-[90vh]">
+        <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-xl sticky top-0 z-10">
           <div>
-            <div style={{ fontSize: 18, fontWeight: 700 }}>{tier?.name}</div>
-            <div style={{ fontSize: 13, opacity: 0.65 }}>
-              {total || tier?.customersCount || 0} клиентов
-            </div>
+            <h3 className="text-xl font-bold text-gray-900">
+              Участники уровня <span className="text-purple-600">{tier.name}</span>
+            </h3>
+            <p className="text-sm text-gray-500 mt-1">
+              Всего участников: {total || tier.customersCount}
+            </p>
           </div>
-          <button className="btn btn-ghost" onClick={onClose}>
-            <X size={18} />
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 p-1"
+            aria-label="Закрыть модалку состава"
+          >
+            <X size={24} />
           </button>
         </div>
 
-        <div style={{ padding: 24, display: "grid", gap: 16 }}>
-          {error && (
-            <div
-              style={{
-                borderRadius: 10,
-                border: "1px solid rgba(248,113,113,.35)",
-                padding: "8px 12px",
-                color: "#f87171",
-                fontSize: 13,
-              }}
-            >
+        <div className="p-4 border-b border-gray-100 bg-white space-y-3">
+          {error ? (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">
               {error}
             </div>
-          )}
-
-          <div style={{ position: "relative" }}>
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Поиск по телефону или имени"
-              style={{
-                width: "100%",
-                padding: "10px 36px 10px 12px",
-                borderRadius: 10,
-                border: "1px solid rgba(148,163,184,0.2)",
-                background: "rgba(15,23,42,0.5)",
-              }}
-            />
+          ) : null}
+          <div className="relative max-w-md">
             <Search
-              size={16}
-              style={{
-                position: "absolute",
-                right: 12,
-                top: "50%",
-                transform: "translateY(-50%)",
-                opacity: 0.6,
-              }}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+              size={18}
+            />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Поиск по имени или телефону..."
+              className="w-full border border-gray-200 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
             />
           </div>
+        </div>
 
-          {loading && !members.length ? (
-            <Skeleton height={220} />
-          ) : filteredMembers.length ? (
-            <div
-              style={{
-                display: "grid",
-                gap: 10,
-                maxHeight: "52vh",
-                overflowY: "auto",
-                paddingRight: 4,
-              }}
-            >
-              {filteredMembers.map((member) => {
-                const clickable = Boolean(member.customerId);
-                return (
-                  <button
+        <div className="flex-1 overflow-y-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="text-xs text-gray-500 uppercase bg-gray-50 sticky top-0 z-10 shadow-sm">
+              <tr>
+                <th className="px-6 py-3 font-semibold bg-gray-50">Имя</th>
+                <th className="px-6 py-3 font-semibold bg-gray-50">Телефон</th>
+                <th className="px-6 py-3 font-semibold bg-gray-50 text-right">
+                  Потрачено
+                </th>
+                <th className="px-6 py-3 font-semibold bg-gray-50 text-right">
+                  Дата рег.
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {loading && !members.length ? (
+                <tr>
+                  <td colSpan={4} className="px-6 py-10 text-center text-gray-500">
+                    <div className="flex items-center justify-center space-x-2">
+                      <Loader2 className="animate-spin" size={18} />
+                      <span>Загружаем участников…</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : filteredMembers.length > 0 ? (
+                filteredMembers.map((member) => (
+                  <tr
                     key={`${member.customerId}:${member.assignedAt}`}
-                    onClick={() => clickable && handleMemberClick(member)}
-                    className="btn btn-ghost"
-                    disabled={!clickable}
-                    style={{
-                      justifyContent: "space-between",
-                      textAlign: "left",
-                      padding: "12px 16px",
-                      borderRadius: 14,
-                      border: "1px solid rgba(148,163,184,0.18)",
-                      opacity: clickable ? 1 : 0.65,
-                      cursor: clickable ? "pointer" : "not-allowed",
-                    }}
+                    className="hover:bg-gray-50 transition-colors cursor-pointer"
+                    onClick={() => handleMemberClick(member)}
                   >
-                    <div style={{ display: "grid", gap: 4 }}>
-                      <div style={{ fontWeight: 600 }}>
-                        {member.name || member.phone || member.customerId}
-                      </div>
-                      <div style={{ fontSize: 12, opacity: 0.7 }}>
-                        {member.phone || "Телефон не указан"}
-                      </div>
-                    </div>
-                    <div style={{ fontSize: 12, opacity: 0.6, textAlign: "right" }}>
-                      Назначен: {formatDateTime(member.assignedAt)}
-                      {member.source ? (
-                        <div style={{ fontSize: 11, opacity: 0.7 }}>
-                          Источник: {member.source}
-                        </div>
-                      ) : null}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <div style={{ padding: 12, opacity: 0.7 }}>Клиенты не найдены</div>
-          )}
+                    <td className="px-6 py-3 font-medium text-gray-900">
+                      {member.name || member.phone || member.customerId}
+                    </td>
+                    <td className="px-6 py-3 text-gray-600 font-mono text-xs">
+                      {member.phone || "—"}
+                    </td>
+                    <td className="px-6 py-3 text-right font-medium">
+                      {formatMoney(member.totalSpent)}
+                    </td>
+                    <td className="px-6 py-3 text-right text-gray-500">
+                      {formatDate(member.firstSeenAt)}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={4} className="px-6 py-10 text-center text-gray-500">
+                    Участники не найдены
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
 
+        <div className="p-4 bg-gray-50 rounded-b-xl flex justify-end space-x-3 border-t border-gray-100">
           {nextCursor ? (
-            <div>
-              <Button
-                variant="secondary"
-                onClick={() => loadMembers(nextCursor, true)}
-                disabled={loading}
-              >
-                {loading ? "Загружаем…" : "Загрузить ещё"}
-              </Button>
-            </div>
+            <button
+              type="button"
+              onClick={() => loadMembers(nextCursor, true)}
+              disabled={loading}
+              className="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-60 flex items-center space-x-2"
+            >
+              {loading ? <Loader2 size={16} className="animate-spin" /> : null}
+              <span>{loading ? "Загружаем…" : "Загрузить ещё"}</span>
+            </button>
           ) : null}
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg text-sm"
+          >
+            Закрыть
+          </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

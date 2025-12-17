@@ -1,207 +1,302 @@
 "use client";
 
 import React from "react";
-import { Button, Card, CardBody, Skeleton } from "@loyalty/ui";
-import Toggle from "../../../../components/Toggle";
-
-function normalizeInt(value: string, fallback = 0) {
-  const trimmed = value.trim();
-  if (!trimmed) return fallback;
-  const parsed = Number(trimmed.replace(',', '.'));
-  if (!Number.isFinite(parsed) || parsed < 0) return fallback;
-  return Math.floor(parsed);
-}
+import Link from "next/link";
+import { ArrowLeft, Ban, CheckCircle2, Clock, Flame, Info, Save, ShieldCheck, Coins } from "lucide-react";
 
 export default function RedeemLimitsPage() {
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
-  const [error, setError] = React.useState("");
-  const [banner, setBanner] = React.useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const [success, setSuccess] = React.useState<string | null>(null);
 
-  const [ttlEnabled, setTtlEnabled] = React.useState(false);
-  const [ttlDays, setTtlDays] = React.useState("365");
-  const [allowSameReceipt, setAllowSameReceipt] = React.useState(false);
-  const [delayEnabled, setDelayEnabled] = React.useState(false);
-  const [delayDays, setDelayDays] = React.useState("7");
+  const [limitations, setLimitations] = React.useState({
+    isExpirationEnabled: false,
+    expirationDays: 180,
+    allowAccrualOnRedemption: false,
+    activationDelay: 0,
+  });
 
-  const load = React.useCallback(async () => {
+  const load = React.useCallback(async (options?: { keepSuccess?: boolean }) => {
     setLoading(true);
-    setError("");
-    setBanner(null);
+    setError(null);
+    if (!options?.keepSuccess) setSuccess(null);
     try {
-      const res = await fetch('/api/portal/loyalty/redeem-limits');
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      setTtlEnabled(Boolean(data?.ttlEnabled));
-      setTtlDays(String(Number(data?.ttlDays ?? 0) || 0));
-      // API возвращает forbidSameReceipt; в UI показываем allowSameReceipt
-      setAllowSameReceipt(!Boolean(data?.forbidSameReceipt));
-      setDelayEnabled(Boolean(data?.delayEnabled));
-      setDelayDays(String(Number(data?.delayDays ?? 0) || 0));
+      const res = await fetch("/api/portal/loyalty/redeem-limits", { cache: "no-store" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.message || "Не удалось загрузить настройки");
+
+      setLimitations({
+        isExpirationEnabled: Boolean(json?.ttlEnabled),
+        expirationDays: Number(json?.ttlDays ?? 180) || 180,
+        allowAccrualOnRedemption: Boolean(json?.allowSameReceipt ?? !json?.forbidSameReceipt),
+        activationDelay: Math.max(0, Math.floor(Number(json?.delayDays ?? 0) || 0)),
+      });
     } catch (e: any) {
-      setError(String(e?.message || e || 'Не удалось загрузить настройки'));
+      setError(String(e?.message || e || "Не удалось загрузить настройки"));
     } finally {
       setLoading(false);
     }
   }, []);
 
   React.useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  const handleSave = React.useCallback(async () => {
     if (saving) return;
-    setError("");
-    setBanner(null);
+    setError(null);
+    setSuccess(null);
 
-    const ttlValue = normalizeInt(ttlDays, 0);
-    if (ttlEnabled && ttlValue <= 0) {
-      setError('Срок жизни баллов должен быть положительным');
-      return;
-    }
+    const expirationDays = Math.max(1, Math.floor(Number(limitations.expirationDays) || 0));
+    const activationDelay = Math.max(0, Math.floor(Number(limitations.activationDelay) || 0));
 
-    const delayValue = normalizeInt(delayDays, 0);
-    if (delayEnabled && delayValue <= 0) {
-      setError('Задержка должна быть положительным числом дней');
+    if (limitations.isExpirationEnabled && expirationDays <= 0) {
+      setError("Укажите количество дней для сгорания");
       return;
     }
 
     setSaving(true);
     try {
-      const res = await fetch('/api/portal/loyalty/redeem-limits', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/portal/loyalty/redeem-limits", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ttlEnabled,
-          ttlDays: ttlValue,
-          // API ожидает forbidSameReceipt — инвертируем локальную настройку allowSameReceipt
-          forbidSameReceipt: !allowSameReceipt,
-          delayEnabled,
-          delayDays: delayValue,
+          ttlEnabled: limitations.isExpirationEnabled,
+          ttlDays: limitations.isExpirationEnabled ? expirationDays : 0,
+          allowSameReceipt: limitations.allowAccrualOnRedemption,
+          delayEnabled: activationDelay > 0,
+          delayDays: activationDelay,
         }),
       });
-      if (!res.ok) throw new Error(await res.text());
-      setBanner({ type: 'success', text: 'Настройки сохранены' });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.message || "Не удалось сохранить настройки");
+      setSuccess("Настройки сохранены");
+      await load({ keepSuccess: true });
     } catch (e: any) {
-      setError(String(e?.message || e || 'Не удалось сохранить настройки'));
+      setError(String(e?.message || e || "Не удалось сохранить настройки"));
     } finally {
       setSaving(false);
     }
-  }
+  }, [limitations, load, saving]);
 
   return (
-    <div style={{ display: "grid", gap: 24 }}>
-      <nav style={{ fontSize: 13, opacity: 0.75 }}>
-        <a href="/loyalty/mechanics" style={{ color: "inherit", textDecoration: "none" }}>Механики</a>
-        <span style={{ margin: "0 8px" }}>→</span>
-        <span style={{ color: "var(--brand-primary)" }}>Ограничения в баллах за покупки</span>
-      </nav>
-
-      <div>
-        <div style={{ fontSize: 26, fontWeight: 700 }}>Ограничения в баллах за покупки</div>
-        <div style={{ fontSize: 13, opacity: 0.7 }}>Настройте срок жизни баллов и запреты на одновременные операции</div>
-      </div>
-
-      <Card>
-        <CardBody>
-          <div style={{ fontSize: 14, lineHeight: 1.6, opacity: 0.75 }}>
-            Здесь задаются системные ограничения для начисленных баллов: срок жизни, правила единовременного использования и задержки на их активацию. Клиент увидит эти условия в приложении и кассир — в рабочем месте.
+    <div className="p-8 max-w-[1400px] mx-auto animate-fade-in">
+      <div className="space-y-6">
+        {error ? (
+          <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm flex items-start space-x-3">
+            <div className="font-semibold">Ошибка</div>
+            <div className="flex-1 whitespace-pre-wrap break-words">{error}</div>
+            <button type="button" className="text-red-700 underline underline-offset-2" onClick={() => void load()}>
+              Повторить
+            </button>
           </div>
-        </CardBody>
-      </Card>
+        ) : null}
 
-      {banner && (
-        <div
-          style={{
-            borderRadius: 12,
-            padding: '12px 16px',
-            border: `1px solid ${banner.type === 'success' ? 'rgba(34,197,94,.35)' : 'rgba(248,113,113,.35)'}`,
-            background: banner.type === 'success' ? 'rgba(34,197,94,.15)' : 'rgba(248,113,113,.16)',
-            color: banner.type === 'success' ? '#4ade80' : '#f87171',
-          }}
-        >
-          {banner.text}
-        </div>
-      )}
-      {error && (
-        <div style={{ borderRadius: 12, border: '1px solid rgba(248,113,113,.35)', padding: '12px 16px', color: '#f87171' }}>
-          {error}
-        </div>
-      )}
+        {success ? (
+          <div className="bg-green-50 border border-green-200 text-green-800 rounded-xl p-4 text-sm flex items-start space-x-3">
+            <div className="font-semibold">Готово</div>
+            <div className="flex-1 whitespace-pre-wrap break-words">{success}</div>
+          </div>
+        ) : null}
 
-      <Card>
-        <CardBody>
-          {loading ? (
-            <Skeleton height={220} />
-          ) : (
-            <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 20 }}>
-              <section style={{ display: 'grid', gap: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-                  <Toggle
-                    checked={ttlEnabled}
-                    onChange={setTtlEnabled}
-                    label={ttlEnabled ? 'Сгорать через фиксированный срок' : 'Баллы бессрочные'}
-                    title="Срок жизни начисленных баллов"
-                    disabled={saving}
-                  />
-                  <span style={{ fontSize: 12, opacity: 0.7 }}>Срок действия начисленных баллов. После истечения — баллы сгорают.</span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <Link
+              href="/loyalty/mechanics"
+              className="p-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors"
+              aria-label="Назад к механикам"
+            >
+              <ArrowLeft size={20} />
+            </Link>
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">Настройки бонусов</h2>
+              <p className="text-sm text-gray-500">Правила сгорания, активации и списания баллов.</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleSave}
+            className="flex items-center space-x-2 bg-purple-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-purple-700 transition-colors shadow-sm disabled:opacity-60"
+            disabled={saving || loading}
+          >
+            <Save size={18} />
+            <span>{saving ? "Сохраняем…" : "Сохранить"}</span>
+          </button>
+        </div>
+
+        <div className={loading ? "opacity-60 pointer-events-none" : ""}>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {/* Expiration Settings */}
+            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex flex-col h-full">
+              <div className="flex items-center space-x-3 mb-6">
+                <div
+                  className={`p-2.5 rounded-lg ${limitations.isExpirationEnabled ? "bg-orange-100 text-orange-600" : "bg-gray-100 text-gray-500"}`}
+                >
+                  <Flame size={24} />
                 </div>
-                {ttlEnabled && (
-                  <label style={{ display: 'grid', gap: 6, maxWidth: 260 }}>
-                    <span>Через сколько дней баллы за покупки сгорят</span>
-                    <input
-                      type="number"
-                      min="1"
-                      value={ttlDays}
-                      onChange={(event) => setTtlDays(event.target.value)}
-                      disabled={saving}
-                      style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(148,163,184,0.35)', background: 'rgba(15,23,42,0.6)', color: '#e2e8f0' }}
-                    />
-                  </label>
-                )}
-              </section>
-
-              <section style={{ display: 'grid', gap: 12 }}>
-                <Toggle
-                  checked={allowSameReceipt}
-                  onChange={setAllowSameReceipt}
-                  label="Разрешить списывать и начислять баллы одновременно в чеке"
-                  disabled={saving}
-                />
-                <span style={{ fontSize: 12, opacity: 0.7 }}>При включении после списания баллов клиенту начисляются баллы на оплаченную сумму по этому же заказу.</span>
-              </section>
-
-              <section style={{ display: 'grid', gap: 12 }}>
-                <Toggle
-                  checked={delayEnabled}
-                  onChange={setDelayEnabled}
-                  label={delayEnabled ? 'Задержка перед использованием включена' : 'Без задержки'}
-                  disabled={saving}
-                />
-                {delayEnabled && (
-                  <label style={{ display: 'grid', gap: 6, maxWidth: 260 }}>
-                    <span>Баллы можно использовать через указанное количество дней</span>
-                    <input
-                      type="number"
-                      min="1"
-                      value={delayDays}
-                      onChange={(event) => setDelayDays(event.target.value)}
-                      disabled={saving}
-                      style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(148,163,184,0.35)', background: 'rgba(15,23,42,0.6)', color: '#e2e8f0' }}
-                    />
-                  </label>
-                )}
-              </section>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-                <Button variant="secondary" type="button" onClick={load} disabled={saving}>Сбросить</Button>
-                <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Сохраняем…' : 'Сохранить'}</Button>
+                <h3 className="font-bold text-gray-900 text-lg">Сгорание баллов</h3>
               </div>
-            </form>
-          )}
-        </CardBody>
-      </Card>
+
+              <div className="space-y-4 flex-1">
+                <p className="text-sm text-gray-600 min-h-[40px]">
+                  Настройте срок жизни баллов, полученных за покупки. Если баллы не использовать вовремя, они сгорят.
+                </p>
+
+                <div className="space-y-3 pt-2">
+                  <label className="flex items-center space-x-3 cursor-pointer p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors has-[:checked]:bg-blue-50 has-[:checked]:border-blue-200">
+                    <input
+                      type="radio"
+                      name="expiration"
+                      checked={!limitations.isExpirationEnabled}
+                      onChange={() => setLimitations({ ...limitations, isExpirationEnabled: false })}
+                      className="text-blue-600 focus:ring-blue-500 h-4 w-4"
+                    />
+                    <div className="flex items-center space-x-2">
+                      <ShieldCheck size={16} className="text-green-600" />
+                      <span className="font-medium text-gray-900 text-sm">Баллы не сгорают</span>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center space-x-3 cursor-pointer p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors has-[:checked]:bg-orange-50 has-[:checked]:border-orange-200">
+                    <input
+                      type="radio"
+                      name="expiration"
+                      checked={limitations.isExpirationEnabled}
+                      onChange={() => setLimitations({ ...limitations, isExpirationEnabled: true })}
+                      className="text-orange-600 focus:ring-orange-500 h-4 w-4"
+                    />
+                    <span className="font-medium text-gray-900 text-sm">Сгорают через время</span>
+                  </label>
+                </div>
+
+                {limitations.isExpirationEnabled && (
+                  <div className="animate-fade-in pl-1">
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">
+                      Количество дней
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="1"
+                        value={limitations.expirationDays}
+                        onChange={(e) =>
+                          setLimitations({ ...limitations, expirationDays: Number(e.target.value) })
+                        }
+                        aria-label="Количество дней"
+                        className="w-full border border-gray-300 rounded-lg pl-3 pr-12 py-2 text-sm focus:ring-2 focus:ring-orange-500 focus:outline-none"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">
+                        дней
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Simultaneous Accrual & Redemption */}
+            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex flex-col h-full">
+              <div className="flex items-center space-x-3 mb-6">
+                <div className="p-2.5 rounded-lg bg-purple-100 text-purple-600">
+                  <Coins size={24} />
+                </div>
+                <h3 className="font-bold text-gray-900 text-lg">Смешанная оплата</h3>
+              </div>
+
+              <div className="space-y-4 flex-1">
+                <div className="flex items-start justify-between">
+                  <p className="text-sm text-gray-600 flex-1 pr-4">
+                    Разрешить списывать и начислять баллы одновременно в одном чеке?
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setLimitations({
+                        ...limitations,
+                        allowAccrualOnRedemption: !limitations.allowAccrualOnRedemption,
+                      })
+                    }
+                    aria-label="Разрешить смешанную оплату"
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${limitations.allowAccrualOnRedemption ? "bg-purple-600" : "bg-gray-300"}`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${limitations.allowAccrualOnRedemption ? "translate-x-6" : "translate-x-1"}`}
+                    />
+                  </button>
+                </div>
+
+                <div
+                  className={`p-3 rounded-lg text-sm border ${limitations.allowAccrualOnRedemption ? "bg-purple-50 border-purple-100 text-purple-900" : "bg-gray-50 border-gray-200 text-gray-600"}`}
+                >
+                  {limitations.allowAccrualOnRedemption ? (
+                    <div className="flex items-start space-x-2">
+                      <CheckCircle2 size={16} className="mt-0.5 flex-shrink-0" />
+                      <div className="space-y-1">
+                        <p className="font-medium">Опция включена</p>
+                        <p className="text-xs opacity-90">
+                          После списания баллов клиенту начисляются новые баллы на{" "}
+                          <strong>оплаченную деньгами часть чека</strong>.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-start space-x-2">
+                      <Ban size={16} className="mt-0.5 flex-shrink-0" />
+                      <span>
+                        Если клиент списывает баллы, начисление за этот чек{" "}
+                        <strong>не производится</strong>.
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Activation Delay */}
+            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex flex-col h-full">
+              <div className="flex items-center space-x-3 mb-6">
+                <div className="p-2.5 rounded-lg bg-blue-100 text-blue-600">
+                  <Clock size={24} />
+                </div>
+                <h3 className="font-bold text-gray-900 text-lg">Задержка активации</h3>
+              </div>
+
+              <div className="space-y-4 flex-1">
+                <p className="text-sm text-gray-600 min-h-[40px]">
+                  Баллы за покупку становятся доступными для списания через указанное время.
+                </p>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">
+                    Дней до активации
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min="0"
+                      value={limitations.activationDelay}
+                      onChange={(e) =>
+                        setLimitations({ ...limitations, activationDelay: Number(e.target.value) })
+                      }
+                      aria-label="Дней до активации"
+                      className="w-full border border-gray-300 rounded-lg pl-3 pr-12 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">
+                      дней
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2 text-xs text-gray-500 bg-gray-50 p-2 rounded">
+                  <Info size={14} className="flex-shrink-0" />
+                  <span>0 = баллы доступны сразу после покупки.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

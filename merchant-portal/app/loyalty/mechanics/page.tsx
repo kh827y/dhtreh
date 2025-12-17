@@ -1,20 +1,18 @@
 "use client";
 
 import React from "react";
-import { Card, CardBody, CardFooter, Badge } from "@loyalty/ui";
-import Toggle from "../../../components/Toggle";
+import { useRouter } from "next/navigation";
 import {
   Trophy,
-  Scale,
-  RotateCcw,
+  Ban,
+  RefreshCw,
   Cake,
-  Gift,
-  Timer,
-  Users,
-  Sparkles,
+  UserPlus,
+  Hourglass,
+  Share2,
   ChevronRight,
-  Zap,
   Settings,
+  Power,
 } from "lucide-react";
 
 type MechanicCard = {
@@ -32,74 +30,85 @@ const cards: MechanicCard[] = [
     id: "levels",
     title: "Уровни клиентов",
     description: "Ступени программы и условия перехода между уровнями",
-    icon: <Trophy size={22} />,
+    icon: <Trophy size={28} />,
     href: "/loyalty/mechanics/levels",
-    color: "rgba(250, 204, 21, 0.15)",
+    color: "bg-yellow-50 text-yellow-600",
   },
   {
     id: "redeem-limits",
-    title: "Ограничения в баллах",
+    title: "Настройки бонусов",
     description: "Срок жизни, запреты и задержки начисления баллов",
-    icon: <Scale size={22} />,
+    icon: <Ban size={28} />,
     href: "/loyalty/mechanics/redeem-limits",
-    color: "rgba(148, 163, 184, 0.15)",
+    color: "bg-red-50 text-red-600",
   },
   {
     id: "auto-return",
     title: "Автовозврат клиентов",
     description: "Возвращаем неактивных клиентов подарочными баллами",
-    icon: <RotateCcw size={22} />,
+    icon: <RefreshCw size={24} />,
     href: "/loyalty/mechanics/auto-return",
     toggle: true,
-    color: "rgba(99, 102, 241, 0.15)",
+    color: "bg-blue-50 text-blue-600",
   },
   {
     id: "birthday",
     title: "Поздравление с днём рождения",
     description: "Автопоздравления и подарочные баллы к празднику",
-    icon: <Cake size={22} />,
+    icon: <Cake size={24} />,
     href: "/loyalty/mechanics/birthday",
     toggle: true,
-    color: "rgba(236, 72, 153, 0.15)",
+    color: "bg-pink-50 text-pink-600",
   },
   {
     id: "registration-bonus",
     title: "Баллы за регистрацию",
     description: "Приветственный бонус новым участникам программы",
-    icon: <Gift size={22} />,
+    icon: <UserPlus size={24} />,
     href: "/loyalty/mechanics/registration-bonus",
     toggle: true,
-    color: "rgba(16, 185, 129, 0.15)",
+    color: "bg-green-50 text-green-600",
   },
   {
     id: "ttl",
     title: "Напоминание о сгорании",
     description: "Предупреждение клиентов о скором сгорании баллов",
-    icon: <Timer size={22} />,
+    icon: <Hourglass size={24} />,
     href: "/loyalty/mechanics/ttl",
     toggle: true,
-    color: "rgba(245, 158, 11, 0.15)",
+    color: "bg-amber-50 text-amber-600",
   },
   {
     id: "referral",
     title: "Реферальная программа",
     description: "Вознаграждение за приглашение новых клиентов",
-    icon: <Users size={22} />,
+    icon: <Share2 size={24} />,
     href: "/referrals/program",
     toggle: true,
-    color: "rgba(6, 182, 212, 0.15)",
+    color: "bg-purple-50 text-purple-600",
   },
 ];
 
 export default function MechanicsPage() {
+  const router = useRouter();
   const [enabled, setEnabled] = React.useState<Record<string, boolean>>({});
   const [settings, setSettings] = React.useState<Record<string, any>>({});
   const [saving, setSaving] = React.useState<Record<string, boolean>>({});
   const [error, setError] = React.useState<string>("");
+  const [tiersCount, setTiersCount] = React.useState<number | null>(null);
 
   const loadAll = React.useCallback(async () => {
     setError("");
     try {
+      const tiersPromise = fetch("/api/portal/loyalty/tiers", { cache: "no-store" })
+        .then(async (res) => {
+          const json = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(json?.message || "Не удалось загрузить уровни");
+          const items = Array.isArray(json) ? json : Array.isArray((json as any)?.items) ? (json as any).items : [];
+          return Array.isArray(items) ? items.length : null;
+        })
+        .catch(() => null);
+
       const endpoints: Record<string, string> = {
         "auto-return": "/api/portal/loyalty/auto-return",
         birthday: "/api/portal/loyalty/birthday",
@@ -126,8 +135,12 @@ export default function MechanicsPage() {
       }
       setEnabled(nextEnabled);
       setSettings(nextSettings);
+
+      const count = await tiersPromise;
+      setTiersCount(count);
     } catch (e: any) {
       setError(String(e?.message || e || "Ошибка загрузки механик"));
+      setTiersCount(null);
     }
   }, []);
 
@@ -183,6 +196,9 @@ export default function MechanicsPage() {
           burnTtlDays: Number(current.burnTtlDays || 0),
           delayEnabled: Boolean(current.delayEnabled),
           delayDays: Number(current.delayDays || 0),
+          delayHours: Number(current.delayHours || 0),
+          pushEnabled: Boolean(current.pushEnabled),
+          text: typeof current.text === "string" ? current.text : "",
         };
       } else if (id === "ttl") {
         payload = {
@@ -241,173 +257,166 @@ export default function MechanicsPage() {
   }, [settings]);
 
   return (
-    <div className="animate-in" style={{ display: "grid", gap: 28 }}>
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8">
       {/* Page Header */}
-      <header style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
-        <div style={{
-          width: 48,
-          height: 48,
-          borderRadius: "var(--radius-lg)",
-          background: "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.1))",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "var(--brand-primary-light)",
-        }}>
-          <Sparkles size={24} />
-        </div>
-        <div>
-          <h1 style={{ 
-            fontSize: 28, 
-            fontWeight: 800, 
-            margin: 0,
-            letterSpacing: "-0.02em",
-          }}>
-            Механики лояльности
-          </h1>
-          <p style={{ 
-            fontSize: 14, 
-            color: "var(--fg-muted)", 
-            margin: "6px 0 0",
-          }}>
-            Настраивайте сценарии лояльности и активации клиентов
-          </p>
-        </div>
-      </header>
+      <div>
+        <h2 className="text-2xl font-bold text-gray-900">Механики лояльности</h2>
+        <p className="text-gray-500 mt-1">Настройка правил начисления, списания и автоматических коммуникаций.</p>
+      </div>
 
       {/* Cards Grid */}
-      <div style={{
-        display: "grid",
-        gap: 16,
-        gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
-      }}>
-        {cards.map((card, index) => {
-          const showToggle = Boolean(card.toggle);
-          const isOn = enabled[card.id];
-          
-          return (
-            <Card 
-              key={card.id} 
-              hover
-              className="animate-in"
-              style={{ 
-                animationDelay: `${index * 0.05}s`,
-                display: "flex", 
-                flexDirection: "column",
-              }}
-            >
-              <CardBody style={{ padding: 0, flex: 1, display: "flex", flexDirection: "column" }}>
-                <a
-                  href={card.href}
-                  style={{
-                    textDecoration: "none",
-                    color: "inherit",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 16,
-                    padding: 20,
-                    flex: 1,
-                  }}
+      <div className="space-y-4">
+        <h3 className="text-lg font-bold text-gray-800">Базовые настройки</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {cards
+            .filter((card) => card.id === "levels" || card.id === "redeem-limits")
+            .map((card) => {
+              const isLevels = card.id === "levels";
+              const iconHoverClass = isLevels
+                ? "group-hover:bg-yellow-100"
+                : card.id === "redeem-limits"
+                  ? "group-hover:bg-red-100"
+                  : "";
+
+              return (
+                <div
+                  key={card.id}
+                  onClick={() => router.push(card.href)}
+                  className={
+                    "bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer group flex items-start justify-between" +
+                    (isLevels ? " relative overflow-hidden" : "")
+                  }
                 >
-                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-                    <div style={{
-                      width: 48,
-                      height: 48,
-                      borderRadius: "var(--radius-md)",
-                      background: card.color || "rgba(99, 102, 241, 0.15)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: "var(--fg)",
-                    }}>
+                  <div className={"flex items-start space-x-4" + (isLevels ? " relative z-10" : "")}
+                  >
+                    <div className={`p-3 rounded-lg ${card.color || "bg-gray-50 text-gray-600"} ${iconHoverClass} transition-colors`}>
                       {card.icon}
                     </div>
-                    
-                    {showToggle && (
-                      <Badge 
-                        variant={isOn ? "success" : "default"}
-                        dot
-                      >
-                        {isOn ? "Активно" : "Выкл"}
-                      </Badge>
-                    )}
-                  </div>
-                  
-                  <div style={{ flex: 1 }}>
-                    <h3 style={{ 
-                      fontSize: 16, 
-                      fontWeight: 600, 
-                      margin: "0 0 6px",
-                      color: "var(--fg)",
-                    }}>
-                      {card.title}
-                    </h3>
-                    <p style={{ 
-                      fontSize: 13, 
-                      color: "var(--fg-muted)", 
-                      margin: 0,
-                      lineHeight: 1.5,
-                    }}>
-                      {card.description}
-                    </p>
-                  </div>
-                </a>
-
-                {/* Footer */}
-                <CardFooter style={{ 
-                  display: "flex", 
-                  justifyContent: "space-between", 
-                  alignItems: "center",
-                }}>
-                  <a
-                    href={card.href}
-                    style={{ 
-                      color: "var(--brand-primary-light)", 
-                      fontSize: 13, 
-                      fontWeight: 500,
-                      textDecoration: "none",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 4,
-                      transition: "gap 0.2s ease",
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.gap = "8px"}
-                    onMouseLeave={(e) => e.currentTarget.style.gap = "4px"}
-                  >
-                    Настроить
-                    <ChevronRight size={16} />
-                  </a>
-                  
-                  {showToggle && (
-                    <div onClick={(e) => e.stopPropagation()}>
-                      <Toggle
-                        checked={!!isOn}
-                        onChange={(value) => handleToggle(card.id, value)}
-                        label=""
-                        disabled={!!saving[card.id]}
-                      />
+                    <div>
+                      <h4 className="text-lg font-bold text-gray-900 group-hover:text-purple-600 transition-colors">
+                        {card.title}
+                      </h4>
+                      <p className="text-sm text-gray-500 mt-1">{card.description}.</p>
+                      {isLevels ? (
+                        <div className="mt-3 flex items-center space-x-2 text-xs font-medium text-gray-400 group-hover:text-purple-500">
+                          <span>Настроено: {tiersCount == null ? "—" : `${tiersCount} ур.`}</span>
+                        </div>
+                      ) : null}
                     </div>
-                  )}
-                </CardFooter>
-              </CardBody>
-            </Card>
-          );
-        })}
+                  </div>
+                  <div className="p-2 bg-gray-50 rounded-full group-hover:bg-purple-50 text-gray-300 group-hover:text-purple-600 transition-colors">
+                    <ChevronRight size={20} />
+                  </div>
+                </div>
+              );
+            })}
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <h3 className="text-lg font-bold text-gray-800">Дополнительные возможности</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {cards
+            .filter((card) => card.toggle)
+            .map((card) => {
+              const isOn = Boolean(enabled[card.id]);
+              const isSaving = Boolean(saving[card.id]);
+
+              return (
+                <div
+                  key={card.id}
+                  onClick={() => router.push(card.href)}
+                  className={
+                    "bg-white p-6 rounded-xl border transition-all duration-200 cursor-pointer group hover:shadow-md hover:border-purple-200 relative " +
+                    (isOn ? "border-gray-200 shadow-sm" : "border-gray-100 bg-gray-50/30")
+                  }
+                >
+                  <div className="flex justify-between items-start mb-4">
+                    <div
+                      className={
+                        "p-3 rounded-lg transition-colors " +
+                        (isOn ? card.color || "bg-gray-50 text-gray-600" : "bg-gray-100 text-gray-400 group-hover:text-gray-600")
+                      }
+                    >
+                      {card.icon}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void handleToggle(card.id, !isOn);
+                      }}
+                      disabled={isSaving}
+                      className={
+                        "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 z-10 disabled:opacity-60 " +
+                        (isOn ? "bg-purple-600" : "bg-gray-300")
+                      }
+                    >
+                      <span
+                        className={
+                          "inline-block h-4 w-4 transform rounded-full bg-white transition-transform " +
+                          (isOn ? "translate-x-6" : "translate-x-1")
+                        }
+                      />
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2">
+                      <h4 className={"text-lg font-bold transition-colors " + (isOn ? "text-gray-900" : "text-gray-600")}>
+                        {card.title}
+                      </h4>
+                      {!isOn && (
+                        <span className="text-[10px] uppercase font-bold text-gray-500 border border-gray-300 px-1.5 rounded">
+                          Выкл
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-500 min-h-[40px]">{card.description}</p>
+
+                    <div className="pt-4 mt-2 border-t border-gray-50 flex justify-between items-center">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          router.push(card.href);
+                        }}
+                        className={
+                          "text-sm font-medium transition-colors flex items-center hover:text-purple-700 " +
+                          (isOn ? "text-purple-600" : "text-gray-500")
+                        }
+                      >
+                        <Settings size={14} className="mr-1.5" />
+                        Настроить
+                      </button>
+                      {isOn ? (
+                        <span className="flex items-center text-xs text-green-600 font-medium">
+                          <Power size={12} className="mr-1" /> Активна
+                        </span>
+                      ) : (
+                        <span className="flex items-center text-xs text-gray-400">
+                          <Power size={12} className="mr-1" /> Отключена
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+        </div>
       </div>
 
       {/* Error Message */}
-      {error && (
-        <div style={{ 
-          padding: 16, 
-          borderRadius: "var(--radius-md)", 
-          border: "1px solid rgba(239, 68, 68, 0.3)",
-          background: "rgba(239, 68, 68, 0.1)",
-          color: "var(--danger-light)",
-          fontSize: 14,
-        }}>
-          {error}
+      {error ? (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm flex items-start space-x-3">
+          <div className="font-semibold">Ошибка</div>
+          <div className="flex-1 whitespace-pre-wrap break-words">{error}</div>
+          <button type="button" className="text-red-700 underline underline-offset-2" onClick={() => void loadAll()}>
+            Повторить
+          </button>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

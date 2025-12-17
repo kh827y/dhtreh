@@ -7,7 +7,7 @@
     "build": "next build --turbopack",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test tests/**/*.test.ts"
+    "test": "node --test --test-concurrency=1 --import tsx --import ./tests/test-setup.ts \"tests/**/*.{test.ts,test.tsx}\""
   },
   "dependencies": {
     "@loyalty/ui": "workspace:*",

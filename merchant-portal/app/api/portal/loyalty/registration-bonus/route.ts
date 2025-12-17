@@ -19,6 +19,12 @@ function parsePositiveInt(value: unknown, fallback = 0) {
   return Math.floor(num);
 }
 
+function parseNonNegativeInt(value: unknown, fallback = 0) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) return fallback;
+  return Math.floor(num);
+}
+
 export async function GET(req: NextRequest) {
   const { res, data, raw } = await fetchSettings(req);
   if (!res.ok) {
@@ -37,20 +43,29 @@ export async function GET(req: NextRequest) {
   const enabled = Boolean(registration?.enabled);
   const points = parsePositiveInt(registration?.points, 0);
   const ttlDays = parsePositiveInt(registration?.ttlDays ?? registration?.burnTtlDays, 0);
+  const delayHours = parsePositiveInt(registration?.delayHours, 0);
   const delayDays = parsePositiveInt(registration?.delayDays ?? registration?.delayAfterDays, 0);
+  const resolvedDelayHours = delayHours > 0 ? delayHours : delayDays > 0 ? delayDays * 24 : 0;
 
   let text: string | null = null;
   if (typeof registration?.text === 'string') {
     text = registration.text;
   }
 
+  const pushEnabled =
+    Object.prototype.hasOwnProperty.call(registration, 'pushEnabled')
+      ? Boolean(registration.pushEnabled)
+      : true;
+
   return Response.json({
     enabled,
     points,
     burnEnabled: ttlDays > 0,
     burnTtlDays: ttlDays,
-    delayEnabled: delayDays > 0,
+    delayEnabled: resolvedDelayHours > 0,
     delayDays,
+    delayHours: resolvedDelayHours,
+    pushEnabled,
     text,
   });
 }
@@ -91,17 +106,28 @@ export async function PUT(req: NextRequest) {
   }
 
   const delayEnabled = Boolean((body as any).delayEnabled);
-  const delayRaw = Number((body as any).delayDays);
-  const delayDays = delayEnabled ? Math.max(1, Math.floor(Number.isFinite(delayRaw) ? delayRaw : 0)) : 0;
-  if (delayEnabled && delayDays <= 0) {
+  const delayHoursRaw = Number((body as any).delayHours);
+  const delayDaysRaw = Number((body as any).delayDays);
+  const delayHours = delayEnabled
+    ? Math.max(1, Math.floor(Number.isFinite(delayHoursRaw) ? delayHoursRaw : 0))
+    : 0;
+  const delayDays = delayEnabled
+    ? Math.max(1, Math.floor(Number.isFinite(delayDaysRaw) ? delayDaysRaw : parseNonNegativeInt(delayHours / 24, 0)))
+    : 0;
+  if (delayEnabled && delayHours <= 0 && delayDays <= 0) {
     return new Response(
-      JSON.stringify({ error: 'ValidationError', message: 'Задержка начисления должна быть положительным числом дней' }),
+      JSON.stringify({ error: 'ValidationError', message: 'Задержка начисления должна быть положительным числом часов' }),
       {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
       },
     );
   }
+
+  const pushEnabled = Object.prototype.hasOwnProperty.call(body, 'pushEnabled')
+    ? Boolean((body as any).pushEnabled)
+    : true;
+  const text = typeof (body as any).text === 'string' ? (body as any).text : null;
 
   const { res, data, raw } = await fetchSettings(req);
   if (!res.ok) {
@@ -129,9 +155,21 @@ export async function PUT(req: NextRequest) {
   }
 
   if (delayEnabled) {
+    nextRegistration.delayHours = delayHours;
     nextRegistration.delayDays = delayDays;
   } else if ('delayDays' in nextRegistration) {
     delete nextRegistration.delayDays;
+  }
+
+  if (!delayEnabled && 'delayHours' in nextRegistration) {
+    delete nextRegistration.delayHours;
+  }
+
+  nextRegistration.pushEnabled = pushEnabled;
+  if (text && pushEnabled) {
+    nextRegistration.text = text;
+  } else if ('text' in nextRegistration) {
+    delete nextRegistration.text;
   }
 
   rules.registration = nextRegistration;

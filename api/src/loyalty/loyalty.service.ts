@@ -1517,10 +1517,16 @@ export class LoyaltyService {
       reg && reg.delayDays != null
         ? Number(reg.delayDays)
         : (settings?.earnDelayDays ?? 0);
-    const delayDays =
-      Number.isFinite(delayDaysRaw) && delayDaysRaw != null && delayDaysRaw > 0
-        ? Math.floor(Number(delayDaysRaw))
-        : 0;
+    const delayHoursRaw =
+      reg && reg.delayHours != null ? Number(reg.delayHours) : null;
+    const delayMs =
+      Number.isFinite(delayHoursRaw as any) &&
+      delayHoursRaw != null &&
+      (delayHoursRaw as any) > 0
+        ? Math.floor(Number(delayHoursRaw)) * 60 * 60 * 1000
+        : Number.isFinite(delayDaysRaw) && delayDaysRaw != null && delayDaysRaw > 0
+          ? Math.floor(Number(delayDaysRaw)) * 24 * 60 * 60 * 1000
+          : 0;
 
     // Если клиент приглашён по рефералу и у активной программы выключено суммирование с регистрацией — запрещаем выдачу
     try {
@@ -1586,11 +1592,9 @@ export class LoyaltyService {
       const now = new Date();
       const lotsEnabled = process.env.EARN_LOTS_FEATURE === '1';
 
-      if (delayDays > 0 && lotsEnabled) {
+      if (delayMs > 0 && lotsEnabled) {
         // Create pending lot
-        const maturesAt = new Date(
-          now.getTime() + delayDays * 24 * 60 * 60 * 1000,
-        );
+        const maturesAt = new Date(now.getTime() + delayMs);
         const expiresAt = ttlDays
           ? new Date(maturesAt.getTime() + ttlDays * 24 * 60 * 60 * 1000)
           : null;
