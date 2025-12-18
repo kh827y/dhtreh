@@ -403,8 +403,20 @@ export class PortalController {
     const payload = this.asRecord(task?.payload);
     const stats = this.asRecord(task?.stats);
     const snapshot = this.asRecord(task?.audienceSnapshot);
+    const audienceIdRaw =
+      task?.audienceId ??
+      snapshot.legacyAudienceId ??
+      snapshot.legacyAudience ??
+      null;
+    const audienceId = audienceIdRaw ? String(audienceIdRaw) : null;
+    const audienceName =
+      typeof task?.audienceName === 'string'
+        ? task.audienceName
+        : typeof snapshot.audienceName === 'string'
+          ? snapshot.audienceName
+          : null;
     const audienceRaw =
-      task?.audienceName ??
+      audienceName ??
       snapshot.code ??
       snapshot.legacyAudience ??
       snapshot.audienceName ??
@@ -427,6 +439,8 @@ export class PortalController {
       id: task.id,
       merchantId: task.merchantId,
       text: typeof payload.text === 'string' ? payload.text : '',
+      audienceId,
+      audienceName,
       audience: audienceRaw ? String(audienceRaw) : 'ALL',
       scheduledAt: task.scheduledAt,
       timezone: task.timezone ?? null,

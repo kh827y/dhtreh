@@ -1,23 +1,42 @@
 "use client";
 
-import React from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  AlertCircle,
+  AlertTriangle,
+  ArrowLeft,
+  Bell,
+  CheckCircle2,
+  Clock,
+  Loader2,
+  Pencil,
+  Plus,
+  Trash2,
+  Users,
+} from "lucide-react";
 import { useTimezone } from "../../../components/TimezoneProvider";
 
-type TabKey = "ACTIVE" | "ARCHIVED";
+type TabKey = "active" | "archived";
 
 type PushCampaign = {
   id: string;
   text: string;
   audience: string;
+  audienceId?: string | null;
+  audienceName?: string | null;
   scheduledAt: string | null;
   status: string;
   totalRecipients: number;
   sent: number;
   failed: number;
-  updatedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
-type CampaignScopeState = Record<TabKey, PushCampaign[]>;
+type CampaignScopeState = {
+  active: PushCampaign[];
+  archived: PushCampaign[];
+};
 
 type AudienceOption = {
   id: string;
@@ -27,69 +46,135 @@ type AudienceOption = {
   customerCount?: number | null;
 };
 
-const MAX_SYMBOLS = 300;
-const DEFAULT_SCOPE_STATE: CampaignScopeState = {
-  ACTIVE: [],
-  ARCHIVED: [],
+type FormState = {
+  text: string;
+  audience: string;
+  sendNow: boolean;
+  date: string;
+  time: string;
 };
 
-function formatDateTime(value: string | null) {
-  if (!value) return "—";
-  return new Date(value).toLocaleString("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+const MAX_SYMBOLS = 150;
+const MAX_TEXT_HINT = "Длина текста не должна превышать 150 символов";
+const DEFAULT_SCOPE_STATE: CampaignScopeState = { active: [], archived: [] };
+const ACTIVE_STATUSES = new Set(["SCHEDULED", "RUNNING", "PAUSED"]);
+const ARCHIVED_STATUSES = new Set(["COMPLETED", "FAILED"]);
+
+function readApiError(payload: unknown): string | null {
+  if (!payload) return null;
+  if (typeof payload === "string") {
+    const trimmed = payload.trim();
+    if (!trimmed) return null;
+    try {
+      const parsed = JSON.parse(trimmed);
+      return readApiError(parsed);
+    } catch {
+      return trimmed;
+    }
+  }
+  if (typeof payload === "object") {
+    const anyPayload = payload as any;
+    if (typeof anyPayload.message === "string") return anyPayload.message;
+    if (Array.isArray(anyPayload.message) && typeof anyPayload.message[0] === "string") return anyPayload.message[0];
+    if (typeof anyPayload.error === "string") return anyPayload.error;
+  }
+  return null;
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, { cache: "no-store", ...init });
   const text = await res.text();
   if (!res.ok) {
-    const message = text || res.statusText;
-    throw new Error(message);
+    throw new Error(readApiError(text) || res.statusText || "Ошибка запроса");
   }
   return text ? (JSON.parse(text) as T) : (undefined as unknown as T);
 }
 
+function pad(value: number) {
+  return String(value).padStart(2, "0");
+}
+
+function toDateInputValue(date: Date) {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function toTimeInputValue(date: Date) {
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function resolveDateSource(campaign: PushCampaign) {
+  return campaign.scheduledAt || campaign.updatedAt || campaign.createdAt || null;
+}
+
+function formatDateParts(value: string | null) {
+  if (!value) return { dateLabel: "—", timeLabel: "" };
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return { dateLabel: "—", timeLabel: "" };
+  const now = new Date();
+  const isToday =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+  return {
+    dateLabel: isToday ? "Сегодня" : date.toLocaleDateString("ru-RU"),
+    timeLabel: date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }),
+  };
+}
+
+function buildLocalDate(dateValue: string, timeValue: string) {
+  const [year, month, day] = dateValue.split("-").map((item) => Number(item));
+  const [hour, minute] = timeValue.split(":").map((item) => Number(item));
+  if (!year || !month || !day) return null;
+  return new Date(year, month - 1, day, hour || 0, minute || 0);
+}
+
+function normalizeStatus(status: string): "scheduled" | "sending" | "sent" {
+  const raw = String(status || "").toUpperCase();
+  if (raw === "RUNNING") return "sending";
+  if (raw === "SCHEDULED" || raw === "PAUSED") return "scheduled";
+  return "sent";
+}
+
 export default function PushPage() {
-  const [tab, setTab] = React.useState<TabKey>("ACTIVE");
-  const [campaigns, setCampaigns] = React.useState<CampaignScopeState>(DEFAULT_SCOPE_STATE);
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState<string | null>(null);
-  const [audiences, setAudiences] = React.useState<AudienceOption[]>([]);
-  const [audiencesLoaded, setAudiencesLoaded] = React.useState(false);
-  const [isModalOpen, setIsModalOpen] = React.useState(false);
-  const [saving, setSaving] = React.useState(false);
-  const [showTextError, setShowTextError] = React.useState(false);
-  const [showDateError, setShowDateError] = React.useState(false);
-  const [form, setForm] = React.useState({
+  const timezoneInfo = useTimezone();
+  const [view, setView] = useState<"list" | "create">("list");
+  const [activeTab, setActiveTab] = useState<TabKey>("active");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [campaigns, setCampaigns] = useState<CampaignScopeState>(DEFAULT_SCOPE_STATE);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [audiences, setAudiences] = useState<AudienceOption[]>([]);
+  const [audiencesLoaded, setAudiencesLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const defaultDate = useMemo(() => new Date(), []);
+
+  const [formData, setFormData] = useState<FormState>({
     text: "",
     audience: "",
-    startAt: "",
+    sendNow: true,
+    date: toDateInputValue(defaultDate),
+    time: "12:00",
   });
-  const timezoneInfo = useTimezone();
-  const timezoneLabel = timezoneInfo.label;
 
-  const loadCampaigns = React.useCallback(async () => {
+  const loadCampaigns = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const [active, archived] = await Promise.all([
         fetchJson<PushCampaign[]>("/api/portal/communications/push?scope=ACTIVE"),
         fetchJson<PushCampaign[]>("/api/portal/communications/push?scope=ARCHIVED"),
-      ] as const);
-      setCampaigns({ ACTIVE: active, ARCHIVED: archived });
-    } catch (err: any) {
-      setError(err?.message || "Не удалось загрузить push-рассылки");
+      ]);
+      setCampaigns({ active, archived });
+    } catch (err) {
+      setError(readApiError(err) || "Не удалось загрузить push-рассылки");
     } finally {
       setLoading(false);
     }
   }, []);
 
-  const loadAudiences = React.useCallback(async () => {
+  const loadAudiences = useCallback(async () => {
     if (audiencesLoaded) return;
     try {
       const list = await fetchJson<any[]>("/api/portal/audiences?includeSystem=1");
@@ -97,404 +182,531 @@ export default function PushPage() {
         .filter((item) => !item.archivedAt)
         .map((item) => ({
           id: String(item.id),
-          label: item.name as string,
+          label: String(item.name || "Без названия"),
           isSystem: Boolean(item.isSystem),
           systemKey: item.systemKey ?? null,
           customerCount: item.customerCount ?? null,
         }));
       setAudiences(mapped);
       setAudiencesLoaded(true);
-      if (!form.audience) {
-        const allOption =
-          mapped.find((a) => a.systemKey === "all-customers" || a.isSystem) ??
-          mapped[0];
-        if (allOption) {
-          setForm((prev) => ({ ...prev, audience: allOption.id }));
-        }
-      }
-    } catch {
+    } catch (err) {
       setAudiencesLoaded(true);
     }
-  }, [audiencesLoaded, form.audience]);
+  }, [audiencesLoaded]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     loadCampaigns().catch(() => {});
   }, [loadCampaigns]);
 
-  const remaining = Math.max(0, MAX_SYMBOLS - form.text.length);
-
-  const textError = React.useMemo(() => {
-    if (!form.text.trim()) return "Введите текст уведомления";
-    if (form.text.length > MAX_SYMBOLS) return `Превышен лимит в ${MAX_SYMBOLS} символов`;
-    return "";
-  }, [form.text]);
-
-  const dateError = React.useMemo(() => {
-    if (!form.startAt) return "Укажите дату и время";
-    const date = new Date(form.startAt);
-    if (Number.isNaN(date.getTime())) return "Некорректная дата";
-    if (date.getTime() < Date.now()) return "Дата не может быть в прошлом";
-    return "";
-  }, [form.startAt]);
-
-  const canSchedule = !textError && !dateError && !saving;
-  const canSendNow = !textError && !saving;
-
-  function openModal() {
-    setIsModalOpen(true);
-    setShowTextError(false);
-    setShowDateError(false);
-    setSaving(false);
+  useEffect(() => {
     loadAudiences().catch(() => {});
-  }
+  }, [loadAudiences]);
 
-  function closeModal() {
-    setIsModalOpen(false);
-    setShowTextError(false);
-    setShowDateError(false);
-    setSaving(false);
-    setForm((prev) => ({
-      ...prev,
+  const allAudience = useMemo(
+    () => audiences.find((a) => a.systemKey === "all-customers" || a.isSystem) ?? null,
+    [audiences],
+  );
+
+  const activeList = useMemo(
+    () => campaigns.active.filter((item) => ACTIVE_STATUSES.has(String(item.status || "").toUpperCase())),
+    [campaigns.active],
+  );
+
+  const archivedList = useMemo(
+    () => campaigns.archived.filter((item) => ARCHIVED_STATUSES.has(String(item.status || "").toUpperCase())),
+    [campaigns.archived],
+  );
+
+  const filteredNotifications = activeTab === "active" ? activeList : archivedList;
+
+  const getAudienceName = useCallback(
+    (campaign: PushCampaign) => {
+      if (campaign.audienceName) return campaign.audienceName;
+      const raw = String(campaign.audience || "").trim();
+      if (!raw) return "—";
+      const match = audiences.find((a) => a.id === raw || a.label.toLowerCase() === raw.toLowerCase());
+      return match ? match.label : raw;
+    },
+    [audiences],
+  );
+
+  const resolveAudienceId = useCallback(
+    (campaign: PushCampaign) => {
+      if (campaign.audienceId) return campaign.audienceId;
+      const raw = String(campaign.audience || "").trim().toLowerCase();
+      if (!raw) return allAudience?.id || "";
+      const match = audiences.find((a) => {
+        if (a.id.toLowerCase() === raw) return true;
+        if (a.systemKey && a.systemKey.toLowerCase() === raw) return true;
+        return a.label.toLowerCase() === raw;
+      });
+      return match?.id || allAudience?.id || "";
+    },
+    [audiences, allAudience],
+  );
+
+  const openCreate = useCallback(() => {
+    setEditingId(null);
+    setFormError(null);
+    setFormData({
       text: "",
-      startAt: "",
-    }));
-  }
+      audience: allAudience?.id || "",
+      sendNow: true,
+      date: toDateInputValue(new Date()),
+      time: "12:00",
+    });
+    setView("create");
+  }, [allAudience]);
 
-  const currentList = campaigns[tab];
-  const totalRecords = currentList.length;
-  const selectedAudience = audiences.find((a) => a.id === form.audience) || null;
+  const closeCreate = useCallback(() => {
+    setEditingId(null);
+    setFormError(null);
+    setView("list");
+  }, []);
 
-  async function submitCampaign(immediate: boolean) {
-    if (immediate) {
-      setShowTextError(true);
-      if (textError || saving) return;
-    } else {
-      setShowTextError(true);
-      setShowDateError(true);
-      if (!canSchedule) return;
+  const handleEdit = useCallback(
+    (campaign: PushCampaign) => {
+      const dateSource = resolveDateSource(campaign);
+      const date = dateSource ? new Date(dateSource) : new Date();
+      setEditingId(campaign.id);
+      setFormError(null);
+      setFormData({
+        text: campaign.text || "",
+        audience: resolveAudienceId(campaign),
+        sendNow: false,
+        date: toDateInputValue(date),
+        time: toTimeInputValue(date),
+      });
+      setView("create");
+    },
+    [resolveAudienceId],
+  );
+
+  const handleDelete = useCallback(
+    async (id: string) => {
+      if (!confirm("Вы уверены, что хотите удалить эту рассылку?")) return;
+      setError(null);
+      try {
+        await fetchJson(`/api/portal/communications/push/${encodeURIComponent(id)}/cancel`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+        await loadCampaigns();
+      } catch (err) {
+        setError(readApiError(err) || "Не удалось удалить рассылку");
+      }
+    },
+    [loadCampaigns],
+  );
+
+  const getStatusBadge = useCallback((status: string, failedCount: number) => {
+    const normalized = normalizeStatus(status);
+    if (normalized === "sending") {
+      return (
+        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 animate-pulse">
+          <Loader2 size={12} className="mr-1 animate-spin" /> Выполняется
+        </span>
+      );
     }
-    if (!form.audience) {
-      setShowTextError(true);
+    if (normalized === "scheduled") {
+      return (
+        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+          <Clock size={12} className="mr-1" /> Запланировано
+        </span>
+      );
+    }
+    if (failedCount > 0) {
+      return (
+        <div className="flex flex-col items-end gap-1">
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+            <CheckCircle2 size={12} className="mr-1" /> Отправлено
+          </span>
+          <span
+            className="inline-flex items-center text-xs text-red-600 font-medium"
+            title="Не доставлено пользователям"
+          >
+            <AlertTriangle size={10} className="mr-1" /> Не доставлено: {failedCount}
+          </span>
+        </div>
+      );
+    }
+    return (
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+        <CheckCircle2 size={12} className="mr-1" /> Отправлено
+      </span>
+    );
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    const trimmed = formData.text.trim();
+    if (!trimmed) {
+      setFormError("Введите текст уведомления");
       return;
     }
+    if (trimmed.length > MAX_SYMBOLS) {
+      setFormError(MAX_TEXT_HINT);
+      return;
+    }
+    if (!formData.audience) {
+      setFormError("Выберите аудиторию");
+      return;
+    }
+    if (!formData.sendNow) {
+      const date = buildLocalDate(formData.date, formData.time);
+      if (!date || Number.isNaN(date.getTime())) {
+        setFormError("Укажите дату и время отправки");
+        return;
+      }
+      if (date.getTime() < Date.now()) {
+        setFormError("Дата не может быть в прошлом");
+        return;
+      }
+    }
+
+    const selectedAudience = audiences.find((a) => a.id === formData.audience) || null;
+    const scheduledAt = formData.sendNow ? null : buildLocalDate(formData.date, formData.time)?.toISOString() || null;
 
     setSaving(true);
+    setFormError(null);
     try {
-      const body: Record<string, any> = {
-        text: form.text.trim(),
-        audienceId: form.audience || null,
-        audienceName: selectedAudience?.label ?? null,
-        timezone: timezoneInfo.iana,
-      };
-      if (!immediate && form.startAt) {
-        body.scheduledAt = new Date(form.startAt).toISOString();
-      } else {
-        body.scheduledAt = null;
+      if (editingId) {
+        await fetchJson(`/api/portal/communications/push/${encodeURIComponent(editingId)}/cancel`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
       }
 
       await fetchJson("/api/portal/communications/push", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          text: trimmed,
+          audienceId: formData.audience,
+          audienceName: selectedAudience?.label ?? null,
+          scheduledAt,
+          timezone: timezoneInfo.iana,
+        }),
       });
 
-      closeModal();
+      setEditingId(null);
+      setView("list");
+      setActiveTab("active");
+      setFormData({
+        text: "",
+        audience: allAudience?.id || "",
+        sendNow: true,
+        date: toDateInputValue(new Date()),
+        time: "12:00",
+      });
       await loadCampaigns();
-    } catch (err: any) {
+    } catch (err) {
+      setFormError(readApiError(err) || "Не удалось сохранить рассылку");
+    } finally {
       setSaving(false);
-      setShowTextError(true);
-      setShowDateError(!immediate);
-      setError(err?.message || "Не удалось сохранить push-рассылку");
     }
-  }
+  }, [
+    audiences,
+    editingId,
+    formData,
+    loadCampaigns,
+    timezoneInfo.iana,
+    allAudience,
+  ]);
 
-  return (
-    <div style={{ display: "grid", gap: 20 }}>
-      <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-        <h1 style={{ margin: 0, fontSize: 24 }}>PUSH-рассылки</h1>
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={openModal}
-          style={{ padding: "10px 18px", borderRadius: 10 }}
-        >
-          Создать push-рассылку
-        </button>
-      </header>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        <div style={{ display: "flex", gap: 12 }}>
-          {(["ACTIVE", "ARCHIVED"] as TabKey[]).map((item) => (
+  if (view === "create") {
+    return (
+      <div className="p-8 max-w-[1600px] mx-auto animate-fade-in">
+        <div className="max-w-3xl mx-auto">
+          <div className="flex items-center space-x-4 mb-8">
             <button
-              key={item}
-              type="button"
-              onClick={() => setTab(item)}
-              style={{
-                padding: "8px 16px",
-                borderRadius: 999,
-                border: "1px solid transparent",
-                background: tab === item ? "#38bdf8" : "rgba(148,163,184,0.1)",
-                color: tab === item ? "#0f172a" : "#e2e8f0",
-                fontWeight: tab === item ? 600 : 400,
-              }}
+              onClick={closeCreate}
+              className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500"
+              aria-label="Назад"
             >
-              {item === "ACTIVE" ? "Активные" : "Архивные"}
+              <ArrowLeft size={24} />
             </button>
-          ))}
-        </div>
-        <div style={{ fontSize: 13, opacity: 0.7 }}>Всего: {loading ? "…" : totalRecords} записей</div>
-      </div>
-
-      {error ? (
-        <div
-          style={{
-            padding: 16,
-            borderRadius: 12,
-            background: "rgba(248,113,113,0.12)",
-            border: "1px solid rgba(248,113,113,0.35)",
-            color: "#fecaca",
-          }}
-        >
-          {error}
-        </div>
-      ) : loading ? (
-        <div style={{ padding: 40, textAlign: "center", opacity: 0.7 }}>Загрузка...</div>
-      ) : tab === "ACTIVE" && currentList.length === 0 ? (
-        <div
-          style={{
-            padding: "48px 24px",
-            borderRadius: 16,
-            background: "rgba(15,23,42,0.65)",
-            border: "1px dashed rgba(148,163,184,0.35)",
-            textAlign: "center",
-            display: "grid",
-            gap: 12,
-            placeItems: "center",
-          }}
-        >
-          <div style={{ fontSize: 18, fontWeight: 600 }}>Ещё нет активных push-рассылок</div>
-          <div style={{ fontSize: 14, opacity: 0.75 }}>
-            Создайте первую кампанию, чтобы напомнить клиентам о ваших предложениях.
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">
+                {editingId ? "Редактирование рассылки" : "Новая рассылка"}
+              </h2>
+              <p className="text-sm text-gray-500">Создание и настройка PUSH-уведомления</p>
+            </div>
           </div>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={openModal}
-            style={{ padding: "10px 18px", borderRadius: 10 }}
-          >
-            Создать push-рассылку
-          </button>
-        </div>
-      ) : (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
-            <thead>
-              <tr style={{ textAlign: "left", fontSize: 13, opacity: 0.7 }}>
-                <th style={{ padding: "12px 8px" }}>Дата запуска</th>
-                <th style={{ padding: "12px 8px" }}>Текст</th>
-                <th style={{ padding: "12px 8px" }}>Аудитория</th>
-                <th style={{ padding: "12px 8px" }}>Статус</th>
-                <th style={{ padding: "12px 8px" }}>Всего</th>
-                <th style={{ padding: "12px 8px" }}>Отправлено</th>
-                <th style={{ padding: "12px 8px" }}>Ошибок</th>
-              </tr>
-            </thead>
-            <tbody>
-              {currentList.map((campaign) => (
-                <tr key={campaign.id} style={{ borderTop: "1px solid rgba(148,163,184,0.15)" }}>
-                  <td style={{ padding: "12px 8px", whiteSpace: "nowrap" }}>
-                    {formatDateTime(campaign.scheduledAt)}
-                  </td>
-                  <td style={{ padding: "12px 8px" }}>{campaign.text}</td>
-                  <td style={{ padding: "12px 8px" }}>{campaign.audience || "—"}</td>
-                  <td style={{ padding: "12px 8px" }}>{campaign.status}</td>
-                  <td style={{ padding: "12px 8px" }}>{campaign.totalRecipients}</td>
-                  <td style={{ padding: "12px 8px" }}>{campaign.sent}</td>
-                  <td style={{ padding: "12px 8px" }}>{campaign.failed}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
 
-      {isModalOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          style={{
-            position: "fixed",
-            inset: 0,
-            display: "grid",
-            placeItems: "center",
-            background: "rgba(15,23,42,0.72)",
-            zIndex: 90,
-            padding: 16,
-          }}
-        >
-          <div
-            style={{
-              width: "min(520px, 100%)",
-              background: "#0f172a",
-              borderRadius: 20,
-              padding: 24,
-              boxShadow: "0 32px 80px rgba(15,23,42,0.55)",
-              position: "relative",
-              display: "grid",
-              gap: 20,
-            }}
-          >
-            <button
-              type="button"
-              onClick={closeModal}
-              aria-label="Отмена"
-              style={{
-                position: "absolute",
-                top: 16,
-                right: 16,
-                width: 32,
-                height: 32,
-                borderRadius: "50%",
-                border: "none",
-                background: "rgba(148,163,184,0.12)",
-                color: "#e2e8f0",
-                fontSize: 18,
-              }}
-            >
-              ×
-            </button>
-            <h2 style={{ margin: 0, fontSize: 20 }}>Создать push-рассылку</h2>
-            <div style={{ display: "grid", gap: 16 }}>
-              <label style={{ display: "grid", gap: 8 }}>
-                <span style={{ fontSize: 13, opacity: 0.75 }}>Текст уведомления</span>
-                <textarea
-                  value={form.text}
-                  maxLength={MAX_SYMBOLS}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, text: event.target.value.slice(0, MAX_SYMBOLS) }))
-                  }
-                  rows={4}
-                  style={{
-                    padding: "12px",
-                    borderRadius: 12,
-                    border: "1px solid rgba(148,163,184,0.35)",
-                    background: "rgba(15,23,42,0.6)",
-                    color: "#e2e8f0",
-                    resize: "vertical",
-                  }}
-                />
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
-                  <span
-                    style={{
-                      color: "#f87171",
-                      visibility: showTextError && textError ? "visible" : "hidden",
-                    }}
-                  >
-                    {textError || " "}
-                  </span>
-                  <span style={{ opacity: 0.7 }}>{remaining}/{MAX_SYMBOLS}</span>
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="p-6 space-y-6">
+              {formError && (
+                <div className="bg-red-50 border border-red-100 text-red-700 px-4 py-3 rounded-lg text-sm flex items-start gap-2">
+                  <AlertTriangle size={16} className="mt-0.5" />
+                  <span>{formError}</span>
                 </div>
-              </label>
+              )}
 
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 13, opacity: 0.75 }}>Аудитория</span>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Текст уведомления</label>
+                <div className="relative">
+                  <textarea
+                    value={formData.text}
+                    onChange={(e) => {
+                      setFormData({ ...formData, text: e.target.value });
+                      setFormError(null);
+                    }}
+                    placeholder="Введите текст сообщения..."
+                    rows={4}
+                    maxLength={MAX_SYMBOLS}
+                    className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none resize-none"
+                  />
+                  <div className="absolute bottom-2 right-2 text-xs text-gray-400">
+                    {formData.text.length}/{MAX_SYMBOLS}
+                  </div>
+                </div>
+                <div className="mt-2 flex items-start space-x-2 text-xs text-gray-500">
+                  <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
+                  <p>Рекомендуем использовать эмодзи для повышения конверсии. Избегайте слишком длинных текстов.</p>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Получатели</label>
                 <select
-                  value={form.audience}
-                  onChange={(event) => setForm((prev) => ({ ...prev, audience: event.target.value }))}
-                  style={{
-                    padding: "10px 12px",
-                    borderRadius: 12,
-                    border: "1px solid rgba(148,163,184,0.35)",
-                    background: "rgba(15,23,42,0.6)",
-                    color: "#e2e8f0",
+                  value={formData.audience}
+                  onChange={(e) => {
+                    setFormData({ ...formData, audience: e.target.value });
+                    setFormError(null);
                   }}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                 >
-                  <option value="" disabled>
-                    Выберите аудиторию
-                  </option>
-                  {audiences.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.label}
-                      {typeof option.customerCount === "number" ? ` (${option.customerCount})` : ""}
+                  {audiences.map((aud) => (
+                    <option key={aud.id} value={aud.id}>
+                      {aud.label}
+                      {typeof aud.customerCount === "number" ? ` (~${aud.customerCount} чел.)` : ""}
                     </option>
                   ))}
                 </select>
-              </label>
+              </div>
 
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 13, opacity: 0.75 }}>Запланировать на</span>
-                <input
-                  type="datetime-local"
-                  value={form.startAt}
-                  onChange={(event) => setForm((prev) => ({ ...prev, startAt: event.target.value }))}
-                  style={{
-                    padding: "10px 12px",
-                    borderRadius: 12,
-                    border: "1px solid rgba(148,163,184,0.35)",
-                    background: "rgba(15,23,42,0.6)",
-                    color: "#e2e8f0",
-                  }}
-                />
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
-                  <span
-                    style={{
-                      color: "#f87171",
-                      visibility: showDateError && dateError ? "visible" : "hidden",
+              <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
+                <label className="flex items-center space-x-2 mb-4 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.sendNow}
+                    onChange={(e) => {
+                      setFormData({ ...formData, sendNow: e.target.checked });
+                      setFormError(null);
                     }}
-                  >
-                    {dateError || " "}
-                  </span>
-                  <span style={{ opacity: 0.7 }}>время по {timezoneLabel}</span>
+                    className="rounded text-purple-600 focus:ring-purple-500"
+                  />
+                  <span className="text-sm font-medium text-gray-900">Отправить сейчас</span>
+                </label>
+
+                <div
+                  className={`grid grid-cols-2 gap-4 transition-opacity duration-200 ${formData.sendNow ? "opacity-50 pointer-events-none" : "opacity-100"}`}
+                >
+                  <div>
+                    <label htmlFor="push-date" className="block text-xs font-medium text-gray-500 mb-1">
+                      Дата
+                    </label>
+                    <input
+                      id="push-date"
+                      type="date"
+                      value={formData.date}
+                      onChange={(e) => {
+                        setFormData({ ...formData, date: e.target.value });
+                        setFormError(null);
+                      }}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="push-time" className="block text-xs font-medium text-gray-500 mb-1">
+                      Время
+                    </label>
+                    <input
+                      id="push-time"
+                      type="time"
+                      value={formData.time}
+                      onChange={(e) => {
+                        setFormData({ ...formData, time: e.target.value });
+                        setFormError(null);
+                      }}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    />
+                  </div>
                 </div>
-              </label>
+              </div>
             </div>
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, flexWrap: "wrap" }}>
+            <div className="bg-gray-50 px-6 py-4 flex justify-end space-x-3 border-t border-gray-100">
               <button
+                onClick={closeCreate}
+                className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 rounded-lg transition-colors"
                 type="button"
-                onClick={closeModal}
-                style={{
-                  padding: "10px 18px",
-                  borderRadius: 10,
-                  background: "rgba(148,163,184,0.12)",
-                  border: "1px solid rgba(148,163,184,0.35)",
-                  color: "#e2e8f0",
-                }}
               >
                 Отмена
               </button>
               <button
+                onClick={handleSave}
+                className="flex items-center space-x-2 bg-purple-600 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
                 type="button"
-                onClick={() => submitCampaign(true)}
-                disabled={!canSendNow}
-                style={{
-                  padding: "10px 18px",
-                  borderRadius: 10,
-                  background: canSendNow ? "#38bdf8" : "rgba(56,189,248,0.3)",
-                  border: "none",
-                  color: canSendNow ? "#0f172a" : "rgba(15,23,42,0.6)",
-                  fontWeight: 600,
-                  cursor: canSendNow ? "pointer" : "not-allowed",
-                }}
+                disabled={saving}
               >
-                Запустить сейчас
-              </button>
-              <button
-                type="button"
-                onClick={() => submitCampaign(false)}
-                disabled={!canSchedule}
-                style={{
-                  padding: "10px 18px",
-                  borderRadius: 10,
-                  background: canSchedule ? "#22d3ee" : "rgba(34,211,238,0.2)",
-                  border: "none",
-                  color: canSchedule ? "#0f172a" : "rgba(15,23,42,0.6)",
-                  fontWeight: 600,
-                  cursor: canSchedule ? "pointer" : "not-allowed",
-                }}
-              >
-                Запланировать
+                <Bell size={16} />
+                <span>{formData.sendNow ? "Отправить" : "Запланировать"}</span>
               </button>
             </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Push-рассылки</h2>
+          <p className="text-gray-500 mt-1">Управление массовыми уведомлениями клиентов.</p>
+        </div>
+
+        <button
+          onClick={openCreate}
+          className="flex items-center space-x-2 bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors shadow-sm"
+          type="button"
+        >
+          <Plus size={18} />
+          <span>Создать рассылку</span>
+        </button>
+      </div>
+
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex space-x-8">
+          <button
+            onClick={() => setActiveTab("active")}
+            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === "active" ? "border-purple-500 text-purple-600" : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"}`}
+            type="button"
+          >
+            Активные
+            <span
+              className={`ml-2 py-0.5 px-2 rounded-full text-xs ${activeTab === "active" ? "bg-purple-100 text-purple-600" : "bg-gray-100 text-gray-500"}`}
+            >
+              {activeList.length}
+            </span>
+          </button>
+          <button
+            onClick={() => setActiveTab("archived")}
+            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === "archived" ? "border-purple-500 text-purple-600" : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"}`}
+            type="button"
+          >
+            Архивные
+            <span
+              className={`ml-2 py-0.5 px-2 rounded-full text-xs ${activeTab === "archived" ? "bg-purple-100 text-purple-600" : "bg-gray-100 text-gray-500"}`}
+            >
+              {archivedList.length}
+            </span>
+          </button>
+        </nav>
+      </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-100 text-red-700 px-4 py-3 rounded-lg text-sm flex items-start gap-2">
+          <AlertTriangle size={16} className="mt-0.5" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-8 text-center text-sm text-gray-500">
+          Загрузка...
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="text-xs text-gray-500 uppercase bg-gray-50 border-b border-gray-100">
+                <tr>
+                  <th className="px-6 py-4 font-semibold w-40">Дата отправки</th>
+                  <th className="px-6 py-4 font-semibold">Сообщение</th>
+                  <th className="px-6 py-4 font-semibold">Аудитория</th>
+                  <th className="px-6 py-4 font-semibold text-right">Статус</th>
+                  {activeTab === "active" && (
+                    <th className="px-6 py-4 font-semibold text-right w-24">Действия</th>
+                  )}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {filteredNotifications.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={activeTab === "active" ? 5 : 4}
+                      className="px-6 py-10 text-center text-gray-500"
+                    >
+                      <Bell size={48} className="mx-auto text-gray-300 mb-4" />
+                      <p>
+                        {activeTab === "active"
+                          ? "Нет активных или запланированных рассылок"
+                          : "Архив рассылок пуст"}
+                      </p>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredNotifications.map((push) => {
+                    const { dateLabel, timeLabel } = formatDateParts(resolveDateSource(push));
+                    const statusKey = normalizeStatus(push.status);
+                    const isEditable = statusKey === "scheduled" && String(push.status || "").toUpperCase() === "SCHEDULED";
+                    const audienceName = getAudienceName(push);
+                    return (
+                      <tr key={push.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-6 py-4 text-gray-600 whitespace-nowrap">
+                          <div className="flex flex-col">
+                            <span className="font-medium text-gray-900">{dateLabel}</span>
+                            <span className="text-xs text-gray-500">{timeLabel}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-gray-900">
+                          <p className="line-clamp-2 max-w-xl break-words">{push.text}</p>
+                        </td>
+                        <td className="px-6 py-4 text-gray-600">
+                          <div className="flex items-center space-x-2">
+                            <Users size={14} />
+                            <span className="break-words">{audienceName}</span>
+                          </div>
+                          {push.totalRecipients ? (
+                            <span className="text-xs text-gray-400 mt-1 block">~{push.totalRecipients} получателей</span>
+                          ) : null}
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          {getStatusBadge(push.status, push.failed)}
+                        </td>
+                        {activeTab === "active" && (
+                          <td className="px-6 py-4 text-right">
+                            {isEditable && (
+                              <div className="flex items-center justify-end space-x-2">
+                                <button
+                                  onClick={() => handleEdit(push)}
+                                  title="Редактировать"
+                                  className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                                  type="button"
+                                >
+                                  <Pencil size={16} />
+                                </button>
+                                <button
+                                  onClick={() => handleDelete(push.id)}
+                                  title="Удалить"
+                                  className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                  type="button"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

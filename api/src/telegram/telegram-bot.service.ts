@@ -653,6 +653,7 @@ export class TelegramBotService {
       mimeType?: string;
       fileName?: string;
       caption?: string;
+      parseMode?: string;
     },
   ) {
     const FormDataCtor = (globalThis as any).FormData;
@@ -663,6 +664,7 @@ export class TelegramBotService {
     const form = new FormDataCtor();
     form.append('chat_id', chatId);
     if (payload.caption) form.append('caption', payload.caption);
+    if (payload.parseMode) form.append('parse_mode', payload.parseMode);
     const blob = new BlobCtor([payload.buffer], {
       type: payload.mimeType || 'image/jpeg',
     });
@@ -688,26 +690,68 @@ export class TelegramBotService {
     const chatId = tgId;
     const text = options.text?.trim() ?? '';
     if (!text) throw new Error('Пустое сообщение');
+    const parseMode = 'Markdown';
 
     if (options.asset) {
       if (text.length > 1024) {
-        await this.sendMessage(bot.token, chatId, text);
+        await this.sendMessageWithMarkdownFallback(
+          bot.token,
+          chatId,
+          text,
+          parseMode,
+        );
         await this.sendPhoto(bot.token, chatId, {
           buffer: options.asset.buffer,
           mimeType: options.asset.mimeType,
           fileName: options.asset.fileName,
         });
       } else {
-        await this.sendPhoto(bot.token, chatId, {
-          buffer: options.asset.buffer,
-          mimeType: options.asset.mimeType,
-          fileName: options.asset.fileName,
-          caption: text,
-        });
+        try {
+          await this.sendPhoto(bot.token, chatId, {
+            buffer: options.asset.buffer,
+            mimeType: options.asset.mimeType,
+            fileName: options.asset.fileName,
+            caption: text,
+            parseMode,
+          });
+        } catch (error) {
+          if (!this.isMarkdownParseError(error)) throw error;
+          await this.sendPhoto(bot.token, chatId, {
+            buffer: options.asset.buffer,
+            mimeType: options.asset.mimeType,
+            fileName: options.asset.fileName,
+            caption: text,
+          });
+        }
       }
     } else {
-      await this.sendMessage(bot.token, chatId, text);
+      await this.sendMessageWithMarkdownFallback(
+        bot.token,
+        chatId,
+        text,
+        parseMode,
+      );
     }
+  }
+
+  private async sendMessageWithMarkdownFallback(
+    token: string,
+    chatId: string | number,
+    text: string,
+    parseMode: string,
+  ) {
+    try {
+      await this.sendMessage(token, chatId, text, null, parseMode);
+    } catch (error) {
+      if (!this.isMarkdownParseError(error)) throw error;
+      await this.sendMessage(token, chatId, text);
+    }
+  }
+
+  private isMarkdownParseError(error: any): boolean {
+    const message = String(error?.message || error || '').toLowerCase();
+    if (!message) return false;
+    return message.includes('parse entities') || message.includes('cant parse');
   }
 
   async sendPushNotification(
