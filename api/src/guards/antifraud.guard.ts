@@ -420,22 +420,27 @@ export class AntiFraudGuard implements CanActivate {
       });
       if (count >= limits.customer.limit)
         block('customer', count, limits.customer.limit);
-      if (limits.customer.dailyCap && limits.customer.dailyCap > 0) {
+      const platformDailyCap = Number(adminDailyCapCustomer);
+      const merchantDailyCap = Number(limits.customer.dailyCap);
+      const enforcePlatformDailyCap =
+        Number.isFinite(platformDailyCap) && platformDailyCap > 0;
+      const enforceMerchantDailyCap =
+        Number.isFinite(merchantDailyCap) && merchantDailyCap > 0;
+
+      if (enforcePlatformDailyCap || enforceMerchantDailyCap) {
         const daily = await this.prisma.transaction.count({
           where: { merchantId, customerId, createdAt: { gte: since24h } },
         });
-        // 1) Жёсткий лимит платформы: AF_DAILY_CAP_CUSTOMER
-        if (adminDailyCapCustomer && adminDailyCapCustomer > 0) {
-          if (daily >= adminDailyCapCustomer) {
-            block('customer_daily', daily, adminDailyCapCustomer);
-          }
+        // 1) Жёсткий лимит платформы: AF_DAILY_CAP_CUSTOMER (всегда первее мерчантских overrides)
+        if (enforcePlatformDailyCap && daily >= platformDailyCap) {
+          block('customer_daily', daily, platformDailyCap);
         }
         // 2) Мерчантский лимит + blockDaily (может быть ниже админского)
-        if (daily >= limits.customer.dailyCap) {
+        if (enforceMerchantDailyCap && daily >= merchantDailyCap) {
           if (limits.customer.blockDaily) {
-            block('customer_daily', daily, limits.customer.dailyCap);
+            block('customer_daily', daily, merchantDailyCap);
           } else {
-            notifyVelocity('customer_daily', daily, limits.customer.dailyCap);
+            notifyVelocity('customer_daily', daily, merchantDailyCap);
           }
         }
       }

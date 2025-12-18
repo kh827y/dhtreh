@@ -1,380 +1,240 @@
 "use client";
 
 import React from "react";
-import { Card, CardHeader, CardBody, Button, Badge } from "@loyalty/ui";
-import { useTimezone, useTimezoneOptions, useTimezoneUpdater } from "../../../components/TimezoneProvider";
-import { 
-  Settings, 
-  Building2, 
-  Clock, 
-  Globe, 
-  MapPin,
-  Save,
-  CheckCircle2,
-  AlertCircle,
-} from "lucide-react";
+import { Globe, Building2, Clock, Save } from "lucide-react";
+import {
+  useTimezone,
+  useTimezoneUpdater,
+} from "../../../components/TimezoneProvider";
 
-const WAIT_LABEL_TIMEOUT = 2500;
+const timezones = [
+  { value: "MSK-1", label: "(MSK-1) Калининград" },
+  { value: "MSK+0", label: "(MSK) Москва, Санкт-Петербург" },
+  { value: "MSK+1", label: "(MSK+1) Самара" },
+  { value: "MSK+2", label: "(MSK+2) Екатеринбург" },
+  { value: "MSK+3", label: "(MSK+3) Омск" },
+  { value: "MSK+4", label: "(MSK+4) Красноярск" },
+  { value: "MSK+5", label: "(MSK+5) Иркутск" },
+  { value: "MSK+6", label: "(MSK+6) Якутск" },
+  { value: "MSK+7", label: "(MSK+7) Владивосток" },
+  { value: "MSK+8", label: "(MSK+8) Магадан" },
+  { value: "MSK+9", label: "(MSK+9) Камчатка" },
+];
 
-export default function SystemSettingsPage() {
+function readApiError(payload: unknown): string | null {
+  if (!payload) return null;
+  if (typeof payload === "string") return payload.trim() || null;
+  if (typeof payload === "object" && payload) {
+    const anyPayload = payload as any;
+    if (typeof anyPayload.message === "string") return anyPayload.message;
+    if (
+      Array.isArray(anyPayload.message) &&
+      typeof anyPayload.message[0] === "string"
+    ) {
+      return anyPayload.message[0];
+    }
+    if (typeof anyPayload.error === "string") return anyPayload.error;
+  }
+  return null;
+}
+
+async function readErrorMessage(res: Response, fallback: string) {
+  const text = await res.text().catch(() => "");
+  let json: any = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {}
+  return readApiError(json || text) || fallback;
+}
+
+export default function SettingsSystemPage() {
   const timezone = useTimezone();
-  const options = useTimezoneOptions();
   const setTimezone = useTimezoneUpdater();
   const [companyName, setCompanyName] = React.useState("");
-  const [savedName, setSavedName] = React.useState("");
-  const [initialName, setInitialName] = React.useState("");
-  const [nameLoading, setNameLoading] = React.useState(true);
-  const [nameSaving, setNameSaving] = React.useState(false);
-  const [nameMessage, setNameMessage] = React.useState<string | null>(null);
-  const [nameError, setNameError] = React.useState<string | null>(null);
-  const [value, setValue] = React.useState(timezone.code);
+  const [savedCompanyName, setSavedCompanyName] = React.useState("");
+  const [timezoneCode, setTimezoneCode] = React.useState(timezone.code);
   const [saving, setSaving] = React.useState(false);
-  const [message, setMessage] = React.useState<string | null>(null);
-  const [error, setError] = React.useState<string | null>(null);
-
-  const loadName = React.useCallback(async () => {
-    setNameLoading(true);
-    setNameError(null);
-    try {
-      const res = await fetch("/api/portal/settings/name");
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data?.message || "Не удалось загрузить название");
-      }
-      const nextName = String(data?.name || "");
-      const origin = String(data?.initialName || nextName);
-      setCompanyName(nextName);
-      setSavedName(nextName);
-      setInitialName(origin);
-    } catch (err: any) {
-      setNameError(String(err?.message || err));
-    } finally {
-      setNameLoading(false);
-    }
-  }, []);
+  const [success, setSuccess] = React.useState<string>("");
 
   React.useEffect(() => {
-    loadName();
-  }, [loadName]);
-
-  React.useEffect(() => {
-    setValue(timezone.code);
+    setTimezoneCode(timezone.code);
   }, [timezone.code]);
 
-  const saveName = React.useCallback(async () => {
-    const nextName = companyName.trim();
-    if (!nextName || nextName === savedName) return;
-    setNameSaving(true);
-    setNameError(null);
-    setNameMessage(null);
-    try {
-      const res = await fetch("/api/portal/settings/name", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: nextName }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data?.message || "Не удалось сохранить название");
+  React.useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch("/api/portal/settings/name", {
+          cache: "no-store",
+        });
+        if (!res.ok) {
+          throw new Error(await readErrorMessage(res, "Не удалось загрузить название"));
+        }
+        const data = (await res.json().catch(() => ({}))) as any;
+        if (cancelled) return;
+        const name = String(data?.name || "");
+        setCompanyName(name);
+        setSavedCompanyName(name);
+      } catch (e: any) {
+        if (cancelled) return;
+        alert(readApiError(String(e?.message || e || "")) || "Не удалось загрузить название компании");
       }
-      const updatedName = String(data?.name || nextName);
-      setCompanyName(updatedName);
-      setSavedName(updatedName);
-      setInitialName(String(data?.initialName || initialName || updatedName));
-      setNameMessage("Сохранено");
-      setTimeout(() => setNameMessage(null), WAIT_LABEL_TIMEOUT);
-    } catch (err: any) {
-      setNameError(String(err?.message || err));
-    } finally {
-      setNameSaving(false);
     }
-  }, [companyName, savedName, initialName]);
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  const applySelection = React.useCallback(async () => {
+  const handleSave = React.useCallback(async () => {
+    if (saving) return;
     setSaving(true);
-    setError(null);
-    setMessage(null);
+    setSuccess("");
+
+    const trimmedName = companyName.trim();
+    const shouldUpdateName = trimmedName !== savedCompanyName;
+    const shouldUpdateTimezone = timezoneCode !== timezone.code;
+
+    const tasks: Array<Promise<void>> = [];
+
+    if (shouldUpdateName) {
+      if (!trimmedName) {
+        alert("Введите название");
+        setSaving(false);
+        return;
+      }
+      tasks.push(
+        (async () => {
+          const res = await fetch("/api/portal/settings/name", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: trimmedName }),
+          });
+          if (!res.ok) {
+            throw new Error(await readErrorMessage(res, "Не удалось сохранить название"));
+          }
+          const data = (await res.json().catch(() => ({}))) as any;
+          const updatedName = String(data?.name || trimmedName);
+          setCompanyName(updatedName);
+          setSavedCompanyName(updatedName);
+        })(),
+      );
+    }
+
+    if (shouldUpdateTimezone) {
+      tasks.push(
+        (async () => {
+          const res = await fetch("/api/portal/settings/timezone", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code: timezoneCode }),
+          });
+          if (!res.ok) {
+            throw new Error(await readErrorMessage(res, "Не удалось сохранить часовой пояс"));
+          }
+          const data = (await res.json().catch(() => ({}))) as any;
+          if (data?.timezone) {
+            setTimezone(data.timezone);
+            setTimezoneCode(String(data.timezone.code || timezoneCode));
+          }
+        })(),
+      );
+    }
+
     try {
-      const res = await fetch("/api/portal/settings/timezone", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: value }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json?.message || "Не удалось сохранить настройки");
+      const results = await Promise.allSettled(tasks);
+      const errors = results.filter((r) => r.status === "rejected") as Array<PromiseRejectedResult>;
+      if (errors.length > 0) {
+        const message = errors
+          .map((err) => String((err.reason as any)?.message || err.reason || ""))
+          .filter(Boolean)
+          .join("\n");
+        alert(readApiError(message) || "Не удалось сохранить системные настройки");
+        return;
       }
-      if (json?.timezone) {
-        setTimezone(json.timezone);
-      }
-      setMessage("Сохранено");
-      setTimeout(() => setMessage(null), WAIT_LABEL_TIMEOUT);
-    } catch (err: any) {
-      setError(String(err?.message || err));
+      setSuccess("Системные настройки сохранены!");
     } finally {
       setSaving(false);
     }
-  }, [value, setTimezone]);
-
-  const selected = options.find((item) => item.code === value) || timezone;
+  }, [saving, companyName, savedCompanyName, timezoneCode, timezone.code, setTimezone]);
 
   return (
-    <div className="animate-in" style={{ display: "grid", gap: 28 }}>
-      {/* Page Header */}
-      <header style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
-        <div style={{
-          width: 48,
-          height: 48,
-          borderRadius: "var(--radius-lg)",
-          background: "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.1))",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "var(--brand-primary-light)",
-        }}>
-          <Settings size={24} />
+    <div className="p-8 max-w-[1000px] mx-auto space-y-8 animate-fade-in">
+      {success ? (
+        <div className="bg-green-50 border border-green-200 text-green-800 rounded-xl p-4 text-sm flex items-start space-x-3">
+          <div className="font-semibold">Готово</div>
+          <div className="flex-1 whitespace-pre-wrap break-words">{success}</div>
         </div>
-        <div>
-          <h1 style={{ 
-            fontSize: 28, 
-            fontWeight: 800, 
-            margin: 0,
-            letterSpacing: "-0.02em",
-          }}>
-            Системные настройки
-          </h1>
-          <p style={{ 
-            fontSize: 14, 
-            color: "var(--fg-muted)", 
-            margin: "6px 0 0",
-            maxWidth: 600,
-          }}>
-            Основные настройки портала: название компании и часовой пояс
-          </p>
-        </div>
-      </header>
+      ) : null}
 
-      {/* Company Name Card */}
-      <Card hover className="animate-in" style={{ animationDelay: "0.1s" }}>
-        <CardHeader
-          title="Название компании"
-          subtitle="Отображается клиентам в приложении, уведомлениях и отчётах"
-          icon={<Building2 size={20} />}
-        />
-        <CardBody style={{ padding: 24 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <label style={{ 
-                fontSize: 13, 
-                fontWeight: 500, 
-                color: "var(--fg-secondary)" 
-              }}>
-                Отображаемое название
-              </label>
+      {/* Header */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Системные настройки</h2>
+          <p className="text-gray-500 mt-1">Базовые параметры вашего проекта.</p>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleSave}
+          aria-busy={saving}
+          className="flex items-center space-x-2 bg-purple-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-purple-700 transition-colors shadow-sm"
+        >
+          <Save size={18} />
+          <span>Сохранить</span>
+        </button>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-gray-100 bg-gray-50/50">
+          <div className="flex items-center space-x-2 text-gray-900 font-bold text-lg">
+            <Globe size={20} className="text-purple-600" />
+            <h3>Общие параметры</h3>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* Company Name */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Название компании</label>
+            <div className="relative">
+              <Building2 size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
+                type="text"
                 value={companyName}
-                onChange={(event) => setCompanyName(event.target.value)}
-                disabled={nameSaving || nameLoading}
-                maxLength={120}
-                placeholder={savedName || companyName || "Введите название компании"}
-                className="input"
-                style={{
-                  fontSize: 15,
-                }}
+                onChange={(e) => setCompanyName(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg pl-10 pr-4 py-2 focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                placeholder="Введите название"
               />
             </div>
-
-            <div style={{ 
-              display: "flex", 
-              gap: 16, 
-              alignItems: "center",
-              paddingTop: 4,
-            }}>
-              <Button
-                variant="primary"
-                disabled={
-                  nameSaving || nameLoading || !companyName.trim() || companyName.trim() === savedName
-                }
-                onClick={saveName}
-                leftIcon={<Save size={16} />}
-              >
-                {nameSaving ? "Сохранение..." : "Сохранить"}
-              </Button>
-              
-              {nameMessage && (
-                <div style={{ 
-                  display: "flex", 
-                  alignItems: "center", 
-                  gap: 6, 
-                  color: "var(--success-light)", 
-                  fontSize: 13,
-                  fontWeight: 500,
-                }}>
-                  <CheckCircle2 size={16} />
-                  {nameMessage}
-                </div>
-              )}
-              
-              {nameError && (
-                <div style={{ 
-                  display: "flex", 
-                  alignItems: "center", 
-                  gap: 6, 
-                  color: "var(--danger-light)", 
-                  fontSize: 13 
-                }}>
-                  <AlertCircle size={16} />
-                  {nameError}
-                </div>
-              )}
-            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              Это название будет отображаться клиентам в приложении и уведомлениях.
+            </p>
           </div>
-        </CardBody>
-      </Card>
 
-      {/* Timezone Card */}
-      <Card hover className="animate-in" style={{ animationDelay: "0.2s" }}>
-        <CardHeader
-          title="Часовой пояс"
-          subtitle="Применяется к аналитике, операциям и уведомлениям"
-          icon={<Clock size={20} />}
-        />
-        <CardBody style={{ padding: 24 }}>
-          <div style={{ display: "grid", gap: 24 }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <label style={{ 
-                fontSize: 13, 
-                fontWeight: 500, 
-                color: "var(--fg-secondary)" 
-              }}>
-                Регион России
-              </label>
+          {/* Timezone */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Часовой пояс</label>
+            <div className="relative">
+              <Clock size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <select
-                value={value}
-                onChange={(event) => setValue(event.target.value)}
-                disabled={saving}
-                className="input"
-                style={{
-                  fontSize: 15,
-                  cursor: "pointer",
-                }}
+                value={timezoneCode}
+                onChange={(e) => setTimezoneCode(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg pl-10 pr-4 py-2 bg-white appearance-none focus:ring-2 focus:ring-purple-500 focus:outline-none cursor-pointer"
               >
-                {options.map((option) => (
-                  <option key={option.code} value={option.code}>
-                    {option.label}
+                {timezones.map((tz) => (
+                  <option key={tz.value} value={tz.value}>
+                    {tz.label}
                   </option>
                 ))}
               </select>
             </div>
-
-            {/* Timezone Info */}
-            <div className="info-panel">
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: "var(--radius-sm)",
-                  background: "rgba(99, 102, 241, 0.1)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: "var(--brand-primary-light)",
-                }}>
-                  <MapPin size={18} />
-                </div>
-                <div>
-                  <div style={{ fontSize: 12, color: "var(--fg-muted)" }}>Город</div>
-                  <div style={{ fontSize: 14, fontWeight: 600 }}>{selected.city}</div>
-                </div>
-              </div>
-              
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: "var(--radius-sm)",
-                  background: "rgba(6, 182, 212, 0.1)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: "var(--brand-accent-light)",
-                }}>
-                  <Clock size={18} />
-                </div>
-                <div>
-                  <div style={{ fontSize: 12, color: "var(--fg-muted)" }}>Смещение</div>
-                  <div style={{ fontSize: 14, fontWeight: 600 }}>
-                    МСК{selected.mskOffset >= 0 ? `+${selected.mskOffset}` : selected.mskOffset}
-                  </div>
-                </div>
-              </div>
-              
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: "var(--radius-sm)",
-                  background: "rgba(16, 185, 129, 0.1)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: "var(--success-light)",
-                }}>
-                  <Globe size={18} />
-                </div>
-                <div>
-                  <div style={{ fontSize: 12, color: "var(--fg-muted)" }}>UTC</div>
-                  <div style={{ fontSize: 14, fontWeight: 600 }}>
-                    UTC{selected.utcOffsetMinutes / 60 >= 0 ? "+" : ""}{selected.utcOffsetMinutes / 60}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ 
-              display: "flex", 
-              gap: 16, 
-              alignItems: "center",
-            }}>
-              <Button 
-                variant="primary" 
-                disabled={saving || value === timezone.code} 
-                onClick={applySelection}
-                leftIcon={<Save size={16} />}
-              >
-                {saving ? "Сохранение..." : "Сохранить"}
-              </Button>
-              
-              {message && (
-                <div style={{ 
-                  display: "flex", 
-                  alignItems: "center", 
-                  gap: 6, 
-                  color: "var(--success-light)", 
-                  fontSize: 13,
-                  fontWeight: 500,
-                }}>
-                  <CheckCircle2 size={16} />
-                  {message}
-                </div>
-              )}
-              
-              {error && (
-                <div style={{ 
-                  display: "flex", 
-                  alignItems: "center", 
-                  gap: 6, 
-                  color: "var(--danger-light)", 
-                  fontSize: 13 
-                }}>
-                  <AlertCircle size={16} />
-                  {error}
-                </div>
-              )}
-            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              Используется для корректного отображения времени транзакций и планирования рассылок.
+            </p>
           </div>
-        </CardBody>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }
