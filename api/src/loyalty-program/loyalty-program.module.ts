@@ -12,7 +12,12 @@ import { PortalGuard } from '../portal-auth/portal.guard';
 import { SubscriptionModule } from '../subscription/subscription.module';
 
 @Module({
-  imports: [PrismaModule, MetricsModule, CommunicationsModule, SubscriptionModule],
+  imports: [
+    PrismaModule,
+    MetricsModule,
+    CommunicationsModule,
+    SubscriptionModule,
+  ],
   providers: [LoyaltyProgramService, PortalGuard],
   controllers: [
     MechanicsController,

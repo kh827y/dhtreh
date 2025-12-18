@@ -101,8 +101,9 @@ function legacyPayloadToPromotion(
   const normalizedRewardMetadata: any = {
     ...rewardMeta,
     productIds: targetProducts.length ? targetProducts : rewardMeta?.productIds,
-    categoryIds:
-      targetCategories.length ? targetCategories : rewardMeta?.categoryIds,
+    categoryIds: targetCategories.length
+      ? targetCategories
+      : rewardMeta?.categoryIds,
   };
   const reminderRaw = body.metadata?.reminderOffsetHours;
   const reminderOffsetHours =
@@ -137,10 +138,7 @@ function legacyPayloadToPromotion(
       Number.isFinite(Number(multiplierRaw)) && Number(multiplierRaw) > 0
         ? Number(multiplierRaw)
         : 0;
-    if (
-      (!Number.isFinite(rewardValue) || rewardValue < 0) &&
-      multiplier <= 0
-    ) {
+    if ((!Number.isFinite(rewardValue) || rewardValue < 0) && multiplier <= 0) {
       throw new BadRequestException(
         'Укажите количество баллов или множитель для акции',
       );
@@ -216,9 +214,7 @@ function legacyPayloadToPromotion(
       (reward as any).price ?? (reward as any).value ?? rewardMeta.price;
     const price = ensureNumber(priceRaw, -1);
     if (!Number.isFinite(price) || price < 0) {
-      throw new BadRequestException(
-        'Укажите акционную цену (reward.price)',
-      );
+      throw new BadRequestException('Укажите акционную цену (reward.price)');
     }
     const rewardMetadata = {
       ...normalizedRewardMetadata,

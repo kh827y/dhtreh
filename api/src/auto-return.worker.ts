@@ -464,7 +464,8 @@ export class AutoReturnWorker implements OnModuleInit, OnModuleDestroy {
       return null;
     }
 
-    const username = (customer.name || 'Уважаемый клиент').trim() || 'Уважаемый клиент';
+    const username =
+      (customer.name || 'Уважаемый клиент').trim() || 'Уважаемый клиент';
     const bonusValue = config.giftPoints > 0 ? String(config.giftPoints) : '';
     const message = this.applyPlaceholders(config.text, {
       username,

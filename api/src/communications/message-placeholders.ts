@@ -19,4 +19,3 @@ export function applyCurlyPlaceholders(
     return normalized[key] ?? '';
   });
 }
-

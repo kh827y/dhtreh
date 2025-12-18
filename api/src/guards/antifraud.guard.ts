@@ -209,9 +209,7 @@ export class AntiFraudGuard implements CanActivate {
           },
           device: {
             limit: Number(deviceCfg?.limit ?? limits.device.limit),
-            windowSec: Number(
-              deviceCfg?.windowSec ?? limits.device.windowSec,
-            ),
+            windowSec: Number(deviceCfg?.windowSec ?? limits.device.windowSec),
             dailyCap: Number(deviceCfg?.dailyCap ?? limits.device.dailyCap),
             weeklyCap: Number(deviceCfg?.weeklyCap ?? limits.device.weeklyCap),
           },
@@ -522,7 +520,8 @@ export class AntiFraudGuard implements CanActivate {
                         customerId: hold.customerId,
                         outletId: hold.outletId || undefined,
                         staffId: hold.staffId,
-                        deviceId: hold.deviceId || resolvedDeviceIdFinal || undefined,
+                        deviceId:
+                          hold.deviceId || resolvedDeviceIdFinal || undefined,
                         amount: earnPoints,
                         limit: limits.customer.pointsCap,
                       },
@@ -578,7 +577,8 @@ export class AntiFraudGuard implements CanActivate {
                         customerId: hold.customerId,
                         outletId: hold.outletId || undefined,
                         staffId: hold.staffId,
-                        deviceId: hold.deviceId ?? resolvedDeviceIdFinal ?? undefined,
+                        deviceId:
+                          hold.deviceId ?? resolvedDeviceIdFinal ?? undefined,
                       },
                     })
                     .catch(() => {});
@@ -616,7 +616,8 @@ export class AntiFraudGuard implements CanActivate {
                         customerId: hold.customerId,
                         outletId: hold.outletId || undefined,
                         staffId: hold.staffId,
-                        deviceId: hold.deviceId ?? resolvedDeviceIdFinal ?? null,
+                        deviceId:
+                          hold.deviceId ?? resolvedDeviceIdFinal ?? null,
                       },
                     })
                     .catch(() => {});
@@ -726,29 +727,29 @@ export class AntiFraudGuard implements CanActivate {
                       merchantId: hold.merchantId,
                       reason: 'factor',
                       factor: matched,
-                    ctx: {
-                      customerId: hold.customerId,
-                      outletId: hold.outletId || undefined,
-                      staffId: hold.staffId,
-                      deviceId:
-                        hold.deviceId ?? resolvedDeviceIdFinal ?? undefined,
-                    },
-                  })
-                  .catch(() => {});
-              } catch {}
-              try {
-                this.staffNotify
-                  .enqueueEvent(hold.merchantId, {
-                    kind: 'FRAUD',
-                    reason: 'factor',
-                    scope: matched,
-                    customerId: hold.customerId ?? null,
-                    outletId: hold.outletId ?? null,
-                    staffId: hold.staffId ?? null,
-                    deviceId: hold.deviceId ?? resolvedDeviceIdFinal ?? null,
-                    operation: isCommit ? 'commit' : 'refund',
-                    at: new Date().toISOString(),
-                  })
+                      ctx: {
+                        customerId: hold.customerId,
+                        outletId: hold.outletId || undefined,
+                        staffId: hold.staffId,
+                        deviceId:
+                          hold.deviceId ?? resolvedDeviceIdFinal ?? undefined,
+                      },
+                    })
+                    .catch(() => {});
+                } catch {}
+                try {
+                  this.staffNotify
+                    .enqueueEvent(hold.merchantId, {
+                      kind: 'FRAUD',
+                      reason: 'factor',
+                      scope: matched,
+                      customerId: hold.customerId ?? null,
+                      outletId: hold.outletId ?? null,
+                      staffId: hold.staffId ?? null,
+                      deviceId: hold.deviceId ?? resolvedDeviceIdFinal ?? null,
+                      operation: isCommit ? 'commit' : 'refund',
+                      at: new Date().toISOString(),
+                    })
                     .catch(() => {});
                 } catch {}
                 throw new HttpException(

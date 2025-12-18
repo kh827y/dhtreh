@@ -126,10 +126,10 @@ export class LoyaltyProgramService {
   private extractMultiplierValue(meta: any): number {
     if (!meta || typeof meta !== 'object') return 0;
     const raw =
-      (meta as any).multiplier ??
-      (meta as any).earnMultiplier ??
-      (meta as any).pointsMultiplier ??
-      (meta as any).rewardMultiplier;
+      meta.multiplier ??
+      meta.earnMultiplier ??
+      meta.pointsMultiplier ??
+      meta.rewardMultiplier;
     const val = Number(raw);
     return Number.isFinite(val) && val > 0 ? val : 0;
   }
@@ -217,8 +217,7 @@ export class LoyaltyProgramService {
       promotion?.metadata && typeof promotion.metadata === 'object'
         ? (promotion.metadata as Record<string, any>)
         : {};
-    const raw =
-      kind === 'start' ? meta.pushMessage : meta.pushReminderMessage;
+    const raw = kind === 'start' ? meta.pushMessage : meta.pushReminderMessage;
     if (typeof raw === 'string' && raw.trim()) return raw.trim();
     if (kind === 'start') return this.buildStartText(promotion);
     return this.buildReminderText(promotion, reminderHours ?? 48);
@@ -302,7 +301,7 @@ export class LoyaltyProgramService {
             });
           }
         }
-      }      
+      }
     }
 
     // REMINDER notifications (default 48h before end)
@@ -317,7 +316,11 @@ export class LoyaltyProgramService {
       if (ts > now) {
         const when = this.normalizeFuture(new Date(ts));
         if (when) {
-          const text = this.resolvePromotionText(promotion, 'reminder', offsetH);
+          const text = this.resolvePromotionText(
+            promotion,
+            'reminder',
+            offsetH,
+          );
           if (promotion.pushTemplateReminderId) {
             if (
               !(await this.taskExists({
@@ -1136,7 +1139,9 @@ export class LoyaltyProgramService {
         rewardMetadata.price = Math.max(0, price);
         rewardValue = Math.round(Math.max(0, price));
       } else {
-        throw new BadRequestException('Укажите тип акции (NTH_FREE/FIXED_PRICE)');
+        throw new BadRequestException(
+          'Укажите тип акции (NTH_FREE/FIXED_PRICE)',
+        );
       }
     }
 
@@ -1207,7 +1212,8 @@ export class LoyaltyProgramService {
     const rewardMetadata =
       payload.rewardMetadata && typeof payload.rewardMetadata === 'object'
         ? { ...(payload.rewardMetadata as Record<string, any>) }
-        : promotion.rewardMetadata && typeof promotion.rewardMetadata === 'object'
+        : promotion.rewardMetadata &&
+            typeof promotion.rewardMetadata === 'object'
           ? { ...(promotion.rewardMetadata as any) }
           : {};
     let rewardValue = Math.max(
@@ -1253,10 +1259,8 @@ export class LoyaltyProgramService {
           ? (promotion.rewardMetadata as any)
           : {};
       if (kind === 'NTH_FREE') {
-        const buyQtyRaw =
-          (rewardMetadata as any).buyQty ?? promoMeta?.buyQty;
-        const freeQtyRaw =
-          (rewardMetadata as any).freeQty ?? promoMeta?.freeQty;
+        const buyQtyRaw = rewardMetadata.buyQty ?? promoMeta?.buyQty;
+        const freeQtyRaw = rewardMetadata.freeQty ?? promoMeta?.freeQty;
         const buyQty = Number(buyQtyRaw);
         const freeQty = Number(freeQtyRaw);
         if (!Number.isFinite(buyQty) || buyQty <= 0) {
@@ -1274,9 +1278,7 @@ export class LoyaltyProgramService {
         rewardValue = 0;
       } else if (kind === 'FIXED_PRICE') {
         const priceRaw =
-          (rewardMetadata as any).price ??
-          promoMeta?.price ??
-          payload.rewardValue;
+          rewardMetadata.price ?? promoMeta?.price ?? payload.rewardValue;
         const price = Number(priceRaw);
         if (!Number.isFinite(price) || price < 0) {
           throw new BadRequestException('Укажите акционную цену');
@@ -1284,7 +1286,9 @@ export class LoyaltyProgramService {
         rewardMetadata.price = Math.max(0, price);
         rewardValue = Math.round(Math.max(0, price));
       } else {
-        throw new BadRequestException('Укажите тип акции (NTH_FREE/FIXED_PRICE)');
+        throw new BadRequestException(
+          'Укажите тип акции (NTH_FREE/FIXED_PRICE)',
+        );
       }
     }
 

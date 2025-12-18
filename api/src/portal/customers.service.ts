@@ -456,8 +456,7 @@ export class PortalCustomersService {
 
     const primaryPhone = entity.phone?.toString() ?? null;
     const primaryEmail = entity.email?.toString() ?? null;
-    const displayName =
-      typeof entity.name === 'string' ? entity.name : null;
+    const displayName = typeof entity.name === 'string' ? entity.name : null;
     const { firstName, lastName } = this.splitName(displayName);
 
     const birthdayIso = entity.birthday
@@ -1645,7 +1644,9 @@ export class PortalCustomersService {
         total: Number(receipt.total ?? 0),
         blockedAccrual: false,
         receiptId: receipt.id,
-        canceledAt: receipt.canceledAt ? receipt.canceledAt.toISOString() : null,
+        canceledAt: receipt.canceledAt
+          ? receipt.canceledAt.toISOString()
+          : null,
         canceledBy: receipt.canceledBy
           ? {
               id: receipt.canceledBy.id,
@@ -1665,8 +1666,7 @@ export class PortalCustomersService {
         let earn = 0;
         let datetime = '';
         let outlet = group.items.find((item) => item.outlet)?.outlet ?? null;
-        let manager =
-          group.items.find((item) => item.manager)?.manager ?? null;
+        let manager = group.items.find((item) => item.manager)?.manager ?? null;
         let receiptNumber =
           group.items.find((item) => item.receiptNumber)?.receiptNumber ?? null;
         let receiptId =
@@ -1730,7 +1730,8 @@ export class PortalCustomersService {
         }
 
         const baseDetails =
-          group.items.find((item) => item.details)?.details ?? 'Возврат покупки';
+          group.items.find((item) => item.details)?.details ??
+          'Возврат покупки';
 
         return {
           id: group.items[0]?.id ?? `refund:${orderId || 'unknown'}`,
@@ -2399,7 +2400,11 @@ export class PortalCustomersService {
   ) {
     const profile = await this.prisma.customer.findUnique({
       where: { id: customerId },
-      select: { merchantId: true, accrualsBlocked: true, redemptionsBlocked: true },
+      select: {
+        merchantId: true,
+        accrualsBlocked: true,
+        redemptionsBlocked: true,
+      },
     });
     if (!profile || profile.merchantId !== merchantId) return;
     if (mode === 'earn' && profile.accrualsBlocked) {

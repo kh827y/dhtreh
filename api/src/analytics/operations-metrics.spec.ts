@@ -58,7 +58,7 @@ describe('AnalyticsService — operational metrics', () => {
     const sqlStrings = sqlCalls.map((sql) => joinSql(sql));
     sqlStrings.forEach((text) => {
       expect(text).toContain('"canceledAt" IS NULL');
-      expect(text).toContain("refund.\"type\" = 'REFUND'");
+      expect(text).toContain('refund."type" = \'REFUND\'');
       expect(text).toContain('"customerId" IS NOT NULL');
     });
   });
@@ -81,7 +81,11 @@ describe('AnalyticsService — operational metrics', () => {
         findMany: jest.fn().mockResolvedValue([{ id: 'o-1', name: 'Флагман' }]),
       },
       staffMotivationEntry: {
-        groupBy: jest.fn().mockResolvedValue([{ staffId: 's-1', outletId: 'o-1', _sum: { points: 18 } }]),
+        groupBy: jest
+          .fn()
+          .mockResolvedValue([
+            { staffId: 's-1', outletId: 'o-1', _sum: { points: 18 } },
+          ]),
       },
       $queryRaw: jest
         .fn()
@@ -101,11 +105,20 @@ describe('AnalyticsService — operational metrics', () => {
         })
         .mockImplementationOnce((sql: any) => {
           sqlCalls.push(sql);
-          return Promise.resolve([{ staffId: 's-1', outletId: 'o-1', newCustomers: 2 }]);
+          return Promise.resolve([
+            { staffId: 's-1', outletId: 'o-1', newCustomers: 2 },
+          ]);
         })
         .mockImplementationOnce((sql: any) => {
           sqlCalls.push(sql);
-          return Promise.resolve([{ staffId: 's-1', outletId: 'o-1', avgRating: 4.5, reviewsCount: 3 }]);
+          return Promise.resolve([
+            {
+              staffId: 's-1',
+              outletId: 'o-1',
+              avgRating: 4.5,
+              reviewsCount: 3,
+            },
+          ]);
         }),
     };
 
@@ -132,10 +145,10 @@ describe('AnalyticsService — operational metrics', () => {
 
     const sqlStrings = sqlCalls.map((sql) => joinSql(sql));
     expect(sqlStrings[0]).toContain('"canceledAt" IS NULL');
-    expect(sqlStrings[0]).toContain("refund.\"type\" = 'REFUND'");
+    expect(sqlStrings[0]).toContain('refund."type" = \'REFUND\'');
     expect(sqlStrings[0]).toContain('"customerId" IS NOT NULL');
     expect(sqlStrings[1]).toContain('"canceledAt" IS NULL');
-    expect(sqlStrings[1]).toContain("refund.\"type\" = 'REFUND'");
+    expect(sqlStrings[1]).toContain('refund."type" = \'REFUND\'');
     expect(sqlStrings[1]).toContain('"customerId" IS NOT NULL');
   });
 });

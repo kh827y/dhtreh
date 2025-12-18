@@ -209,14 +209,17 @@ export class CommunicationsDispatcherWorker
     const promotionName =
       typeof payload.name === 'string' && payload.name.trim()
         ? payload.name.trim()
-        : promotion?.name ?? '';
+        : (promotion?.name ?? '');
     const hasBonusSource =
       payload.bonus !== undefined ||
       payload.rewardValue !== undefined ||
       payload.points !== undefined ||
       promotion?.rewardValue !== undefined;
     const bonusRaw =
-      payload.bonus ?? payload.rewardValue ?? payload.points ?? promotion?.rewardValue;
+      payload.bonus ??
+      payload.rewardValue ??
+      payload.points ??
+      promotion?.rewardValue;
     const bonus = Number.isFinite(Number(bonusRaw))
       ? Math.max(0, Math.trunc(Number(bonusRaw)))
       : 0;
@@ -344,14 +347,17 @@ export class CommunicationsDispatcherWorker
     const promotionName =
       typeof payload.name === 'string' && payload.name.trim()
         ? payload.name.trim()
-        : promotion?.name ?? '';
+        : (promotion?.name ?? '');
     const hasBonusSource =
       payload.bonus !== undefined ||
       payload.rewardValue !== undefined ||
       payload.points !== undefined ||
       promotion?.rewardValue !== undefined;
     const bonusRaw =
-      payload.bonus ?? payload.rewardValue ?? payload.points ?? promotion?.rewardValue;
+      payload.bonus ??
+      payload.rewardValue ??
+      payload.points ??
+      promotion?.rewardValue;
     const bonus = Number.isFinite(Number(bonusRaw))
       ? Math.max(0, Math.trunc(Number(bonusRaw)))
       : 0;

@@ -236,7 +236,8 @@ export class LoyaltyService {
         (entry as any).earn_multiplier ??
         (entry as any).multiplier;
       const earnMultiplier =
-        Number.isFinite(Number(earnMultiplierRaw)) && Number(earnMultiplierRaw) > 0
+        Number.isFinite(Number(earnMultiplierRaw)) &&
+        Number(earnMultiplierRaw) > 0
           ? Number(earnMultiplierRaw)
           : undefined;
       items.push({
@@ -315,7 +316,7 @@ export class LoyaltyService {
       multipliers,
     ] = await Promise.all([
       productIds.length
-        ? this.prisma.product
+        ? (this.prisma.product
             .findMany({
               where: { merchantId, id: { in: productIds }, deletedAt: null },
               select: {
@@ -326,10 +327,10 @@ export class LoyaltyService {
                 allowRedeem: true,
               },
             })
-            .catch(() => []) as any
+            .catch(() => []) as any)
         : [],
       externalIds.length
-        ? this.prisma.productExternalId
+        ? (this.prisma.productExternalId
             .findMany({
               where: {
                 merchantId,
@@ -347,10 +348,10 @@ export class LoyaltyService {
                 },
               },
             })
-            .catch(() => []) as any
+            .catch(() => []) as any)
         : [],
       externalIds.length
-        ? this.prisma.product
+        ? (this.prisma.product
             .findMany({
               where: {
                 merchantId,
@@ -361,21 +362,21 @@ export class LoyaltyService {
                   { sku: { in: externalIds } },
                 ],
               },
-                select: {
-                  id: true,
-                  categoryId: true,
-                  name: true,
-                  accruePoints: true,
-                  allowRedeem: true,
-                  externalId: true,
-                  code: true,
-                  sku: true,
+              select: {
+                id: true,
+                categoryId: true,
+                name: true,
+                accruePoints: true,
+                allowRedeem: true,
+                externalId: true,
+                code: true,
+                sku: true,
               },
             })
-            .catch(() => []) as any
+            .catch(() => []) as any)
         : [],
       categoryIds.length
-        ? this.prisma.productCategory
+        ? (this.prisma.productCategory
             .findMany({
               where: {
                 merchantId,
@@ -387,15 +388,15 @@ export class LoyaltyService {
               },
               select: { id: true, externalId: true },
             })
-            .catch(() => []) as any
+            .catch(() => []) as any)
         : [],
       categoryIds.length
-        ? this.prisma.productCategoryExternal
+        ? (this.prisma.productCategoryExternal
             .findMany({
               where: { merchantId, externalId: { in: categoryIds } },
               include: { category: { select: { id: true, externalId: true } } },
             })
-            .catch(() => []) as any
+            .catch(() => []) as any)
         : [],
       this.loadActiveMultipliers(merchantId, new Date()),
     ]);
@@ -470,14 +471,17 @@ export class LoyaltyService {
     for (const item of normalized) {
       const amount = Math.max(
         0,
-        Math.round(Math.max(0, Number(item.price || 0)) * Math.max(0, Number(item.qty || 0))),
+        Math.round(
+          Math.max(0, Number(item.price || 0)) *
+            Math.max(0, Number(item.qty || 0)),
+        ),
       );
       if (amount <= 0) continue;
       const extKey = normalize(item.externalId);
       const productId =
         (normalize(item.productId) &&
           productByIdMap.get(normalize(item.productId) as string)?.id) ||
-        (extKey && productByExtMap.get(extKey as string)?.id) ||
+        (extKey && productByExtMap.get(extKey)?.id) ||
         null;
       const productInfo: any =
         (productId && productByIdMap.get(productId)) ||
@@ -489,11 +493,7 @@ export class LoyaltyService {
           categoryByExtMap.get(normalize(item.categoryId) as string)) ||
         productInfo?.categoryId ||
         null;
-      const promo = this.pickMultiplier(
-        multipliers,
-        productId,
-        categoryId,
-      );
+      const promo = this.pickMultiplier(multipliers, productId, categoryId);
       const accruePoints =
         item.accruePoints != null
           ? Boolean(item.accruePoints)
@@ -603,10 +603,10 @@ export class LoyaltyService {
       const categoryIds = new Set<string>();
       pushAll(meta.productIds, productIds);
       pushAll(meta.products, productIds);
-      pushAll((meta.targets as any)?.products, productIds);
+      pushAll(meta.targets?.products, productIds);
       pushAll(meta.categoryIds, categoryIds);
       pushAll(meta.categories, categoryIds);
-      pushAll((meta.targets as any)?.categories, categoryIds);
+      pushAll(meta.targets?.categories, categoryIds);
 
       const kindRaw = String(meta.kind || meta.type || '').toUpperCase();
       let kind: ActivePromotionRule['kind'] | null = null;
@@ -747,10 +747,10 @@ export class LoyaltyService {
       };
       pushAll(meta.productIds, productIds);
       pushAll(meta.products, productIds);
-      pushAll((meta.targets as any)?.products, productIds);
+      pushAll(meta.targets?.products, productIds);
       pushAll(meta.categoryIds, categoryIds);
       pushAll(meta.categories, categoryIds);
-      pushAll((meta.targets as any)?.categories, categoryIds);
+      pushAll(meta.targets?.categories, categoryIds);
       return {
         id: promo.id,
         multiplier,
@@ -791,7 +791,10 @@ export class LoyaltyService {
     return best;
   }
 
-  async calculateAction(params: { merchantId: string; items: PositionInput[] }) {
+  async calculateAction(params: {
+    merchantId: string;
+    items: PositionInput[];
+  }) {
     const resolved = await this.resolvePositions(
       params.merchantId,
       params.items,
@@ -827,10 +830,7 @@ export class LoyaltyService {
             promo.productIds.size === 0 && promo.categoryIds.size === 0;
           return matchesProduct || matchesCategory || appliesAll;
         })
-        .sort(
-          (a, b) =>
-            (priority[a.kind] ?? 10) - (priority[b.kind] ?? 10),
-        );
+        .sort((a, b) => (priority[a.kind] ?? 10) - (priority[b.kind] ?? 10));
       const appliedIds: string[] = [];
       const appliedNames: string[] = [];
       let unitPrice = Math.max(0, item.price);
@@ -855,7 +855,9 @@ export class LoyaltyService {
           if (promo.multiplier && promo.multiplier > earnMultiplier) {
             earnMultiplier = promo.multiplier;
           }
-          infoSet.add(`${promo.name}: множитель начисления x${promo.multiplier ?? 1}`);
+          infoSet.add(
+            `${promo.name}: множитель начисления x${promo.multiplier ?? 1}`,
+          );
           continue;
         }
         if (promo.kind === 'NTH_FREE') {
@@ -864,13 +866,13 @@ export class LoyaltyService {
             Math.trunc((promo.buyQty ?? 1) + (promo.freeQty ?? 0)),
           );
           const freeCount =
-            step > 0 ? Math.floor(item.qty / step) * Math.max(1, promo.freeQty ?? 1) : 0;
+            step > 0
+              ? Math.floor(item.qty / step) * Math.max(1, promo.freeQty ?? 1)
+              : 0;
           if (freeCount > 0) {
             freebies = Math.min(freeCount, item.qty);
             nthFreePromoApplied = true;
-            infoSet.add(
-              `${promo.name}: ${freebies} шт. бесплатно`,
-            );
+            infoSet.add(`${promo.name}: ${freebies} шт. бесплатно`);
           }
           continue;
         }
@@ -887,10 +889,7 @@ export class LoyaltyService {
       }
 
       const idProduct =
-        item.externalId ??
-        item.productId ??
-        item.resolvedProductId ??
-        null;
+        item.externalId ?? item.productId ?? item.resolvedProductId ?? null;
       const allowEarnAndPay =
         item.allowEarnAndPay != null ? Boolean(item.allowEarnAndPay) : true;
 
@@ -927,31 +926,35 @@ export class LoyaltyService {
 
       // Если все бесплатные (qty == freebies)
       if (nthFreePromoApplied && freebies >= item.qty) {
-        return [{
+        return [
+          {
+            id_product: idProduct,
+            name: item.name ?? null,
+            qty: item.qty,
+            price: 0,
+            base_price: basePrice,
+            actions: appliedIds,
+            action_names: appliedNames,
+            earn_multiplier: earnMultiplier > 0 ? earnMultiplier : 1,
+            allow_earn_and_pay: allowEarnAndPay,
+          },
+        ];
+      }
+
+      // Стандартный случай — без разбиения
+      return [
+        {
           id_product: idProduct,
           name: item.name ?? null,
           qty: item.qty,
-          price: 0,
+          price: unitPrice,
           base_price: basePrice,
           actions: appliedIds,
           action_names: appliedNames,
           earn_multiplier: earnMultiplier > 0 ? earnMultiplier : 1,
           allow_earn_and_pay: allowEarnAndPay,
-        }];
-      }
-
-      // Стандартный случай — без разбиения
-      return [{
-        id_product: idProduct,
-        name: item.name ?? null,
-        qty: item.qty,
-        price: unitPrice,
-        base_price: basePrice,
-        actions: appliedIds,
-        action_names: appliedNames,
-        earn_multiplier: earnMultiplier > 0 ? earnMultiplier : 1,
-        allow_earn_and_pay: allowEarnAndPay,
-      }];
+        },
+      ];
     });
     return { positions, info: Array.from(infoSet) };
   }
@@ -1524,7 +1527,9 @@ export class LoyaltyService {
       delayHoursRaw != null &&
       (delayHoursRaw as any) > 0
         ? Math.floor(Number(delayHoursRaw)) * 60 * 60 * 1000
-        : Number.isFinite(delayDaysRaw) && delayDaysRaw != null && delayDaysRaw > 0
+        : Number.isFinite(delayDaysRaw) &&
+            delayDaysRaw != null &&
+            delayDaysRaw > 0
           ? Math.floor(Number(delayDaysRaw)) * 24 * 60 * 60 * 1000
           : 0;
 
@@ -2645,9 +2650,7 @@ export class LoyaltyService {
         tierMinPayment != null
           ? Math.max(
               0,
-              sanitizedTotal -
-                tierMinPayment -
-                Math.max(0, priorRedeemApplied),
+              sanitizedTotal - tierMinPayment - Math.max(0, priorRedeemApplied),
             )
           : Number.MAX_SAFE_INTEGER;
       const computeRedeemQuote = (walletBalance: number) => {
@@ -2674,10 +2677,7 @@ export class LoyaltyService {
           postEarnOnAmount = itemsForCalc.reduce(
             (sum, item) =>
               sum +
-              Math.max(
-                0,
-                item.amount - Math.max(0, item.redeemAmount || 0),
-              ),
+              Math.max(0, item.amount - Math.max(0, item.redeemAmount || 0)),
             0,
           );
         } else if (allowSameReceipt) {
@@ -2775,7 +2775,12 @@ export class LoyaltyService {
             createdAt: operationDate ?? undefined,
           },
         });
-        await this.upsertHoldItems(tx, hold.id, dto.merchantId, positionsForHold);
+        await this.upsertHoldItems(
+          tx,
+          hold.id,
+          dto.merchantId,
+          positionsForHold,
+        );
 
         return {
           ...calc,
@@ -2888,7 +2893,8 @@ export class LoyaltyService {
         totalFromItems = 0;
       }
       let cappedTotal = totalFromItems;
-      if (dailyEarnLeft != null) cappedTotal = Math.min(cappedTotal, dailyEarnLeft);
+      if (dailyEarnLeft != null)
+        cappedTotal = Math.min(cappedTotal, dailyEarnLeft);
       if (cappedTotal !== totalFromItems) {
         const weights = itemsForCalc.map((item) =>
           Math.max(
@@ -2977,12 +2983,7 @@ export class LoyaltyService {
           createdAt: operationDate ?? undefined,
         },
       });
-      await this.upsertHoldItems(
-        tx,
-        hold.id,
-        dto.merchantId,
-        positionsForHold,
-      );
+      await this.upsertHoldItems(tx, hold.id, dto.merchantId, positionsForHold);
 
       return {
         canEarn: points > 0,
@@ -3029,10 +3030,7 @@ export class LoyaltyService {
     const manualRedeemOverride =
       opts?.manualRedeemAmount == null
         ? null
-        : Math.max(
-            0,
-            Math.floor(Number(opts.manualRedeemAmount ?? 0) || 0),
-          );
+        : Math.max(0, Math.floor(Number(opts.manualRedeemAmount ?? 0) || 0));
     const manualEarnOverride =
       opts?.manualEarnPoints == null
         ? null
@@ -3062,16 +3060,13 @@ export class LoyaltyService {
     const positionsOverrideResolved = positionsOverrideInput.length
       ? await this.resolvePositions(hold.merchantId, positionsOverrideInput)
       : [];
-    const fallbackHoldTotal = Math.max(
-      0,
-      Math.floor(Number(hold.total ?? 0)),
-    );
+    const fallbackHoldTotal = Math.max(0, Math.floor(Number(hold.total ?? 0)));
     let effectiveTotal = fallbackHoldTotal;
     let effectiveEligible = Math.max(
       0,
       Math.floor(
         Number(
-          hold.eligibleTotal != null ? hold.eligibleTotal : hold.total ?? 0,
+          hold.eligibleTotal != null ? hold.eligibleTotal : (hold.total ?? 0),
         ),
       ),
     );
@@ -3175,7 +3170,7 @@ export class LoyaltyService {
                   ? Math.max(0, Math.floor(Number(item.redeemAmount)))
                   : 0,
             }))
-          : ((hold as any)?.items as any[])?.map((item: any) => ({
+          : (((hold as any)?.items as any[])?.map((item: any) => ({
               productId: item.productId ?? undefined,
               categoryId: item.categoryId ?? undefined,
               resolvedProductId: item.productId ?? null,
@@ -3192,9 +3187,7 @@ export class LoyaltyService {
                   ? Number(item.promotionMultiplier) / 10000
                   : 1,
               accruePoints:
-                item.accruePoints != null
-                  ? Boolean(item.accruePoints)
-                  : true,
+                item.accruePoints != null ? Boolean(item.accruePoints) : true,
               earnPoints:
                 item.earnPoints != null
                   ? Math.max(0, Math.floor(Number(item.earnPoints)))
@@ -3203,7 +3196,7 @@ export class LoyaltyService {
                 item.redeemAmount != null
                   ? Math.max(0, Math.floor(Number(item.redeemAmount)))
                   : 0,
-            })) ?? [];
+            })) ?? []);
 
         if (shouldOverrideItems) {
           await this.upsertHoldItems(
@@ -3280,10 +3273,7 @@ export class LoyaltyService {
           manualEarnOverride != null
             ? 0
             : promoResult
-              ? Math.max(
-                  0,
-                  Math.floor(Number(promoResult.pointsIssued || 0)),
-                )
+              ? Math.max(0, Math.floor(Number(promoResult.pointsIssued || 0)))
               : 0;
         // Доп. начисление при списании, если включено allowEarnRedeemSameReceipt
         let extraEarn = 0;
@@ -3361,7 +3351,9 @@ export class LoyaltyService {
             ) {
               let pts = Math.floor((earnBaseOnCash * earnBpsEff) / 10000);
               if (pts > 0 && earnDailyCap && earnDailyCap > 0) {
-                const since = new Date(operationTimestamp - 24 * 60 * 60 * 1000);
+                const since = new Date(
+                  operationTimestamp - 24 * 60 * 60 * 1000,
+                );
                 const txns = await tx.transaction.findMany({
                   where: {
                     merchantId: hold.merchantId,
@@ -3771,7 +3763,8 @@ export class LoyaltyService {
                 redeemAmount: rec.redeemApplied ?? 0,
                 promotionId: rec.item.promotionId ?? null,
                 promotionMultiplier:
-                  rec.item.promotionMultiplier && rec.item.promotionMultiplier > 0
+                  rec.item.promotionMultiplier &&
+                  rec.item.promotionMultiplier > 0
                     ? Math.round(rec.item.promotionMultiplier * 10000)
                     : null,
                 metadata: Prisma.JsonNull,
@@ -3801,7 +3794,8 @@ export class LoyaltyService {
                 redeemAmount: null,
                 promotionId: rec.item.promotionId ?? null,
                 promotionMultiplier:
-                  rec.item.promotionMultiplier && rec.item.promotionMultiplier > 0
+                  rec.item.promotionMultiplier &&
+                  rec.item.promotionMultiplier > 0
                     ? Math.round(rec.item.promotionMultiplier * 10000)
                     : null,
                 metadata: Prisma.JsonNull,
@@ -4046,10 +4040,7 @@ export class LoyaltyService {
           ),
         ),
       );
-      const earnShares = this.allocateByWeight(
-        earnWeights,
-        bonusValue ?? 0,
-      );
+      const earnShares = this.allocateByWeight(earnWeights, bonusValue ?? 0);
       positionsForHold = positionsForHold.map((item, idx) => ({
         ...item,
         redeemAmount: redeemShares[idx] ?? 0,
@@ -4143,10 +4134,7 @@ export class LoyaltyService {
       }
     }
 
-    if (
-      manualRedeemOverride != null &&
-      manualRedeemOverride > balanceBefore
-    ) {
+    if (manualRedeemOverride != null && manualRedeemOverride > balanceBefore) {
       throw new BadRequestException('Недостаточно бонусов для списания');
     }
 
@@ -4165,9 +4153,7 @@ export class LoyaltyService {
             ? manualRedeemOverride
             : null,
         manualEarnPoints:
-          manualMode && manualEarnOverride != null
-            ? manualEarnOverride
-            : null,
+          manualMode && manualEarnOverride != null ? manualEarnOverride : null,
         positions: manualMode ? undefined : rawItems,
       },
     );
@@ -4256,20 +4242,22 @@ export class LoyaltyService {
       eligibleAmount = computed.eligibleAmount;
     } else if (baseTotal > 0) {
       // Нет items, используем total как одну виртуальную позицию
-      resolved = [{
-        productId: undefined,
-        externalId: undefined,
-        resolvedProductId: undefined,
-        categoryId: undefined,
-        name: undefined,
-        qty: 1,
-        price: baseTotal,
-        basePrice: baseTotal,
-        amount: baseTotal,
-        accruePoints: true,
-        allowEarnAndPay: true,
-        promotionMultiplier: 1,
-      } as ResolvedPosition];
+      resolved = [
+        {
+          productId: undefined,
+          externalId: undefined,
+          resolvedProductId: undefined,
+          categoryId: undefined,
+          name: undefined,
+          qty: 1,
+          price: baseTotal,
+          basePrice: baseTotal,
+          amount: baseTotal,
+          accruePoints: true,
+          allowEarnAndPay: true,
+          promotionMultiplier: 1,
+        } as ResolvedPosition,
+      ];
       total = baseTotal;
       eligibleAmount = baseTotal;
     } else {
@@ -4289,11 +4277,16 @@ export class LoyaltyService {
     const redeemLimitBps = rates.redeemLimitBps ?? 0;
 
     // Считаем лимит списания по чеку
-    const maxRedeemByLimit = Math.floor((eligibleAmount * redeemLimitBps) / 10000);
+    const maxRedeemByLimit = Math.floor(
+      (eligibleAmount * redeemLimitBps) / 10000,
+    );
     let maxRedeemTotal = Math.min(balance, maxRedeemByLimit, eligibleAmount);
 
     // Если передан paidBonus — учитываем желаемое списание
-    const paidBonus = Math.max(0, Math.floor(Number(params.paidBonus ?? 0) || 0));
+    const paidBonus = Math.max(
+      0,
+      Math.floor(Number(params.paidBonus ?? 0) || 0),
+    );
     if (paidBonus > 0) {
       maxRedeemTotal = Math.min(maxRedeemTotal, paidBonus);
     }
@@ -4311,14 +4304,18 @@ export class LoyaltyService {
       const allowEarnAndPay =
         item.allowEarnAndPay != null ? Boolean(item.allowEarnAndPay) : true;
       const itemRedeem = redeemShares[idx] ?? 0;
-      const earnBase = item.accruePoints === false ? 0 : Math.max(0, (item.amount || 0) - itemRedeem);
+      const earnBase =
+        item.accruePoints === false
+          ? 0
+          : Math.max(0, (item.amount || 0) - itemRedeem);
       const multiplier =
         item.promotionMultiplier && item.promotionMultiplier > 0
           ? item.promotionMultiplier
           : 1;
       const itemEarn = Math.floor((earnBase * earnBps * multiplier) / 10000);
       return {
-        id_product: item.externalId ?? item.productId ?? item.resolvedProductId ?? null,
+        id_product:
+          item.externalId ?? item.productId ?? item.resolvedProductId ?? null,
         name: item.name ?? null,
         price,
         base_price: basePrice,
@@ -4417,10 +4414,7 @@ export class LoyaltyService {
           earnBps = Math.max(0, Math.floor(Number(tier.earnRateBps)));
         }
         if (typeof tier.redeemRateBps === 'number') {
-          redeemLimitBps = Math.max(
-            0,
-            Math.floor(Number(tier.redeemRateBps)),
-          );
+          redeemLimitBps = Math.max(0, Math.floor(Number(tier.redeemRateBps)));
         }
         const meta: any = tier.metadata ?? null;
         if (meta && typeof meta === 'object') {
@@ -4468,10 +4462,7 @@ export class LoyaltyService {
           totalSpent: Number(stats.totalSpent ?? 0),
           firstPurchaseAt: stats.firstSeenAt ?? null,
           lastPurchaseAt:
-            stats.lastOrderAt ??
-            stats.lastSeenAt ??
-            stats.firstSeenAt ??
-            null,
+            stats.lastOrderAt ?? stats.lastSeenAt ?? stats.firstSeenAt ?? null,
         };
       }
     }
@@ -4487,14 +4478,11 @@ export class LoyaltyService {
       const endDate = lastDate ?? firstDate;
       const spanDays = Math.max(
         1,
-        Math.round(
-          (endDate.getTime() - firstDate.getTime()) / 86_400_000,
-        ) + 1,
+        Math.round((endDate.getTime() - firstDate.getTime()) / 86_400_000) + 1,
       );
       visitFrequency = (visitCount / spanDays) * 30; // визитов в среднем за 30 дней
     }
-    const visitFrequencyRounded =
-      Math.round(visitFrequency * 100) / 100;
+    const visitFrequencyRounded = Math.round(visitFrequency * 100) / 100;
     return {
       bDate: firstDate ? firstDate.toISOString() : null,
       visitCount,
@@ -4904,19 +4892,19 @@ export class LoyaltyService {
         amount: entity.amount,
         orderId,
         receiptNumber: orderId
-          ? receiptMetaByOrderId.get(orderId)?.receiptNumber ?? null
+          ? (receiptMetaByOrderId.get(orderId)?.receiptNumber ?? null)
           : null,
         createdAt: entity.createdAt.toISOString(),
         outletId: entity.outletId ?? null,
         outletName: entity.outlet?.name ?? null,
         purchaseAmount: orderId
-          ? receiptMetaByOrderId.get(orderId)?.total ?? null
+          ? (receiptMetaByOrderId.get(orderId)?.total ?? null)
           : null,
         earnApplied: orderId
-          ? receiptMetaByOrderId.get(orderId)?.earnApplied ?? null
+          ? (receiptMetaByOrderId.get(orderId)?.earnApplied ?? null)
           : null,
         redeemApplied: orderId
-          ? receiptMetaByOrderId.get(orderId)?.redeemApplied ?? null
+          ? (receiptMetaByOrderId.get(orderId)?.redeemApplied ?? null)
           : null,
         staffName:
           formatStaff(entity.staff ?? undefined) ||
@@ -5000,7 +4988,8 @@ export class LoyaltyService {
           type: null,
           amount: (meta.redeem ?? 0) - (meta.earn ?? 0),
           orderId: orderId === 'unknown' ? null : orderId,
-          receiptNumber: meta.receiptNumber ?? receiptMeta?.receiptNumber ?? null,
+          receiptNumber:
+            meta.receiptNumber ?? receiptMeta?.receiptNumber ?? null,
           createdAt: meta.createdAt,
           outletId,
           outletName: receiptMeta?.outletName ?? null,
@@ -5009,14 +4998,8 @@ export class LoyaltyService {
           redeemApplied: null,
           refundEarn: meta.earn ?? 0,
           refundRedeem: meta.redeem ?? 0,
-          staffName:
-            meta.staffName ??
-            receiptMeta?.staffName ??
-            null,
-          customerName:
-            meta.customerName ??
-            receiptMeta?.customerName ??
-            null,
+          staffName: meta.staffName ?? receiptMeta?.staffName ?? null,
+          customerName: meta.customerName ?? receiptMeta?.customerName ?? null,
         };
       },
     );
@@ -5028,7 +5011,8 @@ export class LoyaltyService {
     );
 
     const merged = [...purchaseEntries, ...refundEntries, ...isolatedTx].sort(
-      (a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0),
+      (a, b) =>
+        a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0,
     );
     const sliced = merged.slice(0, hardLimit);
     const nextBefore =
@@ -5403,18 +5387,27 @@ export class LoyaltyService {
         settings && typeof settings.rulesJson === 'object'
           ? (settings.rulesJson as Record<string, any>)
           : null;
-      if (rules && Object.prototype.hasOwnProperty.call(rules, 'allowSameReceipt')) {
+      if (
+        rules &&
+        Object.prototype.hasOwnProperty.call(rules, 'allowSameReceipt')
+      ) {
         allowSame = Boolean((rules as any).allowSameReceipt);
       } else if (
         rules &&
-        Object.prototype.hasOwnProperty.call(rules, 'allowEarnRedeemSameReceipt')
+        Object.prototype.hasOwnProperty.call(
+          rules,
+          'allowEarnRedeemSameReceipt',
+        )
       ) {
         allowSame = Boolean((rules as any).allowEarnRedeemSameReceipt);
       } else if (
         rules &&
-        Object.prototype.hasOwnProperty.call(rules, 'disallowEarnRedeemSameReceipt')
+        Object.prototype.hasOwnProperty.call(
+          rules,
+          'disallowEarnRedeemSameReceipt',
+        )
       ) {
-        allowSame = !Boolean((rules as any).disallowEarnRedeemSameReceipt);
+        allowSame = !(rules as any).disallowEarnRedeemSameReceipt;
       }
     } catch {}
     return allowSame;

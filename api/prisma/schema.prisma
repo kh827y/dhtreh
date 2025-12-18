@@ -261,6 +261,8 @@ model Merchant {
   staffMetrics                StaffKpiDaily[]
   staffMotivationEntries      StaffMotivationEntry[]
   cashierSessions             CashierSession[]
+  cashierActivationCodes      CashierActivationCode[]
+  cashierDeviceSessions       CashierDeviceSession[]
   dataImports                 DataImportJob[]
   segmentMetrics              SegmentMetricSnapshot[]
   // analytics back-relations
@@ -1097,6 +1099,46 @@ model CashierSession {
 
   @@index([merchantId, startedAt])
   @@index([staffId, startedAt])
+}
+
+model CashierActivationCode {
+  id                   String   @id @default(cuid())
+  merchantId            String
+  tokenHash             String   @unique
+  tokenHint             String?
+  createdAt             DateTime @default(now())
+  expiresAt             DateTime
+  usedAt                DateTime?
+  revokedAt             DateTime?
+  usedByDeviceSessionId String?
+  metadata              Json?
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+  deviceSessions CashierDeviceSession[]
+
+  @@index([merchantId, createdAt])
+  @@index([merchantId, expiresAt])
+  @@index([merchantId, usedAt])
+}
+
+model CashierDeviceSession {
+  id               String   @id @default(cuid())
+  merchantId        String
+  tokenHash         String   @unique
+  createdAt         DateTime @default(now())
+  lastSeenAt        DateTime?
+  expiresAt         DateTime
+  revokedAt         DateTime?
+  activationCodeId  String?
+  ipAddress         String?
+  userAgent         String?
+  metadata          Json?
+
+  merchant         Merchant              @relation(fields: [merchantId], references: [id])
+  activationCode   CashierActivationCode? @relation(fields: [activationCodeId], references: [id])
+
+  @@index([merchantId, createdAt])
+  @@index([merchantId, expiresAt])
 }
 
 model ProductCategory {

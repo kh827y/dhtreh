@@ -306,11 +306,11 @@ describe('LoyaltyService.processIntegrationBonus', () => {
     });
     const staffMotivation = mkStaffMotivation();
     const svc = new LoyaltyService(
-      prisma as any,
+      prisma,
       metrics,
       undefined as any,
       undefined as any,
-      staffMotivation as any,
+      staffMotivation,
     );
     svc.balance = jest.fn().mockResolvedValue({ balance: 250 }) as any;
     svc.commit = jest.fn() as any;
@@ -341,11 +341,11 @@ describe('LoyaltyService.processIntegrationBonus', () => {
     prisma.hold.create.mockResolvedValue({ id: 'H-MANUAL' });
     const staffMotivation = mkStaffMotivation();
     const svc = new LoyaltyService(
-      prisma as any,
+      prisma,
       metrics,
       undefined as any,
       undefined as any,
-      staffMotivation as any,
+      staffMotivation,
     );
     svc.commit = jest.fn().mockResolvedValue({
       receiptId: 'RCPT-M',
@@ -390,21 +390,21 @@ describe('LoyaltyService.processIntegrationBonus', () => {
     });
     const staffMotivation = mkStaffMotivation();
     const svc = new LoyaltyService(
-      prisma as any,
+      prisma,
       metrics,
       undefined as any,
       undefined as any,
-      staffMotivation as any,
+      staffMotivation,
     );
     await expect(
       svc.processIntegrationBonus({
-      merchantId: 'M-3',
-      customerId: 'C-3',
-      userToken: 'token',
-      invoiceNum: 'ORDER-3',
-      total: 100,
-      paidBonus: 50,
-    }),
+        merchantId: 'M-3',
+        customerId: 'C-3',
+        userToken: 'token',
+        invoiceNum: 'ORDER-3',
+        total: 100,
+        paidBonus: 50,
+      }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.hold.create).not.toHaveBeenCalled();
   });
@@ -423,22 +423,22 @@ describe('LoyaltyService.processIntegrationBonus', () => {
     });
     const staffMotivation = mkStaffMotivation();
     const svc = new LoyaltyService(
-      prisma as any,
+      prisma,
       metrics,
       undefined as any,
       undefined as any,
-      staffMotivation as any,
+      staffMotivation,
     );
 
     await expect(
       svc.processIntegrationBonus({
-      merchantId: 'M-4',
-      customerId: 'C-4',
-      userToken: 'token',
-      invoiceNum: 'ORDER-4',
-      total: 100,
-      bonusValue: 150,
-    }),
+        merchantId: 'M-4',
+        customerId: 'C-4',
+        userToken: 'token',
+        invoiceNum: 'ORDER-4',
+        total: 100,
+        bonusValue: 150,
+      }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.hold.create).not.toHaveBeenCalled();
   });
@@ -455,11 +455,11 @@ describe('LoyaltyService.processIntegrationBonus', () => {
     prisma.hold.create.mockResolvedValue({ id: 'H-5' });
     const staffMotivation = mkStaffMotivation();
     const svc = new LoyaltyService(
-      prisma as any,
+      prisma,
       metrics,
       undefined as any,
       undefined as any,
-      staffMotivation as any,
+      staffMotivation,
     );
     svc.commit = jest.fn().mockResolvedValue({
       receiptId: 'RCPT-5',
@@ -563,9 +563,7 @@ describe('LoyaltyService.processIntegrationBonus', () => {
         findUnique: jest.fn(),
         create: jest.fn(),
       } as any);
-    prisma.customer.findUnique = jest
-      .fn()
-      .mockResolvedValue({ id: 'MC-REF' });
+    prisma.customer.findUnique = jest.fn().mockResolvedValue({ id: 'MC-REF' });
     prisma.customer =
       prisma.customer ||
       ({
@@ -614,7 +612,10 @@ describe('LoyaltyService.processIntegrationBonus', () => {
           .mockImplementation(async ({ data }: any) => ({ id: 'ri', ...data })),
       },
       transactionItem: { create: jest.fn() },
-      transaction: { create: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
+      transaction: {
+        create: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
       eventOutbox: { create: jest.fn() },
       outlet: { update: jest.fn() },
       merchantSettings: { findUnique: jest.fn().mockResolvedValue(null) },
@@ -625,10 +626,10 @@ describe('LoyaltyService.processIntegrationBonus', () => {
       },
       earnLot: { create: jest.fn() },
     });
-    prisma.$transaction = jest.fn(async (fn: any) => fn(tx as any));
+    prisma.$transaction = jest.fn(async (fn: any) => fn(tx));
     const staffMotivation = mkStaffMotivation();
     const svc = new LoyaltyService(
-      prisma as any,
+      prisma,
       metrics,
       undefined as any,
       undefined as any,

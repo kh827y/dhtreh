@@ -157,8 +157,9 @@ export class PortalCatalogService {
       externalMappings?: ProductExternalId[];
     },
   ): ProductListItemDto {
-    const externalMappings =
-      (product as any).externalMappings as ProductExternalId[] | undefined;
+    const externalMappings = (product as any).externalMappings as
+      | ProductExternalId[]
+      | undefined;
     const primaryExt = externalMappings?.[0];
     const externalProvider =
       product.externalProvider ?? primaryExt?.externalProvider ?? null;
@@ -422,9 +423,7 @@ export class PortalCatalogService {
         if (!device) return null;
         return normalizeDeviceCode(String(device.code ?? ''));
       })
-      .filter(
-        (value): value is NormalizedDeviceCode => value !== null,
-      );
+      .filter((value): value is NormalizedDeviceCode => value !== null);
     ensureUniqueDeviceCodes(normalized);
     return normalized;
   }
@@ -893,7 +892,10 @@ export class PortalCatalogService {
     }
     if (andFilters.length) {
       if (where.AND) {
-        where.AND = [...(Array.isArray(where.AND) ? where.AND : [where.AND]), ...andFilters];
+        where.AND = [
+          ...(Array.isArray(where.AND) ? where.AND : [where.AND]),
+          ...andFilters,
+        ];
       } else {
         where.AND = andFilters;
       }
@@ -1107,8 +1109,7 @@ export class PortalCatalogService {
         data.barcode = dto.barcode ? dto.barcode.trim() : null;
       if (dto.unit !== undefined) data.unit = dto.unit ? dto.unit.trim() : null;
       if (dto.externalProvider !== undefined)
-        (data as any).externalProvider =
-          dto.externalProvider?.trim() || null;
+        (data as any).externalProvider = dto.externalProvider?.trim() || null;
       if (dto.externalId !== undefined)
         (data as any).externalId = dto.externalId?.trim() || null;
       if (dto.description !== undefined)
@@ -1211,19 +1212,19 @@ export class PortalCatalogService {
       const extProvider =
         dto.externalProvider !== undefined
           ? dto.externalProvider?.trim() || null
-          : (product as any).externalProvider ?? null;
+          : ((product as any).externalProvider ?? null);
       const extId =
         dto.externalId !== undefined
           ? dto.externalId?.trim() || null
-          : (product as any).externalId ?? null;
+          : ((product as any).externalId ?? null);
       await this.syncProductExternal(tx, merchantId, productId, {
         externalProvider: extProvider,
         externalId: extId,
         barcode:
           dto.barcode !== undefined
-            ? dto.barcode ?? null
-            : (product as any).barcode ?? null,
-        sku: dto.sku !== undefined ? dto.sku ?? null : product.sku ?? null,
+            ? (dto.barcode ?? null)
+            : ((product as any).barcode ?? null),
+        sku: dto.sku !== undefined ? (dto.sku ?? null) : (product.sku ?? null),
       });
       const updated = await tx.product.findFirst({
         where: { id: productId },
@@ -1314,13 +1315,8 @@ export class PortalCatalogService {
     provider: string,
     dto: ImportCatalogDto,
   ) {
-    const providerCode =
-      dto.externalProvider?.trim() ||
-      provider ||
-      'EXTERNAL';
-    const categoriesInput = Array.isArray(dto.categories)
-      ? dto.categories
-      : [];
+    const providerCode = dto.externalProvider?.trim() || provider || 'EXTERNAL';
+    const categoriesInput = Array.isArray(dto.categories) ? dto.categories : [];
     const productsInput = Array.isArray(dto.products) ? dto.products : [];
     const summary = {
       createdCategories: 0,
@@ -1411,7 +1407,7 @@ export class PortalCatalogService {
           const categoryId =
             product.categoryId ??
             (product.categoryExternalId
-              ? categoryMap.get(product.categoryExternalId.trim()) ?? null
+              ? (categoryMap.get(product.categoryExternalId.trim()) ?? null)
               : null);
           const barcode = product.barcode?.trim() || null;
           const sku = product.sku?.trim() || null;
@@ -1464,7 +1460,9 @@ export class PortalCatalogService {
                 unit: product.unit?.trim() || resolved.unit,
                 externalProvider: providerCode,
                 externalId,
-                price: this.toDecimal(product.price ?? this.decimalToNumber(resolved.price)),
+                price: this.toDecimal(
+                  product.price ?? this.decimalToNumber(resolved.price),
+                ),
                 priceEnabled: true,
               },
             });
@@ -1672,7 +1670,7 @@ export class PortalCatalogService {
       );
     } catch (error: any) {
       if (error?.code === 'P2002') {
-        const target = (error.meta as any)?.target;
+        const target = error.meta?.target;
         if (
           Array.isArray(target) &&
           target.includes('Device_merchantId_codeNormalized_key')
@@ -1786,7 +1784,7 @@ export class PortalCatalogService {
       return this.mapOutlet(updated as any);
     } catch (error: any) {
       if (error?.code === 'P2002') {
-        const target = (error.meta as any)?.target;
+        const target = error.meta?.target;
         if (
           Array.isArray(target) &&
           target.includes('Device_merchantId_codeNormalized_key')

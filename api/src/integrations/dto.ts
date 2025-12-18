@@ -98,12 +98,13 @@ export class IntegrationBonusDto {
     description: 'ID клиента в системе лояльности',
     name: 'id_client',
   })
-  @Transform(({ value, obj }) =>
-    value ??
-    obj?.idClient ??
-    obj?.customerId ??
-    obj?.customerId ??
-    obj?.merchant_customer_id,
+  @Transform(
+    ({ value, obj }) =>
+      value ??
+      obj?.idClient ??
+      obj?.customerId ??
+      obj?.customerId ??
+      obj?.merchant_customer_id,
   )
   @IsOptional()
   @IsString()
@@ -233,13 +234,14 @@ export class IntegrationCalculateActionDto {
     description: 'ID клиента в системе лояльности (для client-based промо)',
     name: 'id_client',
   })
-  @Transform(({ value, obj }) =>
-    value ??
-    obj?.idClient ??
-    obj?.customerId ??
-    obj?.customerId ??
-    obj?.merchant_customer_id ??
-    null,
+  @Transform(
+    ({ value, obj }) =>
+      value ??
+      obj?.idClient ??
+      obj?.customerId ??
+      obj?.customerId ??
+      obj?.merchant_customer_id ??
+      null,
   )
   @IsOptional()
   @IsString()
@@ -332,12 +334,13 @@ export class IntegrationCalculateBonusDto {
     description: 'ID клиента в системе лояльности',
     name: 'id_client',
   })
-  @Transform(({ value, obj }) =>
-    value ??
-    obj?.idClient ??
-    obj?.customerId ??
-    obj?.customerId ??
-    obj?.merchant_customer_id,
+  @Transform(
+    ({ value, obj }) =>
+      value ??
+      obj?.idClient ??
+      obj?.customerId ??
+      obj?.customerId ??
+      obj?.merchant_customer_id,
   )
   @IsOptional()
   @IsString()
@@ -462,7 +465,8 @@ export class IntegrationOutletsRespDto {
 export class IntegrationDeviceDto {
   @ApiProperty() id!: string;
   @ApiProperty({
-    description: 'Код устройства (из настроек торговой точки, регистр сохраняется)',
+    description:
+      'Код устройства (из настроек торговой точки, регистр сохраняется)',
   })
   code!: string;
   @ApiProperty() outletId!: string;

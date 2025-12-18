@@ -113,7 +113,9 @@ export class SubscriptionService {
       null;
     const statusRaw = String(subscription.status || '').toLowerCase();
     const statusAllows =
-      statusRaw === 'active' || statusRaw === 'trialing' || statusRaw === 'trial';
+      statusRaw === 'active' ||
+      statusRaw === 'trialing' ||
+      statusRaw === 'trial';
     const expiredByDate = !end || end.getTime() <= now.getTime();
     const expired =
       !statusAllows ||
@@ -211,7 +213,8 @@ export class SubscriptionService {
     const state = await this.getSubscriptionState(merchantId);
     if (state.status !== 'active') {
       throw new ForbiddenException(
-        state.problem || 'Подписка закончилась, продлите её чтобы продолжить работу',
+        state.problem ||
+          'Подписка закончилась, продлите её чтобы продолжить работу',
       );
     }
     return state;
@@ -224,7 +227,9 @@ export class SubscriptionService {
     metadata?: any,
   ) {
     if (!Number.isFinite(days) || days <= 0) {
-      throw new BadRequestException('Длительность подписки должна быть > 0 дней');
+      throw new BadRequestException(
+        'Длительность подписки должна быть > 0 дней',
+      );
     }
     const plan = await this.ensurePlan(planId);
     const now = new Date();

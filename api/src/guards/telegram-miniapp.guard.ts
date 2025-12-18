@@ -43,9 +43,7 @@ export class TelegramMiniappGuard implements CanActivate {
     const requestedIds = this.collectCustomerIdentifiers(req);
     if (
       requestedIds.length > 0 &&
-      !requestedIds.some(
-        (id) => id === ctx.customerId || id === ctx.customerId,
-      )
+      !requestedIds.some((id) => id === ctx.customerId || id === ctx.customerId)
     ) {
       throw new UnauthorizedException('Customer identifier mismatch');
     }
@@ -69,9 +67,7 @@ export class TelegramMiniappGuard implements CanActivate {
     const candidates = this.collectCustomerCandidates(req);
     for (const id of candidates) {
       try {
-        const record = await (
-          this.prisma as any
-        )?.customer?.findUnique?.({
+        const record = await (this.prisma as any)?.customer?.findUnique?.({
           where: { id },
           select: { merchantId: true },
         });

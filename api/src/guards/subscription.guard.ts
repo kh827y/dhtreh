@@ -10,8 +10,7 @@ import { Reflector } from '@nestjs/core';
 import { PrismaService } from '../prisma.service';
 import { SubscriptionService } from '../subscription/subscription.service';
 
-export const ALLOW_INACTIVE_SUBSCRIPTION_KEY =
-  'allowInactiveSubscription';
+export const ALLOW_INACTIVE_SUBSCRIPTION_KEY = 'allowInactiveSubscription';
 export const AllowInactiveSubscription = () =>
   SetMetadata(ALLOW_INACTIVE_SUBSCRIPTION_KEY, true);
 
@@ -86,7 +85,8 @@ export class SubscriptionGuard implements CanActivate {
 
     if (state.status !== 'active') {
       throw new ForbiddenException(
-        state.problem || 'Подписка закончилась, продлите её чтобы продолжить работу',
+        state.problem ||
+          'Подписка закончилась, продлите её чтобы продолжить работу',
       );
     }
 

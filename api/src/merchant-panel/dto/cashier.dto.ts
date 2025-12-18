@@ -8,7 +8,7 @@ import {
   ObjectType,
   registerEnumType,
 } from '@nestjs/graphql';
-import { IsBoolean, IsOptional } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, Max, Min } from 'class-validator';
 
 registerEnumType(StaffOutletAccessStatus, { name: 'StaffOutletAccessStatus' });
 
@@ -52,6 +52,18 @@ export class RotateCashierInput {
 }
 
 export class RotateCashierDto extends RotateCashierInput {}
+
+@InputType()
+export class IssueCashierActivationCodesInput {
+  @Field(() => Number)
+  @ApiProperty({ description: 'Количество кодов', minimum: 1, maximum: 50 })
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  count!: number;
+}
+
+export class IssueCashierActivationCodesDto extends IssueCashierActivationCodesInput {}
 
 @ObjectType()
 export class CashierPinDto {

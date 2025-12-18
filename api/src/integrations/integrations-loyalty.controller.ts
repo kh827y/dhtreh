@@ -120,7 +120,10 @@ export class IntegrationsLoyaltyController {
     return Math.min(MAX_OPERATIONS_LIMIT, Math.max(1, base));
   }
 
-  private parseDateTime(raw: string | undefined | null, field: string): Date | null {
+  private parseDateTime(
+    raw: string | undefined | null,
+    field: string,
+  ): Date | null {
     if (!raw) return null;
     const parsed = new Date(raw);
     if (Number.isNaN(parsed.getTime())) {
@@ -200,7 +203,8 @@ export class IntegrationsLoyaltyController {
       const earnMultiplierRaw =
         (item as any).earn_multiplier ?? (item as any).multiplier;
       const earnMultiplier =
-        Number.isFinite(Number(earnMultiplierRaw)) && Number(earnMultiplierRaw) > 0
+        Number.isFinite(Number(earnMultiplierRaw)) &&
+        Number(earnMultiplierRaw) > 0
           ? Number(earnMultiplierRaw)
           : undefined;
       list.push({
@@ -311,10 +315,17 @@ export class IntegrationsLoyaltyController {
       ) {
         throw new BadRequestException('QR выписан для другого мерчанта');
       }
-      tokenCustomer = await this.ensureCustomer(merchantId, resolved.customerId);
+      tokenCustomer = await this.ensureCustomer(
+        merchantId,
+        resolved.customerId,
+      );
     }
 
-    if (explicitCustomer && tokenCustomer && explicitCustomer.id !== tokenCustomer.id) {
+    if (
+      explicitCustomer &&
+      tokenCustomer &&
+      explicitCustomer.id !== tokenCustomer.id
+    ) {
       throw new BadRequestException('userToken не совпадает с id_client');
     }
 
@@ -373,10 +384,10 @@ export class IntegrationsLoyaltyController {
     }
     const outletFromStaff =
       staff.allowedOutletId ??
-      ((Array.isArray(staff.accesses) ? staff.accesses : []).find(
+      (Array.isArray(staff.accesses) ? staff.accesses : []).find(
         (a) => a?.outletId,
       )?.outletId ??
-        null);
+      null;
     if (outletId && outletFromStaff && outletFromStaff !== outletId) {
       throw new BadRequestException(
         'Сотрудник не привязан к указанной торговой точке',
@@ -806,9 +817,11 @@ export class IntegrationsLoyaltyController {
     for (const tx of refundTxns) {
       if (!tx.orderId) continue;
       const meta = this.normalizeRefundMeta(tx.metadata);
-      const key = [tx.orderId, meta.receiptId ?? 'na', tx.createdAt.toISOString()].join(
-        '|',
-      );
+      const key = [
+        tx.orderId,
+        meta.receiptId ?? 'na',
+        tx.createdAt.toISOString(),
+      ].join('|');
       let group = refundGroups.get(key);
       if (!group) {
         group = {
@@ -832,7 +845,11 @@ export class IntegrationsLoyaltyController {
 
     const receiptMetaByOrder = new Map<
       string,
-      { receiptNumber: string | null; canceledAt: Date | null; receiptId: string | null }
+      {
+        receiptNumber: string | null;
+        canceledAt: Date | null;
+        receiptId: string | null;
+      }
     >();
     for (const receipt of receipts) {
       receiptMetaByOrder.set(receipt.orderId, {
@@ -872,11 +889,16 @@ export class IntegrationsLoyaltyController {
           .map((op) => op.orderId)
           .filter((id) => id && !receiptMetaByOrder.has(id)),
       ),
-    ) as string[];
+    );
     if (missingOrderIds.length) {
       const receiptsExtra = await this.prisma.receipt.findMany({
         where: { merchantId, orderId: { in: missingOrderIds } },
-        select: { orderId: true, receiptNumber: true, canceledAt: true, id: true },
+        select: {
+          orderId: true,
+          receiptNumber: true,
+          canceledAt: true,
+          id: true,
+        },
       });
       for (const receipt of receiptsExtra) {
         if (!receipt.orderId) continue;
@@ -918,7 +940,7 @@ export class IntegrationsLoyaltyController {
 
     const customerIds = Array.from(
       new Set(sliced.map((op) => op.customerId).filter(Boolean)),
-    ) as string[];
+    );
     if (customerIds.length > 0) {
       const wallets = await this.prisma.wallet.findMany({
         where: {
@@ -1149,8 +1171,10 @@ export class IntegrationsLoyaltyController {
     }
     const paidBonus =
       dto.paid_bonus != null ? this.sanitizeAmount(dto.paid_bonus) : null;
-    const { customer, userToken } =
-      await this.resolveCustomerContext(merchantId, dto);
+    const { customer, userToken } = await this.resolveCustomerContext(
+      merchantId,
+      dto,
+    );
     const outletId =
       typeof dto.outletId === 'string' && dto.outletId.trim()
         ? dto.outletId.trim()
@@ -1199,8 +1223,10 @@ export class IntegrationsLoyaltyController {
     ).trim();
     if (!merchantId) throw new BadRequestException('merchantId required');
     const invoiceNum = (dto.invoice_num || '').trim() || null;
-    const { customer, userToken } =
-      await this.resolveCustomerContext(merchantId, dto);
+    const { customer, userToken } = await this.resolveCustomerContext(
+      merchantId,
+      dto,
+    );
     const operationDate = this.parseOperationDate(dto.operationDate ?? null);
     const sanitizedTotal = this.sanitizeAmount(dto.total);
     const items = this.normalizeItems(dto.items);
@@ -1393,12 +1419,7 @@ export class IntegrationsLoyaltyController {
     });
     const balanceAfter =
       result.customerId && result.customerId.length
-        ? (
-            await this.loyalty.balance(
-              merchantId,
-              result.customerId,
-            )
-          ).balance
+        ? (await this.loyalty.balance(merchantId, result.customerId)).balance
         : null;
     return {
       result: 'ok',

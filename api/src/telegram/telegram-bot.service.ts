@@ -381,16 +381,13 @@ export class TelegramBotService {
         if (userId && phoneRaw) {
           const tgId = String(userId);
           const phone = this.normalizePhoneStrict(phoneRaw);
-          let profile: Awaited<
-            ReturnType<typeof this.resolveCustomer>
-          > | null = null;
+          let profile: Awaited<ReturnType<typeof this.resolveCustomer>> | null =
+            null;
           try {
             profile = await this.resolveCustomer(merchantId, { tgId });
-            await this.updateCustomer(
-              merchantId,
-              profile.customerId,
-              { phone },
-            );
+            await this.updateCustomer(merchantId, profile.customerId, {
+              phone,
+            });
             try {
               await this.prisma.customer.update({
                 where: { id: profile.customerId },
@@ -889,9 +886,11 @@ export class TelegramBotService {
 
     // Создаём запись в CustomerTelegram для обратной связи
     if (tgId) {
-      await this.prisma.customerTelegram.create({
-        data: { merchantId, tgId, customerId: created.id },
-      }).catch(() => {});
+      await this.prisma.customerTelegram
+        .create({
+          data: { merchantId, tgId, customerId: created.id },
+        })
+        .catch(() => {});
     }
 
     return { customerId: created.id };

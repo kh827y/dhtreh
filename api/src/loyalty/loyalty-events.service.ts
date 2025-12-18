@@ -147,10 +147,7 @@ export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async patchMissingCustomer(
-    eventId: string,
-    customerId: string,
-  ) {
+  private async patchMissingCustomer(eventId: string, customerId: string) {
     try {
       const prismaAny = this.prisma as any;
       await prismaAny?.loyaltyRealtimeEvent?.update?.({
@@ -179,9 +176,7 @@ export class LoyaltyEventsService implements OnModuleInit, OnModuleDestroy {
 
   private mapRecord(record: any): LoyaltyRealtimeEvent {
     const customerId =
-      typeof record?.customerId === 'string'
-        ? record.customerId
-        : null;
+      typeof record?.customerId === 'string' ? record.customerId : null;
     if (customerId) {
       this.rememberCustomer(record.merchantId, customerId);
     }

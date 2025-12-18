@@ -86,9 +86,9 @@ export class OpsAlertMonitor implements OnModuleInit, OnModuleDestroy {
     if (this.timer) clearInterval(this.timer);
   }
 
-  async snapshot(
-    opts?: { includeIncidents?: boolean },
-  ): Promise<ObservabilitySnapshot> {
+  async snapshot(opts?: {
+    includeIncidents?: boolean;
+  }): Promise<ObservabilitySnapshot> {
     const metricsText = await this.metrics.exportProm();
     const metrics = parsePromMetrics(metricsText);
     const workers = this.collectWorkers();
@@ -137,8 +137,7 @@ export class OpsAlertMonitor implements OnModuleInit, OnModuleDestroy {
       expected: workersEnabled,
       reason: workersEnabled ? undefined : 'WORKERS_ENABLED=0',
     });
-    const ttlEnabled =
-      workersEnabled && process.env.POINTS_TTL_FEATURE === '1';
+    const ttlEnabled = workersEnabled && process.env.POINTS_TTL_FEATURE === '1';
     entries.push({
       name: 'points_ttl_preview',
       worker: this.ttl,
@@ -231,9 +230,7 @@ export class OpsAlertMonitor implements OnModuleInit, OnModuleDestroy {
         severity: 'critical',
         lines: [
           `pending=${metrics.outboxPending} (threshold=${this.pendingThreshold})`,
-          metrics.outboxDead
-            ? `dead=${metrics.outboxDead}`
-            : undefined,
+          metrics.outboxDead ? `dead=${metrics.outboxDead}` : undefined,
         ].filter(Boolean) as string[],
         throttleKey: 'outbox:pending',
         throttleMinutes: this.repeatMinutes,
@@ -257,16 +254,11 @@ export class OpsAlertMonitor implements OnModuleInit, OnModuleDestroy {
     for (const w of workers) {
       if (!w.expected || !w.stale) continue;
       const last =
-        w.lastTickAt || w.startedAt
-          ? w.lastTickAt || w.startedAt
-          : 'нет тиков';
+        w.lastTickAt || w.startedAt ? w.lastTickAt || w.startedAt : 'нет тиков';
       void this.alerts.notifyIncident({
         title: `Worker stalled: ${w.name}`,
         severity: 'critical',
-        lines: [
-          `lastTickAt: ${last}`,
-          `intervalMs: ${w.intervalMs}`,
-        ],
+        lines: [`lastTickAt: ${last}`, `intervalMs: ${w.intervalMs}`],
         throttleKey: `worker:${w.name}`,
         throttleMinutes: this.repeatMinutes,
       });

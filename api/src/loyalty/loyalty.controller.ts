@@ -54,7 +54,10 @@ import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
 import { CashierGuard } from '../guards/cashier.guard';
 import { AntiFraudGuard } from '../guards/antifraud.guard';
-import { SubscriptionGuard } from '../guards/subscription.guard';
+import {
+  AllowInactiveSubscription,
+  SubscriptionGuard,
+} from '../guards/subscription.guard';
 import type { Request, Response } from 'express';
 import { createHmac } from 'crypto';
 import { verifyBridgeSignature as verifyBridgeSigUtil } from './bridge.util';
@@ -125,20 +128,50 @@ export class LoyaltyController {
     return null;
   }
 
-  private writeCashierSessionCookie(res: Response, token: string) {
+  private writeCashierSessionCookie(
+    res: Response,
+    token: string,
+    maxAgeMs: number,
+  ) {
     const secure = process.env.NODE_ENV === 'production';
     res.cookie('cashier_session', token, {
       httpOnly: true,
       secure,
       sameSite: 'lax',
       path: '/',
-      maxAge: 1000 * 60 * 60 * 24 * 180, // ~180 дней
+      maxAge: Math.max(0, Math.trunc(maxAgeMs)),
     });
   }
 
   private clearCashierSessionCookie(res: Response) {
     const secure = process.env.NODE_ENV === 'production';
     res.cookie('cashier_session', '', {
+      httpOnly: true,
+      secure,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 0,
+    });
+  }
+
+  private writeCashierDeviceCookie(
+    res: Response,
+    token: string,
+    maxAgeMs: number,
+  ) {
+    const secure = process.env.NODE_ENV === 'production';
+    res.cookie('cashier_device', token, {
+      httpOnly: true,
+      secure,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: Math.max(0, Math.trunc(maxAgeMs)),
+    });
+  }
+
+  private clearCashierDeviceCookie(res: Response) {
+    const secure = process.env.NODE_ENV === 'production';
+    res.cookie('cashier_device', '', {
       httpOnly: true,
       secure,
       sameSite: 'lax',
@@ -321,7 +354,10 @@ export class LoyaltyController {
     } satisfies CustomerProfileDto;
   }
 
-  private async listPromotionsForCustomer(merchantId: string, customerId: string) {
+  private async listPromotionsForCustomer(
+    merchantId: string,
+    customerId: string,
+  ) {
     const customer = await this.ensureCustomer(merchantId, customerId);
 
     const now = new Date();
@@ -437,7 +473,8 @@ export class LoyaltyController {
         name: customer.name ?? null,
         phone: customer.phone ?? null,
         gender: (customer as any).profileGender ?? customer.gender ?? null,
-        birthday: (customer as any).profileBirthDate ?? customer.birthday ?? null,
+        birthday:
+          (customer as any).profileBirthDate ?? customer.birthday ?? null,
         profileCompletedAt: (customer as any).profileCompletedAt ?? null,
       });
     } catch {
@@ -453,8 +490,7 @@ export class LoyaltyController {
     @Query('customerId') customerId?: string,
   ) {
     const mid = typeof merchantId === 'string' ? merchantId.trim() : '';
-    const mcid =
-      typeof customerId === 'string' ? customerId.trim() : '';
+    const mcid = typeof customerId === 'string' ? customerId.trim() : '';
     if (!mid) throw new BadRequestException('merchantId required');
     if (!mcid) throw new BadRequestException('customerId required');
     return this.listPromotionsForCustomer(mid, mcid);
@@ -475,9 +511,7 @@ export class LoyaltyController {
     const merchantId =
       typeof body?.merchantId === 'string' ? body.merchantId.trim() : '';
     const customerId =
-      typeof body?.customerId === 'string'
-        ? body.customerId.trim()
-        : '';
+      typeof body?.customerId === 'string' ? body.customerId.trim() : '';
     const promotionId =
       typeof body?.promotionId === 'string' ? body.promotionId.trim() : '';
     const outletId =
@@ -489,8 +523,7 @@ export class LoyaltyController {
         ? body.staffId.trim()
         : null;
     if (!merchantId) throw new BadRequestException('merchantId required');
-    if (!customerId)
-      throw new BadRequestException('customerId required');
+    if (!customerId) throw new BadRequestException('customerId required');
     if (!promotionId) throw new BadRequestException('promotionId required');
 
     const customer = await this.ensureCustomer(merchantId, customerId);
@@ -984,11 +1017,8 @@ export class LoyaltyController {
     if (!merchantId) throw new BadRequestException('merchantId is required');
 
     const customerId =
-      typeof body?.customerId === 'string'
-        ? body.customerId.trim()
-        : '';
-    if (!customerId)
-      throw new BadRequestException('customerId is required');
+      typeof body?.customerId === 'string' ? body.customerId.trim() : '';
+    if (!customerId) throw new BadRequestException('customerId is required');
 
     const customer = await this.ensureCustomer(merchantId, customerId);
 
@@ -1120,14 +1150,11 @@ export class LoyaltyController {
     const merchantId =
       typeof body?.merchantId === 'string' ? body.merchantId.trim() : '';
     const customerId =
-      typeof body?.customerId === 'string'
-        ? body.customerId.trim()
-        : '';
+      typeof body?.customerId === 'string' ? body.customerId.trim() : '';
     const transactionId =
       typeof body?.transactionId === 'string' ? body.transactionId.trim() : '';
     if (!merchantId) throw new BadRequestException('merchantId is required');
-    if (!customerId)
-      throw new BadRequestException('customerId is required');
+    if (!customerId) throw new BadRequestException('customerId is required');
     if (!transactionId)
       throw new BadRequestException('transactionId is required');
 
@@ -1215,6 +1242,97 @@ export class LoyaltyController {
     );
     return { ok: true, merchantId: r.merchantId } as any;
   }
+
+  @Post('cashier/activate')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        ok: { type: 'boolean' },
+        merchantId: { type: 'string' },
+        login: { type: 'string' },
+        expiresAt: { type: 'string', format: 'date-time' },
+      },
+    },
+  })
+  async cashierActivate(
+    @Body() body: { merchantLogin?: string; activationCode?: string },
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const merchantLogin = String(body?.merchantLogin || '');
+    const activationCode = String(body?.activationCode || '');
+    const result = await this.merchants.activateCashierDeviceByCode(
+      merchantLogin,
+      activationCode,
+      {
+        ip: this.resolveClientIp(req),
+        userAgent: req.headers['user-agent'] || null,
+      },
+    );
+    const ttlMs = 1000 * 60 * 60 * 24 * 180; // ~180 дней
+    this.writeCashierDeviceCookie(res, result.token, ttlMs);
+    return {
+      ok: true,
+      merchantId: result.merchantId,
+      login: result.login,
+      expiresAt: result.expiresAt,
+    };
+  }
+
+  @Get('cashier/device')
+  @AllowInactiveSubscription()
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        active: { type: 'boolean' },
+        merchantId: { type: 'string', nullable: true },
+        login: { type: 'string', nullable: true },
+        expiresAt: { type: 'string', format: 'date-time', nullable: true },
+        lastSeenAt: { type: 'string', format: 'date-time', nullable: true },
+      },
+    },
+  })
+  async cashierDevice(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const token = this.readCookie(req, 'cashier_device');
+    if (!token) return { active: false };
+    const session = await this.merchants.getCashierDeviceSessionByToken(token);
+    if (!session) {
+      this.clearCashierDeviceCookie(res);
+      return { active: false };
+    }
+    return {
+      active: true,
+      merchantId: session.merchantId,
+      login: session.login,
+      expiresAt: session.expiresAt.toISOString(),
+      lastSeenAt: session.lastSeenAt.toISOString(),
+    };
+  }
+
+  @Delete('cashier/device')
+  @AllowInactiveSubscription()
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiOkResponse({
+    schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
+  })
+  async logoutCashierDevice(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const token = this.readCookie(req, 'cashier_device');
+    if (token) {
+      await this.merchants.revokeCashierDeviceSessionByToken(token);
+    }
+    this.clearCashierDeviceCookie(res);
+    return { ok: true };
+  }
   @Post('cashier/staff-token')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @ApiOkResponse({
@@ -1268,24 +1386,40 @@ export class LoyaltyController {
     @Body()
     body: {
       merchantLogin?: string;
-      password9?: string;
       pinCode?: string;
     },
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ) {
-    const merchantLogin = String(body?.merchantLogin || '');
-    const password9 = String(body?.password9 || '');
+    const merchantLogin = String(body?.merchantLogin || '')
+      .trim()
+      .toLowerCase();
     const pinCode = String(body?.pinCode || '');
-    if (!merchantLogin || !password9 || password9.length !== 9)
-      throw new BadRequestException(
-        'merchantLogin and 9-digit password required',
-      );
+    if (!merchantLogin) throw new BadRequestException('merchantLogin required');
     if (!pinCode || pinCode.length !== 4)
       throw new BadRequestException('pinCode (4 digits) required');
-    const auth = await this.merchants.authenticateCashier(
-      merchantLogin,
-      password9,
-    );
-    return this.merchants.getStaffAccessByPin(auth.merchantId, pinCode);
+
+    const deviceToken = this.readCookie(req, 'cashier_device');
+    if (!deviceToken) {
+      throw new UnauthorizedException('Device not activated');
+    }
+    const deviceSession =
+      await this.merchants.getCashierDeviceSessionByToken(deviceToken);
+    if (!deviceSession) {
+      this.clearCashierDeviceCookie(res);
+      throw new UnauthorizedException('Device not activated');
+    }
+
+    const merchant = await this.prisma.merchant.findFirst({
+      where: { cashierLogin: merchantLogin },
+      select: { id: true },
+    });
+    if (!merchant) throw new UnauthorizedException('Invalid cashier merchant login');
+    if (merchant.id !== deviceSession.merchantId) {
+      throw new UnauthorizedException('Device activated for another merchant');
+    }
+
+    return this.merchants.getStaffAccessByPin(deviceSession.merchantId, pinCode);
   }
 
   @Post('cashier/session')
@@ -1307,26 +1441,43 @@ export class LoyaltyController {
     @Body()
     body: {
       merchantLogin?: string;
-      password9?: string;
       pinCode?: string;
       rememberPin?: boolean;
     },
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const merchantLogin = String(body?.merchantLogin || '');
-    const password9 = String(body?.password9 || '');
+    const merchantLogin = String(body?.merchantLogin || '')
+      .trim()
+      .toLowerCase();
     const pinCode = String(body?.pinCode || '');
     const rememberPin = Boolean(body?.rememberPin);
-    if (!merchantLogin || !password9 || password9.length !== 9)
-      throw new BadRequestException(
-        'merchantLogin and 9-digit password required',
-      );
+    if (!merchantLogin) throw new BadRequestException('merchantLogin required');
     if (!pinCode || pinCode.length !== 4)
       throw new BadRequestException('pinCode (4 digits) required');
-    const result = await this.merchants.startCashierSession(
-      merchantLogin,
-      password9,
+
+    const deviceToken = this.readCookie(req, 'cashier_device');
+    if (!deviceToken) {
+      throw new UnauthorizedException('Device not activated');
+    }
+    const deviceSession =
+      await this.merchants.getCashierDeviceSessionByToken(deviceToken);
+    if (!deviceSession) {
+      this.clearCashierDeviceCookie(res);
+      throw new UnauthorizedException('Device not activated');
+    }
+
+    const merchant = await this.prisma.merchant.findFirst({
+      where: { cashierLogin: merchantLogin },
+      select: { id: true },
+    });
+    if (!merchant) throw new UnauthorizedException('Invalid cashier merchant login');
+    if (merchant.id !== deviceSession.merchantId) {
+      throw new UnauthorizedException('Device activated for another merchant');
+    }
+
+    const result = await this.merchants.startCashierSessionByMerchantId(
+      deviceSession.merchantId,
       pinCode,
       rememberPin,
       {
@@ -1334,7 +1485,10 @@ export class LoyaltyController {
         userAgent: req.headers['user-agent'] || null,
       },
     );
-    this.writeCashierSessionCookie(res, result.token);
+    const ttlMs = rememberPin
+      ? 1000 * 60 * 60 * 24 * 180 // ~180 дней
+      : 1000 * 60 * 60 * 12; // 12 часов
+    this.writeCashierSessionCookie(res, result.token, ttlMs);
     return {
       ok: true,
       merchantId: result.session.merchantId,
@@ -1347,6 +1501,7 @@ export class LoyaltyController {
   }
 
   @Get('cashier/session')
+  @AllowInactiveSubscription()
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @ApiOkResponse({
     schema: {
@@ -1423,6 +1578,7 @@ export class LoyaltyController {
   }
 
   @Delete('cashier/session')
+  @AllowInactiveSubscription()
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @ApiOkResponse({
     schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
@@ -2099,10 +2255,11 @@ export class LoyaltyController {
     },
   ) {
     if (!body?.merchantId || !body?.customerId)
-      throw new BadRequestException(
-        'merchantId and customerId required',
-      );
-    const customer = await this.ensureCustomer(body.merchantId, body.customerId);
+      throw new BadRequestException('merchantId and customerId required');
+    const customer = await this.ensureCustomer(
+      body.merchantId,
+      body.customerId,
+    );
     return this.service.applyPromoCode({
       merchantId: body.merchantId,
       customerId: customer.id,
@@ -2155,9 +2312,7 @@ export class LoyaltyController {
         : null;
     if (!invoiceNum && !orderId) {
       if (!receiptNumber) {
-        throw new BadRequestException(
-          'invoice_num или order_id обязательны',
-        );
+        throw new BadRequestException('invoice_num или order_id обязательны');
       }
       const receipt = await this.prisma.receipt.findFirst({
         where: { merchantId, receiptNumber },
@@ -2449,9 +2604,11 @@ export class LoyaltyController {
         data: { merchantId, tgId },
       });
       // Создаём связь в CustomerTelegram
-      await this.prisma.customerTelegram.create({
-        data: { merchantId, tgId, customerId: customer.id },
-      }).catch(() => {});
+      await this.prisma.customerTelegram
+        .create({
+          data: { merchantId, tgId, customerId: customer.id },
+        })
+        .catch(() => {});
     }
 
     const flags = await this.fetchCustomerProfileFlags(customer.id);
@@ -2489,12 +2646,9 @@ export class LoyaltyController {
     const merchantId =
       typeof body?.merchantId === 'string' ? body.merchantId.trim() : '';
     const customerId =
-      typeof body?.customerId === 'string'
-        ? body.customerId.trim()
-        : '';
+      typeof body?.customerId === 'string' ? body.customerId.trim() : '';
     if (!merchantId) throw new BadRequestException('merchantId required');
-    if (!customerId)
-      throw new BadRequestException('customerId required');
+    if (!customerId) throw new BadRequestException('customerId required');
 
     const customer = await this.ensureCustomer(merchantId, customerId);
 
@@ -2578,16 +2732,10 @@ export class LoyaltyController {
       ? Math.min(Math.max(parseInt(limitStr, 10) || 20, 1), 100)
       : 20;
     const before = beforeStr ? new Date(beforeStr) : undefined;
-    return this.service.transactions(
-      merchantId,
-      customerId,
-      limit,
-      before,
-      {
-        outletId,
-        staffId,
-      },
-    );
+    return this.service.transactions(merchantId, customerId, limit, before, {
+      outletId,
+      staffId,
+    });
   }
 
   // Публичные списки для фронтов (без AdminGuard)
@@ -2665,13 +2813,7 @@ export class LoyaltyController {
       await Promise.all([
         this.service.balance(merchantId, customerId),
         this.levelsService.getLevel(merchantId, customerId),
-        this.service.transactions(
-          merchantId,
-          customerId,
-          limit,
-          undefined,
-          {},
-        ),
+        this.service.transactions(merchantId, customerId, limit, undefined, {}),
         this.listPromotionsForCustomer(merchantId, customerId),
       ]);
     return {
@@ -2699,10 +2841,11 @@ export class LoyaltyController {
     },
   ) {
     if (!body?.merchantId || !body?.customerId)
-      throw new BadRequestException(
-        'merchantId and customerId required',
-      );
-    const customer = await this.ensureCustomer(body.merchantId, body.customerId);
+      throw new BadRequestException('merchantId and customerId required');
+    const customer = await this.ensureCustomer(
+      body.merchantId,
+      body.customerId,
+    );
     if (body.granted) {
       await this.prisma.consent.upsert({
         where: {

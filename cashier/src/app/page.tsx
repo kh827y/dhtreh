@@ -1,8 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React from 'react';
 import QrScanner from '../components/QrScanner';
 import SegmentedInput from '../components/SegmentedInput';
+
+const { useCallback, useEffect, useMemo, useRef, useState } = React;
 
 type QuoteRedeemResp = {
   canRedeem?: boolean;
@@ -134,43 +136,29 @@ type RawLeaderboardItem = {
   points?: unknown;
 };
 
-const COOKIE_LOGIN = 'cashier_login';
-const COOKIE_PASSWORD = 'cashier_password';
-const COOKIE_PIN = 'cashier_pin';
-const COOKIE_MAX_AGE = 60 * 60 * 24 * 180;
+const STORAGE_MERCHANT_LOGIN_KEY = 'cashier_merchant_login';
 
-const isBrowser = typeof document !== 'undefined';
-const isSecureContext =
-  typeof window !== 'undefined' &&
-  typeof window.location !== 'undefined' &&
-  window.location.protocol === 'https:';
+const isBrowser = typeof window !== 'undefined';
 
-const readCookie = (name: string): string | null => {
+const readStorage = (key: string): string | null => {
   if (!isBrowser) return null;
-  const entries = document.cookie ? document.cookie.split(';') : [];
-  for (const entry of entries) {
-    const [rawKey, ...rest] = entry.split('=');
-    if (!rawKey) continue;
-    if (rawKey.trim() === name) {
-      return decodeURIComponent(rest.join('=').trim());
-    }
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
   }
-  return null;
 };
 
-const writeCookie = (name: string, value: string, maxAgeSeconds = COOKIE_MAX_AGE) => {
+const writeStorage = (key: string, value: string) => {
   if (!isBrowser) return;
-  const secure = isSecureContext ? '; Secure' : '';
-  document.cookie = `${name}=${encodeURIComponent(value)}; path=/; SameSite=Lax; max-age=${maxAgeSeconds}${secure}`;
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    /* noop */
+  }
 };
 
-const deleteCookie = (name: string) => {
-  if (!isBrowser) return;
-  const secure = isSecureContext ? '; Secure' : '';
-  document.cookie = `${name}=; path=/; SameSite=Lax; max-age=0${secure}`;
-};
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
+const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/$/, '');
 const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
 const LOYALTY_EVENT_CHANNEL = 'loyalty:events';
 const LOYALTY_EVENT_STORAGE_KEY = 'loyalty:lastEvent';
@@ -262,6 +250,85 @@ const formatPoints = (value: number | null | undefined) => {
   return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(value);
 };
 
+const readApiError = (payload: unknown): string | null => {
+  if (!payload) return null;
+  if (typeof payload === 'string') return payload.trim() || null;
+  if (typeof payload === 'object') {
+    const anyPayload = payload as Record<string, unknown>;
+    if (typeof anyPayload.message === 'string') return anyPayload.message;
+    if (
+      Array.isArray(anyPayload.message) &&
+      typeof anyPayload.message[0] === 'string'
+    ) {
+      return anyPayload.message[0];
+    }
+    if (typeof anyPayload.error === 'string') return anyPayload.error;
+  }
+  return null;
+};
+
+const readErrorMessage = async (res: Response, fallback: string) => {
+  const text = await res.text().catch(() => '');
+  let json: unknown = null;
+  try {
+    json = text ? (JSON.parse(text) as unknown) : null;
+  } catch {}
+  return readApiError(json || text) || fallback;
+};
+
+const stripExceptionPrefix = (message: string) =>
+  message
+    .replace(/^UnauthorizedException:\s*/i, '')
+    .replace(/^BadRequestException:\s*/i, '')
+    .replace(/^NotFoundException:\s*/i, '')
+    .trim();
+
+const humanizeCashierAuthError = (message: string): string => {
+  const raw = stripExceptionPrefix(message || '');
+  const lower = raw.toLowerCase();
+  if (!raw) return 'Не удалось выполнить действие';
+  if (lower.includes('invalid cashier merchant login')) {
+    return 'Неверный логин мерчанта';
+  }
+  if (lower.includes('invalid cashier credentials')) {
+    return 'Неверный логин или пароль мерчанта';
+  }
+  if (lower.includes('merchantlogin and 9-digit password required')) {
+    return 'Укажите логин мерчанта и 9‑значный пароль';
+  }
+  if (lower.includes('activationcode (9 digits) required')) {
+    return 'Введите код активации (9 цифр)';
+  }
+  if (lower.includes('invalid or expired activation code')) {
+    return 'Неверный или истёкший код активации';
+  }
+  if (lower.includes('device not activated')) {
+    return 'Устройство не активировано. Введите код активации';
+  }
+  if (lower.includes('device activated for another merchant')) {
+    return 'Устройство активировано для другого мерчанта. Сбросьте устройство и активируйте заново';
+  }
+  if (lower.includes('pincode (4 digits) required')) {
+    return 'Введите PIN сотрудника (4 цифры)';
+  }
+  if (lower.includes('staff access by pin not found')) {
+    return 'PIN не найден. Проверьте PIN и попробуйте снова';
+  }
+  if (lower.includes('pin не уникален')) {
+    return raw;
+  }
+  if (lower.includes('staff inactive')) {
+    return 'Сотрудник не активен. Обратитесь к администратору';
+  }
+  if (lower.includes('invalid pin') || lower.includes('pin assigned to another outlet')) {
+    return 'Неверный PIN или нет доступа к торговой точке';
+  }
+  if (lower.includes('outlet for pin access not found')) {
+    return 'Для этого PIN не найдена торговая точка';
+  }
+  return raw.length > 400 ? raw.slice(0, 400) : raw;
+};
+
 const MOTIVATION_MAX_CUSTOM_DAYS = 365;
 const MOTIVATION_DEFAULT_NEW_POINTS = 30;
 const MOTIVATION_DEFAULT_EXISTING_POINTS = 10;
@@ -339,14 +406,17 @@ export default function Page() {
   const [histNextBefore, setHistNextBefore] = useState<string | null>(null);
 
   const [session, setSession] = useState<CashierSessionInfo | null>(null);
-  const [sessionLoading, setSessionLoading] = useState<boolean>(true);
+  const [, setSessionLoading] = useState<boolean>(true);
   const [rememberPin, setRememberPin] = useState<boolean>(false);
 
   const [merchantLogin, setMerchantLogin] = useState<string>('');
-  const [passwordDigits, setPasswordDigits] = useState<string>('');
+  const [activationCodeDigits, setActivationCodeDigits] = useState<string>('');
   const [pinDigits, setPinDigits] = useState<string>('');
   const [authMsg, setAuthMsg] = useState<string>('');
   const [step, setStep] = useState<'merchant' | 'pin' | 'terminal'>('merchant');
+  const [, setDeviceLoading] = useState<boolean>(true);
+  const [deviceActive, setDeviceActive] = useState<boolean>(false);
+  const [deviceLogin, setDeviceLogin] = useState<string | null>(null);
   const [staffLookup, setStaffLookup] = useState<{
     staff: { id: string; login?: string; firstName?: string; lastName?: string; role: string };
     outlet?: { id: string; name?: string | null };
@@ -395,19 +465,12 @@ export default function Page() {
 
   const [manualTokenInput, setManualTokenInput] = useState('');
 
-  const password9 = passwordDigits;
-  const normalizedLogin = merchantLogin.trim().toLowerCase().replace(/[^a-z]/g, '') || merchantLogin.trim().toLowerCase();
+  const activationCode = activationCodeDigits;
+  const normalizedLogin = merchantLogin.trim().toLowerCase();
 
   useEffect(() => {
-    const savedLogin = readCookie(COOKIE_LOGIN);
+    const savedLogin = readStorage(STORAGE_MERCHANT_LOGIN_KEY);
     if (savedLogin) setMerchantLogin(savedLogin);
-    const savedPassword = readCookie(COOKIE_PASSWORD);
-    if (savedPassword) setPasswordDigits(savedPassword);
-    const savedPin = readCookie(COOKIE_PIN);
-    if (savedPin) {
-      setPinDigits(savedPin);
-      setRememberPin(true);
-    }
   }, []);
 
   const mapSessionResponse = (payload: unknown): CashierSessionInfo => {
@@ -444,28 +507,75 @@ export default function Page() {
     let cancelled = false;
     const bootstrap = async () => {
       setSessionLoading(true);
+      setDeviceLoading(true);
       try {
-        const resp = await fetch(`${API_BASE}/loyalty/cashier/session`, {
-          credentials: 'include',
-        });
-        if (!resp.ok) {
-          if (!cancelled) setSession(null);
-          return;
+        try {
+          const resp = await fetch(`${API_BASE}/loyalty/cashier/session`, {
+            credentials: 'include',
+          });
+          if (resp.ok) {
+            const data = await resp.json().catch(() => null);
+            if (cancelled) return;
+            if (data?.active) {
+              const info = mapSessionResponse(data);
+              setSession(info);
+              setMerchantId(info.merchantId || MERCHANT);
+              setRememberPin(Boolean(info.rememberPin));
+              setStep('terminal');
+              return;
+            }
+          }
+        } catch {
+          /* ignore */
         }
-        const data = await resp.json();
+
         if (cancelled) return;
-        if (data?.active) {
-          const info = mapSessionResponse(data);
-          setSession(info);
-          setMerchantId(info.merchantId || MERCHANT);
-          setRememberPin(Boolean(info.rememberPin));
-        } else {
-          setSession(null);
+        setSession(null);
+
+        try {
+          const resp = await fetch(`${API_BASE}/loyalty/cashier/device`, {
+            credentials: 'include',
+          });
+          if (resp.ok) {
+            const data = await resp.json().catch(() => null);
+            if (cancelled) return;
+            if (data?.active) {
+              const login =
+                typeof data?.login === 'string' ? String(data.login) : '';
+              const mid =
+                typeof data?.merchantId === 'string'
+                  ? String(data.merchantId)
+                  : '';
+              setDeviceActive(true);
+              setDeviceLogin(login || null);
+              if (mid) setMerchantId(mid);
+              if (login) {
+                setMerchantLogin(login);
+                writeStorage(STORAGE_MERCHANT_LOGIN_KEY, login);
+              }
+              setStep('pin');
+              return;
+            }
+          }
+        } catch {
+          /* ignore */
         }
+
+        if (cancelled) return;
+        setDeviceActive(false);
+        setDeviceLogin(null);
+        setStaffLookup(null);
+        setPinDigits('');
+        setActivationCodeDigits('');
+        setAuthMsg('');
+        setStep('merchant');
       } catch {
         if (!cancelled) setSession(null);
       } finally {
-        if (!cancelled) setSessionLoading(false);
+        if (!cancelled) {
+          setSessionLoading(false);
+          setDeviceLoading(false);
+        }
       }
     };
     bootstrap();
@@ -479,16 +589,6 @@ export default function Page() {
       setLeaderboardOutletFilter(null);
     }
   }, [session?.outlet?.id]);
-
-  useEffect(() => {
-    if (sessionLoading) return;
-    if (session) {
-      setMerchantId(session.merchantId || MERCHANT);
-      setStep('terminal');
-    } else {
-      setStep(passwordDigits.length === 9 && merchantLogin.trim() ? 'pin' : 'merchant');
-    }
-  }, [session, sessionLoading, passwordDigits, merchantLogin]);
 
   useEffect(() => {
     setOrderId('O-' + Math.floor(Date.now() % 1_000_000));
@@ -527,33 +627,36 @@ export default function Page() {
     }
   };
 
-  const cashierLogin = async () => {
+  const activateDevice = async () => {
     setAuthMsg('');
     try {
-      if (!normalizedLogin || !password9 || password9.length !== 9) {
-        throw new Error('Укажите логин мерчанта и 9‑значный пароль');
+      if (!normalizedLogin || !activationCode || activationCode.length !== 9) {
+        throw new Error('Укажите логин мерчанта и 9‑значный код активации');
       }
-      const r = await fetch(`${API_BASE}/loyalty/cashier/login`, {
+      const r = await fetch(`${API_BASE}/loyalty/cashier/activate`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ merchantLogin: normalizedLogin, password9 }),
+        body: JSON.stringify({ merchantLogin: normalizedLogin, activationCode }),
       });
-      if (!r.ok) throw new Error(await r.text());
+      if (!r.ok) throw new Error(await readErrorMessage(r, 'Не удалось активировать устройство'));
       const data = await r.json();
-      if (data?.merchantId) {
-        const resolvedMerchantId = String(data.merchantId);
+      const resolvedMerchantId = data?.merchantId ? String(data.merchantId) : '';
+      const resolvedLogin = data?.login ? String(data.login) : normalizedLogin;
+      if (resolvedMerchantId) {
         setMerchantId(resolvedMerchantId);
-        setStaffLookup(null);
-        setMerchantLogin(normalizedLogin);
-        writeCookie(COOKIE_LOGIN, normalizedLogin);
-        writeCookie(COOKIE_PASSWORD, password9);
-        if (!rememberPin) setPinDigits('');
       }
+      setDeviceActive(true);
+      setDeviceLogin(resolvedLogin);
+      setStaffLookup(null);
+      setMerchantLogin(resolvedLogin);
+      writeStorage(STORAGE_MERCHANT_LOGIN_KEY, resolvedLogin);
+      if (!rememberPin) setPinDigits('');
+      setActivationCodeDigits('');
       setStep('pin');
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
-      setAuthMsg(message);
+      setAuthMsg(humanizeCashierAuthError(message));
     }
   };
 
@@ -561,8 +664,11 @@ export default function Page() {
     setAuthMsg('');
     if (!pin || pin.length !== 4) return;
     try {
-      if (!normalizedLogin || !password9 || password9.length !== 9) {
-        throw new Error('Сначала выполните вход мерчанта');
+      if (!deviceActive) {
+        throw new Error('Device not activated');
+      }
+      if (!normalizedLogin) {
+        throw new Error('merchantLogin required');
       }
       setPinDigits(pin);
       const r = await fetch(`${API_BASE}/loyalty/cashier/staff-access`, {
@@ -571,11 +677,10 @@ export default function Page() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           merchantLogin: normalizedLogin,
-          password9,
           pinCode: pin,
         }),
       });
-      if (!r.ok) throw new Error(await r.text());
+      if (!r.ok) throw new Error(await readErrorMessage(r, 'Не удалось проверить PIN'));
       const data = await r.json();
       const accesses = Array.isArray(data?.accesses) ? data.accesses : [];
       const outletInfo =
@@ -596,18 +701,20 @@ export default function Page() {
         outlet: outletInfo,
         accesses,
       });
-      if (rememberPin) writeCookie(COOKIE_PIN, pin);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
-      setAuthMsg(message);
+      setAuthMsg(humanizeCashierAuthError(message));
     }
   };
 
   const startCashierSessionAuth = async () => {
     setAuthMsg('');
     try {
-      if (!normalizedLogin || !password9 || password9.length !== 9) {
-        throw new Error('Сначала войдите как мерчант (логин/пароль 9 цифр)');
+      if (!deviceActive) {
+        throw new Error('Device not activated');
+      }
+      if (!normalizedLogin) {
+        throw new Error('merchantLogin required');
       }
       if (!pinDigits || pinDigits.length !== 4) {
         throw new Error('Введите PIN сотрудника');
@@ -618,29 +725,25 @@ export default function Page() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           merchantLogin: normalizedLogin,
-          password9,
           pinCode: pinDigits,
           rememberPin,
         }),
       });
-      if (!r.ok) throw new Error(await r.text());
+      if (!r.ok) throw new Error(await readErrorMessage(r, 'Не удалось войти по PIN'));
       const data = await r.json();
       const sessionInfo = mapSessionResponse(data);
       setSession(sessionInfo);
       setMerchantId(sessionInfo.merchantId || MERCHANT);
       setRememberPin(Boolean(sessionInfo.rememberPin));
-      writeCookie(COOKIE_LOGIN, normalizedLogin);
-      writeCookie(COOKIE_PASSWORD, password9);
-      if (rememberPin) {
-        writeCookie(COOKIE_PIN, pinDigits);
-      } else {
-        deleteCookie(COOKIE_PIN);
-      }
+      writeStorage(STORAGE_MERCHANT_LOGIN_KEY, normalizedLogin);
+      setActivationCodeDigits('');
+      setPinDigits('');
+      setStaffLookup(null);
       setAuthMsg('');
       setStep('terminal');
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
-      setAuthMsg(message);
+      setAuthMsg(humanizeCashierAuthError(message));
     }
   };
 
@@ -655,16 +758,58 @@ export default function Page() {
     }
     setSession(null);
     setStaffLookup(null);
-    if (!rememberPin) {
-      setPinDigits('');
-      deleteCookie(COOKIE_PIN);
-    } else {
-      const savedPin = readCookie(COOKIE_PIN);
-      if (savedPin) setPinDigits(savedPin);
-    }
-    setRememberPin(Boolean(readCookie(COOKIE_PIN)));
-    setStep(passwordDigits.length === 9 && merchantLogin.trim() ? 'pin' : 'merchant');
+    setPinDigits('');
+    setAuthMsg('');
     resetFlow();
+
+    try {
+      const resp = await fetch(`${API_BASE}/loyalty/cashier/device`, {
+        credentials: 'include',
+      });
+      if (resp.ok) {
+        const data = await resp.json().catch(() => null);
+        if (data?.active) {
+          const login =
+            typeof data?.login === 'string' ? String(data.login) : normalizedLogin;
+          const mid =
+            typeof data?.merchantId === 'string' ? String(data.merchantId) : '';
+          setDeviceActive(true);
+          setDeviceLogin(login || null);
+          if (mid) setMerchantId(mid);
+          if (login) {
+            setMerchantLogin(login);
+            writeStorage(STORAGE_MERCHANT_LOGIN_KEY, login);
+          }
+          setStep('pin');
+          return;
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+
+    setDeviceActive(false);
+    setDeviceLogin(null);
+    setStep('merchant');
+  };
+
+  const deactivateDevice = async () => {
+    setAuthMsg('');
+    try {
+      await fetch(`${API_BASE}/loyalty/cashier/device`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+    } catch {
+      /* ignore */
+    }
+    setDeviceActive(false);
+    setDeviceLogin(null);
+    setStaffLookup(null);
+    setPinDigits('');
+    setActivationCodeDigits('');
+    setAuthMsg('');
+    setStep('merchant');
   };
 
   const callQuote = async (
@@ -1380,12 +1525,22 @@ export default function Page() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm text-slate-300">Пароль (9 цифр)</label>
-                <SegmentedInput length={9} groupSize={3} value={passwordDigits} onChange={setPasswordDigits} placeholderChar="○" autoFocus />
+                <label className="text-sm text-slate-300">Код активации (9 цифр)</label>
+                <SegmentedInput
+                  length={9}
+                  groupSize={3}
+                  value={activationCodeDigits}
+                  onChange={setActivationCodeDigits}
+                  placeholderChar="○"
+                  autoFocus
+                />
+                <div className="text-xs text-slate-400">
+                  Код нужен один раз для подключения устройства (действует 3 дня).
+                </div>
               </div>
               <button
-                onClick={cashierLogin}
-                disabled={!merchantLogin.trim() || passwordDigits.length !== 9}
+                onClick={activateDevice}
+                disabled={!merchantLogin.trim() || activationCodeDigits.length !== 9}
                 className="w-full rounded-full bg-emerald-400 py-3 text-slate-900 font-semibold disabled:opacity-30"
               >
                 Продолжить
@@ -1396,8 +1551,12 @@ export default function Page() {
           {step === 'pin' && (
             <div className="space-y-6">
               <div className="flex items-center justify-between text-sm text-slate-400">
-                <div>Логин: <span className="text-white">{normalizedLogin || '—'}</span></div>
-                <button className="text-emerald-300" onClick={() => { setStaffLookup(null); setStep('merchant'); }}>Изменить</button>
+                <div>
+                  Логин: <span className="text-white">{deviceLogin || normalizedLogin || '—'}</span>
+                </div>
+                <button className="text-emerald-300" onClick={deactivateDevice}>
+                  Сменить мерчанта
+                </button>
               </div>
               <div className="space-y-3">
                 <label className="text-sm text-slate-300">PIN сотрудника</label>
@@ -1427,11 +1586,6 @@ export default function Page() {
                       onChange={(e) => {
                         const checked = e.target.checked;
                         setRememberPin(checked);
-                        if (checked && pinDigits.length === 4) {
-                          writeCookie(COOKIE_PIN, pinDigits);
-                        } else if (!checked) {
-                          deleteCookie(COOKIE_PIN);
-                        }
                       }}
                     />
                     <span>Сохранить PIN</span>

@@ -79,8 +79,7 @@ export class RestApiIntegrationsService {
       value: any,
       key: keyof RestApiRateLimits,
     ): RestApiRateLimit => {
-      const current =
-        value && typeof value === 'object' ? (value[key] as any) : null;
+      const current = value && typeof value === 'object' ? value[key] : null;
       const limit = Number(current?.limit);
       const ttl = Number(current?.ttl);
       const fallback = DEFAULT_RATE_LIMITS[key];

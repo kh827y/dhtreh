@@ -130,7 +130,9 @@ describe('PointsTtlReminderWorker', () => {
       customer: {
         findMany: jest
           .fn()
-          .mockResolvedValue([{ id: 'C1', name: null, tgId: '999', merchantId: 'M1' }]),
+          .mockResolvedValue([
+            { id: 'C1', name: null, tgId: '999', merchantId: 'M1' },
+          ]),
       },
       pushNotification: {
         findFirst: jest.fn().mockImplementation(({ where }: any) => {
@@ -172,7 +174,9 @@ describe('PointsTtlReminderWorker', () => {
       customer: {
         findMany: jest
           .fn()
-          .mockResolvedValue([{ id: 'C1', name: 'NoTg', tgId: null, merchantId: 'M1' }]),
+          .mockResolvedValue([
+            { id: 'C1', name: 'NoTg', tgId: null, merchantId: 'M1' },
+          ]),
       },
     });
 

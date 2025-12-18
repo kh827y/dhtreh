@@ -640,9 +640,7 @@ export class OperationsLogService {
       staff: tx.staff
         ? { id: tx.staff.id, name: staffName, status: tx.staff.status }
         : null,
-      device: tx.device
-        ? { id: tx.device.id, code: tx.device.code }
-        : null,
+      device: tx.device ? { id: tx.device.id, code: tx.device.code } : null,
       rating,
       redeem: {
         amount: redeemAmount,
@@ -1385,11 +1383,7 @@ export class OperationsLogService {
     const normalized =
       typeof scope === 'string' ? scope.trim().toLowerCase() : '';
     if (normalized === 'current' || normalized === 'active') {
-      return [
-        StaffStatus.ACTIVE,
-        StaffStatus.PENDING,
-        StaffStatus.SUSPENDED,
-      ];
+      return [StaffStatus.ACTIVE, StaffStatus.PENDING, StaffStatus.SUSPENDED];
     }
     if (normalized === 'former' || normalized === 'fired') {
       return [StaffStatus.FIRED, StaffStatus.ARCHIVED];

@@ -219,7 +219,12 @@ export class PortalReviewsService {
         string,
         {
           outletId: string | null;
-          outlet: { id: string; name: string | null; code: string | null; externalId: string | null } | null;
+          outlet: {
+            id: string;
+            name: string | null;
+            code: string | null;
+            externalId: string | null;
+          } | null;
           staffId: string | null;
           device: { id: string; code: string | null } | null;
           staff: {
@@ -236,7 +241,9 @@ export class PortalReviewsService {
         orderId: { in: orderIds },
       },
       include: {
-        outlet: { select: { id: true, name: true, code: true, externalId: true } },
+        outlet: {
+          select: { id: true, name: true, code: true, externalId: true },
+        },
         device: { select: { id: true, code: true } },
         staff: { select: { id: true, firstName: true, lastName: true } },
       },

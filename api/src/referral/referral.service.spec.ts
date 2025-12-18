@@ -67,9 +67,9 @@ describe('ReferralService (unit)', () => {
       personalReferralCode: { findFirst: jest.fn(async () => null) },
     });
     const svc = mkSvc(prisma);
-    await expect(
-      svc.activateReferral('BADCODE', 'C1'),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(svc.activateReferral('BADCODE', 'C1')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
   });
 
   it('activateReferral throws on invalid/expired code', async () => {

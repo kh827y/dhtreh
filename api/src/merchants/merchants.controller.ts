@@ -90,7 +90,7 @@ export class MerchantsController {
       rows.map((row) => ({
         ...row,
         subscription: this.subscriptions.buildStateFromRecord(
-          (row as any)?.subscription ?? null,
+          row?.subscription ?? null,
         ),
       })),
     );

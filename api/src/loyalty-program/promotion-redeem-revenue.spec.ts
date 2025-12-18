@@ -24,7 +24,10 @@ describe('computePromotionRedeemRevenueFromData', () => {
       },
     ];
 
-    const result = computePromotionRedeemRevenueFromData(participants, receipts);
+    const result = computePromotionRedeemRevenueFromData(
+      participants,
+      receipts,
+    );
     expect(result.get('p1')).toEqual({
       dates: ['2024-01-02'],
       series: [950],
@@ -65,7 +68,10 @@ describe('computePromotionRedeemRevenueFromData', () => {
       },
     ];
 
-    const result = computePromotionRedeemRevenueFromData(participants, receipts);
+    const result = computePromotionRedeemRevenueFromData(
+      participants,
+      receipts,
+    );
 
     expect(result.get('p1')).toEqual({
       dates: ['2024-01-02', '2024-01-06'],
@@ -115,7 +121,10 @@ describe('computePromotionRedeemRevenueFromData', () => {
       },
     ];
 
-    const result = computePromotionRedeemRevenueFromData(participants, receipts);
+    const result = computePromotionRedeemRevenueFromData(
+      participants,
+      receipts,
+    );
     expect(result.get('p1')).toEqual({
       dates: ['2024-01-10'],
       series: [150],
@@ -168,7 +177,10 @@ describe('computePromotionRedeemRevenueFromData', () => {
       },
     ];
 
-    const result = computePromotionRedeemRevenueFromData(participants, receipts);
+    const result = computePromotionRedeemRevenueFromData(
+      participants,
+      receipts,
+    );
 
     expect(result.get('p1')).toEqual({
       dates: ['2024-01-04'],

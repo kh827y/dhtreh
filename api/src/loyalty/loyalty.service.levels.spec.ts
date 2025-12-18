@@ -9,7 +9,10 @@ function mkPrisma(overrides: any = {}) {
         merchantId: 'M1',
       })),
       findMany: jest.fn(async () => []),
-      create: jest.fn(async (args: any) => ({ id: args?.data?.id || 'C1', merchantId: 'M1' })),
+      create: jest.fn(async (args: any) => ({
+        id: args?.data?.id || 'C1',
+        merchantId: 'M1',
+      })),
     },
     merchant: { upsert: jest.fn(async () => ({})) },
     merchantSettings: {

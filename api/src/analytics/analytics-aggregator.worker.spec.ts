@@ -39,10 +39,10 @@ describe('AnalyticsAggregatorWorker — RFM helpers', () => {
     ) => number;
     const computeRecencyDaysBounded = (worker as any)
       .computeRecencyDaysBounded as (
-        lastOrderAt: Date | null | undefined,
-        horizon: number,
-        now: Date,
-      ) => number;
+      lastOrderAt: Date | null | undefined,
+      horizon: number,
+      now: Date,
+    ) => number;
     const computeRecencyDaysRaw = (worker as any).computeRecencyDaysRaw as (
       lastOrderAt: Date | null | undefined,
       now: Date,
@@ -55,11 +55,7 @@ describe('AnalyticsAggregatorWorker — RFM helpers', () => {
     expect(scoreRecency(150, 100)).toBe(1);
 
     expect(
-      computeRecencyDaysBounded(
-        new Date('2023-12-31T00:00:00.000Z'),
-        100,
-        now,
-      ),
+      computeRecencyDaysBounded(new Date('2023-12-31T00:00:00.000Z'), 100, now),
     ).toBe(15);
     expect(
       computeRecencyDaysBounded(new Date('2024-03-01T00:00:00.000Z'), 100, now),
@@ -114,7 +110,12 @@ describe('AnalyticsAggregatorWorker — RFM helpers', () => {
     ) => (worker as any).suggestUpperQuantile.call(worker, values, options);
 
     const values = [1, 2, 3, 100];
-    expect(computeQuantiles(values)).toEqual({ q20: 1, q40: 2, q60: 2, q80: 3 });
+    expect(computeQuantiles(values)).toEqual({
+      q20: 1,
+      q40: 2,
+      q60: 2,
+      q80: 3,
+    });
     expect(suggestUpperQuantile(values)).toBe(3);
     expect(suggestUpperQuantile(values, { minimum: 10 })).toBe(10);
     expect(suggestUpperQuantile([], { minimum: 5 })).toBeNull();
@@ -141,14 +142,36 @@ describe('AnalyticsAggregatorWorker — recalculateCustomerStatsForMerchant', ()
 
     const prisma = createPrismaMock();
     prisma.merchantSettings.findUnique.mockResolvedValue({
-      rulesJson: { rfm: { frequency: { mode: 'auto' }, monetary: { mode: 'auto' } } },
+      rulesJson: {
+        rfm: { frequency: { mode: 'auto' }, monetary: { mode: 'auto' } },
+      },
     });
     prisma.wallet.findMany.mockResolvedValue([
-      { merchantId: 'm-1', customerId: 'fresh', createdAt: new Date('2023-01-10T00:00:00.000Z') },
-      { merchantId: 'm-1', customerId: 'fresh', createdAt: new Date('2023-01-15T00:00:00.000Z') },
-      { merchantId: 'm-1', customerId: 'mid', createdAt: new Date('2023-07-01T00:00:00.000Z') },
-      { merchantId: 'm-1', customerId: 'lost', createdAt: new Date('2023-01-01T00:00:00.000Z') },
-      { merchantId: 'm-1', customerId: 'dormant', createdAt: new Date('2023-12-01T00:00:00.000Z') },
+      {
+        merchantId: 'm-1',
+        customerId: 'fresh',
+        createdAt: new Date('2023-01-10T00:00:00.000Z'),
+      },
+      {
+        merchantId: 'm-1',
+        customerId: 'fresh',
+        createdAt: new Date('2023-01-15T00:00:00.000Z'),
+      },
+      {
+        merchantId: 'm-1',
+        customerId: 'mid',
+        createdAt: new Date('2023-07-01T00:00:00.000Z'),
+      },
+      {
+        merchantId: 'm-1',
+        customerId: 'lost',
+        createdAt: new Date('2023-01-01T00:00:00.000Z'),
+      },
+      {
+        merchantId: 'm-1',
+        customerId: 'dormant',
+        createdAt: new Date('2023-12-01T00:00:00.000Z'),
+      },
     ]);
 
     const receipts: ReceiptAggregateRow[] = [
@@ -179,17 +202,23 @@ describe('AnalyticsAggregatorWorker — recalculateCustomerStatsForMerchant', ()
     const worker = new AnalyticsAggregatorWorker(prisma);
     await worker.recalculateCustomerStatsForMerchant('m-1');
 
-    expect(fetchAggregatesMock).toHaveBeenCalledWith(prisma, { merchantId: 'm-1' });
+    expect(fetchAggregatesMock).toHaveBeenCalledWith(prisma, {
+      merchantId: 'm-1',
+    });
     expect(prisma.customerStats.upsert).toHaveBeenCalledTimes(4);
 
-    const upserts = prisma.customerStats.upsert.mock.calls.map(([payload]: any) => ({
-      where: payload.where,
-      update: payload.update,
-      create: payload.create,
-    }));
+    const upserts = prisma.customerStats.upsert.mock.calls.map(
+      ([payload]: any) => ({
+        where: payload.where,
+        update: payload.update,
+        create: payload.create,
+      }),
+    );
 
     const find = (id: string) =>
-      upserts.find((call) => call.where.merchantId_customerId?.customerId === id);
+      upserts.find(
+        (call) => call.where.merchantId_customerId?.customerId === id,
+      );
 
     const fresh = find('fresh');
     expect(fresh?.update).toEqual(
@@ -205,7 +234,9 @@ describe('AnalyticsAggregatorWorker — recalculateCustomerStatsForMerchant', ()
         lastOrderAt: receipts[0].lastPurchaseAt,
       }),
     );
-    expect(fresh?.create.firstSeenAt?.toISOString()).toBe('2023-01-10T00:00:00.000Z');
+    expect(fresh?.create.firstSeenAt?.toISOString()).toBe(
+      '2023-01-10T00:00:00.000Z',
+    );
 
     const mid = find('mid');
     expect(mid?.update).toEqual(
@@ -249,7 +280,9 @@ describe('AnalyticsAggregatorWorker — recalculateCustomerStatsForMerchant', ()
         lastOrderAt: null,
       }),
     );
-    expect(dormant?.create.firstSeenAt?.toISOString()).toBe('2023-12-01T00:00:00.000Z');
+    expect(dormant?.create.firstSeenAt?.toISOString()).toBe(
+      '2023-12-01T00:00:00.000Z',
+    );
 
     for (const call of upserts) {
       expect(call.update.lastSeenAt).toEqual(now);
@@ -272,9 +305,21 @@ describe('AnalyticsAggregatorWorker — recalculateCustomerStatsForMerchant', ()
       },
     });
     prisma.wallet.findMany.mockResolvedValue([
-      { merchantId: 'm-2', customerId: 'manual-a', createdAt: new Date('2024-01-10T00:00:00.000Z') },
-      { merchantId: 'm-2', customerId: 'manual-b', createdAt: new Date('2023-12-01T00:00:00.000Z') },
-      { merchantId: 'm-2', customerId: 'manual-c', createdAt: new Date('2024-02-20T00:00:00.000Z') },
+      {
+        merchantId: 'm-2',
+        customerId: 'manual-a',
+        createdAt: new Date('2024-01-10T00:00:00.000Z'),
+      },
+      {
+        merchantId: 'm-2',
+        customerId: 'manual-b',
+        createdAt: new Date('2023-12-01T00:00:00.000Z'),
+      },
+      {
+        merchantId: 'm-2',
+        customerId: 'manual-c',
+        createdAt: new Date('2024-02-20T00:00:00.000Z'),
+      },
     ]);
 
     const receipts: ReceiptAggregateRow[] = [
@@ -298,15 +343,19 @@ describe('AnalyticsAggregatorWorker — recalculateCustomerStatsForMerchant', ()
     const worker = new AnalyticsAggregatorWorker(prisma);
     await worker.recalculateCustomerStatsForMerchant('m-2');
 
-    const upserts = prisma.customerStats.upsert.mock.calls.map(([payload]: any) => ({
-      where: payload.where,
-      update: payload.update,
-      create: payload.create,
-    }));
+    const upserts = prisma.customerStats.upsert.mock.calls.map(
+      ([payload]: any) => ({
+        where: payload.where,
+        update: payload.update,
+        create: payload.create,
+      }),
+    );
     expect(upserts).toHaveLength(3);
 
     const find = (id: string) =>
-      upserts.find((call) => call.where.merchantId_customerId?.customerId === id);
+      upserts.find(
+        (call) => call.where.merchantId_customerId?.customerId === id,
+      );
 
     const manualA = find('manual-a');
     expect(manualA?.update).toEqual(

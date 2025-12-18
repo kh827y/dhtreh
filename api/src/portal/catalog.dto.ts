@@ -369,7 +369,8 @@ export class ListProductsQueryDto {
   @IsString()
   search?: string;
   @ApiPropertyOptional({
-    description: 'Фильтр по провайдеру внешней системы (iiko, r_keeper, MoySklad и т.п.)',
+    description:
+      'Фильтр по провайдеру внешней системы (iiko, r_keeper, MoySklad и т.п.)',
   })
   @IsOptional()
   @IsString()

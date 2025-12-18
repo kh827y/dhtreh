@@ -104,7 +104,11 @@ try {
     CustomerAudiencesModule,
     CommunicationsModule,
   ],
-  controllers: [HealthController, MetricsController, AdminObservabilityController],
+  controllers: [
+    HealthController,
+    MetricsController,
+    AdminObservabilityController,
+  ],
   providers: [
     HoldGcWorker,
     OutboxDispatcherWorker,

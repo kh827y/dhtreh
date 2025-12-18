@@ -76,7 +76,7 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
       const integrationLimits = req?.integrationRateLimits;
       if (integrationLimits && req?.integrationId) {
         const pickIntegration = (key: string) => {
-          const src = (integrationLimits as any)?.[key];
+          const src = integrationLimits?.[key];
           const l = Number(src?.limit);
           const t = Number(src?.ttl);
           return {

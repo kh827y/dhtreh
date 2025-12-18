@@ -44,10 +44,20 @@ describe('AntiFraudGuard (daily cap priority)', () => {
 
     const metrics = { inc: jest.fn() } as any;
     const antifraud = {} as any;
-    const alerts = { antifraudBlocked: jest.fn().mockResolvedValue(null) } as any;
-    const staffNotify = { enqueueEvent: jest.fn().mockResolvedValue(null) } as any;
+    const alerts = {
+      antifraudBlocked: jest.fn().mockResolvedValue(null),
+    } as any;
+    const staffNotify = {
+      enqueueEvent: jest.fn().mockResolvedValue(null),
+    } as any;
 
-    const guard = new AntiFraudGuard(prisma, metrics, antifraud, alerts, staffNotify);
+    const guard = new AntiFraudGuard(
+      prisma,
+      metrics,
+      antifraud,
+      alerts,
+      staffNotify,
+    );
 
     const req = {
       method: 'POST',
@@ -93,10 +103,20 @@ describe('AntiFraudGuard (daily cap priority)', () => {
 
     const metrics = { inc: jest.fn() } as any;
     const antifraud = {} as any;
-    const alerts = { antifraudBlocked: jest.fn().mockResolvedValue(null) } as any;
-    const staffNotify = { enqueueEvent: jest.fn().mockResolvedValue(null) } as any;
+    const alerts = {
+      antifraudBlocked: jest.fn().mockResolvedValue(null),
+    } as any;
+    const staffNotify = {
+      enqueueEvent: jest.fn().mockResolvedValue(null),
+    } as any;
 
-    const guard = new AntiFraudGuard(prisma, metrics, antifraud, alerts, staffNotify);
+    const guard = new AntiFraudGuard(
+      prisma,
+      metrics,
+      antifraud,
+      alerts,
+      staffNotify,
+    );
 
     const req = {
       method: 'POST',

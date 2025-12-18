@@ -15,6 +15,7 @@ import {
   CashierRotationResultDto,
   RotateCashierDto,
   CashierPinDto,
+  IssueCashierActivationCodesDto,
 } from '../dto/cashier.dto';
 import { plainToInstance } from 'class-transformer';
 import { ApiTags } from '@nestjs/swagger';
@@ -78,6 +79,33 @@ export class CashierController {
     const pins = await this.service.listCashierPins(this.getMerchantId(req));
     return pins.map((pin) =>
       plainToInstance(CashierPinDto, pin, { enableImplicitConversion: true }),
+    );
+  }
+
+  @Get('activation-codes')
+  async activationCodes(@Req() req: any) {
+    return this.service.listCashierActivationCodes(this.getMerchantId(req));
+  }
+
+  @Post('activation-codes')
+  async issueActivationCodes(
+    @Req() req: any,
+    @Body() body: IssueCashierActivationCodesDto,
+  ) {
+    return this.service.issueCashierActivationCodes(
+      this.getMerchantId(req),
+      body?.count ?? 1,
+    );
+  }
+
+  @Post('activation-codes/revoke')
+  async revokeActivationCode(
+    @Req() req: any,
+    @Body() body: { id?: string },
+  ) {
+    return this.service.revokeCashierActivationCode(
+      this.getMerchantId(req),
+      String(body?.id || ''),
     );
   }
 }

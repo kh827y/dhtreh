@@ -121,7 +121,7 @@ export class AlertsService {
       );
       event.delivered = true;
     } catch (e) {
-      event.error = String((e as any)?.message || e);
+      event.error = String(e?.message || e);
       this.logger.warn(`Failed to send alert: ${event.error}`);
     }
   }

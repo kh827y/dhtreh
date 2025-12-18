@@ -431,6 +431,8 @@ export class CashierGuard implements CanActivate {
     const isAlwaysPublic =
       path === '/loyalty/teleauth' ||
       path === '/loyalty/cashier/login' ||
+      path === '/loyalty/cashier/activate' ||
+      path === '/loyalty/cashier/device' ||
       path === '/loyalty/cashier/staff-token' ||
       path === '/loyalty/cashier/staff-access' ||
       path === '/loyalty/cashier/session';
@@ -527,8 +529,7 @@ export class CashierGuard implements CanActivate {
 
       if (requiresTelegramCustomer && !teleauthContext) return false;
       if (requiresTelegramCustomer && teleauthContext) {
-        const requestedCustomerId =
-          this.extractCustomerId(req);
+        const requestedCustomerId = this.extractCustomerId(req);
         if (
           requestedCustomerId &&
           requestedCustomerId !== teleauthContext.customerId

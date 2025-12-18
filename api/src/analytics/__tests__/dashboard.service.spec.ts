@@ -45,14 +45,12 @@ describe('AnalyticsService — dashboard summary', () => {
         },
       ]),
     );
-    (service as any).getRegistrationsByDay = jest
-      .fn()
-      .mockResolvedValue(
-        new Map([
-          ['2024-01-01', 2],
-          ['2024-01-02', 1],
-        ]),
-      );
+    (service as any).getRegistrationsByDay = jest.fn().mockResolvedValue(
+      new Map([
+        ['2024-01-01', 2],
+        ['2024-01-02', 1],
+      ]),
+    );
     (service as any).calculateVisitFrequencyDays = jest
       .fn()
       .mockResolvedValueOnce(4.5)

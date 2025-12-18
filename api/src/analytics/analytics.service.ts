@@ -1209,19 +1209,19 @@ export class AnalyticsService {
     const rfm = raw as Record<string, unknown>;
     const recencyObject = this.toJsonObject(
       rfm.recency as Prisma.JsonValue,
-    ) as
-      | {
-          mode?: unknown;
-          days?: unknown;
-          recencyDays?: unknown;
-          threshold?: unknown;
-        }
-      | null;
+    ) as {
+      mode?: unknown;
+      days?: unknown;
+      recencyDays?: unknown;
+      threshold?: unknown;
+    } | null;
     const legacyRecencyDays = this.toNumber(rfm.recencyDays);
     const recencyModeFromObject =
       recencyObject?.mode === 'manual' ? 'manual' : 'auto';
     const recencyDaysFromObject = this.toNumber(
-      recencyObject?.days ?? recencyObject?.recencyDays ?? recencyObject?.threshold,
+      recencyObject?.days ??
+        recencyObject?.recencyDays ??
+        recencyObject?.threshold,
     );
     let recencyMode: 'auto' | 'manual' = recencyModeFromObject;
     let recencyDays = recencyDaysFromObject;
@@ -1553,10 +1553,7 @@ export class AnalyticsService {
       const resolvedRScore =
         entry.rScore ??
         (recencyMode === 'manual' && recencyHorizon
-          ? this.scoreRecency(
-              boundedRecency ?? recencyHorizon,
-              recencyHorizon,
-            )
+          ? this.scoreRecency(boundedRecency ?? recencyHorizon, recencyHorizon)
           : this.scoreRecencyQuantile(entry.daysSinceRaw, recencyQuantiles));
       const resolvedFScore =
         entry.fScore ??
@@ -1578,7 +1575,7 @@ export class AnalyticsService {
           recencyBuckets,
           resolvedRScore,
           recencyMode === 'manual' && recencyHorizon
-            ? boundedRecency ?? recencyHorizon
+            ? (boundedRecency ?? recencyHorizon)
             : entry.daysSinceRaw,
         );
       if (resolvedFScore)
@@ -1615,14 +1612,14 @@ export class AnalyticsService {
       frequencyMode,
       frequencyThreshold:
         frequencyMode === 'manual'
-          ? frequencyThreshold ?? null
-          : suggestedFrequency ?? null,
+          ? (frequencyThreshold ?? null)
+          : (suggestedFrequency ?? null),
       frequencySuggested: suggestedFrequency ?? null,
       moneyMode,
       moneyThreshold:
         moneyMode === 'manual'
-          ? moneyThreshold ?? null
-          : suggestedMoney ?? null,
+          ? (moneyThreshold ?? null)
+          : (suggestedMoney ?? null),
       moneySuggested: suggestedMoney ?? null,
     };
 
@@ -1651,7 +1648,7 @@ export class AnalyticsService {
     const nextRules = this.mergeRfmRules(settingsRow?.rulesJson, {
       recencyMode: dto.recencyMode,
       recencyDays:
-        dto.recencyMode === 'manual' ? dto.recencyDays ?? null : null,
+        dto.recencyMode === 'manual' ? (dto.recencyDays ?? null) : null,
       frequency: {
         mode: dto.frequencyMode,
         threshold:
@@ -1690,7 +1687,10 @@ export class AnalyticsService {
     const tz = await this.getTimezoneInfo(merchantId, timezone);
     const effectiveGrouping = this.resolveGrouping(period, grouping);
     const [currentTotals] = await this.prisma.$queryRaw<
-      Array<{ revenue: Prisma.Decimal | number | null; orders: bigint | number | null }>
+      Array<{
+        revenue: Prisma.Decimal | number | null;
+        orders: bigint | number | null;
+      }>
     >(Prisma.sql`
       SELECT
         COALESCE(SUM(r."total"), 0)::numeric AS revenue,
@@ -3289,10 +3289,7 @@ export class AnalyticsService {
     return { current: currentSet, previous: previousSet };
   }
 
-  private calculateRetentionStats(
-    current: Set<string>,
-    previous: Set<string>,
-  ) {
+  private calculateRetentionStats(current: Set<string>, previous: Set<string>) {
     let retained = 0;
     for (const id of previous) {
       if (current.has(id)) retained += 1;
@@ -3322,7 +3319,10 @@ export class AnalyticsService {
     period: DashboardPeriod,
   ) {
     const [row] = await this.prisma.$queryRaw<
-      Array<{ newChecks: bigint | number | null; repeatChecks: bigint | number | null }>
+      Array<{
+        newChecks: bigint | number | null;
+        repeatChecks: bigint | number | null;
+      }>
     >(Prisma.sql`
       WITH valid_receipts AS (
         SELECT

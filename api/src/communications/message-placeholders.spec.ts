@@ -18,9 +18,8 @@ describe('applyCurlyPlaceholders', () => {
   });
 
   it('is case-insensitive by key', () => {
-    expect(applyCurlyPlaceholders('{Name} {BONUS}', { name: 'A', bonus: 1 })).toBe(
-      'A 1',
-    );
+    expect(
+      applyCurlyPlaceholders('{Name} {BONUS}', { name: 'A', bonus: 1 }),
+    ).toBe('A 1');
   });
 });
-

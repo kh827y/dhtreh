@@ -9,15 +9,15 @@ import { RestApiIntegrationsService } from './rest-api-integrations.service';
 
 @Injectable()
 export class IntegrationApiKeyGuard implements CanActivate {
-  constructor(
-    private readonly restIntegrations: RestApiIntegrationsService,
-  ) {}
+  constructor(private readonly restIntegrations: RestApiIntegrationsService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest();
     const apiKey = this.extractKey(req);
     if (!apiKey) {
-      throw new UnauthorizedException('API-ключ обязателен в заголовке X-Api-Key');
+      throw new UnauthorizedException(
+        'API-ключ обязателен в заголовке X-Api-Key',
+      );
     }
 
     const integration = await this.restIntegrations.findByApiKey(apiKey);

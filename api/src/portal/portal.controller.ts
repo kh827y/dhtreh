@@ -1468,19 +1468,31 @@ export class PortalController {
           properties: {
             code: {
               type: 'object',
-              properties: { limit: { type: 'number' }, ttl: { type: 'number' } },
+              properties: {
+                limit: { type: 'number' },
+                ttl: { type: 'number' },
+              },
             },
             calculate: {
               type: 'object',
-              properties: { limit: { type: 'number' }, ttl: { type: 'number' } },
+              properties: {
+                limit: { type: 'number' },
+                ttl: { type: 'number' },
+              },
             },
             bonus: {
               type: 'object',
-              properties: { limit: { type: 'number' }, ttl: { type: 'number' } },
+              properties: {
+                limit: { type: 'number' },
+                ttl: { type: 'number' },
+              },
             },
             refund: {
               type: 'object',
-              properties: { limit: { type: 'number' }, ttl: { type: 'number' } },
+              properties: {
+                limit: { type: 'number' },
+                ttl: { type: 'number' },
+              },
             },
           },
         },
@@ -1900,11 +1912,7 @@ export class PortalController {
 
   @Post('catalog/import/moysklad')
   importMoySklad(@Req() req: any, @Body() dto: ImportCatalogDto) {
-    return this.catalog.importCatalog(
-      this.getMerchantId(req),
-      'MOYSKLAD',
-      dto,
-    );
+    return this.catalog.importCatalog(this.getMerchantId(req), 'MOYSKLAD', dto);
   }
 
   // Outlets

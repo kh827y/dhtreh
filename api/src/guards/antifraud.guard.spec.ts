@@ -31,7 +31,7 @@ describe('AntiFraudGuard', () => {
     const staffNotify = {
       pushSuspiciousTx: jest.fn(),
     } as any;
-    guard = new AntiFraudGuard(prisma as any, metrics as any, antifraud as any, alerts as any, staffNotify);
+    guard = new AntiFraudGuard(prisma, metrics, antifraud, alerts, staffNotify);
   });
 
   afterAll(() => {

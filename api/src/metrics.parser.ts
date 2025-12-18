@@ -23,8 +23,10 @@ export function parsePromMetrics(text: string): MetricsSummary {
   const counters: Record<string, number> = {};
   const outboxEvents: Record<string, number> = {};
   const posWebhooks: Record<string, number> = {};
-  const posRequests: Record<string, Record<string, Record<string, number>>> =
-    {};
+  const posRequests: Record<
+    string,
+    Record<string, Record<string, number>>
+  > = {};
   const posErrors: Record<string, Record<string, number>> = {};
   const inc = (k: string, v: number) => {
     counters[k] = (counters[k] || 0) + v;
@@ -75,7 +77,8 @@ export function parsePromMetrics(text: string): MetricsSummary {
     if (m) {
       const res = m[1];
       const val = Number(m[2]);
-      outboxEvents[res] = (outboxEvents[res] || 0) + (Number.isNaN(val) ? 0 : val);
+      outboxEvents[res] =
+        (outboxEvents[res] || 0) + (Number.isNaN(val) ? 0 : val);
       continue;
     }
     m = ln.match(
@@ -97,8 +100,7 @@ export function parsePromMetrics(text: string): MetricsSummary {
       const result = m[3];
       const val = Number(m[4]);
       posRequests[provider] = posRequests[provider] || {};
-      posRequests[provider][endpoint] =
-        posRequests[provider][endpoint] || {};
+      posRequests[provider][endpoint] = posRequests[provider][endpoint] || {};
       posRequests[provider][endpoint][result] =
         (posRequests[provider][endpoint][result] || 0) +
         (Number.isNaN(val) ? 0 : val);

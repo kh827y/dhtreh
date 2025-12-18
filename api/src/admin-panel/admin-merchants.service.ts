@@ -418,11 +418,7 @@ export class AdminMerchantsService {
     };
   }
 
-  async grantSubscription(
-    merchantId: string,
-    days: number,
-    planId?: string,
-  ) {
+  async grantSubscription(merchantId: string, days: number, planId?: string) {
     const planToUse = planId?.trim() || FULL_PLAN_ID;
     const merchant = await this.prisma.merchant.findUnique({
       where: { id: merchantId },

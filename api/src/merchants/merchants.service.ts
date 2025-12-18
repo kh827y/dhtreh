@@ -119,9 +119,23 @@ export class MerchantsService {
     return `${slug}${this.letterSuffix(Math.floor(Math.random() * 1000) + 260)}`;
   }
   private random9(): string {
-    let s = '';
-    for (let i = 0; i < 9; i++) s += Math.floor(Math.random() * 10);
-    return s;
+    return this.randomDigitsSecure(9);
+  }
+
+  private randomDigitsSecure(length: number): string {
+    const crypto = require('crypto');
+    const len = Math.max(1, Math.min(64, Math.floor(Number(length) || 0)));
+    let out = '';
+    for (let i = 0; i < len; i += 1) {
+      out += String(crypto.randomInt(0, 10));
+    }
+    return out;
+  }
+
+  private normalizeDigits(value: string, maxLen: number): string {
+    return String(value || '')
+      .replace(/[^0-9]/g, '')
+      .slice(0, Math.max(0, Math.floor(Number(maxLen) || 0)));
   }
   private async generateUniqueOutletPin(
     merchantId: string,
@@ -184,6 +198,254 @@ export class MerchantsService {
     if (!m || !m.cashierPassword9 || m.cashierPassword9 !== password9)
       throw new UnauthorizedException('Invalid cashier credentials');
     return { merchantId: m.id } as any;
+  }
+
+  async issueCashierActivationCodes(merchantId: string, count: number) {
+    const normalizedCount = Math.max(1, Math.min(50, Math.floor(Number(count) || 0)));
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 1000 * 60 * 60 * 24 * 3);
+    const created: Array<{ id: string; code: string; tokenHint: string }> = [];
+
+    for (let i = 0; i < normalizedCount; i += 1) {
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        const code = this.randomDigitsSecure(9);
+        const tokenHash = this.sha256(code);
+        const tokenHint = code.slice(-3);
+        try {
+          const row = await this.prisma.cashierActivationCode.create({
+            data: {
+              merchantId,
+              tokenHash,
+              tokenHint,
+              expiresAt,
+            },
+            select: { id: true },
+          });
+          created.push({ id: row.id, code, tokenHint });
+          break;
+        } catch (e: any) {
+          if (String(e?.code || '').toUpperCase() === 'P2002') {
+            continue;
+          }
+          throw e;
+        }
+      }
+    }
+
+    if (created.length !== normalizedCount) {
+      throw new BadRequestException('Unable to issue activation codes');
+    }
+
+    return {
+      expiresAt: expiresAt.toISOString(),
+      codes: created.map((item) => item.code),
+      items: created.map((item) => ({
+        id: item.id,
+        tokenHint: item.tokenHint,
+        expiresAt: expiresAt.toISOString(),
+      })),
+    };
+  }
+
+  async listCashierActivationCodes(merchantId: string, limit = 50) {
+    const take = Math.max(1, Math.min(200, Math.floor(Number(limit) || 0)));
+    const now = new Date();
+    const rows = await this.prisma.cashierActivationCode.findMany({
+      where: { merchantId },
+      orderBy: { createdAt: 'desc' },
+      take,
+      select: {
+        id: true,
+        tokenHint: true,
+        createdAt: true,
+        expiresAt: true,
+        usedAt: true,
+        revokedAt: true,
+        usedByDeviceSessionId: true,
+      },
+    });
+
+    return rows.map((row) => ({
+      id: row.id,
+      tokenHint: row.tokenHint ?? null,
+      createdAt: row.createdAt.toISOString(),
+      expiresAt: row.expiresAt.toISOString(),
+      usedAt: row.usedAt ? row.usedAt.toISOString() : null,
+      revokedAt: row.revokedAt ? row.revokedAt.toISOString() : null,
+      status: row.revokedAt
+        ? 'REVOKED'
+        : row.usedAt
+          ? 'USED'
+          : row.expiresAt.getTime() <= now.getTime()
+            ? 'EXPIRED'
+            : 'ACTIVE',
+      usedByDeviceSessionId: row.usedByDeviceSessionId ?? null,
+    }));
+  }
+
+  async revokeCashierActivationCode(merchantId: string, codeId: string) {
+    const id = String(codeId || '').trim();
+    if (!id) throw new BadRequestException('codeId required');
+    await this.prisma.cashierActivationCode.updateMany({
+      where: {
+        merchantId,
+        id,
+        usedAt: null,
+        revokedAt: null,
+      },
+      data: { revokedAt: new Date() },
+    });
+    return { ok: true };
+  }
+
+  async activateCashierDeviceByCode(
+    merchantLogin: string,
+    activationCode: string,
+    context?: { ip?: string | null; userAgent?: string | null },
+  ) {
+    const normalizedLogin = String(merchantLogin || '')
+      .trim()
+      .toLowerCase();
+    if (!normalizedLogin) throw new BadRequestException('merchantLogin required');
+    const digits = this.normalizeDigits(String(activationCode || ''), 9);
+    if (digits.length !== 9) {
+      throw new BadRequestException('activationCode (9 digits) required');
+    }
+
+    const merchant = await this.prisma.merchant.findFirst({
+      where: { cashierLogin: normalizedLogin },
+      select: { id: true, cashierLogin: true },
+    });
+    if (!merchant) throw new UnauthorizedException('Invalid cashier merchant login');
+
+    const tokenHash = this.sha256(digits);
+    const now = new Date();
+    const deviceTtlMs = 1000 * 60 * 60 * 24 * 180;
+    const deviceExpiresAt = new Date(now.getTime() + deviceTtlMs);
+
+    const token = this.randomSessionToken();
+    const deviceTokenHash = this.sha256(token);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.cashierActivationCode.updateMany({
+        where: {
+          merchantId: merchant.id,
+          tokenHash,
+          usedAt: null,
+          revokedAt: null,
+          expiresAt: { gt: now },
+        },
+        data: { usedAt: now },
+      });
+      if (updated.count !== 1) {
+        throw new UnauthorizedException('Invalid or expired activation code');
+      }
+
+      const device = await tx.cashierDeviceSession.create({
+        data: {
+          merchantId: merchant.id,
+          tokenHash: deviceTokenHash,
+          expiresAt: deviceExpiresAt,
+          lastSeenAt: now,
+          ipAddress: context?.ip ?? null,
+          userAgent: context?.userAgent ?? null,
+        },
+        select: { id: true, merchantId: true, expiresAt: true },
+      });
+
+      await tx.cashierActivationCode.updateMany({
+        where: { merchantId: merchant.id, tokenHash, usedAt: now },
+        data: { usedByDeviceSessionId: device.id },
+      });
+
+      return device;
+    });
+
+    return {
+      token,
+      expiresAt: result.expiresAt.toISOString(),
+      merchantId: result.merchantId,
+      login: merchant.cashierLogin,
+    };
+  }
+
+  async getCashierDeviceSessionByToken(token: string) {
+    const raw = String(token || '').trim();
+    if (!raw) return null;
+    const hash = this.sha256(raw);
+    const session = await this.prisma.cashierDeviceSession.findFirst({
+      where: { tokenHash: hash, revokedAt: null },
+      select: {
+        id: true,
+        merchantId: true,
+        expiresAt: true,
+        lastSeenAt: true,
+        merchant: { select: { cashierLogin: true } },
+      },
+    });
+    if (!session) return null;
+    const now = new Date();
+    if (session.expiresAt.getTime() <= now.getTime()) {
+      try {
+        await this.prisma.cashierDeviceSession.update({
+          where: { id: session.id },
+          data: { revokedAt: now },
+        });
+      } catch {}
+      return null;
+    }
+    if (
+      !session.lastSeenAt ||
+      now.getTime() - session.lastSeenAt.getTime() > 60_000
+    ) {
+      try {
+        await this.prisma.cashierDeviceSession.update({
+          where: { id: session.id },
+          data: { lastSeenAt: now },
+        });
+      } catch {}
+    }
+    return {
+      id: session.id,
+      merchantId: session.merchantId,
+      login: session.merchant?.cashierLogin ?? null,
+      expiresAt: session.expiresAt,
+      lastSeenAt: session.lastSeenAt ?? now,
+    };
+  }
+
+  async revokeCashierDeviceSessionByToken(token: string) {
+    const raw = String(token || '').trim();
+    if (!raw) return { ok: true };
+    const hash = this.sha256(raw);
+    const now = new Date();
+    await this.prisma.cashierDeviceSession.updateMany({
+      where: { tokenHash: hash, revokedAt: null },
+      data: { revokedAt: now },
+    });
+    return { ok: true };
+  }
+
+  async startCashierSessionByMerchantId(
+    merchantId: string,
+    pinCode: string,
+    rememberPin?: boolean,
+    context?: { ip?: string | null; userAgent?: string | null },
+  ) {
+    const mid = String(merchantId || '').trim();
+    if (!mid) throw new BadRequestException('merchantId required');
+    const normalizedPin = String(pinCode || '').trim();
+    if (!normalizedPin || normalizedPin.length !== 4)
+      throw new BadRequestException('pinCode (4 digits) required');
+
+    const { access, staff } = await this.resolveActiveAccessByPin(
+      mid,
+      normalizedPin,
+    );
+    if (!access.outletId)
+      throw new BadRequestException('Outlet for PIN access not found');
+
+    return this.createCashierSessionRecord(mid, staff, access, rememberPin, context);
   }
   async issueStaffTokenByPin(
     merchantLogin: string,
@@ -648,8 +910,7 @@ export class MerchantsService {
       outletId: entity.outletId ?? null,
       ...this.mapOutletMeta(entity.outlet ?? null),
       staffId: entity.staffId ?? null,
-      deviceId:
-        (entity as any)?.device?.code ?? entity.deviceId ?? null,
+      deviceId: entity?.device?.code ?? entity.deviceId ?? null,
     } as const;
   }
 
@@ -665,8 +926,7 @@ export class MerchantsService {
       outletId: entity.outletId ?? null,
       ...this.mapOutletMeta(entity.outlet ?? null),
       staffId: entity.staffId ?? null,
-      deviceId:
-        (entity as any)?.device?.code ?? entity.deviceId ?? null,
+      deviceId: entity?.device?.code ?? entity.deviceId ?? null,
     } as const;
   }
 
@@ -1515,44 +1775,20 @@ export class MerchantsService {
     return crypto.randomBytes(48).toString('hex');
   }
 
-  async startCashierSession(
-    merchantLogin: string,
-    password9: string,
-    pinCode: string,
+  private async createCashierSessionRecord(
+    merchantId: string,
+    staff: Staff,
+    access: { id: string; outletId: string },
     rememberPin?: boolean,
     context?: { ip?: string | null; userAgent?: string | null },
+    metadata?: Prisma.InputJsonValue,
   ) {
-    const normalizedLogin = String(merchantLogin || '')
-      .trim()
-      .toLowerCase();
-    const normalizedPassword = String(password9 || '').trim();
-    if (
-      !normalizedLogin ||
-      !normalizedPassword ||
-      normalizedPassword.length !== 9
-    )
-      throw new BadRequestException(
-        'merchantLogin and 9-digit password required',
-      );
-    const normalizedPin = String(pinCode || '').trim();
-    if (!normalizedPin || normalizedPin.length !== 4)
-      throw new BadRequestException('pinCode (4 digits) required');
-
-    const auth = await this.authenticateCashier(
-      normalizedLogin,
-      normalizedPassword,
-    );
-    const merchantId = auth.merchantId;
-    const { access, staff } = await this.resolveActiveAccessByPin(
-      merchantId,
-      normalizedPin,
-    );
-    if (!access.outletId)
-      throw new BadRequestException('Outlet for PIN access not found');
-
     const token = this.randomSessionToken();
     const hash = this.sha256(token);
     const now = new Date();
+    const ttlMs = rememberPin
+      ? 1000 * 60 * 60 * 24 * 180 // ~180 дней
+      : 1000 * 60 * 60 * 12; // 12 часов
     const [session] = await this.prisma.$transaction([
       this.prisma.cashierSession.create({
         data: {
@@ -1563,12 +1799,11 @@ export class MerchantsService {
           startedAt: now,
           lastSeenAt: now,
           tokenHash: hash,
+          expiresAt: new Date(now.getTime() + ttlMs),
           rememberPin: !!rememberPin,
           ipAddress: context?.ip ?? null,
           userAgent: context?.userAgent ?? null,
-          metadata: {
-            merchantLogin: normalizedLogin,
-          } as Prisma.InputJsonValue,
+          metadata: metadata ?? ({} as Prisma.InputJsonValue),
         },
         include: {
           outlet: { select: { id: true, name: true } },
@@ -1610,6 +1845,53 @@ export class MerchantsService {
         rememberPin: !!rememberPin,
       },
     };
+  }
+
+  async startCashierSession(
+    merchantLogin: string,
+    password9: string,
+    pinCode: string,
+    rememberPin?: boolean,
+    context?: { ip?: string | null; userAgent?: string | null },
+  ) {
+    const normalizedLogin = String(merchantLogin || '')
+      .trim()
+      .toLowerCase();
+    const normalizedPassword = String(password9 || '').trim();
+    if (
+      !normalizedLogin ||
+      !normalizedPassword ||
+      normalizedPassword.length !== 9
+    )
+      throw new BadRequestException(
+        'merchantLogin and 9-digit password required',
+      );
+    const normalizedPin = String(pinCode || '').trim();
+    if (!normalizedPin || normalizedPin.length !== 4)
+      throw new BadRequestException('pinCode (4 digits) required');
+
+    const auth = await this.authenticateCashier(
+      normalizedLogin,
+      normalizedPassword,
+    );
+    const merchantId = auth.merchantId;
+    const { access, staff } = await this.resolveActiveAccessByPin(
+      merchantId,
+      normalizedPin,
+    );
+    if (!access.outletId)
+      throw new BadRequestException('Outlet for PIN access not found');
+
+    return this.createCashierSessionRecord(
+      merchantId,
+      staff,
+      { id: access.id, outletId: access.outletId },
+      rememberPin,
+      context,
+      {
+        merchantLogin: normalizedLogin,
+      } as Prisma.InputJsonValue,
+    );
   }
 
   async getCashierSessionByToken(token: string) {

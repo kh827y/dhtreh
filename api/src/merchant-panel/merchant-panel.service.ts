@@ -1638,4 +1638,16 @@ export class MerchantPanelService {
   rotateCashierCredentials(merchantId: string, regenerateLogin?: boolean) {
     return this.merchants.rotateCashierCredentials(merchantId, regenerateLogin);
   }
+
+  listCashierActivationCodes(merchantId: string) {
+    return this.merchants.listCashierActivationCodes(merchantId);
+  }
+
+  issueCashierActivationCodes(merchantId: string, count: number) {
+    return this.merchants.issueCashierActivationCodes(merchantId, count);
+  }
+
+  revokeCashierActivationCode(merchantId: string, codeId: string) {
+    return this.merchants.revokeCashierActivationCode(merchantId, codeId);
+  }
 }

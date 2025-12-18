@@ -28,7 +28,9 @@ export function computePromotionRedeemRevenueFromData(
   if (!participants.length || !receipts.length) return result;
 
   const sortedParticipants = [...participants]
-    .filter((p) => p?.promotionId && p?.customerId && p?.joinedAt instanceof Date)
+    .filter(
+      (p) => p?.promotionId && p?.customerId && p?.joinedAt instanceof Date,
+    )
     .sort((a, b) =>
       a.customerId === b.customerId
         ? a.joinedAt.getTime() - b.joinedAt.getTime()
@@ -77,7 +79,10 @@ export function computePromotionRedeemRevenueFromData(
       if (!totalRedeem) return;
       const cashPart = Math.max(0, Number(receipt.total ?? 0) - totalRedeem);
 
-      const allocations: Array<{ promo: (typeof customerPromos)[number]; amount: number }> = [];
+      const allocations: Array<{
+        promo: (typeof customerPromos)[number];
+        amount: number;
+      }> = [];
       let redeemLeft = totalRedeem;
 
       for (const promo of customerPromos) {
@@ -90,7 +95,10 @@ export function computePromotionRedeemRevenueFromData(
         allocations.push({ promo, amount: allocated });
       }
 
-      const promoRedeemTotal = allocations.reduce((acc, cur) => acc + cur.amount, 0);
+      const promoRedeemTotal = allocations.reduce(
+        (acc, cur) => acc + cur.amount,
+        0,
+      );
       if (!promoRedeemTotal) return;
 
       allocations.forEach(({ promo, amount }) => {
@@ -98,7 +106,11 @@ export function computePromotionRedeemRevenueFromData(
         const netPart = cashPart * share;
         const dayKey = receipt.createdAt.toISOString().slice(0, 10);
         if (!buckets.has(promo.promotionId)) {
-          buckets.set(promo.promotionId, { byDay: new Map(), netTotal: 0, redeemedTotal: 0 });
+          buckets.set(promo.promotionId, {
+            byDay: new Map(),
+            netTotal: 0,
+            redeemedTotal: 0,
+          });
         }
         const bucket = buckets.get(promo.promotionId)!;
         const dayBucket = bucket.byDay.get(dayKey) ?? { net: 0, redeemed: 0 };
@@ -113,7 +125,9 @@ export function computePromotionRedeemRevenueFromData(
 
   buckets.forEach((value, promoId) => {
     const days = Array.from(value.byDay.keys()).sort();
-    const series = days.map((day) => Math.round(value.byDay.get(day)?.net ?? 0));
+    const series = days.map((day) =>
+      Math.round(value.byDay.get(day)?.net ?? 0),
+    );
     const netTotal = Math.round(value.netTotal);
     const redeemedTotal = Math.round(value.redeemedTotal);
     result.set(promoId, {
@@ -127,4 +141,3 @@ export function computePromotionRedeemRevenueFromData(
 
   return result;
 }
-

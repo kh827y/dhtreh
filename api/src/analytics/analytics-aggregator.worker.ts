@@ -67,19 +67,19 @@ export class AnalyticsAggregatorWorker {
     const rfm = raw as Record<string, unknown>;
     const recencyObject = this.toJsonObject(
       rfm.recency as Prisma.JsonValue,
-    ) as
-      | {
-          mode?: unknown;
-          days?: unknown;
-          recencyDays?: unknown;
-          threshold?: unknown;
-        }
-      | null;
+    ) as {
+      mode?: unknown;
+      days?: unknown;
+      recencyDays?: unknown;
+      threshold?: unknown;
+    } | null;
     const legacyRecencyDays = this.toNumber(rfm.recencyDays);
     const recencyModeFromObject =
       recencyObject?.mode === 'manual' ? 'manual' : 'auto';
     const recencyDaysFromObject = this.toNumber(
-      recencyObject?.days ?? recencyObject?.recencyDays ?? recencyObject?.threshold,
+      recencyObject?.days ??
+        recencyObject?.recencyDays ??
+        recencyObject?.threshold,
     );
     let recencyMode: 'auto' | 'manual' = recencyModeFromObject;
     let recencyDays = recencyDaysFromObject;
@@ -455,10 +455,7 @@ export class AnalyticsAggregatorWorker {
           : null;
       const rfmR =
         recencyMode === 'manual' && recencyHorizon
-          ? this.scoreRecency(
-              boundedRecency ?? recencyHorizon,
-              recencyHorizon,
-            )
+          ? this.scoreRecency(boundedRecency ?? recencyHorizon, recencyHorizon)
           : this.scoreRecencyQuantile(daysSinceRaw, recencyQuantiles);
       const rfmF = this.scoreDescending(
         visits,

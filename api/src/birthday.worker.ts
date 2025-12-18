@@ -381,9 +381,7 @@ export class BirthdayWorker implements OnModuleInit, OnModuleDestroy {
     target: Date,
   ): Promise<{ record: BirthdayGreeting | null; giftIssued: number }> {
     const username =
-      candidate.customerName ||
-      candidate.customerName ||
-      'Уважаемый клиент';
+      candidate.customerName || candidate.customerName || 'Уважаемый клиент';
     const giftIssued =
       merchant.config.giftPoints > 0 ? merchant.config.giftPoints : 0;
     const message = this.applyPlaceholders(merchant.config.text, {

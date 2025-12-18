@@ -53,10 +53,7 @@ function createController(
     getCustomerAnalytics: jest.fn(),
     ...loyaltyOverrides,
   } as any;
-  const controller = new IntegrationsLoyaltyController(
-    loyalty,
-    prisma,
-  );
+  const controller = new IntegrationsLoyaltyController(loyalty, prisma);
   return { controller, prisma, loyalty };
 }
 
@@ -148,26 +145,24 @@ describe('IntegrationsLoyaltyController', () => {
       customerId: 'C-3',
       customer: { id: 'C-3' },
     };
-    const { controller, loyalty, prisma } = createController(
-      {
-        customer: {
-          findUnique: jest.fn().mockResolvedValue(customer),
-        },
-        staff: {
-          findFirst: jest.fn().mockResolvedValue({
-            id: 'STAFF-1',
-            merchantId: 'M-1',
-            status: 'ACTIVE',
-            firstName: 'Anna',
-            lastName: 'Ivanova',
-            login: 'anna',
-            email: null,
-            allowedOutletId: 'OUT-1',
-            accesses: [],
-          }),
-        },
+    const { controller, loyalty, prisma } = createController({
+      customer: {
+        findUnique: jest.fn().mockResolvedValue(customer),
       },
-    );
+      staff: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'STAFF-1',
+          merchantId: 'M-1',
+          status: 'ACTIVE',
+          firstName: 'Anna',
+          lastName: 'Ivanova',
+          login: 'anna',
+          email: null,
+          allowedOutletId: 'OUT-1',
+          accesses: [],
+        }),
+      },
+    });
     loyalty.processIntegrationBonus.mockResolvedValue({
       receiptId: 'R-2',
       orderId: 'R-2',

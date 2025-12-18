@@ -9,12 +9,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { SubscriptionGuard } from '../guards/subscription.guard';
 
 @Module({
-  imports: [
-    PrismaModule,
-    ConfigModule,
-    MetricsModule,
-    NotificationsModule,
-  ],
+  imports: [PrismaModule, ConfigModule, MetricsModule, NotificationsModule],
   controllers: [SubscriptionController],
   providers: [SubscriptionService, SubscriptionCronService, SubscriptionGuard],
   exports: [SubscriptionService, SubscriptionGuard],
