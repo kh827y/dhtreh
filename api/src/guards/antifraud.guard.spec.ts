@@ -70,12 +70,7 @@ describe('AntiFraudGuard', () => {
     });
 
     await expect(guard.canActivate(ctx)).rejects.toThrow(HttpException);
-    expect(alerts.antifraudBlocked).toHaveBeenCalledWith(
-      expect.objectContaining({
-        factor: 'no_outlet_id',
-        ctx: expect.objectContaining({ outletId: undefined, staffId: 'S-1' }),
-      }),
-    );
+    expect(alerts.antifraudBlocked).not.toHaveBeenCalled();
     expect(antifraud.checkTransaction).not.toHaveBeenCalled();
   });
 

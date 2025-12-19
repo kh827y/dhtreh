@@ -1,334 +1,375 @@
 "use client";
+
 import React from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Card, CardHeader, CardBody, Button, Skeleton } from "@loyalty/ui";
-import Toggle from "../../../components/Toggle";
-
-type TabKey = "BASIC" | "INTEGRATIONS";
+import { Plus, Monitor, Users, Save, ArrowLeft, X } from "lucide-react";
 
 const DEVICE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{1,63}$/;
+const isValidHttpUrl = (value: string) => {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+};
+
+type Device = { id: string; code: string };
+
+type ReviewLinks = {
+  yandex: string;
+  gis: string;
+  google: string;
+};
+
+type StaffItem = {
+  id: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  login?: string | null;
+  email?: string | null;
+};
+
+const staffLabel = (staff: StaffItem) => {
+  const nameParts = [staff.firstName, staff.lastName].filter(Boolean).map((value) => String(value || "").trim());
+  const fullName = nameParts.join(" ").trim();
+  if (fullName) return fullName;
+  return staff.login || staff.email || staff.id;
+};
 
 export default function EditOutletPage() {
   const params = useParams<{ id: string }>();
-  const id = params?.id as string;
+  const outletId = params?.id as string;
   const router = useRouter();
 
   const [loading, setLoading] = React.useState(true);
-  const [tab, setTab] = React.useState<TabKey>("BASIC");
-  const [toast, setToast] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
 
-  const [works, setWorks] = React.useState(true);
+  const [isActive, setIsActive] = React.useState(true);
   const [name, setName] = React.useState("");
-  const [reviewLinks, setReviewLinks] = React.useState<{ yandex: string; twogis: string; google: string }>({
+  const [reviewLinks, setReviewLinks] = React.useState<ReviewLinks>({
     yandex: "",
-    twogis: "",
+    gis: "",
     google: "",
   });
-  const [basicError, setBasicError] = React.useState("");
+  const [devices, setDevices] = React.useState<Device[]>([]);
+  const [newDeviceInput, setNewDeviceInput] = React.useState("");
+  const [deviceError, setDeviceError] = React.useState<string | null>(null);
+  const [staff, setStaff] = React.useState<StaffItem[]>([]);
 
-  const [devices, setDevices] = React.useState<Array<{ id?: string; code: string }>>([]);
-  const [deviceErrors, setDeviceErrors] = React.useState<Record<string, string>>({});
-  const [integrationsMessage, setIntegrationsMessage] = React.useState("");
-
-  React.useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => setToast(""), 3200);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
-
-  const addDeviceRow = () => {
-    if (devices.length >= 50) {
-      setIntegrationsMessage("Можно добавить не более 50 устройств");
-      return;
+  const validateReviewLinks = () => {
+    const invalid: string[] = [];
+    const yandex = reviewLinks.yandex.trim();
+    const gis = reviewLinks.gis.trim();
+    const google = reviewLinks.google.trim();
+    if (yandex && !isValidHttpUrl(yandex)) invalid.push("Яндекс");
+    if (gis && !isValidHttpUrl(gis)) invalid.push("2ГИС");
+    if (google && !isValidHttpUrl(google)) invalid.push("Google");
+    if (invalid.length) {
+      return `Некорректная ссылка для отзывов: ${invalid.join(", ")}`;
     }
-    setDevices((prev) => [...prev, { code: "" }]);
+    return null;
   };
 
-  const updateDeviceCode = (index: number, code: string) => {
-    setDevices((prev) => prev.map((item, idx) => (idx === index ? { ...item, code } : item)));
-    setDeviceErrors((prev) => {
-      const next = { ...prev };
-      delete next[`d${index}`];
-      return next;
-    });
-  };
-
-  const removeDevice = (index: number) => {
-    setDevices((prev) => prev.filter((_, idx) => idx !== index));
-    setDeviceErrors({});
-  };
-
-  const load = React.useCallback(async () => {
+  const loadOutlet = React.useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const res = await fetch(`/api/portal/outlets/${encodeURIComponent(id)}`);
-      if (!res.ok) throw new Error(await res.text());
+      const res = await fetch(`/api/portal/outlets/${encodeURIComponent(outletId)}`, { cache: "no-store" });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || "Не удалось загрузить точку");
+      }
       const data = await res.json();
-      setWorks(Boolean(data?.works ?? (String(data?.status || '').toUpperCase() === 'ACTIVE')));
-      setName(String(data?.name || ''));
-      setDevices(
-        Array.isArray(data?.devices)
-          ? data.devices.map((device: any) => ({
-              id: device?.id,
-              code: typeof device?.code === "string" ? device.code : "",
-            }))
-          : [],
-      );
-      const reviewsShareLinks = data?.reviewsShareLinks && typeof data.reviewsShareLinks === 'object'
-        ? data.reviewsShareLinks as Record<string, unknown>
-        : {};
+      setIsActive(Boolean(data?.works));
+      setName(String(data?.name || ""));
+      const links = data?.reviewsShareLinks && typeof data.reviewsShareLinks === "object" ? data.reviewsShareLinks : {};
       setReviewLinks({
-        yandex: typeof reviewsShareLinks.yandex === 'string' ? reviewsShareLinks.yandex : '',
-        twogis: typeof reviewsShareLinks.twogis === 'string' ? reviewsShareLinks.twogis : '',
-        google: typeof reviewsShareLinks.google === 'string' ? reviewsShareLinks.google : '',
+        yandex: typeof links.yandex === "string" ? links.yandex : "",
+        gis: typeof links.twogis === "string" ? links.twogis : "",
+        google: typeof links.google === "string" ? links.google : "",
       });
+      setDevices(Array.isArray(data?.devices) ? data.devices.map((d: any) => ({ id: String(d.id), code: String(d.code) })) : []);
     } catch (e: any) {
-      setToast(String(e?.message || e || 'Не удалось загрузить точку'));
+      setError(String(e?.message || e || "Не удалось загрузить точку"));
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [outletId]);
+
+  const loadStaff = React.useCallback(async () => {
+    try {
+      const res = await fetch(`/api/portal/staff?outletId=${encodeURIComponent(outletId)}&pageSize=100`, { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      const items = Array.isArray(data?.items) ? data.items : [];
+      setStaff(items);
+    } catch {
+      setStaff([]);
+    }
+  }, [outletId]);
 
   React.useEffect(() => {
-    if (id) load();
-  }, [id, load]);
+    if (!outletId) return;
+    loadOutlet();
+    loadStaff();
+  }, [loadOutlet, loadStaff, outletId]);
 
-  const handleSaveBasic = () => {
-    if (!name.trim()) {
-      setBasicError("Заполните название торговой точки");
-      return false;
-    }
-    setBasicError("");
-    return true;
-  };
-
-  const validateDevices = (): Array<{ code: string }> | null => {
-    if (devices.length > 50) {
-      setIntegrationsMessage("Можно добавить не более 50 устройств");
-      return null;
-    }
-    const errors: Record<string, string> = {};
-    const normalized = devices.map((item) => ({ code: item.code.trim() }));
-    const seen = new Set<string>();
-    normalized.forEach((device, index) => {
-      const key = `d${index}`;
-      if (!device.code) {
-        errors[key] = "Введите идентификатор устройства";
-        return;
-      }
-      if (!DEVICE_ID_PATTERN.test(device.code)) {
-        errors[key] = "Допустимы латиница, цифры, точки, дефисы и подчёркивания (2–64 символа)";
-        return;
-      }
-      const normalizedKey = device.code.toLowerCase();
-      if (seen.has(normalizedKey)) {
-        errors[key] = "Идентификатор должен быть уникальным";
-        return;
-      }
-      seen.add(normalizedKey);
-    });
-    setDeviceErrors(errors);
-    if (Object.keys(errors).length > 0) {
-      setIntegrationsMessage("Исправьте идентификаторы устройств");
-      return null;
-    }
-    setDeviceErrors({});
-    setIntegrationsMessage("");
-    return normalized.filter((device) => device.code.length > 0);
-  };
-
-  const submitSave = async () => {
-    const okBasic = handleSaveBasic();
-    if (!okBasic) return;
-    const normalizedDevices = validateDevices();
-    if (normalizedDevices === null) {
-      setTab("INTEGRATIONS");
+  const handleAddDevice = () => {
+    const code = newDeviceInput.trim();
+    if (!code) return;
+    if (!DEVICE_ID_PATTERN.test(code)) {
+      setDeviceError("Допустимы латинские буквы, цифры, точки, дефисы и подчёркивания (2–64 символа)");
       return;
     }
-
-    const payload: any = {
-      works,
-      name: name.trim(),
-      reviewsShareLinks: {
-        yandex: reviewLinks.yandex.trim() || null,
-        twogis: reviewLinks.twogis.trim() || null,
-        google: reviewLinks.google.trim() || null,
-      },
-    };
-
-    if (normalizedDevices.length) {
-      payload.devices = normalizedDevices;
+    if (devices.some((d) => d.code.toLowerCase() === code.toLowerCase())) {
+      setDeviceError("Идентификатор должен быть уникальным");
+      return;
     }
+    setDevices((prev) => [...prev, { id: Date.now().toString(), code }]);
+    setNewDeviceInput("");
+    setDeviceError(null);
+  };
 
+  const handleRemoveDevice = (deviceId: string) => {
+    setDevices((prev) => prev.filter((d) => d.id !== deviceId));
+  };
+
+  const handleSave = async () => {
+    if (!name.trim()) {
+      setError("Введите название точки");
+      return;
+    }
+    const linkError = validateReviewLinks();
+    if (linkError) {
+      setError(linkError);
+      return;
+    }
+    setSaving(true);
+    setError(null);
     try {
-      const res = await fetch(`/api/portal/outlets/${encodeURIComponent(id)}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+      const payload = {
+        name: name.trim(),
+        works: isActive,
+        reviewsShareLinks: {
+          yandex: reviewLinks.yandex.trim() || null,
+          twogis: reviewLinks.gis.trim() || null,
+          google: reviewLinks.google.trim() || null,
+        },
+        devices: devices.map((d) => ({ code: d.code })),
+      };
+      const res = await fetch(`/api/portal/outlets/${encodeURIComponent(outletId)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
-        const text = await res.text();
-        let msg: any = text;
+        const raw = await res.text().catch(() => "");
+        let message = raw;
         try {
-          const json = JSON.parse(text);
-          msg = json?.message || json?.error || text;
+          const parsed = JSON.parse(raw);
+          message = parsed?.message || parsed?.error || raw;
         } catch {}
-        const msgStr = String(msg || 'Не удалось сохранить торговую точку');
-        const lower = msgStr.toLowerCase();
-        if (lower.includes('устрой') || lower.includes('device')) {
-          setIntegrationsMessage(msgStr);
-          setTab('INTEGRATIONS');
-          setToast(msgStr);
-          return;
-        }
-        setToast(msgStr);
-        return;
+        throw new Error(message || "Не удалось сохранить точку");
       }
-      setToast('Изменения сохранены. Возврат к списку...');
-      window.setTimeout(() => router.push('/outlets'), 600);
+      router.push("/outlets");
     } catch (e: any) {
-      setToast(String(e?.message || e || 'Ошибка при сохранении'));
+      setError(String(e?.message || e || "Не удалось сохранить точку"));
+    } finally {
+      setSaving(false);
     }
   };
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-        <div style={{ display: "grid", gap: 4 }}>
-          <h1 style={{ margin: 0 }}>Редактировать торговую точку</h1>
-          <div style={{ opacity: 0.75, fontSize: 14 }}>Измените информацию по вкладкам и сохраните.</div>
+    <div className="p-8 max-w-[1200px] mx-auto animate-fade-in">
+      <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center space-x-4">
+          <button
+            onClick={() => router.push("/outlets")}
+            className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500"
+          >
+            <ArrowLeft size={24} />
+          </button>
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900">Редактирование точки</h2>
+          </div>
+        </div>
+
+        <div className="flex items-center space-x-3">
+          <div className="flex items-center bg-white px-3 py-1.5 rounded-lg border border-gray-200">
+            <span className={`text-sm font-medium mr-3 ${isActive ? "text-green-600" : "text-gray-500"}`}>
+              {isActive ? "Работает" : "Не работает"}
+            </span>
+            <button
+              onClick={() => setIsActive(!isActive)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                isActive ? "bg-green-500" : "bg-gray-300"
+              }`}
+              disabled={saving}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isActive ? "translate-x-6" : "translate-x-1"}`} />
+            </button>
+          </div>
+
+          <button
+            onClick={handleSave}
+            className="flex items-center space-x-2 bg-purple-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-purple-700 transition-colors shadow-sm"
+            disabled={saving}
+          >
+            <Save size={18} />
+            <span>{saving ? "Сохранение..." : "Сохранить"}</span>
+          </button>
         </div>
       </div>
 
-      {toast && (
-        <div className="glass" style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid rgba(37,211,102,0.25)" }}>
-          {toast}
-        </div>
-      )}
-
-      <Card>
-        <CardBody>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button type="button" className={`btn ${tab === "BASIC" ? "btn-primary" : "btn-ghost"}`} onClick={() => setTab("BASIC")}>
-              Основное
-            </button>
-            <button type="button" className={`btn ${tab === "INTEGRATIONS" ? "btn-primary" : "btn-ghost"}`} onClick={() => setTab("INTEGRATIONS") }>
-              Интеграции
-            </button>
-          </div>
-        </CardBody>
-      </Card>
+      {error && <div className="bg-red-50 border border-red-100 text-red-600 text-sm px-4 py-3 rounded-lg mb-6">{error}</div>}
 
       {loading ? (
-        <Card>
-          <CardBody>
-            <Skeleton height={240} />
-          </CardBody>
-        </Card>
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-8 text-gray-400 text-center">Загрузка...</div>
       ) : (
-        <>
-          {tab === "BASIC" && (
-            <Card>
-              <CardHeader title="Основное" subtitle="Статус, название и ссылки на карточки отзывов" />
-              <CardBody style={{ display: "grid", gap: 16 }}>
-                <Toggle checked={works} onChange={setWorks} label="Работает" />
-
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span style={{ fontSize: 12, opacity: 0.7 }}>Название *</span>
-                  <input
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                    placeholder="Название точки"
-                    style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
-                  />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="space-y-6">
+            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm space-y-4">
+              <h3 className="text-lg font-bold text-gray-900">Основная информация</h3>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Название <span className="text-red-500">*</span>
                 </label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                  placeholder="Например: Магазин на Ленина"
+                />
+              </div>
+            </div>
 
-                <div className="glass" style={{ padding: 16, borderRadius: 12, display: "grid", gap: 12 }}>
-                  <div style={{ fontWeight: 600 }}>Ссылки на карточки отзывов</div>
-                  <div style={{ fontSize: 12, opacity: 0.75 }}>
-                    Эти ссылки используются в мини-аппе, чтобы предлагать гостям поделиться отзывом после высокой оценки.
-                  </div>
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: 12, opacity: 0.7 }}>Яндекс.Карты</span>
+            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm space-y-4">
+              <h3 className="text-lg font-bold text-gray-900">Ссылки на отзывы</h3>
+              <p className="text-sm text-gray-500">Используются для перенаправления клиентов после высокой оценки качества обслуживания.</p>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Яндекс.Карты</label>
+                  <div className="flex items-center relative">
+                    <span className="absolute left-3 text-red-500 font-bold text-xs">Я</span>
                     <input
+                      type="text"
                       value={reviewLinks.yandex}
-                      onChange={(event) => setReviewLinks((prev) => ({ ...prev, yandex: event.target.value }))}
+                      onChange={(e) => setReviewLinks({ ...reviewLinks, yandex: e.target.value })}
+                      className="w-full border border-gray-300 rounded-lg pl-8 pr-4 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none"
                       placeholder="https://yandex.ru/maps/..."
-                      style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
                     />
-                  </label>
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: 12, opacity: 0.7 }}>2ГИС</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">2ГИС</label>
+                  <div className="flex items-center relative">
+                    <span className="absolute left-3 text-green-600 font-bold text-xs">2</span>
                     <input
-                      value={reviewLinks.twogis}
-                      onChange={(event) => setReviewLinks((prev) => ({ ...prev, twogis: event.target.value }))}
+                      type="text"
+                      value={reviewLinks.gis}
+                      onChange={(e) => setReviewLinks({ ...reviewLinks, gis: e.target.value })}
+                      className="w-full border border-gray-300 rounded-lg pl-8 pr-4 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none"
                       placeholder="https://2gis.ru/..."
-                      style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
                     />
-                  </label>
-                  <label style={{ display: "grid", gap: 6 }}>
-                    <span style={{ fontSize: 12, opacity: 0.7 }}>Google</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Google Maps</label>
+                  <div className="flex items-center relative">
+                    <span className="absolute left-3 text-blue-500 font-bold text-xs">G</span>
                     <input
+                      type="text"
                       value={reviewLinks.google}
-                      onChange={(event) => setReviewLinks((prev) => ({ ...prev, google: event.target.value }))}
-                      placeholder="https://maps.google.com/..."
-                      style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
+                      onChange={(e) => setReviewLinks({ ...reviewLinks, google: e.target.value })}
+                      className="w-full border border-gray-300 rounded-lg pl-8 pr-4 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                      placeholder="https://google.com/maps/..."
                     />
-                  </label>
+                  </div>
                 </div>
+              </div>
+            </div>
+          </div>
 
-                {basicError && <div style={{ color: "#f87171", fontSize: 13 }}>{basicError}</div>}
+          <div className="space-y-6">
+            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm space-y-4">
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg font-bold text-gray-900">Устройства (Кассы)</h3>
+                <span className="text-xs bg-purple-50 text-purple-600 px-2 py-1 rounded-full font-medium">
+                  {devices.length}
+                </span>
+              </div>
 
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                  <Button variant="ghost" onClick={() => router.push("/outlets")}>Отменить</Button>
-                  <Button variant="primary" onClick={submitSave}>Сохранить</Button>
-                </div>
-              </CardBody>
-            </Card>
-          )}
+              <div className="flex space-x-2">
+                <input
+                  type="text"
+                  value={newDeviceInput}
+                  onChange={(e) => setNewDeviceInput(e.target.value)}
+                  placeholder="Внешний ID (напр. POS-05)"
+                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                  onKeyDown={(e) => e.key === "Enter" && handleAddDevice()}
+                />
+                <button
+                  onClick={handleAddDevice}
+                  className="bg-purple-50 text-purple-600 p-2 rounded-lg hover:bg-purple-100 transition-colors"
+                  aria-label="Добавить устройство"
+                >
+                  <Plus size={20} />
+                </button>
+              </div>
+              {deviceError && <div className="text-xs text-red-500">{deviceError}</div>}
 
-          {tab === "INTEGRATIONS" && (
-          <Card>
-            <CardHeader title="Устройства" />
-            <CardBody style={{ display: "grid", gap: 16 }}>
-              <div style={{ display: "grid", gap: 12 }}>
-                {devices.map((device, index) => {
-                  const key = device.id || `d${index}`;
-                  const error = deviceErrors[`d${index}`];
-                  return (
-                    <div key={key} className="glass" style={{ padding: 12, borderRadius: 12, display: "grid", gap: 10 }}>
-                      <label style={{ display: "grid", gap: 6 }}>
-                        <span style={{ fontSize: 12, opacity: 0.7 }}>Укажите произвольный идентификатор устройства (допустимы латиница, цифры, точки, дефисы и подчёркивания)</span>
-                        <input
-                          value={device.code}
-                          onChange={(event) => updateDeviceCode(index, event.target.value)}
-                          placeholder="POS-1"
-                          maxLength={64}
-                          style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.3)", color: "inherit" }}
-                        />
-                      </label>
-                      {error && <div style={{ color: "#f87171", fontSize: 12 }}>{error}</div>}
-                      <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                        <Button variant="ghost" onClick={() => removeDevice(index)}>Удалить</Button>
+              <div className="border border-gray-100 rounded-lg divide-y divide-gray-100 max-h-[156px] overflow-y-auto custom-scrollbar">
+                {devices.length === 0 ? (
+                  <div className="p-4 text-center text-sm text-gray-400">Устройств пока нет</div>
+                ) : (
+                  devices.map((dev) => (
+                    <div key={dev.id} className="p-3 flex justify-between items-center hover:bg-gray-50">
+                      <div className="flex items-center space-x-3">
+                        <Monitor size={16} className="text-gray-400" />
+                        <span className="text-sm font-medium text-gray-700">{dev.code}</span>
                       </div>
+                      <button onClick={() => handleRemoveDevice(dev.id)} className="text-gray-400 hover:text-red-500">
+                        <X size={16} />
+                      </button>
                     </div>
-                  );
-                })}
-                {devices.length < 50 && (
-                  <Button variant="ghost" onClick={addDeviceRow}>Добавить устройство</Button>
+                  ))
                 )}
               </div>
+            </div>
 
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                <Button variant="ghost" onClick={() => router.push("/outlets")}>Отменить</Button>
-                <Button variant="primary" onClick={submitSave}>Сохранить</Button>
+            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm space-y-4">
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg font-bold text-gray-900">Сотрудники</h3>
+                <span className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-full font-medium">
+                  {staff.length}
+                </span>
               </div>
-              {integrationsMessage && <div style={{ color: "#f87171" }}>{integrationsMessage}</div>}
-            </CardBody>
-          </Card>
-        )}
-      </>
-    )}
-  </div>
-);
+              <div className="p-4 bg-gray-50 rounded-lg border border-gray-100 text-sm text-gray-600 flex items-start space-x-2">
+                <Users size={16} className="mt-0.5 flex-shrink-0 text-blue-500" />
+                <p>Управление сотрудниками и привязка их к торговым точкам осуществляется в разделе "Сотрудники".</p>
+              </div>
+              <div className="border border-gray-100 rounded-lg divide-y divide-gray-100 max-h-[156px] overflow-y-auto custom-scrollbar">
+                {staff.length === 0 ? (
+                  <div className="p-4 text-center text-sm text-gray-400">Сотрудников пока нет</div>
+                ) : (
+                  staff.map((person) => (
+                    <div key={person.id} className="p-3 flex items-center justify-between hover:bg-gray-50">
+                      <div className="flex items-center space-x-3">
+                        <Users size={16} className="text-gray-400" />
+                        <span className="text-sm font-medium text-gray-700">{staffLabel(person)}</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }

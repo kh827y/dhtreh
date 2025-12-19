@@ -261,6 +261,8 @@ export class PublicSettingsDto {
   @ApiPropertyOptional({ nullable: true }) miniappThemePrimary?: string | null;
   @ApiPropertyOptional({ nullable: true }) miniappThemeBg?: string | null;
   @ApiPropertyOptional({ nullable: true }) miniappLogoUrl?: string | null;
+  @ApiPropertyOptional({ nullable: true })
+  reviewsEnabled?: boolean | null;
   @ApiPropertyOptional({ type: ReviewsShareSettingsDto, nullable: true })
   reviewsShare?: ReviewsShareSettingsDto | null;
 }

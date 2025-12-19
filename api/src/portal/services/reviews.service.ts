@@ -46,6 +46,7 @@ type PortalReviewListResult = {
   offset: number;
   outlets: PortalReviewOutlet[];
   staff: PortalReviewStaff[];
+  stats: { averageRating: number };
 };
 
 @Injectable()
@@ -289,12 +290,20 @@ export class PortalReviewsService {
       });
       if (!allowedOrderIds.length) {
         const { outlets, staff } = await filterOptionsPromise;
-        return { items: [], total: 0, limit, offset, outlets, staff };
+        return {
+          items: [],
+          total: 0,
+          limit,
+          offset,
+          outlets,
+          staff,
+          stats: { averageRating: 0 },
+        };
       }
       where.orderId = { in: allowedOrderIds };
     }
 
-    const [reviews, total, filterOptions] = await Promise.all([
+    const [reviews, total, filterOptions, stats] = await Promise.all([
       this.prisma.review.findMany({
         where,
         include: {
@@ -308,6 +317,10 @@ export class PortalReviewsService {
       }),
       this.prisma.review.count({ where }),
       filterOptionsPromise,
+      this.prisma.review.aggregate({
+        where,
+        _avg: { rating: true },
+      }),
     ]);
 
     const orderIds = Array.from(
@@ -357,6 +370,9 @@ export class PortalReviewsService {
       offset,
       outlets: filterOptions.outlets,
       staff: filterOptions.staff,
+      stats: {
+        averageRating: Number(stats._avg.rating ?? 0),
+      },
     };
   }
 }

@@ -127,12 +127,18 @@ export class AntiFraudGuard implements CanActivate {
 
     // Limits (defaults)
     // Defaults from ENV
+    const platformCustomer = {
+      limit: envNum('AF_LIMIT_CUSTOMER', 5),
+      windowSec: envNum('AF_WINDOW_CUSTOMER_SEC', 120),
+      dailyCap: envNum('AF_DAILY_CAP_CUSTOMER', 5),
+      weeklyCap: envNum('AF_WEEKLY_CAP_CUSTOMER', 0),
+    } as const;
     let limits = {
       customer: {
-        limit: envNum('AF_LIMIT_CUSTOMER', 5),
-        windowSec: envNum('AF_WINDOW_CUSTOMER_SEC', 120),
-        dailyCap: envNum('AF_DAILY_CAP_CUSTOMER', 5),
-        weeklyCap: envNum('AF_WEEKLY_CAP_CUSTOMER', 0),
+        limit: platformCustomer.limit,
+        windowSec: platformCustomer.windowSec,
+        dailyCap: platformCustomer.dailyCap,
+        weeklyCap: platformCustomer.weeklyCap,
         monthlyCap: envNum('AF_MONTHLY_CAP_CUSTOMER', 40),
         pointsCap: envNum('AF_POINTS_CAP_CUSTOMER', 3000),
         blockDaily: envBool('AF_BLOCK_DAILY_CUSTOMER', false),
@@ -162,9 +168,6 @@ export class AntiFraudGuard implements CanActivate {
         weeklyCap: envNum('AF_WEEKLY_CAP_MERCHANT', 0),
       },
     } as const;
-
-    // Жёсткий daily-cap администратора для клиента (до мерчантских overrides)
-    const adminDailyCapCustomer = limits.customer.dailyCap;
 
     // Per-merchant overrides via MerchantSettings.rulesJson.af
     try {
@@ -241,28 +244,35 @@ export class AntiFraudGuard implements CanActivate {
 
     const resolvedOutletId = outletId || undefined;
     const resolvedDeviceIdFinal = resolvedDeviceId || undefined;
-    const notifyVelocity = (scope: string, count: number, limit: number) => {
+    const notifyVelocity = (
+      scope: string,
+      count: number,
+      limit: number,
+      notifyAdmin = false,
+    ) => {
       this.metrics.inc('antifraud_velocity_block_total', {
         scope,
         operation: isCommit ? 'commit' : 'refund',
       });
-      try {
-        this.alerts
-          .antifraudBlocked({
-            merchantId,
-            reason: 'velocity',
-            scope,
-            ctx: {
-              customerId,
-              outletId: resolvedOutletId,
-              staffId,
-              deviceId: resolvedDeviceIdFinal,
-              count,
-              limit,
-            },
-          })
-          .catch(() => {});
-      } catch {}
+      if (notifyAdmin) {
+        try {
+          this.alerts
+            .antifraudBlocked({
+              merchantId,
+              reason: 'velocity',
+              scope,
+              ctx: {
+                customerId,
+                outletId: resolvedOutletId,
+                staffId,
+                deviceId: resolvedDeviceIdFinal,
+                count,
+                limit,
+              },
+            })
+            .catch(() => {});
+        } catch {}
+      }
       try {
         this.staffNotify
           .enqueueEvent(merchantId, {
@@ -282,8 +292,13 @@ export class AntiFraudGuard implements CanActivate {
       } catch {}
     };
 
-    const block = (scope: string, count: number, limit: number) => {
-      notifyVelocity(scope, count, limit);
+    const block = (
+      scope: string,
+      count: number,
+      limit: number,
+      notifyAdmin = false,
+    ) => {
+      notifyVelocity(scope, count, limit, notifyAdmin);
       throw new HttpException(
         `Антифрод: превышен лимит операций (${scope}=${count}/${limit})`,
         HttpStatus.TOO_MANY_REQUESTS,
@@ -297,20 +312,20 @@ export class AntiFraudGuard implements CanActivate {
         where: { merchantId, createdAt: { gte: from } },
       });
       if (count >= limits.merchant.limit)
-        block('merchant', count, limits.merchant.limit);
+        block('merchant', count, limits.merchant.limit, false);
       if (limits.merchant.dailyCap && limits.merchant.dailyCap > 0) {
         const daily = await this.prisma.transaction.count({
           where: { merchantId, createdAt: { gte: since24h } },
         });
         if (daily >= limits.merchant.dailyCap)
-          block('merchant_daily', daily, limits.merchant.dailyCap);
+          block('merchant_daily', daily, limits.merchant.dailyCap, false);
       }
       if (limits.merchant.weeklyCap && limits.merchant.weeklyCap > 0) {
         const weekly = await this.prisma.transaction.count({
           where: { merchantId, createdAt: { gte: startOfWeek } },
         });
         if (weekly >= limits.merchant.weeklyCap)
-          block('merchant_weekly', weekly, limits.merchant.weeklyCap);
+          block('merchant_weekly', weekly, limits.merchant.weeklyCap, false);
       }
     }
 
@@ -325,7 +340,7 @@ export class AntiFraudGuard implements CanActivate {
         },
       });
       if (count >= limits.outlet.limit)
-        block('outlet', count, limits.outlet.limit);
+        block('outlet', count, limits.outlet.limit, false);
       if (limits.outlet.dailyCap && limits.outlet.dailyCap > 0) {
         const daily = await this.prisma.transaction.count({
           where: {
@@ -335,7 +350,7 @@ export class AntiFraudGuard implements CanActivate {
           },
         });
         if (daily >= limits.outlet.dailyCap)
-          block('outlet_daily', daily, limits.outlet.dailyCap);
+          block('outlet_daily', daily, limits.outlet.dailyCap, false);
       }
       if (limits.outlet.weeklyCap && limits.outlet.weeklyCap > 0) {
         const weekly = await this.prisma.transaction.count({
@@ -346,7 +361,7 @@ export class AntiFraudGuard implements CanActivate {
           },
         });
         if (weekly >= limits.outlet.weeklyCap)
-          block('outlet_weekly', weekly, limits.outlet.weeklyCap);
+          block('outlet_weekly', weekly, limits.outlet.weeklyCap, false);
       }
     }
 
@@ -361,7 +376,7 @@ export class AntiFraudGuard implements CanActivate {
         },
       });
       if (count >= limits.device.limit)
-        block('device', count, limits.device.limit);
+        block('device', count, limits.device.limit, false);
       if (limits.device.dailyCap && limits.device.dailyCap > 0) {
         const daily = await this.prisma.transaction.count({
           where: {
@@ -371,7 +386,7 @@ export class AntiFraudGuard implements CanActivate {
           },
         });
         if (daily >= limits.device.dailyCap)
-          block('device_daily', daily, limits.device.dailyCap);
+          block('device_daily', daily, limits.device.dailyCap, false);
       }
       if (limits.device.weeklyCap && limits.device.weeklyCap > 0) {
         const weekly = await this.prisma.transaction.count({
@@ -382,7 +397,7 @@ export class AntiFraudGuard implements CanActivate {
           },
         });
         if (weekly >= limits.device.weeklyCap)
-          block('device_weekly', weekly, limits.device.weeklyCap);
+          block('device_weekly', weekly, limits.device.weeklyCap, false);
       }
     }
 
@@ -393,32 +408,62 @@ export class AntiFraudGuard implements CanActivate {
         where: { merchantId, staffId, createdAt: { gte: from } },
       });
       if (count >= limits.staff.limit)
-        block('staff', count, limits.staff.limit);
+        block('staff', count, limits.staff.limit, false);
       if (limits.staff.dailyCap && limits.staff.dailyCap > 0) {
         const daily = await this.prisma.transaction.count({
           where: { merchantId, staffId, createdAt: { gte: since24h } },
         });
         if (daily >= limits.staff.dailyCap)
-          block('staff_daily', daily, limits.staff.dailyCap);
+          block('staff_daily', daily, limits.staff.dailyCap, false);
       }
       if (limits.staff.weeklyCap && limits.staff.weeklyCap > 0) {
         const weekly = await this.prisma.transaction.count({
           where: { merchantId, staffId, createdAt: { gte: startOfWeek } },
         });
         if (weekly >= limits.staff.weeklyCap)
-          block('staff_weekly', weekly, limits.staff.weeklyCap);
+          block('staff_weekly', weekly, limits.staff.weeklyCap, false);
       }
     }
 
     // Customer-level only for commit (refund может не иметь customerId)
     if (isCommit && customerId) {
-      const from = new Date(now - limits.customer.windowSec * 1000);
-      const count = await this.prisma.transaction.count({
-        where: { merchantId, customerId, createdAt: { gte: from } },
-      });
-      if (count >= limits.customer.limit)
-        block('customer', count, limits.customer.limit);
-      const platformDailyCap = Number(adminDailyCapCustomer);
+      const platformCustomerLimit = Number(platformCustomer.limit);
+      const platformCustomerWindow = Number(platformCustomer.windowSec);
+      const enforcePlatformVelocity =
+        Number.isFinite(platformCustomerLimit) &&
+        platformCustomerLimit > 0 &&
+        Number.isFinite(platformCustomerWindow) &&
+        platformCustomerWindow > 0;
+      if (enforcePlatformVelocity) {
+        const from = new Date(now - platformCustomerWindow * 1000);
+        const count = await this.prisma.transaction.count({
+          where: { merchantId, customerId, createdAt: { gte: from } },
+        });
+        if (count >= platformCustomerLimit) {
+          block('customer', count, platformCustomerLimit, true);
+        }
+      }
+
+      const enforceMerchantVelocity =
+        Number.isFinite(limits.customer.limit) &&
+        limits.customer.limit > 0 &&
+        Number.isFinite(limits.customer.windowSec) &&
+        limits.customer.windowSec > 0 &&
+        !(
+          limits.customer.limit === platformCustomerLimit &&
+          limits.customer.windowSec === platformCustomerWindow
+        );
+      if (enforceMerchantVelocity) {
+        const from = new Date(now - limits.customer.windowSec * 1000);
+        const count = await this.prisma.transaction.count({
+          where: { merchantId, customerId, createdAt: { gte: from } },
+        });
+        if (count >= limits.customer.limit) {
+          block('customer', count, limits.customer.limit, false);
+        }
+      }
+
+      const platformDailyCap = Number(platformCustomer.dailyCap);
       const merchantDailyCap = Number(limits.customer.dailyCap);
       const enforcePlatformDailyCap =
         Number.isFinite(platformDailyCap) && platformDailyCap > 0;
@@ -429,25 +474,43 @@ export class AntiFraudGuard implements CanActivate {
         const daily = await this.prisma.transaction.count({
           where: { merchantId, customerId, createdAt: { gte: since24h } },
         });
-        // 1) Жёсткий лимит платформы: AF_DAILY_CAP_CUSTOMER (всегда первее мерчантских overrides)
+        // 1) Жёсткий лимит платформы: AF_DAILY_CAP_CUSTOMER
         if (enforcePlatformDailyCap && daily >= platformDailyCap) {
-          block('customer_daily', daily, platformDailyCap);
+          block('customer_daily', daily, platformDailyCap, true);
         }
         // 2) Мерчантский лимит + blockDaily (может быть ниже админского)
         if (enforceMerchantDailyCap && daily >= merchantDailyCap) {
           if (limits.customer.blockDaily) {
-            block('customer_daily', daily, merchantDailyCap);
+            block('customer_daily', daily, merchantDailyCap, false);
           } else {
-            notifyVelocity('customer_daily', daily, merchantDailyCap);
+            notifyVelocity('customer_daily', daily, merchantDailyCap, false);
           }
         }
       }
-      if (limits.customer.weeklyCap && limits.customer.weeklyCap > 0) {
+
+      const platformWeeklyCap = Number(platformCustomer.weeklyCap);
+      const merchantWeeklyCap = Number(limits.customer.weeklyCap);
+      const enforcePlatformWeeklyCap =
+        Number.isFinite(platformWeeklyCap) && platformWeeklyCap > 0;
+      if (enforcePlatformWeeklyCap) {
         const weekly = await this.prisma.transaction.count({
           where: { merchantId, customerId, createdAt: { gte: startOfWeek } },
         });
-        if (weekly >= limits.customer.weeklyCap)
-          block('customer_weekly', weekly, limits.customer.weeklyCap);
+        if (weekly >= platformWeeklyCap) {
+          block('customer_weekly', weekly, platformWeeklyCap, true);
+        }
+      }
+      const enforceMerchantWeeklyCap =
+        Number.isFinite(merchantWeeklyCap) &&
+        merchantWeeklyCap > 0 &&
+        merchantWeeklyCap !== platformWeeklyCap;
+      if (enforceMerchantWeeklyCap) {
+        const weekly = await this.prisma.transaction.count({
+          where: { merchantId, customerId, createdAt: { gte: startOfWeek } },
+        });
+        if (weekly >= merchantWeeklyCap) {
+          block('customer_weekly', weekly, merchantWeeklyCap, false);
+        }
       }
       if (limits.customer.monthlyCap && limits.customer.monthlyCap > 0) {
         const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -459,6 +522,7 @@ export class AntiFraudGuard implements CanActivate {
             'customer_monthly',
             monthly,
             limits.customer.monthlyCap,
+            false,
           );
       }
     }
@@ -511,24 +575,6 @@ export class AntiFraudGuard implements CanActivate {
                   reason: 'points_cap',
                 });
                 try {
-                  this.alerts
-                    .antifraudBlocked({
-                      merchantId: hold.merchantId,
-                      reason: 'factor',
-                      factor: 'points_cap',
-                      ctx: {
-                        customerId: hold.customerId,
-                        outletId: hold.outletId || undefined,
-                        staffId: hold.staffId,
-                        deviceId:
-                          hold.deviceId || resolvedDeviceIdFinal || undefined,
-                        amount: earnPoints,
-                        limit: limits.customer.pointsCap,
-                      },
-                    })
-                    .catch(() => {});
-                } catch {}
-                try {
                   this.staffNotify
                     .enqueueEvent(hold.merchantId, {
                       kind: 'FRAUD',
@@ -568,22 +614,6 @@ export class AntiFraudGuard implements CanActivate {
                 const factor = 'no_outlet_id';
                 this.metrics.inc('antifraud_block_factor_total', { factor });
                 try {
-                  this.alerts
-                    .antifraudBlocked({
-                      merchantId: hold.merchantId,
-                      reason: 'factor',
-                      factor,
-                      ctx: {
-                        customerId: hold.customerId,
-                        outletId: hold.outletId || undefined,
-                        staffId: hold.staffId,
-                        deviceId:
-                          hold.deviceId ?? resolvedDeviceIdFinal ?? undefined,
-                      },
-                    })
-                    .catch(() => {});
-                } catch {}
-                try {
                   this.staffNotify
                     .enqueueEvent(hold.merchantId, {
                       kind: 'FRAUD',
@@ -607,22 +637,6 @@ export class AntiFraudGuard implements CanActivate {
                 const factor = 'no_device_id';
                 this.metrics.inc('antifraud_block_factor_total', { factor });
                 try {
-                  this.alerts
-                    .antifraudBlocked({
-                      merchantId: hold.merchantId,
-                      reason: 'factor',
-                      factor,
-                      ctx: {
-                        customerId: hold.customerId,
-                        outletId: hold.outletId || undefined,
-                        staffId: hold.staffId,
-                        deviceId:
-                          hold.deviceId ?? resolvedDeviceIdFinal ?? null,
-                      },
-                    })
-                    .catch(() => {});
-                } catch {}
-                try {
                   this.staffNotify
                     .enqueueEvent(hold.merchantId, {
                       kind: 'FRAUD',
@@ -642,7 +656,9 @@ export class AntiFraudGuard implements CanActivate {
                   HttpStatus.TOO_MANY_REQUESTS,
                 );
               }
-            } catch {}
+            } catch (e) {
+              if (e instanceof HttpException) throw e;
+            }
             const score = await this.antifraud.checkTransaction(ctx);
             this.metrics.inc('antifraud_check_total', {
               operation: isCommit ? 'commit' : 'refund',
@@ -659,22 +675,6 @@ export class AntiFraudGuard implements CanActivate {
                 level: score.level,
                 reason: 'risk',
               });
-              try {
-                this.alerts
-                  .antifraudBlocked({
-                    merchantId: hold.merchantId,
-                    reason: 'risk',
-                    level: String(score.level),
-                    ctx: {
-                      customerId: hold.customerId,
-                      outletId: hold.outletId || undefined,
-                      staffId: hold.staffId,
-                      deviceId:
-                        hold.deviceId ?? resolvedDeviceIdFinal ?? undefined,
-                    },
-                  })
-                  .catch(() => {});
-              } catch {}
               try {
                 this.staffNotify
                   .enqueueEvent(hold.merchantId, {
@@ -721,22 +721,6 @@ export class AntiFraudGuard implements CanActivate {
                 this.metrics.inc('antifraud_block_factor_total', {
                   factor: matched,
                 });
-                try {
-                  this.alerts
-                    .antifraudBlocked({
-                      merchantId: hold.merchantId,
-                      reason: 'factor',
-                      factor: matched,
-                      ctx: {
-                        customerId: hold.customerId,
-                        outletId: hold.outletId || undefined,
-                        staffId: hold.staffId,
-                        deviceId:
-                          hold.deviceId ?? resolvedDeviceIdFinal ?? undefined,
-                      },
-                    })
-                    .catch(() => {});
-                } catch {}
                 try {
                   this.staffNotify
                     .enqueueEvent(hold.merchantId, {

@@ -102,6 +102,7 @@ export function useMiniappAuth(defaultMerchant: string) {
   const [error, setError] = useState<string>('');
   const [theme, setTheme] = useState<{ primary?: string|null; bg?: string|null; logo?: string|null; ttl?: number }>({});
   const [shareSettings, setShareSettings] = useState<ReviewsShareSettings>(null);
+  const [reviewsEnabled, setReviewsEnabled] = useState<boolean | null>(null);
   const [status, setStatus] = useState<AuthStatus>('idle');
   const [teleOnboarded, setTeleOnboarded] = useState<boolean | null>(null);
   const [teleHasPhone, setTeleHasPhone] = useState<boolean | null>(null);
@@ -165,6 +166,11 @@ export function useMiniappAuth(defaultMerchant: string) {
             logo: s.miniappLogoUrl,
             ttl: s.qrTtlSec,
           });
+          if (typeof s.reviewsEnabled === 'boolean') {
+            setReviewsEnabled(s.reviewsEnabled);
+          } else {
+            setReviewsEnabled(null);
+          }
           const normalizedShare = s.reviewsShare
             ? {
                 ...s.reviewsShare,
@@ -268,6 +274,7 @@ export function useMiniappAuth(defaultMerchant: string) {
     error,
     theme,
     shareSettings,
+    reviewsEnabled,
     initData,
     status,
   } as const;

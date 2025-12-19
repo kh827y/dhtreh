@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { portalFetch } from '../_lib';
 
-const ALLOWED_QUERY_PARAMS = new Set(['withCommentOnly', 'outletId', 'staffId', 'deviceId', 'limit', 'offset']);
+const ALLOWED_QUERY_PARAMS = new Set(['withCommentOnly', 'outletId', 'staffId', 'deviceId', 'limit', 'offset', 'includeStats']);
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
@@ -15,4 +15,3 @@ export async function GET(req: NextRequest) {
   const path = search ? `/portal/reviews?${search}` : '/portal/reviews';
   return portalFetch(req, path, { method: 'GET' });
 }
-

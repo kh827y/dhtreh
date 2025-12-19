@@ -16,6 +16,11 @@ import { MerchantsService } from '../merchants/merchants.service';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
 import { hashPassword, verifyPassword } from '../password.util';
+import {
+  normalizeDeviceCode,
+  ensureUniqueDeviceCodes,
+  type NormalizedDeviceCode,
+} from '../devices/device.util';
 import type {
   AccessGroupDto as AccessGroupDtoModel,
   AccessGroupListResponseDto as AccessGroupListResponseDtoModel,
@@ -121,6 +126,7 @@ export interface UpsertOutletPayload {
   integrationProvider?: string | null;
   integrationLocationCode?: string | null;
   reviewsShareLinks?: unknown;
+  devices?: Array<{ code?: string | null }> | null;
   manualLocation?: boolean;
   latitude?: number | null;
   longitude?: number | null;
@@ -475,7 +481,111 @@ export class MerchantPanelService {
     return result;
   }
 
-  private mapOutlet(outlet: Prisma.OutletGetPayload<undefined>) {
+  private mapDevices(
+    devices?: Array<{
+      id: string;
+      code: string;
+      archivedAt: Date | null;
+      createdAt: Date;
+      updatedAt: Date;
+    }>,
+  ) {
+    const list = Array.isArray(devices) ? devices : [];
+    return list
+      .filter((device) => !device.archivedAt)
+      .map((device) => ({
+        id: device.id,
+        code: device.code,
+        archivedAt: device.archivedAt ?? null,
+        createdAt: device.createdAt,
+        updatedAt: device.updatedAt,
+      }));
+  }
+
+  private normalizeDevicesInput(
+    devices?: Array<{ code?: string | null }> | null,
+  ): NormalizedDeviceCode[] {
+    if (!devices) return [];
+    const normalized = devices
+      .map((device) => {
+        if (!device) return null;
+        return normalizeDeviceCode(String(device.code ?? ''));
+      })
+      .filter((value): value is NormalizedDeviceCode => value !== null);
+    ensureUniqueDeviceCodes(normalized);
+    return normalized;
+  }
+
+  private async syncDevicesForOutlet(
+    tx: Prisma.TransactionClient,
+    merchantId: string,
+    outletId: string,
+    devices: NormalizedDeviceCode[],
+  ) {
+    ensureUniqueDeviceCodes(devices);
+    const codes = devices.map((device) => device.normalized);
+    if (!devices.length) {
+      await tx.device.updateMany({
+        where: { merchantId, outletId, archivedAt: null },
+        data: { archivedAt: new Date() },
+      });
+      return;
+    }
+    const existing = await tx.device.findMany({
+      where: { merchantId, codeNormalized: { in: codes } },
+    });
+    const conflict = existing.find(
+      (device) => device.outletId !== outletId && !device.archivedAt,
+    );
+    if (conflict) {
+      throw new BadRequestException(
+        'Идентификатор устройства уже привязан к другой торговой точке',
+      );
+    }
+    const now = new Date();
+    for (const device of devices) {
+      const matched = existing.find(
+        (d) => d.codeNormalized === device.normalized,
+      );
+      if (matched) {
+        await tx.device.update({
+          where: { id: matched.id },
+          data: {
+            code: device.code,
+            codeNormalized: device.normalized,
+            archivedAt: null,
+            updatedAt: now,
+          },
+        });
+      } else {
+        await tx.device.create({
+          data: {
+            merchantId,
+            outletId,
+            code: device.code,
+            codeNormalized: device.normalized,
+            createdAt: now,
+            updatedAt: now,
+          },
+        });
+      }
+    }
+    await tx.device.updateMany({
+      where: {
+        merchantId,
+        outletId,
+        codeNormalized: { notIn: codes },
+        archivedAt: null,
+      },
+      data: { archivedAt: now },
+    });
+  }
+
+  private mapOutlet(
+    outlet: Prisma.OutletGetPayload<{
+      include?: { devices?: true };
+    }> & { devices?: any[]; staffCount?: number },
+  ) {
     const schedule = this.parseSchedule(outlet.scheduleJson ?? undefined);
     return {
       id: outlet.id,
@@ -496,6 +606,8 @@ export class MerchantPanelService {
       manualLocation: outlet.manualLocation,
       latitude: outlet.latitude ? Number(outlet.latitude) : null,
       longitude: outlet.longitude ? Number(outlet.longitude) : null,
+      staffCount: typeof outlet.staffCount === 'number' ? outlet.staffCount : 0,
+      devices: this.mapDevices((outlet as any).devices),
       reviewsShareLinks: (() => {
         const links = this.extractReviewLinks(outlet.reviewLinks ?? null);
         if (!Object.keys(links).length) return null;
@@ -1467,18 +1579,46 @@ export class MerchantPanelService {
         { address: { contains: filters.search, mode: 'insensitive' } },
       ];
     }
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.outlet.findMany({
         where,
         orderBy: { createdAt: 'desc' },
         skip: (paging.page - 1) * paging.pageSize,
         take: paging.pageSize,
+        include: {
+          devices: {
+            where: { archivedAt: null },
+            orderBy: { createdAt: 'asc' },
+          },
+        },
       }),
       this.prisma.outlet.count({ where }),
     ]);
 
+    const outletIds = items.map((outlet) => outlet.id);
+    const staffCountMap = new Map<string, number>();
+    if (outletIds.length) {
+      const counts = await this.prisma.staffOutletAccess.groupBy({
+        by: ['outletId'],
+        where: {
+          merchantId,
+          outletId: { in: outletIds },
+          status: StaffOutletAccessStatus.ACTIVE,
+        },
+        _count: { outletId: true },
+      });
+      counts.forEach((row) => {
+        staffCountMap.set(row.outletId, row._count.outletId);
+      });
+    }
+
     return {
-      items: items.map((outlet) => this.mapOutlet(outlet)),
+      items: items.map((outlet) =>
+        this.mapOutlet({
+          ...outlet,
+          staffCount: staffCountMap.get(outlet.id) ?? 0,
+        }),
+      ),
       meta: this.buildMeta(paging, total),
     };
   }
@@ -1497,7 +1637,8 @@ export class MerchantPanelService {
   }
 
   async createOutlet(merchantId: string, payload: UpsertOutletPayload) {
-    if (!payload.name?.trim())
+    const outletName = payload.name?.trim();
+    if (!outletName)
       throw new BadRequestException('Название обязательно');
     const reviewLinksInput = this.sanitizeReviewLinksInput(
       payload.reviewsShareLinks,
@@ -1506,40 +1647,50 @@ export class MerchantPanelService {
       reviewLinksInput && Object.keys(reviewLinksInput).length
         ? (reviewLinksInput as Prisma.InputJsonValue)
         : Prisma.JsonNull;
-    const outlet = await this.prisma.outlet.create({
-      data: {
-        merchantId,
-        name: payload.name.trim(),
-        description: payload.description ?? null,
-        address: payload.address ?? null,
-        phone: payload.phone ?? null,
-        adminEmails: payload.adminEmails ?? [],
-        status: payload.works === false ? 'INACTIVE' : 'ACTIVE',
-        hidden: payload.hidden ?? false,
-        timezone: payload.timezone ?? null,
-        scheduleEnabled: payload.schedule != null,
-        scheduleJson:
-          payload.schedule != null
-            ? (this.buildScheduleJson(
-                payload.schedule,
-              ) as Prisma.InputJsonValue)
-            : (Prisma.DbNull as Prisma.NullableJsonNullValueInput),
-        externalId: payload.externalId ?? null,
-        integrationProvider: payload.integrationProvider ?? null,
-        integrationLocationCode: payload.integrationLocationCode ?? null,
-        reviewLinks: reviewLinksValue,
-        manualLocation: payload.manualLocation ?? false,
-        latitude:
-          payload.latitude != null
-            ? new Prisma.Decimal(payload.latitude)
-            : null,
-        longitude:
-          payload.longitude != null
-            ? new Prisma.Decimal(payload.longitude)
-            : null,
-      },
+    const devices =
+      payload.devices !== undefined
+        ? this.normalizeDevicesInput(payload.devices)
+        : [];
+    const outlet = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.outlet.create({
+        data: {
+          merchantId,
+          name: outletName,
+          description: payload.description ?? null,
+          address: payload.address ?? null,
+          phone: payload.phone ?? null,
+          adminEmails: payload.adminEmails ?? [],
+          status: payload.works === false ? 'INACTIVE' : 'ACTIVE',
+          hidden: payload.hidden ?? false,
+          timezone: payload.timezone ?? null,
+          scheduleEnabled: payload.schedule != null,
+          scheduleJson:
+            payload.schedule != null
+              ? (this.buildScheduleJson(
+                  payload.schedule,
+                ) as Prisma.InputJsonValue)
+              : (Prisma.DbNull as Prisma.NullableJsonNullValueInput),
+          externalId: payload.externalId ?? null,
+          integrationProvider: payload.integrationProvider ?? null,
+          integrationLocationCode: payload.integrationLocationCode ?? null,
+          reviewLinks: reviewLinksValue,
+          manualLocation: payload.manualLocation ?? false,
+          latitude:
+            payload.latitude != null
+              ? new Prisma.Decimal(payload.latitude)
+              : null,
+          longitude:
+            payload.longitude != null
+              ? new Prisma.Decimal(payload.longitude)
+              : null,
+        },
+      });
+      if (payload.devices !== undefined) {
+        await this.syncDevicesForOutlet(tx, merchantId, created.id, devices);
+      }
+      return created;
     });
-    return this.mapOutlet(outlet);
+    return this.mapOutlet(outlet as any);
   }
 
   async updateOutlet(
@@ -1560,53 +1711,69 @@ export class MerchantPanelService {
           ? (reviewLinksInput as Prisma.InputJsonValue)
           : Prisma.JsonNull
         : undefined;
-    const updated = await this.prisma.outlet.update({
-      where: { id: outletId },
-      data: {
-        name: payload.name?.trim() || outlet.name,
-        description: payload.description?.trim() ?? outlet.description,
-        address: payload.address?.trim() ?? outlet.address,
-        phone: payload.phone?.trim() ?? outlet.phone,
-        adminEmails: payload.adminEmails ?? outlet.adminEmails,
-        status:
-          payload.works === undefined
-            ? outlet.status
-            : payload.works
-              ? 'ACTIVE'
-              : 'INACTIVE',
-        hidden: payload.hidden ?? outlet.hidden,
-        timezone: payload.timezone ?? outlet.timezone,
-        scheduleEnabled:
-          payload.schedule != null ? true : outlet.scheduleEnabled,
-        scheduleJson: payload.schedule
-          ? (this.buildScheduleJson(payload.schedule) as Prisma.InputJsonValue)
-          : undefined,
-        externalId: payload.externalId ?? outlet.externalId,
-        integrationProvider:
-          payload.integrationProvider ?? outlet.integrationProvider,
-        integrationLocationCode:
-          payload.integrationLocationCode ?? outlet.integrationLocationCode,
-        reviewLinks: reviewLinksValue,
-        manualLocation: payload.manualLocation ?? outlet.manualLocation,
-        latitude:
-          payload.latitude != null
-            ? new Prisma.Decimal(payload.latitude)
-            : outlet.latitude,
-        longitude:
-          payload.longitude != null
-            ? new Prisma.Decimal(payload.longitude)
-            : outlet.longitude,
-      },
+    const devices =
+      payload.devices !== undefined
+        ? this.normalizeDevicesInput(payload.devices)
+        : null;
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updatedOutlet = await tx.outlet.update({
+        where: { id: outletId },
+        data: {
+          name: payload.name?.trim() || outlet.name,
+          description: payload.description?.trim() ?? outlet.description,
+          address: payload.address?.trim() ?? outlet.address,
+          phone: payload.phone?.trim() ?? outlet.phone,
+          adminEmails: payload.adminEmails ?? outlet.adminEmails,
+          status:
+            payload.works === undefined
+              ? outlet.status
+              : payload.works
+                ? 'ACTIVE'
+                : 'INACTIVE',
+          hidden: payload.hidden ?? outlet.hidden,
+          timezone: payload.timezone ?? outlet.timezone,
+          scheduleEnabled:
+            payload.schedule != null ? true : outlet.scheduleEnabled,
+          scheduleJson: payload.schedule
+            ? (this.buildScheduleJson(payload.schedule) as Prisma.InputJsonValue)
+            : undefined,
+          externalId: payload.externalId ?? outlet.externalId,
+          integrationProvider:
+            payload.integrationProvider ?? outlet.integrationProvider,
+          integrationLocationCode:
+            payload.integrationLocationCode ?? outlet.integrationLocationCode,
+          reviewLinks: reviewLinksValue,
+          manualLocation: payload.manualLocation ?? outlet.manualLocation,
+          latitude:
+            payload.latitude != null
+              ? new Prisma.Decimal(payload.latitude)
+              : outlet.latitude,
+          longitude:
+            payload.longitude != null
+              ? new Prisma.Decimal(payload.longitude)
+              : outlet.longitude,
+        },
+      });
+      if (devices !== null) {
+        await this.syncDevicesForOutlet(tx, merchantId, outletId, devices);
+      }
+      return updatedOutlet;
     });
-    return this.mapOutlet(updated);
+    return this.mapOutlet(updated as any);
   }
 
   async getOutlet(merchantId: string, outletId: string) {
     const outlet = await this.prisma.outlet.findFirst({
       where: { merchantId, id: outletId },
+      include: {
+        devices: {
+          where: { archivedAt: null },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
     });
     if (!outlet) throw new NotFoundException('Точка не найдена');
-    return this.mapOutlet(outlet);
+    return this.mapOutlet(outlet as any);
   }
 
   async listCashierPins(merchantId: string) {

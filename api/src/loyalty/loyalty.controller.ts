@@ -1021,6 +1021,25 @@ export class LoyaltyController {
     if (!customerId) throw new BadRequestException('customerId is required');
 
     const customer = await this.ensureCustomer(merchantId, customerId);
+    const settings = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+      select: { rulesJson: true },
+    });
+    const rules =
+      settings?.rulesJson &&
+      typeof settings.rulesJson === 'object' &&
+      !Array.isArray(settings.rulesJson)
+        ? (settings.rulesJson as Record<string, any>)
+        : {};
+    const reviewsEnabled =
+      rules?.reviews && typeof rules.reviews === 'object'
+        ? rules.reviews.enabled !== undefined
+          ? Boolean(rules.reviews.enabled)
+          : true
+        : true;
+    if (!reviewsEnabled) {
+      throw new BadRequestException('Сбор отзывов отключен');
+    }
 
     const ratingRaw =
       typeof body?.rating === 'string' ? Number(body.rating) : body?.rating;
@@ -2217,12 +2236,23 @@ export class LoyaltyController {
   async publicSettings(@Param('merchantId') merchantId: string) {
     const { settings: s, share } =
       await this.buildReviewsShareSettings(merchantId);
+    const rulesRaw =
+      s?.rulesJson && typeof s.rulesJson === 'object' && !Array.isArray(s.rulesJson)
+        ? (s.rulesJson as Record<string, any>)
+        : {};
+    const reviewsEnabled =
+      rulesRaw?.reviews && typeof rulesRaw.reviews === 'object'
+        ? rulesRaw.reviews.enabled !== undefined
+          ? Boolean(rulesRaw.reviews.enabled)
+          : true
+        : true;
     return {
       merchantId,
       qrTtlSec: s?.qrTtlSec ?? 120,
       miniappThemePrimary: (s as any)?.miniappThemePrimary ?? null,
       miniappThemeBg: (s as any)?.miniappThemeBg ?? null,
       miniappLogoUrl: (s as any)?.miniappLogoUrl ?? null,
+      reviewsEnabled,
       reviewsShare: share,
     } as any;
   }

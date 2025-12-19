@@ -11,9 +11,40 @@ interface TgChat {
   title?: string;
 }
 
+class TelegramRateLimitError extends Error {
+  retryAfterMs: number;
+  constructor(retryAfterSec: number, message?: string) {
+    super(message || 'Telegram rate limit');
+    this.retryAfterMs = Math.max(0, Math.round(retryAfterSec * 1000));
+  }
+}
+
+class TelegramSendError extends Error {
+  status?: number;
+  constructor(message: string, status?: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+type SendQueueItem = {
+  chatId: number | string;
+  text: string;
+  resolve: () => void;
+  reject: (error: unknown) => void;
+  attempts: number;
+};
+
 @Injectable()
 export class TelegramNotifyService {
   private readonly logger = new Logger(TelegramNotifyService.name);
+  private readonly sendQueue: SendQueueItem[] = [];
+  private sending = false;
+  private lastSentAt = 0;
+  private readonly lastChatSentAt = new Map<string, number>();
+  private readonly minGlobalIntervalMs = 50;
+  private readonly minChatIntervalMs = 1000;
+  private readonly maxSendAttempts = 3;
 
   constructor(
     private prisma: PrismaService,
@@ -60,6 +91,114 @@ export class TelegramNotifyService {
 
   isConfigured(): boolean {
     return !!this.token;
+  }
+
+  private async sleep(ms: number) {
+    if (ms <= 0) return;
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async enqueueSend(chatId: number | string, text: string) {
+    return new Promise<void>((resolve, reject) => {
+      this.sendQueue.push({ chatId, text, resolve, reject, attempts: 0 });
+      this.processQueue().catch((error) => {
+        this.logger.warn(`send queue failed: ${error}`);
+      });
+    });
+  }
+
+  private async processQueue() {
+    if (this.sending) return;
+    this.sending = true;
+    try {
+      while (this.sendQueue.length > 0) {
+        const item = this.sendQueue.shift();
+        if (!item) continue;
+        try {
+          await this.sendWithRetry(item);
+          item.resolve();
+        } catch (error) {
+          item.reject(error);
+        }
+      }
+    } finally {
+      this.sending = false;
+    }
+  }
+
+  private async waitForSlot(chatId: number | string) {
+    const now = Date.now();
+    const key = String(chatId);
+    const nextGlobal = this.lastSentAt + this.minGlobalIntervalMs;
+    const nextChat = (this.lastChatSentAt.get(key) || 0) + this.minChatIntervalMs;
+    const delay = Math.max(0, nextGlobal - now, nextChat - now);
+    if (delay > 0) await this.sleep(delay);
+  }
+
+  private markSent(chatId: number | string) {
+    const now = Date.now();
+    this.lastSentAt = now;
+    this.lastChatSentAt.set(String(chatId), now);
+  }
+
+  private retryDelayMs(error: unknown, attempt: number): number | null {
+    if (error instanceof TelegramRateLimitError) {
+      return error.retryAfterMs;
+    }
+    if (error instanceof TelegramSendError) {
+      if (error.status && error.status >= 500) {
+        return Math.min(5000, 500 * Math.pow(2, attempt));
+      }
+      return null;
+    }
+    return Math.min(5000, 500 * Math.pow(2, attempt));
+  }
+
+  private async sendWithRetry(item: SendQueueItem) {
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt < this.maxSendAttempts; attempt += 1) {
+      try {
+        await this.waitForSlot(item.chatId);
+        await this.sendMessageDirect(item.chatId, item.text);
+        this.markSent(item.chatId);
+        return;
+      } catch (error) {
+        lastError = error;
+        const delay = this.retryDelayMs(error, attempt);
+        if (delay === null) break;
+        await this.sleep(delay);
+      }
+    }
+    throw lastError ?? new Error('Failed to send Telegram message');
+  }
+
+  private async sendMessageDirect(chatId: number | string, text: string) {
+    if (!this.token) throw new Error('Notify bot token not configured');
+    const url = `https://api.telegram.org/bot${this.token}/sendMessage`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text }),
+    });
+    const raw = await res.text();
+    let data: any = null;
+    try {
+      data = raw ? JSON.parse(raw) : null;
+    } catch {}
+    const ok = res.ok && data?.ok;
+    if (!ok) {
+      const retryAfter = Number(
+        data?.parameters?.retry_after ?? data?.retry_after ?? 0,
+      );
+      const description = String(
+        data?.description || raw || 'Telegram API error',
+      );
+      if (res.status === 429 || data?.error_code === 429) {
+        const delaySec = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 1;
+        throw new TelegramRateLimitError(delaySec, description);
+      }
+      throw new TelegramSendError(description, res.status);
+    }
   }
 
   private async api(method: string, body: Record<string, any>) {
@@ -129,14 +268,14 @@ export class TelegramNotifyService {
 
   private async sendMessage(chatId: number | string, text: string) {
     try {
-      await this.api('sendMessage', { chat_id: chatId, text });
+      await this.enqueueSend(chatId, text);
     } catch (e) {
       this.logger.warn(`sendMessage failed: ${e}`);
     }
   }
 
   async sendStaffMessage(chatId: string, text: string) {
-    await this.sendMessage(chatId, text);
+    await this.enqueueSend(chatId, text);
   }
 
   private parseStartToken(text: string, botUsername?: string): string | null {
@@ -217,10 +356,22 @@ export class TelegramNotifyService {
     const inviteActor: TelegramStaffActorType =
       invite.actorType ?? TelegramStaffActorType.STAFF;
     const actorType = isGroup ? TelegramStaffActorType.GROUP : inviteActor;
-    const staffId =
-      actorType === TelegramStaffActorType.STAFF
-        ? (invite.staffId ?? null)
-        : null;
+    const staffId = invite.staffId ?? null;
+
+    const existing = await prismaAny.telegramStaffSubscriber
+      .findUnique({
+        where: {
+          merchantId_chatId: { merchantId: invite.merchantId, chatId },
+        },
+      })
+      .catch(() => null);
+    if (existing?.isActive) {
+      await this.sendMessage(
+        chat.id,
+        'Уведомления уже подключены для этого мерчанта.',
+      );
+      return;
+    }
 
     await this.staffNotifications.ensureInviteMetadata(invite.id, actorType);
     await this.staffNotifications.ensureSubscriber(invite.merchantId, chatId, {

@@ -1,23 +1,20 @@
 "use client";
 
 import React from "react";
-import { createPortal } from "react-dom";
-import { Card, CardBody, Button, Skeleton, MotionFadeIn } from "@loyalty/ui";
-import Toggle from "../../components/Toggle";
-import { 
-  Settings, 
-  Star, 
-  User, 
-  Store, 
-  Smartphone, 
-  MessageSquare, 
-  TrendingUp, 
-  MessageCircle,
-  X,
-  Check,
+import {
+  MessageSquare,
+  Star,
+  Store,
+  User,
+  Monitor,
+  Filter,
+  MapPin,
+  ExternalLink,
   ChevronLeft,
   ChevronRight,
-  ChevronDown
+  MessageCircle,
+  Save,
+  Power,
 } from "lucide-react";
 
 type SelectOption = { value: string; label: string };
@@ -38,17 +35,18 @@ type ReviewsApiResponse = {
   total?: number;
   outlets?: Array<{ id: string; name?: string | null }>;
   staff?: Array<{ id: string; name?: string | null }>;
+  stats?: { averageRating?: number | null } | null;
 };
 
 type ReviewRow = {
   id: string;
-  customer: { id: string; name: string; initials: string };
+  clientName: string;
   rating: number;
   comment: string | null;
-  device: string | null;
-  staff: string;
+  sourceType: "staff" | "device";
+  sourceName: string;
   outlet: string;
-  createdAt: string;
+  date: string;
 };
 
 type DeviceInfo = {
@@ -58,70 +56,52 @@ type DeviceInfo = {
   outletName: string;
 };
 
-const shareThresholds = [
-  { value: "5", label: "⭐⭐⭐⭐⭐ 5 звезд" },
-  { value: "4", label: "⭐⭐⭐⭐ 4 звезды и выше" },
-  { value: "3", label: "⭐⭐⭐ 3 звезды и выше" },
-  { value: "2", label: "⭐⭐ 2 звезды и выше" },
-  { value: "1", label: "⭐ 1 звезда и выше" },
-];
+const PAGE_SIZE = 8;
+const REVIEW_ENABLED_DEFAULT = true;
 
-const PAGE_SIZE = 10;
+const toInitial = (name: string) => {
+  const trimmed = name.trim();
+  return trimmed ? trimmed.charAt(0).toUpperCase() : "?";
+};
 
-function getInitials(name: string) {
-  return name
-    .split(" ")
-    .map((n) => n[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-}
+const formatDateTime = (value: string) => {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
 
-// Custom Select Component
-function CustomSelect({ 
-  value, 
-  onChange, 
-  options, 
-  icon: Icon,
-  placeholder 
-}: { 
-  value: string; 
-  onChange: (val: string) => void; 
-  options: SelectOption[];
-  icon?: React.ComponentType<{ size?: number; color?: string }>;
-  placeholder?: string;
-}) {
-  return (
-    <div style={selectWrapperStyle}>
-      {Icon && <Icon size={16} color="var(--fg-muted)" />}
-      <select 
-        value={value} 
-        onChange={(e) => onChange(e.target.value)} 
-        style={selectStyle}
-      >
-        {options.map((opt) => (
-          <option key={opt.value} value={opt.value}>{opt.label}</option>
-        ))}
-      </select>
-      <ChevronDown size={14} color="var(--fg-muted)" style={{ pointerEvents: 'none', flexShrink: 0 }} />
-    </div>
-  );
-}
+const buildRulesBase = (source: any) => {
+  if (source && typeof source === "object") {
+    return { ...source } as Record<string, any>;
+  }
+  if (Array.isArray(source)) {
+    return { rules: source } as Record<string, any>;
+  }
+  return {} as Record<string, any>;
+};
 
 export default function ReviewsPage() {
   const [loading, setLoading] = React.useState(false);
-  const [withCommentOnly, setWithCommentOnly] = React.useState(false);
-  const [selectedOutlet, setSelectedOutlet] = React.useState("all");
-  const [selectedStaff, setSelectedStaff] = React.useState("all");
-  const [selectedDevice, setSelectedDevice] = React.useState("all");
-  const [page, setPage] = React.useState(1);
-  
+  const [error, setError] = React.useState<string | null>(null);
+
   const [reviews, setReviews] = React.useState<ReviewRow[]>([]);
   const [totalCount, setTotalCount] = React.useState(0);
-  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const [averageRating, setAverageRating] = React.useState(0);
+
+  const [filterOutlet, setFilterOutlet] = React.useState("all");
+  const [filterStaff, setFilterStaff] = React.useState("all");
+  const [filterDevice, setFilterDevice] = React.useState("all");
+  const [onlyWithComments, setOnlyWithComments] = React.useState(false);
+  const [currentPage, setCurrentPage] = React.useState(1);
 
   const [outletOptions, setOutletOptions] = React.useState<SelectOption[]>([
-    { value: "all", label: "Все торговые точки" },
+    { value: "all", label: "Все точки" },
   ]);
   const [staffOptions, setStaffOptions] = React.useState<SelectOption[]>([
     { value: "all", label: "Все сотрудники" },
@@ -130,45 +110,161 @@ export default function ReviewsPage() {
     { value: "all", label: "Все устройства" },
   ]);
 
-  // Stats for ALL filtered reviews (separate fetch)
-  const [statsAvg, setStatsAvg] = React.useState<number>(0);
-  const [statsWithComments, setStatsWithComments] = React.useState<number>(0);
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
-  const fetchIdRef = React.useRef(0);
-  const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [settingsSnapshot, setSettingsSnapshot] = React.useState<any | null>(null);
-  const [settingsError, setSettingsError] = React.useState<string | null>(null);
   const [settingsSaving, setSettingsSaving] = React.useState(false);
+  const [settingsError, setSettingsError] = React.useState<string | null>(null);
 
-  // Settings state
-  const [shareEnabled, setShareEnabled] = React.useState(false);
-  const [shareThreshold, setShareThreshold] = React.useState("5");
-  const [sharePlatforms, setSharePlatforms] = React.useState<{ yandex: boolean; twogis: boolean; google: boolean }>({ yandex: true, twogis: false, google: false });
+  const [isEnabled, setIsEnabled] = React.useState(true);
+  const [offerExternal, setOfferExternal] = React.useState(true);
+  const [minRating, setMinRating] = React.useState<string>("5");
+  const [platforms, setPlatforms] = React.useState({
+    yandex: true,
+    google: false,
+    gis: true,
+  });
 
   const applyShareSettings = React.useCallback((data: any) => {
-    const share = data?.rulesJson?.reviewsShare;
-    setShareEnabled(Boolean(share?.enabled));
-    const th = Number(share?.threshold);
-    const normalized = Number.isFinite(th) ? Math.min(5, Math.max(1, Math.round(th))) : 5;
-    setShareThreshold(String(normalized));
-    const platforms = share?.platforms && typeof share.platforms === "object" ? share.platforms : {};
-    setSharePlatforms({
-      yandex: Boolean(platforms?.yandex?.enabled),
-      twogis: Boolean(platforms?.twogis?.enabled),
-      google: Boolean(platforms?.google?.enabled),
+    const rulesBase = buildRulesBase(data?.rulesJson);
+    const reviewRules =
+      rulesBase?.reviews && typeof rulesBase.reviews === "object" ? rulesBase.reviews : {};
+    const share =
+      rulesBase?.reviewsShare && typeof rulesBase.reviewsShare === "object" ? rulesBase.reviewsShare : {};
+    const enabledValue =
+      reviewRules.enabled !== undefined ? Boolean(reviewRules.enabled) : REVIEW_ENABLED_DEFAULT;
+    setIsEnabled(enabledValue);
+    setOfferExternal(Boolean(share?.enabled));
+    const threshold = Number(share?.threshold);
+    const normalizedThreshold = Number.isFinite(threshold)
+      ? Math.min(5, Math.max(1, Math.round(threshold)))
+      : 5;
+    setMinRating(normalizedThreshold === 5 ? "5" : `${normalizedThreshold}+`);
+    const platformsData = share?.platforms && typeof share.platforms === "object" ? share.platforms : {};
+    setPlatforms({
+      yandex: Boolean(platformsData?.yandex?.enabled),
+      google: Boolean(platformsData?.google?.enabled),
+      gis: Boolean(platformsData?.twogis?.enabled),
     });
   }, []);
 
-  // Fetch devices from outlets API on mount
+  const persistSettings = React.useCallback(
+    async (rulesJson: Record<string, any>) => {
+      if (!settingsSnapshot) return;
+      const payload: Record<string, unknown> = { ...settingsSnapshot, rulesJson };
+      const res = await fetch("/api/portal/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || "Не удалось сохранить настройки");
+      }
+      const updated = await res.json();
+      setSettingsSnapshot(updated);
+      applyShareSettings(updated);
+    },
+    [applyShareSettings, settingsSnapshot],
+  );
+
+  const handleToggleReviews = React.useCallback(
+    async (nextValue: boolean) => {
+      if (!settingsSnapshot) {
+        setIsEnabled(nextValue);
+        return;
+      }
+      const prev = isEnabled;
+      setIsEnabled(nextValue);
+      setSettingsSaving(true);
+      setSettingsError(null);
+      try {
+        const rulesBase = buildRulesBase(settingsSnapshot.rulesJson);
+        const reviewRules =
+          rulesBase.reviews && typeof rulesBase.reviews === "object" ? { ...rulesBase.reviews } : {};
+        reviewRules.enabled = nextValue;
+        rulesBase.reviews = reviewRules;
+        await persistSettings(rulesBase);
+      } catch (err: any) {
+        setIsEnabled(prev);
+        setSettingsError(String(err?.message || err || "Не удалось сохранить настройки"));
+      } finally {
+        setSettingsSaving(false);
+      }
+    },
+    [isEnabled, persistSettings, settingsSnapshot],
+  );
+
+  const handleSaveSettings = React.useCallback(async () => {
+    if (!settingsSnapshot) {
+      setSettingsError("Настройки еще загружаются");
+      return;
+    }
+    setSettingsSaving(true);
+    setSettingsError(null);
+    try {
+      const rulesBase = buildRulesBase(settingsSnapshot.rulesJson);
+      const sharePlatforms =
+        rulesBase.reviewsShare && typeof rulesBase.reviewsShare === "object"
+          ? rulesBase.reviewsShare
+          : {};
+      const prevPlatforms =
+        sharePlatforms?.platforms && typeof sharePlatforms.platforms === "object"
+          ? sharePlatforms.platforms
+          : {};
+      const thresholdValue = Math.min(5, Math.max(1, parseInt(minRating, 10) || 5));
+      rulesBase.reviewsShare = {
+        enabled: offerExternal,
+        threshold: thresholdValue,
+        platforms: {
+          yandex: { ...(prevPlatforms?.yandex ?? {}), enabled: platforms.yandex },
+          twogis: { ...(prevPlatforms?.twogis ?? {}), enabled: platforms.gis },
+          google: { ...(prevPlatforms?.google ?? {}), enabled: platforms.google },
+        },
+      };
+      const reviewRules =
+        rulesBase.reviews && typeof rulesBase.reviews === "object" ? { ...rulesBase.reviews } : {};
+      reviewRules.enabled = isEnabled;
+      rulesBase.reviews = reviewRules;
+      await persistSettings(rulesBase);
+    } catch (err: any) {
+      setSettingsError(String(err?.message || err || "Не удалось сохранить настройки"));
+    } finally {
+      setSettingsSaving(false);
+    }
+  }, [isEnabled, minRating, offerExternal, persistSettings, platforms, settingsSnapshot]);
+
   React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/portal/settings", { cache: "no-store" });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        if (cancelled) return;
+        setSettingsSnapshot(data);
+        applyShareSettings(data);
+      } catch (err: any) {
+        if (!cancelled) {
+          setSettingsError(String(err?.message || err || "Не удалось загрузить настройки"));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [applyShareSettings]);
+
+  React.useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
         const res = await fetch("/api/portal/outlets", { cache: "no-store" });
-        if (!res.ok) return;
+        if (!res.ok || cancelled) return;
         const data = await res.json();
+        if (cancelled) return;
+        const outlets: SelectOption[] = [{ value: "all", label: "Все точки" }];
         const allDevices: DeviceInfo[] = [];
-        const outlets: SelectOption[] = [{ value: "all", label: "Все торговые точки" }];
-        
         if (Array.isArray(data?.items)) {
           data.items.forEach((outlet: any) => {
             if (outlet?.id) {
@@ -176,121 +272,92 @@ export default function ReviewsPage() {
             }
             if (Array.isArray(outlet?.devices)) {
               outlet.devices.forEach((d: DeviceInfo) => {
-                if (d?.id && d?.code) {
+                if (d?.code) {
                   allDevices.push(d);
                 }
               });
             }
           });
         }
-        
         setOutletOptions(outlets);
-        // Use device code as value since API filters by deviceId which is the code
         setDeviceOptions([
           { value: "all", label: "Все устройства" },
-          ...allDevices.map(d => ({ value: d.code, label: `${d.code} (${d.outletName})` }))
+          ...allDevices.map((d) => ({ value: d.code, label: `${d.code} (${d.outletName})` })),
         ]);
-      } catch (err) {
-        console.error("Failed to fetch outlets/devices", err);
+      } catch {
+        // ignore
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // Fetch stats for ALL filtered reviews (without pagination)
   React.useEffect(() => {
-    let cancelled = false;
     const params = new URLSearchParams();
-    params.set("limit", "10000"); // Large number to get all for stats
-    if (withCommentOnly) params.set("withCommentOnly", "1");
-    if (selectedOutlet !== "all") params.set("outletId", selectedOutlet);
-    if (selectedStaff !== "all") params.set("staffId", selectedStaff);
-    if (selectedDevice !== "all") params.set("deviceId", selectedDevice);
-    
+    params.set("limit", String(PAGE_SIZE));
+    params.set("offset", String((currentPage - 1) * PAGE_SIZE));
+    params.set("includeStats", "1");
+    if (onlyWithComments) params.set("withCommentOnly", "1");
+    if (filterOutlet !== "all") params.set("outletId", filterOutlet);
+    if (filterStaff !== "all") params.set("staffId", filterStaff);
+    if (filterDevice !== "all") params.set("deviceId", filterDevice);
+
+    let cancelled = false;
+
+    setLoading(true);
+    setError(null);
+
     (async () => {
       try {
         const res = await fetch(`/api/portal/reviews?${params.toString()}`, { cache: "no-store" });
-        if (!res.ok || cancelled) return;
-        const data = (await res.json()) as ReviewsApiResponse;
-        if (cancelled) return;
-        
-        const items = Array.isArray(data?.items) ? data.items : [];
-        if (items.length > 0) {
-          const sum = items.reduce((acc, r) => acc + (r.rating || 0), 0);
-          setStatsAvg(Number((sum / items.length).toFixed(1)));
-          setStatsWithComments(items.filter(r => r.comment && r.comment.trim().length > 0).length);
-        } else {
-          setStatsAvg(0);
-          setStatsWithComments(0);
-        }
-      } catch {
-        if (!cancelled) {
-          setStatsAvg(0);
-          setStatsWithComments(0);
-        }
-      }
-    })();
-    
-    return () => { cancelled = true; };
-  }, [withCommentOnly, selectedOutlet, selectedStaff, selectedDevice]);
-
-  // Fetch paginated reviews
-  React.useEffect(() => {
-    const fetchId = ++fetchIdRef.current;
-    setLoading(true);
-    let cancelled = false;
-    const params = new URLSearchParams();
-    params.set("limit", String(PAGE_SIZE));
-    params.set("offset", String((page - 1) * PAGE_SIZE));
-    if (withCommentOnly) params.set("withCommentOnly", "1");
-    if (selectedOutlet !== "all") params.set("outletId", selectedOutlet);
-    if (selectedStaff !== "all") params.set("staffId", selectedStaff);
-    if (selectedDevice !== "all") params.set("deviceId", selectedDevice);
-    
-    const search = params.toString();
-    (async () => {
-      try {
-        const res = await fetch(`/api/portal/reviews?${search}`, { cache: "no-store" });
         if (!res.ok) {
           const text = await res.text().catch(() => "");
-          throw new Error(text || `Ошибка ${res.status}`);
+          throw new Error(text || "Не удалось загрузить отзывы");
         }
         const data = (await res.json()) as ReviewsApiResponse;
-        if (cancelled || fetchIdRef.current !== fetchId) return;
+        if (cancelled) return;
 
         const normalizedReviews: ReviewRow[] = Array.isArray(data?.items)
           ? data.items
               .filter((item): item is ApiReviewItem => !!item && typeof item === "object")
               .map((item) => {
-                const customerId = typeof item.customer?.id === "string" ? item.customer.id.trim() : "";
                 const customerName =
                   (item.customer?.name && item.customer.name.trim()) ||
                   (item.customer?.phone && item.customer.phone.trim()) ||
                   (item.customer?.email && item.customer.email.trim()) ||
                   "—";
-                const rawDeviceId = typeof item.deviceId === "string" ? item.deviceId.trim() : "";
-                const staffNameRaw = (item.staff?.name || "").trim();
-                const staffName = staffNameRaw || "—";
+                const staffName = (item.staff?.name || "").trim();
+                const deviceName = (item.deviceId || "").trim();
+                const sourceType = staffName ? "staff" : "device";
+                const sourceName = staffName || deviceName || "—";
                 const outletName = (item.outlet?.name || "").trim() || "—";
                 const comment = typeof item.comment === "string" ? item.comment.trim() : "";
                 return {
                   id: item.id,
+                  clientName: customerName,
                   rating: item.rating,
                   comment: comment.length > 0 ? comment : null,
-                  createdAt: item.createdAt,
-                  customer: { id: customerId, name: customerName, initials: getInitials(customerName) },
-                  device: rawDeviceId || null,
-                  staff: staffName,
+                  sourceType,
+                  sourceName,
                   outlet: outletName,
+                  date: formatDateTime(item.createdAt),
                 };
               })
           : [];
 
         setReviews(normalizedReviews);
         setTotalCount(typeof data?.total === "number" ? data.total : normalizedReviews.length);
+        setAverageRating(
+          typeof data?.stats?.averageRating === "number" && Number.isFinite(data.stats.averageRating)
+            ? data.stats.averageRating
+            : normalizedReviews.length
+              ? normalizedReviews.reduce((acc, item) => acc + (item.rating || 0), 0) / normalizedReviews.length
+              : 0,
+        );
 
-        // Update staff options if returned
         if (Array.isArray(data?.staff)) {
-          const nextStaffOptions: SelectOption[] = [
+          const nextStaff: SelectOption[] = [
             { value: "all", label: "Все сотрудники" },
             ...data.staff
               .filter((item): item is { id: string; name?: string | null } => !!item && typeof item === "object")
@@ -299,482 +366,352 @@ export default function ReviewsPage() {
                 label: (item.name || "").trim() || item.id,
               })),
           ];
-          setStaffOptions(nextStaffOptions);
+          setStaffOptions(nextStaff);
         }
-      } catch (error) {
-        console.error(error);
-        if (cancelled || fetchIdRef.current !== fetchId) return;
+      } catch (err: any) {
+        if (cancelled) return;
         setReviews([]);
         setTotalCount(0);
+        setAverageRating(0);
+        setError(String(err?.message || err || "Не удалось загрузить отзывы"));
       } finally {
-        if (cancelled || fetchIdRef.current !== fetchId) return;
+        if (cancelled) return;
         setLoading(false);
       }
     })();
 
-    return () => { cancelled = true; };
-  }, [withCommentOnly, selectedOutlet, selectedStaff, selectedDevice, page]);
-
-  // Reset page when filters change
-  React.useEffect(() => {
-    setPage(1);
-  }, [withCommentOnly, selectedOutlet, selectedStaff, selectedDevice]);
-
-  // Fetch settings when modal opens
-  React.useEffect(() => {
-    if (!settingsOpen) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        setSettingsError(null);
-        const res = await fetch("/api/portal/settings", { cache: "no-store" });
-        if (!res.ok) {
-          const text = await res.text().catch(() => "");
-          throw new Error(text || `Ошибка ${res.status}`);
-        }
-        const data = await res.json();
-        if (cancelled) return;
-        setSettingsSnapshot(data);
-        applyShareSettings(data);
-      } catch (error) {
-        if (cancelled) return;
-        console.error(error);
-        setSettingsError(error instanceof Error ? error.message : String(error));
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [settingsOpen, applyShareSettings]);
-
-  // Blur background while modal is open (even if backdrop-filter is unsupported)
-  React.useEffect(() => {
-    if (typeof document === "undefined") return;
-    const body = document.body;
-    if (settingsOpen) {
-      body.classList.add("modal-blur-active");
-    } else {
-      body.classList.remove("modal-blur-active");
-    }
     return () => {
-      body.classList.remove("modal-blur-active");
+      cancelled = true;
     };
-  }, [settingsOpen]);
+  }, [currentPage, filterDevice, filterOutlet, filterStaff, onlyWithComments]);
 
-  const handleSaveSettings = React.useCallback(async () => {
-    if (!settingsSnapshot) {
-      alert("Настройки ещё загружаются, повторите попытку позже");
-      return;
-    }
-    const base = settingsSnapshot;
-    const rulesBase = base?.rulesJson && typeof base.rulesJson === "object"
-      ? { ...base.rulesJson }
-      : Array.isArray(base?.rulesJson)
-        ? { rules: base.rulesJson }
-        : {};
-    const prevShare = rulesBase?.reviewsShare && typeof rulesBase.reviewsShare === "object" ? rulesBase.reviewsShare : {};
-    const prevPlatforms = prevShare?.platforms && typeof prevShare.platforms === "object" ? prevShare.platforms : {};
-    const thresholdValue = Math.min(5, Math.max(1, parseInt(shareThreshold, 10) || 5));
-    rulesBase.reviewsShare = {
-      enabled: shareEnabled,
-      threshold: thresholdValue,
-      platforms: {
-        yandex: { ...(prevPlatforms?.yandex ?? {}), enabled: sharePlatforms.yandex },
-        twogis: { ...(prevPlatforms?.twogis ?? {}), enabled: sharePlatforms.twogis },
-        google: { ...(prevPlatforms?.google ?? {}), enabled: sharePlatforms.google },
-      },
-    };
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [filterOutlet, filterStaff, filterDevice, onlyWithComments]);
 
-    const payload: Record<string, unknown> = { ...base, rulesJson: rulesBase };
-
-    setSettingsSaving(true);
-    try {
-      const res = await fetch("/api/portal/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(text || `Ошибка ${res.status}`);
-      }
-      const updated = await res.json();
-      setSettingsSnapshot(updated);
-      applyShareSettings(updated);
-      setSettingsOpen(false);
-    } catch (error) {
-      console.error(error);
-      alert(`Не удалось сохранить настройки: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      setSettingsSaving(false);
-    }
-  }, [applyShareSettings, settingsSnapshot, shareEnabled, shareThreshold, sharePlatforms]);
+  const statsAverage = totalCount > 0 ? averageRating.toFixed(1) : "0.0";
 
   return (
-    <div className="animate-in" style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
-      {/* Header Section */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 20, flexWrap: 'wrap' }}>
-          <div style={{ maxWidth: 640 }}>
-            <h1 style={{ fontSize: 32, fontWeight: 800, letterSpacing: '-0.02em', margin: '0 0 12px', color: 'var(--fg)' }}>
-              Отзывы
-            </h1>
-            <p style={{ fontSize: 15, lineHeight: 1.6, color: 'var(--fg-secondary)', margin: 0 }}>
-              Сбор статистики качества обслуживания. Клиенту предоставляется возможность оставить оценку визита после совершения покупки. Позволяет улучшать сервис и оперативно реагировать на низкие оценки.
-            </p>
-          </div>
-          <Button 
-            variant="outline" 
-            onClick={() => setSettingsOpen(true)}
-            leftIcon={<Settings size={16} />}
-            style={{ flexShrink: 0 }}
-          >
-            Настройки
-          </Button>
-        </div>
-
-        {/* Stats Cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
-          <Card style={{ padding: 20, display: 'flex', alignItems: 'center', gap: 16 }}>
-            <div style={{ width: 48, height: 48, borderRadius: 12, background: 'rgba(250, 204, 21, 0.1)', color: '#ca8a04', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Star size={24} strokeWidth={2.5} />
-            </div>
-            <div>
-              <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1, color: 'var(--fg)' }}>{statsAvg > 0 ? statsAvg : '—'}</div>
-              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--fg-muted)', marginTop: 4 }}>Средняя оценка</div>
-            </div>
-          </Card>
-          
-          <Card style={{ padding: 20, display: 'flex', alignItems: 'center', gap: 16 }}>
-            <div style={{ width: 48, height: 48, borderRadius: 12, background: 'rgba(99, 102, 241, 0.1)', color: 'var(--brand-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <TrendingUp size={24} strokeWidth={2.5} />
-            </div>
-            <div>
-              <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1, color: 'var(--fg)' }}>{totalCount}</div>
-              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--fg-muted)', marginTop: 4 }}>Всего отзывов</div>
-            </div>
-          </Card>
-
-          <Card style={{ padding: 20, display: 'flex', alignItems: 'center', gap: 16 }}>
-            <div style={{ width: 48, height: 48, borderRadius: 12, background: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <MessageCircle size={24} strokeWidth={2.5} />
-            </div>
-            <div>
-              <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1, color: 'var(--fg)' }}>{statsWithComments || '—'}</div>
-              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--fg-muted)', marginTop: 4 }}>С комментариями</div>
-            </div>
-          </Card>
-        </div>
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+      <div>
+        <h2 className="text-2xl font-bold text-gray-900">Отзывы</h2>
+        <p className="text-gray-500 mt-1">Мониторинг обратной связи от клиентов и управление репутацией.</p>
       </div>
 
-      {/* Toolbar */}
-      <Card>
-        <CardBody style={{ padding: 16 }}>
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-            <CustomSelect
-              value={selectedOutlet}
-              onChange={setSelectedOutlet}
-              options={outletOptions}
-              icon={Store}
-            />
-            <CustomSelect
-              value={selectedStaff}
-              onChange={setSelectedStaff}
-              options={staffOptions}
-              icon={User}
-            />
-            <CustomSelect
-              value={selectedDevice}
-              onChange={setSelectedDevice}
-              options={deviceOptions}
-              icon={Smartphone}
-            />
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginLeft: 'auto' }}>
-              <Toggle checked={withCommentOnly} onChange={setWithCommentOnly} label="Только с текстом" />
+      <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between">
+        <div className="flex items-center space-x-4">
+          <div className={`p-3 rounded-full ${isEnabled ? "bg-green-100 text-green-600" : "bg-gray-100 text-gray-400"}`}>
+            <Power size={24} />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-gray-900">Сбор отзывов</h3>
+            <p className="text-sm text-gray-500">
+              {isEnabled
+                ? "Активно. Клиентам предлагается оценить обслуживание после покупки."
+                : "Отключено. Сбор оценок и отзывов приостановлен."}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={() => handleToggleReviews(!isEnabled)}
+          className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 ${isEnabled ? "bg-green-500" : "bg-gray-300"}`}
+          disabled={settingsSaving}
+        >
+          <span
+            className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform shadow-sm ${isEnabled ? "translate-x-7" : "translate-x-1"}`}
+          />
+        </button>
+      </div>
+
+      <div className={`space-y-8 transition-opacity duration-300 ${isEnabled ? "opacity-100" : "opacity-50 pointer-events-none"}`}>
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center space-x-2">
+              <MapPin className="text-purple-600" size={24} />
+              <h3 className="text-lg font-bold text-gray-900">Сбор отзывов на картах</h3>
+            </div>
+            <button
+              onClick={handleSaveSettings}
+              className="flex items-center space-x-2 text-sm text-purple-600 font-medium hover:text-purple-800 bg-purple-50 px-3 py-1.5 rounded-lg transition-colors"
+              disabled={settingsSaving}
+            >
+              <Save size={16} />
+              <span>{settingsSaving ? "Сохранение..." : "Сохранить настройки"}</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+            <div className="space-y-4">
+              <label className="flex items-center justify-between cursor-pointer p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                <div>
+                  <span className="block font-medium text-gray-900">Предлагать поделиться отзывом</span>
+                  <span className="text-sm text-gray-500">Показывать предложение оставить отзыв на картах после высокой оценки.</span>
+                </div>
+                <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${offerExternal ? "bg-green-500" : "bg-gray-300"}`}>
+                  <input
+                    type="checkbox"
+                    checked={offerExternal}
+                    onChange={(e) => setOfferExternal(e.target.checked)}
+                    className="sr-only"
+                  />
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${offerExternal ? "translate-x-6" : "translate-x-1"}`} />
+                </div>
+              </label>
+
+              <div className={`transition-opacity duration-200 ${!offerExternal ? "opacity-50 pointer-events-none" : ""}`}>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Минимальная оценка для предложения</label>
+                <div className="flex space-x-2">
+                  {["5", "4+", "3+", "2+", "1+"].map((val) => (
+                    <button
+                      key={val}
+                      onClick={() => setMinRating(val)}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                        minRating === val
+                          ? "bg-purple-600 text-white border-purple-600"
+                          : "bg-white text-gray-600 border-gray-200 hover:border-purple-300"
+                      }`}
+                    >
+                      {val === "5" ? "⭐️ 5" : `⭐️ ${val}`}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  Клиентам, поставившим оценку ниже выбранной, предложение оставить отзыв на картах показано не будет.
+                </p>
+              </div>
+            </div>
+
+            <div className={`space-y-4 transition-opacity duration-200 ${!offerExternal ? "opacity-50 pointer-events-none" : ""}`}>
+              <span className="block text-sm font-medium text-gray-700">Платформы для размещения</span>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <label className={`flex items-center space-x-3 p-3 rounded-lg border cursor-pointer transition-colors ${platforms.yandex ? "border-red-200 bg-red-50" : "border-gray-200 hover:bg-gray-50"}`}>
+                  <input
+                    type="checkbox"
+                    checked={platforms.yandex}
+                    onChange={(e) => setPlatforms({ ...platforms, yandex: e.target.checked })}
+                    className="rounded text-red-600 focus:ring-red-500"
+                  />
+                  <span className="font-medium text-gray-900">Яндекс</span>
+                </label>
+
+                <label className={`flex items-center space-x-3 p-3 rounded-lg border cursor-pointer transition-colors ${platforms.gis ? "border-green-200 bg-green-50" : "border-gray-200 hover:bg-gray-50"}`}>
+                  <input
+                    type="checkbox"
+                    checked={platforms.gis}
+                    onChange={(e) => setPlatforms({ ...platforms, gis: e.target.checked })}
+                    className="rounded text-green-600 focus:ring-green-500"
+                  />
+                  <span className="font-medium text-gray-900">2ГИС</span>
+                </label>
+
+                <label className={`flex items-center space-x-3 p-3 rounded-lg border cursor-pointer transition-colors ${platforms.google ? "border-blue-200 bg-blue-50" : "border-gray-200 hover:bg-gray-50"}`}>
+                  <input
+                    type="checkbox"
+                    checked={platforms.google}
+                    onChange={(e) => setPlatforms({ ...platforms, google: e.target.checked })}
+                    className="rounded text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="font-medium text-gray-900">Google</span>
+                </label>
+              </div>
+              <div className="flex items-center space-x-2 text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
+                <ExternalLink size={14} />
+                <span>Клиент сможет выбрать удобную платформу из отмеченных. Ссылки настраиваются в разделе "Торговые точки".</span>
+              </div>
+              {settingsError && <div className="text-xs text-red-500">{settingsError}</div>}
             </div>
           </div>
-        </CardBody>
-      </Card>
-
-      {/* Content Table */}
-      <Card>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-surface)' }}>
-                <th style={{ ...thStyle, width: '15%' }}>Клиент</th>
-                <th style={{ ...thStyle, width: '8%' }}>Оценка</th>
-                <th style={{ ...thStyle, width: '35%' }}>Комментарий</th>
-                <th style={{ ...thStyle, width: '14%' }}>Источник</th>
-                <th style={{ ...thStyle, width: '14%' }}>Точка</th>
-                <th style={{ ...thStyle, width: '14%' }}>Дата</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                 Array.from({ length: 5 }).map((_, i) => (
-                   <tr key={i}>
-                     <td colSpan={6} style={{ padding: 16 }}>
-                       <Skeleton height={40} />
-                     </td>
-                   </tr>
-                 ))
-              ) : reviews.length > 0 ? (
-                reviews.map((review) => (
-                  <tr key={review.id} className="list-row">
-                    <td style={tdStyle}>
-                      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                        <div style={{ 
-                          width: 32, height: 32, borderRadius: 999, flexShrink: 0,
-                          background: 'var(--bg-surface)',
-                          color: 'var(--fg-secondary)', fontWeight: 600, fontSize: 12,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          border: '1px solid var(--border-default)'
-                        }}>
-                          {review.customer.initials}
-                        </div>
-                        <div style={{ fontWeight: 500, color: 'var(--fg)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                           {review.customer.id ? (
-                              <a href={`/customers/${review.customer.id}`} style={{ color: 'inherit', textDecoration: 'none' }}>
-                                {review.customer.name}
-                              </a>
-                            ) : review.customer.name}
-                        </div>
-                      </div>
-                    </td>
-                    <td style={tdStyle}>
-                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                         <Star size={16} fill={review.rating >= 4 ? '#22c55e' : review.rating >= 3 ? '#facc15' : '#ef4444'} strokeWidth={0} />
-                         <span style={{ fontWeight: 600, color: review.rating >= 4 ? '#15803d' : review.rating >= 3 ? '#a16207' : '#b91c1c' }}>{review.rating}</span>
-                       </div>
-                    </td>
-                    <td style={{ ...tdStyle, ...commentCellStyle }}>
-                      {review.comment ? (
-                        <div style={{ fontSize: 14, lineHeight: 1.5, color: 'var(--fg)', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
-                          {review.comment}
-                        </div>
-                      ) : (
-                        <span style={{ opacity: 0.4, fontSize: 13 }}>—</span>
-                      )}
-                    </td>
-                    <td style={tdStyle}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--fg)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {review.device ? (
-                            <Smartphone size={14} color="var(--fg-muted)" />
-                          ) : (
-                            <User size={14} color="var(--fg-muted)" />
-                          )}
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {review.device || review.staff}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>
-                          {review.device ? 'Устройство' : 'Сотрудник'}
-                        </div>
-                      </div>
-                    </td>
-                    <td style={tdStyle}>
-                      <span style={{ color: 'var(--fg-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>{review.outlet}</span>
-                    </td>
-                    <td style={tdStyle}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        <span style={{ color: 'var(--fg)' }}>{new Date(review.createdAt).toLocaleDateString('ru-RU')}</span>
-                        <span style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{new Date(review.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={6} style={{ padding: 40, textAlign: 'center', color: 'var(--fg-muted)' }}>
-                    Отзывов не найдено
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
         </div>
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>
-              Страница {page} из {totalPages}
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <Button 
-                variant="secondary" 
-                size="sm" 
-                disabled={page === 1 || loading}
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-                leftIcon={<ChevronLeft size={16} />}
-              >
-                Назад
-              </Button>
-              <Button 
-                variant="secondary" 
-                size="sm" 
-                disabled={page >= totalPages || loading}
-                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                rightIcon={<ChevronRight size={16} />}
-              >
-                Вперед
-              </Button>
-            </div>
-          </div>
-        )}
-      </Card>
-
-      {/* Settings Modal - rendered via Portal to body */}
-      {settingsOpen && typeof document !== 'undefined' && createPortal(
-        <div className="modal-overlay" onClick={() => setSettingsOpen(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <div style={{ display: 'grid', gap: 0 }}>
-                <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--fg)' }}>Настройки отзывов</div>
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
+          <div className="p-6 border-b border-gray-100 bg-gray-50/50 flex flex-col xl:flex-row justify-between items-center gap-6">
+            <div className="flex items-center gap-6 w-full xl:w-auto">
+              <div className="flex items-center space-x-3">
+                <div className="bg-white p-2 rounded-lg border border-gray-200 text-gray-500">
+                  <Filter size={20} />
+                </div>
+                <div>
+                  <span className="block text-xs text-gray-500 uppercase font-bold">Найдено</span>
+                  <span className="text-lg font-bold text-gray-900">{totalCount}</span>
+                </div>
               </div>
-              <button 
-                onClick={() => setSettingsOpen(false)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--fg-muted)', padding: 4 }}
+
+              <div className="w-px h-10 bg-gray-300 hidden sm:block"></div>
+
+              <div className="flex items-center space-x-3">
+                <div className="bg-yellow-100 p-2 rounded-lg border border-yellow-200 text-yellow-600">
+                  <Star size={20} className="fill-yellow-600" />
+                </div>
+                <div>
+                  <span className="block text-xs text-gray-500 uppercase font-bold">Ср. оценка</span>
+                  <span className="text-lg font-bold text-gray-900">{statsAverage}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-3 w-full xl:w-auto">
+              <select
+                value={filterOutlet}
+                onChange={(e) => setFilterOutlet(e.target.value)}
+                className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
               >
-                <X size={24} />
-              </button>
-            </div>
+                {outletOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
 
-            <div className="modal-body" style={{ gap: 32 }}>
-              <section>
-                <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--fg-muted)', marginBottom: 16 }}>
-                  Сбор отзывов на картах
+              <select
+                value={filterStaff}
+                onChange={(e) => setFilterStaff(e.target.value)}
+                className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              >
+                {staffOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={filterDevice}
+                onChange={(e) => setFilterDevice(e.target.value)}
+                className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              >
+                {deviceOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+
+              <label className="flex items-center space-x-2 bg-white px-3 py-2 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={onlyWithComments}
+                  onChange={(e) => setOnlyWithComments(e.target.checked)}
+                  className="rounded text-purple-600 focus:ring-purple-500"
+                />
+                <div className="flex items-center space-x-1.5 text-sm text-gray-700">
+                  <MessageCircle size={14} />
+                  <span>Только с комментарием</span>
                 </div>
-                <div style={{ display: 'grid', gap: 20 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                     <div>
-                        <div style={{ fontWeight: 500 }}>Предлагать поделиться отзывом</div>
-                        <div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>На Яндекс, Google или 2ГИС</div>
-                      </div>
-                      <Toggle checked={shareEnabled} onChange={setShareEnabled} />
-                  </div>
-
-                  {shareEnabled && (
-                    <div style={{ display: 'grid', gap: 16, padding: 16, background: 'var(--bg-surface)', borderRadius: 12, border: '1px solid var(--border-default)' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                         <label style={{ fontSize: 13, fontWeight: 500 }}>Минимальная оценка для предложения</label>
-                         <select 
-                            value={shareThreshold} 
-                            onChange={(e) => setShareThreshold(e.target.value)} 
-                            style={{ ...modalSelectStyle }}
-                          >
-                            {shareThresholds.map((opt) => (
-                              <option key={opt.value} value={opt.value}>{opt.label}</option>
-                            ))}
-                          </select>
-                      </div>
-
-                      <div style={{ display: 'grid', gap: 12 }}>
-                        <label style={{ fontSize: 13, fontWeight: 500 }}>Платформы</label>
-                        <div style={{ display: 'flex', gap: 24 }}>
-                          <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer' }}>
-                            <div style={{ width: 18, height: 18, borderRadius: 4, border: '1px solid var(--border-default)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: sharePlatforms.yandex ? 'var(--brand-primary)' : 'transparent', borderColor: sharePlatforms.yandex ? 'var(--brand-primary)' : 'var(--border-default)' }}>
-                              {sharePlatforms.yandex && <Check size={12} color="white" />}
-                            </div>
-                            <input type="checkbox" checked={sharePlatforms.yandex} onChange={(e) => setSharePlatforms(p => ({...p, yandex: e.target.checked}))} style={{ display: 'none' }} />
-                            <span>Яндекс</span>
-                          </label>
-                          <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer' }}>
-                            <div style={{ width: 18, height: 18, borderRadius: 4, border: '1px solid var(--border-default)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: sharePlatforms.twogis ? 'var(--brand-primary)' : 'transparent', borderColor: sharePlatforms.twogis ? 'var(--brand-primary)' : 'var(--border-default)' }}>
-                              {sharePlatforms.twogis && <Check size={12} color="white" />}
-                            </div>
-                            <input type="checkbox" checked={sharePlatforms.twogis} onChange={(e) => setSharePlatforms(p => ({...p, twogis: e.target.checked}))} style={{ display: 'none' }} />
-                            <span>2ГИС</span>
-                          </label>
-                          <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer' }}>
-                            <div style={{ width: 18, height: 18, borderRadius: 4, border: '1px solid var(--border-default)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: sharePlatforms.google ? 'var(--brand-primary)' : 'transparent', borderColor: sharePlatforms.google ? 'var(--brand-primary)' : 'var(--border-default)' }}>
-                              {sharePlatforms.google && <Check size={12} color="white" />}
-                            </div>
-                            <input type="checkbox" checked={sharePlatforms.google} onChange={(e) => setSharePlatforms(p => ({...p, google: e.target.checked}))} style={{ display: 'none' }} />
-                            <span>Google</span>
-                          </label>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </section>
-            </div>
-
-            <div className="modal-footer">
-              <Button variant="secondary" onClick={() => setSettingsOpen(false)}>Отмена</Button>
-              <Button variant="primary" onClick={handleSaveSettings} disabled={settingsSaving}>
-                {settingsSaving ? 'Сохранение...' : 'Сохранить'}
-              </Button>
+              </label>
             </div>
           </div>
-        </div>,
-        document.body
-      )}
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="text-xs text-gray-500 uppercase bg-gray-50 border-b border-gray-100">
+                <tr>
+                  <th className="px-6 py-4 font-semibold w-48">Клиент</th>
+                  <th className="px-6 py-4 font-semibold w-32">Оценка</th>
+                  <th className="px-6 py-4 font-semibold min-w-[300px]">Комментарий</th>
+                  <th className="px-6 py-4 font-semibold w-48">Источник</th>
+                  <th className="px-6 py-4 font-semibold w-48">Точка</th>
+                  <th className="px-6 py-4 font-semibold w-40 text-right">Дата</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {loading ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                      Загрузка...
+                    </td>
+                  </tr>
+                ) : reviews.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                      <MessageSquare size={48} className="mx-auto text-gray-300 mb-4" />
+                      <p>{error || "Нет отзывов, соответствующих выбранным фильтрам."}</p>
+                    </td>
+                  </tr>
+                ) : (
+                  reviews.map((review) => (
+                    <tr key={review.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-4 font-medium text-gray-900">
+                        <div className="flex items-center space-x-2">
+                          <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-xs font-bold">
+                            {toInitial(review.clientName)}
+                          </div>
+                          <span>{review.clientName}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center">
+                          {Array.from({ length: 5 }).map((_, i) => (
+                            <Star
+                              key={i}
+                              size={14}
+                              className={`${i < review.rating ? "text-yellow-400 fill-yellow-400" : "text-gray-200"}`}
+                            />
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        {review.comment ? (
+                          <p className="text-gray-700 whitespace-normal break-words max-w-[400px]">
+                            {review.comment}
+                          </p>
+                        ) : (
+                          <span className="text-gray-400 italic text-xs">Без комментария</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-gray-600">
+                        <div className="flex items-center space-x-2">
+                          {review.sourceType === "staff" ? (
+                            <User size={14} className="text-blue-500" />
+                          ) : (
+                            <Monitor size={14} className="text-purple-500" />
+                          )}
+                          <span className="truncate max-w-[150px]" title={review.sourceName}>
+                            {review.sourceName}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-gray-600">
+                        <div className="flex items-center space-x-2">
+                          <Store size={14} className="text-gray-400" />
+                          <span className="truncate max-w-[150px]" title={review.outlet}>
+                            {review.outlet}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-right text-gray-500 text-xs whitespace-nowrap">{review.date}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {totalPages > 1 && (
+            <div className="p-4 border-t border-gray-100 bg-gray-50 flex items-center justify-between">
+              <span className="text-sm text-gray-500">
+                Показано {Math.min((currentPage - 1) * PAGE_SIZE + 1, totalCount)} - {Math.min(currentPage * PAGE_SIZE, totalCount)} из {totalCount}
+              </span>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="p-2 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <span className="text-sm font-medium text-gray-900">Стр. {currentPage}</span>
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="p-2 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Styles
-// ─────────────────────────────────────────────────────────────────────────────
-
-const selectWrapperStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 10,
-  padding: '10px 14px',
-  borderRadius: 10,
-  border: '1px solid var(--border-default)',
-  background: 'var(--bg-surface)',
-  minWidth: 200,
-  flex: 1,
-  maxWidth: 280,
-  cursor: 'pointer',
-  transition: 'border-color 0.2s, box-shadow 0.2s',
-};
-
-const selectStyle: React.CSSProperties = {
-  flex: 1,
-  background: 'transparent',
-  border: 'none',
-  outline: 'none',
-  fontSize: 14,
-  color: 'var(--fg)',
-  cursor: 'pointer',
-  appearance: 'none',
-  WebkitAppearance: 'none',
-  MozAppearance: 'none',
-};
-
-const modalSelectStyle: React.CSSProperties = {
-  flex: 1,
-  padding: '8px 12px',
-  borderRadius: 8,
-  border: '1px solid var(--border-default)',
-  background: 'var(--bg-body)',
-  color: 'var(--fg)',
-  fontSize: 14,
-  cursor: 'pointer',
-  outline: 'none',
-};
-
-const thStyle: React.CSSProperties = {
-  textAlign: 'left',
-  padding: '12px 16px',
-  fontSize: 12,
-  fontWeight: 600,
-  color: 'var(--fg-muted)',
-  textTransform: 'uppercase',
-  letterSpacing: '0.05em',
-};
-
-const tdStyle: React.CSSProperties = {
-  padding: '12px 16px',
-  fontSize: 13,
-  verticalAlign: 'top',
-};
-
-const commentCellStyle: React.CSSProperties = {
-  maxWidth: 0, // Trick to force text wrapping in fixed-layout table
-};

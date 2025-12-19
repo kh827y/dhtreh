@@ -105,6 +105,17 @@ export class OutletReviewsShareLinksDto {
 }
 
 @ObjectType()
+export class OutletDeviceDto {
+  @Field(() => ID)
+  @ApiProperty({ description: 'Идентификатор устройства' })
+  id!: string;
+
+  @Field(() => String)
+  @ApiProperty({ description: 'Код устройства' })
+  code!: string;
+}
+
+@ObjectType()
 export class OutletDto {
   @Field(() => ID)
   @ApiProperty({ description: 'Идентификатор торговой точки' })
@@ -180,6 +191,14 @@ export class OutletDto {
   @Field(() => Float, { nullable: true })
   @ApiPropertyOptional({ description: 'Долгота' })
   longitude?: number | null;
+
+  @Field(() => Int, { nullable: true })
+  @ApiPropertyOptional({ description: 'Количество сотрудников на точке' })
+  staffCount?: number | null;
+
+  @Field(() => [OutletDeviceDto], { nullable: true })
+  @ApiPropertyOptional({ type: () => [OutletDeviceDto] })
+  devices?: OutletDeviceDto[] | null;
 
   @Field(() => OutletReviewsShareLinksDto, { nullable: true })
   @ApiPropertyOptional({
@@ -258,6 +277,15 @@ export class OutletReviewsShareLinksInput {
   @IsOptional()
   @IsString()
   google?: string | null;
+}
+
+@InputType()
+export class OutletDeviceInput {
+  @Field(() => String)
+  @ApiProperty({ description: 'Код устройства' })
+  @IsString()
+  @MaxLength(64)
+  code!: string;
 }
 
 @InputType()
@@ -377,6 +405,14 @@ export class UpsertOutletInput {
   @ValidateNested()
   @Type(() => OutletReviewsShareLinksInput)
   reviewsShareLinks?: OutletReviewsShareLinksInput | null;
+
+  @Field(() => [OutletDeviceInput], { nullable: true })
+  @ApiPropertyOptional({ type: () => [OutletDeviceInput] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => OutletDeviceInput)
+  devices?: OutletDeviceInput[] | null;
 }
 
 export class UpsertOutletDto extends UpsertOutletInput {}

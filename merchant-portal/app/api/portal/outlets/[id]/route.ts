@@ -17,8 +17,19 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
   }
   // add convenient boolean works derived from status
   const works = typeof data?.works === 'boolean' ? !!data.works : String(data?.status || '').toUpperCase() === 'ACTIVE';
-  const devices = Array.isArray(data?.devices) ? data.devices : [];
-  return new Response(JSON.stringify({ ...data, works, devices }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  const devices = Array.isArray(data?.devices)
+    ? data.devices
+        .filter((d: any) => d && typeof d === 'object')
+        .map((d: any) => ({
+          id: String(d.id || ''),
+          code: String(d.code || ''),
+        }))
+        .filter((d: any) => d.id && d.code)
+    : [];
+  return new Response(
+    JSON.stringify({ ...data, works, devices, staffCount: typeof data?.staffCount === 'number' ? data.staffCount : 0 }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } },
+  );
 }
 
 export async function PUT(req: NextRequest, context: { params: Promise<{ id: string }> }) {
@@ -35,5 +46,12 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ id: str
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
+  });
+}
+
+export async function DELETE(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const { id } = await context.params;
+  return portalFetch(req, `/portal/outlets/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
   });
 }

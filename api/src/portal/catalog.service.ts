@@ -14,6 +14,7 @@ import {
   Outlet,
   ProductExternalId,
   ProductCategoryExternal,
+  StaffOutletAccessStatus,
 } from '@prisma/client';
 import { MetricsService } from '../metrics.service';
 import { PrismaService } from '../prisma.service';
@@ -283,6 +284,7 @@ export class PortalCatalogService {
   ): Record<string, string | null> | undefined {
     if (!input || typeof input !== 'object') return undefined;
     const patch: Record<string, string | null> = {};
+    const invalid: string[] = [];
     for (const [rawKey, rawValue] of Object.entries(
       input as Record<string, unknown>,
     )) {
@@ -300,11 +302,33 @@ export class PortalCatalogService {
           patch[key] = null;
           continue;
         }
-        if (!this.isValidHttpUrl(trimmed)) continue; // пропускаем невалидные
+        if (!this.isValidHttpUrl(trimmed)) {
+          invalid.push(key);
+          continue;
+        }
         patch[key] = trimmed;
+        continue;
       }
+      invalid.push(key);
+    }
+    if (invalid.length) {
+      const label = invalid
+        .map((key) => this.mapReviewPlatformLabel(key))
+        .join(', ');
+      throw new BadRequestException(
+        `Некорректная ссылка для отзывов: ${label}`,
+      );
     }
     return patch;
+  }
+
+  private mapReviewPlatformLabel(key: string) {
+    const normalized = String(key || '').toLowerCase();
+    if (normalized === 'yandex') return 'Яндекс';
+    if (normalized === 'twogis' || normalized === '2gis' || normalized === 'gis')
+      return '2ГИС';
+    if (normalized === 'google') return 'Google';
+    return normalized || 'ссылка';
   }
 
   private extractReviewLinks(payload: Prisma.JsonValue | null | undefined) {
@@ -340,7 +364,7 @@ export class PortalCatalogService {
   }
 
   private mapOutlet(
-    entity: Outlet & { devices?: Array<any> },
+    entity: Outlet & { devices?: Array<any>; staffCount?: number },
   ): PortalOutletDto {
     return {
       id: entity.id,
@@ -349,6 +373,8 @@ export class PortalCatalogService {
       works: entity.status !== 'INACTIVE',
       hidden: entity.hidden,
       status: entity.status,
+      staffCount:
+        typeof entity.staffCount === 'number' ? entity.staffCount : undefined,
       posType: entity.posType ?? null,
       posLastSeenAt: entity.posLastSeenAt ?? null,
       bridgeSecretIssued: !!entity.bridgeSecret,
@@ -1580,7 +1606,31 @@ export class PortalCatalogService {
       }),
       this.prisma.outlet.count({ where }),
     ]);
-    return { items: items.map((outlet) => this.mapOutlet(outlet)), total };
+    const outletIds = items.map((outlet) => outlet.id);
+    const staffCountMap = new Map<string, number>();
+    if (outletIds.length) {
+      const counts = await this.prisma.staffOutletAccess.groupBy({
+        by: ['outletId'],
+        where: {
+          merchantId,
+          outletId: { in: outletIds },
+          status: StaffOutletAccessStatus.ACTIVE,
+        },
+        _count: { outletId: true },
+      });
+      counts.forEach((row) => {
+        staffCountMap.set(row.outletId, row._count.outletId);
+      });
+    }
+    return {
+      items: items.map((outlet) =>
+        this.mapOutlet({
+          ...outlet,
+          staffCount: staffCountMap.get(outlet.id) ?? 0,
+        }),
+      ),
+      total,
+    };
   }
 
   async getOutlet(
@@ -1596,9 +1646,8 @@ export class PortalCatalogService {
     dto: CreatePortalOutletDto,
   ): Promise<PortalOutletDto> {
     const name = dto.name?.trim();
-    const address = dto.address?.trim();
+    const address = dto.address?.trim() || null;
     if (!name) throw new BadRequestException('Outlet name is required');
-    if (!address) throw new BadRequestException('Outlet address is required');
     const devices = this.normalizeDevicesInput(dto.devices);
     const scheduleEnabled = dto.showSchedule ?? false;
     const schedule =
@@ -1612,7 +1661,7 @@ export class PortalCatalogService {
             merchantId,
             name,
             address,
-            status: dto.works ? 'ACTIVE' : 'INACTIVE',
+            status: dto.works === false ? 'INACTIVE' : 'ACTIVE',
             hidden: dto.hidden ?? false,
             description: dto.description ?? null,
             phone: dto.phone ?? null,
@@ -1708,9 +1757,7 @@ export class PortalCatalogService {
     }
     if (dto.address !== undefined) {
       const address = dto.address.trim();
-      if (!address)
-        throw new BadRequestException('Outlet address cannot be empty');
-      data.address = address;
+      data.address = address ? address : null;
     }
     if (dto.description !== undefined)
       data.description = dto.description ?? null;

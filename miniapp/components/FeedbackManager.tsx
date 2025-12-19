@@ -148,6 +148,7 @@ export function FeedbackManager() {
   const auth = useMiniappAuthContext();
   const merchantId = auth.merchantId;
   const customerId = auth.customerId;
+  const reviewsEnabled = auth.reviewsEnabled !== false;
   const [transactionsList, setTransactionsList] = useState<TransactionItem[]>([]);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackRating, setFeedbackRating] = useState(0);
@@ -191,6 +192,12 @@ export function FeedbackManager() {
     if (!customerId) return;
     void loadTransactions();
   }, [customerId, loadTransactions]);
+
+  useEffect(() => {
+    if (!reviewsEnabled && feedbackOpen) {
+      setFeedbackOpen(false);
+    }
+  }, [reviewsEnabled, feedbackOpen]);
 
   useEffect(() => {
     if (!dismissedReady) return;
@@ -257,6 +264,7 @@ export function FeedbackManager() {
 
   const isEligiblePurchaseTx = useCallback(
     (item: TransactionItem): boolean => {
+      if (!reviewsEnabled) return false;
       const createdAtMs = parseDateMs(item.createdAt);
       if (createdAtMs == null) return false;
       if (Date.now() - createdAtMs > REVIEW_LOOKBACK_MS) return false;
@@ -267,12 +275,13 @@ export function FeedbackManager() {
       if (dismissedTxSet.has(item.id)) return false;
       return true;
     },
-    [dismissedTxSet],
+    [dismissedTxSet, reviewsEnabled],
   );
 
   useEffect(() => {
     if (!dismissedReady) return;
     if (feedbackOpen) return;
+    if (!reviewsEnabled) return;
     let candidate: TransactionItem | null = null;
     if (preferredTxId) {
       const preferred = transactionsList.find((item) => item.id === preferredTxId) ?? null;
@@ -323,9 +332,22 @@ export function FeedbackManager() {
   const handleShareClick = useCallback((url: string) => {
     if (!url) return;
     const tg = getTelegramWebApp();
+    const isTelegramLink = (() => {
+      try {
+        const parsed = new URL(url);
+        const host = parsed.hostname.toLowerCase();
+        return parsed.protocol === "tg:" || host === "t.me" || host === "telegram.me";
+      } catch {
+        return url.startsWith("tg://");
+      }
+    })();
     try {
-      if (tg?.openTelegramLink) {
+      if (isTelegramLink && tg?.openTelegramLink) {
         tg.openTelegramLink(url);
+        return;
+      }
+      if (tg?.openLink) {
+        tg.openLink(url);
         return;
       }
     } catch {

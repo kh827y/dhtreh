@@ -1,293 +1,215 @@
 "use client";
+
 import React from "react";
-import { Card, CardHeader, CardBody, Button, Skeleton, Badge } from "@loyalty/ui";
-import { Store, Plus, Search, ChevronRight, XCircle, Building } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Store, Plus, MapPin, Monitor, Users, Edit, Trash2 } from "lucide-react";
 
-type OutletStatus = "WORKING" | "PAUSED";
-
-type Outlet = {
+type OutletItem = {
   id: string;
   name: string;
-  works?: boolean;
+  works: boolean;
+  devices: Array<{ id: string; code: string }>;
+  staffCount: number;
+  reviewsShareLinks?: { yandex?: string | null; twogis?: string | null; google?: string | null } | null;
 };
 
-const STATUS_TABS: { id: OutletStatus | "ALL"; label: string }[] = [
-  { id: "WORKING", label: "Работают" },
-  { id: "PAUSED", label: "Не работают" },
-];
+type OutletListResponse = {
+  items?: OutletItem[];
+  total?: number;
+};
+
+type TabKey = "active" | "inactive";
 
 export default function OutletsPage() {
-  const [activeTab, setActiveTab] = React.useState<OutletStatus | "ALL">("WORKING");
-  const [search, setSearch] = React.useState("");
-  const [items, setItems] = React.useState<Outlet[]>([]);
+  const router = useRouter();
+  const [activeTab, setActiveTab] = React.useState<TabKey>("active");
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState("");
-  const [total, setTotal] = React.useState(0);
+  const [activeOutlets, setActiveOutlets] = React.useState<OutletItem[]>([]);
+  const [inactiveOutlets, setInactiveOutlets] = React.useState<OutletItem[]>([]);
 
-  const statusLabel = (works?: boolean) => (works ? "Работает" : "Не работает");
-
-  const load = React.useCallback(async () => {
+  const fetchOutlets = React.useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const qs = new URLSearchParams();
-      if (activeTab === "WORKING") qs.set("status", "active");
-      if (activeTab === "PAUSED") qs.set("status", "inactive");
-      const trimmed = search.trim();
-      if (trimmed) qs.set("search", trimmed);
-      const path = qs.toString() ? `/api/portal/outlets?${qs.toString()}` : "/api/portal/outlets";
-      const res = await fetch(path);
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      const list: Outlet[] = Array.isArray(data?.items)
-        ? data.items
-        : Array.isArray(data)
-          ? data
-          : [];
-      setItems(list);
-      setTotal(Number(data?.total) || list.length);
+      const [activeRes, inactiveRes] = await Promise.all([
+        fetch("/api/portal/outlets?status=ACTIVE"),
+        fetch("/api/portal/outlets?status=INACTIVE"),
+      ]);
+      if (!activeRes.ok || !inactiveRes.ok) {
+        const message = await (activeRes.ok ? inactiveRes : activeRes).text();
+        throw new Error(message || "Не удалось загрузить торговые точки");
+      }
+      const activeData = (await activeRes.json()) as OutletListResponse;
+      const inactiveData = (await inactiveRes.json()) as OutletListResponse;
+      setActiveOutlets(Array.isArray(activeData.items) ? activeData.items : []);
+      setInactiveOutlets(Array.isArray(inactiveData.items) ? inactiveData.items : []);
     } catch (e: any) {
       setError(String(e?.message || e || "Не удалось загрузить торговые точки"));
+      setActiveOutlets([]);
+      setInactiveOutlets([]);
     } finally {
       setLoading(false);
     }
-  }, [activeTab, search]);
+  }, []);
 
   React.useEffect(() => {
-    const timeout = setTimeout(() => {
-      load();
-    }, 250);
-    return () => clearTimeout(timeout);
-  }, [load]);
+    fetchOutlets();
+  }, [fetchOutlets]);
 
-  const summary = React.useMemo(() => {
-    if (loading) return "Показано: —";
-    return `Показано: ${items.length} из ${total}`;
-  }, [items.length, loading, total]);
+  const displayedOutlets = activeTab === "active" ? activeOutlets : inactiveOutlets;
+
+  const handleDeleteOutlet = async (id: string) => {
+    if (!confirm("Вы уверены? Это действие нельзя отменить.")) return;
+    try {
+      const res = await fetch(`/api/portal/outlets/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || "Не удалось удалить точку");
+      }
+      await fetchOutlets();
+    } catch (e: any) {
+      setError(String(e?.message || e || "Не удалось удалить точку"));
+    }
+  };
 
   return (
-    <div className="animate-in" style={{ display: "grid", gap: 24 }}>
-      {/* Page Header */}
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
-          <div style={{
-            width: 48,
-            height: 48,
-            borderRadius: "var(--radius-lg)",
-            background: "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.1))",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "var(--brand-primary-light)",
-          }}>
-            <Store size={24} />
-          </div>
-          <div>
-            <h1 style={{ 
-              fontSize: 28, 
-              fontWeight: 800, 
-              margin: 0,
-              letterSpacing: "-0.02em",
-            }}>
-              Торговые точки
-            </h1>
-            <p style={{ fontSize: 14, color: "var(--fg-muted)", margin: "6px 0 0" }}>
-              Управляйте точками продаж и устройствами
-            </p>
-          </div>
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Торговые точки</h2>
+          <p className="text-gray-500 mt-1">Управление магазинами, кассами и ссылками на отзывы.</p>
         </div>
-        
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
-          <a href="/outlets/new" style={{ textDecoration: "none" }}>
-            <Button variant="primary" leftIcon={<Plus size={16} />}>
-              Добавить точку
-            </Button>
-          </a>
-          <div style={{ fontSize: 13, color: "var(--fg-muted)" }}>{summary}</div>
-        </div>
-      </header>
 
-      {/* Filters */}
-      <Card>
-        <CardBody style={{ padding: 16 }}>
-          <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
-            {/* Status tabs */}
-            <div style={{ display: "flex", gap: 6 }}>
-              {STATUS_TABS.map((tab) => {
-                const active = activeTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setActiveTab(tab.id)}
-                    style={{
-                      padding: "8px 16px",
-                      borderRadius: "var(--radius-full)",
-                      border: "1px solid",
-                      borderColor: active ? "rgba(99, 102, 241, 0.5)" : "var(--border-default)",
-                      background: active 
-                        ? "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.1))"
-                        : "transparent",
-                      color: active ? "var(--brand-primary-light)" : "var(--fg-secondary)",
-                      cursor: "pointer",
-                      fontWeight: active ? 600 : 500,
-                      fontSize: 13,
-                      transition: "all 0.2s ease",
-                    }}
-                  >
-                    {tab.label}
-                  </button>
-                );
-              })}
-            </div>
-            
-            {/* Search */}
-            <div className="search-wrapper" style={{ flex: 1, minWidth: 200 }}>
-              <Search size={16} style={{ color: "var(--fg-muted)" }} />
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Поиск по названию..."
-                style={{ 
-                  flex: 1,
-                  border: "none",
-                  background: "transparent",
-                  color: "var(--fg)",
-                  outline: "none",
-                  fontSize: 14,
-                }}
-              />
-            </div>
-          </div>
-        </CardBody>
-      </Card>
+        <button
+          onClick={() => router.push("/outlets/new")}
+          className="flex items-center space-x-2 bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors shadow-sm"
+        >
+          <Plus size={18} />
+          <span>Добавить точку</span>
+        </button>
+      </div>
 
-      {/* Outlets Grid */}
-      <div style={{ display: "grid", gap: 12 }}>
-        {loading ? (
-          Array.from({ length: 3 }).map((_, i) => (
-            <Card key={i}>
-              <CardBody style={{ padding: 20 }}>
-                <div style={{ display: "flex", gap: 16 }}>
-                  <Skeleton height={48} style={{ width: 48, borderRadius: "var(--radius-md)" }} />
-                  <div style={{ flex: 1 }}>
-                    <Skeleton height={20} style={{ width: "40%", marginBottom: 8 }} />
-                    <Skeleton height={14} style={{ width: "60%" }} />
-                  </div>
-                </div>
-              </CardBody>
-            </Card>
-          ))
-        ) : items.length ? (
-          items.map((outlet, index) => (
-            <a 
-              key={outlet.id} 
-              href={`/outlets/${encodeURIComponent(outlet.id)}`} 
-              style={{ textDecoration: "none", color: "inherit" }}
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex space-x-8">
+          <button
+            onClick={() => setActiveTab("active")}
+            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === "active"
+                ? "border-purple-500 text-purple-600"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+            }`}
+          >
+            Работают
+            <span
+              className={`ml-2 py-0.5 px-2 rounded-full text-xs ${
+                activeTab === "active" ? "bg-purple-100 text-purple-600" : "bg-gray-100 text-gray-500"
+              }`}
             >
-              <Card 
-                hover
-                className="animate-in"
-                style={{ 
-                  animationDelay: `${index * 0.05}s`,
-                  borderColor: outlet.works ? "rgba(16, 185, 129, 0.2)" : undefined,
-                }}
-              >
-                <CardBody style={{ padding: 0 }}>
-                  <div style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 16,
-                    padding: 20,
-                  }}>
-                    {/* Icon */}
-                    <div className="list-item-icon" style={{
-                      background: outlet.works 
-                        ? "linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(52, 211, 153, 0.1))"
-                        : undefined,
-                      color: outlet.works ? "var(--success-light)" : undefined,
-                    }}>
-                      <Building size={24} />
-                    </div>
+              {activeOutlets.length}
+            </span>
+          </button>
+          <button
+            onClick={() => setActiveTab("inactive")}
+            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === "inactive"
+                ? "border-purple-500 text-purple-600"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+            }`}
+          >
+            Не работают
+            <span
+              className={`ml-2 py-0.5 px-2 rounded-full text-xs ${
+                activeTab === "inactive" ? "bg-purple-100 text-purple-600" : "bg-gray-100 text-gray-500"
+              }`}
+            >
+              {inactiveOutlets.length}
+            </span>
+          </button>
+        </nav>
+      </div>
 
-                    {/* Content */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-                        <h3 style={{ 
-                          fontSize: 17, 
-                          fontWeight: 600, 
-                          margin: 0,
-                          color: "var(--fg)",
-                        }}>
-                          {outlet.name}
-                        </h3>
-                      </div>
-                      
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--fg-muted)" }}>
-                        <Badge variant={outlet.works ? "success" : "default"} dot>
-                          {statusLabel(outlet.works)}
-                        </Badge>
-                      </div>
-                    </div>
+      {error && !loading && (
+        <div className="bg-red-50 border border-red-100 text-red-600 text-sm px-4 py-3 rounded-lg">{error}</div>
+      )}
 
-                    {/* Arrow */}
-                    <div className="nav-arrow">
-                      <ChevronRight size={20} />
-                    </div>
-                  </div>
-                </CardBody>
-              </Card>
-            </a>
-          ))
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+        {loading ? (
+          <div className="col-span-full py-12 text-center text-gray-400">Загрузка...</div>
+        ) : displayedOutlets.length === 0 ? (
+          <div className="col-span-full py-12 text-center text-gray-500">Нет торговых точек в этом разделе.</div>
         ) : (
-          <Card>
-            <CardBody style={{ padding: 48 }}>
-              <div style={{ 
-                display: "flex", 
-                flexDirection: "column", 
-                alignItems: "center", 
-                gap: 16,
-                textAlign: "center",
-              }}>
-                <div style={{
-                  width: 64,
-                  height: 64,
-                  borderRadius: "var(--radius-lg)",
-                  background: "rgba(255, 255, 255, 0.05)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: "var(--fg-dim)",
-                }}>
-                  <Store size={28} />
-                </div>
-                <div>
-                  <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>
-                    Точки не найдены
+          displayedOutlets.map((outlet) => (
+            <div
+              key={outlet.id}
+              className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all p-6 group"
+            >
+              <div className="flex justify-between items-start mb-4">
+                <div className="flex items-start space-x-3">
+                  <div className="p-2 bg-purple-50 rounded-lg text-purple-600">
+                    <Store size={24} />
                   </div>
-                  <div style={{ fontSize: 14, color: "var(--fg-muted)" }}>
-                    Попробуйте изменить параметры поиска
+                  <div>
+                    <h3 className="font-bold text-gray-900 text-lg leading-tight mb-2">{outlet.name}</h3>
+                    <span
+                      className={`inline-block text-xs px-2.5 py-1 rounded-full font-medium ${
+                        outlet.works ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"
+                      }`}
+                    >
+                      {outlet.works ? "Активна" : "Не активна"}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={() => router.push(`/outlets/${encodeURIComponent(outlet.id)}`)}
+                    className="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                    aria-label="Редактировать"
+                  >
+                    <Edit size={18} />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteOutlet(outlet.id)}
+                    className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    aria-label="Удалить"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center text-gray-600">
+                    <Monitor size={16} className="mr-2" />
+                    <span>Устройства</span>
+                  </div>
+                  <span className="font-medium text-gray-900">{outlet.devices?.length ?? 0}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center text-gray-600">
+                    <Users size={16} className="mr-2" />
+                    <span>Сотрудники</span>
+                  </div>
+                  <span className="font-medium text-gray-900">{outlet.staffCount ?? 0}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center text-gray-600">
+                    <MapPin size={16} className="mr-2" />
+                    <span>Ссылки на отзывы</span>
+                  </div>
+                  <div className="flex space-x-1">
+                    {outlet.reviewsShareLinks?.yandex && <div className="w-2 h-2 rounded-full bg-red-500" title="Yandex" />}
+                    {outlet.reviewsShareLinks?.twogis && <div className="w-2 h-2 rounded-full bg-green-500" title="2GIS" />}
+                    {outlet.reviewsShareLinks?.google && <div className="w-2 h-2 rounded-full bg-blue-500" title="Google" />}
+                    {!outlet.reviewsShareLinks?.yandex &&
+                      !outlet.reviewsShareLinks?.twogis &&
+                      !outlet.reviewsShareLinks?.google && <span className="text-xs text-gray-400">-</span>}
                   </div>
                 </div>
               </div>
-            </CardBody>
-          </Card>
-        )}
-        
-        {error && !loading && (
-          <div style={{ 
-            padding: 16, 
-            borderRadius: "var(--radius-md)", 
-            border: "1px solid rgba(239, 68, 68, 0.3)",
-            background: "rgba(239, 68, 68, 0.1)",
-            color: "var(--danger-light)",
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-          }}>
-            <XCircle size={18} />
-            {error}
-          </div>
+            </div>
+          ))
         )}
       </div>
     </div>

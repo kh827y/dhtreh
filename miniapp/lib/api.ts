@@ -274,6 +274,7 @@ export type PublicSettingsResp = {
   miniappThemePrimary?: string | null;
   miniappThemeBg?: string | null;
   miniappLogoUrl?: string | null;
+  reviewsEnabled?: boolean | null;
   reviewsShare?: ReviewsShareSettings;
 };
 

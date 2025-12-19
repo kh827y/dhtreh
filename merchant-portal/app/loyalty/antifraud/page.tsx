@@ -251,7 +251,7 @@ export default function AntifraudPage() {
                   <input
                     type="number"
                     min="1"
-                    step="100"
+                    step="any"
                     value={maxPoints}
                     onChange={(e) => {
                       if (loading) return;

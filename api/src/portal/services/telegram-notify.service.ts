@@ -10,6 +10,7 @@ import {
   type StaffNotifyActor,
   type StaffNotifySettings,
 } from '../../telegram/staff-notifications.service';
+import { STAFF_DIGEST_LOCAL_HOUR } from '../../telegram/staff-digest.constants';
 import { TelegramStaffActorType } from '@prisma/client';
 
 @Injectable()
@@ -32,7 +33,12 @@ export class PortalTelegramNotifyService {
     const botLink = botInfo?.username
       ? `https://t.me/${botInfo.username}`
       : null;
-    return { configured, botUsername, botLink } as const;
+    return {
+      configured,
+      botUsername,
+      botLink,
+      digestHourLocal: STAFF_DIGEST_LOCAL_HOUR,
+    } as const;
   }
 
   private genToken(): string {
@@ -56,6 +62,7 @@ export class PortalTelegramNotifyService {
     // Try reuse last non-expired invite created within last 7 days
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const prismaAny = this.prisma as any;
+    const now = new Date();
     let invite = null as any;
     const staffId = options?.staffId ? String(options.staffId) : null;
     const actorType = staffId
@@ -85,6 +92,17 @@ export class PortalTelegramNotifyService {
           actorType,
         },
       });
+      await prismaAny.telegramStaffInvite
+        .updateMany({
+          where: {
+            merchantId,
+            staffId: staffId ?? null,
+            id: { not: invite.id },
+            OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+          },
+          data: { expiresAt: now },
+        })
+        .catch(() => null);
     } else {
       const needsUpdate =
         (invite.staffId ?? null) !== (staffId ?? null) ||
@@ -115,9 +133,30 @@ export class PortalTelegramNotifyService {
   async listSubscribers(merchantId: string) {
     if (!merchantId) throw new BadRequestException('merchantId required');
     const prismaAny = this.prisma as any;
+    const ownerStaff = await this.prisma.staff.findFirst({
+      where: { merchantId, isOwner: true },
+      select: {
+        firstName: true,
+        lastName: true,
+        login: true,
+        phone: true,
+        email: true,
+      },
+    });
     const rows = await prismaAny.telegramStaffSubscriber.findMany({
       where: { merchantId, isActive: true },
       orderBy: { addedAt: 'desc' },
+      include: {
+        staff: {
+          select: {
+            firstName: true,
+            lastName: true,
+            login: true,
+            phone: true,
+            email: true,
+          },
+        },
+      },
     });
     return rows.map((r: any) => ({
       id: r.id,
@@ -127,6 +166,28 @@ export class PortalTelegramNotifyService {
       title: r.title ?? null,
       staffId: r.staffId ?? null,
       actorType: r.actorType ?? null,
+      staffName: (() => {
+        const buildStaffName = (staff: any) => {
+          const parts = [staff?.firstName, staff?.lastName]
+            .filter(Boolean)
+            .map((value: string) => String(value || '').trim())
+            .filter(Boolean);
+          const fullName = parts.join(' ');
+          return (
+            fullName ||
+            staff?.login ||
+            staff?.phone ||
+            staff?.email ||
+            null
+          );
+        };
+        const fromStaff = buildStaffName(r.staff);
+        if (fromStaff) return fromStaff;
+        if (r.actorType === TelegramStaffActorType.MERCHANT) {
+          return buildStaffName(ownerStaff);
+        }
+        return null;
+      })(),
       addedAt: r.addedAt?.toISOString?.() || null,
       lastSeenAt: r.lastSeenAt?.toISOString?.() || null,
     }));

@@ -431,7 +431,10 @@ export class OutletScheduleDto {
 
 export class CreatePortalOutletDto {
   @ApiProperty() @IsBoolean() works!: boolean;
-  @ApiProperty() @IsBoolean() hidden!: boolean;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  hidden?: boolean;
   @ApiProperty() @IsString() name!: string;
   @ApiPropertyOptional()
   @IsOptional()
@@ -441,7 +444,10 @@ export class CreatePortalOutletDto {
   @IsOptional()
   @IsString()
   phone?: string;
-  @ApiProperty() @IsString() address!: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  address?: string;
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
@@ -500,6 +506,7 @@ export class PortalOutletDto {
   @ApiProperty() works!: boolean;
   @ApiProperty() hidden!: boolean;
   @ApiProperty() status!: string;
+  @ApiPropertyOptional() staffCount?: number;
   @ApiPropertyOptional({ enum: ['VIRTUAL', 'PC_POS', 'SMART'], nullable: true })
   posType?: DeviceType | string | null;
   @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })

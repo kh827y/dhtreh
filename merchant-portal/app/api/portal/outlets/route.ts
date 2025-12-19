@@ -7,7 +7,16 @@ export async function GET(req: NextRequest) {
   const qs = new URLSearchParams();
   const status = url.searchParams.get('status');
   const search = url.searchParams.get('search');
-  if (status) qs.set('status', status);
+  if (status) {
+    const normalized = status.trim().toLowerCase();
+    if (['active', 'inactive', 'all'].includes(normalized)) {
+      qs.set('status', normalized);
+    } else if (['ACTIVE', 'INACTIVE', 'ALL'].includes(status.trim().toUpperCase())) {
+      qs.set('status', status.trim().toLowerCase());
+    } else {
+      qs.set('status', status);
+    }
+  }
   if (search) qs.set('search', search);
   const path = `/portal/outlets${qs.toString() ? `?${qs.toString()}` : ''}`;
   const proxied = await portalFetch(req, path, { method: 'GET' });
@@ -24,13 +33,29 @@ export async function GET(req: NextRequest) {
   }
   const sourceItems: any[] = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
   const items = sourceItems.map((o: any) => {
+    const outletId = String(o.id || '');
+    const outletName = String(o.name || '');
+    const devices = Array.isArray(o?.devices)
+      ? o.devices
+          .filter((d: any) => d && typeof d === 'object')
+          .map((d: any) => ({
+            id: String(d.id || ''),
+            code: String(d.code || ''),
+            outletId,
+            outletName,
+          }))
+          .filter((d: any) => d.id && d.code)
+      : [];
     return {
-      id: String(o.id),
-      name: String(o.name || ''),
+      id: outletId,
+      name: outletName,
       works: typeof o.works === 'boolean' ? !!o.works : String(o.status || '').toUpperCase() === 'ACTIVE',
+      staffCount: typeof o.staffCount === 'number' ? o.staffCount : 0,
+      devices,
+      reviewsShareLinks: o?.reviewsShareLinks ?? null,
     };
   });
-  const total = Number(data?.meta?.total ?? items.length) || items.length;
+  const total = Number(data?.total ?? data?.meta?.total ?? items.length) || items.length;
   return new Response(JSON.stringify({ items, total }), { status: proxied.status, headers: { 'Content-Type': 'application/json' } });
 }
 

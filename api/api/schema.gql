@@ -89,10 +89,20 @@ type Mutation {
   portalStaffUpdate(id: ID!, input: UpsertStaffInput!): StaffDetailDto!
 }
 
+type OutletDeviceDto {
+  code: String!
+  id: ID!
+}
+
+input OutletDeviceInput {
+  code: String!
+}
+
 type OutletDto {
   address: String
   adminEmails: [String!]!
   description: String
+  devices: [OutletDeviceDto!]
   externalId: String
   hidden: Boolean!
   id: ID!
@@ -107,6 +117,7 @@ type OutletDto {
   schedule: [OutletScheduleItemDto!]
   scheduleEnabled: Boolean!
   scheduleMode: String!
+  staffCount: Int
   status: String!
   timezone: String
 }
@@ -271,6 +282,7 @@ input UpsertOutletInput {
   address: String
   adminEmails: [String!]
   description: String
+  devices: [OutletDeviceInput!]
   externalId: String
   hidden: Boolean
   integrationLocationCode: String
