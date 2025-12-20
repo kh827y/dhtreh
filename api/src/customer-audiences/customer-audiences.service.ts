@@ -458,6 +458,44 @@ export class CustomerAudiencesService {
       });
     }
 
+    const productIds = this.parseStringArray(
+      source.productIds ?? source.products ?? source.productId,
+    );
+    if (productIds.length) {
+      andConditions.push({
+        Receipt: {
+          some: {
+            merchantId,
+            items: {
+              some: {
+                productId: { in: productIds },
+              },
+            },
+          },
+        },
+      });
+    }
+
+    const categoryIds = this.parseStringArray(
+      source.categoryIds ?? source.categories ?? source.categoryId,
+    );
+    if (categoryIds.length) {
+      andConditions.push({
+        Receipt: {
+          some: {
+            merchantId,
+            items: {
+              some: {
+                product: {
+                  categoryId: { in: categoryIds },
+                },
+              },
+            },
+          },
+        },
+      });
+    }
+
     const levelIds = this.parseStringArray(
       source.levelIds ??
         source.levels ??

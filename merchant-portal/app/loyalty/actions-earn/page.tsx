@@ -19,6 +19,7 @@ import {
   ExternalLink,
   AlertCircle,
 } from "lucide-react";
+import { isAllCustomersAudience } from "../../../lib/audience-utils";
 
 type PromotionStatus = "active" | "disabled" | "ended";
 
@@ -147,7 +148,7 @@ export default function ActionsEarnPage() {
       ? json.map((a: any) => ({
           id: String(a.id),
           name: String(a.name || "Без названия"),
-          isAll: Boolean(a.systemKey === "all-customers" || (a.isSystem && /все\\s+клиенты/i.test(a.name || ""))),
+          isAll: isAllCustomersAudience(a),
         }))
       : [];
     mapped.sort((a, b) => Number(b.isAll) - Number(a.isAll));

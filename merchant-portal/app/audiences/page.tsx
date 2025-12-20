@@ -1,1295 +1,1694 @@
 "use client";
 
-import React from "react";
-import { createPortal } from "react-dom";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardHeader, CardBody, Button, Skeleton } from "@loyalty/ui";
-import Toggle from "../../components/Toggle";
-import TagSelect from "../../components/TagSelect";
-import RangeSlider from "../../components/RangeSlider";
-import { Search, PlusCircle, X, Trash2, Users2, Edit2, Eye, Settings, User, Calendar } from "lucide-react";
+import {
+  Users,
+  Plus,
+  Search,
+  Filter,
+  AlertCircle,
+  Edit,
+  Trash2,
+  Eye,
+  ArrowLeft,
+  Save,
+  Calendar,
+  ShoppingBag,
+  DollarSign,
+  Target,
+  User,
+  Check,
+  Loader2,
+  X,
+  Phone,
+  Clock,
+  ExternalLink,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
+import { createPortal } from "react-dom";
+import { isAllCustomersAudience } from "../../lib/audience-utils";
 
-type TableColumn = {
-  key: keyof AudienceRow | 'actions';
-  label: string;
-  render?: (audience: AudienceRow) => React.ReactNode;
-};
-
-const tableColumns: TableColumn[] = [
-  { key: 'name', label: 'Название' },
-  { key: 'participants', label: 'Участники' },
-  { key: 'age', label: 'Возраст' },
-  { key: 'gender', label: 'Пол' },
-  { key: 'averageCheck', label: 'Средний чек' },
-  { key: 'lastPurchaseDays', label: 'Дней с последней покупки' },
-  { key: 'purchaseCount', label: 'Количество покупок' },
-  { key: 'purchaseSum', label: 'Сумма покупок' },
-  { key: 'birthday', label: 'День рождения' },
-  { key: 'registrationDays', label: 'Дней с момента регистрации' },
-  { key: 'device', label: 'Устройство' },
-  { key: 'actions', label: 'Состав аудитории' },
-];
-
-type Option = { value: string; label: string };
-
-type AudienceRow = {
+type Audience = {
   id: string;
   name: string;
-  participants: number;
-  age: string;
-  gender: string;
-  averageCheck: string;
-  lastPurchaseDays: string;
-  purchaseCount: string;
-  purchaseSum: string;
-  birthday: string;
-  registrationDays: string;
-  device: string;
-  settings: AudienceSettings;
+  count: number;
+  createdAt: string;
+  description: string;
   filters: Record<string, unknown>;
+  isSystem: boolean;
+  isAllCustomers: boolean;
+  systemKey?: string | null;
 };
+
+type AudienceFormData = {
+  name: string;
+  selectedOutlets: string[];
+  targetType: "products" | "categories";
+  selectedProducts: string[];
+  selectedCategories: string[];
+  gender: "all" | "M" | "F" | "U";
+  ageFrom: string;
+  ageTo: string;
+  birthdayBefore: string;
+  birthdayAfter: string;
+  regDaysFrom: string;
+  regDaysTo: string;
+  lastPurchaseFrom: string;
+  lastPurchaseTo: string;
+  purchaseCountFrom: string;
+  purchaseCountTo: string;
+  avgCheckFrom: string;
+  avgCheckTo: string;
+  totalSpendFrom: string;
+  totalSpendTo: string;
+  selectedLevels: string[];
+  selectedR: string[];
+  selectedF: string[];
+  selectedM: string[];
+};
+
+type OutletOption = { id: string; name: string };
+
+type ProductItem = {
+  id: string;
+  name: string;
+  categoryId?: string | null;
+  category?: string | null;
+};
+
+type CategoryItem = {
+  id: string;
+  name: string;
+  count: number;
+};
+
+type LevelOption = { id: string; name: string; thresholdAmount: number | null; isInitial: boolean };
 
 type AudienceMember = {
   id: string;
   phone: string;
   name: string;
-  birthday: string;
-  age: number;
-  registrationDate: string;
+  levelId: string | null;
+  levelName: string | null;
+  daysSinceLastVisit: number | null;
+  totalSpend: number;
 };
 
-type AudienceSettings = {
-  visitedEnabled: boolean;
-  visitedOutlets: string[];
-  productEnabled: boolean;
-  products: string[];
-  genderEnabled: boolean;
-  gender: 'male' | 'female' | '';
-  ageEnabled: boolean;
-  age: [number, number];
-  birthdayEnabled: boolean;
-  birthday: [number, number];
-  registrationEnabled: boolean;
-  registration: [number, number];
-  lastPurchaseEnabled: boolean;
-  lastPurchase: [number, number];
-  purchaseCountEnabled: boolean;
-  purchaseCount: [number, number];
-  averageCheckEnabled: boolean;
-  averageCheck: [number, number];
-  purchaseSumEnabled: boolean;
-  purchaseSum: [number, number];
-  levelEnabled: boolean;
-  level: string;
-  rfmRecencyEnabled: boolean;
-  rfmRecency: string;
-  rfmFrequencyEnabled: boolean;
-  rfmFrequency: string;
-  rfmMonetaryEnabled: boolean;
-  rfmMonetary: string;
-  deviceEnabled: boolean;
-  device: string;
+const initialFormData: AudienceFormData = {
+  name: "",
+  selectedOutlets: [],
+  targetType: "products",
+  selectedProducts: [],
+  selectedCategories: [],
+  gender: "all",
+  ageFrom: "",
+  ageTo: "",
+  birthdayBefore: "",
+  birthdayAfter: "",
+  regDaysFrom: "",
+  regDaysTo: "",
+  lastPurchaseFrom: "",
+  lastPurchaseTo: "",
+  purchaseCountFrom: "",
+  purchaseCountTo: "",
+  avgCheckFrom: "",
+  avgCheckTo: "",
+  totalSpendFrom: "",
+  totalSpendTo: "",
+  selectedLevels: [],
+  selectedR: [],
+  selectedF: [],
+  selectedM: [],
 };
 
-const defaultSettings: AudienceSettings = {
-  visitedEnabled: false,
-  visitedOutlets: [],
-  productEnabled: false,
-  products: [],
-  genderEnabled: false,
-  gender: '',
-  ageEnabled: false,
-  age: [0, 100],
-  birthdayEnabled: false,
-  birthday: [-30, 30],
-  registrationEnabled: false,
-  registration: [0, 365],
-  lastPurchaseEnabled: false,
-  lastPurchase: [0, 365],
-  purchaseCountEnabled: false,
-  purchaseCount: [0, 1000],
-  averageCheckEnabled: false,
-  averageCheck: [0, 10000],
-  purchaseSumEnabled: false,
-  purchaseSum: [0, 200000],
-  levelEnabled: false,
-  level: '',
-  rfmRecencyEnabled: false,
-  rfmRecency: '',
-  rfmFrequencyEnabled: false,
-  rfmFrequency: '',
-  rfmMonetaryEnabled: false,
-  rfmMonetary: '',
-  deviceEnabled: false,
-  device: '',
-};
+function readApiError(payload: unknown): string | null {
+  if (!payload) return null;
+  if (typeof payload === "string") {
+    const trimmed = payload.trim();
+    if (!trimmed) return null;
+    try {
+      const parsed = JSON.parse(trimmed);
+      return readApiError(parsed);
+    } catch {
+      return trimmed;
+    }
+  }
+  if (typeof payload === "object") {
+    const anyPayload = payload as any;
+    if (typeof anyPayload.message === "string") return anyPayload.message;
+    if (Array.isArray(anyPayload.message) && typeof anyPayload.message[0] === "string") return anyPayload.message[0];
+    if (typeof anyPayload.error === "string") return anyPayload.error;
+  }
+  return null;
+}
 
-const productOptions = [
-  { value: 'prod-1', label: 'Лимонад' },
-  { value: 'prod-2', label: 'Бургер' },
-  { value: 'prod-3', label: 'Кофе' },
-  { value: 'prod-4', label: 'Салат' },
-];
-
-const rfmOptions = Array.from({ length: 5 }, (_, index) => {
-  const value = String(index + 1);
-  return { value, label: value };
-});
-
-// API helper
-async function api<T = any>(url: string, init?: RequestInit): Promise<T> {
+async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
+    cache: "no-store",
     ...init,
-    headers: { 'content-type': 'application/json', ...(init?.headers || {}) },
-    cache: 'no-store',
+    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
   });
   const text = await res.text();
-  if (!res.ok) throw new Error(text || res.statusText);
-  try { return text ? JSON.parse(text) as T : (undefined as unknown as T); } catch { return (undefined as unknown as T); }
+  if (!res.ok) {
+    throw new Error(readApiError(text) || res.statusText || "Ошибка запроса");
+  }
+  return text ? (JSON.parse(text) as T) : (undefined as unknown as T);
 }
 
-function calculateAge(birthday: string): number {
-  try {
-    const d = new Date(birthday);
-    if (Number.isNaN(d.getTime())) return 0;
-    const now = new Date();
-    let age = now.getFullYear() - d.getFullYear();
-    const m = now.getMonth() - d.getMonth();
-    if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age -= 1;
-    return age;
-  } catch { return 0; }
-}
-
-function formatDateRu(value: string): string {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleDateString('ru-RU');
-}
-
-function parseNumber(value: unknown): number | null {
-  const num = typeof value === 'string' && value.trim() === '' ? NaN : Number(value);
+function safeNumber(value: unknown): number | null {
+  const num = Number(value);
   return Number.isFinite(num) ? num : null;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
     return value as Record<string, unknown>;
   }
   return null;
 }
 
-function normalizeRfmValue(value: unknown): string {
-  const items = Array.isArray(value) ? value : [value];
-  for (const item of items) {
-    if (item === null || item === undefined) continue;
-    const str = String(item).trim();
-    if (!str) continue;
-    const num = Number(str);
-    if (Number.isFinite(num) && num >= 1 && num <= 5) {
-      return String(Math.round(num));
-    }
-  }
-  return '';
+function formatDateRu(value: unknown): string {
+  if (!value) return "—";
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString("ru-RU");
+}
+
+function formatLastPurchase(daysSinceLastVisit: number | null): string {
+  if (daysSinceLastVisit === null || daysSinceLastVisit === undefined) return "—";
+  const days = Math.max(0, Math.floor(daysSinceLastVisit));
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  return date.toLocaleDateString("ru-RU");
+}
+
+function formatCurrency(value: number): string {
+  return value.toLocaleString("ru-RU");
 }
 
 function parseStringArray(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value
-      .map((item) => (typeof item === 'string' ? item : String(item ?? '')))
+      .map((item) => (typeof item === "string" ? item : String(item ?? "")))
       .map((item) => item.trim())
       .filter(Boolean);
   }
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     return value
-      .split(',')
+      .split(",")
       .map((item) => item.trim())
       .filter(Boolean);
   }
   return [];
 }
 
-function parseRangeInput(value: unknown): [number | null, number | null] {
+function parseNumberInput(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const num = Number(trimmed);
+  return Number.isFinite(num) ? num : null;
+}
+
+function parseRangeInput(value: unknown): { min?: number; max?: number } | null {
   if (Array.isArray(value) && value.length >= 2) {
-    return [parseNumber(value[0]), parseNumber(value[1])];
+    const min = safeNumber(value[0]);
+    const max = safeNumber(value[1]);
+    if (min === null && max === null) return null;
+    return { ...(min !== null ? { min } : {}), ...(max !== null ? { max } : {}) };
   }
-  if (value && typeof value === 'object') {
+  if (value && typeof value === "object") {
     const obj = value as Record<string, unknown>;
     const min =
-      parseNumber(obj.min) ??
-      parseNumber(obj.from) ??
-      parseNumber(obj.start) ??
-      parseNumber(obj.gte);
+      safeNumber(obj.min) ??
+      safeNumber(obj.from) ??
+      safeNumber(obj.start) ??
+      safeNumber(obj.gte);
     const max =
-      parseNumber(obj.max) ??
-      parseNumber(obj.to) ??
-      parseNumber(obj.end) ??
-      parseNumber(obj.lte);
-    return [min, max];
+      safeNumber(obj.max) ??
+      safeNumber(obj.to) ??
+      safeNumber(obj.end) ??
+      safeNumber(obj.lte);
+    if (min === null && max === null) return null;
+    return { ...(min !== null ? { min } : {}), ...(max !== null ? { max } : {}) };
   }
-  const single = parseNumber(value);
-  return single !== null ? [single, single] : [null, null];
-}
-
-function normalizeRange(
-  range: [number | null, number | null],
-  clamp?: { min: number; max: number },
-): [number | null, number | null] {
-  let [min, max] = range;
-  if (clamp) {
-    if (min !== null) min = Math.max(clamp.min, Math.min(clamp.max, min));
-    if (max !== null) max = Math.max(clamp.min, Math.min(clamp.max, max));
-  }
-  if (min !== null && max !== null && min > max) {
-    const tmp = min;
-    min = max;
-    max = tmp;
-  }
-  return [min, max];
-}
-
-function applyRangeFallback(
-  range: [number | null, number | null],
-  fallback: [number, number],
-): [number, number] {
-  return [range[0] ?? fallback[0], range[1] ?? fallback[1]];
-}
-
-function normalizeDeviceLabel(value: string): string {
-  const lower = value.toLowerCase();
-  if (lower.startsWith('android')) return 'Android';
-  if (lower.startsWith('ios')) return 'iOS';
-  return value;
-}
-
-function settingsToFilters(s: AudienceSettings) {
-  const filters: Record<string, unknown> = {};
-  if (s.visitedEnabled && s.visitedOutlets.length) {
-    filters.outlets = s.visitedOutlets.slice();
-  }
-  if (s.genderEnabled && s.gender) {
-    filters.gender = [s.gender];
-  }
-  if (s.ageEnabled) {
-    const [min, max] = s.age;
-    filters.age = { min, max };
-  }
-  if (s.birthdayEnabled) {
-    const [min, max] = s.birthday;
-    filters.birthdayOffset = { min, max };
-  }
-  if (s.registrationEnabled) {
-    const [min, max] = s.registration;
-    filters.registrationDays = { min, max };
-  }
-  if (s.lastPurchaseEnabled) {
-    const [min, max] = s.lastPurchase;
-    filters.lastPurchaseDays = { min, max };
-  }
-  if (s.purchaseCountEnabled) {
-    const [min, max] = s.purchaseCount;
-    filters.purchaseCount = { min, max };
-  }
-  if (s.averageCheckEnabled) {
-    const [min, max] = s.averageCheck;
-    filters.averageCheck = { min, max };
-  }
-  if (s.purchaseSumEnabled) {
-    const [min, max] = s.purchaseSum;
-    filters.totalSpent = { min, max };
-  }
-  if (s.levelEnabled && s.level) {
-    filters.levelIds = [s.level];
-  }
-  if (s.rfmRecencyEnabled && s.rfmRecency) {
-    const score = Number(s.rfmRecency);
-    if (Number.isFinite(score)) {
-      filters.rfmRecency = Math.round(score);
-    }
-  }
-  if (s.rfmFrequencyEnabled && s.rfmFrequency) {
-    const score = Number(s.rfmFrequency);
-    if (Number.isFinite(score)) {
-      filters.rfmFrequency = Math.round(score);
-    }
-  }
-  if (s.rfmMonetaryEnabled && s.rfmMonetary) {
-    const score = Number(s.rfmMonetary);
-    if (Number.isFinite(score)) {
-      filters.rfmMonetary = Math.round(score);
-    }
-  }
-  if (s.deviceEnabled && s.device) {
-    filters.devicePlatforms = [s.device.toLowerCase()];
-  }
-  return filters;
-}
-
-function formatRange(
-  min: number | null,
-  max: number | null,
-  suffix = '',
-): string {
-  const formatValue = (value: number) => `${value.toLocaleString('ru-RU')}${suffix}`;
-  if (min !== null && max !== null) {
-    if (min === max) return formatValue(min);
-    return `${formatValue(min)}–${formatValue(max)}`;
-  }
-  if (min !== null) return `от ${formatValue(min)}`;
-  if (max !== null) return `до ${formatValue(max)}`;
-  return '—';
-}
-
-function filtersToDisplay(filters: any) {
-  const display = {
-    age: '—',
-    gender: 'Смешанный',
-    averageCheck: '—',
-    lastPurchaseDays: '—',
-    purchaseCount: '—',
-    purchaseSum: '—',
-    birthday: '—',
-    registrationDays: '—',
-    device: '—',
-  } as Pick<AudienceRow, 'age' | 'gender' | 'averageCheck' | 'lastPurchaseDays' | 'purchaseCount' | 'purchaseSum' | 'birthday' | 'registrationDays' | 'device'>;
-
-  if (!filters || typeof filters !== 'object') {
-    return display;
-  }
-
-  const source = filters as Record<string, unknown>;
-  const genderValues = parseStringArray(source.gender);
-  if (genderValues.length === 1 && genderValues[0]) {
-    const value = genderValues[0].toLowerCase();
-    if (value === 'male') display.gender = 'Мужской';
-    else if (value === 'female') display.gender = 'Женский';
-    else display.gender = 'Смешанный';
-  }
-
-  const ageRange = normalizeRange(parseRangeInput(source.age ?? source.ageRange));
-  if (ageRange[0] !== null || ageRange[1] !== null) {
-    display.age = formatRange(ageRange[0], ageRange[1]);
-  }
-
-  const purchaseRange = normalizeRange(
-    parseRangeInput(
-      source.purchaseCount ??
-        source.visits ??
-        (source.minVisits !== undefined || source.maxVisits !== undefined
-          ? { min: source.minVisits, max: source.maxVisits }
-          : undefined),
-    ),
-  );
-  if (purchaseRange[0] !== null || purchaseRange[1] !== null) {
-    display.purchaseCount = formatRange(purchaseRange[0], purchaseRange[1]);
-  }
-
-  const lastPurchaseRange = normalizeRange(
-    parseRangeInput(
-      source.lastPurchaseDays ??
-        source.daysSinceLastPurchase ??
-        (source.lastPurchase != null ? source.lastPurchase : undefined),
-    ),
-  );
-  if (lastPurchaseRange[0] !== null || lastPurchaseRange[1] !== null) {
-    display.lastPurchaseDays = formatRange(
-      lastPurchaseRange[0],
-      lastPurchaseRange[1],
-      ' дн.',
-    );
-  }
-
-  const avgCheckRange = normalizeRange(
-    parseRangeInput(source.averageCheck ?? source.avgCheck),
-  );
-  if (avgCheckRange[0] !== null || avgCheckRange[1] !== null) {
-    display.averageCheck = formatRange(
-      avgCheckRange[0],
-      avgCheckRange[1],
-      ' ₽',
-    );
-  }
-
-  const totalRange = normalizeRange(
-    parseRangeInput(
-      source.totalSpent ??
-        source.purchaseSum ??
-        (source.total !== undefined ? source.total : undefined),
-    ),
-  );
-  if (totalRange[0] !== null || totalRange[1] !== null) {
-    display.purchaseSum = formatRange(
-      totalRange[0],
-      totalRange[1],
-      ' ₽',
-    );
-  }
-
-  const birthdayRange = normalizeRange(
-    parseRangeInput(
-      source.birthdayOffset ?? source.birthdayWindow ?? source.birthday,
-    ),
-    { min: -366, max: 366 },
-  );
-  if (birthdayRange[0] !== null || birthdayRange[1] !== null) {
-    display.birthday = formatRange(
-      birthdayRange[0],
-      birthdayRange[1],
-      ' дн.',
-    );
-  }
-
-  const registrationRange = normalizeRange(
-    parseRangeInput(
-      source.registrationDays ??
-        source.registration ??
-        (source.registrationFrom !== undefined ||
-        source.registrationTo !== undefined
-          ? { min: source.registrationFrom, max: source.registrationTo }
-          : undefined),
-    ),
-  );
-  if (registrationRange[0] !== null || registrationRange[1] !== null) {
-    display.registrationDays = formatRange(
-      registrationRange[0],
-      registrationRange[1],
-      ' дн.',
-    );
-  }
-
-  const deviceValues = parseStringArray(
-    source.devicePlatforms ?? source.device,
-  );
-  if (deviceValues.length === 1 && deviceValues[0]) {
-    display.device = normalizeDeviceLabel(deviceValues[0]);
-  }
-
-  return display;
-}
-
-type MetricEntry = {
-  value?: number | null;
-  min?: number | null;
-  max?: number | null;
-};
-
-function parseMetricEntry(value: unknown): MetricEntry | null {
-  const directNumber = parseNumber(value);
-  if (directNumber !== null) {
-    return { value: directNumber };
-  }
-
-  if (Array.isArray(value)) {
-    const numbers = value
-      .map((item) => parseNumber(item))
-      .filter((item): item is number => item !== null);
-    if (!numbers.length) return null;
-    const min = Math.min(...numbers);
-    const max = Math.max(...numbers);
-    if (min === max) return { value: min };
-    return { min, max };
-  }
-
-  const record = asRecord(value);
-  if (!record) return null;
-
-  const nestedKeys = ['metrics', 'stats', 'value', 'data'];
-  for (const key of nestedKeys) {
-    if (key in record) {
-      const nested = parseMetricEntry(record[key]);
-      if (nested) return nested;
-    }
-  }
-
-  const directKeys = ['avg', 'average', 'mean', 'median', 'value', 'count', 'total', 'sum', 'amount'];
-  for (const key of directKeys) {
-    if (key in record) {
-      const parsed = parseNumber(record[key]);
-      if (parsed !== null) return { value: parsed };
-    }
-  }
-
-  const min =
-    parseNumber(record.min ?? record.from ?? record.start ?? record.gte ?? record.lower ?? record.low) ?? null;
-  const max =
-    parseNumber(record.max ?? record.to ?? record.end ?? record.lte ?? record.upper ?? record.high) ?? null;
-  if (min !== null || max !== null) {
-    if (min !== null && max !== null && min === max) {
-      return { value: min };
-    }
-    return { min, max };
-  }
-
+  const single = safeNumber(value);
+  if (single !== null) return { min: single, max: single };
   return null;
 }
 
-function formatMetricEntry(entry: MetricEntry | null, suffix = '', { approx = true }: { approx?: boolean } = {}): string | undefined {
-  if (!entry) return undefined;
-  if (entry.value != null) {
-    const formatted = `${entry.value.toLocaleString('ru-RU')}${suffix}`;
-    return approx ? `≈ ${formatted}` : formatted;
-  }
-  if (entry.min != null || entry.max != null) {
-    return formatRange(entry.min ?? null, entry.max ?? null, suffix) ?? undefined;
-  }
-  return undefined;
+function buildRangeFilter(minValue: string, maxValue: string): { min?: number; max?: number } | null {
+  const min = parseNumberInput(minValue);
+  const max = parseNumberInput(maxValue);
+  if (min === null && max === null) return null;
+  return { ...(min !== null ? { min } : {}), ...(max !== null ? { max } : {}) };
 }
 
-function metricsToDisplay(snapshot: unknown) {
-  const outer = asRecord(snapshot) ?? {};
-  const source =
-    asRecord(outer.metrics) ??
-    asRecord(outer.stats) ??
-    outer;
+function formatRangeLabel(minValue: string, maxValue: string, suffix = ""): string {
+  const min = parseNumberInput(minValue);
+  const max = parseNumberInput(maxValue);
+  if (min !== null && max !== null) return `${min}${suffix}–${max}${suffix}`;
+  if (min !== null) return `от ${min}${suffix}`;
+  if (max !== null) return `до ${max}${suffix}`;
+  return "";
+}
 
-  const getEntry = (...keys: string[]) => {
-    for (const key of keys) {
-      if (key in source) {
-        const entry = parseMetricEntry(source[key]);
-        if (entry) return entry;
-      }
-    }
-    return null;
-  };
+function summarizeList(values: string[], maxItems = 3): string {
+  if (values.length <= maxItems) return values.join(", ");
+  const visible = values.slice(0, maxItems).join(", ");
+  return `${visible} и еще ${values.length - maxItems}`;
+}
 
-  const lastPurchaseEntry = getEntry(
-    'lastPurchaseDays',
-    'daysSinceLastPurchase',
-    'recency',
-    'recencyDays',
-    'lastPurchase',
-    'lastOrderDays',
-  );
-  const purchaseCountEntry = getEntry(
-    'purchaseCount',
-    'visits',
-    'orders',
-    'transactions',
-    'checks',
-  );
-  const averageCheckEntry = getEntry(
-    'averageCheck',
-    'avgCheck',
-    'meanCheck',
-    'avg_order_value',
-    'checkAverage',
-  );
-  const totalSpentEntry = getEntry(
-    'purchaseSum',
-    'totalSpent',
-    'revenue',
-    'turnover',
-    'totalRevenue',
-    'spend',
-  );
+function buildAudienceDescription(
+  formData: AudienceFormData,
+  lookups: {
+    outlets: OutletOption[];
+    products: ProductItem[];
+    categories: CategoryItem[];
+    levels: LevelOption[];
+  },
+): string {
+  const outletMap = new Map(lookups.outlets.map((outlet) => [outlet.id, outlet.name]));
+  const productMap = new Map(lookups.products.map((product) => [product.id, product.name]));
+  const categoryMap = new Map(lookups.categories.map((category) => [category.id, category.name]));
+  const levelMap = new Map(lookups.levels.map((level) => [level.id, level.name]));
+
+  const parts: string[] = [];
+
+  if (formData.selectedOutlets.length) {
+    const outletNames = formData.selectedOutlets.map((id) => outletMap.get(id) || id).filter(Boolean);
+    parts.push(`Точки: ${summarizeList(outletNames)}`);
+  }
+
+  if (formData.targetType === "products" && formData.selectedProducts.length) {
+    const productNames = formData.selectedProducts.map((id) => productMap.get(id) || id).filter(Boolean);
+    parts.push(`Товары: ${summarizeList(productNames)}`);
+  }
+
+  if (formData.targetType === "categories" && formData.selectedCategories.length) {
+    const categoryNames = formData.selectedCategories.map((id) => categoryMap.get(id) || id).filter(Boolean);
+    parts.push(`Категории: ${summarizeList(categoryNames)}`);
+  }
+
+  if (formData.gender !== "all") {
+    const genderLabel = formData.gender === "M" ? "Мужской" : formData.gender === "F" ? "Женский" : "Не указан";
+    parts.push(`Пол: ${genderLabel}`);
+  }
+
+  const ageLabel = formatRangeLabel(formData.ageFrom, formData.ageTo);
+  if (ageLabel) parts.push(`Возраст: ${ageLabel}`);
+
+  if (formData.birthdayBefore || formData.birthdayAfter) {
+    const before = formData.birthdayBefore ? `${formData.birthdayBefore} дн. до` : "";
+    const after = formData.birthdayAfter ? `${formData.birthdayAfter} дн. после` : "";
+    const combined = [before, after].filter(Boolean).join(", ");
+    if (combined) parts.push(`ДР: ${combined}`);
+  }
+
+  const regLabel = formatRangeLabel(formData.regDaysFrom, formData.regDaysTo, " дн.");
+  if (regLabel) parts.push(`Регистрация: ${regLabel}`);
+
+  const lastPurchaseLabel = formatRangeLabel(formData.lastPurchaseFrom, formData.lastPurchaseTo, " дн.");
+  if (lastPurchaseLabel) parts.push(`Последняя покупка: ${lastPurchaseLabel}`);
+
+  const purchaseCountLabel = formatRangeLabel(formData.purchaseCountFrom, formData.purchaseCountTo);
+  if (purchaseCountLabel) parts.push(`Покупок: ${purchaseCountLabel}`);
+
+  const avgCheckLabel = formatRangeLabel(formData.avgCheckFrom, formData.avgCheckTo, " ₽");
+  if (avgCheckLabel) parts.push(`Средний чек: ${avgCheckLabel}`);
+
+  const totalSpendLabel = formatRangeLabel(formData.totalSpendFrom, formData.totalSpendTo, " ₽");
+  if (totalSpendLabel) parts.push(`Сумма покупок: ${totalSpendLabel}`);
+
+  if (formData.selectedLevels.length) {
+    const levelNames = formData.selectedLevels.map((id) => levelMap.get(id) || id).filter(Boolean);
+    parts.push(`Уровень: ${summarizeList(levelNames)}`);
+  }
+
+  const rfmParts: string[] = [];
+  if (formData.selectedR.length) rfmParts.push(`R(${formData.selectedR.join(",")})`);
+  if (formData.selectedF.length) rfmParts.push(`F(${formData.selectedF.join(",")})`);
+  if (formData.selectedM.length) rfmParts.push(`M(${formData.selectedM.join(",")})`);
+  if (rfmParts.length) parts.push(`RFM: ${rfmParts.join(" ")}`);
+
+  const summary = parts.join(" · ").trim();
+  if (!summary) return "Пользовательский сегмент";
+  if (summary.length > 140) return `${summary.slice(0, 137)}…`;
+  return summary;
+}
+
+function mapSegmentToAudience(segment: any): Audience {
+  const filters = asRecord(segment?.filters) ?? {};
+  const count =
+    safeNumber(segment?.customerCount) ??
+    safeNumber(segment?.metricsSnapshot?.estimatedCustomers) ??
+    0;
+  const descriptionRaw =
+    typeof segment?.description === "string" ? segment.description.trim() : "";
+  const description =
+    descriptionRaw ||
+    (Object.keys(filters).length ? "Сегмент по фильтрам" : "Пользовательский сегмент");
 
   return {
-    lastPurchaseDays: formatMetricEntry(lastPurchaseEntry, ' дн.'),
-    purchaseCount: formatMetricEntry(purchaseCountEntry, '', { approx: true }),
-    averageCheck: formatMetricEntry(averageCheckEntry, ' ₽'),
-    purchaseSum: formatMetricEntry(totalSpentEntry, ' ₽'),
-  } satisfies Partial<Pick<AudienceRow, 'lastPurchaseDays' | 'purchaseCount' | 'averageCheck' | 'purchaseSum'>>;
-}
-
-function filtersToSettings(filters: any): AudienceSettings {
-  const settings: AudienceSettings = { ...defaultSettings };
-  if (!filters || typeof filters !== 'object') return settings;
-  const source = filters as Record<string, unknown>;
-
-  const outlets = parseStringArray(source.outlets ?? source.visitedOutlets);
-  if (outlets.length) {
-    settings.visitedEnabled = true;
-    settings.visitedOutlets = outlets;
-  }
-
-  const genderValues = parseStringArray(source.gender);
-  if (genderValues.length === 1 && genderValues[0]) {
-    const value = genderValues[0].toLowerCase();
-    if (value === 'male' || value === 'female') {
-      settings.genderEnabled = true;
-      settings.gender = value;
-    }
-  }
-
-  const ageRange = applyRangeFallback(
-    normalizeRange(parseRangeInput(source.age ?? source.ageRange), {
-      min: 0,
-      max: 100,
-    }),
-    defaultSettings.age,
-  );
-  if (ageRange[0] !== defaultSettings.age[0] || ageRange[1] !== defaultSettings.age[1]) {
-    settings.ageEnabled = true;
-    settings.age = ageRange;
-  }
-
-  const birthdayRange = applyRangeFallback(
-    normalizeRange(
-      parseRangeInput(
-        source.birthdayOffset ?? source.birthdayWindow ?? source.birthday,
-      ),
-      { min: -30, max: 30 },
-    ),
-    defaultSettings.birthday,
-  );
-  if (
-    birthdayRange[0] !== defaultSettings.birthday[0] ||
-    birthdayRange[1] !== defaultSettings.birthday[1]
-  ) {
-    settings.birthdayEnabled = true;
-    settings.birthday = birthdayRange;
-  }
-
-  const registrationRange = applyRangeFallback(
-    normalizeRange(
-      parseRangeInput(
-        source.registrationDays ??
-          source.registration ??
-          (source.registrationFrom !== undefined ||
-          source.registrationTo !== undefined
-            ? { min: source.registrationFrom, max: source.registrationTo }
-            : undefined),
-      ),
-      { min: 0, max: 1000 },
-    ),
-    defaultSettings.registration,
-  );
-  if (
-    registrationRange[0] !== defaultSettings.registration[0] ||
-    registrationRange[1] !== defaultSettings.registration[1]
-  ) {
-    settings.registrationEnabled = true;
-    settings.registration = registrationRange;
-  }
-
-  const lastPurchaseRange = applyRangeFallback(
-    normalizeRange(
-      parseRangeInput(
-        source.lastPurchaseDays ??
-          source.daysSinceLastPurchase ??
-          (source.lastPurchase != null ? source.lastPurchase : undefined),
-      ),
-      { min: 0, max: 365 },
-    ),
-    defaultSettings.lastPurchase,
-  );
-  if (
-    lastPurchaseRange[0] !== defaultSettings.lastPurchase[0] ||
-    lastPurchaseRange[1] !== defaultSettings.lastPurchase[1]
-  ) {
-    settings.lastPurchaseEnabled = true;
-    settings.lastPurchase = lastPurchaseRange;
-  }
-
-  const purchaseCountRange = applyRangeFallback(
-    normalizeRange(
-      parseRangeInput(
-        source.purchaseCount ??
-          source.visits ??
-          (source.minVisits !== undefined || source.maxVisits !== undefined
-            ? { min: source.minVisits, max: source.maxVisits }
-            : undefined),
-      ),
-      { min: 0, max: 1000 },
-    ),
-    defaultSettings.purchaseCount,
-  );
-  if (
-    purchaseCountRange[0] !== defaultSettings.purchaseCount[0] ||
-    purchaseCountRange[1] !== defaultSettings.purchaseCount[1]
-  ) {
-    settings.purchaseCountEnabled = true;
-    settings.purchaseCount = purchaseCountRange;
-  }
-
-  const averageCheckRange = applyRangeFallback(
-    normalizeRange(parseRangeInput(source.averageCheck ?? source.avgCheck)),
-    defaultSettings.averageCheck,
-  );
-  if (
-    averageCheckRange[0] !== defaultSettings.averageCheck[0] ||
-    averageCheckRange[1] !== defaultSettings.averageCheck[1]
-  ) {
-    settings.averageCheckEnabled = true;
-    settings.averageCheck = averageCheckRange;
-  }
-
-  const totalSpentRange = applyRangeFallback(
-    normalizeRange(
-      parseRangeInput(
-        source.totalSpent ??
-          source.purchaseSum ??
-          (source.total !== undefined ? source.total : undefined),
-      ),
-    ),
-    defaultSettings.purchaseSum,
-  );
-  if (
-    totalSpentRange[0] !== defaultSettings.purchaseSum[0] ||
-    totalSpentRange[1] !== defaultSettings.purchaseSum[1]
-  ) {
-    settings.purchaseSumEnabled = true;
-    settings.purchaseSum = totalSpentRange;
-  }
-
-  const levelValues = parseStringArray(
-    source.levelIds ??
-      source.levels ??
-      (typeof source.level === 'string' ? [source.level] : undefined),
-  );
-  if (levelValues.length === 1 && levelValues[0]) {
-    settings.levelEnabled = true;
-    settings.level = levelValues[0];
-  }
-
-  const deviceValues = parseStringArray(
-    source.devicePlatforms ?? source.device,
-  );
-  if (deviceValues.length === 1 && deviceValues[0]) {
-    settings.deviceEnabled = true;
-    settings.device = normalizeDeviceLabel(deviceValues[0]);
-  }
-
-  const recencyValue = normalizeRfmValue(
-    source.rfmRecency ??
-      source.rfmRecencyScores ??
-      source.rfmRecencyGroup ??
-      source.rfmR,
-  );
-  if (recencyValue) {
-    settings.rfmRecencyEnabled = true;
-    settings.rfmRecency = recencyValue;
-  }
-
-  const frequencyValue = normalizeRfmValue(
-    source.rfmFrequency ?? source.rfmFrequencyScores ?? source.rfmF,
-  );
-  if (frequencyValue) {
-    settings.rfmFrequencyEnabled = true;
-    settings.rfmFrequency = frequencyValue;
-  }
-
-  const monetaryValue = normalizeRfmValue(
-    source.rfmMonetary ?? source.rfmMonetaryScores ?? source.rfmM,
-  );
-  if (monetaryValue) {
-    settings.rfmMonetaryEnabled = true;
-    settings.rfmMonetary = monetaryValue;
-  }
-
-  return settings;
-}
-
-function segmentToAudienceRow(seg: any): AudienceRow {
-  const filters =
-    seg.filters && typeof seg.filters === 'object' && !Array.isArray(seg.filters)
-      ? (seg.filters as Record<string, unknown>)
-      : {};
-  const display = filtersToDisplay(filters);
-  const metricsDisplay = metricsToDisplay(seg?.metricsSnapshot);
-  return {
-    id: String(seg.id),
-    name: String(seg.name || 'Без названия'),
-    participants: Number(seg.customerCount || 0),
-    age: display.age,
-    gender: display.gender,
-    averageCheck: metricsDisplay.averageCheck ?? display.averageCheck,
-    lastPurchaseDays: metricsDisplay.lastPurchaseDays ?? display.lastPurchaseDays,
-    purchaseCount: metricsDisplay.purchaseCount ?? display.purchaseCount,
-    purchaseSum: metricsDisplay.purchaseSum ?? display.purchaseSum,
-    birthday: display.birthday,
-    registrationDays: display.registrationDays,
-    device: display.device,
-    settings: filtersToSettings(filters),
+    id: String(segment?.id ?? ""),
+    name: String(segment?.name || "Без названия"),
+    count,
+    createdAt: formatDateRu(segment?.createdAt),
+    description,
     filters,
+    isSystem: Boolean(segment?.isSystem),
+    isAllCustomers: isAllCustomersAudience(segment),
+    systemKey: segment?.systemKey ?? null,
   };
+}
+
+function filtersToFormData(filters?: Record<string, unknown> | null): AudienceFormData {
+  const data: AudienceFormData = { ...initialFormData };
+  if (!filters) return data;
+
+  const outlets = parseStringArray(filters.outlets ?? filters.visitedOutlets);
+  if (outlets.length) data.selectedOutlets = outlets;
+
+  const productIds = parseStringArray(filters.productIds ?? filters.products ?? filters.productId);
+  const categoryIds = parseStringArray(filters.categoryIds ?? filters.categories ?? filters.categoryId);
+  if (categoryIds.length && !productIds.length) data.targetType = "categories";
+  if (productIds.length) data.selectedProducts = productIds;
+  if (categoryIds.length) data.selectedCategories = categoryIds;
+
+  const genderValues = parseStringArray(filters.gender).map((value) => value.toLowerCase());
+  if (genderValues.length === 1) {
+    if (genderValues[0] === "male") data.gender = "M";
+    else if (genderValues[0] === "female") data.gender = "F";
+    else if (genderValues[0] === "unknown") data.gender = "U";
+  }
+
+  const ageRange = parseRangeInput(filters.age ?? filters.ageRange);
+  if (ageRange?.min != null) data.ageFrom = String(ageRange.min);
+  if (ageRange?.max != null) data.ageTo = String(ageRange.max);
+
+  const birthdayRange = parseRangeInput(filters.birthdayOffset ?? filters.birthdayWindow ?? filters.birthday);
+  if (birthdayRange?.max != null) data.birthdayBefore = String(Math.max(0, birthdayRange.max));
+  if (birthdayRange?.min != null) {
+    if (birthdayRange.min < 0) data.birthdayAfter = String(Math.abs(birthdayRange.min));
+    else if (!data.birthdayBefore) data.birthdayBefore = String(birthdayRange.min);
+  }
+
+  const regRange = parseRangeInput(
+    filters.registrationDays ??
+      filters.registration ??
+      (filters.registrationFrom !== undefined || filters.registrationTo !== undefined
+        ? { min: filters.registrationFrom, max: filters.registrationTo }
+        : undefined),
+  );
+  if (regRange?.min != null) data.regDaysFrom = String(regRange.min);
+  if (regRange?.max != null) data.regDaysTo = String(regRange.max);
+
+  const lastPurchaseRange = parseRangeInput(
+    filters.lastPurchaseDays ?? filters.daysSinceLastPurchase ?? filters.lastPurchase,
+  );
+  if (lastPurchaseRange?.min != null) data.lastPurchaseFrom = String(lastPurchaseRange.min);
+  if (lastPurchaseRange?.max != null) data.lastPurchaseTo = String(lastPurchaseRange.max);
+
+  const purchaseCountRange = parseRangeInput(
+    filters.purchaseCount ??
+      filters.visits ??
+      (filters.minVisits !== undefined || filters.maxVisits !== undefined
+        ? { min: filters.minVisits, max: filters.maxVisits }
+        : undefined),
+  );
+  if (purchaseCountRange?.min != null) data.purchaseCountFrom = String(purchaseCountRange.min);
+  if (purchaseCountRange?.max != null) data.purchaseCountTo = String(purchaseCountRange.max);
+
+  const avgCheckRange = parseRangeInput(filters.averageCheck ?? filters.avgCheck);
+  if (avgCheckRange?.min != null) data.avgCheckFrom = String(avgCheckRange.min);
+  if (avgCheckRange?.max != null) data.avgCheckTo = String(avgCheckRange.max);
+
+  const totalRange = parseRangeInput(filters.totalSpent ?? filters.purchaseSum ?? filters.total);
+  if (totalRange?.min != null) data.totalSpendFrom = String(totalRange.min);
+  if (totalRange?.max != null) data.totalSpendTo = String(totalRange.max);
+
+  const levelIds = parseStringArray(filters.levelIds ?? filters.levels ?? filters.level);
+  if (levelIds.length) data.selectedLevels = levelIds;
+
+  const recency = parseStringArray(
+    filters.rfmRecency ?? filters.rfmRecencyScores ?? filters.rfmRecencyGroup ?? filters.rfmR,
+  );
+  if (recency.length) data.selectedR = recency;
+
+  const frequency = parseStringArray(filters.rfmFrequency ?? filters.rfmFrequencyScores ?? filters.rfmF);
+  if (frequency.length) data.selectedF = frequency;
+
+  const monetary = parseStringArray(filters.rfmMonetary ?? filters.rfmMonetaryScores ?? filters.rfmM);
+  if (monetary.length) data.selectedM = monetary;
+
+  return data;
+}
+
+function formDataToFilters(formData: AudienceFormData): Record<string, unknown> {
+  const filters: Record<string, unknown> = {};
+
+  if (formData.selectedOutlets.length) {
+    filters.outlets = formData.selectedOutlets.slice();
+  }
+
+  if (formData.targetType === "products" && formData.selectedProducts.length) {
+    filters.productIds = formData.selectedProducts.slice();
+  }
+
+  if (formData.targetType === "categories" && formData.selectedCategories.length) {
+    filters.categoryIds = formData.selectedCategories.slice();
+  }
+
+  if (formData.gender !== "all") {
+    const genderMap: Record<string, string> = { M: "male", F: "female", U: "unknown" };
+    filters.gender = [genderMap[formData.gender] || formData.gender];
+  }
+
+  const ageRange = buildRangeFilter(formData.ageFrom, formData.ageTo);
+  if (ageRange) filters.age = ageRange;
+
+  const birthdayBefore = parseNumberInput(formData.birthdayBefore);
+  const birthdayAfter = parseNumberInput(formData.birthdayAfter);
+  if (birthdayBefore !== null || birthdayAfter !== null) {
+    const range: { min?: number; max?: number } = {};
+    if (birthdayBefore !== null) range.max = Math.abs(birthdayBefore);
+    if (birthdayAfter !== null) range.min = -Math.abs(birthdayAfter);
+    filters.birthdayOffset = range;
+  }
+
+  const regRange = buildRangeFilter(formData.regDaysFrom, formData.regDaysTo);
+  if (regRange) filters.registrationDays = regRange;
+
+  const lastPurchaseRange = buildRangeFilter(formData.lastPurchaseFrom, formData.lastPurchaseTo);
+  if (lastPurchaseRange) filters.lastPurchaseDays = lastPurchaseRange;
+
+  const purchaseCountRange = buildRangeFilter(formData.purchaseCountFrom, formData.purchaseCountTo);
+  if (purchaseCountRange) filters.purchaseCount = purchaseCountRange;
+
+  const avgCheckRange = buildRangeFilter(formData.avgCheckFrom, formData.avgCheckTo);
+  if (avgCheckRange) filters.averageCheck = avgCheckRange;
+
+  const totalRange = buildRangeFilter(formData.totalSpendFrom, formData.totalSpendTo);
+  if (totalRange) filters.totalSpent = totalRange;
+
+  if (formData.selectedLevels.length) {
+    filters.levelIds = formData.selectedLevels.slice();
+  }
+
+  if (formData.selectedR.length) {
+    filters.rfmRecency = formData.selectedR.slice();
+  }
+
+  if (formData.selectedF.length) {
+    filters.rfmFrequency = formData.selectedF.slice();
+  }
+
+  if (formData.selectedM.length) {
+    filters.rfmMonetary = formData.selectedM.slice();
+  }
+
+  return filters;
 }
 
 function mapMember(row: any): AudienceMember {
-  const birthday = row?.birthday ? String(row.birthday) : '';
+  const totalSpend = safeNumber(row?.spendTotal) ?? 0;
+  const daysSinceLastVisit = safeNumber(row?.daysSinceLastVisit);
   return {
-    id: String(row.id || ''),
-    phone: String(row.phone || ''),
-    name: String(row.name || row.phone || row.id || ''),
-    birthday,
-    age: birthday ? calculateAge(birthday) : 0,
-    registrationDate: String(row.createdAt || ''),
+    id: String(row?.id || ""),
+    phone: row?.phone ? String(row.phone) : "",
+    name: String(row?.name || row?.phone || row?.id || "—"),
+    levelId: row?.levelId ? String(row.levelId) : null,
+    levelName: row?.levelName ? String(row.levelName) : null,
+    daysSinceLastVisit,
+    totalSpend: Math.max(0, totalSpend),
   };
 }
 
-// no sample data: always load from API
-
 export default function AudiencesPage() {
   const router = useRouter();
-  const [search, setSearch] = React.useState('');
-  const [audiences, setAudiences] = React.useState<AudienceRow[]>([]);
-  const [loading, setLoading] = React.useState(false);
-  const [modalMode, setModalMode] = React.useState<'create' | 'edit' | null>(null);
-  const [currentAudience, setCurrentAudience] = React.useState<AudienceRow | null>(null);
-  const [settings, setSettings] = React.useState<AudienceSettings>(defaultSettings);
-  const [audienceName, setAudienceName] = React.useState('');
-  const [memberSearch, setMemberSearch] = React.useState('');
-  const [saving, setSaving] = React.useState(false);
-  const [membersLoading, setMembersLoading] = React.useState(false);
-  const [membersModalAudience, setMembersModalAudience] = React.useState<AudienceRow | null>(null);
-  const [membersModalMembers, setMembersModalMembers] = React.useState<AudienceMember[]>([]);
-  const [outletOptions, setOutletOptions] = React.useState<Option[]>([]);
-  const [levelOptions, setLevelOptions] = React.useState<Option[]>([]);
-  const anyModalOpen = Boolean(modalMode || membersModalAudience);
+  const [view, setView] = useState<"list" | "create">("list");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [audiences, setAudiences] = useState<Audience[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [formData, setFormData] = useState<AudienceFormData>(initialFormData);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [productSearch, setProductSearch] = useState("");
 
-  const loadAudiences = React.useCallback(async () => {
+  const [outlets, setOutlets] = useState<OutletOption[]>([]);
+  const [products, setProducts] = useState<ProductItem[]>([]);
+  const [categories, setCategories] = useState<CategoryItem[]>([]);
+  const [levels, setLevels] = useState<LevelOption[]>([]);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+
+  const [isMembersModalOpen, setIsMembersModalOpen] = useState(false);
+  const [viewingAudience, setViewingAudience] = useState<Audience | null>(null);
+  const [members, setMembers] = useState<AudienceMember[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [membersError, setMembersError] = useState<string | null>(null);
+  const [membersSearch, setMembersSearch] = useState("");
+  const [modalPage, setModalPage] = useState(1);
+  const modalItemsPerPage = 12;
+
+  const loadAudiences = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const list = await api<any[]>(`/api/portal/audiences`);
-      const rows = Array.isArray(list) ? list.map(segmentToAudienceRow) : [];
-      setAudiences(rows);
-    } catch (e) {
-      console.error(e);
+      const list = await fetchJson<any[]>("/api/portal/audiences?includeSystem=1");
+      const items = Array.isArray(list) ? list : [];
+      const mapped = items
+        .filter((segment) => !segment?.archivedAt)
+        .map(mapSegmentToAudience);
+      setAudiences(mapped);
+    } catch (err) {
+      setError(readApiError(err) || "Не удалось загрузить аудитории");
       setAudiences([]);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  React.useEffect(() => { loadAudiences(); }, [loadAudiences]);
+  const loadCatalog = useCallback(async () => {
+    if (catalogLoaded || catalogLoading) return;
+    setCatalogLoading(true);
+    setCatalogError(null);
+    try {
+      const [outletsPayload, productsPayload, categoriesPayload, levelsPayload] = await Promise.all([
+        fetchJson<any>("/api/portal/outlets?status=ACTIVE"),
+        fetchJson<any>("/api/portal/catalog/products"),
+        fetchJson<any>("/api/portal/catalog/categories"),
+        fetchJson<any>("/api/portal/loyalty/tiers"),
+      ]);
 
-  React.useEffect(() => {
-    (async () => {
-      try {
-        const res = await api<any>(`/api/portal/outlets?status=ACTIVE`);
-        const list = Array.isArray(res?.items)
-          ? res.items
-          : Array.isArray(res)
-            ? res
-            : [];
-        setOutletOptions(
-          list.map((outlet: any) => ({
-            value: String(outlet.id ?? ''),
-            label: String(outlet.name || outlet.id || ''),
-          })),
-        );
-      } catch (e) {
-        console.error(e);
+      const outletItems = Array.isArray(outletsPayload?.items)
+        ? outletsPayload.items
+        : Array.isArray(outletsPayload)
+          ? outletsPayload
+          : [];
+      setOutlets(
+        outletItems
+          .map((outlet: any) => ({
+            id: String(outlet?.id ?? ""),
+            name: String(outlet?.name || outlet?.id || ""),
+          }))
+          .filter((item: OutletOption) => item.id && item.name),
+      );
+
+      const productItems = Array.isArray(productsPayload?.items)
+        ? productsPayload.items
+        : Array.isArray(productsPayload)
+          ? productsPayload
+          : [];
+      const mappedProducts = productItems
+        .map((product: any) => ({
+          id: String(product?.id ?? ""),
+          name: String(product?.name || product?.id || ""),
+          categoryId: product?.categoryId ? String(product.categoryId) : null,
+          category: product?.categoryName ? String(product.categoryName) : null,
+        }))
+        .filter((item: ProductItem) => item.id && item.name);
+      setProducts(mappedProducts);
+
+      const categoryItems = Array.isArray(categoriesPayload?.items)
+        ? categoriesPayload.items
+        : Array.isArray(categoriesPayload)
+          ? categoriesPayload
+          : [];
+      const categoryCount = new Map<string, number>();
+      for (const product of mappedProducts) {
+        if (!product.categoryId) continue;
+        categoryCount.set(product.categoryId, (categoryCount.get(product.categoryId) || 0) + 1);
       }
-    })();
-  }, []);
+      setCategories(
+        categoryItems
+          .map((category: any) => ({
+            id: String(category?.id ?? ""),
+            name: String(category?.name || category?.id || ""),
+            count: categoryCount.get(String(category?.id ?? "")) || 0,
+            status: String(category?.status || ""),
+          }))
+          .filter((item: any) => item.id && item.name && item.status !== "ARCHIVED")
+          .map(({ status, ...rest }: any) => rest as CategoryItem),
+      );
 
-  React.useEffect(() => {
-    (async () => {
-      try {
-        const res = await api<any>(`/api/portal/loyalty/tiers`);
-        const list = Array.isArray(res?.items)
-          ? res.items
-          : Array.isArray(res)
-            ? res
-            : [];
-        setLevelOptions(
-          list.map((tier: any) => ({
-            value: String(tier.id ?? ''),
-            label: String(tier.name || tier.id || ''),
-          })),
-        );
-      } catch (e) {
-        console.error(e);
-      }
-    })();
-  }, []);
+      const levelItems = Array.isArray(levelsPayload?.items)
+        ? levelsPayload.items
+        : Array.isArray(levelsPayload)
+          ? levelsPayload
+          : [];
+      setLevels(
+        levelItems
+          .map((level: any) => ({
+            id: String(level?.id ?? ""),
+            name: String(level?.name || level?.id || ""),
+            thresholdAmount: safeNumber(level?.thresholdAmount),
+            isInitial: Boolean(level?.isInitial),
+          }))
+          .filter((item: LevelOption) => item.id && item.name),
+      );
 
-  // Load members when opening members tab
-  // members modal loads data on open; see openMembersModal
-
-  const openMembersModal = (
-    audience: AudienceRow,
-    event?: React.MouseEvent<HTMLButtonElement>,
-  ) => {
-    event?.stopPropagation();
-    setMembersModalAudience(audience);
-    setMemberSearch('');
-    setMembersModalMembers([]);
-    setMembersLoading(true);
-    (async () => {
-      try {
-        const qs = new URLSearchParams({ segmentId: audience.id, limit: '100' });
-        const res = await api<any>(`/api/customers?${qs.toString()}`);
-        const items = Array.isArray(res?.items)
-          ? res.items
-          : Array.isArray(res)
-            ? res
-            : [];
-        setMembersModalMembers(items.map(mapMember));
-      } catch (e) {
-        console.error(e);
-        setMembersModalMembers([]);
-      } finally {
-        setMembersLoading(false);
-      }
-    })();
-  };
-
-  const closeMembersModal = () => {
-    setMembersModalAudience(null);
-    setMembersModalMembers([]);
-    setMemberSearch('');
-    setMembersLoading(false);
-  };
-
-  const handleMemberClick = (member: AudienceMember) => {
-    closeMembersModal();
-    router.push(`/customers/${member.id}`);
-  };
-
-  const filteredMembers = React.useMemo(() => {
-    const term = memberSearch.trim().toLowerCase();
-    if (!term) return membersModalMembers;
-    return membersModalMembers.filter(
-      (member) =>
-        member.phone.toLowerCase().includes(term) ||
-        member.name.toLowerCase().includes(term),
-    );
-  }, [membersModalMembers, memberSearch]);
-
-  const filtered = React.useMemo(() =>
-    audiences.filter((aud) => aud.name.toLowerCase().includes(search.toLowerCase())),
-  [audiences, search]);
-
-  const openCreate = () => {
-    setModalMode('create');
-    setAudienceName('');
-    setSettings(defaultSettings);
-    setCurrentAudience(null);
-  };
-
-  const openEdit = (audience: AudienceRow) => {
-    setModalMode('edit');
-    setAudienceName(audience.name);
-    setSettings(audience.settings);
-    setCurrentAudience(audience);
-  };
-
-  const closeModal = () => {
-    setModalMode(null);
-    setAudienceName('');
-    setSettings(defaultSettings);
-    setCurrentAudience(null);
-  };
-
-  React.useEffect(() => {
-    if (typeof document === "undefined") return;
-    const body = document.body;
-    if (anyModalOpen) {
-      body.classList.add("modal-blur-active");
-    } else {
-      body.classList.remove("modal-blur-active");
+      setCatalogLoaded(true);
+    } catch (err) {
+      setCatalogError(readApiError(err) || "Не удалось загрузить справочники");
+    } finally {
+      setCatalogLoading(false);
     }
-    return () => body.classList.remove("modal-blur-active");
-  }, [anyModalOpen]);
+  }, [catalogLoaded, catalogLoading]);
 
-  const handleSubmit = async () => {
-    if (!audienceName.trim()) {
-      alert('Укажите название аудитории');
+  useEffect(() => {
+    loadAudiences().catch(() => {});
+  }, [loadAudiences]);
+
+  useEffect(() => {
+    if (view === "create") {
+      loadCatalog().catch(() => {});
+    }
+  }, [view, loadCatalog]);
+
+  const filteredAudiences = useMemo(
+    () => audiences.filter((a) => a.name.toLowerCase().includes(searchTerm.toLowerCase())),
+    [audiences, searchTerm],
+  );
+
+  const audienceDescriptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const audience of audiences) {
+      if (audience.description !== "Сегмент по фильтрам") continue;
+      const form = filtersToFormData(audience.filters);
+      const summary = buildAudienceDescription(form, { outlets, products, categories, levels });
+      map.set(audience.id, summary);
+    }
+    return map;
+  }, [audiences, outlets, products, categories, levels]);
+
+  const visibleItems = useMemo(() => {
+    const search = productSearch.toLowerCase();
+    if (formData.targetType === "products") {
+      return products.filter((item) => item.name.toLowerCase().includes(search));
+    }
+    return categories.filter((item) => item.name.toLowerCase().includes(search));
+  }, [formData.targetType, productSearch, products, categories]);
+
+  const toggleSelection = (list: string[], item: string) => {
+    return list.includes(item) ? list.filter((i) => i !== item) : [...list, item];
+  };
+
+  const toggleProductSelection = (id: string) => {
+    setFormData((prev) => {
+      const list = prev.targetType === "products" ? prev.selectedProducts : prev.selectedCategories;
+      const key = prev.targetType === "products" ? "selectedProducts" : "selectedCategories";
+      const newList = list.includes(id) ? list.filter((i) => i !== id) : [...list, id];
+      return { ...prev, [key]: newList } as AudienceFormData;
+    });
+  };
+
+  const handleStartCreate = () => {
+    setEditingId(null);
+    setError(null);
+    setFormError(null);
+    setProductSearch("");
+    setFormData(initialFormData);
+    setView("create");
+  };
+
+  const handleStartEdit = (audience: Audience) => {
+    if (audience.isAllCustomers) {
+      setError("Системную аудиторию нельзя редактировать");
+      return;
+    }
+    setEditingId(audience.id);
+    setError(null);
+    setFormError(null);
+    setProductSearch("");
+    setFormData({ ...filtersToFormData(audience.filters), name: audience.name });
+    setView("create");
+  };
+
+  const handleDelete = async (audience: Audience) => {
+    if (audience.isAllCustomers) {
+      setError("Системную аудиторию нельзя удалить");
+      return;
+    }
+    if (!confirm("Вы уверены, что хотите удалить эту аудиторию?")) return;
+    setError(null);
+    try {
+      await fetchJson(`/api/portal/audiences/${encodeURIComponent(audience.id)}/archive`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      await loadAudiences();
+    } catch (err) {
+      setError(readApiError(err) || "Не удалось удалить аудиторию");
+    }
+  };
+
+  const handleSave = async () => {
+    const trimmed = formData.name.trim();
+    if (!trimmed) {
+      setFormError("Введите название аудитории");
       return;
     }
     setSaving(true);
+    setFormError(null);
     try {
-      const payload = { name: audienceName.trim(), rules: { ui: 'audience-settings' }, filters: settingsToFilters(settings) };
-      if (modalMode === 'create') {
-        await api(`/api/portal/audiences`, { method: 'POST', body: JSON.stringify(payload) });
-      } else if (modalMode === 'edit' && currentAudience) {
-        await api(`/api/portal/audiences/${encodeURIComponent(currentAudience.id)}`, { method: 'PUT', body: JSON.stringify(payload) });
+      const filters = formDataToFilters(formData);
+      const currentAudience = editingId ? audiences.find((item) => item.id === editingId) : null;
+      const description =
+        currentAudience?.description?.trim() ||
+        buildAudienceDescription(formData, { outlets, products, categories, levels });
+      const payload = {
+        name: trimmed,
+        description,
+        rules: { ui: "audience-settings" },
+        filters,
+      };
+
+      if (editingId) {
+        await fetchJson(`/api/portal/audiences/${encodeURIComponent(editingId)}`, {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        });
+      } else {
+        await fetchJson("/api/portal/audiences", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
       }
       await loadAudiences();
-      closeModal();
-    } catch (e) {
-      console.error(e);
+      setEditingId(null);
+      setView("list");
+    } catch (err) {
+      setFormError(readApiError(err) || "Не удалось сохранить аудиторию");
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDelete = async () => {
-    if (!currentAudience) return;
-    if (!confirm('Удалить аудиторию?')) return;
-    try {
-      await api(`/api/portal/audiences/${encodeURIComponent(currentAudience.id)}/archive`, { method: 'POST', body: JSON.stringify({}) });
-      await loadAudiences();
-      closeModal();
-    } catch (e) { console.error(e); }
+  const openMembers = useCallback(
+    async (audience: Audience, event?: React.MouseEvent<HTMLButtonElement>) => {
+      event?.stopPropagation();
+      setViewingAudience(audience);
+      setIsMembersModalOpen(true);
+      setMembersSearch("");
+      setModalPage(1);
+      setMembers([]);
+      setMembersError(null);
+      setMembersLoading(true);
+      try {
+        await loadCatalog();
+        const qs = new URLSearchParams({ segmentId: audience.id, limit: "200" });
+        const res = await fetchJson<any>(`/api/customers?${qs.toString()}`);
+        const items = Array.isArray(res?.items) ? res.items : Array.isArray(res) ? res : [];
+        setMembers(items.map(mapMember));
+      } catch (err) {
+        setMembersError(readApiError(err) || "Не удалось загрузить участников");
+        setMembers([]);
+      } finally {
+        setMembersLoading(false);
+      }
+    },
+    [loadCatalog],
+  );
+
+  const closeMembers = () => {
+    setIsMembersModalOpen(false);
+    setViewingAudience(null);
+    setMembers([]);
+    setMembersSearch("");
+    setMembersError(null);
+    setMembersLoading(false);
+    setModalPage(1);
   };
 
-  return (
-    <div className="animate-in" style={{ display: "grid", gap: 24 }}>
-      {/* Header */}
-      <header style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
-        <div style={{
-          width: 48,
-          height: 48,
-          borderRadius: "var(--radius-lg)",
-          background: "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.1))",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "var(--brand-primary-light)",
-        }}>
-          <Users2 size={24} />
-        </div>
-        <div>
-          <h1 style={{ 
-            fontSize: 28, 
-            fontWeight: 800, 
-            margin: 0,
-            letterSpacing: "-0.02em",
-          }}>
-            Аудитории
-          </h1>
-          <p style={{ 
-            fontSize: 14, 
-            color: "var(--fg-muted)", 
-            margin: "6px 0 0",
-          }}>
-            Сегментация клиентской базы
-          </p>
-        </div>
-        <div style={{ marginLeft: "auto" }}>
-           <Button variant="primary" onClick={openCreate} leftIcon={<PlusCircle size={16} />}>
-            Создать аудиторию
-          </Button>
-        </div>
-      </header>
+  const filteredMembers = useMemo(() => {
+    const term = membersSearch.trim().toLowerCase();
+    if (!term) return members;
+    return members.filter(
+      (member) => member.phone.toLowerCase().includes(term) || member.name.toLowerCase().includes(term),
+    );
+  }, [membersSearch, members]);
 
-      {/* Filters */}
-      <Card>
-        <CardBody style={{ padding: 20 }}>
-          <div className="filter-grid">
-            <div className="filter-block" style={{ flex: 1, minWidth: 300 }}>
-               <span className="filter-label">Поиск по названию</span>
-               <div style={{ position: "relative" }}>
-                  <Search size={16} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--fg-muted)" }} />
-                  <input
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Например, Постоянные гости..."
-                    className="input"
-                    style={{ paddingLeft: 38, width: "100%" }}
-                  />
-               </div>
+  const paginatedMembers = useMemo(() => {
+    const start = (modalPage - 1) * modalItemsPerPage;
+    return filteredMembers.slice(start, start + modalItemsPerPage);
+  }, [filteredMembers, modalPage, modalItemsPerPage]);
+
+  const totalModalPages = Math.ceil(filteredMembers.length / modalItemsPerPage);
+
+  const getPageNumbers = () => {
+    const pages: (number | string)[] = [];
+    const maxButtons = 5;
+
+    if (totalModalPages <= maxButtons) {
+      for (let i = 1; i <= totalModalPages; i += 1) pages.push(i);
+    } else {
+      let start = Math.max(1, modalPage - 2);
+      let end = Math.min(totalModalPages, start + maxButtons - 1);
+
+      if (end === totalModalPages) {
+        start = Math.max(1, end - maxButtons + 1);
+      }
+
+      for (let i = start; i <= end; i += 1) pages.push(i);
+    }
+    return pages;
+  };
+
+  const levelLookup = useMemo(() => {
+    const byId = new Map<string, LevelOption>();
+    const byName = new Map<string, LevelOption>();
+    levels.forEach((level) => {
+      byId.set(level.id, level);
+      byName.set(level.name.toLowerCase(), level);
+    });
+    const initial = levels.find((level) => level.isInitial) || null;
+    return { byId, byName, initial };
+  }, [levels]);
+
+  const levelRanks = useMemo(() => {
+    const sorted = levels
+      .filter((level) => !level.isInitial && typeof level.thresholdAmount === "number")
+      .slice()
+      .sort((a, b) => (a.thresholdAmount ?? 0) - (b.thresholdAmount ?? 0));
+    const rankMap = new Map<string, "gold" | "silver" | "bronze">();
+    const top = sorted[sorted.length - 1];
+    const second = sorted[sorted.length - 2];
+    const third = sorted[sorted.length - 3];
+    if (top) rankMap.set(top.id, "gold");
+    if (second) rankMap.set(second.id, "silver");
+    if (third) rankMap.set(third.id, "bronze");
+    return rankMap;
+  }, [levels]);
+
+  const resolveMemberLevel = (member: AudienceMember) => {
+    if (member.levelId && levelLookup.byId.has(member.levelId)) {
+      return levelLookup.byId.get(member.levelId) || null;
+    }
+    const nameKey = member.levelName?.toLowerCase();
+    if (nameKey && levelLookup.byName.has(nameKey)) {
+      return levelLookup.byName.get(nameKey) || null;
+    }
+    return null;
+  };
+
+  const getMemberLevelLabel = (member: AudienceMember) => {
+    if (member.levelName) return member.levelName;
+    const resolved = resolveMemberLevel(member);
+    if (resolved?.name) return resolved.name;
+    return levelLookup.initial?.name || "Base";
+  };
+
+  const getMemberLevelClass = (member: AudienceMember) => {
+    const resolved = resolveMemberLevel(member);
+    if (resolved?.isInitial) return "bg-gray-100 text-gray-700 border-gray-300";
+    const rank = resolved ? levelRanks.get(resolved.id) : undefined;
+    if (rank === "gold") return "bg-yellow-50 text-yellow-700 border-yellow-200";
+    if (rank === "silver") return "bg-slate-100 text-slate-700 border-slate-200";
+    if (rank === "bronze") return "bg-amber-50 text-amber-700 border-amber-200";
+    return "bg-gray-100 text-gray-700 border-gray-300";
+  };
+
+  const modalRangeStart =
+    filteredMembers.length === 0 ? 0 : (modalPage - 1) * modalItemsPerPage + 1;
+  const modalRangeEnd = Math.min(filteredMembers.length, modalPage * modalItemsPerPage);
+
+  if (view === "create") {
+    return (
+      <div className="p-8 max-w-[1200px] mx-auto animate-fade-in">
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center space-x-4">
+            <button onClick={() => setView("list")} className="p-2 hover:bg-gray-100 rounded-full text-gray-500">
+              <ArrowLeft size={24} />
+            </button>
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">
+                {editingId ? "Редактирование аудитории" : "Новая аудитория"}
+              </h2>
+              <p className="text-sm text-gray-500">Настройте параметры сегментации клиентов.</p>
             </div>
           </div>
-        </CardBody>
-      </Card>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex items-center space-x-2 bg-purple-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-purple-700 shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
+          >
+            {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+            <span>{saving ? "Сохранение..." : "Сохранить"}</span>
+          </button>
+        </div>
 
-      {/* List */}
-      <Card>
-        <CardHeader title="Аудитории" />
-        <CardBody style={{ padding: 0 }}>
-          {loading ? (
-            <div style={{ padding: 20 }}><Skeleton height={200} /></div>
-          ) : (
-            <div className="data-list">
-              <div className="list-row audience-grid" style={{ background: "rgba(255,255,255,0.02)", borderBottom: "1px solid var(--border-subtle)" }}>
-                <div className="cell-label">НАЗВАНИЕ</div>
-                <div className="cell-label">УЧАСТНИКИ</div>
-                <div className="cell-label">ПОСЛ. ПОКУПКА</div>
-                <div className="cell-label">КОЛ-ВО ПОКУПОК</div>
-                <div className="cell-label">СРЕДНИЙ ЧЕК</div>
-                <div className="cell-label" style={{ textAlign: "right" }}>ДЕЙСТВИЯ</div>
-              </div>
-              {filtered.map((audience) => (
-                <div 
-                  key={audience.id} 
-                  className="list-row audience-grid"
-                  onClick={() => openEdit(audience)}
-                  style={{ cursor: "pointer" }}
-                >
-                  <div style={{ fontWeight: 600, color: "var(--fg)" }}>{audience.name}</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-                    <Users2 size={14} className="text-muted" />
-                    {audience.participants}
-                  </div>
-                  <div style={{ fontSize: 13, color: "var(--fg-secondary)" }}>
-                    {audience.lastPurchaseDays !== '—' ? `${audience.lastPurchaseDays} дн.` : '—'}
-                  </div>
-                  <div style={{ fontSize: 13, color: "var(--fg-secondary)" }}>
-                    {audience.purchaseCount}
-                  </div>
-                  <div style={{ fontSize: 13, fontWeight: 500, color: "var(--fg)" }}>
-                    {audience.averageCheck}
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); openEdit(audience); }}
-                      className="btn-icon"
-                      title="Настроить"
-                      style={{ color: "var(--fg-secondary)", padding: 6, borderRadius: 6, cursor: "pointer", border: "none", background: "transparent" }}
-                    >
-                      <Settings size={16} />
-                    </button>
-                    <button
-                      onClick={(e) => openMembersModal(audience, e)}
-                      className="btn-icon"
-                      title="Участники"
-                      style={{ color: "var(--brand-primary-light)", padding: 6, borderRadius: 6, cursor: "pointer", border: "none", background: "transparent" }}
-                    >
-                      <User size={16} />
-                    </button>
-                    <button
-                      onClick={(e) => { 
-                        e.stopPropagation();
-                        if (confirm('Удалить аудиторию?')) {
-                           api(`/api/portal/audiences/${encodeURIComponent(audience.id)}/archive`, { method: 'POST', body: JSON.stringify({}) })
-                             .then(() => { loadAudiences(); closeModal(); })
-                             .catch(console.error);
-                        }
-                      }}
-                      className="btn-icon"
-                      title="Удалить"
-                      style={{ color: "var(--danger)", padding: 6, borderRadius: 6, cursor: "pointer", border: "none", background: "transparent" }}
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-              {!filtered.length && (
-                <div style={{ padding: 40, textAlign: "center", opacity: 0.6 }}>
-                  <Users2 size={48} style={{ opacity: 0.3, marginBottom: 12 }} />
-                  <div>Аудитории не найдены</div>
-                </div>
-              )}
+        {formError && (
+          <div className="bg-red-50 border border-red-100 text-red-700 px-4 py-3 rounded-lg text-sm mb-6 flex items-start gap-2">
+            <AlertCircle size={18} className="mt-0.5" />
+            <span>{formError}</span>
+          </div>
+        )}
+
+        {catalogError && (
+          <div className="bg-amber-50 border border-amber-100 text-amber-700 px-4 py-3 rounded-lg text-sm mb-6 flex items-start gap-2">
+            <AlertCircle size={18} className="mt-0.5" />
+            <span>{catalogError}</span>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <div className="space-y-6">
+            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+              <label className="block text-sm font-medium text-gray-900 mb-2">
+                Название аудитории <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                placeholder="Например: Покупатели кофе"
+              />
             </div>
-          )}
-        </CardBody>
-      </Card>
 
-        {membersModalAudience && typeof document !== 'undefined' && createPortal(
-          <div className="modal-overlay" onClick={closeMembersModal}>
-            <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(720px, 96vw)', maxHeight: '75vh' }}>
-              <div className="modal-header">
-                <div>
-                  <div style={{ fontSize: 18, fontWeight: 700 }}>{membersModalAudience.name}</div>
-                  <div style={{ fontSize: 13, opacity: 0.65, marginTop: 4 }}>
-                    {membersModalAudience.participants} участников
-                  </div>
-                </div>
-                <button className="btn-ghost" onClick={closeMembersModal} style={{ padding: 6, borderRadius: '50%', border: 'none', cursor: 'pointer', display: 'flex' }}>
-                  <X size={20} />
-                </button>
+            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm space-y-6">
+              <div className="flex items-center space-x-2 text-gray-900 font-bold text-lg border-b border-gray-100 pb-3">
+                <Target size={20} className="text-purple-600" />
+                <h3>Точки и Товары</h3>
               </div>
 
-              <div className="modal-body">
-                <div style={{ position: 'relative' }}>
-                  <Search
-                    size={16}
-                    style={{
-                      position: 'absolute',
-                      left: 12,
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      color: 'var(--fg-muted)',
-                    }}
-                  />
-                  <input
-                    value={memberSearch}
-                    onChange={(event) => setMemberSearch(event.target.value)}
-                    placeholder="Поиск по телефону или имени"
-                    className="input"
-                    style={{ width: '100%', paddingLeft: 38 }}
-                  />
-                </div>
-
-                {membersLoading ? (
-                  <Skeleton height={220} />
-                ) : filteredMembers.length ? (
-                  <div
-                    style={{
-                      display: 'grid',
-                      gap: 8,
-                      maxHeight: '50vh',
-                      overflowY: 'auto',
-                      paddingRight: 4,
-                    }}
-                  >
-                    {filteredMembers.map((member) => (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Посещал точки</label>
+                {catalogLoading ? (
+                  <div className="text-sm text-gray-500">Загрузка точек...</div>
+                ) : outlets.length ? (
+                  <div className="flex flex-wrap gap-2">
+                    {outlets.map((outlet) => (
                       <button
-                        key={member.id}
-                        onClick={() => handleMemberClick(member)}
-                        className="btn-ghost"
-                        style={{
-                          justifyContent: 'space-between',
-                          textAlign: 'left',
-                          padding: '12px 16px',
-                          borderRadius: 12,
-                          border: '1px solid var(--border-subtle)',
-                          width: '100%',
-                          display: 'flex',
-                          alignItems: 'center',
-                          background: 'rgba(255,255,255,0.02)',
-                        }}
+                        key={outlet.id}
+                        onClick={() =>
+                          setFormData({
+                            ...formData,
+                            selectedOutlets: toggleSelection(formData.selectedOutlets, outlet.id),
+                          })
+                        }
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                          formData.selectedOutlets.includes(outlet.id)
+                            ? "bg-purple-100 border-purple-200 text-purple-800"
+                            : "bg-white border-gray-200 text-gray-600 hover:border-purple-200"
+                        }`}
                       >
-                        <div style={{ display: 'grid', gap: 4 }}>
-                          <div style={{ fontWeight: 600, fontSize: 14 }}>{member.name || member.phone}</div>
-                          <div style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
-                            {member.phone}
-                            {member.age ? ` • ${member.age} лет` : ''}
-                          </div>
-                        </div>
-                        <div style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
-                          {formatDateRu(member.registrationDate)}
-                        </div>
+                        {outlet.name}
                       </button>
                     ))}
                   </div>
                 ) : (
-                  <div style={{ padding: 20, textAlign: 'center', opacity: 0.6 }}>Участники не найдены</div>
+                  <div className="text-sm text-gray-500">Точки не найдены</div>
                 )}
               </div>
-            </div>
-          </div>,
-          document.body,
-        )}
 
-        {modalMode && typeof document !== 'undefined' && createPortal(
-          <div className="modal-overlay" onClick={closeModal}>
-            <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(960px, 96vw)', maxHeight: '82vh' }}>
-              <div className="modal-header">
-                <div>
-                  <div style={{ fontSize: 18, fontWeight: 700 }}>{modalMode === 'create' ? 'Создать аудиторию' : audienceName}</div>
-                  <div style={{ fontSize: 13, opacity: 0.65, marginTop: 4 }}>{modalMode === 'create' ? 'Настройте фильтры и сохраните аудиторию' : `${currentAudience?.participants ?? 0} участников`}</div>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <label className="block text-sm font-medium text-gray-700">Покупал товары</label>
+                  <span className="text-xs font-medium text-purple-600 bg-purple-50 px-2 py-1 rounded-full">
+                    Выбрано: {formData.targetType === "products" ? formData.selectedProducts.length : formData.selectedCategories.length}
+                  </span>
                 </div>
-                <button className="btn-ghost" onClick={closeModal} style={{ padding: 6, borderRadius: '50%', border: 'none', cursor: 'pointer', display: 'flex' }}>
-                  <X size={20} />
-                </button>
+
+                <div className="flex bg-gray-100 p-1 rounded-lg w-fit">
+                  <button
+                    onClick={() => setFormData({ ...formData, targetType: "products" })}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                      formData.targetType === "products" ? "bg-white shadow-sm text-gray-900" : "text-gray-500"
+                    }`}
+                  >
+                    Товары
+                  </button>
+                  <button
+                    onClick={() => setFormData({ ...formData, targetType: "categories" })}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                      formData.targetType === "categories" ? "bg-white shadow-sm text-gray-900" : "text-gray-500"
+                    }`}
+                  >
+                    Категории
+                  </button>
+                </div>
+
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                  <input
+                    type="text"
+                    value={productSearch}
+                    onChange={(e) => setProductSearch(e.target.value)}
+                    placeholder={formData.targetType === "products" ? "Поиск товаров..." : "Поиск категорий..."}
+                    className="w-full border border-gray-300 rounded-lg pl-9 pr-4 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-48 overflow-y-auto custom-scrollbar">
+                  {catalogLoading ? (
+                    <div className="p-4 text-center text-sm text-gray-500">Загрузка...</div>
+                  ) : visibleItems.length === 0 ? (
+                    <div className="p-4 text-center text-sm text-gray-500">Ничего не найдено</div>
+                  ) : (
+                    visibleItems.map((item: any) => {
+                      const isSelected =
+                        formData.targetType === "products"
+                          ? formData.selectedProducts.includes(item.id)
+                          : formData.selectedCategories.includes(item.id);
+
+                      return (
+                        <div
+                          key={item.id}
+                          onClick={() => toggleProductSelection(item.id)}
+                          className={`p-2.5 flex items-center justify-between hover:bg-gray-50 cursor-pointer transition-colors ${
+                            isSelected ? "bg-purple-50" : ""
+                          }`}
+                        >
+                          <div className="flex items-center space-x-3">
+                            <div
+                              className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold ${
+                                isSelected ? "bg-purple-200 text-purple-700" : "bg-gray-100 text-gray-500"
+                              }`}
+                            >
+                              {item.name.charAt(0)}
+                            </div>
+                            <div>
+                              <div
+                                className={`text-sm ${isSelected ? "font-medium text-purple-900" : "text-gray-700"}`}
+                              >
+                                {item.name}
+                              </div>
+                              {formData.targetType === "products" && "category" in item && item.category && (
+                                <div className="text-[10px] text-gray-400">{item.category}</div>
+                              )}
+                              {formData.targetType === "categories" && "count" in item && (
+                                <div className="text-[10px] text-gray-400">{item.count} товаров</div>
+                              )}
+                            </div>
+                          </div>
+                          <div
+                            className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
+                              isSelected ? "bg-purple-600 border-purple-600" : "border-gray-300 bg-white"
+                            }`}
+                          >
+                            {isSelected && <Check size={10} className="text-white" />}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm space-y-6">
+              <div className="flex items-center space-x-2 text-gray-900 font-bold text-lg border-b border-gray-100 pb-3">
+                <User size={20} className="text-blue-500" />
+                <h3>Демография</h3>
               </div>
 
-              <div className="modal-body">
-                <div style={{ display: 'grid', gap: 24 }}>
-                  <div style={{ display: 'grid', gap: 8 }}>
-                    <label style={{ fontSize: 13, fontWeight: 500, color: 'var(--fg-secondary)' }}>Название *</label>
-                    <input 
-                      value={audienceName} 
-                      onChange={(e) => setAudienceName(e.target.value)} 
-                      placeholder="Например, Лояльные" 
-                      className="input"
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Пол</label>
+                  <select
+                    value={formData.gender}
+                    onChange={(e) => setFormData({ ...formData, gender: e.target.value as AudienceFormData["gender"] })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+                  >
+                    <option value="all">Любой</option>
+                    <option value="M">Мужской</option>
+                    <option value="F">Женский</option>
+                    <option value="U">Не указан</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Возраст</label>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="number"
+                      placeholder="От"
+                      value={formData.ageFrom}
+                      onChange={(e) => setFormData({ ...formData, ageFrom: e.target.value })}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    />
+                    <span className="text-gray-400">-</span>
+                    <input
+                      type="number"
+                      placeholder="До"
+                      value={formData.ageTo}
+                      onChange={(e) => setFormData({ ...formData, ageTo: e.target.value })}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                     />
                   </div>
+                </div>
+              </div>
 
-                  <SettingsForm
-                    settings={settings}
-                    onChange={setSettings}
-                    outletOptions={outletOptions}
-                    levelOptions={levelOptions}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  День рождения (период до/после дня рождения)
+                </label>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">Дней до</span>
+                    <input
+                      type="number"
+                      value={formData.birthdayBefore}
+                      onChange={(e) => setFormData({ ...formData, birthdayBefore: e.target.value })}
+                      className="w-full border border-gray-300 rounded-lg pl-24 pr-3 py-2 text-sm"
+                      placeholder="0"
+                    />
+                  </div>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">Дней после</span>
+                    <input
+                      type="number"
+                      value={formData.birthdayAfter}
+                      onChange={(e) => setFormData({ ...formData, birthdayAfter: e.target.value })}
+                      className="w-full border border-gray-300 rounded-lg pl-24 pr-3 py-2 text-sm"
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm space-y-6">
+              <div className="flex items-center space-x-2 text-gray-900 font-bold text-lg border-b border-gray-100 pb-3">
+                <Calendar size={20} className="text-orange-500" />
+                <h3>Активность</h3>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Дней с регистрации</label>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="number"
+                    placeholder="От"
+                    value={formData.regDaysFrom}
+                    onChange={(e) => setFormData({ ...formData, regDaysFrom: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                  <span className="text-gray-400">-</span>
+                  <input
+                    type="number"
+                    placeholder="До"
+                    value={formData.regDaysTo}
+                    onChange={(e) => setFormData({ ...formData, regDaysTo: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                   />
                 </div>
               </div>
 
-              <div className="modal-footer" style={{ justifyContent: modalMode === 'edit' ? 'space-between' : 'flex-end' }}>
-                {modalMode === 'edit' && currentAudience && (
-                  <Button variant="danger" startIcon={<Trash2 size={16} />} onClick={handleDelete}>Удалить аудиторию</Button>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Дней с последней покупки</label>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="number"
+                    placeholder="От"
+                    value={formData.lastPurchaseFrom}
+                    onChange={(e) => setFormData({ ...formData, lastPurchaseFrom: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                  <span className="text-gray-400">-</span>
+                  <input
+                    type="number"
+                    placeholder="До"
+                    value={formData.lastPurchaseTo}
+                    onChange={(e) => setFormData({ ...formData, lastPurchaseTo: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Количество покупок</label>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="number"
+                    placeholder="От"
+                    value={formData.purchaseCountFrom}
+                    onChange={(e) => setFormData({ ...formData, purchaseCountFrom: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                  <span className="text-gray-400">-</span>
+                  <input
+                    type="number"
+                    placeholder="До"
+                    value={formData.purchaseCountTo}
+                    onChange={(e) => setFormData({ ...formData, purchaseCountTo: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm space-y-6">
+              <div className="flex items-center space-x-2 text-gray-900 font-bold text-lg border-b border-gray-100 pb-3">
+                <DollarSign size={20} className="text-green-600" />
+                <h3>Финансы</h3>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Средний чек (₽)</label>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="number"
+                    placeholder="От"
+                    value={formData.avgCheckFrom}
+                    onChange={(e) => setFormData({ ...formData, avgCheckFrom: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                  <span className="text-gray-400">-</span>
+                  <input
+                    type="number"
+                    placeholder="До"
+                    value={formData.avgCheckTo}
+                    onChange={(e) => setFormData({ ...formData, avgCheckTo: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Сумма покупок (₽)</label>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="number"
+                    placeholder="От"
+                    value={formData.totalSpendFrom}
+                    onChange={(e) => setFormData({ ...formData, totalSpendFrom: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                  <span className="text-gray-400">-</span>
+                  <input
+                    type="number"
+                    placeholder="До"
+                    value={formData.totalSpendTo}
+                    onChange={(e) => setFormData({ ...formData, totalSpendTo: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm space-y-6">
+              <div className="flex items-center space-x-2 text-gray-900 font-bold text-lg border-b border-gray-100 pb-3">
+                <ShoppingBag size={20} className="text-pink-600" />
+                <h3>Сегментация</h3>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Уровень клиента</label>
+                {catalogLoading ? (
+                  <div className="text-sm text-gray-500">Загрузка уровней...</div>
+                ) : levels.length ? (
+                  <div className="flex flex-wrap gap-2">
+                    {levels.map((level) => (
+                      <button
+                        key={level.id}
+                        onClick={() =>
+                          setFormData({
+                            ...formData,
+                            selectedLevels: toggleSelection(formData.selectedLevels, level.id),
+                          })
+                        }
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                          formData.selectedLevels.includes(level.id)
+                            ? "bg-yellow-100 border-yellow-200 text-yellow-800"
+                            : "bg-white border-gray-200 text-gray-600 hover:border-yellow-200"
+                        }`}
+                      >
+                        {level.name}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-500">Уровни не найдены</div>
                 )}
-                <div style={{ display: 'flex', gap: 12 }}>
-                  <button className="btn" onClick={closeModal} disabled={saving}>Отмена</button>
-                  <Button variant="primary" onClick={handleSubmit} disabled={saving} startIcon={<Users2 size={16} />}>
-                    {saving ? 'Сохраняем…' : 'Сохранить'}
-                  </Button>
+              </div>
+
+              <div className="space-y-3">
+                <label className="block text-sm font-medium text-gray-700">RFM Сегменты (1 = плохо, 5 = отлично)</label>
+
+                <div className="flex items-center space-x-3">
+                  <span className="text-xs font-bold w-4 text-gray-500">R</span>
+                  <div className="flex space-x-1">
+                    {["1", "2", "3", "4", "5"].map((val) => (
+                      <button
+                        key={val}
+                        onClick={() => setFormData({ ...formData, selectedR: toggleSelection(formData.selectedR, val) })}
+                        className={`w-8 h-8 rounded border text-xs font-medium transition-colors ${
+                          formData.selectedR.includes(val)
+                            ? "bg-purple-600 text-white border-purple-600"
+                            : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+                        }`}
+                      >
+                        {val}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="text-xs text-gray-400">Давность</span>
+                </div>
+
+                <div className="flex items-center space-x-3">
+                  <span className="text-xs font-bold w-4 text-gray-500">F</span>
+                  <div className="flex space-x-1">
+                    {["1", "2", "3", "4", "5"].map((val) => (
+                      <button
+                        key={val}
+                        onClick={() => setFormData({ ...formData, selectedF: toggleSelection(formData.selectedF, val) })}
+                        className={`w-8 h-8 rounded border text-xs font-medium transition-colors ${
+                          formData.selectedF.includes(val)
+                            ? "bg-purple-600 text-white border-purple-600"
+                            : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+                        }`}
+                      >
+                        {val}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="text-xs text-gray-400">Частота</span>
+                </div>
+
+                <div className="flex items-center space-x-3">
+                  <span className="text-xs font-bold w-4 text-gray-500">M</span>
+                  <div className="flex space-x-1">
+                    {["1", "2", "3", "4", "5"].map((val) => (
+                      <button
+                        key={val}
+                        onClick={() => setFormData({ ...formData, selectedM: toggleSelection(formData.selectedM, val) })}
+                        className={`w-8 h-8 rounded border text-xs font-medium transition-colors ${
+                          formData.selectedM.includes(val)
+                            ? "bg-purple-600 text-white border-purple-600"
+                            : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+                        }`}
+                      >
+                        {val}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="text-xs text-gray-400">Деньги</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Аудитории</h2>
+          <p className="text-gray-500 mt-1">Создание сегментов клиентов для таргетированных рассылок и акций.</p>
+        </div>
+
+        <button
+          onClick={handleStartCreate}
+          className="flex items-center space-x-2 bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors shadow-sm"
+        >
+          <Plus size={18} />
+          <span>Создать аудиторию</span>
+        </button>
+      </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-100 text-red-700 px-4 py-3 rounded-lg text-sm flex items-start gap-2">
+          <AlertCircle size={18} className="mt-0.5" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
+        <div className="p-4 border-b border-gray-100 flex items-center justify-between gap-4">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+            <input
+              type="text"
+              placeholder="Поиск аудитории..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full border border-gray-200 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+          </div>
+
+          <div className="flex items-center space-x-2 text-sm text-gray-500">
+            <Filter size={16} />
+            <span>{filteredAudiences.length} сегментов</span>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="text-xs text-gray-500 uppercase bg-gray-50 border-b border-gray-100">
+              <tr>
+                <th className="px-6 py-4 font-semibold">Название</th>
+                <th className="px-6 py-4 font-semibold">Описание</th>
+                <th className="px-6 py-4 font-semibold text-right">Размер</th>
+                <th className="px-6 py-4 font-semibold text-right">Создана</th>
+                <th className="px-6 py-4 font-semibold text-right w-32">Действия</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {loading ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
+                    <Loader2 size={20} className="mx-auto mb-2 animate-spin" />
+                    <p>Загрузка аудиторий...</p>
+                  </td>
+                </tr>
+              ) : filteredAudiences.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
+                    <Users size={48} className="mx-auto text-gray-300 mb-4" />
+                    <p>Аудитории не найдены.</p>
+                  </td>
+                </tr>
+              ) : (
+                filteredAudiences.map((audience) => (
+                  <tr key={audience.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4 font-medium text-purple-600 break-words">{audience.name}</td>
+                    <td className="px-6 py-4 text-gray-600 max-w-md truncate">
+                      {audienceDescriptions.get(audience.id) ?? audience.description}
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                        {audience.count} чел.
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right text-gray-500 text-xs">{audience.createdAt}</td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex items-center justify-end space-x-2">
+                        <button
+                          onClick={(event) => openMembers(audience, event)}
+                          title="Просмотр состава"
+                          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        >
+                          <Eye size={16} />
+                        </button>
+                        <button
+                          onClick={() => handleStartEdit(audience)}
+                          title={audience.isAllCustomers ? "Системную аудиторию нельзя редактировать" : "Редактировать"}
+                          className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                        >
+                          <Edit size={16} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(audience)}
+                          title={audience.isAllCustomers ? "Системную аудиторию нельзя удалить" : "Удалить"}
+                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {isMembersModalOpen &&
+        viewingAudience &&
+        createPortal(
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-[4px] z-[150] flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl relative z-[101] flex flex-col max-h-[90vh] overflow-hidden">
+              <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-xl sticky top-0 z-10 flex-shrink-0">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-purple-100 text-purple-600 rounded-lg">
+                    <Users size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900">Состав аудитории: {viewingAudience.name}</h3>
+                    <p className="text-sm text-gray-500">
+                      Показано <span className="font-bold text-purple-600">{filteredMembers.length}</span> из{" "}
+                      {viewingAudience.count} подходящих клиентов
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={closeMembers}
+                  className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-200 rounded-full transition-colors"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="p-4 border-b border-gray-100 bg-white flex-shrink-0">
+                <div className="relative max-w-md">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                  <input
+                    type="text"
+                    value={membersSearch}
+                    onChange={(e) => {
+                      setMembersSearch(e.target.value);
+                      setModalPage(1);
+                    }}
+                    placeholder="Поиск в сегменте по имени или телефону..."
+                    className="w-full border border-gray-200 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto custom-scrollbar">
+                <table className="w-full text-sm text-left">
+                  <thead className="text-xs text-gray-500 uppercase bg-gray-50 sticky top-0 z-10 shadow-sm border-b border-gray-100">
+                    <tr>
+                      <th className="px-6 py-4 font-semibold bg-gray-50">Клиент</th>
+                      <th className="px-6 py-4 font-semibold bg-gray-50">Телефон</th>
+                      <th className="px-6 py-4 font-semibold bg-gray-50 text-center">Уровень</th>
+                      <th className="px-6 py-4 font-semibold bg-gray-50 text-center">Посл. покупка</th>
+                      <th className="px-6 py-4 font-semibold bg-gray-50 text-right">LTV (Сумма)</th>
+                      <th className="px-6 py-4 font-semibold bg-gray-50 text-right w-16"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {!membersLoading && !membersError && paginatedMembers.length > 0 ? (
+                      paginatedMembers.map((member) => (
+                        <tr key={member.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-6 py-4">
+                            <div className="flex items-center space-x-3">
+                              <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 font-bold text-xs">
+                                {member.name.charAt(0)}
+                              </div>
+                              <span className="font-medium text-gray-900 break-words">{member.name}</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-gray-600 whitespace-nowrap">
+                            <div className="flex items-center space-x-2">
+                              <Phone size={12} className="text-gray-400" />
+                              <span className="font-mono text-xs">{member.phone || "—"}</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border ${getMemberLevelClass(
+                                member,
+                              )}`}
+                            >
+                              {getMemberLevelLabel(member)}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-center text-gray-600 whitespace-nowrap text-xs">
+                            <div className="flex items-center justify-center space-x-1">
+                              <Clock size={12} className="text-gray-400" />
+                              <span>{formatLastPurchase(member.daysSinceLastVisit)}</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-right font-bold text-gray-900 whitespace-nowrap">
+                            ₽{formatCurrency(member.totalSpend)}
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <button
+                              title="Перейти в карточку"
+                              className="text-purple-400 hover:text-purple-600 p-1 rounded-lg hover:bg-purple-50 transition-all"
+                              onClick={() => {
+                                router.push(`/customers/${member.id}`);
+                                closeMembers();
+                              }}
+                            >
+                              <ExternalLink size={16} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td
+                          colSpan={6}
+                          className={`px-6 py-20 text-center bg-white ${
+                            membersError ? "text-red-500" : "text-gray-400"
+                          }`}
+                        >
+                          <Search size={48} className="mx-auto opacity-20 mb-3" />
+                          <p className="text-base">
+                            {membersLoading
+                              ? "Загрузка участников..."
+                              : membersError
+                                ? membersError
+                                : "Клиенты не найдены"}
+                          </p>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="p-4 border-t border-gray-100 bg-gray-50 rounded-b-xl flex flex-col sm:flex-row justify-between items-center gap-4 flex-shrink-0">
+                <div className="text-xs text-gray-500 flex items-center gap-2">
+                  <AlertCircle size={14} className="text-purple-500" />
+                  <span>
+                    Показано {modalRangeStart}-{modalRangeEnd} из {filteredMembers.length}
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setModalPage((p) => Math.max(1, p - 1))}
+                    disabled={modalPage === 1}
+                    className="p-2 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                  <div className="flex space-x-1">
+                    {getPageNumbers().map((p, i) => (
+                      <button
+                        key={i}
+                        onClick={() => typeof p === "number" && setModalPage(p)}
+                        disabled={typeof p !== "number"}
+                        className={`w-8 h-8 rounded-lg text-xs font-bold transition-all ${
+                          modalPage === p
+                            ? "bg-purple-600 text-white shadow-sm"
+                            : p === "..."
+                              ? "bg-transparent text-gray-400 cursor-default"
+                              : "bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => setModalPage((p) => Math.min(totalModalPages, p + 1))}
+                    disabled={modalPage === totalModalPages || totalModalPages === 0}
+                    className="p-2 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                  <button
+                    onClick={closeMembers}
+                    className="ml-4 px-6 py-2 bg-gray-900 text-white rounded-lg text-sm font-bold hover:bg-gray-800 transition-colors shadow-sm"
+                  >
+                    Закрыть
+                  </button>
                 </div>
               </div>
             </div>
@@ -1299,190 +1698,3 @@ export default function AudiencesPage() {
     </div>
   );
 }
-
-type SettingsFormProps = {
-  settings: AudienceSettings;
-  onChange: (next: AudienceSettings) => void;
-  outletOptions: Option[];
-  levelOptions: Option[];
-};
-
-const SettingsForm: React.FC<SettingsFormProps> = ({
-  settings,
-  onChange,
-  outletOptions,
-  levelOptions,
-}) => {
-  const update = (patch: Partial<AudienceSettings>) => onChange({ ...settings, ...patch });
-
-  return (
-    <div style={{ display: 'grid', gap: 18 }}>
-      <ToggleRow
-        title="Посещал точку"
-        enabled={settings.visitedEnabled}
-        onToggle={(value) => update({ visitedEnabled: value })}
-      >
-        <TagSelect
-          options={outletOptions}
-          value={settings.visitedOutlets}
-          onChange={(value) => update({ visitedOutlets: value })}
-          placeholder="Выберите торговые точки"
-        />
-      </ToggleRow>
-
-      <ToggleRow
-        title="Покупал товар"
-        enabled={settings.productEnabled}
-        onToggle={(value) => update({ productEnabled: value })}
-      >
-        <TagSelect
-          options={productOptions}
-          value={settings.products}
-          onChange={(value) => update({ products: value })}
-          placeholder="Выберите товары"
-        />
-      </ToggleRow>
-
-      <ToggleRow
-        title="Пол"
-        enabled={settings.genderEnabled}
-        onToggle={(value) => update({ genderEnabled: value })}
-      >
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button className={settings.gender === 'male' ? 'btn btn-primary' : 'btn'} onClick={() => update({ gender: 'male' })}>Мужской</button>
-          <button className={settings.gender === 'female' ? 'btn btn-primary' : 'btn'} onClick={() => update({ gender: 'female' })}>Женский</button>
-        </div>
-      </ToggleRow>
-
-      <ToggleRow
-        title="Возраст"
-        enabled={settings.ageEnabled}
-        onToggle={(value) => update({ ageEnabled: value })}
-      >
-        <RangeSlider min={0} max={100} value={settings.age} onChange={(value) => update({ age: value })} />
-      </ToggleRow>
-
-      <ToggleRow
-        title="День рождения"
-        enabled={settings.birthdayEnabled}
-        onToggle={(value) => update({ birthdayEnabled: value })}
-      >
-        <RangeSlider min={-30} max={30} value={settings.birthday} onChange={(value) => update({ birthday: value })} />
-      </ToggleRow>
-
-      <ToggleRow
-        title="Дней с момента регистрации"
-        enabled={settings.registrationEnabled}
-        onToggle={(value) => update({ registrationEnabled: value })}
-      >
-        <RangeSlider min={0} max={1000} value={settings.registration} onChange={(value) => update({ registration: value })} />
-      </ToggleRow>
-
-      <ToggleRow
-        title="Дней с последней покупки"
-        enabled={settings.lastPurchaseEnabled}
-        onToggle={(value) => update({ lastPurchaseEnabled: value })}
-      >
-        <RangeSlider min={0} max={365} value={settings.lastPurchase} onChange={(value) => update({ lastPurchase: value })} />
-      </ToggleRow>
-
-      <ToggleRow
-        title="Количество покупок"
-        enabled={settings.purchaseCountEnabled}
-        onToggle={(value) => update({ purchaseCountEnabled: value })}
-      >
-        <RangeSlider min={0} max={1000} value={settings.purchaseCount} onChange={(value) => update({ purchaseCount: value })} />
-      </ToggleRow>
-
-      <ToggleRow
-        title="Средний чек"
-        enabled={settings.averageCheckEnabled}
-        onToggle={(value) => update({ averageCheckEnabled: value })}
-      >
-        <DualInputRange value={settings.averageCheck} onChange={(value) => update({ averageCheck: value })} prefix="₽" />
-      </ToggleRow>
-
-      <ToggleRow
-        title="Сумма покупок"
-        enabled={settings.purchaseSumEnabled}
-        onToggle={(value) => update({ purchaseSumEnabled: value })}
-      >
-        <DualInputRange value={settings.purchaseSum} onChange={(value) => update({ purchaseSum: value })} prefix="₽" />
-      </ToggleRow>
-
-      <ToggleRow
-        title="Уровень клиента"
-        enabled={settings.levelEnabled}
-        onToggle={(value) => update({ levelEnabled: value })}
-      >
-        <TagSelect options={levelOptions} value={settings.level ? [settings.level] : []} onChange={(value) => update({ level: value[0] || '' })} allowMultiple={false} placeholder="Выберите уровень" />
-      </ToggleRow>
-
-      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))' }}>
-        <ToggleRow title="RFM Давность" enabled={settings.rfmRecencyEnabled} onToggle={(value) => update({ rfmRecencyEnabled: value })}>
-          <TagSelect options={rfmOptions} value={settings.rfmRecency ? [settings.rfmRecency] : []} onChange={(value) => update({ rfmRecency: value[0] || '' })} allowMultiple={false} placeholder="Выберите" />
-        </ToggleRow>
-        <ToggleRow title="RFM Частота" enabled={settings.rfmFrequencyEnabled} onToggle={(value) => update({ rfmFrequencyEnabled: value })}>
-          <TagSelect options={rfmOptions} value={settings.rfmFrequency ? [settings.rfmFrequency] : []} onChange={(value) => update({ rfmFrequency: value[0] || '' })} allowMultiple={false} placeholder="Выберите" />
-        </ToggleRow>
-        <ToggleRow title="RFM Деньги" enabled={settings.rfmMonetaryEnabled} onToggle={(value) => update({ rfmMonetaryEnabled: value })}>
-          <TagSelect options={rfmOptions} value={settings.rfmMonetary ? [settings.rfmMonetary] : []} onChange={(value) => update({ rfmMonetary: value[0] || '' })} allowMultiple={false} placeholder="Выберите" />
-        </ToggleRow>
-      </div>
-
-      <ToggleRow
-        title="Устройство"
-        enabled={settings.deviceEnabled}
-        onToggle={(value) => update({ deviceEnabled: value })}
-      >
-        <TagSelect
-          options={[{ value: 'Android', label: 'Android' }, { value: 'iOS', label: 'iOS' }]}
-          value={settings.device ? [settings.device] : []}
-          onChange={(value) => update({ device: value[0] || '' })}
-          allowMultiple={false}
-          placeholder="Выберите платформу"
-        />
-      </ToggleRow>
-    </div>
-  );
-};
-
-type ToggleRowProps = {
-  title: string;
-  enabled: boolean;
-  onToggle: (value: boolean) => void;
-  children: React.ReactNode;
-};
-
-const ToggleRow: React.FC<ToggleRowProps> = ({ title, enabled, onToggle, children }) => (
-  <div style={{
-    border: '1px solid rgba(148,163,184,0.18)',
-    borderRadius: 16,
-    padding: 16,
-    background: 'rgba(148,163,184,0.06)',
-    display: 'grid',
-    gap: 12,
-  }}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-      <div style={{ fontWeight: 600, fontSize: 14 }}>{title}</div>
-      <Toggle checked={enabled} onChange={onToggle} label={enabled ? 'Вкл' : 'Выкл'} />
-    </div>
-    {enabled && <div>{children}</div>}
-  </div>
-);
-
-type DualInputRangeProps = {
-  value: [number, number];
-  onChange: (value: [number, number]) => void;
-  prefix?: string;
-};
-
-const DualInputRange: React.FC<DualInputRangeProps> = ({ value, onChange, prefix }) => (
-  <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-    <span style={{ opacity: 0.7 }}>От</span>
-    <input value={value[0]} onChange={(e) => onChange([Number(e.target.value || 0), value[1]])} style={{ padding: 10, borderRadius: 10, width: 120 }} />
-    <span style={{ opacity: 0.7 }}>до</span>
-    <input value={value[1]} onChange={(e) => onChange([value[0], Number(e.target.value || 0)])} style={{ padding: 10, borderRadius: 10, width: 120 }} />
-    {prefix && <span style={{ opacity: 0.7 }}>{prefix}</span>}
-  </div>
-);

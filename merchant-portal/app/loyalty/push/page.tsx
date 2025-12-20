@@ -15,6 +15,7 @@ import {
   Users,
 } from "lucide-react";
 import { useTimezone } from "../../../components/TimezoneProvider";
+import { isAllCustomersAudience } from "../../../lib/audience-utils";
 
 type TabKey = "active" | "archived";
 
@@ -203,7 +204,7 @@ export default function PushPage() {
   }, [loadAudiences]);
 
   const allAudience = useMemo(
-    () => audiences.find((a) => a.systemKey === "all-customers" || a.isSystem) ?? null,
+    () => audiences.find((a) => isAllCustomersAudience(a)) ?? null,
     [audiences],
   );
 
@@ -224,10 +225,13 @@ export default function PushPage() {
       if (campaign.audienceName) return campaign.audienceName;
       const raw = String(campaign.audience || "").trim();
       if (!raw) return "—";
+      if (raw.toUpperCase() === "ALL" || raw.toLowerCase() === "all-customers") {
+        return allAudience?.label || "Все клиенты";
+      }
       const match = audiences.find((a) => a.id === raw || a.label.toLowerCase() === raw.toLowerCase());
       return match ? match.label : raw;
     },
-    [audiences],
+    [audiences, allAudience],
   );
 
   const resolveAudienceId = useCallback(

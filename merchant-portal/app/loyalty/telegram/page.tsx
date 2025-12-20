@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { useTimezone } from "../../../components/TimezoneProvider";
+import { isAllCustomersAudience } from "../../../lib/audience-utils";
 
 type TabKey = "active" | "archived";
 
@@ -25,6 +26,7 @@ type TelegramCampaign = {
   id: string;
   audienceId: string | null;
   audienceName: string | null;
+  audience?: string | null;
   text: string;
   scheduledAt: string | null;
   status: string;
@@ -221,7 +223,7 @@ export default function TelegramPage() {
   }, [loadAudiences]);
 
   const allAudience = useMemo(
-    () => audiences.find((a) => a.systemKey === "all-customers" || a.isSystem) ?? null,
+    () => audiences.find((a) => isAllCustomersAudience(a)) ?? null,
     [audiences],
   );
 
@@ -244,9 +246,15 @@ export default function TelegramPage() {
         const match = audiences.find((a) => a.id === campaign.audienceId);
         if (match) return match.label;
       }
-      return "Все клиенты";
+      const raw = String(campaign.audience || "").trim();
+      if (!raw) return allAudience?.label || "Все клиенты";
+      if (raw.toUpperCase() === "ALL" || raw.toLowerCase() === "all-customers") {
+        return allAudience?.label || "Все клиенты";
+      }
+      const match = audiences.find((a) => a.label.toLowerCase() === raw.toLowerCase());
+      return match ? match.label : raw;
     },
-    [audiences],
+    [audiences, allAudience],
   );
 
   const openCreate = useCallback(() => {
