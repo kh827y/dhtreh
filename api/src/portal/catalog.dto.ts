@@ -23,13 +23,11 @@ export class CategoryDto {
   @ApiProperty() id!: string;
   @ApiProperty() name!: string;
   @ApiProperty() slug!: string;
-  @ApiPropertyOptional() code?: string | null;
   @ApiPropertyOptional() description?: string | null;
   @ApiPropertyOptional() imageUrl?: string | null;
   @ApiPropertyOptional() parentId?: string | null;
   @ApiProperty() order!: number;
-  @ApiPropertyOptional() externalProvider?: string | null;
-  @ApiPropertyOptional() externalId?: string | null;
+  @ApiProperty() status!: 'ACTIVE' | 'ARCHIVED';
 }
 
 export class CreateCategoryDto {
@@ -52,20 +50,10 @@ export class CreateCategoryDto {
   @IsOptional()
   @IsString()
   parentId?: string;
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ enum: ['ACTIVE', 'ARCHIVED'] })
   @IsOptional()
-  @IsString()
-  code?: string;
-  @ApiPropertyOptional({
-    description: 'Провайдер внешней системы (iiko, r_keeper, MoySklad и т.п.)',
-  })
-  @IsOptional()
-  @IsString()
-  externalProvider?: string;
-  @ApiPropertyOptional({ description: 'Внешний ID категории' })
-  @IsOptional()
-  @IsString()
-  externalId?: string;
+  @IsIn(['ACTIVE', 'ARCHIVED'])
+  status?: 'ACTIVE' | 'ARCHIVED';
 }
 
 export class UpdateCategoryDto extends PartialType(CreateCategoryDto) {}
@@ -283,19 +271,15 @@ export class UpdateProductDto extends PartialType(CreateProductDto) {}
 export class ProductListItemDto {
   @ApiProperty() id!: string;
   @ApiProperty() name!: string;
-  @ApiPropertyOptional() sku?: string | null;
-  @ApiPropertyOptional() code?: string | null;
-  @ApiPropertyOptional() barcode?: string | null;
-  @ApiPropertyOptional() unit?: string | null;
   @ApiPropertyOptional() categoryId?: string | null;
   @ApiPropertyOptional() categoryName?: string | null;
   @ApiPropertyOptional() previewImage?: string | null;
   @ApiProperty() visible!: boolean;
   @ApiProperty() accruePoints!: boolean;
   @ApiProperty() allowRedeem!: boolean;
+  @ApiProperty() redeemPercent!: number;
   @ApiProperty() purchasesMonth!: number;
   @ApiProperty() purchasesTotal!: number;
-  @ApiPropertyOptional() externalProvider?: string | null;
   @ApiPropertyOptional() externalId?: string | null;
 }
 
@@ -307,7 +291,6 @@ export class ProductDto extends ProductListItemDto {
   @ApiProperty() priceEnabled!: boolean;
   @ApiPropertyOptional() price?: number | null;
   @ApiProperty() disableCart!: boolean;
-  @ApiProperty() redeemPercent!: number;
   @ApiPropertyOptional() weightValue?: number | null;
   @ApiPropertyOptional() weightUnit?: string | null;
   @ApiPropertyOptional() heightCm?: number | null;
@@ -368,13 +351,6 @@ export class ListProductsQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
-  @ApiPropertyOptional({
-    description:
-      'Фильтр по провайдеру внешней системы (iiko, r_keeper, MoySklad и т.п.)',
-  })
-  @IsOptional()
-  @IsString()
-  externalProvider?: string;
   @ApiPropertyOptional({ description: 'Фильтр по внешнему ID товара' })
   @IsOptional()
   @IsString()

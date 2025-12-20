@@ -141,13 +141,11 @@ export class PortalCatalogService {
       id: entity.id,
       name: entity.name,
       slug: entity.slug,
-      code: entity.code ?? null,
       description: entity.description ?? null,
       imageUrl: entity.imageUrl ?? null,
       parentId: entity.parentId ?? null,
       order: entity.order,
-      externalProvider: (entity as any).externalProvider ?? null,
-      externalId: (entity as any).externalId ?? null,
+      status: entity.status,
     };
   }
 
@@ -162,25 +160,19 @@ export class PortalCatalogService {
       | ProductExternalId[]
       | undefined;
     const primaryExt = externalMappings?.[0];
-    const externalProvider =
-      product.externalProvider ?? primaryExt?.externalProvider ?? null;
     const externalId = product.externalId ?? primaryExt?.externalId ?? null;
     return {
       id: product.id,
       name: product.name,
-      sku: product.sku ?? null,
-      code: (product as any).code ?? null,
-      barcode: (product as any).barcode ?? null,
-      unit: (product as any).unit ?? null,
       categoryId: product.categoryId ?? null,
       categoryName: product.category?.name ?? null,
       previewImage: product.images[0]?.url ?? null,
       visible: product.visible,
       accruePoints: product.accruePoints,
       allowRedeem: product.allowRedeem,
+      redeemPercent: product.redeemPercent,
       purchasesMonth: product.purchasesMonth,
       purchasesTotal: product.purchasesTotal,
-      externalProvider,
       externalId,
     };
   }
@@ -228,7 +220,6 @@ export class PortalCatalogService {
       priceEnabled: product.priceEnabled,
       price: product.priceEnabled ? this.decimalToNumber(product.price) : null,
       disableCart: !product.allowCart,
-      redeemPercent: product.redeemPercent,
       weightValue: this.decimalToNumber(product.weightValue),
       weightUnit: product.weightUnit ?? null,
       heightCm: this.decimalToNumber(product.heightCm),
@@ -676,22 +667,13 @@ export class PortalCatalogService {
             merchantId,
             name,
             slug,
-            code: dto.code?.trim() || null,
             description: dto.description ?? null,
             imageUrl: dto.imageUrl ?? null,
             parentId: dto.parentId ?? null,
             order,
-            externalProvider: dto.externalProvider?.trim() || null,
-            externalId: dto.externalId?.trim() || null,
+            status: dto.status ?? 'ACTIVE',
           },
         });
-        await this.syncCategoryExternal(
-          tx,
-          merchantId,
-          created.id,
-          dto.externalProvider?.trim() || null,
-          dto.externalId?.trim() || null,
-        );
         this.logger.log(
           JSON.stringify({
             event: 'portal.catalog.category.create',
@@ -741,7 +723,7 @@ export class PortalCatalogService {
       if (dto.description !== undefined)
         data.description = dto.description ?? null;
       if (dto.imageUrl !== undefined) data.imageUrl = dto.imageUrl ?? null;
-      if (dto.code !== undefined) data.code = dto.code?.trim() || null;
+      if (dto.status !== undefined) data.status = dto.status;
       if (dto.parentId !== undefined) {
         if (dto.parentId) {
           if (dto.parentId === categoryId)
@@ -752,31 +734,12 @@ export class PortalCatalogService {
           data.parent = { disconnect: true };
         }
       }
-      if (dto.externalProvider !== undefined)
-        (data as any).externalProvider = dto.externalProvider?.trim() || null;
-      if (dto.externalId !== undefined)
-        (data as any).externalId = dto.externalId?.trim() || null;
       if (Object.keys(data).length === 0) return this.mapCategory(category);
       try {
         const updated = await tx.productCategory.update({
           where: { id: categoryId },
           data,
         });
-        const extProvider =
-          dto.externalProvider?.trim() ??
-          category.externalProvider ??
-          undefined;
-        const extId =
-          dto.externalId?.trim() ?? category.externalId ?? undefined;
-        if (extProvider && extId) {
-          await this.syncCategoryExternal(
-            tx,
-            merchantId,
-            updated.id,
-            extProvider,
-            extId,
-          );
-        }
         this.logger.log(
           JSON.stringify({
             event: 'portal.catalog.category.update',
@@ -864,18 +827,6 @@ export class PortalCatalogService {
     if (query.points === 'with_points') where.accruePoints = true;
     if (query.points === 'without_points') where.accruePoints = false;
     const andFilters: Prisma.ProductWhereInput[] = [];
-    if (query.externalProvider) {
-      andFilters.push({
-        OR: [
-          { externalProvider: query.externalProvider },
-          {
-            externalMappings: {
-              some: { externalProvider: query.externalProvider },
-            },
-          },
-        ],
-      });
-    }
     if (query.externalId) {
       const extId = query.externalId.trim();
       if (extId) {
@@ -902,9 +853,6 @@ export class PortalCatalogService {
         and.push({
           OR: [
             { name: { contains: term, mode: 'insensitive' } },
-            { sku: { contains: term, mode: 'insensitive' } },
-            { code: { contains: term, mode: 'insensitive' } },
-            { barcode: { contains: term, mode: 'insensitive' } },
             { externalId: { contains: term, mode: 'insensitive' } },
             {
               externalMappings: {
@@ -1057,9 +1005,18 @@ export class PortalCatalogService {
         }
       }
       const order = dto.order ?? (await this.nextProductOrder(tx, merchantId));
+      const sanitizedDto: CreateProductDto = {
+        ...dto,
+        sku: undefined,
+        code: undefined,
+        barcode: undefined,
+        unit: undefined,
+        externalProvider: undefined,
+        iikoProductId: undefined,
+      };
       const data = this.prepareProductCreateData(
         merchantId,
-        { ...dto, order },
+        { ...sanitizedDto, order },
         { categoryId: dto.categoryId ?? null },
       );
       const created = await tx.product.create({
@@ -1073,10 +1030,10 @@ export class PortalCatalogService {
         },
       });
       await this.syncProductExternal(tx, merchantId, created.id, {
-        externalProvider: dto.externalProvider ?? null,
+        externalProvider: null,
         externalId: dto.externalId ?? null,
-        barcode: dto.barcode ?? null,
-        sku: dto.sku ?? null,
+        barcode: null,
+        sku: null,
       });
       const full = await tx.product.findFirst({
         where: { id: created.id },
@@ -1129,20 +1086,11 @@ export class PortalCatalogService {
           throw new BadRequestException('Product name cannot be empty');
         data.name = name;
       }
-      if (dto.sku !== undefined) data.sku = dto.sku ? dto.sku.trim() : null;
-      if (dto.code !== undefined) data.code = dto.code ? dto.code.trim() : null;
-      if (dto.barcode !== undefined)
-        data.barcode = dto.barcode ? dto.barcode.trim() : null;
-      if (dto.unit !== undefined) data.unit = dto.unit ? dto.unit.trim() : null;
-      if (dto.externalProvider !== undefined)
-        (data as any).externalProvider = dto.externalProvider?.trim() || null;
       if (dto.externalId !== undefined)
         (data as any).externalId = dto.externalId?.trim() || null;
       if (dto.description !== undefined)
         data.description = dto.description ?? null;
       if (dto.order !== undefined) data.order = dto.order;
-      if (dto.iikoProductId !== undefined)
-        data.iikoProductId = dto.iikoProductId ?? null;
       if (dto.hasVariants !== undefined) data.hasVariants = dto.hasVariants;
       if (dto.priceEnabled !== undefined) data.priceEnabled = dto.priceEnabled;
       const priceEnabled =
@@ -1235,23 +1183,6 @@ export class PortalCatalogService {
           }
         }
       }
-      const extProvider =
-        dto.externalProvider !== undefined
-          ? dto.externalProvider?.trim() || null
-          : ((product as any).externalProvider ?? null);
-      const extId =
-        dto.externalId !== undefined
-          ? dto.externalId?.trim() || null
-          : ((product as any).externalId ?? null);
-      await this.syncProductExternal(tx, merchantId, productId, {
-        externalProvider: extProvider,
-        externalId: extId,
-        barcode:
-          dto.barcode !== undefined
-            ? (dto.barcode ?? null)
-            : ((product as any).barcode ?? null),
-        sku: dto.sku !== undefined ? (dto.sku ?? null) : (product.sku ?? null),
-      });
       const updated = await tx.product.findFirst({
         where: { id: productId },
         include: {

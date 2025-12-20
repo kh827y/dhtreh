@@ -83,6 +83,11 @@ enum StaffStatus {
   ARCHIVED
 }
 
+enum ProductCategoryStatus {
+  ACTIVE
+  ARCHIVED
+}
+
 enum StaffMotivationAction {
   PURCHASE
   REFUND
@@ -1156,6 +1161,7 @@ model ProductCategory {
   description      String?
   imageUrl         String?
   order            Int               @default(1000)
+  status           ProductCategoryStatus @default(ACTIVE)
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   deletedAt        DateTime?

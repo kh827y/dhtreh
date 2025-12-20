@@ -24,6 +24,7 @@ describe('PortalCatalogService', () => {
       imageUrl: data.imageUrl,
       parentId: data.parentId,
       order: data.order,
+      status: data.status,
       createdAt: new Date(),
       updatedAt: new Date(),
       deletedAt: null,
@@ -66,6 +67,7 @@ describe('PortalCatalogService', () => {
     const payload = createMock.mock.calls[0][0].data;
     expect(payload.slug).toBe('supy');
     expect(payload.order).toBe(1010);
+    expect(payload.status).toBe('ACTIVE');
     expect(result.slug).toBe('supy');
     expect(metrics.inc).toHaveBeenCalledWith(
       'portal_catalog_categories_changed_total',
@@ -99,7 +101,9 @@ describe('PortalCatalogService', () => {
   it('creates outlet with trimmed data and schedule flags', async () => {
     const createdAt = new Date('2024-01-01T00:00:00Z');
     const updatedAt = new Date('2024-01-01T01:00:00Z');
-    const createMock = jest.fn(async ({ data }) => ({
+    let createdOutlet: any = null;
+    const createMock = jest.fn(async ({ data }) => {
+      createdOutlet = {
       id: 'out-1',
       merchantId: 'm-99',
       name: data.name,
@@ -119,8 +123,26 @@ describe('PortalCatalogService', () => {
       longitude: data.longitude,
       createdAt,
       updatedAt,
-    }));
+      };
+      return createdOutlet;
+    });
+    const tx: any = {
+      outlet: {
+        create: createMock,
+        findUnique: jest.fn(async () => ({
+          ...createdOutlet,
+          devices: [],
+        })),
+      },
+      device: {
+        updateMany: jest.fn(),
+        findMany: jest.fn(),
+        update: jest.fn(),
+        create: jest.fn(),
+      },
+    };
     const prisma: any = {
+      $transaction: jest.fn(async (fn: any) => fn(tx)),
       outlet: {
         create: createMock,
         findMany: jest.fn(),
