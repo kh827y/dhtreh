@@ -966,7 +966,25 @@ export class TelegramBotService {
     previousCustomerId?: string | null,
   ) {
     await this.prisma.$transaction(async (tx) => {
-      // Обновляем tgId у текущего Customer
+      const existing = await tx.customer.findUnique({
+        where: { merchantId_tgId: { merchantId, tgId } },
+        select: { id: true },
+      });
+      const clearIds = new Set<string>();
+      if (existing?.id && existing.id !== customerId) {
+        clearIds.add(existing.id);
+      }
+      if (previousCustomerId && previousCustomerId !== customerId) {
+        clearIds.add(previousCustomerId);
+      }
+      for (const id of clearIds) {
+        await tx.customer.update({
+          where: { id },
+          data: { tgId: null },
+        });
+      }
+
+      // Обновляем tgId у целевого Customer
       await tx.customer.update({
         where: { id: customerId },
         data: { tgId },
@@ -979,13 +997,6 @@ export class TelegramBotService {
         update: { customerId },
       });
 
-      // Убираем tgId у предыдущего Customer если был
-      if (previousCustomerId && previousCustomerId !== customerId) {
-        await tx.customer.update({
-          where: { id: previousCustomerId },
-          data: { tgId: null },
-        });
-      }
     });
   }
 

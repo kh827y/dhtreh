@@ -386,6 +386,7 @@ model Customer {
   phone              String?
   email              String?
   name               String?
+  profileName        String?
   birthday           DateTime?
   gender             String?
   city               String?

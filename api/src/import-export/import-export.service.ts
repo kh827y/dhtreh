@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
+import { WalletType } from '@prisma/client';
 import type { Response } from 'express';
 import { PrismaService } from '../prisma.service';
 import * as XLSX from 'xlsx';
@@ -28,16 +29,26 @@ export interface ExportCustomersDto {
 }
 
 export interface CustomerImportRow {
+  external_id?: string;
   phone?: string;
-  email?: string;
   name?: string;
   birthday?: string;
   gender?: string;
-  city?: string;
-  balance?: number;
-  status?: string;
-  tags?: string;
-  metadata?: string;
+  email?: string;
+  comment?: string;
+  balance_points?: string | number;
+  level?: string;
+  accruals_blocked?: string | boolean | number;
+  redemptions_blocked?: string | boolean | number;
+  total_spent?: string | number;
+  visits_count?: string | number;
+  last_purchase_at?: string;
+  operation_amount?: string | number;
+  earn_points?: string | number;
+  redeem_points?: string | number;
+  transaction_date?: string;
+  order_id?: string;
+  receipt_number?: string;
 }
 
 @Injectable()
@@ -64,36 +75,301 @@ export class ImportExportService {
       throw new BadRequestException('Файл не содержит данных');
     }
 
+    const totalRows = rows.reduce((count, row) => {
+      return count + (this.isEmptyRow(row as Record<string, any>) ? 0 : 1);
+    }, 0);
     const results = {
-      total: rows.length,
-      imported: 0,
-      updated: 0,
+      total: totalRows,
+      customersCreated: 0,
+      customersUpdated: 0,
+      receiptsImported: 0,
+      receiptsSkipped: 0,
+      statsUpdated: 0,
+      balancesSet: 0,
       errors: [] as Array<{ row: number; error: string }>,
     };
 
-    // Обрабатываем каждую строку
+    const updateExisting = dto.updateExisting === true;
+    const tierCache: { loaded: boolean; map: Map<string, string> } = {
+      loaded: false,
+      map: new Map<string, string>(),
+    };
+    const balanceTouched = new Set<string>();
+    const cachedReceipts = new Map<
+      string,
+      {
+        customerId: string;
+        total: number;
+        earnApplied: number;
+        redeemApplied: number;
+        receiptNumber: string | null;
+      }
+    >();
+
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
-
+      const rowNumber = i + 2;
+      if (this.isEmptyRow(row as Record<string, any>)) {
+        continue;
+      }
       try {
-        await this.processCustomerRow(
-          row,
-          dto.merchantId,
-          dto.updateExisting || false,
+        const normalized = this.normalizeRowKeys(row as Record<string, any>);
+        const phoneRaw = this.asString(normalized.phone);
+        if (!phoneRaw) {
+          throw new Error('Телефон обязателен');
+        }
+
+        const phone = this.normalizePhone(phoneRaw);
+        if (!phone) {
+          throw new Error('Телефон обязателен');
+        }
+        const email = this.normalizeEmail(this.asString(normalized.email));
+        const name = this.asString(normalized.name);
+        const externalId = this.asString(normalized.external_id);
+        const comment = this.asString(normalized.comment);
+        const birthday = normalized.birthday
+          ? this.parseDate(this.asString(normalized.birthday) || '')
+          : null;
+        const gender = this.normalizeGender(this.asString(normalized.gender));
+        const level = this.asString(normalized.level);
+        const accrualsBlocked = this.parseBoolean(
+          normalized.accruals_blocked,
+          'accruals_blocked',
+        );
+        const redemptionsBlocked = this.parseBoolean(
+          normalized.redemptions_blocked,
+          'redemptions_blocked',
         );
 
-        if (
-          dto.updateExisting &&
-          (await this.customerExists(row, dto.merchantId))
-        ) {
-          results.updated++;
+        const balancePoints = this.parseInteger(
+          normalized.balance_points,
+          'balance_points',
+        );
+
+        const totalSpent = this.parseInteger(
+          normalized.total_spent,
+          'total_spent',
+        );
+        const visitsCount = this.parseInteger(
+          normalized.visits_count,
+          'visits_count',
+        );
+        const lastPurchaseAt = normalized.last_purchase_at
+          ? this.parseDate(this.asString(normalized.last_purchase_at) || '')
+          : null;
+
+        const operationAmount = this.parseInteger(
+          normalized.operation_amount,
+          'operation_amount',
+        );
+        const earnPoints = this.parseInteger(
+          normalized.earn_points,
+          'earn_points',
+        );
+        const redeemPoints = this.parseInteger(
+          normalized.redeem_points,
+          'redeem_points',
+        );
+        const orderId = this.asString(normalized.order_id);
+        const receiptNumber = this.asString(normalized.receipt_number);
+        const transactionDate = normalized.transaction_date
+          ? this.parseDate(this.asString(normalized.transaction_date) || '')
+          : null;
+
+        const hasOperation =
+          operationAmount !== null ||
+          orderId !== null ||
+          receiptNumber !== null ||
+          earnPoints !== null ||
+          redeemPoints !== null ||
+          transactionDate !== null;
+        const hasAggregates =
+          totalSpent !== null ||
+          visitsCount !== null ||
+          lastPurchaseAt !== null;
+
+        if (hasOperation) {
+          if (operationAmount === null) {
+            throw new Error('operation_amount обязателен для операций');
+          }
+          if (!orderId) {
+            throw new Error('order_id обязателен для операций');
+          }
+        }
+
+        if (hasAggregates) {
+          if (totalSpent === null || visitsCount === null) {
+            throw new Error('total_spent и visits_count обязательны для агрегатов');
+          }
+        }
+
+        const rowResult = await this.prisma.$transaction(async (tx) => {
+          const { customer, created } = await this.upsertCustomer(
+            {
+              merchantId: dto.merchantId,
+              externalId,
+              phone,
+              email,
+              name,
+              birthday,
+              gender,
+              comment,
+              accrualsBlocked,
+              redemptionsBlocked,
+              updateExisting,
+            },
+            tx,
+          );
+
+          if (level) {
+            await this.applyTierAssignment(
+              dto.merchantId,
+              customer.id,
+              level,
+              tierCache,
+              tx,
+            );
+          }
+
+          const wallet = await this.ensureWallet(dto.merchantId, customer.id, tx);
+
+          let receiptsImported = 0;
+          let receiptsSkipped = 0;
+          let receiptCacheKey: string | null = null;
+          let receiptCacheValue:
+            | {
+                customerId: string;
+                total: number;
+                earnApplied: number;
+                redeemApplied: number;
+                receiptNumber: string | null;
+              }
+            | null = null;
+
+          if (hasOperation) {
+            const total = Math.max(0, Math.floor(operationAmount ?? 0));
+            const earnApplied = Math.max(0, Math.floor(earnPoints ?? 0));
+            const redeemApplied = Math.max(0, Math.floor(redeemPoints ?? 0));
+            const receiptKey = `${dto.merchantId}:${orderId}`;
+            const cached = cachedReceipts.get(receiptKey);
+            if (cached) {
+              const same =
+                cached.customerId === customer.id &&
+                cached.total === total &&
+                cached.earnApplied === earnApplied &&
+                cached.redeemApplied === redeemApplied &&
+                cached.receiptNumber === (receiptNumber ?? null);
+              if (!same) {
+                throw new Error('order_id уже используется для другой операции');
+              }
+              receiptsSkipped++;
+            } else {
+              const existing = await tx.receipt.findUnique({
+                where: {
+                  merchantId_orderId: { merchantId: dto.merchantId, orderId: orderId! },
+                },
+              });
+              if (existing) {
+                const same =
+                  existing.customerId === customer.id &&
+                  Number(existing.total ?? 0) === total &&
+                  Number(existing.earnApplied ?? 0) === earnApplied &&
+                  Number(existing.redeemApplied ?? 0) === redeemApplied &&
+                  (existing.receiptNumber ?? null) === (receiptNumber ?? null);
+                if (!same) {
+                  throw new Error('order_id уже используется для другой операции');
+                }
+                receiptsSkipped++;
+                receiptCacheKey = receiptKey;
+                receiptCacheValue = {
+                  customerId: customer.id,
+                  total,
+                  earnApplied,
+                  redeemApplied,
+                  receiptNumber: receiptNumber ?? null,
+                };
+              } else {
+                await tx.receipt.create({
+                  data: {
+                    merchantId: dto.merchantId,
+                    customerId: customer.id,
+                    orderId: orderId!,
+                    receiptNumber: receiptNumber ?? null,
+                    total,
+                    eligibleTotal: total,
+                    redeemApplied,
+                    earnApplied,
+                    createdAt: transactionDate ?? undefined,
+                  },
+                });
+                receiptsImported++;
+                receiptCacheKey = receiptKey;
+                receiptCacheValue = {
+                  customerId: customer.id,
+                  total,
+                  earnApplied,
+                  redeemApplied,
+                  receiptNumber: receiptNumber ?? null,
+                };
+              }
+            }
+          }
+
+          let statsUpdated = 0;
+          if (hasAggregates) {
+            await this.upsertCustomerStats(
+              {
+                merchantId: dto.merchantId,
+                customerId: customer.id,
+                totalSpent: totalSpent ?? 0,
+                visits: visitsCount ?? 0,
+                lastPurchaseAt,
+              },
+              tx,
+            );
+            statsUpdated = 1;
+          }
+
+          if (balancePoints !== null) {
+            await tx.wallet.update({
+              where: { id: wallet.id },
+              data: { balance: balancePoints },
+            });
+          }
+
+          return {
+            customerId: customer.id,
+            created,
+            receiptsImported,
+            receiptsSkipped,
+            receiptCacheKey,
+            receiptCacheValue,
+            statsUpdated,
+            balanceUpdated: balancePoints !== null,
+          };
+        });
+
+        if (rowResult.created) {
+          results.customersCreated++;
         } else {
-          results.imported++;
+          results.customersUpdated++;
+        }
+        results.receiptsImported += rowResult.receiptsImported;
+        results.receiptsSkipped += rowResult.receiptsSkipped;
+        results.statsUpdated += rowResult.statsUpdated;
+
+        if (rowResult.balanceUpdated && !balanceTouched.has(rowResult.customerId)) {
+          balanceTouched.add(rowResult.customerId);
+          results.balancesSet++;
+        }
+
+        if (rowResult.receiptCacheKey && rowResult.receiptCacheValue) {
+          cachedReceipts.set(rowResult.receiptCacheKey, rowResult.receiptCacheValue);
         }
       } catch (error) {
         results.errors.push({
-          row: i + 2, // +1 для заголовка, +1 для индексации с 1
-          error: error.message,
+          row: rowNumber,
+          error: error instanceof Error ? error.message : String(error),
         });
       }
     }
@@ -399,14 +675,20 @@ export class ImportExportService {
       throw new BadRequestException(`Ошибка парсинга файла: ${error.message}`);
     }
 
+    const totalRows = rows.reduce((count, row) => {
+      return count + (this.isEmptyRow(row as Record<string, any>) ? 0 : 1);
+    }, 0);
     const results = {
-      total: rows.length,
+      total: totalRows,
       imported: 0,
       errors: [] as Array<{ row: number; error: string }>,
     };
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
+      if (this.isEmptyRow(row as Record<string, any>)) {
+        continue;
+      }
 
       try {
         // Находим клиента по телефону или email
@@ -449,24 +731,48 @@ export class ImportExportService {
     const templates = {
       customers: [
         {
-          'Телефон*': '+7 900 123-45-67',
-          Email: 'customer@example.com',
-          Имя: 'Иван Иванов',
-          'Дата рождения': '01.01.1990',
-          Пол: 'M',
-          Город: 'Москва',
-          'Баланс баллов': '500',
-          Тэги: 'VIP, Постоянный',
+          'ID клиента во внешней среде': 'CRM-001',
+          'Номер телефона': '+7 900 123-45-67',
+          ФИО: 'Иван Иванов',
+          'Дата рождения': '1989-01-15',
+          Пол: 'М',
+          Email: 'ivan@example.com',
+          Комментарий: 'VIP',
+          'Баланс баллов': '1200',
+          Уровень: 'Silver',
+          'Блокировка начислений': 'нет',
+          'Блокировка списаний': 'нет',
+          'Сумма покупок': '56000',
+          'Количество визитов': '14',
+          'Дата последней покупки': '2024-10-12',
+          'Сумма операции': '',
+          'Начисленные баллы': '',
+          'Списанные баллы': '',
+          'Дата операции': '',
+          'ID операции': '',
+          'Номер чека': '',
         },
         {
-          'Телефон*': '+7 900 123-45-68',
-          Email: 'customer2@example.com',
-          Имя: 'Мария Петрова',
-          'Дата рождения': '15.05.1985',
-          Пол: 'F',
-          Город: 'Санкт-Петербург',
-          'Баланс баллов': '1000',
-          Тэги: 'Новый',
+          'ID клиента во внешней среде': 'CRM-001',
+          'Номер телефона': '+7 900 123-45-67',
+          ФИО: 'Иван Иванов',
+          'Дата рождения': '',
+          Пол: '',
+          Email: 'ivan@example.com',
+          Комментарий: '',
+          'Баланс баллов': '',
+          Уровень: 'Silver',
+          'Блокировка начислений': '',
+          'Блокировка списаний': '',
+          'Сумма покупок': '',
+          'Количество визитов': '',
+          'Дата последней покупки': '',
+          'Сумма операции': '1500',
+          'Начисленные баллы': '75',
+          'Списанные баллы': '0',
+          'Дата операции': '2024-10-12 14:23',
+          'ID операции': 'ORDER-001',
+          'Номер чека': '000123',
         },
       ],
       transactions: [
@@ -560,116 +866,406 @@ export class ImportExportService {
     );
   }
 
-  private async processCustomerRow(
-    row: CustomerImportRow,
-    merchantId: string,
-    updateExisting: boolean,
-  ) {
-    // Валидация обязательных полей
-    if (!row.phone && !row.email) {
-      throw new Error('Требуется телефон или email');
+  private normalizeRowKeys(row: Record<string, any>) {
+    const normalized: Record<string, any> = {};
+    for (const [key, value] of Object.entries(row)) {
+      const normalizedKey = this.normalizeHeader(String(key));
+      if (!normalizedKey) continue;
+      normalized[this.canonicalHeader(normalizedKey)] = value;
     }
+    return normalized;
+  }
 
-    // Нормализация телефона
-    const phone = this.normalizePhone(row.phone);
-
-    // Проверяем существование клиента
-    let customer = await this.prisma.customer.findFirst({
-      where: {
-        OR: [{ phone: phone || undefined }, { email: row.email || undefined }],
-      },
+  private isEmptyRow(row: Record<string, any>) {
+    if (!row || typeof row !== 'object') return true;
+    const values = Object.values(row);
+    if (!values.length) return true;
+    return values.every((value) => {
+      if (value == null) return true;
+      if (typeof value === 'string') return value.trim().length === 0;
+      if (typeof value === 'number') return !Number.isFinite(value);
+      if (typeof value === 'boolean') return false;
+      if (value instanceof Date) return Number.isNaN(value.getTime());
+      return false;
     });
+  }
+
+  private normalizeHeader(header: string) {
+    return header
+      .trim()
+      .toLowerCase()
+      .replace(/ё/g, 'е')
+      .replace(/[^a-z0-9а-я]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+  }
+
+  private canonicalHeader(header: string) {
+    const map: Record<string, string> = {
+      externalid: 'external_id',
+      orderid: 'order_id',
+      receiptnumber: 'receipt_number',
+      balancepoints: 'balance_points',
+      accrualsblocked: 'accruals_blocked',
+      redemptionsblocked: 'redemptions_blocked',
+      totalspent: 'total_spent',
+      visitscount: 'visits_count',
+      lastpurchaseat: 'last_purchase_at',
+      operationamount: 'operation_amount',
+      earnpoints: 'earn_points',
+      redeempoints: 'redeem_points',
+      transactiondate: 'transaction_date',
+      id_клиента_во_внешней_среде: 'external_id',
+      id_клиента_во_внешней_системе: 'external_id',
+      номер_телефона: 'phone',
+      телефон: 'phone',
+      телефон_клиента: 'phone',
+      фио: 'name',
+      дата_рождения: 'birthday',
+      пол: 'gender',
+      email: 'email',
+      e_mail: 'email',
+      email_клиента: 'email',
+      комментарий: 'comment',
+      баланс_баллов: 'balance_points',
+      уровень: 'level',
+      блокировка_начислений: 'accruals_blocked',
+      блокировка_списаний: 'redemptions_blocked',
+      сумма_покупок: 'total_spent',
+      количество_визитов: 'visits_count',
+      дата_последней_покупки: 'last_purchase_at',
+      сумма_операции: 'operation_amount',
+      начисленные_баллы: 'earn_points',
+      списанные_баллы: 'redeem_points',
+      дата_операции: 'transaction_date',
+      id_операции: 'order_id',
+      ид_операции: 'order_id',
+      номер_чека: 'receipt_number',
+    };
+    return map[header] ?? header;
+  }
+
+  private asString(value: unknown): string | null {
+    if (value == null) return null;
+    const str = String(value).trim();
+    return str.length > 0 ? str : null;
+  }
+
+  private normalizeEmail(value: string | null) {
+    return value ? value.trim().toLowerCase() : null;
+  }
+
+  private parseInteger(value: unknown, field: string): number | null {
+    if (value == null) return null;
+    const raw = String(value).trim();
+    if (!raw) return null;
+    const normalized = raw.replace(',', '.');
+    const parsed = Number(normalized);
+    if (!Number.isFinite(parsed)) {
+      throw new Error(`Неверное число в поле ${field}`);
+    }
+    if (parsed < 0) {
+      throw new Error(`Значение в поле ${field} не может быть отрицательным`);
+    }
+    if (!Number.isInteger(parsed)) {
+      throw new Error(`Значение в поле ${field} должно быть целым числом`);
+    }
+    return parsed;
+  }
+
+  private parseBoolean(value: unknown, field: string): boolean | null {
+    if (value == null) return null;
+    if (typeof value === 'boolean') return value;
+    const raw = String(value).trim().toLowerCase();
+    if (!raw) return null;
+    if (['true', '1', 'yes', 'y', 'да', 'д', 'on'].includes(raw)) return true;
+    if (['false', '0', 'no', 'n', 'нет', 'н', 'off'].includes(raw))
+      return false;
+    throw new Error(`Неверное булево значение в поле ${field}`);
+  }
+
+  private normalizeGender(value: string | null) {
+    if (!value) return null;
+    const normalized = value.trim().toLowerCase();
+    if (
+      ['m', 'male', 'м', 'муж', 'мужчина', 'мужской', 'man'].includes(
+        normalized,
+      )
+    )
+      return 'male';
+    if (
+      ['f', 'female', 'ж', 'жен', 'женщина', 'женский', 'woman'].includes(
+        normalized,
+      )
+    )
+      return 'female';
+    return 'unknown';
+  }
+
+  private async upsertCustomer(
+    params: {
+      merchantId: string;
+      externalId: string | null;
+      phone: string;
+      email: string | null;
+      name: string | null;
+      birthday: Date | null;
+      gender: string | null;
+      comment: string | null;
+      accrualsBlocked: boolean | null;
+      redemptionsBlocked: boolean | null;
+      updateExisting: boolean;
+    },
+    prisma: any = this.prisma,
+  ) {
+    const {
+      merchantId,
+      externalId,
+      phone,
+      email,
+      name,
+      birthday,
+      gender,
+      comment,
+      accrualsBlocked,
+      redemptionsBlocked,
+      updateExisting,
+    } = params;
+
+    let customer =
+      externalId != null
+        ? await prisma.customer.findFirst({
+            where: { merchantId, externalId },
+          })
+        : null;
+
+    if (!customer) {
+      const or: Array<Record<string, any>> = [{ phone }];
+      if (email) or.push({ email });
+      customer = await prisma.customer.findFirst({
+        where: { merchantId, OR: or },
+      });
+    }
 
     if (customer && !updateExisting) {
       throw new Error('Клиент уже существует');
     }
 
-    // Парсим дополнительные поля
-    const birthday = row.birthday ? this.parseDate(row.birthday) : undefined;
-    const tags = row.tags
-      ? row.tags.split(',').map((t) => t.trim())
-      : undefined;
-    const metadata = row.metadata ? JSON.parse(row.metadata) : undefined;
-
     if (customer) {
-      // Обновляем существующего клиента
-      customer = await this.prisma.customer.update({
-        where: { id: customer.id },
-        data: {
-          name: row.name || customer.name,
-          email: row.email || customer.email,
-          phone: phone || customer.phone,
-          birthday: birthday || customer.birthday,
-          gender: row.gender || customer.gender,
-          city: row.city || customer.city,
-          tags: tags || customer.tags,
-          metadata: metadata || customer.metadata,
-        },
-      });
-    } else {
-      // Создаем нового клиента (Customer per-merchant)
-      customer = await this.prisma.customer.create({
-        data: {
-          merchantId,
-          phone,
-          email: row.email,
-          name: row.name,
-          birthday,
-          gender: row.gender,
-          city: row.city,
-          tags,
-          metadata,
-        },
-      });
-    }
+      const updates: Record<string, any> = {};
+      if (externalId && externalId !== customer.externalId) {
+        const clash = await prisma.customer.findFirst({
+          where: { merchantId, externalId },
+        });
+        if (clash && clash.id !== customer.id) {
+          throw new Error('external_id уже используется другим клиентом');
+        }
+        updates.externalId = externalId;
+      }
+      if (phone !== customer.phone) {
+        const clash = await prisma.customer.findFirst({
+          where: { merchantId, phone },
+        });
+        if (clash && clash.id !== customer.id) {
+          throw new Error('Телефон уже используется другим клиентом');
+        }
+        updates.phone = phone;
+      }
+      if (email !== null && email !== customer.email) {
+        const clash = await prisma.customer.findFirst({
+          where: { merchantId, email },
+        });
+        if (clash && clash.id !== customer.id) {
+          throw new Error('Email уже используется другим клиентом');
+        }
+        updates.email = email;
+      }
+      if (name !== null) updates.name = name;
+      if (birthday !== null) updates.birthday = birthday;
+      if (gender !== null) updates.gender = gender;
+      if (comment !== null) updates.comment = comment;
+      if (accrualsBlocked !== null)
+        updates.accrualsBlocked = accrualsBlocked;
+      if (redemptionsBlocked !== null)
+        updates.redemptionsBlocked = redemptionsBlocked;
 
-    // Создаем или обновляем кошелек
-    const wallet = await this.prisma.wallet.findFirst({
-      where: {
-        customerId: customer.id,
-        merchantId,
-      },
-    });
-
-    if (wallet) {
-      // Обновляем баланс если указан
-      if (row.balance !== undefined) {
-        await this.prisma.wallet.update({
-          where: { id: wallet.id },
-          data: {
-            balance: parseInt(row.balance.toString()),
-          },
+      if (Object.keys(updates).length > 0) {
+        customer = await prisma.customer.update({
+          where: { id: customer.id },
+          data: updates,
         });
       }
-    } else {
-      // Создаем новый кошелек
-      await this.prisma.wallet.create({
-        data: {
-          customerId: customer.id,
-          merchantId,
-          balance: row.balance ? parseInt(row.balance.toString()) : 0,
-          type: 'POINTS' as any,
-        },
-      });
+      return { customer, created: false };
     }
-  }
 
-  private async customerExists(
-    row: CustomerImportRow,
-    merchantId: string,
-  ): Promise<boolean> {
-    const phone = this.normalizePhone(row.phone);
-
-    const customer = await this.prisma.customer.findFirst({
-      where: {
-        OR: [{ phone: phone || undefined }, { email: row.email || undefined }],
-        wallets: {
-          some: { merchantId },
-        },
+    const created = await prisma.customer.create({
+      data: {
+        merchantId,
+        externalId: externalId ?? null,
+        phone,
+        email,
+        name,
+        birthday,
+        gender,
+        comment,
+        accrualsBlocked: Boolean(accrualsBlocked),
+        redemptionsBlocked: Boolean(redemptionsBlocked),
       },
     });
 
-    return !!customer;
+    return { customer: created, created: true };
+  }
+
+  private async applyTierAssignment(
+    merchantId: string,
+    customerId: string,
+    level: string,
+    cache?: { loaded: boolean; map: Map<string, string> },
+    prisma: any = this.prisma,
+  ) {
+    const value = level.trim();
+    if (!value) return;
+    const tier = await prisma.loyaltyTier.findFirst({
+      where: {
+        merchantId,
+        OR: [
+          { id: value },
+          { name: { equals: value, mode: 'insensitive' } },
+        ],
+      },
+    });
+    if (!tier) {
+      const normalized = this.normalizeTierName(value);
+      if (cache && normalized) {
+        if (!cache.loaded) {
+          const tiers = await prisma.loyaltyTier.findMany({
+            where: { merchantId },
+            select: { id: true, name: true },
+          });
+          for (const item of tiers) {
+            const key = this.normalizeTierName(item.name);
+            if (!key) continue;
+            if (!cache.map.has(key)) {
+              cache.map.set(key, item.id);
+            }
+          }
+          cache.loaded = true;
+        }
+        const cachedId = cache.map.get(normalized);
+        if (cachedId) {
+          const assignedAt = new Date();
+          await prisma.loyaltyTierAssignment.upsert({
+            where: { merchantId_customerId: { merchantId, customerId } },
+            update: {
+              tierId: cachedId,
+              assignedAt,
+              expiresAt: null,
+              source: 'manual',
+            },
+            create: {
+              merchantId,
+              customerId,
+              tierId: cachedId,
+              assignedAt,
+              expiresAt: null,
+              source: 'manual',
+            },
+          });
+          return;
+        }
+      }
+      throw new Error(`Уровень "${level}" не найден`);
+    }
+    const assignedAt = new Date();
+    await prisma.loyaltyTierAssignment.upsert({
+      where: { merchantId_customerId: { merchantId, customerId } },
+      update: {
+        tierId: tier.id,
+        assignedAt,
+        expiresAt: null,
+        source: 'manual',
+      },
+      create: {
+        merchantId,
+        customerId,
+        tierId: tier.id,
+        assignedAt,
+        expiresAt: null,
+        source: 'manual',
+      },
+    });
+  }
+
+  private normalizeTierName(value: string) {
+    return value
+      .replace(/[\u200B-\u200D\uFEFF]/g, '')
+      .replace(/\u00A0/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  }
+
+  private async ensureWallet(
+    merchantId: string,
+    customerId: string,
+    prisma: any = this.prisma,
+  ) {
+    const wallet = await prisma.wallet.findFirst({
+      where: { merchantId, customerId, type: WalletType.POINTS },
+    });
+    if (wallet) return wallet;
+    return prisma.wallet.create({
+      data: {
+        merchantId,
+        customerId,
+        type: WalletType.POINTS,
+        balance: 0,
+      },
+    });
+  }
+
+  private async upsertCustomerStats(
+    params: {
+      merchantId: string;
+      customerId: string;
+      totalSpent: number;
+      visits: number;
+      lastPurchaseAt: Date | null;
+    },
+    prisma: any = this.prisma,
+  ) {
+    const avgCheck =
+      params.visits > 0
+        ? Math.round(params.totalSpent / params.visits)
+        : 0;
+    const lastSeenAt = params.lastPurchaseAt ?? new Date();
+    const updateData: Record<string, any> = {
+      totalSpent: params.totalSpent,
+      visits: params.visits,
+      avgCheck,
+      lastSeenAt,
+    };
+    if (params.lastPurchaseAt) {
+      updateData.lastOrderAt = params.lastPurchaseAt;
+    }
+    await prisma.customerStats.upsert({
+      where: {
+        merchantId_customerId: {
+          merchantId: params.merchantId,
+          customerId: params.customerId,
+        },
+      },
+      update: updateData,
+      create: {
+        merchantId: params.merchantId,
+        customerId: params.customerId,
+        totalSpent: params.totalSpent,
+        visits: params.visits,
+        avgCheck,
+        firstSeenAt: params.lastPurchaseAt ?? new Date(),
+        lastSeenAt,
+        lastOrderAt: params.lastPurchaseAt ?? null,
+      },
+    });
   }
 
   private async findCustomerByRow(row: any, merchantId: string) {
@@ -751,7 +1347,10 @@ export class ImportExportService {
     }
 
     // Пробуем нативный парсер
-    const date = new Date(dateStr);
+    const normalized = dateStr.includes(' ')
+      ? dateStr.replace(' ', 'T')
+      : dateStr;
+    const date = new Date(normalized);
     if (!isNaN(date.getTime())) {
       return date;
     }

@@ -477,6 +477,7 @@ export class CustomerProfileDto {
     | null;
   @ApiPropertyOptional({ type: String, format: 'date', nullable: true })
   birthDate?: string | null; // YYYY-MM-DD
+  @ApiPropertyOptional({ nullable: true }) customerId?: string | null;
 }
 
 export class CustomerPhoneStatusDto {

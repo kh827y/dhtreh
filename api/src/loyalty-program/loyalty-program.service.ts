@@ -558,6 +558,17 @@ export class LoyaltyProgramService {
           throw new BadRequestException('Стартовая группа уже существует');
         }
       }
+      const nameExists = await tx.loyaltyTier.findFirst({
+        where: {
+          merchantId,
+          name: { equals: name, mode: 'insensitive' },
+        },
+      });
+      if (nameExists) {
+        throw new BadRequestException(
+          'Уровень с таким названием уже существует',
+        );
+      }
       const orderAggregate = await tx.loyaltyTier.aggregate({
         where: { merchantId },
         _max: { order: true },
@@ -655,6 +666,20 @@ export class LoyaltyProgramService {
         });
         if (exists) {
           throw new BadRequestException('Стартовая группа уже существует');
+        }
+      }
+      if (name) {
+        const nameExists = await tx.loyaltyTier.findFirst({
+          where: {
+            merchantId,
+            name: { equals: name, mode: 'insensitive' },
+            NOT: { id: tierId },
+          },
+        });
+        if (nameExists) {
+          throw new BadRequestException(
+            'Уровень с таким названием уже существует',
+          );
         }
       }
       const next = await tx.loyaltyTier.update({

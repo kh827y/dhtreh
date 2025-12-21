@@ -136,6 +136,7 @@ const customerBaseSelect = (merchantId: string) =>
     phone: true,
     email: true,
     name: true,
+    profileName: true,
     birthday: true,
     gender: true,
     tags: true,
@@ -456,7 +457,12 @@ export class PortalCustomersService {
 
     const primaryPhone = entity.phone?.toString() ?? null;
     const primaryEmail = entity.email?.toString() ?? null;
-    const displayName = typeof entity.name === 'string' ? entity.name : null;
+    const displayName =
+      typeof entity.name === 'string' && entity.name.trim()
+        ? entity.name.trim()
+        : typeof entity.profileName === 'string' && entity.profileName.trim()
+          ? entity.profileName.trim()
+          : null;
     const { firstName, lastName } = this.splitName(displayName);
 
     const birthdayIso = entity.birthday
@@ -570,11 +576,18 @@ export class PortalCustomersService {
           customerId: referral.referrer.id,
         },
       },
-      select: { name: true, phone: true },
+      select: { name: true, profileName: true, phone: true },
     });
 
+    const profileName =
+      typeof profile?.name === 'string' && profile.name.trim()
+        ? profile.name.trim()
+        : typeof profile?.profileName === 'string' &&
+            profile.profileName.trim()
+          ? profile.profileName.trim()
+          : null;
     const name =
-      profile?.name ??
+      profileName ??
       referral.referrer.name ??
       referral.referrer.phone ??
       referral.referrer.id ??
@@ -610,7 +623,13 @@ export class PortalCustomersService {
     const [customers, stats, purchases] = await Promise.all([
       this.prisma.customer.findMany({
         where: { merchantId, id: { in: refereeIds } },
-        select: { id: true, name: true, phone: true, createdAt: true },
+        select: {
+          id: true,
+          name: true,
+          profileName: true,
+          phone: true,
+          createdAt: true,
+        },
       }),
       this.prisma.customerStats.findMany({
         where: { merchantId, customerId: { in: refereeIds } },
@@ -639,6 +658,13 @@ export class PortalCustomersService {
 
     return referrals.map((ref) => {
       const customer = customerMap.get(ref.refereeId ?? '') ?? null;
+      const displayName =
+        typeof customer?.name === 'string' && customer.name.trim()
+          ? customer.name.trim()
+          : typeof customer?.profileName === 'string' &&
+              customer.profileName.trim()
+            ? customer.profileName.trim()
+            : null;
       const joinedAt =
         customer?.createdAt ??
         ref.activatedAt ??
@@ -646,7 +672,7 @@ export class PortalCustomersService {
         ref.createdAt;
       return {
         id: ref.refereeId ?? '',
-        name: customer?.name ?? ref.refereeId ?? null,
+        name: displayName ?? ref.refereeId ?? null,
         phone: customer?.phone ?? null,
         joinedAt: joinedAt ? joinedAt.toISOString() : null,
         purchases:

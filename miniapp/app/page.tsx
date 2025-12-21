@@ -38,6 +38,7 @@ import { type TransactionItem } from "../lib/reviewUtils";
 import { getTelegramWebApp } from "../lib/telegram";
 import {
   applySnapshotPatch,
+  clearSnapshot,
   loadSnapshot,
   saveSnapshot,
   type MiniappSnapshot,
@@ -510,6 +511,29 @@ function MiniappPage() {
     [merchantId],
   );
 
+  const applyProfileSaveResult = useCallback(
+    (profile: CustomerProfile | null, fallbackCustomerId: string) => {
+      const nextIdRaw =
+        typeof profile?.customerId === "string" && profile.customerId.trim()
+          ? profile.customerId.trim()
+          : fallbackCustomerId;
+      if (!nextIdRaw) return fallbackCustomerId;
+      setCustomerId(nextIdRaw);
+      setAuthCustomerId(nextIdRaw);
+      if (merchantId) {
+        try {
+          localStorage.setItem(localCustomerKey(merchantId), nextIdRaw);
+          localStorage.removeItem(legacyLocalCustomerKey(merchantId));
+        } catch {}
+        if (fallbackCustomerId && nextIdRaw !== fallbackCustomerId) {
+          clearSnapshot(merchantId, fallbackCustomerId);
+        }
+      }
+      return nextIdRaw;
+    },
+    [merchantId, setAuthCustomerId, setCustomerId],
+  );
+
   const applyBirthDate = useCallback(
     (y: string, m: string, d: string) => {
       if (y && m && d) {
@@ -848,7 +872,8 @@ function MiniappPage() {
     pendingProfileSync.current = true;
     (async () => {
       try {
-        await profileSave(merchantId, customerId, { name, gender, birthDate });
+        const saved = await profileSave(merchantId, customerId, { name, gender, birthDate });
+        applyProfileSaveResult(saved, customerId);
         try {
           localStorage.setItem(key, JSON.stringify({ name, gender, birthDate }));
           localStorage.removeItem(pendingKey);
@@ -866,7 +891,14 @@ function MiniappPage() {
         pendingProfileSync.current = false;
       }
     })();
-  }, [merchantId, customerId, teleHasPhone, setToast, setAuthTeleOnboarded]);
+  }, [
+    merchantId,
+    customerId,
+    teleHasPhone,
+    applyProfileSaveResult,
+    setToast,
+    setAuthTeleOnboarded,
+  ]);
 
   useEffect(() => {
     setLoading(auth.loading);
@@ -1524,7 +1556,7 @@ function MiniappPage() {
     async (options?: { capturedPhone?: string | null; waitServerSync?: boolean }) => {
       if (!merchantId) return false;
       const { capturedPhone = null, waitServerSync = false } = options ?? {};
-      const effectiveCustomerId = pendingCustomerIdForPhone || customerId;
+      let effectiveCustomerId = pendingCustomerIdForPhone || customerId;
       if (!effectiveCustomerId) {
         setToast({ msg: "Не удалось определить клиента", type: "error" });
         setPhoneShareStage("idle");
@@ -1544,12 +1576,55 @@ function MiniappPage() {
       try {
         let serverHasPhone = teleHasPhone === true;
         let statusError: unknown = null;
+        let teleauthRefreshed = false;
+        const syncTeleauthCustomer = async () => {
+          if (teleauthRefreshed) return effectiveCustomerId;
+          teleauthRefreshed = true;
+          let initForAuth = initData;
+          if (!isValidInitData(initForAuth)) {
+            initForAuth = await waitForInitData(10, 200);
+          }
+          if (!isValidInitData(initForAuth)) return null;
+          try {
+            const result = await teleauth(merchantId, initForAuth);
+            const nextId = applyProfileSaveResult(
+              { name: null, gender: null, birthDate: null, customerId: result.customerId },
+              effectiveCustomerId,
+            );
+            if (nextId && nextId !== effectiveCustomerId) {
+              effectiveCustomerId = nextId;
+              setPendingCustomerIdForPhone(nextId);
+            }
+            setAuthTeleHasPhone(Boolean(result.hasPhone));
+            setAuthTeleOnboarded(Boolean(result.onboarded));
+            return nextId;
+          } catch {
+            return null;
+          }
+        };
+        const isForbiddenError = (error: unknown) => {
+          const lowered = resolveErrorMessage(error).toLowerCase();
+          return lowered.includes("forbidden") || lowered.includes("403");
+        };
         const refreshPhoneStatus = async () => {
           try {
             const status = await profilePhoneStatus(merchantId, effectiveCustomerId);
             serverHasPhone = Boolean(status?.hasPhone);
             statusError = null;
           } catch (statusErr) {
+            if (isForbiddenError(statusErr)) {
+              const refreshed = await syncTeleauthCustomer();
+              if (refreshed && refreshed !== effectiveCustomerId) {
+                try {
+                  const status = await profilePhoneStatus(merchantId, refreshed);
+                  serverHasPhone = Boolean(status?.hasPhone);
+                  statusError = null;
+                  return;
+                } catch (retryErr) {
+                  statusError = retryErr;
+                }
+              }
+            }
             serverHasPhone = false;
             statusError = statusErr;
           }
@@ -1584,7 +1659,8 @@ function MiniappPage() {
           birthDate: profileForm.birthDate,
           ...(normalizedPhone ? { phone: normalizedPhone } : {}),
         };
-        await profileSave(merchantId, effectiveCustomerId, payload);
+        const saved = await profileSave(merchantId, effectiveCustomerId, payload);
+        applyProfileSaveResult(saved, effectiveCustomerId);
         try {
           localStorage.setItem(
             key,
@@ -1598,8 +1674,6 @@ function MiniappPage() {
         } catch {
           // ignore
         }
-        setCustomerId(effectiveCustomerId);
-        setAuthCustomerId(effectiveCustomerId);
         setAuthTeleHasPhone(true);
         setAuthTeleOnboarded(true);
         setProfileCompleted(true);
@@ -1637,9 +1711,9 @@ function MiniappPage() {
       profileForm,
       phone,
       setToast,
+      initData,
       teleHasPhone,
-      setCustomerId,
-      setAuthCustomerId,
+      applyProfileSaveResult,
       setAuthTeleHasPhone,
       setAuthTeleOnboarded,
       setProfileCompleted,
@@ -1872,12 +1946,13 @@ function MiniappPage() {
       }
 
       try {
-        await profileSave(merchantId, effectiveCustomerId, {
+        const saved = await profileSave(merchantId, effectiveCustomerId, {
           name: profileForm.name.trim(),
           gender: profileForm.gender as 'male' | 'female',
           birthDate: profileForm.birthDate,
           phone: phone || undefined,
         });
+        applyProfileSaveResult(saved, effectiveCustomerId);
         if (key) {
           try { localStorage.setItem(key, JSON.stringify({ name: profileForm.name.trim(), gender: profileForm.gender, birthDate: profileForm.birthDate })); } catch {}
           try { localStorage.removeItem(pendingKey!); } catch {}
@@ -1893,7 +1968,18 @@ function MiniappPage() {
         setProfileSaving(false);
       }
     },
-    [merchantId, customerId, profileForm, inviteCode, phone, initData, setAuthCustomerId, setAuthTeleOnboarded, setAuthTeleHasPhone]
+    [
+      merchantId,
+      customerId,
+      profileForm,
+      inviteCode,
+      phone,
+      initData,
+      applyProfileSaveResult,
+      setAuthCustomerId,
+      setAuthTeleOnboarded,
+      setAuthTeleHasPhone,
+    ]
   );
 
   const availablePromotions = useMemo(

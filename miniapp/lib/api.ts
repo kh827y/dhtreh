@@ -494,6 +494,7 @@ export type CustomerProfile = {
   name: string | null;
   gender: 'male' | 'female' | null;
   birthDate: string | null; // YYYY-MM-DD
+  customerId?: string | null;
 };
 
 export type CustomerPhoneStatus = {

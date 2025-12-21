@@ -22,6 +22,7 @@ import { CustomerAudiencesModule } from '../customer-audiences/customer-audience
 import { SubscriptionModule } from '../subscription/subscription.module';
 import { IntegrationsModule } from '../integrations/integrations.module';
 import { PortalRestApiIntegrationService } from './services/rest-api-integration.service';
+import { ImportExportModule } from '../import-export/import-export.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { PortalRestApiIntegrationService } from './services/rest-api-integration
     LoyaltyModule,
     SubscriptionModule,
     IntegrationsModule,
+    ImportExportModule,
   ],
   controllers: [PortalController],
   providers: [

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -7,9 +8,11 @@ import {
   Post,
   Put,
   Query,
-  UseGuards,
   Req,
   NotFoundException,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -85,6 +88,7 @@ import {
   type ReferralProgramSettingsDto,
 } from '../referral/referral.service';
 import { PortalReviewsService } from './services/reviews.service';
+import { ImportExportService } from '../import-export/import-export.service';
 import {
   DEFAULT_TIMEZONE_CODE,
   RUSSIA_TIMEZONES,
@@ -93,6 +97,7 @@ import {
 import { UpdateRfmSettingsDto } from '../analytics/dto/update-rfm-settings.dto';
 import { SubscriptionService } from '../subscription/subscription.service';
 import { AllowInactiveSubscription } from '../guards/subscription.guard';
+import { FileInterceptor } from '@nestjs/platform-express';
 
 @ApiTags('portal')
 @Controller('portal')
@@ -116,6 +121,7 @@ export class PortalController {
     private readonly referrals: ReferralService,
     private readonly reviews: PortalReviewsService,
     private readonly subscriptions: SubscriptionService,
+    private readonly importExport: ImportExportService,
   ) {}
 
   private getMerchantId(req: any) {
@@ -676,6 +682,22 @@ export class PortalController {
       this.getMerchantId(req),
       String(customerId || ''),
     );
+  }
+
+  @Post('customers/import')
+  @UseInterceptors(FileInterceptor('file'))
+  importCustomers(@Req() req: any, @UploadedFile() file: any) {
+    if (!file) {
+      throw new BadRequestException('Файл не загружен');
+    }
+    const name = String(file.originalname || '').toLowerCase();
+    const format = name.endsWith('.xlsx') ? 'excel' : 'csv';
+    return this.importExport.importCustomers({
+      merchantId: this.getMerchantId(req),
+      format,
+      data: file.buffer,
+      updateExisting: true,
+    });
   }
 
   @Post('customers')

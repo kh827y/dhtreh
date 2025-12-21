@@ -76,6 +76,7 @@ import {
 
 // После рефакторинга Customer = per-merchant (бывший Customer)
 type CustomerRecord = Customer & {
+  profileName?: string | null;
   profileGender?: string | null;
   profileBirthDate?: Date | null;
   profileCompletedAt?: Date | null;
@@ -251,30 +252,11 @@ export class LoyaltyController {
     return customer as CustomerRecord;
   }
 
-  private extractNameFromInitData(initData?: string | null): string | null {
-    if (!initData) return null;
-    try {
-      const params = new URLSearchParams(initData);
-      const raw = params.get('user');
-      if (!raw) return null;
-      const user = JSON.parse(raw);
-      const parts = [user?.first_name, user?.last_name]
-        .filter((part: unknown) => typeof part === 'string' && part.trim())
-        .map((part: string) => part.trim());
-      if (parts.length) return parts.join(' ');
-      if (typeof user?.username === 'string' && user.username.trim()) {
-        return user.username.trim();
-      }
-    } catch {}
-    return null;
-  }
-
   private async ensureCustomerByTelegram(
     merchantId: string,
     tgId: string,
     initData?: string,
   ): Promise<{ customerId: string }> {
-    const nameFromInit = this.extractNameFromInitData(initData);
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.customer.findUnique({
         where: { merchantId_tgId: { merchantId, tgId } },
@@ -305,11 +287,7 @@ export class LoyaltyController {
       }
 
       const created = await tx.customer.create({
-        data: {
-          merchantId,
-          tgId,
-          name: nameFromInit ?? null,
-        },
+        data: { merchantId, tgId },
         select: { id: true },
       });
 
@@ -340,15 +318,26 @@ export class LoyaltyController {
   }
 
   private toProfileDto(customer: CustomerRecord): CustomerProfileDto {
-    const gender =
-      customer.profileGender === 'male' || customer.profileGender === 'female'
-        ? customer.profileGender
+    const profileName =
+      typeof customer.profileName === 'string' && customer.profileName.trim()
+        ? customer.profileName.trim()
         : null;
-    const birthDate = customer.profileBirthDate
-      ? customer.profileBirthDate.toISOString().slice(0, 10)
+    const legacyName =
+      !profileName &&
+      customer.profileCompletedAt &&
+      typeof customer.name === 'string' &&
+      customer.name.trim()
+        ? customer.name.trim()
+        : null;
+    const rawGender = customer.gender ?? customer.profileGender ?? null;
+    const gender =
+      rawGender === 'male' || rawGender === 'female' ? rawGender : null;
+    const rawBirthDate = customer.birthday ?? customer.profileBirthDate ?? null;
+    const birthDate = rawBirthDate
+      ? rawBirthDate.toISOString().slice(0, 10)
       : null;
     return {
-      name: customer.name ?? null,
+      name: profileName ?? legacyName ?? null,
       gender,
       birthDate,
     } satisfies CustomerProfileDto;
@@ -460,6 +449,7 @@ export class LoyaltyController {
         where: { id: customerId },
         select: {
           name: true,
+          profileName: true,
           phone: true,
           gender: true,
           birthday: true,
@@ -469,13 +459,20 @@ export class LoyaltyController {
         },
       });
       if (!customer) return { hasPhone: false, onboarded: false };
+      const resolvedName =
+        typeof customer.profileName === 'string' && customer.profileName.trim()
+          ? customer.profileName.trim()
+          : customer.profileCompletedAt &&
+              typeof customer.name === 'string' &&
+              customer.name.trim()
+            ? customer.name.trim()
+            : null;
       return this.computeProfileFlags({
-        name: customer.name ?? null,
+        name: resolvedName,
         phone: customer.phone ?? null,
-        gender: (customer as any).profileGender ?? customer.gender ?? null,
-        birthday:
-          (customer as any).profileBirthDate ?? customer.birthday ?? null,
-        profileCompletedAt: (customer as any).profileCompletedAt ?? null,
+        gender: customer.gender ?? customer.profileGender ?? null,
+        birthday: customer.birthday ?? customer.profileBirthDate ?? null,
+        profileCompletedAt: customer.profileCompletedAt ?? null,
       });
     } catch {
       return { hasPhone: false, onboarded: false };
@@ -2722,21 +2719,101 @@ export class LoyaltyController {
 
     // Customer теперь per-merchant модель, обновляем напрямую
     const completionMark = new Date();
-    let updatedCustomer: Customer;
     try {
-      updatedCustomer = await this.prisma.customer.update({
-        where: { id: customer.id },
-        data: {
-          name,
-          gender,
-          birthday: parsed,
-          profileGender: gender,
-          profileBirthDate: parsed,
+      const result = await this.prisma.$transaction(async (tx) => {
+        let targetCustomer = customer;
+        let mergedCustomerId: string | null = null;
+
+        if (phoneNormalized) {
+          const existingByPhone = await tx.customer.findFirst({
+            where: { merchantId, phone: phoneNormalized },
+          });
+          if (existingByPhone && existingByPhone.id !== customer.id) {
+            const currentTgId =
+              typeof customer.tgId === 'string' ? customer.tgId : null;
+            const existingTgId =
+              typeof existingByPhone.tgId === 'string'
+                ? existingByPhone.tgId
+                : null;
+            if (existingTgId && existingTgId !== currentTgId) {
+              throw new BadRequestException('Номер телефона уже используется');
+            }
+            mergedCustomerId = existingByPhone.id;
+            targetCustomer = existingByPhone;
+            if (currentTgId && existingTgId !== currentTgId) {
+              await tx.customer.update({
+                where: { id: existingByPhone.id },
+                data: { tgId: currentTgId },
+              });
+              await tx.customerTelegram.upsert({
+                where: { merchantId_tgId: { merchantId, tgId: currentTgId } },
+                update: { customerId: existingByPhone.id },
+                create: {
+                  merchantId,
+                  tgId: currentTgId,
+                  customerId: existingByPhone.id,
+                },
+              });
+              await tx.customer.update({
+                where: { id: customer.id },
+                data: { tgId: null },
+              });
+            }
+          }
+        }
+
+        const updates: Record<string, any> = {
+          profileName: name,
           profileCompletedAt: completionMark,
-          ...(phoneNormalized ? { phone: phoneNormalized } : {}),
-        },
+        };
+        if (!targetCustomer.name) {
+          updates.name = name;
+        }
+        const targetGender =
+          targetCustomer.gender === 'male' || targetCustomer.gender === 'female'
+            ? targetCustomer.gender
+            : null;
+        if (!targetGender) {
+          updates.gender = gender;
+          updates.profileGender = gender;
+        }
+        if (!targetCustomer.birthday) {
+          updates.birthday = parsed;
+          updates.profileBirthDate = parsed;
+        }
+        if (phoneNormalized) {
+          updates.phone = phoneNormalized;
+        }
+
+        const updatedCustomer = await tx.customer.update({
+          where: { id: targetCustomer.id },
+          data: updates,
+        });
+
+        await tx.wallet.upsert({
+          where: {
+            customerId_merchantId_type: {
+              customerId: updatedCustomer.id,
+              merchantId,
+              type: WalletType.POINTS,
+            } as any,
+          },
+          update: {},
+          create: {
+            customerId: updatedCustomer.id,
+            merchantId,
+            type: WalletType.POINTS,
+          },
+        } as any);
+
+        return { updatedCustomer, mergedCustomerId };
       });
+      const payload = this.toProfileDto(result.updatedCustomer);
+      return result.mergedCustomerId
+        ? { ...payload, customerId: result.mergedCustomerId }
+        : payload;
     } catch (e: any) {
+      if (e instanceof BadRequestException) throw e;
       const code = e?.code || '';
       const msg = String(e?.message || '');
       if (code === 'P2002' || /Unique constraint/i.test(msg)) {
@@ -2744,7 +2821,6 @@ export class LoyaltyController {
       }
       throw e;
     }
-    return this.toProfileDto(updatedCustomer);
   }
 
   @Get('transactions')

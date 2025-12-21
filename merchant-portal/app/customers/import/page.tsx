@@ -1,207 +1,551 @@
 "use client";
 
-import React from "react";
-import { Card, CardHeader, CardBody, Button, Icons } from "@loyalty/ui";
+import React, { useRef, useState } from "react";
+import {
+  Upload,
+  FileSpreadsheet,
+  Download,
+  AlertCircle,
+  Check,
+  FileText,
+  X,
+} from "lucide-react";
 
-const { UploadCloud } = Icons;
-
-type ErrorRow = {
-  line: number;
-  column: string;
-  message: string;
+type ImportResult = {
+  total: number;
+  customersCreated: number;
+  customersUpdated: number;
+  receiptsImported: number;
+  receiptsSkipped: number;
+  statsUpdated: number;
+  balancesSet: number;
+  errors?: Array<{ row: number; error: string }>;
 };
 
-const structure: Array<{ column: string; title: string; description: string; required?: boolean }> = [
-  { column: "A", title: "ID клиента во внешней среде", description: "Опционально. Используйте для связи с CRM." },
+function readApiError(payload: unknown): string | null {
+  if (!payload) return null;
+  if (typeof payload === "string") {
+    const trimmed = payload.trim();
+    if (!trimmed) return null;
+    try {
+      return readApiError(JSON.parse(trimmed));
+    } catch {
+      return trimmed;
+    }
+  }
+  if (typeof payload === "object") {
+    const message = (payload as { message?: unknown }).message;
+    if (Array.isArray(message)) return message.filter(Boolean).join(", ");
+    if (typeof message === "string" && message.trim()) return message.trim();
+  }
+  return null;
+}
+
+type TableRow = {
+  col: string;
+  name: string;
+  desc: string;
+  required?: boolean;
+};
+
+const baseRows: TableRow[] = [
   {
-    column: "B",
-    title: "Номер телефона",
-    description: "Обязательное поле. Минимум 11 цифр, допускается произвольное форматирование.",
+    col: "A",
+    name: "ID клиента во внешней среде",
+    desc: "Опционально. Для связи с внешней CRM или системой.",
+  },
+  {
+    col: "B",
+    name: "Номер телефона",
+    desc: "Обязательно. Минимум 11 цифр, формат свободный.",
     required: true,
   },
-  { column: "C", title: "ФИО", description: "Опционально. Можно передать через пробелы или запятые." },
-  { column: "D", title: "Дата рождения", description: "Опционально. Формат YYYY-MM-DD или DD.MM.YYYY." },
   {
-    column: "E",
-    title: "Количество баллов",
-    description: "Обязательное поле. Если данных нет — поставьте 0.",
+    col: "C",
+    name: "ФИО",
+    desc: "Опционально. Одной строкой.",
+  },
+  {
+    col: "D",
+    name: "Дата рождения",
+    desc: "Опционально. DD.MM.YYYY, DD/MM/YYYY, YYYY-MM-DD или ISO.",
+  },
+  {
+    col: "E",
+    name: "Пол",
+    desc: "Опционально. М/Ж/m/f/male/female/муж/жен и т.д.",
+  },
+  {
+    col: "F",
+    name: "Email",
+    desc: "Опционально.",
+  },
+  {
+    col: "G",
+    name: "Комментарий",
+    desc: "Опционально.",
+  },
+  {
+    col: "H",
+    name: "Баланс баллов",
+    desc: "Опционально. Жёстко выставляет баланс.",
+  },
+  {
+    col: "I",
+    name: "Уровень",
+    desc: "Опционально. Точное название уровня.",
+  },
+  {
+    col: "J",
+    name: "Блокировка начислений",
+    desc: "Опционально. да/нет/true/false/1/0.",
+  },
+  {
+    col: "K",
+    name: "Блокировка списаний",
+    desc: "Опционально. да/нет/true/false/1/0.",
+  },
+];
+
+const aggregateRows: TableRow[] = [
+  {
+    col: "L",
+    name: "Сумма покупок",
+    desc: "Обязательно для агрегатов. В рублях.",
     required: true,
   },
-  { column: "F", title: "Всего покупок/сумма", description: "Опционально. Общая сумма чеков." },
   {
-    column: "G",
-    title: "Дата транзакции",
-    description: "Если не заполнено — будет использована дата обработки файла.",
+    col: "M",
+    name: "Количество визитов",
+    desc: "Обязательно для агрегатов.",
+    required: true,
   },
-  { column: "H", title: "№ чека", description: "Опционально." },
-  { column: "I", title: "Количество накопленных штампов", description: "Опционально." },
-  { column: "J", title: "ID группы начисления баллов", description: "Опционально." },
-  { column: "K", title: "Email клиента", description: "Опционально." },
+  {
+    col: "N",
+    name: "Дата последней покупки",
+    desc: "Опционально.",
+  },
+];
+
+const operationRows: TableRow[] = [
+  {
+    col: "O",
+    name: "Сумма операции",
+    desc: "Обязательно для операций. В рублях.",
+    required: true,
+  },
+  {
+    col: "P",
+    name: "Начисленные баллы",
+    desc: "Опционально.",
+  },
+  {
+    col: "Q",
+    name: "Списанные баллы",
+    desc: "Опционально.",
+  },
+  {
+    col: "R",
+    name: "Дата операции",
+    desc: "Опционально. Если пусто — берётся дата импорта.",
+  },
+  {
+    col: "S",
+    name: "ID операции",
+    desc: "Обязательно для операций. Должен быть уникален.",
+    required: true,
+  },
+  {
+    col: "T",
+    name: "Номер чека",
+    desc: "Опционально.",
+  },
+];
+
+const tableGroups = [
+  { title: null, rows: baseRows },
+  { title: "Если не передаём чеки:", rows: aggregateRows },
+  {
+    title: "Если хотите передать детальную информацию об операциях:",
+    rows: operationRows,
+  },
 ];
 
 export default function ImportCustomersPage() {
-  const [file, setFile] = React.useState<File | null>(null);
-  const [errors, setErrors] = React.useState<ErrorRow[]>([]);
-  const [importing, setImporting] = React.useState(false);
-  const [message, setMessage] = React.useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const current = event.target.files?.[0];
-    setFile(current ?? null);
-    setErrors([]);
-    setMessage(null);
-  }
-
-  async function handleImport() {
-    if (!file) {
-      setErrors([{ line: 0, column: "—", message: "Выберите CSV-файл для загрузки" }]);
-      return;
+  const handleDrag = (event: React.DragEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.type === "dragenter" || event.type === "dragover") {
+      setDragActive(true);
+    } else if (event.type === "dragleave") {
+      setDragActive(false);
     }
+  };
+
+  const handleDrop = (event: React.DragEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setDragActive(false);
+    if (event.dataTransfer.files && event.dataTransfer.files[0]) {
+      handleFile(event.dataTransfer.files[0]);
+    }
+  };
+
+  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files[0]) {
+      handleFile(event.target.files[0]);
+    }
+  };
+
+  const handleFile = (file: File) => {
     if (!file.name.toLowerCase().endsWith(".csv")) {
-      setErrors([{ line: 0, column: "—", message: "Допустим только формат CSV" }]);
+      alert("Пожалуйста, загрузите файл в формате CSV");
+      setSelectedFile(null);
+      if (inputRef.current) {
+        inputRef.current.value = "";
+      }
+      return;
+    }
+    setSelectedFile(file);
+  };
+
+  const handleRemoveFile = () => {
+    setSelectedFile(null);
+    if (inputRef.current) {
+      inputRef.current.value = "";
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!selectedFile) {
+      alert("Выберите CSV-файл для загрузки.");
       return;
     }
 
-    setImporting(true);
-    setErrors([]);
-    setMessage(null);
+    setUploading(true);
+    setImportResult(null);
+    setImportError(null);
 
-    await new Promise((resolve) => setTimeout(resolve, 900));
+    const formData = new FormData();
+    formData.append("file", selectedFile);
 
-    if (file.size === 0) {
-      setErrors([{ line: 1, column: "B", message: "Файл пустой. Добавьте данные" }]);
-      setImporting(false);
-      return;
+    try {
+      const res = await fetch("/api/portal/customers/import", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        const message = readApiError(text) || "Не удалось импортировать файл.";
+        setImportError(message);
+        alert(message);
+        return;
+      }
+
+      const payload = (await res.json().catch(() => null)) as ImportResult | null;
+      if (!payload) {
+        const message = "Некорректный ответ сервера.";
+        setImportError(message);
+        alert(message);
+        return;
+      }
+
+      setImportResult(payload);
+      const errorCount = payload.errors?.length ?? 0;
+      if (errorCount > 0) {
+        alert(`Импорт завершён с ошибками: ${errorCount}. Проверьте файл и повторите загрузку.`);
+      } else {
+        alert(
+          `Импорт завершён. Клиентов: ${payload.customersCreated} новых, ${payload.customersUpdated} обновлено. ` +
+            `Чеков добавлено: ${payload.receiptsImported}. Агрегатов обновлено: ${payload.statsUpdated}.`,
+        );
+        handleRemoveFile();
+      }
+    } catch {
+      const message = "Ошибка соединения. Попробуйте ещё раз.";
+      setImportError(message);
+      alert(message);
+    } finally {
+      setUploading(false);
     }
-
-    setMessage(`Файл ${file.name} принят. Проверка завершена без критичных ошибок.`);
-    setImporting(false);
-  }
+  };
 
   return (
-    <div style={{ display: "grid", gap: 20 }}>
-      <Card>
-        <CardHeader
-          title="Импортировать клиентов"
-          subtitle="Загрузка данных"
-        />
-        <CardBody style={{ display: "grid", gap: 20 }}>
-          <section style={{ display: "grid", gap: 12 }}>
-            <h3 style={sectionTitleStyle}>Инструкции по подготовке файла</h3>
-            <ul style={listStyle}>
-              <li>Формат файла — CSV. Кодировка UTF-8. Разделитель «;».</li>
-              <li>Каждая строка соответствует одному клиенту. Используйте точку для разделения дробной части.</li>
-              <li>Перед загрузкой убедитесь, что обязательные колонки заполнены и нет скрытых формул.</li>
-            </ul>
-          </section>
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+      <div>
+        <h2 className="text-2xl font-bold text-gray-900">Импорт данных</h2>
+        <p className="text-gray-500 mt-1">
+          Массовая загрузка клиентов и истории операций из внешних источников.
+        </p>
+      </div>
 
-          <section style={{ display: "grid", gap: 12 }}>
-            <h3 style={sectionTitleStyle}>Структура файла</h3>
-            <div style={{ overflowX: "auto" }}>
-              <table style={tableStyle}>
-                <thead>
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+        <div className="xl:col-span-1 space-y-6">
+          <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+            <h3 className="font-bold text-gray-900 mb-4">Загрузка файла</h3>
+
+            <div
+              className={`relative border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center text-center transition-colors ${
+                dragActive
+                  ? "border-purple-500 bg-purple-50"
+                  : "border-gray-300 hover:border-gray-400 hover:bg-gray-50"
+              }`}
+              onDragEnter={handleDrag}
+              onDragLeave={handleDrag}
+              onDragOver={handleDrag}
+              onDrop={handleDrop}
+            >
+              <input
+                ref={inputRef}
+                type="file"
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                onChange={handleChange}
+                accept=".csv"
+              />
+
+              <div className="bg-blue-50 p-4 rounded-full mb-4">
+                <Upload size={32} className="text-blue-600" />
+              </div>
+
+              <p className="text-sm font-medium text-gray-900 mb-1">
+                Перетащите файл сюда или нажмите для выбора
+              </p>
+              <p className="text-xs text-gray-500">Поддерживается только формат CSV</p>
+            </div>
+
+            {selectedFile && (
+              <div className="mt-4 p-3 bg-purple-50 border border-purple-100 rounded-lg flex items-center justify-between">
+                <div className="flex items-center space-x-3 overflow-hidden">
+                  <FileSpreadsheet
+                    size={20}
+                    className="text-purple-600 flex-shrink-0"
+                  />
+                  <span className="text-sm font-medium text-purple-900 truncate">
+                    {selectedFile.name}
+                  </span>
+                </div>
+                <button
+                  onClick={handleRemoveFile}
+                  className="text-purple-400 hover:text-purple-700 p-1"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            )}
+
+            <button
+              disabled={!selectedFile || uploading}
+              onClick={handleUpload}
+              className="w-full mt-4 bg-purple-600 text-white py-3 rounded-lg font-medium hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+            >
+              <span>{uploading ? "Импортируем…" : "Начать импорт"}</span>
+            </button>
+          </div>
+
+          <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+            <h3 className="font-bold text-gray-900 mb-2">Шаблон файла</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              Скачайте пример файла, чтобы заполнить колонки корректно.
+            </p>
+            <a
+              href="/import-example.csv"
+              download
+              className="w-full flex items-center justify-center space-x-2 border border-gray-300 text-gray-700 py-2.5 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm"
+            >
+              <Download size={16} />
+              <span>Скачать пример CSV</span>
+            </a>
+          </div>
+
+          <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 flex items-start space-x-3">
+            <AlertCircle size={20} className="text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-amber-800">
+              <span className="font-bold block mb-1">Важно</span>
+              Баланс из <strong>balance_points</strong> выставляется жёстко и не
+              пересчитывается по операциям. <strong>order_id</strong> должен быть
+              уникален для мерчанта — дубликаты с разными данными будут
+              отклонены. Большие файлы (более 10&nbsp;000 строк) могут
+              обрабатываться несколько минут — не закрывайте вкладку до
+              завершения загрузки.
+            </div>
+          </div>
+
+          {importError && (
+            <div className="bg-red-50 border border-red-100 rounded-xl p-4 flex items-start space-x-3">
+              <AlertCircle size={20} className="text-red-600 flex-shrink-0 mt-0.5" />
+              <div className="text-sm text-red-700">
+                <span className="font-bold block mb-1">Ошибка импорта</span>
+                {importError}
+              </div>
+            </div>
+          )}
+
+          {importResult && (
+            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+              <h3 className="font-bold text-gray-900 mb-4">Результат импорта</h3>
+              <div className="grid grid-cols-2 gap-3 text-sm text-gray-600">
+                <div>
+                  <span className="font-medium text-gray-900">{importResult.total}</span>{" "}
+                  строк в обработке
+                </div>
+                <div>
+                  <span className="font-medium text-gray-900">{importResult.customersCreated}</span>{" "}
+                  новых клиентов
+                </div>
+                <div>
+                  <span className="font-medium text-gray-900">{importResult.customersUpdated}</span>{" "}
+                  обновлено
+                </div>
+                <div>
+                  <span className="font-medium text-gray-900">{importResult.receiptsImported}</span>{" "}
+                  чеков добавлено
+                </div>
+                <div>
+                  <span className="font-medium text-gray-900">{importResult.statsUpdated}</span>{" "}
+                  агрегатов
+                </div>
+                <div>
+                  <span className="font-medium text-gray-900">{importResult.balancesSet}</span>{" "}
+                  балансов выставлено
+                </div>
+              </div>
+
+              {(importResult.errors?.length ?? 0) > 0 ? (
+                <div className="mt-5">
+                  <div className="flex items-center text-sm font-semibold text-red-600">
+                    <AlertCircle size={16} className="mr-2" />
+                    Ошибки импорта ({importResult.errors?.length})
+                  </div>
+                  <div className="mt-3 max-h-64 overflow-y-auto rounded-lg border border-red-100 bg-red-50/40">
+                    <ul className="divide-y divide-red-100">
+                      {importResult.errors?.map((err, index) => (
+                        <li key={`${err.row}-${index}`} className="px-4 py-3">
+                          <div className="text-xs text-gray-500 mb-1">
+                            Строка {err.row}
+                          </div>
+                          <div className="text-sm text-red-700">{err.error}</div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-5 flex items-center text-sm font-semibold text-green-600">
+                  <Check size={16} className="mr-2" />
+                  Импорт выполнен без ошибок
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="xl:col-span-2 space-y-6">
+          <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+            <h3 className="font-bold text-gray-900 text-lg mb-4 flex items-center">
+              <FileText size={20} className="mr-2 text-gray-400" />
+              Инструкции по подготовке файла
+            </h3>
+
+            <ul className="space-y-3">
+              <li className="flex items-start space-x-3 text-sm text-gray-600">
+                <Check size={16} className="text-green-500 mt-0.5 flex-shrink-0" />
+                <span>
+                  Формат файла — <strong>CSV</strong>. Кодировка <strong>UTF-8</strong>.
+                  Разделитель — <strong>точка с запятой (;)</strong>.
+                </span>
+              </li>
+              <li className="flex items-start space-x-3 text-sm text-gray-600">
+                <Check size={16} className="text-green-500 mt-0.5 flex-shrink-0" />
+                <span>
+                  Если заполнены <strong>Сумма операции</strong> и{" "}
+                  <strong>ID операции</strong>, строка считается операцией. Для
+                  агрегатов заполните <strong>Сумма покупок</strong> и{" "}
+                  <strong>Количество визитов</strong>.
+                </span>
+              </li>
+              <li className="flex items-start space-x-3 text-sm text-gray-600">
+                <Check size={16} className="text-green-500 mt-0.5 flex-shrink-0" />
+                <span>
+                  Суммы — в рублях (целые значения). Поле{" "}
+                  <strong>Номер телефона</strong> обязательно в каждой строке.
+                </span>
+              </li>
+            </ul>
+          </div>
+
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="p-6 border-b border-gray-100 bg-gray-50/50">
+              <h3 className="font-bold text-gray-900">Структура файла</h3>
+              <p className="text-sm text-gray-500 mt-1">
+                Порядок колонок (A → T). Названия строго как в таблице.
+              </p>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="text-xs text-gray-500 uppercase bg-gray-50 border-b border-gray-100">
                   <tr>
-                    <th style={headerCellStyle}>Колонка</th>
-                    <th style={headerCellStyle}>Поле</th>
-                    <th style={headerCellStyle}>Описание</th>
+                    <th className="px-6 py-3 font-semibold w-16 text-center">Кол.</th>
+                    <th className="px-6 py-3 font-semibold w-80">Поле</th>
+                    <th className="px-6 py-3 font-semibold">Описание</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {structure.map((row) => (
-                    <tr key={row.column}>
-                      <td style={cellStyle}>{row.column}{row.required ? "*" : ""}</td>
-                      <td style={cellStyle}>{row.title}</td>
-                      <td style={cellStyle}>{row.description}</td>
-                    </tr>
+                <tbody className="divide-y divide-gray-50">
+                  {tableGroups.map((group, groupIndex) => (
+                    <React.Fragment key={group.title ?? `base-${groupIndex}`}>
+                      {group.title ? (
+                        <tr className="bg-gray-50/70">
+                          <td
+                            colSpan={3}
+                            className="px-6 py-3 text-sm font-semibold text-gray-500"
+                          >
+                            {group.title}
+                          </td>
+                        </tr>
+                      ) : null}
+                      {group.rows.map((row) => (
+                        <tr
+                          key={row.col}
+                          className="hover:bg-gray-50 transition-colors"
+                        >
+                          <td className="px-6 py-4 text-center font-mono font-bold text-gray-400 bg-gray-50/30">
+                            {row.col}
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center">
+                              <span
+                                className={`font-medium ${
+                                  row.required ? "text-gray-900" : "text-gray-600"
+                                }`}
+                              >
+                                {row.name}
+                              </span>
+                              {row.required && (
+                                <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600 whitespace-nowrap">
+                                  Обязательно
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-gray-600">{row.desc}</td>
+                        </tr>
+                      ))}
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>
             </div>
-          </section>
-
-          <section style={{ display: "grid", gap: 12 }}>
-            <h3 style={sectionTitleStyle}>Загрузка файла</h3>
-            <label style={uploadLabelStyle}>
-              <input type="file" accept=".csv" onChange={handleFileChange} style={{ display: "none" }} />
-              <UploadCloud size={20} />
-              <span>{file ? file.name : "Выберите CSV-файл"}</span>
-            </label>
-            <Button onClick={handleImport} disabled={importing}>
-              {importing ? "Импортируем…" : "Импортировать"}
-            </Button>
-            {message && <div style={successStyle}>{message}</div>}
-          </section>
-
-          <section style={{ display: "grid", gap: 12 }}>
-            <h3 style={sectionTitleStyle}>Журнал ошибок</h3>
-            {errors.length === 0 ? (
-              <div style={{ opacity: 0.6, fontSize: 13 }}>Ошибок не обнаружено.</div>
-            ) : (
-              <ul style={{ ...listStyle, paddingLeft: 16 }}>
-                {errors.map((error, index) => (
-                  <li key={`${error.line}-${error.column}-${index}`}>
-                    Строка {error.line}, колонка {error.column}: {error.message}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        </CardBody>
-      </Card>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
-
-const sectionTitleStyle: React.CSSProperties = {
-  fontSize: 16,
-  fontWeight: 600,
-};
-
-const listStyle: React.CSSProperties = {
-  display: "grid",
-  gap: 6,
-  fontSize: 13,
-  paddingLeft: 18,
-};
-
-const tableStyle: React.CSSProperties = {
-  width: "100%",
-  borderCollapse: "collapse",
-  minWidth: 720,
-};
-
-const headerCellStyle: React.CSSProperties = {
-  textAlign: "left",
-  padding: "10px 12px",
-  fontSize: 12,
-  textTransform: "uppercase",
-  letterSpacing: 0.4,
-  opacity: 0.6,
-  borderBottom: "1px solid rgba(148,163,184,0.24)",
-};
-
-const cellStyle: React.CSSProperties = {
-  padding: "10px 12px",
-  borderBottom: "1px solid rgba(148,163,184,0.12)",
-  fontSize: 13,
-};
-
-const uploadLabelStyle: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 10,
-  padding: "12px 16px",
-  borderRadius: 12,
-  border: "1px dashed rgba(148,163,184,0.35)",
-  cursor: "pointer",
-  background: "rgba(15,23,42,0.35)",
-};
-
-const successStyle: React.CSSProperties = {
-  background: "rgba(34,197,94,0.16)",
-  border: "1px solid rgba(34,197,94,0.35)",
-  color: "#bbf7d0",
-  borderRadius: 12,
-  padding: "10px 14px",
-  fontSize: 13,
-};

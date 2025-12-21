@@ -92,10 +92,20 @@ function formatPercent(value: number | null): string {
 
 function normalizeForm(
   state: LevelFormState,
-  levelsCount: number,
+  existingLevels: TierRow[],
+  editingId: string | null,
 ): NormalizedForm {
   const name = state.name.trim();
   if (!name) return { error: "Укажите название уровня" };
+  const normalizedName = name.toLowerCase();
+  const duplicate = existingLevels.some(
+    (level) =>
+      level.id !== editingId &&
+      level.name.trim().toLowerCase() === normalizedName,
+  );
+  if (duplicate) {
+    return { error: "Уровень с таким названием уже существует" };
+  }
 
   const earnRatePercent = parseDecimal(state.earnRatePercent);
   if (earnRatePercent == null)
@@ -115,7 +125,7 @@ function normalizeForm(
     return { error: "Минимальная сумма не может быть отрицательной" };
   }
 
-  if (state.isHidden && levelsCount <= 1) {
+  if (state.isHidden && existingLevels.length <= 1) {
     return {
       error: "Нельзя сделать единственный уровень скрытым",
     };
@@ -263,7 +273,7 @@ export default function LevelsPage() {
       event?.preventDefault();
       if (saving) return;
 
-      const validation = normalizeForm(formState, levels.length);
+      const validation = normalizeForm(formState, levels, editingId);
       if (validation.error) {
         setFormError(validation.error);
         return;
