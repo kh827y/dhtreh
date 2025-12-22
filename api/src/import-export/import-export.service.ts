@@ -2,6 +2,7 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { WalletType } from '@prisma/client';
 import type { Response } from 'express';
 import { PrismaService } from '../prisma.service';
+import { fetchReceiptAggregates } from '../common/receipt-aggregates.util';
 import * as XLSX from 'xlsx';
 import * as csv from 'csv-parse/sync';
 import * as csvStringify from 'csv-stringify/sync';
@@ -317,13 +318,20 @@ export class ImportExportService {
 
           let statsUpdated = 0;
           if (hasAggregates) {
-            await this.upsertCustomerStats(
+            await this.upsertCustomerImportStats(
               {
                 merchantId: dto.merchantId,
                 customerId: customer.id,
                 totalSpent: totalSpent ?? 0,
                 visits: visitsCount ?? 0,
                 lastPurchaseAt,
+              },
+              tx,
+            );
+            await this.refreshCustomerStats(
+              {
+                merchantId: dto.merchantId,
+                customerId: customer.id,
               },
               tx,
             );
@@ -1223,7 +1231,7 @@ export class ImportExportService {
     });
   }
 
-  private async upsertCustomerStats(
+  private async upsertCustomerImportStats(
     params: {
       merchantId: string;
       customerId: string;
@@ -1233,20 +1241,7 @@ export class ImportExportService {
     },
     prisma: any = this.prisma,
   ) {
-    const avgCheck =
-      params.visits > 0
-        ? Math.round(params.totalSpent / params.visits)
-        : 0;
-    const lastSeenAt = params.lastPurchaseAt ?? new Date();
-    const updateData: Record<string, any> = {
-      totalSpent: params.totalSpent,
-      visits: params.visits,
-      avgCheck,
-      lastSeenAt,
-    };
-    if (params.lastPurchaseAt) {
-      updateData.lastOrderAt = params.lastPurchaseAt;
-    }
+    const lastSeenAt = new Date();
     await prisma.customerStats.upsert({
       where: {
         merchantId_customerId: {
@@ -1254,16 +1249,65 @@ export class ImportExportService {
           customerId: params.customerId,
         },
       },
-      update: updateData,
+      update: {
+        importedTotalSpent: params.totalSpent,
+        importedVisits: params.visits,
+        importedLastPurchaseAt: params.lastPurchaseAt,
+        lastSeenAt,
+      },
       create: {
         merchantId: params.merchantId,
         customerId: params.customerId,
-        totalSpent: params.totalSpent,
-        visits: params.visits,
-        avgCheck,
+        importedTotalSpent: params.totalSpent,
+        importedVisits: params.visits,
+        importedLastPurchaseAt: params.lastPurchaseAt,
         firstSeenAt: params.lastPurchaseAt ?? new Date(),
         lastSeenAt,
-        lastOrderAt: params.lastPurchaseAt ?? null,
+      },
+    });
+  }
+
+  private async refreshCustomerStats(
+    params: {
+      merchantId: string;
+      customerId: string;
+    },
+    prisma: any = this.prisma,
+  ) {
+    const [row] = await fetchReceiptAggregates(prisma, {
+      merchantId: params.merchantId,
+      customerIds: [params.customerId],
+      includeImportedBase: true,
+    });
+    const visits = Math.max(0, Math.floor(Number(row?.visits ?? 0)));
+    const totalSpent = Math.max(0, Math.floor(Number(row?.totalSpent ?? 0)));
+    const avgCheck = visits > 0 ? totalSpent / visits : 0;
+    const lastOrderAt = row?.lastPurchaseAt ?? null;
+    const lastSeenAt = new Date();
+
+    await prisma.customerStats.upsert({
+      where: {
+        merchantId_customerId: {
+          merchantId: params.merchantId,
+          customerId: params.customerId,
+        },
+      },
+      update: {
+        visits,
+        totalSpent,
+        avgCheck,
+        lastOrderAt,
+        lastSeenAt,
+      },
+      create: {
+        merchantId: params.merchantId,
+        customerId: params.customerId,
+        visits,
+        totalSpent,
+        avgCheck,
+        lastOrderAt,
+        firstSeenAt: row?.firstPurchaseAt ?? new Date(),
+        lastSeenAt,
       },
     });
   }

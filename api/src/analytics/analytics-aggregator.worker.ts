@@ -352,7 +352,10 @@ export class AnalyticsAggregatorWorker {
         where: { merchantId },
         select: { customerId: true, createdAt: true },
       }),
-      fetchReceiptAggregates(this.prisma, { merchantId }),
+      fetchReceiptAggregates(this.prisma, {
+        merchantId,
+        includeImportedBase: true,
+      }),
     ]);
 
     const parsedSettings = this.parseRfmSettings(settingsRow?.rulesJson);

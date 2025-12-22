@@ -2280,6 +2280,9 @@ model CustomerStats {
   lastOrderAt DateTime?
   visits      Int       @default(0)
   totalSpent  Int       @default(0)
+  importedVisits      Int?
+  importedTotalSpent  Int?
+  importedLastPurchaseAt DateTime?
   avgCheck    Float     @default(0)
   rfmR        Int?
   rfmF        Int?

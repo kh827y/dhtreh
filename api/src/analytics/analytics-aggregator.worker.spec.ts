@@ -204,6 +204,7 @@ describe('AnalyticsAggregatorWorker — recalculateCustomerStatsForMerchant', ()
 
     expect(fetchAggregatesMock).toHaveBeenCalledWith(prisma, {
       merchantId: 'm-1',
+      includeImportedBase: true,
     });
     expect(prisma.customerStats.upsert).toHaveBeenCalledTimes(4);
 
@@ -259,10 +260,10 @@ describe('AnalyticsAggregatorWorker — recalculateCustomerStatsForMerchant', ()
         totalSpent: 50,
         avgCheck: 50,
         rfmR: 1,
-        rfmF: 2,
-        rfmM: 2,
-        rfmScore: 122,
-        rfmClass: '1-2-2',
+        rfmF: 1,
+        rfmM: 1,
+        rfmScore: 111,
+        rfmClass: '1-1-1',
       }),
     );
 

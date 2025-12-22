@@ -613,6 +613,7 @@ export class CustomerAudiencesService {
       fetchReceiptAggregates(this.prisma, {
         merchantId,
         customerIds: ids,
+        includeImportedBase: true,
       }),
       this.prisma.wallet.findMany({
         where: walletWhere,

@@ -4517,6 +4517,7 @@ export class LoyaltyService {
     const aggregates = await fetchReceiptAggregates(this.prisma, {
       merchantId: mid,
       customerIds: [cid],
+      includeImportedBase: true,
     });
     let row =
       Array.isArray(aggregates) && aggregates.length ? aggregates[0] : null;

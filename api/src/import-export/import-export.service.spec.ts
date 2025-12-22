@@ -3,6 +3,7 @@ import { ImportExportService } from './import-export.service';
 const buildPrisma = (overrides: Partial<any> = {}) => {
   const prisma: any = {
     $transaction: async (fn: (tx: any) => Promise<any>) => fn(prisma),
+    $queryRaw: jest.fn().mockResolvedValue([]),
     customer: {
       findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({
@@ -36,6 +37,7 @@ const buildPrisma = (overrides: Partial<any> = {}) => {
     },
     customerStats: {
       upsert: jest.fn().mockResolvedValue({}),
+      findMany: jest.fn().mockResolvedValue([]),
     },
   };
   return Object.assign(prisma, overrides);
@@ -185,6 +187,17 @@ describe('ImportExportService.importCustomers', () => {
         }),
         create: jest.fn(),
       },
+      customerStats: {
+        upsert: jest.fn().mockResolvedValue({}),
+        findMany: jest.fn().mockResolvedValue([
+          {
+            customerId: 'cust_1',
+            importedTotalSpent: 10000,
+            importedVisits: 5,
+            importedLastPurchaseAt: new Date('2024-10-12T00:00:00.000Z'),
+          },
+        ]),
+      },
     });
     const service = new ImportExportService(prisma);
     const csv = [
@@ -200,13 +213,25 @@ describe('ImportExportService.importCustomers', () => {
     });
 
     expect(result.statsUpdated).toBe(1);
-    expect(prisma.customerStats.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        update: expect.objectContaining({
-          totalSpent: 10000,
-          visits: 5,
+    const upsertCalls = prisma.customerStats.upsert.mock.calls.map(
+      ([payload]: any) => payload,
+    );
+    expect(upsertCalls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          update: expect.objectContaining({
+            importedTotalSpent: 10000,
+            importedVisits: 5,
+            importedLastPurchaseAt: expect.any(Date),
+          }),
         }),
-      }),
+        expect.objectContaining({
+          update: expect.objectContaining({
+            totalSpent: 10000,
+            visits: 5,
+          }),
+        }),
+      ]),
     );
   });
 

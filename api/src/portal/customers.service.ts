@@ -382,6 +382,7 @@ export class PortalCustomersService {
         fetchReceiptAggregates(this.prisma, {
           merchantId,
           customerIds,
+          includeImportedBase: true,
         }),
       ]);
 
@@ -638,6 +639,7 @@ export class PortalCustomersService {
       fetchReceiptAggregates(this.prisma, {
         merchantId,
         customerIds: refereeIds,
+        includeImportedBase: true,
       }),
     ]);
 
