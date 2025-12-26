@@ -54,6 +54,8 @@ export type AppView =
   | 'staff_motivation'
   | 'fraud_protection'
   | 'cashier_panel'
+  | 'cashier_mode' 
+  | 'cashier_mode_mobile' /* NEW VIEW */
   | 'reviews'
   | 'clients'
   | 'audiences'

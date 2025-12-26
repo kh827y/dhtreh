@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Dashboard from './components/Dashboard';
@@ -42,6 +42,8 @@ import ReferralSettings from './components/ReferralSettings';
 import OperationsLog from './components/OperationsLog';
 import Login from './components/Login';
 import SubscriptionExpired from './components/SubscriptionExpired';
+import CashierPanel from './components/CashierPanel';
+import CashierPanelMobile from './components/CashierPanelMobile'; // New Import
 import { AppView } from './types';
 import { ClipboardList } from 'lucide-react';
 
@@ -50,9 +52,26 @@ type AuthStatus = 'authenticated' | 'login' | 'expired';
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>('summary');
   const [authStatus, setAuthStatus] = useState<AuthStatus>('authenticated');
+  const [isMobileCashier, setIsMobileCashier] = useState(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return false;
+    return window.matchMedia('(max-width: 900px)').matches;
+  });
   
   // Navigation State
   const [targetClientId, setTargetClientId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const media = window.matchMedia('(max-width: 900px)');
+    const handleChange = () => setIsMobileCashier(media.matches);
+    handleChange();
+    if (media.addEventListener) {
+      media.addEventListener('change', handleChange);
+      return () => media.removeEventListener('change', handleChange);
+    }
+    media.addListener(handleChange);
+    return () => media.removeListener(handleChange);
+  }, []);
 
   // --- Auth Guards ---
 
@@ -62,6 +81,14 @@ const App: React.FC = () => {
 
   if (authStatus === 'expired') {
     return <SubscriptionExpired onRenew={() => setAuthStatus('authenticated')} />;
+  }
+
+  // --- Cashier Mode Guards ---
+  
+  if (currentView === 'cashier_mode' || currentView === 'cashier_mode_mobile') {
+    return isMobileCashier
+      ? <CashierPanelMobile onExit={() => setCurrentView('summary')} />
+      : <CashierPanel onExit={() => setCurrentView('summary')} />;
   }
 
   // --- Handlers ---

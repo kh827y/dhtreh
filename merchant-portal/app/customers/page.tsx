@@ -1,94 +1,168 @@
 "use client";
 
-import React from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Card, CardHeader, CardBody, Button, Icons, Badge } from "@loyalty/ui";
+import React, { Suspense } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Search, Plus, Upload, ChevronLeft, ChevronRight, Gift, Edit, User, Filter } from "lucide-react";
 import { type CustomerRecord, getFullName } from "./data";
 import { normalizeCustomer } from "./normalize";
-import { CustomerFormModal, type CustomerFormPayload } from "./customer-form-modal";
-import { UsersRound, UserPlus, Upload as UploadIcon, Search, Edit3, Trash2, ChevronLeft, ChevronRight, Filter } from "lucide-react";
+import CustomerFormModal, { type CustomerFormPayload } from "./customer-form-modal";
+import ComplimentaryModal from "./complimentary-modal";
+import { buildLevelLookups, getAvatarClass, getCustomerLevelRank } from "./level-utils";
+import CustomerCard from "./customer-card";
 
-const { Plus } = Icons;
-
-type Filters = {
-  login: string;
+type LevelOption = {
+  id: string;
   name: string;
-  email: string;
-  frequencyFrom: string;
-  frequencyTo: string;
-  averageCheck: string;
-  birthday: string;
-  age: string;
+  label: string;
+  isInitial?: boolean;
+  thresholdAmount?: number | null;
 };
 
-const initialFilters: Filters = {
-  login: "",
-  name: "",
-  email: "",
-  frequencyFrom: "",
-  frequencyTo: "",
-  averageCheck: "",
-  birthday: "",
-  age: "",
-};
+const ITEMS_PER_PAGE = 10;
 
-const PAGE_SIZE = 8;
+function formatCurrency(value?: number | null): string {
+  if (value == null || Number.isNaN(Number(value)) || value <= 0) return "-";
+  return `₽${Math.round(Number(value)).toLocaleString("ru-RU")}`;
+}
 
-type LevelOption = { id: string; name: string; isInitial?: boolean };
+function formatDate(value?: string | null): string {
+  if (!value) return "-";
+  try {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "-";
+    return date.toLocaleDateString("ru-RU");
+  } catch {
+    return "-";
+  }
+}
+
+function calculateAge(value?: string | null): number | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - date.getFullYear();
+  const month = today.getMonth() - date.getMonth();
+  if (month < 0 || (month === 0 && today.getDate() < date.getDate())) {
+    age -= 1;
+  }
+  return age >= 0 ? age : null;
+}
+
+function readApiError(payload: unknown): string | null {
+  if (!payload) return null;
+  if (typeof payload === "string") {
+    const trimmed = payload.trim();
+    if (!trimmed) return null;
+    try {
+      return readApiError(JSON.parse(trimmed));
+    } catch {
+      return trimmed;
+    }
+  }
+  if (typeof payload === "object") {
+    const message = (payload as { message?: unknown }).message;
+    if (Array.isArray(message)) return message.filter(Boolean).join(", ");
+    if (typeof message === "string" && message.trim()) return message.trim();
+  }
+  return null;
+}
 
 export default function CustomersPage() {
+  return (
+    <Suspense fallback={null}>
+      <CustomersPageInner />
+    </Suspense>
+  );
+}
+
+function CustomersPageInner() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [customers, setCustomers] = React.useState<CustomerRecord[]>([]);
-  const [filters, setFilters] = React.useState<Filters>(initialFilters);
-  const [page, setPage] = React.useState(1);
+  const [levelsCatalog, setLevelsCatalog] = React.useState<LevelOption[]>([]);
+  const [searchTerm, setSearchTerm] = React.useState("");
+  const [currentPage, setCurrentPage] = React.useState(1);
   const [toast, setToast] = React.useState<string | null>(null);
   const [modalState, setModalState] = React.useState<{ mode: "create" | "edit"; customer?: CustomerRecord } | null>(null);
-  const [levelsCatalog, setLevelsCatalog] = React.useState<LevelOption[]>([]);
+  const [giftTarget, setGiftTarget] = React.useState<CustomerRecord | null>(null);
+  const [loading, setLoading] = React.useState(true);
 
-  // Хелпер для запросов к локальному прокси /api/customers
+  const selectedCustomerId = searchParams.get("customerId");
+  const selectedCustomer = React.useMemo(() => {
+    if (!selectedCustomerId) return null;
+    return customers.find((customer) => customer.id === selectedCustomerId) ?? null;
+  }, [customers, selectedCustomerId]);
+
+  function openCustomer(customerId: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("customerId", customerId);
+    router.push(`${pathname}?${params.toString()}`);
+  }
+
+  function closeCustomer() {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("customerId");
+    const next = params.toString();
+    router.push(next ? `${pathname}?${next}` : pathname);
+  }
+
+  const handleCustomerUpdated = React.useCallback((updated: CustomerRecord) => {
+    setCustomers((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+  }, []);
+
+  const levelLookups = React.useMemo(() => buildLevelLookups(levelsCatalog), [levelsCatalog]);
+
+  const defaultLevelId = React.useMemo(() => {
+    const initial = levelsCatalog.find((lvl) => lvl.isInitial);
+    return initial?.id ?? levelsCatalog[0]?.id ?? null;
+  }, [levelsCatalog]);
+
+  const existingLogins = React.useMemo(
+    () => customers.map((customer) => customer.phone || customer.login),
+    [customers],
+  );
+
   async function api<T = any>(url: string, init?: RequestInit): Promise<T> {
     const res = await fetch(url, {
       ...init,
       headers: { "content-type": "application/json", ...(init?.headers || {}) },
       cache: "no-store",
     });
-    const ct = res.headers.get("content-type") || "";
     const text = await res.text();
-    if (!res.ok) throw new Error(text || res.statusText);
-    if (ct.includes("application/json") || ct.includes("+json")) {
-      try {
-        return text ? ((JSON.parse(text) as unknown) as T) : ((undefined as unknown) as T);
-      } catch {
-        // fallthrough to heuristic parsing
-      }
+    if (!res.ok) {
+      throw new Error(readApiError(text) || text || res.statusText);
     }
-    const trimmed = (text || "").trim();
+    const ct = res.headers.get("content-type") || "";
+    if (ct.includes("application/json") || ct.includes("+json")) {
+      return text ? ((JSON.parse(text) as unknown) as T) : ((undefined as unknown) as T);
+    }
+    const trimmed = text.trim();
     if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-      try {
-        return (JSON.parse(trimmed) as unknown) as T;
-      } catch {
-        // ignore
-      }
+      return (JSON.parse(trimmed) as unknown) as T;
     }
     return ((undefined as unknown) as T);
   }
 
-  // Загрузка списка клиентов при монтировании
-  React.useEffect(() => {
-    let aborted = false;
-    (async () => {
-      try {
-        const data = await api<any[]>("/api/customers");
-        if (!aborted) setCustomers(Array.isArray(data) ? data.map(normalizeCustomer) : []);
-      } catch (e) {
-        console.error(e);
-      }
-    })();
-    return () => {
-      aborted = true;
-    };
+  const loadCustomers = React.useCallback(async () => {
+    try {
+      setLoading(true);
+      const qs = new URLSearchParams({ registeredOnly: "0", excludeMiniapp: "1" });
+      const data = await api<any[]>(`/api/customers?${qs.toString()}`);
+      setCustomers(Array.isArray(data) ? data.map(normalizeCustomer) : []);
+    } catch (e: any) {
+      console.error(e);
+      setToast(readApiError(e?.message || e) || "Не удалось загрузить клиентов");
+      setCustomers([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  React.useEffect(() => {
+    void loadCustomers();
+  }, [loadCustomers]);
 
   React.useEffect(() => {
     let aborted = false;
@@ -106,19 +180,21 @@ export default function CustomersPage() {
             name: typeof row?.name === "string" ? row.name : "",
             isInitial: Boolean(row?.isInitial),
             isHidden: Boolean(row?.isHidden),
-            threshold: Number(row?.thresholdAmount ?? 0) || 0,
+            thresholdAmount: Number(row?.thresholdAmount ?? 0) || 0,
           }))
           .filter((item) => item.id && item.name)
           .sort((a, b) => {
-            if (a.threshold === b.threshold) {
+            if (a.thresholdAmount === b.thresholdAmount) {
               return a.name.localeCompare(b.name);
             }
-            return a.threshold - b.threshold;
+            return a.thresholdAmount - b.thresholdAmount;
           })
           .map((item) => ({
             id: item.id,
-            name: item.isHidden ? `${item.name} (скрытый)` : item.name,
+            name: item.name,
+            label: item.isHidden ? `${item.name} (скрытый)` : item.name,
             isInitial: item.isInitial,
+            thresholdAmount: item.thresholdAmount,
           }));
         if (!aborted) setLevelsCatalog(normalized);
       } catch (error) {
@@ -131,108 +207,47 @@ export default function CustomersPage() {
     };
   }, []);
 
-  const filteredCustomers = React.useMemo(() => {
-    return customers.filter((customer) => {
-      if (filters.login) {
-        const haystack = (customer.phone || customer.login || "").toLowerCase();
-        if (!haystack.includes(filters.login.trim().toLowerCase())) return false;
-      }
-      if (filters.name) {
-        const fullName = getFullName(customer).toLowerCase();
-        if (!fullName.includes(filters.name.trim().toLowerCase())) return false;
-      }
-      if (filters.email && !(customer.email || "").toLowerCase().includes(filters.email.trim().toLowerCase())) return false;
-
-      const freqDays = customer.visitFrequencyDays;
-      if (filters.frequencyFrom) {
-        const min = Number(filters.frequencyFrom);
-        if (!Number.isNaN(min)) {
-          if (freqDays == null || freqDays < min) return false;
-        }
-      }
-      if (filters.frequencyTo) {
-        const max = Number(filters.frequencyTo);
-        if (!Number.isNaN(max)) {
-          if (freqDays == null || freqDays > max) return false;
-        }
-      }
-
-      if (filters.averageCheck) {
-        const min = Number(filters.averageCheck);
-        if (!Number.isNaN(min) && customer.averageCheck < min) return false;
-      }
-      if (filters.birthday) {
-        if ((customer.birthday || "").slice(0, 10) !== filters.birthday) return false;
-      }
-      if (filters.age) {
-        const expected = Number(filters.age);
-        if (!Number.isNaN(expected) && customer.age !== expected) return false;
-      }
-      return true;
-    });
-  }, [customers, filters]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredCustomers.length / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
-  const startIndex = filteredCustomers.length ? (currentPage - 1) * PAGE_SIZE : 0;
-  const pageItems = filteredCustomers.slice(startIndex, startIndex + PAGE_SIZE);
-  const shownFrom = filteredCustomers.length ? startIndex + 1 : 0;
-  const shownTo = filteredCustomers.length ? startIndex + pageItems.length : 0;
-
-  React.useEffect(() => {
-    setPage(1);
-  }, [filters.login, filters.name, filters.email, filters.frequencyFrom, filters.frequencyTo, filters.averageCheck, filters.birthday, filters.age]);
-
-  React.useEffect(() => {
-    if (page > totalPages) {
-      setPage(totalPages);
-    }
-  }, [page, totalPages]);
-
   React.useEffect(() => {
     if (!toast) return;
     const timeout = window.setTimeout(() => setToast(null), 4000);
     return () => window.clearTimeout(timeout);
   }, [toast]);
 
-  const existingLogins = React.useMemo(
-    () => customers.map((customer) => customer.phone || customer.login),
-    [customers],
-  );
-  const defaultLevelId = React.useMemo(() => {
-    const initial = levelsCatalog.find((lvl) => lvl.isInitial);
-    return initial?.id ?? levelsCatalog[0]?.id ?? null;
-  }, [levelsCatalog]);
+  const filteredCustomers = React.useMemo(() => {
+    const lowerSearch = searchTerm.trim().toLowerCase();
+    if (!lowerSearch) return customers;
+    return customers.filter((customer) => {
+      const name = getFullName(customer).toLowerCase();
+      const phone = (customer.phone || customer.login || "").toLowerCase();
+      const email = (customer.email || "").toLowerCase();
+      return name.includes(lowerSearch) || phone.includes(lowerSearch) || email.includes(lowerSearch);
+    });
+  }, [customers, searchTerm]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredCustomers.length / ITEMS_PER_PAGE));
+  const page = Math.min(currentPage, totalPages);
+  const startIndex = filteredCustomers.length ? (page - 1) * ITEMS_PER_PAGE : 0;
+  const paginatedCustomers = filteredCustomers.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
+
+  React.useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   function openCreateModal() {
     setModalState({ mode: "create" });
   }
 
-  function openEditModal(customer: CustomerRecord) {
+  function openEditModal(customer: CustomerRecord, event?: React.MouseEvent) {
+    if (event) event.stopPropagation();
     setModalState({ mode: "edit", customer });
-  }
-
-  async function handleDelete(customer: CustomerRecord) {
-    if (!customer?.id) return;
-    const ok = window.confirm(`Удалить клиента ${getFullName(customer) || customer.login}?\nДействие нельзя отменить.`);
-    if (!ok) return;
-    try {
-      await api(`/api/customers/${encodeURIComponent(customer.id)}`, { method: 'DELETE' });
-      setCustomers((prev) => prev.filter((c) => c.id !== customer.id));
-      // Подстраховка: перечитать список с сервера
-      try {
-        const fresh = await api<any[]>("/api/customers");
-        if (Array.isArray(fresh)) setCustomers(fresh.map(normalizeCustomer));
-      } catch {}
-      setToast("Клиент удалён");
-    } catch (e: any) {
-      setToast(e?.message || 'Не удалось удалить клиента');
-    }
   }
 
   async function handleModalSubmit(payload: CustomerFormPayload) {
     if (!modalState) return;
-
     const trimmedName = payload.firstName.trim();
     const baseBody = {
       phone: payload.login.trim(),
@@ -241,7 +256,6 @@ export default function CustomersPage() {
       name: trimmedName || undefined,
       birthday: payload.birthday || undefined,
       gender: payload.gender,
-      tags: parseTags(payload.tags),
       comment: payload.comment.trim() || undefined,
       levelId: payload.levelId || undefined,
     };
@@ -253,14 +267,21 @@ export default function CustomersPage() {
           body: JSON.stringify(baseBody),
         });
         const normalized = normalizeCustomer(created);
-        setCustomers((prev) => [normalized, ...prev]);
-        try {
-          const fresh = await api<any[]>("/api/customers");
-          if (Array.isArray(fresh)) setCustomers(fresh.map(normalizeCustomer));
-        } catch {}
-        setToast("Клиент создан");
+        let existed = false;
+        setCustomers((prev) => {
+          const idx = prev.findIndex((item) => item.id === normalized.id);
+          if (idx >= 0) {
+            existed = true;
+            const next = [...prev];
+            next[idx] = normalized;
+            return next;
+          }
+          return [normalized, ...prev];
+        });
+        setToast(existed ? "Клиент уже существует, данные загружены" : "Клиент создан");
+        void loadCustomers();
       } catch (e: any) {
-        setToast(e?.message || "Ошибка при создании клиента");
+        setToast(readApiError(e?.message || e) || "Ошибка при создании клиента");
       }
     } else if (modalState.mode === "edit" && modalState.customer) {
       const { customer } = modalState;
@@ -271,325 +292,250 @@ export default function CustomersPage() {
         });
         const normalized = normalizeCustomer(saved ?? { ...customer, ...baseBody });
         setCustomers((prev) => prev.map((item) => (item.id === customer.id ? normalized : item)));
-        try {
-          const fresh = await api<any[]>("/api/customers");
-          if (Array.isArray(fresh)) setCustomers(fresh.map(normalizeCustomer));
-        } catch {}
         setToast("Данные клиента обновлены");
+        void loadCustomers();
       } catch (e: any) {
-        setToast(e?.message || "Ошибка при сохранении клиента");
+        setToast(readApiError(e?.message || e) || "Ошибка при сохранении клиента");
       }
     }
     setModalState(null);
   }
 
+  const shownFrom = filteredCustomers.length ? startIndex + 1 : 0;
+  const shownTo = filteredCustomers.length ? startIndex + paginatedCustomers.length : 0;
+
+  if (selectedCustomerId) {
+    return (
+      <CustomerCard
+        key={selectedCustomerId}
+        customerId={selectedCustomerId}
+        initialCustomer={selectedCustomer}
+        onBack={closeCustomer}
+        onNavigateToCustomer={openCustomer}
+        onCustomerUpdated={handleCustomerUpdated}
+      />
+    );
+  }
+
   return (
-<div className="animate-in" style={{ display: "grid", gap: 24 }}>
-  {toast && (
-    <div style={{
-      position: "fixed",
-      top: 96,
-      right: 24,
-      background: "rgba(16, 185, 129, 0.15)",
-      border: "1px solid rgba(16, 185, 129, 0.4)",
-      color: "var(--success-light)",
-      padding: "14px 20px",
-      borderRadius: "var(--radius-md)",
-      zIndex: 99,
-      fontSize: 14,
-      fontWeight: 500,
-      boxShadow: "0 16px 48px rgba(0, 0, 0, 0.4)",
-      display: "flex",
-      alignItems: "center",
-      gap: 10,
-      backdropFilter: "blur(8px)"
-    }} role="status">
-      {toast}
-    </div>
-  )}
-
-  {/* Page Header */}
-  <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
-    <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
-      <div style={{
-        width: 48,
-        height: 48,
-        borderRadius: "var(--radius-lg)",
-        background: "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.1))",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        color: "var(--brand-primary-light)",
-      }}>
-        <UsersRound size={24} />
-      </div>
-      <div>
-        <h1 style={{ 
-          fontSize: 28, 
-          fontWeight: 800, 
-          margin: 0,
-          letterSpacing: "-0.02em",
-        }}>
-          Клиенты
-        </h1>
-        <p style={{ 
-          fontSize: 14, 
-          color: "var(--fg-muted)", 
-          margin: "6px 0 0",
-        }}>
-          Список участников программы лояльности ({filteredCustomers.length})
-        </p>
-      </div>
-    </div>
-    
-    <div style={{ display: "flex", gap: 10 }}>
-      <Button onClick={openCreateModal} leftIcon={<UserPlus size={16} />}>
-        Добавить клиента
-      </Button>
-      <Button type="button" variant="secondary" leftIcon={<UploadIcon size={16} />} onClick={() => router.push("/customers/import")}>
-        Импорт
-      </Button>
-    </div>
-  </header>
-
-  {/* Filters */}
-  <Card>
-    <CardBody style={{ padding: 20 }}>
-      <div className="filter-grid">
-        <div className="filter-block" style={{ flex: 1, minWidth: 160 }}>
-          <span className="filter-label">Телефон</span>
-          <input
-            className="input"
-            style={{ width: "100%" }}
-            value={filters.login}
-            onChange={(e) => setFilters((prev) => ({ ...prev, login: e.target.value }))}
-            placeholder="Телефон..."
-          />
-        </div>
-        <div className="filter-block" style={{ flex: 1, minWidth: 160 }}>
-          <span className="filter-label">Имя</span>
-          <input
-            className="input"
-            style={{ width: "100%" }}
-            value={filters.name}
-            onChange={(e) => setFilters((prev) => ({ ...prev, name: e.target.value }))}
-            placeholder="Имя..."
-          />
-        </div>
-        <div className="filter-block" style={{ flex: 1, minWidth: 160 }}>
-          <span className="filter-label">Email</span>
-          <input
-            className="input"
-            style={{ width: "100%" }}
-            value={filters.email}
-            onChange={(e) => setFilters((prev) => ({ ...prev, email: e.target.value }))}
-            placeholder="Email..."
-          />
-        </div>
-        <div className="filter-block">
-          <span className="filter-label">Ср. чек</span>
-          <input
-            type="number"
-            className="input"
-            style={{ width: 120 }}
-            value={filters.averageCheck}
-            onChange={(e) => setFilters((prev) => ({ ...prev, averageCheck: e.target.value }))}
-            placeholder="от..."
-          />
-        </div>
-        <div className="filter-block">
-          <span className="filter-label">Частота</span>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input
-              type="number"
-              className="input"
-              style={{ width: 80 }}
-              value={filters.frequencyFrom}
-              onChange={(e) => setFilters((prev) => ({ ...prev, frequencyFrom: e.target.value }))}
-              placeholder="От"
-            />
-            <input
-              type="number"
-              className="input"
-              style={{ width: 80 }}
-              value={filters.frequencyTo}
-              onChange={(e) => setFilters((prev) => ({ ...prev, frequencyTo: e.target.value }))}
-              placeholder="До"
-            />
-          </div>
-        </div>
-        <div className="filter-block">
-          <span className="filter-label">Дата рожд.</span>
-          <input
-            type="date"
-            className="input"
-            style={{ width: 140 }}
-            value={filters.birthday}
-            onChange={(e) => setFilters((prev) => ({ ...prev, birthday: e.target.value }))}
-          />
-        </div>
-        <div className="filter-block">
-          <span className="filter-label">Возраст</span>
-          <input
-            type="number"
-            className="input"
-            style={{ width: 80 }}
-            value={filters.age}
-            onChange={(e) => setFilters((prev) => ({ ...prev, age: e.target.value }))}
-            placeholder="лет"
-          />
-        </div>
-      </div>
-    </CardBody>
-  </Card>
-
-  <Card>
-    <CardBody style={{ padding: 0 }}>
-      <div className="data-list">
-         <div className="list-row customer-grid" style={{ background: "rgba(255,255,255,0.02)", borderBottom: "1px solid var(--border-subtle)" }}>
-            <div className="cell-label">#</div>
-            <div className="cell-label">ТЕЛЕФОН</div>
-            <div className="cell-label">ИМЯ</div>
-            <div className="cell-label">EMAIL</div>
-            <div className="cell-label">ЧАСТОТА</div>
-            <div className="cell-label">СР. ЧЕК</div>
-            <div className="cell-label">ДАТА РОЖД.</div>
-            <div className="cell-label">ВОЗРАСТ</div>
-            <div className="cell-label" style={{ textAlign: "right" }}>ДЕЙСТВИЯ</div>
-         </div>
-         {pageItems.map((customer, index) => (
-           <div key={customer.id} className="list-row customer-grid">
-              <div style={{ color: "var(--fg-muted)", fontSize: 13 }}>{startIndex + index + 1}</div>
-              <div>
-                <Link href={`/customers/${customer.id}`} style={{ color: "var(--brand-primary-light)", fontWeight: 500, textDecoration: "none" }}>
-                  {customer.phone || customer.login}
-                </Link>
-              </div>
-              <div>
-                <Link href={`/customers/${customer.id}`} style={{ color: "var(--fg)", fontWeight: 500, textDecoration: "none" }}>
-                  {getFullName(customer) || "—"}
-                </Link>
-              </div>
-              <div style={{ fontSize: 13, color: "var(--fg-secondary)", overflow: "hidden", textOverflow: "ellipsis" }}>{customer.email || "—"}</div>
-              <div style={{ fontSize: 13, color: "var(--fg-secondary)" }}>{formatVisitFrequency(customer)}</div>
-              <div style={{ fontSize: 13, fontWeight: 500 }}>{formatCurrency(customer.averageCheck)}</div>
-              <div style={{ fontSize: 13, color: "var(--fg-muted)" }}>{formatDate(customer.birthday)}</div>
-              <div style={{ fontSize: 13, color: "var(--fg-muted)" }}>{customer.age || "—"}</div>
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                <button
-                  type="button"
-                  onClick={() => openEditModal(customer)}
-                  title="Редактировать"
-                  className="btn-icon"
-                  style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--fg-secondary)", padding: 6, borderRadius: 6 }}
-                >
-                  <Edit3 size={16} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDelete(customer)}
-                  title="Удалить"
-                  className="btn-icon"
-                  style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--danger)", padding: 6, borderRadius: 6 }}
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-           </div>
-         ))}
-      </div>
-
-      {!pageItems.length && (
-        <div style={{ padding: 40, textAlign: "center", opacity: 0.6 }}>
-          <UsersRound size={48} style={{ opacity: 0.2, marginBottom: 12 }} />
-          <div>Клиенты не найдены. Попробуйте изменить фильтры.</div>
+    <div className="p-8 max-w-[1600px] mx-auto space-y-8">
+      {toast && (
+        <div className="fixed top-24 right-6 bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg text-sm shadow-lg z-[120]">
+          {toast}
         </div>
       )}
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, padding: 20, borderTop: "1px solid var(--border-subtle)" }}>
-        <span style={{ fontSize: 13, color: "var(--fg-muted)" }}>
-          Показаны записи {shownFrom}-{shownTo} из {filteredCustomers.length}
-        </span>
-        <div style={{ display: "flex", gap: 8 }}>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setPage((current) => Math.max(1, current - 1))}
-            disabled={currentPage === 1}
-            leftIcon={<ChevronLeft size={14} />}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Клиенты</h2>
+          <p className="text-gray-500 mt-1">База данных покупателей, управление профилями и начислениями.</p>
+        </div>
+
+        <div className="flex space-x-3">
+          <button
+            onClick={() => router.push("/customers/import")}
+            className="flex items-center space-x-2 bg-white border border-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
           >
-            Назад
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-            disabled={currentPage === totalPages || !filteredCustomers.length}
-            rightIcon={<ChevronRight size={14} />}
+            <Upload size={18} />
+            <span>Импорт</span>
+          </button>
+          <button
+            onClick={openCreateModal}
+            className="flex items-center space-x-2 bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors shadow-sm"
           >
-            Вперёд
-          </Button>
+            <Plus size={18} />
+            <span>Добавить клиента</span>
+          </button>
         </div>
       </div>
-    </CardBody>
-  </Card>
 
-  <CustomerFormModal
-    open={Boolean(modalState)}
-    mode={modalState?.mode ?? "create"}
-    initialValues={
-      modalState?.customer
-        ? mapCustomerToForm(modalState.customer)
-        : { levelId: defaultLevelId }
-    }
-    loginToIgnore={modalState?.customer?.login}
-    levels={levelsCatalog}
-    onClose={() => setModalState(null)}
-    onSubmit={handleModalSubmit}
-    existingLogins={existingLogins}
-  />
-</div>
-);
-}
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
+        <div className="p-4 border-b border-gray-100 flex items-center justify-between gap-4">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+            <input
+              type="text"
+              placeholder="Поиск по имени, телефону или email..."
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full border border-gray-200 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+          </div>
 
-function formatVisitFrequency(customer: CustomerRecord): string {
-const value = customer.visitFrequencyDays;
-if (value == null || value <= 0) return "—";
-return value.toLocaleString("ru-RU");
-}
+          <div className="flex items-center space-x-2 text-sm text-gray-500">
+            <Filter size={16} />
+            <span>Найдено: {filteredCustomers.length}</span>
+          </div>
+        </div>
 
-function parseTags(tags: string): string[] {
-return tags
-  .split(/[,;]+/)
-  .map((item) => item.trim())
-  .filter(Boolean);
-}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="text-xs text-gray-500 uppercase bg-gray-50 border-b border-gray-100">
+              <tr>
+                <th className="px-6 py-4 font-semibold w-16">#</th>
+                <th className="px-6 py-4 font-semibold">Телефон</th>
+                <th className="px-6 py-4 font-semibold">Имя</th>
+                <th className="px-6 py-4 font-semibold">Email</th>
+                <th className="px-6 py-4 font-semibold text-right">Частота (дней)</th>
+                <th className="px-6 py-4 font-semibold text-right">Ср. чек</th>
+                <th className="px-6 py-4 font-semibold">Дата рожд.</th>
+                <th className="px-6 py-4 font-semibold">Возраст</th>
+                <th className="px-6 py-4 font-semibold text-right w-32">Действия</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {loading ? (
+                <tr>
+                  <td colSpan={9} className="px-6 py-12 text-center text-gray-500">
+                    Загрузка клиентов...
+                  </td>
+                </tr>
+              ) : paginatedCustomers.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="px-6 py-12 text-center text-gray-500">
+                    <User size={48} className="mx-auto text-gray-300 mb-4" />
+                    <p>Клиенты не найдены.</p>
+                  </td>
+                </tr>
+              ) : (
+                paginatedCustomers.map((customer) => {
+                  const fullName = getFullName(customer) || customer.phone || customer.login || "—";
+                  const rank = getCustomerLevelRank(customer, levelLookups);
+                  const avatarClass = getAvatarClass(rank);
+                  const age = customer.age ?? calculateAge(customer.birthday);
+                  return (
+                    <tr
+                      key={customer.id}
+                      className="hover:bg-gray-50 transition-colors cursor-pointer"
+                      onClick={() => openCustomer(customer.id)}
+                    >
+                      <td className="px-6 py-4 text-gray-400 font-mono text-xs truncate max-w-[120px]">
+                        {customer.id}
+                      </td>
+                      <td className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">
+                        {customer.phone || customer.login || "—"}
+                      </td>
+                      <td className="px-6 py-4 text-gray-900">
+                        <div className="flex items-center space-x-2">
+                          <div
+                            className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] text-white font-bold ${avatarClass}`}
+                          >
+                            {fullName.charAt(0)}
+                          </div>
+                          <span className="truncate max-w-[180px]" title={fullName}>
+                            {fullName}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-gray-500 truncate max-w-[200px]">{customer.email || "-"}</td>
+                      <td className="px-6 py-4 text-right text-gray-900">
+                        {customer.visitFrequencyDays != null && customer.visitFrequencyDays > 0
+                          ? Math.round(customer.visitFrequencyDays)
+                          : "-"}
+                      </td>
+                      <td className="px-6 py-4 text-right text-gray-900 font-medium">
+                        {formatCurrency(customer.averageCheck)}
+                      </td>
+                      <td className="px-6 py-4 text-gray-500">{formatDate(customer.birthday)}</td>
+                      <td className="px-6 py-4 text-gray-500">{age ?? "-"}</td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex items-center justify-end space-x-2" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={(e) => openEditModal(customer, e)}
+                            title="Редактировать"
+                            className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                          >
+                            <Edit size={16} />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setGiftTarget(customer);
+                            }}
+                            title="Подарить баллы"
+                            className="p-1.5 text-gray-400 hover:text-pink-600 hover:bg-pink-50 rounded-lg transition-colors"
+                          >
+                            <Gift size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
 
-function formatDate(value?: string | null): string {
-if (!value) return "—";
-try {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleDateString("ru-RU");
-} catch {
-  return "—";
-}
-}
+        {totalPages > 1 && (
+          <div className="p-4 border-t border-gray-100 bg-gray-50 flex items-center justify-between">
+            <span className="text-sm text-gray-500">
+              Показано {shownFrom} - {shownTo} из {filteredCustomers.length}
+            </span>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="p-2 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <span className="text-sm font-medium text-gray-900">Стр. {page}</span>
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="p-2 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
-function formatCurrency(value: number): string {
-return new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(value);
+      <CustomerFormModal
+        open={Boolean(modalState)}
+        mode={modalState?.mode ?? "create"}
+        initialValues={
+          modalState?.customer
+            ? mapCustomerToForm(modalState.customer)
+            : { levelId: defaultLevelId }
+        }
+        loginToIgnore={modalState?.customer?.login}
+        levels={levelsCatalog.map((level) => ({ id: level.id, name: level.label, isInitial: level.isInitial }))}
+        onClose={() => setModalState(null)}
+        onSubmit={handleModalSubmit}
+        existingLogins={existingLogins}
+      />
+
+      {giftTarget && (
+        <ComplimentaryModal
+          customer={giftTarget}
+          onClose={() => setGiftTarget(null)}
+          onSuccess={(message) => {
+            setToast(message);
+            setGiftTarget(null);
+            void loadCustomers();
+          }}
+        />
+      )}
+    </div>
+  );
 }
 
 function mapCustomerToForm(customer: CustomerRecord): Partial<CustomerFormPayload> {
-const birthdayValue = customer.birthday ? customer.birthday.slice(0, 10) : "";
-return {
-  login: customer.phone || customer.login,
-  email: customer.email ?? "",
-  firstName: getFullName(customer) || "",
-  tags: customer.tags.join(", "),
-  birthday: birthdayValue,
-  levelId: customer.levelId ?? null,
-  gender: customer.gender,
-  comment: customer.comment ?? "",
-};
+  const birthdayValue = customer.birthday ? customer.birthday.slice(0, 10) : "";
+  return {
+    login: customer.phone || customer.login,
+    email: customer.email ?? "",
+    firstName: getFullName(customer) || "",
+    tags: customer.tags.join(", "),
+    birthday: birthdayValue,
+    levelId: customer.levelId ?? null,
+    gender: customer.gender,
+    comment: customer.comment ?? "",
+  };
 }

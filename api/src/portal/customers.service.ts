@@ -125,6 +125,7 @@ export type ListCustomersQuery = {
   offset?: number;
   segmentId?: string;
   registeredOnly?: boolean;
+  excludeMiniapp?: boolean;
 };
 
 const msPerDay = 24 * 60 * 60 * 1000;
@@ -570,13 +571,8 @@ export class PortalCustomersService {
     });
     if (!referral?.referrer) return null;
 
-    const profile = await (this.prisma as any)?.customer?.findUnique?.({
-      where: {
-        merchantId_customerId: {
-          merchantId,
-          customerId: referral.referrer.id,
-        },
-      },
+    const profile = await this.prisma.customer.findFirst({
+      where: { merchantId, id: referral.referrer.id },
       select: { name: true, profileName: true, phone: true },
     });
 
@@ -781,8 +777,6 @@ export class PortalCustomersService {
     }> | null;
     metadata: Record<string, any> | null;
     promoUsage?: { code: string | null; name: string | null } | null;
-    accrualsBlocked: boolean;
-    redemptionsBlocked: boolean;
   }): {
     details: string;
     kind: string;
@@ -901,8 +895,6 @@ export class PortalCustomersService {
     }> | null;
     metadata: Record<string, any> | null;
     promoUsage?: { code: string | null; name: string | null } | null;
-    accrualsBlocked: boolean;
-    redemptionsBlocked: boolean;
   }): {
     details: string;
     kind: string;
@@ -922,17 +914,6 @@ export class PortalCustomersService {
     let details = 'Операция с баллами';
     let kind = 'OTHER';
     let note: string | null = null;
-
-    if (params.tx.type === 'EARN' && params.accrualsBlocked) {
-      details = 'Начисление заблокировано администратором';
-      kind = 'EARN_BLOCKED';
-      return { details, kind, note, purchaseAmount };
-    }
-    if (params.tx.type === 'REDEEM' && params.redemptionsBlocked) {
-      details = 'Списание заблокировано администратором';
-      kind = 'REDEEM_BLOCKED';
-      return { details, kind, note, purchaseAmount };
-    }
 
     if (params.tx.orderId === 'registration_bonus') {
       details = 'Баллы за регистрацию';
@@ -1215,6 +1196,7 @@ export class PortalCustomersService {
     const offset = Math.max(query.offset ?? 0, 0);
     const search = query.search?.trim();
     const registeredOnly = query.registeredOnly ?? true;
+    const excludeMiniapp = query.excludeMiniapp ?? false;
 
     const whereSearch = search
       ? ({
@@ -1265,6 +1247,20 @@ export class PortalCustomersService {
     const andConditions: Prisma.CustomerWhereInput[] = [association];
     if (Object.keys(whereSearch).length) andConditions.push(whereSearch);
     if (segmentCondition) andConditions.push(segmentCondition);
+    if (excludeMiniapp) {
+      andConditions.push({
+        NOT: {
+          AND: [
+            { tgId: { not: null } },
+            { phone: null },
+            { email: null },
+            { name: null },
+            { profileName: null },
+            { externalId: null },
+          ],
+        },
+      });
+    }
     if (registeredOnly) {
       andConditions.push({
         AND: [
@@ -1512,8 +1508,6 @@ export class PortalCustomersService {
         receipt,
         metadata,
         promoUsage,
-        accrualsBlocked: Boolean(baseDto.accrualsBlocked),
-        redemptionsBlocked: Boolean(baseDto.redemptionsBlocked),
       });
 
       const purchaseAmount = descriptor.purchaseAmount;
@@ -1591,8 +1585,7 @@ export class PortalCustomersService {
         toPay,
         paidByPoints,
         total,
-        blockedAccrual:
-          tx.type === 'EARN' ? Boolean(baseDto.accrualsBlocked) : false,
+        blockedAccrual: tx.type === 'EARN' ? Boolean(metadata?.blockedAccrual) : false,
         receiptId: receipt?.id ?? null,
         canceledAt: txCanceledAt
           ? txCanceledAt
@@ -2164,7 +2157,7 @@ export class PortalCustomersService {
         where: { merchantId_phone: { merchantId, phone } },
       });
       if (existingPhone) {
-        throw new BadRequestException('Phone already used');
+        return this.get(merchantId, existingPhone.id);
       }
     }
     if (email) {
@@ -2172,7 +2165,7 @@ export class PortalCustomersService {
         where: { merchantId_email: { merchantId, email } },
       });
       if (existingEmail) {
-        throw new BadRequestException('Email already used');
+        throw new BadRequestException('Email уже используется');
       }
     }
 
@@ -2262,8 +2255,8 @@ export class PortalCustomersService {
         const clash = await prismaAny?.customer?.findUnique?.({
           where: { merchantId_phone: { merchantId, phone } },
         });
-        if (clash && clash.customerId !== customerId) {
-          throw new BadRequestException('Phone already used');
+        if (clash && clash.id !== customerId) {
+          throw new BadRequestException('Телефон уже используется');
         }
       }
       updateCustomer.phone = phone;
@@ -2275,8 +2268,8 @@ export class PortalCustomersService {
         const clash = await prismaAny?.customer?.findUnique?.({
           where: { merchantId_email: { merchantId, email } },
         });
-        if (clash && clash.customerId !== customerId) {
-          throw new BadRequestException('Email already used');
+        if (clash && clash.id !== customerId) {
+          throw new BadRequestException('Email уже используется');
         }
       }
       updateCustomer.email = email;
@@ -2306,65 +2299,26 @@ export class PortalCustomersService {
       updateCustomer.tags = this.sanitizeTags(dto.tags);
     }
 
-    if (Object.keys(updateCustomer).length > 0) {
-      await this.prisma.customer.update({
-        where: { id: customerId },
-        data: updateCustomer,
-      });
-    }
-
-    const merchantUpdate: Record<string, any> = {};
-    const merchantCreate: Record<string, any> = {
-      merchantId,
-      customerId,
-    };
-
-    if (dto.phone !== undefined) {
-      merchantUpdate.phone = dto.phone?.trim() || null;
-      merchantCreate.phone = dto.phone?.trim() || null;
-    }
-    if (dto.email !== undefined) {
-      merchantUpdate.email = dto.email?.trim()?.toLowerCase() || null;
-      merchantCreate.email = dto.email?.trim()?.toLowerCase() || null;
-    }
-    if (
-      dto.name !== undefined ||
-      dto.firstName !== undefined ||
-      dto.lastName !== undefined
-    ) {
-      const name =
-        dto.name?.trim() ||
-        [dto.firstName, dto.lastName].filter(Boolean).join(' ').trim() ||
-        null;
-      merchantUpdate.name = name;
-      merchantCreate.name = name;
-    }
     if (dto.comment !== undefined) {
       const comment =
         dto.comment != null && dto.comment !== ''
           ? String(dto.comment).trim()
           : null;
-      merchantUpdate.comment = comment;
-      merchantCreate.comment = comment;
+      updateCustomer.comment = comment;
     }
     if (dto.accrualsBlocked !== undefined) {
       const blocked = Boolean(dto.accrualsBlocked);
-      merchantUpdate.accrualsBlocked = blocked;
-      merchantCreate.accrualsBlocked = blocked;
+      updateCustomer.accrualsBlocked = blocked;
     }
     if (dto.redemptionsBlocked !== undefined) {
       const blocked = Boolean(dto.redemptionsBlocked);
-      merchantUpdate.redemptionsBlocked = blocked;
-      merchantCreate.redemptionsBlocked = blocked;
+      updateCustomer.redemptionsBlocked = blocked;
     }
 
-    if (Object.keys(merchantUpdate).length > 0) {
-      await prismaAny?.customer?.upsert?.({
-        where: {
-          merchantId_customerId: { merchantId, customerId },
-        },
-        update: merchantUpdate,
-        create: merchantCreate,
+    if (Object.keys(updateCustomer).length > 0) {
+      await this.prisma.customer.update({
+        where: { id: customerId },
+        data: updateCustomer,
       });
     }
 

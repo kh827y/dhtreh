@@ -14,11 +14,13 @@ describe('LoyaltyService.commit idempotency', () => {
       customer: {
         findUnique: jest.fn(() => ({
           id: 'C-CTX',
-          merchantId: 'M-CTX',
+          merchantId: 'M-1',
           tgId: null,
           phone: null,
           email: null,
           name: null,
+          accrualsBlocked: false,
+          redemptionsBlocked: false,
         })),
         create: jest.fn(() => ({ id: 'C-NEW', merchantId: 'M-CTX' })),
       },
@@ -243,6 +245,150 @@ describe('LoyaltyService.commit idempotency', () => {
     await svc.commit('H3', 'ORDER-3', undefined, undefined, undefined);
     expect(txUsed.outlet.update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'OUT-1' } }),
+    );
+  });
+
+  it('blocks earn commit when accruals are blocked', async () => {
+    const prisma = mkPrisma();
+    prisma.customer.findUnique.mockResolvedValue({
+      id: 'C-B1',
+      merchantId: 'M-1',
+      accrualsBlocked: true,
+      redemptionsBlocked: false,
+    });
+    prisma.hold.findUnique.mockResolvedValue({
+      id: 'H-B1',
+      merchantId: 'M-1',
+      customerId: 'C-B1',
+      status: 'PENDING',
+      mode: 'EARN',
+      earnPoints: 10,
+    });
+
+    const staffMotivation = mkStaffMotivation();
+    const svc = new LoyaltyService(
+      prisma,
+      metrics,
+      undefined as any,
+      undefined as any,
+      staffMotivation,
+    );
+
+    await expect(
+      svc.commit('H-B1', 'ORDER-B1', undefined, undefined, undefined),
+    ).rejects.toThrow('Начисления заблокированы администратором');
+  });
+
+  it('blocks redeem commit when redemptions are blocked', async () => {
+    const prisma = mkPrisma();
+    prisma.customer.findUnique.mockResolvedValue({
+      id: 'C-B2',
+      merchantId: 'M-1',
+      accrualsBlocked: false,
+      redemptionsBlocked: true,
+    });
+    prisma.hold.findUnique.mockResolvedValue({
+      id: 'H-B2',
+      merchantId: 'M-1',
+      customerId: 'C-B2',
+      status: 'PENDING',
+      mode: 'REDEEM',
+      redeemAmount: 10,
+      earnPoints: 0,
+    });
+
+    const staffMotivation = mkStaffMotivation();
+    const svc = new LoyaltyService(
+      prisma,
+      metrics,
+      undefined as any,
+      undefined as any,
+      staffMotivation,
+    );
+
+    await expect(
+      svc.commit('H-B2', 'ORDER-B2', undefined, undefined, undefined),
+    ).rejects.toThrow('Списания заблокированы администратором');
+  });
+
+  it('allows redeem but skips earn when accruals are blocked', async () => {
+    const prisma = mkPrisma();
+    prisma.customer.findUnique.mockResolvedValue({
+      id: 'C-R1',
+      merchantId: 'M-1',
+      accrualsBlocked: true,
+      redemptionsBlocked: false,
+    });
+    prisma.hold.findUnique.mockResolvedValue({
+      id: 'H-R1',
+      merchantId: 'M-1',
+      customerId: 'C-R1',
+      status: 'PENDING',
+      mode: 'REDEEM',
+      redeemAmount: 20,
+      earnPoints: 15,
+      total: 100,
+      eligibleTotal: 100,
+      outletId: null,
+      staffId: null,
+    });
+    prisma.wallet.findFirst.mockResolvedValue({
+      id: 'W-R1',
+      balance: 100,
+      type: 'POINTS',
+    });
+
+    let txUsed: any;
+    prisma.$transaction = jest.fn(async (fn: any) => {
+      txUsed = mkPrisma({
+        receipt: {
+          findUnique: jest.fn(() => null),
+          create: jest.fn(() => ({
+            id: 'R-R1',
+            redeemApplied: 20,
+            earnApplied: 0,
+          })),
+        },
+        wallet: {
+          findUnique: jest.fn(() => ({ id: 'W-R1', balance: 100 })),
+          update: jest.fn(),
+        },
+        transaction: { create: jest.fn(() => ({ id: 'TX-R1' })) },
+        eventOutbox: { create: jest.fn() },
+        hold: { update: jest.fn() },
+      });
+      return fn(txUsed);
+    });
+
+    const staffMotivation = mkStaffMotivation();
+    const svc = new LoyaltyService(
+      prisma,
+      metrics,
+      undefined as any,
+      undefined as any,
+      staffMotivation,
+    );
+
+    const res = await svc.commit(
+      'H-R1',
+      'ORDER-R1',
+      undefined,
+      undefined,
+      undefined,
+    );
+    expect(res.ok).toBe(true);
+    expect(res.redeemApplied).toBe(20);
+    expect(res.earnApplied).toBe(0);
+    expect(txUsed.transaction.create).toHaveBeenCalledTimes(1);
+    expect(txUsed.transaction.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ type: 'REDEEM' }),
+      }),
+    );
+    expect(txUsed.receipt.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ earnApplied: 0 }),
+      }),
     );
   });
 
@@ -571,10 +717,13 @@ describe('LoyaltyService.processIntegrationBonus', () => {
       } as any);
     prisma.customer.findUnique = jest.fn().mockResolvedValue({
       id: hold.customerId,
+      merchantId: hold.merchantId,
       tgId: null,
       phone: null,
       email: null,
       name: null,
+      accrualsBlocked: false,
+      redemptionsBlocked: false,
     });
     prisma.loyaltyPromotion = { findMany: jest.fn().mockResolvedValue([]) };
     prisma.wallet.findFirst.mockResolvedValue({

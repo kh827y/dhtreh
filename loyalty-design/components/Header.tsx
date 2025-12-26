@@ -9,7 +9,7 @@ import {
   UserCircle2, RefreshCcw, Target, BadgeCheck, Sliders,
   Tag, Ticket, Award, MonitorSmartphone, ShieldAlert,
   Link2, Upload, Activity, List, Trophy, Ban, Layers, UserCog,
-  ClipboardList
+  ClipboardList, Monitor
 } from 'lucide-react';
 import { AppView } from '../types';
 
@@ -259,6 +259,26 @@ const Header: React.FC<HeaderProps> = ({ onNavigate, onLogout }) => {
                 <span>24 дня</span>
             </div>
         </div>
+
+        {/* Cashier Panel Button (Desktop) */}
+        <button
+          onClick={() => onNavigate('cashier_mode')}
+          className="hidden md:flex items-center space-x-2 bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors shadow-sm"
+          title="Открыть интерфейс кассира (Десктоп)"
+        >
+          <Monitor size={16} />
+          <span className="hidden lg:inline">Терминал</span>
+        </button>
+
+        {/* Cashier Panel Button (Mobile) */}
+        <button
+          onClick={() => onNavigate('cashier_mode')}
+          className="flex md:hidden items-center space-x-2 bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors shadow-sm"
+          title="Открыть интерфейс кассира (Смартфон)"
+        >
+          <Smartphone size={16} />
+          <span className="hidden lg:inline">Терминал (Mobile)</span>
+        </button>
 
         {/* Logout */}
         <button

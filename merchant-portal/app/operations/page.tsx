@@ -595,7 +595,7 @@ export default function OperationsPage() {
             const spentPoints = operation.spent > 0 ? `-${formatPoints(operation.spent)}` : "0";
             const isHovered = hoveredRowId === operation.id;
             const customerId = operation.client?.id?.trim();
-            const customerHref = customerId ? `/customers/${customerId}` : null;
+            const customerHref = customerId ? `/customers?customerId=${encodeURIComponent(customerId)}` : null;
             return (
               <div
                 key={operation.id}
@@ -750,7 +750,10 @@ export default function OperationsPage() {
                 <InfoRow
                   label="Клиент"
                   value={
-                    <a href={`/customers/${preview.client.id}`} style={{ color: "var(--brand-primary-light)", fontWeight: 500 }}>
+                    <a
+                      href={`/customers?customerId=${encodeURIComponent(preview.client.id)}`}
+                      style={{ color: "var(--brand-primary-light)", fontWeight: 500 }}
+                    >
                       {preview.client.name}
                     </a>
                   }

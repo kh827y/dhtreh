@@ -655,6 +655,7 @@ export class PortalController {
     @Query('offset') offsetStr?: string,
     @Query('segmentId') segmentId?: string,
     @Query('registeredOnly') registeredOnlyStr?: string,
+    @Query('excludeMiniapp') excludeMiniappStr?: string,
   ) {
     const limit = limitStr
       ? Math.min(Math.max(parseInt(limitStr, 10) || 50, 1), 200)
@@ -666,12 +667,19 @@ export class PortalController {
         registeredOnlyStr.trim().toLowerCase(),
       );
     }
+    let excludeMiniapp: boolean | undefined;
+    if (typeof excludeMiniappStr === 'string') {
+      excludeMiniapp = !['0', 'false', 'no'].includes(
+        excludeMiniappStr.trim().toLowerCase(),
+      );
+    }
     return this.customersService.list(this.getMerchantId(req), {
       search,
       limit,
       offset,
       segmentId,
       registeredOnly,
+      excludeMiniapp,
     });
   }
 

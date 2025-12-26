@@ -1611,7 +1611,7 @@ export default function AudiencesPage() {
                               title="Перейти в карточку"
                               className="text-purple-400 hover:text-purple-600 p-1 rounded-lg hover:bg-purple-50 transition-all"
                               onClick={() => {
-                                router.push(`/customers/${member.id}`);
+                                router.push(`/customers?customerId=${encodeURIComponent(member.id)}`);
                                 closeMembers();
                               }}
                             >

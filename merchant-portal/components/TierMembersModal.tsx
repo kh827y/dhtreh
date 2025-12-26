@@ -166,7 +166,7 @@ export function TierMembersModal({
   const handleMemberClick = (member: TierMember) => {
     if (!member.customerId) return;
     onClose();
-    safeRouter.push(`/customers/${member.customerId}`);
+    safeRouter.push(`/customers?customerId=${encodeURIComponent(member.customerId)}`);
   };
 
   if (!open || !tier) return null;

@@ -2,10 +2,8 @@
 
 import React from "react";
 import { createPortal } from "react-dom";
-import { Button, Icons } from "@loyalty/ui";
+import { X } from "lucide-react";
 import type { Gender } from "./data";
-
-const { X } = Icons;
 
 export type CustomerFormPayload = {
   login: string;
@@ -95,7 +93,10 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
       nextErrors.login = "Укажите телефон клиента";
     } else if (digits.length < 11) {
       nextErrors.login = "Минимум 11 цифр";
-    } else if (existingLogins.some((login) => login === form.login && login !== loginToIgnore)) {
+    } else if (
+      mode === "edit" &&
+      existingLogins.some((login) => login === form.login && login !== loginToIgnore)
+    ) {
       nextErrors.login = "Телефон уже используется";
     }
 
@@ -108,10 +109,6 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
       if (Number.isNaN(date.getTime())) {
         nextErrors.birthday = "Некорректная дата";
       }
-    }
-
-    if (!form.levelId) {
-      nextErrors.levelId = "Выберите уровень";
     }
 
     setErrors(nextErrors);
@@ -136,204 +133,136 @@ export const CustomerFormModal: React.FC<CustomerFormModalProps> = ({
   }
 
   return createPortal(
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-[4px] z-[150] flex items-center justify-center p-4" onClick={onClose}>
       <form
         onSubmit={handleSubmit}
-        className="modal"
-        style={modalStyle}
+        className="bg-white rounded-xl shadow-2xl w-full max-w-lg relative z-[101]"
         role="dialog"
         aria-modal="true"
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={modalHeaderStyle}>
-          <div style={{ fontSize: 18, fontWeight: 700 }}>
-            {mode === "create" ? "Добавить клиента" : "Редактировать клиента"}
-          </div>
-          <button type="button" onClick={onClose} style={closeButtonStyle} aria-label="Закрыть">
-            <X size={16} />
+        <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-xl">
+          <h3 className="text-xl font-bold text-gray-900">
+            {mode === "create" ? "Новый клиент" : "Редактирование клиента"}
+          </h3>
+          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X size={24} />
           </button>
         </div>
-        <div style={{ padding: "18px 24px", display: "grid", gap: 16, maxHeight: "70vh", overflowY: "auto" }}>
-          <label style={fieldStyle}>
-            <span style={labelStyle}>Телефон</span>
-            <input
-              style={inputStyle}
-              value={form.login}
-              onChange={(event) => update("login", event.target.value)}
-              placeholder="+7 (900) 000-00-00"
-            />
-            {errors.login && <ErrorText>{errors.login}</ErrorText>}
-          </label>
 
-          <label style={fieldStyle}>
-            <span style={labelStyle}>Email</span>
-            <input
-              style={inputStyle}
-              type="email"
-              value={form.email}
-              onChange={(event) => update("email", event.target.value)}
-              placeholder="client@example.com"
-            />
-            {errors.email && <ErrorText>{errors.email}</ErrorText>}
-          </label>
-
-          <label style={fieldStyle}>
-            <span style={labelStyle}>Имя клиента</span>
-            <input
-              style={inputStyle}
-              value={form.firstName}
-              onChange={(event) => update("firstName", event.target.value)}
-              placeholder="Например, Иван Иванов"
-            />
-          </label>
-
-          <label style={fieldStyle}>
-            <span style={labelStyle}>Теги</span>
-            <input
-              style={inputStyle}
-              value={form.tags}
-              onChange={(event) => update("tags", event.target.value)}
-              placeholder="vip, день рождения; #кофе"
-            />
-            <span style={{ fontSize: 12, opacity: 0.65 }}>
-              Используйте запятую или точку с запятой как разделитель. Префикс # сохранится в значении тега.
-            </span>
-          </label>
-
-          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
-            <label style={fieldStyle}>
-              <span style={labelStyle}>День рождения</span>
+        <div className="p-6 space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Телефон <span className="text-red-500">*</span>
+              </label>
               <input
-                style={inputStyle}
+                type="text"
+                placeholder="+7"
+                value={form.login}
+                onChange={(e) => update("login", e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+              {errors.login && <span className="text-xs text-red-600 mt-1 block">{errors.login}</span>}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <input
+                type="email"
+                value={form.email}
+                onChange={(e) => update("email", e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+              {errors.email && <span className="text-xs text-red-600 mt-1 block">{errors.email}</span>}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">ФИО клиента</label>
+            <input
+              type="text"
+              value={form.firstName}
+              onChange={(e) => update("firstName", e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">День рождения</label>
+              <input
                 type="date"
                 value={form.birthday}
-                onChange={(event) => update("birthday", event.target.value)}
+                onChange={(e) => update("birthday", e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
-              {errors.birthday && <ErrorText>{errors.birthday}</ErrorText>}
-            </label>
-            <label style={fieldStyle}>
-              <span style={labelStyle}>Уровень клиента</span>
+              {errors.birthday && <span className="text-xs text-red-600 mt-1 block">{errors.birthday}</span>}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Пол</label>
               <select
-                style={inputStyle}
-                value={form.levelId ?? ""}
-                onChange={(event) => update("levelId", event.target.value || null)}
-                disabled={!levels.length}
-              >
-                {levels.length === 0 && <option value="">Нет доступных уровней</option>}
-                {levels.map((level) => (
-                  <option key={level.id} value={level.id}>
-                    {level.name}
-                  </option>
-                ))}
-              </select>
-              {errors.levelId && <ErrorText>{errors.levelId}</ErrorText>}
-            </label>
-          </div>
-
-          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
-            <label style={fieldStyle}>
-              <span style={labelStyle}>Пол</span>
-              <select
-                style={inputStyle}
                 value={form.gender}
-                onChange={(event) => update("gender", event.target.value as Gender)}
+                onChange={(e) => update("gender", e.target.value as Gender)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
               >
+                <option value="unknown">Не указан</option>
                 <option value="male">Мужской</option>
                 <option value="female">Женский</option>
-                <option value="unknown">Не указан</option>
               </select>
-            </label>
+            </div>
           </div>
 
-          <label style={fieldStyle}>
-            <span style={labelStyle}>Комментарий к пользователю</span>
-            <textarea
-              style={{ ...inputStyle, minHeight: 90, resize: "vertical" }}
-              value={form.comment}
-              onChange={(event) => update("comment", event.target.value)}
-              placeholder="Комментарий виден только администраторам"
-            />
-          </label>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Уровень</label>
+            <select
+              value={form.levelId ?? ""}
+              onChange={(e) => update("levelId", e.target.value || null)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+              disabled={!levels.length}
+            >
+              {levels.length === 0 && <option value="">Нет доступных уровней</option>}
+              {levels.map((level) => (
+                <option key={level.id} value={level.id}>
+                  {level.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
-          {submitError && <ErrorText>{submitError}</ErrorText>}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Комментарий</label>
+            <textarea
+              rows={3}
+              value={form.comment}
+              onChange={(e) => update("comment", e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
+            />
+          </div>
+
+          {submitError && <div className="text-sm text-red-600">{submitError}</div>}
         </div>
-        <div style={modalFooterStyle}>
-          <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>
+
+        <div className="p-4 border-t border-gray-100 bg-gray-50 rounded-b-xl flex justify-end space-x-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50"
+            disabled={submitting}
+          >
             Отмена
-          </Button>
-          <Button type="submit" disabled={submitting}>
+          </button>
+          <button
+            type="submit"
+            className="px-6 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-70 disabled:cursor-not-allowed"
+            disabled={submitting}
+          >
             {submitting ? "Сохраняем…" : mode === "create" ? "Создать" : "Сохранить"}
-          </Button>
+          </button>
         </div>
       </form>
     </div>,
     document.body,
   );
 };
-
-const modalStyle: React.CSSProperties = {
-  width: "min(640px, 96vw)",
-  maxHeight: "82vh",
-  borderRadius: "var(--radius-lg)",
-  border: "1px solid var(--border-default)",
-  background: "var(--bg-elevated)",
-  boxShadow: "var(--shadow-xl)",
-  display: "grid",
-  gridTemplateRows: "auto 1fr auto",
-  color: "var(--fg)",
-};
-
-const modalHeaderStyle: React.CSSProperties = {
-  padding: "18px 24px",
-  borderBottom: "1px solid var(--border-default)",
-  display: "flex",
-  alignItems: "flex-start",
-  justifyContent: "space-between",
-  gap: 12,
-};
-
-const modalFooterStyle: React.CSSProperties = {
-  padding: "16px 24px",
-  borderTop: "1px solid var(--border-default)",
-  display: "flex",
-  justifyContent: "flex-end",
-  gap: 12,
-};
-
-const closeButtonStyle: React.CSSProperties = {
-  background: "none",
-  border: "none",
-  color: "var(--fg-muted)",
-  width: 32,
-  height: 32,
-  borderRadius: "50%",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  cursor: "pointer",
-  padding: 4,
-};
-
-const fieldStyle: React.CSSProperties = {
-  display: "grid",
-  gap: 6,
-};
-
-const labelStyle: React.CSSProperties = {
-  fontSize: 13,
-  opacity: 0.8,
-};
-
-const inputStyle: React.CSSProperties = {
-  padding: "10px 12px",
-  borderRadius: 12,
-  border: "1px solid var(--border-default)",
-  background: "var(--bg-surface)",
-  color: "var(--fg)",
-};
-
-const ErrorText: React.FC<React.PropsWithChildren> = ({ children }) => (
-  <span style={{ fontSize: 12, color: "#f87171" }}>{children}</span>
-);
 
 export default CustomerFormModal;

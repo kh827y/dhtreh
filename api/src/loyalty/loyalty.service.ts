@@ -44,6 +44,8 @@ type QrMeta = { jti: string; iat: number; exp: number } | undefined;
 
 type CustomerContext = {
   customerId: string;
+  accrualsBlocked: boolean;
+  redemptionsBlocked: boolean;
 };
 
 type IntegrationBonusParams = {
@@ -124,8 +126,10 @@ export class LoyaltyService {
   }) {
     const { customerId, merchantId, amount, orderId } = params;
     if (amount <= 0) throw new BadRequestException('Amount must be > 0');
-    // Ensure entities exist
-    await this.ensureCustomerId(customerId);
+    const context = await this.ensureCustomerContext(merchantId, customerId);
+    if (context.accrualsBlocked) {
+      throw new BadRequestException('Начисления заблокированы администратором');
+    }
     try {
       await this.prisma.merchant.upsert({
         where: { id: merchantId },
@@ -1598,7 +1602,10 @@ export class LoyaltyService {
       } as const;
     }
 
-    await this.ensureCustomerId(customerId);
+    const context = await this.ensureCustomerContext(merchantId, customerId);
+    if (context.accrualsBlocked) {
+      throw new BadRequestException('Начисления заблокированы администратором');
+    }
 
     return this.prisma.$transaction(async (tx) => {
       // Ensure wallet
@@ -1767,7 +1774,10 @@ export class LoyaltyService {
   }) {
     const { customerId, merchantId, amount, orderId } = params;
     if (amount <= 0) throw new BadRequestException('Amount must be > 0');
-    await this.ensureCustomerId(customerId);
+    const context = await this.ensureCustomerContext(merchantId, customerId);
+    if (context.redemptionsBlocked) {
+      throw new BadRequestException('Списания заблокированы администратором');
+    }
     try {
       await this.prisma.merchant.upsert({
         where: { id: merchantId },
@@ -1817,7 +1827,10 @@ export class LoyaltyService {
     if (!customerId) throw new BadRequestException('customerId required');
     if (!code) throw new BadRequestException('code required');
 
-    await this.ensureCustomerId(customerId);
+    const context = await this.ensureCustomerContext(merchantId, customerId);
+    if (context.accrualsBlocked) {
+      throw new BadRequestException('Начисления заблокированы администратором');
+    }
     const merchant = await this.prisma.merchant.findUnique({
       where: { id: merchantId },
     });
@@ -2353,6 +2366,8 @@ export class LoyaltyService {
     opts?: { dryRun?: boolean; operationDate?: Date | null },
   ) {
     const customer = await this.ensureCustomerId(dto.customerId);
+    const accrualsBlocked = Boolean(customer.accrualsBlocked);
+    const redemptionsBlocked = Boolean(customer.redemptionsBlocked);
     const dryRun = opts?.dryRun ?? false;
     const operationDate = opts?.operationDate ?? null;
     // Ensure the merchant exists to satisfy FK constraints for wallet/holds
@@ -2388,6 +2403,8 @@ export class LoyaltyService {
     )
       ? Boolean((rulesConfig as any).allowEarnRedeemSameReceipt)
       : !(rulesConfig as any).disallowEarnRedeemSameReceipt;
+    const allowSameReceiptForCustomer = allowSameReceipt && !accrualsBlocked;
+    const modeUpper = String(dto.mode).toUpperCase();
 
     let effectiveOutletId = dto.outletId ?? null;
     const deviceCtx = await this.resolveDeviceContext(
@@ -2477,6 +2494,24 @@ export class LoyaltyService {
       }
     } catch {}
 
+    if (modeUpper === 'REDEEM' && redemptionsBlocked) {
+      return {
+        canRedeem: false,
+        discountToApply: 0,
+        pointsToBurn: 0,
+        finalPayable: sanitizedTotal,
+        holdId: undefined,
+        message: 'Списания заблокированы администратором',
+      };
+    }
+    if (modeUpper !== 'REDEEM' && accrualsBlocked) {
+      return {
+        canEarn: false,
+        pointsToEarn: 0,
+        holdId: undefined,
+        message: 'Начисления заблокированы администратором',
+      };
+    }
     // 0) если есть qr — сначала смотрим, не существует ли hold с таким qrJti
     if (qr && !dryRun) {
       const existing = await this.prisma.hold.findUnique({
@@ -2543,7 +2578,6 @@ export class LoyaltyService {
       }
     }
 
-    const modeUpper = String(dto.mode).toUpperCase();
     if (modeUpper === 'REDEEM') {
       if (!allowSameReceipt && dto.orderId) {
         const [existingEarnHold, existingReceipt] = await Promise.all([
@@ -2690,7 +2724,7 @@ export class LoyaltyService {
         if (itemsForCalc.length) {
           postEarnPoints = this.applyEarnAndRedeemToItems(
             itemsForCalc,
-            allowSameReceipt ? earnBps : 0,
+            allowSameReceiptForCustomer ? earnBps : 0,
             discountToApply,
           );
           appliedRedeem = itemsForCalc.reduce(
@@ -2703,7 +2737,7 @@ export class LoyaltyService {
               Math.max(0, item.amount - Math.max(0, item.redeemAmount || 0)),
             0,
           );
-        } else if (allowSameReceipt) {
+        } else if (allowSameReceiptForCustomer) {
           appliedRedeem = Math.max(
             0,
             Math.floor(Number(discountToApply) || 0),
@@ -3058,6 +3092,8 @@ export class LoyaltyService {
       hold.merchantId,
       hold.customerId,
     );
+    const accrualsBlocked = Boolean(context.accrualsBlocked);
+    const redemptionsBlocked = Boolean(context.redemptionsBlocked);
     const operationDate = opts?.operationDate ?? null;
     const operationDateObj = operationDate ?? new Date();
     const operationTimestamp = operationDateObj.getTime();
@@ -3086,6 +3122,23 @@ export class LoyaltyService {
         };
       }
       throw new ConflictException('Hold already finished');
+    }
+
+    if (accrualsBlocked && hold.mode === 'EARN') {
+      throw new BadRequestException('Начисления заблокированы администратором');
+    }
+    if (redemptionsBlocked && hold.mode === 'REDEEM') {
+      throw new BadRequestException('Списания заблокированы администратором');
+    }
+    if (accrualsBlocked && manualEarnOverride != null && manualEarnOverride > 0) {
+      throw new BadRequestException('Начисления заблокированы администратором');
+    }
+    if (
+      redemptionsBlocked &&
+      manualRedeemOverride != null &&
+      manualRedeemOverride > 0
+    ) {
+      throw new BadRequestException('Списания заблокированы администратором');
     }
 
     const positionsOverrideInput = this.sanitizePositions(
@@ -3174,6 +3227,11 @@ export class LoyaltyService {
         let earnTxId: string | null = null;
         let promoResult: PromoCodeApplyResult | null = null;
         if (opts?.promoCode && hold.customerId && manualEarnOverride == null) {
+          if (accrualsBlocked) {
+            throw new BadRequestException(
+              'Начисления заблокированы администратором',
+            );
+          }
           promoResult = await this.promoCodes.apply(tx, {
             promoCodeId: opts.promoCode.promoCodeId,
             merchantId: hold.merchantId,
@@ -3299,115 +3357,118 @@ export class LoyaltyService {
             });
           }
         }
-        const baseEarnFromHold =
-          manualEarnOverride != null
+        const baseEarnFromHold = accrualsBlocked
+          ? 0
+          : manualEarnOverride != null
             ? manualEarnOverride
             : Math.max(0, Math.floor(Number(hold.earnPoints || 0)));
         const promoBonus =
-          manualEarnOverride != null
+          accrualsBlocked || manualEarnOverride != null
             ? 0
             : promoResult
               ? Math.max(0, Math.floor(Number(promoResult.pointsIssued || 0)))
               : 0;
         // Доп. начисление при списании, если включено allowEarnRedeemSameReceipt
         let extraEarn = 0;
-        try {
-          const msRules = await tx.merchantSettings.findUnique({
-            where: { merchantId: hold.merchantId },
-          });
-          const rules =
-            msRules?.rulesJson && typeof msRules.rulesJson === 'object'
-              ? (msRules.rulesJson as any)
-              : {};
-          const allowSame = Object.prototype.hasOwnProperty.call(
-            rules,
-            'allowEarnRedeemSameReceipt',
-          )
-            ? Boolean(rules.allowEarnRedeemSameReceipt)
-            : !rules.disallowEarnRedeemSameReceipt;
-          if (
-            manualEarnOverride == null &&
-            hold.mode === 'REDEEM' &&
-            allowSame &&
-            baseEarnFromHold === 0
-          ) {
-            const { earnBps: baseEarnBps, earnDailyCap } =
-              await this.getSettings(hold.merchantId);
-            let earnBpsEff = baseEarnBps;
-            let tierMinPaymentLocal: number | null = null;
-            try {
-              const assignment = await tx.loyaltyTierAssignment.findFirst({
-                where: {
-                  merchantId: hold.merchantId,
-                  customerId: hold.customerId,
-                  OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-                },
-                orderBy: { assignedAt: 'desc' },
-              });
-              let tier: any = null;
-              if (assignment)
-                tier = await tx.loyaltyTier.findUnique({
-                  where: { id: assignment.tierId },
-                });
-              if (!tier)
-                tier = await tx.loyaltyTier.findFirst({
-                  where: { merchantId: hold.merchantId, isInitial: true },
-                  orderBy: { thresholdAmount: 'asc' },
-                });
-              if (tier) {
-                if (typeof tier.earnRateBps === 'number')
-                  earnBpsEff = Math.max(
-                    0,
-                    Math.floor(Number(tier.earnRateBps)),
-                  );
-                const meta: any = tier.metadata ?? null;
-                if (meta && typeof meta === 'object') {
-                  const raw = meta.minPaymentAmount ?? meta.minPayment;
-                  if (raw != null) {
-                    const mp = Number(raw);
-                    if (Number.isFinite(mp) && mp >= 0)
-                      tierMinPaymentLocal = Math.round(mp);
-                  }
-                }
-              }
-            } catch {}
-            const appliedRedeemAmt = Math.max(0, appliedRedeem);
-            const total = effectiveTotal;
-            const eligible = effectiveEligible;
-            const finalPayable = Math.max(0, total - appliedRedeemAmt);
-            const earnBaseOnCash = Math.min(finalPayable, eligible);
+        if (!accrualsBlocked) {
+          try {
+            const msRules = await tx.merchantSettings.findUnique({
+              where: { merchantId: hold.merchantId },
+            });
+            const rules =
+              msRules?.rulesJson && typeof msRules.rulesJson === 'object'
+                ? (msRules.rulesJson as any)
+                : {};
+            const allowSame = Object.prototype.hasOwnProperty.call(
+              rules,
+              'allowEarnRedeemSameReceipt',
+            )
+              ? Boolean(rules.allowEarnRedeemSameReceipt)
+              : !rules.disallowEarnRedeemSameReceipt;
             if (
-              !(
-                tierMinPaymentLocal != null &&
-                finalPayable < tierMinPaymentLocal
-              ) &&
-              earnBaseOnCash > 0
+              manualEarnOverride == null &&
+              hold.mode === 'REDEEM' &&
+              allowSame &&
+              baseEarnFromHold === 0
             ) {
-              let pts = Math.floor((earnBaseOnCash * earnBpsEff) / 10000);
-              if (pts > 0 && earnDailyCap && earnDailyCap > 0) {
-                const since = new Date(
-                  operationTimestamp - 24 * 60 * 60 * 1000,
-                );
-                const txns = await tx.transaction.findMany({
+              const { earnBps: baseEarnBps, earnDailyCap } =
+                await this.getSettings(hold.merchantId);
+              let earnBpsEff = baseEarnBps;
+              let tierMinPaymentLocal: number | null = null;
+              try {
+                const assignment = await tx.loyaltyTierAssignment.findFirst({
                   where: {
                     merchantId: hold.merchantId,
                     customerId: hold.customerId,
-                    type: 'EARN',
-                    orderId: { not: null } as any,
-                    createdAt: { gte: since },
+                    OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
                   },
+                  orderBy: { assignedAt: 'desc' },
                 });
-                const used = txns.reduce(
-                  (sum, t) => sum + Math.max(0, t.amount),
-                  0,
-                );
-                const left = Math.max(0, earnDailyCap - used);
-                pts = Math.min(pts, left);
+                let tier: any = null;
+                if (assignment)
+                  tier = await tx.loyaltyTier.findUnique({
+                    where: { id: assignment.tierId },
+                  });
+                if (!tier)
+                  tier = await tx.loyaltyTier.findFirst({
+                    where: { merchantId: hold.merchantId, isInitial: true },
+                    orderBy: { thresholdAmount: 'asc' },
+                  });
+                if (tier) {
+                  if (typeof tier.earnRateBps === 'number')
+                    earnBpsEff = Math.max(
+                      0,
+                      Math.floor(Number(tier.earnRateBps)),
+                    );
+                  const meta: any = tier.metadata ?? null;
+                  if (meta && typeof meta === 'object') {
+                    const raw = meta.minPaymentAmount ?? meta.minPayment;
+                    if (raw != null) {
+                      const mp = Number(raw);
+                      if (Number.isFinite(mp) && mp >= 0)
+                        tierMinPaymentLocal = Math.round(mp);
+                    }
+                  }
+                }
+              } catch {}
+              const appliedRedeemAmt = Math.max(0, appliedRedeem);
+              const total = effectiveTotal;
+              const eligible = effectiveEligible;
+              const finalPayable = Math.max(0, total - appliedRedeemAmt);
+              const earnBaseOnCash = Math.min(finalPayable, eligible);
+              if (
+                !(
+                  tierMinPaymentLocal != null &&
+                  finalPayable < tierMinPaymentLocal
+                ) &&
+                earnBaseOnCash > 0
+              ) {
+                let pts = Math.floor((earnBaseOnCash * earnBpsEff) / 10000);
+                if (pts > 0 && earnDailyCap && earnDailyCap > 0) {
+                  const since = new Date(
+                    operationTimestamp - 24 * 60 * 60 * 1000,
+                  );
+                  const txns = await tx.transaction.findMany({
+                    where: {
+                      merchantId: hold.merchantId,
+                      customerId: hold.customerId,
+                      type: 'EARN',
+                      orderId: { not: null } as any,
+                      createdAt: { gte: since },
+                    },
+                  });
+                  const used = txns.reduce(
+                    (sum, t) => sum + Math.max(0, t.amount),
+                    0,
+                  );
+                  const left = Math.max(0, earnDailyCap - used);
+                  pts = Math.min(pts, left);
+                }
+                extraEarn = Math.max(0, pts);
               }
-              extraEarn = Math.max(0, pts);
             }
-          }
-        } catch {}
+          } catch {}
+        }
         const appliedEarnTotal = baseEarnFromHold + promoBonus + extraEarn;
 
         if (appliedEarnTotal > 0) {
@@ -5399,12 +5460,21 @@ export class LoyaltyService {
   ): Promise<CustomerContext> {
     const customer = await this.prisma.customer.findUnique({
       where: { id: customerId },
-      select: { id: true, merchantId: true },
+      select: {
+        id: true,
+        merchantId: true,
+        accrualsBlocked: true,
+        redemptionsBlocked: true,
+      },
     });
     if (!customer || customer.merchantId !== merchantId) {
       throw new BadRequestException('customer not found');
     }
-    return { customerId: customer.id };
+    return {
+      customerId: customer.id,
+      accrualsBlocked: Boolean(customer.accrualsBlocked),
+      redemptionsBlocked: Boolean(customer.redemptionsBlocked),
+    };
   }
 
   private async ensureCustomerByTelegram(
