@@ -1,10 +1,47 @@
 'use client';
 
-import React from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import QrScanner from '../components/QrScanner';
-import SegmentedInput from '../components/SegmentedInput';
-
-const { useCallback, useEffect, useMemo, useRef, useState } = React;
+import {
+  Award,
+  AlertCircle,
+  AlertTriangle,
+  ArrowDownLeft,
+  ArrowLeft,
+  ArrowUpRight,
+  Building2,
+  Camera,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Coins,
+  Copy,
+  CreditCard,
+  Crown,
+  Eye,
+  EyeOff,
+  Gift,
+  History,
+  Home,
+  KeyRound,
+  Keyboard,
+  Loader2,
+  Lock,
+  LogOut,
+  Plus,
+  QrCode,
+  Receipt,
+  RotateCcw,
+  Search,
+  SlidersHorizontal,
+  Store,
+  Trophy,
+  User,
+  UserPlus,
+  Wallet,
+  X,
+} from 'lucide-react';
 
 type QuoteRedeemResp = {
   canRedeem?: boolean;
@@ -13,6 +50,8 @@ type QuoteRedeemResp = {
   finalPayable?: number;
   holdId?: string;
   message?: string;
+  postEarnPoints?: number;
+  postEarnOnAmount?: number;
 };
 
 type QuoteEarnResp = {
@@ -32,8 +71,6 @@ type Txn = {
   createdAt: string;
   outletId?: string | null;
   outletName?: string | null;
-  outletPosType?: string | null;
-  outletLastSeenAt?: string | null;
   purchaseAmount?: number | null;
   earnApplied?: number | null;
   redeemApplied?: number | null;
@@ -110,13 +147,6 @@ type LeaderboardPeriod = {
   customDays?: number;
 };
 
-type RefundHistoryItem = {
-  id: string;
-  createdAt: string;
-  amount: number;
-  receiptNumber?: string | null;
-};
-
 type RefundPreview = {
   receiptId: string;
   orderId: string | null;
@@ -136,9 +166,80 @@ type RawLeaderboardItem = {
   points?: unknown;
 };
 
+type ClientProfile = {
+  id: string;
+  name: string;
+  level: string;
+  balance: number;
+  avatar: string;
+  redeemRateBps?: number | null;
+  minPaymentAmount?: number | null;
+};
+
+type LevelInfo = {
+  name: string | null;
+  redeemRateBps: number | null;
+  minPaymentAmount: number | null;
+};
+
+type UiTransaction = {
+  id: string;
+  checkId: string;
+  date: Date;
+  type: 'sale' | 'return';
+  client: string;
+  staff: string;
+  amount: number;
+  pointsAccrued: number;
+  pointsRedeemed: number;
+  orderId?: string | null;
+  receiptNumber?: string | null;
+};
+
+type Tab = 'checkout' | 'history' | 'rating' | 'returns';
+
+type CheckoutMode =
+  | 'landing'
+  | 'manual_input'
+  | 'scanning'
+  | 'profile'
+  | 'amount'
+  | 'redeem'
+  | 'precheck'
+  | 'success';
+
+type CheckoutStep =
+  | 'search'
+  | 'amount'
+  | 'mode'
+  | 'redeem'
+  | 'precheck'
+  | 'success';
+
+type DesktopView = 'main' | 'history' | 'return' | 'rating';
+
+type TxMode = 'accrue' | 'redeem';
+
 const STORAGE_MERCHANT_LOGIN_KEY = 'cashier_merchant_login';
 
+const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/$/, '');
+const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
+const LOYALTY_EVENT_CHANNEL = 'loyalty:events';
+const LOYALTY_EVENT_STORAGE_KEY = 'loyalty:lastEvent';
+
 const isBrowser = typeof window !== 'undefined';
+const API_ORIGIN_FALLBACK = 'http://localhost';
+
+const buildApiUrl = (path: string) => {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  if (API_BASE) {
+    return new URL(`${API_BASE}${normalizedPath}`);
+  }
+  if (isBrowser && window.location?.origin) {
+    return new URL(normalizedPath, window.location.origin);
+  }
+  return new URL(normalizedPath, API_ORIGIN_FALLBACK);
+};
 
 const readStorage = (key: string): string | null => {
   if (!isBrowser) return null;
@@ -157,11 +258,6 @@ const writeStorage = (key: string, value: string) => {
     /* noop */
   }
 };
-
-const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/$/, '');
-const MERCHANT = process.env.NEXT_PUBLIC_MERCHANT_ID || 'M-1';
-const LOYALTY_EVENT_CHANNEL = 'loyalty:events';
-const LOYALTY_EVENT_STORAGE_KEY = 'loyalty:lastEvent';
 
 const base64UrlDecode = (s: string) => {
   try {
@@ -211,7 +307,7 @@ const resolveCustomerIdFromToken = (token: string): string | null => {
   }
 };
 
-const qrKeyFromToken = (token: string) => {
+const qrKeyFromToken = (token: string): string | null => {
   const trimmed = token.trim();
   const parts = trimmed.split('.');
   if (parts.length === 3) {
@@ -222,7 +318,7 @@ const qrKeyFromToken = (token: string) => {
       /* noop */
     }
   }
-  return `raw:${trimmed}`;
+  return null;
 };
 
 const formatDateTime = (value: string) => {
@@ -240,15 +336,58 @@ const formatDateTime = (value: string) => {
   }
 };
 
+const formatDate = (value: Date) =>
+  new Intl.DateTimeFormat('ru-RU', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(value);
+
 const formatCurrency = (value: number | null | undefined) => {
   if (value == null || Number.isNaN(value)) return '0 ₽';
-  return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 }).format(value);
+  return new Intl.NumberFormat('ru-RU', {
+    style: 'currency',
+    currency: 'RUB',
+    maximumFractionDigits: 0,
+  }).format(value);
 };
 
 const formatPoints = (value: number | null | undefined) => {
   if (value == null || Number.isNaN(value)) return '0';
-  return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(value);
+  return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(
+    value,
+  );
 };
+
+const ClientHeader = React.memo(function ClientHeader({
+  client,
+}: {
+  client: ClientProfile;
+}) {
+  return (
+    <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between mb-6 animate-fade-in">
+      <div className="flex items-center space-x-3">
+        <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 font-bold text-sm">
+          {client.avatar}
+        </div>
+        <div>
+          <h3 className="font-bold text-gray-900 leading-tight">{client.name}</h3>
+          <div className="flex items-center space-x-2 text-xs">
+            <span className="bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded font-medium">
+              {client.level}
+            </span>
+            <span className="text-gray-500">ID: {client.id}</span>
+          </div>
+        </div>
+      </div>
+      <div className="text-right">
+        <span className="block text-xs text-gray-500 uppercase font-bold">Баланс</span>
+        <span className="text-xl font-bold text-purple-600">{formatPoints(client.balance)} Б</span>
+      </div>
+    </div>
+  );
+});
 
 const readApiError = (payload: unknown): string | null => {
   if (!payload) return null;
@@ -329,6 +468,58 @@ const humanizeCashierAuthError = (message: string): string => {
   return raw.length > 400 ? raw.slice(0, 400) : raw;
 };
 
+const humanizeQuoteError = (message: string): string => {
+  const raw = stripExceptionPrefix(message || '');
+  const lower = raw.toLowerCase();
+  if (lower.includes('qr токен уже использован')) {
+    return 'Этот QR уже использован. Попросите клиента обновить QR в приложении.';
+  }
+  if (lower.includes('customer not found') || lower.includes('merchant customer not found')) {
+    return 'Клиент не найден';
+  }
+  if (lower.includes('err_jwt_expired') || lower.includes('jwtexpired')) {
+    return 'Код истёк по времени. Попросите клиента обновить его в приложении и попробуйте ещё раз.';
+  }
+  if (lower.includes('qr выписан для другого мерчанта')) {
+    return 'QR выписан для другого мерчанта.';
+  }
+  if (lower.includes('bad qr token')) {
+    return 'QR не распознан. Попросите клиента открыть QR заново.';
+  }
+  if (lower.includes('нельзя одновременно начислять')) {
+    return 'Нельзя одновременно начислять и списывать баллы в одном чеке.';
+  }
+  if (lower.includes('начисления заблокированы')) {
+    return 'Начисления заблокированы администратором.';
+  }
+  if (lower.includes('списания заблокированы')) {
+    return 'Списания заблокированы администратором.';
+  }
+  return raw || 'Не удалось выполнить расчёт.';
+};
+
+const humanizeRefundError = (message: string): string => {
+  const raw = stripExceptionPrefix(message || '');
+  if (!raw) return 'Не удалось оформить возврат.';
+  if (raw.toLowerCase().includes('receipt')) {
+    return 'Чек с таким номером не найден.';
+  }
+  return raw.length > 400 ? raw.slice(0, 400) : raw;
+};
+
+const extractInitials = (value: string) => {
+  const parts = (value || '')
+    .split(' ')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const initials = parts
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .filter(Boolean)
+    .join('');
+  return initials || value.slice(0, 2).toUpperCase();
+};
+
 const MOTIVATION_MAX_CUSTOM_DAYS = 365;
 const MOTIVATION_DEFAULT_NEW_POINTS = 30;
 const MOTIVATION_DEFAULT_EXISTING_POINTS = 10;
@@ -384,94 +575,118 @@ const buildMotivationPeriodLabel = (kind: string, customDays?: number | null) =>
 export default function Page() {
   const [merchantId, setMerchantId] = useState<string>(MERCHANT);
 
-  const [mode, setMode] = useState<'redeem' | 'earn'>('redeem');
-  const [userToken, setUserToken] = useState<string>('');
-  const [customerId, setCustomerId] = useState<string | null>(null);
-  const [orderId, setOrderId] = useState<string>('');
-  const [total, setTotal] = useState<number>(0);
-  const [receiptNumber, setReceiptNumber] = useState<string>('');
+  const [session, setSession] = useState<CashierSessionInfo | null>(null);
+  const [rememberPin, setRememberPin] = useState<boolean>(false);
+  const [deviceActive, setDeviceActive] = useState<boolean>(false);
+  const [deviceLogin, setDeviceLogin] = useState<string | null>(null);
 
-  const [holdId, setHoldId] = useState<string | null>(null);
-  const [result, setResult] = useState<QuoteRedeemResp | QuoteEarnResp | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [authStep, setAuthStep] = useState<'app_login' | 'staff_pin' | 'authorized'>('app_login');
+  const [appLogin, setAppLogin] = useState('');
+  const [appPassword, setAppPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [authError, setAuthError] = useState('');
+  const [pin, setPin] = useState('');
+  const [pinError, setPinError] = useState(false);
+  const [pinMessage, setPinMessage] = useState('');
+
+  const [activeView, setActiveView] = useState<DesktopView>('main');
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  const [checkoutStep, setCheckoutStep] = useState<CheckoutStep>('search');
+  const [currentClient, setCurrentClient] = useState<ClientProfile | null>(null);
+  const [inputValue, setInputValue] = useState('');
   const [scanOpen, setScanOpen] = useState(false);
 
-  const [refundReceiptNumber, setRefundReceiptNumber] = useState<string>('');
-  const [refundPreview, setRefundPreview] = useState<RefundPreview | null>(null);
-  const [refundBusy, setRefundBusy] = useState(false);
-  const [refundError, setRefundError] = useState<string>('');
+  const [txAmount, setTxAmount] = useState('');
+  const [txCheckId, setTxCheckId] = useState('');
+  const [txRedeemPoints, setTxRedeemPoints] = useState('');
+  const [txAccruePoints, setTxAccruePoints] = useState(0);
+  const [txFinalAmount, setTxFinalAmount] = useState(0);
+  const [txType, setTxType] = useState<TxMode>('accrue');
 
-  const [history, setHistory] = useState<Txn[]>([]);
+  const [userToken, setUserToken] = useState('');
+  const [customerId, setCustomerId] = useState<string | null>(null);
+  const [orderId, setOrderId] = useState('');
+  const [holdId, setHoldId] = useState<string | null>(null);
+  const [result, setResult] = useState<QuoteRedeemResp | QuoteEarnResp | null>(null);
+  const [actionError, setActionError] = useState('');
+
+  const [historyRaw, setHistoryRaw] = useState<Txn[]>([]);
   const [histBusy, setHistBusy] = useState(false);
   const [histNextBefore, setHistNextBefore] = useState<string | null>(null);
 
-  const [session, setSession] = useState<CashierSessionInfo | null>(null);
-  const [, setSessionLoading] = useState<boolean>(true);
-  const [rememberPin, setRememberPin] = useState<boolean>(false);
+  const [historySearch, setHistorySearch] = useState('');
+  const [filterDate, setFilterDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [filterType, setFilterType] = useState<'all' | 'sale' | 'return'>('all');
+  const [filterStaff, setFilterStaff] = useState<string>('all');
+  const [currentPage, setCurrentPage] = useState(1);
 
-  const [merchantLogin, setMerchantLogin] = useState<string>('');
-  const [activationCodeDigits, setActivationCodeDigits] = useState<string>('');
-  const [pinDigits, setPinDigits] = useState<string>('');
-  const [authMsg, setAuthMsg] = useState<string>('');
-  const [step, setStep] = useState<'merchant' | 'pin' | 'terminal'>('merchant');
-  const [, setDeviceLoading] = useState<boolean>(true);
-  const [deviceActive, setDeviceActive] = useState<boolean>(false);
-  const [deviceLogin, setDeviceLogin] = useState<string | null>(null);
-  const [staffLookup, setStaffLookup] = useState<{
-    staff: { id: string; login?: string; firstName?: string; lastName?: string; role: string };
-    outlet?: { id: string; name?: string | null };
-    accesses: Array<{ outletId: string; outletName: string }>;
-  } | null>(null);
+  const [returnTx, setReturnTx] = useState<UiTransaction | null>(null);
+  const [returnSearchInput, setReturnSearchInput] = useState('');
+  const [returnSuccess, setReturnSuccess] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'home' | 'history' | 'rating' | 'returns'>('home');
-  const [flowStep, setFlowStep] = useState<'idle' | 'details' | 'points' | 'confirm' | 'receipt'>('idle');
-  const [purchaseAmountInput, setPurchaseAmountInput] = useState<string>('');
-  const [receiptInput, setReceiptInput] = useState<string>('');
-  const [selectedPoints, setSelectedPoints] = useState<number>(0);
-  const [lastRequestedRedeem, setLastRequestedRedeem] = useState<number>(0);
-  const [quoteError, setQuoteError] = useState<string>('');
-  const [confirmSnapshot, setConfirmSnapshot] = useState<{
-    purchaseTotal: number;
-    finalPayable: number;
-    pointsEarn: number;
-    pointsBurn: number;
-  } | null>(null);
-  const [receiptData, setReceiptData] = useState<{
-    purchaseTotal: number;
-    pointsEarn: number;
-    pointsBurn: number;
-    finalPayable: number;
-  } | null>(null);
-  const [overview, setOverview] = useState<CustomerOverview>({
-    customerId: null,
-    name: null,
-    levelName: null,
-    balance: null,
-  });
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
-  const [leaderboardError, setLeaderboardError] = useState<string>('');
+  const [leaderboardError, setLeaderboardError] = useState('');
   const [motivationInfo, setMotivationInfo] = useState<{
     enabled: boolean;
-    periodKind: string;
     periodLabel: string;
     pointsNew: number;
     pointsExisting: number;
   } | null>(null);
-  const [leaderboardOutletFilter, setLeaderboardOutletFilter] = useState<string | null>(null);
-  const [ratingInfoOpen, setRatingInfoOpen] = useState(false);
-  const [refundHistory, setRefundHistory] = useState<RefundHistoryItem[]>([]);
-  const [allowSameReceipt, setAllowSameReceipt] = useState(false);
+  const [ratingFilter, setRatingFilter] = useState<'all' | 'my_outlet'>('all');
 
-  const [manualTokenInput, setManualTokenInput] = useState('');
+  const [refundPreview, setRefundPreview] = useState<RefundPreview | null>(null);
+  const [refundError, setRefundError] = useState('');
+  const [refundBusy, setRefundBusy] = useState(false);
 
-  const activationCode = activationCodeDigits;
-  const normalizedLogin = merchantLogin.trim().toLowerCase();
+  const [activeTab, setActiveTab] = useState<Tab>('checkout');
+  const [mobileMode, setMobileMode] = useState<CheckoutMode>('landing');
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  const [selectedTx, setSelectedTx] = useState<UiTransaction | null>(null);
+  const [isCopied, setIsCopied] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [filters, setFilters] = useState({
+    dateFrom: '',
+    dateTo: '',
+    staff: '',
+    amountFrom: '',
+    amountTo: '',
+  });
+  const [dragY, setDragY] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartY = useRef(0);
+
+  const [isMobile, setIsMobile] = useState(false);
+
+  const normalizedLogin = appLogin.trim().toLowerCase();
 
   useEffect(() => {
     const savedLogin = readStorage(STORAGE_MERCHANT_LOGIN_KEY);
-    if (savedLogin) setMerchantLogin(savedLogin);
+    if (savedLogin) setAppLogin(savedLogin);
   }, []);
+
+  useEffect(() => {
+    if (!isBrowser || !window.matchMedia) return;
+    const query = window.matchMedia('(max-width: 1023px)');
+    const update = () => setIsMobile(query.matches);
+    update();
+    if (query.addEventListener) {
+      query.addEventListener('change', update);
+      return () => query.removeEventListener('change', update);
+    }
+    query.addListener(update);
+    return () => query.removeListener(update);
+  }, []);
+
+  useEffect(() => {
+    if (!actionError || !isMobile) return;
+    alert(actionError);
+    setActionError('');
+  }, [actionError, isMobile]);
 
   const mapSessionResponse = (payload: unknown): CashierSessionInfo => {
     const raw = (payload ?? {}) as RawSessionPayload;
@@ -506,77 +721,60 @@ export default function Page() {
   useEffect(() => {
     let cancelled = false;
     const bootstrap = async () => {
-      setSessionLoading(true);
-      setDeviceLoading(true);
       try {
-        try {
-          const resp = await fetch(`${API_BASE}/loyalty/cashier/session`, {
-            credentials: 'include',
-          });
-          if (resp.ok) {
-            const data = await resp.json().catch(() => null);
-            if (cancelled) return;
-            if (data?.active) {
-              const info = mapSessionResponse(data);
-              setSession(info);
-              setMerchantId(info.merchantId || MERCHANT);
-              setRememberPin(Boolean(info.rememberPin));
-              setStep('terminal');
-              return;
-            }
+        const resp = await fetch(`${API_BASE}/loyalty/cashier/session`, {
+          credentials: 'include',
+        });
+        if (resp.ok) {
+          const data = await resp.json().catch(() => null);
+          if (cancelled) return;
+          if (data?.active) {
+            const info = mapSessionResponse(data);
+            setSession(info);
+            setMerchantId(info.merchantId || MERCHANT);
+            setRememberPin(Boolean(info.rememberPin));
+            setAuthStep('authorized');
+            return;
           }
-        } catch {
-          /* ignore */
         }
-
-        if (cancelled) return;
-        setSession(null);
-
-        try {
-          const resp = await fetch(`${API_BASE}/loyalty/cashier/device`, {
-            credentials: 'include',
-          });
-          if (resp.ok) {
-            const data = await resp.json().catch(() => null);
-            if (cancelled) return;
-            if (data?.active) {
-              const login =
-                typeof data?.login === 'string' ? String(data.login) : '';
-              const mid =
-                typeof data?.merchantId === 'string'
-                  ? String(data.merchantId)
-                  : '';
-              setDeviceActive(true);
-              setDeviceLogin(login || null);
-              if (mid) setMerchantId(mid);
-              if (login) {
-                setMerchantLogin(login);
-                writeStorage(STORAGE_MERCHANT_LOGIN_KEY, login);
-              }
-              setStep('pin');
-              return;
-            }
-          }
-        } catch {
-          /* ignore */
-        }
-
-        if (cancelled) return;
-        setDeviceActive(false);
-        setDeviceLogin(null);
-        setStaffLookup(null);
-        setPinDigits('');
-        setActivationCodeDigits('');
-        setAuthMsg('');
-        setStep('merchant');
       } catch {
-        if (!cancelled) setSession(null);
-      } finally {
-        if (!cancelled) {
-          setSessionLoading(false);
-          setDeviceLoading(false);
-        }
+        /* ignore */
       }
+
+      if (cancelled) return;
+      setSession(null);
+
+      try {
+        const resp = await fetch(`${API_BASE}/loyalty/cashier/device`, {
+          credentials: 'include',
+        });
+        if (resp.ok) {
+          const data = await resp.json().catch(() => null);
+          if (cancelled) return;
+          if (data?.active) {
+            const login = typeof data?.login === 'string' ? String(data.login) : '';
+            const mid = typeof data?.merchantId === 'string' ? String(data.merchantId) : '';
+            setDeviceActive(true);
+            setDeviceLogin(login || null);
+            if (mid) setMerchantId(mid);
+            if (login) {
+              setAppLogin(login);
+              writeStorage(STORAGE_MERCHANT_LOGIN_KEY, login);
+            }
+            setAuthStep('staff_pin');
+            return;
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+
+      if (cancelled) return;
+      setDeviceActive(false);
+      setDeviceLogin(null);
+      setPin('');
+      setAuthError('');
+      setAuthStep('app_login');
     };
     bootstrap();
     return () => {
@@ -585,10 +783,9 @@ export default function Page() {
   }, []);
 
   useEffect(() => {
-    if (!session?.outlet?.id) {
-      setLeaderboardOutletFilter(null);
-    }
-  }, [session?.outlet?.id]);
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     setOrderId('O-' + Math.floor(Date.now() % 1_000_000));
@@ -605,7 +802,7 @@ export default function Page() {
     alreadyCommitted?: boolean;
     mode?: 'redeem' | 'earn';
   }) => {
-    if (typeof window === 'undefined') return;
+    if (!isBrowser) return;
     if (!payload.type || !payload.merchantId) return;
     const enriched = {
       ...payload,
@@ -628,106 +825,45 @@ export default function Page() {
   };
 
   const activateDevice = async () => {
-    setAuthMsg('');
+    setAuthError('');
     try {
-      if (!normalizedLogin || !activationCode || activationCode.length !== 9) {
+      if (!normalizedLogin || !appPassword || appPassword.length !== 9) {
         throw new Error('Укажите логин мерчанта и 9‑значный код активации');
       }
       const r = await fetch(`${API_BASE}/loyalty/cashier/activate`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ merchantLogin: normalizedLogin, activationCode }),
+        body: JSON.stringify({ merchantLogin: normalizedLogin, activationCode: appPassword }),
       });
       if (!r.ok) throw new Error(await readErrorMessage(r, 'Не удалось активировать устройство'));
       const data = await r.json();
       const resolvedMerchantId = data?.merchantId ? String(data.merchantId) : '';
       const resolvedLogin = data?.login ? String(data.login) : normalizedLogin;
-      if (resolvedMerchantId) {
-        setMerchantId(resolvedMerchantId);
-      }
+      if (resolvedMerchantId) setMerchantId(resolvedMerchantId);
       setDeviceActive(true);
       setDeviceLogin(resolvedLogin);
-      setStaffLookup(null);
-      setMerchantLogin(resolvedLogin);
+      setAppLogin(resolvedLogin);
       writeStorage(STORAGE_MERCHANT_LOGIN_KEY, resolvedLogin);
-      if (!rememberPin) setPinDigits('');
-      setActivationCodeDigits('');
-      setStep('pin');
+      setPin('');
+      setAppPassword('');
+      setAuthStep('staff_pin');
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
-      setAuthMsg(humanizeCashierAuthError(message));
+      setAuthError(humanizeCashierAuthError(message));
     }
   };
 
-  const lookupStaffByPin = async (pin: string) => {
-    setAuthMsg('');
-    if (!pin || pin.length !== 4) return;
+  const startCashierSession = async (pinCode: string) => {
+    setPinMessage('');
     try {
-      if (!deviceActive) {
-        throw new Error('Device not activated');
-      }
-      if (!normalizedLogin) {
-        throw new Error('merchantLogin required');
-      }
-      setPinDigits(pin);
-      const r = await fetch(`${API_BASE}/loyalty/cashier/staff-access`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          merchantLogin: normalizedLogin,
-          pinCode: pin,
-        }),
-      });
-      if (!r.ok) throw new Error(await readErrorMessage(r, 'Не удалось проверить PIN'));
-      const data = await r.json();
-      const accesses = Array.isArray(data?.accesses) ? data.accesses : [];
-      const outletInfo =
-        data?.outlet && data.outlet.id
-          ? {
-              id: String(data.outlet.id),
-              name: typeof data.outlet.name === 'string' ? data.outlet.name : String(data.outlet.id),
-            }
-          : undefined;
-      setStaffLookup({
-        staff: {
-          id: data?.staff?.id,
-          login: data?.staff?.login,
-          firstName: data?.staff?.firstName,
-          lastName: data?.staff?.lastName,
-          role: data?.staff?.role,
-        },
-        outlet: outletInfo,
-        accesses,
-      });
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
-      setAuthMsg(humanizeCashierAuthError(message));
-    }
-  };
-
-  const startCashierSessionAuth = async () => {
-    setAuthMsg('');
-    try {
-      if (!deviceActive) {
-        throw new Error('Device not activated');
-      }
-      if (!normalizedLogin) {
-        throw new Error('merchantLogin required');
-      }
-      if (!pinDigits || pinDigits.length !== 4) {
-        throw new Error('Введите PIN сотрудника');
-      }
+      if (!deviceActive) throw new Error('Device not activated');
+      if (!normalizedLogin) throw new Error('merchantLogin required');
       const r = await fetch(`${API_BASE}/loyalty/cashier/session`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          merchantLogin: normalizedLogin,
-          pinCode: pinDigits,
-          rememberPin,
-        }),
+        body: JSON.stringify({ merchantLogin: normalizedLogin, pinCode, rememberPin }),
       });
       if (!r.ok) throw new Error(await readErrorMessage(r, 'Не удалось войти по PIN'));
       const data = await r.json();
@@ -736,15 +872,36 @@ export default function Page() {
       setMerchantId(sessionInfo.merchantId || MERCHANT);
       setRememberPin(Boolean(sessionInfo.rememberPin));
       writeStorage(STORAGE_MERCHANT_LOGIN_KEY, normalizedLogin);
-      setActivationCodeDigits('');
-      setPinDigits('');
-      setStaffLookup(null);
-      setAuthMsg('');
-      setStep('terminal');
+      setPin('');
+      setAuthStep('authorized');
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
-      setAuthMsg(humanizeCashierAuthError(message));
+      setPinMessage(humanizeCashierAuthError(message));
+      setPinError(true);
+      setTimeout(() => {
+        setPin('');
+        setPinError(false);
+        setPinMessage('');
+      }, 800);
     }
+  };
+
+  const handlePinInput = (num: string) => {
+    if (pin.length < 4) {
+      const newPin = pin + num;
+      setPin(newPin);
+      setPinError(false);
+      setPinMessage('');
+      if (newPin.length === 4) {
+        void startCashierSession(newPin);
+      }
+    }
+  };
+
+  const handlePinBackspace = () => {
+    setPin((prev) => prev.slice(0, -1));
+    setPinError(false);
+    setPinMessage('');
   };
 
   const logoutStaff = async () => {
@@ -757,10 +914,7 @@ export default function Page() {
       /* ignore */
     }
     setSession(null);
-    setStaffLookup(null);
-    setPinDigits('');
-    setAuthMsg('');
-    resetFlow();
+    resetAll();
 
     try {
       const resp = await fetch(`${API_BASE}/loyalty/cashier/device`, {
@@ -769,18 +923,16 @@ export default function Page() {
       if (resp.ok) {
         const data = await resp.json().catch(() => null);
         if (data?.active) {
-          const login =
-            typeof data?.login === 'string' ? String(data.login) : normalizedLogin;
-          const mid =
-            typeof data?.merchantId === 'string' ? String(data.merchantId) : '';
+          const login = typeof data?.login === 'string' ? String(data.login) : normalizedLogin;
+          const mid = typeof data?.merchantId === 'string' ? String(data.merchantId) : '';
           setDeviceActive(true);
           setDeviceLogin(login || null);
           if (mid) setMerchantId(mid);
           if (login) {
-            setMerchantLogin(login);
+            setAppLogin(login);
             writeStorage(STORAGE_MERCHANT_LOGIN_KEY, login);
           }
-          setStep('pin');
+          setAuthStep('staff_pin');
           return;
         }
       }
@@ -790,11 +942,11 @@ export default function Page() {
 
     setDeviceActive(false);
     setDeviceLogin(null);
-    setStep('merchant');
+    setAuthStep('app_login');
   };
 
   const deactivateDevice = async () => {
-    setAuthMsg('');
+    setAuthError('');
     try {
       await fetch(`${API_BASE}/loyalty/cashier/device`, {
         method: 'DELETE',
@@ -805,27 +957,227 @@ export default function Page() {
     }
     setDeviceActive(false);
     setDeviceLogin(null);
-    setStaffLookup(null);
-    setPinDigits('');
-    setActivationCodeDigits('');
-    setAuthMsg('');
-    setStep('merchant');
+    setPin('');
+    setAppPassword('');
+    setAuthStep('app_login');
   };
 
-  const callQuote = async (
-    overrides?: Partial<{ total: number; mode: 'redeem' | 'earn'; receiptNumber: string }>,
-  ): Promise<QuoteRedeemResp | QuoteEarnResp | null> => {
-    if (!session) {
-      alert('Сначала авторизуйтесь в кассире.');
+  const loadCustomerBalance = async (customerIdValue: string, merchant: string): Promise<number | null> => {
+    try {
+      const r = await fetch(
+        `${API_BASE}/loyalty/balance/${merchant}/${encodeURIComponent(customerIdValue)}`,
+        { credentials: 'include' },
+      );
+      if (!r.ok) return null;
+      const data = await r.json();
+      if (typeof data?.balance === 'number') return data.balance;
+      return null;
+    } catch {
       return null;
     }
-    setBusy(true);
-    const requestId = 'req_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+  };
+
+  const loadCustomerLevel = async (merchant: string, customerIdValue: string): Promise<LevelInfo | null> => {
+    try {
+      const r = await fetch(`${API_BASE}/levels/${merchant}/${encodeURIComponent(customerIdValue)}`, {
+        credentials: 'include',
+      });
+      if (!r.ok) return null;
+      const data = await r.json();
+      const level = data?.current ?? data?.level ?? null;
+      const levelName = typeof level?.name === 'string' && level.name.trim() ? level.name.trim() : null;
+      const redeemRateValue = level?.redeemRateBps ?? level?.redeemLimitBps;
+      const minPaymentValue = level?.minPaymentAmount ?? level?.minPayment;
+      const rawRedeemRate = redeemRateValue != null ? Number(redeemRateValue) : Number.NaN;
+      const rawMinPayment = minPaymentValue != null ? Number(minPaymentValue) : Number.NaN;
+      return {
+        name: levelName,
+        redeemRateBps: Number.isFinite(rawRedeemRate) ? Math.max(0, Math.floor(rawRedeemRate)) : null,
+        minPaymentAmount: Number.isFinite(rawMinPayment) ? Math.max(0, Math.floor(rawMinPayment)) : null,
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  const fetchCustomerOverview = async (token: string): Promise<ClientProfile | null> => {
+    const merchant = session?.merchantId || merchantId;
+    if (!merchant) return null;
+    const fallbackName = extractNameFromToken(token);
+    const fallbackId = resolveCustomerIdFromToken(token);
+    try {
+      const r = await fetch(`${API_BASE}/loyalty/cashier/customer`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ merchantId: merchant, userToken: token }),
+      });
+      if (!r.ok) {
+        const msg = await readErrorMessage(r, 'Не удалось загрузить данные клиента');
+        throw new Error(msg);
+      }
+      const data = await r.json();
+      const resolvedCustomerId =
+        typeof data?.customerId === 'string' && data.customerId.trim().length > 0
+          ? data.customerId.trim()
+          : fallbackId;
+      const nameFromApi =
+        typeof data?.name === 'string' && data.name.trim().length > 0 ? data.name.trim() : null;
+      setCustomerId(resolvedCustomerId ?? null);
+      const balanceHint = typeof data?.balance === 'number' ? data.balance : null;
+      const redeemLimitRaw =
+        typeof data?.redeemLimitBps === 'number'
+          ? data.redeemLimitBps
+          : typeof data?.redeemRateBps === 'number'
+            ? data.redeemRateBps
+            : null;
+      const redeemLimitHint =
+        redeemLimitRaw != null && Number.isFinite(redeemLimitRaw)
+          ? Math.max(0, Math.floor(Number(redeemLimitRaw)))
+          : null;
+      const minPaymentRaw =
+        typeof data?.minPaymentAmount === 'number'
+          ? data.minPaymentAmount
+          : typeof data?.minPayment === 'number'
+            ? data.minPayment
+            : null;
+      const minPaymentHint =
+        minPaymentRaw != null && Number.isFinite(minPaymentRaw)
+          ? Math.max(0, Math.floor(Number(minPaymentRaw)))
+          : null;
+      const balancePromise =
+        resolvedCustomerId != null
+          ? balanceHint != null
+            ? Promise.resolve(balanceHint)
+            : loadCustomerBalance(resolvedCustomerId, merchant)
+          : Promise.resolve<number | null>(null);
+      const levelPromise =
+        resolvedCustomerId != null
+          ? loadCustomerLevel(merchant, resolvedCustomerId)
+          : Promise.resolve<LevelInfo | null>(null);
+      const [balance, levelInfo] = await Promise.all([balancePromise, levelPromise]);
+      const name = nameFromApi ?? fallbackName ?? 'Новый клиент';
+      const redeemRateBps =
+        redeemLimitHint != null && levelInfo?.redeemRateBps != null
+          ? Math.min(redeemLimitHint, levelInfo.redeemRateBps)
+          : redeemLimitHint ?? levelInfo?.redeemRateBps ?? null;
+      const minPaymentAmount =
+        minPaymentHint != null && levelInfo?.minPaymentAmount != null
+          ? Math.max(minPaymentHint, levelInfo.minPaymentAmount)
+          : minPaymentHint ?? levelInfo?.minPaymentAmount ?? null;
+      const profile: ClientProfile = {
+        id: resolvedCustomerId ?? fallbackId ?? '—',
+        name,
+        level: levelInfo?.name ?? 'Base',
+        balance: balance ?? 0,
+        avatar: extractInitials(name),
+        redeemRateBps,
+        minPaymentAmount,
+      };
+      setCurrentClient(profile);
+      return profile;
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      setCustomerId(null);
+      setCurrentClient(null);
+      setActionError(humanizeQuoteError(message));
+      return null;
+    }
+  };
+
+  const cancelHoldIfNeeded = async (holdToCancel: string | null) => {
+    if (!holdToCancel) return;
+    try {
+      const url = buildApiUrl('/loyalty/cancel');
+      await fetch(url.toString(), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ holdId: holdToCancel }),
+      });
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const resetQuoteState = (options?: { clearRedeem?: boolean }) => {
+    setHoldId(null);
+    setResult(null);
+    setTxAccruePoints(0);
+    setTxFinalAmount(0);
+    setActionError('');
+    if (options?.clearRedeem) {
+      setTxRedeemPoints('');
+    }
+  };
+
+  const resetTransaction = () => {
+    void cancelHoldIfNeeded(holdId);
+    setTxAmount('');
+    setTxCheckId('');
+    setTxType('accrue');
+    resetQuoteState({ clearRedeem: true });
+  };
+
+  const resetCheckout = () => {
+    resetTransaction();
+    setInputValue('');
+    setCurrentClient(null);
+    setCheckoutStep('search');
+  };
+
+  const resetAll = (options?: { preserveTab?: boolean }) => {
+    resetCheckout();
+    setReturnTx(null);
+    setReturnSearchInput('');
+    setReturnSuccess(false);
+    setRefundPreview(null);
+    setRefundError('');
+    setMobileMode('landing');
+    if (!options?.preserveTab) {
+      setActiveTab('checkout');
+    }
+    setSelectedTx(null);
+  };
+
+  const handleSwitchView = (view: DesktopView) => {
+    setActiveView(view);
+    if (view !== 'main') resetCheckout();
+    if (view !== 'return') {
+      setReturnTx(null);
+      setReturnSearchInput('');
+      setReturnSuccess(false);
+      setRefundPreview(null);
+      setRefundError('');
+    }
+  };
+
+  const beginFlow = async (token: string) => {
+    setActionError('');
+    resetTransaction();
+    setUserToken(token);
+    setOrderId('O-' + Math.floor(Date.now() % 1_000_000));
+    const profile = await fetchCustomerOverview(token);
+    if (!profile) return;
+    setCheckoutStep('amount');
+    setMobileMode('profile');
+  };
+
+  const callQuote = async (overrides: {
+    total: number;
+    mode: 'redeem' | 'earn';
+    receiptNumber?: string;
+    redeemAmount?: number;
+  }): Promise<QuoteRedeemResp | QuoteEarnResp | null> => {
+    if (!session) {
+      setActionError('Сначала авторизуйтесь в кассире.');
+      return null;
+    }
+    setIsProcessing(true);
+    setActionError('');
     setResult(null);
     setHoldId(null);
-    const totalToSend = overrides?.total ?? total;
-    const modeToSend = overrides?.mode ?? mode;
-    const receiptToSend = overrides?.receiptNumber ?? receiptNumber;
+    const requestId = `req_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     try {
       const activeMerchantId = session?.merchantId || merchantId;
       const activeOutletId = session?.outlet?.id || undefined;
@@ -836,18 +1188,21 @@ export default function Page() {
         headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId },
         body: JSON.stringify({
           merchantId: activeMerchantId,
-          mode: modeToSend,
+          mode: overrides.mode,
           userToken,
           orderId,
-          total: totalToSend,
+          total: overrides.total,
           outletId: activeOutletId || undefined,
           staffId: activeStaffId || undefined,
-          receiptNumber: receiptToSend || undefined,
+          receiptNumber: overrides.receiptNumber || undefined,
+          redeemAmount:
+            overrides.redeemAmount != null && overrides.redeemAmount > 0
+              ? overrides.redeemAmount
+              : undefined,
         }),
       });
       if (!r.ok) {
-        const text = await r.text();
-        throw new Error(text || r.statusText);
+        throw new Error(await readErrorMessage(r, 'Не удалось выполнить расчёт'));
       }
       const data = await r.json();
       setResult(data);
@@ -855,37 +1210,27 @@ export default function Page() {
       setHoldId(typeof holdCandidate === 'string' ? holdCandidate : null);
       return data;
     } catch (e: unknown) {
-      const err = e as { message?: unknown } | undefined;
-      const msg = String(err?.message ?? e ?? '');
-      setScanOpen(false);
-      if (msg.includes('QR токен уже использован')) {
-        alert('Этот QR уже использован. Попросите клиента обновить QR в мини-аппе.');
-      } else if (msg.includes('ERR_JWT_EXPIRED') || msg.includes('JWTExpired') || msg.includes('"exp"')) {
-        alert('QR истёк по времени. Попросите клиента обновить QR в мини-аппе и отсканируйте заново.');
-      } else if (msg.includes('другого мерчанта')) {
-        alert('QR выписан для другого мерчанта.');
-      } else {
-        alert('Ошибка расчёта: ' + msg);
-      }
+      const message = e instanceof Error ? e.message : String(e);
+      setActionError(humanizeQuoteError(message));
       return null;
     } finally {
-      setBusy(false);
+      setIsProcessing(false);
     }
   };
 
   const callCommit = async () => {
     if (!session) {
-      alert('Сначала авторизуйтесь в кассире.');
+      setActionError('Сначала авторизуйтесь в кассире.');
       return null;
     }
     if (!holdId) {
-      alert('Сначала сделайте расчёт.');
+      setActionError('Сначала выполните расчёт.');
       return null;
     }
-    setBusy(true);
-    const requestId = 'req_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+    setIsProcessing(true);
+    const requestId = `req_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     try {
-      const normalizedReceiptNumber = receiptNumber.trim();
+      const normalizedReceiptNumber = txCheckId.trim();
       const activeMerchantId = session?.merchantId || merchantId;
       const activeOutletId = session?.outlet?.id || undefined;
       const activeStaffId = session?.staff?.id || undefined;
@@ -904,7 +1249,7 @@ export default function Page() {
         }),
       });
       if (!r.ok) {
-        throw new Error(await r.text());
+        throw new Error(await readErrorMessage(r, 'Не удалось завершить операцию'));
       }
       const data = await r.json();
       if (typeof data?.customerId === 'string') {
@@ -920,261 +1265,86 @@ export default function Page() {
           redeemApplied: typeof data?.redeemApplied === 'number' ? data.redeemApplied : undefined,
           earnApplied: typeof data?.earnApplied === 'number' ? data.earnApplied : undefined,
           alreadyCommitted: Boolean(data?.alreadyCommitted),
-          mode,
+          mode: txType === 'redeem' ? 'redeem' : 'earn',
         });
+        const appliedRedeem = typeof data?.redeemApplied === 'number' ? data.redeemApplied : Number(txRedeemPoints) || 0;
+        const appliedEarn = typeof data?.earnApplied === 'number' ? data.earnApplied : txAccruePoints;
+        const totalValue = Number(txAmount) || 0;
+        setTxRedeemPoints(appliedRedeem > 0 ? String(appliedRedeem) : '');
+        setTxAccruePoints(appliedEarn || 0);
+        setTxFinalAmount(Math.max(0, totalValue - appliedRedeem));
         setHoldId(null);
         setResult(null);
+        const scannedKey = qrKeyFromToken(userToken);
+        if (scannedKey) {
+          scannedTokensRef.current.add(scannedKey);
+          saveScanned();
+        }
         setOrderId('O-' + Math.floor(Math.random() * 100000));
+        await fetchCustomerOverview(userToken);
+        await loadHistory(true);
         return data;
       }
-      alert('Commit вернул неуспех: ' + JSON.stringify(data));
+      setActionError('Не удалось завершить операцию.');
       return null;
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
-      alert('Ошибка commit: ' + message);
+      setActionError(humanizeQuoteError(message));
       return null;
     } finally {
-      setBusy(false);
+      setIsProcessing(false);
     }
   };
 
-  const loadCustomerBalance = async (customerId: string, merchant: string): Promise<number | null> => {
-    try {
-      const r = await fetch(`${API_BASE}/loyalty/balance/${merchant}/${encodeURIComponent(customerId)}`, {
-        credentials: 'include',
-      });
-      if (!r.ok) return null;
-      const data = await r.json();
-      if (typeof data?.balance === 'number') return data.balance;
-      return null;
-    } catch {
-      return null;
-    }
-  };
-
-  const loadCustomerLevel = async (merchant: string, customerId: string): Promise<string | null> => {
-    try {
-      const r = await fetch(`${API_BASE}/levels/${merchant}/${encodeURIComponent(customerId)}`, {
-        credentials: 'include',
-      });
-      if (!r.ok) return null;
-      const data = await r.json();
-      const levelName = data?.current?.name ?? data?.level?.name ?? null;
-      return levelName ? String(levelName) : null;
-    } catch {
-      return null;
-    }
-  };
-
-  const fetchCustomerOverview = async (token: string) => {
-    const merchant = session?.merchantId || merchantId;
-    if (!merchant) return;
-    const fallbackName = extractNameFromToken(token);
-    try {
-      const r = await fetch(`${API_BASE}/loyalty/cashier/customer`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ merchantId: merchant, userToken: token }),
-      });
-      if (!r.ok) {
-        const text = await r.text();
-        throw new Error(text || r.statusText);
-      }
-      const data = await r.json();
-      const resolvedCustomerId =
-        typeof data?.customerId === 'string' && data.customerId.trim().length > 0
-          ? data.customerId.trim()
-          : null;
-      const nameFromApi =
-        typeof data?.name === 'string' && data.name.trim().length > 0
-          ? data.name.trim()
-          : null;
-      setCustomerId(resolvedCustomerId);
-      const balanceHint =
-        typeof data?.balance === 'number' ? data.balance : null;
-      const balancePromise =
-        resolvedCustomerId != null
-          ? balanceHint != null
-            ? Promise.resolve(balanceHint)
-            : loadCustomerBalance(resolvedCustomerId, merchant)
-          : Promise.resolve<number | null>(null);
-      const levelPromise =
-        resolvedCustomerId != null
-          ? loadCustomerLevel(merchant, resolvedCustomerId)
-          : Promise.resolve<string | null>(null);
-      const [balance, levelName] = await Promise.all([
-        balancePromise,
-        levelPromise,
-      ]);
-      setOverview({
-        customerId: resolvedCustomerId,
-        name: nameFromApi ?? fallbackName ?? null,
-        levelName,
-        balance,
-      });
-    } catch (e: unknown) {
-      setCustomerId(null);
-      setOverview({
-        customerId: null,
-        name: fallbackName ?? null,
-        levelName: null,
-        balance: null,
-      });
-      const message = e instanceof Error ? e.message : String(e);
-      alert('Не удалось загрузить данные клиента: ' + message);
-    }
-  };
-
-  const resetFlow = () => {
-    setFlowStep('idle');
-    setPurchaseAmountInput('');
-    setReceiptInput('');
-    setSelectedPoints(0);
-    setLastRequestedRedeem(0);
-    setQuoteError('');
-    setConfirmSnapshot(null);
-    setReceiptData(null);
-    setResult(null);
-    setHoldId(null);
-    setCustomerId(null);
-    setOverview({ customerId: null, name: null, levelName: null, balance: null });
-    setUserToken('');
-    setManualTokenInput('');
-    setReceiptNumber('');
-    setTotal(0);
-  };
-
-  const beginFlow = async (token: string) => {
-    setUserToken(token);
-    setCustomerId(null);
-    setOverview({ customerId: null, name: null, levelName: null, balance: null });
-    setManualTokenInput('');
-    setFlowStep('details');
-    setPurchaseAmountInput('');
-    setReceiptInput('');
-    setSelectedPoints(0);
-    setLastRequestedRedeem(0);
-    setQuoteError('');
-    setConfirmSnapshot(null);
-    setReceiptData(null);
-    setResult(null);
-    setHoldId(null);
-    await fetchCustomerOverview(token);
-  };
-
-  const handleDetailsContinue = async () => {
-    setQuoteError('');
-    const parsedAmount = Number(purchaseAmountInput.replace(',', '.'));
-    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-      setQuoteError('Введите сумму покупки больше нуля.');
-      return;
-    }
-    setTotal(parsedAmount);
-    setReceiptNumber(receiptInput.trim());
-    if (mode === 'redeem') {
-      const quote = await callQuote({
-        total: parsedAmount,
-        mode: 'redeem',
-        receiptNumber: receiptInput.trim(),
-      });
-      if (!quote) return;
-      const maxRedeem = (quote as QuoteRedeemResp)?.pointsToBurn ?? 0;
-      setSelectedPoints(maxRedeem);
-      setLastRequestedRedeem(maxRedeem);
-      setFlowStep('points');
-    } else {
-      const quote = await callQuote({
-        total: parsedAmount,
-        mode: 'earn',
-        receiptNumber: receiptInput.trim(),
-      });
-      if (!quote) return;
-      const earn = (quote as QuoteEarnResp)?.pointsToEarn ?? 0;
-      setConfirmSnapshot({
-        purchaseTotal: parsedAmount,
-        finalPayable: parsedAmount,
-        pointsEarn: earn,
-        pointsBurn: 0,
-      });
-      setFlowStep('confirm');
-    }
-  };
-
-  const handlePointsSubmit = async (redeemAll: boolean) => {
-    if (mode !== 'redeem') return;
-    const quote = result as QuoteRedeemResp | null;
-    const maxRedeem = quote?.pointsToBurn ?? 0;
-    const desired = redeemAll ? maxRedeem : Math.min(selectedPoints, maxRedeem);
-    const normalized = Number.isFinite(desired) && desired > 0 ? Math.round(desired) : 0;
-    setSelectedPoints(normalized);
-    if (normalized === 0) {
-      const earnOnly = await callQuote({
-        total,
-        mode: 'earn',
-        receiptNumber,
-      });
-      if (!earnOnly) return;
-      const earn = (earnOnly as QuoteEarnResp)?.pointsToEarn ?? 0;
-      setConfirmSnapshot({
-        purchaseTotal: total,
-        finalPayable: total,
-        pointsEarn: earn,
-        pointsBurn: 0,
-      });
-      setMode('earn');
-      setFlowStep('confirm');
-      return;
-    }
-
-    let effectiveQuote = (result as QuoteRedeemResp) ?? null;
-    let redeemToUse = normalized;
-    if (normalized !== lastRequestedRedeem) {
-      const updated = await callQuote({
-        total,
-        mode: 'redeem',
-        receiptNumber,
-      });
-      if (!updated) return;
-      effectiveQuote = updated as QuoteRedeemResp;
-      const updatedRedeem = effectiveQuote.pointsToBurn ?? normalized;
-      redeemToUse = updatedRedeem;
-      setSelectedPoints(updatedRedeem);
-      setLastRequestedRedeem(updatedRedeem);
-    }
-
-    const finalPayable =
-      typeof effectiveQuote?.finalPayable === 'number'
-        ? effectiveQuote.finalPayable
-        : Math.max(total - redeemToUse, 0);
-    setConfirmSnapshot({
-      purchaseTotal: total,
-      finalPayable,
-      pointsEarn: 0,
-      pointsBurn: redeemToUse,
+  const handleAccrueQuote = async () => {
+    const amountValue = Number(txAmount) || 0;
+    if (!amountValue) return;
+    await cancelHoldIfNeeded(holdId);
+    resetQuoteState({ clearRedeem: true });
+    setTxType('accrue');
+    const data = await callQuote({
+      total: amountValue,
+      mode: 'earn',
+      receiptNumber: txCheckId || undefined,
     });
-    setFlowStep('confirm');
+    if (!data) return;
+    const earn = Number((data as QuoteEarnResp)?.pointsToEarn ?? 0);
+    setTxAccruePoints(earn);
+    setTxFinalAmount(amountValue);
+    setCheckoutStep('precheck');
+    setMobileMode('precheck');
   };
 
-  const handleConfirm = async () => {
+  const handleRedeemQuote = async () => {
+    const amountValue = Number(txAmount) || 0;
+    if (!amountValue) return;
+    const redeemValue = Math.max(0, Math.floor(Number(txRedeemPoints) || 0));
+    if (!redeemValue || redeemValue > redeemableMax) return;
+    await cancelHoldIfNeeded(holdId);
+    resetQuoteState();
+    setTxType('redeem');
+    const data = await callQuote({
+      total: amountValue,
+      mode: 'redeem',
+      receiptNumber: txCheckId || undefined,
+      redeemAmount: redeemValue,
+    });
+    if (!data) return;
+    const redeemApplied = Number((data as QuoteRedeemResp)?.discountToApply ?? redeemValue);
+    const finalPayable = Number((data as QuoteRedeemResp)?.finalPayable ?? Math.max(0, amountValue - redeemApplied));
+    const postEarn = Number((data as QuoteRedeemResp)?.postEarnPoints ?? 0);
+    setTxRedeemPoints(redeemApplied > 0 ? String(redeemApplied) : '');
+    setTxAccruePoints(postEarn || 0);
+    setTxFinalAmount(finalPayable);
+    setCheckoutStep('precheck');
+    setMobileMode('precheck');
+  };
+
+  const handleCommit = async () => {
     const data = await callCommit();
     if (!data) return;
-    const appliedRedeem = typeof data?.redeemApplied === 'number' ? data.redeemApplied : selectedPoints;
-    const appliedEarn = typeof data?.earnApplied === 'number' ? data.earnApplied : 0;
-    setReceiptData({
-      purchaseTotal: total,
-      pointsEarn: appliedEarn,
-      pointsBurn: appliedRedeem,
-      finalPayable: typeof data?.finalPayable === 'number' ? data.finalPayable : total - appliedRedeem,
-    });
-    setFlowStep('receipt');
-    await fetchCustomerOverview(userToken);
-    loadHistory(true);
-  };
-
-  const handleReceiptClose = () => {
-    setReceiptData(null);
-    resetFlow();
+    setCheckoutStep('success');
+    setMobileMode('success');
   };
 
   const loadHistory = async (reset = false) => {
@@ -1184,82 +1354,324 @@ export default function Page() {
     if (!activeMerchantId || !outletId) return;
     setHistBusy(true);
     try {
-      const url = new URL(`${API_BASE}/loyalty/cashier/outlet-transactions`);
+      const url = buildApiUrl('/loyalty/cashier/outlet-transactions');
       url.searchParams.set('merchantId', activeMerchantId);
       url.searchParams.set('outletId', outletId);
-      url.searchParams.set('limit', '20');
+      url.searchParams.set('limit', '50');
       if (!reset && histNextBefore) url.searchParams.set('before', histNextBefore);
       const r = await fetch(url.toString(), { credentials: 'include' });
-      if (!r.ok) {
-        const text = await r.text();
-        throw new Error(text || r.statusText);
-      }
+      if (!r.ok) throw new Error(await readErrorMessage(r, 'Не удалось загрузить историю'));
       const data = await r.json();
       const items: Txn[] = Array.isArray(data.items) ? data.items : [];
-      setAllowSameReceipt(Boolean(data.allowSameReceipt));
-      setHistory((old) => (reset ? items : [...old, ...items]));
+      setHistoryRaw((old) => (reset ? items : [...old, ...items]));
       setHistNextBefore(typeof data.nextBefore === 'string' ? data.nextBefore : null);
-      if (reset) {
-        const refunds = items
-          .filter((i) => i.mode === 'REFUND')
-          .map((i) => ({
-            id: i.id,
-            createdAt: i.createdAt,
-            amount: i.refundRedeem ?? i.amount ?? 0,
-            receiptNumber: i.receiptNumber ?? null,
-          }));
-        setRefundHistory(refunds);
-      }
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
-      alert('Ошибка истории: ' + message);
+      setActionError(humanizeQuoteError(message));
     } finally {
       setHistBusy(false);
     }
   };
 
   useEffect(() => {
-    setHistory([]);
-    setRefundHistory([]);
+    setHistoryRaw([]);
     setHistNextBefore(null);
-  }, [session?.outlet?.id, session?.merchantId, merchantId]);
+    if (session?.outlet?.id) void loadHistory(true);
+  }, [session?.outlet?.id, session?.merchantId]);
 
-  const loadRefundPreview = async () => {
+  const loadLeaderboard = useCallback(async () => {
     if (!session) {
-      alert('Сначала авторизуйтесь в кассире.');
+      setLeaderboard([]);
+      setMotivationInfo(null);
       return;
     }
-    const code = refundReceiptNumber.trim();
-    if (!code) {
-      setRefundError('Укажите номер чека или ID операции');
-      setRefundPreview(null);
+    setLeaderboardLoading(true);
+    setLeaderboardError('');
+    try {
+      const url = buildApiUrl('/loyalty/cashier/leaderboard');
+      url.searchParams.set('merchantId', session.merchantId);
+      if (ratingFilter === 'my_outlet' && session.outlet?.id) {
+        url.searchParams.set('outletId', session.outlet.id);
+      }
+      const r = await fetch(url.toString(), { credentials: 'include' });
+      if (!r.ok) throw new Error(await readErrorMessage(r, 'Не удалось загрузить рейтинг'));
+      const data = await r.json();
+      const settings: LeaderboardSettings = data?.settings ?? {};
+      const period: LeaderboardPeriod = data?.period ?? {};
+      const periodKind =
+        typeof period?.kind === 'string'
+          ? period.kind
+          : typeof settings?.leaderboardPeriod === 'string'
+            ? settings.leaderboardPeriod
+            : 'week';
+      const periodLabel =
+        typeof period?.label === 'string'
+          ? period.label
+          : buildMotivationPeriodLabel(periodKind, period?.customDays ?? settings?.customDays ?? null);
+      setMotivationInfo({
+        enabled: Boolean(data?.enabled),
+        periodLabel,
+        pointsNew: Number(settings?.pointsForNewCustomer ?? MOTIVATION_DEFAULT_NEW_POINTS),
+        pointsExisting: Number(settings?.pointsForExistingCustomer ?? MOTIVATION_DEFAULT_EXISTING_POINTS),
+      });
+      const items: RawLeaderboardItem[] = Array.isArray(data?.items) ? data.items : [];
+      const entries: LeaderboardEntry[] = items.map((item) => ({
+        staffId: String(item?.staffId ?? ''),
+        staffName:
+          String(item?.staffName ?? item?.staffDisplayName ?? item?.staffLogin ?? '').trim() || 'Сотрудник',
+        outletName: typeof item?.outletName === 'string' ? item.outletName : null,
+        points: Number(item?.points ?? 0),
+      }));
+      entries.sort((a, b) => b.points - a.points);
+      setLeaderboard(entries);
+    } catch (e: unknown) {
+      setLeaderboard([]);
+      setMotivationInfo(null);
+      const message = e instanceof Error ? e.message : String(e ?? '');
+      setLeaderboardError(message || 'Не удалось загрузить рейтинг');
+    } finally {
+      setLeaderboardLoading(false);
+    }
+  }, [session, ratingFilter]);
+
+  useEffect(() => {
+    if (activeTab === 'rating' || activeView === 'rating') {
+      void loadLeaderboard();
+    }
+  }, [activeTab, activeView, loadLeaderboard]);
+
+  const scanHandledRef = useRef(false);
+  useEffect(() => {
+    if (scanOpen) scanHandledRef.current = false;
+  }, [scanOpen]);
+
+  const scannedTokensRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('scannedQrKeys_v1');
+      if (raw) scannedTokensRef.current = new Set(JSON.parse(raw));
+    } catch {
+      /* noop */
+    }
+  }, []);
+
+  const saveScanned = () => {
+    try {
+      sessionStorage.setItem('scannedQrKeys_v1', JSON.stringify(Array.from(scannedTokensRef.current)));
+    } catch {
+      /* noop */
+    }
+  };
+
+  const onScan = async (text: string) => {
+    if (scanHandledRef.current) return;
+    scanHandledRef.current = true;
+    setScanOpen(false);
+    const key = qrKeyFromToken(text);
+    if (key && scannedTokensRef.current.has(key)) {
+      setActionError('Этот QR уже использован. Попросите клиента обновить QR в приложении.');
       return;
     }
-    const activeMerchantId = session?.merchantId || merchantId;
-    const outletId = session?.outlet?.id || null;
-    if (!outletId) {
-      setRefundError('Нет выбранной торговой точки');
-      setRefundPreview(null);
+    await beginFlow(text);
+  };
+
+  const staffName = useMemo(() => {
+    if (!session) return '';
+    return (
+      session.staff.displayName?.trim() ||
+      [session.staff.firstName, session.staff.lastName].filter(Boolean).join(' ') ||
+      session.staff.login ||
+      session.staff.id
+    );
+  }, [session]);
+
+  const staffRole = useMemo(() => {
+    const role = session?.staff?.role ?? 'CASHIER';
+    if (role.toUpperCase() === 'SENIOR_CASHIER') return 'Старший кассир';
+    if (role.toUpperCase() === 'CASHIER') return 'Кассир';
+    return role;
+  }, [session?.staff?.role]);
+
+  const outletName = useMemo(() => {
+    if (!session) return '';
+    return session.outlet.name || session.outlet.id || '';
+  }, [session]);
+
+  const employee = useMemo(() => {
+    const name = staffName || 'Сотрудник';
+    return {
+      name,
+      role: staffRole || 'Кассир',
+      outlet: outletName || 'Торговая точка',
+      avatar: extractInitials(name),
+    };
+  }, [staffName, staffRole, outletName]);
+
+  const uiHistory = useMemo<UiTransaction[]>(() => {
+    return historyRaw
+      .filter((item) => item.mode !== 'TXN' || item.purchaseAmount != null)
+      .map((item) => {
+        const date = new Date(item.createdAt);
+        const amountBase =
+          item.purchaseAmount != null ? item.purchaseAmount : Math.abs(Number(item.amount ?? 0));
+        let pointsAccrued = 0;
+        let pointsRedeemed = 0;
+        let type: 'sale' | 'return' = 'sale';
+        if (item.mode === 'PURCHASE') {
+          pointsAccrued = Math.max(0, Number(item.earnApplied ?? 0));
+          pointsRedeemed = Math.max(0, Number(item.redeemApplied ?? 0));
+          type = 'sale';
+        } else if (item.mode === 'REFUND') {
+          pointsAccrued = -Math.max(0, Number(item.refundEarn ?? 0));
+          pointsRedeemed = -Math.max(0, Number(item.refundRedeem ?? 0));
+          type = 'return';
+        } else {
+          const amount = Math.round(Number(item.amount ?? 0));
+          if (item.type === 'REDEEM') pointsRedeemed = Math.abs(amount);
+          if (item.type === 'EARN') pointsAccrued = Math.abs(amount);
+          type = item.type === 'REFUND' ? 'return' : 'sale';
+        }
+        return {
+          id: item.id,
+          checkId: item.receiptNumber || item.orderId || item.id,
+          date,
+          type,
+          client: item.customerName || 'Клиент',
+          staff: item.staffName || 'Сотрудник',
+          amount: Math.max(0, Math.round(Number(amountBase) || 0)),
+          pointsAccrued,
+          pointsRedeemed,
+          orderId: item.orderId ?? null,
+          receiptNumber: item.receiptNumber ?? null,
+        };
+      });
+  }, [historyRaw]);
+
+  const filteredHistory = useMemo(() => {
+    return uiHistory.filter((tx) => {
+      if (historySearch) {
+        const lowerSearch = historySearch.toLowerCase();
+        if (!tx.checkId.toLowerCase().includes(lowerSearch) && !tx.client.toLowerCase().includes(lowerSearch)) {
+          return false;
+        }
+      }
+      if (filterDate) {
+        if (tx.date.toISOString().split('T')[0] !== filterDate) return false;
+      }
+      if (filterType !== 'all' && tx.type !== filterType) return false;
+      if (filterStaff !== 'all' && tx.staff !== filterStaff) return false;
+      return true;
+    });
+  }, [uiHistory, historySearch, filterDate, filterType, filterStaff]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [historySearch, filterDate, filterType, filterStaff]);
+
+  const itemsPerPage = 8;
+  const totalPages = Math.ceil(filteredHistory.length / itemsPerPage);
+  const paginatedHistory = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredHistory.slice(start, start + itemsPerPage);
+  }, [filteredHistory, currentPage]);
+
+  const uniqueStaff = useMemo(() => Array.from(new Set(uiHistory.map((tx) => tx.staff))), [uiHistory]);
+  const recentTx = useMemo(() => uiHistory.slice(0, 5), [uiHistory]);
+
+  const shiftStats = useMemo(() => {
+    const today = new Date();
+    const isSameDay = (date: Date) =>
+      date.getFullYear() === today.getFullYear() &&
+      date.getMonth() === today.getMonth() &&
+      date.getDate() === today.getDate();
+    const salesToday = uiHistory.filter((tx) => tx.type === 'sale' && isSameDay(tx.date));
+    const revenue = salesToday.reduce((sum, tx) => sum + tx.amount, 0);
+    return {
+      revenue: Math.max(0, Math.round(revenue)),
+      checks: salesToday.length,
+    };
+  }, [uiHistory]);
+
+  const fmtMoney = (val: number) => val.toLocaleString('ru-RU');
+
+  const handleNumClick = (num: string) => {
+    if (inputValue.length < 16) setInputValue((prev) => prev + num);
+  };
+  const handleBackspace = () => setInputValue((prev) => prev.slice(0, -1));
+  const handleClear = () => setInputValue('');
+
+  const handleSearchAction = async (action: 'scan' | 'search') => {
+    if (!inputValue && action !== 'scan') return;
+    if (action === 'scan') {
+      setScanOpen(true);
+      setMobileMode('scanning');
       return;
     }
-    setRefundBusy(true);
+    setActionError('');
+    await beginFlow(inputValue);
+  };
+
+  const handleCopy = (id: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const keys = [
+    { label: '1', val: '1' },
+    { label: '2', val: '2' },
+    { label: '3', val: '3' },
+    { label: '4', val: '4' },
+    { label: '5', val: '5' },
+    { label: '6', val: '6' },
+    { label: '7', val: '7' },
+    { label: '8', val: '8' },
+    { label: '9', val: '9' },
+    { label: 'C', val: 'clear', type: 'secondary' },
+    { label: '0', val: '0' },
+    { label: '⌫', val: 'back', type: 'secondary' },
+  ];
+
+  const { redeemableMax, redeemPolicyMax } = useMemo(() => {
+    const amountValue = Math.max(0, Number(txAmount) || 0);
+    const balanceValue = Math.max(0, currentClient?.balance ?? 0);
+    const redeemRateValue = currentClient?.redeemRateBps;
+    const minPaymentValue = currentClient?.minPaymentAmount;
+    const rawRedeemRate = redeemRateValue != null ? Number(redeemRateValue) : Number.NaN;
+    const rawMinPayment = minPaymentValue != null ? Number(minPaymentValue) : Number.NaN;
+    const redeemRateBps = Number.isFinite(rawRedeemRate) ? Math.max(0, Math.floor(rawRedeemRate)) : null;
+    const minPaymentAmount = Number.isFinite(rawMinPayment) ? Math.max(0, Math.floor(rawMinPayment)) : null;
+    const limitByRate = redeemRateBps != null ? Math.floor((amountValue * redeemRateBps) / 10000) : amountValue;
+    const limitByMinPayment = minPaymentAmount != null ? Math.max(0, Math.floor(amountValue - minPaymentAmount)) : amountValue;
+    const policyMax = Math.max(0, Math.min(amountValue, limitByRate, limitByMinPayment));
+    return {
+      redeemableMax: Math.max(0, Math.min(balanceValue, policyMax)),
+      redeemPolicyMax: policyMax,
+    };
+  }, [currentClient?.balance, currentClient?.redeemRateBps, currentClient?.minPaymentAmount, txAmount]);
+
+  const handleReturnSearch = async () => {
+    if (!returnSearchInput.trim()) return;
     setRefundError('');
     setRefundPreview(null);
+    setRefundBusy(true);
+    setReturnSuccess(false);
     try {
+      if (!session) throw new Error('Сначала авторизуйтесь в кассире.');
+      const code = returnSearchInput.trim();
+      const activeMerchantId = session?.merchantId || merchantId;
+      const outletId = session?.outlet?.id || null;
+      if (!outletId) throw new Error('Нет выбранной торговой точки');
       let found: Txn | null = null;
       let nextBefore: string | null = null;
-      // Поиск чека по истории точки (несколько страниц на всякий случай)
       for (let page = 0; page < 5 && !found; page += 1) {
-        const url = new URL(`${API_BASE}/loyalty/cashier/outlet-transactions`);
+        const url = buildApiUrl('/loyalty/cashier/outlet-transactions');
         url.searchParams.set('merchantId', activeMerchantId);
         url.searchParams.set('outletId', outletId);
         url.searchParams.set('limit', '50');
         if (nextBefore) url.searchParams.set('before', nextBefore);
         const r = await fetch(url.toString(), { credentials: 'include' });
-        if (!r.ok) {
-          const text = await r.text();
-          throw new Error(text || r.statusText);
-        }
+        if (!r.ok) throw new Error(await readErrorMessage(r, 'Не удалось найти чек'));
         const data = await r.json();
         const items: Txn[] = Array.isArray(data.items) ? data.items : [];
         found =
@@ -1269,15 +1681,12 @@ export default function Page() {
               (i.receiptNumber === code || (i.orderId ?? '').trim() === code),
           ) ?? null;
         if (found) break;
-        nextBefore =
-          typeof data.nextBefore === 'string' && data.nextBefore
-            ? data.nextBefore
-            : null;
+        nextBefore = typeof data.nextBefore === 'string' ? data.nextBefore : null;
         if (!nextBefore) break;
       }
       if (!found) {
         setRefundError('Чек с таким номером или ID операции не найден');
-        setRefundPreview(null);
+        setReturnTx(null);
         return;
       }
       const purchaseAmount = found.purchaseAmount ?? 0;
@@ -1292,10 +1701,23 @@ export default function Page() {
         pointsToRestore,
         pointsToRevoke,
       });
+      setReturnTx({
+        id: found.id,
+        checkId: found.receiptNumber || found.orderId || found.id,
+        date: new Date(found.createdAt),
+        type: 'sale',
+        client: found.customerName || 'Клиент',
+        staff: found.staffName || 'Сотрудник',
+        amount: Math.max(0, Math.round(Number(purchaseAmount) || 0)),
+        pointsAccrued: pointsToRevoke,
+        pointsRedeemed: pointsToRestore,
+        orderId: found.orderId ?? null,
+        receiptNumber: found.receiptNumber ?? null,
+      });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
-      setRefundError(message || 'Не удалось получить данные по чеку');
-      setRefundPreview(null);
+      setRefundError(humanizeRefundError(message));
+      setReturnTx(null);
     } finally {
       setRefundBusy(false);
     }
@@ -1303,17 +1725,17 @@ export default function Page() {
 
   const doRefund = async () => {
     if (!session) {
-      alert('Сначала авторизуйтесь в кассире.');
+      setRefundError('Сначала авторизуйтесь в кассире.');
       return;
     }
-    const code = refundReceiptNumber.trim();
+    const code = returnSearchInput.trim();
     if (!code) {
       setRefundError('Укажите номер чека или ID операции');
       return;
     }
     const preview = refundPreview;
     if (!preview) {
-      await loadRefundPreview();
+      await handleReturnSearch();
       if (!refundPreview) return;
     }
     const effective = preview ?? refundPreview!;
@@ -1332,1004 +1754,2494 @@ export default function Page() {
           receiptNumber: effective.receiptNumber || code,
         }),
       });
-      if (!r.ok) throw new Error(await r.text());
+      if (!r.ok) throw new Error(await readErrorMessage(r, 'Не удалось оформить возврат'));
       const data = await r.json();
       if (typeof data?.customerId === 'string') {
         setCustomerId(data.customerId);
       }
-      setRefundReceiptNumber('');
+      setReturnSearchInput('');
       setRefundPreview(null);
-      loadHistory(true);
-      alert('Возврат выполнен. Баллы пересчитаны.');
+      setReturnTx(null);
+      setReturnSuccess(true);
+      await loadHistory(true);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
-      setRefundError(message || 'Ошибка возврата');
+      setRefundError(humanizeRefundError(message));
     } finally {
       setRefundBusy(false);
     }
   };
 
-  const loadLeaderboard = useCallback(async () => {
-    if (!session) {
-      setLeaderboard([]);
-      setMotivationInfo(null);
-      return;
-    }
-    setLeaderboardLoading(true);
-    setLeaderboardError('');
-    try {
-      const url = new URL(`${API_BASE}/loyalty/cashier/leaderboard`);
-      url.searchParams.set('merchantId', session.merchantId);
-      if (leaderboardOutletFilter) {
-        url.searchParams.set('outletId', leaderboardOutletFilter);
+  const handleConfirmReturn = async () => {
+    await doRefund();
+    if (!isMobile) {
+      if (!refundError) {
+        alert('Возврат выполнен. Баллы пересчитаны.');
       }
-      const r = await fetch(url.toString(), { credentials: 'include' });
-      if (!r.ok) throw new Error(await r.text());
-      const data = await r.json();
-      const settings: LeaderboardSettings = data?.settings ?? {};
-      const period: LeaderboardPeriod = data?.period ?? {};
-      const periodKind =
-        typeof period?.kind === 'string'
-          ? period.kind
-          : typeof settings?.leaderboardPeriod === 'string'
-            ? settings.leaderboardPeriod
-            : 'week';
-      const periodLabel =
-        typeof period?.label === 'string'
-          ? period.label
-          : buildMotivationPeriodLabel(
-              periodKind,
-              period?.customDays ?? settings?.customDays ?? null,
-            );
-      const info = {
-        enabled: Boolean(data?.enabled),
-        periodKind,
-        periodLabel,
-        pointsNew: Number(
-          settings?.pointsForNewCustomer ?? MOTIVATION_DEFAULT_NEW_POINTS,
-        ),
-        pointsExisting: Number(
-          settings?.pointsForExistingCustomer ??
-            MOTIVATION_DEFAULT_EXISTING_POINTS,
-        ),
-      };
-      setMotivationInfo(info);
-      const items: RawLeaderboardItem[] = Array.isArray(data?.items)
-        ? data.items
-        : [];
-      const entries: LeaderboardEntry[] = items.map((item) => ({
-        staffId: String(item.staffId ?? ''),
-        staffName:
-          typeof item.staffName === 'string'
-            ? item.staffName
-            : typeof item.staffDisplayName === 'string'
-              ? item.staffDisplayName
-              : typeof item.staffLogin === 'string'
-                ? item.staffLogin
-                : '—',
-        outletName:
-          typeof item.outletName === 'string' ? item.outletName : null,
-        points: Number(item.points ?? 0),
-      }));
-      entries.sort((a, b) => b.points - a.points);
-      setLeaderboard(entries);
-    } catch (e: unknown) {
-      setLeaderboard([]);
-      setMotivationInfo(null);
-      const message = e instanceof Error ? e.message : String(e ?? '');
-      setLeaderboardError(message || 'Не удалось загрузить рейтинг');
-    } finally {
-      setLeaderboardLoading(false);
-    }
-  }, [session, leaderboardOutletFilter]);
-
-  useEffect(() => {
-    if (activeTab === 'rating') {
-      void loadLeaderboard();
-    }
-  }, [activeTab, loadLeaderboard]);
-
-  const scanHandledRef = useRef(false);
-  useEffect(() => {
-    if (scanOpen) scanHandledRef.current = false;
-  }, [scanOpen]);
-
-  const scannedTokensRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem('scannedQrKeys_v1');
-      if (raw) scannedTokensRef.current = new Set(JSON.parse(raw));
-    } catch {
-      /* noop */
-    }
-  }, []);
-  const saveScanned = () => {
-    try {
-      sessionStorage.setItem('scannedQrKeys_v1', JSON.stringify(Array.from(scannedTokensRef.current)));
-    } catch {
-      /* noop */
+      setReturnTx(null);
+      setReturnSearchInput('');
+      setReturnSuccess(false);
     }
   };
 
-  const onScan = async (text: string) => {
-    if (scanHandledRef.current) return;
-    scanHandledRef.current = true;
-    setScanOpen(false);
-    const key = qrKeyFromToken(text);
-    if (scannedTokensRef.current.has(key)) {
-      alert('Этот QR уже сканирован. Попросите клиента обновить QR в мини-аппе.');
+  const currentUserRating = useMemo(() => {
+    const entries = [...leaderboard].sort((a, b) => b.points - a.points);
+    const idx = entries.findIndex((u) => u.staffId && session?.staff?.id && u.staffId === session.staff.id);
+    if (idx < 0) return null;
+    return {
+      score: entries[idx]?.points ?? 0,
+      rank: idx + 1,
+    };
+  }, [leaderboard, session?.staff?.id]);
+
+  const filteredLeaderboard = useMemo(() => {
+    let data = leaderboard;
+    if (ratingFilter === 'my_outlet') {
+      data = data.filter((s) => s.outletName === employee.outlet);
+    }
+    return [...data].sort((a, b) => b.points - a.points);
+  }, [leaderboard, ratingFilter, employee.outlet]);
+
+  const activeFilterCount = Object.values(filters).filter((v) => v !== '').length;
+
+  const filteredHistoryMobile = useMemo(() => {
+    return uiHistory.filter((tx) => {
+      const searchLower = searchQuery.toLowerCase();
+      if (searchQuery && !tx.client.toLowerCase().includes(searchLower) && !tx.checkId.includes(searchLower)) {
+        return false;
+      }
+      if (filters.dateFrom) {
+        const txDate = new Date(tx.date).setHours(0, 0, 0, 0);
+        const fromDate = new Date(filters.dateFrom).setHours(0, 0, 0, 0);
+        if (txDate < fromDate) return false;
+      }
+      if (filters.dateTo) {
+        const txDate = new Date(tx.date).setHours(0, 0, 0, 0);
+        const toDate = new Date(filters.dateTo).setHours(0, 0, 0, 0);
+        if (txDate > toDate) return false;
+      }
+      if (filters.staff && tx.staff !== filters.staff) return false;
+      if (filters.amountFrom && tx.amount < Number(filters.amountFrom)) return false;
+      if (filters.amountTo && tx.amount > Number(filters.amountTo)) return false;
+      return true;
+    });
+  }, [uiHistory, searchQuery, filters]);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setIsDragging(true);
+    dragStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDragging) return;
+    const currentY = e.touches[0].clientY;
+    const delta = currentY - dragStartY.current;
+    if (delta > 0) {
+      setDragY(delta);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setIsDragging(false);
+    if (dragY > 120) {
+      closeModal();
+    } else {
+      setDragY(0);
+    }
+  };
+
+  const closeModal = () => {
+    setSelectedTx(null);
+    setIsCopied(false);
+    setDragY(0);
+  };
+
+  const clearFilters = () => {
+    setFilters({
+      dateFrom: '',
+      dateTo: '',
+      staff: '',
+      amountFrom: '',
+      amountTo: '',
+    });
+  };
+
+  const handleCopyMobile = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setIsCopied(true);
+    setTimeout(() => setIsCopied(false), 1500);
+  };
+
+  const handleNumpadInput = (key: string, setter: (value: string) => void, value: string) => {
+    if (key === 'clear') {
+      setter('');
       return;
     }
-    scannedTokensRef.current.add(key);
-    saveScanned();
-    await beginFlow(text);
+    if (key === 'backspace') {
+      setter(value.slice(0, -1));
+      return;
+    }
+    if (value.length < 15) setter(value + key);
   };
 
-  const staffName = useMemo(() => {
-    if (!session) return '';
-    return (
-      session.staff.displayName?.trim() ||
-      [session.staff.firstName, session.staff.lastName].filter(Boolean).join(' ') ||
-      session.staff.login ||
-      session.staff.id
-    );
-  }, [session]);
+  const startScan = () => {
+    setScanOpen(true);
+    setMobileMode('scanning');
+  };
 
-  const outletName = useMemo(() => {
-    if (!session) return '';
-    return session.outlet.name || session.outlet.id || '';
-  }, [session]);
+  const startManualInput = () => {
+    setMobileMode('manual_input');
+  };
 
-  const pageTitle = useMemo(() => {
-    if (activeTab === 'history') return 'История операций';
-    if (activeTab === 'rating') return 'Рейтинг сотрудников';
-    if (activeTab === 'returns') return 'Возвраты по чекам';
-    switch (flowStep) {
-      case 'details':
-        return 'Оформление покупки';
-      case 'points':
-        return 'Списание баллов';
-      case 'confirm':
-        return 'Подтверждение операции';
-      case 'receipt':
-        return 'Чек операции';
-      default:
-        return 'Главная';
+  const performSearch = async () => {
+    if (inputValue.length < 3) return;
+    await beginFlow(inputValue);
+  };
+
+  const startCheckout = (type: TxMode) => {
+    setTxType(type);
+    setMobileMode('amount');
+  };
+
+  const confirmAmount = () => {
+    const amountValue = Number(txAmount) || 0;
+    if (!amountValue) return;
+    if (txType === 'redeem') {
+      setMobileMode('redeem');
+    } else {
+      void handleAccrueQuote();
     }
-  }, [activeTab, flowStep]);
+  };
 
-  const renderAuth = () => (
-    <div className="flex flex-col min-h-screen bg-slate-900 text-white">
-      <div className="flex-1 flex flex-col px-6 py-8">
-        <div className="mt-8">
-          <h1 className="text-3xl font-semibold">Терминал кассира</h1>
-          <p className="text-sm text-slate-300 mt-2">Авторизуйтесь, чтобы начать обслуживание клиентов.</p>
-        </div>
-        <div className="mt-10 space-y-8">
-          <div className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-slate-500">
-            <span className={step === 'merchant' ? 'text-white' : ''}>1. Мерчант</span>
-            <span className="opacity-40">•</span>
-            <span className={step === 'pin' ? 'text-white' : ''}>2. PIN</span>
-            <span className="opacity-40">•</span>
-            <span className={step === 'terminal' ? 'text-white' : ''}>3. Терминал</span>
-          </div>
-          {step === 'merchant' && (
-            <div className="space-y-6">
-              <div className="space-y-2">
-                <label className="text-sm text-slate-300">Логин мерчанта</label>
-                <input
-                  value={merchantLogin}
-                  onChange={(e) => setMerchantLogin(e.target.value)}
-                  placeholder="Например, greenmarket"
-                  className="w-full rounded-2xl bg-slate-800 px-4 py-3 text-base placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
+  const confirmRedeem = () => {
+    void handleRedeemQuote();
+  };
+
+  const completeTransaction = () => {
+    void handleCommit();
+  };
+
+  const setRedeemMax = () => {
+    setTxRedeemPoints(Math.floor(redeemableMax).toString());
+  };
+
+  const handlePrecheckBack = async () => {
+    await cancelHoldIfNeeded(holdId);
+    resetQuoteState();
+    setCheckoutStep(Number(txRedeemPoints) > 0 ? 'redeem' : 'mode');
+  };
+
+  const handleMobilePrecheckBack = async () => {
+    await cancelHoldIfNeeded(holdId);
+    resetQuoteState();
+    setMobileMode(txType === 'accrue' ? 'amount' : 'redeem');
+  };
+
+  if (authStep === 'app_login') {
+    return (
+      <div className="min-h-screen bg-[#F1F5F9] flex items-center justify-center p-4 [@media(max-height:700px)]:py-3 [@media(max-height:600px)]:py-2">
+        <div className="w-full max-w-sm bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden animate-fade-in">
+          <div className="p-10 [@media(max-height:700px)]:p-8 [@media(max-height:600px)]:p-6">
+            <div className="flex justify-center mb-8 [@media(max-height:700px)]:mb-6 [@media(max-height:600px)]:mb-4">
+              <div className="w-16 h-16 bg-purple-600 rounded-2xl flex items-center justify-center shadow-md shadow-purple-200 [@media(max-height:700px)]:w-14 [@media(max-height:700px)]:h-14 [@media(max-height:600px)]:w-12 [@media(max-height:600px)]:h-12">
+                <Store size={32} className="text-white" />
               </div>
-              <div className="space-y-2">
-                <label className="text-sm text-slate-300">Код активации (9 цифр)</label>
-                <SegmentedInput
-                  length={9}
-                  groupSize={3}
-                  value={activationCodeDigits}
-                  onChange={setActivationCodeDigits}
-                  placeholderChar="○"
-                  autoFocus
-                />
-                <div className="text-xs text-slate-400">
-                  Код нужен один раз для подключения устройства (действует 3 дня).
-                </div>
-              </div>
-              <button
-                onClick={activateDevice}
-                disabled={!merchantLogin.trim() || activationCodeDigits.length !== 9}
-                className="w-full rounded-full bg-emerald-400 py-3 text-slate-900 font-semibold disabled:opacity-30"
-              >
-                Продолжить
-              </button>
-              {authMsg && <div className="text-sm text-red-400">{authMsg}</div>}
             </div>
-          )}
-          {step === 'pin' && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between text-sm text-slate-400">
-                <div>
-                  Логин: <span className="text-white">{deviceLogin || normalizedLogin || '—'}</span>
+
+            <h2 className="text-2xl font-bold text-center text-gray-900 mb-2 [@media(max-height:700px)]:text-xl [@media(max-height:600px)]:text-lg">Терминал</h2>
+            <p className="text-center text-gray-500 text-sm mb-8 font-medium [@media(max-height:700px)]:mb-6 [@media(max-height:600px)]:mb-4 [@media(max-height:600px)]:text-xs">
+              Авторизация устройства
+            </p>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void activateDevice();
+              }}
+              className="space-y-5 [@media(max-height:600px)]:space-y-4"
+            >
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-gray-700 ml-1 uppercase tracking-wide">Логин</label>
+                <div className="relative">
+                  <Building2 size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    value={appLogin}
+                    onChange={(e) => setAppLogin(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3.5 pl-11 outline-none focus:border-purple-500 focus:ring-4 focus:ring-purple-500/10 transition-all text-gray-900 font-medium [@media(max-height:700px)]:py-3 [@media(max-height:600px)]:py-2.5"
+                    placeholder="Например: shop_01"
+                    autoFocus
+                  />
                 </div>
-                <button className="text-emerald-300" onClick={deactivateDevice}>
-                  Сменить мерчанта
-                </button>
               </div>
-              <div className="space-y-3">
-                <label className="text-sm text-slate-300">PIN сотрудника</label>
-                <SegmentedInput
-                  length={4}
-                  value={pinDigits}
-                  onChange={(val) => {
-                    setPinDigits(val);
-                    if (val.length < 4) setStaffLookup(null);
-                  }}
-                  onComplete={lookupStaffByPin}
-                  placeholderChar="○"
-                />
-                <div className="flex items-center justify-between text-sm text-slate-400">
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-gray-700 ml-1 uppercase tracking-wide">Пароль</label>
+                <div className="relative">
+                  <KeyRound size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={appPassword}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, '').slice(0, 9);
+                      setAppPassword(val);
+                    }}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-11 pr-12 py-3.5 outline-none focus:border-purple-500 focus:ring-4 focus:ring-purple-500/10 transition-all text-gray-900 font-mono text-lg tracking-widest [@media(max-height:700px)]:py-3 [@media(max-height:600px)]:py-2.5 [@media(max-height:600px)]:text-base"
+                    placeholder="•••••••••"
+                  />
                   <button
-                    onClick={() => lookupStaffByPin(pinDigits)}
-                    disabled={pinDigits.length !== 4}
-                    className="rounded-full border border-slate-700 px-4 py-2 disabled:opacity-30"
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
                   >
-                    Проверить PIN
+                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                   </button>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      className="accent-emerald-400"
-                      checked={rememberPin}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setRememberPin(checked);
-                      }}
-                    />
-                    <span>Сохранить PIN</span>
-                  </label>
                 </div>
               </div>
-              {staffLookup && (
-                <div className="rounded-3xl bg-slate-800 p-4 space-y-2">
-                  <div className="text-xs text-slate-400">Сотрудник</div>
-                  <div className="text-lg font-semibold">
-                    {[staffLookup.staff.firstName, staffLookup.staff.lastName].filter(Boolean).join(' ') ||
-                      staffLookup.staff.login ||
-                      staffLookup.staff.id}
-                  </div>
-                  <div className="text-xs text-emerald-300">{staffLookup.staff.role}</div>
-                  {staffLookup.outlet && (
-                    <div className="text-sm text-slate-300">Точка: {staffLookup.outlet.name}</div>
-                  )}
-                  {staffLookup.accesses?.length ? (
-                    <div className="text-xs text-slate-400">
-                      Доступ к {staffLookup.accesses.length} точкам
-                    </div>
-                  ) : null}
+
+              {authError && (
+                <div className="flex items-center space-x-2 text-red-600 bg-red-50 p-3 rounded-xl text-xs font-medium border border-red-100 animate-in fade-in slide-in-from-top-1 [@media(max-height:600px)]:p-2.5 [@media(max-height:600px)]:text-[11px]">
+                  <AlertTriangle size={14} className="flex-shrink-0" />
+                  <span>{authError}</span>
                 </div>
               )}
+
               <button
-                onClick={startCashierSessionAuth}
-                disabled={!staffLookup}
-                className="w-full rounded-full bg-emerald-400 py-3 text-slate-900 font-semibold disabled:opacity-30"
+                type="submit"
+                disabled={!appLogin || appPassword.length < 9}
+                className="w-full bg-gray-900 hover:bg-black text-white font-bold py-4 rounded-xl shadow-lg shadow-gray-200 hover:shadow-xl transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed mt-4 [@media(max-height:700px)]:py-3.5 [@media(max-height:600px)]:py-3"
               >
-                Продолжить в терминал
+                Войти
               </button>
-              {authMsg && <div className="text-sm text-red-400">{authMsg}</div>}
-            </div>
-          )}
+            </form>
+          </div>
+          <div className="h-1.5 w-full bg-gradient-to-r from-purple-600 via-purple-500 to-indigo-600"></div>
         </div>
       </div>
-      <div className="px-6 pb-8 text-xs text-slate-500">© {new Date().getFullYear()} Программа лояльности</div>
-    </div>
-  );
+    );
+  }
 
-  const renderHomeTab = () => (
-    <div className="flex-1 overflow-y-auto px-6 pb-32">
-      <div className="mt-6 space-y-6">
-        {flowStep === 'idle' && (
-          <div className="rounded-3xl bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 p-6 shadow-xl">
-            <div className="text-sm text-slate-400">Сотрудник</div>
-            <div className="text-xl font-semibold text-white">{staffName}</div>
-            <div className="text-sm text-slate-400 mt-3">Торговая точка</div>
-            <div className="text-base text-white">{outletName || '—'}</div>
+  if (authStep === 'staff_pin') {
+    return (
+      <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4 [@media(max-height:700px)]:py-3 [@media(max-height:600px)]:py-2">
+        <button
+          onClick={deactivateDevice}
+          className="absolute top-6 left-6 text-gray-500 hover:text-gray-900 flex items-center space-x-2 transition-colors [@media(max-height:700px)]:top-3 [@media(max-height:700px)]:left-3 [@media(max-height:600px)]:text-sm"
+        >
+          <ArrowLeft size={20} /> <span>Сменить терминал</span>
+        </button>
+
+        <div className="w-full max-w-sm text-center space-y-8 animate-fade-in [@media(max-height:700px)]:space-y-6 [@media(max-height:600px)]:space-y-4">
+          <div>
+            <div className="w-20 h-20 bg-white rounded-full mx-auto flex items-center justify-center shadow-sm mb-4 [@media(max-height:700px)]:w-16 [@media(max-height:700px)]:h-16 [@media(max-height:600px)]:w-14 [@media(max-height:600px)]:h-14 [@media(max-height:600px)]:mb-3">
+              <Lock size={32} className="text-purple-600" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 [@media(max-height:700px)]:text-xl [@media(max-height:600px)]:text-lg">Вход сотрудника</h2>
+            <p className="text-gray-500 mt-2 [@media(max-height:600px)]:text-sm">Введите ваш 4-значный PIN-код</p>
           </div>
-        )}
 
-        {flowStep === 'idle' && (
-          <div className="space-y-6">
-            <div className="rounded-3xl bg-slate-800/80 backdrop-blur p-6 text-center">
-              <p className="text-sm text-slate-300">Чтобы начать, отсканируйте QR клиента или введите токен вручную.</p>
-            </div>
-            <button
-              onClick={() => setScanOpen(true)}
-              className="mx-auto flex h-48 w-48 items-center justify-center rounded-full bg-emerald-400 text-slate-900 text-lg font-semibold shadow-emerald-500/40 shadow-lg"
-            >
-              Сканировать QR
-            </button>
-            <div className="rounded-3xl bg-slate-800/80 backdrop-blur p-6 space-y-4">
-              <div className="text-sm text-slate-300">Ручной ввод токена</div>
-              <div className="flex items-center gap-3">
-                <input
-                  value={manualTokenInput}
-                  onChange={(e) => setManualTokenInput(e.target.value)}
-                  placeholder="Вставьте токен клиента"
-                  className="flex-1 rounded-2xl bg-slate-900 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-                <button
-                  onClick={() => manualTokenInput.trim() && beginFlow(manualTokenInput.trim())}
-                  className="rounded-full bg-emerald-500 px-4 py-3 text-slate-900 text-sm font-semibold"
-                >
-                  Продолжить
-                </button>
-              </div>
-            </div>
+          <div className={`flex justify-center space-x-4 mb-8 [@media(max-height:700px)]:space-x-3 [@media(max-height:700px)]:mb-6 [@media(max-height:600px)]:space-x-2 [@media(max-height:600px)]:mb-4 ${pinError ? 'animate-shake' : ''}`}>
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div
+                key={i}
+                className={`w-4 h-4 rounded-full transition-all duration-200 [@media(max-height:600px)]:w-3 [@media(max-height:600px)]:h-3 ${
+                  i < pin.length ? (pinError ? 'bg-red-500 scale-110' : 'bg-purple-600 scale-110') : 'bg-gray-300'
+                }`}
+              />
+            ))}
           </div>
-        )}
 
-        {flowStep !== 'idle' && (
-          <div className="space-y-6">
-            <div className="rounded-3xl bg-slate-800/60 backdrop-blur p-6 space-y-4">
-              <div className="text-sm text-slate-300">Информация о клиенте</div>
-              <div className="text-lg font-semibold text-white">{overview.name || 'Имя неизвестно'}</div>
-              <div className="flex items-center justify-between text-sm text-slate-300">
-                <span>Уровень</span>
-                <span className="font-medium text-emerald-300">{overview.levelName || '—'}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm text-slate-300">
-                <span>Баланс</span>
-                <span className="font-medium text-white">{formatCurrency(overview.balance)}</span>
-              </div>
-            </div>
-
-            {flowStep === 'details' && (
-              <div className="rounded-3xl bg-slate-800/60 backdrop-blur p-6 space-y-5">
-                <div className="space-y-2">
-                  <label className="text-sm text-slate-300">Сумма покупки</label>
-                  <input
-                    inputMode="decimal"
-                    value={purchaseAmountInput}
-                    onChange={(e) => setPurchaseAmountInput(e.target.value)}
-                    placeholder="0"
-                    className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-lg text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm text-slate-300">Номер чека</label>
-                  <input
-                    value={receiptInput}
-                    onChange={(e) => setReceiptInput(e.target.value)}
-                    placeholder="Например, 123456"
-                    className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-base text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-                <div className="flex gap-2 bg-slate-900 rounded-2xl p-1">
-                  <button
-                    onClick={() => setMode('redeem')}
-                    className={`flex-1 rounded-2xl py-3 text-sm font-semibold ${mode === 'redeem' ? 'bg-emerald-500 text-slate-900' : 'text-slate-400'}`}
-                  >
-                    Списание баллов
-                  </button>
-                  <button
-                    onClick={() => setMode('earn')}
-                    className={`flex-1 rounded-2xl py-3 text-sm font-semibold ${mode === 'earn' ? 'bg-emerald-500 text-slate-900' : 'text-slate-400'}`}
-                  >
-                    Только начисление
-                  </button>
-                </div>
-                {quoteError && <div className="text-sm text-red-400">{quoteError}</div>}
-                <div className="flex gap-3">
-                  <button
-                    onClick={resetFlow}
-                    className="flex-1 rounded-full border border-slate-600 py-3 text-sm font-semibold text-slate-300"
-                  >
-                    Отменить
-                  </button>
-                  <button
-                    onClick={handleDetailsContinue}
-                    disabled={busy}
-                    className="flex-1 rounded-full bg-emerald-500 py-3 text-sm font-semibold text-slate-900 disabled:opacity-40"
-                  >
-                    Продолжить
-                  </button>
-                </div>
-              </div>
+          <div className="h-6 [@media(max-height:600px)]:h-5">
+            {(pinError || pinMessage) && (
+              <p className="text-red-500 text-sm font-medium animate-fade-in [@media(max-height:600px)]:text-xs">
+                {pinMessage || 'Неверный PIN-код'}
+              </p>
             )}
+          </div>
 
-            {flowStep === 'points' && (
-              <div className="rounded-3xl bg-slate-800/60 backdrop-blur p-6 space-y-5">
-                <div className="text-sm text-slate-300">Доступно для оплаты</div>
-                <div className="text-3xl font-semibold text-white">
-                  {formatCurrency((result as QuoteRedeemResp)?.discountToApply ?? selectedPoints)}
+          <div className="grid grid-cols-3 gap-4 [@media(max-height:700px)]:gap-3 [@media(max-height:600px)]:gap-2">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
+              <button
+                key={num}
+                type="button"
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  handlePinInput(num.toString());
+                }}
+                className="w-20 h-20 bg-white rounded-2xl shadow-sm text-2xl font-medium text-gray-700 hover:bg-gray-50 active:scale-95 transition-all mx-auto flex items-center justify-center [@media(max-height:700px)]:w-16 [@media(max-height:700px)]:h-16 [@media(max-height:700px)]:text-xl [@media(max-height:600px)]:w-14 [@media(max-height:600px)]:h-14 [@media(max-height:600px)]:text-lg"
+              >
+                {num}
+              </button>
+            ))}
+            <div className="w-20 h-20 flex items-center justify-center [@media(max-height:700px)]:w-16 [@media(max-height:700px)]:h-16 [@media(max-height:600px)]:w-14 [@media(max-height:600px)]:h-14"></div>
+            <button
+              type="button"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                handlePinInput('0');
+              }}
+              className="w-20 h-20 bg-white rounded-2xl shadow-sm text-2xl font-medium text-gray-700 hover:bg-gray-50 active:scale-95 transition-all mx-auto flex items-center justify-center [@media(max-height:700px)]:w-16 [@media(max-height:700px)]:h-16 [@media(max-height:700px)]:text-xl [@media(max-height:600px)]:w-14 [@media(max-height:600px)]:h-14 [@media(max-height:600px)]:text-lg"
+            >
+              0
+            </button>
+            <button
+              type="button"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                handlePinBackspace();
+              }}
+              className="w-20 h-20 flex items-center justify-center text-gray-400 hover:text-gray-600 active:scale-95 transition-all mx-auto [@media(max-height:700px)]:w-16 [@media(max-height:700px)]:h-16 [@media(max-height:600px)]:w-14 [@media(max-height:600px)]:h-14"
+            >
+              <ChevronLeft size={32} />
+            </button>
+          </div>
+        </div>
+        <style>{`
+          @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+          }
+          .animate-shake { animation: shake 0.3s ease-in-out; }
+        `}</style>
+      </div>
+    );
+  }
+
+  const purchaseAmount = Number(txAmount) || 0;
+  const redeemAmount = Math.max(0, Number(txRedeemPoints) || 0);
+  const payableAmount = Math.max(0, txFinalAmount || Math.max(purchaseAmount - redeemAmount, 0));
+
+  const renderDesktop = () => (
+    <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden relative">
+      {scanOpen && (
+        <div className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center animate-fade-in">
+          <div className="relative w-72 h-72 rounded-2xl overflow-hidden bg-gray-900 shadow-2xl ring-4 ring-white/10">
+            <QrScanner
+              onResult={onScan}
+              onClose={() => setScanOpen(false)}
+              onError={(message) => {
+                setActionError(message);
+                setScanOpen(false);
+              }}
+              className="absolute inset-0"
+              viewfinderClassName="w-full h-full"
+            />
+            <div className="absolute top-0 left-0 w-16 h-16 border-t-4 border-l-4 border-purple-500 rounded-tl-xl"></div>
+            <div className="absolute top-0 right-0 w-16 h-16 border-t-4 border-r-4 border-purple-500 rounded-tr-xl"></div>
+            <div className="absolute bottom-0 left-0 w-16 h-16 border-b-4 border-l-4 border-purple-500 rounded-bl-xl"></div>
+            <div className="absolute bottom-0 right-0 w-16 h-16 border-b-4 border-r-4 border-purple-500 rounded-br-xl"></div>
+            <div
+              className="absolute left-0 w-full h-0.5 bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.8)] animate-[scan_2s_ease-in-out_infinite]"
+              style={{ top: '50%' }}
+            ></div>
+            <div className="absolute inset-0 flex flex-col items-center justify-center opacity-30">
+              <QrCode size={64} className="text-white mb-2" />
+              <span className="text-white text-xs tracking-widest font-mono">SCANNING</span>
+            </div>
+          </div>
+
+          <p className="text-white mt-8 text-lg font-medium tracking-wide">Наведите камеру на QR-код</p>
+          <p className="text-white/50 text-sm mt-2">Поиск клиента...</p>
+
+          <button
+            onClick={() => setScanOpen(false)}
+            className="mt-10 px-8 py-3 bg-white/10 hover:bg-white/20 text-white rounded-full font-medium backdrop-blur-md transition-all border border-white/10"
+          >
+            Отмена
+          </button>
+
+          <style>{`
+            @keyframes scan {
+              0% { top: 10%; opacity: 0; }
+              25% { opacity: 1; }
+              50% { top: 90%; opacity: 1; }
+              75% { opacity: 1; }
+              100% { top: 10%; opacity: 0; }
+            }
+          `}</style>
+        </div>
+      )}
+
+      <aside className="w-20 bg-[#1e293b] flex flex-col items-center py-6 z-30 flex-shrink-0">
+        <div
+          className="w-10 h-10 bg-purple-600 rounded-xl flex items-center justify-center text-white font-bold text-lg mb-8 shadow-lg shadow-purple-900/30 cursor-pointer"
+          onClick={() => handleSwitchView('main')}
+        >
+          L
+        </div>
+        <div className="flex-1 flex flex-col items-center space-y-4 w-full">
+          <button
+            onClick={() => handleSwitchView('main')}
+            aria-label="Касса"
+            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors shadow-sm ${
+              activeView === 'main'
+                ? 'bg-purple-600 text-white'
+                : 'bg-slate-700/50 text-slate-400 hover:text-white hover:bg-slate-700'
+            }`}
+          >
+            <Search size={20} />
+          </button>
+          <button
+            onClick={() => handleSwitchView('history')}
+            aria-label="История"
+            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors shadow-sm ${
+              activeView === 'history'
+                ? 'bg-purple-600 text-white'
+                : 'bg-slate-700/50 text-slate-400 hover:text-white hover:bg-slate-700'
+            }`}
+          >
+            <History size={20} />
+          </button>
+          <button
+            onClick={() => handleSwitchView('return')}
+            aria-label="Возврат"
+            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors shadow-sm ${
+              activeView === 'return'
+                ? 'bg-purple-600 text-white'
+                : 'bg-slate-700/50 text-slate-400 hover:text-white hover:bg-slate-700'
+            }`}
+          >
+            <RotateCcw size={20} />
+          </button>
+          <button
+            onClick={() => handleSwitchView('rating')}
+            aria-label="Рейтинг"
+            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors shadow-sm ${
+              activeView === 'rating'
+                ? 'bg-purple-600 text-white'
+                : 'bg-slate-700/50 text-slate-400 hover:text-white hover:bg-slate-700'
+            }`}
+          >
+            <Award size={20} />
+          </button>
+        </div>
+        <div className="mt-auto">
+          <button
+            onClick={logoutStaff}
+            className="w-10 h-10 rounded-xl text-slate-400 hover:text-red-400 hover:bg-slate-800 transition-colors flex items-center justify-center"
+          >
+            <LogOut size={20} />
+          </button>
+        </div>
+      </aside>
+
+      <div className="flex-1 flex flex-col min-w-0 bg-[#f8fafc]">
+        <header className="h-16 px-6 flex items-center justify-between bg-white border-b border-slate-200">
+          <div>
+            <h1 className="font-bold text-slate-800 text-lg leading-tight">
+              {activeView === 'main'
+                ? 'Терминал лояльности'
+                : activeView === 'history'
+                  ? 'История операций'
+                  : activeView === 'return'
+                    ? 'Оформление возврата'
+                    : 'Рейтинг сотрудников'}
+            </h1>
+            <div className="flex items-center text-xs text-slate-500 mt-0.5 font-medium">
+              <Store size={12} className="mr-1 text-purple-600" />
+              <span>{employee.outlet}</span>
+            </div>
+          </div>
+          <div className="flex items-center space-x-6">
+            <div className="text-right">
+              <div className="text-sm font-bold text-slate-900 font-mono">
+                {currentTime.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+              </div>
+              <div className="text-xs text-slate-500">
+                {currentTime.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}
+              </div>
+            </div>
+            <div className="flex items-center space-x-3 pl-6 border-l border-slate-200">
+              <div className="w-9 h-9 rounded-full bg-purple-100 border border-purple-200 flex items-center justify-center text-purple-600 font-bold text-xs">
+                {employee.avatar}
+              </div>
+              <div className="text-left hidden lg:block">
+                <div className="text-sm font-bold text-slate-900">{employee.name}</div>
+                <div className="text-xs text-slate-500">{employee.role}</div>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {activeView === 'main' ? (
+          <main className="flex-1 flex flex-col items-center justify-center p-6 bg-slate-100/50">
+            <div className="w-full max-w-md">
+              {actionError && (
+                <div className="mb-4 flex items-center space-x-2 text-red-600 bg-red-50 p-3 rounded-xl text-xs font-medium border border-red-100 animate-in fade-in slide-in-from-top-1">
+                  <AlertCircle size={14} className="flex-shrink-0" />
+                  <span>{actionError}</span>
                 </div>
-                <div className="flex items-center justify-between text-sm text-slate-400">
-                  <span>Баллов к списанию</span>
-                  <button
-                    onClick={() => handlePointsSubmit(true)}
-                    disabled={busy}
-                    className="text-emerald-300 font-medium disabled:opacity-40"
-                  >
-                    СПИСАТЬ ВСЕ
-                  </button>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm text-slate-300">СПИСАТЬ БАЛЛЫ</label>
-                  <div className="flex items-center gap-3">
+              )}
+              {checkoutStep === 'search' && (
+                <div className="space-y-4 animate-fade-in">
+                  <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 h-32 flex flex-col items-center justify-center relative overflow-hidden focus-within:border-purple-500 focus-within:ring-1 focus-within:ring-purple-500 transition-all">
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Поиск клиента</label>
                     <input
-                      inputMode="numeric"
-                      value={selectedPoints ? String(selectedPoints) : ''}
-                      onChange={(e) => {
-                        const raw = e.target.value.replace(/[^0-9]/g, '');
-                        const next = Number(raw);
-                        if (!Number.isFinite(next)) return;
-                        const max = (result as QuoteRedeemResp)?.pointsToBurn ?? 0;
-                        setSelectedPoints(Math.min(next, max));
+                      type="text"
+                      value={inputValue}
+                      onChange={(e) => setInputValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          void handleSearchAction('search');
+                        }
                       }}
-                      placeholder="0"
-                      className="flex-1 rounded-2xl bg-slate-900 px-4 py-3 text-lg text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      placeholder="Телефон/карта или сканируйте QR"
+                      className="w-full bg-transparent border-none text-center text-xl sm:text-2xl font-mono font-medium text-slate-900 tracking-widest outline-none placeholder:text-slate-300 placeholder:font-sans placeholder:text-sm sm:placeholder:text-lg placeholder:font-medium placeholder:tracking-normal focus:placeholder-transparent"
+                      autoFocus
                     />
-                    <span className="text-sm text-slate-400">☆</span>
+                    <div
+                      className={`absolute bottom-0 left-0 h-1.5 bg-purple-600 transition-all duration-300 ease-out ${
+                        inputValue ? 'w-full' : 'w-0'
+                      }`}
+                    ></div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    {keys.map((k) => (
+                      <button
+                        key={k.val}
+                        onClick={() => {
+                          if (k.val === 'clear') handleClear();
+                          else if (k.val === 'back') handleBackspace();
+                          else handleNumClick(k.val);
+                        }}
+                        className={`h-16 rounded-xl text-xl font-medium transition-all duration-100 active:scale-[0.98] select-none ${
+                          k.label === 'C'
+                            ? 'bg-[#FFFBEB] text-[#D97706] border border-[#FEF3C7] hover:bg-[#FEF3C7]'
+                            : k.type === 'secondary'
+                              ? 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                              : 'bg-white text-slate-900 shadow-sm border border-slate-200 hover:border-purple-300 hover:text-purple-600'
+                        }`}
+                      >
+                        {k.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 mt-2">
+                    <button
+                      onClick={() => handleSearchAction('scan')}
+                      className="h-14 bg-[#1e293b] hover:bg-[#334155] text-white rounded-xl font-semibold text-base flex items-center justify-center space-x-2 transition-all shadow-md active:scale-[0.98]"
+                    >
+                      <Camera size={20} />
+                      <span>Камера</span>
+                    </button>
+                    <button
+                      disabled={!inputValue}
+                      onClick={() => handleSearchAction('search')}
+                      className="h-14 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white rounded-xl font-semibold text-base flex items-center justify-center space-x-2 transition-all shadow-md shadow-purple-200 active:scale-[0.98]"
+                    >
+                      <span>Найти</span>
+                      <ChevronRight size={20} />
+                    </button>
                   </div>
                 </div>
-                <div className="text-xs text-slate-400">
-                  Можно использовать: {formatPoints((result as QuoteRedeemResp)?.pointsToBurn ?? 0)} баллов
+              )}
+
+              {checkoutStep === 'amount' && (
+                <div className="animate-fade-in">
+                  {currentClient && <ClientHeader client={currentClient} />}
+                  <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Сумма покупки</label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          value={txAmount}
+                          onChange={(e) => setTxAmount(e.target.value)}
+                          placeholder="0"
+                          className="w-full bg-gray-50 border border-gray-200 rounded-xl py-3 pl-4 pr-10 text-xl font-bold text-gray-900 focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                          autoFocus
+                        />
+                        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-medium">₽</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Номер чека <span className="text-gray-400 font-normal">(необязательно)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={txCheckId}
+                        onChange={(e) => setTxCheckId(e.target.value)}
+                        placeholder="#"
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl py-3 px-4 text-lg text-gray-900 focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                      />
+                    </div>
+                    <div className="flex gap-3 pt-2">
+                      <button
+                        onClick={resetCheckout}
+                        className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-medium hover:bg-gray-200 transition-colors"
+                      >
+                        Отмена
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (parseFloat(txAmount) > 0) setCheckoutStep('mode');
+                        }}
+                        disabled={!parseFloat(txAmount)}
+                        className="flex-1 py-3 bg-purple-600 text-white rounded-xl font-medium hover:bg-purple-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Далее
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex gap-3">
+              )}
+
+              {checkoutStep === 'mode' && (
+                <div className="animate-fade-in">
+                  {currentClient && <ClientHeader client={currentClient} />}
+                  <div className="grid grid-cols-1 gap-4">
+                    <button
+                      onClick={() => {
+                        setTxRedeemPoints('');
+                        void handleAccrueQuote();
+                      }}
+                      className="bg-white p-6 rounded-2xl border-2 border-transparent hover:border-purple-500 shadow-sm hover:shadow-md transition-all group text-left"
+                    >
+                      <div className="flex items-center space-x-3 mb-2">
+                        <div className="p-2 bg-green-100 rounded-lg text-green-600 group-hover:bg-green-500 group-hover:text-white transition-colors">
+                          <Plus size={24} />
+                        </div>
+                        <h3 className="text-lg font-bold text-gray-900">Начислить баллы</h3>
+                      </div>
+                      <p className="text-gray-500 text-sm">Клиент копит баллы. Списание не производится.</p>
+                    </button>
+
+                    <button
+                      onClick={() => setCheckoutStep('redeem')}
+                      disabled={!currentClient || currentClient.balance === 0}
+                      className="bg-white p-6 rounded-2xl border-2 border-transparent hover:border-orange-500 shadow-sm hover:shadow-md transition-all group text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <div className="flex items-center space-x-3 mb-2">
+                        <div className="p-2 bg-orange-100 rounded-lg text-orange-600 group-hover:bg-orange-500 group-hover:text-white transition-colors">
+                          <Wallet size={24} />
+                        </div>
+                        <h3 className="text-lg font-bold text-gray-900">Списать баллы</h3>
+                      </div>
+                      <p className="text-gray-500 text-sm">Оплата части покупки баллами.</p>
+                    </button>
+                  </div>
                   <button
-                    onClick={() => setFlowStep('details')}
-                    className="flex-1 rounded-full border border-slate-600 py-3 text-sm font-semibold text-slate-300"
+                    onClick={() => setCheckoutStep('amount')}
+                    className="w-full mt-4 py-3 text-gray-500 hover:text-gray-700 font-medium transition-colors"
                   >
                     Назад
                   </button>
-                  <button
-                    onClick={() => handlePointsSubmit(false)}
-                    disabled={busy}
-                    className="flex-1 rounded-full bg-emerald-500 py-3 text-sm font-semibold text-slate-900 disabled:opacity-40"
-                  >
-                    {selectedPoints > 0 ? 'СПИСАТЬ' : 'НЕ СПИСЫВАТЬ'}
-                  </button>
                 </div>
-              </div>
-            )}
+              )}
 
-            {flowStep === 'confirm' && confirmSnapshot && (
-              <div className="rounded-3xl bg-slate-800/60 backdrop-blur p-6 space-y-4">
-                <div className="text-sm text-slate-300">Подтвердите операцию</div>
-                <div className="space-y-2 text-sm text-slate-300">
-                  <div className="flex justify-between">
-                    <span>Сумма покупки</span>
-                    <span className="text-white font-semibold">{formatCurrency(confirmSnapshot.purchaseTotal)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Клиенту будет начислено</span>
-                    <span className="text-emerald-300 font-semibold">{formatPoints(confirmSnapshot.pointsEarn)} баллов</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>С клиента будет списано</span>
-                    <span className="text-orange-300 font-semibold">{formatPoints(confirmSnapshot.pointsBurn)} баллов</span>
-                  </div>
-                </div>
-                <div className="flex gap-3 pt-2">
-                  <button
-                    onClick={() => setFlowStep(mode === 'redeem' ? 'points' : 'details')}
-                    className="flex-1 rounded-full border border-slate-600 py-3 text-sm font-semibold text-slate-300"
-                  >
-                    Отмена
-                  </button>
-                  <button
-                    onClick={handleConfirm}
-                    disabled={busy}
-                    className="flex-1 rounded-full bg-emerald-500 py-3 text-sm font-semibold text-slate-900 disabled:opacity-40"
-                  >
-                    ОК
-                  </button>
-                </div>
-              </div>
-            )}
+              {checkoutStep === 'redeem' && currentClient && (
+                <div className="animate-fade-in">
+                  {currentClient && <ClientHeader client={currentClient} />}
+                  <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-6">
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <label className="block text-sm font-medium text-gray-700">Списать баллы</label>
+                        <span className="text-xs text-green-600 font-bold bg-green-50 px-2 py-0.5 rounded">
+                          Доступно: {redeemableMax}
+                        </span>
+                      </div>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          value={txRedeemPoints}
+                          onChange={(e) => setTxRedeemPoints(e.target.value)}
+                          className="w-full bg-gray-50 border border-gray-200 rounded-xl py-3 pl-4 pr-10 text-xl font-bold text-gray-900 focus:ring-2 focus:ring-orange-500 focus:outline-none"
+                          autoFocus
+                        />
+                        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-medium">Б</span>
+                      </div>
+                      {redeemAmount > currentClient.balance && (
+                        <p className="text-red-500 text-xs mt-1">Недостаточно баллов</p>
+                      )}
+                      {redeemAmount > purchaseAmount && (
+                        <p className="text-red-500 text-xs mt-1">Списание не может превышать сумму</p>
+                      )}
+                      {redeemAmount <= purchaseAmount && redeemAmount <= currentClient.balance && redeemAmount > redeemPolicyMax && (
+                        <p className="text-red-500 text-xs mt-1">Превышен лимит списания по уровню клиента</p>
+                      )}
+                    </div>
 
-            {flowStep === 'receipt' && receiptData && (
-              <div className="relative overflow-hidden rounded-3xl bg-slate-900 px-6 py-8 shadow-2xl">
-                <div className="absolute left-1/2 top-0 h-6 w-24 -translate-x-1/2 rounded-b-full bg-slate-800" />
-                <div className="animate-[receipt_0.6s_ease-out]">
-                  <div className="text-center text-sm text-slate-400">ИТОГО</div>
-                  <div className="mt-4 space-y-3 text-sm text-slate-300">
-                    <div>
-                      <div className="uppercase text-xs tracking-wider text-slate-500">Покупатель</div>
-                      <div className="text-white font-semibold">{overview.name || '—'}</div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={setRedeemMax}
+                        className="px-3 py-1.5 bg-orange-50 text-orange-700 rounded-lg text-sm font-medium hover:bg-orange-100 transition-colors"
+                      >
+                        Максимум
+                      </button>
+                      <button
+                        onClick={() => setTxRedeemPoints(Math.floor(redeemableMax / 2).toString())}
+                        className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors"
+                      >
+                        50%
+                      </button>
                     </div>
-                    <div>
-                      <div className="uppercase text-xs tracking-wider text-slate-500">Сотрудник</div>
-                      <div className="text-white font-semibold">{staffName || '—'}</div>
+
+                    <div className="flex gap-3 pt-2">
+                      <button
+                        onClick={() => setCheckoutStep('mode')}
+                        className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-medium hover:bg-gray-200 transition-colors"
+                      >
+                        Назад
+                      </button>
+                      <button
+                        onClick={() => void handleRedeemQuote()}
+                        disabled={
+                          !txRedeemPoints || redeemAmount <= 0 || redeemAmount > redeemableMax
+                        }
+                        className="flex-1 py-3 bg-orange-600 text-white rounded-xl font-medium hover:bg-orange-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Далее
+                      </button>
                     </div>
-                    <div className="border-t border-dashed border-slate-700 pt-3 mt-3 space-y-2">
-                      <div className="flex justify-between">
+                  </div>
+                </div>
+              )}
+
+              {checkoutStep === 'precheck' && (
+                <div className="animate-fade-in">
+                  {currentClient && <ClientHeader client={currentClient} />}
+                  <div className="bg-white rounded-2xl border border-purple-100 shadow-lg overflow-hidden">
+                    <div className="bg-purple-600 p-4 text-white text-center">
+                      <h3 className="font-bold text-lg">Подтвердите операцию</h3>
+                    </div>
+                    <div className="p-6 space-y-4">
+                      <div className="flex justify-between items-center text-gray-600">
                         <span>Сумма покупки</span>
-                        <span className="text-white">{formatCurrency(receiptData.purchaseTotal)}</span>
+                        <span className="font-medium">{fmtMoney(purchaseAmount)} ₽</span>
                       </div>
-                      <div className="flex justify-between text-emerald-300">
-                        <span>Начислено баллов</span>
-                        <span>{formatPoints(receiptData.pointsEarn)}</span>
+                      {Number(txRedeemPoints) > 0 && (
+                        <div className="flex justify-between items-center text-orange-600">
+                          <span>Списание баллов</span>
+                          <span className="font-bold">-{txRedeemPoints} Б</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between items-center text-green-600">
+                        <span>Начисление баллов</span>
+                        <span className="font-bold">+{txAccruePoints} Б</span>
                       </div>
-                      <div className="flex justify-between text-orange-300">
-                        <span>Списано баллов</span>
-                        <span>{formatPoints(receiptData.pointsBurn)}</span>
+
+                      {Number(txRedeemPoints) > 0 && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3 my-2">
+                          <AlertCircle className="text-amber-600 flex-shrink-0 mt-0.5" size={20} />
+                          <div className="text-left">
+                            <h4 className="font-bold text-amber-900 text-sm">Примените скидку на кассе!</h4>
+                            <p className="text-amber-800 text-xs mt-1 leading-snug">
+                              Не забудьте уменьшить сумму чека на <strong>{txRedeemPoints} ₽</strong> в вашей
+                              POS-системе перед оплатой.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="border-t border-gray-100 pt-4 mt-2 flex justify-between items-center text-xl font-bold text-gray-900">
+                        <span>К ОПЛАТЕ</span>
+                        <span>{fmtMoney(txFinalAmount)} ₽</span>
                       </div>
                     </div>
-                    <div className="border-t border-dashed border-slate-700 pt-3 mt-3 flex justify-between text-lg font-semibold text-white">
-                      <span>К ОПЛАТЕ</span>
-                      <span>{formatCurrency(receiptData.finalPayable)}</span>
+                    <div className="p-4 bg-gray-50 flex gap-3">
+                      <button
+                        onClick={handlePrecheckBack}
+                        className="flex-1 py-3 bg-white border border-gray-200 text-gray-700 rounded-xl font-medium hover:bg-gray-100 transition-colors"
+                      >
+                        Назад
+                      </button>
+                      <button
+                        onClick={() => void handleCommit()}
+                        disabled={isProcessing}
+                        className="flex-1 py-3 bg-purple-600 text-white rounded-xl font-bold hover:bg-purple-700 transition-colors shadow-md flex items-center justify-center space-x-2 disabled:opacity-50"
+                      >
+                        <Check size={20} /> <span>Провести</span>
+                      </button>
                     </div>
                   </div>
                 </div>
-                <button
-                  onClick={handleReceiptClose}
-                  className="mt-6 w-full rounded-full bg-emerald-500 py-3 text-sm font-semibold text-slate-900"
-                >
-                  Закрыть
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
+              )}
 
-  const renderHistoryTab = () => {
-    const outletName =
-      session?.outlet?.name || session?.outlet?.id || 'ваша торговая точка';
-    return (
-      <div className="flex-1 overflow-y-auto px-6 pb-32">
-        <div className="mt-6 space-y-4">
-          <div className="rounded-3xl bg-slate-800/60 p-4 text-sm text-slate-300">
-            История операций по точке: <span className="text-white">{outletName}</span>
-          </div>
-          <button
-            onClick={() => loadHistory(true)}
-            disabled={histBusy || !session?.outlet?.id}
-            className="w-full rounded-full bg-slate-800 py-3 text-sm font-semibold text-white disabled:opacity-40"
-          >
-            Загрузить историю
-          </button>
-          {!session?.outlet?.id && (
-            <div className="text-xs text-slate-500">
-              История станет доступна после выбора торговой точки.
+              {checkoutStep === 'success' && (
+                <div className="animate-fade-in flex flex-col items-center justify-center h-full">
+                  <div className="w-full max-w-sm bg-white rounded-t-2xl shadow-xl overflow-hidden relative pb-2 mb-6">
+                    <div className="bg-emerald-500 p-6 text-center text-white relative overflow-hidden">
+                      <div
+                        className="absolute top-0 left-0 w-full h-full opacity-10"
+                        style={{
+                          backgroundImage: 'radial-gradient(circle, white 2px, transparent 2.5px)',
+                          backgroundSize: '10px 10px',
+                        }}
+                      ></div>
+                      <div className="w-14 h-14 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center mx-auto mb-3 border-2 border-white/30">
+                        <Check size={32} strokeWidth={3} />
+                      </div>
+                      <h2 className="text-xl font-bold">Оплата прошла</h2>
+                      <p className="text-emerald-100 text-sm">
+                        {new Date().toLocaleString('ru-RU', {
+                          day: 'numeric',
+                          month: 'long',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </p>
+                    </div>
+
+                    <div className="p-6 bg-white relative z-10 space-y-5">
+                      <div className="flex justify-between items-center text-xs text-slate-400 font-medium uppercase tracking-wider mb-6 pb-4 border-b border-dashed border-slate-100">
+                        <span>{employee.outlet}</span>
+                        <span>Кассир: {employee.name.split(' ')[0]}</span>
+                      </div>
+
+                      {currentClient?.name && (
+                        <div className="flex justify-between items-center text-xs text-slate-500">
+                          <span className="font-medium">Клиент</span>
+                          <span className="font-semibold text-slate-900">{currentClient.name}</span>
+                        </div>
+                      )}
+
+                      <div className="space-y-3 mb-6">
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-slate-500">Сумма покупки</span>
+                          <span className="font-bold text-slate-900">{fmtMoney(purchaseAmount)} ₽</span>
+                        </div>
+                        {Number(txRedeemPoints) > 0 && (
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="text-orange-500 flex items-center">
+                              <Coins size={14} className="mr-1" /> Списано баллов
+                            </span>
+                            <span className="font-bold text-orange-500">-{txRedeemPoints}</span>
+                          </div>
+                        )}
+                        {txAccruePoints > 0 && (
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="text-emerald-600 flex items-center">
+                              <Gift size={14} className="mr-1" /> Начислено
+                            </span>
+                            <span className="font-bold text-emerald-600">+{txAccruePoints}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                        <div className="flex justify-between items-end">
+                          <span className="text-xs font-bold text-slate-400 uppercase mb-1">К ОПЛАТЕ</span>
+                          <span className="text-3xl font-black text-slate-900 leading-none">{fmtMoney(txFinalAmount)} ₽</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div
+                      className="w-full h-3 absolute bottom-0 left-0 bg-white"
+                      style={{
+                        maskImage: 'radial-gradient(circle at 10px 10px, transparent 10px, black 10px)',
+                        maskSize: '20px 20px',
+                        maskPosition: 'bottom',
+                        WebkitMaskImage: 'radial-gradient(circle at 10px 10px, transparent 10px, black 10px)',
+                        WebkitMaskSize: '20px 20px',
+                        WebkitMaskPosition: 'bottom',
+                      }}
+                    ></div>
+                  </div>
+
+                  <button
+                    onClick={resetCheckout}
+                    className="w-full max-w-sm py-4 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-all shadow-lg active:scale-[0.98] flex items-center justify-center"
+                  >
+                    Закрыть
+                  </button>
+                </div>
+              )}
             </div>
-          )}
-          <div className="space-y-4">
-            {history.map((item) => {
-              const isPurchase = item.mode === 'PURCHASE';
-              const isRefund = item.mode === 'REFUND';
-              const isTx = item.mode === 'TXN';
-              const isEarn = item.type === 'EARN';
-              const isRedeem = item.type === 'REDEEM';
-              const typeLabel = isPurchase
-                ? 'Покупка'
-                : isRefund
-                  ? 'Возврат'
-                  : isEarn
-                    ? 'Начисление'
-                    : isRedeem
-                      ? 'Списание'
-                      : item.type || 'Операция';
-              const color =
-                isPurchase || isEarn
-                  ? 'text-emerald-300'
-                  : isRefund || isRedeem
-                    ? 'text-orange-300'
-                    : 'text-slate-100';
-              const bg =
-                isPurchase || isEarn
-                  ? 'bg-emerald-500/10'
-                  : isRefund || isRedeem
-                    ? 'bg-orange-500/10'
-                    : 'bg-slate-700/50';
-              const amount = item.amount ?? 0;
-              const topAmount = isPurchase || isRefund
-                ? item.purchaseAmount ?? amount
-                : amount;
-              const sign = isPurchase || isRefund ? '' : topAmount > 0 ? '+' : '';
-
-              return (
-                <div
-                  key={item.id}
-                  className="space-y-3 rounded-3xl bg-slate-900/60 border border-slate-800 p-4"
-                >
-                  <div className="flex items-center justify-between text-sm text-slate-400">
-                    <span>{formatDateTime(item.createdAt)}</span>
-                    <span className="text-xs text-slate-500">
-                      {item.receiptNumber ? `Чек ${item.receiptNumber}` : 'Чек не указан'}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div
-                      className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${bg} ${color}`}
-                    >
-                      {typeLabel}
+          </main>
+        ) : activeView === 'return' ? (
+          <main className="flex-1 flex flex-col items-center justify-center p-6 bg-slate-100">
+            <div className="w-full max-w-md space-y-6">
+              {returnTx ? (
+                <div className="bg-white rounded-2xl shadow-xl shadow-red-900/5 border border-red-100 overflow-hidden animate-fade-in">
+                  <div className="bg-red-50 p-6 border-b border-red-100 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xl font-bold text-red-900">Подтверждение возврата</h3>
+                      <p className="text-red-700 text-sm mt-1">Проверьте данные перед списанием</p>
                     </div>
-                    <div
-                      className={`text-base font-semibold ${
-                        isPurchase ? 'text-white' : color
-                      }`}
-                    >
-                      {sign}
-                      {formatCurrency(Math.abs(topAmount))}
+                    <div className="p-3 bg-white rounded-full text-red-600 shadow-sm">
+                      <AlertTriangle size={24} />
                     </div>
                   </div>
-
-                  {(isPurchase || isRefund) && (() => {
-                    const redeemVal = Math.abs(
-                      isRefund
-                        ? item.refundRedeem ?? 0
-                        : item.redeemApplied ?? 0,
-                    );
-                    const earnVal = Math.abs(
-                      isRefund ? item.refundEarn ?? 0 : item.earnApplied ?? 0,
-                    );
-                    const sections: Array<{
-                      label: string;
-                      value: number;
-                      colorClass: string;
-                    }> = [];
-                    if (redeemVal > 0) {
-                      sections.push({
-                        label: isRefund ? 'Возврат списаний' : 'Списано баллов',
-                        value: redeemVal,
-                        colorClass: 'text-orange-200',
-                      });
-                    }
-                    if (earnVal > 0) {
-                      sections.push({
-                        label: isRefund ? 'Возврат начислений' : 'Начислено баллов',
-                        value: earnVal,
-                        colorClass: 'text-emerald-200',
-                      });
-                    }
-                    if (!sections.length) return null;
-                    return (
-                      <div className="grid grid-cols-2 gap-3 text-xs text-slate-400">
-                        {sections.map((section) => (
-                          <div key={section.label}>
-                            <div className="text-slate-500">{section.label}</div>
-                            <div className={section.colorClass}>
-                              {formatPoints(section.value)}
+                  <div className="p-6 space-y-6">
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="block text-gray-500 text-xs uppercase font-semibold mb-1">Номер чека</span>
+                        <div className="font-mono font-medium text-gray-900">{returnTx.checkId}</div>
+                      </div>
+                      <div>
+                        <span className="block text-gray-500 text-xs uppercase font-semibold mb-1">Дата продажи</span>
+                        <div className="font-medium text-gray-900">{returnTx.date.toLocaleDateString()}</div>
+                      </div>
+                      <div className="col-span-2 pt-2 border-t border-gray-100">
+                        <span className="block text-gray-500 text-xs uppercase font-semibold mb-1">Клиент</span>
+                        <div className="font-medium text-gray-900 flex items-center">
+                          <User size={16} className="mr-2 text-gray-400" />
+                          {returnTx.client}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="bg-gray-50 rounded-xl p-4 space-y-3 border border-gray-200">
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-600 font-medium">Сумма возврата</span>
+                        <span className="text-lg font-bold text-gray-900">{fmtMoney(returnTx.amount)} ₽</span>
+                      </div>
+                      <div className="h-px bg-gray-200"></div>
+                      {returnTx.pointsAccrued > 0 && (
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-gray-500">Будет списано</span>
+                          <span className="font-bold text-red-600">-{returnTx.pointsAccrued} Б</span>
+                        </div>
+                      )}
+                      {returnTx.pointsRedeemed !== 0 && (
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-gray-500">Будет возвращено</span>
+                          <span className="font-bold text-green-600">+{Math.abs(returnTx.pointsRedeemed)} Б</span>
+                        </div>
+                      )}
+                    </div>
+                    {refundError && (
+                      <div className="flex items-center space-x-2 text-red-600 bg-red-50 p-3 rounded-xl text-xs font-medium border border-red-100 animate-in fade-in slide-in-from-top-1">
+                        <AlertTriangle size={14} className="flex-shrink-0" />
+                        <span>{refundError}</span>
+                      </div>
+                    )}
+                    <div className="flex space-x-3 pt-2">
+                      <button
+                        onClick={() => {
+                          setReturnTx(null);
+                          setReturnSearchInput('');
+                          setRefundPreview(null);
+                          setRefundError('');
+                        }}
+                        className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition-colors"
+                      >
+                        Отмена
+                      </button>
+                      <button
+                        onClick={handleConfirmReturn}
+                        disabled={refundBusy}
+                        className="flex-1 py-3 rounded-xl bg-red-600 text-white font-bold hover:bg-red-700 shadow-md transition-colors flex items-center justify-center space-x-2 disabled:opacity-50"
+                      >
+                        <RotateCcw size={18} />
+                        <span>Выполнить возврат</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-white rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-100 p-8">
+                  <div className="flex flex-col items-center mb-8">
+                    <div className="w-14 h-14 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center mb-4 shadow-sm shadow-red-100">
+                      <RotateCcw size={28} />
+                    </div>
+                    <h2 className="text-xl font-bold text-slate-900">Оформление возврата</h2>
+                    <p className="text-slate-500 text-sm mt-1 text-center">
+                      Введите номер чека для поиска транзакции
+                    </p>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={returnSearchInput}
+                        onChange={(e) => setReturnSearchInput(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleReturnSearch()}
+                        placeholder="№ Чека"
+                        className="w-full bg-slate-50 border border-slate-200 text-slate-900 font-medium rounded-xl px-4 py-3 pl-11 focus:bg-white focus:border-red-500 focus:ring-4 focus:ring-red-500/10 transition-all outline-none"
+                        autoFocus
+                      />
+                      <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                    </div>
+                    {refundError && (
+                      <p className="text-xs text-red-600 font-medium">{refundError}</p>
+                    )}
+                    <button
+                      onClick={handleReturnSearch}
+                      disabled={!returnSearchInput || refundBusy}
+                      className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl shadow-lg shadow-red-600/20 disabled:opacity-50 disabled:shadow-none transition-all flex items-center justify-center space-x-2 active:scale-[0.98]"
+                    >
+                      <span>Найти операцию</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </main>
+        ) : activeView === 'rating' ? (
+          <main className="flex-1 flex flex-col items-center p-6 bg-slate-100/50 overflow-hidden">
+            {motivationInfo?.enabled ? (
+              <div className="w-full max-w-4xl flex flex-col h-full overflow-hidden">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 flex-shrink-0">
+                  <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex items-center justify-between relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-yellow-50 rounded-full -mr-8 -mt-8 z-0"></div>
+                    <div className="relative z-10">
+                      <h3 className="text-sm font-medium text-slate-500">Ваш рейтинг</h3>
+                      <div className="flex items-baseline mt-2 space-x-2">
+                        <span className="text-4xl font-bold text-slate-900">{currentUserRating?.score || 0}</span>
+                        {currentUserRating?.rank ? (
+                          <span className="text-sm font-medium text-yellow-600 bg-yellow-100 px-2 py-0.5 rounded-full">
+                            {currentUserRating.rank}-е место
+                          </span>
+                        ) : (
+                          <span className="text-sm font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+                            Нет данных
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-400 mt-2 flex items-center">
+                        <Clock size={12} className="mr-1" /> Период: {motivationInfo?.periodLabel || '—'}
+                      </p>
+                    </div>
+                    <div className="relative z-10 p-3 bg-yellow-100 rounded-full text-yellow-600 shadow-sm">
+                      <Trophy size={32} />
+                    </div>
+                  </div>
+                  <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col justify-center">
+                    <h3 className="text-sm font-medium text-slate-500 mb-3">Правила начисления</h3>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center space-x-2 text-slate-700 text-sm">
+                          <UserPlus size={16} className="text-blue-500" />
+                          <span>Новый клиент</span>
+                        </div>
+                        <span className="font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded text-xs">
+                          +{motivationInfo?.pointsNew ?? MOTIVATION_DEFAULT_NEW_POINTS} очков
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center space-x-2 text-slate-700 text-sm">
+                          <User size={16} className="text-purple-500" />
+                          <span>Постоянный клиент</span>
+                        </div>
+                        <span className="font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded text-xs">
+                          +{motivationInfo?.pointsExisting ?? MOTIVATION_DEFAULT_EXISTING_POINTS} очков
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
+                  <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 flex-shrink-0">
+                    <h3 className="font-bold text-slate-800">Топ сотрудников</h3>
+                    <div className="flex bg-white rounded-lg p-1 border border-slate-200 shadow-sm">
+                      <button
+                        onClick={() => setRatingFilter('all')}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                          ratingFilter === 'all' ? 'bg-slate-800 text-white shadow' : 'text-slate-500 hover:bg-slate-100'
+                        }`}
+                      >
+                        Вся сеть
+                      </button>
+                      <button
+                        onClick={() => setRatingFilter('my_outlet')}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                          ratingFilter === 'my_outlet'
+                            ? 'bg-slate-800 text-white shadow'
+                            : 'text-slate-500 hover:bg-slate-100'
+                        }`}
+                      >
+                        Моя точка
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
+                    {filteredLeaderboard.map((user, index) => {
+                      const isMe = user.staffId === session?.staff?.id;
+                      const currentRank = index + 1;
+                      return (
+                        <div
+                          key={user.staffId || user.staffName}
+                          className={`flex items-center p-3 rounded-xl mb-2 transition-colors ${
+                            isMe ? 'bg-purple-50 border border-purple-100' : 'hover:bg-slate-50 border border-transparent'
+                          }`}
+                        >
+                          <div className="w-10 flex-shrink-0 flex justify-center">
+                            {currentRank === 1 ? (
+                              <div className="w-8 h-8 bg-yellow-100 text-yellow-600 rounded-full flex items-center justify-center shadow-sm">
+                                <Crown size={16} fill="currentColor" />
+                              </div>
+                            ) : currentRank === 2 ? (
+                              <div className="w-8 h-8 bg-gray-100 text-slate-500 rounded-full flex items-center justify-center shadow-sm font-bold text-sm">
+                                2
+                              </div>
+                            ) : currentRank === 3 ? (
+                              <div className="w-8 h-8 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center shadow-sm font-bold text-sm">
+                                3
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 font-medium text-sm">{currentRank}</span>
+                            )}
+                          </div>
+                          <div className="flex items-center flex-1 ml-4">
+                            <div
+                              className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs mr-3 ${
+                                isMe ? 'bg-purple-600 text-white shadow-md shadow-purple-200' : 'bg-slate-200 text-slate-500'
+                              }`}
+                            >
+                              {extractInitials(user.staffName)}
+                            </div>
+                            <div>
+                              <div className="flex items-center">
+                                <span className={`font-bold text-sm ${isMe ? 'text-purple-900' : 'text-slate-900'}`}>
+                                  {user.staffName}
+                                </span>
+                                {isMe && (
+                                  <span className="ml-2 text-[10px] bg-purple-200 text-purple-800 px-1.5 rounded font-bold">
+                                    Вы
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-xs text-slate-500 flex items-center mt-0.5">
+                                <Store size={10} className="mr-1" />
+                                {user.outletName || employee.outlet}
+                              </div>
                             </div>
                           </div>
-                        ))}
+                          <div className="text-right">
+                            <span className={`font-bold text-lg ${isMe ? 'text-purple-700' : 'text-slate-700'}`}>
+                              {user.points}
+                            </span>
+                            <span className="text-[10px] text-slate-400 block uppercase font-medium">очков</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full text-center max-w-md">
+                <div className="w-24 h-24 bg-slate-200 rounded-full flex items-center justify-center mb-6 relative">
+                  <Award size={48} className="text-slate-400" />
+                  <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-1">
+                    <AlertCircle size={24} className="text-slate-400" fill="white" />
+                  </div>
+                </div>
+                <h3 className="text-xl font-bold text-slate-800 mb-2">Рейтинг отключен</h3>
+                <p className="text-slate-500 text-sm">
+                  Система рейтинга в данный момент неактивна.
+                </p>
+              </div>
+            )}
+          </main>
+        ) : (
+          <main className="flex-1 flex flex-col bg-slate-50/50 p-6 overflow-hidden">
+            <div className="max-w-5xl w-full mx-auto h-full flex flex-col">
+              <div className="flex flex-col space-y-4 mb-6 flex-shrink-0">
+                <div className="flex justify-between items-end">
+                  <h2 className="text-2xl font-bold text-slate-900">История операций</h2>
+                  <div className="text-sm text-slate-500">
+                    Найдено: <span className="font-bold text-slate-900">{filteredHistory.length}</span>
+                  </div>
+                </div>
+                <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col lg:flex-row items-center gap-3">
+                  <div className="relative flex-1 w-full lg:w-auto">
+                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="№ Чека или Имя клиента..."
+                      value={historySearch}
+                      onChange={(e) => setHistorySearch(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:ring-2 focus:ring-purple-500 outline-none transition-all"
+                    />
+                  </div>
+                  <div className="relative w-full lg:w-40">
+                    <input
+                      type="date"
+                      value={filterDate}
+                      onChange={(e) => setFilterDate(e.target.value)}
+                      className="w-full pl-3 pr-2 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:ring-2 focus:ring-purple-500 outline-none transition-all text-slate-600"
+                    />
+                  </div>
+                  <div className="flex bg-slate-100 p-1 rounded-lg w-full lg:w-auto">
+                    {(['all', 'sale', 'return'] as const).map((type) => (
+                      <button
+                        key={type}
+                        onClick={() => setFilterType(type)}
+                        className={`flex-1 lg:flex-none px-3 py-1.5 text-xs font-semibold rounded-md transition-all capitalize ${
+                          filterType === type ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                        }`}
+                      >
+                        {type === 'all' ? 'Все' : type === 'sale' ? 'Продажа' : 'Возврат'}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="relative w-full lg:w-48">
+                    <select
+                      value={filterStaff}
+                      onChange={(e) => setFilterStaff(e.target.value)}
+                      className="w-full pl-3 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:ring-2 focus:ring-purple-500 outline-none transition-all text-slate-600 appearance-none cursor-pointer"
+                    >
+                      <option value="all">Все сотрудники</option>
+                      {uniqueStaff.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                    <User size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+                </div>
+              </div>
+              <div className="flex-1 flex flex-col min-h-0">
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col">
+                  <div className="flex-1 overflow-y-auto custom-scrollbar">
+                    {paginatedHistory.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                        <Search size={48} className="mb-4 opacity-20" />
+                        <p>Операции не найдены</p>
+                        <button
+                          onClick={() => {
+                            setHistorySearch('');
+                            setFilterType('all');
+                            setFilterDate('');
+                            setFilterStaff('all');
+                          }}
+                          className="mt-2 text-purple-600 hover:underline text-sm"
+                        >
+                          Сбросить фильтры
+                        </button>
                       </div>
-                    );
-                  })()}
-
-                  {isTx && (
-                    <div className="text-xs text-slate-500 space-y-1">
-                      {isEarn && amount !== 0 && (
-                        <div>Начислено {formatPoints(Math.abs(amount))} баллов</div>
-                      )}
-                      {isRedeem && amount !== 0 && (
-                        <div>Списано {formatPoints(Math.abs(amount))} баллов</div>
-                      )}
-                      {item.type === 'REFUND' && amount !== 0 && (
-                        <div>Возврат на {formatPoints(Math.abs(amount))} баллов</div>
-                      )}
-                    </div>
-                  )}
-
-                  {(item.staffName || item.customerName) && (
-                    <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/60 mt-2">
-                      <span>Сотрудник: {item.staffName || '—'}</span>
-                      <span>Клиент: {item.customerName || '—'}</span>
+                    ) : (
+                      <div className="divide-y divide-slate-100">
+                        {paginatedHistory.map((tx) => {
+                          const isReturn = tx.type === 'return';
+                          return (
+                            <div
+                              key={tx.id}
+                              className="p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:bg-slate-50 transition-colors group"
+                            >
+                              <div className="flex items-start sm:items-center w-full sm:w-auto">
+                                <div
+                                  className={`w-10 h-10 rounded-lg flex items-center justify-center mr-4 flex-shrink-0 border ${
+                                    isReturn
+                                      ? 'bg-red-50 text-red-600 border-red-100'
+                                      : 'bg-green-50 text-green-600 border-green-100'
+                                  }`}
+                                >
+                                  {isReturn ? <RotateCcw size={18} /> : <Receipt size={18} />}
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-slate-900 text-base">{fmtMoney(tx.amount)} ₽</span>
+                                    {isReturn && (
+                                      <span className="bg-red-100 text-red-700 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">
+                                        Возврат
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center text-xs text-slate-500 mt-1 relative">
+                                    <button
+                                      onClick={() => handleCopy(tx.id, tx.checkId)}
+                                      className="flex items-center space-x-1 bg-slate-100 hover:bg-slate-200 px-1.5 py-0.5 rounded transition-colors mr-2 group/copy max-w-[180px]"
+                                      title="Копировать"
+                                    >
+                                      <Copy size={10} className="text-slate-400 group-hover/copy:text-slate-600 flex-shrink-0" />
+                                      <span className="font-mono truncate">{tx.checkId}</span>
+                                    </button>
+                                    <span>
+                                      {tx.date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })},{' '}
+                                      {tx.date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                    {copiedId === tx.id && (
+                                      <span className="absolute -bottom-4 left-0 text-[10px] text-green-600 font-medium bg-white/90 backdrop-blur-sm px-1.5 py-0.5 rounded border border-green-100 shadow-sm animate-fade-in z-10 pointer-events-none">
+                                        Скопировано!
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex flex-col w-full sm:w-1/3 text-left sm:px-4">
+                                <div className="flex items-center text-sm font-medium text-slate-900 mb-1">
+                                  <User size={14} className="mr-2 text-slate-400" />
+                                  <span className="truncate">{tx.client}</span>
+                                </div>
+                                <div className="flex items-center text-xs text-slate-500">
+                                  <span className="bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100 truncate max-w-[150px]">
+                                    Кассир: {tx.staff}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto min-w-[100px] border-t sm:border-0 border-slate-50 pt-2 sm:pt-0">
+                                {tx.pointsAccrued !== 0 && (
+                                  <div
+                                    className={`flex items-center text-sm font-bold ${
+                                      tx.pointsAccrued > 0 ? 'text-green-600' : 'text-red-500'
+                                    }`}
+                                  >
+                                    {tx.pointsAccrued > 0 ? '+' : ''}
+                                    {tx.pointsAccrued} Б{' '}
+                                    {tx.pointsAccrued > 0 ? (
+                                      <ArrowUpRight size={14} className="ml-1" />
+                                    ) : (
+                                      <ArrowDownLeft size={14} className="ml-1" />
+                                    )}
+                                  </div>
+                                )}
+                                {tx.pointsRedeemed !== 0 && (
+                                  <div
+                                    className={`flex items-center text-sm font-bold ${
+                                      tx.pointsRedeemed > 0 ? 'text-red-500' : 'text-green-600'
+                                    }`}
+                                  >
+                                    {tx.pointsRedeemed > 0 ? '-' : '+'}
+                                    {Math.abs(tx.pointsRedeemed)} Б{' '}
+                                    {tx.pointsRedeemed > 0 ? (
+                                      <ArrowDownLeft size={14} className="ml-1" />
+                                    ) : (
+                                      <ArrowUpRight size={14} className="ml-1" />
+                                    )}
+                                  </div>
+                                )}
+                                {tx.pointsAccrued === 0 && tx.pointsRedeemed === 0 && (
+                                  <span className="text-xs text-slate-400">Без баллов</span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                  {totalPages > 1 && (
+                    <div className="p-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between flex-shrink-0">
+                      <span className="text-xs text-slate-500">
+                        Показано {Math.min((currentPage - 1) * itemsPerPage + 1, filteredHistory.length)} -{' '}
+                        {Math.min(currentPage * itemsPerPage, filteredHistory.length)} из {filteredHistory.length}
+                      </span>
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                          disabled={currentPage === 1}
+                          className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          <ChevronLeft size={16} />
+                        </button>
+                        <span className="text-xs font-medium text-slate-900 bg-white px-2 py-1 rounded border border-slate-200 min-w-[30px] text-center">
+                          {currentPage}
+                        </span>
+                        <button
+                          onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                          disabled={currentPage === totalPages}
+                          className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          <ChevronRight size={16} />
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
-              );
-            })}
-            {!history.length && (
-              <div className="text-sm text-slate-400">Нет операций по этой точке.</div>
-            )}
-            {histNextBefore && (
-              <button
-                onClick={() => loadHistory(false)}
-                disabled={histBusy}
-                className="w-full rounded-full border border-slate-700 py-3 text-sm font-semibold text-white disabled:opacity-40"
-              >
-                Показать ещё
-              </button>
-            )}
+              </div>
+            </div>
+          </main>
+        )}
+      </div>
+
+      <aside className="w-96 bg-white border-l border-slate-200 flex flex-col z-20 shadow-lg hidden xl:flex">
+        <div className="p-6 border-b border-purple-800 bg-gradient-to-br from-purple-600 to-indigo-700 text-white">
+          <h3 className="text-xs font-bold text-purple-100 uppercase tracking-wider mb-4 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.6)]"></span>
+            Смена
+          </h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-white/10 p-3 rounded-xl border border-white/10 backdrop-blur-sm shadow-sm">
+              <div className="flex items-center space-x-1.5 text-purple-200 mb-1">
+                <CreditCard size={12} />
+                <span className="text-[10px] font-bold uppercase">Выручка</span>
+              </div>
+              <div className="text-lg font-bold text-white">{fmtMoney(shiftStats.revenue)} ₽</div>
+            </div>
+            <div className="bg-white/10 p-3 rounded-xl border border-white/10 backdrop-blur-sm shadow-sm">
+              <div className="flex items-center space-x-1.5 text-purple-200 mb-1">
+                <Receipt size={12} />
+                <span className="text-[10px] font-bold uppercase">Чеков</span>
+              </div>
+              <div className="text-lg font-bold text-white">{shiftStats.checks}</div>
+            </div>
           </div>
         </div>
-      </div>
-    );
-  };
-
-  const renderRatingTab = () => {
-    const filterActive = Boolean(leaderboardOutletFilter);
-    const outletLabel =
-      session?.outlet?.name ||
-      session?.outlet?.id ||
-      leaderboardOutletFilter ||
-      '';
-    const info = motivationInfo;
-    const infoSummary =
-      info && info.enabled
-        ? `Период: ${info.periodLabel}. Баллы за нового клиента — ${info.pointsNew}, за постоянного — ${info.pointsExisting}.`
-        : null;
-    const infoModalText = info
-      ? info.enabled
-        ? `Рейтинг строится за ${info.periodLabel.toLowerCase()}. Кассир получает ${info.pointsNew} очков за покупку нового клиента и ${info.pointsExisting} очков за обслуживание постоянного клиента.`
-        : 'Мотивация персонала отключена в портале. Новые очки не начисляются, пока функция выключена.'
-      : 'Настройки мотивации загружаются из портала мерчанта.';
-    return (
-      <div className="flex-1 overflow-y-auto px-6 pb-32">
-        <div className="mt-6 space-y-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-white">Рейтинг сотрудников</h2>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setRatingInfoOpen(true)}
-                className="h-10 w-10 rounded-full border border-slate-700 text-lg text-white"
-              >
-                ?
-              </button>
-              <button
-                onClick={() => {
-                  if (!session?.outlet?.id) return;
-                  setLeaderboardOutletFilter((prev) =>
-                    prev ? null : session.outlet!.id,
-                  );
-                }}
-                disabled={!session?.outlet?.id}
-                className={`h-10 w-10 rounded-full border ${
-                  filterActive
-                    ? 'border-emerald-400 bg-emerald-500/10 text-emerald-300'
-                    : 'border-slate-700 text-white'
-                } disabled:opacity-40`}
-                title={
-                  session?.outlet?.id
-                    ? filterActive
-                      ? 'Показаны только результаты по вашей точке'
-                      : 'Отфильтровать рейтинг по вашей точке'
-                    : 'Фильтр доступен после выбора торговой точки'
-                }
-              >
-                ⛃
-              </button>
-            </div>
+        <div className="flex-1 flex flex-col overflow-hidden bg-white">
+          <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-white sticky top-0 z-10">
+            <h3 className="font-bold text-slate-800 text-sm">Последние</h3>
+            <span className="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full font-bold">
+              {recentTx.length}
+            </span>
           </div>
-          {infoSummary && (
-            <div className="text-xs text-slate-400">{infoSummary}</div>
-          )}
-          {filterActive && outletLabel && (
-            <div className="text-xs text-emerald-300">
-              Фильтр: {outletLabel}
-            </div>
-          )}
-          {leaderboardLoading && (
-            <div className="text-sm text-slate-400">Загружаем данные...</div>
-          )}
-          {leaderboardError && (
-            <div className="text-sm text-red-400">{leaderboardError}</div>
-          )}
-          {!leaderboardLoading && info && !info.enabled && (
-            <div className="rounded-3xl bg-slate-800/60 p-4 text-sm text-slate-400">
-              Мотивация персонала отключена в портале, новые очки не начисляются.
-            </div>
-          )}
-          <div className="space-y-4">
-            {leaderboard.map((entry, index) => (
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+            {recentTx.map((tx) => (
               <div
-                key={entry.staffId}
-                className="rounded-3xl bg-slate-800/70 p-4 flex items-center justify-between"
+                key={tx.id}
+                className="group p-3 rounded-xl border border-slate-100 bg-white hover:border-purple-200 hover:shadow-md transition-all cursor-pointer relative"
               >
-                <div>
-                  <div className="text-xs text-slate-500">#{index + 1}</div>
-                  <div className="text-base font-semibold text-white">
-                    {entry.staffName}
+                <div
+                  className={`absolute left-0 top-3 bottom-3 w-1 rounded-r-full ${
+                    tx.type === 'return' ? 'bg-red-500' : 'bg-green-500'
+                  }`}
+                ></div>
+                <div className="pl-3">
+                  <div className="flex justify-between items-start mb-1">
+                    <div className="flex items-center space-x-2">
+                      <span className={`text-sm font-bold ${tx.type === 'return' ? 'text-red-600' : 'text-slate-900'}`}>
+                        {tx.amount} ₽
+                      </span>
+                      {tx.type === 'return' && <RotateCcw size={12} className="text-red-500" />}
+                    </div>
+                    <span className="text-xs text-slate-400 font-mono">
+                      {tx.date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })},{' '}
+                      {tx.date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
                   </div>
-                  <div className="text-xs text-slate-400">
-                    {entry.outletName || '—'}
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center text-xs text-slate-500">
+                      <User size={12} className="mr-1.5 text-slate-400" />
+                      <span className="truncate max-w-[120px]">{tx.client}</span>
+                    </div>
+                    <span
+                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                        tx.pointsAccrued > 0
+                          ? 'bg-green-50 text-green-700'
+                          : tx.pointsRedeemed > 0
+                            ? 'bg-red-50 text-red-700'
+                            : 'bg-slate-100 text-slate-500'
+                      }`}
+                    >
+                      {tx.pointsAccrued > 0
+                        ? `+${tx.pointsAccrued}`
+                        : tx.pointsRedeemed > 0
+                          ? `-${tx.pointsRedeemed}`
+                          : '0'}{' '}
+                      Б
+                    </span>
                   </div>
-                </div>
-                <div className="text-lg font-semibold text-emerald-300">
-                  {formatPoints(entry.points)}
                 </div>
               </div>
             ))}
-            {!leaderboard.length && !leaderboardLoading && (
-              <div className="rounded-3xl bg-slate-800/60 p-4 text-sm text-slate-400">
-                Нет данных для отображения.
-              </div>
-            )}
           </div>
         </div>
-        {ratingInfoOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6">
-            <div className="w-full max-w-sm rounded-3xl bg-slate-900 p-6 space-y-4">
-              <h3 className="text-lg font-semibold text-white">Информация</h3>
-              <p className="text-sm text-slate-300">{infoModalText}</p>
-              <button
-                onClick={() => setRatingInfoOpen(false)}
-                className="w-full rounded-full bg-emerald-500 py-3 text-sm font-semibold text-slate-900"
-              >
-                Понятно
-              </button>
-            </div>
+        <div className="p-4 border-t border-slate-200 bg-white">
+          <button
+            onClick={() => handleSwitchView('return')}
+            className="w-full flex items-center justify-center space-x-2 py-3 bg-white border border-slate-200 text-slate-600 hover:text-red-600 hover:border-red-200 hover:bg-red-50 rounded-xl transition-all font-bold text-sm"
+          >
+            <RotateCcw size={16} />
+            <span>Оформить возврат</span>
+          </button>
+        </div>
+      </aside>
+    </div>
+  );
+
+  const Header = () => (
+    <div className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-4 sticky top-0 z-20">
+      <div className="flex items-center gap-3">
+        <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-700 text-xs font-bold">
+          {employee.avatar}
+        </div>
+        <div className="flex flex-col">
+          <span className="text-sm font-semibold text-gray-900 leading-none">{employee.name}</span>
+          <span className="text-[10px] text-gray-500">{employee.outlet}</span>
+        </div>
+      </div>
+      <button onClick={logoutStaff} className="text-gray-400 hover:text-red-500 transition-colors">
+        <LogOut size={20} />
+      </button>
+    </div>
+  );
+
+  const BottomNav = () => (
+    <div className="h-16 bg-white border-t border-gray-200 grid grid-cols-4 pb-safe z-30 relative">
+      {[
+        { id: 'checkout', icon: Home, label: 'Касса' },
+        { id: 'history', icon: History, label: 'История' },
+        { id: 'rating', icon: Trophy, label: 'Рейтинг' },
+        { id: 'returns', icon: RotateCcw, label: 'Возврат' },
+      ].map((tab) => (
+        <button
+          key={tab.id}
+          onClick={() => {
+            resetAll({ preserveTab: true });
+            setActiveTab(tab.id as Tab);
+          }}
+          className={`flex flex-col items-center justify-center gap-1 transition-colors ${
+            activeTab === tab.id ? 'text-purple-600' : 'text-gray-400 hover:text-gray-600'
+          }`}
+        >
+          <tab.icon size={22} strokeWidth={activeTab === tab.id ? 2.5 : 2} />
+          <span className="text-[10px] font-medium">{tab.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+
+  const DialerNumpad = ({ onInput, onConfirm, confirmLabel, disabled = false, showConfirm = true }: any) => {
+    const handlePress = (key: string) => (event: React.PointerEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      onInput(key);
+    };
+
+    return (
+      <div className="w-full flex-1 flex flex-col justify-end pb-6 [@media(max-height:700px)]:flex-none [@media(max-height:700px)]:pb-3 [@media(max-height:600px)]:pb-2">
+        <div className="grid grid-cols-3 gap-y-6 gap-x-8 px-8 mb-6 [@media(max-height:700px)]:gap-y-3 [@media(max-height:700px)]:gap-x-5 [@media(max-height:700px)]:px-5 [@media(max-height:700px)]:mb-3 [@media(max-height:600px)]:gap-y-2 [@media(max-height:600px)]:gap-x-4 [@media(max-height:600px)]:px-4 [@media(max-height:600px)]:mb-2">
+          {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
+            <button
+              key={num}
+              type="button"
+              onPointerDown={handlePress(num.toString())}
+              className="text-3xl font-light text-gray-900 active:text-purple-600 transition-colors h-16 flex items-center justify-center rounded-full active:bg-gray-100 [@media(max-height:700px)]:text-2xl [@media(max-height:700px)]:h-12 [@media(max-height:600px)]:text-xl [@media(max-height:600px)]:h-10"
+            >
+              {num}
+            </button>
+          ))}
+          <button
+            type="button"
+            onPointerDown={handlePress('clear')}
+            className="text-sm font-medium text-gray-400 uppercase tracking-wider flex items-center justify-center h-16 active:bg-gray-100 rounded-full [@media(max-height:700px)]:text-xs [@media(max-height:700px)]:h-12 [@media(max-height:600px)]:h-10"
+          >
+            Сброс
+          </button>
+          <button
+            type="button"
+            onPointerDown={handlePress('0')}
+            className="text-3xl font-light text-gray-900 active:text-purple-600 transition-colors h-16 flex items-center justify-center rounded-full active:bg-gray-100 [@media(max-height:700px)]:text-2xl [@media(max-height:700px)]:h-12 [@media(max-height:600px)]:text-xl [@media(max-height:600px)]:h-10"
+          >
+            0
+          </button>
+          <button
+            type="button"
+            onPointerDown={handlePress('backspace')}
+            className="flex items-center justify-center h-16 text-gray-400 active:text-gray-600 active:bg-gray-100 rounded-full [@media(max-height:700px)]:h-12 [@media(max-height:600px)]:h-10"
+          >
+            <ChevronLeft size={32} />
+          </button>
+        </div>
+        {showConfirm && (
+          <div className="px-6 [@media(max-height:700px)]:px-4 [@media(max-height:600px)]:px-3">
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={disabled || isProcessing}
+              className="w-full h-14 bg-purple-600 text-white rounded-xl text-base font-semibold shadow-sm active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:shadow-none [@media(max-height:700px)]:h-11 [@media(max-height:600px)]:h-10 [@media(max-height:600px)]:text-sm"
+            >
+              {isProcessing ? <Loader2 className="animate-spin" /> : confirmLabel}
+            </button>
           </div>
         )}
       </div>
     );
   };
 
-  const renderReturnsTab = () => (
-    <div className="flex-1 overflow-y-auto px-6 pb-32">
-      <div className="mt-6 space-y-6">
-        <div className="rounded-3xl bg-slate-800/70 p-6 space-y-4">
-          <div className="text-sm text-slate-300">Оформить возврат по чеку</div>
-          <div className="space-y-2">
-            <label className="text-sm text-slate-300">Номер чека или ID операции</label>
-            <input
-              value={refundReceiptNumber}
-              onChange={(e) => {
-                setRefundReceiptNumber(e.target.value);
-                setRefundPreview(null);
-                setRefundError('');
-              }}
-              placeholder="Например, 123456 или O-123"
-              className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+  const renderCheckout = () => {
+    if (mobileMode === 'landing') {
+      return (
+        <div className="flex-1 flex flex-col bg-gray-50 p-4 space-y-4 animate-in fade-in">
+          <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm flex flex-col gap-4">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Текущая смена</h2>
+            <div className="flex items-end justify-between">
+              <div>
+                <span className="text-3xl font-bold text-gray-900">{fmtMoney(shiftStats.revenue)} ₽</span>
+                <span className="text-sm text-gray-500 ml-2">выручка</span>
+              </div>
+              <div className="text-right">
+                <div className="text-lg font-bold text-gray-900">{shiftStats.checks}</div>
+                <div className="text-xs text-gray-500">чека</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex-1 flex flex-col justify-center gap-4">
+            <button
+              onClick={startScan}
+              className="flex-1 bg-purple-600 text-white rounded-2xl p-6 shadow-md active:scale-[0.98] transition-all flex flex-col items-center justify-center gap-3 group"
+            >
+              <div className="bg-white/20 p-4 rounded-full group-hover:bg-white/30 transition-colors">
+                <QrCode size={32} />
+              </div>
+              <div className="text-center">
+                <span className="block text-xl font-bold">Сканировать QR</span>
+                <span className="text-sm text-purple-100 opacity-80">Камера устройства</span>
+              </div>
+            </button>
+
+            <button
+              onClick={startManualInput}
+              className="flex-1 bg-white text-gray-900 rounded-2xl p-6 shadow-sm border border-gray-200 active:scale-[0.98] transition-all flex flex-col items-center justify-center gap-3 group"
+            >
+              <div className="bg-gray-100 p-4 rounded-full text-gray-600 group-hover:bg-gray-200 transition-colors">
+                <Keyboard size={32} />
+              </div>
+              <div className="text-center">
+                <span className="block text-xl font-bold">Ввести номер</span>
+                <span className="text-sm text-gray-500">Телефон или карта</span>
+              </div>
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (mobileMode === 'manual_input') {
+      return (
+        <div className="flex-1 flex flex-col bg-white h-full">
+          <div className="flex items-center p-4 border-b border-gray-100 [@media(max-height:700px)]:p-3 [@media(max-height:600px)]:p-2">
+            <button onClick={() => setMobileMode('landing')} className="p-2 -ml-2 text-gray-500 [@media(max-height:600px)]:p-1.5">
+              <ChevronLeft size={24} />
+            </button>
+            <span className="mx-auto font-semibold text-gray-900 [@media(max-height:600px)]:text-sm">Поиск клиента</span>
+            <div className="w-8"></div>
+          </div>
+          <div className="flex-1 flex flex-col min-h-0">
+            <div className="flex-1 flex items-center justify-center">
+              <span
+                className={`text-4xl font-mono tracking-wider [@media(max-height:700px)]:text-3xl [@media(max-height:600px)]:text-2xl ${
+                  inputValue ? 'text-gray-900' : 'text-gray-300'
+                }`}
+              >
+                {inputValue || '000 000 000'}
+              </span>
+            </div>
+            <DialerNumpad
+              onInput={(key: string) => handleNumpadInput(key, setInputValue, inputValue)}
+              onConfirm={performSearch}
+              confirmLabel="Найти"
+              disabled={inputValue.length < 3}
             />
           </div>
-          {refundError && <div className="text-sm text-red-400">{refundError}</div>}
-          <div className="flex gap-3">
-            <button
-              onClick={() => {
-                setRefundReceiptNumber('');
-                setRefundPreview(null);
-                setRefundError('');
-              }}
-              className="flex-1 rounded-full border border-slate-600 py-3 text-sm font-semibold text-slate-300"
-            >
-              Отмена
-            </button>
-            <button
-              onClick={loadRefundPreview}
-              disabled={refundBusy || !refundReceiptNumber.trim()}
-              className="flex-1 rounded-full bg-emerald-500 py-3 text-sm font-semibold text-slate-900 disabled:opacity-40"
-            >
-              Найти чек
-            </button>
-          </div>
         </div>
+      );
+    }
 
-        {refundPreview && (
-          <div className="rounded-3xl bg-slate-800/70 p-6 space-y-4">
-            <div className="text-sm text-slate-300">Подтвердите возврат</div>
-            <div className="space-y-2 text-sm text-slate-300">
-              <div className="flex items-center justify-between">
-                <span>Клиент</span>
-                <span className="font-semibold text-white">
-                  {refundPreview.customerName || '—'}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Сумма покупки</span>
-                <span className="font-semibold text-white">
-                  {formatCurrency(refundPreview.purchaseAmount)}
-                </span>
-              </div>
-              {refundPreview.pointsToRestore > 0 && (
-                <div className="flex items-center justify-between">
-                  <span>Вернём списанные баллы</span>
-                  <span className="font-semibold text-emerald-300">
-                    {formatPoints(refundPreview.pointsToRestore)} баллов
-                  </span>
-                </div>
-              )}
-              {refundPreview.pointsToRevoke > 0 && (
-                <div className="flex items-center justify-between">
-                  <span>Спишем начисленные баллы</span>
-                  <span className="font-semibold text-orange-300">
-                    {formatPoints(refundPreview.pointsToRevoke)} баллов
-                  </span>
-                </div>
-              )}
-            </div>
-            <div className="flex gap-3 pt-2">
-              <button
-                onClick={() => {
-                  setRefundPreview(null);
+    if (mobileMode === 'scanning') {
+      return (
+        <div className="flex-1 bg-black relative flex flex-col items-center justify-center">
+          <button
+            onClick={() => {
+              setScanOpen(false);
+              setMobileMode('landing');
+            }}
+            className="absolute top-6 right-6 p-2 bg-white/20 rounded-full text-white"
+          >
+            <X size={24} />
+          </button>
+          <div className="w-64 h-64 border-2 border-white/50 rounded-xl relative overflow-hidden">
+            {scanOpen && (
+              <QrScanner
+                onResult={onScan}
+                onClose={() => setScanOpen(false)}
+                onError={(message) => {
+                  setActionError(message);
+                  setScanOpen(false);
+                  setMobileMode('landing');
                 }}
-                className="flex-1 rounded-full border border-slate-600 py-3 text-sm font-semibold text-slate-300"
-              >
-                Отмена
-              </button>
-              <button
-                onClick={doRefund}
-                disabled={refundBusy}
-                className="flex-1 rounded-full bg-emerald-500 py-3 text-sm font-semibold text-slate-900 disabled:opacity-40"
-              >
-                Подтвердить
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
-  if (step !== 'terminal' || !session) {
-    return renderAuth();
-  }
-
-  return (
-    <main className="min-h-screen bg-slate-950 text-white">
-      <div className="mx-auto flex min-h-screen w-full max-w-md flex-col">
-        <header className="px-6 pt-10">
-          <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-semibold text-white">{pageTitle}</h1>
-            <button onClick={logoutStaff} className="text-sm text-slate-400 underline">Выйти</button>
-          </div>
-        </header>
-        <div className="flex-1">
-          {activeTab === 'home' && renderHomeTab()}
-          {activeTab === 'history' && renderHistoryTab()}
-          {activeTab === 'rating' && renderRatingTab()}
-          {activeTab === 'returns' && renderReturnsTab()}
-        </div>
-        <nav className="sticky bottom-0 flex w-full items-center justify-between bg-slate-900/90 px-6 py-4 backdrop-blur">
-          {[
-            { key: 'home', label: 'Главная', icon: '⌂' },
-            { key: 'history', label: 'История', icon: '⟲' },
-            { key: 'rating', label: 'Рейтинг', icon: '★' },
-            { key: 'returns', label: 'Возвраты', icon: '↺' },
-          ].map((item) => (
-            <button
-              key={item.key}
-              onClick={() => setActiveTab(item.key as typeof activeTab)}
-              className={`flex flex-col items-center text-xs ${activeTab === item.key ? 'text-emerald-300' : 'text-slate-400'}`}
-            >
-              <span className="text-lg">{item.icon}</span>
-              <span>{item.label}</span>
-            </button>
-          ))}
-        </nav>
-      </div>
-
-      {scanOpen && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/95 p-6 text-white">
-          <div className="w-full max-w-sm space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Сканирование QR</h2>
-              <button onClick={() => setScanOpen(false)} className="text-2xl">×</button>
-            </div>
-            <div className="rounded-3xl bg-slate-900 p-4">
-              <QrScanner onResult={onScan} onClose={() => setScanOpen(false)} />
-            </div>
-            <div className="space-y-3">
-              <div className="text-sm text-slate-300">Или введите токен вручную</div>
-              <input
-                value={manualTokenInput}
-                onChange={(e) => setManualTokenInput(e.target.value)}
-                placeholder="Токен клиента"
-                className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                className="absolute inset-0"
+                viewfinderClassName="w-full h-full"
               />
-              <button
-                onClick={() => {
-                  if (manualTokenInput.trim()) {
-                    void beginFlow(manualTokenInput.trim());
-                    setScanOpen(false);
-                  }
-                }}
-                className="w-full rounded-full bg-emerald-500 py-3 text-sm font-semibold text-slate-900"
+            )}
+            <div className="absolute top-0 left-0 w-full h-0.5 bg-red-500 animate-[scan-mobile_2s_ease-in-out_infinite]"></div>
+          </div>
+          <p className="text-white mt-8 font-medium">Наведите камеру на код</p>
+          <style>{`@keyframes scan-mobile { 0% { top: 0; } 100% { top: 100%; } }`}</style>
+        </div>
+      );
+    }
+
+    if (mobileMode === 'profile' && currentClient) {
+      return (
+        <div className="flex-1 flex flex-col bg-gray-50 animate-in slide-in-from-right">
+          <div className="bg-white p-6 border-b border-gray-200">
+            <div className="flex justify-between items-start mb-4">
+              <button onClick={() => setMobileMode('landing')} className="p-2 -ml-2 text-gray-400 hover:text-gray-600">
+                <X size={24} />
+              </button>
+              <div className="px-3 py-1 bg-purple-50 text-purple-700 rounded-full text-xs font-bold uppercase tracking-wide border border-purple-100">
+                {currentClient.level}
+              </div>
+            </div>
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-gray-900">{currentClient.name}</h2>
+              <p className="text-gray-500 text-sm mt-1">{currentClient.id}</p>
+              <div className="mt-6 inline-flex items-center px-4 py-2 bg-gray-50 rounded-lg border border-gray-100">
+                <span className="text-2xl font-bold text-gray-900 mr-2">{formatPoints(currentClient.balance)}</span>
+                <span className="text-sm text-gray-500">баллов</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 grid gap-4 mt-2">
+            <button
+              onClick={() => startCheckout('accrue')}
+              className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center justify-between active:scale-[0.99] transition-all"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 bg-green-50 text-green-600 rounded-xl flex items-center justify-center">
+                  <Plus size={26} />
+                </div>
+                <div className="text-left">
+                  <span className="block text-lg font-bold text-gray-900">Начислить</span>
+                  <span className="text-sm text-gray-500">Обычная покупка</span>
+                </div>
+              </div>
+              <ChevronRight className="text-gray-300" />
+            </button>
+
+            <button
+              onClick={() => startCheckout('redeem')}
+              className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center justify-between active:scale-[0.99] transition-all"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 bg-orange-50 text-orange-600 rounded-xl flex items-center justify-center">
+                  <Wallet size={26} />
+                </div>
+                <div className="text-left">
+                  <span className="block text-lg font-bold text-gray-900">Списать</span>
+                  <span className="text-sm text-gray-500">Оплата баллами</span>
+                </div>
+              </div>
+              <ChevronRight className="text-gray-300" />
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (mobileMode === 'amount') {
+      return (
+        <div className="flex-1 flex flex-col bg-white h-full">
+          <div className="flex items-center p-4 border-b border-gray-100 justify-between [@media(max-height:700px)]:p-3 [@media(max-height:600px)]:p-2">
+            <button onClick={() => setMobileMode('profile')} className="p-2 -ml-2 text-gray-500 [@media(max-height:600px)]:p-1.5">
+              <ChevronLeft size={24} />
+            </button>
+            <span className="text-sm font-bold uppercase tracking-wider text-gray-600 [@media(max-height:600px)]:text-xs">
+              Сумма покупки
+            </span>
+            <div className="w-8"></div>
+          </div>
+
+          <div className="flex-1 flex flex-col min-h-0">
+            <div className="flex-1 flex flex-col items-center justify-center px-6 [@media(max-height:700px)]:px-5 [@media(max-height:600px)]:px-4">
+              <div className="text-5xl font-semibold text-gray-900 flex items-baseline [@media(max-height:700px)]:text-4xl [@media(max-height:600px)]:text-3xl">
+                {txAmount || '0'}
+                <span className="text-2xl text-gray-300 ml-2 [@media(max-height:700px)]:text-xl [@media(max-height:600px)]:text-lg">
+                  ₽
+                </span>
+              </div>
+              <div className="w-full max-w-sm mt-8 [@media(max-height:700px)]:mt-5 [@media(max-height:600px)]:mt-3">
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 [@media(max-height:600px)]:mb-1">
+                  Номер чека (опционально)
+                </label>
+                <input
+                  type="text"
+                  value={txCheckId}
+                  onChange={(e) => setTxCheckId(e.target.value)}
+                  placeholder="12345"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-base text-gray-900 focus:ring-2 focus:ring-purple-500 focus:bg-white outline-none transition-all [@media(max-height:700px)]:py-2 [@media(max-height:600px)]:py-1.5 [@media(max-height:600px)]:text-sm"
+                />
+              </div>
+            </div>
+            <DialerNumpad
+              onInput={(key: string) => handleNumpadInput(key, setTxAmount, txAmount)}
+              onConfirm={confirmAmount}
+              confirmLabel="Далее"
+              disabled={!purchaseAmount}
+            />
+          </div>
+        </div>
+      );
+    }
+
+    if (mobileMode === 'redeem') {
+      return (
+        <div className="flex-1 flex flex-col bg-white h-full">
+          <div className="flex items-center p-4 border-b border-gray-100 justify-between [@media(max-height:700px)]:p-3 [@media(max-height:600px)]:p-2">
+            <button onClick={() => setMobileMode('amount')} className="p-2 -ml-2 text-gray-500 [@media(max-height:600px)]:p-1.5">
+              <ChevronLeft size={24} />
+            </button>
+            <span className="text-sm font-bold uppercase tracking-wider text-orange-600 [@media(max-height:600px)]:text-xs">
+              Сколько списать?
+            </span>
+            <div className="w-8"></div>
+          </div>
+
+          <div className="flex-1 flex flex-col min-h-0">
+            <div className="flex-1 flex flex-col items-center justify-center px-6 gap-4 [@media(max-height:700px)]:px-5 [@media(max-height:700px)]:gap-3 [@media(max-height:600px)]:px-4 [@media(max-height:600px)]:gap-2">
+              <div className="w-full max-w-sm bg-white border border-gray-200 rounded-2xl shadow-sm p-4 space-y-3 [@media(max-height:700px)]:p-3 [@media(max-height:700px)]:space-y-2 [@media(max-height:600px)]:p-2 [@media(max-height:600px)]:space-y-1">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs uppercase text-gray-500 font-semibold">Сумма покупки</div>
+                  <div className="text-lg font-bold text-gray-900 [@media(max-height:700px)]:text-base [@media(max-height:600px)]:text-sm">
+                    {purchaseAmount} ₽
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="text-xs uppercase text-gray-500 font-semibold">Доступно</div>
+                  <div className="text-sm font-semibold text-orange-700 [@media(max-height:700px)]:text-xs">
+                    {formatPoints(redeemableMax)} Б
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="text-xs uppercase text-gray-500 font-semibold">К списанию</div>
+                  <div className="flex items-baseline text-4xl font-bold text-gray-900 [@media(max-height:700px)]:text-3xl [@media(max-height:600px)]:text-2xl">
+                    {txRedeemPoints || '0'}
+                    <span className="text-base text-gray-400 ml-1 [@media(max-height:700px)]:text-sm [@media(max-height:600px)]:text-xs">
+                      Б
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={setRedeemMax}
+                  className="w-full px-4 py-3 bg-orange-50 text-orange-700 rounded-lg text-sm font-semibold active:scale-[0.99] transition-all border border-orange-100 [@media(max-height:700px)]:py-2 [@media(max-height:700px)]:text-xs [@media(max-height:600px)]:py-1.5"
+                >
+                  Списать максимум
+                </button>
+              </div>
+              {redeemAmount > redeemableMax && (
+                <div className="text-xs text-red-500">Недостаточно баллов или превышение суммы покупки</div>
+              )}
+            </div>
+            <DialerNumpad
+              onInput={(key: string) => handleNumpadInput(key, setTxRedeemPoints, txRedeemPoints)}
+              onConfirm={confirmRedeem}
+              confirmLabel="Далее"
+              disabled={!redeemAmount || redeemAmount > redeemableMax}
+            />
+          </div>
+        </div>
+      );
+    }
+
+    if (mobileMode === 'precheck') {
+      return (
+        <div className="flex-1 flex flex-col bg-white">
+          <div className="flex items-center p-4 border-b border-gray-100 justify-between">
+            <button onClick={handleMobilePrecheckBack} className="p-2 -ml-2 text-gray-500">
+              <ChevronLeft size={24} />
+            </button>
+            <span className="text-sm font-bold uppercase tracking-wider text-gray-900">Подтверждение</span>
+            <div className="w-8"></div>
+          </div>
+
+          <div className="p-4 space-y-3">
+            <div className="bg-white rounded-xl border border-purple-100 shadow-sm overflow-hidden">
+              <div className={`p-4 ${txType === 'accrue' ? 'bg-green-50 text-green-800' : 'bg-orange-50 text-orange-800'}`}>
+                <h3 className="font-bold text-lg text-center">{txType === 'accrue' ? 'Начисление' : 'Списание баллов'}</h3>
+              </div>
+              <div className="p-5 space-y-3">
+                <div className="flex justify-between text-gray-600">
+                  <span>Сумма покупки</span>
+                  <span className="font-semibold text-gray-900">{purchaseAmount} ₽</span>
+                </div>
+                {txType === 'redeem' && (
+                  <div className="flex justify-between text-orange-600">
+                    <span>Списание баллов</span>
+                    <span className="font-bold">-{redeemAmount} Б</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-green-600">
+                  <span>Начисление баллов</span>
+                  <span className="font-bold">+{txAccruePoints} Б</span>
+                </div>
+                <div className="flex justify-between text-gray-900">
+                  <span className="font-semibold">К ОПЛАТЕ</span>
+                  <span className="font-bold text-xl">{payableAmount} ₽</span>
+                </div>
+
+                {txType === 'redeem' && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
+                    <AlertTriangle className="text-amber-600 flex-shrink-0 mt-0.5" size={20} />
+                    <div className="text-left">
+                      <h4 className="font-bold text-amber-900 text-sm">Примените скидку на кассе!</h4>
+                      <p className="text-amber-800 text-xs mt-1 leading-snug">
+                        Не забудьте уменьшить сумму чека на <strong>{redeemAmount} ₽</strong> в вашей POS-системе перед оплатой.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <button
+              onClick={completeTransaction}
+              disabled={isProcessing}
+              className="w-full h-14 bg-purple-600 text-white rounded-xl text-base font-semibold shadow-sm active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {isProcessing ? <Loader2 className="animate-spin" /> : 'Провести операцию'}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (mobileMode === 'success') {
+      return (
+        <div className="flex-1 flex flex-col items-center justify-center bg-white p-6 min-h-0 overflow-y-auto [@media(max-height:700px)]:justify-start [@media(max-height:700px)]:py-4 [@media(max-height:700px)]:px-4 [@media(max-height:600px)]:py-3 [@media(max-height:600px)]:px-3">
+          <div className="w-full max-w-sm bg-white rounded-t-2xl shadow-xl overflow-hidden relative mb-6 pb-2 [@media(max-height:700px)]:mb-4 [@media(max-height:700px)]:pb-1 [@media(max-height:600px)]:mb-3">
+            <div className="bg-emerald-500 p-6 text-center text-white relative overflow-hidden [@media(max-height:700px)]:p-5 [@media(max-height:600px)]:p-4">
+              <div
+                className="absolute top-0 left-0 w-full h-full opacity-10"
+                style={{ backgroundImage: 'radial-gradient(circle, white 2px, transparent 2.5px)', backgroundSize: '10px 10px' }}
+              ></div>
+              <div className="w-14 h-14 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center mx-auto mb-3 border-2 border-white/30 [@media(max-height:700px)]:w-12 [@media(max-height:700px)]:h-12 [@media(max-height:700px)]:mb-2 [@media(max-height:600px)]:w-10 [@media(max-height:600px)]:h-10">
+                <Check size={32} strokeWidth={3} />
+              </div>
+              <h2 className="text-xl font-bold [@media(max-height:700px)]:text-lg [@media(max-height:600px)]:text-base">Оплата прошла</h2>
+              <p className="text-emerald-100 text-sm [@media(max-height:700px)]:text-xs">
+                {new Date().toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}
+              </p>
+            </div>
+
+            <div className="p-6 bg-white relative z-10 space-y-5 [@media(max-height:700px)]:p-5 [@media(max-height:700px)]:space-y-4 [@media(max-height:600px)]:p-4 [@media(max-height:600px)]:space-y-3">
+              <div className="flex justify-between items-center text-xs text-slate-400 font-medium uppercase tracking-wider pb-4 border-b border-dashed border-slate-100 [@media(max-height:700px)]:pb-3 [@media(max-height:600px)]:text-[10px] [@media(max-height:600px)]:pb-2">
+                <span>{employee.outlet}</span>
+                <span>Кассир: {employee.name.split(' ')[0]}</span>
+              </div>
+
+              {currentClient?.name && (
+                <div className="flex justify-between items-center text-xs text-slate-500 [@media(max-height:600px)]:text-[10px]">
+                  <span className="font-medium">Клиент</span>
+                  <span className="font-semibold text-slate-900">{currentClient.name}</span>
+                </div>
+              )}
+
+              <div className="space-y-3 [@media(max-height:700px)]:space-y-2">
+                <div className="flex justify-between items-center text-sm [@media(max-height:700px)]:text-xs">
+                  <span className="text-slate-500">Сумма покупки</span>
+                  <span className="font-bold text-slate-900">{purchaseAmount.toLocaleString('ru-RU')} ₽</span>
+                </div>
+                {redeemAmount > 0 && (
+                  <div className="flex justify-between items-center text-sm [@media(max-height:700px)]:text-xs">
+                    <span className="text-orange-500 flex items-center gap-1">
+                      <Wallet size={14} /> Списано баллов
+                    </span>
+                    <span className="font-bold text-orange-500">-{redeemAmount}</span>
+                  </div>
+                )}
+                {txAccruePoints > 0 && (
+                  <div className="flex justify-between items-center text-sm [@media(max-height:700px)]:text-xs">
+                    <span className="text-emerald-600 flex items-center gap-1">
+                      <Plus size={14} /> Начислено
+                    </span>
+                    <span className="font-bold text-emerald-600">+{txAccruePoints}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 [@media(max-height:700px)]:p-3 [@media(max-height:600px)]:p-2">
+                <div className="flex justify-between items-end">
+                  <span className="text-xs font-bold text-slate-400 uppercase mb-1 [@media(max-height:600px)]:text-[10px]">К ОПЛАТЕ</span>
+                  <span className="text-3xl font-black text-slate-900 leading-none [@media(max-height:700px)]:text-2xl [@media(max-height:600px)]:text-xl">
+                    {payableAmount.toLocaleString('ru-RU')} ₽
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div
+              className="w-full h-3 absolute bottom-0 left-0 bg-white [@media(max-height:600px)]:h-2"
+              style={{
+                maskImage: 'radial-gradient(circle at 10px 10px, transparent 10px, black 10px)',
+                maskSize: '20px 20px',
+                maskPosition: 'bottom',
+                WebkitMaskImage: 'radial-gradient(circle at 10px 10px, transparent 10px, black 10px)',
+                WebkitMaskSize: '20px 20px',
+                WebkitMaskPosition: 'bottom',
+              }}
+            ></div>
+          </div>
+
+          <button
+            onClick={resetAll}
+            className="w-full max-w-sm h-14 bg-gray-900 text-white rounded-xl font-semibold shadow-md [@media(max-height:700px)]:h-12 [@media(max-height:600px)]:h-10 [@media(max-height:600px)]:text-sm"
+          >
+            Закрыть
+          </button>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
+  const renderHistory = () => (
+    <div className="flex-1 bg-gray-50 flex flex-col relative">
+      <div className="bg-white border-b border-gray-200 px-4 py-3 sticky top-0 z-10 shadow-sm flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Чек или клиент..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full h-10 pl-9 pr-4 rounded-lg bg-gray-100 border-none text-sm focus:ring-2 focus:ring-purple-500 outline-none"
+          />
+        </div>
+        <button
+          onClick={() => setIsFilterOpen(true)}
+          className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors ${
+            activeFilterCount > 0 ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-600'
+          }`}
+        >
+          <SlidersHorizontal size={18} />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto bg-white">
+        <div className="divide-y divide-gray-100">
+          {filteredHistoryMobile.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+              <Search size={32} className="mb-2 opacity-50" />
+              <p className="text-sm">Ничего не найдено</p>
+            </div>
+          ) : (
+            filteredHistoryMobile.map((tx) => (
+              <div
+                key={tx.id}
+                onClick={() => setSelectedTx(tx)}
+                className="p-4 flex justify-between items-center active:bg-gray-50 transition-colors cursor-pointer"
               >
-                Продолжить
+                <div className="flex items-center gap-3 overflow-hidden">
+                  <div
+                    className={`w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center ${
+                      tx.type === 'return'
+                        ? 'bg-red-50 text-red-600'
+                        : tx.pointsRedeemed > 0
+                          ? 'bg-orange-50 text-orange-600'
+                          : 'bg-green-50 text-green-600'
+                    }`}
+                  >
+                    {tx.type === 'return' ? (
+                      <RotateCcw size={18} />
+                    ) : tx.pointsRedeemed > 0 ? (
+                      <Wallet size={18} />
+                    ) : (
+                      <Plus size={18} />
+                    )}
+                  </div>
+                  <div className="flex flex-col overflow-hidden">
+                    <span className="font-medium text-gray-900 truncate text-sm">{tx.client}</span>
+                    <span className="text-xs text-gray-500 flex items-center">{formatDate(tx.date)}</span>
+                  </div>
+                </div>
+
+                <div className="flex flex-col items-end flex-shrink-0 ml-2">
+                  <span className="font-bold text-gray-900 text-sm">{tx.amount} ₽</span>
+                  <div className="flex items-center gap-1">
+                    {tx.type === 'return' ? (
+                      <span className="text-[10px] font-bold text-red-600 bg-red-50 px-1.5 rounded">ВОЗВРАТ</span>
+                    ) : (
+                      <>
+                        {tx.pointsAccrued > 0 && <span className="text-xs font-bold text-green-600">+{tx.pointsAccrued}</span>}
+                        {tx.pointsRedeemed > 0 && <span className="text-xs font-bold text-red-500">-{tx.pointsRedeemed}</span>}
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {isFilterOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-in fade-in"
+            onClick={() => setIsFilterOpen(false)}
+          ></div>
+          <div className="w-full bg-white rounded-t-2xl relative z-10 animate-in slide-in-from-bottom duration-300 max-h-[85vh] flex flex-col">
+            <div className="p-4 border-b border-gray-100 flex justify-between items-center">
+              <h3 className="font-bold text-lg">Фильтры</h3>
+              <button onClick={() => setIsFilterOpen(false)} className="p-1.5 bg-gray-100 rounded-full">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6 overflow-y-auto">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">Период</label>
+                <div className="flex gap-3">
+                  <input
+                    type="date"
+                    value={filters.dateFrom}
+                    onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })}
+                    className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                  <input
+                    type="date"
+                    value={filters.dateTo}
+                    onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })}
+                    className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">Сотрудник</label>
+                <select
+                  value={filters.staff}
+                  onChange={(e) => setFilters({ ...filters, staff: e.target.value })}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+                >
+                  <option value="">Все сотрудники</option>
+                  {uniqueStaff.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">Сумма чека</label>
+                <div className="flex items-center gap-3">
+                  <div className="relative flex-1">
+                    <input
+                      type="number"
+                      placeholder="От"
+                      value={filters.amountFrom}
+                      onChange={(e) => setFilters({ ...filters, amountFrom: e.target.value })}
+                      className="w-full border border-gray-200 rounded-lg pl-3 pr-8 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">₽</span>
+                  </div>
+                  <span className="text-gray-400">-</span>
+                  <div className="relative flex-1">
+                    <input
+                      type="number"
+                      placeholder="До"
+                      value={filters.amountTo}
+                      onChange={(e) => setFilters({ ...filters, amountTo: e.target.value })}
+                      className="w-full border border-gray-200 rounded-lg pl-3 pr-8 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">₽</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-gray-100 flex gap-3 pb-safe-footer">
+              <button onClick={clearFilters} className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium">
+                Сбросить
+              </button>
+              <button
+                onClick={() => setIsFilterOpen(false)}
+                className="flex-[2] py-3 bg-purple-600 text-white rounded-xl font-bold shadow-sm"
+              >
+                Показать ({filteredHistoryMobile.length})
               </button>
             </div>
           </div>
         </div>
       )}
-    </main>
+
+      {selectedTx && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-in fade-in" onClick={closeModal}></div>
+
+          <div
+            className="w-full bg-white rounded-t-2xl relative z-10 animate-in slide-in-from-bottom duration-300 pb-safe shadow-2xl flex flex-col max-h-[90vh]"
+            style={{ transform: `translateY(${dragY}px)`, transition: isDragging ? 'none' : 'transform 0.2s' }}
+          >
+            <div
+              className="w-full flex justify-center pt-3 pb-1 cursor-grab active:cursor-grabbing touch-none"
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+            >
+              <div className="w-12 h-1.5 bg-gray-300 rounded-full"></div>
+            </div>
+
+            <div className="p-6 pt-2">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h3 className="text-2xl font-bold text-gray-900">{selectedTx.amount} ₽</h3>
+                  <p className="text-gray-500 text-sm mt-1">
+                    {selectedTx.type === 'return' ? 'Возврат' : 'Продажа'} • {formatDate(selectedTx.date)}
+                  </p>
+                </div>
+                <button onClick={closeModal} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200">
+                  <X size={20} className="text-gray-500" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-gray-400 uppercase">Чек / ID</span>
+                    <div className="text-sm font-mono font-medium text-gray-900 break-all pr-2 mt-1 line-clamp-1">
+                      {selectedTx.checkId}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleCopyMobile(selectedTx.checkId)}
+                    className={`p-2 rounded-lg transition-colors flex-shrink-0 ${
+                      isCopied ? 'bg-green-100 text-green-700' : 'bg-white border border-gray-200 text-gray-500'
+                    }`}
+                  >
+                    {isCopied ? <Check size={18} /> : <Copy size={18} />}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-4 border border-gray-100 rounded-xl">
+                    <span className="text-xs text-gray-400 block mb-1">Клиент</span>
+                    <span className="text-sm font-bold text-gray-900">{selectedTx.client}</span>
+                  </div>
+                  <div className="p-4 border border-gray-100 rounded-xl">
+                    <span className="text-xs text-gray-400 block mb-1">Кассир</span>
+                    <span className="text-sm font-bold text-gray-900">{selectedTx.staff}</span>
+                  </div>
+                </div>
+
+                <div className="border-t border-gray-100 pt-4 flex justify-between">
+                  <span className="text-sm text-gray-500">
+                    {selectedTx.pointsAccrued >= 0 ? 'Начислено баллов' : 'Списано баллов'}
+                  </span>
+                  <span
+                    className={`text-sm font-bold ${
+                      selectedTx.pointsAccrued >= 0 ? 'text-green-600' : 'text-red-500'
+                    }`}
+                  >
+                    {selectedTx.pointsAccrued >= 0 ? '+' : '-'}
+                    {Math.abs(selectedTx.pointsAccrued)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-500">
+                    {selectedTx.pointsRedeemed >= 0 ? 'Списано баллов' : 'Возвращено баллов'}
+                  </span>
+                  <span
+                    className={`text-sm font-bold ${
+                      selectedTx.pointsRedeemed >= 0 ? 'text-red-500' : 'text-green-600'
+                    }`}
+                  >
+                    {selectedTx.pointsRedeemed >= 0 ? '-' : '+'}
+                    {Math.abs(selectedTx.pointsRedeemed)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
+
+  const renderRating = () => {
+    if (!motivationInfo?.enabled) {
+      return (
+        <div className="flex-1 bg-gray-50 flex flex-col items-center justify-center text-center p-6">
+          <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-5 relative">
+            <Award size={40} className="text-gray-400" />
+            <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-1 shadow-sm">
+              <AlertCircle size={20} className="text-gray-400" />
+            </div>
+          </div>
+          <h3 className="text-lg font-bold text-gray-900 mb-2">Рейтинг отключен</h3>
+          <p className="text-sm text-gray-500">Система рейтинга в данный момент неактивна.</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex-1 bg-gray-50 flex flex-col">
+        <div className="bg-white p-6 border-b border-gray-200">
+          <div className="flex justify-between items-start mb-4">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">Мой рейтинг</h2>
+              <p className="text-sm text-gray-500 mt-1">Период: {motivationInfo?.periodLabel || '—'}</p>
+            </div>
+            <div className="text-right">
+              <span className="block text-3xl font-bold text-purple-600">{currentUserRating?.score || 0}</span>
+              <span className="text-xs text-gray-400 uppercase font-bold">очков</span>
+            </div>
+          </div>
+
+          <div className="bg-gray-50 rounded-xl p-3 grid grid-cols-2 gap-3 border border-gray-100">
+            <div className="flex flex-col items-center text-center">
+              <div className="bg-white p-1.5 rounded-lg shadow-sm mb-1">
+                <UserPlus size={16} className="text-blue-500" />
+              </div>
+              <span className="text-xs text-gray-500">Новый</span>
+              <span className="text-sm font-bold text-gray-900">
+                +{motivationInfo?.pointsNew ?? MOTIVATION_DEFAULT_NEW_POINTS} очков
+              </span>
+            </div>
+            <div className="flex flex-col items-center text-center">
+              <div className="bg-white p-1.5 rounded-lg shadow-sm mb-1">
+                <User size={16} className="text-purple-500" />
+              </div>
+              <span className="text-xs text-gray-500">Повторный</span>
+              <span className="text-sm font-bold text-gray-900">
+                +{motivationInfo?.pointsExisting ?? MOTIVATION_DEFAULT_EXISTING_POINTS} очков
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-4 text-xs text-gray-500 flex justify-between items-center">
+            <span>
+              Ваше место в рейтинге: <span className="font-bold text-gray-900">{currentUserRating?.rank || '—'}</span>
+            </span>
+          </div>
+        </div>
+
+        <div className="p-4">
+          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3 px-2">Топ сотрудников</h3>
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            {filteredLeaderboard.map((user, index) => (
+              <div key={user.staffId || user.staffName} className="flex items-center justify-between p-3 border-b border-gray-50 last:border-0">
+                <div className="flex items-center gap-3">
+                  <span className={`font-bold w-6 text-center text-sm ${index === 0 ? 'text-yellow-500' : 'text-gray-400'}`}>
+                    {index + 1}
+                  </span>
+                  <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-xs font-bold text-gray-600">
+                    {extractInitials(user.staffName)}
+                  </div>
+                  <span className="text-sm font-medium text-gray-900">{user.staffName}</span>
+                </div>
+                <span className="text-sm font-bold text-gray-900">{user.points}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderReturns = () => (
+    <div className="flex-1 bg-gray-50 flex flex-col p-4">
+      <h2 className="text-xl font-bold text-gray-900 mb-4 px-2">Оформление возврата</h2>
+
+      {!returnTx && !returnSuccess ? (
+        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Номер чека</label>
+            <input
+              type="text"
+              value={returnSearchInput}
+              onChange={(e) => setReturnSearchInput(e.target.value)}
+              className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-red-500 focus:bg-white transition-all"
+              placeholder="12345"
+            />
+          </div>
+          {refundError && <p className="text-xs text-red-600 font-medium">{refundError}</p>}
+
+          <button
+            onClick={handleReturnSearch}
+            className="w-full h-12 bg-red-600 text-white rounded-lg font-bold shadow-sm active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+            disabled={!returnSearchInput || refundBusy}
+          >
+            {refundBusy ? <Loader2 className="animate-spin" size={20} /> : 'Найти чек'}
+          </button>
+        </div>
+      ) : returnTx && !returnSuccess ? (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden animate-in fade-in">
+          <div className="bg-red-50 p-4 border-b border-red-100 flex items-center justify-between">
+            <h3 className="font-bold text-red-900">Подтверждение возврата</h3>
+            <div className="p-2 bg-white rounded-full text-red-600 shadow-sm">
+              <AlertTriangle size={20} />
+            </div>
+          </div>
+
+          <div className="p-6 space-y-5">
+            <div className="space-y-3 text-sm">
+              <div className="flex justify-between border-b border-gray-50 pb-2">
+                <span className="text-gray-500">Чек / ID</span>
+                <span className="font-mono font-medium text-gray-900">{returnTx.checkId}</span>
+              </div>
+              <div className="flex justify-between border-b border-gray-50 pb-2">
+                <span className="text-gray-500">Дата продажи</span>
+                <span className="font-medium text-gray-900">{formatDate(returnTx.date)}</span>
+              </div>
+              <div className="flex justify-between border-b border-gray-50 pb-2">
+                <span className="text-gray-500">Клиент</span>
+                <span className="font-medium text-gray-900">{returnTx.client}</span>
+              </div>
+              <div className="flex justify-between pt-1">
+                <span className="text-gray-500">Сумма возврата</span>
+                <span className="font-bold text-gray-900 text-lg">{returnTx.amount} ₽</span>
+              </div>
+            </div>
+
+            <div className="bg-gray-50 p-4 rounded-xl space-y-2 border border-gray-100">
+              {returnTx.pointsAccrued > 0 && (
+                <div className="flex justify-between text-sm items-center">
+                  <span className="text-gray-600">Будет списано</span>
+                  <span className="font-bold text-red-600">-{returnTx.pointsAccrued} Б</span>
+                </div>
+              )}
+              {returnTx.pointsRedeemed > 0 && (
+                <div className="flex justify-between text-sm items-center">
+                  <span className="text-gray-600">Будет возвращено</span>
+                  <span className="font-bold text-green-600">+{returnTx.pointsRedeemed} Б</span>
+                </div>
+              )}
+              {returnTx.pointsAccrued === 0 && returnTx.pointsRedeemed === 0 && (
+                <span className="text-xs text-gray-400 italic text-center block">
+                  Баллы не начислялись и не списывались
+                </span>
+              )}
+            </div>
+
+            {refundError && (
+              <div className="flex items-center space-x-2 text-red-600 bg-red-50 p-3 rounded-xl text-xs font-medium border border-red-100 animate-in fade-in slide-in-from-top-1">
+                <AlertTriangle size={14} className="flex-shrink-0" />
+                <span>{refundError}</span>
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => {
+                  setReturnTx(null);
+                  setReturnSearchInput('');
+                  setRefundPreview(null);
+                  setRefundError('');
+                }}
+                className="flex-1 py-3 border border-gray-200 text-gray-600 rounded-xl font-medium hover:bg-gray-50 transition-colors"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={handleConfirmReturn}
+                className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold shadow-sm hover:bg-red-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                disabled={refundBusy}
+              >
+                {refundBusy ? <Loader2 className="animate-spin" size={18} /> : <span>Подтвердить</span>}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-green-50 text-green-700 p-6 rounded-xl flex flex-col items-center justify-center text-center border border-green-100 animate-in fade-in">
+          <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center mb-3 shadow-sm text-green-600">
+            <Check size={24} strokeWidth={3} />
+          </div>
+          <h3 className="font-bold text-lg mb-1">Возврат оформлен</h3>
+          <p className="text-sm opacity-90 mb-4">Операция успешно отменена, баллы скорректированы.</p>
+          <button
+            onClick={resetAll}
+            className="px-6 py-2 bg-white text-green-700 font-bold rounded-lg shadow-sm text-sm border border-green-200"
+          >
+            Закрыть
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderMobile = () => (
+    <div className="flex flex-col h-screen bg-gray-50 font-sans text-gray-900 overflow-hidden relative">
+      <Header />
+      <div className="flex-1 flex flex-col overflow-hidden relative">
+        {activeTab === 'checkout' && renderCheckout()}
+        {activeTab === 'history' && renderHistory()}
+        {activeTab === 'rating' && renderRating()}
+        {activeTab === 'returns' && renderReturns()}
+      </div>
+      <BottomNav />
+    </div>
+  );
+
+  return isMobile ? renderMobile() : renderDesktop();
 }

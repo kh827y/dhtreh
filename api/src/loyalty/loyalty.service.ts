@@ -2533,7 +2533,7 @@ export class LoyaltyService {
         }
         // уже зафиксирован или отменён — QR повторно использовать нельзя
         throw new BadRequestException(
-          'QR токен уже использован. Попросите клиента обновить QR.',
+          'Этот QR уже использован. Попросите клиента обновить QR в приложении.',
         );
       }
 
@@ -2568,12 +2568,12 @@ export class LoyaltyService {
             return this.quoteFromExistingHold(dto.mode, again);
           }
           throw new BadRequestException(
-            'QR токен уже использован. Попросите клиента обновить QR.',
+            'Этот QR уже использован. Попросите клиента обновить QR в приложении.',
           );
         }
         // иначе считаем, что QR использован
         throw new BadRequestException(
-          'QR токен уже использован. Попросите клиента обновить QR.',
+          'Этот QR уже использован. Попросите клиента обновить QR в приложении.',
         );
       }
     }
@@ -2703,12 +2703,20 @@ export class LoyaltyService {
               sanitizedTotal - tierMinPayment - Math.max(0, priorRedeemApplied),
             )
           : Number.MAX_SAFE_INTEGER;
+      const manualRedeemAmount = this.sanitizeManualAmount(
+        (dto as any).redeemAmount ?? null,
+      );
+      const manualRedeemCap =
+        manualRedeemAmount != null && manualRedeemAmount > 0
+          ? manualRedeemAmount
+          : Number.MAX_SAFE_INTEGER;
       const computeRedeemQuote = (walletBalance: number) => {
         const discountToApply = Math.min(
           walletBalance,
           remainingByOrder || limit,
           capLeft,
           allowedByMinPayment,
+          manualRedeemCap,
         );
         const itemsForCalc = resolvedPositions.map((item) => ({
           ...item,
@@ -3085,7 +3093,7 @@ export class LoyaltyService {
     if (!hold) throw new BadRequestException('Hold not found');
     if (hold.expiresAt && hold.expiresAt.getTime() < Date.now()) {
       throw new BadRequestException(
-        'Hold expired. Обновите QR в мини-аппе и повторите.',
+        'Код истёк по времени. Попросите клиента обновить его в приложении и попробуйте ещё раз.',
       );
     }
     const context = await this.ensureCustomerContext(
@@ -4308,9 +4316,19 @@ export class LoyaltyService {
     if (!hold) throw new BadRequestException('Hold not found');
     if (hold.status !== HoldStatus.PENDING)
       throw new ConflictException('Hold already finished');
-    await this.prisma.hold.update({
-      where: { id: holdId },
-      data: { status: HoldStatus.CANCELED },
+    const qrJti = hold.qrJti ?? null;
+    await this.prisma.$transaction(async (tx) => {
+      await tx.hold.update({
+        where: { id: holdId },
+        data: { status: HoldStatus.CANCELED, qrJti: null },
+      });
+      if (qrJti) {
+        try {
+          await tx.qrNonce.delete({ where: { jti: qrJti } });
+        } catch {
+          /* ignore */
+        }
+      }
     });
     return { ok: true };
   }

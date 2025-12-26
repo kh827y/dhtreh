@@ -1560,7 +1560,10 @@ export class LoyaltyController {
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @ApiOkResponse({ type: CashierCustomerResolveRespDto })
   @ApiBadRequestResponse({ type: ErrorDto })
-  async resolveCashierCustomer(@Body() dto: CashierCustomerResolveDto) {
+  async resolveCashierCustomer(
+    @Req() req: any,
+    @Body() dto: CashierCustomerResolveDto,
+  ) {
     const merchantId =
       typeof dto?.merchantId === 'string' ? dto.merchantId.trim() : '';
     const userToken =
@@ -1581,15 +1584,38 @@ export class LoyaltyController {
         ? customer.name.trim()
         : null;
     let balance: number | null = null;
+    let redeemLimitBps: number | null = null;
+    let minPaymentAmount: number | null = null;
     try {
       const balanceResp = await this.service.balance(merchantId, customer.id);
       balance =
         typeof balanceResp?.balance === 'number' ? balanceResp.balance : null;
     } catch {}
+    try {
+      const outletId =
+        typeof req?.cashierSession?.outletId === 'string'
+          ? req.cashierSession.outletId
+          : null;
+      const rates = await this.service.getBaseRatesForCustomer(
+        merchantId,
+        customer.id,
+        { outletId },
+      );
+      redeemLimitBps =
+        typeof rates?.redeemLimitBps === 'number'
+          ? Math.max(0, Math.floor(Number(rates.redeemLimitBps)))
+          : null;
+      minPaymentAmount =
+        typeof rates?.tierMinPayment === 'number'
+          ? Math.max(0, Math.floor(Number(rates.tierMinPayment)))
+          : null;
+    } catch {}
     return {
       customerId: customer.id,
       name: customerName,
       balance,
+      redeemLimitBps,
+      minPaymentAmount,
     } satisfies CashierCustomerResolveRespDto;
   }
 

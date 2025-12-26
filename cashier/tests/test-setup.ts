@@ -18,6 +18,21 @@ Object.defineProperty(globalThis, "navigator", {
   configurable: true,
   writable: true,
 });
+Object.defineProperty(dom.window, "matchMedia", {
+  value: (query: string) => ({
+    matches: false,
+    media: query,
+    addEventListener() {},
+    removeEventListener() {},
+    addListener() {},
+    removeListener() {},
+    dispatchEvent() {
+      return false;
+    },
+  }),
+  writable: true,
+  configurable: true,
+});
 globalObject.HTMLElement = dom.window.HTMLElement as unknown as typeof HTMLElement;
 globalObject.ResizeObserver = class {
   observe() {}

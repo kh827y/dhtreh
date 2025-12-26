@@ -89,6 +89,14 @@ export class QuoteDto {
   @IsNumber()
   @Min(0)
   total: number;
+  @ApiPropertyOptional({
+    description: 'Сумма списания в баллах (в рублях)',
+    minimum: 0,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  redeemAmount?: number;
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -209,6 +217,8 @@ export class QuoteRedeemRespDto {
   @ApiProperty() discountToApply!: number;
   @ApiProperty() pointsToBurn!: number;
   @ApiProperty() finalPayable!: number;
+  @ApiPropertyOptional() postEarnPoints?: number;
+  @ApiPropertyOptional() postEarnOnAmount?: number;
   @ApiPropertyOptional() holdId?: string;
   @ApiPropertyOptional() message?: string;
 }
@@ -289,6 +299,10 @@ export class CashierCustomerResolveRespDto {
   name?: string | null;
   @ApiPropertyOptional({ nullable: true })
   balance?: number | null;
+  @ApiPropertyOptional({ nullable: true })
+  redeemLimitBps?: number | null;
+  @ApiPropertyOptional({ nullable: true })
+  minPaymentAmount?: number | null;
 }
 
 export class OkDto {

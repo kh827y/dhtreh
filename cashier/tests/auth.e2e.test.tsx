@@ -22,7 +22,7 @@ describe("cashier auth flow", () => {
     restoreFetch();
   });
 
-  it("авторизуется мерчантом, проверяет PIN и открывает терминал", async () => {
+  it("авторизуется по коду активации и PIN", async () => {
     const calls: Array<{ url: string; method: string; body: unknown }> = [];
 
     fetchMock = mock.method(global, "fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -53,21 +53,6 @@ describe("cashier auth flow", () => {
             login: "greenmarket-01",
             expiresAt: "2025-01-04T00:00:00.000Z",
           }),
-          {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-          },
-        );
-      }
-
-      if (url.endsWith("/loyalty/cashier/staff-access") && method === "POST") {
-        calls.push({ url, method, body });
-        return new Response(
-          JSON.stringify({
-            staff: { id: "S-1", login: "alice", firstName: "Алиса", lastName: "Фриман", role: "CASHIER" },
-            outlet: { id: "O-1", name: "Флагманский магазин" },
-            accesses: [{ outletId: "O-1", outletName: "Флагманский магазин" }],
-          }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
@@ -88,35 +73,36 @@ describe("cashier auth flow", () => {
         );
       }
 
+      if (url.includes("/loyalty/cashier/outlet-transactions") && method === "GET") {
+        return new Response(JSON.stringify({ items: [], nextBefore: null }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
     const { default: CashierPage } = await import("../src/app/page");
     render(React.createElement(CashierPage));
 
-    await screen.findByText("Терминал кассира");
+    await screen.findByText("Авторизация устройства");
 
-    fireEvent.change(screen.getByPlaceholderText("Например, greenmarket"), { target: { value: "GreenMarket-01" } });
+    fireEvent.change(screen.getByPlaceholderText("Например: shop_01"), { target: { value: "GreenMarket-01" } });
+    fireEvent.change(screen.getByPlaceholderText("•••••••••"), { target: { value: "123456789" } });
 
-    const activationHidden = document.querySelector('input[maxlength="9"]') as HTMLInputElement | null;
-    assert.ok(activationHidden);
-    fireEvent.change(activationHidden, { target: { value: "123456789" } });
+    fireEvent.click(screen.getByRole("button", { name: "Войти" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
+    await screen.findByText("Вход сотрудника");
 
-    await screen.findByText("PIN сотрудника");
+    fireEvent.pointerDown(screen.getByRole("button", { name: "1" }));
+    fireEvent.pointerDown(screen.getByRole("button", { name: "2" }));
+    fireEvent.pointerDown(screen.getByRole("button", { name: "3" }));
+    fireEvent.pointerDown(screen.getByRole("button", { name: "4" }));
 
-    const pinHidden = document.querySelector('input[maxlength="4"]') as HTMLInputElement | null;
-    assert.ok(pinHidden);
-    fireEvent.change(pinHidden, { target: { value: "1234" } });
-
-    await screen.findByText("Алиса Фриман");
-    fireEvent.click(screen.getByRole("button", { name: "Продолжить в терминал" }));
-
-    await screen.findByText("Сканировать QR");
+    await screen.findByText("Терминал лояльности");
 
     assert.equal(window.localStorage.getItem("cashier_merchant_login"), "greenmarket-01");
-    assert.equal(document.cookie, "");
 
     assert.deepEqual(
       calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
@@ -127,11 +113,6 @@ describe("cashier auth flow", () => {
           body: { merchantLogin: "greenmarket-01", activationCode: "123456789" },
         },
         {
-          url: "/loyalty/cashier/staff-access",
-          method: "POST",
-          body: { merchantLogin: "greenmarket-01", pinCode: "1234" },
-        },
-        {
           url: "/loyalty/cashier/session",
           method: "POST",
           body: { merchantLogin: "greenmarket-01", pinCode: "1234", rememberPin: false },
@@ -140,7 +121,7 @@ describe("cashier auth flow", () => {
     );
   });
 
-  it("показывает человекочитаемую ошибку при неверном коде активации", async () => {
+  it("показывает ошибку при неверном коде активации", async () => {
     fetchMock = mock.method(global, "fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
       const method = init?.method || "GET";
@@ -172,19 +153,17 @@ describe("cashier auth flow", () => {
     const { default: CashierPage } = await import("../src/app/page");
     render(React.createElement(CashierPage));
 
-    await screen.findByText("Терминал кассира");
+    await screen.findByText("Авторизация устройства");
 
-    fireEvent.change(screen.getByPlaceholderText("Например, greenmarket"), { target: { value: "greenmarket-01" } });
-    const activationHidden = document.querySelector('input[maxlength="9"]') as HTMLInputElement | null;
-    assert.ok(activationHidden);
-    fireEvent.change(activationHidden, { target: { value: "000000000" } });
+    fireEvent.change(screen.getByPlaceholderText("Например: shop_01"), { target: { value: "greenmarket-01" } });
+    fireEvent.change(screen.getByPlaceholderText("•••••••••"), { target: { value: "000000000" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
+    fireEvent.click(screen.getByRole("button", { name: "Войти" }));
 
     await screen.findByText("Неверный или истёкший код активации");
   });
 
-  it("пропускает шаг активации, если устройство уже активно", async () => {
+  it("пропускает активацию, если устройство уже активно", async () => {
     const calls: Array<{ url: string; method: string; body: unknown }> = [];
 
     fetchMock = mock.method(global, "fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -212,18 +191,6 @@ describe("cashier auth flow", () => {
         );
       }
 
-      if (url.endsWith("/loyalty/cashier/staff-access") && method === "POST") {
-        calls.push({ url, method, body });
-        return new Response(
-          JSON.stringify({
-            staff: { id: "S-1", login: "alice", firstName: "Алиса", lastName: "Фриман", role: "CASHIER" },
-            outlet: { id: "O-1", name: "Флагманский магазин" },
-            accesses: [{ outletId: "O-1", outletName: "Флагманский магазин" }],
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
-      }
-
       if (url.endsWith("/loyalty/cashier/session") && method === "POST") {
         calls.push({ url, method, body });
         return new Response(
@@ -240,40 +207,34 @@ describe("cashier auth flow", () => {
         );
       }
 
+      if (url.includes("/loyalty/cashier/outlet-transactions") && method === "GET") {
+        return new Response(JSON.stringify({ items: [], nextBefore: null }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
       throw new Error(`Unexpected fetch ${url} ${method}`);
     });
 
     const { default: CashierPage } = await import("../src/app/page");
     render(React.createElement(CashierPage));
 
-    await screen.findByText("Терминал кассира");
-    await screen.findByText("PIN сотрудника");
+    await screen.findByText("Вход сотрудника");
 
-    assert.equal(window.localStorage.getItem("cashier_merchant_login"), "greenmarket-01");
+    fireEvent.pointerDown(screen.getByRole("button", { name: "1" }));
+    fireEvent.pointerDown(screen.getByRole("button", { name: "2" }));
+    fireEvent.pointerDown(screen.getByRole("button", { name: "3" }));
+    fireEvent.pointerDown(screen.getByRole("button", { name: "4" }));
 
-    const pinHidden = document.querySelector('input[maxlength="4"]') as HTMLInputElement | null;
-    assert.ok(pinHidden);
-    fireEvent.change(pinHidden, { target: { value: "1234" } });
+    await screen.findByText("Терминал лояльности");
 
-    await screen.findByText("Алиса Фриман");
-    fireEvent.click(screen.getByRole("button", { name: "Продолжить в терминал" }));
-
-    await screen.findByText("Сканировать QR");
-
-    assert.deepEqual(
-      calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
-      [
-        {
-          url: "/loyalty/cashier/staff-access",
-          method: "POST",
-          body: { merchantLogin: "greenmarket-01", pinCode: "1234" },
-        },
-        {
-          url: "/loyalty/cashier/session",
-          method: "POST",
-          body: { merchantLogin: "greenmarket-01", pinCode: "1234", rememberPin: false },
-        },
-      ],
-    );
+    assert.deepEqual(calls, [
+      {
+        url: "/loyalty/cashier/session",
+        method: "POST",
+        body: { merchantLogin: "greenmarket-01", pinCode: "1234", rememberPin: false },
+      },
+    ]);
   });
 });
