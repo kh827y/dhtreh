@@ -36,18 +36,6 @@ export class LoyaltyPositionDto {
   @IsString()
   externalId?: string;
 
-  @ApiPropertyOptional({ description: 'Явный ID категории' })
-  @IsOptional()
-  @IsString()
-  categoryId?: string;
-
-  @ApiPropertyOptional({
-    description: 'Внешний ID категории в указанной системе',
-  })
-  @IsOptional()
-  @IsString()
-  categoryExternalId?: string;
-
   @ApiPropertyOptional({ description: 'Штрихкод товара' })
   @IsOptional()
   @IsString()

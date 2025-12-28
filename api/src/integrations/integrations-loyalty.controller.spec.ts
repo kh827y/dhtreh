@@ -77,11 +77,10 @@ describe('IntegrationsLoyaltyController', () => {
       },
     });
     loyalty.calculateBonusPreview.mockResolvedValue({
-      products: [],
+      items: [],
       max_pay_bonus: 0,
       bonus_value: 0,
       final_payable: 0,
-      balance: 0,
     });
 
     const dto: any = {
@@ -93,7 +92,7 @@ describe('IntegrationsLoyaltyController', () => {
       body: dto,
     });
 
-    expect(resp.balance).toBe(0);
+    expect(resp.status).toBe('ok');
     expect(loyalty.calculateBonusPreview).toHaveBeenCalledWith(
       expect.objectContaining({
         customerId: customer.id,
@@ -102,7 +101,7 @@ describe('IntegrationsLoyaltyController', () => {
     expect(prisma.customer.findUnique).toHaveBeenCalled();
   });
 
-  it('ошибается, если не переданы outletId/deviceId/managerId в BONUS', async () => {
+  it('ошибается, если не переданы outlet_id/device_id/manager_id в BONUS', async () => {
     const customer = {
       id: 'MC-2',
       merchantId: 'M-1',
@@ -128,6 +127,7 @@ describe('IntegrationsLoyaltyController', () => {
     const dto: any = {
       id_client: customer.id,
       invoice_num: 'ORDER-1',
+      idempotency_key: 'idem-1',
       total: 100,
       items: [],
     };
@@ -177,8 +177,9 @@ describe('IntegrationsLoyaltyController', () => {
     const dto: any = {
       id_client: customer.id,
       invoice_num: 'ORDER-2',
+      idempotency_key: 'idem-2',
       total: 200,
-      managerId: 'STAFF-1',
+      manager_id: 'STAFF-1',
       items: [{ id_product: 'X', qty: 1, price: 200 }],
     };
     const resp = await controller.bonus(dto, { ...baseReq, body: dto });
@@ -193,7 +194,7 @@ describe('IntegrationsLoyaltyController', () => {
     expect(resp.order_id).toBe('R-2');
   });
 
-  it('возвращает invoice_num/order_id и outlet_name в ответе BONUS', async () => {
+  it('возвращает invoice_num/order_id и client в ответе BONUS', async () => {
     const customer = {
       id: 'MC-4',
       merchantId: 'M-1',
@@ -232,16 +233,16 @@ describe('IntegrationsLoyaltyController', () => {
     const dto: any = {
       id_client: customer.id,
       invoice_num: 'INV-42',
+      idempotency_key: 'idem-42',
       total: 420,
-      outletId: 'OUT-42',
+      outlet_id: 'OUT-42',
       items: [{ id_product: 'SKU', qty: 1, price: 420 }],
     };
     const resp = await controller.bonus(dto, { ...baseReq, body: dto });
 
     expect(resp.invoice_num).toBe('INV-42');
     expect(resp.order_id).toBe('R-4');
-    expect(resp.outlet_name).toBe('Outlet 42');
-    expect(resp.outletId).toBe('OUT-42');
+    expect(resp.client.id_client).toBe(customer.id);
   });
 
   it('возвращает invoice_num/order_id в ответе REFUND', async () => {
@@ -274,8 +275,8 @@ describe('IntegrationsLoyaltyController', () => {
     );
     expect(resp.invoice_num).toBe('INV-1');
     expect(resp.order_id).toBe('RID-1');
-    expect(resp.pointsRestored).toBe(30);
-    expect(resp.pointsRevoked).toBe(10);
+    expect(resp.points_restored).toBe(30);
+    expect(resp.points_revoked).toBe(10);
   });
 
   it('calculate action нормализует позиции и возвращает статус ok', async () => {
@@ -294,7 +295,7 @@ describe('IntegrationsLoyaltyController', () => {
               qty: 2,
               price: 100,
               base_price: null,
-              actions_id: [],
+              actions: [],
               actions_names: [],
             },
           ],

@@ -53,7 +53,8 @@ type IntegrationBonusParams = {
   customerId: string;
   userToken?: string | null;
   invoiceNum?: string | null;
-  total: number;
+  idempotencyKey: string;
+  total?: number | null;
   paidBonus?: number | null;
   bonusValue?: number | null;
   outletId?: string | null;
@@ -84,6 +85,8 @@ type PositionInput = {
   price: number;
   basePrice?: number;
   accruePoints?: boolean;
+  actionIds?: string[];
+  actionNames?: string[];
 };
 
 type ResolvedPosition = PositionInput & {
@@ -196,6 +199,13 @@ export class LoyaltyService {
       typeof value === 'string' && value.trim().length
         ? value.trim()
         : undefined;
+    const normalizeArray = (value: any) => {
+      if (!Array.isArray(value)) return undefined;
+      const sanitized = value
+        .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+        .filter(Boolean);
+      return sanitized.length ? sanitized : undefined;
+    };
     const parseBool = (value: any): boolean | undefined => {
       if (value === true || value === false) return Boolean(value);
       if (typeof value === 'string') {
@@ -239,6 +249,19 @@ export class LoyaltyService {
             (entry as any).earn_bonus ??
             (entry as any).eligible,
         ),
+        actionIds: normalizeArray(
+          (entry as any).actions ??
+            (entry as any).actions_id ??
+            (entry as any).action_ids ??
+            (entry as any).actionIds ??
+            (entry as any).actionsIds,
+        ),
+        actionNames: normalizeArray(
+          (entry as any).action_names ??
+            (entry as any).actions_names ??
+            (entry as any).actionNames ??
+            (entry as any).actionsNames,
+        ),
       });
     }
     return items;
@@ -269,9 +292,11 @@ export class LoyaltyService {
     merchantId: string,
     items: PositionInput[],
     customerId?: string | null,
+    opts?: { allowAutoPromotions?: boolean },
   ): Promise<ResolvedPosition[]> {
     const normalized = this.sanitizePositions(items);
     if (!normalized.length) return [];
+    const allowAutoPromotions = opts?.allowAutoPromotions !== false;
 
     const normalize = (value?: string | null) => {
       if (value == null) return undefined;
@@ -454,17 +479,48 @@ export class LoyaltyService {
         (productId && productByIdMap.get(productId)) ||
         (extKey ? productByExtMap.get(extKey) : undefined);
       const categoryId = productInfo?.categoryId || null;
-      const applicablePromos = promotions
-        .filter((promo) => matchesPromotion(promo, productId, categoryId))
-        .sort(
-          (a, b) =>
-            ({ FIXED_PRICE: 1, NTH_FREE: 2, POINTS_MULTIPLIER: 3 } as const)[
-              a.kind
-            ] -
-            ({ FIXED_PRICE: 1, NTH_FREE: 2, POINTS_MULTIPLIER: 3 } as const)[
-              b.kind
-            ],
-        );
+      const requestedIds = new Set(
+        Array.isArray(item.actionIds)
+          ? item.actionIds
+              .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+              .filter(Boolean)
+          : [],
+      );
+      const requestedNames = new Set(
+        Array.isArray(item.actionNames)
+          ? item.actionNames
+              .map((entry) =>
+                typeof entry === 'string' ? entry.trim().toLowerCase() : '',
+              )
+              .filter(Boolean)
+          : [],
+      );
+      const hasRequestedPromos =
+        requestedIds.size > 0 || requestedNames.size > 0;
+      const isRequestedPromo = (promo: ActivePromotionRule) =>
+        requestedIds.has(promo.id) ||
+        (promo.name &&
+          requestedNames.has(String(promo.name).trim().toLowerCase()));
+      const shouldApplyPromos = hasRequestedPromos || allowAutoPromotions;
+      const applicablePromos = shouldApplyPromos
+        ? promotions
+            .filter((promo) => {
+              if (!matchesPromotion(promo, productId, categoryId)) return false;
+              if (hasRequestedPromos && !isRequestedPromo(promo)) return false;
+              return true;
+            })
+            .sort(
+              (a, b) =>
+                ({ FIXED_PRICE: 1, NTH_FREE: 2, POINTS_MULTIPLIER: 3 } as const)[
+                  a.kind
+                ] -
+                ({
+                  FIXED_PRICE: 1,
+                  NTH_FREE: 2,
+                  POINTS_MULTIPLIER: 3,
+                } as const)[b.kind],
+            )
+        : [];
       const appliedPromos: ActivePromotionRule[] = [];
       for (const promo of applicablePromos) {
         if (promo.kind === 'POINTS_MULTIPLIER') {
@@ -489,9 +545,13 @@ export class LoyaltyService {
           appliedPromos.push(promo);
         }
       }
-      const applicablePointPromos = pointPromotions.filter((promo) =>
-        matchesPromotion(promo, productId, categoryId),
-      );
+      const applicablePointPromos = shouldApplyPromos
+        ? pointPromotions.filter((promo) => {
+            if (!matchesPromotion(promo, productId, categoryId)) return false;
+            if (hasRequestedPromos && !isRequestedPromo(promo)) return false;
+            return true;
+          })
+        : [];
       const accruePoints =
         item.accruePoints != null
           ? Boolean(item.accruePoints)
@@ -997,7 +1057,7 @@ export class LoyaltyService {
           qty: freebies,
           price: 0,
           base_price: resolveBasePrice(0),
-          actions_id: actionsAll,
+          actions: actionsAll,
           actions_names: actionNamesAll,
         });
         // Платная позиция
@@ -1007,7 +1067,7 @@ export class LoyaltyService {
           qty: paidQty,
           price: unitPrice,
           base_price: resolveBasePrice(unitPrice),
-          actions_id: actionsPaid,
+          actions: actionsPaid,
           actions_names: actionNamesPaid,
         });
         return result;
@@ -1022,7 +1082,7 @@ export class LoyaltyService {
             qty: item.qty,
             price: 0,
             base_price: resolveBasePrice(0),
-            actions_id: actionsAll,
+            actions: actionsAll,
             actions_names: actionNamesAll,
           },
         ];
@@ -1036,7 +1096,7 @@ export class LoyaltyService {
           qty: item.qty,
           price: unitPrice,
           base_price: resolveBasePrice(unitPrice),
-          actions_id: actionsAll,
+          actions: actionsAll,
           actions_names: actionNamesAll,
         },
       ];
@@ -1154,8 +1214,10 @@ export class LoyaltyService {
     items: ResolvedPosition[],
     earnBps: number,
     discountToApply: number,
+    opts?: { allowEarn?: boolean },
   ) {
     if (!items.length) return 0;
+    const allowEarn = opts?.allowEarn !== false;
     const amounts = items.map((i) => Math.max(0, i.amount || 0));
     const caps = this.computeRedeemCaps(items);
     const capsTotal = caps.reduce((sum, cap) => sum + cap, 0);
@@ -1168,16 +1230,18 @@ export class LoyaltyService {
     items.forEach((item, idx) => {
       const redeemShare = shares[idx] ?? 0;
       item.redeemAmount = redeemShare;
-      const earnBase =
-        item.accruePoints === false
-          ? 0
-          : Math.max(0, item.amount - redeemShare);
-      const basePoints = Math.floor((earnBase * earnBps) / 10000);
+      const allowItemEarn = allowEarn && item.accruePoints !== false;
+      const earnBase = allowItemEarn
+        ? Math.max(0, item.amount - redeemShare)
+        : 0;
+      const basePoints = allowItemEarn
+        ? Math.floor((earnBase * earnBps) / 10000)
+        : 0;
       let itemEarn = basePoints;
       let selectedPromo: ActivePromotionRule | null = null;
-      if (item.pointPromotions && item.pointPromotions.length) {
+      if (allowItemEarn && item.pointPromotions && item.pointPromotions.length) {
         const qty = Math.max(0, Number(item.qty ?? 0));
-        let bestPoints = basePoints;
+        let bestPoints = 0;
         for (const promo of item.pointPromotions) {
           if (promo.kind !== 'POINTS_MULTIPLIER') continue;
           const ruleType = promo.pointsRuleType ?? 'multiplier';
@@ -1201,15 +1265,17 @@ export class LoyaltyService {
             selectedPromo = promo;
           }
         }
-        itemEarn = bestPoints;
-      } else {
+        itemEarn = Math.max(0, bestPoints);
+      } else if (allowItemEarn) {
         const multiplier =
           item.promotionMultiplier && item.promotionMultiplier > 0
             ? item.promotionMultiplier
             : 1;
         itemEarn = Math.floor(basePoints * multiplier);
+      } else {
+        itemEarn = 0;
       }
-      if (selectedPromo) {
+      if (allowItemEarn && selectedPromo) {
         item.promotionId = selectedPromo.id;
         item.appliedPointPromotionId = selectedPromo.id;
         if (selectedPromo.pointsRuleType === 'multiplier') {
@@ -1219,11 +1285,13 @@ export class LoyaltyService {
           item.promotionMultiplier = 1;
         }
         item.promotionPointsBonus = Math.max(0, itemEarn - basePoints);
-      } else {
+      } else if (allowItemEarn) {
         item.promotionPointsBonus = Math.max(0, itemEarn - basePoints);
         if (!item.promotionMultiplier || item.promotionMultiplier <= 0) {
           item.promotionMultiplier = 1;
         }
+      } else {
+        item.promotionPointsBonus = 0;
       }
       item.earnPoints = itemEarn;
       totalEarn += itemEarn;
@@ -2923,6 +2991,7 @@ export class LoyaltyService {
             itemsForCalc,
             allowSameReceiptForCustomer ? earnBps : 0,
             discountToApply,
+            { allowEarn: allowSameReceiptForCustomer },
           );
           appliedRedeem = itemsForCalc.reduce(
             (sum, item) => sum + Math.max(0, item.redeemAmount || 0),
@@ -3149,10 +3218,13 @@ export class LoyaltyService {
       }));
       const eligibleBps =
         tierMinPayment != null && sanitizedTotal < tierMinPayment ? 0 : earnBps;
+      const allowEarn =
+        !(tierMinPayment != null && sanitizedTotal < tierMinPayment);
       let totalFromItems = this.applyEarnAndRedeemToItems(
         itemsForCalc,
         eligibleBps,
         0,
+        { allowEarn },
       );
       if (tierMinPayment != null && sanitizedTotal < tierMinPayment) {
         totalFromItems = 0;
@@ -4422,24 +4494,22 @@ export class LoyaltyService {
     const merchantId = String(params.merchantId || '').trim();
     const customerId = String(params.customerId || '').trim();
     const invoiceNum = String(params.invoiceNum || '').trim() || null;
-    const orderId = invoiceNum || randomUUID();
+    const idempotencyKey = String(params.idempotencyKey || '').trim();
+    if (!idempotencyKey) {
+      throw new BadRequestException('idempotency_key required');
+    }
+    const orderId = idempotencyKey;
     if (!merchantId) throw new BadRequestException('merchantId required');
     if (!customerId) throw new BadRequestException('customerId required');
     const operationDate = params.operationDate ?? null;
     const paidBonus = this.sanitizeManualAmount(params.paidBonus);
     const bonusValue = this.sanitizeManualAmount(params.bonusValue);
-    const manualMode = paidBonus != null || bonusValue != null;
+    const manualRedeem = paidBonus != null;
+    const manualEarn = bonusValue != null;
     const baseTotal = Math.max(0, Math.floor(Number(params.total ?? 0)));
     const rawItems = this.sanitizePositions(
       (params.items as PositionInput[]) ?? [],
     );
-    const resolvedItems = rawItems.length
-      ? await this.resolvePositions(merchantId, rawItems, customerId)
-      : [];
-    const { total: sanitizedTotal, eligibleAmount } =
-      this.computeTotalsFromPositions(baseTotal, resolvedItems);
-
-    await this.ensureCustomerId(customerId);
     try {
       await this.prisma.merchant.upsert({
         where: { id: merchantId },
@@ -4469,7 +4539,10 @@ export class LoyaltyService {
       const walletAfter = await this.balance(merchantId, customerId);
       return {
         orderId: existingReceipt.id,
-        invoiceNum: invoiceNum || orderId,
+        invoiceNum:
+          existingReceipt.receiptNumber ??
+          invoiceNum ??
+          null,
         receiptId: existingReceipt.id,
         redeemApplied: existingReceipt.redeemApplied ?? 0,
         earnApplied: existingReceipt.earnApplied ?? 0,
@@ -4492,7 +4565,7 @@ export class LoyaltyService {
     const wallet = await this.ensurePointsWallet(merchantId, customerId);
     const balanceBefore = wallet.balance ?? 0;
 
-    if (manualMode) {
+    if (manualRedeem || manualEarn) {
       if (paidBonus != null && paidBonus > balanceBefore) {
         throw new BadRequestException('Недостаточно бонусов для списания');
       }
@@ -4505,56 +4578,72 @@ export class LoyaltyService {
       });
     }
 
-    let holdId = existingHold?.id ?? null;
-    let manualRedeemOverride: number | null = paidBonus ?? null;
-    let manualEarnOverride: number | null = bonusValue ?? null;
+    const calc = await this.computeIntegrationCalc({
+      merchantId,
+      customerId,
+      items: rawItems,
+      outletId: params.outletId ?? null,
+      operationDate,
+      total: baseTotal,
+      paidBonus,
+      redeemMode: 'exact',
+      allowAutoPromotions: false,
+    });
 
-    let positionsForHold = resolvedItems.map((item) => ({
+    let holdId = existingHold?.id ?? null;
+    let positionsForHold = calc.itemsForCalc.map((item) => ({
       ...item,
-      earnPoints: item.earnPoints ?? 0,
-      redeemAmount: item.redeemAmount ?? 0,
+      earnPoints:
+        item.earnPoints != null ? Math.max(0, item.earnPoints) : 0,
+      redeemAmount:
+        item.redeemAmount != null ? Math.max(0, item.redeemAmount) : 0,
     }));
-    if (manualMode && positionsForHold.length) {
-      const redeemCaps = this.computeRedeemCaps(positionsForHold);
-      const capsTotal = redeemCaps.reduce((sum, cap) => sum + cap, 0);
-      const redeemTarget = Math.min(
-        Math.max(0, Math.floor(Number(paidBonus ?? 0) || 0)),
-        capsTotal,
-      );
-      const redeemShares = this.allocateProRataWithCaps(
-        positionsForHold.map((i) => i.amount),
-        redeemCaps,
-        redeemTarget,
-      );
-      const earnWeights = positionsForHold.map((item, idx) =>
-        Math.max(
-          0,
-          Math.floor(
-            item.earnPoints != null && Number.isFinite(item.earnPoints)
-              ? Math.max(0, item.earnPoints)
-              : Math.max(0, item.amount - (redeemShares[idx] ?? 0)) *
-                  Math.max(1, item.promotionMultiplier || 1),
+    let redeemToSave = calc.appliedRedeem;
+    let earnToSave = calc.earnedTotal;
+    let manualRedeemOverride: number | null = manualRedeem ? redeemToSave : null;
+    let manualEarnOverride: number | null = manualEarn ? earnToSave : null;
+
+    if (manualEarn) {
+      if (calc.accrualsBlocked && (bonusValue ?? 0) > 0) {
+        throw new BadRequestException('Начисления заблокированы администратором');
+      }
+      if (
+        calc.appliedRedeem > 0 &&
+        !calc.allowSameReceipt &&
+        (bonusValue ?? 0) > 0
+      ) {
+        throw new BadRequestException(
+          'Нельзя одновременно начислять и списывать баллы в одном чеке.',
+        );
+      }
+      if (positionsForHold.length) {
+        const earnTarget = Math.max(0, Math.floor(Number(bonusValue ?? 0)));
+        const earnWeights = positionsForHold.map((item) =>
+          Math.max(
+            1,
+            Math.floor(
+              Math.max(0, item.amount - Math.max(0, item.redeemAmount || 0)) *
+                Math.max(1, item.promotionMultiplier || 1),
+            ),
           ),
-        ),
-      );
-      const earnShares = this.allocateByWeight(earnWeights, bonusValue ?? 0);
-      manualRedeemOverride = redeemShares.reduce(
-        (sum, value) => sum + Math.max(0, value),
-        0,
-      );
-      positionsForHold = positionsForHold.map((item, idx) => ({
-        ...item,
-        redeemAmount: redeemShares[idx] ?? 0,
-        earnPoints: earnShares[idx] ?? 0,
-      }));
+        );
+        const earnShares = this.allocateByWeight(earnWeights, earnTarget);
+        positionsForHold = positionsForHold.map((item, idx) => ({
+          ...item,
+          earnPoints: earnShares[idx] ?? 0,
+        }));
+        earnToSave = earnShares.reduce(
+          (sum, value) => sum + Math.max(0, value),
+          0,
+        );
+      } else {
+        earnToSave = Math.max(0, Math.floor(Number(bonusValue ?? 0)));
+      }
+      manualEarnOverride = earnToSave;
     }
 
     const holdMode =
-      manualRedeemOverride && manualRedeemOverride > 0
-        ? HoldMode.REDEEM
-        : HoldMode.EARN;
-    const redeemToSave = manualRedeemOverride ?? 0;
-    const earnToSave = manualEarnOverride ?? 0;
+      redeemToSave && redeemToSave > 0 ? HoldMode.REDEEM : HoldMode.EARN;
 
     if (!holdId) {
       const hold = await this.prisma.hold.create({
@@ -4566,8 +4655,8 @@ export class LoyaltyService {
           redeemAmount: redeemToSave,
           earnPoints: earnToSave,
           orderId,
-          total: sanitizedTotal,
-          eligibleTotal: eligibleAmount,
+          total: calc.total,
+          eligibleTotal: calc.eligibleAmount,
           status: HoldStatus.PENDING,
           outletId: params.outletId ?? null,
           staffId: params.staffId ?? null,
@@ -4599,7 +4688,7 @@ export class LoyaltyService {
             : null;
       }
 
-      if (manualMode && positionsForHold.length) {
+      if ((manualRedeem || manualEarn) && positionsForHold.length) {
         try {
           await this.upsertHoldItems(
             this.prisma as any,
@@ -4612,30 +4701,26 @@ export class LoyaltyService {
           await this.prisma.hold.update({
             where: { id: holdId },
             data: {
-              total: sanitizedTotal,
-              eligibleTotal: eligibleAmount,
+              total: calc.total,
+              eligibleTotal: calc.eligibleAmount,
               outletId: params.outletId ?? null,
               staffId: params.staffId ?? null,
               deviceId: params.resolvedDeviceId ?? null,
               mode:
-                manualRedeemOverride && manualRedeemOverride > 0
+                redeemToSave && redeemToSave > 0
                   ? HoldMode.REDEEM
                   : holdExisting.mode,
               redeemAmount:
-                manualRedeemOverride != null
-                  ? manualRedeemOverride
-                  : holdExisting.redeemAmount,
+                manualRedeem ? redeemToSave : holdExisting.redeemAmount,
               earnPoints:
-                manualEarnOverride != null
-                  ? manualEarnOverride
-                  : holdExisting.earnPoints,
+                manualEarn ? earnToSave : holdExisting.earnPoints,
             },
           });
         } catch {}
       }
     }
 
-    if (manualRedeemOverride != null && manualRedeemOverride > balanceBefore) {
+    if (manualRedeem && redeemToSave > balanceBefore) {
       throw new BadRequestException('Недостаточно бонусов для списания');
     }
 
@@ -4650,12 +4735,12 @@ export class LoyaltyService {
       {
         operationDate,
         manualRedeemAmount:
-          manualMode && manualRedeemOverride != null
+          manualRedeem && manualRedeemOverride != null
             ? manualRedeemOverride
             : null,
         manualEarnPoints:
-          manualMode && manualEarnOverride != null ? manualEarnOverride : null,
-        positions: manualMode ? undefined : rawItems,
+          manualEarn && manualEarnOverride != null ? manualEarnOverride : null,
+        positions: manualRedeem || manualEarn ? undefined : rawItems,
       },
     );
     let receiptId: string | null = commitResult.receiptId ?? null;
@@ -4675,7 +4760,7 @@ export class LoyaltyService {
     return {
       receiptId: receiptId,
       orderId: receiptId,
-      invoiceNum: invoiceNum || orderId,
+      invoiceNum: invoiceNum ?? null,
       redeemApplied: commitResult.redeemApplied ?? 0,
       earnApplied: commitResult.earnApplied ?? 0,
       balanceBefore,
@@ -4729,34 +4814,36 @@ export class LoyaltyService {
     };
   }
 
-  async calculateBonusPreview(params: {
+  private async computeIntegrationCalc(params: {
     merchantId: string;
     customerId: string;
-    userToken?: string | null;
     items: PositionInput[];
     outletId?: string | null;
     operationDate?: Date | null;
     total?: number | null;
     paidBonus?: number | null;
+    redeemMode: 'max' | 'exact';
+    allowAutoPromotions?: boolean;
   }) {
     const normalized = this.sanitizePositions(params.items);
     const baseTotal = Math.max(0, Math.floor(Number(params.total ?? 0) || 0));
+    const hasItems = normalized.length > 0;
+    const operationDate = params.operationDate ?? new Date();
 
-    // Если items пустой, но есть total — создаём виртуальную позицию
     let resolved: ResolvedPosition[];
     let total: number;
     let eligibleAmount: number;
-    if (normalized.length) {
+    if (hasItems) {
       resolved = await this.resolvePositions(
         params.merchantId,
         normalized,
         params.customerId,
+        { allowAutoPromotions: params.allowAutoPromotions },
       );
       const computed = this.computeTotalsFromPositions(0, resolved);
       total = computed.total;
       eligibleAmount = computed.eligibleAmount;
     } else if (baseTotal > 0) {
-      // Нет items, используем total как одну виртуальную позицию
       resolved = [
         {
           productId: undefined,
@@ -4779,92 +4866,244 @@ export class LoyaltyService {
       throw new BadRequestException('items или total обязательны');
     }
 
-    // Загружаем баланс и ставки
-    const [balanceResp, rates] = await Promise.all([
+    const context = await this.ensureCustomerContext(
+      params.merchantId,
+      params.customerId,
+    );
+    const accrualsBlocked = Boolean(context.accrualsBlocked);
+    const redemptionsBlocked = Boolean(context.redemptionsBlocked);
+    const [balanceResp, rates, settings, allowSameReceipt] = await Promise.all([
       this.balance(params.merchantId, params.customerId),
       this.getBaseRatesForCustomer(params.merchantId, params.customerId, {
         outletId: params.outletId,
         eligibleAmount,
       }),
+      this.getSettings(params.merchantId),
+      this.isAllowSameReceipt(params.merchantId),
     ]);
     const balance = balanceResp.balance ?? 0;
     const earnBps = rates.earnBps ?? 0;
     const redeemLimitBps = rates.redeemLimitBps ?? 0;
+    const tierMinPayment = rates.tierMinPayment ?? null;
 
-    // Считаем лимит списания по чеку
-    const maxRedeemByLimit = Math.floor(
-      (total * redeemLimitBps) / 10000,
-    );
-    let maxRedeemTotal = Math.min(balance, maxRedeemByLimit, total);
-
-    // Если передан paidBonus — учитываем желаемое списание
-    const paidBonus = Math.max(
-      0,
-      Math.floor(Number(params.paidBonus ?? 0) || 0),
-    );
-    if (paidBonus > 0) {
-      maxRedeemTotal = Math.min(maxRedeemTotal, paidBonus);
-    }
-
+    const paidBonus =
+      params.paidBonus != null
+        ? Math.max(0, Math.floor(Number(params.paidBonus) || 0))
+        : null;
+    const redeemTarget =
+      paidBonus != null
+        ? paidBonus
+        : params.redeemMode === 'exact'
+          ? 0
+          : null;
     const amounts = resolved.map((item) => Math.max(0, item.amount || 0));
     const itemCaps = this.computeRedeemCaps(resolved);
     const capsTotal = itemCaps.reduce((sum, cap) => sum + cap, 0);
-    maxRedeemTotal = Math.min(maxRedeemTotal, capsTotal);
+
+    let redeemAllowed = !redemptionsBlocked;
+    if (redeemAllowed && settings.redeemCooldownSec > 0) {
+      const last = await this.prisma.transaction.findFirst({
+        where: {
+          merchantId: params.merchantId,
+          customerId: params.customerId,
+          type: 'REDEEM',
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (last) {
+        const diffSec = Math.floor(
+          (Date.now() - last.createdAt.getTime()) / 1000,
+        );
+        if (diffSec < settings.redeemCooldownSec) {
+          redeemAllowed = false;
+        }
+      }
+    }
+
+    let dailyRedeemLeft: number | null = null;
+    if (redeemAllowed && settings.redeemDailyCap && settings.redeemDailyCap > 0) {
+      const ts = operationDate.getTime();
+      const since = new Date(ts - 24 * 60 * 60 * 1000);
+      const until = new Date(ts);
+      const txns = await this.prisma.transaction.findMany({
+        where: {
+          merchantId: params.merchantId,
+          customerId: params.customerId,
+          type: 'REDEEM',
+          createdAt: { gte: since, lte: until },
+        },
+      });
+      const used = txns.reduce((sum, t) => sum + Math.max(0, -t.amount), 0);
+      dailyRedeemLeft = Math.max(0, settings.redeemDailyCap - used);
+      if (dailyRedeemLeft <= 0) redeemAllowed = false;
+    }
+
+    let maxRedeemTotal = 0;
+    if (redeemAllowed) {
+      const maxRedeemByLimit = Math.floor((total * redeemLimitBps) / 10000);
+      const allowedByMinPayment =
+        tierMinPayment != null
+          ? Math.max(0, total - tierMinPayment)
+          : Number.MAX_SAFE_INTEGER;
+      maxRedeemTotal = Math.min(
+        balance,
+        maxRedeemByLimit,
+        total,
+        allowedByMinPayment,
+        capsTotal,
+        dailyRedeemLeft ?? Number.MAX_SAFE_INTEGER,
+      );
+      if (redeemTarget != null) {
+        maxRedeemTotal = Math.min(maxRedeemTotal, redeemTarget);
+      }
+    }
+
     const redeemShares = this.allocateProRataWithCaps(
       amounts,
       itemCaps,
       maxRedeemTotal,
     );
     const appliedRedeem = redeemShares.reduce((sum, value) => sum + value, 0);
-    const perItemMaxRedeem =
-      paidBonus > 0 ? redeemShares : itemCaps;
+    const perItemMaxRedeem = redeemAllowed
+      ? redeemTarget != null
+        ? redeemShares
+        : itemCaps
+      : itemCaps.map(() => 0);
+    const finalPayable = Math.max(0, total - appliedRedeem);
 
-    // Считаем начисление по позициям
+    let earnAllowed = !accrualsBlocked;
+    if (earnAllowed && settings.earnCooldownSec > 0) {
+      const last = await this.prisma.transaction.findFirst({
+        where: {
+          merchantId: params.merchantId,
+          customerId: params.customerId,
+          type: 'EARN',
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (last) {
+        const diffSec = Math.floor(
+          (Date.now() - last.createdAt.getTime()) / 1000,
+        );
+        if (diffSec < settings.earnCooldownSec) {
+          earnAllowed = false;
+        }
+      }
+    }
+    if (tierMinPayment != null) {
+      const baseForMin = appliedRedeem > 0 ? finalPayable : total;
+      if (baseForMin < tierMinPayment) earnAllowed = false;
+    }
+    if (appliedRedeem > 0 && !allowSameReceipt) earnAllowed = false;
+
     const itemsForCalc = resolved.map((item) => ({
       ...item,
       earnPoints: 0,
       redeemAmount: 0,
     }));
-    const earnedTotal = this.applyEarnAndRedeemToItems(
+    let earnedTotal = this.applyEarnAndRedeemToItems(
       itemsForCalc,
-      earnBps,
+      earnAllowed ? earnBps : 0,
       appliedRedeem,
+      { allowEarn: earnAllowed },
     );
-    const actualRedeem = itemsForCalc.reduce(
-      (sum, item) => sum + Math.max(0, item.redeemAmount || 0),
-      0,
-    );
-    const products = itemsForCalc.map((item, idx) => {
+
+    if (earnAllowed && settings.earnDailyCap && settings.earnDailyCap > 0) {
+      const ts = operationDate.getTime();
+      const since = new Date(ts - 24 * 60 * 60 * 1000);
+      const until = new Date(ts);
+      const txns = await this.prisma.transaction.findMany({
+        where: {
+          merchantId: params.merchantId,
+          customerId: params.customerId,
+          type: 'EARN',
+          createdAt: { gte: since, lte: until },
+        },
+      });
+      const used = txns.reduce((sum, t) => sum + Math.max(0, t.amount), 0);
+      const left = Math.max(0, settings.earnDailyCap - used);
+      if (left <= 0) {
+        itemsForCalc.forEach((item) => {
+          item.earnPoints = 0;
+        });
+        earnedTotal = 0;
+      } else if (earnedTotal > left) {
+        const weights = itemsForCalc.map((item) =>
+          Math.max(
+            1,
+            Math.floor(
+              item.earnPoints != null && Number.isFinite(item.earnPoints)
+                ? Math.max(0, item.earnPoints)
+                : Math.max(0, item.amount || 0) *
+                    Math.max(1, item.promotionMultiplier || 1),
+            ),
+          ),
+        );
+        const redistributed = this.allocateByWeight(weights, left);
+        redistributed.forEach((value, idx) => {
+          itemsForCalc[idx].earnPoints = value;
+        });
+        earnedTotal = left;
+      }
+    }
+
+    return {
+      itemsForCalc,
+      perItemMaxRedeem,
+      appliedRedeem,
+      earnedTotal,
+      finalPayable,
+      total,
+      eligibleAmount,
+      hasItems,
+      allowSameReceipt,
+      accrualsBlocked,
+      redemptionsBlocked,
+    };
+  }
+
+  async calculateBonusPreview(params: {
+    merchantId: string;
+    customerId: string;
+    userToken?: string | null;
+    items: PositionInput[];
+    outletId?: string | null;
+    operationDate?: Date | null;
+    total?: number | null;
+    paidBonus?: number | null;
+  }) {
+    const calc = await this.computeIntegrationCalc({
+      merchantId: params.merchantId,
+      customerId: params.customerId,
+      items: params.items,
+      outletId: params.outletId,
+      operationDate: params.operationDate,
+      total: params.total,
+      paidBonus: params.paidBonus,
+      redeemMode: 'max',
+      allowAutoPromotions: false,
+    });
+
+    const items = calc.itemsForCalc.map((item, idx) => {
       const qty = Math.max(0, Number(item.qty ?? 0));
       const price = Math.max(0, Number(item.price ?? 0));
-      const basePrice =
-        item.basePrice != null ? Math.max(0, Number(item.basePrice)) : price;
-      const allowEarnAndPay =
-        item.allowEarnAndPay != null ? Boolean(item.allowEarnAndPay) : true;
-      const itemMaxRedeem = perItemMaxRedeem[idx] ?? 0;
+      const itemMaxRedeem = calc.perItemMaxRedeem[idx] ?? 0;
       return {
         id_product:
           item.externalId ?? item.productId ?? item.resolvedProductId ?? null,
         name: item.name ?? null,
         price,
-        base_price: basePrice,
         quantity: qty,
-        qty,
         max_pay_bonus: itemMaxRedeem,
         earn_bonus: item.earnPoints ?? 0,
-        allow_earn_and_pay: allowEarnAndPay,
       };
     });
 
-    const totalEarn = products.reduce((sum, p) => sum + p.earn_bonus, 0);
-    const finalPayable = Math.max(0, total - actualRedeem);
-
     return {
-      products: normalized.length ? products : undefined,
-      max_pay_bonus: actualRedeem,
-      bonus_value: earnedTotal > 0 ? earnedTotal : totalEarn,
-      final_payable: finalPayable,
-      balance,
+      items: calc.hasItems ? items : undefined,
+      max_pay_bonus: calc.appliedRedeem,
+      bonus_value: calc.earnedTotal,
+      final_payable: calc.finalPayable,
     };
   }
 
@@ -5003,22 +5242,22 @@ export class LoyaltyService {
     const avgBill = Math.round(avgBillRaw * 100) / 100;
     const firstDate = row?.firstPurchaseAt ?? null;
     const lastDate = row?.lastPurchaseAt ?? firstDate;
-    let visitFrequency = 0;
-    if (visitCount > 0 && firstDate) {
-      const endDate = lastDate ?? firstDate;
-      const spanDays = Math.max(
-        1,
-        Math.round((endDate.getTime() - firstDate.getTime()) / 86_400_000) + 1,
+    let visitFrequencyDays: number | null = null;
+    if (visitCount > 1 && firstDate && lastDate) {
+      const diffDays = Math.max(
+        0,
+        Math.round((lastDate.getTime() - firstDate.getTime()) / 86_400_000),
       );
-      visitFrequency = (visitCount / spanDays) * 30; // визитов в среднем за 30 дней
+      if (diffDays > 0) {
+        visitFrequencyDays =
+          Math.round((diffDays / (visitCount - 1)) * 100) / 100;
+      }
     }
-    const visitFrequencyRounded = Math.round(visitFrequency * 100) / 100;
     return {
-      bDate: firstDate ? firstDate.toISOString() : null,
       visitCount,
       totalAmount,
       avgBill,
-      visitFrequency: visitFrequencyRounded,
+      visitFrequencyDays,
     };
   }
 

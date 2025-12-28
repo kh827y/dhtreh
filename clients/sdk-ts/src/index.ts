@@ -32,7 +32,7 @@ export class LoyaltyApi {
   }
 
   // Endpoints
-  quote(body: { mode: 'redeem'|'earn'; merchantId: string; userToken: string; orderId: string; total: number; outletId?: string; staffId?: string; category?: string; promoCode?: string; positions?: Array<{ productId?: string; externalProvider?: string; externalId?: string; categoryId?: string; categoryExternalId?: string; name?: string; sku?: string; barcode?: string; qty: number; price: number; accruePoints?: boolean }> }, opts?: { staffKey?: string; bridgeSignatureSecret?: string }) {
+  quote(body: { mode: 'redeem'|'earn'; merchantId: string; userToken: string; orderId: string; total: number; outletId?: string; staffId?: string; category?: string; promoCode?: string; positions?: Array<{ productId?: string; externalProvider?: string; externalId?: string; name?: string; sku?: string; barcode?: string; qty: number; price: number; accruePoints?: boolean }> }, opts?: { staffKey?: string; bridgeSignatureSecret?: string }) {
     const json = JSON.stringify(body);
     const headers: any = {};
     if (opts?.staffKey) headers['X-Staff-Key'] = opts.staffKey;

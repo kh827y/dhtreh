@@ -417,6 +417,7 @@ describe('LoyaltyService.processIntegrationBonus', () => {
       merchant: { upsert: jest.fn() },
       receipt: { findUnique: jest.fn() },
       hold: { findFirst: jest.fn(), create: jest.fn() },
+      holdItem: { deleteMany: jest.fn(), createMany: jest.fn() },
       wallet: { findFirst: jest.fn(), create: jest.fn() },
       merchantSettings: { findUnique: jest.fn() },
       transaction: { findMany: jest.fn().mockResolvedValue([]) },
@@ -443,7 +444,10 @@ describe('LoyaltyService.processIntegrationBonus', () => {
 
   it('returns stored result for repeated order without creating new hold', async () => {
     const prisma = mkPrisma();
-    prisma.customer.findUnique.mockResolvedValue({ id: 'C-1' });
+    prisma.customer.findUnique.mockResolvedValue({
+      id: 'C-1',
+      merchantId: 'M-1',
+    });
     prisma.receipt.findUnique.mockResolvedValue({
       id: 'RCPT-1',
       customerId: 'C-1',
@@ -478,7 +482,10 @@ describe('LoyaltyService.processIntegrationBonus', () => {
 
   it('processes manual redeem when balance is sufficient', async () => {
     const prisma = mkPrisma();
-    prisma.customer.findUnique.mockResolvedValue({ id: 'C-2' });
+    prisma.customer.findUnique.mockResolvedValue({
+      id: 'C-2',
+      merchantId: 'M-2',
+    });
     prisma.wallet.findFirst.mockResolvedValue({
       id: 'W-1',
       balance: 120,
@@ -528,7 +535,10 @@ describe('LoyaltyService.processIntegrationBonus', () => {
 
   it('rejects manual redeem that exceeds balance', async () => {
     const prisma = mkPrisma();
-    prisma.customer.findUnique.mockResolvedValue({ id: 'C-3' });
+    prisma.customer.findUnique.mockResolvedValue({
+      id: 'C-3',
+      merchantId: 'M-3',
+    });
     prisma.wallet.findFirst.mockResolvedValue({
       id: 'W-3',
       balance: 10,
@@ -561,7 +571,10 @@ describe('LoyaltyService.processIntegrationBonus', () => {
         findUnique: jest.fn().mockResolvedValue({ earnDailyCap: 100 }),
       },
     });
-    prisma.customer.findUnique.mockResolvedValue({ id: 'C-4' });
+    prisma.customer.findUnique.mockResolvedValue({
+      id: 'C-4',
+      merchantId: 'M-4',
+    });
     prisma.wallet.findFirst.mockResolvedValue({
       id: 'W-4',
       balance: 0,
@@ -592,7 +605,10 @@ describe('LoyaltyService.processIntegrationBonus', () => {
   it('passes operationDate into hold creation and commit', async () => {
     const operationDate = new Date('2024-01-01T10:00:00Z');
     const prisma = mkPrisma();
-    prisma.customer.findUnique.mockResolvedValue({ id: 'C-5' });
+    prisma.customer.findUnique.mockResolvedValue({
+      id: 'C-5',
+      merchantId: 'M-5',
+    });
     prisma.wallet.findFirst.mockResolvedValue({
       id: 'W-5',
       balance: 80,
@@ -638,6 +654,61 @@ describe('LoyaltyService.processIntegrationBonus', () => {
       'ORDER-5',
       undefined,
       expect.objectContaining({ operationDate }),
+    );
+  });
+
+  it('does not auto-apply promotions in BONUS when actions are not provided', async () => {
+    const prisma = mkPrisma();
+    prisma.customer.findUnique.mockResolvedValue({
+      id: 'C-7',
+      merchantId: 'M-7',
+    });
+    prisma.hold.create.mockResolvedValue({ id: 'H-7' });
+    const staffMotivation = mkStaffMotivation();
+    const svc = new LoyaltyService(
+      prisma,
+      metrics,
+      undefined as any,
+      undefined as any,
+      staffMotivation,
+    );
+    jest
+      .spyOn(svc as any, 'ensurePointsWallet')
+      .mockResolvedValue({ balance: 0 });
+    const calcSpy = jest
+      .spyOn(svc as any, 'computeIntegrationCalc')
+      .mockResolvedValue({
+        itemsForCalc: [],
+        perItemMaxRedeem: [],
+        appliedRedeem: 0,
+        earnedTotal: 0,
+        finalPayable: 100,
+        total: 100,
+        eligibleAmount: 100,
+        hasItems: false,
+        allowSameReceipt: true,
+        accrualsBlocked: false,
+        redemptionsBlocked: false,
+      });
+    svc.commit = jest.fn().mockResolvedValue({
+      receiptId: 'RCPT-7',
+      redeemApplied: 0,
+      earnApplied: 0,
+    }) as any;
+    svc.balance = jest.fn().mockResolvedValue({ balance: 0 }) as any;
+
+    await svc.processIntegrationBonus({
+      merchantId: 'M-7',
+      customerId: 'C-7',
+      userToken: 'token',
+      invoiceNum: 'ORDER-7',
+      total: 100,
+      outletId: 'OUT-7',
+      resolvedDeviceId: 'DEV-7',
+    });
+
+    expect(calcSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ allowAutoPromotions: false }),
     );
   });
 

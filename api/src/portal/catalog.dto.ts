@@ -524,18 +524,9 @@ export class PortalOutletListResponseDto {
   @ApiProperty() total!: number;
 }
 
-export class ImportCategoryDto {
-  @ApiProperty() @IsString() externalId!: string;
-  @ApiProperty() @IsString() name!: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() parentExternalId?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() code?: string;
-}
-
 export class ImportProductDto {
   @ApiProperty() @IsString() externalId!: string;
   @ApiProperty() @IsString() name!: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() categoryExternalId?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() categoryId?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() sku?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() barcode?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() unit?: string;
@@ -555,10 +546,4 @@ export class ImportCatalogDto {
   @ValidateNested({ each: true })
   @Type(() => ImportProductDto)
   products!: ImportProductDto[];
-  @ApiPropertyOptional({ type: () => [ImportCategoryDto] })
-  @IsOptional()
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => ImportCategoryDto)
-  categories?: ImportCategoryDto[];
 }

@@ -362,18 +362,18 @@ Response 200:
 
 Эндпоинты `/api/integrations/**` требуют заголовок `X-Api-Key` (интеграционный ключ); `merchantId` определяется по ключу. Throttling по `integrationId` с дефолтными лимитами: CODE — 60/мин, CALCULATE-ACTION/BONUS — 180/мин, BONUS — 60/мин, REFUND — 30/мин, OUTLETS/DEVICES — 60/мин, OPERATIONS — 30/мин (настраиваются в интеграции).
 
-Идентификация клиента: во всех методах, требующих клиента, используется `id_client` (= customerId) или `userToken` (QR). `id_client` — это ID клиента в системе лояльности для данного мерчанта.
+Идентификация клиента: во всех методах, требующих клиента, используется `id_client` (= customerId) или `user_token` (QR/JWT). `id_client` разрешён только если в админке отключено «Требовать JWT для QUOTE».
 
-- `POST /api/integrations/code` — { `userToken` } → `{ type: "bonus", client: { id_client, id_ext, name?, phone?, email?, balance, earnPercent, redeemLimitPercent, k_bonus, maxPayBonusK, b_date?, avgBill, visitFrequency, visitCount, totalAmount } }`. Валидируется `merchantAud`, данные клиента резолвятся по `userToken`. `id_ext` — внешний ID клиента из вашей системы (`merchantCustomer.externalId`), при отсутствии будет `null`. deviceId/outlet не требуются. `earnPercent`/`k_bonus` и `redeemLimitPercent`/`maxPayBonusK` берутся из настроек мерчанта и уровня клиента (без учёта товарных промо). Аналитика (`avgBill`, `visitCount`, `totalAmount`, `visitFrequency`, `b_date`) строится по чекам мерчанта; `visitFrequency` — среднее количество визитов за 30 дней.
-- `POST /api/integrations/calculate/action` — промо-расчёт без побочных эффектов: `{ items[], id_client, outlet_id? }` → `{ status: "ok", positions: [{ id_product, name?, qty, price, base_price?, actions_id, actions_names }], info: string[] }`. При акции "N-й бесплатно" позиции разбиваются: бесплатные (`price: 0`) и платные возвращаются отдельно (как в GMB API). `base_price` возвращается только если цена изменилась (иначе `null`). Не требует userToken/устройства/сотрудника, контекст — по точке и клиенту (stateless). `outlet_id` опционален, но рекомендуется для точного подбора локальных акций.
-- `POST /api/integrations/calculate/bonus` — pre-check начисления/списания без hold: `{ userToken? | id_client?, items[]?, total?, paid_bonus?, outletId?, operationDate? }` → `{ products?: [{ id_product, name, price, base_price?, quantity|qty, max_pay_bonus, earn_bonus, allow_earn_and_pay }], max_pay_bonus, bonus_value, final_payable, balance }`. Можно передать `total` вместо `items[]` для упрощённого расчёта (без per-item детализации). `paid_bonus` — желаемое списание, ограничивает `max_pay_bonus` этим значением. Контекст — только торговая точка (stateless, без deviceId/managerId). Расчёт лимитов выполняется напрямую по балансу клиента и ставкам мерчанта.
-- `POST /api/integrations/bonus` — фиксация операции по переданным значениям: `invoice_num?` (опционально, если не передан — генерируется UUID; идемпотентность по merchant+invoice), `paid_bonus?` (списывается ровно указанное при достаточном балансе), `bonus_value?` (начисляется ровно указанное, если не передан — начисление не обязательно), `operationDate?` (ISO), `managerId?`. Контекст `outletId`/`deviceId`/`managerId` обязателен (хотя бы один). Ответ без технических массивов транзакций: `{ invoice_num, order_id (ID операции лояльности), redeemApplied, earnApplied, balanceBefore?, balanceAfter?, outletId?, outlet_name? }`.
-- `POST /api/integrations/refund` — только полная отмена по `invoice_num` или `order_id` (`operationDate?`, `deviceId?`, `outletId?` для контекста). Возвращает `{ invoice_num, order_id, pointsRestored, pointsRevoked, balanceAfter }`, без partial-share и без transactionIds.
+- `POST /api/integrations/code` — { `user_token` } → `{ type: "bonus", client: { id_client, id_ext, name?, phone?, email?, balance, earn_percent, redeem_limit_percent, birth_date?, avg_bill, visit_frequency?, visit_count, total_amount, accruals_blocked, redemptions_blocked } }`. Валидируется `merchantAud`, данные клиента резолвятся по `user_token`. `id_ext` — внешний ID клиента из вашей системы (`merchantCustomer.externalId`), при отсутствии будет `null`. `device_id/outlet_id` не требуются. Аналитика (`avg_bill`, `visit_count`, `total_amount`, `visit_frequency`) строится по чекам мерчанта; `visit_frequency` — средний интервал между визитами в днях.
+- `POST /api/integrations/calculate/action` — промо-расчёт без побочных эффектов: `{ items[], id_client, outlet_id? }` → `{ status: "ok", positions: [{ id_product, name?, qty, price, base_price?, actions, actions_names }], info: string[] }`. При акции "N-й бесплатно" позиции разбиваются: бесплатные (`price: 0`) и платные возвращаются отдельно (как в GMB API). `base_price` возвращается только если цена изменилась (иначе `null`). Не требует userToken/устройства/сотрудника, контекст — по точке и клиенту (stateless). `outlet_id` опционален, но рекомендуется для точного подбора локальных акций.
+- `POST /api/integrations/calculate/bonus` — расчёт начисления/списания без hold: `{ user_token? | id_client?, items[]?, total?, paid_bonus?, outlet_id? }` → `{ status, items?: [{ id_product, name, price, quantity, max_pay_bonus, earn_bonus }], max_pay_bonus, bonus_value, final_payable }`. Можно передать `total` вместо `items[]` для упрощённого расчёта (без per-item детализации). `paid_bonus` — желаемое списание, ограничивает `max_pay_bonus` этим значением. Акции применяются **только** если переданы `items[].actions`/`items[].action_names`; при отсутствии — промо не учитываются.
+- `POST /api/integrations/bonus` — фиксация операции по переданным значениям: `idempotency_key` (обязательный ключ идемпотентности), `invoice_num?` (кастомный номер чека), `paid_bonus?` (списывается с учётом лимитов), `bonus_value?` (если не передан — авторасчёт по правилам лояльности, `0` отключает начисление), `operation_date?` (ISO), `manager_id?`. Контекст `outlet_id`/`device_id`/`manager_id` обязателен (хотя бы один). Акции применяются **только** если переданы `items[].actions`/`items[].action_names`; при отсутствии — промо не учитываются. Идемпотентность по `merchantId+idempotency_key`. Ответ: `{ result, invoice_num, order_id (ID операции лояльности), redeem_applied, earn_applied, client }`.
+- `POST /api/integrations/refund` — только полная отмена по `invoice_num` или `order_id` (`operation_date?`, `device_id?`, `outlet_id?` для контекста). Возвращает `{ invoice_num, order_id, points_restored, points_revoked, balance_after }`, без partial-share и без transactionIds.
 - `GET /api/integrations/outlets` — справочник точек мерчанта (`id`, `name`, `address?`, `description?`) + `managers[]` (активные сотрудники с доступом к точке: `id`, `name`, `code?`), без чужих `merchantId`.
-- `GET /api/integrations/devices` — опциональный `outletId`, возвращает устройства мерчанта (`id`, `code`, `outletId`) с валидацией кода/ID по Device.
-- `GET /api/integrations/operations` — история покупок/возвратов: query `invoice_num?` (ищет и по `receiptNumber`), `from?`/`to?` (ISO по `operationDate/createdAt`), `deviceId?`, `outletId?`, `limit?` (<=500). Ответ `items[]`: `{ kind: purchase|refund, id_client, invoice_num, order_id, receiptNumber?, total, redeemApplied?, earnApplied?, pointsRestored?, pointsRevoked?, operationDate, outletId?, deviceId?, deviceCode?, canceledAt?, pointsDelta, balanceBefore?, balanceAfter? }`. История строится только из зафиксированных BONUS (hold→commit) и REFUND; CODE/CALCULATE не создают записей.
+- `GET /api/integrations/devices` — опциональный `outlet_id`, возвращает устройства мерчанта (`id`, `code`, `outlet_id`) с валидацией кода/ID по Device.
+- `GET /api/integrations/operations` — история покупок/возвратов: query `invoice_num?` (ищет и по `receipt_num`), `from?`/`to?` (ISO по `operation_date/createdAt`), `device_id?`, `outlet_id?`, `limit?` (<=500). Ответ `items[]`: `{ kind: purchase|refund, id_client, invoice_num, order_id, receipt_num?, total, redeem_applied?, earn_applied?, points_restored?, points_revoked?, operation_date, outlet_id?, device_id?, device_code?, canceled_at?, points_delta, balance_before?, balance_after? }`. История строится только из зафиксированных BONUS (hold→commit) и REFUND; CODE/CALCULATE не создают записей.
 
-Item-level формат позиций: `items[]` с полями `id_product`, `name?`, `qty` (или `quantity`), `price`. Поля `categoryId/category_id` не поддерживаются ни в одном интеграционном методе. Для `calculate/action` дополнительно не поддерживаются `base_price`, `allow_earn_and_pay`, `actions`, `action_names`, `earn_multiplier`. Баллы/списание распределяются по позициям, учитываются акции по товарам (множители, N-й бесплатно, акционная цена).
+Item-level формат позиций: `items[]` с полями `id_product`, `name?`, `qty` (или `quantity`), `price`. Поля `categoryId/category_id` не поддерживаются ни в одном интеграционном методе. Для `calculate/bonus` не поддерживаются `base_price`, `allow_earn_and_pay`, `earn_multiplier`. Акции по товарам учитываются через `actions`/`action_names`.
 
 ### Программа лояльности
 
@@ -1195,15 +1195,12 @@ Content-Type: application/json
 
 {
   "externalProvider": "COMMERCE_ML",
-  "categories": [
-    { "externalId": "grp-1", "name": "Напитки", "parentExternalId": null, "code": "DRINKS" }
-  ],
   "products": [
-    { "externalId": "pr-1", "name": "Капучино", "categoryExternalId": "grp-1", "barcode": "460...", "sku": "CAP-01", "unit": "шт", "price": 250, "code": "COF-1" }
+    { "externalId": "pr-1", "name": "Капучино", "barcode": "460...", "sku": "CAP-01", "unit": "шт", "price": 250, "code": "COF-1" }
   ]
 }
 
-Response 200: { "ok": true, "createdCategories": 1, "updatedCategories": 0, "createdProducts": 1, "updatedProducts": 0 }
+Response 200: { "ok": true, "createdCategories": 0, "updatedCategories": 0, "createdProducts": 1, "updatedProducts": 0 }
 ```
 
 ```http
@@ -1213,12 +1210,12 @@ Content-Type: application/json
 
 {
   "products": [
-    { "externalId": "ms-1", "name": "Латте", "categoryExternalId": "grp-1", "barcode": "460...", "sku": "LAT-01", "unit": "шт", "price": 280 }
+    { "externalId": "ms-1", "name": "Латте", "barcode": "460...", "sku": "LAT-01", "unit": "шт", "price": 280 }
   ]
 }
 ```
 
-Поля позиций: `externalId`, `name`, `categoryExternalId` или `categoryId`, опционально `barcode`, `sku`, `code`, `unit`, `price`. Категории: `externalId`, `name`, `parentExternalId?`, `code?`. Маппинг выполняется по `productId`/`externalId` и, при необходимости, по `barcode`/`sku`/`code`, связи категорий восстанавливаются по `parentExternalId`. Все операции импортов логируются в `SyncLog` с итогом `ok/error`.
+Поля позиций: `externalId`, `name`, опционально `barcode`, `sku`, `code`, `unit`, `price`. Импорт выполняется по `productId`/`externalId` и, при необходимости, по `barcode`/`sku`/`code`. Все операции импортов логируются в `SyncLog` с итогом `ok/error`.
 
 #### Торговые точки портала
 

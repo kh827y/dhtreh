@@ -13,7 +13,6 @@ import {
   ProductVariant,
   Outlet,
   ProductExternalId,
-  ProductCategoryExternal,
   StaffOutletAccessStatus,
 } from '@prisma/client';
 import { MetricsService } from '../metrics.service';
@@ -40,7 +39,6 @@ import {
   ProductStockInputDto,
   OutletScheduleDto,
   ImportCatalogDto,
-  ImportCategoryDto,
   ImportProductDto,
 } from './catalog.dto';
 import {
@@ -555,27 +553,6 @@ export class PortalCatalogService {
       select: { order: true },
     });
     return (last?.order ?? 1000) + 10;
-  }
-
-  private async syncCategoryExternal(
-    tx: Prisma.TransactionClient,
-    merchantId: string,
-    categoryId: string,
-    externalProvider?: string | null,
-    externalId?: string | null,
-  ) {
-    if (!externalProvider || !externalId) return;
-    await tx.productCategoryExternal.upsert({
-      where: {
-        merchantId_externalProvider_externalId: {
-          merchantId,
-          externalProvider,
-          externalId,
-        },
-      },
-      update: { categoryId },
-      create: { merchantId, categoryId, externalProvider, externalId },
-    });
   }
 
   private async syncProductExternal(
@@ -1360,7 +1337,6 @@ export class PortalCatalogService {
     dto: ImportCatalogDto,
   ) {
     const providerCode = dto.externalProvider?.trim() || provider || 'EXTERNAL';
-    const categoriesInput = Array.isArray(dto.categories) ? dto.categories : [];
     const productsInput = Array.isArray(dto.products) ? dto.products : [];
     const summary = {
       createdCategories: 0,
@@ -1370,89 +1346,11 @@ export class PortalCatalogService {
     };
     try {
       await this.prisma.$transaction(async (tx) => {
-        const categoryMap = new Map<string, string>();
-        for (const category of categoriesInput) {
-          const externalId = (category.externalId || '').trim();
-          const name = (category.name || '').trim();
-          if (!externalId || !name) continue;
-          const existing = await tx.productCategory.findFirst({
-            where: {
-              merchantId,
-              OR: [
-                {
-                  externalProvider: providerCode,
-                  externalId,
-                },
-                {
-                  external: {
-                    some: { externalProvider: providerCode, externalId },
-                  },
-                },
-              ],
-            },
-          });
-          let categoryId: string;
-          if (existing) {
-            await tx.productCategory.update({
-              where: { id: existing.id },
-              data: {
-                name,
-                code: category.code?.trim() || existing.code,
-                externalProvider: providerCode,
-                externalId,
-              },
-            });
-            categoryId = existing.id;
-            summary.updatedCategories += 1;
-          } else {
-            const created = await tx.productCategory.create({
-              data: {
-                merchantId,
-                name,
-                slug: category.code?.trim() || this.slugify(name),
-                code: category.code?.trim() || null,
-                externalProvider: providerCode,
-                externalId,
-                order: await this.nextCategoryOrder(tx, merchantId),
-              },
-            });
-            categoryId = created.id;
-            summary.createdCategories += 1;
-          }
-          await this.syncCategoryExternal(
-            tx,
-            merchantId,
-            categoryId,
-            providerCode,
-            externalId,
-          );
-          categoryMap.set(externalId, categoryId);
-        }
-
-        // Проставляем родителей после создания всех категорий
-        for (const category of categoriesInput) {
-          const externalId = (category.externalId || '').trim();
-          const parentExt = category.parentExternalId?.trim();
-          if (!externalId || !parentExt) continue;
-          const catId = categoryMap.get(externalId);
-          const parentId = categoryMap.get(parentExt);
-          if (catId && parentId) {
-            await tx.productCategory.update({
-              where: { id: catId },
-              data: { parentId },
-            });
-          }
-        }
-
         for (const product of productsInput) {
           const externalId = (product.externalId || '').trim();
           const name = (product.name || '').trim();
           if (!externalId || !name) continue;
-          const categoryId =
-            product.categoryId ??
-            (product.categoryExternalId
-              ? (categoryMap.get(product.categoryExternalId.trim()) ?? null)
-              : null);
+          const categoryId = null;
           const barcode = product.barcode?.trim() || null;
           const sku = product.sku?.trim() || null;
           const code = product.code?.trim() || null;
@@ -1565,7 +1463,7 @@ export class PortalCatalogService {
         status: 'ok',
         request: {
           products: productsInput.length,
-          categories: categoriesInput.length,
+          categories: 0,
         },
         response: summary,
       });
@@ -1578,7 +1476,7 @@ export class PortalCatalogService {
         status: 'error',
         request: {
           products: productsInput.length,
-          categories: categoriesInput.length,
+          categories: 0,
         },
         response: summary,
         error: error?.message ?? String(error),

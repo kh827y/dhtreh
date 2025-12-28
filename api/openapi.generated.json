@@ -187,6 +187,110 @@
         ]
       }
     },
+    "/loyalty/cashier/activate": {
+      "post": {
+        "operationId": "LoyaltyController_cashierActivate",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "merchantId": {
+                      "type": "string"
+                    },
+                    "login": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "loyalty"
+        ]
+      }
+    },
+    "/loyalty/cashier/device": {
+      "get": {
+        "operationId": "LoyaltyController_cashierDevice",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "merchantId": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "login": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true
+                    },
+                    "lastSeenAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "loyalty"
+        ]
+      },
+      "delete": {
+        "operationId": "LoyaltyController_logoutCashierDevice",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "loyalty"
+        ]
+      }
+    },
     "/loyalty/cashier/staff-token": {
       "post": {
         "operationId": "LoyaltyController_cashierStaffToken",
@@ -464,6 +568,60 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "loyalty"
+        ]
+      }
+    },
+    "/loyalty/cashier/outlet-transactions": {
+      "get": {
+        "operationId": "LoyaltyController_cashierOutletTransactions",
+        "parameters": [
+          {
+            "name": "merchantId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "outletId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "before",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CashierOutletTransactionsRespDto"
                 }
               }
             }
@@ -2666,14 +2824,6 @@
           },
           {
             "name": "weekday",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "eligibleTotal",
             "required": true,
             "in": "query",
             "schema": {
@@ -7919,6 +8069,14 @@
             }
           },
           {
+            "name": "deviceId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "limit",
             "required": true,
             "in": "query",
@@ -8206,6 +8364,20 @@
                 }
               }
             }
+          }
+        },
+        "tags": [
+          "portal"
+        ]
+      }
+    },
+    "/portal/customers/import": {
+      "post": {
+        "operationId": "PortalController_importCustomers",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
           }
         },
         "tags": [
@@ -10123,6 +10295,9 @@
                     "notifyReviews": {
                       "type": "boolean"
                     },
+                    "notifyReviewThreshold": {
+                      "type": "number"
+                    },
                     "notifyDailyDigest": {
                       "type": "boolean"
                     },
@@ -10732,15 +10907,6 @@
             "name": "search",
             "required": false,
             "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "externalProvider",
-            "required": false,
-            "in": "query",
-            "description": "Фильтр по провайдеру внешней системы (iiko, r_keeper, MoySklad и т.п.)",
             "schema": {
               "type": "string"
             }
@@ -11964,7 +12130,7 @@
         "operationId": "IntegrationsLoyaltyController_devices",
         "parameters": [
           {
-            "name": "outletId",
+            "name": "outlet_id",
             "required": false,
             "in": "query",
             "description": "Фильтр по торговой точке",
@@ -11995,10 +12161,10 @@
         "operationId": "IntegrationsLoyaltyController_operations",
         "parameters": [
           {
-            "name": "orderId",
+            "name": "invoice_num",
             "required": false,
             "in": "query",
-            "description": "Поиск по orderId/receiptNumber",
+            "description": "Поиск по invoice_num/receipt_num",
             "schema": {
               "type": "string"
             }
@@ -12024,7 +12190,7 @@
             }
           },
           {
-            "name": "deviceId",
+            "name": "device_id",
             "required": false,
             "in": "query",
             "description": "Фильтр по устройству (id или код)",
@@ -12033,7 +12199,7 @@
             }
           },
           {
-            "name": "outletId",
+            "name": "outlet_id",
             "required": false,
             "in": "query",
             "description": "Фильтр по торговой точке",
@@ -12094,16 +12260,16 @@
         ]
       }
     },
-    "/api/integrations/client/migrate": {
+    "/api/integrations/calculate/action": {
       "post": {
-        "operationId": "IntegrationsLoyaltyController_migrateClient",
+        "operationId": "IntegrationsLoyaltyController_calculateAction",
         "parameters": [],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/IntegrationClientMigrationDto"
+                "$ref": "#/components/schemas/IntegrationCalculateActionDto"
               }
             }
           }
@@ -12118,16 +12284,16 @@
         ]
       }
     },
-    "/api/integrations/bonus/calculate": {
+    "/api/integrations/calculate/bonus": {
       "post": {
-        "operationId": "IntegrationsLoyaltyController_calculate",
+        "operationId": "IntegrationsLoyaltyController_calculateBonusPreview",
         "parameters": [],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/IntegrationCalculateDto"
+                "$ref": "#/components/schemas/IntegrationCalculateBonusDto"
               }
             }
           }
@@ -12187,6 +12353,365 @@
         },
         "tags": [
           "integrations"
+        ]
+      }
+    },
+    "/import-export/import/customers": {
+      "post": {
+        "operationId": "ImportExportController_importCustomers",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "merchantId": {
+                    "type": "string"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "csv",
+                      "excel"
+                    ]
+                  },
+                  "updateExisting": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Импортировать клиентов из CSV/Excel файла",
+        "tags": [
+          "Import/Export"
+        ]
+      }
+    },
+    "/import-export/export/customers": {
+      "get": {
+        "operationId": "ImportExportController_exportCustomers",
+        "parameters": [
+          {
+            "name": "merchantId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fields",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "minBalance",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "maxBalance",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hasTransactions",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "createdFrom",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "createdTo",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "batch",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Экспортировать клиентов в CSV/Excel файл",
+        "tags": [
+          "Import/Export"
+        ]
+      }
+    },
+    "/import-export/export/transactions": {
+      "get": {
+        "operationId": "ImportExportController_exportTransactions",
+        "parameters": [
+          {
+            "name": "merchantId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "customerId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "outletId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "staffId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "batch",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Экспортировать транзакции в CSV (стрим)",
+        "tags": [
+          "Import/Export"
+        ]
+      }
+    },
+    "/import-export/import/transactions": {
+      "post": {
+        "operationId": "ImportExportController_importTransactions",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "merchantId": {
+                    "type": "string"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "csv",
+                      "excel"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Импортировать транзакции из CSV/Excel файла",
+        "tags": [
+          "Import/Export"
+        ]
+      }
+    },
+    "/import-export/template": {
+      "get": {
+        "operationId": "ImportExportController_getImportTemplate",
+        "parameters": [
+          {
+            "name": "type",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Скачать шаблон для импорта",
+        "tags": [
+          "Import/Export"
+        ]
+      }
+    },
+    "/import-export/bulk-update/customers": {
+      "post": {
+        "operationId": "ImportExportController_bulkUpdateCustomers",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Массовое обновление данных клиентов",
+        "tags": [
+          "Import/Export"
+        ]
+      }
+    },
+    "/import-export/stats/{merchantId}": {
+      "get": {
+        "operationId": "ImportExportController_getImportExportStats",
+        "parameters": [
+          {
+            "name": "merchantId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Получить статистику импорта/экспорта",
+        "tags": [
+          "Import/Export"
         ]
       }
     },
@@ -13037,6 +13562,56 @@
         ]
       }
     },
+    "/portal/cashier/activation-codes": {
+      "get": {
+        "operationId": "CashierController_activationCodes",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "portal-cashier"
+        ]
+      },
+      "post": {
+        "operationId": "CashierController_issueActivationCodes",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueCashierActivationCodesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "portal-cashier"
+        ]
+      }
+    },
+    "/portal/cashier/activation-codes/revoke": {
+      "post": {
+        "operationId": "CashierController_revokeActivationCode",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "portal-cashier"
+        ]
+      }
+    },
     "/portal/loyalty/mechanics": {
       "get": {
         "operationId": "MechanicsController_list",
@@ -13198,6 +13773,27 @@
       },
       "get": {
         "operationId": "PromotionsController_getById",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Promotions"
+        ]
+      },
+      "delete": {
+        "operationId": "PromotionsController_delete",
         "parameters": [
           {
             "name": "id",
@@ -13451,6 +14047,12 @@
           "finalPayable": {
             "type": "number"
           },
+          "postEarnPoints": {
+            "type": "number"
+          },
+          "postEarnOnAmount": {
+            "type": "number"
+          },
           "holdId": {
             "type": "string"
           },
@@ -13507,9 +14109,6 @@
           "customerId": {
             "type": "string"
           },
-          "customerId": {
-            "type": "string"
-          },
           "name": {
             "type": "object",
             "nullable": true
@@ -13517,10 +14116,17 @@
           "balance": {
             "type": "object",
             "nullable": true
+          },
+          "redeemLimitBps": {
+            "type": "object",
+            "nullable": true
+          },
+          "minPaymentAmount": {
+            "type": "object",
+            "nullable": true
           }
         },
         "required": [
-          "customerId",
           "customerId"
         ]
       },
@@ -13604,14 +14210,6 @@
             "type": "string",
             "description": "Внешний ID товара в указанной системе"
           },
-          "categoryId": {
-            "type": "string",
-            "description": "Явный ID категории"
-          },
-          "categoryExternalId": {
-            "type": "string",
-            "description": "Внешний ID категории в указанной системе"
-          },
           "barcode": {
             "type": "string",
             "description": "Штрихкод товара"
@@ -13662,6 +14260,11 @@
           },
           "total": {
             "type": "number",
+            "minimum": 0
+          },
+          "redeemAmount": {
+            "type": "number",
+            "description": "Сумма списания в баллах (в рублях)",
             "minimum": 0
           },
           "outletId": {
@@ -13857,6 +14460,10 @@
             "type": "object",
             "nullable": true
           },
+          "reviewsEnabled": {
+            "type": "object",
+            "nullable": true
+          },
           "reviewsShare": {
             "nullable": true,
             "allOf": [
@@ -13877,28 +14484,27 @@
           "merchantId": {
             "type": "string"
           },
-          "orderId": {
+          "invoice_num": {
             "type": "string"
+          },
+          "order_id": {
+            "type": "string",
+            "description": "ID операции лояльности (order_id/receiptId)"
           },
           "receiptNumber": {
             "type": "string"
           },
-          "refundTotal": {
-            "type": "number",
-            "minimum": 0
-          },
-          "refundEligibleTotal": {
-            "type": "number",
-            "minimum": 0
-          },
           "deviceId": {
             "type": "string",
             "description": "Идентификатор устройства, с которого оформляется возврат"
+          },
+          "operationDate": {
+            "type": "string",
+            "description": "Дата операции (ISO 8601)"
           }
         },
         "required": [
-          "merchantId",
-          "refundTotal"
+          "merchantId"
         ]
       },
       "RefundRespDto": {
@@ -13942,6 +14548,10 @@
           "birthDate": {
             "type": "string",
             "format": "date",
+            "nullable": true
+          },
+          "customerId": {
+            "type": "object",
             "nullable": true
           }
         }
@@ -14747,9 +15357,6 @@
           "total": {
             "type": "number"
           },
-          "eligibleTotal": {
-            "type": "number"
-          },
           "redeemApplied": {
             "type": "number"
           },
@@ -14787,7 +15394,6 @@
           "customerId",
           "orderId",
           "total",
-          "eligibleTotal",
           "redeemApplied",
           "earnApplied",
           "createdAt"
@@ -14864,10 +15470,18 @@
       "UpdateRfmSettingsDto": {
         "type": "object",
         "properties": {
+          "recencyMode": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "manual"
+            ],
+            "description": "Режим расчёта давности покупок",
+            "default": "auto"
+          },
           "recencyDays": {
             "type": "number",
             "minimum": 1,
-            "default": 365,
             "description": "После какого количества дней клиента считаем потерянным"
           },
           "frequencyMode": {
@@ -14898,6 +15512,7 @@
           }
         },
         "required": [
+          "recencyMode",
           "recencyDays",
           "frequencyMode",
           "moneyMode"
@@ -14953,9 +15568,6 @@
           "slug": {
             "type": "string"
           },
-          "code": {
-            "type": "object"
-          },
           "description": {
             "type": "object"
           },
@@ -14968,18 +15580,16 @@
           "order": {
             "type": "number"
           },
-          "externalProvider": {
-            "type": "object"
-          },
-          "externalId": {
-            "type": "object"
+          "status": {
+            "type": "string"
           }
         },
         "required": [
           "id",
           "name",
           "slug",
-          "order"
+          "order",
+          "status"
         ]
       },
       "CreateCategoryDto": {
@@ -15001,16 +15611,12 @@
           "parentId": {
             "type": "string"
           },
-          "code": {
-            "type": "string"
-          },
-          "externalProvider": {
+          "status": {
             "type": "string",
-            "description": "Провайдер внешней системы (iiko, r_keeper, MoySklad и т.п.)"
-          },
-          "externalId": {
-            "type": "string",
-            "description": "Внешний ID категории"
+            "enum": [
+              "ACTIVE",
+              "ARCHIVED"
+            ]
           }
         },
         "required": [
@@ -15036,16 +15642,12 @@
           "parentId": {
             "type": "string"
           },
-          "code": {
-            "type": "string"
-          },
-          "externalProvider": {
+          "status": {
             "type": "string",
-            "description": "Провайдер внешней системы (iiko, r_keeper, MoySklad и т.п.)"
-          },
-          "externalId": {
-            "type": "string",
-            "description": "Внешний ID категории"
+            "enum": [
+              "ACTIVE",
+              "ARCHIVED"
+            ]
           }
         }
       },
@@ -15087,18 +15689,6 @@
           "name": {
             "type": "string"
           },
-          "sku": {
-            "type": "object"
-          },
-          "code": {
-            "type": "object"
-          },
-          "barcode": {
-            "type": "object"
-          },
-          "unit": {
-            "type": "object"
-          },
           "categoryId": {
             "type": "object"
           },
@@ -15117,14 +15707,14 @@
           "allowRedeem": {
             "type": "boolean"
           },
+          "redeemPercent": {
+            "type": "number"
+          },
           "purchasesMonth": {
             "type": "number"
           },
           "purchasesTotal": {
             "type": "number"
-          },
-          "externalProvider": {
-            "type": "object"
           },
           "externalId": {
             "type": "object"
@@ -15136,6 +15726,7 @@
           "visible",
           "accruePoints",
           "allowRedeem",
+          "redeemPercent",
           "purchasesMonth",
           "purchasesTotal"
         ]
@@ -15230,18 +15821,6 @@
           "name": {
             "type": "string"
           },
-          "sku": {
-            "type": "object"
-          },
-          "code": {
-            "type": "object"
-          },
-          "barcode": {
-            "type": "object"
-          },
-          "unit": {
-            "type": "object"
-          },
           "categoryId": {
             "type": "object"
           },
@@ -15260,14 +15839,14 @@
           "allowRedeem": {
             "type": "boolean"
           },
+          "redeemPercent": {
+            "type": "number"
+          },
           "purchasesMonth": {
             "type": "number"
           },
           "purchasesTotal": {
             "type": "number"
-          },
-          "externalProvider": {
-            "type": "object"
           },
           "externalId": {
             "type": "object"
@@ -15292,9 +15871,6 @@
           },
           "disableCart": {
             "type": "boolean"
-          },
-          "redeemPercent": {
-            "type": "number"
           },
           "weightValue": {
             "type": "object"
@@ -15354,13 +15930,13 @@
           "visible",
           "accruePoints",
           "allowRedeem",
+          "redeemPercent",
           "purchasesMonth",
           "purchasesTotal",
           "order",
           "hasVariants",
           "priceEnabled",
           "disableCart",
-          "redeemPercent",
           "tags",
           "images",
           "variants",
@@ -15650,12 +16226,6 @@
           "name": {
             "type": "string"
           },
-          "categoryExternalId": {
-            "type": "string"
-          },
-          "categoryId": {
-            "type": "string"
-          },
           "sku": {
             "type": "string"
           },
@@ -15677,27 +16247,6 @@
           "name"
         ]
       },
-      "ImportCategoryDto": {
-        "type": "object",
-        "properties": {
-          "externalId": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "parentExternalId": {
-            "type": "string"
-          },
-          "code": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "externalId",
-          "name"
-        ]
-      },
       "ImportCatalogDto": {
         "type": "object",
         "properties": {
@@ -15709,12 +16258,6 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ImportProductDto"
-            }
-          },
-          "categories": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ImportCategoryDto"
             }
           }
         },
@@ -15818,6 +16361,9 @@
           },
           "status": {
             "type": "string"
+          },
+          "staffCount": {
+            "type": "number"
           },
           "posType": {
             "type": "string",
@@ -16016,9 +16562,7 @@
         },
         "required": [
           "works",
-          "hidden",
-          "name",
-          "address"
+          "name"
         ]
       },
       "UpdatePortalOutletDto": {
@@ -16085,6 +16629,26 @@
           }
         }
       },
+      "IntegrationOutletManagerDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "code": {
+            "type": "object",
+            "nullable": true,
+            "description": "Код/внешний ID"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
       "IntegrationOutletDto": {
         "type": "object",
         "properties": {
@@ -16101,6 +16665,13 @@
           "description": {
             "type": "object",
             "nullable": true
+          },
+          "managers": {
+            "description": "Сотрудники, привязанные к точке",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntegrationOutletManagerDto"
+            }
           }
         },
         "required": [
@@ -16132,14 +16703,14 @@
             "type": "string",
             "description": "Код устройства (из настроек торговой точки, регистр сохраняется)"
           },
-          "outletId": {
+          "outlet_id": {
             "type": "string"
           }
         },
         "required": [
           "id",
           "code",
-          "outletId"
+          "outlet_id"
         ]
       },
       "IntegrationDevicesRespDto": {
@@ -16166,18 +16737,23 @@
               "refund"
             ]
           },
-          "orderId": {
-            "type": "string"
+          "id_client": {
+            "type": "string",
+            "description": "ID клиента в системе лояльности"
           },
-          "receiptId": {
+          "invoice_num": {
+            "type": "string",
+            "description": "Кастомный номер чека от мерчанта"
+          },
+          "order_id": {
+            "type": "string",
+            "description": "Внутренний ID операции лояльности"
+          },
+          "receipt_num": {
             "type": "object",
             "nullable": true
           },
-          "receiptNumber": {
-            "type": "object",
-            "nullable": true
-          },
-          "operationDate": {
+          "operation_date": {
             "type": "string",
             "description": "Дата и время операции (operationDate/createdAt)",
             "format": "date-time"
@@ -16187,72 +16763,57 @@
             "description": "Сумма чека (для возврата — сумма возврата)",
             "nullable": true
           },
-          "redeemApplied": {
+          "redeem_applied": {
             "type": "object",
             "description": "Списанные бонусы для покупки",
             "nullable": true
           },
-          "earnApplied": {
+          "earn_applied": {
             "type": "object",
             "description": "Начисленные бонусы для покупки",
             "nullable": true
           },
-          "pointsRestored": {
+          "points_restored": {
             "type": "object",
             "description": "Восстановленные бонусы при возврате",
             "nullable": true
           },
-          "pointsRevoked": {
+          "points_revoked": {
             "type": "object",
             "description": "Списанные (отозванные) бонусы при возврате",
             "nullable": true
           },
-          "balanceBefore": {
+          "balance_before": {
             "type": "object",
             "description": "Баланс до операции (если удалось восстановить)",
             "nullable": true
           },
-          "balanceAfter": {
+          "balance_after": {
             "type": "object",
             "description": "Баланс после операции (если удалось восстановить)",
             "nullable": true
           },
-          "outletId": {
+          "outlet_id": {
             "type": "object",
             "nullable": true
           },
-          "deviceId": {
+          "device_id": {
             "type": "object",
             "description": "ID устройства",
             "nullable": true
           },
-          "deviceCode": {
+          "device_code": {
             "type": "object",
             "description": "Код устройства (как в настройках)",
             "nullable": true
           },
-          "refundShare": {
-            "type": "object",
-            "description": "Доля возврата (0..1) при REFUND",
-            "nullable": true
-          },
-          "refundTotal": {
-            "type": "object",
-            "description": "Возвращаемая сумма (если передавалась в refund)",
-            "nullable": true
-          },
-          "refundEligibleTotal": {
-            "type": "object",
-            "description": "Возвращаемая сумма, участвующая в бонусах (refundEligibleTotal)",
-            "nullable": true
-          },
-          "canceledAt": {
+          "canceled_at": {
             "type": "string",
             "description": "Пометка отменённого чека (full refund)",
             "format": "date-time",
             "nullable": true
           },
-          "pointsDelta": {
+          "points_delta": {
             "type": "object",
             "description": "Чистое изменение баланса по операции",
             "nullable": true
@@ -16260,8 +16821,10 @@
         },
         "required": [
           "kind",
-          "orderId",
-          "operationDate"
+          "id_client",
+          "invoice_num",
+          "order_id",
+          "operation_date"
         ]
       },
       "IntegrationOperationsRespDto": {
@@ -16281,88 +16844,150 @@
       "IntegrationCodeRequestDto": {
         "type": "object",
         "properties": {
-          "userToken": {
+          "user_token": {
             "type": "string"
           }
         },
         "required": [
-          "userToken"
+          "user_token"
         ]
       },
-      "IntegrationClientMigrationDto": {
+      "IntegrationCalculateActionItemDto": {
         "type": "object",
         "properties": {
-          "client_id_ext": {
+          "id_product": {
             "type": "string",
-            "description": "Внешний ID клиента в системе интеграции"
+            "description": "Внешний ID товара (артикул id_product)"
           },
-          "id_client": {
-            "type": "string",
-            "description": "Внутренний ID клиента (customerId), если уже известен"
+          "qty": {
+            "type": "number",
+            "description": "Количество"
           },
-          "phone": {
-            "type": "string",
-            "description": "Номер телефона клиента (E.164, например +79991234567)"
-          },
-          "email": {
-            "type": "string",
-            "description": "Email клиента"
+          "price": {
+            "type": "number",
+            "description": "Цена за единицу"
           },
           "name": {
             "type": "string",
-            "description": "Имя клиента"
-          },
-          "b_date": {
-            "type": "string",
-            "description": "Дата рождения или дата ключевого события (ISO 8601 или ГГГГ-ММ-ДД)"
-          },
-          "gender": {
-            "type": "string",
-            "description": "Пол клиента (например, M/F или произвольная строка)"
+            "description": "Название товара"
           }
         },
         "required": [
-          "client_id_ext"
+          "id_product",
+          "qty",
+          "price"
         ]
+      },
+      "IntegrationCalculateActionDto": {
+        "type": "object",
+        "properties": {
+          "id_client": {
+            "type": "string",
+            "description": "ID клиента в системе лояльности"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntegrationCalculateActionItemDto"
+            }
+          },
+          "outlet_id": {
+            "type": "string",
+            "description": "ID торговой точки (опционально)"
+          }
+        },
+        "required": [
+          "id_client",
+          "items"
+        ]
+      },
+      "IntegrationCalculateBonusItemDto": {
+        "type": "object",
+        "properties": {
+          "id_product": {
+            "type": "string",
+            "description": "Внешний ID товара (артикул id_product)"
+          },
+          "name": {
+            "type": "string",
+            "description": "Название товара"
+          },
+          "qty": {
+            "type": "number",
+            "description": "Количество",
+            "default": 1
+          },
+          "price": {
+            "type": "number",
+            "description": "Цена после применения акций"
+          },
+          "actions": {
+            "description": "ID применённых акций",
+            "type": "array",
+            "items": {
+              "type": "array"
+            }
+          },
+          "action_names": {
+            "description": "Названия применённых акций",
+            "type": "array",
+            "items": {
+              "type": "array"
+            }
+          }
+        },
+        "required": [
+          "id_product",
+          "price"
+        ]
+      },
+      "IntegrationCalculateBonusDto": {
+        "type": "object",
+        "properties": {
+          "user_token": {
+            "type": "string",
+            "description": "Токен клиента (QR)"
+          },
+          "id_client": {
+            "type": "string",
+            "description": "ID клиента в системе лояльности"
+          },
+          "outlet_id": {
+            "type": "string"
+          },
+          "total": {
+            "type": "number",
+            "description": "Сумма заказа (если items не передаётся)",
+            "minimum": 0
+          },
+          "paid_bonus": {
+            "type": "number",
+            "description": "Желаемое списание баллов (для расчёта остатка)",
+            "minimum": 0
+          },
+          "items": {
+            "description": "Состав заказа (опционально, если передан total)",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntegrationCalculateBonusItemDto"
+            }
+          }
+        }
       },
       "IntegrationItemDto": {
         "type": "object",
         "properties": {
           "id_product": {
             "type": "string",
-            "description": "Внешний ID товара (id_product / externalId)"
-          },
-          "productCode": {
-            "type": "string",
-            "description": "Альтернативный код товара"
-          },
-          "externalProvider": {
-            "type": "string",
-            "description": "Провайдер внешней системы (iiko, r_keeper, MoySklad и т.п.)"
+            "description": "Внешний ID товара (id_product / артикул)"
           },
           "productId": {
             "type": "string",
             "description": "Внутренний ID товара"
           },
-          "categoryId": {
-            "type": "string",
-            "description": "ID категории"
-          },
-          "categoryExternalId": {
-            "type": "string",
-            "description": "Внешний ID категории в указанной системе"
-          },
           "name": {
             "type": "string",
             "description": "Название товара"
-          },
-          "barcode": {
-            "type": "string",
-            "description": "Штрихкод"
-          },
-          "sku": {
-            "type": "string",
-            "description": "SKU/артикул"
           },
           "qty": {
             "type": "number",
@@ -16373,6 +16998,24 @@
             "type": "number",
             "description": "Цена за единицу",
             "example": 450
+          },
+          "base_price": {
+            "type": "number",
+            "description": "Цена до применения акции (опционально)"
+          },
+          "actions": {
+            "description": "ID применённых акций",
+            "type": "array",
+            "items": {
+              "type": "array"
+            }
+          },
+          "action_names": {
+            "description": "Названия применённых акций",
+            "type": "array",
+            "items": {
+              "type": "array"
+            }
           }
         },
         "required": [
@@ -16380,75 +17023,42 @@
           "price"
         ]
       },
-      "IntegrationCalculateDto": {
-        "type": "object",
-        "properties": {
-          "mode": {
-            "type": "string",
-            "enum": [
-              "redeem",
-              "earn",
-              "mixed"
-            ]
-          },
-          "userToken": {
-            "type": "string"
-          },
-          "orderId": {
-            "type": "string"
-          },
-          "total": {
-            "type": "number",
-            "minimum": 0
-          },
-          "deviceId": {
-            "type": "string",
-            "description": "Идентификатор устройства (код из настроек торговой точки)"
-          },
-          "outletId": {
-            "type": "string"
-          },
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/IntegrationItemDto"
-            }
-          }
-        },
-        "required": [
-          "mode",
-          "userToken",
-          "orderId",
-          "total"
-        ]
-      },
       "IntegrationBonusDto": {
         "type": "object",
         "properties": {
-          "mode": {
+          "user_token": {
+            "type": "string"
+          },
+          "id_client": {
             "type": "string",
-            "enum": [
-              "redeem",
-              "earn",
-              "mixed"
-            ]
+            "description": "ID клиента в системе лояльности"
           },
-          "userToken": {
-            "type": "string"
-          },
-          "orderId": {
-            "type": "string"
+          "invoice_num": {
+            "type": "string",
+            "description": "Кастомный номер чека от мерчанта (опционально)"
           },
           "total": {
             "type": "number",
             "minimum": 0
           },
-          "deviceId": {
+          "device_id": {
             "type": "string",
             "description": "Идентификатор устройства (код из настроек торговой точки)"
           },
-          "outletId": {
+          "outlet_id": {
             "type": "string"
+          },
+          "outlet_name": {
+            "type": "string",
+            "description": "Название торговой точки (опционально)"
+          },
+          "manager_id": {
+            "type": "string",
+            "description": "Идентификатор сотрудника/кассира (managerId)"
+          },
+          "manager_name": {
+            "type": "string",
+            "description": "Имя сотрудника (опционально)"
           },
           "paid_bonus": {
             "type": "number",
@@ -16458,7 +17068,7 @@
             "type": "number",
             "minimum": 0
           },
-          "operationDate": {
+          "operation_date": {
             "type": "string",
             "description": "Дата операции (ISO 8601), может быть в прошлом"
           },
@@ -16470,44 +17080,32 @@
           }
         },
         "required": [
-          "mode",
-          "userToken",
-          "orderId",
           "total"
         ]
       },
       "IntegrationRefundDto": {
         "type": "object",
         "properties": {
-          "orderId": {
-            "type": "string"
+          "invoice_num": {
+            "type": "string",
+            "description": "Кастомный номер чека от мерчанта"
           },
-          "receiptNumber": {
-            "type": "string"
+          "order_id": {
+            "type": "string",
+            "description": "ID операции лояльности (order_id)"
           },
-          "refundTotal": {
-            "type": "number",
-            "minimum": 0
-          },
-          "refundEligibleTotal": {
-            "type": "number",
-            "minimum": 0
-          },
-          "deviceId": {
+          "device_id": {
             "type": "string",
             "description": "Идентификатор устройства (код из настроек торговой точки)"
           },
-          "outletId": {
+          "outlet_id": {
             "type": "string"
           },
-          "operationDate": {
+          "operation_date": {
             "type": "string",
             "description": "Дата операции (ISO 8601), может быть в прошлом"
           }
-        },
-        "required": [
-          "refundTotal"
-        ]
+        }
       },
       "Object": {
         "type": "object",
@@ -16718,6 +17316,18 @@
           }
         }
       },
+      "OutletDeviceInput": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Код устройства"
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
       "UpsertOutletDto": {
         "type": "object",
         "properties": {
@@ -16794,6 +17404,12 @@
                 "$ref": "#/components/schemas/OutletReviewsShareLinksInput"
               }
             ]
+          },
+          "devices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutletDeviceInput"
+            }
           }
         },
         "required": [
@@ -16808,6 +17424,20 @@
             "description": "Перегенерировать логин"
           }
         }
+      },
+      "IssueCashierActivationCodesDto": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "number",
+            "description": "Количество кодов",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "required": [
+          "count"
+        ]
       }
     }
   }

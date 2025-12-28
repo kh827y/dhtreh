@@ -289,7 +289,6 @@ model Merchant {
   // catalog
   productCategories           ProductCategory[]
   products                    Product[]
-  productCategoryExternals    ProductCategoryExternal[]
   productExternalIds          ProductExternalId[]
   productAttributes           ProductAttribute[]
   productOptions              ProductOption[]
@@ -1157,8 +1156,6 @@ model ProductCategory {
   name             String
   slug             String
   code             String?
-  externalProvider String?
-  externalId       String?
   description      String?
   imageUrl         String?
   order            Int               @default(1000)
@@ -1168,31 +1165,13 @@ model ProductCategory {
   deletedAt        DateTime?
 
   products         Product[]
-  external         ProductCategoryExternal[]
   holdItems        HoldItem[]
   receiptItems     ReceiptItem[]
   transactionItems TransactionItem[]
 
   @@unique([merchantId, slug])
-  @@index([merchantId, externalProvider, externalId])
   @@index([merchantId, order])
   @@index([merchantId, parentId])
-}
-
-model ProductCategoryExternal {
-  id               String   @id @default(cuid())
-  merchantId       String
-  categoryId       String
-  externalProvider String
-  externalId       String
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-
-  merchant Merchant        @relation(fields: [merchantId], references: [id])
-  category ProductCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-
-  @@unique([merchantId, externalProvider, externalId])
-  @@index([merchantId, categoryId])
 }
 
 model Product {

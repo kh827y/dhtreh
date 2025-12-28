@@ -20,14 +20,16 @@ class ClientIdentifierConstraint implements ValidatorConstraintInterface {
   validate(_: any, args: any) {
     const obj = args?.object ?? {};
     const userToken =
-      typeof obj?.userToken === 'string' && obj.userToken.trim().length > 0;
+      (typeof obj?.user_token === 'string' &&
+        obj.user_token.trim().length > 0) ||
+      (typeof obj?.userToken === 'string' && obj.userToken.trim().length > 0);
     const idClient =
       typeof obj?.id_client === 'string' && obj.id_client.trim().length > 0;
     return userToken || idClient;
   }
 
   defaultMessage() {
-    return 'Укажите userToken или id_client';
+    return 'Укажите user_token или id_client';
   }
 }
 
@@ -36,16 +38,22 @@ class BonusContextConstraint implements ValidatorConstraintInterface {
   validate(_: any, args: any) {
     const obj = args?.object ?? {};
     const outletId =
-      typeof obj?.outletId === 'string' && obj.outletId.trim().length > 0;
+      (typeof obj?.outlet_id === 'string' &&
+        obj.outlet_id.trim().length > 0) ||
+      (typeof obj?.outletId === 'string' && obj.outletId.trim().length > 0);
     const deviceId =
-      typeof obj?.deviceId === 'string' && obj.deviceId.trim().length > 0;
+      (typeof obj?.device_id === 'string' &&
+        obj.device_id.trim().length > 0) ||
+      (typeof obj?.deviceId === 'string' && obj.deviceId.trim().length > 0);
     const managerId =
-      typeof obj?.managerId === 'string' && obj.managerId.trim().length > 0;
+      (typeof obj?.manager_id === 'string' &&
+        obj.manager_id.trim().length > 0) ||
+      (typeof obj?.managerId === 'string' && obj.managerId.trim().length > 0);
     return outletId || deviceId || managerId;
   }
 
   defaultMessage() {
-    return 'Нужно передать outletId или deviceId или managerId';
+    return 'Нужно передать outlet_id или device_id или manager_id';
   }
 }
 
@@ -68,6 +76,7 @@ export class IntegrationItemDto {
   name?: string;
 
   @ApiProperty({ description: 'Количество', example: 1 })
+  @Transform(({ value, obj }) => value ?? obj?.quantity ?? obj?.qty)
   @IsNumber()
   qty!: number;
 
@@ -82,12 +91,45 @@ export class IntegrationItemDto {
   @IsOptional()
   @IsNumber()
   base_price?: number;
+
+  @ApiPropertyOptional({
+    description: 'ID применённых акций',
+    isArray: true,
+    name: 'actions',
+  })
+  @Transform(
+    ({ value, obj }) =>
+      value ?? obj?.actions ?? obj?.actions_id ?? obj?.actionsId,
+  )
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  actions?: string[];
+
+  @ApiPropertyOptional({
+    description: 'Названия применённых акций',
+    isArray: true,
+    name: 'action_names',
+  })
+  @Transform(
+    ({ value, obj }) =>
+      value ??
+      obj?.action_names ??
+      obj?.actions_names ??
+      obj?.actionNames ??
+      obj?.actionsNames,
+  )
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  action_names?: string[];
 }
 
 export class IntegrationCodeRequestDto {
   @ApiProperty()
   @IsString()
-  userToken!: string;
+  @Transform(({ value, obj }) => value ?? obj?.userToken)
+  user_token!: string;
 }
 
 export class IntegrationBonusDto {
@@ -95,7 +137,8 @@ export class IntegrationBonusDto {
   @IsOptional()
   @IsString()
   @Validate(ClientIdentifierConstraint)
-  userToken?: string;
+  @Transform(({ value, obj }) => value ?? obj?.userToken)
+  user_token?: string;
 
   @ApiPropertyOptional({
     description: 'ID клиента в системе лояльности',
@@ -134,31 +177,66 @@ export class IntegrationBonusDto {
   @IsString()
   invoice_num?: string;
 
-  @ApiProperty({ minimum: 0 })
+  @ApiProperty({
+    description: 'Уникальный ключ идемпотентности операции',
+    name: 'idempotency_key',
+  })
+  @Transform(({ value, obj }) => value ?? obj?.idempotencyKey)
+  @IsString()
+  idempotency_key!: string;
+
+  @ApiPropertyOptional({
+    description: 'Сумма заказа (если не передана — считаем по items)',
+    name: 'total',
+    minimum: 0,
+  })
+  @IsOptional()
   @IsNumber()
   @Min(0)
-  total!: number;
+  total?: number;
 
   @ApiPropertyOptional({
     description: 'Идентификатор устройства (код из настроек торговой точки)',
+    name: 'device_id',
+  })
+  @Transform(({ value, obj }) => value ?? obj?.deviceId)
+  @IsOptional()
+  @IsString()
+  device_id?: string;
+
+  @ApiPropertyOptional()
+  @Transform(({ value, obj }) => value ?? obj?.outletId)
+  @IsOptional()
+  @IsString()
+  outlet_id?: string;
+
+  @ApiPropertyOptional({
+    description: 'Название торговой точки (опционально)',
+    name: 'outlet_name',
   })
   @IsOptional()
   @IsString()
-  deviceId?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  outletId?: string;
+  outlet_name?: string;
 
   @ApiPropertyOptional({
     description: 'Идентификатор сотрудника/кассира (managerId)',
-    name: 'managerId',
+    name: 'manager_id',
   })
-  @Transform(({ value, obj }) => value ?? obj?.id_manager ?? obj?.manager_id)
+  @Transform(
+    ({ value, obj }) =>
+      value ?? obj?.id_manager ?? obj?.manager_id ?? obj?.managerId,
+  )
   @IsOptional()
   @IsString()
-  managerId?: string;
+  manager_id?: string;
+
+  @ApiPropertyOptional({
+    description: 'Имя сотрудника (опционально)',
+    name: 'manager_name',
+  })
+  @IsOptional()
+  @IsString()
+  manager_name?: string;
 
   @Validate(BonusContextConstraint)
   _bonusContextValidator?: string;
@@ -177,10 +255,12 @@ export class IntegrationBonusDto {
 
   @ApiPropertyOptional({
     description: 'Дата операции (ISO 8601), может быть в прошлом',
+    name: 'operation_date',
   })
+  @Transform(({ value, obj }) => value ?? obj?.operationDate)
   @IsOptional()
   @IsString()
-  operationDate?: string;
+  operation_date?: string;
 
   @ApiPropertyOptional({ type: [IntegrationItemDto] })
   @IsOptional()
@@ -273,6 +353,38 @@ export class IntegrationCalculateBonusItemDto {
   })
   @IsNumber()
   price!: number;
+
+  @ApiPropertyOptional({
+    description: 'ID применённых акций',
+    isArray: true,
+    name: 'actions',
+  })
+  @Transform(
+    ({ value, obj }) =>
+      value ?? obj?.actions ?? obj?.actions_id ?? obj?.actionsId,
+  )
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  actions?: string[];
+
+  @ApiPropertyOptional({
+    description: 'Названия применённых акций',
+    isArray: true,
+    name: 'action_names',
+  })
+  @Transform(
+    ({ value, obj }) =>
+      value ??
+      obj?.action_names ??
+      obj?.actions_names ??
+      obj?.actionNames ??
+      obj?.actionsNames,
+  )
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  action_names?: string[];
 }
 
 export class IntegrationCalculateBonusDto {
@@ -282,7 +394,8 @@ export class IntegrationCalculateBonusDto {
   @IsOptional()
   @IsString()
   @Validate(ClientIdentifierConstraint)
-  userToken?: string;
+  @Transform(({ value, obj }) => value ?? obj?.userToken)
+  user_token?: string;
 
   @ApiPropertyOptional({
     description: 'ID клиента в системе лояльности',
@@ -304,16 +417,10 @@ export class IntegrationCalculateBonusDto {
   _clientIdentifierValidator?: string;
 
   @ApiPropertyOptional()
+  @Transform(({ value, obj }) => value ?? obj?.outletId)
   @IsOptional()
   @IsString()
-  outletId?: string;
-
-  @ApiPropertyOptional({
-    description: 'Дата операции (ISO 8601)',
-  })
-  @IsOptional()
-  @IsString()
-  operationDate?: string;
+  outlet_id?: string;
 
   @ApiPropertyOptional({
     description: 'Сумма заказа (если items не передаётся)',
@@ -370,22 +477,27 @@ export class IntegrationRefundDto {
 
   @ApiPropertyOptional({
     description: 'Идентификатор устройства (код из настроек торговой точки)',
+    name: 'device_id',
   })
   @IsOptional()
   @IsString()
-  deviceId?: string;
+  @Transform(({ value, obj }) => value ?? obj?.deviceId)
+  device_id?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ name: 'outlet_id' })
   @IsOptional()
   @IsString()
-  outletId?: string;
+  @Transform(({ value, obj }) => value ?? obj?.outletId)
+  outlet_id?: string;
 
   @ApiPropertyOptional({
     description: 'Дата операции (ISO 8601), может быть в прошлом',
+    name: 'operation_date',
   })
   @IsOptional()
   @IsString()
-  operationDate?: string;
+  @Transform(({ value, obj }) => value ?? obj?.operationDate)
+  operation_date?: string;
 }
 
 export class IntegrationOutletManagerDto {
@@ -423,16 +535,19 @@ export class IntegrationDeviceDto {
       'Код устройства (из настроек торговой точки, регистр сохраняется)',
   })
   code!: string;
-  @ApiProperty() outletId!: string;
+  @ApiProperty({ name: 'outlet_id' })
+  outlet_id!: string;
 }
 
 export class IntegrationDevicesQueryDto {
   @ApiPropertyOptional({
     description: 'Фильтр по торговой точке',
+    name: 'outlet_id',
   })
   @IsOptional()
   @IsString()
-  outletId?: string;
+  @Transform(({ value, obj }) => value ?? obj?.outletId)
+  outlet_id?: string;
 }
 
 export class IntegrationDevicesRespDto {
@@ -442,7 +557,7 @@ export class IntegrationDevicesRespDto {
 
 export class IntegrationOperationsQueryDto {
   @ApiPropertyOptional({
-    description: 'Поиск по invoice_num/receiptNumber',
+    description: 'Поиск по invoice_num/receipt_num',
   })
   @IsOptional()
   @IsString()
@@ -471,17 +586,21 @@ export class IntegrationOperationsQueryDto {
 
   @ApiPropertyOptional({
     description: 'Фильтр по устройству (id или код)',
+    name: 'device_id',
   })
   @IsOptional()
   @IsString()
-  deviceId?: string;
+  @Transform(({ value, obj }) => value ?? obj?.deviceId)
+  device_id?: string;
 
   @ApiPropertyOptional({
     description: 'Фильтр по торговой точке',
+    name: 'outlet_id',
   })
   @IsOptional()
   @IsString()
-  outletId?: string;
+  @Transform(({ value, obj }) => value ?? obj?.outletId)
+  outlet_id?: string;
 
   @ApiPropertyOptional({
     description: 'Ограничение количества записей (1–500)',
@@ -518,15 +637,16 @@ export class IntegrationOperationDto {
   })
   order_id!: string;
 
-  @ApiPropertyOptional({ nullable: true })
-  receiptNumber?: string | null;
+  @ApiPropertyOptional({ nullable: true, name: 'receipt_num' })
+  receipt_num?: string | null;
 
   @ApiProperty({
     description: 'Дата и время операции (operationDate/createdAt)',
     type: String,
     format: 'date-time',
+    name: 'operation_date',
   })
-  operationDate!: string;
+  operation_date!: string;
 
   @ApiPropertyOptional({
     description: 'Сумма чека (для возврата — сумма возврата)',
@@ -537,67 +657,77 @@ export class IntegrationOperationDto {
   @ApiPropertyOptional({
     description: 'Списанные бонусы для покупки',
     nullable: true,
+    name: 'redeem_applied',
   })
-  redeemApplied?: number | null;
+  redeem_applied?: number | null;
 
   @ApiPropertyOptional({
     description: 'Начисленные бонусы для покупки',
     nullable: true,
+    name: 'earn_applied',
   })
-  earnApplied?: number | null;
+  earn_applied?: number | null;
 
   @ApiPropertyOptional({
     description: 'Восстановленные бонусы при возврате',
     nullable: true,
+    name: 'points_restored',
   })
-  pointsRestored?: number | null;
+  points_restored?: number | null;
 
   @ApiPropertyOptional({
     description: 'Списанные (отозванные) бонусы при возврате',
     nullable: true,
+    name: 'points_revoked',
   })
-  pointsRevoked?: number | null;
+  points_revoked?: number | null;
 
   @ApiPropertyOptional({
     description: 'Баланс до операции (если удалось восстановить)',
     nullable: true,
+    name: 'balance_before',
   })
-  balanceBefore?: number | null;
+  balance_before?: number | null;
 
   @ApiPropertyOptional({
     description: 'Баланс после операции (если удалось восстановить)',
     nullable: true,
+    name: 'balance_after',
   })
-  balanceAfter?: number | null;
+  balance_after?: number | null;
 
-  @ApiPropertyOptional({ nullable: true })
-  outletId?: string | null;
+  @ApiPropertyOptional({ nullable: true, name: 'outlet_id' })
+  outlet_id?: string | null;
 
   @ApiPropertyOptional({
     description: 'ID устройства',
     nullable: true,
+    name: 'device_id',
   })
-  deviceId?: string | null;
+  device_id?: string | null;
 
   @ApiPropertyOptional({
     description: 'Код устройства (как в настройках)',
     nullable: true,
+    name: 'device_code',
   })
-  deviceCode?: string | null;
+  device_code?: string | null;
 
   @ApiPropertyOptional({
     description: 'Пометка отменённого чека (full refund)',
     type: String,
     format: 'date-time',
     nullable: true,
+    name: 'canceled_at',
   })
-  canceledAt?: string | null;
+  canceled_at?: string | null;
 
   @ApiPropertyOptional({
     description: 'Чистое изменение баланса по операции',
     nullable: true,
+    name: 'points_delta',
   })
-  pointsDelta?: number | null;
+  points_delta?: number | null;
 }
 
 export class IntegrationOperationsRespDto {

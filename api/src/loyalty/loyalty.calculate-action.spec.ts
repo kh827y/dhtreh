@@ -61,7 +61,7 @@ describe('LoyaltyService.calculateAction', () => {
         qty: 1,
         price: 0,
         base_price: 500,
-        actions_id: ['12'],
+        actions: ['12'],
         actions_names: ['3 пиццы по цене 2х'],
       }),
     );
@@ -71,7 +71,7 @@ describe('LoyaltyService.calculateAction', () => {
         qty: 2,
         price: 500,
         base_price: null,
-        actions_id: [],
+        actions: [],
         actions_names: [],
       }),
     );
@@ -118,7 +118,7 @@ describe('LoyaltyService.calculateAction', () => {
         qty: 1,
         price: 150,
         base_price: 200,
-        actions_id: ['p-fixed'],
+        actions: ['p-fixed'],
         actions_names: ['Спеццена'],
       }),
     );
@@ -164,7 +164,7 @@ describe('LoyaltyService.calculateAction', () => {
         id_product: 'cake-01',
         price: 300,
         base_price: null,
-        actions_id: ['p-mult'],
+        actions: ['p-mult'],
         actions_names: ['Х2 баллы'],
       }),
     );
@@ -273,7 +273,7 @@ describe('LoyaltyService.calculateAction', () => {
       items: [{ id_product: 'cake-01', qty: 1, price: 300 }],
     });
 
-    const applied = result.positions[0].actions_id.sort();
+    const applied = result.positions[0].actions.sort();
     expect(applied).toEqual(['promo-open', 'promo-seg']);
   });
 });
