@@ -166,7 +166,7 @@ E. Проверка результатов
 - Сущность `LoyaltyPromotion` заменяет legacy-кампании: портал и API работают с единым CRUD `/portal/loyalty/promotions`.
 - Исторические `GET /reports/export/:merchantId` отключены — используйте аналитику портала или выгрузку через API лояльности.
 - Статистика применения акции формируется из записей `PromotionParticipant` (участники, начисленные баллы, ROI) и доступна в `GET /portal/loyalty/promotions/:id`.
-- Уведомления (email/push/telegram) используют `promotionId`: шаблоны получают название акции, сроки и тип из `metadata.legacyCampaign`.
+- Уведомления (email/push/telegram) используют `promotionId`: шаблоны получают название акции, сроки и тип из `rewardType`/`rewardMetadata.kind`.
 - Push-уведомления доставляются через Telegram Mini App: регистрация устройств и FCM-провайдеры убраны, `PushService` использует `sendNotification` и воркер коммуникаций.
 
 ## Наблюдаемость: метрики и алерты

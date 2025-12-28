@@ -25,15 +25,18 @@ describe("points promotions page (new design)", () => {
         id: "p1",
         name: "Приветственные 500 бонусов",
         status: "ACTIVE",
-        startDate: "2024-01-02T00:00:00.000Z",
-        endDate: null,
-        targetSegmentId: null,
-        reward: { type: "POINTS", value: 500 },
-        analytics: { metrics: { revenueGenerated: 1067, pointsRedeemed: 100 } },
+        startAt: "2024-01-02T00:00:00.000Z",
+        endAt: null,
+        segmentId: null,
+        rewardType: "POINTS",
+        rewardValue: 500,
+        rewardMetadata: { pointsExpire: true, pointsExpireAfterEnd: true },
+        metrics: { revenueGenerated: 1067, pointsRedeemed: 100 },
+        pushOnStart: true,
+        pushReminderEnabled: false,
         metadata: {
-          pushOnStart: true,
           pushMessage: "Мы запустили акцию {name}!",
-          legacyCampaign: { reward: { metadata: { pointsExpire: true } } },
+          pushReminderMessage: "",
         },
       },
     ];
@@ -71,13 +74,14 @@ describe("points promotions page (new design)", () => {
         id: "p2",
         name: "Акция стартует сразу",
         status: "ACTIVE",
-        startDate: null,
-        endDate: null,
+        startAt: null,
+        endAt: null,
         createdAt,
-        targetSegmentId: null,
-        reward: { type: "POINTS", value: 10 },
-        analytics: { metrics: { revenueGenerated: 0, pointsRedeemed: 0 } },
-        metadata: { legacyCampaign: { reward: { metadata: { pointsExpire: false } } } },
+        segmentId: null,
+        rewardType: "POINTS",
+        rewardValue: 10,
+        rewardMetadata: { pointsExpire: false },
+        metrics: { revenueGenerated: 0, pointsRedeemed: 0 },
       },
     ];
 
@@ -111,12 +115,13 @@ describe("points promotions page (new design)", () => {
       id: "p_new",
       name: "Бонусы за регистрацию",
       status: "DRAFT",
-      startDate: "2024-01-02T00:00:00.000Z",
-      endDate: null,
-      targetSegmentId: null,
-      reward: { type: "POINTS", value: 100 },
-      analytics: { metrics: { revenueGenerated: 0, pointsRedeemed: 0 } },
-      metadata: { legacyCampaign: { reward: { metadata: { pointsExpire: false } } } },
+      startAt: "2024-01-02T00:00:00.000Z",
+      endAt: null,
+      segmentId: null,
+      rewardType: "POINTS",
+      rewardValue: 100,
+      rewardMetadata: { pointsExpire: false },
+      metrics: { revenueGenerated: 0, pointsRedeemed: 0 },
     };
 
     let lastPost: any = null;
@@ -154,9 +159,8 @@ describe("points promotions page (new design)", () => {
     assert.ok(lastPost);
     assert.equal(lastPost.name, "Бонусы за регистрацию");
     assert.equal(lastPost.status, "DRAFT");
-    assert.equal(lastPost.type, "BONUS");
-    assert.equal(lastPost.reward?.type, "POINTS");
-    assert.ok(Number(lastPost.reward?.value) > 0);
+    assert.equal(lastPost.rewardType, "POINTS");
+    assert.ok(Number(lastPost.rewardValue) > 0);
   });
 
   it("удаляет акцию через DELETE", async () => {
@@ -166,12 +170,13 @@ describe("points promotions page (new design)", () => {
         id: "p1",
         name: "Приветственные 500 бонусов",
         status: "ACTIVE",
-        startDate: "2024-01-02T00:00:00.000Z",
-        endDate: null,
-        targetSegmentId: null,
-        reward: { type: "POINTS", value: 500 },
-        analytics: { metrics: { revenueGenerated: 0, pointsRedeemed: 0 } },
-        metadata: { legacyCampaign: { reward: { metadata: { pointsExpire: false } } } },
+        startAt: "2024-01-02T00:00:00.000Z",
+        endAt: null,
+        segmentId: null,
+        rewardType: "POINTS",
+        rewardValue: 500,
+        rewardMetadata: { pointsExpire: false },
+        metrics: { revenueGenerated: 0, pointsRedeemed: 0 },
       },
     ];
 

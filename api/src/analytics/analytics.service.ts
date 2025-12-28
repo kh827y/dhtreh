@@ -3703,18 +3703,21 @@ export class AnalyticsService {
 
     const promotions = await this.prisma.loyaltyPromotion.findMany({
       where: { id: { in: ids } },
-      select: { id: true, name: true, metadata: true },
+      select: { id: true, name: true, rewardType: true, rewardMetadata: true },
     });
     const map = new Map(promotions.map((promo) => [promo.id, promo]));
 
     return aggregates.map((row) => {
       const promotion = map.get(row.promotionId);
-      const legacy = ((promotion?.metadata as any)?.legacyCampaign ??
-        {}) as Record<string, any>;
+      const rewardMeta =
+        promotion?.rewardMetadata && typeof promotion.rewardMetadata === 'object'
+          ? (promotion.rewardMetadata as Record<string, any>)
+          : {};
+      const kind = String(rewardMeta.kind || promotion?.rewardType || '');
       return {
         id: row.promotionId,
         name: promotion?.name ?? row.promotionId,
-        type: legacy.kind ?? 'LOYALTY_PROMOTION',
+        type: kind || 'LOYALTY_PROMOTION',
         usageCount: row._count._all,
         totalRewards: row._sum.pointsIssued ?? 0,
         roi: 0,

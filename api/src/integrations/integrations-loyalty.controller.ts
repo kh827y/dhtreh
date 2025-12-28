@@ -51,15 +51,9 @@ type IntegrationRequest = Request & {
 type NormalizedItem = {
   productId?: string;
   externalId?: string;
-  categoryId?: string;
   name?: string;
   qty: number;
   price: number;
-  basePrice?: number;
-  allowEarnAndPay?: boolean;
-  actions?: string[];
-  actionNames?: string[];
-  earnMultiplier?: number;
 };
 
 type IntegrationOperationInternal = {
@@ -135,19 +129,6 @@ export class IntegrationsLoyaltyController {
   private normalizeItems(items?: unknown[]): NormalizedItem[] {
     if (!Array.isArray(items)) return [];
     const list: NormalizedItem[] = [];
-    const parseBool = (value: any): boolean | undefined => {
-      if (value === true || value === false) return Boolean(value);
-      if (typeof value === 'string') {
-        const v = value.trim().toLowerCase();
-        if (v === 'true' || v === '1') return true;
-        if (v === 'false' || v === '0') return false;
-      }
-      if (typeof value === 'number') {
-        if (value === 1) return true;
-        if (value === 0) return false;
-      }
-      return undefined;
-    };
     for (const raw of items) {
       if (!raw || typeof raw !== 'object') continue;
       const item = raw as Record<string, any>;
@@ -168,57 +149,44 @@ export class IntegrationsLoyaltyController {
         typeof item.productId === 'string' && item.productId.trim().length
           ? item.productId.trim()
           : undefined;
-      const categoryId =
-        typeof item.categoryId === 'string' && item.categoryId.trim().length
-          ? item.categoryId.trim()
-          : typeof (item as any).category_id === 'string' &&
-              (item as any).category_id.trim().length
-            ? (item as any).category_id.trim()
-            : undefined;
       const name =
         typeof item.name === 'string' && item.name.trim().length
           ? item.name.trim()
           : undefined;
-      const basePrice = this.sanitizeAmount(
-        (item as any).base_price ?? (item as any).basePrice ?? price,
-        price,
-      );
-      const allowEarnAndPay = parseBool(
-        (item as any).allow_earn_and_pay ?? (item as any).allowEarnAndPay,
-      );
-      const actions = Array.isArray((item as any).actions)
-        ? (item as any).actions
-            .map((v: any) =>
-              typeof v === 'string' && v.trim().length ? v.trim() : null,
-            )
-            .filter((v: string | null): v is string => Boolean(v))
-        : undefined;
-      const actionNames = Array.isArray((item as any).action_names)
-        ? (item as any).action_names
-            .map((v: any) =>
-              typeof v === 'string' && v.trim().length ? v.trim() : null,
-            )
-            .filter((v: string | null): v is string => Boolean(v))
-        : undefined;
-      const earnMultiplierRaw =
-        (item as any).earn_multiplier ?? (item as any).multiplier;
-      const earnMultiplier =
-        Number.isFinite(Number(earnMultiplierRaw)) &&
-        Number(earnMultiplierRaw) > 0
-          ? Number(earnMultiplierRaw)
-          : undefined;
       list.push({
         productId,
         externalId: externalIdCandidate,
-        categoryId,
         name,
         qty,
         price,
-        basePrice,
-        allowEarnAndPay,
-        actions,
-        actionNames,
-        earnMultiplier,
+      });
+    }
+    return list;
+  }
+
+  private normalizeActionItems(items?: unknown[]): NormalizedItem[] {
+    if (!Array.isArray(items)) return [];
+    const list: NormalizedItem[] = [];
+    for (const raw of items) {
+      if (!raw || typeof raw !== 'object') continue;
+      const item = raw as Record<string, any>;
+      const qty = this.sanitizeAmount(item.qty ?? item.quantity ?? 0);
+      const price = this.sanitizeAmount(item.price ?? 0);
+      if (qty <= 0) continue;
+      if (price < 0) continue;
+      const externalId =
+        typeof item.id_product === 'string' && item.id_product.trim().length
+          ? item.id_product.trim()
+          : undefined;
+      const name =
+        typeof item.name === 'string' && item.name.trim().length
+          ? item.name.trim()
+          : undefined;
+      list.push({
+        externalId,
+        name,
+        qty,
+        price,
       });
     }
     return list;
@@ -1124,13 +1092,13 @@ export class IntegrationsLoyaltyController {
       req.integrationMerchantId || (req as any).merchantId || '',
     ).trim();
     if (!merchantId) throw new BadRequestException('merchantId required');
-    const items = this.normalizeItems(dto.items);
+    const items = this.normalizeActionItems(dto.items);
     if (!items.length) {
       throw new BadRequestException('items required');
     }
     const outletId =
-      typeof dto.outletId === 'string' && dto.outletId.trim()
-        ? dto.outletId.trim()
+      typeof dto.outlet_id === 'string' && dto.outlet_id.trim()
+        ? dto.outlet_id.trim()
         : null;
     if (outletId) {
       await this.ensureOutletContext(merchantId, outletId);
@@ -1151,7 +1119,7 @@ export class IntegrationsLoyaltyController {
       'ok',
       { items: items.length, outletId },
     );
-    return result;
+    return { status: 'ok', ...result };
   }
 
   @Post('calculate/bonus')

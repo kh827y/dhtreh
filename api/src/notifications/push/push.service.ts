@@ -200,15 +200,25 @@ export class PushService {
   ) {
     const promotion = await this.prisma.loyaltyPromotion.findUnique({
       where: { id: campaignId },
-      select: { merchantId: true, name: true, metadata: true },
+      select: {
+        merchantId: true,
+        name: true,
+        rewardType: true,
+        rewardMetadata: true,
+      },
     });
 
     if (!promotion) {
       throw new BadRequestException('Кампания не найдена');
     }
 
-    const legacy = ((promotion.metadata as any)?.legacyCampaign ??
-      {}) as Record<string, any>;
+    const rewardMeta =
+      promotion.rewardMetadata && typeof promotion.rewardMetadata === 'object'
+        ? (promotion.rewardMetadata as Record<string, any>)
+        : {};
+    const campaignType = String(
+      rewardMeta.kind || promotion.rewardType || '',
+    );
 
     return this.sendPush({
       merchantId: promotion.merchantId,
@@ -218,7 +228,7 @@ export class PushService {
       type: 'CAMPAIGN',
       campaignId,
       data: {
-        campaignType: legacy.kind ?? 'LOYALTY_PROMOTION',
+        campaignType: campaignType || 'LOYALTY_PROMOTION',
         campaignName: promotion.name ?? title,
       },
     });

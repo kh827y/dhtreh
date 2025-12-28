@@ -77,21 +77,16 @@ function formatDateRu(value: unknown, fallback: string) {
 
 function resolvePromotionStatus(item: any): PromotionStatus {
   const status = String(item?.status || "").toUpperCase();
-  const endAt = item?.endDate ? new Date(item.endDate) : item?.endAt ? new Date(item.endAt) : null;
+  const endAt = item?.endAt ? new Date(item.endAt) : null;
   if (endAt && Number.isFinite(endAt.getTime()) && endAt.getTime() < Date.now()) return "ended";
   if (status === "ACTIVE" || status === "SCHEDULED") return "active";
   return "disabled";
 }
 
 function extractPointsExpireFlag(item: any): boolean {
-  const legacyReward = item?.metadata?.legacyCampaign?.reward ?? null;
   const meta =
-    legacyReward && typeof legacyReward === "object"
-      ? legacyReward.metadata && typeof legacyReward.metadata === "object"
-        ? legacyReward.metadata
-        : legacyReward
-      : null;
-  return Boolean(meta?.pointsExpire ?? meta?.metadata?.pointsExpire ?? meta?.pointsExpireAfterEnd);
+    item?.rewardMetadata && typeof item.rewardMetadata === "object" ? item.rewardMetadata : null;
+  return Boolean(meta?.pointsExpire ?? meta?.pointsExpireAfterEnd);
 }
 
 function computeROI(revenue: number, cost: number) {
@@ -163,26 +158,34 @@ export default function ActionsEarnPage() {
     }
     const json = await res.json();
     const mapped: PointsPromotion[] = Array.isArray(json)
-      ? json.map((item: any) => {
-          const metrics = item?.analytics?.metrics ?? item?.metrics ?? {};
+      ? json
+          .map((item: any) => {
+            const rewardMeta =
+              item?.rewardMetadata && typeof item.rewardMetadata === "object" ? item.rewardMetadata : {};
+            const productIds = Array.isArray(rewardMeta?.productIds) ? rewardMeta.productIds : [];
+            const categoryIds = Array.isArray(rewardMeta?.categoryIds) ? rewardMeta.categoryIds : [];
+            const rewardTypeRaw = String(rewardMeta?.kind || rewardMeta?.type || item?.rewardType || "").toUpperCase();
+            const isProductPromo = rewardTypeRaw === "NTH_FREE" || rewardTypeRaw === "FIXED_PRICE" || productIds.length || categoryIds.length;
+            if (isProductPromo) return null;
+          const metrics = item?.metrics ?? {};
           const revenue = Math.max(0, safeNumber(metrics?.revenueGenerated));
           const cost = Math.max(0, safeNumber(metrics?.pointsRedeemed));
 
-          const createdAtIso = item?.createdAt ? String(item.createdAt) : item?.createdAtIso ? String(item.createdAtIso) : null;
-          const hasExplicitStartDate = Boolean(item?.startDate);
-          const startDateValue = item?.startDate ?? createdAtIso;
+          const createdAtIso = item?.createdAt ? String(item.createdAt) : null;
+          const hasExplicitStartDate = Boolean(item?.startAt);
+          const startDateValue = item?.startAt ?? createdAtIso;
           const startDate = startDateValue ? formatDateRu(startDateValue, "—") : "—";
-          const endDate = item?.endDate ? formatDateRu(item.endDate, "—") : "Бессрочно";
+          const endDate = item?.endAt ? formatDateRu(item.endAt, "—") : "Бессрочно";
 
-          const audienceId = item?.targetSegmentId ? String(item.targetSegmentId) : item?.segmentId ? String(item.segmentId) : "";
+          const audienceId = item?.segmentId ? String(item.segmentId) : "";
           const resolvedAudience = audienceId || audAllId;
           const status = resolvePromotionStatus(item);
           const burning = extractPointsExpireFlag(item);
 
-          const rewardValue = safeNumber(item?.reward?.value ?? item?.rewardValue ?? 0);
-          const pushAtStart = Boolean(item?.metadata?.pushOnStart);
+          const rewardValue = safeNumber(item?.rewardValue ?? 0);
+          const pushAtStart = Boolean(item?.pushOnStart);
           const pushStartText = String(item?.metadata?.pushMessage || "");
-          const pushBeforeEnd = Boolean(item?.metadata?.pushReminder);
+          const pushBeforeEnd = Boolean(item?.pushReminderEnabled);
           const pushEndText = String(item?.metadata?.pushReminderMessage || "");
 
           return {
@@ -204,7 +207,8 @@ export default function ActionsEarnPage() {
             revenue,
             cost,
           };
-        })
+          })
+          .filter((promo: PointsPromotion | null): promo is PointsPromotion => Boolean(promo))
       : [];
     setPromotions(mapped);
   };
@@ -370,26 +374,22 @@ export default function ActionsEarnPage() {
       name: formData.title,
       description: "",
       status,
-      startDate: startIso,
-      endDate: endIso,
-      targetSegmentId: audienceIdToSend,
-      type: "BONUS",
-      reward: {
-        type: "POINTS",
-        value: Math.max(0, Math.round(Number(formData.pointsAmount || 0))),
-        metadata: {
-          pointsExpire: formData.isBurning,
-          pointsExpireAfterEnd: formData.isBurning,
-        },
+      startAt: startIso,
+      endAt: endIso,
+      segmentId: audienceIdToSend,
+      rewardType: "POINTS",
+      rewardValue: Math.max(0, Math.round(Number(formData.pointsAmount || 0))),
+      rewardMetadata: {
+        pointsExpire: formData.isBurning,
+        pointsExpireAfterEnd: formData.isBurning,
       },
+      pushOnStart: formData.pushAtStart,
+      pushReminderEnabled: formData.pushBeforeEnd,
+      reminderOffsetHours: formData.pushBeforeEnd ? 48 : null,
       metadata: {
-        pushOnStart: formData.pushAtStart,
         pushMessage: formData.pushStartText,
-        pushReminder: formData.pushBeforeEnd,
         pushReminderMessage: formData.pushEndText,
-        reminderOffsetHours: formData.pushBeforeEnd ? 48 : null,
       },
-      rules: {},
     };
 
     setSaving(true);

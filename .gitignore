@@ -26,3 +26,9 @@ miniapp/miniapp/
 Thumbs.db
 .idea/
 .vscode/
+.oracle.local
+.codex/last_task.md
+.codex/solution_summary.md
+.codex/gemini_review.md
+.codex/gemini_verification.md
+.oracle_artifacts/

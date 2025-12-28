@@ -62,11 +62,6 @@ export class IntegrationItemDto {
   @IsString()
   productId?: string;
 
-  @ApiPropertyOptional({ description: 'ID категории' })
-  @IsOptional()
-  @IsString()
-  categoryId?: string;
-
   @ApiPropertyOptional({ description: 'Название товара' })
   @IsOptional()
   @IsString()
@@ -197,6 +192,7 @@ export class IntegrationCalculateActionItemDto {
   @ApiProperty({
     description: 'Количество',
   })
+  @Transform(({ value, obj }) => value ?? obj?.quantity)
   @IsNumber()
   qty!: number;
 
@@ -205,13 +201,6 @@ export class IntegrationCalculateActionItemDto {
   })
   @IsNumber()
   price!: number;
-
-  @ApiPropertyOptional({
-    description: 'Внешний ID категории товара',
-  })
-  @IsOptional()
-  @IsString()
-  categoryId?: string;
 
   @ApiPropertyOptional({
     description: 'Название товара',
@@ -249,10 +238,12 @@ export class IntegrationCalculateActionDto {
 
   @ApiPropertyOptional({
     description: 'Опциональный контекст точки (для правил по торговой точке)',
+    name: 'outlet_id',
   })
+  @Transform(({ value, obj }) => value ?? obj?.outlet_id ?? obj?.outletId)
   @IsOptional()
   @IsString()
-  outletId?: string;
+  outlet_id?: string;
 }
 
 export class IntegrationCalculateBonusItemDto {
@@ -280,45 +271,6 @@ export class IntegrationCalculateBonusItemDto {
   })
   @IsNumber()
   price!: number;
-
-  @ApiPropertyOptional({
-    description: 'Цена до применения акций',
-    name: 'base_price',
-  })
-  @IsOptional()
-  @IsNumber()
-  base_price?: number;
-
-  @ApiPropertyOptional({
-    description: 'Можно ли начислять и списывать одновременно',
-    name: 'allow_earn_and_pay',
-  })
-  @IsOptional()
-  @IsBoolean()
-  allow_earn_and_pay?: boolean;
-
-  @ApiPropertyOptional({
-    description: 'ID применённых акций',
-    type: [String],
-  })
-  @IsOptional()
-  @IsArray()
-  actions?: string[];
-
-  @ApiPropertyOptional({
-    description: 'Названия применённых акций',
-    type: [String],
-  })
-  @IsOptional()
-  @IsArray()
-  action_names?: string[];
-
-  @ApiPropertyOptional({
-    description: 'Множитель начисления (если акция x2/x3)',
-  })
-  @IsOptional()
-  @IsNumber()
-  earn_multiplier?: number;
 }
 
 export class IntegrationCalculateBonusDto {

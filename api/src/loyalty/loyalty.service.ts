@@ -79,20 +79,15 @@ type IntegrationBonusResult = {
 type PositionInput = {
   productId?: string;
   externalId?: string;
-  categoryId?: string;
   name?: string;
   qty: number;
   price: number;
   accruePoints?: boolean;
-  basePrice?: number;
-  allowEarnAndPay?: boolean;
-  actions?: string[];
-  actionNames?: string[];
-  earnMultiplier?: number;
 };
 
 type ResolvedPosition = PositionInput & {
   amount: number;
+  categoryId?: string | null;
   resolvedProductId?: string | null;
   resolvedCategoryId?: string | null;
   promotionId?: string | null;
@@ -101,6 +96,8 @@ type ResolvedPosition = PositionInput & {
   redeemAmount?: number;
   accruePoints: boolean;
   redeemPercent?: number;
+  basePrice?: number;
+  allowEarnAndPay?: boolean;
 };
 
 type ActivePromotionRule = {
@@ -211,52 +208,14 @@ export class LoyaltyService {
       const qty = Number.isFinite(qtyRaw) ? qtyRaw : 0;
       const price = Number.isFinite(priceRaw) ? priceRaw : 0;
       if (qty <= 0 || price < 0) continue;
-      const basePriceRaw =
-        (entry as any).basePrice ?? (entry as any).base_price ?? price;
-      const basePrice = Number.isFinite(Number(basePriceRaw))
-        ? Math.max(0, Number(basePriceRaw))
-        : Math.max(0, price);
-      const actions = Array.isArray((entry as any).actions)
-        ? (entry as any).actions
-            .map((v: any) =>
-              typeof v === 'string' && v.trim().length ? v.trim() : null,
-            )
-            .filter((v: string | null): v is string => Boolean(v))
-        : undefined;
-      const actionNames = Array.isArray((entry as any).actionNames)
-        ? (entry as any).actionNames
-            .map((v: any) =>
-              typeof v === 'string' && v.trim().length ? v.trim() : null,
-            )
-            .filter((v: string | null): v is string => Boolean(v))
-        : Array.isArray((entry as any).action_names)
-          ? (entry as any).action_names
-              .map((v: any) =>
-                typeof v === 'string' && v.trim().length ? v.trim() : null,
-              )
-              .filter((v: string | null): v is string => Boolean(v))
-          : undefined;
-      const earnMultiplierRaw =
-        (entry as any).earnMultiplier ??
-        (entry as any).earn_multiplier ??
-        (entry as any).multiplier;
-      const earnMultiplier =
-        Number.isFinite(Number(earnMultiplierRaw)) &&
-        Number(earnMultiplierRaw) > 0
-          ? Number(earnMultiplierRaw)
-          : undefined;
       items.push({
         productId: normalizeStr((entry as any).productId),
         externalId:
           normalizeStr((entry as any).externalId) ??
           normalizeStr((entry as any).id_product),
-        categoryId:
-          normalizeStr((entry as any).categoryId) ??
-          normalizeStr((entry as any).category_id),
         name: normalizeStr((entry as any).name),
         qty,
         price: Math.max(0, price),
-        basePrice,
         accruePoints: parseBool(
           (entry as any).accruePoints ??
             (entry as any).accrue_points ??
@@ -264,14 +223,6 @@ export class LoyaltyService {
             (entry as any).earn_bonus ??
             (entry as any).eligible,
         ),
-        allowEarnAndPay: parseBool(
-          (entry as any).allowEarnAndPay ??
-            (entry as any).allow_earn_and_pay ??
-            (entry as any).allowEarnPay,
-        ),
-        actions,
-        actionNames,
-        earnMultiplier,
       });
     }
     return items;
@@ -304,16 +255,8 @@ export class LoyaltyService {
           .filter((v): v is string => Boolean(v)),
       ),
     );
-    const categoryIds = Array.from(
-      new Set(
-        normalized
-          .map((i) => normalize(i.categoryId))
-          .filter((v): v is string => Boolean(v)),
-      ),
-    );
-
-    const [productsById, productsByExternalId, categoriesById, multipliers] =
-      await Promise.all([
+    const [productsById, productsByExternalId, multipliers] = await Promise.all(
+      [
       productIds.length
         ? (this.prisma.product
             .findMany({
@@ -346,18 +289,6 @@ export class LoyaltyService {
                 redeemPercent: true,
                 externalId: true,
               },
-            })
-            .catch(() => []) as any)
-        : [],
-      categoryIds.length
-        ? (this.prisma.productCategory
-            .findMany({
-              where: {
-                merchantId,
-                deletedAt: null,
-                id: { in: categoryIds },
-              },
-              select: { id: true },
             })
             .catch(() => []) as any)
         : [],
@@ -413,11 +344,6 @@ export class LoyaltyService {
       });
     });
 
-    const categoryByIdMap = new Map<string, string>();
-    (categoriesById as any[]).forEach((c) => {
-      categoryByIdMap.set(c.id, c.id);
-    });
-
     const resolved: ResolvedPosition[] = [];
     for (const item of normalized) {
       const amount = Math.max(
@@ -437,20 +363,13 @@ export class LoyaltyService {
       const productInfo: any =
         (productId && productByIdMap.get(productId)) ||
         (extKey ? productByExtMap.get(extKey) : undefined);
-      const categoryId =
-        (normalize(item.categoryId) &&
-          categoryByIdMap.get(normalize(item.categoryId) as string)) ||
-        productInfo?.categoryId ||
-        null;
+      const categoryId = productInfo?.categoryId || null;
       const promo = this.pickMultiplier(multipliers, productId, categoryId);
       const accruePoints =
         item.accruePoints != null
           ? Boolean(item.accruePoints)
           : productInfo?.accruePoints !== false;
-      const allowEarnAndPay =
-        item.allowEarnAndPay != null
-          ? Boolean(item.allowEarnAndPay)
-          : productInfo?.allowRedeem !== false;
+      const allowEarnAndPay = productInfo?.allowRedeem !== false;
       const name =
         item.name && item.name.length
           ? item.name
@@ -475,10 +394,7 @@ export class LoyaltyService {
           ? Number(productInfo?.redeemPercent)
           : 100,
         price: Math.max(0, item.price),
-        basePrice:
-          item.basePrice != null && Number.isFinite(item.basePrice)
-            ? Math.max(0, Number(item.basePrice))
-            : Math.max(0, item.price),
+        basePrice: Math.max(0, Number(item.price)),
       });
     }
     return resolved;
@@ -535,7 +451,7 @@ export class LoyaltyService {
           status: PromotionStatus.ACTIVE,
           archivedAt: null,
           OR: [{ startAt: null }, { startAt: { lte: now } }],
-          AND: [{ endAt: null }, { endAt: { gte: now } }],
+          AND: [{ OR: [{ endAt: null }, { endAt: { gte: now } }] }],
         },
       })
       .catch(() => []);
@@ -554,51 +470,33 @@ export class LoyaltyService {
       const productIds = new Set<string>();
       const categoryIds = new Set<string>();
       pushAll(meta.productIds, productIds);
-      pushAll(meta.products, productIds);
-      pushAll(meta.targets?.products, productIds);
       pushAll(meta.categoryIds, categoryIds);
-      pushAll(meta.categories, categoryIds);
-      pushAll(meta.targets?.categories, categoryIds);
 
-      const kindRaw = String(meta.kind || meta.type || '').toUpperCase();
+      const kindRaw = String(meta.kind || '').toUpperCase();
+      const pointsRuleTypeRaw = String(meta.pointsRuleType || '').toLowerCase();
       let kind: ActivePromotionRule['kind'] | null = null;
       let multiplier: number | undefined;
       let buyQty: number | undefined;
       let freeQty: number | undefined;
       let fixedPrice: number | undefined;
       const pickMultiplier = () => {
-        const raw =
-          meta.multiplier ??
-          meta.earnMultiplier ??
-          meta.pointsMultiplier ??
-          meta.rewardMultiplier ??
-          promo.rewardValue;
-        const num = Number(raw);
+        const num = Number(meta.multiplier);
         return Number.isFinite(num) && num > 0 ? num : undefined;
       };
 
       if (
-        promo.rewardType === PromotionRewardType.POINTS ||
-        kindRaw === 'POINTS' ||
-        kindRaw === 'POINTS_MULTIPLIER'
+        promo.rewardType === PromotionRewardType.POINTS
       ) {
-        multiplier = pickMultiplier();
-        if (multiplier) kind = 'POINTS_MULTIPLIER';
+        if (pointsRuleTypeRaw === 'percent' || pointsRuleTypeRaw === 'fixed') {
+          kind = 'POINTS_MULTIPLIER';
+        } else {
+          multiplier = pickMultiplier();
+          if (multiplier) kind = 'POINTS_MULTIPLIER';
+        }
       }
 
-      const buyRaw =
-        meta.buyQty ??
-        meta.buy ??
-        meta.every ??
-        meta.step ??
-        (meta.nth != null ? Number(meta.nth) - 1 : undefined);
-      const freeRaw =
-        meta.freeQty ??
-        meta.free ??
-        meta.getQty ??
-        meta.bonusQty ??
-        meta.giftQty ??
-        1;
+      const buyRaw = meta.buyQty;
+      const freeRaw = meta.freeQty;
       const buyParsed = Number(buyRaw);
       const freeParsed = Number(freeRaw);
       const buy =
@@ -609,37 +507,19 @@ export class LoyaltyService {
         Number.isFinite(freeParsed) && freeParsed > 0
           ? Math.max(1, Math.trunc(freeParsed))
           : 1;
-      if (
-        kind === null &&
-        (kindRaw === 'NTH_FREE' ||
-          kindRaw === 'EACH_NTH_FREE' ||
-          kindRaw === 'STEP' ||
-          buy !== null)
-      ) {
+      if (kind === null && kindRaw === 'NTH_FREE' && buy !== null) {
         kind = 'NTH_FREE';
         buyQty = buy ?? 1;
         freeQty = free;
       }
 
-      const fixedPriceRaw =
-        meta.price ??
-        meta.fixedPrice ??
-        meta.specialPrice ??
-        meta.promoPrice ??
-        (promo.rewardType === PromotionRewardType.DISCOUNT
-          ? promo.rewardValue
-          : undefined);
+      const fixedPriceRaw = meta.price;
       const fixedParsed = Number(fixedPriceRaw);
       if (
         kind === null &&
         Number.isFinite(fixedParsed) &&
         fixedParsed >= 0 &&
-        (kindRaw === 'FIXED_PRICE' ||
-          kindRaw === 'SPECIAL_PRICE' ||
-          kindRaw === 'PRICE' ||
-          promo.rewardType === PromotionRewardType.DISCOUNT ||
-          promo.rewardType === PromotionRewardType.CASHBACK ||
-          promo.rewardType === PromotionRewardType.CUSTOM)
+        kindRaw === 'FIXED_PRICE'
       ) {
         kind = 'FIXED_PRICE';
         fixedPrice = Math.max(0, fixedParsed);
@@ -670,25 +550,23 @@ export class LoyaltyService {
           rewardType: PromotionRewardType.POINTS,
           archivedAt: null,
           OR: [{ startAt: null }, { startAt: { lte: now } }],
-          AND: [{ endAt: null }, { endAt: { gte: now } }],
+          AND: [{ OR: [{ endAt: null }, { endAt: { gte: now } }] }],
         },
       })
       .catch(() => []);
-    return promos.map((promo) => {
+    const rules = promos.flatMap((promo) => {
       const meta =
         promo.rewardMetadata && typeof promo.rewardMetadata === 'object'
           ? (promo.rewardMetadata as Record<string, any>)
           : {};
-      const multiplierRaw =
-        meta.multiplier ??
-        meta.earnMultiplier ??
-        meta.pointsMultiplier ??
-        meta.rewardMultiplier ??
-        1;
+      const pointsRuleType = String(meta.pointsRuleType || '').toLowerCase();
+      if (pointsRuleType && pointsRuleType !== 'multiplier') return [];
+      const multiplierRaw = meta.multiplier;
       const multiplier =
         Number.isFinite(Number(multiplierRaw)) && Number(multiplierRaw) > 0
           ? Number(multiplierRaw)
-          : 1;
+          : 0;
+      if (!multiplier) return [];
       const productIds = new Set<string>();
       const categoryIds = new Set<string>();
       const pushAll = (value: any, target: Set<string>) => {
@@ -698,18 +576,17 @@ export class LoyaltyService {
         });
       };
       pushAll(meta.productIds, productIds);
-      pushAll(meta.products, productIds);
-      pushAll(meta.targets?.products, productIds);
       pushAll(meta.categoryIds, categoryIds);
-      pushAll(meta.categories, categoryIds);
-      pushAll(meta.targets?.categories, categoryIds);
-      return {
+      return [
+        {
         id: promo.id,
         multiplier,
         productIds,
         categoryIds,
-      };
+        },
+      ];
     });
+    return rules;
   }
 
   private pickMultiplier(
@@ -768,6 +645,9 @@ export class LoyaltyService {
 
     // Используем flatMap для возможности разбиения позиций (NTH_FREE)
     const positions = resolved.flatMap((item) => {
+      const idProduct =
+        item.externalId ?? item.productId ?? item.resolvedProductId ?? null;
+      const itemLabel = item.name ?? idProduct ?? 'товар';
       const applicable = promotions
         .filter((promo) => {
           const matchesProduct =
@@ -783,36 +663,30 @@ export class LoyaltyService {
           return matchesProduct || matchesCategory || appliesAll;
         })
         .sort((a, b) => (priority[a.kind] ?? 10) - (priority[b.kind] ?? 10));
-      const appliedIds: string[] = [];
-      const appliedNames: string[] = [];
-      let unitPrice = Math.max(0, item.price);
-      const basePrice =
-        item.basePrice != null && Number.isFinite(item.basePrice)
-          ? Math.max(0, Number(item.basePrice))
-          : unitPrice;
-      let earnMultiplier =
-        item.promotionMultiplier && item.promotionMultiplier > 0
-          ? item.promotionMultiplier
-          : 1;
+      const appliedPromos: ActivePromotionRule[] = [];
+      const appliedPromoIds = new Set<string>();
+      const originalPrice = Math.max(0, Number(item.price ?? 0));
+      const normalizedOriginal = roundCurrency(originalPrice);
+      let unitPrice = originalPrice;
 
       // Для NTH_FREE: кол-во бесплатных единиц
       let freebies = 0;
       let nthFreePromoApplied = false;
 
       for (const promo of applicable) {
-        if (appliedIds.includes(promo.id)) continue;
-        appliedIds.push(promo.id);
-        appliedNames.push(promo.name);
         if (promo.kind === 'POINTS_MULTIPLIER') {
-          if (promo.multiplier && promo.multiplier > earnMultiplier) {
-            earnMultiplier = promo.multiplier;
-          }
+          if (appliedPromoIds.has(promo.id)) continue;
+          appliedPromoIds.add(promo.id);
+          appliedPromos.push(promo);
           infoSet.add(
-            `${promo.name}: множитель начисления x${promo.multiplier ?? 1}`,
+            `Применена акция: ${promo.name}${
+              promo.multiplier ? ` (x${promo.multiplier})` : ''
+            } для товара "${itemLabel}"`,
           );
           continue;
         }
         if (promo.kind === 'NTH_FREE') {
+          if (appliedPromoIds.has(promo.id)) continue;
           const step = Math.max(
             1,
             Math.trunc((promo.buyQty ?? 1) + (promo.freeQty ?? 0)),
@@ -824,26 +698,40 @@ export class LoyaltyService {
           if (freeCount > 0) {
             freebies = Math.min(freeCount, item.qty);
             nthFreePromoApplied = true;
-            infoSet.add(`${promo.name}: ${freebies} шт. бесплатно`);
+            appliedPromoIds.add(promo.id);
+            appliedPromos.push(promo);
+            infoSet.add(
+              `Применена акция: ${promo.name} — ${freebies} шт. бесплатно для товара "${itemLabel}"`,
+            );
           }
           continue;
         }
         if (promo.kind === 'FIXED_PRICE') {
+          if (appliedPromoIds.has(promo.id)) continue;
           const fixed = Math.max(
             0,
             Math.min(Number.MAX_SAFE_INTEGER, promo.fixedPrice ?? unitPrice),
           );
           unitPrice = fixed;
+          appliedPromoIds.add(promo.id);
+          appliedPromos.push(promo);
           infoSet.add(
-            `${promo.name}: цена ${roundCurrency(fixed)} вместо ${roundCurrency(basePrice)}`,
+            `Применена акция: ${promo.name} — цена ${roundCurrency(fixed)} вместо ${normalizedOriginal} для товара "${itemLabel}"`,
           );
         }
       }
 
-      const idProduct =
-        item.externalId ?? item.productId ?? item.resolvedProductId ?? null;
-      const allowEarnAndPay =
-        item.allowEarnAndPay != null ? Boolean(item.allowEarnAndPay) : true;
+      const actionsAll = appliedPromos.map((promo) => promo.id);
+      const actionNamesAll = appliedPromos.map((promo) => promo.name);
+      const actionsWithoutNth = appliedPromos.filter(
+        (promo) => promo.kind !== 'NTH_FREE',
+      );
+      const actionsPaid = actionsWithoutNth.map((promo) => promo.id);
+      const actionNamesPaid = actionsWithoutNth.map((promo) => promo.name);
+      const resolveBasePrice = (price: number) =>
+        roundCurrency(price) !== normalizedOriginal && appliedPromos.length
+          ? normalizedOriginal
+          : null;
 
       // Если есть бесплатные позиции — разбиваем на две записи (как GMB)
       if (nthFreePromoApplied && freebies > 0 && freebies < item.qty) {
@@ -855,11 +743,9 @@ export class LoyaltyService {
           name: item.name ?? null,
           qty: freebies,
           price: 0,
-          base_price: basePrice,
-          actions: appliedIds,
-          action_names: appliedNames,
-          earn_multiplier: earnMultiplier > 0 ? earnMultiplier : 1,
-          allow_earn_and_pay: allowEarnAndPay,
+          base_price: resolveBasePrice(0),
+          actions_id: actionsAll,
+          actions_names: actionNamesAll,
         });
         // Платная позиция
         result.push({
@@ -867,11 +753,9 @@ export class LoyaltyService {
           name: item.name ?? null,
           qty: paidQty,
           price: unitPrice,
-          base_price: basePrice,
-          actions: [],
-          action_names: [],
-          earn_multiplier: earnMultiplier > 0 ? earnMultiplier : 1,
-          allow_earn_and_pay: allowEarnAndPay,
+          base_price: resolveBasePrice(unitPrice),
+          actions_id: actionsPaid,
+          actions_names: actionNamesPaid,
         });
         return result;
       }
@@ -884,11 +768,9 @@ export class LoyaltyService {
             name: item.name ?? null,
             qty: item.qty,
             price: 0,
-            base_price: basePrice,
-            actions: appliedIds,
-            action_names: appliedNames,
-            earn_multiplier: earnMultiplier > 0 ? earnMultiplier : 1,
-            allow_earn_and_pay: allowEarnAndPay,
+            base_price: resolveBasePrice(0),
+            actions_id: actionsAll,
+            actions_names: actionNamesAll,
           },
         ];
       }
@@ -900,11 +782,9 @@ export class LoyaltyService {
           name: item.name ?? null,
           qty: item.qty,
           price: unitPrice,
-          base_price: basePrice,
-          actions: appliedIds,
-          action_names: appliedNames,
-          earn_multiplier: earnMultiplier > 0 ? earnMultiplier : 1,
-          allow_earn_and_pay: allowEarnAndPay,
+          base_price: resolveBasePrice(unitPrice),
+          actions_id: actionsAll,
+          actions_names: actionNamesAll,
         },
       ];
     });

@@ -123,17 +123,6 @@ export class LoyaltyProgramService {
     return Math.round(parsed * 100);
   }
 
-  private extractMultiplierValue(meta: any): number {
-    if (!meta || typeof meta !== 'object') return 0;
-    const raw =
-      meta.multiplier ??
-      meta.earnMultiplier ??
-      meta.pointsMultiplier ??
-      meta.rewardMultiplier;
-    const val = Number(raw);
-    return Number.isFinite(val) && val > 0 ? val : 0;
-  }
-
   private normalizePointsTtl(days?: number | null): number | null {
     if (days === undefined || days === null) return null;
     const parsed = Number(days);
@@ -1110,11 +1099,7 @@ export class LoyaltyProgramService {
       payload.pointsExpireInDays,
     );
     if (rewardType === PromotionRewardType.POINTS) {
-      const multiplierRaw =
-        rewardMetadata?.multiplier ??
-        rewardMetadata?.earnMultiplier ??
-        rewardMetadata?.pointsMultiplier ??
-        rewardMetadata?.rewardMultiplier;
+      const multiplierRaw = rewardMetadata?.multiplier;
       const multiplier =
         Number.isFinite(Number(multiplierRaw)) && Number(multiplierRaw) > 0
           ? Number(multiplierRaw)
@@ -1133,7 +1118,7 @@ export class LoyaltyProgramService {
       rewardValue = Math.max(0, Math.floor(rewardValueRaw));
     } else {
       pointsExpireInDays = null;
-      const kind = String(rewardMetadata?.kind || rewardMetadata?.type || '')
+      const kind = String(rewardMetadata?.kind || '')
         .toUpperCase()
         .trim();
       if (kind === 'NTH_FREE') {
@@ -1251,11 +1236,7 @@ export class LoyaltyProgramService {
       payload.pointsExpireInDays ?? promotion.pointsExpireInDays,
     );
     if (rewardType === PromotionRewardType.POINTS) {
-      const multiplierRaw =
-        rewardMetadata?.multiplier ??
-        rewardMetadata?.earnMultiplier ??
-        rewardMetadata?.pointsMultiplier ??
-        rewardMetadata?.rewardMultiplier;
+      const multiplierRaw = rewardMetadata?.multiplier;
       const multiplier =
         Number.isFinite(Number(multiplierRaw)) && Number(multiplierRaw) > 0
           ? Number(multiplierRaw)
@@ -1276,7 +1257,7 @@ export class LoyaltyProgramService {
       rewardValue = Math.max(0, Math.floor(rewardValueRaw));
     } else {
       pointsExpireInDays = null;
-      const kind = String(rewardMetadata?.kind || rewardMetadata?.type || '')
+      const kind = String(rewardMetadata?.kind || '')
         .toUpperCase()
         .trim();
       const promoMeta =
@@ -1317,12 +1298,27 @@ export class LoyaltyProgramService {
       }
     }
 
+    const segmentId =
+      payload.segmentId !== undefined ? payload.segmentId : promotion.segmentId;
+    const startAt =
+      payload.startAt === undefined
+        ? promotion.startAt
+        : payload.startAt
+          ? new Date(payload.startAt)
+          : null;
+    const endAt =
+      payload.endAt === undefined
+        ? promotion.endAt
+        : payload.endAt
+          ? new Date(payload.endAt)
+          : null;
+
     const updated = await this.prisma.loyaltyPromotion.update({
       where: { id: promotionId },
       data: {
         name: payload.name?.trim() ?? promotion.name,
         description: payload.description ?? promotion.description,
-        segmentId: payload.segmentId ?? promotion.segmentId,
+        segmentId,
         targetTierId: payload.targetTierId ?? promotion.targetTierId,
         status: payload.status ?? promotion.status,
         rewardType,
@@ -1339,10 +1335,8 @@ export class LoyaltyProgramService {
         reminderOffsetHours:
           payload.reminderOffsetHours ?? promotion.reminderOffsetHours,
         autoLaunch: payload.autoLaunch ?? promotion.autoLaunch,
-        startAt: payload.startAt
-          ? new Date(payload.startAt)
-          : promotion.startAt,
-        endAt: payload.endAt ? new Date(payload.endAt) : promotion.endAt,
+        startAt,
+        endAt,
         metadata: payload.metadata ?? promotion.metadata,
         updatedById: payload.actorId ?? promotion.updatedById,
       },

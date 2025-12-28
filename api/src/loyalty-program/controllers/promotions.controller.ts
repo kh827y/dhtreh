@@ -1,6 +1,5 @@
 import {
   Body,
-  BadRequestException,
   Controller,
   Delete,
   Get,
@@ -11,251 +10,78 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { PromotionStatus } from '@prisma/client';
 import { PortalGuard } from '../../portal-auth/portal.guard';
 import {
   LoyaltyProgramService,
   type PromotionPayload,
 } from '../loyalty-program.service';
-import { PromotionRewardType, PromotionStatus } from '@prisma/client';
-import {
-  toLegacyCampaignDto,
-  type CampaignStatus,
-  type CreateCampaignDto,
-} from '../../loyalty-promotion/dto';
 
-type LegacyCampaignPayload = Omit<CreateCampaignDto, 'merchantId'>;
+type PortalPromotionPayload = Omit<PromotionPayload, 'actorId'>;
 
-function mapStatusToPromotion(status?: string | null): PromotionStatus {
-  switch (status) {
-    case 'ACTIVE':
-      return PromotionStatus.ACTIVE;
-    case 'PAUSED':
-      return PromotionStatus.PAUSED;
-    case 'COMPLETED':
-      return PromotionStatus.COMPLETED;
-    default:
-      return PromotionStatus.DRAFT;
+const statusValues = new Set(Object.values(PromotionStatus));
+
+function normalizeStatus(value?: string | null): PromotionStatus {
+  if (value && statusValues.has(value as PromotionStatus)) {
+    return value as PromotionStatus;
   }
+  return PromotionStatus.DRAFT;
 }
 
-function ensureNumber(value: any, fallback = 0): number {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : fallback;
-}
-
-function buildMetadata(body: LegacyCampaignPayload, reward: any) {
-  const rawMeta =
-    body?.metadata && typeof body.metadata === 'object'
-      ? (body.metadata as Record<string, any>)
-      : {};
-  const { legacyCampaign, ...baseMeta } = rawMeta;
-  return {
-    ...baseMeta,
-    pushOnStart:
-      baseMeta.pushOnStart ??
-      body.notificationChannels?.includes('PUSH') ??
-      false,
-    legacyCampaign: {
-      type: body.type ?? 'BONUS',
-      status: body.status ?? 'DRAFT',
-      startDate: body.startDate ?? null,
-      endDate: body.endDate ?? null,
-      targetSegmentId: body.targetSegmentId ?? null,
-      rules: body.rules ?? {},
-      reward: reward ?? {},
-      budget: body.budget ?? null,
-      maxUsagePerCustomer: body.maxUsagePerCustomer ?? null,
-      maxUsageTotal: body.maxUsageTotal ?? null,
-      notificationChannels: body.notificationChannels ?? [],
-      metadata: baseMeta,
-    },
-  };
-}
-
-function legacyPayloadToPromotion(
-  body: LegacyCampaignPayload,
-): PromotionPayload {
-  const reward = body.reward ?? { type: 'POINTS', value: 0 };
-  const rewardType = String(reward.type || 'POINTS').toUpperCase();
-  const rewardMeta =
-    reward && typeof (reward as any).metadata === 'object'
-      ? ((reward as any).metadata as Record<string, any>)
-      : {};
-  const targetProducts =
-    Array.isArray((body as any).productIds) && (body as any).productIds.length
-      ? ((body as any).productIds as any[]).map((id) => String(id))
-      : Array.isArray((body as any).products) && (body as any).products.length
-        ? ((body as any).products as any[]).map((id) => String(id))
-        : Array.isArray((rewardMeta as any).productIds)
-          ? ((rewardMeta as any).productIds as any[]).map((id) => String(id))
-          : [];
-  const targetCategories =
-    Array.isArray((body as any).categoryIds) && (body as any).categoryIds.length
-      ? ((body as any).categoryIds as any[]).map((id) => String(id))
-      : Array.isArray((body as any).categories) &&
-          (body as any).categories.length
-        ? ((body as any).categories as any[]).map((id) => String(id))
-        : Array.isArray((rewardMeta as any).categoryIds)
-          ? ((rewardMeta as any).categoryIds as any[]).map((id) => String(id))
-          : [];
-  const normalizedRewardMetadata: any = {
-    ...rewardMeta,
-    productIds: targetProducts.length ? targetProducts : rewardMeta?.productIds,
-    categoryIds: targetCategories.length
-      ? targetCategories
-      : rewardMeta?.categoryIds,
-  };
-  const reminderRaw = body.metadata?.reminderOffsetHours;
-  const reminderOffsetHours =
-    reminderRaw === undefined || reminderRaw === null
-      ? null
-      : ensureNumber(reminderRaw, 0);
-  const basePayload = {
-    name: body.name?.trim() || 'Без названия',
-    description: body.description ?? null,
-    segmentId: body.targetSegmentId ?? null,
-    targetTierId: null,
-    status: mapStatusToPromotion(body.status),
-    pushOnStart: Boolean(
-      body.metadata?.pushOnStart ?? body.notificationChannels?.includes('PUSH'),
-    ),
-    pushReminderEnabled: Boolean(body.metadata?.pushReminder),
-    reminderOffsetHours,
-    autoLaunch: Boolean(body.metadata?.autoLaunch),
-    startAt: body.startDate ?? null,
-    endAt: body.endDate ?? null,
-    actorId: body.metadata?.actorId ?? undefined,
-  };
-
-  if (rewardType === 'POINTS') {
-    const rewardValue = ensureNumber(reward.value, 0);
-    const multiplierRaw =
-      (reward as any).multiplier ??
-      (reward as any).earnMultiplier ??
-      (reward as any).pointsMultiplier ??
-      (reward as any).rewardMultiplier;
-    const multiplier =
-      Number.isFinite(Number(multiplierRaw)) && Number(multiplierRaw) > 0
-        ? Number(multiplierRaw)
-        : 0;
-    if ((!Number.isFinite(rewardValue) || rewardValue < 0) && multiplier <= 0) {
-      throw new BadRequestException(
-        'Укажите количество баллов или множитель для акции',
-      );
-    }
-    const pointsExpire = Boolean(rewardMeta.pointsExpire);
-    const pointsExpireDaysRaw = rewardMeta.pointsExpireDays;
-    const pointsExpireDays =
-      pointsExpire && Number.isFinite(Number(pointsExpireDaysRaw))
-        ? Math.max(1, Math.trunc(Number(pointsExpireDaysRaw)))
+function normalizePayload(body: PortalPromotionPayload): PromotionPayload {
+  const segmentId = body.segmentId === '' ? null : body.segmentId;
+  const metadata =
+    body.metadata === undefined
+      ? undefined
+      : body.metadata && typeof body.metadata === 'object'
+        ? body.metadata
         : null;
-    const payload: PromotionPayload = {
-      ...basePayload,
-      rewardType: PromotionRewardType.POINTS,
-      rewardValue,
-      rewardMetadata: {
-        ...reward,
-        type: 'POINTS',
-        value: rewardValue,
-        productIds: targetProducts.length ? targetProducts : undefined,
-        categoryIds: targetCategories.length ? targetCategories : undefined,
-        metadata: {
-          ...normalizedRewardMetadata,
-          pointsExpire,
-          pointsExpireDays,
-          multiplier: multiplier || rewardMeta?.multiplier,
-        },
-        pointsExpire,
-        pointsExpireDays,
-        multiplier,
-        legacyType: 'POINTS',
-      },
-      pointsExpireInDays: pointsExpire ? pointsExpireDays : null,
-    };
-    payload.metadata = buildMetadata(body, payload.rewardMetadata);
-    return payload;
-  }
+  const rewardMetadata =
+    body.rewardMetadata === undefined
+      ? undefined
+      : body.rewardMetadata && typeof body.rewardMetadata === 'object'
+        ? body.rewardMetadata
+        : null;
 
-  if (rewardType === 'NTH_FREE') {
-    const buyQty = ensureNumber(
-      (reward as any).buyQty ?? (reward as any).value,
-      0,
-    );
-    const freeQty = ensureNumber(
-      (reward as any).freeQty ?? (reward as any).giftQty ?? 1,
-      1,
-    );
-    if (!Number.isFinite(buyQty) || buyQty <= 0) {
-      throw new BadRequestException(
-        'Укажите buyQty (каждый N-й товар бесплатно)',
-      );
-    }
-    const rewardMetadata = {
-      ...normalizedRewardMetadata,
-      kind: 'NTH_FREE',
-      buyQty: Math.max(1, Math.trunc(buyQty)),
-      freeQty: Math.max(1, Math.trunc(freeQty)),
-      productIds: targetProducts.length ? targetProducts : undefined,
-      categoryIds: targetCategories.length ? targetCategories : undefined,
-    };
-    const payload: PromotionPayload = {
-      ...basePayload,
-      rewardType: PromotionRewardType.DISCOUNT,
-      rewardValue: 0,
-      rewardMetadata,
-      pointsExpireInDays: null,
-    };
-    payload.metadata = buildMetadata(body, rewardMetadata);
-    return payload;
-  }
-
-  if (rewardType === 'FIXED_PRICE') {
-    const priceRaw =
-      (reward as any).price ?? (reward as any).value ?? rewardMeta.price;
-    const price = ensureNumber(priceRaw, -1);
-    if (!Number.isFinite(price) || price < 0) {
-      throw new BadRequestException('Укажите акционную цену (reward.price)');
-    }
-    const rewardMetadata = {
-      ...normalizedRewardMetadata,
-      kind: 'FIXED_PRICE',
-      price: price,
-      productIds: targetProducts.length ? targetProducts : undefined,
-      categoryIds: targetCategories.length ? targetCategories : undefined,
-    };
-    const payload: PromotionPayload = {
-      ...basePayload,
-      rewardType: PromotionRewardType.DISCOUNT,
-      rewardValue: Math.max(0, Math.round(price)),
-      rewardMetadata,
-      pointsExpireInDays: null,
-    };
-    payload.metadata = buildMetadata(body, rewardMetadata);
-    return payload;
-  }
-
-  throw new BadRequestException(
-    'Поддерживаются типы POINTS, NTH_FREE и FIXED_PRICE',
-  );
+  return {
+    ...body,
+    segmentId,
+    status: body.status ? normalizeStatus(String(body.status)) : body.status,
+    metadata,
+    rewardMetadata,
+  };
 }
 
-function toLegacyResponse(promotion: any) {
-  const legacy = toLegacyCampaignDto(promotion);
-  if (promotion?.audience) {
-    (legacy as any).segment = {
-      id: promotion.audience.id,
-      name: promotion.audience.name ?? null,
-      _count: promotion.audience._count ?? {},
-    };
-    (legacy as any).segmentName = promotion.audience.name ?? null;
-  }
-  if (promotion?.metrics) {
-    (legacy as any).analytics = {
-      revenueSeries: promotion.metrics.charts?.revenueSeries ?? null,
-      metrics: promotion.metrics,
-    };
-  }
-  return legacy;
+function toPortalResponse(promotion: any) {
+  return {
+    id: promotion.id,
+    name: promotion.name,
+    description: promotion.description ?? null,
+    status: promotion.status,
+    startAt: promotion.startAt ?? null,
+    endAt: promotion.endAt ?? null,
+    createdAt: promotion.createdAt,
+    updatedAt: promotion.updatedAt,
+    segmentId: promotion.segmentId ?? null,
+    rewardType: promotion.rewardType,
+    rewardValue: promotion.rewardValue ?? null,
+    rewardMetadata: promotion.rewardMetadata ?? null,
+    pointsExpireInDays: promotion.pointsExpireInDays ?? null,
+    pushOnStart: promotion.pushOnStart ?? false,
+    pushReminderEnabled: promotion.pushReminderEnabled ?? false,
+    reminderOffsetHours: promotion.reminderOffsetHours ?? null,
+    pushTemplateStartId: promotion.pushTemplateStartId ?? null,
+    pushTemplateReminderId: promotion.pushTemplateReminderId ?? null,
+    metadata: promotion.metadata ?? null,
+    metrics: promotion.metrics ?? null,
+    audience: promotion.audience
+      ? {
+          id: promotion.audience.id,
+          name: promotion.audience.name ?? null,
+          _count: promotion.audience._count ?? {},
+        }
+      : null,
+  };
 }
 
 @Controller('portal/loyalty/promotions')
@@ -273,56 +99,58 @@ export class PromotionsController {
       status && status !== 'ALL' ? (status as PromotionStatus) : 'ALL';
     return this.service
       .listPromotions(this.merchantId(req), normalized as any)
-      .then((items) => items.map((item) => toLegacyResponse(item)));
+      .then((items) => items.map((item) => toPortalResponse(item)));
   }
 
   @Post()
-  async create(@Req() req: any, @Body() body: LegacyCampaignPayload) {
+  async create(@Req() req: any, @Body() body: PortalPromotionPayload) {
     const merchantId = this.merchantId(req);
-    const payload = legacyPayloadToPromotion(body);
+    const payload = normalizePayload(body);
     const created = await this.service.createPromotion(merchantId, payload);
     const full = await this.service.getPromotion(merchantId, created.id);
-    return toLegacyResponse(full);
+    return toPortalResponse(full);
   }
 
   @Put(':id')
   async update(
     @Req() req: any,
     @Param('id') id: string,
-    @Body() body: LegacyCampaignPayload,
+    @Body() body: PortalPromotionPayload,
   ) {
     const merchantId = this.merchantId(req);
-    const payload = legacyPayloadToPromotion(body);
+    const payload = normalizePayload(body);
     await this.service.updatePromotion(merchantId, id, payload);
     const full = await this.service.getPromotion(merchantId, id);
-    return toLegacyResponse(full);
+    return toPortalResponse(full);
   }
 
   @Post(':id/status')
   async changeStatus(
     @Req() req: any,
     @Param('id') id: string,
-    @Body() body: { status: CampaignStatus; actorId?: string },
+    @Body() body: { status: PromotionStatus; actorId?: string },
   ) {
     const merchantId = this.merchantId(req);
+    const status = normalizeStatus(String(body.status));
     const updated = await this.service.changePromotionStatus(
       merchantId,
       id,
-      mapStatusToPromotion(body.status),
+      status,
       body.actorId,
     );
-    return toLegacyResponse(updated);
+    return toPortalResponse(updated);
   }
 
   @Post('bulk/status')
   bulkStatus(
     @Req() req: any,
-    @Body() body: { ids: string[]; status: CampaignStatus; actorId?: string },
+    @Body() body: { ids: string[]; status: PromotionStatus; actorId?: string },
   ) {
+    const status = normalizeStatus(String(body.status));
     return this.service.bulkUpdatePromotionStatus(
       this.merchantId(req),
       body.ids ?? [],
-      mapStatusToPromotion(body.status),
+      status,
       body.actorId,
     );
   }
@@ -331,7 +159,6 @@ export class PromotionsController {
   async getById(@Req() req: any, @Param('id') id: string) {
     const merchantId = this.merchantId(req);
     const promotion = await this.service.getPromotion(merchantId, id);
-    const legacy = toLegacyResponse(promotion);
     const participants = promotion.participants ?? [];
     const totalUsage =
       promotion.metrics?.participantsCount ?? participants.length;
@@ -343,8 +170,7 @@ export class PromotionsController {
       new Set(participants.map((p) => p.customerId)).size;
     const avgReward = totalUsage ? Math.round(totalReward / totalUsage) : 0;
     return {
-      ...legacy,
-      segment: (legacy as any).segment,
+      ...toPortalResponse(promotion),
       stats: {
         totalUsage,
         uniqueCustomers,

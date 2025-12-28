@@ -1246,6 +1246,7 @@ model Product {
   externalMappings ProductExternalId[]
 
   @@unique([merchantId, sku])
+  @@unique([merchantId, externalId])
   @@index([merchantId, externalProvider, externalId])
   @@index([merchantId, categoryId])
   @@index([merchantId, order])

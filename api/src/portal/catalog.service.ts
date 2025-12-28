@@ -1004,6 +1004,27 @@ export class PortalCatalogService {
             await this.ensureOutletOwnership(tx, merchantId, stock.outletId);
         }
       }
+      const trimmedExternalId = dto.externalId?.trim() || null;
+      if (trimmedExternalId) {
+        const archived = await tx.product.findMany({
+          where: {
+            merchantId,
+            deletedAt: { not: null },
+            externalId: trimmedExternalId,
+          },
+          select: { id: true },
+        });
+        if (archived.length) {
+          const archivedIds = archived.map((item) => item.id);
+          await tx.product.updateMany({
+            where: { id: { in: archivedIds } },
+            data: { externalId: null, externalProvider: null },
+          });
+          await tx.productExternalId.deleteMany({
+            where: { merchantId, productId: { in: archivedIds } },
+          });
+        }
+      }
       const order = dto.order ?? (await this.nextProductOrder(tx, merchantId));
       const sanitizedDto: CreateProductDto = {
         ...dto,
@@ -1031,7 +1052,7 @@ export class PortalCatalogService {
       });
       await this.syncProductExternal(tx, merchantId, created.id, {
         externalProvider: null,
-        externalId: dto.externalId ?? null,
+        externalId: trimmedExternalId,
         barcode: null,
         sku: null,
       });
@@ -1079,6 +1100,27 @@ export class PortalCatalogService {
             await this.ensureOutletOwnership(tx, merchantId, stock.outletId);
         }
       }
+      const trimmedExternalId = dto.externalId?.trim() || null;
+      if (dto.externalId !== undefined && trimmedExternalId) {
+        const archived = await tx.product.findMany({
+          where: {
+            merchantId,
+            deletedAt: { not: null },
+            externalId: trimmedExternalId,
+          },
+          select: { id: true },
+        });
+        if (archived.length) {
+          const archivedIds = archived.map((item) => item.id);
+          await tx.product.updateMany({
+            where: { id: { in: archivedIds } },
+            data: { externalId: null, externalProvider: null },
+          });
+          await tx.productExternalId.deleteMany({
+            where: { merchantId, productId: { in: archivedIds } },
+          });
+        }
+      }
       const data: Prisma.ProductUpdateInput = {};
       if (dto.name !== undefined) {
         const name = dto.name.trim();
@@ -1087,7 +1129,7 @@ export class PortalCatalogService {
         data.name = name;
       }
       if (dto.externalId !== undefined)
-        (data as any).externalId = dto.externalId?.trim() || null;
+        (data as any).externalId = trimmedExternalId;
       if (dto.description !== undefined)
         data.description = dto.description ?? null;
       if (dto.order !== undefined) data.order = dto.order;
@@ -1211,9 +1253,12 @@ export class PortalCatalogService {
   async deleteProduct(merchantId: string, productId: string) {
     const updated = await this.prisma.product.updateMany({
       where: { id: productId, merchantId, deletedAt: null },
-      data: { deletedAt: new Date() },
+      data: { deletedAt: new Date(), externalId: null, externalProvider: null },
     });
     if (updated.count === 0) throw new NotFoundException('Product not found');
+    await this.prisma.productExternalId.deleteMany({
+      where: { merchantId, productId },
+    });
     this.logger.log(
       JSON.stringify({
         event: 'portal.catalog.product.delete',
@@ -1233,7 +1278,10 @@ export class PortalCatalogService {
     if (dto.action === ProductBulkAction.DELETE) {
       const result = await this.prisma.product.updateMany({
         where: { id: { in: ids }, merchantId, deletedAt: null },
-        data: { deletedAt: new Date() },
+        data: { deletedAt: new Date(), externalId: null, externalProvider: null },
+      });
+      await this.prisma.productExternalId.deleteMany({
+        where: { merchantId, productId: { in: ids } },
       });
       this.logger.log(
         JSON.stringify({

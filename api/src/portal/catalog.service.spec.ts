@@ -98,6 +98,103 @@ describe('PortalCatalogService', () => {
     );
   });
 
+  it('clears externalId for archived products before create', async () => {
+    const archivedIds = [{ id: 'old-1' }, { id: 'old-2' }];
+    const createdProduct = {
+      id: 'prod-1',
+      merchantId: 'm-1',
+      name: 'Латте',
+      categoryId: null,
+      category: null,
+      description: null,
+      iikoProductId: null,
+      hasVariants: false,
+      priceEnabled: true,
+      price: 0,
+      allowCart: true,
+      visible: true,
+      accruePoints: true,
+      allowRedeem: true,
+      redeemPercent: 100,
+      weightValue: null,
+      weightUnit: null,
+      heightCm: null,
+      widthCm: null,
+      depthCm: null,
+      proteins: null,
+      fats: null,
+      carbs: null,
+      calories: null,
+      tags: [],
+      purchasesMonth: 0,
+      purchasesTotal: 0,
+      order: 1010,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      deletedAt: null,
+      images: [],
+      variants: [],
+      stocks: [],
+      externalMappings: [],
+    };
+    const productFindFirst = jest.fn(async (args) => {
+      if (args?.select?.order) return { order: 1000 };
+      return createdProduct;
+    });
+    const tx: any = {
+      product: {
+        findMany: jest.fn(async () => archivedIds),
+        updateMany: jest.fn(async () => ({ count: archivedIds.length })),
+        findFirst: productFindFirst,
+        create: jest.fn(async () => createdProduct),
+      },
+      productExternalId: { deleteMany: jest.fn(async () => ({ count: 2 })) },
+    };
+    const prisma: any = {
+      $transaction: jest.fn(async (fn: any) => fn(tx)),
+    };
+    const service = new PortalCatalogService(prisma, metrics);
+
+    await service.createProduct('m-1', {
+      name: 'Латте',
+      externalId: 'latte-01',
+    } as any);
+
+    expect(tx.product.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['old-1', 'old-2'] } },
+      data: { externalId: null, externalProvider: null },
+    });
+    expect(tx.productExternalId.deleteMany).toHaveBeenCalledWith({
+      where: { merchantId: 'm-1', productId: { in: ['old-1', 'old-2'] } },
+    });
+  });
+
+  it('nulls externalId and removes external mappings on delete', async () => {
+    const prisma: any = {
+      product: {
+        updateMany: jest.fn(async () => ({ count: 1 })),
+      },
+      productExternalId: {
+        deleteMany: jest.fn(async () => ({ count: 1 })),
+      },
+    };
+    const service = new PortalCatalogService(prisma, metrics);
+
+    await service.deleteProduct('m-1', 'prod-1');
+
+    expect(prisma.product.updateMany).toHaveBeenCalledWith({
+      where: { id: 'prod-1', merchantId: 'm-1', deletedAt: null },
+      data: {
+        deletedAt: expect.any(Date),
+        externalId: null,
+        externalProvider: null,
+      },
+    });
+    expect(prisma.productExternalId.deleteMany).toHaveBeenCalledWith({
+      where: { merchantId: 'm-1', productId: 'prod-1' },
+    });
+  });
+
   it('creates outlet with trimmed data and schedule flags', async () => {
     const createdAt = new Date('2024-01-01T00:00:00Z');
     const updatedAt = new Date('2024-01-01T01:00:00Z');

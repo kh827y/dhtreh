@@ -277,4 +277,68 @@ describe('IntegrationsLoyaltyController', () => {
     expect(resp.pointsRestored).toBe(30);
     expect(resp.pointsRevoked).toBe(10);
   });
+
+  it('calculate action нормализует позиции и возвращает статус ok', async () => {
+    const { controller, loyalty } = createController(
+      {
+        outlet: {
+          findFirst: jest.fn().mockResolvedValue({ id: 'OUT-1' }),
+        },
+      },
+      {
+        calculateAction: jest.fn().mockResolvedValue({
+          positions: [
+            {
+              id_product: 'p1',
+              name: 'Латте',
+              qty: 2,
+              price: 100,
+              base_price: null,
+              actions_id: [],
+              actions_names: [],
+            },
+          ],
+          info: [],
+        }),
+      },
+    );
+
+    const dto: any = {
+      id_client: 'C-1',
+      outlet_id: 'OUT-1',
+      items: [
+        {
+          id_product: 'p1',
+          name: 'Латте',
+          quantity: 2,
+          price: 100,
+        },
+      ],
+    };
+
+    const resp = await controller.calculateAction(dto, {
+      ...baseReq,
+      body: dto,
+    });
+
+    expect(resp.status).toBe('ok');
+    expect(loyalty.calculateAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        merchantId: 'M-1',
+        items: [
+          expect.objectContaining({
+            externalId: 'p1',
+            qty: 2,
+            price: 100,
+            name: 'Латте',
+          }),
+        ],
+      }),
+    );
+
+    const passedItems = (loyalty.calculateAction as jest.Mock).mock.calls[0][0]
+      .items;
+    expect(passedItems[0].categoryId).toBeUndefined();
+    expect(passedItems[0].basePrice).toBeUndefined();
+  });
 });
