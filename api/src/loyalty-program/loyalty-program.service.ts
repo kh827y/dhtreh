@@ -130,6 +130,47 @@ export class LoyaltyProgramService {
     return Math.max(1, Math.trunc(parsed));
   }
 
+  private normalizeIdList(value: any): string[] {
+    if (!Array.isArray(value)) return [];
+    const normalized = value
+      .map((item) => (typeof item === 'string' ? item.trim() : ''))
+      .filter((item) => item.length > 0);
+    return Array.from(new Set(normalized));
+  }
+
+  private normalizePointsRuleType(
+    value: any,
+  ): 'multiplier' | 'percent' | 'fixed' | null {
+    if (typeof value !== 'string') return null;
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return null;
+    if (
+      normalized === 'multiplier' ||
+      normalized === 'percent' ||
+      normalized === 'fixed'
+    ) {
+      return normalized;
+    }
+    throw new BadRequestException(
+      'pointsRuleType должен быть multiplier/percent/fixed',
+    );
+  }
+
+  private normalizePointsValue(
+    ruleType: 'multiplier' | 'percent' | 'fixed',
+    value: any,
+  ): number {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      throw new BadRequestException('Укажите pointsValue для товарной акции');
+    }
+    const normalized = ruleType === 'fixed' ? Math.floor(parsed) : parsed;
+    if (!Number.isFinite(normalized) || normalized <= 0) {
+      throw new BadRequestException('Укажите pointsValue для товарной акции');
+    }
+    return normalized;
+  }
+
   // ===== Notifications scheduling =====
   private normalizeFuture(date: Date | null | undefined): Date | null {
     if (!date) return null;
@@ -1087,10 +1128,46 @@ export class LoyaltyProgramService {
     if (!payload.name?.trim())
       throw new BadRequestException('Название акции обязательно');
     const rewardType = payload.rewardType ?? PromotionRewardType.POINTS;
+    if (
+      rewardType !== PromotionRewardType.POINTS &&
+      rewardType !== PromotionRewardType.DISCOUNT
+    ) {
+      throw new BadRequestException(
+        'Тип акции должен быть POINTS или DISCOUNT',
+      );
+    }
     const rewardMetadata =
       payload.rewardMetadata && typeof payload.rewardMetadata === 'object'
         ? { ...(payload.rewardMetadata as Record<string, any>) }
         : {};
+    const productIds = this.normalizeIdList(rewardMetadata.productIds);
+    const categoryIds = this.normalizeIdList(rewardMetadata.categoryIds);
+    const hasTargets = productIds.length > 0 || categoryIds.length > 0;
+    if (rewardType === PromotionRewardType.DISCOUNT && !hasTargets) {
+      throw new BadRequestException('Выберите товары или категории');
+    }
+    if (hasTargets) {
+      rewardMetadata.productIds = productIds;
+      rewardMetadata.categoryIds = categoryIds;
+    }
+    const pointsRuleType = this.normalizePointsRuleType(
+      rewardMetadata.pointsRuleType,
+    );
+    if (rewardType === PromotionRewardType.POINTS && hasTargets) {
+      if (!pointsRuleType) {
+        throw new BadRequestException(
+          'Укажите pointsRuleType для товарной акции',
+        );
+      }
+      rewardMetadata.pointsRuleType = pointsRuleType;
+      rewardMetadata.pointsValue = this.normalizePointsValue(
+        pointsRuleType,
+        rewardMetadata.pointsValue,
+      );
+      if ('multiplier' in rewardMetadata) {
+        delete (rewardMetadata as Record<string, any>).multiplier;
+      }
+    }
     let rewardValue = Math.max(
       0,
       Math.floor(Number(payload.rewardValue ?? 0) || 0),
@@ -1099,23 +1176,15 @@ export class LoyaltyProgramService {
       payload.pointsExpireInDays,
     );
     if (rewardType === PromotionRewardType.POINTS) {
-      const multiplierRaw = rewardMetadata?.multiplier;
-      const multiplier =
-        Number.isFinite(Number(multiplierRaw)) && Number(multiplierRaw) > 0
-          ? Number(multiplierRaw)
-          : 0;
-      const rewardValueRaw = Number(payload.rewardValue ?? 0);
-      if (!Number.isFinite(rewardValueRaw) || rewardValueRaw < 0) {
-        throw new BadRequestException(
-          'Укажите количество баллов или множитель',
-        );
+      if (hasTargets) {
+        rewardValue = 0;
+      } else {
+        const rewardValueRaw = Number(payload.rewardValue ?? 0);
+        if (!Number.isFinite(rewardValueRaw) || rewardValueRaw <= 0) {
+          throw new BadRequestException('Укажите количество баллов');
+        }
+        rewardValue = Math.max(0, Math.floor(rewardValueRaw));
       }
-      if (rewardValueRaw <= 0 && multiplier <= 0) {
-        throw new BadRequestException(
-          'Укажите количество баллов или множитель',
-        );
-      }
-      rewardValue = Math.max(0, Math.floor(rewardValueRaw));
     } else {
       pointsExpireInDays = null;
       const kind = String(rewardMetadata?.kind || '')
@@ -1140,8 +1209,7 @@ export class LoyaltyProgramService {
         rewardMetadata.freeQty = Math.max(1, Math.trunc(freeQty));
         rewardValue = 0;
       } else if (kind === 'FIXED_PRICE') {
-        const priceRaw =
-          (rewardMetadata as any).price ?? payload.rewardValue ?? null;
+        const priceRaw = (rewardMetadata as any).price ?? null;
         const price = Number(priceRaw);
         if (!Number.isFinite(price) || price < 0) {
           throw new BadRequestException('Укажите акционную цену');
@@ -1219,6 +1287,14 @@ export class LoyaltyProgramService {
     if (!promotion) throw new NotFoundException('Акция не найдена');
     const rewardType =
       payload.rewardType ?? promotion.rewardType ?? PromotionRewardType.POINTS;
+    if (
+      rewardType !== PromotionRewardType.POINTS &&
+      rewardType !== PromotionRewardType.DISCOUNT
+    ) {
+      throw new BadRequestException(
+        'Тип акции должен быть POINTS или DISCOUNT',
+      );
+    }
     const rewardMetadata =
       payload.rewardMetadata && typeof payload.rewardMetadata === 'object'
         ? { ...(payload.rewardMetadata as Record<string, any>) }
@@ -1226,6 +1302,34 @@ export class LoyaltyProgramService {
             typeof promotion.rewardMetadata === 'object'
           ? { ...(promotion.rewardMetadata as any) }
           : {};
+    const productIds = this.normalizeIdList(rewardMetadata.productIds);
+    const categoryIds = this.normalizeIdList(rewardMetadata.categoryIds);
+    const hasTargets = productIds.length > 0 || categoryIds.length > 0;
+    if (rewardType === PromotionRewardType.DISCOUNT && !hasTargets) {
+      throw new BadRequestException('Выберите товары или категории');
+    }
+    if (hasTargets) {
+      rewardMetadata.productIds = productIds;
+      rewardMetadata.categoryIds = categoryIds;
+    }
+    const pointsRuleType = this.normalizePointsRuleType(
+      rewardMetadata.pointsRuleType,
+    );
+    if (rewardType === PromotionRewardType.POINTS && hasTargets) {
+      if (!pointsRuleType) {
+        throw new BadRequestException(
+          'Укажите pointsRuleType для товарной акции',
+        );
+      }
+      rewardMetadata.pointsRuleType = pointsRuleType;
+      rewardMetadata.pointsValue = this.normalizePointsValue(
+        pointsRuleType,
+        rewardMetadata.pointsValue,
+      );
+      if ('multiplier' in rewardMetadata) {
+        delete (rewardMetadata as Record<string, any>).multiplier;
+      }
+    }
     let rewardValue = Math.max(
       0,
       Math.floor(
@@ -1236,25 +1340,17 @@ export class LoyaltyProgramService {
       payload.pointsExpireInDays ?? promotion.pointsExpireInDays,
     );
     if (rewardType === PromotionRewardType.POINTS) {
-      const multiplierRaw = rewardMetadata?.multiplier;
-      const multiplier =
-        Number.isFinite(Number(multiplierRaw)) && Number(multiplierRaw) > 0
-          ? Number(multiplierRaw)
-          : 0;
-      const rewardValueRaw = Number(
-        payload.rewardValue ?? promotion.rewardValue ?? 0,
-      );
-      if (!Number.isFinite(rewardValueRaw) || rewardValueRaw < 0) {
-        throw new BadRequestException(
-          'Укажите количество баллов или множитель',
+      if (hasTargets) {
+        rewardValue = 0;
+      } else {
+        const rewardValueRaw = Number(
+          payload.rewardValue ?? promotion.rewardValue ?? 0,
         );
+        if (!Number.isFinite(rewardValueRaw) || rewardValueRaw <= 0) {
+          throw new BadRequestException('Укажите количество баллов');
+        }
+        rewardValue = Math.max(0, Math.floor(rewardValueRaw));
       }
-      if (rewardValueRaw <= 0 && multiplier <= 0) {
-        throw new BadRequestException(
-          'Укажите количество баллов или множитель',
-        );
-      }
-      rewardValue = Math.max(0, Math.floor(rewardValueRaw));
     } else {
       pointsExpireInDays = null;
       const kind = String(rewardMetadata?.kind || '')
@@ -1283,8 +1379,7 @@ export class LoyaltyProgramService {
         rewardMetadata.freeQty = Math.max(1, Math.trunc(freeQty));
         rewardValue = 0;
       } else if (kind === 'FIXED_PRICE') {
-        const priceRaw =
-          rewardMetadata.price ?? promoMeta?.price ?? payload.rewardValue;
+        const priceRaw = rewardMetadata.price ?? promoMeta?.price ?? null;
         const price = Number(priceRaw);
         if (!Number.isFinite(price) || price < 0) {
           throw new BadRequestException('Укажите акционную цену');

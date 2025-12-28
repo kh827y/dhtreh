@@ -133,7 +133,8 @@ describe('LoyaltyService.calculateAction', () => {
       id: 'p-mult',
       name: 'Х2 баллы',
       kind: 'POINTS_MULTIPLIER',
-      multiplier: 2,
+      pointsRuleType: 'multiplier',
+      pointsValue: 2,
       productIds: new Set(['prod-3']),
       categoryIds: new Set<string>(),
     };
@@ -171,6 +172,110 @@ describe('LoyaltyService.calculateAction', () => {
       'Применена акция: Х2 баллы (x2) для товара "Чизкейк"',
     );
   });
+
+  it('фильтрует акции по аудитории и лимитам использования', async () => {
+    const now = new Date();
+    const svc = makeService({
+      customer: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'C-1',
+          merchantId: 'M-1',
+          accrualsBlocked: false,
+          redemptionsBlocked: false,
+        }),
+      },
+      customerSegment: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'seg-1', systemKey: null, isSystem: false, rules: {} },
+          { id: 'seg-2', systemKey: null, isSystem: false, rules: {} },
+        ]),
+      },
+      segmentCustomer: {
+        findMany: jest.fn().mockResolvedValue([{ segmentId: 'seg-1' }]),
+      },
+      promotionParticipant: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            promotionId: 'promo-limit',
+            purchasesCount: 1,
+            lastPurchaseAt: now,
+          },
+        ]),
+      },
+    });
+    const promos = [
+      {
+        id: 'promo-seg',
+        name: 'Сегмент',
+        kind: 'POINTS_MULTIPLIER',
+        pointsRuleType: 'multiplier',
+        pointsValue: 2,
+        productIds: new Set(['prod-1']),
+        categoryIds: new Set<string>(),
+        segmentId: 'seg-1',
+        usageLimit: null,
+      },
+      {
+        id: 'promo-limit',
+        name: 'Лимит',
+        kind: 'POINTS_MULTIPLIER',
+        pointsRuleType: 'multiplier',
+        pointsValue: 2,
+        productIds: new Set(['prod-1']),
+        categoryIds: new Set<string>(),
+        segmentId: null,
+        usageLimit: 'once_per_day',
+      },
+      {
+        id: 'promo-other',
+        name: 'Другой сегмент',
+        kind: 'POINTS_MULTIPLIER',
+        pointsRuleType: 'multiplier',
+        pointsValue: 2,
+        productIds: new Set(['prod-1']),
+        categoryIds: new Set<string>(),
+        segmentId: 'seg-2',
+        usageLimit: null,
+      },
+      {
+        id: 'promo-open',
+        name: 'Общая акция',
+        kind: 'POINTS_MULTIPLIER',
+        pointsRuleType: 'multiplier',
+        pointsValue: 2,
+        productIds: new Set(['prod-1']),
+        categoryIds: new Set<string>(),
+        segmentId: null,
+        usageLimit: null,
+      },
+    ];
+
+    (svc as any).resolvePositions = jest.fn().mockResolvedValue([
+      {
+        externalId: 'cake-01',
+        name: 'Чизкейк',
+        qty: 1,
+        price: 300,
+        amount: 300,
+        resolvedProductId: 'prod-1',
+        resolvedCategoryId: null,
+        promotionMultiplier: 1,
+        accruePoints: true,
+      },
+    ]);
+    (svc as any).loadActivePromotionRules = jest
+      .fn()
+      .mockResolvedValue(promos);
+
+    const result = await svc.calculateAction({
+      merchantId: 'M-1',
+      customerId: 'C-1',
+      items: [{ id_product: 'cake-01', qty: 1, price: 300 }],
+    });
+
+    const applied = result.positions[0].actions_id.sort();
+    expect(applied).toEqual(['promo-open', 'promo-seg']);
+  });
 });
 
 describe('LoyaltyService.loadActivePromotionRules', () => {
@@ -200,7 +305,7 @@ describe('LoyaltyService.loadActivePromotionRules', () => {
         rewardType: 'POINTS',
         rewardMetadata: {
           pointsRuleType: 'multiplier',
-          multiplier: 2,
+          pointsValue: 2,
           productIds: ['prod-1'],
         },
       },
@@ -234,7 +339,8 @@ describe('LoyaltyService.loadActivePromotionRules', () => {
     expect(ruleById('p-1')).toEqual(
       expect.objectContaining({
         kind: 'POINTS_MULTIPLIER',
-        multiplier: 2,
+        pointsRuleType: 'multiplier',
+        pointsValue: 2,
       }),
     );
     expect(Array.from(ruleById('p-1').productIds)).toEqual(['prod-1']);

@@ -325,6 +325,7 @@ describe('IntegrationsLoyaltyController', () => {
     expect(loyalty.calculateAction).toHaveBeenCalledWith(
       expect.objectContaining({
         merchantId: 'M-1',
+        customerId: 'C-1',
         items: [
           expect.objectContaining({
             externalId: 'p1',

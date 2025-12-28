@@ -164,12 +164,17 @@ export default function ActionsEarnPage() {
               item?.rewardMetadata && typeof item.rewardMetadata === "object" ? item.rewardMetadata : {};
             const productIds = Array.isArray(rewardMeta?.productIds) ? rewardMeta.productIds : [];
             const categoryIds = Array.isArray(rewardMeta?.categoryIds) ? rewardMeta.categoryIds : [];
-            const rewardTypeRaw = String(rewardMeta?.kind || rewardMeta?.type || item?.rewardType || "").toUpperCase();
-            const isProductPromo = rewardTypeRaw === "NTH_FREE" || rewardTypeRaw === "FIXED_PRICE" || productIds.length || categoryIds.length;
+            const rewardType = String(item?.rewardType || "").toUpperCase();
+            if (rewardType !== "POINTS") return null;
+            const kindRaw = String(rewardMeta?.kind || "").toUpperCase();
+            const isProductPromo = kindRaw === "NTH_FREE" || kindRaw === "FIXED_PRICE" || productIds.length || categoryIds.length;
             if (isProductPromo) return null;
           const metrics = item?.metrics ?? {};
           const revenue = Math.max(0, safeNumber(metrics?.revenueGenerated));
-          const cost = Math.max(0, safeNumber(metrics?.pointsRedeemed));
+          const cost = Math.max(
+            0,
+            safeNumber(metrics?.pointsIssued ?? metrics?.pointsRedeemed),
+          );
 
           const createdAtIso = item?.createdAt ? String(item.createdAt) : null;
           const hasExplicitStartDate = Boolean(item?.startAt);

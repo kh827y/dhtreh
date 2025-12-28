@@ -221,11 +221,3 @@ export async function computeLevelState(args: {
   } catch {}
   return { value, current, next, progressToNext, refundsCount };
 }
-
-// Legacy helper — оставлен для обратной совместимости, но bonuses не применяются.
-export function resolveLevelBenefits(
-  _source: unknown,
-  _levelName: string,
-): { earnBpsBonus: number; redeemLimitBpsBonus: number } {
-  return { earnBpsBonus: 0, redeemLimitBpsBonus: 0 };
-}

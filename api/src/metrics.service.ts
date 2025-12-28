@@ -169,7 +169,7 @@ export class MetricsService implements OnModuleDestroy {
   }
 
   inc(name: string, labels: Record<string, string> = {}, value = 1) {
-    // Route POS metrics directly to prom-client counters to avoid duplicate legacy lines
+    // Route POS metrics directly to prom-client counters to avoid duplicates
     if (
       name === 'pos_requests_total' &&
       labels?.provider &&
@@ -265,7 +265,7 @@ export class MetricsService implements OnModuleDestroy {
     lines.push('# HELP loyalty_hold_gc_canceled_total Holds canceled by GC');
     lines.push('# TYPE loyalty_hold_gc_canceled_total counter');
 
-    // legacy counters/summaries, исключая те, что отражаем через prom-client
+    // Raw counters/summaries, исключая те, что отражаем через prom-client
     const skip = new Set([
       'loyalty_outbox_sent_total',
       'loyalty_outbox_failed_total',

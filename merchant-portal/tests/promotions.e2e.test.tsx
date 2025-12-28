@@ -83,7 +83,7 @@ describe("product promotions page (new design)", () => {
       endAt: null,
       rewardType: "POINTS",
       rewardValue: 0,
-      rewardMetadata: { productIds: ["p1"], pointsRuleType: "multiplier", pointsValue: 3, multiplier: 3 },
+      rewardMetadata: { productIds: ["p1"], pointsRuleType: "multiplier", pointsValue: 3 },
       metrics: { revenueGenerated: 0, pointsRedeemed: 0, participantsCount: 0 },
     };
 
@@ -149,7 +149,7 @@ describe("product promotions page (new design)", () => {
     assert.equal(lastPost.rewardValue, 0);
     assert.deepEqual(lastPost.rewardMetadata?.productIds, ["p1"]);
     assert.equal(lastPost.rewardMetadata?.pointsRuleType, "multiplier");
-    assert.equal(Number(lastPost.rewardMetadata?.multiplier), 3);
+    assert.equal(Number(lastPost.rewardMetadata?.pointsValue), 3);
   });
 
   it("сохраняет выбранные товары и категории при переключении вкладок", async () => {

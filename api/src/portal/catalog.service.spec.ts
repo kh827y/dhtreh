@@ -138,6 +138,7 @@ describe('PortalCatalogService', () => {
       externalMappings: [],
     };
     const productFindFirst = jest.fn(async (args) => {
+      if (args?.select?.id) return null;
       if (args?.select?.order) return { order: 1000 };
       return createdProduct;
     });

@@ -322,13 +322,6 @@ export class LoyaltyController {
       typeof customer.profileName === 'string' && customer.profileName.trim()
         ? customer.profileName.trim()
         : null;
-    const legacyName =
-      !profileName &&
-      customer.profileCompletedAt &&
-      typeof customer.name === 'string' &&
-      customer.name.trim()
-        ? customer.name.trim()
-        : null;
     const rawGender = customer.gender ?? customer.profileGender ?? null;
     const gender =
       rawGender === 'male' || rawGender === 'female' ? rawGender : null;
@@ -337,7 +330,7 @@ export class LoyaltyController {
       ? rawBirthDate.toISOString().slice(0, 10)
       : null;
     return {
-      name: profileName ?? legacyName ?? null,
+      name: profileName ?? null,
       gender,
       birthDate,
     } satisfies CustomerProfileDto;
@@ -2629,17 +2622,11 @@ export class LoyaltyController {
               'merchantId mismatch with start_param',
             );
           }
-        } else if (startParamRequired) {
-          // legacy strict mode: require exact merchantId in start_param
-          if (merchantId && sp !== merchantId)
-            throw new BadRequestException(
-              'merchantId mismatch with start_param',
-            );
         }
       }
     } catch (e) {
       if (e instanceof BadRequestException) throw e;
-      // ignore start_param if malformed unless strict legacy mode triggers above
+      // ignore malformed start_param
     }
     // Customer теперь per-merchant модель
     const tgId = String(r.userId);

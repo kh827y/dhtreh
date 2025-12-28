@@ -21,20 +21,13 @@ export async function GET(req: NextRequest) {
   const ttlDays = Number(data?.pointsTtlDays ?? 0) || 0;
   const delayDays = Number(data?.earnDelayDays ?? 0) || 0;
   const rulesJson = data?.rulesJson && typeof data.rulesJson === 'object' ? data.rulesJson : {};
-  let allowSameReceipt = false;
-  if (Object.prototype.hasOwnProperty.call(rulesJson, 'allowEarnRedeemSameReceipt')) {
-    allowSameReceipt = Boolean(rulesJson.allowEarnRedeemSameReceipt);
-  } else if (Object.prototype.hasOwnProperty.call(rulesJson, 'disallowEarnRedeemSameReceipt')) {
-    allowSameReceipt = !Boolean(rulesJson.disallowEarnRedeemSameReceipt);
-  }
-  const forbidSameReceipt = !allowSameReceipt;
+  const allowSameReceipt = Boolean((rulesJson as any).allowEarnRedeemSameReceipt);
 
   return Response.json({
     ttlEnabled: ttlDays > 0,
     ttlDays,
     delayEnabled: delayDays > 0,
     delayDays,
-    forbidSameReceipt,
     allowSameReceipt,
   });
 }
@@ -55,13 +48,7 @@ export async function PUT(req: NextRequest) {
   const delayDaysInput = Number(body.delayDays);
   const delayDays = delayEnabled ? Math.max(0, Math.floor(Number.isFinite(delayDaysInput) ? delayDaysInput : 0)) : 0;
 
-  let allowSameReceipt = false;
-  if (Object.prototype.hasOwnProperty.call(body, 'allowSameReceipt')) {
-    allowSameReceipt = Boolean((body as any).allowSameReceipt);
-  } else if (Object.prototype.hasOwnProperty.call(body, 'forbidSameReceipt')) {
-    allowSameReceipt = !Boolean((body as any).forbidSameReceipt);
-  }
-  const forbidSameReceipt = !allowSameReceipt;
+  const allowSameReceipt = Boolean((body as any).allowSameReceipt);
 
   const { res, data, raw } = await fetchSettings(req);
   if (!res.ok) {

@@ -389,13 +389,13 @@ export class AntiFraudService {
       return { score, factors };
     }
 
-    const legacyThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const historyThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const outletHistory = await this.prisma.transaction.count({
       where: {
         customerId: context.customerId,
         merchantId: context.merchantId,
         outletId,
-        createdAt: { lt: legacyThreshold },
+        createdAt: { lt: historyThreshold },
       },
     });
 

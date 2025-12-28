@@ -1404,11 +1404,6 @@ export class OperationsLogService {
           : null;
       if (
         rules &&
-        Object.prototype.hasOwnProperty.call(rules, 'allowSameReceipt')
-      ) {
-        allowSame = this.normalizeFlag((rules as any).allowSameReceipt);
-      } else if (
-        rules &&
         Object.prototype.hasOwnProperty.call(
           rules,
           'allowEarnRedeemSameReceipt',
@@ -1416,16 +1411,6 @@ export class OperationsLogService {
       ) {
         allowSame = this.normalizeFlag(
           (rules as any).allowEarnRedeemSameReceipt,
-        );
-      } else if (
-        rules &&
-        Object.prototype.hasOwnProperty.call(
-          rules,
-          'disallowEarnRedeemSameReceipt',
-        )
-      ) {
-        allowSame = !this.normalizeFlag(
-          (rules as any).disallowEarnRedeemSameReceipt,
         );
       }
     } catch {}

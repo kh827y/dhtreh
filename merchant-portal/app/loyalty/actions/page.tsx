@@ -288,16 +288,19 @@ const PromotionsPage: React.FC = () => {
               item?.rewardMetadata && typeof item.rewardMetadata === "object" ? item.rewardMetadata : {};
             const productIds = normalizeStringArray(rewardMeta.productIds);
             const categoryIds = normalizeStringArray(rewardMeta.categoryIds);
-            const rewardTypeRaw = String(rewardMeta.kind || item?.rewardType || "").toUpperCase();
+            const rewardType = String(item?.rewardType || "").toUpperCase();
+            if (rewardType !== "POINTS" && rewardType !== "DISCOUNT") return null;
+            const kindRaw = String(rewardMeta.kind || "").toUpperCase();
             const hasTargets = productIds.length > 0 || categoryIds.length > 0;
-            const isProductPromo = hasTargets || rewardTypeRaw === "NTH_FREE" || rewardTypeRaw === "FIXED_PRICE";
+            const isProductPromo = hasTargets || kindRaw === "NTH_FREE" || kindRaw === "FIXED_PRICE";
             if (!isProductPromo) return null;
 
-            const type: PromotionType = rewardTypeRaw.includes("NTH_FREE")
-              ? "buy_x_get_y"
-              : rewardTypeRaw.includes("FIXED_PRICE") || rewardTypeRaw.includes("PRICE")
-                ? "promo_price"
-                : "double_points";
+            const type: PromotionType =
+              kindRaw === "NTH_FREE"
+                ? "buy_x_get_y"
+                : kindRaw === "FIXED_PRICE"
+                  ? "promo_price"
+                  : "double_points";
 
             const metrics = item?.metrics ?? {};
             const revenue = Math.max(0, safeNumber(metrics?.revenueGenerated ?? metrics?.revenue ?? 0));
@@ -325,8 +328,7 @@ const PromotionsPage: React.FC = () => {
 
             const audienceRaw = item?.segmentId ? String(item.segmentId) : "";
             const audience = audienceRaw && audAllId && audienceRaw === audAllId ? "all" : audienceRaw || "all";
-            const usageLimitRaw =
-              item?.metadata?.usageLimit ?? (item?.metadata?.maxUsagePerCustomer === 1 ? "once_per_client" : null);
+            const usageLimitRaw = item?.metadata?.usageLimit ?? null;
             const usageLimit = normalizeUsageLimit(usageLimitRaw);
             const startImmediately = !hasExplicitStartDate;
             const isIndefinite = !item?.endAt;
@@ -340,11 +342,11 @@ const PromotionsPage: React.FC = () => {
             const metaPointsValue = safeNumber(rewardMeta?.pointsValue);
             let pointsValue = 0;
             if (pointsRuleType === "multiplier") {
-              pointsValue = metaPointsValue || safeNumber(rewardMeta?.multiplier) || safeNumber(item?.rewardValue) || 2;
+              pointsValue = metaPointsValue || 2;
             } else if (pointsRuleType === "percent") {
-              pointsValue = metaPointsValue || safeNumber(item?.rewardValue) || 1;
+              pointsValue = metaPointsValue || 1;
             } else {
-              pointsValue = metaPointsValue || safeNumber(item?.rewardValue) || 0;
+              pointsValue = metaPointsValue || 0;
             }
 
             const buyCount = Math.max(1, Math.trunc(safeNumber(rewardMeta?.buyQty ?? 2)));
@@ -573,12 +575,7 @@ const PromotionsPage: React.FC = () => {
         pointsRuleType: formData.pointsRuleType,
         pointsValue,
       };
-      if (formData.pointsRuleType === "multiplier") {
-        rewardMetadata.multiplier = pointsValue;
-        rewardValue = 0;
-      } else {
-        rewardValue = pointsValue;
-      }
+      rewardValue = 0;
     }
 
     const payload = {
@@ -593,7 +590,6 @@ const PromotionsPage: React.FC = () => {
       rewardMetadata,
       metadata: {
         usageLimit: formData.usageLimit,
-        maxUsagePerCustomer: formData.usageLimit === "once_per_client" ? 1 : null,
       },
     };
 
@@ -638,31 +634,23 @@ const PromotionsPage: React.FC = () => {
   };
 
   const toggleSelection = (id: string) => {
-    setFormData((prev) => {
-      const exists = prev.selectedItemIds.includes(id);
-      const nextSelected = exists ? prev.selectedItemIds.filter((item) => item !== id) : [...prev.selectedItemIds, id];
-      setSelectionByTarget((prevSelection) => ({
-        ...prevSelection,
-        [prev.targetType]: nextSelected,
-      }));
-      return { ...prev, selectedItemIds: nextSelected };
+    setSelectionByTarget((prevSelection) => {
+      const current = prevSelection[formData.targetType] ?? [];
+      const exists = current.includes(id);
+      const nextSelected = exists ? current.filter((item) => item !== id) : [...current, id];
+      setFormData((prev) => ({ ...prev, selectedItemIds: nextSelected }));
+      return { ...prevSelection, [formData.targetType]: nextSelected };
     });
   };
 
   const handleTargetSwitch = (nextTarget: PromotionConfig["targetType"]) => {
     if (nextTarget === formData.targetType) return;
-    setSelectionByTarget((prevSelection) => {
-      const nextSelection = {
-        ...prevSelection,
-        [formData.targetType]: formData.selectedItemIds,
-      };
-      setFormData((prev) => ({
-        ...prev,
-        targetType: nextTarget,
-        selectedItemIds: nextSelection[nextTarget],
-      }));
-      return nextSelection;
-    });
+    const nextSelected = selectionByTarget[nextTarget] ?? [];
+    setFormData((prev) => ({
+      ...prev,
+      targetType: nextTarget,
+      selectedItemIds: nextSelected,
+    }));
   };
 
   const getIconForType = (type: PromotionType) => {
@@ -700,7 +688,7 @@ const PromotionsPage: React.FC = () => {
         {/* Creation Header */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center space-x-4">
-            <button onClick={() => setView("list")} className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500">
+            <button onClick={() => setView("list")} className="p-2 hover:bg-gray-100 rounded-full text-gray-500">
               <ArrowLeft size={24} />
             </button>
             <div>
@@ -716,15 +704,15 @@ const PromotionsPage: React.FC = () => {
               </span>
               <button
                 onClick={() => setFormData({ ...formData, isActive: !formData.isActive })}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${formData.isActive ? "bg-green-500" : "bg-gray-300"}`}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full focus:outline-none ${formData.isActive ? "bg-green-500" : "bg-gray-300"}`}
               >
-                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${formData.isActive ? "translate-x-6" : "translate-x-1"}`} />
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white ${formData.isActive ? "translate-x-6" : "translate-x-1"}`} />
               </button>
             </div>
 
             <button
               onClick={handleSave}
-              className="flex items-center space-x-2 bg-purple-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-purple-700 transition-colors shadow-sm"
+              className="flex items-center space-x-2 bg-purple-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-purple-700 shadow-sm"
             >
               <Save size={18} />
               <span>Сохранить</span>
@@ -815,13 +803,13 @@ const PromotionsPage: React.FC = () => {
               <div className="flex bg-gray-100 p-1 rounded-lg w-fit">
                 <button
                   onClick={() => handleTargetSwitch("products")}
-                  className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${formData.targetType === "products" ? "bg-white shadow-sm text-gray-900" : "text-gray-500"}`}
+                  className={`px-4 py-1.5 text-sm font-medium rounded-md ${formData.targetType === "products" ? "bg-white shadow-sm text-gray-900" : "text-gray-500"}`}
                 >
                   Товары
                 </button>
                 <button
                   onClick={() => handleTargetSwitch("categories")}
-                  className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${formData.targetType === "categories" ? "bg-white shadow-sm text-gray-900" : "text-gray-500"}`}
+                  className={`px-4 py-1.5 text-sm font-medium rounded-md ${formData.targetType === "categories" ? "bg-white shadow-sm text-gray-900" : "text-gray-500"}`}
                 >
                   Категории
                 </button>
@@ -848,7 +836,7 @@ const PromotionsPage: React.FC = () => {
                       <div
                         key={item.id}
                         onClick={() => toggleSelection(item.id)}
-                        className={`p-3 flex items-center justify-between hover:bg-gray-50 cursor-pointer transition-colors ${isSelected ? "bg-purple-50 hover:bg-purple-50" : ""}`}
+                        className={`p-3 flex items-center justify-between hover:bg-gray-50 cursor-pointer ${isSelected ? "bg-purple-50 hover:bg-purple-50" : ""}`}
                       >
                         <div className="flex items-center space-x-3">
                           <div className={`w-8 h-8 rounded-md flex items-center justify-center text-xs font-bold ${isSelected ? "bg-purple-200 text-purple-700" : "bg-gray-100 text-gray-500"}`}>
@@ -864,7 +852,7 @@ const PromotionsPage: React.FC = () => {
                             </div>
                           </div>
                         </div>
-                        <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${isSelected ? "bg-purple-600 border-purple-600" : "border-gray-300 bg-white"}`}>
+                        <div className={`w-5 h-5 rounded border flex items-center justify-center ${isSelected ? "bg-purple-600 border-purple-600" : "border-gray-300 bg-white"}`}>
                           {isSelected && <Check size={14} className="text-white" />}
                         </div>
                       </div>
@@ -887,21 +875,21 @@ const PromotionsPage: React.FC = () => {
                     <div className="grid grid-cols-3 gap-3">
                       <button
                         onClick={() => setFormData({ ...formData, pointsRuleType: "multiplier" })}
-                        className={`p-3 border rounded-xl flex flex-col items-center justify-center space-y-2 transition-all ${formData.pointsRuleType === "multiplier" ? "border-purple-500 bg-purple-50 text-purple-700" : "border-gray-200 hover:border-purple-200"}`}
+                        className={`p-3 border rounded-xl flex flex-col items-center justify-center space-y-2 ${formData.pointsRuleType === "multiplier" ? "border-purple-500 bg-purple-50 text-purple-700" : "border-gray-200 hover:border-purple-200"}`}
                       >
                         <span className="font-bold text-lg">X2</span>
                         <span className="text-xs">Множитель</span>
                       </button>
                       <button
                         onClick={() => setFormData({ ...formData, pointsRuleType: "percent" })}
-                        className={`p-3 border rounded-xl flex flex-col items-center justify-center space-y-2 transition-all ${formData.pointsRuleType === "percent" ? "border-purple-500 bg-purple-50 text-purple-700" : "border-gray-200 hover:border-purple-200"}`}
+                        className={`p-3 border rounded-xl flex flex-col items-center justify-center space-y-2 ${formData.pointsRuleType === "percent" ? "border-purple-500 bg-purple-50 text-purple-700" : "border-gray-200 hover:border-purple-200"}`}
                       >
                         <Percent size={20} />
                         <span className="text-xs">% от цены</span>
                       </button>
                       <button
                         onClick={() => setFormData({ ...formData, pointsRuleType: "fixed" })}
-                        className={`p-3 border rounded-xl flex flex-col items-center justify-center space-y-2 transition-all ${formData.pointsRuleType === "fixed" ? "border-purple-500 bg-purple-50 text-purple-700" : "border-gray-200 hover:border-purple-200"}`}
+                        className={`p-3 border rounded-xl flex flex-col items-center justify-center space-y-2 ${formData.pointsRuleType === "fixed" ? "border-purple-500 bg-purple-50 text-purple-700" : "border-gray-200 hover:border-purple-200"}`}
                       >
                         <Coins size={20} />
                         <span className="text-xs">Фикс. баллы</span>
@@ -1078,7 +1066,7 @@ const PromotionsPage: React.FC = () => {
 
         <button
           onClick={() => setIsTypeSelectionOpen(true)}
-          className="flex items-center space-x-2 bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors shadow-sm"
+          className="flex items-center space-x-2 bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 shadow-sm"
         >
           <Plus size={18} />
           <span>Создать акцию</span>
@@ -1093,7 +1081,7 @@ const PromotionsPage: React.FC = () => {
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={`
-                whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors
+                whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm
                 ${
                   activeTab === tab
                     ? "border-purple-500 text-purple-600"
@@ -1124,7 +1112,7 @@ const PromotionsPage: React.FC = () => {
           {filteredPromotions.map((promo) => {
             const roi = calculateROI(promo.revenue, promo.cost);
             return (
-              <div key={promo.id} className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow relative group">
+              <div key={promo.id} className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md relative group">
                 {/* Top Row: Status & Actions */}
                 <div className="flex justify-between items-start mb-4">
                   <div className="flex items-center space-x-3">
@@ -1148,7 +1136,7 @@ const PromotionsPage: React.FC = () => {
                     <button
                       onClick={() => handleEdit(promo)}
                       title="Редактировать"
-                      className="p-2 rounded-lg text-gray-400 hover:text-purple-600 hover:bg-purple-50 transition-colors"
+                      className="p-2 rounded-lg text-gray-400 hover:text-purple-600 hover:bg-purple-50"
                     >
                       <Pencil size={18} />
                     </button>
@@ -1156,7 +1144,7 @@ const PromotionsPage: React.FC = () => {
                       <button
                         onClick={() => handleToggleStatus(promo.id, promo.status)}
                         title={promo.status === "active" ? "Выключить" : "Включить"}
-                        className={`p-2 rounded-lg transition-colors ${promo.status === "active" ? "text-green-600 bg-green-50 hover:bg-green-100" : "text-gray-400 bg-gray-100 hover:bg-gray-200"}`}
+                        className={`p-2 rounded-lg ${promo.status === "active" ? "text-green-600 bg-green-50 hover:bg-green-100" : "text-gray-400 bg-gray-100 hover:bg-gray-200"}`}
                       >
                         <Power size={18} />
                       </button>
@@ -1164,7 +1152,7 @@ const PromotionsPage: React.FC = () => {
                     <button
                       onClick={() => handleDelete(promo.id)}
                       title="Удалить"
-                      className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                      className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50"
                     >
                       <Trash2 size={18} />
                     </button>
@@ -1254,7 +1242,7 @@ const PromotionsPage: React.FC = () => {
 
                 <button
                   onClick={() => startCreation("double_points")}
-                  className="w-full text-left p-4 rounded-xl border border-gray-200 hover:border-purple-300 hover:bg-purple-50 transition-all flex items-start space-x-4 group"
+                  className="w-full text-left p-4 rounded-xl border border-gray-200 hover:border-purple-300 hover:bg-purple-50 flex items-start space-x-4 group"
                 >
                   <div className="p-3 bg-yellow-50 text-yellow-600 rounded-lg group-hover:bg-yellow-100">
                     <Coins size={24} />
@@ -1267,7 +1255,7 @@ const PromotionsPage: React.FC = () => {
 
                 <button
                   onClick={() => startCreation("buy_x_get_y")}
-                  className="w-full text-left p-4 rounded-xl border border-gray-200 hover:border-purple-300 hover:bg-purple-50 transition-all flex items-start space-x-4 group"
+                  className="w-full text-left p-4 rounded-xl border border-gray-200 hover:border-purple-300 hover:bg-purple-50 flex items-start space-x-4 group"
                 >
                   <div className="p-3 bg-purple-50 text-purple-600 rounded-lg group-hover:bg-purple-100">
                     <Gift size={24} />
@@ -1280,7 +1268,7 @@ const PromotionsPage: React.FC = () => {
 
                 <button
                   onClick={() => startCreation("promo_price")}
-                  className="w-full text-left p-4 rounded-xl border border-gray-200 hover:border-purple-300 hover:bg-purple-50 transition-all flex items-start space-x-4 group"
+                  className="w-full text-left p-4 rounded-xl border border-gray-200 hover:border-purple-300 hover:bg-purple-50 flex items-start space-x-4 group"
                 >
                   <div className="p-3 bg-red-50 text-red-600 rounded-lg group-hover:bg-red-100">
                     <Percent size={24} />

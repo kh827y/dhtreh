@@ -82,6 +82,7 @@ type PositionInput = {
   name?: string;
   qty: number;
   price: number;
+  basePrice?: number;
   accruePoints?: boolean;
 };
 
@@ -98,13 +99,20 @@ type ResolvedPosition = PositionInput & {
   redeemPercent?: number;
   basePrice?: number;
   allowEarnAndPay?: boolean;
+  pointPromotions?: ActivePromotionRule[];
+  appliedPromotionIds?: string[];
+  appliedPointPromotionId?: string | null;
+  promotionPointsBonus?: number;
 };
 
 type ActivePromotionRule = {
   id: string;
   name: string;
   kind: 'POINTS_MULTIPLIER' | 'NTH_FREE' | 'FIXED_PRICE';
-  multiplier?: number;
+  pointsRuleType?: 'multiplier' | 'percent' | 'fixed';
+  pointsValue?: number;
+  segmentId?: string | null;
+  usageLimit?: 'unlimited' | 'once_per_client' | 'once_per_day' | 'once_per_week' | 'once_per_month' | null;
   buyQty?: number;
   freeQty?: number;
   fixedPrice?: number;
@@ -205,8 +213,15 @@ export class LoyaltyService {
       if (!entry || typeof entry !== 'object') continue;
       const qtyRaw = Number((entry as any).qty ?? 0);
       const priceRaw = Number((entry as any).price ?? 0);
+      const basePriceRaw = Number(
+        (entry as any).base_price ?? (entry as any).basePrice ?? NaN,
+      );
       const qty = Number.isFinite(qtyRaw) ? qtyRaw : 0;
       const price = Number.isFinite(priceRaw) ? priceRaw : 0;
+      const basePrice =
+        Number.isFinite(basePriceRaw) && basePriceRaw >= 0
+          ? basePriceRaw
+          : undefined;
       if (qty <= 0 || price < 0) continue;
       items.push({
         productId: normalizeStr((entry as any).productId),
@@ -216,6 +231,7 @@ export class LoyaltyService {
         name: normalizeStr((entry as any).name),
         qty,
         price: Math.max(0, price),
+        basePrice,
         accruePoints: parseBool(
           (entry as any).accruePoints ??
             (entry as any).accrue_points ??
@@ -228,9 +244,31 @@ export class LoyaltyService {
     return items;
   }
 
+  private normalizeUsageLimit(value: any):
+    | 'unlimited'
+    | 'once_per_client'
+    | 'once_per_day'
+    | 'once_per_week'
+    | 'once_per_month'
+    | null {
+    if (typeof value !== 'string') return null;
+    const normalized = value.trim().toLowerCase();
+    if (
+      normalized === 'unlimited' ||
+      normalized === 'once_per_client' ||
+      normalized === 'once_per_day' ||
+      normalized === 'once_per_week' ||
+      normalized === 'once_per_month'
+    ) {
+      return normalized;
+    }
+    return null;
+  }
+
   private async resolvePositions(
     merchantId: string,
     items: PositionInput[],
+    customerId?: string | null,
   ): Promise<ResolvedPosition[]> {
     const normalized = this.sanitizePositions(items);
     if (!normalized.length) return [];
@@ -255,12 +293,31 @@ export class LoyaltyService {
           .filter((v): v is string => Boolean(v)),
       ),
     );
-    const [productsById, productsByExternalId, multipliers] = await Promise.all(
+    const externalMappings =
+      externalIds.length && this.prisma.productExternalId?.findMany
+      ? await this.prisma.productExternalId
+          .findMany({
+            where: { merchantId, externalId: { in: externalIds } },
+            select: { externalId: true, productId: true },
+          })
+          .catch(() => [])
+      : [];
+    const mappedProductIds = externalMappings
+      .map((item) => item.productId)
+      .filter(Boolean);
+    const productIdsToFetch = Array.from(
+      new Set([...productIds, ...mappedProductIds]),
+    );
+    const [productsById, productsByExternalId, promotionsRaw] = await Promise.all(
       [
-      productIds.length
+      productIdsToFetch.length
         ? (this.prisma.product
             .findMany({
-              where: { merchantId, id: { in: productIds }, deletedAt: null },
+              where: {
+                merchantId,
+                id: { in: productIdsToFetch },
+                deletedAt: null,
+              },
               select: {
                 id: true,
                 categoryId: true,
@@ -292,8 +349,33 @@ export class LoyaltyService {
             })
             .catch(() => []) as any)
         : [],
-      this.loadActiveMultipliers(merchantId, new Date()),
+      this.loadActivePromotionRules(merchantId, new Date()),
     ]);
+    const promotions = await this.filterPromotionsForCustomer({
+      merchantId,
+      promotions: promotionsRaw,
+      customerId,
+    });
+    const pointPromotions = promotions.filter(
+      (promo) => promo.kind === 'POINTS_MULTIPLIER',
+    );
+    const matchesPromotion = (
+      promo: ActivePromotionRule,
+      productId?: string | null,
+      categoryId?: string | null,
+    ) => {
+      const matchesProduct =
+        productId && promo.productIds.size
+          ? promo.productIds.has(productId)
+          : false;
+      const matchesCategory =
+        categoryId && promo.categoryIds.size
+          ? promo.categoryIds.has(categoryId)
+          : false;
+      const appliesAll =
+        promo.productIds.size === 0 && promo.categoryIds.size === 0;
+      return matchesProduct || matchesCategory || appliesAll;
+    };
 
     const productByIdMap = new Map<
       string,
@@ -343,6 +425,14 @@ export class LoyaltyService {
         name: p.name ?? null,
       });
     });
+    externalMappings.forEach((mapping: any) => {
+      const extId = mapping.externalId;
+      const productId = mapping.productId;
+      if (!extId || productByExtMap.has(extId)) return;
+      const product = productByIdMap.get(productId);
+      if (!product) return;
+      productByExtMap.set(extId, product);
+    });
 
     const resolved: ResolvedPosition[] = [];
     for (const item of normalized) {
@@ -364,7 +454,44 @@ export class LoyaltyService {
         (productId && productByIdMap.get(productId)) ||
         (extKey ? productByExtMap.get(extKey) : undefined);
       const categoryId = productInfo?.categoryId || null;
-      const promo = this.pickMultiplier(multipliers, productId, categoryId);
+      const applicablePromos = promotions
+        .filter((promo) => matchesPromotion(promo, productId, categoryId))
+        .sort(
+          (a, b) =>
+            ({ FIXED_PRICE: 1, NTH_FREE: 2, POINTS_MULTIPLIER: 3 } as const)[
+              a.kind
+            ] -
+            ({ FIXED_PRICE: 1, NTH_FREE: 2, POINTS_MULTIPLIER: 3 } as const)[
+              b.kind
+            ],
+        );
+      const appliedPromos: ActivePromotionRule[] = [];
+      for (const promo of applicablePromos) {
+        if (promo.kind === 'POINTS_MULTIPLIER') {
+          appliedPromos.push(promo);
+          continue;
+        }
+        if (promo.kind === 'NTH_FREE') {
+          const step = Math.max(
+            1,
+            Math.trunc((promo.buyQty ?? 1) + (promo.freeQty ?? 0)),
+          );
+          const freeCount =
+            step > 0
+              ? Math.floor(item.qty / step) * Math.max(1, promo.freeQty ?? 1)
+              : 0;
+          if (freeCount > 0) {
+            appliedPromos.push(promo);
+          }
+          continue;
+        }
+        if (promo.kind === 'FIXED_PRICE') {
+          appliedPromos.push(promo);
+        }
+      }
+      const applicablePointPromos = pointPromotions.filter((promo) =>
+        matchesPromotion(promo, productId, categoryId),
+      );
       const accruePoints =
         item.accruePoints != null
           ? Boolean(item.accruePoints)
@@ -384,8 +511,12 @@ export class LoyaltyService {
         resolvedProductId: productId,
         resolvedCategoryId: categoryId,
         amount,
-        promotionId: promo?.id ?? null,
-        promotionMultiplier: promo?.multiplier ?? 1,
+        promotionId: null,
+        promotionMultiplier: 1,
+        pointPromotions: applicablePointPromos,
+        appliedPromotionIds: appliedPromos.length
+          ? appliedPromos.map((promo) => promo.id)
+          : undefined,
         earnPoints: 0,
         redeemAmount: 0,
         accruePoints,
@@ -394,7 +525,10 @@ export class LoyaltyService {
           ? Number(productInfo?.redeemPercent)
           : 100,
         price: Math.max(0, item.price),
-        basePrice: Math.max(0, Number(item.price)),
+        basePrice:
+          item.basePrice != null
+            ? Math.max(0, Number(item.basePrice))
+            : Math.max(0, Number(item.price)),
       });
     }
     return resolved;
@@ -467,32 +601,47 @@ export class LoyaltyService {
         promo.rewardMetadata && typeof promo.rewardMetadata === 'object'
           ? (promo.rewardMetadata as Record<string, any>)
           : {};
+      const promoMeta =
+        promo.metadata && typeof promo.metadata === 'object'
+          ? (promo.metadata as Record<string, any>)
+          : {};
       const productIds = new Set<string>();
       const categoryIds = new Set<string>();
       pushAll(meta.productIds, productIds);
       pushAll(meta.categoryIds, categoryIds);
+      const hasTargets = productIds.size > 0 || categoryIds.size > 0;
 
       const kindRaw = String(meta.kind || '').toUpperCase();
       const pointsRuleTypeRaw = String(meta.pointsRuleType || '').toLowerCase();
       let kind: ActivePromotionRule['kind'] | null = null;
-      let multiplier: number | undefined;
+      let pointsRuleType: ActivePromotionRule['pointsRuleType'] | undefined;
+      let pointsValue: number | undefined;
       let buyQty: number | undefined;
       let freeQty: number | undefined;
       let fixedPrice: number | undefined;
-      const pickMultiplier = () => {
-        const num = Number(meta.multiplier);
-        return Number.isFinite(num) && num > 0 ? num : undefined;
-      };
 
       if (
         promo.rewardType === PromotionRewardType.POINTS
       ) {
-        if (pointsRuleTypeRaw === 'percent' || pointsRuleTypeRaw === 'fixed') {
-          kind = 'POINTS_MULTIPLIER';
-        } else {
-          multiplier = pickMultiplier();
-          if (multiplier) kind = 'POINTS_MULTIPLIER';
+        if (!hasTargets) {
+          continue;
         }
+        if (
+          pointsRuleTypeRaw !== 'multiplier' &&
+          pointsRuleTypeRaw !== 'percent' &&
+          pointsRuleTypeRaw !== 'fixed'
+        ) {
+          continue;
+        }
+        const rawValue = Number(meta.pointsValue);
+        if (!Number.isFinite(rawValue) || rawValue <= 0) continue;
+        const normalized =
+          pointsRuleTypeRaw === 'fixed' ? Math.floor(rawValue) : rawValue;
+        if (!Number.isFinite(normalized) || normalized <= 0) continue;
+        kind = 'POINTS_MULTIPLIER';
+        pointsRuleType =
+          pointsRuleTypeRaw as ActivePromotionRule['pointsRuleType'];
+        pointsValue = normalized;
       }
 
       const buyRaw = meta.buyQty;
@@ -530,7 +679,12 @@ export class LoyaltyService {
         id: promo.id,
         name: promo.name,
         kind,
-        multiplier,
+        pointsRuleType,
+        pointsValue,
+        segmentId: promo.segmentId ?? null,
+        usageLimit: this.normalizeUsageLimit(
+          promoMeta?.usageLimit ?? null,
+        ),
         buyQty,
         freeQty,
         fixedPrice,
@@ -541,100 +695,187 @@ export class LoyaltyService {
     return rules;
   }
 
-  private async loadActiveMultipliers(merchantId: string, now: Date) {
-    const promos = await this.prisma.loyaltyPromotion
-      .findMany({
-        where: {
-          merchantId,
-          status: PromotionStatus.ACTIVE,
-          rewardType: PromotionRewardType.POINTS,
-          archivedAt: null,
-          OR: [{ startAt: null }, { startAt: { lte: now } }],
-          AND: [{ OR: [{ endAt: null }, { endAt: { gte: now } }] }],
-        },
-      })
-      .catch(() => []);
-    const rules = promos.flatMap((promo) => {
-      const meta =
-        promo.rewardMetadata && typeof promo.rewardMetadata === 'object'
-          ? (promo.rewardMetadata as Record<string, any>)
-          : {};
-      const pointsRuleType = String(meta.pointsRuleType || '').toLowerCase();
-      if (pointsRuleType && pointsRuleType !== 'multiplier') return [];
-      const multiplierRaw = meta.multiplier;
-      const multiplier =
-        Number.isFinite(Number(multiplierRaw)) && Number(multiplierRaw) > 0
-          ? Number(multiplierRaw)
-          : 0;
-      if (!multiplier) return [];
-      const productIds = new Set<string>();
-      const categoryIds = new Set<string>();
-      const pushAll = (value: any, target: Set<string>) => {
-        if (!Array.isArray(value)) return;
-        value.forEach((v) => {
-          if (typeof v === 'string' && v.trim()) target.add(v.trim());
-        });
-      };
-      pushAll(meta.productIds, productIds);
-      pushAll(meta.categoryIds, categoryIds);
-      return [
-        {
-        id: promo.id,
-        multiplier,
-        productIds,
-        categoryIds,
-        },
-      ];
-    });
-    return rules;
-  }
-
-  private pickMultiplier(
-    promos: Array<{
-      id: string;
-      multiplier: number;
-      productIds: Set<string>;
-      categoryIds: Set<string>;
-    }>,
-    productId?: string | null,
-    categoryId?: string | null,
-  ) {
-    let best: { id: string; multiplier: number } | null = null;
-    for (const promo of promos) {
-      const matchesProduct =
-        productId && promo.productIds.size
-          ? promo.productIds.has(productId)
-          : false;
-      const matchesCategory =
-        categoryId && promo.categoryIds.size
-          ? promo.categoryIds.has(categoryId)
-          : false;
-      const appliesAll =
-        promo.productIds.size === 0 && promo.categoryIds.size === 0;
-      if (matchesProduct || matchesCategory || appliesAll) {
-        if (!best || promo.multiplier > best.multiplier) {
-          best = { id: promo.id, multiplier: promo.multiplier };
+  private async filterPromotionsForCustomer(params: {
+    merchantId: string;
+    promotions: ActivePromotionRule[];
+    customerId?: string | null;
+  }) {
+    const { merchantId, promotions } = params;
+    if (!promotions.length) return promotions;
+    const customerId =
+      typeof params.customerId === 'string' && params.customerId.trim()
+        ? params.customerId.trim()
+        : null;
+    if (!customerId) {
+      return promotions.filter(
+        (promo) =>
+          !promo.segmentId &&
+          (!promo.usageLimit || promo.usageLimit === 'unlimited'),
+      );
+    }
+    await this.ensureCustomerContext(merchantId, customerId);
+    const segmentIds = Array.from(
+      new Set(
+        promotions
+          .map((promo) => promo.segmentId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    );
+    const usagePromoIds = promotions
+      .filter((promo) => promo.usageLimit && promo.usageLimit !== 'unlimited')
+      .map((promo) => promo.id);
+    const [segments, memberships, usageStats] = await Promise.all([
+      segmentIds.length
+        ? this.prisma.customerSegment
+            .findMany({
+              where: { id: { in: segmentIds } },
+              select: { id: true, systemKey: true, isSystem: true, rules: true },
+            })
+            .catch(() => [])
+        : [],
+      segmentIds.length
+        ? this.prisma.segmentCustomer
+            .findMany({
+              where: { segmentId: { in: segmentIds }, customerId },
+              select: { segmentId: true },
+            })
+            .catch(() => [])
+        : [],
+      usagePromoIds.length
+        ? this.prisma.promotionParticipant
+            .findMany({
+              where: {
+                merchantId,
+                customerId,
+                promotionId: { in: usagePromoIds },
+              },
+              select: {
+                promotionId: true,
+                purchasesCount: true,
+                lastPurchaseAt: true,
+              },
+            })
+            .catch(() => [])
+        : [],
+    ]);
+    const segmentAllSet = new Set(
+      segments
+        .filter((seg: any) => {
+          const rules =
+            seg && seg.rules && typeof seg.rules === 'object'
+              ? (seg.rules as Record<string, any>)
+              : {};
+          return (
+            seg?.systemKey === 'all-customers' ||
+            (seg?.isSystem && rules?.kind === 'all') ||
+            rules?.kind === 'all'
+          );
+        })
+        .map((seg: any) => seg.id),
+    );
+    const memberSet = new Set(
+      memberships.map((entry: any) => entry.segmentId),
+    );
+    type UsageStats = { purchasesCount: number; lastPurchaseAt: Date | null };
+    const usageMap = new Map<string, UsageStats>(
+      (
+        usageStats as Array<{
+          promotionId: string;
+          purchasesCount?: number | null;
+          lastPurchaseAt?: Date | string | null;
+        }>
+      ).map(
+        (entry): [string, UsageStats] => [
+          entry.promotionId,
+          {
+            purchasesCount: Number(entry.purchasesCount ?? 0),
+            lastPurchaseAt: entry.lastPurchaseAt
+              ? new Date(entry.lastPurchaseAt)
+              : null,
+          },
+        ],
+      ),
+    );
+    const now = new Date();
+    const startOfDay = new Date(now);
+    startOfDay.setHours(0, 0, 0, 0);
+    const startOfWeek = new Date(startOfDay);
+    const dayOfWeek = (startOfWeek.getDay() + 6) % 7;
+    startOfWeek.setDate(startOfWeek.getDate() - dayOfWeek);
+    const startOfMonth = new Date(
+      startOfDay.getFullYear(),
+      startOfDay.getMonth(),
+      1,
+    );
+    return promotions.filter((promo) => {
+      if (promo.segmentId) {
+        if (segmentAllSet.has(promo.segmentId)) {
+          // pass
+        } else if (!memberSet.has(promo.segmentId)) {
+          return false;
         }
       }
-    }
-    return best;
+      if (promo.usageLimit && promo.usageLimit !== 'unlimited') {
+        const stats = usageMap.get(promo.id);
+        if (stats) {
+          const hasPurchases = (stats.purchasesCount ?? 0) > 0;
+          const lastPurchase = stats.lastPurchaseAt;
+          if (promo.usageLimit === 'once_per_client') {
+            if (hasPurchases || lastPurchase) return false;
+          } else if (!lastPurchase && hasPurchases) {
+            return false;
+          } else if (lastPurchase) {
+            if (
+              promo.usageLimit === 'once_per_day' &&
+              lastPurchase >= startOfDay
+            ) {
+              return false;
+            }
+            if (
+              promo.usageLimit === 'once_per_week' &&
+              lastPurchase >= startOfWeek
+            ) {
+              return false;
+            }
+            if (
+              promo.usageLimit === 'once_per_month' &&
+              lastPurchase >= startOfMonth
+            ) {
+              return false;
+            }
+          }
+        }
+      }
+      return true;
+    });
   }
 
   async calculateAction(params: {
     merchantId: string;
     items: PositionInput[];
+    customerId?: string | null;
   }) {
+    const customerId =
+      typeof params.customerId === 'string' && params.customerId.trim()
+        ? params.customerId.trim()
+        : null;
     const resolved = await this.resolvePositions(
       params.merchantId,
       params.items,
+      customerId,
     );
     if (!resolved.length) {
       return { positions: [], info: [] as string[] };
     }
-    const promotions = await this.loadActivePromotionRules(
+    let promotions = await this.loadActivePromotionRules(
       params.merchantId,
       new Date(),
     );
+    promotions = await this.filterPromotionsForCustomer({
+      merchantId: params.merchantId,
+      promotions,
+      customerId,
+    });
     const infoSet = new Set<string>();
     const priority: Record<ActivePromotionRule['kind'], number> = {
       FIXED_PRICE: 1,
@@ -678,10 +919,22 @@ export class LoyaltyService {
           if (appliedPromoIds.has(promo.id)) continue;
           appliedPromoIds.add(promo.id);
           appliedPromos.push(promo);
+          const ruleType = promo.pointsRuleType ?? 'multiplier';
+          const rawValue = Number(promo.pointsValue ?? 0);
+          const roundedValue =
+            Number.isFinite(rawValue) && rawValue > 0
+              ? Math.round(rawValue * 100) / 100
+              : 0;
+          const suffix =
+            ruleType === 'percent' && roundedValue
+              ? ` (${roundedValue}% от цены)`
+              : ruleType === 'fixed' && roundedValue
+                ? ` (${roundedValue} баллов)`
+                : ruleType === 'multiplier' && roundedValue
+                  ? ` (x${roundedValue})`
+                  : '';
           infoSet.add(
-            `Применена акция: ${promo.name}${
-              promo.multiplier ? ` (x${promo.multiplier})` : ''
-            } для товара "${itemLabel}"`,
+            `Применена акция: ${promo.name}${suffix} для товара "${itemLabel}"`,
           );
           continue;
         }
@@ -920,11 +1173,58 @@ export class LoyaltyService {
           ? 0
           : Math.max(0, item.amount - redeemShare);
       const basePoints = Math.floor((earnBase * earnBps) / 10000);
-      const multiplier =
-        item.promotionMultiplier && item.promotionMultiplier > 0
-          ? item.promotionMultiplier
-          : 1;
-      const itemEarn = Math.floor(basePoints * multiplier);
+      let itemEarn = basePoints;
+      let selectedPromo: ActivePromotionRule | null = null;
+      if (item.pointPromotions && item.pointPromotions.length) {
+        const qty = Math.max(0, Number(item.qty ?? 0));
+        let bestPoints = basePoints;
+        for (const promo of item.pointPromotions) {
+          if (promo.kind !== 'POINTS_MULTIPLIER') continue;
+          const ruleType = promo.pointsRuleType ?? 'multiplier';
+          let points = basePoints;
+          if (ruleType === 'multiplier') {
+            const mult = promo.pointsValue ?? 0;
+            if (mult > 0) points = Math.floor(basePoints * mult);
+          } else if (ruleType === 'percent') {
+            const percent = Number(promo.pointsValue ?? 0);
+            if (percent > 0) {
+              points = Math.floor((earnBase * percent) / 100);
+            }
+          } else if (ruleType === 'fixed') {
+            const fixed = Number(promo.pointsValue ?? 0);
+            if (fixed > 0) {
+              points = Math.floor(fixed * qty);
+            }
+          }
+          if (points > bestPoints) {
+            bestPoints = points;
+            selectedPromo = promo;
+          }
+        }
+        itemEarn = bestPoints;
+      } else {
+        const multiplier =
+          item.promotionMultiplier && item.promotionMultiplier > 0
+            ? item.promotionMultiplier
+            : 1;
+        itemEarn = Math.floor(basePoints * multiplier);
+      }
+      if (selectedPromo) {
+        item.promotionId = selectedPromo.id;
+        item.appliedPointPromotionId = selectedPromo.id;
+        if (selectedPromo.pointsRuleType === 'multiplier') {
+          const mult = selectedPromo.pointsValue ?? 1;
+          item.promotionMultiplier = mult > 0 ? mult : 1;
+        } else {
+          item.promotionMultiplier = 1;
+        }
+        item.promotionPointsBonus = Math.max(0, itemEarn - basePoints);
+      } else {
+        item.promotionPointsBonus = Math.max(0, itemEarn - basePoints);
+        if (!item.promotionMultiplier || item.promotionMultiplier <= 0) {
+          item.promotionMultiplier = 1;
+        }
+      }
       item.earnPoints = itemEarn;
       totalEarn += itemEarn;
     });
@@ -967,7 +1267,18 @@ export class LoyaltyService {
           item.promotionMultiplier && item.promotionMultiplier > 0
             ? Math.round(item.promotionMultiplier * 10000)
             : null,
-        metadata: Prisma.JsonNull,
+        metadata:
+          item.basePrice != null ||
+          item.appliedPromotionIds?.length ||
+          item.appliedPointPromotionId ||
+          item.promotionPointsBonus != null
+            ? {
+                basePrice: item.basePrice ?? null,
+                promotionIds: item.appliedPromotionIds ?? [],
+                pointPromotionId: item.appliedPointPromotionId ?? null,
+                promotionPointsBonus: item.promotionPointsBonus ?? null,
+              }
+            : Prisma.JsonNull,
         createdAt: now,
       })),
     });
@@ -2277,12 +2588,9 @@ export class LoyaltyService {
       rulesJson && typeof rulesJson === 'object'
         ? (rulesJson as Record<string, any>)
         : {};
-    const allowSameReceipt = Object.prototype.hasOwnProperty.call(
-      rulesConfig,
-      'allowEarnRedeemSameReceipt',
-    )
-      ? Boolean((rulesConfig as any).allowEarnRedeemSameReceipt)
-      : !(rulesConfig as any).disallowEarnRedeemSameReceipt;
+    const allowSameReceipt = Boolean(
+      (rulesConfig as any).allowEarnRedeemSameReceipt,
+    );
     const allowSameReceiptForCustomer = allowSameReceipt && !accrualsBlocked;
     const modeUpper = String(dto.mode).toUpperCase();
 
@@ -2310,6 +2618,7 @@ export class LoyaltyService {
       resolvedPositions = await this.resolvePositions(
         dto.merchantId,
         rawPositions,
+        customer.id,
       );
     }
     const { total: sanitizedTotal, eligibleAmount } =
@@ -2856,8 +3165,10 @@ export class LoyaltyService {
           Math.max(
             1,
             Math.floor(
-              Math.max(0, item.amount || 0) *
-                Math.max(1, item.promotionMultiplier || 1),
+              item.earnPoints != null && Number.isFinite(item.earnPoints)
+                ? Math.max(0, item.earnPoints)
+                : Math.max(0, item.amount || 0) *
+                    Math.max(1, item.promotionMultiplier || 1),
             ),
           ),
         );
@@ -3033,7 +3344,11 @@ export class LoyaltyService {
       (opts?.positions as PositionInput[]) ?? [],
     );
     const positionsOverrideResolved = positionsOverrideInput.length
-      ? await this.resolvePositions(hold.merchantId, positionsOverrideInput)
+      ? await this.resolvePositions(
+          hold.merchantId,
+          positionsOverrideInput,
+          hold.customerId,
+        )
       : [];
     const fallbackHoldTotal = Math.max(0, Math.floor(Number(hold.total ?? 0)));
     let effectiveTotal = fallbackHoldTotal;
@@ -3150,7 +3465,31 @@ export class LoyaltyService {
                   ? Math.max(0, Math.floor(Number(item.redeemAmount)))
                   : 0,
             }))
-          : (((hold as any)?.items as any[])?.map((item: any) => ({
+          : (((hold as any)?.items as any[])?.map((item: any) => {
+              const meta =
+                item?.metadata && typeof item.metadata === 'object'
+                  ? item.metadata
+                  : {};
+              const promoIds = Array.isArray(meta?.promotionIds)
+                ? meta.promotionIds.filter(
+                    (value: any) =>
+                      typeof value === 'string' && value.trim().length > 0,
+                  )
+                : undefined;
+              const basePriceRaw = Number(meta?.basePrice ?? NaN);
+              const basePrice =
+                Number.isFinite(basePriceRaw) && basePriceRaw >= 0
+                  ? basePriceRaw
+                  : undefined;
+              const pointPromotionId =
+                typeof meta?.pointPromotionId === 'string'
+                  ? meta.pointPromotionId
+                  : null;
+              const promoBonusRaw = Number(meta?.promotionPointsBonus ?? NaN);
+              const promotionPointsBonus = Number.isFinite(promoBonusRaw)
+                ? promoBonusRaw
+                : undefined;
+              return {
               productId: item.productId ?? undefined,
               categoryId: item.categoryId ?? undefined,
               resolvedProductId: item.productId ?? null,
@@ -3166,6 +3505,9 @@ export class LoyaltyService {
                 Number.isFinite(item.promotionMultiplier)
                   ? Number(item.promotionMultiplier) / 10000
                   : 1,
+              appliedPromotionIds: promoIds,
+              appliedPointPromotionId: pointPromotionId,
+              promotionPointsBonus,
               accruePoints:
                 item.accruePoints != null ? Boolean(item.accruePoints) : true,
               earnPoints:
@@ -3176,7 +3518,9 @@ export class LoyaltyService {
                 item.redeemAmount != null
                   ? Math.max(0, Math.floor(Number(item.redeemAmount)))
                   : 0,
-            })) ?? []);
+              basePrice,
+              };
+            }) ?? []);
 
         if (shouldOverrideItems) {
           await this.upsertHoldItems(
@@ -3267,12 +3611,7 @@ export class LoyaltyService {
               msRules?.rulesJson && typeof msRules.rulesJson === 'object'
                 ? (msRules.rulesJson as any)
                 : {};
-            const allowSame = Object.prototype.hasOwnProperty.call(
-              rules,
-              'allowEarnRedeemSameReceipt',
-            )
-              ? Boolean(rules.allowEarnRedeemSameReceipt)
-              : !rules.disallowEarnRedeemSameReceipt;
+            const allowSame = Boolean(rules.allowEarnRedeemSameReceipt);
             if (
               manualEarnOverride == null &&
               hold.mode === 'REDEEM' &&
@@ -3665,15 +4004,20 @@ export class LoyaltyService {
         }
         const earnWeights =
           holdItemsResolved.length > 0
-            ? holdItemsResolved.map((item, idx) =>
-                Math.max(
+            ? holdItemsResolved.map((item, idx) => {
+                const explicitEarn =
+                  item.earnPoints != null && Number.isFinite(item.earnPoints)
+                    ? Math.max(0, Math.floor(item.earnPoints))
+                    : null;
+                if (explicitEarn && explicitEarn > 0) return explicitEarn;
+                return Math.max(
                   0,
                   Math.floor(
                     Math.max(0, item.amount - (redeemShares[idx] ?? 0)) *
                       Math.max(1, item.promotionMultiplier || 1),
                   ),
-                ),
-              )
+                );
+              })
             : [];
         const earnShares =
           holdItemsResolved.length > 0
@@ -3728,7 +4072,20 @@ export class LoyaltyService {
                 item.promotionMultiplier && item.promotionMultiplier > 0
                   ? Math.round(item.promotionMultiplier * 10000)
                   : null,
-              metadata: Prisma.JsonNull,
+              metadata:
+                item.basePrice != null ||
+                item.appliedPromotionIds?.length ||
+                item.appliedPointPromotionId ||
+                item.promotionPointsBonus != null
+                  ? {
+                      basePrice: item.basePrice ?? null,
+                      promotionIds:
+                        item.appliedPromotionIds ??
+                        (item.promotionId ? [item.promotionId] : []),
+                      pointPromotionId: item.appliedPointPromotionId ?? null,
+                      promotionPointsBonus: item.promotionPointsBonus ?? null,
+                    }
+                  : Prisma.JsonNull,
             },
           });
           receiptItemsCreated.push({
@@ -3737,6 +4094,140 @@ export class LoyaltyService {
             earnApplied: earnAppliedItem,
             item,
           });
+        }
+
+        const promotionIds = new Set<string>();
+        for (const item of holdItemsResolved) {
+          const fromMeta = item.appliedPromotionIds ?? [];
+          if (fromMeta.length) {
+            fromMeta.forEach((id) => promotionIds.add(id));
+          } else if (item.promotionId) {
+            promotionIds.add(item.promotionId);
+          }
+        }
+        if (promotionIds.size > 0) {
+          const promos = await tx.loyaltyPromotion.findMany({
+            where: {
+              merchantId: hold.merchantId,
+              id: { in: Array.from(promotionIds) },
+            },
+            select: { id: true, rewardType: true },
+          });
+          const promoTypeMap = new Map(
+            promos.map((promo) => [promo.id, promo.rewardType]),
+          );
+          const metrics = new Map<
+            string,
+            {
+              revenue: number;
+              paidAmount: number;
+              discountCost: number;
+              pointsCost: number;
+              purchases: number;
+            }
+          >();
+          for (const item of holdItemsResolved) {
+            const qty = Math.max(0, Number(item.qty ?? 0));
+            if (!qty) continue;
+            const basePrice =
+              item.basePrice != null
+                ? Math.max(0, Number(item.basePrice))
+                : Math.max(0, Number(item.price ?? 0));
+            const baseAmount = Math.max(0, Math.round(basePrice * qty));
+            const paidAmount = Math.max(0, Math.floor(Number(item.amount ?? 0)));
+            const discountAmount = Math.max(0, baseAmount - paidAmount);
+            const appliedIds =
+              item.appliedPromotionIds?.length
+                ? item.appliedPromotionIds
+                : item.promotionId
+                  ? [item.promotionId]
+                  : [];
+            const pointPromoId =
+              item.appliedPointPromotionId ?? item.promotionId ?? null;
+            for (const promoId of appliedIds) {
+              const rewardType = promoTypeMap.get(promoId);
+              if (!rewardType) continue;
+              if (
+                rewardType === PromotionRewardType.POINTS &&
+                pointPromoId &&
+                promoId !== pointPromoId
+              ) {
+                continue;
+              }
+              const entry =
+                metrics.get(promoId) ?? {
+                  revenue: 0,
+                  paidAmount: 0,
+                  discountCost: 0,
+                  pointsCost: 0,
+                  purchases: 0,
+                };
+              entry.revenue += paidAmount;
+              entry.paidAmount += paidAmount;
+              if (rewardType === PromotionRewardType.POINTS) {
+                entry.pointsCost += Math.max(
+                  0,
+                  Math.floor(Number(item.promotionPointsBonus ?? 0)),
+                );
+              } else {
+                entry.discountCost += discountAmount;
+              }
+              metrics.set(promoId, entry);
+            }
+          }
+          for (const promoId of metrics.keys()) {
+            const entry = metrics.get(promoId);
+            if (entry) entry.purchases = 1;
+          }
+          for (const [promoId, entry] of metrics.entries()) {
+            await tx.loyaltyPromotionMetric.upsert({
+              where: { promotionId: promoId },
+              create: {
+                promotionId: promoId,
+                merchantId: hold.merchantId,
+                participantsCount: entry.purchases,
+                revenueGenerated: entry.revenue,
+                pointsIssued: entry.pointsCost,
+                pointsRedeemed: entry.discountCost,
+              },
+              update: {
+                participantsCount: { increment: entry.purchases },
+                revenueGenerated: { increment: entry.revenue },
+                pointsIssued: { increment: entry.pointsCost },
+                pointsRedeemed: { increment: entry.discountCost },
+              },
+            });
+            if (hold.customerId) {
+              await tx.promotionParticipant.upsert({
+                where: {
+                  promotionId_customerId: {
+                    promotionId: promoId,
+                    customerId: hold.customerId,
+                  },
+                },
+                create: {
+                  promotionId: promoId,
+                  merchantId: hold.merchantId,
+                  customerId: hold.customerId,
+                  outletId: hold.outletId ?? null,
+                  joinedAt: operationDateObj,
+                  firstPurchaseAt: operationDateObj,
+                  lastPurchaseAt: operationDateObj,
+                  purchasesCount: entry.purchases,
+                  totalSpent: entry.paidAmount,
+                  pointsIssued: entry.pointsCost,
+                  pointsRedeemed: entry.discountCost,
+                },
+                update: {
+                  lastPurchaseAt: operationDateObj,
+                  purchasesCount: { increment: entry.purchases },
+                  totalSpent: { increment: entry.paidAmount },
+                  pointsIssued: { increment: entry.pointsCost },
+                  pointsRedeemed: { increment: entry.discountCost },
+                },
+              });
+            }
+          }
         }
 
         if (redeemTxId && appliedRedeem > 0) {
@@ -3943,7 +4434,7 @@ export class LoyaltyService {
       (params.items as PositionInput[]) ?? [],
     );
     const resolvedItems = rawItems.length
-      ? await this.resolvePositions(merchantId, rawItems)
+      ? await this.resolvePositions(merchantId, rawItems, customerId)
       : [];
     const { total: sanitizedTotal, eligibleAmount } =
       this.computeTotalsFromPositions(baseTotal, resolvedItems);
@@ -4039,8 +4530,10 @@ export class LoyaltyService {
         Math.max(
           0,
           Math.floor(
-            Math.max(0, item.amount - (redeemShares[idx] ?? 0)) *
-              Math.max(1, item.promotionMultiplier || 1),
+            item.earnPoints != null && Number.isFinite(item.earnPoints)
+              ? Math.max(0, item.earnPoints)
+              : Math.max(0, item.amount - (redeemShares[idx] ?? 0)) *
+                  Math.max(1, item.promotionMultiplier || 1),
           ),
         ),
       );
@@ -4254,7 +4747,11 @@ export class LoyaltyService {
     let total: number;
     let eligibleAmount: number;
     if (normalized.length) {
-      resolved = await this.resolvePositions(params.merchantId, normalized);
+      resolved = await this.resolvePositions(
+        params.merchantId,
+        normalized,
+        params.customerId,
+      );
       const computed = this.computeTotalsFromPositions(0, resolved);
       total = computed.total;
       eligibleAmount = computed.eligibleAmount;
@@ -4323,24 +4820,28 @@ export class LoyaltyService {
       paidBonus > 0 ? redeemShares : itemCaps;
 
     // Считаем начисление по позициям
-    const products = resolved.map((item, idx) => {
+    const itemsForCalc = resolved.map((item) => ({
+      ...item,
+      earnPoints: 0,
+      redeemAmount: 0,
+    }));
+    const earnedTotal = this.applyEarnAndRedeemToItems(
+      itemsForCalc,
+      earnBps,
+      appliedRedeem,
+    );
+    const actualRedeem = itemsForCalc.reduce(
+      (sum, item) => sum + Math.max(0, item.redeemAmount || 0),
+      0,
+    );
+    const products = itemsForCalc.map((item, idx) => {
       const qty = Math.max(0, Number(item.qty ?? 0));
       const price = Math.max(0, Number(item.price ?? 0));
       const basePrice =
         item.basePrice != null ? Math.max(0, Number(item.basePrice)) : price;
       const allowEarnAndPay =
         item.allowEarnAndPay != null ? Boolean(item.allowEarnAndPay) : true;
-      const itemRedeem = redeemShares[idx] ?? 0;
       const itemMaxRedeem = perItemMaxRedeem[idx] ?? 0;
-      const earnBase =
-        item.accruePoints === false
-          ? 0
-          : Math.max(0, (item.amount || 0) - itemRedeem);
-      const multiplier =
-        item.promotionMultiplier && item.promotionMultiplier > 0
-          ? item.promotionMultiplier
-          : 1;
-      const itemEarn = Math.floor((earnBase * earnBps * multiplier) / 10000);
       return {
         id_product:
           item.externalId ?? item.productId ?? item.resolvedProductId ?? null,
@@ -4350,18 +4851,18 @@ export class LoyaltyService {
         quantity: qty,
         qty,
         max_pay_bonus: itemMaxRedeem,
-        earn_bonus: itemEarn,
+        earn_bonus: item.earnPoints ?? 0,
         allow_earn_and_pay: allowEarnAndPay,
       };
     });
 
     const totalEarn = products.reduce((sum, p) => sum + p.earn_bonus, 0);
-    const finalPayable = Math.max(0, total - appliedRedeem);
+    const finalPayable = Math.max(0, total - actualRedeem);
 
     return {
       products: normalized.length ? products : undefined,
-      max_pay_bonus: appliedRedeem,
-      bonus_value: totalEarn,
+      max_pay_bonus: actualRedeem,
+      bonus_value: earnedTotal > 0 ? earnedTotal : totalEarn,
       final_payable: finalPayable,
       balance,
     };
@@ -5415,7 +5916,7 @@ export class LoyaltyService {
   }
 
   private async isAllowSameReceipt(merchantId: string): Promise<boolean> {
-    let allowSame = true;
+    let allowSame = false;
     try {
       const settings = await this.prisma.merchantSettings.findUnique({
         where: { merchantId },
@@ -5425,27 +5926,8 @@ export class LoyaltyService {
         settings && typeof settings.rulesJson === 'object'
           ? (settings.rulesJson as Record<string, any>)
           : null;
-      if (
-        rules &&
-        Object.prototype.hasOwnProperty.call(rules, 'allowSameReceipt')
-      ) {
-        allowSame = Boolean((rules as any).allowSameReceipt);
-      } else if (
-        rules &&
-        Object.prototype.hasOwnProperty.call(
-          rules,
-          'allowEarnRedeemSameReceipt',
-        )
-      ) {
+      if (rules) {
         allowSame = Boolean((rules as any).allowEarnRedeemSameReceipt);
-      } else if (
-        rules &&
-        Object.prototype.hasOwnProperty.call(
-          rules,
-          'disallowEarnRedeemSameReceipt',
-        )
-      ) {
-        allowSame = !(rules as any).disallowEarnRedeemSameReceipt;
       }
     } catch {}
     return allowSame;

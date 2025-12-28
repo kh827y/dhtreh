@@ -24,27 +24,12 @@ export class RedeemLimitsController {
       where: { merchantId },
     });
     const rules = ensureObject(s?.rulesJson ?? null);
-    // Новая семантика: allowEarnRedeemSameReceipt; поддержим обратную совместимость с legacy disallow
-    let allowSame = false;
-    if (
-      Object.prototype.hasOwnProperty.call(rules, 'allowEarnRedeemSameReceipt')
-    ) {
-      allowSame = Boolean(rules.allowEarnRedeemSameReceipt);
-    } else if (
-      Object.prototype.hasOwnProperty.call(
-        rules,
-        'disallowEarnRedeemSameReceipt',
-      )
-    ) {
-      allowSame = !rules.disallowEarnRedeemSameReceipt;
-    }
+    const allowSame = Boolean((rules as any).allowEarnRedeemSameReceipt);
     const ttlDays = Number(s?.pointsTtlDays ?? 0) || 0;
     const delayDays = Number(s?.earnDelayDays ?? 0) || 0;
     return {
       ttlEnabled: ttlDays > 0,
       ttlDays,
-      // Для обратной совместимости фронта, который может ожидать forbidSameReceipt
-      forbidSameReceipt: !allowSame,
       allowSameReceipt: allowSame,
       delayEnabled: delayDays > 0,
       delayDays,
@@ -58,7 +43,6 @@ export class RedeemLimitsController {
     body: {
       ttlEnabled?: boolean;
       ttlDays?: number;
-      forbidSameReceipt?: boolean;
       allowSameReceipt?: boolean;
       delayEnabled?: boolean;
       delayDays?: number;
@@ -80,18 +64,9 @@ export class RedeemLimitsController {
       ? Math.max(1, Math.floor(delayDaysRaw))
       : 0;
 
-    // Определяем allowSameReceipt из тела (приоритет у allowSameReceipt); поддержим forbidSameReceipt для обратной совместимости
     let allowSame = false;
-    if (
-      body &&
-      Object.prototype.hasOwnProperty.call(body, 'allowSameReceipt')
-    ) {
+    if (body && Object.prototype.hasOwnProperty.call(body, 'allowSameReceipt')) {
       allowSame = Boolean(body.allowSameReceipt);
-    } else if (
-      body &&
-      Object.prototype.hasOwnProperty.call(body, 'forbidSameReceipt')
-    ) {
-      allowSame = !body.forbidSameReceipt;
     } else {
       // если ничего не передано — оставляем как было
       if (
@@ -101,17 +76,10 @@ export class RedeemLimitsController {
         )
       ) {
         allowSame = Boolean(rules.allowEarnRedeemSameReceipt);
-      } else if (
-        Object.prototype.hasOwnProperty.call(
-          rules,
-          'disallowEarnRedeemSameReceipt',
-        )
-      ) {
-        allowSame = !rules.disallowEarnRedeemSameReceipt;
       }
     }
 
-    // Обновляем rulesJson: используем новое поле allowEarnRedeemSameReceipt, legacy ключ удаляем
+    // Обновляем rulesJson: используем allowEarnRedeemSameReceipt
     delete (rules as any).disallowEarnRedeemSameReceipt;
     (rules as any).allowEarnRedeemSameReceipt = allowSame;
 
@@ -128,7 +96,6 @@ export class RedeemLimitsController {
       ttlEnabled: updTtlDays > 0,
       ttlDays: updTtlDays,
       allowSameReceipt: allowSame,
-      forbidSameReceipt: !allowSame,
       delayEnabled: updDelayDays > 0,
       delayDays: updDelayDays,
     };

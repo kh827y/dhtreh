@@ -1058,11 +1058,6 @@ export class PortalCustomersService {
           : null;
       if (
         rules &&
-        Object.prototype.hasOwnProperty.call(rules, 'allowSameReceipt')
-      ) {
-        allowSame = this.normalizeFlag((rules as any).allowSameReceipt);
-      } else if (
-        rules &&
         Object.prototype.hasOwnProperty.call(
           rules,
           'allowEarnRedeemSameReceipt',
@@ -1070,16 +1065,6 @@ export class PortalCustomersService {
       ) {
         allowSame = this.normalizeFlag(
           (rules as any).allowEarnRedeemSameReceipt,
-        );
-      } else if (
-        rules &&
-        Object.prototype.hasOwnProperty.call(
-          rules,
-          'disallowEarnRedeemSameReceipt',
-        )
-      ) {
-        allowSame = !this.normalizeFlag(
-          (rules as any).disallowEarnRedeemSameReceipt,
         );
       }
     } catch {}

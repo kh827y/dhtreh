@@ -409,11 +409,7 @@ export class PortalController {
     const payload = this.asRecord(task?.payload);
     const stats = this.asRecord(task?.stats);
     const snapshot = this.asRecord(task?.audienceSnapshot);
-    const audienceIdRaw =
-      task?.audienceId ??
-      snapshot.legacyAudienceId ??
-      snapshot.legacyAudience ??
-      null;
+    const audienceIdRaw = task?.audienceId ?? snapshot.audienceId ?? null;
     const audienceId = audienceIdRaw ? String(audienceIdRaw) : null;
     const audienceName =
       typeof task?.audienceName === 'string'
@@ -424,7 +420,6 @@ export class PortalController {
     const audienceRaw =
       audienceName ??
       snapshot.code ??
-      snapshot.legacyAudience ??
       snapshot.audienceName ??
       'ALL';
     const totalRecipients =
@@ -484,7 +479,7 @@ export class PortalController {
     return {
       id: task.id,
       merchantId: task.merchantId,
-      audienceId: task.audienceId ?? snapshot.legacyAudienceId ?? null,
+      audienceId: task.audienceId ?? snapshot.audienceId ?? null,
       audienceName: task.audienceName ?? snapshot.audienceName ?? null,
       text: typeof payload.text === 'string' ? payload.text : '',
       imageAssetId: typeof imageAssetId === 'string' ? imageAssetId : null,
@@ -1071,7 +1066,7 @@ export class PortalController {
         audienceId: body?.audienceId ?? undefined,
         audienceName: body?.audienceName ?? undefined,
         audienceSnapshot: {
-          legacyAudienceId: body?.audienceId ?? null,
+          audienceId: body?.audienceId ?? null,
           audienceName: body?.audienceName ?? null,
         },
         scheduledAt: body?.scheduledAt ?? body?.startAt ?? null,

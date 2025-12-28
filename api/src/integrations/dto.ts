@@ -74,6 +74,14 @@ export class IntegrationItemDto {
   @ApiProperty({ description: 'Цена за единицу', example: 450 })
   @IsNumber()
   price!: number;
+
+  @ApiPropertyOptional({
+    description: 'Цена до применения акции (опционально)',
+    name: 'base_price',
+  })
+  @IsOptional()
+  @IsNumber()
+  base_price?: number;
 }
 
 export class IntegrationCodeRequestDto {
@@ -212,6 +220,17 @@ export class IntegrationCalculateActionItemDto {
 
 export class IntegrationCalculateActionDto {
   @ApiProperty({
+    description: 'ID клиента в системе лояльности',
+    name: 'id_client',
+  })
+  @Transform(
+    ({ value, obj }) =>
+      value ?? obj?.idClient ?? obj?.customerId ?? obj?.merchant_customer_id,
+  )
+  @IsString()
+  id_client!: string;
+
+  @ApiProperty({
     type: [IntegrationCalculateActionItemDto],
   })
   @IsArray()
@@ -220,24 +239,7 @@ export class IntegrationCalculateActionDto {
   items!: IntegrationCalculateActionItemDto[];
 
   @ApiPropertyOptional({
-    description: 'ID клиента в системе лояльности (для client-based промо)',
-    name: 'id_client',
-  })
-  @Transform(
-    ({ value, obj }) =>
-      value ??
-      obj?.idClient ??
-      obj?.customerId ??
-      obj?.customerId ??
-      obj?.merchant_customer_id ??
-      null,
-  )
-  @IsOptional()
-  @IsString()
-  id_client?: string;
-
-  @ApiPropertyOptional({
-    description: 'Опциональный контекст точки (для правил по торговой точке)',
+    description: 'ID торговой точки (опционально)',
     name: 'outlet_id',
   })
   @Transform(({ value, obj }) => value ?? obj?.outlet_id ?? obj?.outletId)

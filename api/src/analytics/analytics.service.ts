@@ -1215,7 +1215,6 @@ export class AnalyticsService {
       recencyDays?: unknown;
       threshold?: unknown;
     } | null;
-    const legacyRecencyDays = this.toNumber(rfm.recencyDays);
     const recencyModeFromObject =
       recencyObject?.mode === 'manual' ? 'manual' : 'auto';
     const recencyDaysFromObject = this.toNumber(
@@ -1225,10 +1224,6 @@ export class AnalyticsService {
     );
     let recencyMode: 'auto' | 'manual' = recencyModeFromObject;
     let recencyDays = recencyDaysFromObject;
-    if (!recencyDays && legacyRecencyDays) {
-      recencyDays = legacyRecencyDays;
-      recencyMode = 'manual';
-    }
     if (!(recencyDays && recencyDays > 0) && recencyMode === 'manual') {
       recencyMode = 'auto';
       recencyDays = undefined;

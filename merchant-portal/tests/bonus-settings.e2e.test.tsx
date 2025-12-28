@@ -20,7 +20,6 @@ describe("bonus settings page (new design)", () => {
             ttlEnabled: true,
             ttlDays: 365,
             allowSameReceipt: true,
-            forbidSameReceipt: false,
             delayEnabled: true,
             delayDays: 7,
           }),
@@ -83,4 +82,3 @@ describe("bonus settings page (new design)", () => {
     });
   });
 });
-

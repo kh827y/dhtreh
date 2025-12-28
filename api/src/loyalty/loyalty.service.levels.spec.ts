@@ -163,7 +163,6 @@ describe('LoyaltyService.quote with level benefits (Wave 2)', () => {
     const prisma = mkPrisma({
       transaction: {
         count: jest.fn(async () => 0),
-        // ensure Silver level (600 earned) for legacy path
         findMany: jest.fn(async () => [{ amount: 300 }, { amount: 300 }]),
       },
       wallet: {

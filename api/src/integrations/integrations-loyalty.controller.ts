@@ -1092,6 +1092,13 @@ export class IntegrationsLoyaltyController {
       req.integrationMerchantId || (req as any).merchantId || '',
     ).trim();
     if (!merchantId) throw new BadRequestException('merchantId required');
+    const customerId =
+      typeof dto.id_client === 'string' && dto.id_client.trim()
+        ? dto.id_client.trim()
+        : '';
+    if (!customerId) {
+      throw new BadRequestException('id_client required');
+    }
     const items = this.normalizeActionItems(dto.items);
     if (!items.length) {
       throw new BadRequestException('items required');
@@ -1112,6 +1119,7 @@ export class IntegrationsLoyaltyController {
     const result = await this.loyalty.calculateAction({
       merchantId,
       items,
+      customerId,
     });
     await this.logIntegrationSync(
       req,

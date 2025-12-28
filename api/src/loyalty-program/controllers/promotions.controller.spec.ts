@@ -34,7 +34,11 @@ function makePromotion(overrides: Record<string, any> = {}) {
     status: PromotionStatus.ACTIVE,
     rewardType: PromotionRewardType.POINTS,
     rewardValue: 0,
-    rewardMetadata: { multiplier: 2, productIds: ['p1'] },
+    rewardMetadata: {
+      productIds: ['p1'],
+      pointsRuleType: 'multiplier',
+      pointsValue: 2,
+    },
     pointsExpireInDays: null,
     startAt: new Date('2024-02-01T00:00:00.000Z'),
     endAt: new Date('2024-02-10T00:00:00.000Z'),
@@ -68,7 +72,6 @@ describe('PromotionsController — portal payload mapping', () => {
       metadata: { usageLimit: 'once_per_day' },
       rewardValue: 0,
       rewardMetadata: {
-        multiplier: 2,
         productIds: ['p1'],
         pointsRuleType: 'multiplier',
         pointsValue: 2,

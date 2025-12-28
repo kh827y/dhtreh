@@ -275,7 +275,7 @@ export class CommunicationsService {
       (() => {
         const base: Record<string, any> = {};
         if (audienceCode) base.code = audienceCode;
-        if (payload.audienceId) base.legacyAudienceId = payload.audienceId;
+        if (payload.audienceId) base.audienceId = payload.audienceId;
         if (payload.audienceName) base.audienceName = payload.audienceName;
         return Object.keys(base).length ? base : null;
       })();
@@ -315,7 +315,8 @@ export class CommunicationsService {
       ? this.resolveFutureDate(payload.scheduledAt)
       : null;
     const audienceSnapshot = payload.audienceSnapshot ?? {
-      legacyAudienceId: payload.audienceId ?? payload.audienceCode ?? null,
+      audienceId: payload.audienceId ?? null,
+      code: payload.audienceCode ?? null,
       audienceName: payload.audienceName ?? null,
     };
 

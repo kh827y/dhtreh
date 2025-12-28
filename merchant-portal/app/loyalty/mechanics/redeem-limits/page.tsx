@@ -29,7 +29,7 @@ export default function RedeemLimitsPage() {
       setLimitations({
         isExpirationEnabled: Boolean(json?.ttlEnabled),
         expirationDays: Number(json?.ttlDays ?? 180) || 180,
-        allowAccrualOnRedemption: Boolean(json?.allowSameReceipt ?? !json?.forbidSameReceipt),
+        allowAccrualOnRedemption: Boolean(json?.allowSameReceipt),
         activationDelay: Math.max(0, Math.floor(Number(json?.delayDays ?? 0) || 0)),
       });
     } catch (e: any) {

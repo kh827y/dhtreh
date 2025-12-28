@@ -1006,6 +1006,19 @@ export class PortalCatalogService {
       }
       const trimmedExternalId = dto.externalId?.trim() || null;
       if (trimmedExternalId) {
+        const existing = await tx.product.findFirst({
+          where: {
+            merchantId,
+            deletedAt: null,
+            externalId: trimmedExternalId,
+          },
+          select: { id: true },
+        });
+        if (existing) {
+          throw new BadRequestException(
+            'Товар с таким внешним ID уже существует',
+          );
+        }
         const archived = await tx.product.findMany({
           where: {
             merchantId,
@@ -1102,6 +1115,20 @@ export class PortalCatalogService {
       }
       const trimmedExternalId = dto.externalId?.trim() || null;
       if (dto.externalId !== undefined && trimmedExternalId) {
+        const existing = await tx.product.findFirst({
+          where: {
+            merchantId,
+            deletedAt: null,
+            externalId: trimmedExternalId,
+            NOT: { id: productId },
+          },
+          select: { id: true },
+        });
+        if (existing) {
+          throw new BadRequestException(
+            'Товар с таким внешним ID уже существует',
+          );
+        }
         const archived = await tx.product.findMany({
           where: {
             merchantId,
@@ -1255,7 +1282,19 @@ export class PortalCatalogService {
       where: { id: productId, merchantId, deletedAt: null },
       data: { deletedAt: new Date(), externalId: null, externalProvider: null },
     });
-    if (updated.count === 0) throw new NotFoundException('Product not found');
+    if (updated.count === 0) {
+      const archived = await this.prisma.product.findFirst({
+        where: { id: productId, merchantId, deletedAt: { not: null } },
+        select: { id: true },
+      });
+      if (!archived) {
+        throw new NotFoundException('Product not found');
+      }
+      await this.prisma.product.update({
+        where: { id: productId },
+        data: { externalId: null, externalProvider: null },
+      });
+    }
     await this.prisma.productExternalId.deleteMany({
       where: { merchantId, productId },
     });
