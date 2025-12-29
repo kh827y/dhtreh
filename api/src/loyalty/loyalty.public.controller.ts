@@ -51,11 +51,14 @@ export class LoyaltyPublicController {
       const bps =
         typeof rule.earnRateBps === 'number' ? rule.earnRateBps : null;
       const percent = bps != null ? bps / 100 : null;
+      const redeemRateBps =
+        typeof rule.redeemRateBps === 'number' ? rule.redeemRateBps : null;
       return {
         id: t.id,
         name: t.name,
         threshold: rule.threshold,
         cashbackPercent: percent,
+        redeemRateBps,
         benefits: { cashbackPercent: percent },
         rewardPercent: percent,
         minPaymentAmount: rule.minPaymentAmount ?? null,

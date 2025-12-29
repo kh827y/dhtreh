@@ -55,6 +55,7 @@ export type MechanicsLevelsResp = {
     threshold?: number;
     minPaymentAmount?: number | null;
     cashbackPercent?: number | null;
+    redeemRateBps?: number | null;
     benefits?: { cashbackPercent?: number | null } | null;
     rewardPercent?: number | null;
   }>;

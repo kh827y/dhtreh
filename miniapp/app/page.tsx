@@ -61,6 +61,7 @@ import {
   BellOff,
   Sparkles,
   Zap,
+  Clock,
   Tag,
   ShoppingBag,
   Package,
@@ -94,6 +95,7 @@ type MechanicsLevel = {
   cashbackPercent?: number | null;
   benefits?: { cashbackPercent?: number | null; [key: string]: unknown } | null;
   rewardPercent?: number | null;
+  redeemRateBps?: number | null;
 };
 
 type ReferralTemplateContext = {
@@ -113,6 +115,16 @@ type ReferralInfo = {
   shareMessageTemplate?: string;
 };
 
+type MiniappCache = {
+  balance?: number | null;
+  levelInfo?: LevelInfo | null;
+  levelCatalog?: MechanicsLevel[];
+  cashbackPercent?: number | null;
+  referralEnabled?: boolean;
+  referralInfo?: ReferralInfo | null;
+  bonusCount?: number | null;
+};
+
 type ViewState = "HOME" | "HISTORY" | "PROMOS" | "INVITE" | "SETTINGS" | "ABOUT";
 
 type PromoBadge = {
@@ -126,6 +138,7 @@ const profilePendingKey = (merchantId: string) => `miniapp.profile.pending.v1:${
 const localCustomerKey = (merchantId: string) => `miniapp.customerId.v1:${merchantId}`;
 const legacyLocalCustomerKey = (merchantId: string) => `miniapp.merchantCustomerId.v1:${merchantId}`;
 const onboardKey = (merchantId: string) => `miniapp.onboarded.v1:${merchantId}`;
+const cacheStorageKey = (merchantId: string) => `miniapp.cache.v1:${merchantId}`;
 
 const normalizeReferralTemplate = (template: string | null | undefined, fallback: string): string => {
   if (typeof template === "string") {
@@ -198,6 +211,28 @@ function readStoredOnboardFlag(merchantId?: string | null): boolean {
     return localStorage.getItem(onboardKey(merchantId)) === "1";
   } catch {
     return false;
+  }
+}
+
+function readCachedState(merchantId?: string | null): MiniappCache | null {
+  if (!merchantId || typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(cacheStorageKey(merchantId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    return parsed as MiniappCache;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedState(merchantId: string | null | undefined, payload: MiniappCache) {
+  if (!merchantId || typeof window === "undefined") return;
+  try {
+    localStorage.setItem(cacheStorageKey(merchantId), JSON.stringify(payload));
+  } catch {
+    // ignore storage issues
   }
 }
 
@@ -276,6 +311,82 @@ function formatPromoDuration(startAt?: string | null, endAt?: string | null): st
   if (endAt) return `до ${formatDate(endAt)}`;
   if (startAt) return `с ${formatDate(startAt)}`;
   return null;
+}
+
+function formatTransactionDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const datePart = date
+    .toLocaleDateString("ru-RU", { day: "numeric", month: "short" })
+    .replace(/\./g, "")
+    .replace(/,/g, "");
+  const timePart = date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  return `${datePart} ${timePart}`.trim();
+}
+
+function describePromotion(promo: PromotionItem): string {
+  const meta =
+    promo.rewardMetadata && typeof promo.rewardMetadata === "object"
+      ? (promo.rewardMetadata as Record<string, unknown>)
+      : {};
+  const pointsRuleType = typeof meta.pointsRuleType === "string" ? meta.pointsRuleType : "";
+  const pointsValueRaw = meta.pointsValue ?? promo.rewardValue ?? null;
+  const pointsValue = Number(pointsValueRaw);
+
+  if (promo.rewardType === "POINTS") {
+    if (pointsRuleType === "multiplier" && Number.isFinite(pointsValue) && pointsValue > 0) {
+      return `Начисляем в ${pointsValue} раза больше баллов за товары из акции.`;
+    }
+    if (pointsRuleType === "percent" && Number.isFinite(pointsValue) && pointsValue > 0) {
+      return `Вернем ${Math.round(pointsValue)}% от суммы покупки баллами.`;
+    }
+    if (pointsRuleType === "fixed" && Number.isFinite(pointsValue) && pointsValue > 0) {
+      return `Начислим ${Math.round(pointsValue)} баллов за товары из акции.`;
+    }
+    if (Number.isFinite(pointsValue) && pointsValue > 0) {
+      return `Начислим ${Math.round(pointsValue)} баллов за товары из акции.`;
+    }
+  }
+
+  if (promo.rewardType === "DISCOUNT") {
+    const kind = typeof meta.kind === "string" ? meta.kind.toUpperCase() : "";
+    if (kind === "NTH_FREE") {
+      const buyQty = Number(meta.buyQty ?? 0);
+      const freeQty = Number(meta.freeQty ?? 0);
+      if (buyQty > 0 && freeQty > 0) {
+        return `Купите ${buyQty} шт. товаров из акции, получите ${freeQty} в подарок.`;
+      }
+      if (buyQty > 0) {
+        return `Купите ${buyQty} шт. товаров из акции и получите подарок.`;
+      }
+      return "Подарок при покупке товаров из акции.";
+    }
+    if (kind === "FIXED_PRICE") {
+      const priceValue = Number(meta.price ?? promo.rewardValue);
+      if (Number.isFinite(priceValue) && priceValue >= 0) {
+        return `Акционная цена ${Math.round(priceValue)} ₽ на товары из акции.`;
+      }
+      return "Акционная цена на товары из акции.";
+    }
+    if (Number.isFinite(pointsValue) && pointsValue > 0) {
+      return `Скидка ${Math.round(pointsValue)}% на товары из акции.`;
+    }
+    return "Скидка на товары из акции.";
+  }
+
+  if (promo.rewardType === "CASHBACK") {
+    const pct = Number(promo.rewardValue);
+    if (Number.isFinite(pct) && pct > 0) {
+      return `Вернем ${Math.round(pct)}% от суммы покупки баллами.`;
+    }
+  }
+
+  if (promo.rewardType === "LEVEL_UP") {
+    return "Покупки по акции помогают быстрее повысить уровень.";
+  }
+
+  const fallback = promo.description?.trim();
+  return fallback || "Специальное предложение";
 }
 
 function validateBirthDate(value: string): string | null {
@@ -449,7 +560,7 @@ function buildHistoryTransactions(items: TransactionItem[]): HistoryTransaction[
     }
 
     const createdAt = item.createdAt;
-    const date = new Date(createdAt).toLocaleString("ru-RU");
+    const date = formatTransactionDate(createdAt);
     const description = item.comment || undefined;
     let type: HistoryType = "campaign";
     let title = meta.title;
@@ -549,7 +660,7 @@ function buildHistoryTransactions(items: TransactionItem[]): HistoryTransaction[
       tx: {
         id: group.id,
         title: "Покупка",
-        date: new Date(group.createdAt).toLocaleString("ru-RU"),
+        date: formatTransactionDate(group.createdAt),
         amount: amountRaw,
         cashback: Math.max(0, group.cashback),
         pointsBurned: group.pointsBurned > 0 ? group.pointsBurned : undefined,
@@ -567,7 +678,7 @@ function buildHistoryTransactions(items: TransactionItem[]): HistoryTransaction[
       tx: {
         id: group.id,
         title: "Возврат",
-        date: new Date(group.createdAt).toLocaleString("ru-RU"),
+        date: formatTransactionDate(group.createdAt),
         amount: amountRaw,
         cashback: Math.max(0, group.pointsRevoked),
         pointsBurned: group.pointsRestored > 0 ? group.pointsRestored : undefined,
@@ -595,17 +706,18 @@ function MiniappPage() {
 
   const storedProfile = useMemo(() => readStoredProfile(merchantId), [merchantId]);
   const storedCustomerId = useMemo(() => readStoredCustomerId(merchantId), [merchantId]);
+  const cachedState = useMemo(() => readCachedState(merchantId), [merchantId]);
 
   const [customerId, setCustomerId] = useState<string | null>(() => storedCustomerId);
-  const [bal, setBal] = useState<number | null>(null);
+  const [bal, setBal] = useState<number | null>(() => cachedState?.balance ?? null);
   const [tx, setTx] = useState<TransactionItem[]>([]);
   const [consent, setConsent] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
   const [toast, setToast] = useState<{ msg: string; type?: "info" | "error" | "success" } | null>(null);
-  const [levelInfo, setLevelInfo] = useState<LevelInfo | null>(null);
-  const [levelCatalog, setLevelCatalog] = useState<MechanicsLevel[]>([]);
-  const [cashbackPercent, setCashbackPercent] = useState<number | null>(null);
+  const [levelInfo, setLevelInfo] = useState<LevelInfo | null>(() => cachedState?.levelInfo ?? null);
+  const [levelCatalog, setLevelCatalog] = useState<MechanicsLevel[]>(() => cachedState?.levelCatalog ?? []);
+  const [cashbackPercent, setCashbackPercent] = useState<number | null>(() => cachedState?.cashbackPercent ?? null);
   const [telegramUser] = useState<TelegramUser | null>(() => getTelegramUser());
   const [phone, setPhone] = useState<string | null>(null);
   const [pendingCustomerIdForPhone, setPendingCustomerIdForPhone] = useState<string | null>(null);
@@ -619,13 +731,16 @@ function MiniappPage() {
   const [profileError, setProfileError] = useState<string | null>(null);
   const [profileSaving, setProfileSaving] = useState(false);
   const [localOnboarded, setLocalOnboarded] = useState<boolean>(() => readStoredOnboardFlag(merchantId));
-  const [referralInfo, setReferralInfo] = useState<ReferralInfo | null>(null);
-  const [referralEnabled, setReferralEnabled] = useState(false);
+  const [referralInfo, setReferralInfo] = useState<ReferralInfo | null>(() => cachedState?.referralInfo ?? null);
+  const [referralEnabled, setReferralEnabled] = useState<boolean>(() => cachedState?.referralEnabled ?? false);
   const [referralLoading, setReferralLoading] = useState(false);
   const [promoCode, setPromoCode] = useState("");
   const [promoStatus, setPromoStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [promotions, setPromotions] = useState<PromotionItem[]>([]);
   const [promotionsResolved, setPromotionsResolved] = useState(false);
+  const [cachedBonusCount, setCachedBonusCount] = useState<number | null>(() =>
+    typeof cachedState?.bonusCount === "number" ? cachedState.bonusCount : null,
+  );
   const [view, setView] = useState<ViewState>("HOME");
   const [qrOpen, setQrOpen] = useState(false);
   const [qrToken, setQrToken] = useState("");
@@ -644,6 +759,30 @@ function MiniappPage() {
 
   useEffect(() => {
     setLocalOnboarded(readStoredOnboardFlag(merchantId));
+  }, [merchantId]);
+
+  useEffect(() => {
+    if (!merchantId) return;
+    const cached = readCachedState(merchantId);
+    if (!cached) {
+      setBal(null);
+      setLevelInfo(null);
+      setLevelCatalog([]);
+      setCashbackPercent(null);
+      setReferralInfo(null);
+      setReferralEnabled(false);
+      setCachedBonusCount(null);
+      return;
+    }
+    setBal(typeof cached.balance === "number" ? cached.balance : null);
+    setLevelInfo(cached.levelInfo ?? null);
+    setLevelCatalog(Array.isArray(cached.levelCatalog) ? cached.levelCatalog : []);
+    setCashbackPercent(typeof cached.cashbackPercent === "number" ? cached.cashbackPercent : null);
+    if (typeof cached.referralEnabled === "boolean") {
+      setReferralEnabled(cached.referralEnabled);
+    }
+    setReferralInfo(cached.referralInfo ?? null);
+    setCachedBonusCount(typeof cached.bonusCount === "number" ? cached.bonusCount : null);
   }, [merchantId]);
 
   useEffect(() => {
@@ -686,6 +825,20 @@ function MiniappPage() {
       // ignore
     }
   }, [merchantId]);
+
+  useEffect(() => {
+    if (!merchantId) return;
+    const snapshot: MiniappCache = {
+      balance: typeof bal === "number" ? bal : null,
+      levelInfo: levelInfo ?? null,
+      levelCatalog,
+      cashbackPercent: typeof cashbackPercent === "number" ? cashbackPercent : null,
+      referralEnabled,
+      referralInfo: referralInfo ?? null,
+      bonusCount: typeof cachedBonusCount === "number" ? cachedBonusCount : null,
+    };
+    writeCachedState(merchantId, snapshot);
+  }, [merchantId, bal, levelInfo, levelCatalog, cashbackPercent, referralEnabled, referralInfo, cachedBonusCount]);
 
   useEffect(() => {
     setPromotionsResolved(false);
@@ -952,11 +1105,9 @@ function MiniappPage() {
   }, [auth.loading, loadLevelCatalog]);
 
   useEffect(() => {
-    if (!customerId) {
-      setCashbackPercent(null);
-      return;
-    }
+    if (!customerId) return;
     const value = pickCashbackPercent(levelInfo, levelCatalog);
+    if (value == null) return;
     setCashbackPercent(value);
   }, [customerId, levelInfo, levelCatalog]);
 
@@ -1035,11 +1186,7 @@ function MiniappPage() {
 
   useEffect(() => {
     if (auth.loading) return;
-    if (!merchantId || !customerId) {
-      setReferralEnabled(false);
-      setReferralInfo(null);
-      return;
-    }
+    if (!merchantId || !customerId) return;
     let cancelled = false;
     setReferralLoading(true);
     referralLink(customerId, merchantId)
@@ -1058,8 +1205,15 @@ function MiniappPage() {
         setReferralInfo(info);
         setReferralEnabled(true);
       })
-      .catch(() => {
-        if (!cancelled) {
+      .catch((err) => {
+        if (cancelled) return;
+        const message = resolveErrorMessage(err).toLowerCase();
+        const disabled =
+          message.includes("не активна") ||
+          message.includes("не активен") ||
+          message.includes("referral") ||
+          message.includes("program");
+        if (disabled) {
           setReferralInfo(null);
           setReferralEnabled(false);
         }
@@ -1670,6 +1824,14 @@ function MiniappPage() {
     [bonusPromos],
   );
 
+  const bonusBadgeCount = promotionsResolved ? unclaimedBonusCount : cachedBonusCount;
+  const showBonusSkeleton = !promotionsResolved && cachedBonusCount == null;
+
+  useEffect(() => {
+    if (!promotionsResolved) return;
+    setCachedBonusCount(unclaimedBonusCount);
+  }, [promotionsResolved, unclaimedBonusCount]);
+
   const shortCodeRaw = useMemo(() => (isShortCode(qrToken) ? qrToken : null), [qrToken]);
   const manualCode = useMemo(() => (shortCodeRaw ? formatShortCode(shortCodeRaw) : null), [shortCodeRaw]);
   const showManualCode = Boolean(shortCodeRaw);
@@ -1693,6 +1855,12 @@ function MiniappPage() {
 
   const writeOffByName = useMemo(() => {
     const map = new Map<string, number>();
+    for (const level of levelCatalog) {
+      if (!level?.name) continue;
+      if (typeof level.redeemRateBps === "number" && Number.isFinite(level.redeemRateBps)) {
+        map.set(level.name, level.redeemRateBps / 100);
+      }
+    }
     if (levelInfo?.current?.name && typeof levelInfo.current.redeemRateBps === "number") {
       map.set(levelInfo.current.name, levelInfo.current.redeemRateBps / 100);
     }
@@ -1700,7 +1868,7 @@ function MiniappPage() {
       map.set(levelInfo.next.name, levelInfo.next.redeemRateBps / 100);
     }
     return map;
-  }, [levelInfo]);
+  }, [levelCatalog, levelInfo]);
 
   const handleCopyInviteCode = useCallback(() => {
     if (!referralInfo?.code) return;
@@ -1714,7 +1882,7 @@ function MiniappPage() {
     setSelectedPromo({
       id: promo.id,
       title: promo.name,
-      description: promo.description || undefined,
+      description: describePromotion(promo),
       duration: duration || undefined,
       categories: promo.categoryNames || [],
       products: promo.productNames || [],
@@ -1818,11 +1986,13 @@ function MiniappPage() {
             }}
             className="bg-white p-4 rounded-2xl shadow-card flex flex-col justify-between h-28 active:scale-[0.98] transition-transform relative"
           >
-            {unclaimedBonusCount > 0 && (
+            {showBonusSkeleton ? (
+              <div className="absolute top-3 right-3 h-[18px] w-[30px] rounded-full bg-gray-200 animate-pulse" />
+            ) : bonusBadgeCount != null && bonusBadgeCount > 0 ? (
               <div className="absolute top-3 right-3 bg-red-500 text-white text-[11px] font-bold px-2 py-0.5 rounded-full shadow-sm animate-in zoom-in duration-300">
-                {unclaimedBonusCount}
+                {bonusBadgeCount}
               </div>
-            )}
+            ) : null}
             <div className="w-10 h-10 rounded-full bg-pink-50 text-pink-600 flex items-center justify-center">
               <Gift size={22} />
             </div>
@@ -1832,7 +2002,7 @@ function MiniappPage() {
             </div>
           </button>
 
-          {referralEnabled && (
+          {referralEnabled ? (
             <button
               onClick={() => setView("INVITE")}
               className="bg-white p-4 rounded-2xl shadow-card flex flex-col justify-between h-28 active:scale-[0.98] transition-transform"
@@ -1843,6 +2013,19 @@ function MiniappPage() {
               <div className="text-left">
                 <div className="font-bold text-gray-900 text-lg">Друзья</div>
                 <div className="text-xs text-gray-400">Получите бонусы</div>
+              </div>
+            </button>
+          ) : (
+            <button
+              onClick={() => setView("HISTORY")}
+              className="bg-white p-4 rounded-2xl shadow-card flex flex-col justify-between h-28 active:scale-[0.98] transition-transform"
+            >
+              <div className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                <Clock size={22} />
+              </div>
+              <div className="text-left">
+                <div className="font-bold text-gray-900 text-lg">История</div>
+                <div className="text-xs text-gray-400">Ваши операции</div>
               </div>
             </button>
           )}
@@ -1903,10 +2086,10 @@ function MiniappPage() {
       <div className="sticky top-0 bg-ios-bg/90 backdrop-blur-md z-20 px-4 py-3 border-b border-gray-200 flex items-center justify-between">
         <button
           onClick={() => setView("HOME")}
-          className="p-2 -ml-2 text-ios-blue flex items-center space-x-1 hover:opacity-70 transition-opacity z-10"
+          className="flex items-center space-x-1 text-blue-500 active:opacity-60 transition-opacity z-10"
         >
-          <ChevronLeft size={24} />
-          <span className="font-medium text-lg">Назад</span>
+          <ChevronLeft size={22} className="stroke-[2.5]" />
+          <span className="text-[17px] font-normal">Главная</span>
         </button>
         <div className="w-10" />
       </div>
@@ -2027,11 +2210,13 @@ function MiniappPage() {
               <div className="px-5 flex items-center justify-between">
                 <div className="flex items-center space-x-2">
                   <h2 className="text-[22px] font-bold text-gray-900">Ваши бонусы</h2>
-                  {unclaimedBonusCount > 0 && (
+                  {showBonusSkeleton ? (
+                    <div className="h-[18px] w-[30px] rounded-full bg-gray-200 animate-pulse" />
+                  ) : bonusBadgeCount != null && bonusBadgeCount > 0 ? (
                     <div className="bg-red-500 text-white text-[12px] font-bold px-2 py-0.5 rounded-full shadow-sm animate-in zoom-in">
-                      {unclaimedBonusCount}
+                      {bonusBadgeCount}
                     </div>
-                  )}
+                  ) : null}
                 </div>
                 <button
                   onClick={() => setIsAllBonusesOpen(true)}
@@ -2116,7 +2301,7 @@ function MiniappPage() {
                 <Info size={18} className="text-gray-400" />
               </div>
               <p className="text-[15px] text-gray-900 leading-relaxed">
-                {referralInfo?.description || "Приглашайте друзей и получайте бонусы за их покупки."}
+                {referralInfo?.description || ""}
               </p>
             </div>
           </div>
@@ -2293,10 +2478,10 @@ function MiniappPage() {
       <div className="sticky top-0 bg-ios-bg/90 backdrop-blur-md z-20 px-4 py-3 border-b border-gray-200 flex items-center">
         <button
           onClick={() => setView("HOME")}
-          className="p-2 -ml-2 text-ios-blue flex items-center space-x-1 hover:opacity-70 transition-opacity"
+          className="flex items-center space-x-1 text-blue-500 active:opacity-60 transition-opacity"
         >
-          <ChevronLeft size={24} />
-          <span className="font-medium text-lg">Назад</span>
+          <ChevronLeft size={22} className="stroke-[2.5]" />
+          <span className="text-[17px] font-normal">Главная</span>
         </button>
       </div>
 
@@ -2345,7 +2530,7 @@ function MiniappPage() {
       {showNotificationAlert && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
-            className="absolute inset-0 bg-black/30 backdrop-blur-sm transition-opacity"
+            className="absolute inset-0 bg-black/40 backdrop-blur-[2px] transition-opacity animate-in fade-in duration-200"
             onClick={() => setShowNotificationAlert(false)}
           />
           <div className="relative bg-white/90 backdrop-blur-xl rounded-[14px] w-full max-w-[270px] text-center overflow-hidden shadow-lg animate-in fade-in zoom-in-95 duration-200">
