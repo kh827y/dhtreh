@@ -40,7 +40,9 @@ import {
 import { randomUUID } from 'crypto';
 import { normalizeDeviceCode } from '../devices/device.util';
 
-type QrMeta = { jti: string; iat: number; exp: number } | undefined;
+type QrMeta =
+  | { jti: string; iat: number; exp: number; kind?: 'jwt' | 'short' }
+  | undefined;
 
 type CustomerContext = {
   customerId: string;
@@ -2794,44 +2796,114 @@ export class LoyaltyService {
         );
       }
 
-      // 1) «помечаем» QR как использованный ВНЕ транзакции (чтобы метка не откатывалась)
-      try {
-        await this.prisma.qrNonce.create({
-          data: {
-            jti: qr.jti,
-            customerId: customer.id,
-            merchantId: dto.merchantId,
-            issuedAt: new Date(qr.iat * 1000),
-            expiresAt: new Date(qr.exp * 1000),
-            usedAt: new Date(),
-          },
+      const isShortCode = qr.kind === 'short';
+      const now = new Date();
+      if (isShortCode) {
+        const nonce = await this.prisma.qrNonce.findUnique({
+          where: { jti: qr.jti },
         });
-      } catch (e: any) {
-        // гонка: пока мы шли сюда, кто-то другой успел использовать QR — проверим hold ещё раз
-        const again = await this.prisma.hold.findUnique({
-          where: { qrJti: qr.jti },
-        });
-        if (again) {
-          if (again.status === HoldStatus.PENDING) {
-            if (effectiveOutletId && again.outletId !== effectiveOutletId) {
-              try {
-                await this.prisma.hold.update({
-                  where: { id: again.id },
-                  data: { outletId: effectiveOutletId },
-                });
-                (again as any).outletId = effectiveOutletId;
-              } catch {}
+        if (!nonce) {
+          throw new BadRequestException('Bad QR token');
+        }
+        if (nonce.expiresAt && nonce.expiresAt.getTime() <= now.getTime()) {
+          try {
+            await this.prisma.qrNonce.delete({ where: { jti: qr.jti } });
+          } catch {}
+          throw new BadRequestException(
+            'JWTExpired: "exp" claim timestamp check failed',
+          );
+        }
+        if (nonce.usedAt) {
+          const again = await this.prisma.hold.findUnique({
+            where: { qrJti: qr.jti },
+          });
+          if (again) {
+            if (again.status === HoldStatus.PENDING) {
+              if (effectiveOutletId && again.outletId !== effectiveOutletId) {
+                try {
+                  await this.prisma.hold.update({
+                    where: { id: again.id },
+                    data: { outletId: effectiveOutletId },
+                  });
+                  (again as any).outletId = effectiveOutletId;
+                } catch {}
+              }
+              return this.quoteFromExistingHold(dto.mode, again);
             }
-            return this.quoteFromExistingHold(dto.mode, again);
           }
           throw new BadRequestException(
             'Этот QR уже использован. Попросите клиента обновить QR в приложении.',
           );
         }
-        // иначе считаем, что QR использован
-        throw new BadRequestException(
-          'Этот QR уже использован. Попросите клиента обновить QR в приложении.',
-        );
+        const updated = await this.prisma.qrNonce.updateMany({
+          where: { jti: qr.jti, usedAt: null },
+          data: { usedAt: now },
+        });
+        if (!updated.count) {
+          const again = await this.prisma.hold.findUnique({
+            where: { qrJti: qr.jti },
+          });
+          if (again) {
+            if (again.status === HoldStatus.PENDING) {
+              if (effectiveOutletId && again.outletId !== effectiveOutletId) {
+                try {
+                  await this.prisma.hold.update({
+                    where: { id: again.id },
+                    data: { outletId: effectiveOutletId },
+                  });
+                  (again as any).outletId = effectiveOutletId;
+                } catch {}
+              }
+              return this.quoteFromExistingHold(dto.mode, again);
+            }
+            throw new BadRequestException(
+              'Этот QR уже использован. Попросите клиента обновить QR в приложении.',
+            );
+          }
+          throw new BadRequestException(
+            'Этот QR уже использован. Попросите клиента обновить QR в приложении.',
+          );
+        }
+      } else {
+        // 1) «помечаем» QR как использованный ВНЕ транзакции (чтобы метка не откатывалась)
+        try {
+          await this.prisma.qrNonce.create({
+            data: {
+              jti: qr.jti,
+              customerId: customer.id,
+              merchantId: dto.merchantId,
+              issuedAt: new Date(qr.iat * 1000),
+              expiresAt: new Date(qr.exp * 1000),
+              usedAt: new Date(),
+            },
+          });
+        } catch (e: any) {
+          // гонка: пока мы шли сюда, кто-то другой успел использовать QR — проверим hold ещё раз
+          const again = await this.prisma.hold.findUnique({
+            where: { qrJti: qr.jti },
+          });
+          if (again) {
+            if (again.status === HoldStatus.PENDING) {
+              if (effectiveOutletId && again.outletId !== effectiveOutletId) {
+                try {
+                  await this.prisma.hold.update({
+                    where: { id: again.id },
+                    data: { outletId: effectiveOutletId },
+                  });
+                  (again as any).outletId = effectiveOutletId;
+                } catch {}
+              }
+              return this.quoteFromExistingHold(dto.mode, again);
+            }
+            throw new BadRequestException(
+              'Этот QR уже использован. Попросите клиента обновить QR в приложении.',
+            );
+          }
+          // иначе считаем, что QR использован
+          throw new BadRequestException(
+            'Этот QR уже использован. Попросите клиента обновить QR в приложении.',
+          );
+        }
       }
     }
 
@@ -5925,12 +5997,23 @@ export class LoyaltyService {
     );
     const receiptMetaByOrderId = new Map<
       string,
-      { receiptNumber: string | null; createdAt: string }
+      {
+        receiptNumber: string | null;
+        createdAt: string;
+        total: number | null;
+        redeemApplied: number | null;
+      }
     >();
     if (orderIdsForReceipts.length > 0) {
       const receipts = await this.prisma.receipt.findMany({
         where: { merchantId, orderId: { in: orderIdsForReceipts } },
-        select: { orderId: true, receiptNumber: true, createdAt: true },
+        select: {
+          orderId: true,
+          receiptNumber: true,
+          createdAt: true,
+          total: true,
+          redeemApplied: true,
+        },
       });
       for (const receipt of receipts) {
         if (!receipt.orderId) continue;
@@ -5943,6 +6026,15 @@ export class LoyaltyService {
         receiptMetaByOrderId.set(key, {
           receiptNumber: normalized,
           createdAt: receipt.createdAt.toISOString(),
+          total:
+            typeof receipt.total === 'number' && Number.isFinite(receipt.total)
+              ? receipt.total
+              : null,
+          redeemApplied:
+            typeof receipt.redeemApplied === 'number' &&
+            Number.isFinite(receipt.redeemApplied)
+              ? receipt.redeemApplied
+              : null,
         });
       }
     }
@@ -6013,6 +6105,12 @@ export class LoyaltyService {
         orderId,
         receiptNumber: orderId
           ? (receiptMetaByOrderId.get(orderId)?.receiptNumber ?? null)
+          : null,
+        receiptTotal: orderId
+          ? (receiptMetaByOrderId.get(orderId)?.total ?? null)
+          : null,
+        redeemApplied: orderId
+          ? (receiptMetaByOrderId.get(orderId)?.redeemApplied ?? null)
           : null,
         customerId: entity.customerId,
         createdAt: entity.createdAt.toISOString(),

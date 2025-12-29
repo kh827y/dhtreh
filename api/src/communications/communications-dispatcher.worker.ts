@@ -472,6 +472,7 @@ export class CommunicationsDispatcherWorker
       where: {
         merchantId,
         tgId: { not: null },
+        consents: { some: { merchantId } },
         ...(Array.isArray(customerIds) ? { id: { in: customerIds } } : {}),
       },
       select: { id: true, tgId: true, name: true },

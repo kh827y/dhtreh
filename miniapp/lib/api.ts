@@ -8,6 +8,8 @@ export type TransactionsResp = {
     orderId?: string | null;
     customerId: string;
     createdAt: string;
+    receiptTotal?: number | null;
+    redeemApplied?: number | null;
     outletId?: string | null;
     staffId?: string | null;
     reviewId?: string | null;
@@ -276,6 +278,7 @@ export type PublicSettingsResp = {
   miniappLogoUrl?: string | null;
   reviewsEnabled?: boolean | null;
   reviewsShare?: ReviewsShareSettings;
+  supportTelegram?: string | null;
 };
 
 export async function publicSettings(merchantId: string): Promise<PublicSettingsResp> {
@@ -300,6 +303,9 @@ export type PromotionItem = {
   description: string | null;
   rewardType: 'POINTS' | 'DISCOUNT' | 'CASHBACK' | 'LEVEL_UP' | 'CUSTOM';
   rewardValue: number | null;
+  rewardMetadata?: Record<string, unknown> | null;
+  productNames?: string[];
+  categoryNames?: string[];
   startAt: string | null;
   endAt: string | null;
   pointsExpireInDays: number | null;

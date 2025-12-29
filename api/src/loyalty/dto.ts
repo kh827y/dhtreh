@@ -260,6 +260,8 @@ export class PublicSettingsDto {
   @ApiPropertyOptional({ nullable: true }) miniappThemeBg?: string | null;
   @ApiPropertyOptional({ nullable: true }) miniappLogoUrl?: string | null;
   @ApiPropertyOptional({ nullable: true })
+  supportTelegram?: string | null;
+  @ApiPropertyOptional({ nullable: true })
   reviewsEnabled?: boolean | null;
   @ApiPropertyOptional({ type: ReviewsShareSettingsDto, nullable: true })
   reviewsShare?: ReviewsShareSettingsDto | null;
@@ -326,6 +328,16 @@ export class TransactionItemDto {
   @ApiProperty() amount!: number;
   @ApiPropertyOptional() orderId?: string | null;
   @ApiPropertyOptional({ nullable: true }) receiptNumber?: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Сумма чека (рубли) для операций с orderId',
+  })
+  receiptTotal?: number | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Списано баллов по чеку (рубли) для операций с orderId',
+  })
+  redeemApplied?: number | null;
   @ApiProperty() customerId!: string;
   @ApiProperty() createdAt!: string;
   @ApiPropertyOptional() outletId?: string | null;

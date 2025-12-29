@@ -49,6 +49,7 @@ import {
   CustomerProfileSaveDto,
   CustomerPhoneStatusDto,
 } from './dto';
+import { randomInt } from 'crypto';
 import { looksLikeJwt, signQrToken, verifyQrToken } from './token.util';
 import { PrismaService } from '../prisma.service';
 import { MetricsService } from '../metrics.service';
@@ -346,8 +347,6 @@ export class LoyaltyController {
     const promos = await this.prisma.loyaltyPromotion.findMany({
       where: {
         merchantId,
-        rewardType: PromotionRewardType.POINTS,
-        rewardValue: { gt: 0 },
         status: { in: ['ACTIVE', 'SCHEDULED'] as any },
         AND: [
           {
@@ -381,6 +380,59 @@ export class LoyaltyController {
       orderBy: { createdAt: 'desc' },
       include: { metrics: true },
     });
+    const rewardMetaById = new Map<
+      string,
+      {
+        rewardMetadata: Record<string, any> | null;
+        productIds: string[];
+        categoryIds: string[];
+      }
+    >();
+    const productIdSet = new Set<string>();
+    const categoryIdSet = new Set<string>();
+    for (const promo of promos) {
+      const meta =
+        promo.rewardMetadata && typeof promo.rewardMetadata === 'object'
+          ? (promo.rewardMetadata as Record<string, any>)
+          : null;
+      const productIds = Array.isArray(meta?.productIds)
+        ? meta.productIds
+            .map((id: any) => String(id || '').trim())
+            .filter((id: string) => id.length > 0)
+        : [];
+      const categoryIds = Array.isArray(meta?.categoryIds)
+        ? meta.categoryIds
+            .map((id: any) => String(id || '').trim())
+            .filter((id: string) => id.length > 0)
+        : [];
+      productIds.forEach((id) => productIdSet.add(id));
+      categoryIds.forEach((id) => categoryIdSet.add(id));
+      rewardMetaById.set(promo.id, { rewardMetadata: meta, productIds, categoryIds });
+    }
+    const productNamesById = new Map<string, string>();
+    if (productIdSet.size > 0) {
+      const products = await this.prisma.product.findMany({
+        where: { merchantId, id: { in: Array.from(productIdSet) } },
+        select: { id: true, name: true },
+      });
+      for (const product of products) {
+        if (product?.id && product?.name) {
+          productNamesById.set(product.id, product.name);
+        }
+      }
+    }
+    const categoryNamesById = new Map<string, string>();
+    if (categoryIdSet.size > 0) {
+      const categories = await this.prisma.productCategory.findMany({
+        where: { merchantId, id: { in: Array.from(categoryIdSet) } },
+        select: { id: true, name: true },
+      });
+      for (const category of categories) {
+        if (category?.id && category?.name) {
+          categoryNamesById.set(category.id, category.name);
+        }
+      }
+    }
     const existing = await this.prisma.promotionParticipant.findMany({
       where: {
         merchantId,
@@ -391,6 +443,24 @@ export class LoyaltyController {
     });
     const claimedSet = new Set(existing.map((e) => e.promotionId));
     return promos.map((p) => ({
+      ...(() => {
+        const meta = rewardMetaById.get(p.id);
+        const productNames = meta?.productIds
+          ? meta.productIds
+              .map((id) => productNamesById.get(id))
+              .filter((value): value is string => Boolean(value))
+          : [];
+        const categoryNames = meta?.categoryIds
+          ? meta.categoryIds
+              .map((id) => categoryNamesById.get(id))
+              .filter((value): value is string => Boolean(value))
+          : [];
+        return {
+          rewardMetadata: meta?.rewardMetadata ?? null,
+          productNames,
+          categoryNames,
+        };
+      })(),
       id: p.id,
       name: p.name,
       description: p.description ?? null,
@@ -951,13 +1021,62 @@ export class LoyaltyController {
     return result;
   }
 
-  // Plain ID или JWT
+  private normalizeShortCode(userToken: string): string | null {
+    if (!userToken) return null;
+    const compact = userToken.replace(/\s+/g, '');
+    return /^\d{9}$/.test(compact) ? compact : null;
+  }
+
+  private async mintShortCode(
+    merchantId: string,
+    customerId: string,
+    ttlSec: number,
+  ): Promise<string> {
+    const issuedAt = new Date();
+    const expiresAt = new Date(
+      issuedAt.getTime() + Math.max(5, ttlSec) * 1000,
+    );
+    try {
+      await this.prisma.qrNonce.deleteMany({
+        where: {
+          merchantId,
+          usedAt: null,
+          expiresAt: { lt: issuedAt },
+        },
+      });
+    } catch {}
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const code = String(randomInt(100000000, 1000000000));
+      try {
+        await this.prisma.qrNonce.create({
+          data: {
+            jti: code,
+            customerId,
+            merchantId,
+            issuedAt,
+            expiresAt,
+            usedAt: null,
+          },
+        });
+        return code;
+      } catch (e: any) {
+        const codeHint = e?.code || e?.name || '';
+        if (codeHint === 'P2002' || /Unique constraint/i.test(String(e))) {
+          continue;
+        }
+        throw e;
+      }
+    }
+    throw new BadRequestException('Failed to mint short QR code');
+  }
+
+  // Plain ID, 9-digit short code, or JWT
   private async resolveFromToken(userToken: string) {
     if (looksLikeJwt(userToken)) {
       const secret = process.env.QR_JWT_SECRET || 'dev_change_me';
       try {
         const v = await verifyQrToken(secret, userToken);
-        return v; // { customerId, merchantAud, jti, iat, exp }
+        return { ...v, kind: 'jwt' as const };
       } catch (e: any) {
         const code = e?.code || e?.name || '';
         const msg = String(e?.message || e || '');
@@ -974,6 +1093,32 @@ export class LoyaltyController {
         throw new BadRequestException('Bad QR token');
       }
     }
+    const shortCode = this.normalizeShortCode(userToken);
+    if (shortCode) {
+      const nonce = await this.prisma.qrNonce.findUnique({
+        where: { jti: shortCode },
+      });
+      if (!nonce) {
+        throw new BadRequestException('Bad QR token');
+      }
+      const expMs = nonce.expiresAt?.getTime?.() ?? NaN;
+      if (!Number.isFinite(expMs) || expMs <= Date.now()) {
+        try {
+          await this.prisma.qrNonce.delete({ where: { jti: shortCode } });
+        } catch {}
+        throw new BadRequestException(
+          'JWTExpired: "exp" claim timestamp check failed',
+        );
+      }
+      return {
+        customerId: nonce.customerId,
+        merchantAud: nonce.merchantId ?? undefined,
+        jti: nonce.jti,
+        iat: Math.floor(nonce.issuedAt.getTime() / 1000),
+        exp: Math.floor(nonce.expiresAt.getTime() / 1000),
+        kind: 'short' as const,
+      };
+    }
     const now = Math.floor(Date.now() / 1000);
     return {
       customerId: userToken,
@@ -981,6 +1126,7 @@ export class LoyaltyController {
       jti: `plain:${userToken}:${now}`,
       iat: now,
       exp: now + 3600,
+      kind: 'plain' as const,
     } as const;
   }
 
@@ -1814,24 +1960,26 @@ export class LoyaltyController {
     const hasAuth = hasTeleauth || hasInitData;
     const staffKey = req.headers['x-staff-key'] as string | undefined;
     const bridgeSig = req.headers['x-bridge-signature'] as string | undefined;
+    const merchantId =
+      typeof dto.merchantId === 'string' ? dto.merchantId.trim() : '';
+    if (!merchantId) throw new BadRequestException('merchantId required');
+    const settings = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+    });
 
     // Verify staff key if provided
     if (staffKey && !hasAuth) {
-      if (!dto.merchantId) throw new BadRequestException('merchantId required');
-      const valid = await this.verifyStaffKey(dto.merchantId, staffKey);
+      const valid = await this.verifyStaffKey(merchantId, staffKey);
       if (!valid) throw new UnauthorizedException('Invalid staff key');
     }
 
     // If merchant requires Bridge signature for QR minting, enforce it
-    if (!hasAuth && !staffKey && dto.merchantId && dto.customerId) {
-      const settings = await this.prisma.merchantSettings.findUnique({
-        where: { merchantId: dto.merchantId },
-      });
+    if (!hasAuth && !staffKey && dto.customerId) {
       if (settings?.requireBridgeSig) {
         if (!bridgeSig)
           throw new UnauthorizedException('X-Bridge-Signature required');
         const bodyForSig = JSON.stringify({
-          merchantId: dto.merchantId,
+          merchantId,
           customerId: dto.customerId,
         });
         let verified = false;
@@ -1856,21 +2004,20 @@ export class LoyaltyController {
 
     // Если указаны merchantId и initData — валидируем Telegram initData токеном мерчанта
     const secret = process.env.QR_JWT_SECRET || 'dev_change_me';
-    if (dto.initData && dto.merchantId) {
-      const s = await this.prisma.merchantSettings.findUnique({
-        where: { merchantId: dto.merchantId },
-      });
+    if (dto.initData) {
       const botToken =
-        (s as any)?.telegramBotToken || process.env.TELEGRAM_BOT_TOKEN || '';
+        (settings as any)?.telegramBotToken ||
+        process.env.TELEGRAM_BOT_TOKEN ||
+        '';
       if (!botToken) throw new BadRequestException('Bot token not configured');
       const r = validateTelegramInitData(botToken, dto.initData);
       if (!r.ok) throw new BadRequestException('Invalid initData');
       // опционально: если включено требование start_param, проверим соответствие merchantId
-      if ((s as any)?.telegramStartParamRequired) {
+      if ((settings as any)?.telegramStartParamRequired) {
         try {
           const p = new URLSearchParams(dto.initData);
           const sp = p.get('start_param') || p.get('startapp') || '';
-          if (sp && sp !== dto.merchantId)
+          if (sp && sp !== merchantId)
             throw new BadRequestException(
               'merchantId mismatch with start_param',
             );
@@ -1878,11 +2025,7 @@ export class LoyaltyController {
       }
     } else {
       // Нет initData: допускаем только если у мерчанта явно НЕ требуется staff key
-      if (!dto.merchantId) throw new BadRequestException('merchantId required');
-      const s = await this.prisma.merchantSettings.findUnique({
-        where: { merchantId: dto.merchantId },
-      });
-      const requireStaffKey = Boolean(s?.requireStaffKey);
+      const requireStaffKey = Boolean(settings?.requireStaffKey);
       if (requireStaffKey) {
         // Guard заблокирует без X-Staff-Key; здесь оставим явную проверку для ясности ответов
         throw new BadRequestException('Staff key required');
@@ -1890,20 +2033,12 @@ export class LoyaltyController {
     }
 
     let ttl = dto.ttlSec ?? 60;
-    if (!dto.ttlSec && dto.merchantId) {
-      const s = await this.prisma.merchantSettings.findUnique({
-        where: { merchantId: dto.merchantId },
-      });
-      if (s?.qrTtlSec) ttl = s.qrTtlSec;
-    }
-    if (!dto.merchantId) throw new BadRequestException('merchantId required');
-    await this.ensureCustomer(dto.merchantId, dto.customerId);
-    const token = await signQrToken(
-      secret,
-      dto.customerId,
-      dto.merchantId,
-      ttl,
-    );
+    if (!dto.ttlSec && settings?.qrTtlSec) ttl = settings.qrTtlSec;
+    await this.ensureCustomer(merchantId, dto.customerId);
+    const requireJwtForQuote = Boolean(settings?.requireJwtForQuote);
+    const token = requireJwtForQuote
+      ? await signQrToken(secret, dto.customerId, merchantId, ttl)
+      : await this.mintShortCode(merchantId, dto.customerId, ttl);
     return { token, ttl };
   }
 
@@ -1984,9 +2119,10 @@ export class LoyaltyController {
         dto.merchantId,
         dto.outletId ?? null,
       );
-      const qrMeta = looksLikeJwt(dto.userToken)
-        ? { jti: v.jti, iat: v.iat, exp: v.exp }
-        : undefined;
+      const qrMeta =
+        v.kind === 'jwt' || v.kind === 'short'
+          ? { jti: v.jti, iat: v.iat, exp: v.exp, kind: v.kind }
+          : undefined;
       // проверка подписи Bridge при необходимости
       if (s?.requireBridgeSig) {
         const sig =
@@ -2256,6 +2392,14 @@ export class LoyaltyController {
       s?.rulesJson && typeof s.rulesJson === 'object' && !Array.isArray(s.rulesJson)
         ? (s.rulesJson as Record<string, any>)
         : {};
+    const supportTelegramRaw =
+      rulesRaw?.miniapp && typeof rulesRaw.miniapp === 'object'
+        ? (rulesRaw.miniapp as Record<string, any>)?.supportTelegram
+        : null;
+    const supportTelegram =
+      typeof supportTelegramRaw === 'string' && supportTelegramRaw.trim()
+        ? supportTelegramRaw.trim()
+        : null;
     const reviewsEnabled =
       rulesRaw?.reviews && typeof rulesRaw.reviews === 'object'
         ? rulesRaw.reviews.enabled !== undefined
@@ -2268,6 +2412,7 @@ export class LoyaltyController {
       miniappThemePrimary: (s as any)?.miniappThemePrimary ?? null,
       miniappThemeBg: (s as any)?.miniappThemeBg ?? null,
       miniappLogoUrl: (s as any)?.miniappLogoUrl ?? null,
+      supportTelegram,
       reviewsEnabled,
       reviewsShare: share,
     } as any;

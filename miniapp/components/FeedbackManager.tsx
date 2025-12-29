@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { MessageSquareHeart, Send, Star, X } from "lucide-react";
 import Toast from "./Toast";
-import styles from "../app/page.module.css";
 import {
   submitReview,
   transactions,
@@ -52,6 +52,8 @@ function mapTransactions(
     amount: number;
     createdAt: string;
     orderId?: string | null;
+    receiptTotal?: number | null;
+    redeemApplied?: number | null;
     outletId?: string | null;
     staffId?: string | null;
     reviewId?: string | null;
@@ -71,6 +73,14 @@ function mapTransactions(
       amount: item.amount,
       createdAt: item.createdAt,
       orderId: item.orderId ?? null,
+      receiptTotal:
+        typeof item.receiptTotal === "number" && Number.isFinite(item.receiptTotal)
+          ? item.receiptTotal
+          : null,
+      redeemApplied:
+        typeof item.redeemApplied === "number" && Number.isFinite(item.redeemApplied)
+          ? item.redeemApplied
+          : null,
       outletId: item.outletId ?? null,
       staffId: item.staffId ?? null,
       reviewId: item.reviewId ?? null,
@@ -312,7 +322,7 @@ export function FeedbackManager() {
     } else if (!transactionsList.length) {
       setFeedbackTxId(null);
     }
-  }, [transactionsList, dismissedReady, feedbackOpen, isEligiblePurchaseTx, preferredTxId]);
+  }, [transactionsList, dismissedReady, feedbackOpen, isEligiblePurchaseTx, preferredTxId, reviewsEnabled]);
 
   const activeTransaction = useMemo(() => {
     if (!feedbackTxId) return null;
@@ -574,101 +584,144 @@ export function FeedbackManager() {
     return toastElement;
   }
 
+  const overlayClass =
+    feedbackPresence.status === "entered"
+      ? "opacity-100"
+      : "opacity-0";
+  const cardClass =
+    feedbackPresence.status === "entered"
+      ? "opacity-100 translate-y-0 scale-100"
+      : "opacity-0 translate-y-2 scale-95";
+
+  const renderPlatformBadge = (id: string) => {
+    const normalized = id.toLowerCase();
+    if (normalized === "yandex") {
+      return <span className="text-red-500 font-bold">Я</span>;
+    }
+    if (normalized === "twogis" || normalized === "2gis") {
+      return <span className="text-green-500 font-extrabold">2</span>;
+    }
+    if (normalized === "google") {
+      return <span className="text-blue-500 font-bold">G</span>;
+    }
+    return null;
+  };
+
   return (
     <>
-      <div
-        className={`${styles.modalBackdrop} ${styles.modalBackdropTop} ${
-          feedbackPresence.status === "entered" ? styles.modalBackdropVisible : styles.modalBackdropLeaving
-        }`}
-        onClick={handleFeedbackClose}
-      >
+      <div className="fixed inset-0 z-[60] flex items-center justify-center px-4 safe-area-bottom">
+        <div
+          className={`absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300 ${overlayClass}`}
+          onClick={handleFeedbackClose}
+        />
+
         <form
-          className={`${styles.sheet} ${styles.feedbackSheet} ${styles.sheetAnimated} ${
-            feedbackPresence.status === "entered" ? styles.sheetEntering : styles.sheetLeaving
-          }`}
+          className={`relative z-10 w-full max-w-[340px] bg-white rounded-[28px] shadow-2xl transition-all duration-300 overflow-hidden flex flex-col p-6 ${cardClass}`}
           onClick={(event) => event.stopPropagation()}
           onSubmit={handleFeedbackSubmit}
         >
           <button
             type="button"
-            className={styles.feedbackClose}
             onClick={handleFeedbackClose}
+            className="absolute top-4 right-4 w-8 h-8 bg-gray-50 rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-100 transition-colors z-20"
             aria-label="Закрыть окно оценки"
           >
-            ✕
+            <X size={18} />
           </button>
-          <div className={styles.feedbackHeader}>
-            <div className={styles.feedbackTitle}>
-              {feedbackStage === "share" ? "Отзыв отправлен!" : "Оцените визит."}
-            </div>
-            <div className={styles.feedbackSubtitle}>
-              {feedbackStage === "share"
-                ? shareOptions.length > 0
-                  ? "Поделитесь впечатлением на площадке"
-                  : "Спасибо за обратную связь"
-                : "Ваш отзыв поможет нам улучшить сервис."}
-            </div>
-          </div>
-          {feedbackStage === "form" && (
-            <>
-              <div className={styles.feedbackStars} role="radiogroup" aria-label="Оценка визита">
+
+          {feedbackStage === "form" ? (
+            <div className="flex flex-col items-center text-center animate-in fade-in slide-in-from-right-4 duration-300">
+              <div className="w-14 h-14 bg-yellow-50 rounded-full flex items-center justify-center mb-4 text-yellow-500">
+                <Star fill="currentColor" size={28} />
+              </div>
+
+              <h2 className="text-xl font-bold text-gray-900 mb-2">Оцените визит</h2>
+              <p className="text-sm text-gray-500 mb-6">Как вам обслуживание и качество?</p>
+
+              <div className="flex space-x-2 mb-6" role="radiogroup" aria-label="Оценка визита">
                 {[1, 2, 3, 4, 5].map((value) => (
                   <button
                     key={value}
                     type="button"
-                    className={`${styles.starButton} ${feedbackRating >= value ? styles.starButtonActive : ""}`}
                     onClick={() => setFeedbackRating(value)}
+                    className="transition-transform active:scale-90 focus:outline-none"
                     role="radio"
                     aria-checked={feedbackRating >= value}
                     aria-label={`Оценка ${value}`}
                   >
-                    ★
+                    <Star
+                      size={36}
+                      className={`${
+                        feedbackRating >= value ? "text-yellow-400 fill-yellow-400" : "text-gray-200"
+                      } transition-colors duration-200`}
+                      strokeWidth={feedbackRating >= value ? 0 : 1.5}
+                    />
                   </button>
                 ))}
               </div>
-              <label className={styles.feedbackCommentLabel}>
-                Комментарий
-                <textarea
-                  className={styles.feedbackComment}
-                  value={feedbackComment}
-                  onChange={(event) => setFeedbackComment(event.currentTarget.value)}
-                  placeholder="Расскажите, что понравилось"
-                  rows={3}
-                />
-              </label>
-            </>
-          )}
-          {feedbackStage === "share" && shareOptions.length > 0 && (
-            <div className={styles.feedbackShareBlock}>
-              <div className={styles.feedbackShareTitle}>
-                Мы рады, что вам понравилось! Пожалуйста, поделитесь своим отзывом
+
+              <textarea
+                placeholder="Расскажите подробнее (необязательно)"
+                value={feedbackComment}
+                onChange={(event) => setFeedbackComment(event.currentTarget.value)}
+                className="w-full bg-gray-50 rounded-xl p-3 text-sm text-gray-900 placeholder-gray-400 resize-none outline-none focus:ring-2 focus:ring-blue-100 transition-all mb-4 h-24"
+              />
+
+              <button
+                type="submit"
+                disabled={feedbackRating === 0 || feedbackSubmitting}
+                className={`w-full py-3.5 rounded-xl font-semibold text-[17px] flex items-center justify-center space-x-2 transition-all active:scale-[0.98] ${
+                  feedbackRating > 0
+                    ? "bg-blue-600 text-white shadow-lg shadow-blue-200"
+                    : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                }`}
+                aria-busy={feedbackSubmitting || undefined}
+              >
+                {feedbackSubmitting ? (
+                  <span className="animate-pulse">Отправка...</span>
+                ) : (
+                  <>
+                    <span>Отправить</span>
+                    <Send size={18} />
+                  </>
+                )}
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center text-center animate-in fade-in slide-in-from-right-4 duration-300">
+              <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mb-4 text-red-500">
+                <MessageSquareHeart fill="currentColor" size={32} />
               </div>
-              <div className={styles.feedbackShareButtons}>
+
+              <h2 className="text-xl font-bold text-gray-900 mb-2">Спасибо за оценку!</h2>
+              <p className="text-[15px] text-gray-500 leading-relaxed mb-6">
+                Мы очень рады, что вам понравилось. Пожалуйста, поделитесь впечатлениями в картах — это очень поможет нам.
+              </p>
+
+              <div className="w-full space-y-3">
                 {shareOptions.map((platform) => (
                   <button
                     key={platform.id}
                     type="button"
-                    className={styles.feedbackShareButton}
                     onClick={() => handleShareClick(platform.url)}
+                    className="w-full bg-[#F2F2F7] hover:bg-gray-200 text-gray-900 py-3 rounded-xl font-medium text-[15px] flex items-center justify-center space-x-2 transition-colors active:scale-[0.98]"
                   >
-                    {REVIEW_PLATFORM_LABELS[platform.id] || platform.id}
+                    {renderPlatformBadge(platform.id)}
+                    <span>{REVIEW_PLATFORM_LABELS[platform.id] || platform.id}</span>
                   </button>
                 ))}
               </div>
+
+              <button
+                type="button"
+                onClick={handleFeedbackClose}
+                className="mt-4 text-gray-400 text-sm font-medium p-2 hover:text-gray-600 transition-colors"
+                aria-busy={feedbackSubmitting || undefined}
+              >
+                Закрыть
+              </button>
             </div>
           )}
-          <button
-            type={feedbackStage === "share" ? "button" : "submit"}
-            className={styles.feedbackSubmit}
-            disabled={
-              (feedbackStage === "share" && feedbackSubmitting) ||
-              (feedbackStage === "form" && (!feedbackRating || feedbackSubmitting))
-            }
-            onClick={feedbackStage === "share" ? handleFeedbackClose : undefined}
-            aria-busy={feedbackSubmitting || undefined}
-          >
-            {feedbackStage === "share" ? "Готово" : feedbackSubmitting ? "Отправляем…" : "Отправить"}
-          </button>
         </form>
       </div>
       {toastElement}

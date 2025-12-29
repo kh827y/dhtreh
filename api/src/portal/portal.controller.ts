@@ -98,6 +98,7 @@ import { UpdateRfmSettingsDto } from '../analytics/dto/update-rfm-settings.dto';
 import { SubscriptionService } from '../subscription/subscription.service';
 import { AllowInactiveSubscription } from '../guards/subscription.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { PrismaService } from '../prisma.service';
 
 @ApiTags('portal')
 @Controller('portal')
@@ -106,6 +107,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 export class PortalController {
   constructor(
     private readonly service: MerchantsService,
+    private readonly prisma: PrismaService,
     private readonly promoCodes: PromoCodesService,
     private readonly notifications: NotificationsService,
     private readonly analytics: AnalyticsService,
@@ -1850,6 +1852,75 @@ export class PortalController {
       timezone,
       options: RUSSIA_TIMEZONES.map((tz) => serializeTimezone(tz.code)),
     };
+  }
+
+  @Get('settings/support')
+  async getSupportSetting(@Req() req: any) {
+    const merchantId = this.getMerchantId(req);
+    const settings = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+      select: { rulesJson: true },
+    });
+    const rules =
+      settings?.rulesJson &&
+      typeof settings.rulesJson === 'object' &&
+      !Array.isArray(settings.rulesJson)
+        ? (settings.rulesJson as Record<string, any>)
+        : {};
+    const supportTelegramRaw =
+      rules?.miniapp && typeof rules.miniapp === 'object'
+        ? (rules.miniapp as Record<string, any>)?.supportTelegram
+        : null;
+    const supportTelegram =
+      typeof supportTelegramRaw === 'string' && supportTelegramRaw.trim()
+        ? supportTelegramRaw.trim()
+        : null;
+    return { supportTelegram };
+  }
+
+  @Put('settings/support')
+  async updateSupportSetting(@Req() req: any, @Body() body: any) {
+    const merchantId = this.getMerchantId(req);
+    const rawValue =
+      typeof body?.supportTelegram === 'string' ? body.supportTelegram : '';
+    const supportTelegram = rawValue.trim() ? rawValue.trim() : null;
+    const settings = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+      select: { rulesJson: true },
+    });
+    let rules: Record<string, any>;
+    if (Array.isArray(settings?.rulesJson)) {
+      rules = { rules: settings?.rulesJson };
+    } else if (
+      settings?.rulesJson &&
+      typeof settings.rulesJson === 'object'
+    ) {
+      rules = { ...(settings.rulesJson as Record<string, any>) };
+    } else {
+      rules = {};
+    }
+    const miniapp =
+      rules.miniapp && typeof rules.miniapp === 'object'
+        ? { ...(rules.miniapp as Record<string, any>) }
+        : {};
+    miniapp.supportTelegram = supportTelegram;
+    const nextRules = { ...rules, miniapp };
+    this.service.validateRules(nextRules);
+    await this.prisma.merchant.upsert({
+      where: { id: merchantId },
+      update: {},
+      create: {
+        id: merchantId,
+        name: merchantId,
+        initialName: merchantId,
+      },
+    });
+    await this.prisma.merchantSettings.upsert({
+      where: { merchantId },
+      update: { rulesJson: nextRules },
+      create: { merchantId, rulesJson: nextRules },
+    });
+    return { supportTelegram };
   }
 
   // Catalog — Categories

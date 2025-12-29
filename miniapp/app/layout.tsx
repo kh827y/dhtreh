@@ -1,7 +1,22 @@
 import Script from "next/script";
+import { Inter } from "next/font/google";
 import { Providers } from "./providers";
+import "./globals.css";
+
+const inter = Inter({
+  subsets: ["latin", "cyrillic"],
+  weight: ["400", "500", "600", "700", "800"],
+});
 
 export const metadata = { title: "Loyalty Miniapp", description: "Клиентская мини‑аппа" };
+
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -9,18 +24,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <Script src="https://telegram.org/js/telegram-web-app.js" strategy="beforeInteractive" />
       </head>
-      <body
-        style={{
-          fontFamily:
-            'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial',
-          background: '#f5f5ff',
-          color: '#1f1f33',
-          margin: 0,
-        }}
-      >
-        <div style={{ maxWidth: 520, margin: '0 auto', minHeight: '100vh' }}>
-          <Providers>{children}</Providers>
-        </div>
+      <body className={`${inter.className} bg-ios-bg text-gray-900`}>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

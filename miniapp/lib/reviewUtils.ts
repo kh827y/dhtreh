@@ -4,6 +4,8 @@ export type TransactionItem = {
   amount: number;
   createdAt: string;
   orderId: string | null;
+  receiptTotal?: number | null;
+  redeemApplied?: number | null;
   outletId: string | null;
   staffId: string | null;
   reviewId: string | null;

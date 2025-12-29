@@ -412,6 +412,7 @@ export class PushService {
     const where: Prisma.CustomerWhereInput = {
       merchantId,
       tgId: { not: null },
+      consents: { some: { merchantId } },
     };
     if (specificCustomers?.length) {
       where.id = { in: specificCustomers };

@@ -101,6 +101,7 @@ export function useMiniappAuth(defaultMerchant: string) {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
   const [theme, setTheme] = useState<{ primary?: string|null; bg?: string|null; logo?: string|null; ttl?: number }>({});
+  const [supportTelegram, setSupportTelegram] = useState<string | null>(null);
   const [shareSettings, setShareSettings] = useState<ReviewsShareSettings>(null);
   const [reviewsEnabled, setReviewsEnabled] = useState<boolean | null>(null);
   const [status, setStatus] = useState<AuthStatus>('idle');
@@ -166,6 +167,11 @@ export function useMiniappAuth(defaultMerchant: string) {
             logo: s.miniappLogoUrl,
             ttl: s.qrTtlSec,
           });
+          setSupportTelegram(
+            typeof s.supportTelegram === 'string' && s.supportTelegram.trim()
+              ? s.supportTelegram.trim()
+              : null,
+          );
           if (typeof s.reviewsEnabled === 'boolean') {
             setReviewsEnabled(s.reviewsEnabled);
           } else {
@@ -273,6 +279,7 @@ export function useMiniappAuth(defaultMerchant: string) {
     loading,
     error,
     theme,
+    supportTelegram,
     shareSettings,
     reviewsEnabled,
     initData,

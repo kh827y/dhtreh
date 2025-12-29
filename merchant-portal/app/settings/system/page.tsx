@@ -52,6 +52,8 @@ export default function SettingsSystemPage() {
   const setTimezone = useTimezoneUpdater();
   const [companyName, setCompanyName] = React.useState("");
   const [savedCompanyName, setSavedCompanyName] = React.useState("");
+  const [supportTelegram, setSupportTelegram] = React.useState("");
+  const [savedSupportTelegram, setSavedSupportTelegram] = React.useState("");
   const [timezoneCode, setTimezoneCode] = React.useState(timezone.code);
   const [saving, setSaving] = React.useState(false);
   const [success, setSuccess] = React.useState<string>("");
@@ -75,6 +77,17 @@ export default function SettingsSystemPage() {
         const name = String(data?.name || "");
         setCompanyName(name);
         setSavedCompanyName(name);
+        const supportRes = await fetch("/api/portal/settings/support", {
+          cache: "no-store",
+        });
+        if (!supportRes.ok) {
+          throw new Error(await readErrorMessage(supportRes, "Не удалось загрузить поддержку"));
+        }
+        const supportData = (await supportRes.json().catch(() => ({}))) as any;
+        if (cancelled) return;
+        const supportValue = String(supportData?.supportTelegram || "");
+        setSupportTelegram(supportValue);
+        setSavedSupportTelegram(supportValue);
       } catch (e: any) {
         if (cancelled) return;
         alert(readApiError(String(e?.message || e || "")) || "Не удалось загрузить название компании");
@@ -93,6 +106,8 @@ export default function SettingsSystemPage() {
 
     const trimmedName = companyName.trim();
     const shouldUpdateName = trimmedName !== savedCompanyName;
+    const trimmedSupport = supportTelegram.trim();
+    const shouldUpdateSupport = trimmedSupport !== savedSupportTelegram;
     const shouldUpdateTimezone = timezoneCode !== timezone.code;
 
     const tasks: Array<Promise<void>> = [];
@@ -141,6 +156,25 @@ export default function SettingsSystemPage() {
       );
     }
 
+    if (shouldUpdateSupport) {
+      tasks.push(
+        (async () => {
+          const res = await fetch("/api/portal/settings/support", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ supportTelegram: trimmedSupport || null }),
+          });
+          if (!res.ok) {
+            throw new Error(await readErrorMessage(res, "Не удалось сохранить поддержку"));
+          }
+          const data = (await res.json().catch(() => ({}))) as any;
+          const nextSupport = String(data?.supportTelegram || "");
+          setSupportTelegram(nextSupport);
+          setSavedSupportTelegram(nextSupport);
+        })(),
+      );
+    }
+
     try {
       const results = await Promise.allSettled(tasks);
       const errors = results.filter((r) => r.status === "rejected") as Array<PromiseRejectedResult>;
@@ -156,7 +190,16 @@ export default function SettingsSystemPage() {
     } finally {
       setSaving(false);
     }
-  }, [saving, companyName, savedCompanyName, timezoneCode, timezone.code, setTimezone]);
+  }, [
+    saving,
+    companyName,
+    savedCompanyName,
+    supportTelegram,
+    savedSupportTelegram,
+    timezoneCode,
+    timezone.code,
+    setTimezone,
+  ]);
 
   return (
     <div className="p-8 max-w-[1000px] mx-auto space-y-8 animate-fade-in">
@@ -209,6 +252,24 @@ export default function SettingsSystemPage() {
             </div>
             <p className="text-xs text-gray-500 mt-2">
               Это название будет отображаться клиентам в приложении и уведомлениях.
+            </p>
+          </div>
+
+          {/* Support Telegram */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Telegram поддержки</label>
+            <div className="relative">
+              <Building2 size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                value={supportTelegram}
+                onChange={(e) => setSupportTelegram(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg pl-10 pr-4 py-2 focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                placeholder="@support"
+              />
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              Ссылка на чат поддержки для мини‑аппы (username или @username).
             </p>
           </div>
 
