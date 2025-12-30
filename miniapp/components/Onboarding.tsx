@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Phone, Check, User as UserIcon, Calendar, Gift, AlertCircle } from "lucide-react";
 
 export type OnboardingForm = {
@@ -29,9 +29,53 @@ const Onboarding: React.FC<OnboardingProps> = ({
   loading,
   error,
 }) => {
+  const [birthInput, setBirthInput] = useState(() => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(form.birthDate);
+    return match ? `${match[3]}.${match[2]}.${match[1]}` : form.birthDate;
+  });
+
+  useEffect(() => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(form.birthDate);
+    if (match) {
+      setBirthInput(`${match[3]}.${match[2]}.${match[1]}`);
+      return;
+    }
+    if (!form.birthDate && birthInput) return;
+    setBirthInput(form.birthDate);
+  }, [form.birthDate, birthInput]);
+
+  const inputTextClass = "text-lg";
+
+  const handleBirthInput = (value: string) => {
+    const isoMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (isoMatch) {
+      const formatted = `${isoMatch[3]}.${isoMatch[2]}.${isoMatch[1]}`;
+      setBirthInput(formatted);
+      onFieldChange("birthDate", `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`);
+      return;
+    }
+    const digits = value.replace(/\D+/g, "").slice(0, 8);
+    let formatted = digits;
+    if (digits.length > 2) {
+      formatted = `${digits.slice(0, 2)}.${digits.slice(2)}`;
+    }
+    if (digits.length > 4) {
+      formatted = `${digits.slice(0, 2)}.${digits.slice(2, 4)}.${digits.slice(4)}`;
+    }
+    setBirthInput(formatted);
+    if (digits.length === 8) {
+      const day = digits.slice(0, 2);
+      const month = digits.slice(2, 4);
+      const year = digits.slice(4, 8);
+      onFieldChange("birthDate", `${year}-${month}-${day}`);
+    } else {
+      onFieldChange("birthDate", "");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-ios-bg flex flex-col relative pb-safe">
-      <div className="flex-1 overflow-y-auto px-6 pt-12 pb-32">
+      <div className="flex-1 overflow-y-auto px-6 pt-12 pb-40">
         <div className="mb-8 text-center animate-in slide-in-from-bottom-4 fade-in duration-500">
           <div className="w-20 h-20 bg-blue-600 rounded-3xl mx-auto flex items-center justify-center shadow-xl shadow-blue-200 mb-6 rotate-3">
             <Gift className="text-white w-10 h-10" />
@@ -39,6 +83,13 @@ const Onboarding: React.FC<OnboardingProps> = ({
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Добро пожаловать</h1>
           <p className="text-gray-500 leading-relaxed">Заполните анкету, чтобы продолжить.</p>
         </div>
+
+        {error && (
+          <div className="mb-4 p-4 bg-red-50 rounded-2xl flex items-center space-x-3 text-red-600 animate-in fade-in slide-in-from-top-2">
+            <AlertCircle size={20} />
+            <span className="text-sm font-medium">{error}</span>
+          </div>
+        )}
 
         <div className="bg-white rounded-3xl p-1 shadow-card space-y-1 animate-in slide-in-from-bottom-8 fade-in duration-500 delay-100">
           <div className="relative px-4 py-3 border-b border-gray-100">
@@ -50,7 +101,7 @@ const Onboarding: React.FC<OnboardingProps> = ({
                 value={form.name}
                 onChange={(e) => onFieldChange("name", e.target.value)}
                 placeholder="Как к вам обращаться?"
-                className="w-full text-lg font-medium text-gray-900 placeholder-gray-300 outline-none"
+                className={`w-full font-medium text-gray-900 placeholder-gray-300 outline-none ${inputTextClass}`}
               />
             </div>
           </div>
@@ -84,10 +135,12 @@ const Onboarding: React.FC<OnboardingProps> = ({
             <div className="flex items-center space-x-3">
               <Calendar size={20} className="text-gray-300" />
               <input
-                type="date"
-                value={form.birthDate}
-                onChange={(e) => onFieldChange("birthDate", e.target.value)}
-                className="w-full text-lg font-medium text-gray-900 bg-transparent outline-none"
+                type="tel"
+                inputMode="numeric"
+                value={birthInput}
+                onChange={(e) => handleBirthInput(e.target.value)}
+                placeholder="ДД.ММ.ГГГГ"
+                className={`w-full font-medium text-gray-900 bg-transparent outline-none ${inputTextClass}`}
               />
             </div>
           </div>
@@ -103,27 +156,23 @@ const Onboarding: React.FC<OnboardingProps> = ({
                 value={form.inviteCode}
                 onChange={(e) => onFieldChange("inviteCode", e.target.value)}
                 placeholder="REF-12345"
-                className="w-full text-lg font-medium text-gray-900 placeholder-gray-300 outline-none uppercase"
+                className={`w-full font-medium text-gray-900 placeholder-gray-300 outline-none uppercase ${inputTextClass}`}
               />
             </div>
           </div>
         </div>
-
-        {error && (
-          <div className="mt-4 p-4 bg-red-50 rounded-2xl flex items-center space-x-3 text-red-600 animate-in fade-in slide-in-from-top-2">
-            <AlertCircle size={20} />
-            <span className="text-sm font-medium">{error}</span>
-          </div>
-        )}
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-ios-bg/80 backdrop-blur-xl border-t border-gray-200 z-20 pb-safe">
+      <div
+        className="fixed bottom-0 left-0 right-0 p-4 bg-ios-bg/80 backdrop-blur-xl border-t border-gray-200 z-20"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)" }}
+      >
         <div
-          className="flex items-start justify-center space-x-2.5 mb-4 px-2 cursor-pointer active:opacity-70 transition-opacity"
+          className="flex items-center justify-center space-x-2.5 mb-4 px-2 cursor-pointer active:opacity-70 transition-opacity"
           onClick={onToggleConsent}
         >
           <div
-            className={`mt-0.5 w-5 h-5 flex-shrink-0 rounded-[6px] border-[1.5px] flex items-center justify-center transition-all duration-200 ${
+            className={`w-5 h-5 flex-shrink-0 rounded-[6px] border-[1.5px] flex items-center justify-center transition-all duration-200 ${
               consent ? "bg-blue-600 border-blue-600" : "bg-transparent border-gray-400/60"
             }`}
           >
@@ -133,7 +182,7 @@ const Onboarding: React.FC<OnboardingProps> = ({
               strokeWidth={3}
             />
           </div>
-          <p className="text-[12px] text-gray-500 leading-snug">
+          <p className="text-[11px] text-gray-500 leading-none whitespace-nowrap">
             Даю согласие на{" "}
             <a
               href="#"

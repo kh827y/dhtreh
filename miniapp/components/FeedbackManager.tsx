@@ -138,6 +138,83 @@ function mapTransactions(
   return grouped.filter((item) => !item.canceledAt);
 }
 
+const REVIEW_KEY_ORDER_PREFIX = "order:";
+const REVIEW_KEY_TX_PREFIX = "tx:";
+
+type ReviewGroup = { orderId: string | null; txIds: string[]; keys: string[] };
+
+function normalizeReviewKey(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith(REVIEW_KEY_ORDER_PREFIX)) {
+    const rest = trimmed.slice(REVIEW_KEY_ORDER_PREFIX.length).trim();
+    return rest ? `${REVIEW_KEY_ORDER_PREFIX}${rest}` : null;
+  }
+  if (trimmed.startsWith(REVIEW_KEY_TX_PREFIX)) {
+    const rest = trimmed.slice(REVIEW_KEY_TX_PREFIX.length).trim();
+    return rest ? `${REVIEW_KEY_TX_PREFIX}${rest}` : null;
+  }
+  return `${REVIEW_KEY_TX_PREFIX}${trimmed}`;
+}
+
+function resolveOrderId(item: TransactionItem | null): string | null {
+  if (!item) return null;
+  const orderId = typeof item.orderId === "string" ? item.orderId.trim() : "";
+  return orderId.length > 0 ? orderId : null;
+}
+
+function buildReviewKeysForItem(item: TransactionItem): string[] {
+  const keys: string[] = [];
+  const orderId = resolveOrderId(item);
+  if (orderId) {
+    keys.push(`${REVIEW_KEY_ORDER_PREFIX}${orderId}`);
+  }
+  const txKey = normalizeReviewKey(item.id);
+  if (txKey) keys.push(txKey);
+  return keys;
+}
+
+function buildReviewGroup(transactionId: string | null, items: TransactionItem[]): ReviewGroup {
+  if (!transactionId) return { orderId: null, txIds: [], keys: [] };
+  const active = items.find((item) => item.id === transactionId) ?? null;
+  if (!active) {
+    const txKey = normalizeReviewKey(transactionId);
+    return {
+      orderId: null,
+      txIds: txKey ? [transactionId] : [],
+      keys: txKey ? [txKey] : [],
+    };
+  }
+  const orderId = resolveOrderId(active);
+  if (!orderId) {
+    const txKey = normalizeReviewKey(active.id);
+    return {
+      orderId: null,
+      txIds: [active.id],
+      keys: txKey ? [txKey] : [],
+    };
+  }
+  const related = items.filter((item) => resolveOrderId(item) === orderId);
+  const txIds = related.map((item) => item.id);
+  const keys = new Set<string>();
+  keys.add(`${REVIEW_KEY_ORDER_PREFIX}${orderId}`);
+  for (const id of txIds) {
+    const txKey = normalizeReviewKey(id);
+    if (txKey) keys.add(txKey);
+  }
+  return { orderId, txIds, keys: Array.from(keys) };
+}
+
+function isReviewKeyDismissed(item: TransactionItem, dismissedKeys: Set<string>): boolean {
+  const orderId = resolveOrderId(item);
+  if (orderId && dismissedKeys.has(`${REVIEW_KEY_ORDER_PREFIX}${orderId}`)) {
+    return true;
+  }
+  const txKey = normalizeReviewKey(item.id);
+  return Boolean(txKey && dismissedKeys.has(txKey));
+}
+
 function computeShareOptions(share: ReviewsShareSettings, activeOutletId: string | null) {
   if (!share || !share.enabled) return [] as Array<{ id: string; url: string }>;
   if (!activeOutletId) return [] as Array<{ id: string; url: string }>;
@@ -169,12 +246,26 @@ export function FeedbackManager() {
   const [sharePrompt, setSharePrompt] = useState<SubmitResponseShare>(null);
   const [shareOptions, setShareOptions] = useState<Array<{ id: string; url: string }>>([]);
   const [toast, setToast] = useState<ToastState>(null);
-  const [dismissedTransactions, setDismissedTransactions] = useState<string[]>([]);
+  const [dismissedReviewKeys, setDismissedReviewKeys] = useState<string[]>([]);
   const [dismissedReady, setDismissedReady] = useState(false);
   const feedbackPresence = useDelayedRender(feedbackOpen, 320);
   const [preferredTxId, setPreferredTxId] = useState<string | null>(null);
 
-  const dismissedTxSet = useMemo(() => new Set(dismissedTransactions), [dismissedTransactions]);
+  const dismissedReviewKeySet = useMemo(() => new Set(dismissedReviewKeys), [dismissedReviewKeys]);
+  const appendDismissedReviewKeys = useCallback((keys: Array<string | null | undefined>) => {
+    if (!keys.length) return;
+    setDismissedReviewKeys((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      for (const key of keys) {
+        const normalized = normalizeReviewKey(key);
+        if (!normalized || next.has(normalized)) continue;
+        next.add(normalized);
+        changed = true;
+      }
+      return changed ? Array.from(next) : prev;
+    });
+  }, []);
 
   const loadTransactions = useCallback(async (opts?: { fresh?: boolean }) => {
     if (!merchantId || !customerId) return;
@@ -212,11 +303,11 @@ export function FeedbackManager() {
   useEffect(() => {
     if (!dismissedReady) return;
     try {
-      localStorage.setItem("miniapp.dismissedTransactions", JSON.stringify(dismissedTransactions));
+      localStorage.setItem("miniapp.dismissedTransactions", JSON.stringify(dismissedReviewKeys));
     } catch {
       // ignore
     }
-  }, [dismissedTransactions, dismissedReady]);
+  }, [dismissedReviewKeys, dismissedReady]);
 
   useEffect(() => {
     try {
@@ -225,11 +316,14 @@ export function FeedbackManager() {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          setDismissedTransactions(parsed.filter((id) => typeof id === "string"));
+          const normalized = parsed
+            .map((id) => normalizeReviewKey(id))
+            .filter((id): id is string => Boolean(id));
+          setDismissedReviewKeys(Array.from(new Set(normalized)));
         }
       }
     } catch {
-      setDismissedTransactions([]);
+      setDismissedReviewKeys([]);
     } finally {
       setDismissedReady(true);
     }
@@ -238,39 +332,25 @@ export function FeedbackManager() {
   useEffect(() => {
     if (!dismissedReady) return;
     if (!transactionsList.length) return;
-    const ratedIds = transactionsList.filter((item) => item.reviewId).map((item) => item.id);
-    if (!ratedIds.length) return;
-    setDismissedTransactions((prev) => {
-      let changed = false;
-      const next = new Set(prev);
-      for (const id of ratedIds) {
-        if (!next.has(id)) {
-          next.add(id);
-          changed = true;
-        }
-      }
-      return changed ? Array.from(next) : prev;
-    });
-  }, [transactionsList, dismissedReady]);
+    const keys: string[] = [];
+    for (const item of transactionsList) {
+      if (!item.reviewId) continue;
+      keys.push(...buildReviewKeysForItem(item));
+    }
+    if (!keys.length) return;
+    appendDismissedReviewKeys(keys);
+  }, [transactionsList, dismissedReady, appendDismissedReviewKeys]);
 
   useEffect(() => {
     if (!dismissedReady) return;
-    const remotelyDismissed = transactionsList
-      .filter((item) => item.reviewDismissedAt)
-      .map((item) => item.id);
-    if (!remotelyDismissed.length) return;
-    setDismissedTransactions((prev) => {
-      const next = new Set(prev);
-      let changed = false;
-      for (const id of remotelyDismissed) {
-        if (!next.has(id)) {
-          next.add(id);
-          changed = true;
-        }
-      }
-      return changed ? Array.from(next) : prev;
-    });
-  }, [transactionsList, dismissedReady]);
+    const keys: string[] = [];
+    for (const item of transactionsList) {
+      if (!item.reviewDismissedAt) continue;
+      keys.push(...buildReviewKeysForItem(item));
+    }
+    if (!keys.length) return;
+    appendDismissedReviewKeys(keys);
+  }, [transactionsList, dismissedReady, appendDismissedReviewKeys]);
 
   const isEligiblePurchaseTx = useCallback(
     (item: TransactionItem): boolean => {
@@ -282,10 +362,10 @@ export function FeedbackManager() {
       if (!item.outletId && !item.staffId) return false;
       if (item.reviewId) return false;
       if (item.reviewDismissedAt) return false;
-      if (dismissedTxSet.has(item.id)) return false;
+      if (isReviewKeyDismissed(item, dismissedReviewKeySet)) return false;
       return true;
     },
-    [dismissedTxSet, reviewsEnabled],
+    [dismissedReviewKeySet, reviewsEnabled],
   );
 
   useEffect(() => {
@@ -384,16 +464,33 @@ export function FeedbackManager() {
   const handleFeedbackClose = useCallback(() => {
     if (feedbackTxId) {
       const dismissedAt = new Date().toISOString();
-      setDismissedTransactions((prev) => (prev.includes(feedbackTxId) ? prev : [...prev, feedbackTxId]));
-      setTransactionsList((prev) =>
-        prev.map((item) =>
-          item.id === feedbackTxId && !item.reviewDismissedAt ? { ...item, reviewDismissedAt: dismissedAt } : item,
-        ),
-      );
-      void persistDismissedTransaction(feedbackTxId);
+      const group = buildReviewGroup(feedbackTxId, transactionsList);
+      const keys = group.keys.length ? group.keys : [feedbackTxId];
+      appendDismissedReviewKeys(keys);
+      if (group.orderId) {
+        setTransactionsList((prev) =>
+          prev.map((item) => {
+            const itemOrderId = resolveOrderId(item);
+            if (itemOrderId === group.orderId && !item.reviewDismissedAt) {
+              return { ...item, reviewDismissedAt: dismissedAt };
+            }
+            return item;
+          }),
+        );
+      } else {
+        setTransactionsList((prev) =>
+          prev.map((item) =>
+            item.id === feedbackTxId && !item.reviewDismissedAt ? { ...item, reviewDismissedAt: dismissedAt } : item,
+          ),
+        );
+      }
+      const txIds = group.txIds.length ? group.txIds : [feedbackTxId];
+      for (const txId of txIds) {
+        void persistDismissedTransaction(txId);
+      }
     }
     resetFeedbackState();
-  }, [feedbackTxId, resetFeedbackState, persistDismissedTransaction]);
+  }, [feedbackTxId, resetFeedbackState, persistDismissedTransaction, transactionsList, appendDismissedReviewKeys]);
 
   const handleFeedbackSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -426,7 +523,9 @@ export function FeedbackManager() {
           staffId: activeTx?.staffId ?? null,
         });
         if (feedbackTxId) {
-          setDismissedTransactions((prev) => (prev.includes(feedbackTxId) ? prev : [...prev, feedbackTxId]));
+          const group = buildReviewGroup(feedbackTxId, transactionsList);
+          const keys = group.keys.length ? group.keys : [feedbackTxId];
+          appendDismissedReviewKeys(keys);
           setTransactionsList((prev) =>
             prev.map((item) =>
               item.id === feedbackTxId
@@ -499,6 +598,7 @@ export function FeedbackManager() {
       loadTransactions,
       auth.shareSettings,
       activeOutletId,
+      appendDismissedReviewKeys,
       resetFeedbackState,
       handleFeedbackClose,
     ],

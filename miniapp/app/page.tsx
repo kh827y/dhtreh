@@ -1,9 +1,8 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import Onboarding, { type OnboardingForm } from "../components/Onboarding";
-import { FeedbackManager } from "../components/FeedbackManager";
 import QRCodeOverlay from "../components/QRCodeOverlay";
 import TransactionHistory, {
   type Transaction as HistoryTransaction,
@@ -87,6 +86,7 @@ const PRODUCT_ACCENTS = [
   "bg-emerald-100",
   "bg-amber-100",
 ];
+const TX_PAGE_LIMIT = 20;
 
 type MechanicsLevel = {
   id?: string;
@@ -475,6 +475,25 @@ function getPromoTargets(promo: PromotionItem): { hasTargets: boolean } {
   return { hasTargets: productIds.length > 0 || categoryIds.length > 0 };
 }
 
+function mergeTransactionItems(prev: TransactionItem[], next: TransactionItem[]): TransactionItem[] {
+  if (next.length === 0) return prev;
+  const seen = new Set(prev.map((item) => item.id));
+  const merged = [...prev];
+  for (const item of next) {
+    if (!seen.has(item.id)) {
+      merged.push(item);
+      seen.add(item.id);
+    }
+  }
+  return merged;
+}
+
+function resolveTxNextBefore(items: TransactionItem[], nextBefore?: string | null): string | null {
+  if (items.length < TX_PAGE_LIMIT) return null;
+  if (typeof nextBefore === "string" && nextBefore.trim()) return nextBefore;
+  return null;
+}
+
 function buildHistoryTransactions(items: TransactionItem[]): HistoryTransaction[] {
   const purchaseGroups = new Map<
     string,
@@ -711,7 +730,9 @@ function MiniappPage() {
   const [customerId, setCustomerId] = useState<string | null>(() => storedCustomerId);
   const [bal, setBal] = useState<number | null>(() => cachedState?.balance ?? null);
   const [tx, setTx] = useState<TransactionItem[]>([]);
-  const [consent, setConsent] = useState(false);
+  const [txNextBefore, setTxNextBefore] = useState<string | null>(null);
+  const [txLoadingMore, setTxLoadingMore] = useState(false);
+  const [consent, setConsent] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
   const [toast, setToast] = useState<{ msg: string; type?: "info" | "error" | "success" } | null>(null);
@@ -756,6 +777,9 @@ function MiniappPage() {
   const [showCodeCopied, setShowCodeCopied] = useState(false);
 
   const pendingProfileSync = useRef(false);
+  const txLoadSeq = useRef(0);
+  const txLoadingMoreRef = useRef(false);
+  const txLoadMoreRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setLocalOnboarded(readStoredOnboardFlag(merchantId));
@@ -1006,7 +1030,12 @@ function MiniappPage() {
     if (!customerId || !merchantId) return;
     try {
       const r = await consentGet(merchantId, customerId);
-      setConsent(!!r.granted);
+      if (!r.consentAt && !r.granted) {
+        setConsent(true);
+        void consentSet(merchantId, customerId, true).catch(() => {});
+      } else {
+        setConsent(!!r.granted);
+      }
     } catch {
       // ignore
     }
@@ -1024,13 +1053,37 @@ function MiniappPage() {
 
   const loadTx = useCallback(async (opts?: { fresh?: boolean }) => {
     if (!merchantId || !customerId) return;
+    const requestId = ++txLoadSeq.current;
     try {
-      const resp = await transactions(merchantId, customerId, 50, undefined, { fresh: opts?.fresh });
-      setTx(resp.items as TransactionItem[]);
+      const resp = await transactions(merchantId, customerId, TX_PAGE_LIMIT, undefined, { fresh: opts?.fresh });
+      if (txLoadSeq.current !== requestId) return;
+      const items = resp.items as TransactionItem[];
+      setTx(items);
+      setTxNextBefore(resolveTxNextBefore(items, resp.nextBefore));
     } catch (error) {
       setToast({ msg: `Не удалось загрузить историю: ${resolveErrorMessage(error)}`, type: "error" });
     }
   }, [merchantId, customerId]);
+
+  const loadMoreTx = useCallback(async () => {
+    if (!merchantId || !customerId) return;
+    if (!txNextBefore || txLoadingMoreRef.current) return;
+    txLoadingMoreRef.current = true;
+    setTxLoadingMore(true);
+    const requestId = txLoadSeq.current;
+    try {
+      const resp = await transactions(merchantId, customerId, TX_PAGE_LIMIT, txNextBefore, { fresh: true });
+      if (txLoadSeq.current !== requestId) return;
+      const items = resp.items as TransactionItem[];
+      setTx((prev) => mergeTransactionItems(prev, items));
+      setTxNextBefore(resolveTxNextBefore(items, resp.nextBefore));
+    } catch (error) {
+      setToast({ msg: `Не удалось загрузить историю: ${resolveErrorMessage(error)}`, type: "error" });
+    } finally {
+      txLoadingMoreRef.current = false;
+      setTxLoadingMore(false);
+    }
+  }, [merchantId, customerId, txNextBefore]);
 
   const loadLevels = useCallback(async () => {
     if (!merchantId || !customerId) return;
@@ -1067,12 +1120,26 @@ function MiniappPage() {
   const loadBootstrap = useCallback(async () => {
     if (!merchantId || !customerId) return false;
     try {
-      const resp = await bootstrap(merchantId, customerId, { transactionsLimit: 50 });
+      const resp = await bootstrap(merchantId, customerId, { transactionsLimit: TX_PAGE_LIMIT });
       if (resp.profile) applyServerProfile(resp.profile);
-      if (resp.consent) setConsent(Boolean(resp.consent.granted));
+      if (resp.consent) {
+        if (!resp.consent.consentAt && !resp.consent.granted) {
+          setConsent(true);
+          void consentSet(merchantId, customerId, true).catch(() => {});
+        } else {
+          setConsent(Boolean(resp.consent.granted));
+        }
+      } else {
+        setConsent(true);
+        void consentSet(merchantId, customerId, true).catch(() => {});
+      }
       if (resp.balance) setBal(resp.balance.balance);
       if (resp.levels) setLevelInfo(resp.levels);
-      if (resp.transactions) setTx(resp.transactions.items as TransactionItem[]);
+      if (resp.transactions) {
+        const items = resp.transactions.items as TransactionItem[];
+        setTx(items);
+        setTxNextBefore(resolveTxNextBefore(items, resp.transactions.nextBefore));
+      }
       if (resp.promotions) {
         setPromotions(resp.promotions);
         setPromotionsResolved(true);
@@ -1103,6 +1170,35 @@ function MiniappPage() {
       loadLevelCatalog();
     }
   }, [auth.loading, loadLevelCatalog]);
+
+  useEffect(() => {
+    if (!["HISTORY", "PROMOS", "INVITE"].includes(view)) return;
+    if (typeof window === "undefined") return;
+    const resetScroll = () => {
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    };
+    const raf = requestAnimationFrame(resetScroll);
+    return () => cancelAnimationFrame(raf);
+  }, [view]);
+
+  useEffect(() => {
+    if (view !== "HISTORY") return;
+    if (!txNextBefore) return;
+    const target = txLoadMoreRef.current;
+    if (!target || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          loadMoreTx();
+        }
+      },
+      { root: null, rootMargin: "200px 0px", threshold: 0 },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [view, txNextBefore, loadMoreTx]);
 
   useEffect(() => {
     if (!customerId) return;
@@ -1192,10 +1288,17 @@ function MiniappPage() {
     referralLink(customerId, merchantId)
       .then((data) => {
         if (cancelled) return;
+        const program = data.program as (typeof data.program & { message?: string | null }) | undefined;
+        const description =
+          program?.description ||
+          program?.messageTemplate ||
+          program?.message ||
+          program?.shareMessageTemplate ||
+          "";
         const info: ReferralInfo = {
           code: data.code,
           link: data.link,
-          description: data.program?.description || "",
+          description,
           merchantName: data.program?.merchantName || "",
           friendReward: typeof data.program?.refereeReward === "number" ? data.program.refereeReward : 0,
           inviterReward: typeof data.program?.referrerReward === "number" ? data.program.referrerReward : 0,
@@ -2101,11 +2204,21 @@ function MiniappPage() {
           titleClassName="text-3xl font-bold text-gray-900"
           headerClassName="mb-6"
         />
+        {txNextBefore && <div ref={txLoadMoreRef} className="h-4" />}
+        {txLoadingMore && (
+          <div className="mt-2 flex items-center justify-center text-gray-400 text-sm">
+            <Loader2 size={16} className="animate-spin mr-2" />
+            Загружаем операции…
+          </div>
+        )}
       </div>
     </div>
   );
 
   const renderPromos = () => {
+    const showBonusesEmpty = promotionsResolved && bonusPromos.length === 0;
+    const showPromosEmpty = promotionsResolved && productPromos.length === 0;
+
     const renderBonusCard = (promo: PromotionItem, index: number, vertical = false) => {
       const isClaimed = promo.claimed;
       const isAvailable = promo.canClaim && !promo.claimed;
@@ -2178,12 +2291,12 @@ function MiniappPage() {
           <div className="p-3 flex-1 flex flex-col">
             <h3 className="text-[14px] font-bold text-gray-900 leading-snug mb-1 line-clamp-2">{promo.name}</h3>
             <div className="mt-auto pt-2">
-              <button
-                onClick={() => handlePromoDetail(promo)}
-                className="w-full py-2 rounded-[10px] bg-gray-50 text-blue-600 text-xs font-bold hover:bg-blue-50 transition-colors"
-              >
-                Подробнее
-              </button>
+                <button
+                  onClick={() => handlePromoDetail(promo)}
+                  className="w-full py-2 rounded-[10px] bg-gray-50 text-blue-600 text-xs font-bold text-center hover:bg-blue-50 transition-colors"
+                >
+                  Подробнее
+                </button>
             </div>
           </div>
         </div>
@@ -2205,41 +2318,55 @@ function MiniappPage() {
         </div>
 
         <div className="space-y-8 pb-10 pt-4">
-          {bonusPromos.length > 0 && (
-            <div className="space-y-4">
-              <div className="px-5 flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <h2 className="text-[22px] font-bold text-gray-900">Ваши бонусы</h2>
-                  {showBonusSkeleton ? (
-                    <div className="h-[18px] w-[30px] rounded-full bg-gray-200 animate-pulse" />
-                  ) : bonusBadgeCount != null && bonusBadgeCount > 0 ? (
-                    <div className="bg-red-500 text-white text-[12px] font-bold px-2 py-0.5 rounded-full shadow-sm animate-in zoom-in">
-                      {bonusBadgeCount}
-                    </div>
-                  ) : null}
-                </div>
+          <div className="space-y-4">
+            <div className="px-5 flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <h2 className="text-[22px] font-bold text-gray-900">Ваши бонусы</h2>
+                {showBonusSkeleton ? (
+                  <div className="h-[18px] w-[30px] rounded-full bg-gray-200 animate-pulse" />
+                ) : bonusBadgeCount != null && bonusBadgeCount > 0 ? (
+                  <div className="bg-red-500 text-white text-[12px] font-bold px-2 py-0.5 rounded-full shadow-sm animate-in zoom-in">
+                    {bonusBadgeCount}
+                  </div>
+                ) : null}
+              </div>
+              {bonusPromos.length > 0 ? (
                 <button
                   onClick={() => setIsAllBonusesOpen(true)}
                   className="text-[15px] font-medium text-blue-600 active:opacity-50"
                 >
                   Все
                 </button>
-              </div>
+              ) : null}
+            </div>
 
+            {bonusPromos.length > 0 ? (
               <div className="flex overflow-x-auto gap-4 px-5 pb-4 snap-x hide-scrollbar">
                 {bonusPromos.map((promo, idx) => renderBonusCard(promo, idx))}
               </div>
-            </div>
-          )}
+            ) : showBonusesEmpty ? (
+              <div className="px-5">
+                <div className="bg-white rounded-[20px] shadow-card px-5 py-6 text-center text-gray-500 text-[15px]">
+                  Пока ничего нет
+                </div>
+              </div>
+            ) : null}
+          </div>
 
-          {productPromos.length > 0 && (
-            <div className="px-4">
-              <h2 className="text-[22px] font-bold text-gray-900 mb-4 px-1">Спецпредложения</h2>
+          <div className="px-4">
+            <h2 className="text-[22px] font-bold text-gray-900 mb-4 px-1">Спецпредложения</h2>
+            {productPromos.length > 0 ? (
               <div className="grid grid-cols-2 gap-3">
                 {productPromos.map((promo, idx) => renderGridCard(promo, idx))}
               </div>
-            </div>
-          )}
+            ) : showPromosEmpty ? (
+              <div className="px-1">
+                <div className="bg-white rounded-[20px] shadow-card px-5 py-6 text-center text-gray-500 text-[15px]">
+                  Пока ничего нет
+                </div>
+              </div>
+            ) : null}
+          </div>
         </div>
 
         {isAllBonusesOpen && (
@@ -2264,8 +2391,48 @@ function MiniappPage() {
     );
   };
 
-  const renderInvite = () => (
-    <div className="min-h-screen bg-[#F2F2F7] flex flex-col">
+  const renderInvite = () => {
+    const inviteDescriptionNodes = (() => {
+      if (!referralInfo) return "—";
+      const template = (referralInfo.description || "").trim();
+      if (!template) return "—";
+      const ctx = {
+        merchantName: referralInfo.merchantName,
+        bonusAmount: referralInfo.inviterReward || 0,
+        code: referralInfo.code,
+        link: referralInfo.link || "",
+      };
+      const placeholderRegex = /(\{businessname\}|\{bonusamount\}|\{code\}|\{link\})/gi;
+      const parts = template.split(placeholderRegex).filter((part) => part !== "");
+      const nodes: ReactNode[] = [];
+      let hasContent = false;
+      parts.forEach((part, index) => {
+        const token = part.toLowerCase();
+        let value = "";
+        if (token === "{businessname}") value = ctx.merchantName || "";
+        if (token === "{bonusamount}") {
+          value = Number.isFinite(ctx.bonusAmount) ? String(Math.round(ctx.bonusAmount)) : "";
+        }
+        if (token === "{code}") value = ctx.code || "";
+        if (token === "{link}") value = ctx.link || "";
+        if (value) {
+          nodes.push(
+            <span key={`ph-${index}`} className="text-blue-600 font-semibold">
+              {value}
+            </span>,
+          );
+          hasContent = true;
+          return;
+        }
+        if (token.startsWith("{") && token.endsWith("}")) return;
+        nodes.push(<span key={`txt-${index}`}>{part}</span>);
+        if (part.trim()) hasContent = true;
+      });
+      return hasContent ? nodes : "—";
+    })();
+
+    return (
+      <div className="min-h-screen bg-[#F2F2F7] flex flex-col">
       <div className="sticky top-0 z-30 bg-[#F2F2F7]/80 backdrop-blur-xl border-b border-gray-300/50 px-4 py-3 flex items-center justify-between">
         <button
           onClick={() => setView("HOME")}
@@ -2301,7 +2468,7 @@ function MiniappPage() {
                 <Info size={18} className="text-gray-400" />
               </div>
               <p className="text-[15px] text-gray-900 leading-relaxed">
-                {referralInfo?.description || ""}
+                {inviteDescriptionNodes}
               </p>
             </div>
           </div>
@@ -2338,7 +2505,10 @@ function MiniappPage() {
         </div>
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-[#F2F2F7]/80 backdrop-blur-xl border-t border-gray-300/50 z-20 pb-safe">
+      <div
+        className="fixed bottom-0 left-0 right-0 p-4 bg-[#F2F2F7]/80 backdrop-blur-xl border-t border-gray-300/50 z-20"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 20px) + 16px)" }}
+      >
         <button
           onClick={handleInviteFriend}
           className="w-full bg-[#007AFF] text-white h-[50px] rounded-[14px] font-semibold text-[17px] active:opacity-90 transition-opacity flex items-center justify-center space-x-2"
@@ -2349,7 +2519,8 @@ function MiniappPage() {
         </button>
       </div>
     </div>
-  );
+    );
+  };
 
   const renderAbout = () => (
     <div className="min-h-screen bg-[#F2F2F7] flex flex-col pb-safe">
@@ -2590,7 +2761,6 @@ function MiniappPage() {
       />
 
       <PromoDetailModal promo={selectedPromo} onClose={() => setSelectedPromo(null)} />
-      <FeedbackManager />
     </div>
   );
 
