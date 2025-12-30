@@ -75,7 +75,6 @@ export default function SettingsPage() {
         qrTtlSec: s.qrTtlSec,
         redeemCooldownSec: s.redeemCooldownSec,
         earnCooldownSec: s.earnCooldownSec,
-        requireJwtForQuote: !!s.requireJwtForQuote,
         rulesJson,
         webhookUrl: webhookUrl || undefined,
         webhookKeyId: webhookKeyId || undefined,
@@ -198,12 +197,6 @@ export default function SettingsPage() {
               onChange={e=>setS({ ...s, earnCooldownSec: num(e.target.value, s.earnCooldownSec) || 0 })}
               style={{ marginLeft: 8, width: 120 }}
             />
-          </div>
-          <div>
-            <label>
-              Требовать JWT для QUOTE (выкл. — разрешаем customerId / номер карты / телефон и т.п.)
-              <input type="checkbox" checked={!!s.requireJwtForQuote} onChange={e=>setS({ ...s, requireJwtForQuote: e.target.checked })} style={{ marginLeft: 8 }} />
-            </label>
           </div>
           <div>
             <label>Правила (JSON):</label>

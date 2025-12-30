@@ -76,6 +76,7 @@ type Txn = {
   redeemApplied?: number | null;
   refundEarn?: number | null;
   refundRedeem?: number | null;
+  staffId?: string | null;
   staffName?: string | null;
   customerName?: string | null;
 };
@@ -189,6 +190,7 @@ type UiTransaction = {
   type: 'sale' | 'return';
   client: string;
   staff: string;
+  staffId?: string | null;
   amount: number;
   pointsAccrued: number;
   pointsRedeemed: number;
@@ -485,6 +487,12 @@ const humanizeQuoteError = (message: string): string => {
   }
   if (lower.includes('bad qr token')) {
     return 'QR не распознан. Попросите клиента открыть QR заново.';
+  }
+  if (lower.includes('short qr code required')) {
+    return 'Введите 9‑значный код из приложения.';
+  }
+  if (lower.includes('jwt required for quote')) {
+    return 'Нужен защищённый QR. Отсканируйте код из приложения.';
   }
   if (lower.includes('нельзя одновременно начислять')) {
     return 'Нельзя одновременно начислять и списывать баллы в одном чеке.';
@@ -1537,7 +1545,8 @@ export default function Page() {
           date,
           type,
           client: item.customerName || 'Клиент',
-          staff: item.staffName || 'Сотрудник',
+          staff: item.staffName?.trim() || 'Сотрудник',
+          staffId: item.staffId ?? null,
           amount: Math.max(0, Math.round(Number(amountBase) || 0)),
           pointsAccrued,
           pointsRedeemed,
@@ -1576,7 +1585,12 @@ export default function Page() {
   }, [filteredHistory, currentPage]);
 
   const uniqueStaff = useMemo(() => Array.from(new Set(uiHistory.map((tx) => tx.staff))), [uiHistory]);
-  const recentTx = useMemo(() => uiHistory.slice(0, 5), [uiHistory]);
+  const activeStaffId = session?.staff?.id || null;
+  const staffScopedHistory = useMemo(() => {
+    if (!activeStaffId) return uiHistory;
+    return uiHistory.filter((tx) => tx.staffId === activeStaffId);
+  }, [uiHistory, activeStaffId]);
+  const recentTx = useMemo(() => staffScopedHistory.slice(0, 5), [staffScopedHistory]);
 
   const shiftStats = useMemo(() => {
     const today = new Date();
@@ -1584,13 +1598,13 @@ export default function Page() {
       date.getFullYear() === today.getFullYear() &&
       date.getMonth() === today.getMonth() &&
       date.getDate() === today.getDate();
-    const salesToday = uiHistory.filter((tx) => tx.type === 'sale' && isSameDay(tx.date));
+    const salesToday = staffScopedHistory.filter((tx) => tx.type === 'sale' && isSameDay(tx.date));
     const revenue = salesToday.reduce((sum, tx) => sum + tx.amount, 0);
     return {
       revenue: Math.max(0, Math.round(revenue)),
       checks: salesToday.length,
     };
-  }, [uiHistory]);
+  }, [staffScopedHistory]);
 
   const fmtMoney = (val: number) => val.toLocaleString('ru-RU');
 
@@ -1707,7 +1721,8 @@ export default function Page() {
         date: new Date(found.createdAt),
         type: 'sale',
         client: found.customerName || 'Клиент',
-        staff: found.staffName || 'Сотрудник',
+        staff: found.staffName?.trim() || 'Сотрудник',
+        staffId: found.staffId ?? null,
         amount: Math.max(0, Math.round(Number(purchaseAmount) || 0)),
         pointsAccrued: pointsToRevoke,
         pointsRedeemed: pointsToRestore,
@@ -2286,7 +2301,7 @@ export default function Page() {
                           void handleSearchAction('search');
                         }
                       }}
-                      placeholder="Телефон/карта или сканируйте QR"
+                      placeholder="Введите код или сканируйте QR"
                       className="w-full bg-transparent border-none text-center text-xl sm:text-2xl font-mono font-medium text-slate-900 tracking-widest outline-none placeholder:text-slate-300 placeholder:font-sans placeholder:text-sm sm:placeholder:text-lg placeholder:font-medium placeholder:tracking-normal focus:placeholder-transparent"
                       autoFocus
                     />
@@ -2928,8 +2943,8 @@ export default function Page() {
             )}
           </main>
         ) : (
-          <main className="flex-1 flex flex-col bg-slate-50/50 p-6 overflow-hidden">
-            <div className="max-w-5xl w-full mx-auto h-full flex flex-col">
+          <main className="flex-1 flex flex-col bg-slate-50/50 p-6 overflow-hidden min-h-0">
+            <div className="max-w-5xl w-full mx-auto h-full flex flex-col min-h-0">
               <div className="flex flex-col space-y-4 mb-6 flex-shrink-0">
                 <div className="flex justify-between items-end">
                   <h2 className="text-2xl font-bold text-slate-900">История операций</h2>
@@ -3144,7 +3159,7 @@ export default function Page() {
         <div className="p-6 border-b border-purple-800 bg-gradient-to-br from-purple-600 to-indigo-700 text-white">
           <h3 className="text-xs font-bold text-purple-100 uppercase tracking-wider mb-4 flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.6)]"></span>
-            Смена
+            Ваши операции за сегодня
           </h3>
           <div className="grid grid-cols-2 gap-4">
             <div className="bg-white/10 p-3 rounded-xl border border-white/10 backdrop-blur-sm shadow-sm">
@@ -3338,7 +3353,7 @@ export default function Page() {
       return (
         <div className="flex-1 flex flex-col bg-gray-50 p-4 space-y-4 animate-in fade-in">
           <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm flex flex-col gap-4">
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Текущая смена</h2>
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Ваши операции за сегодня</h2>
             <div className="flex items-end justify-between">
               <div>
                 <span className="text-3xl font-bold text-gray-900">{fmtMoney(shiftStats.revenue)} ₽</span>
@@ -3373,8 +3388,8 @@ export default function Page() {
                 <Keyboard size={32} />
               </div>
               <div className="text-center">
-                <span className="block text-xl font-bold">Ввести номер</span>
-                <span className="text-sm text-gray-500">Телефон или карта</span>
+                <span className="block text-xl font-bold">Ввести вручную</span>
+                <span className="text-sm text-gray-500">Код из приложения</span>
               </div>
             </button>
           </div>
@@ -3763,7 +3778,7 @@ export default function Page() {
   };
 
   const renderHistory = () => (
-    <div className="flex-1 bg-gray-50 flex flex-col relative">
+    <div className="flex-1 bg-gray-50 flex flex-col relative min-h-0">
       <div className="bg-white border-b border-gray-200 px-4 py-3 sticky top-0 z-10 shadow-sm flex items-center gap-2">
         <div className="relative flex-1">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -3785,7 +3800,7 @@ export default function Page() {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto bg-white">
+      <div className="flex-1 overflow-y-auto bg-white min-h-0">
         <div className="divide-y divide-gray-100">
           {filteredHistoryMobile.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-gray-400">

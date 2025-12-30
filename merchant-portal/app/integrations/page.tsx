@@ -1,7 +1,16 @@
 "use client";
-import React from 'react';
-import { useRouter } from 'next/navigation';
-import { Card, CardBody, Skeleton } from '@loyalty/ui';
+
+import React from "react";
+import { useRouter } from "next/navigation";
+import {
+  Link2,
+  Code,
+  Send,
+  Settings,
+  CheckCircle2,
+  ExternalLink,
+  ChevronRight,
+} from "lucide-react";
 
 type TelegramSummary = {
   enabled: boolean;
@@ -21,62 +30,67 @@ type RestApiSummary = {
   message?: string | null;
 };
 
-function StatusPill({ color, label }: { color: string; label: string }) {
-  return (
-    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600 }}>
-      <span style={{ width: 10, height: 10, borderRadius: '50%', background: color }} />
-      <span>{label}</span>
-    </div>
-  );
+interface IntegrationItem {
+  id: string;
+  name: string;
+  description: string;
+  icon: React.ElementType;
+  connected: boolean;
+  color: string;
+  docsUrl?: string;
+  targetHref?: string;
+  error?: string;
 }
 
 export default function IntegrationsPage() {
   const router = useRouter();
   const [telegram, setTelegram] = React.useState<TelegramSummary | null>(null);
-  const [telegramLoading, setTelegramLoading] = React.useState(true);
-  const [telegramError, setTelegramError] = React.useState('');
+  const [telegramError, setTelegramError] = React.useState("");
   const [restApi, setRestApi] = React.useState<RestApiSummary | null>(null);
-  const [restLoading, setRestLoading] = React.useState(true);
-  const [restError, setRestError] = React.useState('');
+  const [restError, setRestError] = React.useState("");
 
   async function loadTelegram() {
-    setTelegramLoading(true);
-    setTelegramError('');
+    setTelegramError("");
     try {
-      const res = await fetch('/api/portal/integrations/telegram-mini-app');
+      const res = await fetch("/api/portal/integrations/telegram-mini-app");
       const data = await res.json().catch(() => null);
       if (!res.ok) {
         setTelegram(null);
-        setTelegramError((data && typeof data?.message === 'string' && data.message) || 'Не удалось загрузить Telegram-интеграцию');
+        setTelegramError(
+          (data && typeof data?.message === "string" && data.message) ||
+            "Не удалось загрузить Telegram-интеграцию",
+        );
       } else {
         setTelegram(data ?? null);
-        setTelegramError((data && typeof data?.message === 'string' && data.message) || '');
+        setTelegramError(
+          (data && typeof data?.message === "string" && data.message) || "",
+        );
       }
     } catch (error: any) {
       setTelegram(null);
       setTelegramError(String(error?.message || error));
-    } finally {
-      setTelegramLoading(false);
     }
   }
 
   async function loadRestApi() {
-    setRestLoading(true);
-    setRestError('');
+    setRestError("");
     try {
-      const res = await fetch('/api/portal/integrations/rest-api');
+      const res = await fetch("/api/portal/integrations/rest-api");
       const data = await res.json().catch(() => null);
       if (!res.ok) {
         setRestApi(null);
-        throw new Error((data && typeof data?.message === 'string' && data.message) || 'Не удалось загрузить REST API');
+        throw new Error(
+          (data && typeof data?.message === "string" && data.message) ||
+            "Не удалось загрузить REST API",
+        );
       }
       setRestApi(data ?? null);
-      setRestError((data && typeof data?.message === 'string' && data.message) || '');
+      setRestError(
+        (data && typeof data?.message === "string" && data.message) || "",
+      );
     } catch (error: any) {
       setRestApi(null);
       setRestError(String(error?.message || error));
-    } finally {
-      setRestLoading(false);
     }
   }
 
@@ -85,208 +99,155 @@ export default function IntegrationsPage() {
     loadRestApi();
   }, []);
 
-  const statusLabel = telegram?.enabled ? 'Подключена' : 'Не подключена';
-  const statusColor = telegram?.enabled ? '#22c55e' : 'rgba(148,163,184,0.45)';
-  const connectionLabel = telegram?.enabled
-    ? telegram.connectionHealthy
-      ? 'Подключение к боту работает'
-      : 'Подключение к боту не удалось'
-    : 'Telegram Mini App не активна';
-  const connectionColor = !telegram?.enabled
-    ? 'rgba(148,163,184,0.45)'
-    : telegram.connectionHealthy
-    ? '#22c55e'
-    : '#f87171';
-
-  const handleOpenTelegram = () => {
-    router.push('/integrations/telegram-mini-app');
-  };
-
-  const handleOpenRestApi = () => {
-    router.push('/integrations/rest-api');
-  };
-
-  const telegramCard = (
-    <Card
-      style={{
-        border: '1px solid rgba(148,163,184,0.18)',
-        background: 'radial-gradient(circle at top left, rgba(56,189,248,0.15), rgba(15,23,42,0.75))',
-        transition: 'border-color .2s ease, transform .2s ease',
-      }}
-    >
-      <CardBody>
-        {telegramLoading ? (
-          <Skeleton height={160} />
-        ) : (
-          <div style={{ display: 'grid', gap: 16 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: 24, alignItems: 'center' }}>
-              <div
-                style={{
-                  width: 96,
-                  height: 96,
-                  borderRadius: '50%',
-                  background: 'rgba(56,189,248,0.18)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <svg width="58" height="58" viewBox="0 0 48 48" aria-hidden="true">
-                  <circle cx="24" cy="24" r="24" fill="#1d9bf0" />
-                  <path
-                    d="M33.6 15.2 29 32.4c-.3 1.1-1.1 1.3-2.1.8l-5.7-4.2-2.8 2.7c-.3.3-.5.5-1 .5l.4-5.9 10.7-9.6c.5-.5-.1-.7-.8-.3l-13.2 8.3-5.7-1.8c-1.2-.4-1.3-1.1.3-1.6l21.6-8.3c1-.4 1.9.2 1.6 1.6Z"
-                    fill="#fff"
-                  />
-                </svg>
-              </div>
-              <div style={{ display: 'grid', gap: 8 }}>
-                <div style={{ fontSize: 20, fontWeight: 700 }}>Telegram Mini App</div>
-                <div style={{ fontSize: 13, opacity: 0.75 }}>Программа лояльности в мини-приложении Telegram</div>
-                {telegram?.enabled && telegram.botUsername && (
-                  <div style={{ fontSize: 13, opacity: 0.85 }}>
-                    Подключен бот: <span style={{ fontWeight: 600 }}>{telegram.botUsername}</span>
-                  </div>
-                )}
-                {telegram?.tokenMask && (
-                  <div style={{ fontSize: 12, opacity: 0.6 }}>Последний проверенный токен: {telegram.tokenMask}</div>
-                )}
-                {telegramError && (
-                  <div style={{ fontSize: 12, color: '#f97316' }}>{telegramError}</div>
-                )}
-              </div>
-              <div style={{ display: 'grid', justifyItems: 'end', gap: 12 }}>
-                <StatusPill color={statusColor} label={statusLabel} />
-                <div style={{ fontSize: 12, opacity: 0.7 }}>Подробнее →</div>
-              </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, opacity: 0.85 }}>
-              <span style={{ width: 9, height: 9, borderRadius: '50%', background: connectionColor }} />
-              <span>{connectionLabel}</span>
-            </div>
-          </div>
-        )}
-      </CardBody>
-    </Card>
+  const integrations = React.useMemo<IntegrationItem[]>(
+    () => [
+      {
+        id: "rest_api",
+        name: "REST API",
+        description: "API для работы с баллами и интеграции во внешние системы",
+        icon: Code,
+        connected: Boolean(restApi?.enabled),
+        color: "bg-blue-50 text-blue-600",
+        docsUrl: "#",
+        targetHref: "/integrations/rest-api",
+        error: restError || undefined,
+      },
+      {
+        id: "telegram_miniapp",
+        name: "Telegram Miniapp",
+        description: "Программа лояльности в мини-приложении Telegram.",
+        icon: Send,
+        connected: Boolean(telegram?.enabled),
+        color: "bg-sky-50 text-sky-500",
+        docsUrl: "#",
+        targetHref: "/integrations/telegram-mini-app",
+        error: telegramError || undefined,
+      },
+    ],
+    [restApi?.enabled, telegram?.enabled, restError, telegramError],
   );
 
-  const restStatusLabel = restApi?.enabled ? 'Активна' : 'Не подключена';
-  const restStatusColor = restApi?.enabled ? '#22c55e' : 'rgba(148,163,184,0.45)';
-  const restApiCard = (
-    <Card
-      style={{
-        border: '1px solid rgba(148,163,184,0.18)',
-        background: 'linear-gradient(135deg, rgba(16,185,129,0.14), rgba(15,23,42,0.78))',
-        transition: 'border-color .2s ease, transform .2s ease',
-      }}
-    >
-      <CardBody>
-        {restLoading ? (
-          <Skeleton height={160} />
-        ) : (
-          <div style={{ display: 'grid', gap: 16 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: 24, alignItems: 'center' }}>
-              <div
-                style={{
-                  width: 96,
-                  height: 96,
-                  borderRadius: '50%',
-                  background: 'rgba(16,185,129,0.16)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <svg width="54" height="54" viewBox="0 0 48 48" aria-hidden="true">
-                  <circle cx="24" cy="24" r="24" fill="#10b981" />
-                  <path
-                    d="M31 15c-2.9 0-5.2 1.9-5.9 4.5a6.5 6.5 0 0 0-5.1-.2c-2 .8-3.3 2.7-3.3 4.9a5.1 5.1 0 0 0 3.8 4.9v1.9c0 .5.5 1 1.1 1H25a1 1 0 0 0 1-1v-1.8a2.7 2.7 0 0 0 2.2-2.7 2.8 2.8 0 0 0-2.8-2.8h-3.9a1 1 0 0 1-.9-1c0-.4.2-.7.5-.9a4.5 4.5 0 0 1 6.9 3.6 1 1 0 0 0 1.1.9h1.8a1 1 0 0 0 1-.9C31.9 20.6 35 18 38 18a1 1 0 0 0 1-1v-1a1 1 0 0 0-1-1h-7Z"
-                    fill="#0f172a"
-                  />
-                </svg>
-              </div>
-              <div style={{ display: 'grid', gap: 8 }}>
-                <div style={{ fontSize: 20, fontWeight: 700 }}>REST API</div>
-                <div style={{ fontSize: 13, opacity: 0.75 }}>
-                  Доступ для внешних CRM/касс по API-ключу (CODE / CALCULATE / BONUS / REFUND)
-                </div>
-                {restApi?.apiKeyMask && (
-                  <div style={{ fontSize: 12, opacity: 0.7 }}>Маска ключа: {restApi.apiKeyMask}</div>
-                )}
-                {restError && <div style={{ fontSize: 12, color: '#f97316' }}>{restError}</div>}
-              </div>
-              <div style={{ display: 'grid', justifyItems: 'end', gap: 12 }}>
-                <StatusPill color={restStatusColor} label={restStatusLabel} />
-                <div style={{ fontSize: 12, opacity: 0.7 }}>Подробнее →</div>
-              </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, opacity: 0.85 }}>
-              <span style={{ width: 9, height: 9, borderRadius: '50%', background: restStatusColor }} />
-              <span>
-                {restApi?.baseUrl
-                  ? `Базовый URL: ${restApi.baseUrl}`
-                  : 'API_BASE_URL не задан, ключ можно выпустить на странице интеграции'}
-              </span>
-            </div>
-          </div>
-        )}
-      </CardBody>
-    </Card>
-  );
+  const sortedIntegrations = React.useMemo(() => {
+    return [...integrations].sort((a, b) => {
+      if (a.connected === b.connected) return 0;
+      return a.connected ? -1 : 1;
+    });
+  }, [integrations]);
 
-  const integrationsCards = [
-    {
-      key: 'rest',
-      enabled: Boolean(restApi?.enabled),
-      card: (
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={handleOpenRestApi}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault();
-              handleOpenRestApi();
-            }
-          }}
-          style={{ outline: 'none', cursor: 'pointer' }}
-        >
-          {restApiCard}
-        </div>
-      ),
-    },
-    {
-      key: 'telegram',
-      enabled: Boolean(telegram?.enabled),
-      card: (
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={handleOpenTelegram}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault();
-              handleOpenTelegram();
-            }
-          }}
-          style={{ outline: 'none', cursor: 'pointer' }}
-        >
-          {telegramCard}
-        </div>
-      ),
-    },
-  ].sort((a, b) => Number(b.enabled) - Number(a.enabled));
+  const handleNavigate = (item: IntegrationItem) => {
+    if (item.targetHref) {
+      router.push(item.targetHref);
+    }
+  };
+
+  const openDocs = (event: React.MouseEvent, url: string) => {
+    event.stopPropagation();
+    alert(`Открытие документации: ${url}`);
+  };
 
   return (
-    <div style={{ display: 'grid', gap: 20 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div>
-          <div style={{ fontSize: 18, fontWeight: 700 }}>Интеграции</div>
-        </div>
+    <div className="p-8 max-w-[1200px] mx-auto space-y-8 animate-fade-in">
+      <div>
+        <h2 className="text-2xl font-bold text-gray-900">Интеграции</h2>
+        <p className="text-gray-500 mt-1">
+          Подключение внешних сервисов и настройка обмена данными.
+        </p>
       </div>
 
-      {integrationsCards.map((item) => (
-        <React.Fragment key={item.key}>{item.card}</React.Fragment>
-      ))}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {sortedIntegrations.map((item) => (
+          <div
+            key={item.id}
+            onClick={() => handleNavigate(item)}
+            className={`bg-white p-6 rounded-xl border transition-all duration-200 flex flex-col h-full hover:shadow-md cursor-pointer group ${
+              item.connected
+                ? "border-purple-200 shadow-sm ring-1 ring-purple-50"
+                : "border-gray-200 shadow-sm"
+            }`}
+          >
+            <div className="flex justify-between items-start mb-4">
+              <div
+                className={`p-3 rounded-xl ${item.color} transition-transform group-hover:scale-105 duration-200`}
+              >
+                <item.icon size={28} />
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <span
+                  className={`text-xs font-medium px-2.5 py-1 rounded-full flex items-center ${
+                    item.connected
+                      ? "bg-green-50 text-green-700"
+                      : "bg-gray-100 text-gray-500"
+                  }`}
+                >
+                  {item.connected ? (
+                    <>
+                      <CheckCircle2 size={12} className="mr-1.5" />
+                      Подключено
+                    </>
+                  ) : (
+                    "Отключено"
+                  )}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex-1 mb-6">
+              <h3 className="text-lg font-bold text-gray-900 mb-1 group-hover:text-purple-600 transition-colors">
+                {item.name}
+              </h3>
+              <p className="text-sm text-gray-500 leading-relaxed">
+                {item.description}
+              </p>
+              {item.error && (
+                <p className="text-xs text-orange-600 mt-2">{item.error}</p>
+              )}
+            </div>
+
+            <div className="pt-4 border-t border-gray-50 flex items-center justify-between">
+              <div
+                className={`text-sm font-medium flex items-center transition-colors ${
+                  item.connected
+                    ? "text-purple-600 group-hover:text-purple-700"
+                    : "text-gray-600 group-hover:text-purple-600"
+                }`}
+              >
+                {item.connected ? (
+                  <>
+                    <Settings size={16} className="mr-1.5" />
+                    Настроить
+                  </>
+                ) : (
+                  <>
+                    <span>Подробнее</span>
+                    <ChevronRight size={16} className="ml-1" />
+                  </>
+                )}
+              </div>
+
+              {item.docsUrl && (
+                <button
+                  onClick={(event) => openDocs(event, item.docsUrl!)}
+                  className="text-xs text-gray-400 hover:text-gray-600 flex items-center transition-colors z-10"
+                >
+                  Документация <ExternalLink size={12} className="ml-1" />
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+
+        <div className="bg-gray-50 border border-gray-200 border-dashed rounded-xl p-6 flex flex-col items-center justify-center text-center opacity-70 min-h-[200px]">
+          <div className="bg-gray-100 p-3 rounded-full mb-3 text-gray-400">
+            <Link2 size={24} />
+          </div>
+          <h3 className="font-medium text-gray-600">Больше интеграций скоро</h3>
+          <p className="text-xs text-gray-400 mt-1 max-w-xs">
+            Мы работаем над подключением iiko, r_keeper, 1С и популярных CRM
+            систем.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

@@ -33,6 +33,32 @@ class ClientIdentifierConstraint implements ValidatorConstraintInterface {
   }
 }
 
+@ValidatorConstraint({ name: 'CalculateClientIdentifier', async: false })
+class CalculateClientIdentifierConstraint
+  implements ValidatorConstraintInterface
+{
+  validate(_: any, args: any) {
+    const obj = args?.object ?? {};
+    const userToken =
+      (typeof obj?.user_token === 'string' &&
+        obj.user_token.trim().length > 0) ||
+      (typeof obj?.userToken === 'string' && obj.userToken.trim().length > 0);
+    const idClient =
+      typeof obj?.id_client === 'string' && obj.id_client.trim().length > 0;
+    const phone =
+      (typeof obj?.phone === 'string' && obj.phone.trim().length > 0) ||
+      (typeof obj?.phone_number === 'string' &&
+        obj.phone_number.trim().length > 0) ||
+      (typeof obj?.phoneNumber === 'string' &&
+        obj.phoneNumber.trim().length > 0);
+    return userToken || idClient || phone;
+  }
+
+  defaultMessage() {
+    return 'Укажите user_token, id_client или phone';
+  }
+}
+
 @ValidatorConstraint({ name: 'BonusContext', async: false })
 class BonusContextConstraint implements ValidatorConstraintInterface {
   validate(_: any, args: any) {
@@ -299,7 +325,7 @@ export class IntegrationCalculateActionItemDto {
 }
 
 export class IntegrationCalculateActionDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     description: 'ID клиента в системе лояльности',
     name: 'id_client',
   })
@@ -307,8 +333,23 @@ export class IntegrationCalculateActionDto {
     ({ value, obj }) =>
       value ?? obj?.idClient ?? obj?.customerId ?? obj?.merchant_customer_id,
   )
+  @IsOptional()
   @IsString()
-  id_client!: string;
+  id_client?: string;
+
+  @ApiPropertyOptional({
+    description: 'Телефон клиента',
+    name: 'phone',
+  })
+  @Transform(
+    ({ value, obj }) => value ?? obj?.phone_number ?? obj?.phoneNumber,
+  )
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @Validate(CalculateClientIdentifierConstraint)
+  _clientIdentifierValidator?: string;
 
   @ApiProperty({
     type: [IntegrationCalculateActionItemDto],
@@ -393,7 +434,7 @@ export class IntegrationCalculateBonusDto {
   })
   @IsOptional()
   @IsString()
-  @Validate(ClientIdentifierConstraint)
+  @Validate(CalculateClientIdentifierConstraint)
   @Transform(({ value, obj }) => value ?? obj?.userToken)
   user_token?: string;
 
@@ -413,7 +454,18 @@ export class IntegrationCalculateBonusDto {
   @IsString()
   id_client?: string;
 
-  @Validate(ClientIdentifierConstraint)
+  @ApiPropertyOptional({
+    description: 'Телефон клиента',
+    name: 'phone',
+  })
+  @Transform(
+    ({ value, obj }) => value ?? obj?.phone_number ?? obj?.phoneNumber,
+  )
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @Validate(CalculateClientIdentifierConstraint)
   _clientIdentifierValidator?: string;
 
   @ApiPropertyOptional()

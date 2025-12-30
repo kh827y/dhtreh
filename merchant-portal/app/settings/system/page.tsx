@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Globe, Building2, Clock, Save } from "lucide-react";
+import { Globe, Building2, Clock, Save, QrCode } from "lucide-react";
 import {
   useTimezone,
   useTimezoneUpdater,
@@ -55,6 +55,8 @@ export default function SettingsSystemPage() {
   const [supportTelegram, setSupportTelegram] = React.useState("");
   const [savedSupportTelegram, setSavedSupportTelegram] = React.useState("");
   const [timezoneCode, setTimezoneCode] = React.useState(timezone.code);
+  const [qrMode, setQrMode] = React.useState<"short" | "jwt">("short");
+  const [savedQrMode, setSavedQrMode] = React.useState<"short" | "jwt">("short");
   const [saving, setSaving] = React.useState(false);
   const [success, setSuccess] = React.useState<string>("");
 
@@ -88,6 +90,18 @@ export default function SettingsSystemPage() {
         const supportValue = String(supportData?.supportTelegram || "");
         setSupportTelegram(supportValue);
         setSavedSupportTelegram(supportValue);
+        const settingsRes = await fetch("/api/portal/settings/qr", {
+          cache: "no-store",
+        });
+        if (!settingsRes.ok) {
+          throw new Error(await readErrorMessage(settingsRes, "Не удалось загрузить системные настройки"));
+        }
+        const settingsData = (await settingsRes.json().catch(() => ({}))) as any;
+        if (cancelled) return;
+        const requireJwtForQuote = Boolean(settingsData?.requireJwtForQuote);
+        const mode = requireJwtForQuote ? "jwt" : "short";
+        setQrMode(mode);
+        setSavedQrMode(mode);
       } catch (e: any) {
         if (cancelled) return;
         alert(readApiError(String(e?.message || e || "")) || "Не удалось загрузить название компании");
@@ -109,6 +123,7 @@ export default function SettingsSystemPage() {
     const trimmedSupport = supportTelegram.trim();
     const shouldUpdateSupport = trimmedSupport !== savedSupportTelegram;
     const shouldUpdateTimezone = timezoneCode !== timezone.code;
+    const shouldUpdateQrMode = qrMode !== savedQrMode;
 
     const tasks: Array<Promise<void>> = [];
 
@@ -175,6 +190,25 @@ export default function SettingsSystemPage() {
       );
     }
 
+    if (shouldUpdateQrMode) {
+      tasks.push(
+        (async () => {
+          const res = await fetch("/api/portal/settings/qr", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ requireJwtForQuote: qrMode === "jwt" }),
+          });
+          if (!res.ok) {
+            throw new Error(await readErrorMessage(res, "Не удалось сохранить настройки QR"));
+          }
+          const data = (await res.json().catch(() => ({}))) as any;
+          const nextMode = data?.requireJwtForQuote ? "jwt" : "short";
+          setQrMode(nextMode);
+          setSavedQrMode(nextMode);
+        })(),
+      );
+    }
+
     try {
       const results = await Promise.allSettled(tasks);
       const errors = results.filter((r) => r.status === "rejected") as Array<PromiseRejectedResult>;
@@ -198,6 +232,8 @@ export default function SettingsSystemPage() {
     savedSupportTelegram,
     timezoneCode,
     timezone.code,
+    qrMode,
+    savedQrMode,
     setTimezone,
   ]);
 
@@ -269,7 +305,7 @@ export default function SettingsSystemPage() {
               />
             </div>
             <p className="text-xs text-gray-500 mt-2">
-              Ссылка на чат поддержки для мини‑аппы (username или @username).
+              Аккаунт поддержки в телеграм для приложения (username или @username).
             </p>
           </div>
 
@@ -293,6 +329,69 @@ export default function SettingsSystemPage() {
             <p className="text-xs text-gray-500 mt-2">
               Используется для корректного отображения времени транзакций и планирования рассылок.
             </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Тип QR-кода в приложении
+            </label>
+            <div className="grid gap-3">
+              <label
+                className={`flex gap-3 rounded-lg border p-4 cursor-pointer transition-colors ${
+                  qrMode === "short"
+                    ? "border-purple-300 bg-purple-50"
+                    : "border-gray-200 hover:border-gray-300"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="qrMode"
+                  value="short"
+                  checked={qrMode === "short"}
+                  onChange={() => setQrMode("short")}
+                  className="mt-1"
+                />
+                <div>
+                  <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+                    <QrCode size={16} className="text-purple-600" />
+                    <span>Цифровой код (упрощённый режим)</span>
+                  </div>
+                  <p className="text-xs text-gray-600 mt-1">
+                    Последовательность из девяти цифр, присваивается клиенту и периодически меняется.
+                    Касса может использовать её для операций с баллами — удобно, потому что короткий код
+                    можно вручную ввести для поиска клиента.
+                  </p>
+                </div>
+              </label>
+
+              <label
+                className={`flex gap-3 rounded-lg border p-4 cursor-pointer transition-colors ${
+                  qrMode === "jwt"
+                    ? "border-purple-300 bg-purple-50"
+                    : "border-gray-200 hover:border-gray-300"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="qrMode"
+                  value="jwt"
+                  checked={qrMode === "jwt"}
+                  onChange={() => setQrMode("jwt")}
+                  className="mt-1"
+                />
+                <div>
+                  <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+                    <QrCode size={16} className="text-purple-600" />
+                    <span>Защищённый токен</span>
+                  </div>
+                  <p className="text-xs text-gray-600 mt-1">
+                    Требует расшифровки на сервере для операций и тоже периодически обновляется, создаёт
+                    дополнительную защиту от мошенничества. Более безопасный способ, но поиск клиента
+                    возможен только сканированием QR — код слишком длинный, вручную его ввести не получится.
+                  </p>
+                </div>
+              </label>
+            </div>
           </div>
         </div>
       </div>

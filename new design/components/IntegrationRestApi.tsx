@@ -18,43 +18,43 @@ interface IntegrationRestApiProps {
 }
 
 const IntegrationRestApi: React.FC<IntegrationRestApiProps> = ({ onBack }) => {
-  const [apiKey, setApiKey] = useState('sk_live_51Mz...q3f9A');
+  const [apiKey, setApiKey] = useState('rk_4b9d...e7d8');
   const [showKey, setShowKey] = useState(false);
   const [copiedKey, setCopiedKey] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
 
-  const baseUrl = 'https://api.link/api/integrations/';
+  const baseUrl = '/api/integrations';
 
   const endpoints = [
     {
       method: 'POST',
       url: 'code',
-      title: 'Расшифровка кода',
-      description: 'Получение информации о клиенте по QR-коду из приложения или номеру телефона. Возвращает баланс, уровень лояльности, % начисления и списания.'
+      title: 'Проверка QR',
+      description: 'Проверка user_token и возврат профиля клиента, баланса и ставок начисления/списания.'
     },
     {
       method: 'POST',
       url: 'calculate/action',
-      title: 'Расчет товарных акций',
-      description: 'Рассчитать количество подарочных позиций или бонусных баллов за товары в корзине согласно активным акциям (2+1, баллы за товар).'
+      title: 'Применение акций',
+      description: 'Применение товарных акций (подарки, изменённая цена, множители) и нормализация позиций.'
     },
     {
       method: 'POST',
       url: 'calculate/bonus',
-      title: 'Применение бонусной программы',
-      description: 'Финальный расчет чека: применение списания баллов, начисление новых баллов от итоговой суммы.'
+      title: 'Предрасчёт бонусов',
+      description: 'Расчёт начисления/списания по чеку без фиксации операции (items или total).'
     },
     {
       method: 'POST',
       url: 'bonus',
-      title: 'Фиксация транзакции',
-      description: 'Проведение операции. Списывает баллы и начисляет новые. Должен вызываться при закрытии чека на кассе.'
+      title: 'Фиксация покупки',
+      description: 'Списание/начисление баллов с идемпотентностью (idempotency_key) и данными чека.'
     },
     {
       method: 'POST',
       url: 'refund',
       title: 'Возврат',
-      description: 'Отмена операции. Возвращает списанные баллы клиенту и аннулирует начисленные за этот чек.'
+      description: 'Отмена операции по order_id или invoice_num с возвратом и списанием баллов.'
     }
   ];
 
@@ -66,7 +66,7 @@ const IntegrationRestApi: React.FC<IntegrationRestApiProps> = ({ onBack }) => {
 
   const handleRegenerateKey = () => {
     if (confirm('Вы уверены? Старый ключ перестанет работать, что может нарушить работу интеграции.')) {
-      setApiKey('sk_live_' + Math.random().toString(36).substr(2, 24));
+      setApiKey('rk_' + Math.random().toString(36).slice(2, 30));
     }
   };
 
@@ -139,7 +139,7 @@ const IntegrationRestApi: React.FC<IntegrationRestApiProps> = ({ onBack }) => {
                         </button>
                      </div>
                   </div>
-                  <p className="text-xs text-gray-400">Передавайте этот токен в заголовке <code className="bg-gray-100 px-1 rounded text-gray-600">Authorization: Bearer TOKEN</code></p>
+                  <p className="text-xs text-gray-400">Передавайте этот ключ в заголовке <code className="bg-gray-100 px-1 rounded text-gray-600">X-Api-Key: TOKEN</code></p>
                </div>
 
                <div className="pt-2">
@@ -209,13 +209,13 @@ const IntegrationRestApi: React.FC<IntegrationRestApiProps> = ({ onBack }) => {
                </div>
                <div className="font-mono text-xs text-gray-300 leading-relaxed overflow-x-auto">
                   <p><span className="text-purple-400">curl</span> -X POST \</p>
-                  <p className="pl-4">'{baseUrl}calculate/bonus' \</p>
-                  <p className="pl-4">-H 'Authorization: Bearer {apiKey.substring(0, 15)}...' \</p>
+                  <p className="pl-4">'{baseUrl}/calculate/bonus' \</p>
+                  <p className="pl-4">-H 'X-Api-Key: {apiKey.substring(0, 12)}...' \</p>
                   <p className="pl-4">-H 'Content-Type: application/json' \</p>
                   <p className="pl-4">-d '{"{"}</p>
-                  <p className="pl-8">"client_code": "123456",</p>
-                  <p className="pl-8">"amount": 1500,</p>
-                  <p className="pl-8">"items": [...]</p>
+                  <p className="pl-8">"user_token": "qr_123456",</p>
+                  <p className="pl-8">"outlet_id": "OUT-1",</p>
+                  <p className="pl-8">"items": [{"{"}"id_product": "SKU-1", "qty": 2, "price": 450{"}"}]</p>
                   <p className="pl-4">{"}"}'</p>
                </div>
             </div>

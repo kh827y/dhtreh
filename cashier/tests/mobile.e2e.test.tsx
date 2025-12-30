@@ -92,7 +92,7 @@ describe("cashier mobile layout", () => {
     fireEvent.click(screen.getByRole("button", { name: "Касса" }));
     await screen.findByText("Сканировать QR");
 
-    fireEvent.click(screen.getByRole("button", { name: /Ввести номер/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Ввести вручную/ }));
 
     fireEvent.pointerDown(screen.getByRole("button", { name: "1" }));
     fireEvent.pointerDown(screen.getByRole("button", { name: "2" }));

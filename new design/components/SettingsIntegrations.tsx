@@ -32,7 +32,7 @@ const SettingsIntegrations: React.FC<SettingsIntegrationsProps> = ({ onNavigate 
     {
       id: 'rest_api',
       name: 'REST API',
-      description: 'API для работы с баллами, заказами, клиентами и товарами.',
+      description: 'Доступ для внешних CRM/касс по API-ключу (CODE / CALCULATE / BONUS / REFUND).',
       icon: Code,
       connected: true,
       color: 'bg-blue-50 text-blue-600',
@@ -42,7 +42,7 @@ const SettingsIntegrations: React.FC<SettingsIntegrationsProps> = ({ onNavigate 
     {
       id: 'telegram_miniapp',
       name: 'Telegram Miniapp',
-      description: 'Приложение программы лояльности в Telegram.',
+      description: 'Программа лояльности в мини-приложении Telegram.',
       icon: Send,
       connected: false,
       color: 'bg-sky-50 text-sky-500',

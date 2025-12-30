@@ -83,16 +83,28 @@ const IntegrationTelegramMiniapp: React.FC<IntegrationTelegramMiniappProps> = ({
                   {/* Phone Mockup 1: Menu */}
                   <div className="relative w-[240px] h-[480px] bg-gray-900 rounded-[2.5rem] border-8 border-gray-900 shadow-2xl overflow-hidden">
                      <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-32 h-6 bg-gray-900 rounded-b-xl z-20"></div>
-                     <img 
-                        src="https://images.unsplash.com/photo-1556742049-0cfed4f7a07d?auto=format&fit=crop&q=80&w=400" 
-                        alt="Screen 1" 
-                        className="w-full h-full object-cover opacity-80"
-                     />
-                     <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/60 flex flex-col justify-end p-4">
-                        <div className="bg-white rounded-xl p-3 shadow-lg mb-2">
-                           <div className="h-2 w-16 bg-gray-200 rounded mb-2"></div>
-                           <div className="h-10 w-full bg-purple-100 rounded flex items-center justify-center text-purple-600 font-bold">
-                              540 Баллов
+                     <div className="absolute inset-0 bg-gradient-to-b from-sky-400/40 via-slate-900 to-black"></div>
+                     <div className="absolute inset-0 p-4 flex flex-col justify-between">
+                        <div className="flex items-center justify-between text-white/80 text-xs">
+                           <div className="h-2 w-16 bg-white/20 rounded"></div>
+                           <div className="h-2 w-10 bg-white/20 rounded"></div>
+                        </div>
+                        <div className="space-y-3">
+                           <div className="bg-white/95 rounded-2xl p-4 shadow-lg">
+                              <div className="text-xs text-gray-500">Баланс</div>
+                              <div className="text-2xl font-bold text-gray-900">540 баллов</div>
+                              <div className="mt-3 h-8 rounded-lg bg-purple-100 text-purple-600 font-semibold flex items-center justify-center text-sm">
+                                 Открыть QR
+                              </div>
+                           </div>
+                           <div className="bg-white/90 rounded-2xl p-4 shadow-lg">
+                              <div className="flex items-center gap-2">
+                                 <div className="h-10 w-10 rounded-xl bg-slate-100"></div>
+                                 <div className="space-y-1">
+                                    <div className="h-2 w-24 bg-slate-200 rounded"></div>
+                                    <div className="h-2 w-16 bg-slate-200 rounded"></div>
+                                 </div>
+                              </div>
                            </div>
                         </div>
                      </div>
@@ -102,11 +114,13 @@ const IntegrationTelegramMiniapp: React.FC<IntegrationTelegramMiniappProps> = ({
                   <div className="relative w-[240px] h-[480px] bg-gray-900 rounded-[2.5rem] border-8 border-gray-900 shadow-2xl overflow-hidden hidden sm:block mt-12">
                      <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-32 h-6 bg-gray-900 rounded-b-xl z-20"></div>
                      <div className="w-full h-full bg-white flex flex-col items-center justify-center p-6">
-                        <h4 className="font-bold text-gray-900 mb-4">Карта лояльности</h4>
-                        <div className="w-32 h-32 bg-gray-900 rounded-lg flex items-center justify-center text-white text-xs mb-4">
-                           QR CODE
+                        <div className="text-sm font-semibold text-gray-700 mb-2">Карта лояльности</div>
+                        <div className="w-36 h-36 bg-gray-900 rounded-2xl p-3 grid grid-cols-6 gap-1 mb-4">
+                           {Array.from({ length: 36 }).map((_, i) => (
+                              <div key={i} className={i % 5 === 0 || i % 7 === 0 ? 'bg-white' : 'bg-gray-900'}></div>
+                           ))}
                         </div>
-                        <p className="text-center text-xs text-gray-500">Покажите этот код кассиру для начисления баллов</p>
+                        <p className="text-center text-xs text-gray-500">Покажите код кассиру для начисления или списания</p>
                      </div>
                   </div>
                </div>
@@ -117,15 +131,15 @@ const IntegrationTelegramMiniapp: React.FC<IntegrationTelegramMiniappProps> = ({
                <ul className="space-y-2">
                   <li className="flex items-start space-x-3 text-sm text-gray-600">
                      <Check size={16} className="text-green-500 mt-0.5" />
-                     <span>Не нужно скачивать приложение — работает внутри Telegram.</span>
+                     <span>Клиент может зарегистрироваться в вашей программе лояльности по QR-коду.</span>
                   </li>
                   <li className="flex items-start space-x-3 text-sm text-gray-600">
                      <Check size={16} className="text-green-500 mt-0.5" />
-                     <span>Быстрая регистрация и доступ к карте лояльности.</span>
+                     <span>Клиент сможет использовать бот для списания и начисления баллов.</span>
                   </li>
                   <li className="flex items-start space-x-3 text-sm text-gray-600">
                      <Check size={16} className="text-green-500 mt-0.5" />
-                     <span>Бесплатные PUSH-уведомления через бота.</span>
+                     <span>Рассылки, включая текст и изображения.</span>
                   </li>
                </ul>
             </div>
@@ -255,7 +269,7 @@ const IntegrationTelegramMiniapp: React.FC<IntegrationTelegramMiniappProps> = ({
                   
                   <div className="pt-4 border-t border-gray-100">
                      <p className="text-xs text-gray-500">
-                        Также рекомендуется настроить кнопку меню: <strong>Bot Settings</strong> &rarr; <strong>Menu Button</strong> &rarr; <strong>Configure Menu Button</strong> и вставьте ту же ссылку.
+                        Не требуется устанавливать Menu Button - это делается автоматически после подключения токена бота.
                      </p>
                   </div>
                </div>

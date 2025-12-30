@@ -1130,6 +1130,25 @@ export class LoyaltyController {
     } as const;
   }
 
+  private getQrModeError(
+    kind: 'jwt' | 'short' | 'plain',
+    requireJwtForQuote: boolean,
+  ): { message: string; reason: 'jwt_required' | 'short_code_required' } | null {
+    if (requireJwtForQuote) {
+      if (kind !== 'jwt') {
+        return { message: 'JWT required for quote', reason: 'jwt_required' };
+      }
+      return null;
+    }
+    if (kind !== 'short') {
+      return {
+        message: 'Short QR code required',
+        reason: 'short_code_required',
+      };
+    }
+    return null;
+  }
+
   @Post('reviews')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async submitReview(
@@ -1709,7 +1728,16 @@ export class LoyaltyController {
       typeof dto?.userToken === 'string' ? dto.userToken.trim() : '';
     if (!merchantId) throw new BadRequestException('merchantId required');
     if (!userToken) throw new BadRequestException('userToken required');
+    const settings = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+      select: { requireJwtForQuote: true },
+    });
+    const requireJwtForQuote = Boolean(settings?.requireJwtForQuote);
     const resolved = await this.resolveFromToken(userToken);
+    const modeError = this.getQrModeError(resolved.kind, requireJwtForQuote);
+    if (modeError) {
+      throw new BadRequestException(modeError.message);
+    }
     if (
       resolved.merchantAud &&
       resolved.merchantAud !== 'any' &&
@@ -2070,18 +2098,22 @@ export class LoyaltyController {
     const t0 = Date.now();
     try {
       const v = await this.resolveFromToken(dto.userToken);
-      const customerId = v.customerId;
-      const customer = await this.ensureCustomer(dto.merchantId, customerId);
       const s = await this.prisma.merchantSettings.findUnique({
         where: { merchantId: dto.merchantId },
       });
-      if (s?.requireJwtForQuote && !looksLikeJwt(dto.userToken)) {
+      const modeError = this.getQrModeError(
+        v.kind,
+        Boolean(s?.requireJwtForQuote),
+      );
+      if (modeError) {
         this.metrics.inc('loyalty_quote_requests_total', {
           result: 'error',
-          reason: 'jwt_required',
+          reason: modeError.reason,
         });
-        throw new BadRequestException('JWT required for quote');
+        throw new BadRequestException(modeError.message);
       }
+      const customerId = v.customerId;
+      const customer = await this.ensureCustomer(dto.merchantId, customerId);
       if (
         v.merchantAud &&
         v.merchantAud !== 'any' &&

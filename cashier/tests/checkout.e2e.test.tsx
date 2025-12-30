@@ -91,7 +91,7 @@ describe("cashier checkout flow", () => {
 
     await screen.findByText("Терминал лояльности");
 
-    fireEvent.change(screen.getByPlaceholderText("Телефон/карта или сканируйте QR"), {
+    fireEvent.change(screen.getByPlaceholderText("Введите код или сканируйте QR"), {
       target: { value: "token-123" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Найти" }));
@@ -190,7 +190,7 @@ describe("cashier checkout flow", () => {
 
     await screen.findByText("Терминал лояльности");
 
-    fireEvent.change(screen.getByPlaceholderText("Телефон/карта или сканируйте QR"), {
+    fireEvent.change(screen.getByPlaceholderText("Введите код или сканируйте QR"), {
       target: { value: "token-555" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Найти" }));
@@ -264,7 +264,7 @@ describe("cashier checkout flow", () => {
 
     await screen.findByText("Терминал лояльности");
 
-    fireEvent.change(screen.getByPlaceholderText("Телефон/карта или сканируйте QR"), {
+    fireEvent.change(screen.getByPlaceholderText("Введите код или сканируйте QR"), {
       target: { value: "token-999" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Найти" }));
@@ -336,7 +336,7 @@ describe("cashier checkout flow", () => {
 
     await screen.findByText("Терминал лояльности");
 
-    fireEvent.change(screen.getByPlaceholderText("Телефон/карта или сканируйте QR"), {
+    fireEvent.change(screen.getByPlaceholderText("Введите код или сканируйте QR"), {
       target: { value: "token-888" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Найти" }));
@@ -423,7 +423,7 @@ describe("cashier checkout flow", () => {
 
     await screen.findByText("Терминал лояльности");
 
-    fireEvent.change(screen.getByPlaceholderText("Телефон/карта или сканируйте QR"), {
+    fireEvent.change(screen.getByPlaceholderText("Введите код или сканируйте QR"), {
       target: { value: "token-321" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Найти" }));

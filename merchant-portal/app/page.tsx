@@ -7,6 +7,8 @@ import {
   Ban,
   Store,
   Users,
+  Settings,
+  MessageCircle,
   ChevronRight,
   CheckCircle2,
   AlertCircle,
@@ -296,6 +298,58 @@ export default function Page() {
             className="w-full flex items-center justify-center space-x-2 bg-white border border-gray-200 text-gray-700 py-2.5 rounded-lg font-medium hover:bg-gray-50 hover:border-purple-200 hover:text-purple-700 transition-colors"
           >
             <span>Управление персоналом</span>
+            <ChevronRight size={16} />
+          </Link>
+        </div>
+
+        {/* Step 5: System Settings */}
+        <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+          <div className="flex items-start justify-between mb-4">
+            <div className="flex items-center space-x-3">
+              <div className="p-3 bg-emerald-50 text-emerald-600 rounded-lg">
+                <Settings size={24} />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900 text-lg">Системные настройки</h3>
+                <p className="text-sm text-gray-500 leading-snug mt-1">
+                  Заполнение базовых параметров проекта, типа QR-кода и поддержки.
+                </p>
+              </div>
+            </div>
+            <AlertCircle className="text-amber-500 flex-shrink-0" size={24} />
+          </div>
+
+          <Link
+            href="http://localhost:3004/settings/system"
+            className="w-full flex items-center justify-center space-x-2 bg-white border border-gray-200 text-gray-700 py-2.5 rounded-lg font-medium hover:bg-gray-50 hover:border-purple-200 hover:text-purple-700 transition-colors"
+          >
+            <span>Перейти к настройкам</span>
+            <ChevronRight size={16} />
+          </Link>
+        </div>
+
+        {/* Step 6: Telegram Mini App */}
+        <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+          <div className="flex items-start justify-between mb-4">
+            <div className="flex items-center space-x-3">
+              <div className="p-3 bg-sky-50 text-sky-600 rounded-lg">
+                <MessageCircle size={24} />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900 text-lg">Telegram Mini App</h3>
+                <p className="text-sm text-gray-500 leading-snug mt-1">
+                  Интеграция с мини‑приложением в Telegram и настройка параметров.
+                </p>
+              </div>
+            </div>
+            <AlertCircle className="text-amber-500 flex-shrink-0" size={24} />
+          </div>
+
+          <Link
+            href="http://localhost:3004/integrations/telegram-mini-app"
+            className="w-full flex items-center justify-center space-x-2 bg-white border border-gray-200 text-gray-700 py-2.5 rounded-lg font-medium hover:bg-gray-50 hover:border-purple-200 hover:text-purple-700 transition-colors"
+          >
+            <span>Открыть интеграцию</span>
             <ChevronRight size={16} />
           </Link>
         </div>

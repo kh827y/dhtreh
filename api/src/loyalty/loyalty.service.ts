@@ -4854,7 +4854,14 @@ export class LoyaltyService {
       });
       if (qrJti) {
         try {
-          await tx.qrNonce.delete({ where: { jti: qrJti } });
+          if (/^\d{9}$/.test(qrJti)) {
+            await tx.qrNonce.updateMany({
+              where: { jti: qrJti },
+              data: { usedAt: null },
+            });
+          } else {
+            await tx.qrNonce.delete({ where: { jti: qrJti } });
+          }
         } catch {
           /* ignore */
         }
@@ -5624,6 +5631,11 @@ export class LoyaltyService {
         .trim();
       return name || staff.login?.trim() || null;
     };
+    const formatDevice = (device?: { code?: string | null }): string | null => {
+      if (!device?.code) return null;
+      const code = device.code.trim();
+      return code.length > 0 ? code : null;
+    };
     const formatCustomer = (customer?: {
       name?: string | null;
       phone?: string | null;
@@ -5653,6 +5665,7 @@ export class LoyaltyService {
       include: {
         outlet: { select: { name: true } },
         staff: { select: { firstName: true, lastName: true, login: true } },
+        device: { select: { code: true } },
         customer: { select: { name: true, phone: true, email: true } },
       },
     });
@@ -5678,6 +5691,8 @@ export class LoyaltyService {
         earnApplied: number;
         redeemApplied: number;
         staffName: string | null;
+        staffId: string | null;
+        deviceCode: string | null;
         customerName: string | null;
         outletName: string | null;
       }
@@ -5694,6 +5709,8 @@ export class LoyaltyService {
           redeemApplied: true,
           outlet: { select: { name: true, code: true } },
           staff: { select: { firstName: true, lastName: true, login: true } },
+          staffId: true,
+          device: { select: { code: true } },
           customer: { select: { name: true, phone: true, email: true } },
         },
       });
@@ -5712,6 +5729,8 @@ export class LoyaltyService {
           earnApplied: Math.max(0, Number(receipt.earnApplied ?? 0)),
           redeemApplied: Math.max(0, Number(receipt.redeemApplied ?? 0)),
           staffName: formatStaff(receipt.staff ?? undefined),
+          staffId: receipt.staffId ?? null,
+          deviceCode: formatDevice(receipt.device ?? undefined),
           customerName: formatCustomer(receipt.customer ?? undefined),
           outletName:
             receipt.outlet?.name?.trim() ||
@@ -5726,6 +5745,13 @@ export class LoyaltyService {
         typeof entity.orderId === 'string' && entity.orderId.trim().length > 0
           ? entity.orderId.trim()
           : null;
+      const receiptMeta = orderId ? receiptMetaByOrderId.get(orderId) : null;
+      const staffName =
+        formatStaff(entity.staff ?? undefined) ||
+        receiptMeta?.staffName ||
+        formatDevice(entity.device ?? undefined) ||
+        receiptMeta?.deviceCode ||
+        null;
       return {
         id: entity.id,
         mode: 'TXN' as const,
@@ -5733,27 +5759,25 @@ export class LoyaltyService {
         amount: entity.amount,
         orderId,
         receiptNumber: orderId
-          ? (receiptMetaByOrderId.get(orderId)?.receiptNumber ?? null)
+          ? (receiptMeta?.receiptNumber ?? null)
           : null,
         createdAt: entity.createdAt.toISOString(),
         outletId: entity.outletId ?? null,
         outletName: entity.outlet?.name ?? null,
         purchaseAmount: orderId
-          ? (receiptMetaByOrderId.get(orderId)?.total ?? null)
+          ? (receiptMeta?.total ?? null)
           : null,
         earnApplied: orderId
-          ? (receiptMetaByOrderId.get(orderId)?.earnApplied ?? null)
+          ? (receiptMeta?.earnApplied ?? null)
           : null,
         redeemApplied: orderId
-          ? (receiptMetaByOrderId.get(orderId)?.redeemApplied ?? null)
+          ? (receiptMeta?.redeemApplied ?? null)
           : null,
-        staffName:
-          formatStaff(entity.staff ?? undefined) ||
-          receiptMetaByOrderId.get(orderId ?? '')?.staffName ||
-          null,
+        staffId: entity.staffId ?? receiptMeta?.staffId ?? null,
+        staffName,
         customerName:
           formatCustomer(entity.customer ?? undefined) ||
-          receiptMetaByOrderId.get(orderId ?? '')?.customerName ||
+          receiptMeta?.customerName ||
           null,
       };
     });
@@ -5777,7 +5801,8 @@ export class LoyaltyService {
           redeemApplied: meta.redeemApplied ?? null,
           refundEarn: null,
           refundRedeem: null,
-          staffName: meta.staffName ?? null,
+          staffId: meta.staffId ?? null,
+          staffName: meta.staffName ?? meta.deviceCode ?? null,
           customerName: meta.customerName ?? null,
         };
       },
@@ -5790,6 +5815,7 @@ export class LoyaltyService {
         redeem: number;
         createdAt: string;
         receiptNumber: string | null;
+        staffId: string | null;
         staffName: string | null;
         customerName: string | null;
       }
@@ -5804,6 +5830,7 @@ export class LoyaltyService {
           redeem: 0,
           createdAt: tx.createdAt,
           receiptNumber: tx.receiptNumber ?? null,
+          staffId: tx.staffId ?? null,
           staffName: tx.staffName ?? null,
           customerName: tx.customerName ?? null,
         } as any);
@@ -5813,6 +5840,7 @@ export class LoyaltyService {
       if (tx.createdAt > group.createdAt) group.createdAt = tx.createdAt;
       if (!group.receiptNumber && tx.receiptNumber)
         group.receiptNumber = tx.receiptNumber;
+      if (!group.staffId && tx.staffId) group.staffId = tx.staffId;
       if (!group.staffName && tx.staffName) group.staffName = tx.staffName;
       if (!group.customerName && tx.customerName)
         group.customerName = tx.customerName;
@@ -5839,7 +5867,12 @@ export class LoyaltyService {
           redeemApplied: null,
           refundEarn: meta.earn ?? 0,
           refundRedeem: meta.redeem ?? 0,
-          staffName: meta.staffName ?? receiptMeta?.staffName ?? null,
+          staffId: meta.staffId ?? receiptMeta?.staffId ?? null,
+          staffName:
+            meta.staffName ??
+            receiptMeta?.staffName ??
+            receiptMeta?.deviceCode ??
+            null,
           customerName: meta.customerName ?? receiptMeta?.customerName ?? null,
         };
       },

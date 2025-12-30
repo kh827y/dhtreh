@@ -446,6 +446,7 @@ export class CashierOutletTransactionDto {
   @ApiPropertyOptional({ nullable: true }) redeemApplied?: number | null;
   @ApiPropertyOptional({ nullable: true }) refundEarn?: number | null;
   @ApiPropertyOptional({ nullable: true }) refundRedeem?: number | null;
+  @ApiPropertyOptional({ nullable: true }) staffId?: string | null;
   @ApiPropertyOptional({ nullable: true }) staffName?: string | null;
   @ApiPropertyOptional({ nullable: true }) customerName?: string | null;
 }

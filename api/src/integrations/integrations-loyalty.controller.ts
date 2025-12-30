@@ -240,12 +240,18 @@ export class IntegrationsLoyaltyController {
     return list;
   }
 
+  private normalizeShortCode(userToken: string): string | null {
+    if (!userToken) return null;
+    const compact = userToken.replace(/\s+/g, '');
+    return /^\d{9}$/.test(compact) ? compact : null;
+  }
+
   private async resolveFromToken(userToken: string) {
     if (looksLikeJwt(userToken)) {
       const secret = process.env.QR_JWT_SECRET || 'dev_change_me';
       try {
         const v = await verifyQrToken(secret, userToken);
-        return v;
+        return { ...v, kind: 'jwt' as const };
       } catch (e: any) {
         const code = e?.code || e?.name || '';
         const msg = String(e?.message || e || '');
@@ -261,6 +267,32 @@ export class IntegrationsLoyaltyController {
         throw new BadRequestException('Bad QR token');
       }
     }
+    const shortCode = this.normalizeShortCode(userToken);
+    if (shortCode) {
+      const nonce = await this.prisma.qrNonce.findUnique({
+        where: { jti: shortCode },
+      });
+      if (!nonce) {
+        throw new BadRequestException('Bad QR token');
+      }
+      const expMs = nonce.expiresAt?.getTime?.() ?? NaN;
+      if (!Number.isFinite(expMs) || expMs <= Date.now()) {
+        try {
+          await this.prisma.qrNonce.delete({ where: { jti: shortCode } });
+        } catch {}
+        throw new BadRequestException(
+          'JWTExpired: "exp" claim timestamp check failed',
+        );
+      }
+      return {
+        customerId: nonce.customerId,
+        merchantAud: nonce.merchantId ?? undefined,
+        jti: nonce.jti,
+        iat: Math.floor(nonce.issuedAt.getTime() / 1000),
+        exp: Math.floor(nonce.expiresAt.getTime() / 1000),
+        kind: 'short' as const,
+      };
+    }
     const now = Math.floor(Date.now() / 1000);
     return {
       customerId: userToken,
@@ -268,7 +300,19 @@ export class IntegrationsLoyaltyController {
       jti: `plain:${userToken}:${now}`,
       iat: now,
       exp: now + 3600,
+      kind: 'plain' as const,
     } as const;
+  }
+
+  private normalizePhoneStrict(phone?: string | null): string {
+    if (!phone) throw new BadRequestException('phone required');
+    let cleaned = String(phone).replace(/\D/g, '');
+    if (cleaned.startsWith('8')) cleaned = '7' + cleaned.substring(1);
+    if (cleaned.length === 10 && !cleaned.startsWith('7')) {
+      cleaned = '7' + cleaned;
+    }
+    if (cleaned.length !== 11) throw new BadRequestException('invalid phone');
+    return '+' + cleaned;
   }
 
   private async ensureCustomer(merchantId: string, customerId: string) {
@@ -301,8 +345,11 @@ export class IntegrationsLoyaltyController {
     payload: {
       user_token?: string | null;
       id_client?: string | null;
+      phone?: string | null;
     },
+    options?: { allowPhone?: boolean },
   ): Promise<{ customer: any; userToken: string | null }> {
+    const allowPhone = options?.allowPhone ?? false;
     const userToken =
       typeof payload.user_token === 'string' &&
       payload.user_token.trim().length
@@ -312,26 +359,38 @@ export class IntegrationsLoyaltyController {
       typeof payload.id_client === 'string' && payload.id_client.trim().length
         ? payload.id_client.trim()
         : '';
+    const phoneRaw =
+      allowPhone &&
+      typeof payload.phone === 'string' &&
+      payload.phone.trim().length
+        ? payload.phone.trim()
+        : '';
+    const phone = phoneRaw ? this.normalizePhoneStrict(phoneRaw) : '';
 
-    if (!userToken && !idClient) {
-      throw new BadRequestException('user_token или id_client обязательны');
+    if (!userToken && !idClient && !phone) {
+      throw new BadRequestException(
+        'user_token или id_client или phone обязательны',
+      );
     }
 
-    if (!userToken && idClient) {
-      const settings = await this.prisma.merchantSettings.findUnique({
-        where: { merchantId },
-        select: { requireJwtForQuote: true },
-      });
-      if (settings?.requireJwtForQuote) {
+    const settings = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+      select: { requireJwtForQuote: true },
+    });
+    const requireJwtForQuote = Boolean(settings?.requireJwtForQuote);
+
+    if (!userToken && requireJwtForQuote) {
+      throw new BadRequestException('JWT required for quote');
+    }
+
+    let tokenResolved: any = null;
+    if (userToken) {
+      tokenResolved = await this.resolveFromToken(userToken);
+      if (requireJwtForQuote && tokenResolved.kind !== 'jwt') {
         throw new BadRequestException('JWT required for quote');
       }
-    } else if (userToken) {
-      const settings = await this.prisma.merchantSettings.findUnique({
-        where: { merchantId },
-        select: { requireJwtForQuote: true },
-      });
-      if (settings?.requireJwtForQuote && !looksLikeJwt(userToken)) {
-        throw new BadRequestException('JWT required for quote');
+      if (!requireJwtForQuote && tokenResolved.kind !== 'short') {
+        throw new BadRequestException('Short QR code required');
       }
     }
 
@@ -341,8 +400,8 @@ export class IntegrationsLoyaltyController {
     }
 
     let tokenCustomer: any = null;
-    if (userToken) {
-      const resolved = await this.resolveFromToken(userToken);
+    if (userToken && tokenResolved) {
+      const resolved = tokenResolved;
       if (
         resolved.merchantAud &&
         resolved.merchantAud !== 'any' &&
@@ -356,6 +415,16 @@ export class IntegrationsLoyaltyController {
       );
     }
 
+    let phoneCustomer: any = null;
+    if (phone) {
+      phoneCustomer = await this.prisma.customer.findUnique({
+        where: { merchantId_phone: { merchantId, phone } },
+      });
+      if (!phoneCustomer) {
+        throw new BadRequestException('customer not found');
+      }
+    }
+
     if (
       explicitCustomer &&
       tokenCustomer &&
@@ -363,8 +432,18 @@ export class IntegrationsLoyaltyController {
     ) {
       throw new BadRequestException('user_token не совпадает с id_client');
     }
+    if (
+      explicitCustomer &&
+      phoneCustomer &&
+      explicitCustomer.id !== phoneCustomer.id
+    ) {
+      throw new BadRequestException('phone не совпадает с id_client');
+    }
+    if (tokenCustomer && phoneCustomer && tokenCustomer.id !== phoneCustomer.id) {
+      throw new BadRequestException('phone не совпадает с user_token');
+    }
 
-    const customer = explicitCustomer ?? tokenCustomer;
+    const customer = explicitCustomer ?? phoneCustomer ?? tokenCustomer;
     if (!customer) {
       throw new BadRequestException('customer not found');
     }
@@ -1140,6 +1219,17 @@ export class IntegrationsLoyaltyController {
     if (!userToken) throw new BadRequestException('user_token required');
 
     const resolved = await this.resolveFromToken(userToken);
+    const settings = await this.prisma.merchantSettings.findUnique({
+      where: { merchantId },
+      select: { requireJwtForQuote: true },
+    });
+    const requireJwtForQuote = Boolean(settings?.requireJwtForQuote);
+    if (requireJwtForQuote && resolved.kind !== 'jwt') {
+      throw new BadRequestException('JWT required for quote');
+    }
+    if (!requireJwtForQuote && resolved.kind !== 'short') {
+      throw new BadRequestException('Short QR code required');
+    }
     if (
       resolved.merchantAud &&
       resolved.merchantAud !== 'any' &&
@@ -1170,8 +1260,37 @@ export class IntegrationsLoyaltyController {
       typeof dto.id_client === 'string' && dto.id_client.trim()
         ? dto.id_client.trim()
         : '';
-    if (!customerId) {
-      throw new BadRequestException('id_client required');
+    const phoneRaw =
+      typeof dto.phone === 'string' && dto.phone.trim().length
+        ? dto.phone.trim()
+        : '';
+    const phone = phoneRaw ? this.normalizePhoneStrict(phoneRaw) : '';
+    if (!customerId && !phone) {
+      throw new BadRequestException('id_client или phone required');
+    }
+    let explicitCustomer: any = null;
+    if (customerId) {
+      explicitCustomer = await this.ensureCustomer(merchantId, customerId);
+    }
+    let phoneCustomer: any = null;
+    if (phone) {
+      phoneCustomer = await this.prisma.customer.findUnique({
+        where: { merchantId_phone: { merchantId, phone } },
+      });
+      if (!phoneCustomer) {
+        throw new BadRequestException('customer not found');
+      }
+    }
+    if (
+      explicitCustomer &&
+      phoneCustomer &&
+      explicitCustomer.id !== phoneCustomer.id
+    ) {
+      throw new BadRequestException('phone не совпадает с id_client');
+    }
+    const resolvedCustomer = explicitCustomer ?? phoneCustomer;
+    if (!resolvedCustomer) {
+      throw new BadRequestException('customer not found');
     }
     const items = this.normalizeActionItems(dto.items);
     if (!items.length) {
@@ -1193,7 +1312,7 @@ export class IntegrationsLoyaltyController {
     const result = await this.loyalty.calculateAction({
       merchantId,
       items,
-      customerId,
+      customerId: resolvedCustomer.id,
     });
     await this.logIntegrationSync(
       req,
@@ -1224,6 +1343,7 @@ export class IntegrationsLoyaltyController {
     const { customer, userToken } = await this.resolveCustomerContext(
       merchantId,
       dto,
+      { allowPhone: true },
     );
     const outletId =
       typeof dto.outlet_id === 'string' && dto.outlet_id.trim()

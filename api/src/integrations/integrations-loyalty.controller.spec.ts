@@ -8,6 +8,10 @@ function createPrismaMock(overrides: PrismaMock = {}) {
     customer: {
       findUnique: jest.fn().mockResolvedValue(null),
     },
+    qrNonce: {
+      findUnique: jest.fn().mockResolvedValue(null),
+      delete: jest.fn().mockResolvedValue(null),
+    },
     outlet: {
       findMany: jest.fn().mockResolvedValue([]),
       findFirst: jest.fn().mockResolvedValue(null),
@@ -282,6 +286,12 @@ describe('IntegrationsLoyaltyController', () => {
   it('calculate action нормализует позиции и возвращает статус ok', async () => {
     const { controller, loyalty } = createController(
       {
+        customer: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'C-1',
+            merchantId: 'M-1',
+          }),
+        },
         outlet: {
           findFirst: jest.fn().mockResolvedValue({ id: 'OUT-1' }),
         },
@@ -342,5 +352,59 @@ describe('IntegrationsLoyaltyController', () => {
       .items;
     expect(passedItems[0].categoryId).toBeUndefined();
     expect(passedItems[0].basePrice).toBeUndefined();
+  });
+
+  it('code требует JWT при включённом requireJwtForQuote', async () => {
+    const { controller } = createController({
+      merchantSettings: {
+        findUnique: jest.fn().mockResolvedValue({ requireJwtForQuote: true }),
+      },
+    });
+    jest
+      .spyOn(controller as any, 'resolveFromToken')
+      .mockResolvedValue({
+        kind: 'short',
+        customerId: 'C-1',
+        merchantAud: 'M-1',
+      });
+
+    await expect(
+      controller.code({ user_token: 'qr' } as any, {
+        ...baseReq,
+        body: { user_token: 'qr' },
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('code возвращает профиль клиента при валидном токене', async () => {
+    const { controller } = createController({
+      merchantSettings: {
+        findUnique: jest.fn().mockResolvedValue({ requireJwtForQuote: false }),
+      },
+    });
+    jest
+      .spyOn(controller as any, 'resolveFromToken')
+      .mockResolvedValue({
+        kind: 'short',
+        customerId: 'C-2',
+        merchantAud: 'M-1',
+      });
+    jest
+      .spyOn(controller as any, 'ensureCustomer')
+      .mockResolvedValue({ id: 'C-2' });
+    jest
+      .spyOn(controller as any, 'buildClientPayload')
+      .mockResolvedValue({ id_client: 'C-2' });
+    jest
+      .spyOn(controller as any, 'verifyBridgeSignatureIfRequired')
+      .mockResolvedValue(undefined);
+
+    const resp = await controller.code({ user_token: 'qr' } as any, {
+      ...baseReq,
+      body: { user_token: 'qr' },
+    });
+
+    expect(resp.type).toBe('bonus');
+    expect(resp.client).toEqual({ id_client: 'C-2' });
   });
 });
