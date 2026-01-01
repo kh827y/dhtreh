@@ -768,7 +768,7 @@ export class OperationsLogService {
         details = 'Баллы за автовозврат';
         kind = 'AUTO_RETURN';
       } else if (source === 'COMPLIMENTARY') {
-        details = 'Комплиментарные баллы';
+        details = 'Подарочные баллы';
         kind = 'COMPLIMENTARY';
         note = this.extractComment(metadata);
       } else if (source === 'MANUAL_ACCRUAL') {

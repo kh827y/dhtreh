@@ -84,7 +84,7 @@ const operationKindLabels: Record<OperationKind, string> = {
   AUTO_RETURN: "Автовозврат",
   MANUAL_ACCRUAL: "Начислено администратором",
   MANUAL_REDEEM: "Списание администратором",
-  COMPLIMENTARY: "Комплиментарные баллы",
+  COMPLIMENTARY: "Подарочные баллы",
   REFERRAL: "Реферальное начисление",
   REFERRAL_ROLLBACK: "Возврат реферала",
   REFUND: "Возврат покупки",

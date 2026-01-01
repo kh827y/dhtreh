@@ -987,7 +987,7 @@ export class PortalCustomersService {
     }
 
     if (source === 'COMPLIMENTARY') {
-      details = 'Комплиментарные баллы';
+      details = 'Подарочные баллы';
       kind = 'COMPLIMENTARY';
       if (typeof params.metadata?.comment === 'string') {
         const trimmed = params.metadata.comment.trim();

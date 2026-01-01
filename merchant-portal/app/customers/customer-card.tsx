@@ -1721,7 +1721,7 @@ function buildOperationMeta(
       subtitleMain = detailsText;
     }
   } else if (isComplimentary) {
-    headerText = "Комплиментарные баллы";
+    headerText = "Подарочные баллы";
     if (operation.note && operation.note.trim()) {
       subtitleMain = operation.note.trim();
     }

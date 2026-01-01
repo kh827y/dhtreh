@@ -488,11 +488,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className={inter.className}>
         <ThemeProvider defaultTheme="light">
           <TimezoneProvider timezone={timezonePayload.timezone} options={timezonePayload.options}>
-            <div className="flex min-h-screen bg-slate-50 overflow-x-hidden font-sans text-slate-900">
+            <div className="flex h-screen bg-slate-50 overflow-hidden font-sans text-slate-900">
               {/* Sidebar — 1:1 как в new design */}
               <aside
                 className={
-                  "w-72 bg-white border-r border-gray-200 h-screen flex flex-col flex-shrink-0 sticky top-0 overflow-y-auto custom-scrollbar" +
+                  "w-72 bg-white border-r border-gray-200 flex flex-col flex-shrink-0 h-full overflow-y-auto custom-scrollbar" +
                   (expired ? " opacity-40 pointer-events-none" : "")
                 }
               >
@@ -512,7 +512,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               </aside>
 
               {/* Header + Content */}
-              <div className="flex-1 flex flex-col min-h-screen overflow-x-hidden">
+              <div className="flex-1 flex flex-col h-full min-h-0 overflow-hidden">
                 <AppHeader
                   staffLabel={staffLabel}
                   role={profile?.role || null}
@@ -520,8 +520,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   navSections={filteredSections}
                 />
 
-                <main className="flex-1 min-h-0 overflow-x-hidden bg-gray-50/50">
-                  <div className="main-content flex-1 min-h-0 overflow-visible relative">
+                <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden bg-gray-50/50 custom-scrollbar">
+                  <div className="main-content flex-1 min-h-0 relative">
                     {subscription?.expired && (
                       <div className="fixed inset-0 z-50 bg-gray-50 flex items-center justify-center p-4 overflow-hidden">
                         <div
